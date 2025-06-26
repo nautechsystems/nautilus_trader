@@ -277,16 +277,16 @@ impl BarBuilder {
             self.close = self.last_close;
         }
 
-        if let (Some(close), Some(low)) = (self.close, self.low) {
-            if close < low {
-                self.low = Some(close);
-            }
+        if let (Some(close), Some(low)) = (self.close, self.low)
+            && close < low
+        {
+            self.low = Some(close);
         }
 
-        if let (Some(close), Some(high)) = (self.close, self.high) {
-            if close > high {
-                self.high = Some(close);
-            }
+        if let (Some(close), Some(high)) = (self.close, self.high)
+            && close > high
+        {
+            self.high = Some(close);
         }
 
         // SAFETY: The open was checked, so we can assume all prices are Some

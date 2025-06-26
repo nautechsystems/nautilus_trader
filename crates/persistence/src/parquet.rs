@@ -263,19 +263,19 @@ pub async fn min_max_from_parquet_metadata_object_store(
                     // Check if we have Int64 statistics
                     if let Statistics::Int64(int64_stats) = stats {
                         // Extract min value if available
-                        if let Some(&min_value) = int64_stats.min_opt() {
-                            if overall_min_value.is_none() || min_value < overall_min_value.unwrap()
-                            {
-                                overall_min_value = Some(min_value);
-                            }
+                        if let Some(&min_value) = int64_stats.min_opt()
+                            && (overall_min_value.is_none()
+                                || min_value < overall_min_value.unwrap())
+                        {
+                            overall_min_value = Some(min_value);
                         }
 
                         // Extract max value if available
-                        if let Some(&max_value) = int64_stats.max_opt() {
-                            if overall_max_value.is_none() || max_value > overall_max_value.unwrap()
-                            {
-                                overall_max_value = Some(max_value);
-                            }
+                        if let Some(&max_value) = int64_stats.max_opt()
+                            && (overall_max_value.is_none()
+                                || max_value > overall_max_value.unwrap())
+                        {
+                            overall_max_value = Some(max_value);
                         }
                     } else {
                         anyhow::bail!("Warning: Column name '{column_name}' is not of type i64.");

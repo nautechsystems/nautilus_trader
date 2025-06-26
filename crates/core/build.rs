@@ -123,18 +123,15 @@ fn try_read_pyproject_version() -> Option<String> {
     let paths_to_check: Vec<PathBuf> = vec![path1].into_iter().chain(path2).collect();
 
     for path in paths_to_check {
-        if path.exists() {
-            if let Ok(contents) = std::fs::read_to_string(&path) {
-                if let Ok(value) = toml::from_str::<toml::Value>(&contents) {
-                    if let Some(version) = value
-                        .get("project")
-                        .and_then(|p| p.get("version"))
-                        .and_then(|v| v.as_str())
-                    {
-                        return Some(version.to_string());
-                    }
-                }
-            }
+        if path.exists()
+            && let Ok(contents) = std::fs::read_to_string(&path)
+            && let Ok(value) = toml::from_str::<toml::Value>(&contents)
+            && let Some(version) = value
+                .get("project")
+                .and_then(|p| p.get("version"))
+                .and_then(|v| v.as_str())
+        {
+            return Some(version.to_string());
         }
     }
 

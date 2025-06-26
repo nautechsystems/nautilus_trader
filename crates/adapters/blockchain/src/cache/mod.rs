@@ -88,11 +88,11 @@ impl BlockchainCache {
     /// Connects to the database and loads initial data.
     pub async fn connect(&mut self, from_block: u64) -> anyhow::Result<()> {
         // Seed target adapter chain in database
-        if let Some(database) = &self.database {
-            if let Err(e) = database.seed_chain(&self.chain).await {
-                log::error!("Error seeding chain in database: {e}");
-                log::warn!("Continuing without database cache functionality");
-            }
+        if let Some(database) = &self.database
+            && let Err(e) = database.seed_chain(&self.chain).await
+        {
+            log::error!("Error seeding chain in database: {e}");
+            log::warn!("Continuing without database cache functionality");
         }
 
         if let Err(e) = self.load_tokens().await {

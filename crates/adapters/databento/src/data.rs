@@ -390,10 +390,10 @@ impl DataClient for DatabentoDataClient {
         };
 
         for handle in handles {
-            if let Err(e) = handle.await {
-                if !e.is_cancelled() {
-                    tracing::error!("Task join error: {e}");
-                }
+            if let Err(e) = handle.await
+                && !e.is_cancelled()
+            {
+                tracing::error!("Task join error: {e}");
             }
         }
 

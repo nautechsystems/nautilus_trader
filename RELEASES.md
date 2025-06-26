@@ -48,6 +48,7 @@ Released on TBD (UTC).
 - Refined logging subsystem lifecycle management and introduce global log sender
 - Refined signal serialization and tests (#2705), thanks @faysou
 - Refined CI/CD and build system (#2707), thanks @stastnypremysl
+- Upgraded Rust (MSRV) to 1.88.0
 - Upgraded Cython to v3.1.2
 - Upgraded `databento` crate to v0.27.1
 - Upgraded `datafusion` crate to v48.0.0

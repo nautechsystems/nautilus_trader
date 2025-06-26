@@ -73,18 +73,17 @@ impl MessageHandler for BookUpdater {
 
     fn handle(&self, message: &dyn Any) {
         // TODO: Temporary handler implementation (this will be removed soon)
-        if let Some(data) = message.downcast_ref::<Data>() {
-            if let Some(book) = self
+        if let Some(data) = message.downcast_ref::<Data>()
+            && let Some(book) = self
                 .cache
                 .borrow_mut()
                 .order_book_mut(&data.instrument_id())
-            {
-                match data {
-                    Data::Delta(delta) => book.apply_delta(delta),
-                    Data::Deltas(deltas) => book.apply_deltas(deltas),
-                    Data::Depth10(depth) => book.apply_depth(depth),
-                    _ => log::error!("Invalid data type for book update, was {data:?}"),
-                }
+        {
+            match data {
+                Data::Delta(delta) => book.apply_delta(delta),
+                Data::Deltas(deltas) => book.apply_deltas(deltas),
+                Data::Depth10(depth) => book.apply_depth(depth),
+                _ => log::error!("Invalid data type for book update, was {data:?}"),
             }
         }
     }

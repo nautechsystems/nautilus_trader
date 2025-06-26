@@ -1862,7 +1862,7 @@ impl Cache {
         };
         self.position_snapshots.insert(position_id, new_snapshots);
 
-        log::debug!("Snapshot {}", copied_position);
+        log::debug!("Snapshot {copied_position}");
         Ok(())
     }
 

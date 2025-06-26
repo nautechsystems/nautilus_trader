@@ -282,11 +282,11 @@ impl WebSocketClientInner {
                 return Ok(());
             }
 
-            if let Some(ref read_task) = self.read_task.take() {
-                if !read_task.is_finished() {
-                    read_task.abort();
-                    log_task_aborted("read");
-                }
+            if let Some(ref read_task) = self.read_task.take()
+                && !read_task.is_finished()
+            {
+                read_task.abort();
+                log_task_aborted("read");
             }
 
             // If a disconnect was requested during reconnect, do not proceed to reactivate
@@ -426,13 +426,12 @@ impl WebSocketClientInner {
                     }
                     Ok(Some(Ok(Message::Ping(ping)))) => {
                         tracing::trace!("Received ping: {ping:?}");
-                        if let Some(ref handler) = ping_handler {
-                            if let Err(e) =
+                        if let Some(ref handler) = ping_handler
+                            && let Err(e) =
                                 Python::with_gil(|py| handler.call1(py, (PyBytes::new(py, &ping),)))
-                            {
-                                tracing::error!("Error calling handler: {e}");
-                                break;
-                            }
+                        {
+                            tracing::error!("Error calling handler: {e}");
+                            break;
                         }
                         continue;
                     }
@@ -585,11 +584,11 @@ impl WebSocketClientInner {
 
 impl Drop for WebSocketClientInner {
     fn drop(&mut self) {
-        if let Some(ref read_task) = self.read_task.take() {
-            if !read_task.is_finished() {
-                read_task.abort();
-                log_task_aborted("read");
-            }
+        if let Some(ref read_task) = self.read_task.take()
+            && !read_task.is_finished()
+        {
+            read_task.abort();
+            log_task_aborted("read");
         }
 
         if !self.write_task.is_finished() {
@@ -597,11 +596,11 @@ impl Drop for WebSocketClientInner {
             log_task_aborted("write");
         }
 
-        if let Some(ref handle) = self.heartbeat_task.take() {
-            if !handle.is_finished() {
-                handle.abort();
-                log_task_aborted("heartbeat");
-            }
+        if let Some(ref handle) = self.heartbeat_task.take()
+            && !handle.is_finished()
+        {
+            handle.abort();
+            log_task_aborted("heartbeat");
         }
     }
 }
@@ -896,18 +895,18 @@ impl WebSocketClient {
                         // Delay awaiting graceful shutdown
                         tokio::time::sleep(Duration::from_millis(100)).await;
 
-                        if let Some(task) = &inner.read_task {
-                            if !task.is_finished() {
-                                task.abort();
-                                log_task_aborted("read");
-                            }
+                        if let Some(task) = &inner.read_task
+                            && !task.is_finished()
+                        {
+                            task.abort();
+                            log_task_aborted("read");
                         }
 
-                        if let Some(task) = &inner.heartbeat_task {
-                            if !task.is_finished() {
-                                task.abort();
-                                log_task_aborted("heartbeat");
-                            }
+                        if let Some(task) = &inner.heartbeat_task
+                            && !task.is_finished()
+                        {
+                            task.abort();
+                            log_task_aborted("heartbeat");
                         }
                     })
                     .await

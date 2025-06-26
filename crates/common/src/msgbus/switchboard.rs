@@ -307,7 +307,7 @@ impl MessagingSwitchboard {
         *self
             .instruments_topics
             .entry(venue)
-            .or_insert_with(|| format!("data.instrument.{}", venue).into())
+            .or_insert_with(|| format!("data.instrument.{venue}").into())
     }
 
     #[must_use]

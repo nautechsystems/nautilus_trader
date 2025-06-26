@@ -117,7 +117,7 @@ impl Symbol {
         if root_str == self.as_str() {
             root_str.to_string()
         } else {
-            format!("{}*", root_str)
+            format!("{root_str}*")
         }
     }
 }

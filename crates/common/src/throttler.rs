@@ -307,7 +307,7 @@ where
     T: Debug,
 {
     pub fn new(actor_id: Ustr) -> Self {
-        let endpoint = Ustr::from(&format!("{}_process", actor_id));
+        let endpoint = Ustr::from(&format!("{actor_id}_process"));
         Self {
             actor_id,
             endpoint,

@@ -159,7 +159,7 @@ impl BookLadder {
                     } else {
                         debug_assert!(
                             self.cache.contains_key(&order.order_id),
-                            "Cache should still contain order {} after update",
+                            "Cache should still contain order {0} after update",
                             order.order_id
                         );
                     }
@@ -169,8 +169,7 @@ impl BookLadder {
                         self.levels.remove(&price);
                         debug_assert!(
                             !self.cache.values().any(|p| *p == price),
-                            "Cache should not contain removed price level {:?}",
-                            price
+                            "Cache should not contain removed price level {price:?}"
                         );
                     }
 
@@ -190,8 +189,7 @@ impl BookLadder {
                     self.levels.remove(&price);
                     debug_assert!(
                         !self.cache.values().any(|p| *p == price),
-                        "Cache should not contain removed price level {:?}",
-                        price
+                        "Cache should not contain removed price level {price:?}"
                     );
                 }
             }
@@ -237,8 +235,7 @@ impl BookLadder {
                         self.levels.remove(&price);
                         debug_assert!(
                             !self.cache.values().any(|p| *p == price),
-                            "Cache should not contain removed price level {:?}",
-                            price
+                            "Cache should not contain removed price level {price:?}"
                         );
                     }
                 }

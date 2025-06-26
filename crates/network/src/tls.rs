@@ -157,22 +157,22 @@ pub fn create_tls_config_from_certs_dir(certs_dir: &Path) -> anyhow::Result<rust
         let entry = entry?;
         let path = entry.path();
 
-        if client_key.is_none() {
-            if let Ok(key) = load_private_key(&path) {
-                client_key = Some(key);
-                continue;
-            }
+        if client_key.is_none()
+            && let Ok(key) = load_private_key(&path)
+        {
+            client_key = Some(key);
+            continue;
         }
 
-        if let Ok(certs) = load_certs(&path) {
-            if !certs.is_empty() {
-                if client_cert.is_none() {
-                    client_cert = Some(certs);
-                } else {
-                    for cert in certs {
-                        if let Err(e) = root_store.add(cert) {
-                            eprintln!("Warning: Invalid certificate in {path:?}: {e}");
-                        }
+        if let Ok(certs) = load_certs(&path)
+            && !certs.is_empty()
+        {
+            if client_cert.is_none() {
+                client_cert = Some(certs);
+            } else {
+                for cert in certs {
+                    if let Err(e) = root_store.add(cert) {
+                        eprintln!("Warning: Invalid certificate in {path:?}: {e}");
                     }
                 }
             }

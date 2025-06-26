@@ -82,7 +82,7 @@ pub(crate) fn pprint_book(bids: &BookLadder, asks: &BookLadder, num_levels: usiz
         asks.levels.len()
     );
 
-    format!("{}\n{}", header, table)
+    format!("{header}\n{table}")
 }
 
 // TODO: Probably consolidate the below at some point
@@ -144,5 +144,5 @@ pub(crate) fn pprint_own_book(
         asks.levels.len()
     );
 
-    format!("{}\n{}", header, table)
+    format!("{header}\n{table}")
 }
