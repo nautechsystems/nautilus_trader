@@ -4,6 +4,7 @@
 [![Documentation](https://img.shields.io/docsrs/nautilus-network)](https://docs.rs/nautilus-network/latest/nautilus-network/)
 [![crates.io version](https://img.shields.io/crates/v/nautilus-network.svg)](https://crates.io/crates/nautilus-network)
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
+[![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
 
 Network functionality for [NautilusTrader](http://nautilustrader.io).
 

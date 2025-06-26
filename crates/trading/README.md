@@ -4,6 +4,7 @@
 [![Documentation](https://img.shields.io/docsrs/nautilus-trading)](https://docs.rs/nautilus-trading/latest/nautilus-trading/)
 [![crates.io version](https://img.shields.io/crates/v/nautilus-trading.svg)](https://crates.io/crates/nautilus-trading)
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
+[![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
 
 Trading strategy machinery and orchestration for [NautilusTrader](http://nautilustrader.io).
 

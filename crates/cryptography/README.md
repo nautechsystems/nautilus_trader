@@ -4,6 +4,7 @@
 [![Documentation](https://img.shields.io/docsrs/nautilus-cryptography)](https://docs.rs/nautilus-cryptography/latest/nautilus-cryptography/)
 [![crates.io version](https://img.shields.io/crates/v/nautilus-cryptography.svg)](https://crates.io/crates/nautilus-cryptography)
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
+[![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
 
 Cryptographic utilities and security functions for [NautilusTrader](http://nautilustrader.io).
 

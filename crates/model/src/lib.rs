@@ -39,6 +39,7 @@
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 //! - `stubs`: Enables type stubs for use in testing scenarios.
 //! - `high-precision`: Enables [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) to use 128-bit value types.
+//! - `defi`: Enables the DeFi (Decentralized Finance) domain model.
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]
