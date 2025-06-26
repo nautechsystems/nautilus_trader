@@ -108,35 +108,38 @@ The table below outlines the mappings between Nautilus venues and corresponding 
 | Nautilus venue          | Tardis exchange(s)                                    |
 |:------------------------|:------------------------------------------------------|
 | `ASCENDEX`              | `ascendex`                                            |
-| `BINANCE`               | `binance`, `binance-dex`, `binance-futures`, `binance-jersey`, `binance-options`, `binance-us` |
+| `BINANCE`               | `binance`, `binance-dex`, `binance-european-options`, `binance-futures`, `binance-jersey`, `binance-options` |
 | `BINANCE_DELIVERY`      | `binance-delivery` (*COIN-margined contracts*)        |
 | `BINANCE_US`            | `binance-us`                                          |
 | `BITFINEX`              | `bitfinex`, `bitfinex-derivatives`                    |
 | `BITFLYER`              | `bitflyer`                                            |
+| `BITGET`                | `bitget`, `bitget-futures`                            |
 | `BITMEX`                | `bitmex`                                              |
 | `BITNOMIAL`             | `bitnomial`                                           |
 | `BITSTAMP`              | `bitstamp`                                            |
 | `BLOCKCHAIN_COM`        | `blockchain-com`                                      |
 | `BYBIT`                 | `bybit`, `bybit-options`, `bybit-spot`                |
 | `COINBASE`              | `coinbase`                                            |
+| `COINBASE_INTX`         | `coinbase-international`                              |
 | `COINFLEX`              | `coinflex` (*for historical research*)                |
-| `CRYPTO_COM`            | `crypto-com`                                          |
+| `CRYPTO_COM`            | `crypto-com`, `crypto-com-derivatives`                |
 | `CRYPTOFACILITIES`      | `cryptofacilities`                                    |
 | `DELTA`                 | `delta`                                               |
 | `DERIBIT`               | `deribit`                                             |
 | `DYDX`                  | `dydx`                                                |
-| `FTX`                   | `ftx` (*historical research*)                         |
-| `FTX_US`                | `ftx-us` (*historical research*)                      |
+| `DYDX_V4`               | `dydx-v4`                                             |
+| `FTX`                   | `ftx`, `ftx-us` (*historical research*)               |
 | `GATE_IO`               | `gate-io`, `gate-io-futures`                          |
 | `GEMINI`                | `gemini`                                              |
 | `HITBTC`                | `hitbtc`                                              |
 | `HUOBI`                 | `huobi`, `huobi-dm`, `huobi-dm-linear-swap`, `huobi-dm-options` |
 | `HUOBI_DELIVERY`        | `huobi-dm-swap`                                       |
-| `KRAKEN`                | `kraken`                                              |
-| `KUCOIN`                | `kucoin`                                              |
+| `HYPERLIQUID`           | `hyperliquid`                                         |
+| `KRAKEN`                | `kraken`, `kraken-futures`                            |
+| `KUCOIN`                | `kucoin`, `kucoin-futures`                            |
 | `MANGO`                 | `mango`                                               |
 | `OKCOIN`                | `okcoin`                                              |
-| `OKEX`                  | `okex`, `okex-futures`, `okex-options`, `okex-swap`   |
+| `OKEX`                  | `okex`, `okex-futures`, `okex-options`, `okex-spreads`, `okex-swap` |
 | `PHEMEX`                | `phemex`                                              |
 | `POLONIEX`              | `poloniex`                                            |
 | `SERUM`                 | `serum` (*historical research*)                       |
@@ -150,7 +153,7 @@ The following environment variables are used by Tardis and NautilusTrader.
 
 - `TM_API_KEY`: API key for the Tardis Machine.
 - `TARDIS_API_KEY`: API key for NautilusTrader Tardis clients.
-- `TARDIS_WS_URL` (optional): WebSocket URL for the `TardisMachineClient` in NautilusTrader.
+- `TARDIS_MACHINE_WS_URL` (optional): WebSocket URL for the `TardisMachineClient` in NautilusTrader.
 - `TARDIS_BASE_URL` (optional): Base URL for the `TardisHttpClient` in NautilusTrader.
 - `NAUTILUS_CATALOG_PATH` (optional): Root directory for writing replay data in the Nautilus catalog.
 
@@ -200,7 +203,7 @@ Next, ensure you have a configuration JSON file available.
 
 | Field               | Type              | Description                                                                         | Default                                                                                               |
 |:--------------------|:------------------|:------------------------------------------------------------------------------------|:------------------------------------------------------------------------------------------------------|
-| `tardis_ws_url`     | string (optional) | The Tardis Machine WebSocket URL.                                                   | If `null` then will use the `TARDIS_WS_URL` env var.                                                  |
+| `tardis_ws_url`     | string (optional) | The Tardis Machine WebSocket URL.                                                   | If `null` then will use the `TARDIS_MACHINE_WS_URL` env var.                                          |
 | `normalize_symbols` | bool (optional)   | If Nautilus [symbol normalization](#symbology-and-normalization) should be applied. | If `null` then will default to `true`.                                                                |
 | `output_path`       | string (optional) | The output directory path to write Nautilus Parquet data to.                        | If `null` then will use the `NAUTILUS_CATALOG_PATH` env var, otherwise the current working directory. |
 | `options`           | JSON[]            | An array of [ReplayNormalizedRequestOptions](https://docs.tardis.dev/api/tardis-machine#replay-normalized-options) objects.                                                                 |

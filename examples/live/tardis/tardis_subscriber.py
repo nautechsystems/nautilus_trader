@@ -40,6 +40,7 @@ from nautilus_trader.trading.strategy import Strategy
 
 # Run the following to start the tardis-machine server:
 # docker run -p 8000:8000 -p 8001:8001 -e "TM_API_KEY=YOUR_API_KEY" -d tardisdev/tardis-machine
+# The TARDIS_MACHINE_WS_URL environment variable should be set to ws://localhost:8001
 
 instrument_ids = [
     InstrumentId.from_str("BTCUSDT-PERP.BINANCE"),
