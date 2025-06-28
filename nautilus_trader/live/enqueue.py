@@ -15,6 +15,7 @@
 
 import asyncio
 from typing import Generic, TypeVar
+from weakref import WeakSet
 
 from nautilus_trader.common.component import Clock
 from nautilus_trader.common.component import Logger
@@ -57,6 +58,7 @@ class ThrottledEnqueuer(Generic[T]):
         self._clock = clock
         self._log = logger
         self._ts_last_logged: int = 0
+        self._pending_tasks: WeakSet[asyncio.Task] = WeakSet()
 
     @property
     def qname(self) -> str:
@@ -114,7 +116,8 @@ class ThrottledEnqueuer(Generic[T]):
             self._loop.call_soon_threadsafe(self._enqueue_nowait_safely, self._queue, msg)
             return
 
-        self._loop.create_task(self._queue.put(msg))
+        task = self._loop.create_task(self._queue.put(msg))
+        self._pending_tasks.add(task)
 
         # Throttle logging to once per second
         now_ns = self._clock.timestamp_ns()
@@ -125,6 +128,18 @@ class ThrottledEnqueuer(Generic[T]):
             )
             self._ts_last_logged = now_ns
 
+    def cancel_pending_tasks(self) -> None:
+        """
+        Cancel all pending async put tasks.
+
+        This should be called during shutdown to prevent "Task was destroyed but it is
+        pending!" warnings.
+
+        """
+        for task in list(self._pending_tasks):
+            if not task.done():
+                task.cancel()
+
     def _enqueue_nowait_safely(self, queue: asyncio.Queue, msg: T) -> None:
         # Attempt put_nowait(msg) and if the queue is full,
         # schedule an async put() as a fallback.
@@ -132,6 +147,7 @@ class ThrottledEnqueuer(Generic[T]):
             queue.put_nowait(msg)
         except asyncio.QueueFull:
             task = asyncio.create_task(queue.put(msg))
+            self._pending_tasks.add(task)
             task.add_done_callback(
                 lambda t: (
                     self._log.error(f"Error putting on queue: {t.exception()!r}")

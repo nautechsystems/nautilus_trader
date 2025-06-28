@@ -14,6 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from unittest.mock import Mock
+from unittest.mock import patch
 
 import pytest
 
@@ -325,3 +327,245 @@ class TestLiveRiskEngine:
         # Assert
         await eventually(lambda: self.risk_engine.cmd_qsize() == 0)
         await eventually(lambda: self.risk_engine.event_count == 1)
+
+    @pytest.mark.asyncio
+    async def test_graceful_shutdown_cmd_queue_exception_enabled_calls_shutdown_system(self):
+        """
+        Test that when graceful_shutdown_on_exception=True, shutdown_system is called on
+        command queue exception.
+        """
+        # Arrange
+        test_msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+        )
+
+        test_portfolio = Portfolio(
+            msgbus=test_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        config = LiveRiskEngineConfig(graceful_shutdown_on_exception=True)
+        engine = LiveRiskEngine(
+            loop=self.loop,
+            portfolio=test_portfolio,
+            msgbus=test_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            config=config,
+        )
+
+        # Mock shutdown_system to track calls
+        shutdown_mock = Mock()
+        engine.shutdown_system = shutdown_mock
+
+        # Mock _execute_command to raise an exception
+        def mock_execute_command(command):
+            raise ValueError("Test exception for graceful shutdown in cmd queue")
+
+        with patch.object(engine, "_execute_command", side_effect=mock_execute_command):
+            engine.start()
+
+            # Act - Send command that will trigger the exception
+            order = self.order_factory.market(
+                instrument_id=AUDUSD_SIM.id,
+                order_side=OrderSide.BUY,
+                quantity=AUDUSD_SIM.make_qty(100),
+            )
+            submit_order = SubmitOrder(
+                trader_id=self.trader_id,
+                strategy_id=StrategyId("S-001"),
+                order=order,
+                command_id=UUID4(),
+                ts_init=self.clock.timestamp_ns(),
+            )
+            engine.execute(submit_order)
+
+            # Wait for processing and shutdown call
+            await eventually(lambda: shutdown_mock.called)
+
+            # Assert
+            shutdown_mock.assert_called_once()
+            args = shutdown_mock.call_args[0]
+            assert "Test exception for graceful shutdown in cmd queue" in args[0]
+            assert engine._shutdown_initiated is True
+
+            engine.stop()
+            await eventually(lambda: engine.cmd_qsize() == 0)
+
+    @pytest.mark.asyncio
+    async def test_graceful_shutdown_cmd_queue_exception_disabled_calls_os_exit(self):
+        """
+        Test that when graceful_shutdown_on_exception=False, os._exit is called on
+        command queue exception.
+        """
+        # Arrange
+        test_msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+        )
+
+        test_portfolio = Portfolio(
+            msgbus=test_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        config = LiveRiskEngineConfig(graceful_shutdown_on_exception=False)
+        engine = LiveRiskEngine(
+            loop=self.loop,
+            portfolio=test_portfolio,
+            msgbus=test_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            config=config,
+        )
+
+        # Mock os._exit to track calls instead of actually exiting
+        with patch("os._exit") as exit_mock:
+            # Mock _execute_command to raise an exception
+            def mock_execute_command(command):
+                raise ValueError("Test exception for immediate crash in cmd queue")
+
+            with patch.object(engine, "_execute_command", side_effect=mock_execute_command):
+                engine.start()
+
+                # Act - Send command that will trigger the exception
+                order = self.order_factory.market(
+                    instrument_id=AUDUSD_SIM.id,
+                    order_side=OrderSide.BUY,
+                    quantity=AUDUSD_SIM.make_qty(100),
+                )
+                submit_order = SubmitOrder(
+                    trader_id=self.trader_id,
+                    strategy_id=StrategyId("S-001"),
+                    order=order,
+                    command_id=UUID4(),
+                    ts_init=self.clock.timestamp_ns(),
+                )
+                engine.execute(submit_order)
+
+                # Wait for processing and os._exit call
+                await eventually(lambda: exit_mock.called)
+
+                # Assert
+                exit_mock.assert_called_once_with(1)
+
+            engine.stop()
+            await eventually(lambda: engine.cmd_qsize() == 0)
+
+    @pytest.mark.asyncio
+    async def test_graceful_shutdown_evt_queue_exception_enabled_calls_shutdown_system(self):
+        """
+        Test that when graceful_shutdown_on_exception=True, shutdown_system is called on
+        event queue exception.
+        """
+        # Arrange
+        test_msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+        )
+
+        test_portfolio = Portfolio(
+            msgbus=test_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        config = LiveRiskEngineConfig(graceful_shutdown_on_exception=True)
+        engine = LiveRiskEngine(
+            loop=self.loop,
+            portfolio=test_portfolio,
+            msgbus=test_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            config=config,
+        )
+
+        # Mock shutdown_system to track calls
+        shutdown_mock = Mock()
+        engine.shutdown_system = shutdown_mock
+
+        # Mock _handle_event to raise an exception
+        def mock_handle_event(event):
+            raise ValueError("Test exception for graceful shutdown in evt queue")
+
+        with patch.object(engine, "_handle_event", side_effect=mock_handle_event):
+            engine.start()
+
+            # Act - Send event that will trigger the exception
+            order = self.order_factory.market(
+                instrument_id=AUDUSD_SIM.id,
+                order_side=OrderSide.BUY,
+                quantity=AUDUSD_SIM.make_qty(100),
+            )
+            event = TestEventStubs.order_submitted(order)
+            engine.process(event)
+
+            # Wait for processing and shutdown call
+            await eventually(lambda: shutdown_mock.called)
+
+            # Assert
+            shutdown_mock.assert_called_once()
+            args = shutdown_mock.call_args[0]
+            assert "Test exception for graceful shutdown in evt queue" in args[0]
+            assert engine._shutdown_initiated is True
+
+            engine.stop()
+            await eventually(lambda: engine.evt_qsize() == 0)
+
+    @pytest.mark.asyncio
+    async def test_graceful_shutdown_evt_queue_exception_disabled_calls_os_exit(self):
+        """
+        Test that when graceful_shutdown_on_exception=False, os._exit is called on event
+        queue exception.
+        """
+        # Arrange
+        test_msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+        )
+
+        test_portfolio = Portfolio(
+            msgbus=test_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        config = LiveRiskEngineConfig(graceful_shutdown_on_exception=False)
+        engine = LiveRiskEngine(
+            loop=self.loop,
+            portfolio=test_portfolio,
+            msgbus=test_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            config=config,
+        )
+
+        # Mock os._exit to track calls instead of actually exiting
+        with patch("os._exit") as exit_mock:
+            # Mock _handle_event to raise an exception
+            def mock_handle_event(event):
+                raise ValueError("Test exception for immediate crash in evt queue")
+
+            with patch.object(engine, "_handle_event", side_effect=mock_handle_event):
+                engine.start()
+
+                # Act - Send event that will trigger the exception
+                order = self.order_factory.market(
+                    instrument_id=AUDUSD_SIM.id,
+                    order_side=OrderSide.BUY,
+                    quantity=AUDUSD_SIM.make_qty(100),
+                )
+                event = TestEventStubs.order_submitted(order)
+                engine.process(event)
+
+                # Wait for processing and os._exit call
+                await eventually(lambda: exit_mock.called)
+
+                # Assert
+                exit_mock.assert_called_once_with(1)
+
+            engine.stop()
+            await eventually(lambda: engine.evt_qsize() == 0)
