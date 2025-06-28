@@ -71,6 +71,7 @@ config_node = TradingNodeConfig(
         purge_closed_positions_buffer_mins=60,  # Purge positions closed for at least an hour
         purge_account_events_interval_mins=15,  # Example of purging account events for HFT
         purge_account_events_lookback_mins=60,  # Purge account events occurring more than an hour ago
+        graceful_shutdown_on_exception=True,
     ),
     # cache=CacheConfig(
     #     # database=DatabaseConfig(),

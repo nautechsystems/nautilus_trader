@@ -3,6 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added `graceful_shutdown_on_exception` config option for live engines (default `False` to retain intended hard crash on unexpected system exceptions)
 - Added support for data download during backtest (#2652), thanks @faysou
 - Added consolidate catalog by period (#2727), thanks @faysou
 - Added `fire_immediately` flag parameter for timers where a time event will be fired at the `start` instant and then every interval thereafter (default `False` to retain current behavior) (#2600), thanks for the idea @stastnypremysl
@@ -39,6 +40,7 @@ Released on TBD (UTC).
 - Confirmed parity between Cython and Rust indicators (#2700, #2710, #2713), thanks @nicolad
 - Implemented `From<Pool>` -> `CurrencyPair` & `InstrumentAny` (#2693), thanks @nicolad
 - Updated Tardis exchange mappings
+- Improved live engine message processing to ensure unexpected exceptions result in an immediate hard crash rather than continuing without the queue processing messages
 - Improved handling of negative balances in backtests (#2730), thanks @ms32035
 - Improved implementation, validations and testing for Rust instruments (#2723, #2733), thanks @nicolad
 - Improved `Currency` equality to use `strcmp` to avoid C pointer comparison issues with `ustr` string interning

@@ -44,7 +44,7 @@ from nautilus_trader.trading.strategy import Strategy
 
 instrument_ids = [
     InstrumentId.from_str("BTCUSDT-PERP.BINANCE"),
-    InstrumentId.from_str("BTCUSD_PERP.BINANCE_DELIVERY"),
+    # InstrumentId.from_str("BTCUSD_PERP.BINANCE_DELIVERY"),
     # InstrumentId.from_str("USDTUSD.BINANCE_US"),
     # InstrumentId.from_str("BTCUSDT-SPOT.BYBIT"),
     # InstrumentId.from_str("BTCUSDT-LINEAR.BYBIT"),
@@ -94,7 +94,7 @@ config_node = TradingNodeConfig(
             instrument_provider=instrument_provider_config,
         ),
     },
-    timeout_connection=20.0,
+    timeout_connection=60.0,
     timeout_reconciliation=10.0,  # Not applicable
     timeout_portfolio=10.0,
     timeout_disconnection=10.0,

@@ -15,6 +15,7 @@
 
 import asyncio
 import math
+import os
 import uuid
 from asyncio import Queue
 from collections import Counter
@@ -171,6 +172,8 @@ class LiveExecutionEngine(ExecutionEngine):
         self.purge_account_events_interval_mins = config.purge_account_events_interval_mins
         self.purge_account_events_lookback_mins = config.purge_account_events_lookback_mins
         self._inflight_check_threshold_ns: int = millis_to_nanos(self.inflight_check_threshold_ms)
+        self.graceful_shutdown_on_exception: bool = config.graceful_shutdown_on_exception
+        self._shutdown_initiated: bool = False
 
         self._log.info(f"{config.reconciliation=}", LogColor.BLUE)
         self._log.info(f"{config.reconciliation_lookback_mins=}", LogColor.BLUE)
@@ -188,6 +191,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self._log.info(f"{config.purge_closed_positions_buffer_mins=}", LogColor.BLUE)
         self._log.info(f"{config.purge_account_events_interval_mins=}", LogColor.BLUE)
         self._log.info(f"{config.purge_account_events_lookback_mins=}", LogColor.BLUE)
+        self._log.info(f"{config.graceful_shutdown_on_exception=}", LogColor.BLUE)
 
         # Register endpoints
         self._msgbus.register(endpoint="ExecEngine.reconcile_report", handler=self.reconcile_report)
@@ -364,6 +368,26 @@ class LiveExecutionEngine(ExecutionEngine):
 
     # -- INTERNAL -------------------------------------------------------------------------------------
 
+    def _handle_queue_exception(self, e: Exception, queue_name: str) -> None:
+        self._log.exception(
+            f"Unexpected exception in {queue_name} queue processing: {e!r}",
+            e,
+        )
+        if self.graceful_shutdown_on_exception:
+            if not self._shutdown_initiated:
+                self._log.warning(
+                    "Initiating graceful shutdown due to unexpected exception",
+                )
+                self.shutdown_system(
+                    f"Unexpected exception in {queue_name} queue processing: {e!r}",
+                )
+                self._shutdown_initiated = True
+        else:
+            self._log.error(
+                "System will terminate immediately to prevent operation in degraded state",
+            )
+            os._exit(1)  # Immediate crash
+
     def _enqueue_sentinel(self) -> None:
         self._loop.call_soon_threadsafe(self._cmd_queue.put_nowait, self._sentinel)
         self._loop.call_soon_threadsafe(self._evt_queue.put_nowait, self._sentinel)
@@ -459,16 +483,17 @@ class LiveExecutionEngine(ExecutionEngine):
         )
         try:
             while True:
-                command: TradingCommand | None = await self._cmd_queue.get()
+                try:
+                    command: TradingCommand | None = await self._cmd_queue.get()
+                    if command is self._sentinel:
+                        break
 
-                if command is self._sentinel:
+                    self._execute_command(command)
+                except asyncio.CancelledError:
+                    self._log.warning("Canceled task 'run_cmd_queue'")
                     break
-
-                self._execute_command(command)
-        except asyncio.CancelledError:
-            self._log.warning("Canceled task 'run_cmd_queue'")
-        except Exception as e:
-            self._log.exception(f"{e!r}", e)
+                except Exception as e:
+                    self._handle_queue_exception(e, "command")
         finally:
             stopped_msg = "Command message queue stopped"
 
@@ -483,16 +508,17 @@ class LiveExecutionEngine(ExecutionEngine):
         )
         try:
             while True:
-                event: OrderEvent | None = await self._evt_queue.get()
+                try:
+                    event: OrderEvent | None = await self._evt_queue.get()
+                    if event is self._sentinel:
+                        break
 
-                if event is self._sentinel:
+                    self._handle_event(event)
+                except asyncio.CancelledError:
+                    self._log.warning("Canceled task 'run_evt_queue'")
                     break
-
-                self._handle_event(event)
-        except asyncio.CancelledError:
-            self._log.warning("Canceled task 'run_evt_queue'")
-        except Exception as e:
-            self._log.exception(f"{e!r}", e)
+                except Exception as e:
+                    self._handle_queue_exception(e, "event")
         finally:
             stopped_msg = "Event message queue stopped"
 
