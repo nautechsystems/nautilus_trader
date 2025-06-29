@@ -47,7 +47,7 @@ Released on TBD (UTC).
 - Improved `Currency` equality to use `strcmp` to avoid C pointer comparison issues with `ustr` string interning
 - Improved unsubscribe cleanup(s) for Bybit adapter
 - Refactored IB adapter (#2647), thanks @faysou
-- Refactored data catalog (#2652), thanks @faysou
+- Refactored data catalog (#2652, #2740), thanks @faysou
 - Refined Rust data catalog (#2734), thanks @faysou
 - Refined logging subsystem lifecycle management and introduce global log sender
 - Refined signal serialization and tests (#2705), thanks @faysou
