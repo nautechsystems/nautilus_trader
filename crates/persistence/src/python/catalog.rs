@@ -582,7 +582,7 @@ impl ParquetDataCatalogV2 {
     ///
     /// # Returns
     ///
-    /// Returns a vector of QuoteTick objects matching the query criteria.
+    /// Returns a vector of `QuoteTick` objects matching the query criteria.
     #[pyo3(signature = (instrument_ids=None, start=None, end=None, where_clause=None))]
     pub fn query_quote_ticks(
         &mut self,
@@ -618,7 +618,7 @@ impl ParquetDataCatalogV2 {
     ///
     /// # Returns
     ///
-    /// Returns a vector of TradeTick objects matching the query criteria.
+    /// Returns a vector of `TradeTick` objects matching the query criteria.
     #[pyo3(signature = (instrument_ids=None, start=None, end=None, where_clause=None))]
     pub fn query_trade_ticks(
         &mut self,
@@ -654,7 +654,7 @@ impl ParquetDataCatalogV2 {
     ///
     /// # Returns
     ///
-    /// Returns a vector of OrderBookDelta objects matching the query criteria.
+    /// Returns a vector of `OrderBookDelta` objects matching the query criteria.
     #[pyo3(signature = (instrument_ids=None, start=None, end=None, where_clause=None))]
     pub fn query_order_book_deltas(
         &mut self,
@@ -726,7 +726,7 @@ impl ParquetDataCatalogV2 {
     ///
     /// # Returns
     ///
-    /// Returns a vector of OrderBookDepth10 objects matching the query criteria.
+    /// Returns a vector of `OrderBookDepth10` objects matching the query criteria.
     #[pyo3(signature = (instrument_ids=None, start=None, end=None, where_clause=None))]
     pub fn query_order_book_depths(
         &mut self,
@@ -762,7 +762,7 @@ impl ParquetDataCatalogV2 {
     ///
     /// # Returns
     ///
-    /// Returns a vector of MarkPriceUpdate objects matching the query criteria.
+    /// Returns a vector of `MarkPriceUpdate` objects matching the query criteria.
     #[pyo3(signature = (instrument_ids=None, start=None, end=None, where_clause=None))]
     pub fn query_mark_price_updates(
         &mut self,
@@ -798,7 +798,7 @@ impl ParquetDataCatalogV2 {
     ///
     /// # Returns
     ///
-    /// Returns a vector of IndexPriceUpdate objects matching the query criteria.
+    /// Returns a vector of `IndexPriceUpdate` objects matching the query criteria.
     #[pyo3(signature = (instrument_ids=None, start=None, end=None, where_clause=None))]
     pub fn query_index_price_updates(
         &mut self,

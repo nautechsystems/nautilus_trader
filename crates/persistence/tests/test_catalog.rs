@@ -928,7 +928,7 @@ fn test_consolidate_data_by_period_different_periods() {
         );
 
         // Assert
-        assert!(result.is_ok(), "Failed for period: {}", period_nanos);
+        assert!(result.is_ok(), "Failed for period: {period_nanos}");
     }
 }
 
@@ -1155,9 +1155,7 @@ fn test_generic_query_typed_data_quotes() {
     let (_temp_dir, mut catalog) = create_temp_catalog();
     // Create test data
     let quotes = vec![create_quote_tick(1000), create_quote_tick(2000)];
-    catalog
-        .write_to_parquet(quotes.clone(), None, None, None)
-        .unwrap();
+    catalog.write_to_parquet(quotes, None, None, None).unwrap();
 
     // Act - query using generic typed data function
     let result = catalog
@@ -1186,9 +1184,7 @@ fn test_generic_query_typed_data_bars() {
 
     // Create test data
     let bars = vec![create_bar(1000), create_bar(2000)];
-    catalog
-        .write_to_parquet(bars.clone(), None, None, None)
-        .unwrap();
+    catalog.write_to_parquet(bars, None, None, None).unwrap();
 
     // Act - query using generic typed data function
     let result = catalog
@@ -1237,9 +1233,7 @@ fn test_generic_query_typed_data_with_where_clause() {
 
     // Create test data
     let quotes = vec![create_quote_tick(1000), create_quote_tick(2000)];
-    catalog
-        .write_to_parquet(quotes.clone(), None, None, None)
-        .unwrap();
+    catalog.write_to_parquet(quotes, None, None, None).unwrap();
 
     // Act - query with WHERE clause
     let result = catalog
@@ -1423,7 +1417,7 @@ fn test_consolidation_preserves_data_integrity() {
     // Write each bar separately to create multiple files
     for bar in &original_bars {
         catalog
-            .write_to_parquet(vec![bar.clone()], None, None, None)
+            .write_to_parquet(vec![*bar], None, None, None)
             .unwrap();
     }
 
