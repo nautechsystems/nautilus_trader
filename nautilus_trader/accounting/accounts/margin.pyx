@@ -468,14 +468,30 @@ cdef class MarginAccount(Account):
             total_margin += margin.initial
             total_margin += margin.maintenance
 
-        total_free = current_balance.total.as_decimal() - total_margin
+        # Calculate the free balance ensuring that it is never negative.
+        #
+        # In some edge-cases (for example, when an adapter temporarily reports
+        # an inflated margin amount due to latency or rounding differences)
+        # the calculated ``total_margin`` can exceed the ``total`` balance. This
+        # would normally propagate to the ``AccountBalance`` constructor where
+        # the internal correctness checks would raise – ultimately causing the
+        # entire application to terminate. That fail-fast behaviour is useful
+        # during development, but in live trading we prefer to degrade
+        # gracefully whilst ensuring that balances remain internally
+        # consistent.
+        #
+        # Therefore we clamp the margin amount to the total balance whenever it
+        # would otherwise exceed it. The resulting free balance is then zero –
+        # indicating that no funds are currently available for trading.
+        total = current_balance.total.as_decimal()
+        total_free = total - total_margin
 
         if total_free < 0:
-            raise AccountMarginExceeded(
-                balance=current_balance.total.as_decimal(),
-                margin=Money(total_margin, currency).as_decimal(),
-                currency=currency,
-            )
+            # Clamp the margin balance. We intentionally do not raise as this
+            # condition can occur transiently when the venue and client state
+            # are out-of-sync.
+            total_margin = total
+            total_free = Decimal(0)
 
         cdef AccountBalance new_balance = AccountBalance(
             current_balance.total,
