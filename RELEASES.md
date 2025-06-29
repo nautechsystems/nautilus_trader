@@ -43,6 +43,7 @@ Released on TBD (UTC).
 - Updated Tardis exchange mappings
 - Improved live engine message processing to ensure unexpected exceptions result in an immediate hard crash rather than continuing without the queue processing messages
 - Improved handling of negative balances in backtests (#2730), thanks @ms32035
+- Improved robustness of cash and margin account locked balance calculations to avoid negative free balance
 - Improved implementation, validations and testing for Rust instruments (#2723, #2733), thanks @nicolad
 - Improved `Currency` equality to use `strcmp` to avoid C pointer comparison issues with `ustr` string interning
 - Improved unsubscribe cleanup(s) for Bybit adapter
@@ -87,6 +88,7 @@ Released on TBD (UTC).
 - Fixed instrument message decoding when no `exchange` value for Databento US equities
 - Fixed fetching single-instrument trading fees for `Binance`, thanks @petioptrv
 - Fixed IB-TWS connection issue with international languages (#2726), thanks @DracheShiki
+- Fixed margin balance parsing for Bybit
 - Restore task error logs for IBKR (#2716), thanks @bartlaw
 
 ### Documentation Updates
