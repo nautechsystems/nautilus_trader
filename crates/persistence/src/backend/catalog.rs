@@ -21,11 +21,11 @@
 //!
 //! # Key Features
 //!
-//! - **Object Store Integration**: Works with local filesystems, S3, and other object stores
-//! - **Data Type Support**: Handles all major financial data types (quotes, trades, bars, etc.)
-//! - **Time-based Organization**: Organizes data by timestamp ranges for efficient querying
-//! - **Consolidation**: Merges multiple files to optimize storage and query performance
-//! - **Validation**: Ensures data integrity with timestamp ordering and interval validation
+//! - **Object Store Integration**: Works with local filesystems, S3, and other object stores.
+//! - **Data Type Support**: Handles all major financial data types (quotes, trades, bars, etc.).
+//! - **Time-based Organization**: Organizes data by timestamp ranges for efficient querying.
+//! - **Consolidation**: Merges multiple files to optimize storage and query performance.
+//! - **Validation**: Ensures data integrity with timestamp ordering and interval validation.
 //!
 //! # Architecture
 //!
@@ -98,26 +98,26 @@ use crate::parquet::write_batches_to_object_store;
 ///
 /// # Features
 ///
-/// - **Efficient Storage**: Uses Apache Parquet format with configurable compression
-/// - **Object Store Backend**: Supports multiple storage backends through the `object_store` crate
-/// - **Time-based Organization**: Organizes data by timestamp ranges for optimal query performance
-/// - **Data Validation**: Ensures timestamp ordering and interval consistency
-/// - **Consolidation**: Merges multiple files to reduce storage overhead and improve query speed
-/// - **Type Safety**: Strongly typed data handling with compile-time guarantees
+/// - **Efficient Storage**: Uses Apache Parquet format with configurable compression.
+/// - **Object Store Backend**: Supports multiple storage backends through the `object_store` crate.
+/// - **Time-based Organization**: Organizes data by timestamp ranges for optimal query performance.
+/// - **Data Validation**: Ensures timestamp ordering and interval consistency.
+/// - **Consolidation**: Merges multiple files to reduce storage overhead and improve query speed.
+/// - **Type Safety**: Strongly typed data handling with compile-time guarantees.
 ///
 /// # Data Organization
 ///
 /// Data is organized hierarchically by data type and instrument:
-/// - `data/{data_type}/{instrument_id}/{start_ts}-{end_ts}.parquet`
-/// - Files are named with their timestamp ranges for efficient range queries
-/// - Intervals are validated to be disjoint to prevent data overlap
+/// - `data/{data_type}/{instrument_id}/{start_ts}-{end_ts}.parquet`.
+/// - Files are named with their timestamp ranges for efficient range queries.
+/// - Intervals are validated to be disjoint to prevent data overlap.
 ///
 /// # Performance Considerations
 ///
-/// - **Batch Size**: Controls memory usage during data processing
-/// - **Compression**: SNAPPY compression provides good balance of speed and size
-/// - **Row Group Size**: Affects query performance and memory usage
-/// - **File Consolidation**: Reduces the number of files for better query performance
+/// - **Batch Size**: Controls memory usage during data processing.
+/// - **Compression**: SNAPPY compression provides good balance of speed and size.
+/// - **Row Group Size**: Affects query performance and memory usage.
+/// - **File Consolidation**: Reduces the number of files for better query performance.
 pub struct ParquetDataCatalog {
     /// The base path for data storage within the object store.
     pub base_path: String,
@@ -202,11 +202,11 @@ impl ParquetDataCatalog {
     ///
     /// # Supported URI Schemes
     ///
-    /// - **AWS S3**: `s3://bucket/path`
-    /// - **Google Cloud Storage**: `gs://bucket/path` or `gcs://bucket/path`
-    /// - **Azure Blob Storage**: `azure://account/container/path` or `abfs://container@account.dfs.core.windows.net/path`
-    /// - **HTTP/WebDAV**: `http://` or `https://`
-    /// - **Local files**: `file://path` or plain paths
+    /// - **AWS S3**: `s3://bucket/path`.
+    /// - **Google Cloud Storage**: `gs://bucket/path` or `gcs://bucket/path`.
+    /// - **Azure Blob Storage**: `azure://account/container/path` or `abfs://container@account.dfs.core.windows.net/path`.
+    /// - **HTTP/WebDAV**: `http://` or `https://`.
+    /// - **Local files**: `file://path` or plain paths.
     ///
     /// # Parameters
     ///
@@ -411,17 +411,17 @@ impl ParquetDataCatalog {
     /// # Errors
     ///
     /// This function will return an error if:
-    /// - Data serialization to Arrow record batches fails
-    /// - Object store write operations fail
-    /// - File path construction fails
-    /// - Timestamp interval validation fails after writing
+    /// - Data serialization to Arrow record batches fails.
+    /// - Object store write operations fail.
+    /// - File path construction fails.
+    /// - Timestamp interval validation fails after writing.
     ///
     /// # Panics
     ///
     /// Panics if:
-    /// - Data timestamps are not in ascending order
-    /// - Record batches are empty after conversion
-    /// - Required metadata is missing from the schema
+    /// - Data timestamps are not in ascending order.
+    /// - Record batches are empty after conversion.
+    /// - Required metadata is missing from the schema.
     ///
     /// # Examples
     ///
@@ -517,9 +517,9 @@ impl ParquetDataCatalog {
     /// # Errors
     ///
     /// This function will return an error if:
-    /// - JSON serialization fails
-    /// - Object store write operations fail
-    /// - File path construction fails
+    /// - JSON serialization fails.
+    /// - Object store write operations fail.
+    /// - File path construction fails.
     ///
     /// # Panics
     ///
@@ -632,7 +632,7 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `data`: Vector of data records to convert
+    /// - `data`: Vector of data records to convert.
     ///
     /// # Returns
     ///
@@ -752,16 +752,16 @@ impl ParquetDataCatalog {
     /// # Errors
     ///
     /// This function will return an error if:
-    /// - Object store listing operations fail
-    /// - Directory access is denied
-    /// - Network issues occur (for remote object stores)
+    /// - Object store listing operations fail.
+    /// - Directory access is denied.
+    /// - Network issues occur (for remote object stores).
     ///
     /// # Notes
     ///
-    /// - Only files ending with `.parquet` are included
-    /// - Subdirectories are not recursively scanned
-    /// - File paths are returned in the order provided by the object store
-    /// - Works with all supported object store backends (local, S3, GCS, Azure, etc.)
+    /// - Only files ending with `.parquet` are included.
+    /// - Subdirectories are not recursively scanned.
+    /// - File paths are returned in the order provided by the object store.
+    /// - Works with all supported object store backends (local, S3, GCS, Azure, etc.).
     ///
     /// # Examples
     ///
@@ -868,17 +868,17 @@ impl ParquetDataCatalog {
     /// # Errors
     ///
     /// This function will return an error if:
-    /// - Object store registration fails for remote URIs
-    /// - File discovery fails
-    /// - DataFusion query execution fails
-    /// - Data deserialization fails
+    /// - Object store registration fails for remote URIs.
+    /// - File discovery fails.
+    /// - DataFusion query execution fails.
+    /// - Data deserialization fails.
     ///
     /// # Performance Notes
     ///
-    /// - Files are automatically filtered by timestamp ranges before querying
-    /// - DataFusion optimizes queries across multiple Parquet files
-    /// - Use specific instrument IDs and time ranges to improve performance
-    /// - WHERE clauses are pushed down to the Parquet reader when possible
+    /// - Files are automatically filtered by timestamp ranges before querying.
+    /// - DataFusion optimizes queries across multiple Parquet files.
+    /// - Use specific instrument IDs and time ranges to improve performance.
+    /// - WHERE clauses are pushed down to the Parquet reader when possible.
     ///
     /// # Examples
     ///
@@ -992,17 +992,17 @@ impl ParquetDataCatalog {
     /// # Errors
     ///
     /// This function will return an error if:
-    /// - The underlying query execution fails
-    /// - Data type conversion fails
-    /// - Object store access fails
-    /// - Invalid WHERE clause syntax is provided
+    /// - The underlying query execution fails.
+    /// - Data type conversion fails.
+    /// - Object store access fails.
+    /// - Invalid WHERE clause syntax is provided.
     ///
     /// # Performance Considerations
     ///
-    /// - Use specific instrument IDs and time ranges to minimize data scanning
-    /// - WHERE clauses are pushed down to Parquet readers when possible
-    /// - Results are automatically sorted by timestamp during collection
-    /// - Memory usage scales with the amount of data returned
+    /// - Use specific instrument IDs and time ranges to minimize data scanning.
+    /// - WHERE clauses are pushed down to Parquet readers when possible.
+    /// - Results are automatically sorted by timestamp during collection.
+    /// - Memory usage scales with the amount of data returned.
     ///
     /// # Examples
     ///
@@ -1220,9 +1220,9 @@ impl ParquetDataCatalog {
     /// # Errors
     ///
     /// This function will return an error if:
-    /// - The directory path cannot be constructed
-    /// - Interval retrieval fails
-    /// - Gap calculation fails
+    /// - The directory path cannot be constructed.
+    /// - Interval retrieval fails.
+    /// - Gap calculation fails.
     ///
     /// # Examples
     ///
@@ -1275,8 +1275,8 @@ impl ParquetDataCatalog {
     /// # Errors
     ///
     /// This function will return an error if:
-    /// - The directory path cannot be constructed
-    /// - Interval retrieval fails
+    /// - The directory path cannot be constructed.
+    /// - Interval retrieval fails.
     ///
     /// # Examples
     ///
@@ -1373,15 +1373,15 @@ impl ParquetDataCatalog {
     /// # Errors
     ///
     /// This function will return an error if:
-    /// - Object store listing operations fail
-    /// - Directory access is denied
+    /// - Object store listing operations fail.
+    /// - Directory access is denied.
     ///
     /// # Notes
     ///
-    /// - Only files with valid timestamp-based filenames are included
-    /// - Files with unparseable names are silently ignored
-    /// - The method works with both local and remote object stores
-    /// - Results are automatically sorted by start timestamp
+    /// - Only files with valid timestamp-based filenames are included.
+    /// - Files with unparseable names are silently ignored.
+    /// - The method works with both local and remote object stores.
+    /// - Results are automatically sorted by start timestamp.
     ///
     /// # Examples
     ///
@@ -1450,14 +1450,14 @@ impl ParquetDataCatalog {
     /// # Errors
     ///
     /// This function will return an error if:
-    /// - The instrument ID contains invalid characters that cannot be made URI-safe
-    /// - Path construction fails due to system limitations
+    /// - The instrument ID contains invalid characters that cannot be made URI-safe.
+    /// - Path construction fails due to system limitations.
     ///
     /// # Path Structure
     ///
-    /// - Without instrument ID: `{base_path}/data/{type_name}`
-    /// - With instrument ID: `{base_path}/data/{type_name}/{safe_instrument_id}`
-    /// - If `base_path` is empty: `data/{type_name}[/{safe_instrument_id}]`
+    /// - Without instrument ID: `{base_path}/data/{type_name}`.
+    /// - With instrument ID: `{base_path}/data/{type_name}/{safe_instrument_id}`.
+    /// - If `base_path` is empty: `data/{type_name}[/{safe_instrument_id}]`.
     ///
     /// # Examples
     ///
@@ -1537,10 +1537,10 @@ impl ParquetDataCatalog {
     ///
     /// # Path Handling
     ///
-    /// - If `base_path` is empty, the path is used as-is
-    /// - If `base_path` is set, it's stripped from the path if present
-    /// - Trailing slashes are automatically handled
-    /// - The resulting path is relative to the object store root
+    /// - If `base_path` is empty, the path is used as-is.
+    /// - If `base_path` is set, it's stripped from the path if present.
+    /// - Trailing slashes are automatically handled.
+    /// - The resulting path is relative to the object store root.
     ///
     /// # Examples
     ///
@@ -2036,8 +2036,8 @@ fn query_interval_diff(start: u64, end: u64, closed_intervals: &[(u64, u64)]) ->
 ///
 /// # Notes
 ///
-/// - Invalid intervals (where start > end) are skipped
-/// - Uses saturating addition to prevent overflow when converting to half-open intervals
+/// - Invalid intervals (where start > end) are skipped.
+/// - Uses saturating addition to prevent overflow when converting to half-open intervals.
 fn get_interval_set(intervals: &[(u64, u64)]) -> IntervalTree<u64> {
     let mut tree = IntervalTree::default();
 

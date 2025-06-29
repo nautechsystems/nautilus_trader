@@ -1,3 +1,18 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
 //! Catalog operations for data consolidation and reset functionality.
 //!
 //! This module contains the consolidation and reset operations for the `ParquetDataCatalog`.
@@ -29,19 +44,19 @@ use crate::{
 ///
 /// # Fields
 ///
-/// - `query_start`: Start timestamp for the data query range (inclusive, in nanoseconds)
-/// - `query_end`: End timestamp for the data query range (inclusive, in nanoseconds)
-/// - `use_period_boundaries`: If true, uses period boundaries for file naming; if false, uses actual data timestamps
+/// - `query_start`: Start timestamp for the data query range (inclusive, in nanoseconds).
+/// - `query_end`: End timestamp for the data query range (inclusive, in nanoseconds).
+/// - `use_period_boundaries`: If true, uses period boundaries for file naming; if false, uses actual data timestamps.
 ///
 /// # Usage
 ///
 /// This struct is used internally by the consolidation system to plan and execute
 /// data consolidation operations. It allows the system to:
-/// - Separate query planning from execution
-/// - Handle complex scenarios like data splitting
-/// - Optimize file naming strategies
-/// - Batch multiple operations efficiently
-/// - Maintain file contiguity across periods
+/// - Separate query planning from execution.
+/// - Handle complex scenarios like data splitting.
+/// - Optimize file naming strategies.
+/// - Batch multiple operations efficiently.
+/// - Maintain file contiguity across periods.
 ///
 /// # Examples
 ///
@@ -156,9 +171,9 @@ impl ParquetDataCatalog {
     /// # Errors
     ///
     /// This function will return an error if:
-    /// - The directory path cannot be constructed
-    /// - File consolidation operations fail
-    /// - Interval validation fails (when `ensure_contiguous_files` is true)
+    /// - The directory path cannot be constructed.
+    /// - File consolidation operations fail.
+    /// - Interval validation fails (when `ensure_contiguous_files` is true).
     ///
     /// # Examples
     ///
@@ -218,19 +233,19 @@ impl ParquetDataCatalog {
     ///
     /// # Behavior
     ///
-    /// - Skips consolidation if directory contains 1 or fewer files
-    /// - Filters files by timestamp range if start/end are specified
-    /// - Sorts intervals by start timestamp before consolidation
-    /// - Creates a new file spanning the entire time range of input files
-    /// - Validates interval disjointness after consolidation (if enabled)
+    /// - Skips consolidation if directory contains 1 or fewer files.
+    /// - Filters files by timestamp range if start/end are specified.
+    /// - Sorts intervals by start timestamp before consolidation.
+    /// - Creates a new file spanning the entire time range of input files.
+    /// - Validates interval disjointness after consolidation (if enabled).
     ///
     /// # Errors
     ///
     /// This function will return an error if:
-    /// - Directory listing fails
-    /// - File combination operations fail
-    /// - Interval validation fails (when `ensure_contiguous_files` is true)
-    /// - Object store operations fail
+    /// - Directory listing fails.
+    /// - File combination operations fail.
+    /// - Interval validation fails (when `ensure_contiguous_files` is true).
+    /// - Object store operations fail.
     fn consolidate_directory(
         &self,
         directory: &str,
@@ -327,19 +342,19 @@ impl ParquetDataCatalog {
     /// # Errors
     ///
     /// This function will return an error if:
-    /// - Directory listing fails
-    /// - Data type extraction from path fails
-    /// - Period-based consolidation operations fail
+    /// - Directory listing fails.
+    /// - Data type extraction from path fails.
+    /// - Period-based consolidation operations fail.
     ///
     /// # Notes
     ///
-    /// - This operation can be resource-intensive for large catalogs with many data types
+    /// - This operation can be resource-intensive for large catalogs with many data types.
     ///   and instruments.
-    /// - The consolidation process splits data into fixed time periods rather than combining
+    /// - The consolidation process splits data into fixed time periods rather than combining.
     ///   all files into a single file per directory.
     /// - Uses the same period-based consolidation logic as `consolidate_data_by_period`.
     /// - Original files are removed and replaced with period-based consolidated files.
-    /// - This method is useful for periodic maintenance of the catalog to standardize
+    /// - This method is useful for periodic maintenance of the catalog to standardize.
     ///   file organization by time periods.
     ///
     /// # Examples
@@ -483,7 +498,7 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `path`: The directory path to parse
+    /// - `path`: The directory path to parse.
     ///
     /// # Returns
     ///
@@ -543,23 +558,23 @@ impl ParquetDataCatalog {
     /// # Errors
     ///
     /// This function will return an error if:
-    /// - The directory path cannot be constructed
-    /// - File operations fail
-    /// - Data querying or writing fails
+    /// - The directory path cannot be constructed.
+    /// - File operations fail.
+    /// - Data querying or writing fails.
     ///
     /// # Notes
     ///
-    /// - Uses two-phase approach: first determines all queries, then executes them
-    /// - Groups intervals into contiguous groups to preserve holes between groups
-    /// - Allows consolidation across multiple files within each contiguous group
-    /// - Skips queries if target files already exist for efficiency
-    /// - Original files are removed immediately after querying each period
-    /// - When `ensure_contiguous_files=false`, file timestamps match actual data range
-    /// - When `ensure_contiguous_files=true`, file timestamps use period boundaries
-    /// - Uses modulo arithmetic for efficient period boundary calculation
-    /// - Preserves holes in data by preventing queries from spanning across gaps
-    /// - Automatically splits files at start/end boundaries to preserve all data
-    /// - Split operations are executed before consolidation to ensure data preservation
+    /// - Uses two-phase approach: first determines all queries, then executes them.
+    /// - Groups intervals into contiguous groups to preserve holes between groups.
+    /// - Allows consolidation across multiple files within each contiguous group.
+    /// - Skips queries if target files already exist for efficiency.
+    /// - Original files are removed immediately after querying each period.
+    /// - When `ensure_contiguous_files=false`, file timestamps match actual data range.
+    /// - When `ensure_contiguous_files=true`, file timestamps use period boundaries.
+    /// - Uses modulo arithmetic for efficient period boundary calculation.
+    /// - Preserves holes in data by preventing queries from spanning across gaps.
+    /// - Automatically splits files at start/end boundaries to preserve all data.
+    /// - Split operations are executed before consolidation to ensure data preservation.
     ///
     /// # Examples
     ///
@@ -700,11 +715,11 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `identifier`: Optional instrument ID to target a specific instrument's data
-    /// - `period_nanos`: Optional period size in nanoseconds (default: 1 day)
-    /// - `start`: Optional start timestamp for consolidation range
-    /// - `end`: Optional end timestamp for consolidation range
-    /// - `ensure_contiguous_files`: Optional flag to control file naming strategy
+    /// - `identifier`: Optional instrument ID to target a specific instrument's data.
+    /// - `period_nanos`: Optional period size in nanoseconds (default: 1 day).
+    /// - `start`: Optional start timestamp for consolidation range.
+    /// - `end`: Optional end timestamp for consolidation range.
+    /// - `ensure_contiguous_files`: Optional flag to control file naming strategy.
     ///
     /// # Returns
     ///
@@ -854,11 +869,11 @@ impl ParquetDataCatalog {
     /// Prepares all queries for consolidation by filtering, grouping, and handling splits.
     ///
     /// This auxiliary function handles all the preparation logic for consolidation:
-    /// 1. Filters intervals by time range
-    /// 2. Groups intervals into contiguous groups
-    /// 3. Identifies and creates split operations for data preservation
-    /// 4. Generates period-based consolidation queries
-    /// 5. Checks for existing target files
+    /// 1. Filters intervals by time range.
+    /// 2. Groups intervals into contiguous groups.
+    /// 3. Identifies and creates split operations for data preservation.
+    /// 4. Generates period-based consolidation queries.
+    /// 5. Checks for existing target files.
     #[allow(clippy::too_many_arguments)]
     pub fn prepare_consolidation_queries(
         &self,
@@ -1018,11 +1033,11 @@ impl ParquetDataCatalog {
     ///
     /// # Algorithm
     ///
-    /// 1. Starts with the first interval in a new group
-    /// 2. For each subsequent interval, checks if it's contiguous with the previous
-    /// 3. If contiguous (`prev_end` + 1 == `curr_start`), adds to current group
-    /// 4. If not contiguous, starts a new group
-    /// 5. Returns all groups
+    /// 1. Starts with the first interval in a new group.
+    /// 2. For each subsequent interval, checks if it's contiguous with the previous.
+    /// 3. If contiguous (`prev_end` + 1 == `curr_start`), adds to current group.
+    /// 4. If not contiguous, starts a new group.
+    /// 5. Returns all groups.
     ///
     /// # Examples
     ///
@@ -1036,9 +1051,9 @@ impl ParquetDataCatalog {
     ///
     /// # Notes
     ///
-    /// - Input intervals should be sorted by start timestamp
-    /// - Gaps between groups are preserved and not consolidated
-    /// - Used internally by period-based consolidation methods
+    /// - Input intervals should be sorted by start timestamp.
+    /// - Gaps between groups are preserved and not consolidated.
+    /// - Used internally by period-based consolidation methods.
     #[must_use]
     pub fn group_contiguous_intervals(&self, intervals: &[(u64, u64)]) -> Vec<Vec<(u64, u64)>> {
         if intervals.is_empty() {
@@ -1108,10 +1123,10 @@ impl ParquetDataCatalog {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The file doesn't exist
-    /// - Permission is denied
-    /// - Network issues occur (for remote stores)
-    /// - The object store operation fails
+    /// - The file doesn't exist.
+    /// - Permission is denied.
+    /// - Network issues occur (for remote stores).
+    /// - The object store operation fails.
     ///
     /// # Safety
     ///
@@ -1140,10 +1155,10 @@ impl ParquetDataCatalog {
     /// # Errors
     ///
     /// This function will return an error if:
-    /// - Directory listing fails
-    /// - File metadata reading fails
-    /// - File rename operations fail
-    /// - Interval validation fails after renaming
+    /// - Directory listing fails.
+    /// - File metadata reading fails.
+    /// - File rename operations fail.
+    /// - Interval validation fails after renaming.
     ///
     /// # Examples
     ///
@@ -1184,10 +1199,10 @@ impl ParquetDataCatalog {
     /// # Errors
     ///
     /// This function will return an error if:
-    /// - The directory path cannot be constructed
-    /// - File metadata reading fails
-    /// - File rename operations fail
-    /// - Interval validation fails after renaming
+    /// - The directory path cannot be constructed.
+    /// - File metadata reading fails.
+    /// - File rename operations fail.
+    /// - Interval validation fails after renaming.
     ///
     /// # Examples
     ///
@@ -1237,17 +1252,17 @@ impl ParquetDataCatalog {
     /// # Errors
     ///
     /// This function will return an error if:
-    /// - Directory listing fails
-    /// - Metadata reading fails for any file
-    /// - File move operations fail
-    /// - Interval validation fails after renaming
-    /// - Object store operations fail
+    /// - Directory listing fails.
+    /// - Metadata reading fails for any file.
+    /// - File move operations fail.
+    /// - Interval validation fails after renaming.
+    /// - Object store operations fail.
     ///
     /// # Notes
     ///
-    /// - This operation can be time-consuming for directories with many files
-    /// - Files are processed sequentially to avoid conflicts
-    /// - The operation is atomic per file but not across the entire directory
+    /// - This operation can be time-consuming for directories with many files.
+    /// - Files are processed sequentially to avoid conflicts.
+    /// - The operation is atomic per file but not across the entire directory.
     fn reset_file_names(&self, directory: &str) -> Result<()> {
         let parquet_files = self.list_parquet_files(directory)?;
 
@@ -1293,8 +1308,8 @@ impl ParquetDataCatalog {
     /// # Errors
     ///
     /// This function will return an error if:
-    /// - Object store listing operations fail
-    /// - Directory structure cannot be analyzed
+    /// - Object store listing operations fail.
+    /// - Directory structure cannot be analyzed.
     ///
     /// # Examples
     ///
