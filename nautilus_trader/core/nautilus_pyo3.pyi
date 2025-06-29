@@ -3927,42 +3927,49 @@ class ParquetDataCatalogV2:
         data: list[QuoteTick],
         start: int | None = None,
         end: int | None = None,
+        skip_disjoint_check: bool = False,
     ) -> str: ...
     def write_trade_ticks(
         self,
         data: list[TradeTick],
         start: int | None = None,
         end: int | None = None,
+        skip_disjoint_check: bool = False,
     ) -> str: ...
     def write_order_book_deltas(
         self,
         data: list[OrderBookDelta],
         start: int | None = None,
         end: int | None = None,
+        skip_disjoint_check: bool = False,
     ) -> str: ...
     def write_bars(
         self,
         data: list[Bar],
         start: int | None = None,
         end: int | None = None,
+        skip_disjoint_check: bool = False,
     ) -> str: ...
     def write_order_book_depths(
         self,
         data: list[OrderBookDepth10],
         start: int | None = None,
         end: int | None = None,
+        skip_disjoint_check: bool = False,
     ) -> str: ...
     def write_mark_price_updates(
         self,
         data: list[MarkPriceUpdate],
         start: int | None = None,
         end: int | None = None,
+        skip_disjoint_check: bool = False,
     ) -> str: ...
     def write_index_price_updates(
         self,
         data: list[IndexPriceUpdate],
         start: int | None = None,
         end: int | None = None,
+        skip_disjoint_check: bool = False,
     ) -> str: ...
     def consolidate_catalog(
         self,
@@ -3974,6 +3981,22 @@ class ParquetDataCatalogV2:
         self,
         type_name: str,
         instrument_id: str | None = None,
+        start: int | None = None,
+        end: int | None = None,
+        ensure_contiguous_files: bool | None = None,
+    ) -> None: ...
+    def consolidate_catalog_by_period(
+        self,
+        period_nanos: int | None = None,
+        start: int | None = None,
+        end: int | None = None,
+        ensure_contiguous_files: bool | None = None,
+    ) -> None: ...
+    def consolidate_data_by_period(
+        self,
+        type_name: str,
+        identifier: str | None = None,
+        period_nanos: int | None = None,
         start: int | None = None,
         end: int | None = None,
         ensure_contiguous_files: bool | None = None,
@@ -4015,6 +4038,55 @@ class ParquetDataCatalogV2:
         start: int | None = None,
         end: int | None = None,
     ) -> None: ...
+    def query_quote_ticks(
+        self,
+        instrument_ids: list[str] | None = None,
+        start: int | None = None,
+        end: int | None = None,
+        where_clause: str | None = None,
+    ) -> list[QuoteTick]: ...
+    def query_trade_ticks(
+        self,
+        instrument_ids: list[str] | None = None,
+        start: int | None = None,
+        end: int | None = None,
+        where_clause: str | None = None,
+    ) -> list[TradeTick]: ...
+    def query_order_book_deltas(
+        self,
+        instrument_ids: list[str] | None = None,
+        start: int | None = None,
+        end: int | None = None,
+        where_clause: str | None = None,
+    ) -> list[OrderBookDelta]: ...
+    def query_bars(
+        self,
+        instrument_ids: list[str] | None = None,
+        start: int | None = None,
+        end: int | None = None,
+        where_clause: str | None = None,
+    ) -> list[Bar]: ...
+    def query_order_book_depths(
+        self,
+        instrument_ids: list[str] | None = None,
+        start: int | None = None,
+        end: int | None = None,
+        where_clause: str | None = None,
+    ) -> list[OrderBookDepth10]: ...
+    def query_mark_price_updates(
+        self,
+        instrument_ids: list[str] | None = None,
+        start: int | None = None,
+        end: int | None = None,
+        where_clause: str | None = None,
+    ) -> list[MarkPriceUpdate]: ...
+    def query_index_price_updates(
+        self,
+        instrument_ids: list[str] | None = None,
+        start: int | None = None,
+        end: int | None = None,
+        where_clause: str | None = None,
+    ) -> list[IndexPriceUpdate]: ...
 
 ###################################################################################################
 # Network
