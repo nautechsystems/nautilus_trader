@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+from __future__ import annotations
 
 from decimal import Decimal
 from functools import partial
@@ -59,7 +60,7 @@ class InteractiveBrokersEWrapper(EWrapper):
     def __init__(
         self,
         nautilus_logger: Logger,
-        client: "InteractiveBrokersClient",
+        client: InteractiveBrokersClient,
     ) -> None:
         super().__init__()
         self._log = nautilus_logger
