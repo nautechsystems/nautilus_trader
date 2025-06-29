@@ -1,6 +1,6 @@
 //! Catalog operations for data consolidation and reset functionality.
 //!
-//! This module contains the consolidation and reset operations for the ParquetDataCatalog.
+//! This module contains the consolidation and reset operations for the `ParquetDataCatalog`.
 //! These operations are separated into their own module for better organization and maintainability.
 
 use std::collections::HashSet;
@@ -487,7 +487,7 @@ impl ParquetDataCatalog {
     ///
     /// # Returns
     ///
-    /// Returns a tuple of (data_class, identifier) where both are optional strings.
+    /// Returns a tuple of (`data_class`, identifier) where both are optional strings.
     pub fn extract_data_cls_and_identifier_from_path(
         &self,
         path: &str,
@@ -496,19 +496,19 @@ impl ParquetDataCatalog {
         let path_parts: Vec<&str> = path.split('/').collect();
 
         // Find the "data" directory in the path
-        if let Some(data_index) = path_parts.iter().position(|&part| part == "data") {
-            if data_index + 1 < path_parts.len() {
-                let data_cls = path_parts[data_index + 1].to_string();
+        if let Some(data_index) = path_parts.iter().position(|&part| part == "data")
+            && data_index + 1 < path_parts.len()
+        {
+            let data_cls = path_parts[data_index + 1].to_string();
 
-                // Check if there's an identifier (instrument ID) after the data class
-                let identifier = if data_index + 2 < path_parts.len() {
-                    Some(path_parts[data_index + 2].to_string())
-                } else {
-                    None
-                };
+            // Check if there's an identifier (instrument ID) after the data class
+            let identifier = if data_index + 2 < path_parts.len() {
+                Some(path_parts[data_index + 2].to_string())
+            } else {
+                None
+            };
 
-                return Ok((Some(data_cls), identifier));
-            }
+            return Ok((Some(data_cls), identifier));
         }
 
         // If we can't parse the path, return None for both
@@ -554,8 +554,8 @@ impl ParquetDataCatalog {
     /// - Allows consolidation across multiple files within each contiguous group
     /// - Skips queries if target files already exist for efficiency
     /// - Original files are removed immediately after querying each period
-    /// - When ensure_contiguous_files=false, file timestamps match actual data range
-    /// - When ensure_contiguous_files=true, file timestamps use period boundaries
+    /// - When `ensure_contiguous_files=false`, file timestamps match actual data range
+    /// - When `ensure_contiguous_files=true`, file timestamps use period boundaries
     /// - Uses modulo arithmetic for efficient period boundary calculation
     /// - Preserves holes in data by preventing queries from spanning across gaps
     /// - Automatically splits files at start/end boundaries to preserve all data
@@ -691,7 +691,7 @@ impl ParquetDataCatalog {
 
     /// Generic consolidate data files by splitting them into fixed time periods.
     ///
-    /// This is a type-safe version of consolidate_data_by_period that uses generic types
+    /// This is a type-safe version of `consolidate_data_by_period` that uses generic types
     /// to ensure compile-time correctness and enable reuse across different data types.
     ///
     /// # Type Parameters
@@ -780,9 +780,8 @@ impl ParquetDataCatalog {
                     file_start_ns = Some(query_info.query_start);
                 }
                 continue;
-            } else {
-                file_start_ns = None;
             }
+            file_start_ns = None;
 
             // Determine final file timestamps
             let (final_start_ns, final_end_ns) = if query_info.use_period_boundaries {
@@ -823,11 +822,11 @@ impl ParquetDataCatalog {
             // Only remove files AFTER successfully writing a new file
             // Use slice copy to avoid modification during iteration (match Python logic)
             for file in existing_files.clone() {
-                if let Some(interval) = parse_filename_timestamps(&file) {
-                    if interval.1 <= query_info.query_end {
-                        files_to_remove.insert(file.clone());
-                        existing_files.retain(|f| f != &file);
-                    }
+                if let Some(interval) = parse_filename_timestamps(&file)
+                    && interval.1 <= query_info.query_end
+                {
+                    files_to_remove.insert(file.clone());
+                    existing_files.retain(|f| f != &file);
                 }
             }
 
@@ -1021,7 +1020,7 @@ impl ParquetDataCatalog {
     ///
     /// 1. Starts with the first interval in a new group
     /// 2. For each subsequent interval, checks if it's contiguous with the previous
-    /// 3. If contiguous (prev_end + 1 == curr_start), adds to current group
+    /// 3. If contiguous (`prev_end` + 1 == `curr_start`), adds to current group
     /// 4. If not contiguous, starts a new group
     /// 5. Returns all groups
     ///
@@ -1040,6 +1039,7 @@ impl ParquetDataCatalog {
     /// - Input intervals should be sorted by start timestamp
     /// - Gaps between groups are preserved and not consolidated
     /// - Used internally by period-based consolidation methods
+    #[must_use]
     pub fn group_contiguous_intervals(&self, intervals: &[(u64, u64)]) -> Vec<Vec<(u64, u64)>> {
         if intervals.is_empty() {
             return Vec::new();

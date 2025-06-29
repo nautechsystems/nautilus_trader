@@ -295,6 +295,7 @@ impl ParquetDataCatalog {
     }
 
     /// Returns the base path of the catalog for testing purposes.
+    #[must_use]
     pub fn get_base_path(&self) -> String {
         self.base_path.clone()
     }
@@ -792,6 +793,7 @@ impl ParquetDataCatalog {
     }
 
     /// Helper method to reconstruct full URI for remote object store paths
+    #[must_use]
     pub fn reconstruct_full_uri(&self, path_str: &str) -> String {
         // Check if this is a remote URI scheme that needs reconstruction
         if self.is_remote_uri() {
@@ -806,29 +808,30 @@ impl ParquetDataCatalog {
         // For local paths, extract the directory from the original URI
         if self.original_uri.starts_with("file://") {
             // Extract the path from the file:// URI
-            if let Ok(url) = url::Url::parse(&self.original_uri) {
-                if let Ok(base_path) = url.to_file_path() {
-                    return format!("{}/{}", base_path.display(), path_str);
-                }
+            if let Ok(url) = url::Url::parse(&self.original_uri)
+                && let Ok(base_path) = url.to_file_path()
+            {
+                return format!("{}/{}", base_path.display(), path_str);
             }
         }
 
         // For local paths without file:// prefix, use the original URI as base
-        if !self.base_path.is_empty() {
-            let base = self.base_path.trim_end_matches('/');
-            format!("{base}/{path_str}")
-        } else {
+        if self.base_path.is_empty() {
             // If base_path is empty and not a file URI, try using original_uri as base
-            if !self.original_uri.contains("://") {
-                format!("{}/{}", self.original_uri.trim_end_matches('/'), path_str)
-            } else {
+            if self.original_uri.contains("://") {
                 // Fallback: return the path as-is
                 path_str.to_string()
+            } else {
+                format!("{}/{}", self.original_uri.trim_end_matches('/'), path_str)
             }
+        } else {
+            let base = self.base_path.trim_end_matches('/');
+            format!("{base}/{path_str}")
         }
     }
 
     /// Helper method to check if the original URI uses a remote object store scheme
+    #[must_use]
     pub fn is_remote_uri(&self) -> bool {
         self.original_uri.starts_with("s3://")
             || self.original_uri.starts_with("gs://")
@@ -979,7 +982,7 @@ impl ParquetDataCatalog {
     /// - `start`: Optional start timestamp for filtering (inclusive). If `None`, queries from the beginning.
     /// - `end`: Optional end timestamp for filtering (inclusive). If `None`, queries to the end.
     /// - `where_clause`: Optional SQL WHERE clause for additional filtering. Use standard SQL syntax
-    ///   with column names matching the Parquet schema (e.g., "bid_price > 1.2000", "volume > 1000").
+    ///   with column names matching the Parquet schema (e.g., "`bid_price` > 1.2000", "volume > 1000").
     ///
     /// # Returns
     ///
@@ -1454,7 +1457,7 @@ impl ParquetDataCatalog {
     ///
     /// - Without instrument ID: `{base_path}/data/{type_name}`
     /// - With instrument ID: `{base_path}/data/{type_name}/{safe_instrument_id}`
-    /// - If base_path is empty: `data/{type_name}[/{safe_instrument_id}]`
+    /// - If `base_path` is empty: `data/{type_name}[/{safe_instrument_id}]`
     ///
     /// # Examples
     ///
@@ -1554,6 +1557,7 @@ impl ParquetDataCatalog {
     /// let object_path = catalog.to_object_path("data/trades/file.parquet");
     /// // Returns: ObjectPath("data/trades/file.parquet")
     /// ```
+    #[must_use]
     pub fn to_object_path(&self, path: &str) -> ObjectPath {
         if self.base_path.is_empty() {
             return ObjectPath::from(path);
@@ -1677,6 +1681,7 @@ impl_catalog_path_prefix!(InstrumentClose, "instrument_closes");
 /// );
 /// // Returns something like: "2021-01-01T00-00-00-000000000Z_2021-01-02T00-00-00-000000000Z.parquet"
 /// ```
+#[must_use]
 pub fn timestamps_to_filename(timestamp_1: UnixNanos, timestamp_2: UnixNanos) -> String {
     let datetime_1 = iso_timestamp_to_file_timestamp(&unix_nanos_to_iso8601(timestamp_1));
     let datetime_2 = iso_timestamp_to_file_timestamp(&unix_nanos_to_iso8601(timestamp_2));
@@ -1860,6 +1865,7 @@ fn query_intersects_filename(filename: &str, start: Option<u64>, end: Option<u64
 /// assert!(parse_filename_timestamps("2021-01-01T00-00-00-000000000Z_2021-01-02T00-00-00-000000000Z.parquet").is_some());
 /// assert_eq!(parse_filename_timestamps("invalid.parquet"), None);
 /// ```
+#[must_use]
 pub fn parse_filename_timestamps(filename: &str) -> Option<(u64, u64)> {
     let path = Path::new(filename);
     let base_name = path.file_name()?.to_str()?;
@@ -1900,6 +1906,7 @@ pub fn parse_filename_timestamps(filename: &str) -> Option<(u64, u64)> {
 /// // Overlapping intervals
 /// assert!(!are_intervals_disjoint(&[(1, 10), (5, 15)]));
 /// ```
+#[must_use]
 pub fn are_intervals_disjoint(intervals: &[(u64, u64)]) -> bool {
     let n = intervals.len();
 
@@ -1947,6 +1954,7 @@ pub fn are_intervals_disjoint(intervals: &[(u64, u64)]) -> bool {
 /// // Non-contiguous intervals (gap between 5 and 8)
 /// assert!(!are_intervals_contiguous(&[(1, 5), (8, 10)]));
 /// ```
+#[must_use]
 pub fn are_intervals_contiguous(intervals: &[(u64, u64)]) -> bool {
     let n = intervals.len();
     if n <= 1 {
