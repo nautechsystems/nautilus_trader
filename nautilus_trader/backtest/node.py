@@ -338,6 +338,11 @@ class BacktestNode:
 
         kwargs["update_catalog"] = True
         params = kwargs.get("params", {})
+
+        # No need to do catalog queries when we just want to download and store data
+        params["skip_catalog_data"] = True
+
+        # To be able to download future data if necessary
         params["subscription_name"] = "download"
         kwargs["params"] = params
 

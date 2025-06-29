@@ -1462,7 +1462,8 @@ cdef class DataEngine(Component):
             if has_catalog_data:
                 break
 
-        n_requests = (len(missing_intervals) if used_client else 0) + (1 if has_catalog_data else 0)
+        skip_catalog_data = request.params.get("skip_catalog_data", False)
+        n_requests = (len(missing_intervals) if used_client else 0) + (1 if has_catalog_data and not skip_catalog_data else 0)
 
         if n_requests == 0:
             response = DataResponse(
@@ -1480,7 +1481,7 @@ cdef class DataEngine(Component):
         self._new_query_group(request.id, n_requests)
 
         # Catalog query
-        if has_catalog_data:
+        if has_catalog_data and not skip_catalog_data:
             new_request = request.with_dates(start, end, now.value)
             new_request.params["request_ts_start"] = start.value
             new_request.params["request_ts_end"] = end.value
