@@ -836,6 +836,8 @@ class ParquetDataCatalog(BaseDataCatalog):
         existing_files = list(existing_files)  # Make it mutable
 
         # Phase 2: Execute queries, write, and delete
+        file_start_ns = None  # Track contiguity across periods
+
         for query_info in queries_to_execute:
             # Query data for this period using existing files
             period_data = self.query(
@@ -847,14 +849,20 @@ class ParquetDataCatalog(BaseDataCatalog):
             )
 
             if not period_data:
-                # Skip if no data found
+                # Skip if no data found, but maintain contiguity by using query start
+                if file_start_ns is None:
+                    file_start_ns = query_info["query_start"]
                 continue
+            else:
+                file_start_ns = None
 
             # Determine final file timestamps
             if query_info["use_period_boundaries"]:
-                # Use period boundaries for file naming
-                file_start_ns = query_info["target_file_start"]
-                file_end_ns = query_info["target_file_end"]
+                # Use period boundaries for file naming, maintaining contiguity
+                if file_start_ns is None:
+                    file_start_ns = query_info["query_start"]
+
+                file_end_ns = query_info["query_end"]
             else:
                 # Use actual data timestamps for file naming
                 file_start_ns = period_data[0].ts_init
@@ -886,11 +894,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             for file in existing_files[:]:  # Use slice copy to avoid modification during iteration
                 interval = _parse_filename_timestamps(file)
 
-                if (
-                    interval
-                    and query_info["query_start"] <= interval[0]
-                    and interval[1] <= query_info["query_end"]
-                ):
+                if interval and interval[1] <= query_info["query_end"]:
                     files_to_remove.add(file)
                     existing_files.remove(file)
 
@@ -999,31 +1003,25 @@ class ParquetDataCatalog(BaseDataCatalog):
         # Handle interval splitting by creating split operations for data preservation
         if filtered_intervals and used_start is not None:
             first_interval = filtered_intervals[0]
-            if first_interval[0] < used_start.value < first_interval[1]:
+            if first_interval[0] < used_start.value <= first_interval[1]:
                 # Split before start: preserve data from interval_start to start-1
                 queries_to_execute.append(
                     {
                         "query_start": first_interval[0],
                         "query_end": used_start.value - 1,
-                        "target_file_start": first_interval[0],
-                        "target_file_end": used_start.value - 1,
                         "use_period_boundaries": False,
-                        "is_split": True,
                     },
                 )
 
         if filtered_intervals and used_end is not None:
             last_interval = filtered_intervals[-1]
-            if last_interval[0] < used_end.value < last_interval[1]:
+            if last_interval[0] <= used_end.value < last_interval[1]:
                 # Split after end: preserve data from end+1 to interval_end
                 queries_to_execute.append(
                     {
                         "query_start": used_end.value + 1,
                         "query_end": last_interval[1],
-                        "target_file_start": used_end.value + 1,
-                        "target_file_end": last_interval[1],
                         "use_period_boundaries": False,
-                        "is_split": True,
                     },
                 )
 
@@ -1066,21 +1064,11 @@ class ParquetDataCatalog(BaseDataCatalog):
                 if current_end_ns > group_end_ts:
                     current_end_ns = group_end_ts
 
-                # Determine target file timestamps based on ensure_contiguous_files
+                # Create target filename to check if it already exists (only for period boundaries)
                 if ensure_contiguous_files:
-                    # Use period boundaries for file naming
-                    target_file_start_ns = current_start_ns
-                    target_file_end_ns = current_end_ns
-                else:
-                    # For actual data timestamps, we'll determine this after querying
-                    target_file_start_ns = None
-                    target_file_end_ns = None
-
-                # Create target filename to check if it already exists
-                if target_file_start_ns is not None and target_file_end_ns is not None:
                     target_filename = os.path.join(
                         directory,
-                        _timestamps_to_filename(target_file_start_ns, target_file_end_ns),
+                        _timestamps_to_filename(current_start_ns, current_end_ns),
                     )
 
                     # Skip if target file already exists
@@ -1093,10 +1081,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                     {
                         "query_start": current_start_ns,
                         "query_end": current_end_ns,
-                        "target_file_start": target_file_start_ns,
-                        "target_file_end": target_file_end_ns,
                         "use_period_boundaries": ensure_contiguous_files,
-                        "is_split": False,
                     },
                 )
 
@@ -1106,7 +1091,10 @@ class ParquetDataCatalog(BaseDataCatalog):
                 if current_start_ns > group_end_ts:
                     break
 
-        return queries_to_execute
+        # Sort queries by start date to enable efficient file removal
+        # Files can be removed when interval[1] <= query_info["query_end"]
+        # and processing in chronological order ensures optimal cleanup
+        return sorted(queries_to_execute, key=lambda q: q["query_start"])
 
     def _find_leaf_data_directories(self) -> list[str]:
         all_paths = self.fs.glob(os.path.join(self.path, "data", "**"))
