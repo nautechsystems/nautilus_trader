@@ -15,6 +15,7 @@ Released on TBD (UTC).
 - Added optional metadata function for custom data query (#2724), thanks @faysou
 - Added support for order-list submission in the sandbox execution client (#2714), thanks @petioptrv
 - Added `bid_levels` and `ask_levels` for `OrderBook.pprint`
+- Added hidden order support for IBKR (#2739), thanks @sunlei
 
 ### Breaking Changes
 - Changed timer `allow_past=False` behavior: now validates the `next_event_time` instead of the `start_time`. This allows timers with past start times as long as their next scheduled event is still in the future
@@ -47,6 +48,7 @@ Released on TBD (UTC).
 - Improved unsubscribe cleanup(s) for Bybit adapter
 - Refactored IB adapter (#2647), thanks @faysou
 - Refactored data catalog (#2652), thanks @faysou
+- Refined Rust data catalog (#2734), thanks @faysou
 - Refined logging subsystem lifecycle management and introduce global log sender
 - Refined signal serialization and tests (#2705), thanks @faysou
 - Refined CI/CD and build system (#2707), thanks @stastnypremysl
