@@ -161,10 +161,35 @@ cdef class CashAccount(Account):
                 continue
             total_locked += locked.as_decimal()
 
+        # Calculate the free balance ensuring that it is never negative.
+        #
+        # In some edge-cases (for example, when an adapter temporarily reports
+        # an inflated locked amount due to latency or rounding differences)
+        # the calculated ``total_locked`` can exceed the ``total`` balance. This
+        # would normally propagate to the ``AccountBalance`` constructor where
+        # the internal correctness checks would raise – ultimately causing the
+        # entire application to terminate. That fail-fast behaviour is useful
+        # during development, but in live trading we prefer to degrade
+        # gracefully whilst ensuring that balances remain internally
+        # consistent.
+        #
+        # Therefore we clamp the locked amount to the total balance whenever it
+        # would otherwise exceed it. The resulting free balance is then zero –
+        # indicating that no funds are currently available for trading.
+        total = current_balance.total.as_decimal()
+        total_free = total - total_locked
+
+        if total_free < 0:
+            # Clamp the locked balance. We intentionally do not raise as this
+            # condition can occur transiently when the venue and client state
+            # are out-of-sync.
+            total_locked = total
+            total_free = Decimal(0)
+
         cdef AccountBalance new_balance = AccountBalance(
             current_balance.total,
             Money(total_locked, currency),
-            Money(current_balance.total.as_decimal() - total_locked, currency),
+            Money(total_free, currency),
         )
 
         self._balances[currency] = new_balance
