@@ -7,8 +7,8 @@ GIT_TAG:=$(shell git rev-parse --abbrev-ref HEAD)
 IMAGE_FULL?=$(IMAGE):$(GIT_TAG)
 
 V = 0  # 0 / 1 - verbose mode
-Q = $(if $(filter 1,$V),,@)
-M = $(shell printf "$(BLUE)>$(RESET)")
+Q = $(if $(filter 1,$V),,@) # Quiet mode, suppress command output
+M = $(shell printf "$(BLUE)>$(RESET)") # Message prefix for commands
 
 # > Colors
 RED    := $(shell tput -Txterm setaf 1)
@@ -26,15 +26,18 @@ RESET  := $(shell tput -Txterm sgr0)
 
 .PHONY: install
 install:  #-- Install in release mode with all dependencies and extras
-	BUILD_MODE=release uv sync --active --all-groups --all-extras --verbose
+	$(info $(M) Installing Nautilus Trader in release mode with all dependencies and extras...)
+	$Q BUILD_MODE=release uv sync --active --all-groups --all-extras --verbose
 
 .PHONY: install-debug
 install-debug:  #-- Install in debug mode for development
-	BUILD_MODE=debug uv sync --active --all-groups --all-extras --verbose
+	$(info $(M) Installing Nautilus Trader in debug mode for development...)
+	$Q BUILD_MODE=debug uv sync --active --all-groups --all-extras --verbose
 
 .PHONY: install-just-deps
 install-just-deps:  #-- Install dependencies only without building the package
-	uv sync --active --all-groups --all-extras --no-install-package nautilus_trader
+	$(info $(M) Installing dependencies only without building the package...)
+	$Q uv sync --active --all-groups --all-extras --no-install-package nautilus_trader
 
 #== Build
 
@@ -65,7 +68,7 @@ clean: clean-build-artifacts clean-caches clean-builds  #-- Clean all build arti
 
 .PHONY: clean-builds
 clean-builds:  #-- Clean distribution and target directories
-		rm -rf dist target 2>/dev/null || true
+	$Q rm -rf dist target 2>/dev/null || true
 
 .PHONY: clean-build-artifacts
 clean-build-artifacts:  #-- Clean compiled artifacts (.so, .dll, .pyc files)
