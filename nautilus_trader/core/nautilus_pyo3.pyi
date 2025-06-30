@@ -4087,6 +4087,18 @@ class ParquetDataCatalogV2:
         end: int | None = None,
         where_clause: str | None = None,
     ) -> list[IndexPriceUpdate]: ...
+    def delete_data_range(
+        self,
+        type_name: str,
+        identifier: str | None = None,
+        start: int | None = None,
+        end: int | None = None,
+    ) -> None: ...
+    def delete_catalog_range(
+        self,
+        start: int | None = None,
+        end: int | None = None,
+    ) -> None: ...
 
 ###################################################################################################
 # Network
