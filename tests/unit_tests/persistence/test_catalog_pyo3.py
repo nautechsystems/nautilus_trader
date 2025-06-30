@@ -757,3 +757,388 @@ def test_query_functions_data_integrity(catalog: ParquetDataCatalog):
         assert bar_data.high == test_bars[i].high
         assert bar_data.low == test_bars[i].low
         assert bar_data.close == test_bars[i].close
+
+
+# ================================================================================================
+# Delete functionality tests
+# ================================================================================================
+
+
+def test_delete_data_range_complete_file_deletion(catalog: ParquetDataCatalog):
+    """
+    Test deleting data that completely covers one or more files.
+    """
+    # Arrange
+    pyo3_catalog = ParquetDataCatalogV2(catalog.path)
+    test_bars = [bar(1_000_000_000), bar(2_000_000_000)]
+    pyo3_catalog.write_bars(test_bars)
+
+    # Verify initial state
+    initial_bars = pyo3_catalog.query_bars(["AUD/USD.SIM"])
+    assert len(initial_bars) == 2
+
+    # Act - delete all data
+    pyo3_catalog.delete_data_range(
+        "bars",
+        "AUD/USD.SIM",
+        0,
+        3_000_000_000,
+    )
+
+    # Assert
+    remaining_bars = pyo3_catalog.query_bars(["AUD/USD.SIM"])
+    assert len(remaining_bars) == 0
+
+
+def test_delete_data_range_partial_file_overlap_start(catalog: ParquetDataCatalog):
+    """
+    Test deleting data that partially overlaps with a file from the start.
+    """
+    # Arrange
+    pyo3_catalog = ParquetDataCatalogV2(catalog.path)
+    test_bars = [
+        bar(1_000_000_000),
+        bar(2_000_000_000),
+        bar(3_000_000_000),
+    ]
+    pyo3_catalog.write_bars(test_bars)
+
+    # Act - delete first part of the data
+    pyo3_catalog.delete_data_range(
+        "bars",
+        "AUD/USD.SIM",
+        0,
+        1_500_000_000,
+    )
+
+    # Assert - should keep data after deletion range
+    remaining_bars = pyo3_catalog.query_bars(["AUD/USD.SIM"])
+    assert len(remaining_bars) == 2
+    assert remaining_bars[0].ts_init == 2_000_000_000
+    assert remaining_bars[1].ts_init == 3_000_000_000
+
+
+def test_delete_data_range_partial_file_overlap_end(catalog: ParquetDataCatalog):
+    """
+    Test deleting data that partially overlaps with a file from the end.
+    """
+    # Arrange
+    pyo3_catalog = ParquetDataCatalogV2(catalog.path)
+    test_bars = [
+        bar(1_000_000_000),
+        bar(2_000_000_000),
+        bar(3_000_000_000),
+    ]
+    pyo3_catalog.write_bars(test_bars)
+
+    # Act - delete last part of the data
+    pyo3_catalog.delete_data_range(
+        "bars",
+        "AUD/USD.SIM",
+        2_500_000_000,
+        4_000_000_000,
+    )
+
+    # Assert - should keep data before deletion range
+    remaining_bars = pyo3_catalog.query_bars(["AUD/USD.SIM"])
+    assert len(remaining_bars) == 2
+    assert remaining_bars[0].ts_init == 1_000_000_000
+    assert remaining_bars[1].ts_init == 2_000_000_000
+
+
+def test_delete_data_range_partial_file_overlap_middle(catalog: ParquetDataCatalog):
+    """
+    Test deleting data that partially overlaps with a file in the middle.
+    """
+    # Arrange
+    pyo3_catalog = ParquetDataCatalogV2(catalog.path)
+    test_bars = [
+        bar(1_000_000_000),
+        bar(2_000_000_000),
+        bar(3_000_000_000),
+        bar(4_000_000_000),
+    ]
+    pyo3_catalog.write_bars(test_bars)
+
+    # Act - delete middle part of the data
+    pyo3_catalog.delete_data_range(
+        "bars",
+        "AUD/USD.SIM",
+        1_500_000_000,
+        3_500_000_000,
+    )
+
+    # Assert - should keep data before and after deletion range
+    remaining_bars = pyo3_catalog.query_bars(["AUD/USD.SIM"])
+    assert len(remaining_bars) == 2
+    assert remaining_bars[0].ts_init == 1_000_000_000
+    assert remaining_bars[1].ts_init == 4_000_000_000
+
+
+def test_delete_data_range_no_data(catalog: ParquetDataCatalog):
+    """
+    Test deleting data when no data exists.
+    """
+    # Arrange
+    pyo3_catalog = ParquetDataCatalogV2(catalog.path)
+
+    # Act - delete from empty catalog
+    pyo3_catalog.delete_data_range(
+        "bars",
+        "AUD/USD.SIM",
+        1_000_000_000,
+        2_000_000_000,
+    )
+
+    # Assert - should not raise any errors
+    remaining_bars = pyo3_catalog.query_bars(["AUD/USD.SIM"])
+    assert len(remaining_bars) == 0
+
+
+def test_delete_data_range_no_intersection(catalog: ParquetDataCatalog):
+    """
+    Test deleting data that doesn't intersect with existing data.
+    """
+    # Arrange
+    pyo3_catalog = ParquetDataCatalogV2(catalog.path)
+    test_bars = [bar(2_000_000_000)]
+    pyo3_catalog.write_bars(test_bars)
+
+    # Act - delete data outside existing range
+    pyo3_catalog.delete_data_range(
+        "bars",
+        "AUD/USD.SIM",
+        3_000_000_000,
+        4_000_000_000,
+    )
+
+    # Assert - should keep all existing data
+    remaining_bars = pyo3_catalog.query_bars(["AUD/USD.SIM"])
+    assert len(remaining_bars) == 1
+    assert remaining_bars[0].ts_init == 2_000_000_000
+
+
+def test_delete_catalog_range_multiple_data_types(catalog: ParquetDataCatalog):
+    """
+    Test deleting data across multiple data types in the catalog.
+    """
+    # Arrange
+    pyo3_catalog = ParquetDataCatalogV2(catalog.path)
+
+    # Create data for multiple data types using pyo3 objects
+    test_bars = [
+        bar(1_000_000_000),
+        bar(2_000_000_000),
+    ]
+    test_quotes = [
+        TestDataProviderPyo3.quote_tick(),
+        TestDataProviderPyo3.quote_tick(),
+    ]
+
+    pyo3_catalog.write_bars(test_bars)
+    pyo3_catalog.write_quote_ticks(test_quotes)
+
+    # Verify initial state
+    initial_bars = pyo3_catalog.query_bars(["AUD/USD.SIM"])
+    initial_quotes = pyo3_catalog.query_quote_ticks(
+        ["ETH/USDT.BINANCE"],
+    )  # Use correct instrument ID
+    assert len(initial_bars) == 2
+    assert len(initial_quotes) == 2
+
+    # Act - delete all data (use wide range since we can't control timestamps)
+    pyo3_catalog.delete_catalog_range(
+        0,
+        3_000_000_000,
+    )
+
+    # Assert - should delete all data
+    remaining_bars = pyo3_catalog.query_bars(["AUD/USD.SIM"])
+    remaining_quotes = pyo3_catalog.query_quote_ticks(["ETH/USDT.BINANCE"])
+
+    # Should have no remaining data
+    assert len(remaining_bars) == 0
+    assert len(remaining_quotes) == 0
+
+
+def test_delete_catalog_range_complete_deletion(catalog: ParquetDataCatalog):
+    """
+    Test deleting all data in the catalog.
+    """
+    # Arrange
+    pyo3_catalog = ParquetDataCatalogV2(catalog.path)
+
+    # Create data for multiple data types
+    test_bars = [bar(1_000_000_000)]
+    test_quotes = [TestDataProviderPyo3.quote_tick()]
+
+    pyo3_catalog.write_bars(test_bars)
+    pyo3_catalog.write_quote_ticks(test_quotes)
+
+    # Verify initial state
+    assert len(pyo3_catalog.query_bars(["AUD/USD.SIM"])) == 1
+    assert len(pyo3_catalog.query_quote_ticks(["ETH/USDT.BINANCE"])) == 1
+
+    # Act - delete all data
+    pyo3_catalog.delete_catalog_range(
+        0,
+        3_000_000_000,
+    )
+
+    # Assert - should have no data left
+    assert len(pyo3_catalog.query_bars(["AUD/USD.SIM"])) == 0
+    assert len(pyo3_catalog.query_quote_ticks(["ETH/USDT.BINANCE"])) == 0
+
+
+def test_delete_catalog_range_empty_catalog(catalog: ParquetDataCatalog):
+    """
+    Test deleting data from an empty catalog.
+    """
+    # Arrange
+    pyo3_catalog = ParquetDataCatalogV2(catalog.path)
+
+    # Act - delete from empty catalog
+    pyo3_catalog.delete_catalog_range(
+        1_000_000_000,
+        2_000_000_000,
+    )
+
+    # Assert - should not raise any errors
+    assert len(pyo3_catalog.query_bars(["AUD/USD.SIM"])) == 0
+    assert len(pyo3_catalog.query_quote_ticks(["ETH/USDT.BINANCE"])) == 0
+
+
+def test_delete_catalog_range_open_boundaries(catalog: ParquetDataCatalog):
+    """
+    Test deleting data with open start/end boundaries.
+    """
+    # Arrange
+    pyo3_catalog = ParquetDataCatalogV2(catalog.path)
+
+    # Create test data
+    test_bars = [
+        bar(1_000_000_000),
+        bar(2_000_000_000),
+        bar(3_000_000_000),
+    ]
+    test_quotes = [
+        TestDataProviderPyo3.quote_tick(),
+        TestDataProviderPyo3.quote_tick(),
+        TestDataProviderPyo3.quote_tick(),
+    ]
+
+    pyo3_catalog.write_bars(test_bars)
+    pyo3_catalog.write_quote_ticks(test_quotes)
+
+    # Act - delete from beginning to middle (open start)
+    pyo3_catalog.delete_catalog_range(
+        None,
+        2_200_000_000,
+    )
+
+
+def test_delete_data_range_nanosecond_precision_boundaries(catalog: ParquetDataCatalog):
+    """
+    Test deleting data with nanosecond precision boundaries.
+    """
+    # Arrange
+    pyo3_catalog = ParquetDataCatalogV2(catalog.path)
+
+    # Create test data with precise nanosecond timestamps
+    test_bars = [
+        bar(1_000_000_000),
+        bar(1_000_000_001),  # +1 nanosecond
+        bar(1_000_000_002),  # +2 nanoseconds
+        bar(1_000_000_003),  # +3 nanoseconds
+    ]
+    pyo3_catalog.write_bars(test_bars)
+
+    # Act - delete exactly the middle two timestamps [1_000_000_001, 1_000_000_002]
+    pyo3_catalog.delete_data_range(
+        "bars",
+        "AUD/USD.SIM",
+        1_000_000_001,
+        1_000_000_002,
+    )
+
+    # Assert - should keep only first and last timestamps
+    remaining_bars = pyo3_catalog.query_bars(["AUD/USD.SIM"])
+    assert len(remaining_bars) == 2
+    assert remaining_bars[0].ts_init == 1_000_000_000
+    assert remaining_bars[1].ts_init == 1_000_000_003
+
+
+def test_delete_data_range_single_file_double_split(catalog: ParquetDataCatalog):
+    """
+    Test deleting from a single file that requires both split_before and split_after.
+    """
+    # Arrange
+    pyo3_catalog = ParquetDataCatalogV2(catalog.path)
+
+    # Create test data in a single file that will need both splits
+    test_bars = [
+        bar(1_000_000_000),
+        bar(2_000_000_000),
+        bar(3_000_000_000),
+        bar(4_000_000_000),
+        bar(5_000_000_000),
+    ]
+    pyo3_catalog.write_bars(test_bars)
+
+    # Act - delete middle range [2_500_000_000, 3_500_000_000]
+    # This should create both split_before and split_after operations
+    pyo3_catalog.delete_data_range(
+        "bars",
+        "AUD/USD.SIM",
+        2_500_000_000,
+        3_500_000_000,
+    )
+
+    # Assert - should keep data before and after deletion range
+    remaining_bars = pyo3_catalog.query_bars(["AUD/USD.SIM"])
+    assert len(remaining_bars) == 4
+
+    timestamps = [bar.ts_init for bar in remaining_bars]
+    timestamps.sort()
+    assert timestamps == [1_000_000_000, 2_000_000_000, 4_000_000_000, 5_000_000_000]
+
+
+def test_delete_data_range_file_contiguity_verification(catalog: ParquetDataCatalog):
+    """
+    Test that split files maintain proper timestamp contiguity.
+    """
+    # Arrange
+    pyo3_catalog = ParquetDataCatalogV2(catalog.path)
+
+    # Create test data that will be split
+    test_bars = [
+        bar(1_000_000_000),
+        bar(1_000_000_001),
+        bar(1_000_000_002),
+        bar(1_000_000_003),
+        bar(1_000_000_004),
+    ]
+    pyo3_catalog.write_bars(test_bars)
+
+    # Act - delete middle timestamp [1_000_000_002, 1_000_000_002]
+    pyo3_catalog.delete_data_range(
+        "bars",
+        "AUD/USD.SIM",
+        1_000_000_002,
+        1_000_000_002,
+    )
+
+    # Assert - verify remaining data maintains proper order and contiguity
+    remaining_bars = pyo3_catalog.query_bars(["AUD/USD.SIM"])
+    assert len(remaining_bars) == 4
+
+    timestamps = [bar.ts_init for bar in remaining_bars]
+    timestamps.sort()
+    expected = [1_000_000_000, 1_000_000_001, 1_000_000_003, 1_000_000_004]
+    assert timestamps == expected
+
+    # Verify that the gap is exactly where we deleted (timestamp 1_000_000_002 is missing)
+    for i in range(len(timestamps) - 1):
+        if timestamps[i] == 1_000_000_001:
+            # Should jump from 1_000_000_001 to 1_000_000_003 (skipping 1_000_000_002)
+            assert timestamps[i + 1] == 1_000_000_003
