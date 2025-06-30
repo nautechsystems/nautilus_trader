@@ -475,6 +475,76 @@ impl ParquetDataCatalogV2 {
             .map_err(|e| PyIOError::new_err(format!("Failed to reset data file names: {e}")))
     }
 
+    /// Delete data within a specified time range across the entire catalog.
+    ///
+    /// This method identifies all leaf directories in the catalog that contain parquet files
+    /// and deletes data within the specified time range from each directory. A leaf directory
+    /// is one that contains files but no subdirectories. This is a convenience method that
+    /// effectively calls `delete_data_range` for all data types and instrument IDs in the catalog.
+    ///
+    /// # Parameters
+    ///
+    /// - `start`: Optional start timestamp for the deletion range (nanoseconds since Unix epoch)
+    /// - `end`: Optional end timestamp for the deletion range (nanoseconds since Unix epoch)
+    ///
+    /// # Notes
+    ///
+    /// - This operation permanently removes data and cannot be undone
+    /// - The deletion process handles file intersections intelligently by splitting files
+    ///   when they partially overlap with the deletion range
+    /// - Files completely within the deletion range are removed entirely
+    /// - Files partially overlapping the deletion range are split to preserve data outside the range
+    /// - This method is useful for bulk data cleanup operations across the entire catalog
+    /// - Empty directories are not automatically removed after deletion
+    #[pyo3(signature = (start=None, end=None))]
+    pub fn delete_catalog_range(&mut self, start: Option<u64>, end: Option<u64>) -> PyResult<()> {
+        // Convert u64 timestamps to UnixNanos
+        let start_nanos = start.map(UnixNanos::from);
+        let end_nanos = end.map(UnixNanos::from);
+
+        self.inner
+            .delete_catalog_range(start_nanos, end_nanos)
+            .map_err(|e| PyIOError::new_err(format!("Failed to delete catalog range: {e}")))
+    }
+
+    /// Delete data within a specified time range for a specific data type and instrument.
+    ///
+    /// This method identifies all parquet files that intersect with the specified time range
+    /// and handles them appropriately:
+    /// - Files completely within the range are deleted
+    /// - Files partially overlapping the range are split to preserve data outside the range
+    /// - The original intersecting files are removed after processing
+    ///
+    /// # Parameters
+    ///
+    /// - `type_name`: The data type directory name (e.g., "quotes", "trades", "bars")
+    /// - `instrument_id`: Optional instrument ID to delete data for. If None, deletes data across all instruments
+    /// - `start`: Optional start timestamp for the deletion range (nanoseconds since Unix epoch)
+    /// - `end`: Optional end timestamp for the deletion range (nanoseconds since Unix epoch)
+    ///
+    /// # Notes
+    ///
+    /// - This operation permanently removes data and cannot be undone
+    /// - Files that partially overlap the deletion range are split to preserve data outside the range
+    /// - The method ensures data integrity by using atomic operations where possible
+    /// - Empty directories are not automatically removed after deletion
+    #[pyo3(signature = (type_name, instrument_id=None, start=None, end=None))]
+    pub fn delete_data_range(
+        &mut self,
+        type_name: &str,
+        instrument_id: Option<String>,
+        start: Option<u64>,
+        end: Option<u64>,
+    ) -> PyResult<()> {
+        // Convert u64 timestamps to UnixNanos
+        let start_nanos = start.map(UnixNanos::from);
+        let end_nanos = end.map(UnixNanos::from);
+
+        self.inner
+            .delete_data_range(type_name, instrument_id, start_nanos, end_nanos)
+            .map_err(|e| PyIOError::new_err(format!("Failed to delete data range: {e}")))
+    }
+
     /// Query files in the catalog matching the specified criteria.
     ///
     /// # Parameters

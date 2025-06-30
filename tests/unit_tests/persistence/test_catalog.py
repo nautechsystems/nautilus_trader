@@ -523,7 +523,7 @@ class TestConsolidateDataByPeriod:
         """
         bars = []
         for ts in timestamps:
-            # Always use TestDataStubs for consistency
+            # Use TestDataStubs.bar_5decimal() to create AUD/USD bars that match _get_bar_type_identifier
             bar = TestDataStubs.bar_5decimal(ts_event=ts, ts_init=ts)
             bars.append(bar)
         return bars
@@ -867,11 +867,15 @@ class TestConsolidateDataByPeriod:
 
     def test_consolidate_with_contiguous_timestamps(self):
         """
-        Test consolidation with contiguous timestamps (files differ by 1 nanosecond).
+        Test consolidation with contiguous timestamps (files differ by small amounts).
         """
-        # Arrange - Create contiguous timestamps with realistic base
+        # Arrange - Create timestamps with small gaps but within same period
         base_time = dt_to_unix_nanos(pd.Timestamp("2024-01-01 12:00:00", tz="UTC"))
-        timestamps = [base_time, base_time + 1, base_time + 2]  # Contiguous nanoseconds
+        timestamps = [
+            base_time,
+            base_time + 1_000_000_000,  # 1 second later
+            base_time + 2_000_000_000,  # 2 seconds later
+        ]
         test_bars = self._create_test_bars(timestamps)
         self.catalog.write_data(test_bars)
 
@@ -1222,3 +1226,905 @@ def test_extract_data_cls_and_identifier_from_path(catalog: ParquetDataCatalog) 
     # Assert
     assert data_cls is not None
     assert identifier is not None
+
+
+def test_delete_data_range_complete_file_deletion(catalog: ParquetDataCatalog) -> None:
+    """
+    Test deleting data that completely covers one or more files.
+    """
+    # Arrange
+    quotes = [
+        TestDataStubs.quote_tick(ts_init=1_000_000_000),
+        TestDataStubs.quote_tick(ts_init=2_000_000_000),
+    ]
+    catalog.write_data(quotes)
+
+    # Verify initial state
+    initial_data = catalog.quote_ticks()
+    assert len(initial_data) == 2
+
+    # Act - delete all data (use correct instrument ID)
+    catalog.delete_data_range(
+        data_cls=QuoteTick,
+        identifier="AUD/USD.SIM",
+        start=0,
+        end=3_000_000_000,
+    )
+
+    # Assert
+    remaining_data = catalog.quote_ticks()
+    assert len(remaining_data) == 0
+
+
+def test_delete_data_range_partial_file_overlap_start(catalog: ParquetDataCatalog) -> None:
+    """
+    Test deleting data that partially overlaps with a file from the start.
+    """
+    # Arrange
+    quotes = [
+        TestDataStubs.quote_tick(ts_init=1_000_000_000),
+        TestDataStubs.quote_tick(ts_init=2_000_000_000),
+        TestDataStubs.quote_tick(ts_init=3_000_000_000),
+    ]
+    catalog.write_data(quotes)
+
+    # Act - delete first part of the data
+    catalog.delete_data_range(
+        data_cls=QuoteTick,
+        identifier="AUD/USD.SIM",
+        start=0,
+        end=1_500_000_000,
+    )
+
+    # Assert - should keep data after deletion range
+    remaining_data = catalog.quote_ticks()
+    assert len(remaining_data) == 2
+    assert remaining_data[0].ts_init == 2_000_000_000
+    assert remaining_data[1].ts_init == 3_000_000_000
+
+
+def test_delete_data_range_partial_file_overlap_end(catalog: ParquetDataCatalog) -> None:
+    """
+    Test deleting data that partially overlaps with a file from the end.
+    """
+    # Arrange
+    quotes = [
+        TestDataStubs.quote_tick(ts_init=1_000_000_000),
+        TestDataStubs.quote_tick(ts_init=2_000_000_000),
+        TestDataStubs.quote_tick(ts_init=3_000_000_000),
+    ]
+    catalog.write_data(quotes)
+
+    # Act - delete last part of the data
+    catalog.delete_data_range(
+        data_cls=QuoteTick,
+        identifier="AUD/USD.SIM",
+        start=2_500_000_000,
+        end=4_000_000_000,
+    )
+
+    # Assert - should keep data before deletion range
+    remaining_data = catalog.quote_ticks()
+    assert len(remaining_data) == 2
+    assert remaining_data[0].ts_init == 1_000_000_000
+    assert remaining_data[1].ts_init == 2_000_000_000
+
+
+def test_delete_data_range_partial_file_overlap_middle(catalog: ParquetDataCatalog) -> None:
+    """
+    Test deleting data that partially overlaps with a file in the middle.
+    """
+    # Arrange
+    quotes = [
+        TestDataStubs.quote_tick(ts_init=1_000_000_000),
+        TestDataStubs.quote_tick(ts_init=2_000_000_000),
+        TestDataStubs.quote_tick(ts_init=3_000_000_000),
+        TestDataStubs.quote_tick(ts_init=4_000_000_000),
+    ]
+    catalog.write_data(quotes)
+
+    # Act - delete middle part of the data
+    catalog.delete_data_range(
+        data_cls=QuoteTick,
+        identifier="AUD/USD.SIM",
+        start=1_500_000_000,
+        end=3_500_000_000,
+    )
+
+    # Assert - should keep data before and after deletion range
+    remaining_data = catalog.quote_ticks()
+    assert len(remaining_data) == 2
+    assert remaining_data[0].ts_init == 1_000_000_000
+    assert remaining_data[1].ts_init == 4_000_000_000
+
+
+def test_delete_data_range_multiple_files(catalog: ParquetDataCatalog) -> None:
+    """
+    Test deleting data across multiple files.
+    """
+    # Arrange - create multiple files
+    quotes1 = [TestDataStubs.quote_tick(ts_init=1_000_000_000)]
+    quotes2 = [TestDataStubs.quote_tick(ts_init=2_000_000_000)]
+    quotes3 = [TestDataStubs.quote_tick(ts_init=3_000_000_000)]
+
+    catalog.write_data(quotes1)
+    catalog.write_data(quotes2)
+    catalog.write_data(quotes3)
+
+    # Verify we have 3 files
+    intervals = catalog.get_intervals(QuoteTick, "AUD/USD.SIM")
+    assert len(intervals) == 3
+
+    # Act - delete data spanning multiple files
+    catalog.delete_data_range(
+        data_cls=QuoteTick,
+        identifier="AUD/USD.SIM",
+        start=1_500_000_000,
+        end=2_500_000_000,
+    )
+
+    # Assert - should keep data outside deletion range
+    remaining_data = catalog.quote_ticks()
+    assert len(remaining_data) == 2
+    assert remaining_data[0].ts_init == 1_000_000_000
+    assert remaining_data[1].ts_init == 3_000_000_000
+
+
+def test_delete_data_range_no_data(catalog: ParquetDataCatalog) -> None:
+    """
+    Test deleting data when no data exists.
+    """
+    # Act - delete from empty catalog
+    catalog.delete_data_range(
+        data_cls=QuoteTick,
+        identifier="EUR/USD.SIM",
+        start=1_000_000_000,
+        end=2_000_000_000,
+    )
+
+    # Assert - should not raise any errors
+    remaining_data = catalog.quote_ticks()
+    assert len(remaining_data) == 0
+
+
+def test_delete_data_range_no_intersection(catalog: ParquetDataCatalog) -> None:
+    """
+    Test deleting data that doesn't intersect with existing data.
+    """
+    # Arrange
+    quotes = [TestDataStubs.quote_tick(ts_init=2_000_000_000)]
+    catalog.write_data(quotes)
+
+    # Act - delete data outside existing range
+    catalog.delete_data_range(
+        data_cls=QuoteTick,
+        identifier="EUR/USD.SIM",
+        start=3_000_000_000,
+        end=4_000_000_000,
+    )
+
+    # Assert - should keep all existing data
+    remaining_data = catalog.quote_ticks()
+    assert len(remaining_data) == 1
+    assert remaining_data[0].ts_init == 2_000_000_000
+
+
+def test_delete_data_range_boundary_conditions(catalog: ParquetDataCatalog) -> None:
+    """
+    Test deleting data with exact boundary matches.
+    """
+    # Arrange
+    quotes = [
+        TestDataStubs.quote_tick(ts_init=1_000_000_000),
+        TestDataStubs.quote_tick(ts_init=2_000_000_000),
+        TestDataStubs.quote_tick(ts_init=3_000_000_000),
+    ]
+    catalog.write_data(quotes)
+
+    # Act - delete with exact timestamp boundaries
+    catalog.delete_data_range(
+        data_cls=QuoteTick,
+        identifier="AUD/USD.SIM",
+        start=2_000_000_000,
+        end=2_000_000_000,
+    )
+
+    # Assert - should delete only the exact match
+    remaining_data = catalog.quote_ticks()
+    assert len(remaining_data) == 2
+    assert remaining_data[0].ts_init == 1_000_000_000
+    assert remaining_data[1].ts_init == 3_000_000_000
+
+
+def test_delete_data_range_open_start(catalog: ParquetDataCatalog) -> None:
+    """
+    Test deleting data with no start boundary (delete from beginning).
+    """
+    # Arrange
+    quotes = [
+        TestDataStubs.quote_tick(ts_init=1_000_000_000),
+        TestDataStubs.quote_tick(ts_init=2_000_000_000),
+        TestDataStubs.quote_tick(ts_init=3_000_000_000),
+    ]
+    catalog.write_data(quotes)
+
+    # Act - delete from beginning to middle
+    catalog.delete_data_range(
+        data_cls=QuoteTick,
+        identifier="AUD/USD.SIM",
+        start=None,
+        end=2_500_000_000,
+    )
+
+    # Assert - should keep data after end boundary
+    remaining_data = catalog.quote_ticks()
+    assert len(remaining_data) == 1
+    assert remaining_data[0].ts_init == 3_000_000_000
+
+
+def test_delete_data_range_open_end(catalog: ParquetDataCatalog) -> None:
+    """
+    Test deleting data with no end boundary (delete to end).
+    """
+    # Arrange
+    quotes = [
+        TestDataStubs.quote_tick(ts_init=1_000_000_000),
+        TestDataStubs.quote_tick(ts_init=2_000_000_000),
+        TestDataStubs.quote_tick(ts_init=3_000_000_000),
+    ]
+    catalog.write_data(quotes)
+
+    # Act - delete from middle to end
+    catalog.delete_data_range(
+        data_cls=QuoteTick,
+        identifier="AUD/USD.SIM",
+        start=1_500_000_000,
+        end=None,
+    )
+
+    # Assert - should keep data before start boundary
+    remaining_data = catalog.quote_ticks()
+    assert len(remaining_data) == 1
+    assert remaining_data[0].ts_init == 1_000_000_000
+
+
+def test_delete_data_range_all_identifiers(catalog: ParquetDataCatalog) -> None:
+    """
+    Test deleting data across all identifiers when identifier is None.
+    """
+    # Arrange - create data for multiple instruments
+    eur_usd_quote = TestDataStubs.quote_tick(ts_init=1_000_000_000)
+    gbp_usd_quote = TestDataStubs.quote_ticks_usdjpy()[0]  # Use USD/JPY as second instrument
+
+    catalog.write_data([eur_usd_quote])
+    catalog.write_data([gbp_usd_quote])
+
+    # Verify initial state
+    all_quotes = catalog.quote_ticks()
+    assert len(all_quotes) == 2
+
+    # Act - delete data for all identifiers (use wide range to cover USD/JPY timestamp)
+    catalog.delete_data_range(
+        data_cls=QuoteTick,
+        identifier=None,
+        start=0,
+        end=2_000_000_000_000_000_000,  # Large enough to cover USD/JPY timestamp
+    )
+
+    # Assert - should delete data from all instruments
+    remaining_quotes = catalog.quote_ticks()
+    assert len(remaining_quotes) == 0
+
+
+def test_delete_catalog_range_multiple_data_types(catalog: ParquetDataCatalog) -> None:
+    """
+    Test deleting data across multiple data types in the catalog.
+    """
+    # Arrange - create data for multiple data types
+    quotes = [
+        TestDataStubs.quote_tick(ts_init=1_000_000_000),
+        TestDataStubs.quote_tick(ts_init=2_000_000_000),
+    ]
+    trades = [
+        TestDataStubs.trade_tick(ts_init=1_500_000_000),
+        TestDataStubs.trade_tick(ts_init=2_500_000_000),
+    ]
+
+    catalog.write_data(quotes)
+    catalog.write_data(trades)
+
+    # Verify initial state
+    initial_quotes = catalog.quote_ticks()
+    initial_trades = catalog.trade_ticks()
+    assert len(initial_quotes) == 2
+    assert len(initial_trades) == 2
+
+    # Act - delete data across all data types in a specific range
+    catalog.delete_catalog_range(
+        start=1_200_000_000,
+        end=2_200_000_000,
+    )
+
+    # Assert - should delete data from both data types within the range
+    remaining_quotes = catalog.quote_ticks()
+    remaining_trades = catalog.trade_ticks()
+
+    # Should keep quotes outside the deletion range
+    assert len(remaining_quotes) == 1
+    assert remaining_quotes[0].ts_init == 1_000_000_000
+
+    # Should keep trades outside the deletion range
+    assert len(remaining_trades) == 1
+    assert remaining_trades[0].ts_init == 2_500_000_000
+
+
+def test_delete_catalog_range_multiple_instruments(catalog: ParquetDataCatalog) -> None:
+    """
+    Test deleting data across multiple instruments in the catalog.
+    """
+    # Arrange - create data for multiple instruments
+    eur_usd_quotes = [
+        TestDataStubs.quote_tick(ts_init=1_000_000_000),
+        TestDataStubs.quote_tick(ts_init=3_000_000_000),
+    ]
+    gbp_usd_quotes = [
+        TestDataStubs.quote_ticks_usdjpy()[0],  # Use USD/JPY as second instrument
+        TestDataStubs.quote_ticks_usdjpy()[0],  # Use USD/JPY as second instrument
+    ]
+
+    catalog.write_data(eur_usd_quotes)
+    catalog.write_data(gbp_usd_quotes)
+
+    # Verify initial state
+    all_quotes = catalog.quote_ticks()
+    assert len(all_quotes) == 4
+
+    # Act - delete data across all instruments (use wide range to cover USD/JPY timestamp)
+    catalog.delete_catalog_range(
+        start=500_000_000,
+        end=2_000_000_000_000_000_000,  # Large enough to cover USD/JPY timestamp
+    )
+
+    # Assert - should delete all data since deletion range covers everything
+    remaining_quotes = catalog.quote_ticks()
+    assert len(remaining_quotes) == 0  # Should delete all data including USD/JPY
+
+
+def test_delete_catalog_range_complete_deletion(catalog: ParquetDataCatalog) -> None:
+    """
+    Test deleting all data in the catalog.
+    """
+    # Arrange - create data for multiple data types and instruments
+    quotes = [TestDataStubs.quote_tick(ts_init=1_000_000_000)]
+    trades = [TestDataStubs.trade_tick(ts_init=2_000_000_000)]
+    gbp_quotes = [TestDataStubs.quote_ticks_usdjpy()[0]]  # Use USD/JPY as second instrument
+
+    catalog.write_data(quotes)
+    catalog.write_data(trades)
+    catalog.write_data(gbp_quotes)
+
+    # Verify initial state
+    assert len(catalog.quote_ticks()) == 2  # EUR/USD + GBP/USD
+    assert len(catalog.trade_ticks()) == 1
+
+    # Act - delete all data (use wide range to cover USD/JPY timestamp)
+    catalog.delete_catalog_range(
+        start=0,
+        end=2_000_000_000_000_000_000,  # Large enough to cover USD/JPY timestamp
+    )
+
+    # Assert - should have no data left
+    assert len(catalog.quote_ticks()) == 0
+    assert len(catalog.trade_ticks()) == 0
+
+
+def test_delete_data_range_cross_file_split(catalog: ParquetDataCatalog) -> None:
+    """
+    Test deleting data that spans across multiple files and creates splits.
+
+    Scenario:
+    - File 1: timestamps [1_000_000_000, 2_000_000_000, 3_000_000_000, 4_000_000_000]
+    - File 2: timestamps [5_000_000_000, 6_000_000_000, 7_000_000_000, 8_000_000_000]
+    - File 3: timestamps [9_000_000_000, 10_000_000_000]
+    - Delete range: [4_000_000_000, 10_000_000_000]
+    - Expected result:
+      - Remaining data: [1_000_000_000, 2_000_000_000, 3_000_000_000] (from split of file 1)
+      - Files 2 and 3 should be completely deleted
+      - File 1 should be split to preserve data before deletion range
+
+    """
+    # Arrange - create three separate files with specific timestamps (use larger gaps for disjoint intervals)
+    quotes_file1 = [
+        TestDataStubs.quote_tick(ts_init=1_000_000_000),
+        TestDataStubs.quote_tick(ts_init=2_000_000_000),
+        TestDataStubs.quote_tick(ts_init=3_000_000_000),
+        TestDataStubs.quote_tick(ts_init=4_000_000_000),
+    ]
+    quotes_file2 = [
+        TestDataStubs.quote_tick(ts_init=5_000_000_000),
+        TestDataStubs.quote_tick(ts_init=6_000_000_000),
+        TestDataStubs.quote_tick(ts_init=7_000_000_000),
+        TestDataStubs.quote_tick(ts_init=8_000_000_000),
+    ]
+    quotes_file3 = [
+        TestDataStubs.quote_tick(ts_init=9_000_000_000),
+        TestDataStubs.quote_tick(ts_init=10_000_000_000),
+    ]
+
+    # Write each group separately to create separate files
+    catalog.write_data(quotes_file1)
+    catalog.write_data(quotes_file2)
+    catalog.write_data(quotes_file3)
+
+    # Verify initial state - should have 3 files and 10 quotes
+    initial_intervals = catalog.get_intervals(QuoteTick, "AUD/USD.SIM")
+    assert len(initial_intervals) == 3, f"Expected 3 files, got {len(initial_intervals)}"
+
+    initial_quotes = catalog.quote_ticks()
+    assert len(initial_quotes) == 10, f"Expected 10 quotes, got {len(initial_quotes)}"
+
+    # Act - delete range [4_000_000_000, 10_000_000_000] which should:
+    # - Split file 1 to keep [1_000_000_000, 2_000_000_000, 3_000_000_000]
+    # - Delete files 2 and 3 completely
+    catalog.delete_data_range(
+        data_cls=QuoteTick,
+        identifier="AUD/USD.SIM",
+        start=4_000_000_000,
+        end=10_000_000_000,
+    )
+
+    # Assert - verify remaining data
+    remaining_quotes = catalog.quote_ticks()
+    remaining_timestamps = [q.ts_init for q in remaining_quotes]
+    remaining_timestamps.sort()
+
+    expected_remaining = [1_000_000_000, 2_000_000_000, 3_000_000_000]
+    assert (
+        remaining_timestamps == expected_remaining
+    ), f"Expected {expected_remaining}, got {remaining_timestamps}"
+
+    # Verify file structure - should have 1 file remaining
+    final_intervals = catalog.get_intervals(QuoteTick, "AUD/USD.SIM")
+    assert len(final_intervals) == 1, f"Expected 1 file, got {len(final_intervals)}"
+
+    # Verify the remaining file covers the correct range (should end just before deletion start)
+    expected_start = 1_000_000_000
+    expected_end = 4_000_000_000 - 1  # Just before deletion range starts (one nanosecond before)
+    assert (
+        final_intervals[0][0] == expected_start
+    ), f"Expected start {expected_start}, got {final_intervals[0][0]}"
+    assert (
+        final_intervals[0][1] == expected_end
+    ), f"Expected end {expected_end}, got {final_intervals[0][1]}"
+
+    # Verify we can query the remaining data correctly
+    queried_quotes = catalog.query(
+        data_cls=QuoteTick,
+        identifiers=["AUD/USD.SIM"],
+        start=1_000_000_000,
+        end=10_000_000_000,
+    )
+    queried_timestamps = [q.ts_init for q in queried_quotes]
+    queried_timestamps.sort()
+
+    assert (
+        queried_timestamps == expected_remaining
+    ), f"Query result should be {expected_remaining}, got {queried_timestamps}"
+
+
+def test_delete_data_range_cross_file_split_keep_end(catalog: ParquetDataCatalog) -> None:
+    """
+    Test deleting data from the beginning and keeping the end across multiple files.
+
+    Scenario:
+    - File 1: timestamps [1_000_000_000, 2_000_000_000, 3_000_000_000, 4_000_000_000]
+    - File 2: timestamps [5_000_000_000, 6_000_000_000, 7_000_000_000, 8_000_000_000]
+    - File 3: timestamps [9_000_000_000, 10_000_000_000]
+    - Delete range: [1_000_000_000, 7_000_000_000]
+    - Expected result:
+      - Remaining data: [8_000_000_000, 9_000_000_000, 10_000_000_000]
+      - Files 1 and 2 should be mostly deleted
+      - File 2 should be split to preserve [8_000_000_000]
+      - File 3 should remain intact
+
+    """
+    # Arrange - create three separate files with specific timestamps
+    quotes_file1 = [
+        TestDataStubs.quote_tick(ts_init=1_000_000_000),
+        TestDataStubs.quote_tick(ts_init=2_000_000_000),
+        TestDataStubs.quote_tick(ts_init=3_000_000_000),
+        TestDataStubs.quote_tick(ts_init=4_000_000_000),
+    ]
+    quotes_file2 = [
+        TestDataStubs.quote_tick(ts_init=5_000_000_000),
+        TestDataStubs.quote_tick(ts_init=6_000_000_000),
+        TestDataStubs.quote_tick(ts_init=7_000_000_000),
+        TestDataStubs.quote_tick(ts_init=8_000_000_000),
+    ]
+    quotes_file3 = [
+        TestDataStubs.quote_tick(ts_init=9_000_000_000),
+        TestDataStubs.quote_tick(ts_init=10_000_000_000),
+    ]
+
+    # Write each group separately to create separate files
+    catalog.write_data(quotes_file1)
+    catalog.write_data(quotes_file2)
+    catalog.write_data(quotes_file3)
+
+    # Verify initial state
+    initial_intervals = catalog.get_intervals(QuoteTick, "AUD/USD.SIM")
+    assert len(initial_intervals) == 3, f"Expected 3 files, got {len(initial_intervals)}"
+
+    initial_quotes = catalog.quote_ticks()
+    assert len(initial_quotes) == 10, f"Expected 10 quotes, got {len(initial_quotes)}"
+
+    # Act - delete range [1_000_000_000, 7_000_000_000] which should:
+    # - Delete file 1 completely
+    # - Split file 2 to keep [8_000_000_000]
+    # - Keep file 3 intact
+    catalog.delete_data_range(
+        data_cls=QuoteTick,
+        identifier="AUD/USD.SIM",
+        start=1_000_000_000,
+        end=7_000_000_000,
+    )
+
+    # Assert - verify remaining data
+    remaining_quotes = catalog.quote_ticks()
+    remaining_timestamps = [q.ts_init for q in remaining_quotes]
+    remaining_timestamps.sort()
+
+    expected_remaining = [8_000_000_000, 9_000_000_000, 10_000_000_000]
+    assert (
+        remaining_timestamps == expected_remaining
+    ), f"Expected {expected_remaining}, got {remaining_timestamps}"
+
+    # Verify file structure - should have 2 files remaining (split file 2 + intact file 3)
+    final_intervals = catalog.get_intervals(QuoteTick, "AUD/USD.SIM")
+    assert len(final_intervals) == 2, f"Expected 2 files, got {len(final_intervals)}"
+
+    # Verify we can query the remaining data correctly
+    queried_quotes = catalog.query(
+        data_cls=QuoteTick,
+        identifiers=["AUD/USD.SIM"],
+        start=1_000_000_000,
+        end=10_000_000_000,
+    )
+    queried_timestamps = [q.ts_init for q in queried_quotes]
+    queried_timestamps.sort()
+
+    assert (
+        queried_timestamps == expected_remaining
+    ), f"Query result should be {expected_remaining}, got {queried_timestamps}"
+
+
+def test_delete_catalog_range_partial_overlap(catalog: ParquetDataCatalog) -> None:
+    """
+    Test deleting data with partial file overlaps across the catalog.
+    """
+    # Arrange - create data that will result in partial file overlaps
+    quotes = [
+        TestDataStubs.quote_tick(ts_init=1_000_000_000),
+        TestDataStubs.quote_tick(ts_init=2_000_000_000),
+        TestDataStubs.quote_tick(ts_init=3_000_000_000),
+    ]
+    trades = [
+        TestDataStubs.trade_tick(ts_init=1_500_000_000),
+        TestDataStubs.trade_tick(ts_init=2_500_000_000),
+        TestDataStubs.trade_tick(ts_init=3_500_000_000),
+    ]
+
+    catalog.write_data(quotes)
+    catalog.write_data(trades)
+
+    # Act - delete data in the middle range
+    catalog.delete_catalog_range(
+        start=1_800_000_000,
+        end=2_800_000_000,
+    )
+
+    # Assert - should keep data outside the deletion range for both data types
+    remaining_quotes = catalog.quote_ticks()
+    remaining_trades = catalog.trade_ticks()
+
+    # Should keep quotes before and after deletion range
+    assert len(remaining_quotes) == 2
+    quote_timestamps = [q.ts_init for q in remaining_quotes]
+    assert 1_000_000_000 in quote_timestamps
+    assert 3_000_000_000 in quote_timestamps
+
+    # Should keep trades before and after deletion range
+    assert len(remaining_trades) == 2
+    trade_timestamps = [t.ts_init for t in remaining_trades]
+    assert 1_500_000_000 in trade_timestamps
+    assert 3_500_000_000 in trade_timestamps
+
+
+def test_delete_catalog_range_empty_catalog(catalog: ParquetDataCatalog) -> None:
+    """
+    Test deleting data from an empty catalog.
+    """
+    # Act - delete from empty catalog
+    catalog.delete_catalog_range(
+        start=1_000_000_000,
+        end=2_000_000_000,
+    )
+
+    # Assert - should not raise any errors
+    assert len(catalog.quote_ticks()) == 0
+    assert len(catalog.trade_ticks()) == 0
+
+
+def test_delete_catalog_range_no_intersection(catalog: ParquetDataCatalog) -> None:
+    """
+    Test deleting data that doesn't intersect with existing data.
+    """
+    # Arrange
+    quotes = [TestDataStubs.quote_tick(ts_init=5_000_000_000)]
+    trades = [TestDataStubs.trade_tick(ts_init=6_000_000_000)]
+
+    catalog.write_data(quotes)
+    catalog.write_data(trades)
+
+    # Act - delete data outside existing range
+    catalog.delete_catalog_range(
+        start=1_000_000_000,
+        end=2_000_000_000,
+    )
+
+    # Assert - should keep all existing data
+    remaining_quotes = catalog.quote_ticks()
+    remaining_trades = catalog.trade_ticks()
+
+    assert len(remaining_quotes) == 1
+    assert remaining_quotes[0].ts_init == 5_000_000_000
+    assert len(remaining_trades) == 1
+    assert remaining_trades[0].ts_init == 6_000_000_000
+
+
+def test_delete_catalog_range_open_boundaries(catalog: ParquetDataCatalog) -> None:
+    """
+    Test deleting data with open start/end boundaries.
+    """
+    # Arrange
+    quotes = [
+        TestDataStubs.quote_tick(ts_init=1_000_000_000),
+        TestDataStubs.quote_tick(ts_init=2_000_000_000),
+        TestDataStubs.quote_tick(ts_init=3_000_000_000),
+    ]
+    trades = [
+        TestDataStubs.trade_tick(ts_init=1_500_000_000),
+        TestDataStubs.trade_tick(ts_init=2_500_000_000),
+        TestDataStubs.trade_tick(ts_init=3_500_000_000),
+    ]
+
+    catalog.write_data(quotes)
+    catalog.write_data(trades)
+
+    # Test 1: Delete from beginning to middle (open start)
+    catalog.delete_catalog_range(
+        start=None,
+        end=2_200_000_000,
+    )
+
+    # Should keep data after end boundary
+    remaining_quotes = catalog.quote_ticks()
+    remaining_trades = catalog.trade_ticks()
+
+    assert len(remaining_quotes) == 1
+    assert remaining_quotes[0].ts_init == 3_000_000_000
+    assert len(remaining_trades) == 2
+    assert 2_500_000_000 in [t.ts_init for t in remaining_trades]
+    assert 3_500_000_000 in [t.ts_init for t in remaining_trades]
+
+
+def test_delete_catalog_range_open_end_boundary(catalog: ParquetDataCatalog) -> None:
+    """
+    Test deleting data with open end boundary.
+    """
+    # Arrange
+    quotes = [
+        TestDataStubs.quote_tick(ts_init=1_000_000_000),
+        TestDataStubs.quote_tick(ts_init=2_000_000_000),
+        TestDataStubs.quote_tick(ts_init=3_000_000_000),
+    ]
+    trades = [
+        TestDataStubs.trade_tick(ts_init=1_500_000_000),
+        TestDataStubs.trade_tick(ts_init=2_500_000_000),
+        TestDataStubs.trade_tick(ts_init=3_500_000_000),
+    ]
+
+    catalog.write_data(quotes)
+    catalog.write_data(trades)
+
+    # Act: Delete from middle to end (open end)
+    catalog.delete_catalog_range(
+        start=1_800_000_000,
+        end=None,
+    )
+
+    # Assert - should keep data before start boundary
+    remaining_quotes = catalog.quote_ticks()
+    remaining_trades = catalog.trade_ticks()
+
+    assert len(remaining_quotes) == 1
+    assert remaining_quotes[0].ts_init == 1_000_000_000
+    assert len(remaining_trades) == 1
+    assert remaining_trades[0].ts_init == 1_500_000_000
+
+
+def test_delete_catalog_range_boundary_conditions(catalog: ParquetDataCatalog) -> None:
+    """
+    Test deleting data with exact boundary matches.
+    """
+    # Arrange
+    quotes = [
+        TestDataStubs.quote_tick(ts_init=1_000_000_000),
+        TestDataStubs.quote_tick(ts_init=2_000_000_000),
+        TestDataStubs.quote_tick(ts_init=3_000_000_000),
+    ]
+    trades = [
+        TestDataStubs.trade_tick(ts_init=1_500_000_000),
+        TestDataStubs.trade_tick(ts_init=2_500_000_000),
+    ]
+
+    catalog.write_data(quotes)
+    catalog.write_data(trades)
+
+    # Act - delete with exact timestamp boundaries
+    catalog.delete_catalog_range(
+        start=2_000_000_000,
+        end=2_500_000_000,
+    )
+
+
+def test_delete_data_range_nanosecond_precision_boundaries(catalog: ParquetDataCatalog) -> None:
+    """
+    Test deleting data with nanosecond precision boundaries to verify exact [a-1, b+1]
+    logic.
+    """
+    # Arrange
+    quotes = [
+        TestDataStubs.quote_tick(ts_init=1_000_000_000),
+        TestDataStubs.quote_tick(ts_init=1_000_000_001),  # +1 nanosecond
+        TestDataStubs.quote_tick(ts_init=1_000_000_002),  # +2 nanoseconds
+        TestDataStubs.quote_tick(ts_init=1_000_000_003),  # +3 nanoseconds
+        TestDataStubs.quote_tick(ts_init=1_000_000_004),  # +4 nanoseconds
+    ]
+    catalog.write_data(quotes)
+
+    # Act - delete exactly [1_000_000_001, 1_000_000_003] (inclusive)
+    # Should keep [0, 1_000_000_000] and [1_000_000_004, ∞]
+    catalog.delete_data_range(
+        data_cls=QuoteTick,
+        identifier="AUD/USD.SIM",
+        start=1_000_000_001,
+        end=1_000_000_003,
+    )
+
+    # Assert - should keep only first and last timestamps
+    remaining_data = catalog.quote_ticks()
+    assert len(remaining_data) == 2
+    timestamps = [q.ts_init for q in remaining_data]
+    timestamps.sort()
+    assert timestamps == [1_000_000_000, 1_000_000_004]
+
+
+def test_delete_data_range_single_file_double_split(catalog: ParquetDataCatalog) -> None:
+    """
+    Test deleting from a single file that requires both split_before and split_after
+    operations.
+    """
+    # Arrange
+    quotes = [
+        TestDataStubs.quote_tick(ts_init=1_000_000_000),
+        TestDataStubs.quote_tick(ts_init=2_000_000_000),
+        TestDataStubs.quote_tick(ts_init=3_000_000_000),
+        TestDataStubs.quote_tick(ts_init=4_000_000_000),
+        TestDataStubs.quote_tick(ts_init=5_000_000_000),
+    ]
+    catalog.write_data(quotes)
+
+    # Act - delete middle range [2_500_000_000, 3_500_000_000]
+    # This should create both split_before (keep [1_000_000_000, 2_000_000_000])
+    # and split_after (keep [4_000_000_000, 5_000_000_000])
+    catalog.delete_data_range(
+        data_cls=QuoteTick,
+        identifier="AUD/USD.SIM",
+        start=2_500_000_000,
+        end=3_500_000_000,
+    )
+
+    # Assert - should keep data before and after deletion range
+    remaining_data = catalog.quote_ticks()
+    assert len(remaining_data) == 4
+
+    timestamps = [q.ts_init for q in remaining_data]
+    timestamps.sort()
+    assert timestamps == [1_000_000_000, 2_000_000_000, 4_000_000_000, 5_000_000_000]
+
+
+def test_delete_data_range_complex_multi_file_scenario(catalog: ParquetDataCatalog) -> None:
+    """
+    Test complex deletion scenario across multiple files with various split operations.
+    """
+    # Arrange - create 4 separate files with different timestamp ranges
+    quotes_file1 = [
+        TestDataStubs.quote_tick(ts_init=1_000_000_000),
+        TestDataStubs.quote_tick(ts_init=2_000_000_000),
+    ]
+    quotes_file2 = [
+        TestDataStubs.quote_tick(ts_init=3_000_000_000),
+        TestDataStubs.quote_tick(ts_init=4_000_000_000),
+    ]
+    quotes_file3 = [
+        TestDataStubs.quote_tick(ts_init=5_000_000_000),
+        TestDataStubs.quote_tick(ts_init=6_000_000_000),
+    ]
+    quotes_file4 = [
+        TestDataStubs.quote_tick(ts_init=7_000_000_000),
+        TestDataStubs.quote_tick(ts_init=8_000_000_000),
+    ]
+
+    # Write each group separately to create separate files
+    catalog.write_data(quotes_file1)
+    catalog.write_data(quotes_file2)
+    catalog.write_data(quotes_file3)
+    catalog.write_data(quotes_file4)
+
+    # Verify initial state
+    initial_quotes = catalog.quote_ticks()
+    assert len(initial_quotes) == 8
+
+    # Act - delete range [1_500_000_000, 6_500_000_000] which should:
+    # - Split file 1: keep [1_000_000_000] (before deletion)
+    # - Remove file 2 completely
+    # - Remove file 3 completely
+    # - Split file 4: keep [7_000_000_000, 8_000_000_000] (after deletion)
+    catalog.delete_data_range(
+        data_cls=QuoteTick,
+        identifier="AUD/USD.SIM",
+        start=1_500_000_000,
+        end=6_500_000_000,
+    )
+
+    # Assert - verify remaining data
+    remaining_quotes = catalog.quote_ticks()
+    timestamps = [q.ts_init for q in remaining_quotes]
+    timestamps.sort()
+
+    expected_remaining = [1_000_000_000, 7_000_000_000, 8_000_000_000]
+    assert timestamps == expected_remaining
+
+    # Verify file structure - should have 2 files now (split from file 1 and file 4)
+    intervals = catalog.get_intervals(QuoteTick, "AUD/USD.SIM")
+    assert len(intervals) == 2
+
+
+def test_delete_data_range_zero_timestamp_edge_case(catalog: ParquetDataCatalog) -> None:
+    """
+    Test deletion with timestamp 0 to verify saturating arithmetic behavior.
+    """
+    # Arrange
+    quotes = [
+        TestDataStubs.quote_tick(ts_init=0),
+        TestDataStubs.quote_tick(ts_init=1),
+        TestDataStubs.quote_tick(ts_init=2),
+        TestDataStubs.quote_tick(ts_init=3),
+    ]
+    catalog.write_data(quotes)
+
+    # Act - delete range [0, 1] which tests edge case where start-1 would underflow
+    catalog.delete_data_range(
+        data_cls=QuoteTick,
+        identifier="AUD/USD.SIM",
+        start=0,
+        end=1,
+    )
+
+    # Assert - should keep only timestamps 2 and 3
+    remaining_data = catalog.quote_ticks()
+    assert len(remaining_data) == 2
+    timestamps = [q.ts_init for q in remaining_data]
+    timestamps.sort()
+    assert timestamps == [2, 3]

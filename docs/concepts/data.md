@@ -1134,6 +1134,45 @@ catalog.consolidate_data_by_period(
 )
 ```
 
+#### Delete Data Range
+
+Remove data within a specified time range for specific data types and instruments. This operation permanently deletes data and handles file intersections intelligently.
+
+**Delete entire catalog range:**
+
+```python
+# Delete all data within a time range across the entire catalog
+catalog.delete_catalog_range(
+    start="2024-01-01T00:00:00Z",
+    end="2024-01-02T00:00:00Z"
+)
+
+# Delete all data from the beginning up to a specific time
+catalog.delete_catalog_range(end="2024-01-01T00:00:00Z")
+```
+
+**Delete specific data type:**
+
+```python
+# Delete all quote tick data for a specific instrument
+catalog.delete_data_range(
+    data_cls=QuoteTick,
+    identifier="BTC/USD.BINANCE"
+)
+
+# Delete trade data within a specific time range
+catalog.delete_data_range(
+    data_cls=TradeTick,
+    identifier="EUR/USD.SIM",
+    start="2024-01-01T00:00:00Z",
+    end="2024-01-31T23:59:59Z"
+)
+```
+
+:::warning
+Delete operations permanently remove data and cannot be undone. Files that partially overlap the deletion range are split to preserve data outside the range.
+:::
+
 ### Feather Streaming and Conversion
 
 The catalog supports streaming data to temporary feather files during backtests, which can then be converted to permanent parquet format for efficient querying.

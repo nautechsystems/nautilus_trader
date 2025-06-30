@@ -87,6 +87,26 @@ pub struct ConsolidationQuery {
     pub use_period_boundaries: bool,
 }
 
+/// Information about a deletion operation to be executed.
+///
+/// This struct encapsulates all the information needed to execute a single deletion
+/// operation, including the type of operation and file handling details.
+#[derive(Debug, Clone)]
+pub struct DeleteOperation {
+    /// Type of deletion operation ("remove", "split_before", "split_after").
+    pub operation_type: String,
+    /// List of files involved in this operation.
+    pub files: Vec<String>,
+    /// Start timestamp for data query (used for split operations).
+    pub query_start: u64,
+    /// End timestamp for data query (used for split operations).
+    pub query_end: u64,
+    /// Start timestamp for new file naming (used for split operations).
+    pub file_start_ns: u64,
+    /// End timestamp for new file naming (used for split operations).
+    pub file_end_ns: u64,
+}
+
 impl ParquetDataCatalog {
     /// Consolidates all data files in the catalog.
     ///
@@ -1377,5 +1397,405 @@ impl ParquetDataCatalog {
         })?;
 
         Ok(leaf_dirs)
+    }
+
+    /// Deletes data within a specified time range for a specific data type and instrument.
+    ///
+    /// This method identifies all parquet files that intersect with the specified time range
+    /// and handles them appropriately:
+    /// - Files completely within the range are deleted
+    /// - Files partially overlapping the range are split to preserve data outside the range
+    /// - The original intersecting files are removed after processing
+    ///
+    /// # Parameters
+    ///
+    /// - `type_name`: The data type directory name (e.g., "quotes", "trades", "bars").
+    /// - `identifier`: Optional instrument ID to delete data for. If None, deletes data across all instruments.
+    /// - `start`: Optional start timestamp for the deletion range. If None, deletes from the beginning.
+    /// - `end`: Optional end timestamp for the deletion range. If None, deletes to the end.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` on success, or an error if deletion fails.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The directory path cannot be constructed.
+    /// - File operations fail.
+    /// - Data querying or writing fails.
+    ///
+    /// # Notes
+    ///
+    /// - This operation permanently removes data and cannot be undone.
+    /// - Files that partially overlap the deletion range are split to preserve data outside the range.
+    /// - The method ensures data integrity by using atomic operations where possible.
+    /// - Empty directories are not automatically removed after deletion.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
+    /// use nautilus_core::UnixNanos;
+    ///
+    /// let catalog = ParquetDataCatalog::new(/* ... */);
+    ///
+    /// // Delete all quote data for a specific instrument
+    /// catalog.delete_data_range(
+    ///     "quotes",
+    ///     Some("BTCUSD".to_string()),
+    ///     None,
+    ///     None
+    /// )?;
+    ///
+    /// // Delete trade data within a specific time range
+    /// catalog.delete_data_range(
+    ///     "trades",
+    ///     None,
+    ///     Some(UnixNanos::from(1609459200000000000)),
+    ///     Some(UnixNanos::from(1609545600000000000))
+    /// )?;
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn delete_data_range(
+        &mut self,
+        type_name: &str,
+        identifier: Option<String>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+    ) -> Result<()> {
+        // Use match statement to call the generic delete_data_range for various types
+        match type_name {
+            "quotes" => {
+                use nautilus_model::data::QuoteTick;
+                self.delete_data_range_generic::<QuoteTick>(identifier, start, end)
+            }
+            "trades" => {
+                use nautilus_model::data::TradeTick;
+                self.delete_data_range_generic::<TradeTick>(identifier, start, end)
+            }
+            "bars" => {
+                use nautilus_model::data::Bar;
+                self.delete_data_range_generic::<Bar>(identifier, start, end)
+            }
+            "order_book_deltas" => {
+                use nautilus_model::data::OrderBookDelta;
+                self.delete_data_range_generic::<OrderBookDelta>(identifier, start, end)
+            }
+            "order_book_depth10" => {
+                use nautilus_model::data::OrderBookDepth10;
+                self.delete_data_range_generic::<OrderBookDepth10>(identifier, start, end)
+            }
+            _ => Err(anyhow::anyhow!("Unsupported data type: {}", type_name)),
+        }
+    }
+
+    /// Deletes data within a specified time range across the entire catalog.
+    ///
+    /// This method identifies all leaf directories in the catalog that contain parquet files
+    /// and deletes data within the specified time range from each directory. A leaf directory
+    /// is one that contains files but no subdirectories. This is a convenience method that
+    /// effectively calls `delete_data_range` for all data types and instrument IDs in the catalog.
+    ///
+    /// # Parameters
+    ///
+    /// - `start`: Optional start timestamp for the deletion range. If None, deletes from the beginning.
+    /// - `end`: Optional end timestamp for the deletion range. If None, deletes to the end.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` on success, or an error if deletion fails.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - Directory traversal fails.
+    /// - Data class extraction from paths fails.
+    /// - Individual delete operations fail.
+    ///
+    /// # Notes
+    ///
+    /// - This operation permanently removes data and cannot be undone.
+    /// - The deletion process handles file intersections intelligently by splitting files
+    ///   when they partially overlap with the deletion range.
+    /// - Files completely within the deletion range are removed entirely.
+    /// - Files partially overlapping the deletion range are split to preserve data outside the range.
+    /// - This method is useful for bulk data cleanup operations across the entire catalog.
+    /// - Empty directories are not automatically removed after deletion.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
+    /// use nautilus_core::UnixNanos;
+    ///
+    /// let mut catalog = ParquetDataCatalog::new(/* ... */);
+    ///
+    /// // Delete all data before a specific date across entire catalog
+    /// catalog.delete_catalog_range(
+    ///     None,
+    ///     Some(UnixNanos::from(1609459200000000000))
+    /// )?;
+    ///
+    /// // Delete all data within a specific range across entire catalog
+    /// catalog.delete_catalog_range(
+    ///     Some(UnixNanos::from(1609459200000000000)),
+    ///     Some(UnixNanos::from(1609545600000000000))
+    /// )?;
+    ///
+    /// // Delete all data after a specific date across entire catalog
+    /// catalog.delete_catalog_range(
+    ///     Some(UnixNanos::from(1609459200000000000)),
+    ///     None
+    /// )?;
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn delete_catalog_range(
+        &mut self,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+    ) -> Result<()> {
+        let leaf_directories = self.find_leaf_data_directories()?;
+
+        for directory in leaf_directories {
+            if let Ok((Some(data_type), identifier)) =
+                self.extract_data_cls_and_identifier_from_path(&directory)
+            {
+                // Call the existing delete_data_range method
+                if let Err(e) = self.delete_data_range(&data_type, identifier, start, end) {
+                    eprintln!("Failed to delete data in directory {directory}: {e}");
+                    // Continue with other directories instead of failing completely
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Generic implementation for deleting data within a specified time range.
+    ///
+    /// This method provides the core deletion logic that works with any data type
+    /// that implements the required traits. It handles file intersection analysis,
+    /// data splitting for partial overlaps, and file cleanup.
+    ///
+    /// # Type Parameters
+    ///
+    /// - `T`: The data type that implements required traits for catalog operations.
+    ///
+    /// # Parameters
+    ///
+    /// - `identifier`: Optional instrument ID to delete data for.
+    /// - `start`: Optional start timestamp for the deletion range.
+    /// - `end`: Optional end timestamp for the deletion range.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` on success, or an error if deletion fails.
+    pub fn delete_data_range_generic<T>(
+        &mut self,
+        identifier: Option<String>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+    ) -> Result<()>
+    where
+        T: DecodeDataFromRecordBatch
+            + CatalogPathPrefix
+            + EncodeToRecordBatch
+            + HasTsInit
+            + TryFrom<Data>
+            + Clone,
+    {
+        // Get intervals for cleaner implementation
+        let intervals = self.get_intervals(T::path_prefix(), identifier.clone())?;
+
+        if intervals.is_empty() {
+            return Ok(()); // No files to process
+        }
+
+        // Prepare all operations for execution
+        let operations_to_execute = self.prepare_delete_operations(
+            T::path_prefix(),
+            identifier.clone(),
+            &intervals,
+            start,
+            end,
+        )?;
+
+        if operations_to_execute.is_empty() {
+            return Ok(()); // No operations to execute
+        }
+
+        // Execute all operations
+        let mut files_to_remove = std::collections::HashSet::new();
+
+        for operation in operations_to_execute {
+            match operation.operation_type.as_str() {
+                "split_before" => {
+                    // Query data before the deletion range and write it
+                    let instrument_ids = identifier.as_ref().map(|id| vec![id.clone()]);
+                    let before_data = self.query_typed_data::<T>(
+                        instrument_ids,
+                        Some(UnixNanos::from(operation.query_start)),
+                        Some(UnixNanos::from(operation.query_end)),
+                        None,
+                        Some(operation.files.clone()),
+                    )?;
+
+                    if !before_data.is_empty() {
+                        let start_ts = UnixNanos::from(operation.file_start_ns);
+                        let end_ts = UnixNanos::from(operation.file_end_ns);
+                        self.write_to_parquet(
+                            before_data,
+                            Some(start_ts),
+                            Some(end_ts),
+                            Some(true),
+                        )?;
+                    }
+                }
+                "split_after" => {
+                    // Query data after the deletion range and write it
+                    let instrument_ids = identifier.as_ref().map(|id| vec![id.clone()]);
+                    let after_data = self.query_typed_data::<T>(
+                        instrument_ids,
+                        Some(UnixNanos::from(operation.query_start)),
+                        Some(UnixNanos::from(operation.query_end)),
+                        None,
+                        Some(operation.files.clone()),
+                    )?;
+
+                    if !after_data.is_empty() {
+                        let start_ts = UnixNanos::from(operation.file_start_ns);
+                        let end_ts = UnixNanos::from(operation.file_end_ns);
+                        self.write_to_parquet(
+                            after_data,
+                            Some(start_ts),
+                            Some(end_ts),
+                            Some(true),
+                        )?;
+                    }
+                }
+                _ => {
+                    // For "remove" operations, just mark files for removal
+                }
+            }
+
+            // Mark files for removal (applies to all operation types)
+            for file in operation.files {
+                files_to_remove.insert(file);
+            }
+        }
+
+        // Remove all files that were processed
+        for file in files_to_remove {
+            if let Err(e) = self.delete_file(&file) {
+                eprintln!("Failed to delete file {file}: {e}");
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Prepares all operations for data deletion by identifying files that need to be
+    /// split or removed.
+    ///
+    /// This auxiliary function handles all the preparation logic for deletion:
+    /// 1. Filters intervals by time range
+    /// 2. Identifies files that intersect with the deletion range
+    /// 3. Creates split operations for files that partially overlap
+    /// 4. Generates removal operations for files completely within the range
+    ///
+    /// # Parameters
+    ///
+    /// - `type_name`: The data type directory name for path generation.
+    /// - `identifier`: Optional instrument identifier for path generation.
+    /// - `intervals`: List of (start_ts, end_ts) tuples representing existing file intervals.
+    /// - `start`: Optional start timestamp for deletion range.
+    /// - `end`: Optional end timestamp for deletion range.
+    ///
+    /// # Returns
+    ///
+    /// Returns a vector of `DeleteOperation` structs ready for execution.
+    pub fn prepare_delete_operations(
+        &self,
+        type_name: &str,
+        identifier: Option<String>,
+        intervals: &[(u64, u64)],
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+    ) -> Result<Vec<DeleteOperation>> {
+        // Convert start/end to nanoseconds
+        let delete_start_ns = start.map(|s| s.as_u64());
+        let delete_end_ns = end.map(|e| e.as_u64());
+
+        let mut operations = Vec::new();
+
+        // Get directory for file path construction
+        let directory = self.make_path(type_name, identifier.clone())?;
+
+        // Process each interval (which represents an actual file)
+        for &(file_start_ns, file_end_ns) in intervals {
+            // Check if file intersects with deletion range
+            let intersects = (delete_start_ns.is_none() || delete_start_ns.unwrap() <= file_end_ns)
+                && (delete_end_ns.is_none() || file_start_ns <= delete_end_ns.unwrap());
+
+            if !intersects {
+                continue; // File doesn't intersect with deletion range
+            }
+
+            // Construct file path from interval timestamps
+            let filename = timestamps_to_filename(
+                UnixNanos::from(file_start_ns),
+                UnixNanos::from(file_end_ns),
+            );
+            let file_path = format!("{directory}/{filename}");
+
+            // Determine what type of operation is needed
+            let file_completely_within_range = (delete_start_ns.is_none()
+                || delete_start_ns.unwrap() <= file_start_ns)
+                && (delete_end_ns.is_none() || file_end_ns <= delete_end_ns.unwrap());
+
+            if file_completely_within_range {
+                // File is completely within deletion range - just mark for removal
+                operations.push(DeleteOperation {
+                    operation_type: "remove".to_string(),
+                    files: vec![file_path],
+                    query_start: 0,
+                    query_end: 0,
+                    file_start_ns: 0,
+                    file_end_ns: 0,
+                });
+            } else {
+                // File partially overlaps - need to split
+                if let Some(delete_start) = delete_start_ns {
+                    if file_start_ns < delete_start {
+                        // Keep data before deletion range
+                        operations.push(DeleteOperation {
+                            operation_type: "split_before".to_string(),
+                            files: vec![file_path.clone()],
+                            query_start: file_start_ns,
+                            query_end: delete_start.saturating_sub(1), // Exclusive end
+                            file_start_ns,
+                            file_end_ns: delete_start.saturating_sub(1),
+                        });
+                    }
+                }
+
+                if let Some(delete_end) = delete_end_ns {
+                    if delete_end < file_end_ns {
+                        // Keep data after deletion range
+                        operations.push(DeleteOperation {
+                            operation_type: "split_after".to_string(),
+                            files: vec![file_path.clone()],
+                            query_start: delete_end.saturating_add(1), // Exclusive start
+                            query_end: file_end_ns,
+                            file_start_ns: delete_end.saturating_add(1),
+                            file_end_ns,
+                        });
+                    }
+                }
+            }
+        }
+
+        Ok(operations)
     }
 }

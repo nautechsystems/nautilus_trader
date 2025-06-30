@@ -1734,3 +1734,565 @@ fn test_reconstruct_full_uri_moved() {
     let expected = format!("{}/data/quotes/file.parquet", tmp.path().display());
     assert_eq!(reconstructed, expected);
 }
+
+// ================================================================================================
+// Delete functionality tests
+// ================================================================================================
+
+#[rstest]
+fn test_delete_data_range_complete_file_deletion() {
+    // Arrange
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+
+    // Create test data
+    let quotes = vec![
+        create_quote_tick(1_000_000_000),
+        create_quote_tick(2_000_000_000),
+    ];
+
+    // Write data
+    catalog
+        .write_to_parquet(quotes.clone(), None, None, None)
+        .unwrap();
+
+    // Verify initial state
+    let initial_data = catalog
+        .query_typed_data::<QuoteTick>(None, None, None, None, None)
+        .unwrap();
+    assert_eq!(initial_data.len(), 2);
+
+    // Act - delete all data
+    catalog
+        .delete_data_range(
+            "quotes",
+            Some("ETH/USDT.BINANCE".to_string()),
+            Some(UnixNanos::from(0)),
+            Some(UnixNanos::from(3_000_000_000)),
+        )
+        .unwrap();
+
+    // Assert - verify deletion
+    let remaining_data = catalog
+        .query_typed_data::<QuoteTick>(None, None, None, None, None)
+        .unwrap();
+    assert_eq!(remaining_data.len(), 0);
+}
+
+#[rstest]
+fn test_delete_data_range_partial_file_overlap_start() {
+    // Arrange
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+
+    // Create test data
+    let quotes = vec![
+        create_quote_tick(1_000_000_000),
+        create_quote_tick(2_000_000_000),
+        create_quote_tick(3_000_000_000),
+    ];
+
+    // Write data
+    catalog
+        .write_to_parquet(quotes.clone(), None, None, None)
+        .unwrap();
+
+    // Act - delete first part of the data
+    catalog
+        .delete_data_range(
+            "quotes",
+            Some("ETH/USDT.BINANCE".to_string()),
+            Some(UnixNanos::from(0)),
+            Some(UnixNanos::from(1_500_000_000)),
+        )
+        .unwrap();
+
+    // Assert - verify remaining data
+    let remaining_data = catalog
+        .query_typed_data::<QuoteTick>(None, None, None, None, None)
+        .unwrap();
+    assert_eq!(remaining_data.len(), 2);
+    assert_eq!(remaining_data[0].ts_init.as_u64(), 2_000_000_000);
+    assert_eq!(remaining_data[1].ts_init.as_u64(), 3_000_000_000);
+}
+
+#[rstest]
+fn test_delete_data_range_partial_file_overlap_end() {
+    // Arrange
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+
+    // Create test data
+    let quotes = vec![
+        create_quote_tick(1_000_000_000),
+        create_quote_tick(2_000_000_000),
+        create_quote_tick(3_000_000_000),
+    ];
+
+    // Write data
+    catalog
+        .write_to_parquet(quotes.clone(), None, None, None)
+        .unwrap();
+
+    // Act - delete last part of the data
+    catalog
+        .delete_data_range(
+            "quotes",
+            Some("ETH/USDT.BINANCE".to_string()),
+            Some(UnixNanos::from(2_500_000_000)),
+            Some(UnixNanos::from(4_000_000_000)),
+        )
+        .unwrap();
+
+    // Assert - verify remaining data
+    let remaining_data = catalog
+        .query_typed_data::<QuoteTick>(None, None, None, None, None)
+        .unwrap();
+    assert_eq!(remaining_data.len(), 2);
+    assert_eq!(remaining_data[0].ts_init.as_u64(), 1_000_000_000);
+    assert_eq!(remaining_data[1].ts_init.as_u64(), 2_000_000_000);
+}
+
+#[rstest]
+fn test_delete_data_range_partial_file_overlap_middle() {
+    // Arrange
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+
+    // Create test data
+    let quotes = vec![
+        create_quote_tick(1_000_000_000),
+        create_quote_tick(2_000_000_000),
+        create_quote_tick(3_000_000_000),
+        create_quote_tick(4_000_000_000),
+    ];
+
+    // Write data
+    catalog
+        .write_to_parquet(quotes.clone(), None, None, None)
+        .unwrap();
+
+    // Act - delete middle part of the data
+    catalog
+        .delete_data_range(
+            "quotes",
+            Some("ETH/USDT.BINANCE".to_string()),
+            Some(UnixNanos::from(1_500_000_000)),
+            Some(UnixNanos::from(3_500_000_000)),
+        )
+        .unwrap();
+
+    // Assert - verify remaining data
+    let remaining_data = catalog
+        .query_typed_data::<QuoteTick>(None, None, None, None, None)
+        .unwrap();
+    assert_eq!(remaining_data.len(), 2);
+    assert_eq!(remaining_data[0].ts_init.as_u64(), 1_000_000_000);
+    assert_eq!(remaining_data[1].ts_init.as_u64(), 4_000_000_000);
+}
+
+#[rstest]
+fn test_delete_data_range_no_data() {
+    // Arrange
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+
+    // Act - delete from empty catalog - should not raise any errors
+    let result = catalog.delete_data_range(
+        "quotes",
+        Some("ETH/USDT.BINANCE".to_string()),
+        Some(UnixNanos::from(1_000_000_000)),
+        Some(UnixNanos::from(2_000_000_000)),
+    );
+
+    // Assert - should succeed
+    assert!(result.is_ok());
+
+    // Verify no data
+    let remaining_data = catalog
+        .query_typed_data::<QuoteTick>(None, None, None, None, None)
+        .unwrap();
+    assert_eq!(remaining_data.len(), 0);
+}
+
+#[rstest]
+fn test_delete_data_range_no_intersection() {
+    // Arrange
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+
+    // Create test data
+    let quotes = vec![create_quote_tick(2_000_000_000)];
+
+    // Write data
+    catalog
+        .write_to_parquet(quotes.clone(), None, None, None)
+        .unwrap();
+
+    // Act - delete data outside existing range
+    catalog
+        .delete_data_range(
+            "quotes",
+            Some("ETH/USDT.BINANCE".to_string()),
+            Some(UnixNanos::from(3_000_000_000)),
+            Some(UnixNanos::from(4_000_000_000)),
+        )
+        .unwrap();
+
+    // Assert - verify all existing data remains
+    let remaining_data = catalog
+        .query_typed_data::<QuoteTick>(None, None, None, None, None)
+        .unwrap();
+    assert_eq!(remaining_data.len(), 1);
+    assert_eq!(remaining_data[0].ts_init.as_u64(), 2_000_000_000);
+}
+
+#[rstest]
+fn test_delete_catalog_range_multiple_data_types() {
+    // Arrange
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+
+    // Create data for multiple data types
+    let quotes = vec![
+        create_quote_tick(1_000_000_000),
+        create_quote_tick(2_000_000_000),
+    ];
+    let bars = vec![create_bar(1_500_000_000), create_bar(2_500_000_000)];
+
+    catalog
+        .write_to_parquet(quotes.clone(), None, None, None)
+        .unwrap();
+    catalog
+        .write_to_parquet(bars.clone(), None, None, None)
+        .unwrap();
+
+    // Verify initial state
+    let initial_quotes = catalog
+        .query_typed_data::<QuoteTick>(None, None, None, None, None)
+        .unwrap();
+    let initial_bars = catalog
+        .query_typed_data::<Bar>(None, None, None, None, None)
+        .unwrap();
+    assert_eq!(initial_quotes.len(), 2);
+    assert_eq!(initial_bars.len(), 2);
+
+    // Act - delete data across all data types in a specific range
+    catalog
+        .delete_catalog_range(
+            Some(UnixNanos::from(1_200_000_000)),
+            Some(UnixNanos::from(2_200_000_000)),
+        )
+        .unwrap();
+
+    // Assert - verify deletion from both data types within the range
+    let remaining_quotes = catalog
+        .query_typed_data::<QuoteTick>(None, None, None, None, None)
+        .unwrap();
+    let remaining_bars = catalog
+        .query_typed_data::<Bar>(None, None, None, None, None)
+        .unwrap();
+
+    // Should keep quotes outside the deletion range
+    assert_eq!(remaining_quotes.len(), 1);
+    assert_eq!(remaining_quotes[0].ts_init.as_u64(), 1_000_000_000);
+
+    // Should keep bars outside the deletion range
+    assert_eq!(remaining_bars.len(), 1);
+    assert_eq!(remaining_bars[0].ts_init.as_u64(), 2_500_000_000);
+}
+
+#[rstest]
+fn test_delete_catalog_range_complete_deletion() {
+    // Arrange
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+
+    // Create data for multiple data types
+    let quotes = vec![create_quote_tick(1_000_000_000)];
+    let bars = vec![create_bar(2_000_000_000)];
+
+    catalog
+        .write_to_parquet(quotes.clone(), None, None, None)
+        .unwrap();
+    catalog
+        .write_to_parquet(bars.clone(), None, None, None)
+        .unwrap();
+
+    // Verify initial state
+    assert_eq!(
+        catalog
+            .query_typed_data::<QuoteTick>(None, None, None, None, None)
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        catalog
+            .query_typed_data::<Bar>(None, None, None, None, None)
+            .unwrap()
+            .len(),
+        1
+    );
+
+    // Act - delete all data
+    catalog
+        .delete_catalog_range(
+            Some(UnixNanos::from(0)),
+            Some(UnixNanos::from(3_000_000_000)),
+        )
+        .unwrap();
+
+    // Assert - should have no data left
+    assert_eq!(
+        catalog
+            .query_typed_data::<QuoteTick>(None, None, None, None, None)
+            .unwrap()
+            .len(),
+        0
+    );
+    assert_eq!(
+        catalog
+            .query_typed_data::<Bar>(None, None, None, None, None)
+            .unwrap()
+            .len(),
+        0
+    );
+}
+
+#[rstest]
+fn test_delete_catalog_range_empty_catalog() {
+    // Arrange
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+
+    // Act - delete from empty catalog
+    let result = catalog.delete_catalog_range(
+        Some(UnixNanos::from(1_000_000_000)),
+        Some(UnixNanos::from(2_000_000_000)),
+    );
+
+    // Assert - should not raise any errors
+    assert!(result.is_ok());
+    assert_eq!(
+        catalog
+            .query_typed_data::<QuoteTick>(None, None, None, None, None)
+            .unwrap()
+            .len(),
+        0
+    );
+    assert_eq!(
+        catalog
+            .query_typed_data::<Bar>(None, None, None, None, None)
+            .unwrap()
+            .len(),
+        0
+    );
+}
+
+#[rstest]
+fn test_delete_catalog_range_open_boundaries() {
+    // Arrange
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+
+    // Create test data
+    let quotes = vec![
+        create_quote_tick(1_000_000_000),
+        create_quote_tick(2_000_000_000),
+        create_quote_tick(3_000_000_000),
+    ];
+    let bars = vec![
+        create_bar(1_500_000_000),
+        create_bar(2_500_000_000),
+        create_bar(3_500_000_000),
+    ];
+
+    catalog
+        .write_to_parquet(quotes.clone(), None, None, None)
+        .unwrap();
+    catalog
+        .write_to_parquet(bars.clone(), None, None, None)
+        .unwrap();
+
+    // Act - delete from beginning to middle (open start)
+    catalog
+        .delete_catalog_range(None, Some(UnixNanos::from(2_200_000_000)))
+        .unwrap();
+
+    // Assert - should keep data after end boundary
+    let remaining_quotes = catalog
+        .query_typed_data::<QuoteTick>(None, None, None, None, None)
+        .unwrap();
+    let remaining_bars = catalog
+        .query_typed_data::<Bar>(None, None, None, None, None)
+        .unwrap();
+
+    assert_eq!(remaining_quotes.len(), 1);
+    assert_eq!(remaining_quotes[0].ts_init.as_u64(), 3_000_000_000);
+    assert_eq!(remaining_bars.len(), 2);
+    assert!(
+        remaining_bars
+            .iter()
+            .any(|b| b.ts_init.as_u64() == 2_500_000_000)
+    );
+    assert!(
+        remaining_bars
+            .iter()
+            .any(|b| b.ts_init.as_u64() == 3_500_000_000)
+    );
+}
+
+#[rstest]
+fn test_prepare_delete_operations_basic() {
+    // Arrange
+    let (_temp_dir, catalog) = create_temp_catalog();
+
+    // Test basic delete operation preparation
+    let intervals = vec![(1000, 5000), (6000, 10000)];
+
+    let operations = catalog
+        .prepare_delete_operations(
+            "quotes",
+            Some("ETH/USDT.BINANCE".to_string()),
+            &intervals,
+            Some(UnixNanos::from(2000)),
+            Some(UnixNanos::from(8000)),
+        )
+        .unwrap();
+
+    // Should have operations for handling the deletion
+    assert!(!operations.is_empty());
+
+    // Verify operation types are valid
+    for operation in &operations {
+        assert!(matches!(
+            operation.operation_type.as_str(),
+            "remove" | "split_before" | "split_after"
+        ));
+    }
+}
+
+#[rstest]
+fn test_prepare_delete_operations_no_intersection() {
+    // Arrange
+    let (_temp_dir, catalog) = create_temp_catalog();
+
+    // Test with no intersection between intervals and deletion range
+    let intervals = vec![(1000, 2000)];
+
+    let operations = catalog
+        .prepare_delete_operations(
+            "quotes",
+            Some("ETH/USDT.BINANCE".to_string()),
+            &intervals,
+            Some(UnixNanos::from(5000)),
+            Some(UnixNanos::from(6000)),
+        )
+        .unwrap();
+
+    // Should have no operations since no intersection
+    assert!(operations.is_empty());
+}
+
+#[rstest]
+fn test_delete_data_range_nanosecond_precision_boundaries() {
+    // Arrange
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+
+    // Create test data with precise nanosecond timestamps
+    let quotes = vec![
+        create_quote_tick(1_000_000_000),
+        create_quote_tick(1_000_000_001), // +1 nanosecond
+        create_quote_tick(1_000_000_002), // +2 nanoseconds
+        create_quote_tick(1_000_000_003), // +3 nanoseconds
+    ];
+
+    catalog
+        .write_to_parquet(quotes.clone(), None, None, None)
+        .unwrap();
+
+    // Act - delete exactly the middle two timestamps [1_000_000_001, 1_000_000_002]
+    catalog
+        .delete_data_range(
+            "quotes",
+            Some("ETH/USDT.BINANCE".to_string()),
+            Some(UnixNanos::from(1_000_000_001)),
+            Some(UnixNanos::from(1_000_000_002)),
+        )
+        .unwrap();
+
+    // Assert - should keep only first and last timestamps
+    let remaining_data = catalog
+        .query_typed_data::<QuoteTick>(None, None, None, None, None)
+        .unwrap();
+    assert_eq!(remaining_data.len(), 2);
+    assert_eq!(remaining_data[0].ts_init.as_u64(), 1_000_000_000);
+    assert_eq!(remaining_data[1].ts_init.as_u64(), 1_000_000_003);
+}
+
+#[rstest]
+fn test_delete_data_range_single_file_double_split() {
+    // Arrange
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+
+    // Create test data in a single file that will need both split_before and split_after
+    let quotes = vec![
+        create_quote_tick(1_000_000_000),
+        create_quote_tick(2_000_000_000),
+        create_quote_tick(3_000_000_000),
+        create_quote_tick(4_000_000_000),
+        create_quote_tick(5_000_000_000),
+    ];
+
+    catalog
+        .write_to_parquet(quotes.clone(), None, None, None)
+        .unwrap();
+
+    // Act - delete middle range [2_500_000_000, 3_500_000_000]
+    // This should create both split_before and split_after operations
+    catalog
+        .delete_data_range(
+            "quotes",
+            Some("ETH/USDT.BINANCE".to_string()),
+            Some(UnixNanos::from(2_500_000_000)),
+            Some(UnixNanos::from(3_500_000_000)),
+        )
+        .unwrap();
+
+    // Assert - should keep data before and after deletion range
+    let remaining_data = catalog
+        .query_typed_data::<QuoteTick>(None, None, None, None, None)
+        .unwrap();
+    assert_eq!(remaining_data.len(), 4);
+
+    let timestamps: Vec<u64> = remaining_data.iter().map(|q| q.ts_init.as_u64()).collect();
+    assert_eq!(
+        timestamps,
+        vec![1_000_000_000, 2_000_000_000, 4_000_000_000, 5_000_000_000]
+    );
+}
+
+#[rstest]
+fn test_delete_data_range_saturating_arithmetic_edge_cases() {
+    // Arrange
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+
+    // Test edge case with timestamp 0 and 1
+    let quotes = vec![
+        create_quote_tick(0),
+        create_quote_tick(1),
+        create_quote_tick(2),
+    ];
+
+    catalog
+        .write_to_parquet(quotes.clone(), None, None, None)
+        .unwrap();
+
+    // Act - delete range [0, 1] which tests saturating_sub(1) on timestamp 0
+    catalog
+        .delete_data_range(
+            "quotes",
+            Some("ETH/USDT.BINANCE".to_string()),
+            Some(UnixNanos::from(0)),
+            Some(UnixNanos::from(1)),
+        )
+        .unwrap();
+
+    // Assert - should keep only timestamp 2
+    let remaining_data = catalog
+        .query_typed_data::<QuoteTick>(None, None, None, None, None)
+        .unwrap();
+    assert_eq!(remaining_data.len(), 1);
+    assert_eq!(remaining_data[0].ts_init.as_u64(), 2);
+}
