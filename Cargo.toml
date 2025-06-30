@@ -149,7 +149,7 @@ pyo3-async-runtimes = { version = "0.25.0", default-features = false, features =
   "tokio-runtime",
 ] }
 rand = { version = "0.9.1", default-features = false, features = ["std", "thread_rng"] }
-redis = { version = "0.32.2", features = [
+redis = { version = "0.32.3", features = [
   "connection-manager",
   "keep-alive",
   "sentinel",
@@ -160,7 +160,7 @@ redis = { version = "0.32.2", features = [
   "tls-rustls-webpki-roots",
 ] }
 regex = { version = "1.11.1", default-features = false, features = ["std", "perf"] }
-reqwest = { version = "0.12.20", default-features = false, features = [
+reqwest = { version = "0.12.21", default-features = false, features = [
   "blocking",
   "rustls-tls",
   "stream",
