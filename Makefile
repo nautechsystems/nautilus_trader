@@ -268,11 +268,11 @@ docker-push-jupyter:  #-- Push JupyterLab Docker image to registry
 
 .PHONY: start-services
 start-services:  #-- Start development services with docker-compose
-	docker-compose -f .docker/docker-compose.yml up -d
+	docker compose -f .docker/docker-compose.yml up -d
 
 .PHONY: stop-services
 stop-services:  #-- Stop development services
-	docker-compose -f .docker/docker-compose.yml down
+	docker compose -f .docker/docker-compose.yml down
 
 #== Python Testing
 
