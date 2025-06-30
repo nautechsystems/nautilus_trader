@@ -466,7 +466,13 @@ impl Clock for TestClock {
         // When alert time equals current time, fire immediately
         let fire_immediately = alert_time_ns == ts_now;
 
-        let timer = TestTimer::new(name, interval_ns, ts_now, Some(alert_time_ns), fire_immediately);
+        let timer = TestTimer::new(
+            name,
+            interval_ns,
+            ts_now,
+            Some(alert_time_ns),
+            fire_immediately,
+        );
         self.timers.insert(name, timer);
 
         Ok(())
