@@ -5,6 +5,7 @@ Released on TBD (UTC).
 ### Enhancements
 - Added `graceful_shutdown_on_exception` config option for live engines (default `False` to retain intended hard crash on unexpected system exceptions)
 - Added support for data download during backtest (#2652), thanks @faysou
+- Added delete data range to catalog (#2744), thanks @faysou
 - Added consolidate catalog by period (#2727), thanks @faysou
 - Added `fire_immediately` flag parameter for timers where a time event will be fired at the `start` instant and then every interval thereafter (default `False` to retain current behavior) (#2600), thanks for the idea @stastnypremysl
 - Added `time_bars_build_delay` config option for `DataEngineConfig` (#2676), thanks @faysou
@@ -47,6 +48,7 @@ Released on TBD (UTC).
 - Improved implementation, validations and testing for Rust instruments (#2723, #2733), thanks @nicolad
 - Improved `Currency` equality to use `strcmp` to avoid C pointer comparison issues with `ustr` string interning
 - Improved unsubscribe cleanup(s) for Bybit adapter
+- Improved `Makefile` to be self-documenting (#2741), thanks @sunlei
 - Refactored IB adapter (#2647), thanks @faysou
 - Refactored data catalog (#2652, #2740), thanks @faysou
 - Refined Rust data catalog (#2734), thanks @faysou
@@ -88,6 +90,7 @@ Released on TBD (UTC).
 - Fixed instrument message decoding when no `exchange` value for Databento US equities
 - Fixed fetching single-instrument trading fees for `Binance`, thanks @petioptrv
 - Fixed IB-TWS connection issue with international languages (#2726), thanks @DracheShiki
+- Fix Bybit Unknown Error (#2742), thanks @DeevsDeevs
 - Fixed margin balance parsing for Bybit
 - Restore task error logs for IBKR (#2716), thanks @bartlaw
 
