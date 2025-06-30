@@ -1,50 +1,77 @@
+# Variables
+# -----------------------------------------------------------------------------
 PROJECT?=nautechsystems/nautilus_trader
 REGISTRY?=ghcr.io/
 IMAGE?=$(REGISTRY)$(PROJECT)
 GIT_TAG:=$(shell git rev-parse --abbrev-ref HEAD)
 IMAGE_FULL?=$(IMAGE):$(GIT_TAG)
 
+V = 0  # 0 / 1 - verbose mode
+Q = $(if $(filter 1,$V),,@) # Quiet mode, suppress command output
+M = $(shell printf "$(BLUE)>$(RESET)") # Message prefix for commands
+
+# > Colors
+RED    := $(shell tput -Txterm setaf 1)
+GREEN  := $(shell tput -Txterm setaf 2)
+YELLOW := $(shell tput -Txterm setaf 3)
+BLUE   := $(shell tput -Txterm setaf 4)
+PURPLE := $(shell tput -Txterm setaf 5)
+CYAN   := $(shell tput -Txterm setaf 6)
+GRAY   := $(shell tput -Txterm setaf 7)
+RESET  := $(shell tput -Txterm sgr0)
+
+.DEFAULT_GOAL := help
+
+#== Installation
+
 .PHONY: install
-install:
-	BUILD_MODE=release uv sync --active --all-groups --all-extras --verbose
+install:  #-- Install in release mode with all dependencies and extras
+	$(info $(M) Installing Nautilus Trader in release mode with all dependencies and extras...)
+	$Q BUILD_MODE=release uv sync --active --all-groups --all-extras --verbose
 
 .PHONY: install-debug
-install-debug:
-	BUILD_MODE=debug uv sync --active --all-groups --all-extras --verbose
+install-debug:  #-- Install in debug mode for development
+	$(info $(M) Installing Nautilus Trader in debug mode for development...)
+	$Q BUILD_MODE=debug uv sync --active --all-groups --all-extras --verbose
 
 .PHONY: install-just-deps
-install-just-deps:
-	uv sync --active --all-groups --all-extras --no-install-package nautilus_trader
+install-just-deps:  #-- Install dependencies only without building the package
+	$(info $(M) Installing dependencies only without building the package...)
+	$Q uv sync --active --all-groups --all-extras --no-install-package nautilus_trader
+
+#== Build
 
 .PHONY: build
-build:
+build:  #-- Build the package in release mode
 	BUILD_MODE=release uv run --active --no-sync build.py
 
 .PHONY: build-debug
-build-debug:
+build-debug:  #-- Build the package in debug mode (recommended for development)
 	BUILD_MODE=debug uv run --active --no-sync build.py
 
 .PHONY: build-wheel
-build-wheel:
+build-wheel:  #-- Build wheel distribution in release mode
 	BUILD_MODE=release uv build --wheel
 
 .PHONY: build-wheel-debug
-build-wheel-debug:
+build-wheel-debug:  #-- Build wheel distribution in debug mode
 	BUILD_MODE=debug uv build --wheel
 
 .PHONY: build-dry-run
-build-dry-run:
+build-dry-run:  #-- Show build commands without executing them
 	DRY_RUN=true uv run --active --no-sync build.py
 
+#== Clean
+
 .PHONY: clean
-clean: clean-build-artifacts clean-caches clean-builds
+clean: clean-build-artifacts clean-caches clean-builds  #-- Clean all build artifacts, caches, and builds
 
 .PHONY: clean-builds
-clean-builds:
-		rm -rf dist target 2>/dev/null || true
+clean-builds:  #-- Clean distribution and target directories
+	$Q rm -rf dist target 2>/dev/null || true
 
 .PHONY: clean-build-artifacts
-clean-build-artifacts:
+clean-build-artifacts:  #-- Clean compiled artifacts (.so, .dll, .pyc files)
 	@echo "Cleaning build artifacts..."
 	# Clean Rust build artifacts (keep final libraries)
 	find target -name "*.rlib" -delete 2>/dev/null || true
@@ -59,120 +86,130 @@ clean-build-artifacts:
 	rm -rf .coverage .benchmarks 2>/dev/null || true
 
 .PHONY: clean-caches
-clean-caches:
+clean-caches:  #-- Clean pytest, mypy, ruff, uv, and cargo caches
 	rm -rf .pytest_cache .mypy_cache .ruff_cache 2>/dev/null || true
 	-uv cache prune
 	-cargo clean
 
 .PHONY: distclean
-distclean: clean
+distclean: clean  #-- Nuclear clean - remove all untracked files (requires FORCE=1)
 	@[ "$$FORCE" = 1 ] || { echo "Pass FORCE=1 to really nuke"; exit 1; }
 	@echo "⚠️  nuking working tree (git clean -fxd)…"
 	git clean -fxd -e tests/test_data/large/ -e .venv
 
+#== Code Quality
+
 .PHONY: format
-format:
+format:  #-- Format Rust code using nightly formatter
 	cargo +nightly fmt
 
 .PHONY: pre-commit
-pre-commit:
+pre-commit:  #-- Run all pre-commit hooks on all files
 	uv run --active --no-sync pre-commit run --all-files
 
 .PHONY: ruff
-ruff:
+ruff:  #-- Run ruff linter with automatic fixes
 	uv run --active --no-sync ruff check . --fix
 
-.PHONY: outdated
-outdated:
-	cargo outdated
-
-.PHONY: update cargo-update
-update: cargo-update
-	uv self update
-	uv lock --upgrade
-
-.PHONY: docs
-docs: docs-python docs-rust
-
-.PHONY: docs-python
-docs-python:
-	BUILD_MODE=debug uv run --active sphinx-build -M markdown ./docs/api_reference ./api_reference
-
-.PHONY: docs-rust
-docs-rust:
-	RUSTDOCFLAGS="--enable-index-page -Zunstable-options" cargo +nightly doc --all-features --no-deps --workspace
-
-.PHONY: docsrs-check
-docsrs-check:
-	RUSTDOCFLAGS="--cfg docsrs -D warnings" cargo hack --workspace doc --no-deps --all-features
-
 .PHONY: clippy
-clippy:
+clippy:  #-- Run Rust clippy linter with fixes
 	cargo clippy --fix --all-targets --all-features -- -D warnings -W clippy::pedantic -W clippy::nursery -W clippy::unwrap_used -W clippy::expect_used
 
 .PHONY: clippy-nightly
-clippy-nightly:
+clippy-nightly:  #-- Run Rust clippy linter with nightly toolchain
 	cargo +nightly clippy --fix --all-targets --all-features --allow-dirty --allow-staged -- -D warnings -W clippy::pedantic -W clippy::nursery -W clippy::unwrap_used -W clippy::expect_used
 
+#== Dependencies
+
+.PHONY: outdated
+outdated:  #-- Check for outdated Rust dependencies
+	cargo outdated
+
+.PHONY: update cargo-update
+update: cargo-update  #-- Update all dependencies (uv and cargo)
+	uv self update
+	uv lock --upgrade
+
+#== Documentation
+
+.PHONY: docs
+docs: docs-python docs-rust  #-- Build all documentation (Python and Rust)
+
+.PHONY: docs-python
+docs-python:  #-- Build Python documentation with Sphinx
+	BUILD_MODE=debug uv run --active sphinx-build -M markdown ./docs/api_reference ./api_reference
+
+.PHONY: docs-rust
+docs-rust:  #-- Build Rust documentation with cargo doc
+	RUSTDOCFLAGS="--enable-index-page -Zunstable-options" cargo +nightly doc --all-features --no-deps --workspace
+
+.PHONY: docsrs-check
+docsrs-check:  #-- Check documentation builds for docs.rs compatibility
+	RUSTDOCFLAGS="--cfg docsrs -D warnings" cargo hack --workspace doc --no-deps --all-features
+
+#== Rust Development
+
 .PHONY: cargo-build
-cargo-build:
+cargo-build:  #-- Build Rust crates in release mode
 	cargo build --release --all-features
 
 .PHONY: cargo-update
-cargo-update:
+cargo-update:  #-- Update Rust dependencies and install test tools
 	cargo update \
 	&& cargo install cargo-nextest \
 	&& cargo install cargo-llvm-cov
 
 .PHONY:
-cargo-check:
+cargo-check:  #-- Check Rust code without building
 	cargo check --workspace --all-features
 
 .PHONY: check-nextest
-check-nextest:
+check-nextest:  #-- Verify cargo-nextest is installed
 	@if ! cargo nextest --version >/dev/null 2>&1; then \
 		echo "cargo-nextest is not installed. You can install it using 'cargo install cargo-nextest'"; \
 		exit 1; \
 	fi
 
+#== Rust Testing
+
 .PHONY: cargo-test
 cargo-test: RUST_BACKTRACE=1
 cargo-test: HIGH_PRECISION=true
 cargo-test: check-nextest
-cargo-test:
+cargo-test:  #-- Run all Rust tests with high precision features
 	cargo nextest run --workspace --features "ffi,python,high-precision,defi" --no-fail-fast --cargo-profile nextest
 
 .PHONY: cargo-test-lib
 cargo-test: RUST_BACKTRACE=1
 cargo-test: HIGH_PRECISION=true
 cargo-test-lib: check-nextest
-cargo-test-lib:
+cargo-test-lib:  #-- Run Rust library tests only with high precision
 	cargo nextest run --lib --workspace --no-default-features --features "ffi,python,high-precision,defi,stubs" --no-fail-fast --cargo-profile nextest
 
 .PHONY: cargo-test-standard-precision
 cargo-test-standard-precision: RUST_BACKTRACE=1
 cargo-test-standard-precision: HIGH_PRECISION=false
 cargo-test-standard-precision: check-nextest
-cargo-test-standard-precision:
+cargo-test-standard-precision:  #-- Run Rust tests with standard precision (64-bit)
 	cargo nextest run --workspace --features "ffi,python" --no-fail-fast --cargo-profile nextest
 
 .PHONY: cargo-test-debug
 cargo-test-debug: RUST_BACKTRACE=1
 cargo-test-debug: HIGH_PRECISION=true
 cargo-test-debug: check-nextest
-cargo-test-debug:
+cargo-test-debug:  #-- Run Rust tests in debug mode with high precision
 	cargo nextest run --workspace --features "ffi,python,high-precision,defi" --no-fail-fast
 
 .PHONY: cargo-test-standard-precision-debug
 cargo-test-standard-precision-debug: RUST_BACKTRACE=1
 cargo-test-standard-precision-debug: HIGH_PRECISION=false
 cargo-test-standard-precision-debug: check-nextest
-cargo-test-standard-precision-debug:
+cargo-test-standard-precision-debug:  #-- Run Rust tests in debug mode with standard precision
 	cargo nextest run --workspace --features "ffi,python"
 
 .PHONY: cargo-test-coverage
 cargo-test-coverage: check-nextest
-cargo-test-coverage:
+cargo-test-coverage:  #-- Run Rust tests with coverage reporting
 	@if ! cargo llvm-cov --version >/dev/null 2>&1; then \
 		echo "cargo-llvm-cov is not installed. You can install it using 'cargo install cargo-llvm-cov'"; \
 		exit 1; \
@@ -195,54 +232,100 @@ cargo-test-coverage:
 cargo-test-crate-%: RUST_BACKTRACE=1
 cargo-test-crate-%: HIGH_PRECISION=true
 cargo-test-crate-%: check-nextest
-cargo-test-crate-%:
+cargo-test-crate-%:  #-- Run tests for a specific Rust crate (usage: make cargo-test-crate-<crate_name>)
 	cargo nextest run --lib --no-default-features --all-features --no-fail-fast --cargo-profile nextest -p $*
 
 .PHONY: cargo-bench
-cargo-bench:
+cargo-bench:  #-- Run Rust benchmarks
 	cargo bench
 
 .PHONY: cargo-doc
-cargo-doc:
+cargo-doc:  #-- Generate Rust documentation
 	cargo doc
 
+#== Docker
+
 .PHONY: docker-build
-docker-build: clean
+docker-build: clean  #-- Build Docker image for NautilusTrader
 	docker pull $(IMAGE_FULL) || docker pull $(IMAGE):nightly || true
 	docker build -f .docker/nautilus_trader.dockerfile --platform linux/x86_64 -t $(IMAGE_FULL) .
 
 .PHONY: docker-build-force
-docker-build-force:
+docker-build-force:  #-- Force rebuild Docker image without cache
 	docker build --no-cache -f .docker/nautilus_trader.dockerfile -t $(IMAGE_FULL) .
 
 .PHONY: docker-push
-docker-push:
+docker-push:  #-- Push Docker image to registry
 	docker push $(IMAGE_FULL)
 
 .PHONY: docker-build-jupyter
-docker-build-jupyter:
+docker-build-jupyter:  #-- Build JupyterLab Docker image
 	docker build --build-arg GIT_TAG=$(GIT_TAG) -f .docker/jupyterlab.dockerfile --platform linux/x86_64 -t $(IMAGE):jupyter .
 
 .PHONY: docker-push-jupyter
-docker-push-jupyter:
+docker-push-jupyter:  #-- Push JupyterLab Docker image to registry
 	docker push $(IMAGE):jupyter
 
 .PHONY: start-services
-start-services:
+start-services:  #-- Start development services with docker-compose
 	docker-compose -f .docker/docker-compose.yml up -d
 
 .PHONY: stop-services
-stop-services:
+stop-services:  #-- Stop development services
 	docker-compose -f .docker/docker-compose.yml down
 
+#== Python Testing
+
 .PHONY: pytest
-pytest:
+pytest:  #-- Run Python tests with pytest
 	uv run --active --no-sync pytest --new-first --failed-first
 
 .PHONY: test-performance
-test-performance:
+test-performance:  #-- Run performance tests with codspeed benchmarking
 	uv run --active --no-sync pytest tests/performance_tests --benchmark-disable-gc --codspeed
 
+#== CLI Tools
+
 .PHONY: install-cli
-install-cli:
+install-cli:  #-- Install Nautilus CLI tool from source
 	cargo install --path crates/cli --bin nautilus --force
+
+#== Internal
+
+.PHONY: help
+help:  #-- Show this help message and exit
+	@printf "Nautilus Trader Makefile\n\n"
+	@printf "$(GREEN)Usage:$(RESET) make $(CYAN)<target>$(RESET)\n\n"
+	@printf "$(GRAY)Tips: Use $(CYAN)make <target> V=1$(GRAY) for verbose output$(RESET)\n\n"
+
+	@printf "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣴⣶⡟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n"
+	@printf "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣰⣾⣿⣿⣿⠀⢸⣿⣿⣿⣿⣶⣶⣤⣀⠀⠀⠀⠀⠀\n"
+	@printf "⠀⠀⠀⠀⠀⠀⢀⣴⡇⢀⣾⣿⣿⣿⣿⣿⠀⣾⣿⣿⣿⣿⣿⣿⣿⠿⠓⠀⠀⠀⠀\n"
+	@printf "⠀⠀⠀⠀⠀⣰⣿⣿⡀⢸⣿⣿⣿⣿⣿⣿⠀⣿⣿⣿⣿⣿⣿⠟⠁⣠⣄⠀⠀⠀⠀\n"
+	@printf "⠀⠀⠀⠀⢠⣿⣿⣿⣇⠀⢿⣿⣿⣿⣿⣿⠀⢻⣿⣿⣿⡿⢃⣠⣾⣿⣿⣧⡀⠀⠀\n"
+	@printf "⠀⠀⠀⠠⣾⣿⣿⣿⣿⣿⣧⠈⠋⢀⣴⣧⠀⣿⡏⢠⡀⢸⣿⣿⣿⣿⣿⣿⣿⡇⠀\n"
+	@printf "⠀⠀⠀⣀⠙⢿⣿⣿⣿⣿⣿⠇⢠⣿⣿⣿⡄⠹⠃⠼⠃⠈⠉⠛⠛⠛⠛⠛⠻⠇⠀\n"
+	@printf "⠀⠀⢸⡟⢠⣤⠉⠛⠿⢿⣿⠀⢸⣿⡿⠋⣠⣤⣄⠀⣾⣿⣿⣶⣶⣶⣦⡄⠀⠀⠀\n"
+	@printf "⠀⠀⠸⠀⣾⠏⣸⣷⠂⣠⣤⠀⠘⢁⣴⣾⣿⣿⣿⡆⠘⣿⣿⣿⣿⣿⣿⠀⠀⠀⠀\n"
+	@printf "⠀⠀⠀⠀⠛⠀⣿⡟⠀⢻⣿⡄⠸⣿⣿⣿⣿⣿⣿⣿⡀⠘⣿⣿⣿⣿⠟⠀⠀⠀⠀\n"
+	@printf "⠀⠀⠀⠀⠀⠀⣿⠇⠀⠀⢻⡿⠀⠈⠻⣿⣿⣿⣿⣿⡇⠀⢹⣿⠿⠋⠀⠀⠀⠀⠀\n"
+	@printf "⠀⠀⠀⠀⠀⠀⠋⠀⠀⠀⡘⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠁⠀⠀⠀⠀⠀⠀⠀\n"
+
+	@awk '\
+	BEGIN { FS = ":.*#--"; target_maxlen = 0 } \
+	/^[$$()% a-zA-Z_-]+:.*?#--/ { \
+		if (length($$1) > target_maxlen) target_maxlen = length($$1); \
+		targets[NR] = $$1; descriptions[NR] = $$2; \
+	} \
+	/^#==/ { \
+		groups[NR] = substr($$0, 5); \
+	} \
+	END { \
+		for (i = 1; i <= NR; i++) { \
+			if (groups[i]) { \
+				printf "\n$(GREEN)%s:$(RESET)\n", groups[i]; \
+			} else if (targets[i]) { \
+				printf "  $(CYAN)%-*s$(RESET) %s\n", target_maxlen, targets[i], descriptions[i]; \
+			} \
+		} \
+	}' $(MAKEFILE_LIST)
