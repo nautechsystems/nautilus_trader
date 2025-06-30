@@ -475,7 +475,12 @@ class BybitWebSocketClient:
         if future is not None:
             try:
                 order_resp: BybitWsOrderResponseMsg = self._decoder_ws_order_resp_map[msg.op].decode(raw)  # type: ignore[attr-defined]
-                future.set_result(order_resp)
+                if order_resp.retCode == 0:
+                    future.set_result(order_resp)
+                else:
+                    future.set_exception(
+                        BybitError(code=order_resp.retCode, message=order_resp.retMsg),
+                    )
             except Exception as e:
                 self._log.exception(f"Failed to decode order ack response {raw!r}", e)
         else:
