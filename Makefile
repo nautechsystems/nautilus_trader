@@ -293,7 +293,7 @@ install-cli:  #-- Install Nautilus CLI tool from source
 #== Internal
 
 .PHONY: help
-help:  #-- Show this help message and exit.
+help:  #-- Show this help message and exit
 	@printf "Nautilus Trader Makefile\n\n"
 	@printf "$(GREEN)Usage:$(RESET) make $(CYAN)<target>$(RESET)\n\n"
 	@printf "$(GRAY)Tips: Use $(CYAN)make <target> V=1$(GRAY) for verbose output$(RESET)\n\n"
