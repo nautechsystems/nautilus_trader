@@ -93,7 +93,7 @@ pub struct ConsolidationQuery {
 /// operation, including the type of operation and file handling details.
 #[derive(Debug, Clone)]
 pub struct DeleteOperation {
-    /// Type of deletion operation ("remove", "split_before", "split_after").
+    /// Type of deletion operation ("remove", "`split_before`", "`split_after`").
     pub operation_type: String,
     /// List of files involved in this operation.
     pub files: Vec<String>,
@@ -1708,7 +1708,7 @@ impl ParquetDataCatalog {
     ///
     /// - `type_name`: The data type directory name for path generation.
     /// - `identifier`: Optional instrument identifier for path generation.
-    /// - `intervals`: List of (start_ts, end_ts) tuples representing existing file intervals.
+    /// - `intervals`: List of (`start_ts`, `end_ts`) tuples representing existing file intervals.
     /// - `start`: Optional start timestamp for deletion range.
     /// - `end`: Optional end timestamp for deletion range.
     ///
@@ -1730,7 +1730,7 @@ impl ParquetDataCatalog {
         let mut operations = Vec::new();
 
         // Get directory for file path construction
-        let directory = self.make_path(type_name, identifier.clone())?;
+        let directory = self.make_path(type_name, identifier)?;
 
         // Process each interval (which represents an actual file)
         for &(file_start_ns, file_end_ns) in intervals {
@@ -1766,32 +1766,32 @@ impl ParquetDataCatalog {
                 });
             } else {
                 // File partially overlaps - need to split
-                if let Some(delete_start) = delete_start_ns {
-                    if file_start_ns < delete_start {
-                        // Keep data before deletion range
-                        operations.push(DeleteOperation {
-                            operation_type: "split_before".to_string(),
-                            files: vec![file_path.clone()],
-                            query_start: file_start_ns,
-                            query_end: delete_start.saturating_sub(1), // Exclusive end
-                            file_start_ns,
-                            file_end_ns: delete_start.saturating_sub(1),
-                        });
-                    }
+                if let Some(delete_start) = delete_start_ns
+                    && file_start_ns < delete_start
+                {
+                    // Keep data before deletion range
+                    operations.push(DeleteOperation {
+                        operation_type: "split_before".to_string(),
+                        files: vec![file_path.clone()],
+                        query_start: file_start_ns,
+                        query_end: delete_start.saturating_sub(1), // Exclusive end
+                        file_start_ns,
+                        file_end_ns: delete_start.saturating_sub(1),
+                    });
                 }
 
-                if let Some(delete_end) = delete_end_ns {
-                    if delete_end < file_end_ns {
-                        // Keep data after deletion range
-                        operations.push(DeleteOperation {
-                            operation_type: "split_after".to_string(),
-                            files: vec![file_path.clone()],
-                            query_start: delete_end.saturating_add(1), // Exclusive start
-                            query_end: file_end_ns,
-                            file_start_ns: delete_end.saturating_add(1),
-                            file_end_ns,
-                        });
-                    }
+                if let Some(delete_end) = delete_end_ns
+                    && delete_end < file_end_ns
+                {
+                    // Keep data after deletion range
+                    operations.push(DeleteOperation {
+                        operation_type: "split_after".to_string(),
+                        files: vec![file_path.clone()],
+                        query_start: delete_end.saturating_add(1), // Exclusive start
+                        query_end: file_end_ns,
+                        file_start_ns: delete_end.saturating_add(1),
+                        file_end_ns,
+                    });
                 }
             }
         }

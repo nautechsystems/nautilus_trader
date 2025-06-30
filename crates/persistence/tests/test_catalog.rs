@@ -1751,9 +1751,7 @@ fn test_delete_data_range_complete_file_deletion() {
     ];
 
     // Write data
-    catalog
-        .write_to_parquet(quotes.clone(), None, None, None)
-        .unwrap();
+    catalog.write_to_parquet(quotes, None, None, None).unwrap();
 
     // Verify initial state
     let initial_data = catalog
@@ -1791,9 +1789,7 @@ fn test_delete_data_range_partial_file_overlap_start() {
     ];
 
     // Write data
-    catalog
-        .write_to_parquet(quotes.clone(), None, None, None)
-        .unwrap();
+    catalog.write_to_parquet(quotes, None, None, None).unwrap();
 
     // Act - delete first part of the data
     catalog
@@ -1827,9 +1823,7 @@ fn test_delete_data_range_partial_file_overlap_end() {
     ];
 
     // Write data
-    catalog
-        .write_to_parquet(quotes.clone(), None, None, None)
-        .unwrap();
+    catalog.write_to_parquet(quotes, None, None, None).unwrap();
 
     // Act - delete last part of the data
     catalog
@@ -1864,9 +1858,7 @@ fn test_delete_data_range_partial_file_overlap_middle() {
     ];
 
     // Write data
-    catalog
-        .write_to_parquet(quotes.clone(), None, None, None)
-        .unwrap();
+    catalog.write_to_parquet(quotes, None, None, None).unwrap();
 
     // Act - delete middle part of the data
     catalog
@@ -1919,9 +1911,7 @@ fn test_delete_data_range_no_intersection() {
     let quotes = vec![create_quote_tick(2_000_000_000)];
 
     // Write data
-    catalog
-        .write_to_parquet(quotes.clone(), None, None, None)
-        .unwrap();
+    catalog.write_to_parquet(quotes, None, None, None).unwrap();
 
     // Act - delete data outside existing range
     catalog
@@ -1953,12 +1943,8 @@ fn test_delete_catalog_range_multiple_data_types() {
     ];
     let bars = vec![create_bar(1_500_000_000), create_bar(2_500_000_000)];
 
-    catalog
-        .write_to_parquet(quotes.clone(), None, None, None)
-        .unwrap();
-    catalog
-        .write_to_parquet(bars.clone(), None, None, None)
-        .unwrap();
+    catalog.write_to_parquet(quotes, None, None, None).unwrap();
+    catalog.write_to_parquet(bars, None, None, None).unwrap();
 
     // Verify initial state
     let initial_quotes = catalog
@@ -2004,12 +1990,8 @@ fn test_delete_catalog_range_complete_deletion() {
     let quotes = vec![create_quote_tick(1_000_000_000)];
     let bars = vec![create_bar(2_000_000_000)];
 
-    catalog
-        .write_to_parquet(quotes.clone(), None, None, None)
-        .unwrap();
-    catalog
-        .write_to_parquet(bars.clone(), None, None, None)
-        .unwrap();
+    catalog.write_to_parquet(quotes, None, None, None).unwrap();
+    catalog.write_to_parquet(bars, None, None, None).unwrap();
 
     // Verify initial state
     assert_eq!(
@@ -2098,12 +2080,8 @@ fn test_delete_catalog_range_open_boundaries() {
         create_bar(3_500_000_000),
     ];
 
-    catalog
-        .write_to_parquet(quotes.clone(), None, None, None)
-        .unwrap();
-    catalog
-        .write_to_parquet(bars.clone(), None, None, None)
-        .unwrap();
+    catalog.write_to_parquet(quotes, None, None, None).unwrap();
+    catalog.write_to_parquet(bars, None, None, None).unwrap();
 
     // Act - delete from beginning to middle (open start)
     catalog
@@ -2198,9 +2176,7 @@ fn test_delete_data_range_nanosecond_precision_boundaries() {
         create_quote_tick(1_000_000_003), // +3 nanoseconds
     ];
 
-    catalog
-        .write_to_parquet(quotes.clone(), None, None, None)
-        .unwrap();
+    catalog.write_to_parquet(quotes, None, None, None).unwrap();
 
     // Act - delete exactly the middle two timestamps [1_000_000_001, 1_000_000_002]
     catalog
@@ -2235,9 +2211,7 @@ fn test_delete_data_range_single_file_double_split() {
         create_quote_tick(5_000_000_000),
     ];
 
-    catalog
-        .write_to_parquet(quotes.clone(), None, None, None)
-        .unwrap();
+    catalog.write_to_parquet(quotes, None, None, None).unwrap();
 
     // Act - delete middle range [2_500_000_000, 3_500_000_000]
     // This should create both split_before and split_after operations
@@ -2275,9 +2249,7 @@ fn test_delete_data_range_saturating_arithmetic_edge_cases() {
         create_quote_tick(2),
     ];
 
-    catalog
-        .write_to_parquet(quotes.clone(), None, None, None)
-        .unwrap();
+    catalog.write_to_parquet(quotes, None, None, None).unwrap();
 
     // Act - delete range [0, 1] which tests saturating_sub(1) on timestamp 0
     catalog
