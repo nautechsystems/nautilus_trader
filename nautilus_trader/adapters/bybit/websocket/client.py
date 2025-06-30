@@ -479,7 +479,7 @@ class BybitWebSocketClient:
                     future.set_result(order_resp)
                 else:
                     future.set_exception(
-                        BybitError(code=order_resp.retCode, message=order_resp.retMsg)
+                        BybitError(code=order_resp.retCode, message=order_resp.retMsg),
                     )
             except Exception as e:
                 self._log.exception(f"Failed to decode order ack response {raw!r}", e)
