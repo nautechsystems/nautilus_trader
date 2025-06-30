@@ -117,7 +117,7 @@ pub fn nanos_since_unix_epoch() -> u64 {
 ///
 /// The `realtime` flag indicates which mode the clock is currently in.
 /// For concurrency, this struct uses atomic operations with appropriate memory orderings:
-/// - **Acquire/Release** for reading/writing in **static mode**,
+/// - **Acquire/Release** for reading/writing in **static mode**.
 /// - **Compare-and-exchange (`AcqRel`)** in real-time mode to guarantee monotonic increments.
 #[repr(C)]
 #[derive(Debug)]
