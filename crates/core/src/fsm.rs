@@ -28,23 +28,6 @@ use std::error::Error;
 use std::fmt;
 use std::hash::Hash;
 
-/// Error representing an invalid trigger for the current state.
-#[derive(Debug)]
-pub struct InvalidStateTrigger {
-    /// The current state as a string.
-    pub current_state: String,
-    /// The trigger as a string.
-    pub trigger: String,
-}
-
-impl fmt::Display for InvalidStateTrigger {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Invalid state transition: {} -> {}", self.current_state, self.trigger)
-    }
-}
-
-impl Error for InvalidStateTrigger {}
-
 /// Provides a generic finite state machine.
 ///
 /// # Examples
