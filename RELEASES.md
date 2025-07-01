@@ -60,10 +60,10 @@ Released on TBD (UTC).
 - Refined CI/CD and build system (#2707), thanks @stastnypremysl
 - Upgraded Rust (MSRV) to 1.88.0
 - Upgraded Cython to v3.1.2
-- Upgraded `databento` crate to v0.27.1
+- Upgraded `databento` crate to v0.28.0
 - Upgraded `datafusion` crate to v48.0.0
 - Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.25.1
-- Upgraded `redis` crate to v0.32.2
+- Upgraded `redis` crate to v0.32.3
 - Upgraded `tokio-tungstenite` crate to v0.27.0
 
 ### Fixes
