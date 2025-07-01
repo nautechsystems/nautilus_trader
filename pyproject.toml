@@ -123,7 +123,7 @@ test = [
     "pytest-codspeed>=3.2.0,<4.0.0",
     "pytest-cov>=4.1.0,<5.0.0",
     "pytest-mock>=3.14.1,<4.0.0",
-    "pytest-xdist[psutil]>=3.7.0,<4.0.0",
+    "pytest-xdist[psutil]>=3.8.0,<4.0.0",
 ]
 docs = [
     "numpydoc>=1.9.0,<2.0.0",
