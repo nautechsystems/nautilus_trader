@@ -966,7 +966,22 @@ class BetfairExecutionClient(LiveExecutionClient):
                     self._log.warning(f"Fill size determined as zero for {unmatched_order}")
                     return
 
-                fill_price = self._determine_fill_price(unmatched_order, order)
+                # Determine fill price and convert to `Price`. A ValueError can be raised if the
+                # incoming price is outside the bounds accepted by `Price`. Guard this to ensure
+                # a single bad message does not bubble up and break stream processing.
+                fill_price = None
+
+                try:
+                    fill_price = self._determine_fill_price(unmatched_order, order)
+                    last_px = betfair_float_to_price(fill_price)
+                except ValueError as e:
+                    self._log.warning(
+                        "Skipping invalid fill due to ValueError when converting price: "
+                        f"fill_price={fill_price!r}, unmatched_order={unmatched_order!r}, "
+                        f"client_order_id={client_order_id!r}, error={e}",
+                    )
+                    return
+
                 ts_event = self._get_matched_timestamp(unmatched_order)
 
                 self.generate_order_filled(
@@ -979,7 +994,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     order_side=OrderSideParser.to_nautilus(unmatched_order.side),
                     order_type=OrderType.LIMIT,
                     last_qty=fill_qty,
-                    last_px=betfair_float_to_price(fill_price),
+                    last_px=last_px,
                     quote_currency=instrument.quote_currency,
                     commission=Money(0, self.base_currency),
                     liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
@@ -1021,7 +1036,26 @@ class BetfairExecutionClient(LiveExecutionClient):
             trade_id = order_to_trade_id(unmatched_order)
             if trade_id not in self._published_executions[client_order_id]:
                 fill_qty = self._determine_fill_qty(unmatched_order, order)
-                fill_price = self._determine_fill_price(unmatched_order, order)
+                if fill_qty == 0:
+                    self._log.warning(f"Fill size determined as zero for {unmatched_order}")
+                    return
+
+                # Determine fill price and convert to `Price`. A ValueError can be raised if the
+                # incoming price is outside the bounds accepted by `Price`. Guard this to ensure
+                # a single bad message does not bubble up and break stream processing.
+                fill_price = None
+
+                try:
+                    fill_price = self._determine_fill_price(unmatched_order, order)
+                    last_px = betfair_float_to_price(fill_price)
+                except ValueError as e:
+                    self._log.warning(
+                        "Skipping invalid fill due to ValueError when converting price. "
+                        f"fill_price={fill_price!r}, unmatched_order={unmatched_order!r}, "
+                        f"client_order_id={client_order_id!r}, error={e}",
+                    )
+                    return
+
                 ts_event = self._get_matched_timestamp(unmatched_order)
 
                 # At least some part of this order has been filled
@@ -1035,7 +1069,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     order_side=OrderSideParser.to_nautilus(unmatched_order.side),
                     order_type=OrderType.LIMIT,
                     last_qty=fill_qty,
-                    last_px=betfair_float_to_price(fill_price),
+                    last_px=last_px,
                     quote_currency=instrument.quote_currency,
                     # avg_px=order['avp'],
                     commission=Money(0, self.base_currency),
