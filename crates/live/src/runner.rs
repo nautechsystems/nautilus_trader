@@ -163,25 +163,14 @@ impl AsyncRunner {
             if let Some(msg) = next_msg {
                 match msg {
                     RunnerEvent::Time(handler) => handler.run(),
-                    RunnerEvent::Data(event) => {
+                    RunnerEvent::Data(event) => match event {
+                        DataEvent::Data(data) => msgbus::send_any(data_engine_process, &data),
+                        DataEvent::Response(resp) => {
+                            msgbus::send_any(data_engine_response, &resp);
+                        }
                         #[cfg(feature = "defi")]
-                        match event {
-                            DataEvent::Data(data) => msgbus::send_any(data_engine_process, &data),
-                            DataEvent::Response(resp) => {
-                                msgbus::send_any(data_engine_response, &resp);
-                            }
-                            DataEvent::DeFi(data) => {
-                                msgbus::send_any(data_engine_process, &data);
-                            }
-                        }
-                        #[cfg(not(feature = "defi"))]
-                        match event {
-                            DataEvent::Data(data) => msgbus::send_any(data_engine_process, &data),
-                            DataEvent::Response(resp) => {
-                                msgbus::send_any(data_engine_response, &resp)
-                            }
-                        }
-                    }
+                        DataEvent::DeFi(data) => msgbus::send_any(data_engine_process, &data),
+                    },
                 }
             }
         }

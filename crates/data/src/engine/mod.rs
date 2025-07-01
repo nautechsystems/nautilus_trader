@@ -497,6 +497,10 @@ impl DataEngine {
             DataCommand::DefiSubscribe(c) => self.execute_defi_subscribe(c),
             #[cfg(feature = "defi")]
             DataCommand::DefiUnsubscribe(c) => self.execute_defi_unsubscribe(c),
+            _ => {
+                log::warn!("Unhandled DataCommand variant: {cmd:?}");
+                Ok(())
+            }
         } {
             log::error!("{e}");
         }
