@@ -463,8 +463,16 @@ impl Clock for TestClock {
 
         // Safe to calculate interval now that we've ensured alert_time_ns >= ts_now
         let interval_ns = create_valid_interval((alert_time_ns - ts_now).into());
+        // When alert time equals current time, fire immediately
+        let fire_immediately = alert_time_ns == ts_now;
 
-        let timer = TestTimer::new(name, interval_ns, ts_now, Some(alert_time_ns), false);
+        let timer = TestTimer::new(
+            name,
+            interval_ns,
+            ts_now,
+            Some(alert_time_ns),
+            fire_immediately,
+        );
         self.timers.insert(name, timer);
 
         Ok(())
@@ -1643,5 +1651,25 @@ mod tests {
         assert_eq!(events.len(), 2);
         assert_eq!(*events[0].ts_event, *start_ns); // Immediate fire
         assert_eq!(*events[1].ts_event, *start_ns + interval_ns); // Regular interval
+    }
+
+    #[rstest]
+    fn test_set_time_alert_when_alert_time_equals_current_time(mut test_clock: TestClock) {
+        let current_time = test_clock.timestamp_ns();
+
+        // Set time alert for exactly the current time
+        test_clock
+            .set_time_alert_ns("alert_at_current_time", current_time, None, None)
+            .unwrap();
+
+        assert_eq!(test_clock.timer_count(), 1);
+
+        // Advance time by exactly 0 (to current time) - should fire immediately
+        let events = test_clock.advance_time(current_time, true);
+
+        // Should fire immediately since alert_time_ns == ts_now
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].name.as_str(), "alert_at_current_time");
+        assert_eq!(*events[0].ts_event, *current_time);
     }
 }
