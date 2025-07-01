@@ -2405,6 +2405,50 @@ cdef class Actor(Component):
             handler=self.handle_signal,
         )
 
+# -- VALIDATIONS -------------------------------------------------------------------------
+
+    cdef tuple _validate_datetime_range(
+        self,
+        datetime start,
+        datetime end,
+    ):
+        """
+        Validate datetime range parameters.
+
+        Parameters
+        ----------
+        start : datetime
+            The start datetime (UTC) of request time range.
+        end : datetime, optional
+            The end datetime (UTC) of request time range.
+
+        Returns
+        -------
+        tuple[datetime, datetime]
+            The validated start and end datetimes. If `end` was None,
+            it will be replaced with the current UTC time.
+
+        Raises
+        ------
+        TypeError
+            If `start` is None.
+        ValueError
+            If `start` is > current timestamp (now).
+        ValueError
+            If `end` is > current timestamp (now).
+        ValueError
+            If `start` is > `end`.
+
+        """
+        cdef datetime now = self.clock.utc_now()
+        if end is None:
+            end = now
+        Condition.not_none(start, "start")
+        Condition.is_true(start <= now, "start was > now")
+        Condition.is_true(end <= now, "end was > now")
+        Condition.is_true(start <= end, "start was > end")
+        return (start, end)
+
 # -- REQUESTS -------------------------------------------------------------------------------------
 
     cpdef UUID4 request_data(
@@ -2433,12 +2477,14 @@ cdef class Actor(Component):
             The data type for the request.
         client_id : ClientId
             The data client ID.
-        start : datetime, optional
+        start : datetime
             The start datetime (UTC) of request time range.
-            The inclusiveness depends on individual data client implementation.
+            Cannot be `None`.
+            Should be left-inclusive (start <= value), but inclusiveness is not currently guaranteed.
         end : datetime, optional
             The end datetime (UTC) of request time range.
-            The inclusiveness depends on individual data client implementation.
+            If `None` then will be replaced with the current UTC time.
+            Should be right-inclusive (value <= end), but inclusiveness is not currently guaranteed.
         limit : int, optional
             The limit on the amount of data points received.
         callback : Callable[[UUID4], None], optional
@@ -2457,24 +2503,24 @@ cdef class Actor(Component):
         Raises
         ------
         TypeError
+            If `start` is `None`.
+        ValueError
+            If `start` is > current timestamp (now).
+        ValueError
+            If `end` is > current timestamp (now).
+        ValueError
+            If `start` is > `end`.
+        TypeError
             If `callback` is not `None` and not of type `Callable`.
 
         """
+        # TODO: Default start value assignment based on requested type of data
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
         Condition.not_none(client_id, "client_id")
         Condition.not_none(data_type, "data_type")
         Condition.callable_or_none(callback, "callback")
 
-        cdef datetime now = self.clock.utc_now()
-
-        if start is not None:
-            Condition.is_true(start <= now, "start was > now")
-
-        if end is not None:
-            Condition.is_true(end <= now, "end was > now")
-
-        if start is not None and end is not None:
-            Condition.is_true(start <= end, "start was > end")
+        start, end = self._validate_datetime_range(start, end)
 
         params = params or {}
         params["update_catalog"] = update_catalog
@@ -2524,10 +2570,13 @@ cdef class Actor(Component):
             The instrument ID for the request.
         start : datetime, optional
             The start datetime (UTC) of request time range.
-            The inclusiveness depends on individual data client implementation.
+            If ``None`` then will be replaced with the current UTC time.
+            Should be left-inclusive (start <= value), but inclusiveness is not currently guaranteed.
+            The `start == end` case is allowed to request only the initial state.
         end : datetime, optional
             The end datetime (UTC) of request time range.
-            The inclusiveness depends on individual data client implementation.
+            If `None` then will be replaced with the current UTC time.
+            Should be right-inclusive (value <= end), but inclusiveness is not currently guaranteed.
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
@@ -2547,11 +2596,11 @@ cdef class Actor(Component):
         Raises
         ------
         ValueError
-            If `start` is not `None` and > current timestamp (now).
+            If `start` is > current timestamp (now).
         ValueError
-            If `end` is not `None` and > current timestamp (now).
+            If `end` is > current timestamp (now).
         ValueError
-            If `start` and `end` are not `None` and `start` is >= `end`.
+            If `start` is > `end`.
         TypeError
             If `callback` is not `None` and not of type `Callable`.
 
@@ -2560,16 +2609,11 @@ cdef class Actor(Component):
         Condition.not_none(instrument_id, "instrument_id")
         Condition.callable_or_none(callback, "callback")
 
-        cdef datetime now = self.clock.utc_now()
+        # Handle None values for start by replacing with current UTC time
+        if start is None:
+            start = self.clock.utc_now()
 
-        if start is not None:
-            Condition.is_true(start <= now, "start was > now")
-
-        if end is not None:
-            Condition.is_true(end <= now, "end was > now")
-
-        if start is not None and end is not None:
-            Condition.is_true(start <= end, "start was > end")
+        start, end = self._validate_datetime_range(start, end)
 
         params = params or {}
         params["update_catalog"] = update_catalog
@@ -2617,10 +2661,13 @@ cdef class Actor(Component):
             The venue for the request.
         start : datetime, optional
             The start datetime (UTC) of request time range.
-            The inclusiveness depends on individual data client implementation.
+            If ``None`` then will be replaced with the current UTC time.
+            Should be left-inclusive (start <= value), but inclusiveness is not currently guaranteed.
+            The `start == end` case is allowed to request only the initial state.
         end : datetime, optional
             The end datetime (UTC) of request time range.
-            The inclusiveness depends on individual data client implementation.
+            If `None` then will be replaced with the current UTC time.
+            Should be right-inclusive (value <= end), but inclusiveness is not currently guaranteed.
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
@@ -2640,11 +2687,11 @@ cdef class Actor(Component):
         Raises
         ------
         ValueError
-            If `start` is not `None` and > current timestamp (now).
+            If `start` is > current timestamp (now).
         ValueError
-            If `end` is not `None` and > current timestamp (now).
+            If `end` is > current timestamp (now).
         ValueError
-            If `start` and `end` are not `None` and `start` is >= `end`.
+            If `start` is > `end`.
         TypeError
             If `callback` is not `None` and not of type `Callable`.
 
@@ -2653,16 +2700,11 @@ cdef class Actor(Component):
         Condition.not_none(venue, "venue")
         Condition.callable_or_none(callback, "callback")
 
-        cdef datetime now = self.clock.utc_now()
+        # Handle None values for start by replacing with current UTC time
+        if start is None:
+            start = self.clock.utc_now()
 
-        if start is not None:
-            Condition.is_true(start <= now, "start was > now")
-
-        if end is not None:
-            Condition.is_true(end <= now, "end was > now")
-
-        if start is not None and end is not None:
-            Condition.is_true(start <= end, "start was > end")
+        start, end = self._validate_datetime_range(start, end)
 
         params = params or {}
         params["update_catalog"] = update_catalog
@@ -2771,12 +2813,14 @@ cdef class Actor(Component):
         ----------
         instrument_id : InstrumentId
             The tick instrument ID for the request.
-        start : datetime, optional
+        start : datetime
             The start datetime (UTC) of request time range.
-            The inclusiveness depends on individual data client implementation.
+            Cannot be `None`.
+            Should be left-inclusive (start <= value), but inclusiveness is not currently guaranteed.
         end : datetime, optional
             The end datetime (UTC) of request time range.
-            The inclusiveness depends on individual data client implementation.
+            If `None` then will be replaced with the current UTC time.
+            Should be right-inclusive (value <= end), but inclusiveness is not currently guaranteed.
         limit : int, optional
             The limit on the amount of quote ticks received.
         client_id : ClientId, optional
@@ -2797,30 +2841,24 @@ cdef class Actor(Component):
 
         Raises
         ------
+        TypeError
+            If `start` is `None`.
         ValueError
-            If `start` is not `None` and > current timestamp (now).
+            If `start` is > current timestamp (now).
         ValueError
-            If `end` is not `None` and > current timestamp (now).
+            If `end` is > current timestamp (now).
         ValueError
-            If `start` and `end` are not `None` and `start` is >= `end`.
+            If `start` is > `end`.
         TypeError
             If `callback` is not `None` and not of type `Callable`.
 
         """
+        # TODO: Default start value assignment based on requested type of data
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
         Condition.not_none(instrument_id, "instrument_id")
         Condition.callable_or_none(callback, "callback")
 
-        cdef datetime now = self.clock.utc_now()
-
-        if start is not None:
-            Condition.is_true(start <= now, "start was > now")
-
-        if end is not None:
-            Condition.is_true(end <= now, "end was > now")
-
-        if start is not None and end is not None:
-            Condition.is_true(start <= end, "start was > end")
+        start, end = self._validate_datetime_range(start, end)
 
         params = params or {}
         params["update_catalog"] = update_catalog
@@ -2868,12 +2906,14 @@ cdef class Actor(Component):
         ----------
         instrument_id : InstrumentId
             The tick instrument ID for the request.
-        start : datetime, optional
+        start : datetime
             The start datetime (UTC) of request time range.
-            The inclusiveness depends on individual data client implementation.
+            Cannot be `None`.
+            Should be left-inclusive (start <= value), but inclusiveness is not currently guaranteed.
         end : datetime, optional
             The end datetime (UTC) of request time range.
-            The inclusiveness depends on individual data client implementation.
+            If `None` then will be replaced with the current UTC time.
+            Should be right-inclusive (value <= end), but inclusiveness is not currently guaranteed.
         limit : int, optional
             The limit on the amount of trade ticks received.
         client_id : ClientId, optional
@@ -2894,30 +2934,24 @@ cdef class Actor(Component):
 
         Raises
         ------
+        TypeError
+            If `start` is `None`.
         ValueError
-            If `start` is not `None` and > current timestamp (now).
+            If `start` is > current timestamp (now).
         ValueError
-            If `end` is not `None` and > current timestamp (now).
+            If `end` is > current timestamp (now).
         ValueError
-            If `start` and `end` are not `None` and `start` is >= `end`.
+            If `start` is > `end`.
         TypeError
             If `callback` is not `None` and not of type `Callable`.
 
         """
+        # TODO: Default start value assignment based on requested type of data
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
         Condition.not_none(instrument_id, "instrument_id")
         Condition.callable_or_none(callback, "callback")
 
-        cdef datetime now = self.clock.utc_now()
-
-        if start is not None:
-            Condition.is_true(start <= now, "start was > now")
-
-        if end is not None:
-            Condition.is_true(end <= now, "end was > now")
-
-        if start is not None and end is not None:
-            Condition.is_true(start <= end, "start was > end")
+        start, end = self._validate_datetime_range(start, end)
 
         params = params or {}
         params["update_catalog"] = update_catalog
@@ -2965,12 +2999,14 @@ cdef class Actor(Component):
         ----------
         bar_type : BarType
             The bar type for the request.
-        start : datetime, optional
+        start : datetime
             The start datetime (UTC) of request time range.
-            The inclusiveness depends on individual data client implementation.
+            Cannot be `None`.
+            Should be left-inclusive (start <= value), but inclusiveness is not currently guaranteed.
         end : datetime, optional
             The end datetime (UTC) of request time range.
-            The inclusiveness depends on individual data client implementation.
+            If `None` then will be replaced with the current UTC time.
+            Should be right-inclusive (value <= end), but inclusiveness is not currently guaranteed.
         limit : int, optional
             The limit on the amount of bars received.
         client_id : ClientId, optional
@@ -2991,30 +3027,24 @@ cdef class Actor(Component):
 
         Raises
         ------
+        TypeError
+            If `start` is `None`.
         ValueError
-            If `start` is not `None` and > current timestamp (now).
+            If `start` is > current timestamp (now).
         ValueError
-            If `end` is not `None` and > current timestamp (now).
+            If `end` is > current timestamp (now).
         ValueError
-            If `start` and `end` are not `None` and `start` is >= `end`.
+            If `start` is > `end`.
         TypeError
             If `callback` is not `None` and not of type `Callable`.
 
         """
+        # TODO: Default start value assignment based on requested type of data
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
         Condition.not_none(bar_type, "bar_type")
         Condition.callable_or_none(callback, "callback")
 
-        cdef datetime now = self.clock.utc_now()
-
-        if start is not None:
-            Condition.is_true(start <= now, "start was > now")
-
-        if end is not None:
-            Condition.is_true(end <= now, "end was > now")
-
-        if start is not None and end is not None:
-            Condition.is_true(start <= end, "start was > end")
+        start, end = self._validate_datetime_range(start, end)
 
         params = params or {}
         params["update_catalog"] = update_catalog
@@ -3070,12 +3100,14 @@ cdef class Actor(Component):
         bar_types : list[BarType]
             The list of bar types for the request. Composite bars can also be used and need to
             figure in the list after a BarType on which it depends.
-        start : datetime, optional
+        start : datetime
             The start datetime (UTC) of request time range.
-            The inclusiveness depends on individual data client implementation.
+            Cannot be `None`.
+            Should be left-inclusive (start <= value), but inclusiveness is not currently guaranteed.
         end : datetime, optional
             The end datetime (UTC) of request time range.
-            The inclusiveness depends on individual data client implementation.
+            If `None` then will be replaced with the current UTC time.
+            Should be right-inclusive (value <= end), but inclusiveness is not currently guaranteed.
         limit : int, optional
             The limit on the amount of data received (quote ticks, trade ticks or bars).
         client_id : ClientId, optional
@@ -3100,12 +3132,14 @@ cdef class Actor(Component):
 
         Raises
         ------
+        TypeError
+            If `start` is `None`.
         ValueError
-            If `start` is not `None` and > current timestamp (now).
+            If `start` is > current timestamp (now).
         ValueError
-            If `end` is not `None` and > current timestamp (now).
+            If `end` is > current timestamp (now).
         ValueError
-            If `start` and `end` are not `None` and `start` is >= `end`.
+            If `start` is > `end`.
         ValueError
             If `bar_types` is empty.
         TypeError
@@ -3114,21 +3148,13 @@ cdef class Actor(Component):
             If `bar_types` is empty or contains elements not of type `BarType`.
 
         """
+        # TODO: Default start value assignment based on requested type of data
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
         Condition.not_empty(bar_types, "bar_types")
         Condition.list_type(bar_types, BarType, "bar_types")
         Condition.callable_or_none(callback, "callback")
 
-        cdef datetime now = self.clock.utc_now()
-
-        if start is not None:
-            Condition.is_true(start <= now, "start was > now")
-
-        if end is not None:
-            Condition.is_true(end <= now, "end was > now")
-
-        if start is not None and end is not None:
-            Condition.is_true(start <= end, "start was > end")
+        start, end = self._validate_datetime_range(start, end)
 
         for bar_type in bar_types:
             if not bar_type.is_internally_aggregated():

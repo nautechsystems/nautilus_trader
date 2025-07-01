@@ -1428,6 +1428,7 @@ cdef class DataEngine(Component):
         # Capping dates to the now datetime
         cdef bint query_past_data = request.params.get("subscription_name") is None
         cdef datetime now = self._clock.utc_now()
+
         cdef datetime start = request.start if request.start is not None else time_object_to_dt(0)
         cdef datetime end = request.end if request.end is not None else now
 
@@ -1473,6 +1474,8 @@ cdef class DataEngine(Component):
                 data=[],
                 correlation_id=request.id,
                 response_id=UUID4(),
+                start=request.start,
+                end=request.end,
                 ts_init=self._clock.timestamp_ns(),
                 params=request.params,
             )
@@ -1612,6 +1615,8 @@ cdef class DataEngine(Component):
             data=data,
             correlation_id=request.id,
             response_id=UUID4(),
+            start=request.start,
+            end=request.end,
             ts_init=self._clock.timestamp_ns(),
             params=params,
         )
@@ -1886,19 +1891,19 @@ cdef class DataEngine(Component):
                     self._handle_instrument(response_2.data, update_catalog, force_update_catalog)
             elif response_2.data_type.type == QuoteTick:
                 if response_2.params.get("bars_market_data_type"):
-                    response_2.data = self._handle_aggregated_bars(response_2.data, response_2.params)
+                    response_2.data = self._handle_aggregated_bars(response_2)
                     response_2.data_type = DataType(Bar)
                 else:
                     self._handle_quote_ticks(response_2.data)
             elif response_2.data_type.type == TradeTick:
                 if response_2.params.get("bars_market_data_type"):
-                    response_2.data = self._handle_aggregated_bars(response_2.data, response_2.params)
+                    response_2.data = self._handle_aggregated_bars(response_2)
                     response_2.data_type = DataType(Bar)
                 else:
                     self._handle_trade_ticks(response_2.data)
             elif response_2.data_type.type == Bar:
                 if response_2.params.get("bars_market_data_type"):
-                    response_2.data = self._handle_aggregated_bars(response_2.data, response_2.params)
+                    response_2.data = self._handle_aggregated_bars(response_2)
                 else:
                     self._handle_bars(response_2.data, response_2.data_type.metadata.get("partial"))
             # Note: custom data will use the callback submitted by the user in actor.request_data
@@ -2075,18 +2080,24 @@ cdef class DataEngine(Component):
                     # - with the partial bar being for a now removed aggregator.
                     self._log.error("No aggregator for partial bar update")
 
-    cpdef dict _handle_aggregated_bars(self, list ticks, dict params):
+    cpdef dict _handle_aggregated_bars(self, DataResponse response):
         # Closure is not allowed in cpdef functions so we call a cdef function
-        return self._handle_aggregated_bars_aux(ticks, params)
+        return self._handle_aggregated_bars_aux(response)
 
-    cdef dict _handle_aggregated_bars_aux(self, list ticks, dict params):
-        result = {}
+    cdef dict _handle_aggregated_bars_aux(self, DataResponse response):
+        cdef dict result = {}
+        cdef list ticks = response.data
+        cdef dict params = response.params
 
         if len(ticks) == 0:
             self._log.warning("_handle_aggregated_bars: No data to aggregate")
             return result
 
-        bars_result = {}
+        # Extract start and end time from original request timing
+        cdef uint64_t start_ns = dt_to_unix_nanos(response.start)
+        cdef uint64_t end_ns = dt_to_unix_nanos(response.end)
+
+        cdef dict bars_result = {}
 
         if params["include_external_data"]:
             if params["bars_market_data_type"] == "quote_ticks":
@@ -2118,24 +2129,19 @@ cdef class DataEngine(Component):
                     self._bar_aggregators[bar_type.standard()] = aggregator
 
             aggregated_bars = []
-            handler = lambda bar: aggregated_bars.append(bar)
+            handler = aggregated_bars.append
+            aggregator.start_batch_update(handler, start_ns)
 
             if params["bars_market_data_type"] == "quote_ticks" and not bar_type.is_composite():
-                aggregator.start_batch_update(handler, ticks[0].ts_event)
-
                 for tick in ticks:
                     aggregator.handle_quote_tick(tick)
             elif params["bars_market_data_type"] == "trade_ticks" and not bar_type.is_composite():
-                aggregator.start_batch_update(handler, ticks[0].ts_event)
-
                 for tick in ticks:
                     aggregator.handle_trade_tick(tick)
             else:
                 input_bars = bars_result[bar_type.composite()]
 
                 if len(input_bars) > 0:
-                    aggregator.start_batch_update(handler, input_bars[0].ts_init)
-
                     for bar in input_bars:
                         aggregator.handle_bar(bar)
 

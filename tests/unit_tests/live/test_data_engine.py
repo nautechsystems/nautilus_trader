@@ -17,6 +17,7 @@ import asyncio
 from unittest.mock import Mock
 from unittest.mock import patch
 
+import pandas as pd
 import pytest
 
 from nautilus_trader.common.component import LiveClock
@@ -189,6 +190,8 @@ class TestLiveDataEngine:
             correlation_id=UUID4(),
             response_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
+            start=pd.Timestamp("2023-01-01"),
+            end=pd.Timestamp("2023-01-02"),
         )
 
         # Act
@@ -320,6 +323,8 @@ class TestLiveDataEngine:
             correlation_id=UUID4(),
             response_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
+            start=pd.Timestamp("2023-01-01"),
+            end=pd.Timestamp("2023-01-02"),
         )
 
         # Act
@@ -651,6 +656,8 @@ class TestLiveDataEngine:
                 correlation_id=UUID4(),
                 response_id=UUID4(),
                 ts_init=self.clock.timestamp_ns(),
+                start=pd.Timestamp("2023-01-01"),
+                end=pd.Timestamp("2023-01-02"),
             )
             engine.response(response)
 
