@@ -9,6 +9,7 @@ Released on TBD (UTC).
 - Added consolidate catalog by period (#2727), thanks @faysou
 - Added `fire_immediately` flag parameter for timers where a time event will be fired at the `start` instant and then every interval thereafter (default `False` to retain current behavior) (#2600), thanks for the idea @stastnypremysl
 - Added `time_bars_build_delay` config option for `DataEngineConfig` (#2676), thanks @faysou
+- Added immediate firing capability for time alerts and corresponding test (#2745), thanks @stastnypremysl
 - Added missing serialization mappings for some instruments (#2702), thanks @faysou
 - Added support for DEX swaps for blockchain adapter (#2683), thanks @filipmacek
 - Added support for Pool liquidity updates for blockchain adapter (#2692), thanks @filipmacek
@@ -41,6 +42,7 @@ Released on TBD (UTC).
 - Consolidated on `aws-lc-rs` cryptography for FIPS compliance
 - Confirmed parity between Cython and Rust indicators (#2700, #2710, #2713), thanks @nicolad
 - Implemented `From<Pool>` -> `CurrencyPair` & `InstrumentAny` (#2693), thanks @nicolad
+- Updated `Makefile` to use new docker compose syntax (#2746), thanks @stastnypremysl
 - Updated Tardis exchange mappings
 - Improved live engine message processing to ensure unexpected exceptions result in an immediate hard crash rather than continuing without the queue processing messages
 - Improved handling of negative balances in backtests (#2730), thanks @ms32035
