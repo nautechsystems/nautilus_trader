@@ -46,6 +46,7 @@ use crate::{
 )]
 pub struct TrailingStopMarketOrder {
     core: OrderCore,
+    pub activation_price: Option<Price>,
     pub trigger_price: Price,
     pub trigger_type: TriggerType,
     pub trailing_offset: Decimal,
@@ -53,6 +54,7 @@ pub struct TrailingStopMarketOrder {
     pub expire_time: Option<UnixNanos>,
     pub display_qty: Option<Quantity>,
     pub trigger_instrument_id: Option<InstrumentId>,
+    pub is_activated: bool,
     pub is_triggered: bool,
     pub ts_triggered: Option<UnixNanos>,
 }
@@ -138,6 +140,7 @@ impl TrailingStopMarketOrder {
 
         Ok(Self {
             core: OrderCore::new(init_order),
+            activation_price: None,
             trigger_price,
             trigger_type,
             trailing_offset,
@@ -145,6 +148,7 @@ impl TrailingStopMarketOrder {
             expire_time,
             display_qty,
             trigger_instrument_id,
+            is_activated: false,
             is_triggered: false,
             ts_triggered: None,
         })
@@ -216,11 +220,19 @@ impl TrailingStopMarketOrder {
         )
         .expect(FAILED)
     }
+
+    pub fn has_activation_price(&self) -> bool {
+        self.activation_price.is_some()
+    }
+
+    pub fn set_activated(&mut self) {
+        debug_assert!(!self.is_activated, "double activation");
+        self.is_activated = true;
+    }
 }
 
 impl Deref for TrailingStopMarketOrder {
     type Target = OrderCore;
-
     fn deref(&self) -> &Self::Target {
         &self.core
     }
@@ -448,14 +460,14 @@ impl Order for TrailingStopMarketOrder {
     fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError> {
         if let OrderEventAny::Updated(ref event) = event {
             self.update(event);
-        };
-        let is_order_filled = matches!(event, OrderEventAny::Filled(_));
+        }
+        let was_filled = matches!(event, OrderEventAny::Filled(_));
 
         self.core.apply(event)?;
 
-        if is_order_filled {
+        if was_filled {
             self.core.set_slippage(self.trigger_price);
-        };
+        }
 
         Ok(())
     }
@@ -512,16 +524,7 @@ impl Display for TrailingStopMarketOrder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "TrailingStopMarketOrder(\
-            {} {} {} {} {}, \
-            status={}, \
-            client_order_id={}, \
-            venue_order_id={}, \
-            position_id={}, \
-            exec_algorithm_id={}, \
-            exec_spawn_id={}, \
-            tags={:?}\
-            )",
+            "TrailingStopMarketOrder({} {} {} {} {}, status={}, client_order_id={}, venue_order_id={}, position_id={}, exec_algorithm_id={}, exec_spawn_id={}, tags={:?}, activation_price={:?}, is_activated={})",
             self.side,
             self.quantity.to_formatted_string(),
             self.instrument_id,
@@ -529,19 +532,17 @@ impl Display for TrailingStopMarketOrder {
             self.time_in_force,
             self.status,
             self.client_order_id,
-            self.venue_order_id.map_or_else(
-                || "None".to_string(),
-                |venue_order_id| format!("{venue_order_id}")
-            ),
-            self.position_id.map_or_else(
-                || "None".to_string(),
-                |position_id| format!("{position_id}")
-            ),
+            self.venue_order_id
+                .map_or_else(|| "None".to_string(), |id| format!("{id}")),
+            self.position_id
+                .map_or_else(|| "None".to_string(), |id| format!("{id}")),
             self.exec_algorithm_id
                 .map_or_else(|| "None".to_string(), |id| format!("{id}")),
             self.exec_spawn_id
                 .map_or_else(|| "None".to_string(), |id| format!("{id}")),
-            self.tags
+            self.tags,
+            self.activation_price,
+            self.is_activated
         )
     }
 }
@@ -557,10 +558,10 @@ impl From<OrderInitialized> for TrailingStopMarketOrder {
             event.quantity,
             event
                 .trigger_price
-                .expect("Error initializing order: `trigger_price` was `None` for `TrailingStopMarketOrder`"),
+                .expect("Error initializing order: trigger_price is None"),
             event
                 .trigger_type
-                .expect("Error initializing order: `trigger_type` was `None` for `TrailingStopMarketOrder`"),
+                .expect("Error initializing order: trigger_type is None"),
             event.trailing_offset.unwrap(),
             event.trailing_offset_type.unwrap(),
             event.time_in_force,
@@ -641,7 +642,7 @@ mod tests {
 
         assert_eq!(
             order.to_string(),
-            "TrailingStopMarketOrder(BUY 1 AUD/USD.SIM TRAILING_STOP_MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-000000-001-001-1, venue_order_id=None, position_id=None, exec_algorithm_id=None, exec_spawn_id=None, tags=None)"
+            "TrailingStopMarketOrder(BUY 1 AUD/USD.SIM TRAILING_STOP_MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-000000-001-001-1, venue_order_id=None, position_id=None, exec_algorithm_id=None, exec_spawn_id=None, tags=None, activation_price=None, is_activated=false)"
         );
     }
 
