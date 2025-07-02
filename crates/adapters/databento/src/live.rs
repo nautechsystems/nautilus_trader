@@ -21,7 +21,10 @@ use databento::{
     live::Subscription,
 };
 use indexmap::IndexMap;
-use nautilus_core::{UnixNanos, python::to_pyruntime_err, time::get_atomic_clock_realtime};
+use nautilus_core::{
+    UnixNanos, consts::NAUTILUS_USER_AGENT, python::to_pyruntime_err,
+    time::get_atomic_clock_realtime,
+};
 use nautilus_model::{
     data::{Data, InstrumentStatus, OrderBookDelta, OrderBookDeltas, OrderBookDeltas_API},
     enums::RecordFlag,
@@ -127,11 +130,13 @@ impl DatabentoFeedHandler {
         let result = tokio::time::timeout(
             timeout,
             databento::LiveClient::builder()
+                .user_agent_extension(NAUTILUS_USER_AGENT.into())
                 .key(self.key.clone())?
                 .dataset(self.dataset.clone())
                 .build(),
         )
         .await?;
+
         tracing::info!("Connected");
 
         let mut client = if let Ok(client) = result {
