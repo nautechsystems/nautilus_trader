@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import functools
+from collections import defaultdict
 from collections.abc import Callable
 from decimal import Decimal
 from inspect import iscoroutinefunction
@@ -68,6 +69,9 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
     Trader.
 
     """
+
+    _order_book_depth: ClassVar[dict[int, int]] = {}  # reqId -> depth
+    _order_books_initialized: ClassVar[dict[int, bool]] = {}  # reqId -> initialized
 
     _order_books: ClassVar[dict[int, dict[str, dict[int, IBKRBookLevel]]]] = {}
     """
@@ -144,6 +148,10 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             else:
                 handle_func = functools.partial(subscription_method, req_id, *args, **kwargs)
 
+                if subscription_method == self._eclient.reqMktDepth:
+                    self._order_book_depth[req_id] = args[1]
+                    self._order_books_initialized[req_id] = False
+
             # Add subscription
             subscription = self._subscriptions.add(
                 req_id=req_id,
@@ -167,6 +175,8 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         self,
         name: str | tuple,
         cancellation_method: Callable,
+        *args: Any,
+        **kwargs: Any,
     ) -> None:
         """
         Manage the unsubscription process for market data. This internal method is
@@ -180,11 +190,15 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             The method to call for unsubscribing from market data.
         name : Any
             A unique identifier for the subscription.
+        *args
+            Variable length argument list for the subscription method.
+        **kwargs
+            Arbitrary keyword arguments for the subscription method.
 
         """
         if subscription := self._subscriptions.get(name=name):
             self._subscriptions.remove(subscription.req_id)
-            cancellation_method(reqId=subscription.req_id)
+            cancellation_method(subscription.req_id, *args, **kwargs)
             self._log.debug(f"Unsubscribed from {subscription}")
         else:
             self._log.debug(f"Subscription doesn't exist for {name}")
@@ -277,6 +291,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
     async def unsubscribe_order_book(
         self,
         instrument_id: InstrumentId,
+        is_smart_depth: bool = True,
     ) -> None:
         """
         Unsubscribes from order book data for a specified instrument.
@@ -295,7 +310,11 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
 
         """
         name = (str(instrument_id), "order_book")
-        await self._unsubscribe(name, self._eclient.cancelMktDepth)
+        await self._unsubscribe(
+            name,
+            self._eclient.cancelMktDepth,
+            is_smart_depth,
+        )
 
     async def subscribe_realtime_bars(
         self,
@@ -1215,7 +1234,17 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         elif action == BookAction.DELETE:
             levels.pop(position, None)
 
+        # Check if the order book is initialized
+        if not self._order_books_initialized.get(req_id, False):
+            depth = self._order_book_depth[req_id]
+            if len(book["bids"]) == depth and len(book["asks"]) == depth:
+                self._order_books_initialized[req_id] = True
+            else:
+                return
+
         # Convert to OrderBookDeltas
+        aggregated_book = self._aggregate_order_book_by_price(book)
+
         price_magnifier = (
             self._instrument_provider.get_price_magnifier(instrument_id)
             if self._instrument_provider
@@ -1243,7 +1272,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
                 size=instrument.make_qty(level.size),
                 order_id=0,  # Not applicable for L2 data
             )
-            for level in book["bids"].values()
+            for level in aggregated_book["bids"].values()
         ]
 
         asks = [
@@ -1258,7 +1287,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
                 size=instrument.make_qty(level.size),
                 order_id=0,  # Not applicable for L2 data
             )
-            for level in book["asks"].values()
+            for level in aggregated_book["asks"].values()
         ]
 
         deltas += [
@@ -1275,3 +1304,35 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         ]
 
         await self._handle_data(OrderBookDeltas(instrument_id=instrument_id, deltas=deltas))
+
+    def _aggregate_order_book_by_price(
+        self,
+        book: dict[str, dict[int, IBKRBookLevel]],
+    ) -> dict[str, dict[float, IBKRBookLevel]]:
+        """
+        Aggregate order book by price.
+
+        Parameters
+        ----------
+        book : dict[str, dict[int, IBKRBookLevel]]
+            The order book to be aggregated.
+
+        Returns
+        -------
+        dict[str, dict[float, IBKRBookLevel]]
+            The aggregated order book.
+
+        """
+        aggregated_book: dict[str, dict[float, IBKRBookLevel]] = {}
+
+        for side, order_side in [("bids", OrderSide.BUY), ("asks", OrderSide.SELL)]:
+            price_aggregates: dict[float, Decimal] = defaultdict(Decimal)
+            for level in book[side].values():
+                price_aggregates[level.price] += level.size
+
+            aggregated_book[side] = {
+                price: IBKRBookLevel(price=price, size=size, side=order_side, market_maker="")
+                for price, size in price_aggregates.items()
+            }
+
+        return aggregated_book
