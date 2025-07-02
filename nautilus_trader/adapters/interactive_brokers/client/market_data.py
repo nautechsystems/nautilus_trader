@@ -1179,6 +1179,12 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         """
         Return Market Depth (L2) real-time data.
 
+        Note
+        ----
+        IBKR's L2 depth data is updated based on position,
+        so we need to maintain a local order book indexed by position,
+        and then aggregate this order book by price.
+
         Parameters
         ----------
         req_id : TickerId
