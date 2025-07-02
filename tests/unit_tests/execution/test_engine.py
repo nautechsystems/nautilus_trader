@@ -3530,3 +3530,145 @@ class TestExecutionEngine:
         assert order2.status == OrderStatus.SUBMITTED
         assert len(own_book.bids_to_dict()) == 1
         assert order2.client_order_id.value == own_book.bid_client_order_ids()[0].value
+
+    def test_own_book_accepted_buffer_filtering(self) -> None:
+        # Arrange
+        self.exec_engine.set_manage_own_order_books(True)
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        instrument = AUDUSD_SIM
+
+        # Create and submit orders at different times
+        bid_order = strategy.order_factory.limit(
+            instrument_id=instrument.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("1.00000"),
+        )
+
+        ask_order = strategy.order_factory.limit(
+            instrument_id=instrument.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("1.10000"),
+        )
+
+        # Submit and accept first order (older)
+        strategy.submit_order(bid_order)
+        self.exec_engine.process(TestEventStubs.order_submitted(bid_order))
+
+        # Set accepted time for first order
+        bid_accepted_time = self.clock.timestamp_ns()
+        self.exec_engine.process(
+            TestEventStubs.order_accepted(bid_order, ts_event=bid_accepted_time),
+        )
+
+        # Advance time by 5 seconds
+        self.clock.advance_time(5_000_000_000)  # 5 seconds in nanoseconds
+
+        # Submit and accept second order (newer)
+        strategy.submit_order(ask_order)
+        self.exec_engine.process(TestEventStubs.order_submitted(ask_order))
+
+        # Set accepted time for second order
+        ask_accepted_time = self.clock.timestamp_ns()
+        self.exec_engine.process(
+            TestEventStubs.order_accepted(ask_order, ts_event=ask_accepted_time),
+        )
+
+        # Test without buffer - should return both orders
+        bid_orders_no_buffer = self.cache.own_bid_orders(instrument.id, accepted_buffer_ns=0)
+        ask_orders_no_buffer = self.cache.own_ask_orders(instrument.id, accepted_buffer_ns=0)
+
+        assert len(bid_orders_no_buffer) == 1
+        assert len(ask_orders_no_buffer) == 1
+        assert Decimal("1.00000") in bid_orders_no_buffer
+        assert Decimal("1.10000") in ask_orders_no_buffer
+
+        # Test validation: accepted_buffer_ns > 0 but ts_now == 0 should raise ValueError
+        with pytest.raises(ValueError, match="ts_now must be provided when accepted_buffer_ns > 0"):
+            self.cache.own_bid_orders(instrument.id, accepted_buffer_ns=2_000_000_000)
+
+        with pytest.raises(ValueError, match="ts_now must be provided when accepted_buffer_ns > 0"):
+            self.cache.own_ask_orders(instrument.id, accepted_buffer_ns=2_000_000_000)
+
+        # Test with buffer and current time (should work properly now)
+        current_time = self.clock.timestamp_ns()
+        bid_orders_2s_buffer = self.cache.own_bid_orders(
+            instrument.id,
+            accepted_buffer_ns=2_000_000_000,
+            ts_now=current_time,
+        )
+        ask_orders_2s_buffer = self.cache.own_ask_orders(
+            instrument.id,
+            accepted_buffer_ns=2_000_000_000,
+            ts_now=current_time,
+        )
+
+        # With proper filtering, newer ask order should be excluded
+        assert len(bid_orders_2s_buffer) == 1  # Bid order is older than 2s
+        assert len(ask_orders_2s_buffer) == 0  # Ask order is newer than 2s
+        assert Decimal("1.00000") in bid_orders_2s_buffer
+
+        # Test with larger buffer - should include both orders
+        bid_orders_10s_buffer = self.cache.own_bid_orders(
+            instrument.id,
+            accepted_buffer_ns=10_000_000_000,
+            ts_now=current_time,
+        )
+        ask_orders_10s_buffer = self.cache.own_ask_orders(
+            instrument.id,
+            accepted_buffer_ns=10_000_000_000,
+            ts_now=current_time,
+        )
+
+        assert len(bid_orders_10s_buffer) == 0  # Both orders are newer than 10s
+        assert len(ask_orders_10s_buffer) == 0
+
+        # Advance time and test again
+        self.clock.advance_time(15_000_000_000)  # 15 seconds
+        current_time = self.clock.timestamp_ns()
+
+        bid_orders_final = self.cache.own_bid_orders(
+            instrument.id,
+            accepted_buffer_ns=8_000_000_000,
+            ts_now=current_time,
+        )
+        ask_orders_final = self.cache.own_ask_orders(
+            instrument.id,
+            accepted_buffer_ns=8_000_000_000,
+            ts_now=current_time,
+        )
+
+        assert len(bid_orders_final) == 1  # Both orders are now older than 8s
+        assert len(ask_orders_final) == 1
+        assert Decimal("1.00000") in bid_orders_final
+        assert Decimal("1.10000") in ask_orders_final
+
+        # Test with status filtering combined with buffer
+        bid_orders_status_buffer = self.cache.own_bid_orders(
+            instrument.id,
+            status={OrderStatus.ACCEPTED},
+            accepted_buffer_ns=8_000_000_000,
+            ts_now=current_time,
+        )
+        ask_orders_status_buffer = self.cache.own_ask_orders(
+            instrument.id,
+            status={OrderStatus.ACCEPTED},
+            accepted_buffer_ns=8_000_000_000,
+            ts_now=current_time,
+        )
+
+        assert len(bid_orders_status_buffer) == 1
+        assert len(ask_orders_status_buffer) == 1
+        assert Decimal("1.00000") in bid_orders_status_buffer
+        assert Decimal("1.10000") in ask_orders_status_buffer

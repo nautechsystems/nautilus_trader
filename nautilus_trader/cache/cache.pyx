@@ -2679,7 +2679,13 @@ cdef class Cache(CacheFacade):
 
         return self._own_order_books.get(instrument_id)
 
-    cpdef dict[Decimal, list[Order]] own_bid_orders(self, InstrumentId instrument_id, set[OrderStatus] status = None):
+    cpdef dict[Decimal, list[Order]] own_bid_orders(
+        self,
+        InstrumentId instrument_id,
+        set[OrderStatus] status = None,
+        uint64_t accepted_buffer_ns = 0,
+        uint64_t ts_now = 0,
+    ):
         """
         Return own bid orders for the given instrument ID (if found).
 
@@ -2690,14 +2696,27 @@ cdef class Cache(CacheFacade):
             Note this is the standard Cython `InstumentId`.
         status : set[OrderStatus], optional
             The order status to filter for. Empty price levels after filtering are excluded from the result.
+        accepted_buffer_ns : uint64_t, optional
+            The minimum time in nanoseconds that must have elapsed since the order was accepted.
+            Orders accepted less than this time ago will be filtered out.
+        ts_now : uint64_t, optional
+            The current time in nanoseconds. Required if accepted_buffer_ns > 0.
 
         Returns
         -------
         dict[Decimal, list[Order]] or ``None``
             If own book not found for the instrument ID then returns ``None``.
 
+        Raises
+        ------
+        ValueError
+            If `accepted_buffer_ns` > 0 and `ts_now` == 0.
+
         """
         Condition.not_none(instrument_id, "instrument_id")
+
+        if accepted_buffer_ns > 0 and ts_now == 0:
+            raise ValueError("ts_now must be provided when accepted_buffer_ns > 0")
 
         own_order_book = self._own_order_books.get(instrument_id)
 
@@ -2705,11 +2724,21 @@ cdef class Cache(CacheFacade):
             return None
 
         return process_own_order_map(
-            own_order_book.bids_to_dict({order_status_to_pyo3(s) for s in status} if status is not None else None),
+            own_order_book.bids_to_dict(
+                {order_status_to_pyo3(s) for s in status} if status is not None else None,
+                accepted_buffer_ns if accepted_buffer_ns > 0 else None,
+                ts_now if ts_now > 0 else None,
+            ),
             self._orders,
         )
 
-    cpdef dict[Decimal, list[Order]] own_ask_orders(self, InstrumentId instrument_id, set[OrderStatus] status = None):
+    cpdef dict[Decimal, list[Order]] own_ask_orders(
+        self,
+        InstrumentId instrument_id,
+        set[OrderStatus] status = None,
+        uint64_t accepted_buffer_ns = 0,
+        uint64_t ts_now = 0,
+    ):
         """
         Return own ask orders for the given instrument ID (if found).
 
@@ -2720,14 +2749,27 @@ cdef class Cache(CacheFacade):
             Note this is the standard Cython `InstumentId`.
         status : set[OrderStatus], optional
             The order status to filter for. Empty price levels after filtering are excluded from the result.
+        accepted_buffer_ns : uint64_t, optional
+            The minimum time in nanoseconds that must have elapsed since the order was accepted.
+            Orders accepted less than this time ago will be filtered out.
+        ts_now : uint64_t, optional
+            The current time in nanoseconds. Required if accepted_buffer_ns > 0.
 
         Returns
         -------
         dict[Decimal, list[Order]] or ``None``
             If own book not found for the instrument ID then returns ``None``.
 
+        Raises
+        ------
+        ValueError
+            If `accepted_buffer_ns` > 0 and `ts_now` == 0.
+
         """
         Condition.not_none(instrument_id, "instrument_id")
+
+        if accepted_buffer_ns > 0 and ts_now == 0:
+            raise ValueError("ts_now must be provided when accepted_buffer_ns > 0")
 
         own_order_book = self._own_order_books.get(instrument_id)
 
@@ -2735,7 +2777,11 @@ cdef class Cache(CacheFacade):
             return None
 
         return process_own_order_map(
-            own_order_book.asks_to_dict({order_status_to_pyo3(s) for s in status} if status is not None else None),
+            own_order_book.asks_to_dict(
+                {order_status_to_pyo3(s) for s in status} if status is not None else None,
+                accepted_buffer_ns if accepted_buffer_ns > 0 else None,
+                ts_now if ts_now > 0 else None,
+            ),
             self._orders,
         )
 
@@ -5100,7 +5146,7 @@ cdef inline dict[Decimal, list[Order]] process_own_order_map(
             order = order_cache.get(client_order_id)
 
             if order is None:
-                RuntimeError(f"{client_order_id!r} from own book not found in cache")
+                raise RuntimeError(f"{client_order_id!r} from own book not found in cache")
 
             orders.append(order)
 
