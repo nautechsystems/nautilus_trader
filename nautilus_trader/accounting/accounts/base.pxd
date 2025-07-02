@@ -72,7 +72,7 @@ cdef class Account:
 # -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void apply(self, AccountState event)
-    cpdef void update_balances(self, list balances, bint allow_zero=*)
+    cpdef void update_balances(self, list balances)
     cpdef void update_commissions(self, Money commission)
     cpdef void purge_account_events(self, uint64_t ts_now, uint64_t lookback_secs=*)
 

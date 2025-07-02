@@ -17,9 +17,6 @@ from decimal import Decimal
 
 from libc.stdint cimport uint64_t
 
-from nautilus_trader.accounting.error import AccountBalanceNegative
-from nautilus_trader.accounting.error import AccountMarginExceeded
-
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.accounting.accounts.cash cimport CashAccount
 from nautilus_trader.accounting.accounts.margin cimport MarginAccount
@@ -113,7 +110,7 @@ cdef class AccountsManager:
         Raises
         ------
         AccountBalanceNegative
-            If a new free balance would become negative.
+            If account type is ``CASH`` and a balance becomes negative.
 
         """
         Condition.not_none(account, "account")
@@ -469,16 +466,8 @@ cdef class AccountsManager:
             self._log.error(f"Cannot complete transaction: no balance for {pnl.currency}")
             return False
 
-        # Calculate new balance
-        cdef Money new_total = balance.total.add(pnl)
-        if new_total._mem.raw < 0:
-            raise AccountBalanceNegative(
-                balance=new_total.as_decimal(),
-                currency=pnl.currency,
-            )
-
         cdef AccountBalance new_balance = AccountBalance(
-            total=new_total,
+            total=balance.total.add(pnl),
             locked=balance.locked,
             free=balance.free.add(pnl),
         )
@@ -536,19 +525,17 @@ cdef class AccountsManager:
                 new_free = balance.free.as_decimal() + pnl.as_decimal()
                 total = Money(new_total, pnl.currency)
                 free = Money(new_free, pnl.currency)
-                if new_total < 0:
-                    raise AccountBalanceNegative(
-                        balance=total.as_decimal(),
-                        currency=pnl.currency,
-                    )
-                if new_free < 0:
-                    raise AccountMarginExceeded(
-                        balance=total.as_decimal(),
-                        margin=balance.locked.as_decimal(),
-                        currency=pnl.currency,
-                    )
 
-                # Calculate new balance
+                # TODO: Until the platform can accurately track account equity and
+                # cross-margin requirements this condition check is inaccurate and
+                # causes issues in live trading with more complex margin requirements.
+                # if new_free < 0:
+                #     raise AccountMarginExceeded(
+                #         balance=total.as_decimal(),
+                #         margin=balance.locked.as_decimal(),
+                #         currency=pnl.currency,
+                #     )
+
                 new_balance = AccountBalance(
                     total=total,
                     locked=balance.locked,
