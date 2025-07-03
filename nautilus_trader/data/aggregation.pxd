@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
@@ -74,6 +75,10 @@ cdef class BarAggregator:
     cpdef void handle_trade_tick(self, TradeTick tick)
     cpdef void handle_bar(self, Bar bar)
     cpdef void set_partial(self, Bar partial_bar)
+    cpdef void start_batch_update(self, handler: Callable[[Bar], None], uint64_t time_ns)
+    cdef void _start_batch_update(self, uint64_t time_ns)
+    cpdef void stop_batch_update(self, uint64_t time_ns)
+    cdef void _stop_batch_update(self, uint64_t time_ns)
     cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event)
     cdef void _apply_update_bar(self, Bar bar, Quantity volume, uint64_t ts_init)
     cdef void _build_now_and_send(self)
@@ -102,7 +107,7 @@ cdef class TimeBarAggregator(BarAggregator):
     cdef str _timer_name
     cdef bint _is_left_open
     cdef bint _timestamp_on_close
-    cdef bint _skip_first_non_full_bar
+    cdef bint _skip_first_build_and_send
     cdef bint _build_with_no_updates
     cdef int _bar_build_delay
     cdef bint _add_delay
@@ -120,7 +125,7 @@ cdef class TimeBarAggregator(BarAggregator):
     cpdef void stop(self)
     cdef timedelta _get_interval(self)
     cdef uint64_t _get_interval_ns(self)
-    cpdef void _set_build_timer(self)
+    cdef void _set_build_timer(self)
     cdef void _batch_pre_update(self, uint64_t time_ns)
     cdef void _batch_post_update(self, uint64_t time_ns)
-    cpdef void _build_bar(self, TimeEvent event)
+    cpdef void _callback_build_bar(self, TimeEvent event)

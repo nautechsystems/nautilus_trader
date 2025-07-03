@@ -987,4 +987,4 @@ class DYDXDataClient(LiveMarketDataClient):
             ]
 
             partial: Bar = bars.pop()
-            self._handle_bars(request.bar_type, bars, partial, request.id, request.params)
+            self._handle_bars(request.bar_type, bars, partial, request.id, request.start, request.end, request.params)

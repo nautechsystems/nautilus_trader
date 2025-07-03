@@ -60,6 +60,7 @@ from nautilus_trader.data.messages cimport UnsubscribeQuoteTicks
 from nautilus_trader.data.messages cimport UnsubscribeTradeTicks
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarAggregation
+from nautilus_trader.model.data cimport BarIntervalType
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport CustomData
 from nautilus_trader.model.data cimport IndexPriceUpdate
@@ -97,7 +98,7 @@ cdef class DataEngine(Component):
     cdef readonly dict[UUID4, int] _query_group_n_responses
     cdef readonly dict[UUID4, list] _query_group_responses
 
-    cdef readonly str _time_bars_interval_type
+    cdef readonly BarIntervalType _time_bars_interval_type
     cdef readonly bint _time_bars_timestamp_on_close
     cdef readonly bint _time_bars_skip_first_non_full_bar
     cdef readonly bint _time_bars_build_with_no_updates
@@ -233,8 +234,8 @@ cdef class DataEngine(Component):
     cpdef void _handle_quote_ticks(self, list ticks)
     cpdef void _handle_trade_ticks(self, list ticks)
     cpdef void _handle_bars(self, list bars, Bar partial)
-    cpdef dict _handle_aggregated_bars(self, list ticks, dict params)
-    cdef dict _handle_aggregated_bars_aux(self, list ticks, dict params)
+    cpdef dict _handle_aggregated_bars(self, DataResponse response)
+    cdef dict _handle_aggregated_bars_aux(self, DataResponse response)
 
 # -- INTERNAL -------------------------------------------------------------------------------------
 
