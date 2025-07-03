@@ -302,6 +302,9 @@ There are two main scenarios for reconciliation:
 
 - **Missing trade reports**: Some venues filter out older trades, causing incomplete reconciliation. Increase `reconciliation_lookback_mins` or ensure all events are cached locally.
 - **Position mismatches**: If external orders predate the lookback window, positions may not align. Flatten the account before restarting the system to reset state.
+- **Duplicate order IDs**: Duplicate client order IDs in mass status reports will cause reconciliation failure. Ensure venue data integrity or contact support.
+- **Precision differences**: Small decimal differences in position quantities are handled automatically using instrument precision, but large discrepancies may indicate missing orders.
+- **Out-of-order reports**: Fill reports arriving before order status reports are deferred until order state is available.
 
 :::tip
 **Best practice**: Persist all execution events to the cache database to minimize reliance on venue history, ensuring full recovery even with short lookback windows.
@@ -347,14 +350,20 @@ methods to produce an execution mass status:
 The system state is then reconciled with the reports, which represent external "reality":
 
 - **Duplicate Check**:
-  - Check for duplicate order IDs and trade IDs.
+  - Check for duplicate client order IDs and trade IDs.
+  - Duplicate client order IDs cause reconciliation failure to prevent state corruption.
 - **Order Reconciliation**:
   - Generate and apply events necessary to update orders from any cached state to the current state.
   - If any trade reports are missing, inferred `OrderFilled` events are generated.
   - If any client order ID is not recognized or an order report lacks a client order ID, external order events are generated.
+  - Fill report data consistency is verified using tolerance-based comparisons for price and commission differences.
 - **Position Reconciliation**:
-  - Ensure the net position per instrument matches the position reports returned from the venue.
+  - Ensure the net position per instrument matches the position reports returned from the venue using instrument precision handling.
   - If the position state resulting from order reconciliation does not match the external state, external order events will be generated to resolve discrepancies.
+  - Zero quantity differences after precision rounding are handled gracefully.
+- **Exception Handling**:
+  - Individual adapter failures do not abort the entire reconciliation process.
+  - Missing order status reports are handled gracefully when fill reports arrive first.
 
 If reconciliation fails, the system will not continue to start, and an error will be logged.
 

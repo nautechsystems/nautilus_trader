@@ -47,6 +47,7 @@ Released on TBD (UTC).
 - Updated `Makefile` to use new docker compose syntax (#2746), thanks @stastnypremysl
 - Updated Tardis exchange mappings
 - Improved live engine message processing to ensure unexpected exceptions result in an immediate hard crash rather than continuing without the queue processing messages
+- Improved live reconciliation robustness and testing
 - Improved handling of negative balances in backtests (#2730), thanks @ms32035
 - Improved robustness of cash and margin account locked balance calculations to avoid negative free balance
 - Improved robustness of fill price parsing for Betfair
@@ -102,6 +103,7 @@ Released on TBD (UTC).
 
 ### Documentation Updates
 - Updated IB adapter documentation (#2729), thanks @faysou
+- Improved reconciliation docs in live concept guide
 
 ### Deprecations
 - Deprecated `Portfolio.set_specific_venue(...)`, to be removed in a future release; use `Cache.set_specific_venue(...)` instead
