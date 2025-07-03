@@ -258,12 +258,18 @@ impl OrderMatchingCore {
     }
 
     pub fn match_stop_order(&mut self, order: &StopOrderAny) {
-        if self.is_stop_matched(order.order_side_specified(), order.stop_px())
-            && let Some(handler) = &mut self.trigger_stop_order
-        {
-            handler
-                .0
-                .trigger_stop_order(&mut OrderAny::from(order.clone()));
+        match order {
+            StopOrderAny::TrailingStopMarket(o) if !o.is_activated => return,
+            StopOrderAny::TrailingStopLimit(o) if !o.is_activated => return,
+            _ => {}
+        }
+
+        if self.is_stop_matched(order.order_side_specified(), order.stop_px()) {
+            if let Some(handler) = &mut self.trigger_stop_order {
+                handler
+                    .0
+                    .trigger_stop_order(&mut OrderAny::from(order.clone()));
+            }
         }
     }
 
