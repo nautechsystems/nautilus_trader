@@ -1241,12 +1241,14 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             levels.pop(position, None)
 
         # Check if the order book is initialized
-        if not self._order_books_initialized.get(req_id, False):
-            depth = self._order_book_depth[req_id]
-            if len(book["bids"]) == depth and len(book["asks"]) == depth:
-                self._order_books_initialized[req_id] = True
-            else:
-                return
+        # For low-liquidity stocks, the set depth requirement may not be satisfied,
+        # so temporarily disable the initialization check handling
+        # if not self._order_books_initialized.get(req_id, False):
+        #     depth = self._order_book_depth[req_id]
+        #     if len(book["bids"]) == depth and len(book["asks"]) == depth:
+        #         self._order_books_initialized[req_id] = True
+        #     else:
+        #         return
 
         # Convert to OrderBookDeltas
         aggregated_book = self._aggregate_order_book_by_price(book)
