@@ -98,7 +98,8 @@ Released on TBD (UTC).
 - Fixed instrument message decoding when no `exchange` value for Databento US equities
 - Fixed fetching single-instrument trading fees for `Binance`, thanks @petioptrv
 - Fixed IB-TWS connection issue with international languages (#2726), thanks @DracheShiki
-- Fix Bybit Unknown Error (#2742), thanks @DeevsDeevs
+- Fixed bar requests for Bybit where pagination was incorrect which limited bars being returned
+- Fixed Bybit Unknown Error (#2742), thanks @DeevsDeevs
 - Fixed margin balance parsing for Bybit
 - Restore task error logs for IBKR (#2716), thanks @bartlaw
 
