@@ -1156,8 +1156,8 @@ fn test_book_filtered_with_depth_limit() {
         book.add(
             *order,
             0,
-            ((i + bid_orders.len()) as u64).into(),
-            ((i + bid_orders.len()) as u64).into(),
+            (i + bid_orders.len()) as u64,
+            UnixNanos::from((i + bid_orders.len()) as u64),
         );
     }
 
@@ -1899,7 +1899,7 @@ fn test_client_order_ids_with_orders() {
 
     let bid_order1 = OwnBookOrder::new(
         TraderId::from("TRADER-001"),
-        bid_id1.clone(),
+        bid_id1,
         Some(VenueOrderId::from("1")),
         OrderSideSpecified::Buy,
         Price::from("100.00"),
@@ -1915,7 +1915,7 @@ fn test_client_order_ids_with_orders() {
 
     let bid_order2 = OwnBookOrder::new(
         TraderId::from("TRADER-001"),
-        bid_id2.clone(),
+        bid_id2,
         Some(VenueOrderId::from("2")),
         OrderSideSpecified::Buy,
         Price::from("99.00"),
@@ -1931,7 +1931,7 @@ fn test_client_order_ids_with_orders() {
 
     let ask_order1 = OwnBookOrder::new(
         TraderId::from("TRADER-001"),
-        ask_id1.clone(),
+        ask_id1,
         Some(VenueOrderId::from("3")),
         OrderSideSpecified::Sell,
         Price::from("101.00"),
@@ -1947,7 +1947,7 @@ fn test_client_order_ids_with_orders() {
 
     let ask_order2 = OwnBookOrder::new(
         TraderId::from("TRADER-001"),
-        ask_id2.clone(),
+        ask_id2,
         Some(VenueOrderId::from("4")),
         OrderSideSpecified::Sell,
         Price::from("102.00"),
@@ -1995,7 +1995,7 @@ fn test_client_order_ids_after_operations() {
     let client_order_id = ClientOrderId::from("O-BID-1");
     let order = OwnBookOrder::new(
         TraderId::from("TRADER-001"),
-        client_order_id.clone(),
+        client_order_id,
         Some(VenueOrderId::from("1")),
         OrderSideSpecified::Buy,
         Price::from("100.00"),
@@ -3785,10 +3785,7 @@ fn test_orderbook_with_operations(book_type: BookType, operations: Vec<OrderBook
                 if bid <= ask {
                     assert!(
                         mid >= bid.as_f64() && mid <= ask.as_f64(),
-                        "Midpoint {} should be between bid {} and ask {}",
-                        mid,
-                        bid,
-                        ask
+                        "Midpoint {mid} should be between bid {bid} and ask {ask}"
                     );
                 }
             }

@@ -441,10 +441,10 @@ mod tests {
     }
 
     impl MockStatistic {
-        fn new(name: &str) -> Arc<dyn PortfolioStatistic<Item = f64> + Send + Sync> {
-            Arc::new(Self {
+        fn new(name: &str) -> Self {
+            Self {
                 name: name.to_string(),
-            })
+            }
         }
     }
 
@@ -615,7 +615,8 @@ mod tests {
     #[rstest]
     fn test_register_and_deregister_statistics() {
         let mut analyzer = PortfolioAnalyzer::new();
-        let stat = Arc::new(MockStatistic::new("test_stat"));
+        let stat: Arc<dyn PortfolioStatistic<Item = f64> + Send + Sync> =
+            Arc::new(MockStatistic::new("test_stat"));
 
         // Test registration
         analyzer.register_statistic(Arc::clone(&stat));
@@ -626,8 +627,10 @@ mod tests {
         assert!(analyzer.statistic("test_stat").is_none());
 
         // Test deregister all
-        let stat1 = Arc::new(MockStatistic::new("stat1"));
-        let stat2 = Arc::new(MockStatistic::new("stat2"));
+        let stat1: Arc<dyn PortfolioStatistic<Item = f64> + Send + Sync> =
+            Arc::new(MockStatistic::new("stat1"));
+        let stat2: Arc<dyn PortfolioStatistic<Item = f64> + Send + Sync> =
+            Arc::new(MockStatistic::new("stat2"));
         analyzer.register_statistic(Arc::clone(&stat1));
         analyzer.register_statistic(Arc::clone(&stat2));
         analyzer.deregister_statistics();
@@ -726,7 +729,8 @@ mod tests {
     fn test_performance_stats_calculation() {
         let mut analyzer = PortfolioAnalyzer::new();
         let currency = Currency::USD();
-        let stat = Arc::new(MockStatistic::new("test_stat"));
+        let stat: Arc<dyn PortfolioStatistic<Item = f64> + Send + Sync> =
+            Arc::new(MockStatistic::new("test_stat"));
         analyzer.register_statistic(Arc::clone(&stat));
 
         // Add some positions
@@ -769,7 +773,8 @@ mod tests {
     fn test_formatted_output() {
         let mut analyzer = PortfolioAnalyzer::new();
         let currency = Currency::USD();
-        let stat = Arc::new(MockStatistic::new("test_stat"));
+        let stat: Arc<dyn PortfolioStatistic<Item = f64> + Send + Sync> =
+            Arc::new(MockStatistic::new("test_stat"));
         analyzer.register_statistic(Arc::clone(&stat));
 
         let positions = vec![

@@ -168,7 +168,7 @@ mod tests {
             &eth_rpc_response_eth_transfer_tx,
         ) {
             Ok(rpc_response) => rpc_response.result,
-            Err(e) => panic!("Failed to deserialize transaction RPC response: {}", e),
+            Err(e) => panic!("Failed to deserialize transaction RPC response: {e}"),
         };
         assert_eq!(tx.chain.name, Blockchain::Ethereum);
         assert_eq!(
@@ -204,7 +204,7 @@ mod tests {
             &eth_rpc_response_smart_contract_interaction_tx,
         ) {
             Ok(rpc_response) => rpc_response.result,
-            Err(e) => panic!("Failed to deserialize transaction RPC response: {}", e),
+            Err(e) => panic!("Failed to deserialize transaction RPC response: {e}"),
         };
         assert_eq!(tx.chain.name, Blockchain::Ethereum);
         assert_eq!(

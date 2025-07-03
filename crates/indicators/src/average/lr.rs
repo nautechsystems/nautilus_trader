@@ -493,7 +493,7 @@ mod tests {
     #[rstest(
         period, value,
         case(8, 5.0),
-        case(16, -3.1415)
+        case(16, -std::f64::consts::PI)
     )]
     fn constant_non_zero_series(period: usize, value: f64) {
         let mut lr = LinearRegression::new(period);
@@ -505,7 +505,7 @@ mod tests {
         assert!(lr.initialized());
         assert!(lr.slope.abs() < EPS);
         assert!((lr.intercept - value).abs() < EPS);
-        assert_eq!(lr.degree, 0.0);
+        assert!(lr.degree.abs() < EPS);
         assert!(lr.r2.is_nan());
         assert!((lr.cfo).abs() < EPS);
         assert!((lr.value - value).abs() < EPS);

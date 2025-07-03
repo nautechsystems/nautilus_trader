@@ -374,8 +374,7 @@ mod tests {
 
         assert_eq!(
             result, expected,
-            "Failed for precision {}, value {}: got {}, expected {}",
-            precision, value, result, expected
+            "Failed for precision {precision}, value {value}: got {result}, expected {expected}"
         );
     }
 
@@ -428,8 +427,7 @@ mod tests {
 
         assert_eq!(
             result, expected,
-            "Failed for precision {}, value {}: got {}, expected {}",
-            precision, value, result, expected
+            "Failed for precision {precision}, value {value}: got {result}, expected {expected}"
         );
     }
 
@@ -467,8 +465,7 @@ mod tests {
 
         assert_eq!(
             result, expected,
-            "Failed for precision {}, value {}: got {}, expected {}",
-            precision, value, result, expected
+            "Failed for precision {precision}, value {value}: got {result}, expected {expected}"
         );
     }
 

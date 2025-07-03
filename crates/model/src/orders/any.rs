@@ -306,7 +306,7 @@ mod tests {
         let market_order = OrderTestBuilder::new(OrderType::Market)
             .instrument_id(InstrumentId::from("BTC-USDT.BINANCE"))
             .quantity(Quantity::from(10))
-            .client_order_id(client_order_id.clone())
+            .client_order_id(client_order_id)
             .build();
 
         let limit_order = OrderTestBuilder::new(OrderType::Limit)

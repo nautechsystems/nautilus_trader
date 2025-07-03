@@ -61,11 +61,11 @@ fn mem_leak_test<T>(setup: impl FnOnce() -> T, run: impl Fn(&T), threshold: f64,
 
     let after = me.stat().unwrap().rss * page_size / 1024 - setup_mem;
 
-    if !(after.abs_diff(before) as f64 / (before as f64) < threshold) {
+    if (after.abs_diff(before) as f64 / (before as f64)) >= threshold {
         println!("Memory leak detected after {iter} iterations");
         println!("Memory before runs (in KB): {before}");
         println!("Memory after runs (in KB): {after}");
-        assert!(false);
+        panic!("Memory leak detected");
     }
 }
 
@@ -814,10 +814,10 @@ fn test_consolidate_data_by_period_basic() {
 
     // Create data spanning multiple hours
     let bars = vec![
-        create_bar(3600_000_000_000), // 1 hour
-        create_bar(3601_000_000_000), // 1 hour + 1 second
-        create_bar(7200_000_000_000), // 2 hours
-        create_bar(7201_000_000_000), // 2 hours + 1 second
+        create_bar(3_600_000_000_000), // 1 hour
+        create_bar(3_601_000_000_000), // 1 hour + 1 second
+        create_bar(7_200_000_000_000), // 2 hours
+        create_bar(7_201_000_000_000), // 2 hours + 1 second
     ];
     catalog.write_to_parquet(bars, None, None, None).unwrap();
 
@@ -826,7 +826,7 @@ fn test_consolidate_data_by_period_basic() {
         .consolidate_data_by_period(
             "bars",
             Some("AUD/USD.SIM".to_string()),
-            Some(3600_000_000_000), // 1 hour in nanoseconds
+            Some(3_600_000_000_000), // 1 hour in nanoseconds
             None,
             None,
             Some(true),
@@ -862,7 +862,7 @@ fn test_consolidate_data_by_period_with_time_range() {
         .consolidate_data_by_period(
             "bars",
             Some("AUD/USD.SIM".to_string()),
-            Some(86400_000_000_000), // 1 day in nanoseconds
+            Some(86_400_000_000_000), // 1 day in nanoseconds
             Some(UnixNanos::from(2000)),
             Some(UnixNanos::from(4000)),
             Some(false),
@@ -885,7 +885,7 @@ fn test_consolidate_data_by_period_empty_data() {
     let result = catalog.consolidate_data_by_period(
         "bars",
         Some("AUD/USD.SIM".to_string()),
-        Some(86400_000_000_000), // 1 day in nanoseconds
+        Some(86_400_000_000_000), // 1 day in nanoseconds
         None,
         None,
         Some(true),
@@ -911,9 +911,9 @@ fn test_consolidate_data_by_period_different_periods() {
 
     // Test different period sizes
     let periods = vec![
-        1800_000_000_000,  // 30 minutes
-        3600_000_000_000,  // 1 hour
-        86400_000_000_000, // 1 day
+        1_800_000_000_000,  // 30 minutes
+        3_600_000_000_000,  // 1 hour
+        86_400_000_000_000, // 1 day
     ];
 
     for period_nanos in periods {
@@ -946,7 +946,7 @@ fn test_consolidate_data_by_period_ensure_contiguous_files_false() {
         .consolidate_data_by_period(
             "bars",
             Some("AUD/USD.SIM".to_string()),
-            Some(86400_000_000_000), // 1 day in nanoseconds
+            Some(86_400_000_000_000), // 1 day in nanoseconds
             None,
             None,
             Some(false), // Use actual data timestamps for file naming
@@ -975,7 +975,7 @@ fn test_consolidate_catalog_by_period_basic() {
     // Act - consolidate entire catalog
     catalog
         .consolidate_catalog_by_period(
-            Some(86400_000_000_000), // 1 day in nanoseconds
+            Some(86_400_000_000_000), // 1 day in nanoseconds
             None,
             None,
             Some(true),
@@ -1006,7 +1006,7 @@ fn test_consolidate_catalog_by_period_with_time_range() {
     // Act - consolidate catalog with time range
     catalog
         .consolidate_catalog_by_period(
-            Some(86400_000_000_000), // 1 day in nanoseconds
+            Some(86_400_000_000_000), // 1 day in nanoseconds
             Some(UnixNanos::from(2000)),
             Some(UnixNanos::from(8000)),
             Some(false),
@@ -1027,7 +1027,7 @@ fn test_consolidate_catalog_by_period_empty_catalog() {
 
     // Act - consolidate empty catalog
     let result = catalog.consolidate_catalog_by_period(
-        Some(86400_000_000_000), // 1 day in nanoseconds
+        Some(86_400_000_000_000), // 1 day in nanoseconds
         None,
         None,
         Some(true),
@@ -1075,7 +1075,7 @@ fn test_consolidate_data_by_period_multiple_instruments() {
         .consolidate_data_by_period(
             "bars",
             Some("AUD/USD.SIM".to_string()),
-            Some(86400_000_000_000), // 1 day in nanoseconds
+            Some(86_400_000_000_000), // 1 day in nanoseconds
             None,
             None,
             Some(true),
@@ -1103,7 +1103,7 @@ fn test_consolidate_data_by_period_invalid_type() {
     let result = catalog.consolidate_data_by_period(
         "invalid_type",
         Some("AUD/USD.SIM".to_string()),
-        Some(86400_000_000_000), // 1 day in nanoseconds
+        Some(86_400_000_000_000), // 1 day in nanoseconds
         None,
         None,
         Some(true),
@@ -1120,7 +1120,7 @@ fn test_prepare_consolidation_queries_empty_intervals() {
 
     // Test with empty intervals
     let intervals = vec![];
-    let period_nanos = 86400_000_000_000; // 1 day
+    let period_nanos = 86_400_000_000_000; // 1 day
 
     let queries = catalog
         .prepare_consolidation_queries("quotes", None, &intervals, period_nanos, None, None, true)
@@ -1137,7 +1137,7 @@ fn test_prepare_consolidation_queries_filtered_intervals() {
 
     // Test with intervals that are filtered out by time range
     let intervals = vec![(1000, 2000), (3000, 4000)];
-    let period_nanos = 86400_000_000_000; // 1 day
+    let period_nanos = 86_400_000_000_000; // 1 day
     let start = Some(UnixNanos::from(5000)); // After all intervals
     let end = Some(UnixNanos::from(6000));
 
@@ -1271,7 +1271,7 @@ fn test_generic_consolidate_data_by_period_quotes() {
     catalog
         .consolidate_data_by_period_generic::<QuoteTick>(
             Some("ETH/USDT.BINANCE".to_string()),
-            Some(86400_000_000_000), // 1 day in nanoseconds
+            Some(86_400_000_000_000), // 1 day in nanoseconds
             None,
             None,
             Some(true),
@@ -1306,7 +1306,7 @@ fn test_generic_consolidate_data_by_period_bars() {
     catalog
         .consolidate_data_by_period_generic::<Bar>(
             Some("AUD/USD.SIM".to_string()),
-            Some(86400_000_000_000), // 1 day in nanoseconds
+            Some(86_400_000_000_000), // 1 day in nanoseconds
             None,
             None,
             Some(true),
@@ -1328,7 +1328,7 @@ fn test_generic_consolidate_data_by_period_empty_catalog() {
     // Act - consolidate empty catalog
     let result = catalog.consolidate_data_by_period_generic::<QuoteTick>(
         Some("ETH/USDT.BINANCE".to_string()),
-        Some(86400_000_000_000), // 1 day in nanoseconds
+        Some(86_400_000_000_000), // 1 day in nanoseconds
         None,
         None,
         Some(true),
@@ -1359,7 +1359,7 @@ fn test_generic_consolidate_data_by_period_with_time_range() {
     catalog
         .consolidate_data_by_period_generic::<QuoteTick>(
             Some("ETH/USDT.BINANCE".to_string()),
-            Some(86400_000_000_000), // 1 day in nanoseconds
+            Some(86_400_000_000_000), // 1 day in nanoseconds
             Some(UnixNanos::from(2000)),
             Some(UnixNanos::from(8000)),
             Some(false),
@@ -1426,7 +1426,7 @@ fn test_consolidation_preserves_data_integrity() {
         .consolidate_data_by_period(
             "bars",
             Some("AUD/USD.SIM".to_string()),
-            Some(86400_000_000_000), // 1 day in nanoseconds
+            Some(86_400_000_000_000), // 1 day in nanoseconds
             None,
             None,
             Some(true),

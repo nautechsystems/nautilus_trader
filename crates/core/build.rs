@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#![allow(clippy::needless_return)]
+
 //! Build script for the `nautilus-core` crate.
 //!
 //! This script is executed by Cargo during compilation and is responsible for the ancillary

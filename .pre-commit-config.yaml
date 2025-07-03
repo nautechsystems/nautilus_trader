@@ -84,7 +84,7 @@ repos:
         description: Run the Clippy linter on the package.
         entry: cargo clippy
         language: system
-        args: ["--features", "high-precision,ffi,python,extension-module", "--", "-D", "warnings"]
+        args: ["--benches", "--no-default-features", "--features", "high-precision,ffi,python,extension-module", "--", "-D", "warnings"]
         files: '\.(rs|toml)$'
         types: [file]
         pass_filenames: false
