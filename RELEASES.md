@@ -48,6 +48,7 @@ Released on TBD (UTC).
 - Updated Tardis exchange mappings
 - Improved live engine message processing to ensure unexpected exceptions result in an immediate hard crash rather than continuing without the queue processing messages
 - Improved live reconciliation robustness and testing
+- Improved listen key error handling and recovery for Binance
 - Improved handling of negative balances in backtests (#2730), thanks @ms32035
 - Improved robustness of cash and margin account locked balance calculations to avoid negative free balance
 - Improved robustness of fill price parsing for Betfair
