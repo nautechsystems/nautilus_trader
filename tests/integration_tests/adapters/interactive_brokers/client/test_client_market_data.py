@@ -177,9 +177,7 @@ async def test_unsubscribe_ticks(ib_client):
     await ib_client.unsubscribe_ticks(instrument_id, tick_type)
 
     # Assert
-    ib_client._eclient.cancelTickByTickData.assert_called_once_with(
-        reqId=999,
-    )
+    ib_client._eclient.cancelTickByTickData.assert_called_once_with(999)
 
 
 @pytest.mark.asyncio
@@ -220,9 +218,7 @@ async def test_unsubscribe_realtime_bars(ib_client):
     await ib_client.unsubscribe_realtime_bars(bar_type)
 
     # Assert
-    ib_client._eclient.cancelRealTimeBars.assert_called_once_with(
-        reqId=999,
-    )
+    ib_client._eclient.cancelRealTimeBars.assert_called_once_with(999)
 
 
 @pytest.mark.asyncio
@@ -279,9 +275,7 @@ async def test_unsubscribe_historical_bars(ib_client):
     await ib_client.unsubscribe_historical_bars(bar_type)
 
     # Assert
-    ib_client._eclient.cancelHistoricalData.assert_called_once_with(
-        reqId=999,
-    )
+    ib_client._eclient.cancelHistoricalData.assert_called_once_with(999)
 
 
 @pytest.mark.asyncio

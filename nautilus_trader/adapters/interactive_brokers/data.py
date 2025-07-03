@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+from __future__ import annotations
 
 import asyncio
 from operator import attrgetter
@@ -56,6 +57,7 @@ from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.currency_pair import CurrencyPair
@@ -166,8 +168,28 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         )
 
     async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
-        raise NotImplementedError(  # pragma: no cover
-            "implement the `_subscribe_order_book_deltas` coroutine",  # pragma: no cover
+        if command.book_type == BookType.L3_MBO:
+            self._log.error(
+                "Cannot subscribe to order book deltas: "
+                "L3_MBO data is not published by Interactive Brokers. "
+                "Valid book types are L1_MBP, L2_MBP",
+            )
+            return
+
+        if not (instrument := self._cache.instrument(command.instrument_id)):
+            self._log.error(
+                f"Cannot subscribe to order book deltas for {command.instrument_id}: instrument not found",
+            )
+            return
+
+        depth = 20 if not command.depth else command.depth
+        is_smart_depth = command.params.get("is_smart_depth", True)
+
+        await self._client.subscribe_order_book(
+            instrument_id=command.instrument_id,
+            contract=IBContract(**instrument.info["contract"]),
+            depth=depth,
+            is_smart_depth=is_smart_depth,
         )
 
     async def _subscribe_order_book_snapshots(self, command: SubscribeOrderBook) -> None:
@@ -250,8 +272,10 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         )
 
     async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
-        raise NotImplementedError(  # pragma: no cover
-            "implement the `_unsubscribe_order_book_deltas` coroutine",  # pragma: no cover
+        is_smart_depth = command.params.get("is_smart_depth", True)
+        await self._client.unsubscribe_order_book(
+            instrument_id=command.instrument_id,
+            is_smart_depth=is_smart_depth,
         )
 
     async def _unsubscribe_order_book_snapshots(self, command: UnsubscribeOrderBook) -> None:
