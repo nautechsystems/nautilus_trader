@@ -171,14 +171,14 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         if command.book_type == BookType.L3_MBO:
             self._log.error(
                 "Cannot subscribe to order book deltas: "
-                "L3_MBO data is not published by Tardis. "
+                "L3_MBO data is not published by Interactive Brokers. "
                 "Valid book types are L1_MBP, L2_MBP",
             )
             return
 
         if not (instrument := self._cache.instrument(command.instrument_id)):
             self._log.error(
-                f"Cannot subscribe to quotes for {command.instrument_id}: instrument not found",
+                f"Cannot subscribe to order book deltas for {command.instrument_id}: instrument not found",
             )
             return
 
