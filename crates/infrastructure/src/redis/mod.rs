@@ -341,8 +341,10 @@ mod tests {
     fn test_get_stream_key_with_trader_prefix_and_instance_id() {
         let trader_id = TraderId::from("tester-123");
         let instance_id = UUID4::new();
-        let mut config = MessageBusConfig::default();
-        config.use_instance_id = true;
+        let config = MessageBusConfig {
+            use_instance_id: true,
+            ..Default::default()
+        };
 
         let key = get_stream_key(trader_id, instance_id, &config);
         assert_eq!(key, format!("trader-tester-123:{instance_id}:stream"));
@@ -352,9 +354,11 @@ mod tests {
     fn test_get_stream_key_without_trader_prefix_or_instance_id() {
         let trader_id = TraderId::from("tester-123");
         let instance_id = UUID4::new();
-        let mut config = MessageBusConfig::default();
-        config.use_trader_prefix = false;
-        config.use_trader_id = false;
+        let config = MessageBusConfig {
+            use_trader_prefix: false,
+            use_trader_id: false,
+            ..Default::default()
+        };
 
         let key = get_stream_key(trader_id, instance_id, &config);
         assert_eq!(key, format!("stream"));

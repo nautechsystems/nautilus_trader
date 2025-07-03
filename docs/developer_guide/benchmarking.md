@@ -50,7 +50,9 @@ harness = false                    # disable the default libtest harness
    `sample_size` when the defaults aren’t ideal.
 
 ```rust
-use criterion::{black_box, Criterion, criterion_group, criterion_main};
+use std::hint::black_box;
+
+use criterion::{Criterion, criterion_group, criterion_main};
 
 fn bench_my_algo(c: &mut Criterion) {
     let data = prepare_data(); // heavy set-up done once
@@ -73,7 +75,7 @@ can be ignored). Keep them as small as possible so the measured instruction
 count is meaningful.
 
 ```rust
-use iai::black_box;
+use std::hint::black_box;
 
 fn bench_add() -> i64 {
     let a = black_box(123);

@@ -657,6 +657,7 @@ mod tests {
         }
     }
 
+    #[allow(clippy::type_complexity)]
     fn create_trader_components() -> (
         Rc<RefCell<MessageBus>>,
         Rc<RefCell<Cache>>,
@@ -788,8 +789,10 @@ mod tests {
 
         let mut trader = Trader::new(trader_id, instance_id, Environment::Backtest, clock, cache);
 
-        let mut config = DataActorConfig::default();
-        config.actor_id = Some(ActorId::from("TestActor"));
+        let config = DataActorConfig {
+            actor_id: Some(ActorId::from("TestActor")),
+            ..Default::default()
+        };
         let actor1 = TestDataActor::new(config.clone());
         let actor2 = TestDataActor::new(config);
 

@@ -879,7 +879,7 @@ mod tests {
                 if let Some(stop_time_ns) = stop_time_ns {
                     if timer.next_time_ns().as_u64() > stop_time_ns {
                         // The timer should expire on the next advance/iteration
-                        let mut test_timer = timer.clone();
+                        let mut test_timer = timer;
                         let events: Vec<TimeEvent> = test_timer
                             .advance(UnixNanos::from(stop_time_ns + 1))
                             .collect();

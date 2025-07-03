@@ -654,7 +654,7 @@ mod tests {
 
     #[rstest]
     fn tick_navigation(currency_pair_btcusdt: CurrencyPair) {
-        let start = 10_000.1234;
+        let start = 10_000.123_4;
         let bid_0 = currency_pair_btcusdt.next_bid_price(start, 0).unwrap();
         let bid_1 = currency_pair_btcusdt.next_bid_price(start, 1).unwrap();
         assert!(bid_1 < bid_0);
@@ -886,8 +886,8 @@ mod tests {
     }
 
     #[rstest]
-    #[case(1.234_9999, false, "1.235000")]
-    #[case(1.234_9999, true, "1.234999")]
+    #[case(1.234_999_9, false, "1.235000")]
+    #[case(1.234_999_9, true, "1.234999")]
     fn make_qty_boundary(
         currency_pair_btcusdt: CurrencyPair,
         #[case] input: f64,
@@ -1086,7 +1086,7 @@ mod tests {
     #[rstest]
     #[case::dp0(Decimal::new(1_000, 0), Decimal::new(2, 0), 500.0)]
     #[case::dp1(Decimal::new(10_000, 1), Decimal::new(2, 0), 500.0)]
-    #[case::dp2(Decimal::new(1_000_00, 2), Decimal::new(2, 0), 500.0)]
+    #[case::dp2(Decimal::new(100_000, 2), Decimal::new(2, 0), 500.0)]
     #[case::dp3(Decimal::new(1_000_000, 3), Decimal::new(2, 0), 500.0)]
     #[case::dp4(Decimal::new(10_000_000, 4), Decimal::new(2, 0), 500.0)]
     #[case::dp5(Decimal::new(100_000_000, 5), Decimal::new(2, 0), 500.0)]
@@ -1174,8 +1174,8 @@ mod tests {
     #[rstest]
     #[case(0.999_999, false)]
     #[case(0.999_999, true)]
-    #[case(1.000_0001, false)]
-    #[case(1.000_0001, true)]
+    #[case(1.000_000_1, false)]
+    #[case(1.000_000_1, true)]
     #[case(1.234_5, false)]
     #[case(1.234_5, true)]
     #[case(2.345_5, false)]

@@ -443,7 +443,7 @@ mod tests {
 
         // Check the venue and exec client has been added
         assert_eq!(engine.venues.len(), 1);
-        assert!(engine.venues.get(&venue).is_some());
+        assert!(engine.venues.contains_key(&venue));
         assert!(engine.kernel.exec_engine.get_client(&client_id).is_some());
 
         // Check the instrument has been added

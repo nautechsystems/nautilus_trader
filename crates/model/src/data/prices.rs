@@ -298,7 +298,7 @@ mod tests {
         let ts_init = UnixNanos::from(2);
 
         let mark_price = MarkPriceUpdate::new(instrument_id, price, ts_event, ts_init);
-        let cloned = mark_price.clone();
+        let cloned = mark_price;
 
         assert_eq!(mark_price, cloned);
     }

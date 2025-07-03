@@ -1001,8 +1001,10 @@ mod tests {
     fn test_get_trader_key_with_prefix_and_instance_id() {
         let trader_id = TraderId::from("tester-123");
         let instance_id = UUID4::new();
-        let mut config = CacheConfig::default();
-        config.use_instance_id = true;
+        let config = CacheConfig {
+            use_instance_id: true,
+            ..Default::default()
+        };
 
         let key = get_trader_key(trader_id, instance_id, &config);
         assert!(key.starts_with("trader-tester-123:"));

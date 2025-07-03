@@ -13,7 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use std::hint::black_box;
+
+use criterion::{Criterion, criterion_group, criterion_main};
 use nautilus_common::msgbus::matching::is_matching_backtracking;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 use regex::Regex;

@@ -767,7 +767,7 @@ mod tests {
             .limit_offset(dec!(2.0))
             .trailing_offset(dec!(1.0))
             .trailing_offset_type(TrailingOffsetType::Price)
-            .trigger_instrument_id(trigger_instrument_id.clone())
+            .trigger_instrument_id(trigger_instrument_id)
             .build();
 
         // Assert that the trigger instrument ID is set correctly

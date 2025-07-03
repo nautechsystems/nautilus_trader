@@ -177,8 +177,7 @@ mod tests {
             let result = std::panic::catch_unwind(|| quantity.as_wei());
             assert!(
                 result.is_err(),
-                "as_wei() should panic for precision {}",
-                precision
+                "as_wei() should panic for precision {precision}"
             );
         }
     }

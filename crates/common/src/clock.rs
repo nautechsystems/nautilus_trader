@@ -930,7 +930,7 @@ mod tests {
     #[rstest]
     fn test_time_monotonicity(mut test_clock: TestClock) {
         let initial_time = test_clock.timestamp_ns();
-        test_clock.advance_time((*initial_time + 1000).into(), true);
+        test_clock.advance_time(UnixNanos::from(*initial_time + 1000), true);
         assert!(test_clock.timestamp_ns() > initial_time);
     }
 
@@ -980,7 +980,7 @@ mod tests {
         test_clock
             .set_timer_ns("test_timer", 1000, Some(start_time), None, None, None, None)
             .unwrap();
-        let events = test_clock.advance_time((*start_time + 2500).into(), true);
+        let events = test_clock.advance_time(UnixNanos::from(*start_time + 2500), true);
         assert_eq!(events.len(), 2);
         assert_eq!(*events[0].ts_event, *start_time + 1000);
         assert_eq!(*events[1].ts_event, *start_time + 2000);
@@ -1013,7 +1013,7 @@ mod tests {
             )
             .unwrap();
 
-        let events = clock.advance_time((*clock.timestamp_ns() + 1000).into(), true);
+        let events = clock.advance_time(UnixNanos::from(*clock.timestamp_ns() + 1000), true);
         let handlers = clock.match_handlers(events);
 
         for handler in handlers {
@@ -1033,7 +1033,7 @@ mod tests {
         test_clock
             .set_timer_ns("timer2", 2000, Some(start_time), None, None, None, None)
             .unwrap();
-        let events = test_clock.advance_time((*start_time + 2000).into(), true);
+        let events = test_clock.advance_time(UnixNanos::from(*start_time + 2000), true);
         assert_eq!(events.len(), 3);
         assert_eq!(events[0].name.as_str(), "timer1");
         assert_eq!(events[1].name.as_str(), "timer1");
@@ -1122,7 +1122,7 @@ mod tests {
             .unwrap();
 
         // Advance time to check immediate firing and subsequent intervals
-        let events = test_clock.advance_time((start_time + 2500).into(), true);
+        let events = test_clock.advance_time(start_time + 2500, true);
 
         // Should fire immediately at start_time (0), then at start_time+1000, then at start_time+2000
         assert_eq!(events.len(), 3);
@@ -1149,7 +1149,7 @@ mod tests {
             .unwrap();
 
         // Advance time to check normal behavior
-        let events = test_clock.advance_time((start_time + 2500).into(), true);
+        let events = test_clock.advance_time(start_time + 2500, true);
 
         // Should fire after first interval, not immediately
         assert_eq!(events.len(), 2);
@@ -1175,7 +1175,7 @@ mod tests {
             )
             .unwrap();
 
-        let events = test_clock.advance_time((start_time + 1500).into(), true);
+        let events = test_clock.advance_time(start_time + 1500, true);
 
         // Should behave the same as fire_immediately=false
         assert_eq!(events.len(), 1);
@@ -1199,7 +1199,7 @@ mod tests {
             )
             .unwrap();
 
-        let events = test_clock.advance_time(7000.into(), true);
+        let events = test_clock.advance_time(UnixNanos::from(7000), true);
 
         // With zero start time, should use current time as start
         // Fire immediately at current time (5000), then at 6000, 7000
@@ -1240,7 +1240,7 @@ mod tests {
             )
             .unwrap();
 
-        let events = test_clock.advance_time((start_time + 1500).into(), true);
+        let events = test_clock.advance_time(start_time + 1500, true);
 
         // Should have 3 events total: immediate_timer fires at start & 1000, normal_timer fires at 1000
         assert_eq!(events.len(), 3);
@@ -1326,14 +1326,14 @@ mod tests {
                 "exact_stop",
                 interval_ns,
                 Some(start_time),
-                Some(stop_time.into()),
+                Some(stop_time),
                 None,
                 None,
                 Some(true),
             )
             .unwrap();
 
-        let events = test_clock.advance_time(stop_time.into(), true);
+        let events = test_clock.advance_time(stop_time, true);
 
         // Should fire immediately at start, then at stop time (which equals first interval)
         assert_eq!(events.len(), 2);
@@ -1479,7 +1479,7 @@ mod tests {
         assert_eq!(test_clock.timer_count(), 0);
 
         // Advance time - should get no events from cancelled timer
-        let events = test_clock.advance_time((start_time + 2000).into(), true);
+        let events = test_clock.advance_time(start_time + 2000, true);
         assert_eq!(events.len(), 0);
     }
 
@@ -1504,7 +1504,7 @@ mod tests {
         assert_eq!(test_clock.timer_count(), 0);
 
         // Advance time - should get no events
-        let events = test_clock.advance_time(5000.into(), true);
+        let events = test_clock.advance_time(UnixNanos::from(5000), true);
         assert_eq!(events.len(), 0);
     }
 

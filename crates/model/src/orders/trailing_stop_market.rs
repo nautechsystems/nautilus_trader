@@ -749,7 +749,7 @@ mod tests {
             .trigger_price(Price::new(100.0, 2))
             .trailing_offset(Decimal::new(5, 1)) // 0.5
             .trailing_offset_type(TrailingOffsetType::NoTrailingOffset)
-            .trigger_instrument_id(trigger_instrument_id.clone())
+            .trigger_instrument_id(trigger_instrument_id)
             .build();
 
         // Assert that the trigger instrument ID is set correctly
@@ -840,9 +840,7 @@ mod tests {
 
         assert!(
             (actual_slippage - expected_slippage).abs() < 0.001,
-            "Expected slippage around {}, got {}",
-            expected_slippage,
-            actual_slippage
+            "Expected slippage around {expected_slippage}, got {actual_slippage}"
         );
     }
 }

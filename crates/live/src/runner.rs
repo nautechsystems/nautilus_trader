@@ -170,6 +170,10 @@ impl AsyncRunner {
                         }
                         #[cfg(feature = "defi")]
                         DataEvent::DeFi(data) => msgbus::send_any(data_engine_process, &data),
+                        #[allow(unreachable_patterns)]
+                        _ => {
+                            log::warn!("Unhandled RunnerEvent variant");
+                        }
                     },
                 }
             }
