@@ -233,13 +233,14 @@ class BybitMarketHttpAPI:
         bybit_symbol = BybitSymbol(bar_type.instrument_id.symbol.value)
 
         all_bars: list[Bar] = []
-        prev_start: int | None = None
         seen_timestamps: set[int] = set()
 
+        # Work backwards from end time to get all historical data
+        current_end = end
+        page_count = 0
+
         while True:
-            if prev_start is not None and prev_start == start:
-                break
-            prev_start = start
+            page_count += 1
 
             klines = await self.fetch_klines(
                 symbol=bybit_symbol.raw_symbol,
@@ -247,7 +248,7 @@ class BybitMarketHttpAPI:
                 interval=interval,
                 limit=1000,  # Limit for data size per page (maximum for the Bybit API)
                 start=start,
-                end=end,
+                end=current_end,
             )
 
             if not klines:
@@ -260,12 +261,27 @@ class BybitMarketHttpAPI:
                 if int(kline.startTime) not in seen_timestamps
             ]
 
+            # If no new bars were added (all were duplicates), we've reached the end
+            if not new_bars:
+                break
+
             all_bars.extend(new_bars)
             seen_timestamps.update(int(kline.startTime) for kline in klines)
 
-            start = int(klines[-1].startTime) + 1
+            # Check if we've reached the requested limit
+            if limit is not None and len(all_bars) >= limit:
+                break
 
-            if end is not None and start > end:
+            # Move end time backwards to get earlier data
+            # Set new end to be 1ms before the first bar of this page
+            earliest_bar_time = int(klines[0].startTime)
+            if start is not None and earliest_bar_time <= start:
+                break
+
+            current_end = earliest_bar_time - 1
+
+            # Safety check to prevent infinite loops
+            if page_count > 100:
                 break
 
         if limit is not None and len(all_bars) > limit:
