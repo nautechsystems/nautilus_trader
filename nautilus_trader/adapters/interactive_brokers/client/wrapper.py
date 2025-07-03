@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 from __future__ import annotations
 
 from decimal import Decimal
@@ -506,12 +507,13 @@ class InteractiveBrokersEWrapper(EWrapper):
         position : int
             The order book's row being updated.
         marketMaker : str
-            The exchange holding the order.
+            The exchange holding the order if isSmartDepth is True,
+            otherwise the MPID of the market maker.
         operation : int
             How to refresh the row:
             - 0: insert (insert this new order into the row identified by 'position')
             - 1: update (update the existing order in the row identified by 'position')
-            - 2: delete (delete the existing order at the row identified by 'position').
+            - 2: delete (delete the existing order at the row identified by 'position')
         side : int
             0 for ask, 1 for bid.
         price : float
@@ -523,6 +525,19 @@ class InteractiveBrokersEWrapper(EWrapper):
 
         """
         self.logAnswer(current_fn_name(), vars())
+
+        task = partial(
+            self._client.process_update_mkt_depth_l2,
+            req_id=reqId,
+            position=position,
+            market_maker=marketMaker,
+            operation=operation,
+            side=side,
+            price=price,
+            size=size,
+            is_smart_depth=isSmartDepth,
+        )
+        self._client.submit_to_msg_handler_queue(task)
 
     def updateNewsBulletin(
         self,
