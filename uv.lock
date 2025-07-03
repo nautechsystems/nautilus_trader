@@ -1444,7 +1444,7 @@ dev = [
     { name = "cython", specifier = "==3.1.2" },
     { name = "docformatter", specifier = ">=1.7.7,<2.0.0" },
     { name = "mypy", specifier = ">=1.16.1,<2.0.0" },
-    { name = "pandas-stubs", specifier = ">=2.2.2,<3.0.0" },
+    { name = "pandas-stubs", specifier = ">=2.3.0,<3.0.0" },
     { name = "pre-commit", specifier = ">=4.2.0,<5.0.0" },
     { name = "requests", specifier = ">=2.32.4,<3.0.0" },
     { name = "ruff", specifier = ">=0.12.1,<1.0.0" },
@@ -1604,15 +1604,15 @@ wheels = [
 
 [[package]]
 name = "pandas-stubs"
-version = "2.2.3.250527"
+version = "2.3.0.250703"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
     { name = "types-pytz" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/5f/0d/5fe7f7f3596eb1c2526fea151e9470f86b379183d8b9debe44b2098651ca/pandas_stubs-2.2.3.250527.tar.gz", hash = "sha256:e2d694c4e72106055295ad143664e5c99e5815b07190d1ff85b73b13ff019e63", size = 106312, upload-time = "2025-05-27T15:24:29.716Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ec/df/c1c51c5cec087b8f4d04669308b700e9648745a77cdd0c8c5e16520703ca/pandas_stubs-2.3.0.250703.tar.gz", hash = "sha256:fb6a8478327b16ed65c46b1541de74f5c5947f3601850caf3e885e0140584717", size = 103910, upload-time = "2025-07-02T17:49:11.667Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ec/f8/46141ba8c9d7064dc5008bfb4a6ae5bd3c30e4c61c28b5c5ed485bf358ba/pandas_stubs-2.2.3.250527-py3-none-any.whl", hash = "sha256:cd0a49a95b8c5f944e605be711042a4dd8550e2c559b43d70ba2c4b524b66163", size = 159683, upload-time = "2025-05-27T15:24:28.4Z" },
+    { url = "https://files.pythonhosted.org/packages/75/cb/09d5f9bf7c8659af134ae0ffc1a349038a5d0ff93e45aedc225bde2872a3/pandas_stubs-2.3.0.250703-py3-none-any.whl", hash = "sha256:a9265fc69909f0f7a9cabc5f596d86c9d531499fed86b7838fd3278285d76b81", size = 154719, upload-time = "2025-07-02T17:49:10.697Z" },
 ]
 
 [[package]]

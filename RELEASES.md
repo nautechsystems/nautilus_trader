@@ -66,6 +66,7 @@ Released on TBD (UTC).
 - Upgraded `datafusion` crate to v48.0.0
 - Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.25.1
 - Upgraded `redis` crate to v0.32.3
+- Upgraded `tokio` crate to v1.46.0
 - Upgraded `tokio-tungstenite` crate to v0.27.0
 
 ### Fixes
