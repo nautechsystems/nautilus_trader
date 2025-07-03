@@ -17,8 +17,10 @@ Released on TBD (UTC).
 - Added optional metadata function for custom data query (#2724), thanks @faysou
 - Added support for order-list submission in the sandbox execution client (#2714), thanks @petioptrv
 - Added hidden order support for IBKR (#2739), thanks @sunlei
+- Added `subscribe_order_book_deltas` support for IBKR (#2749), thanks @sunlei
 - Added `bid_levels` and `ask_levels` for `OrderBook.pprint`
 - Added `accepted_buffer_ns` filter param for `Cache.own_bid_orders(...)` and `Cache.own_ask_orders(...)`
+- Added trailing stop orders `activation_price` support in Rust (#2750), thanks @nicolad
 
 ### Breaking Changes
 - Changed timer `allow_past=False` behavior: now validates the `next_event_time` instead of the `start_time`. This allows timers with past start times as long as their next scheduled event is still in the future
