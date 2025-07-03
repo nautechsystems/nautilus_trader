@@ -29,7 +29,7 @@ use nautilus_common::{
     },
     msgbus::{self, handler::ShareableMessageHandler},
 };
-use nautilus_core::uuid::UUID4;
+use nautilus_core::UUID4;
 use nautilus_model::{
     data::{OrderBookDeltas, QuoteTick, TradeTick},
     enums::{ContingencyType, OrderSide, OrderStatus, OrderType, TriggerType},
@@ -1052,88 +1052,75 @@ impl OrderEmulator {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn update_trailing_stop_order(&mut self, order: &mut OrderAny) {
-        if let Some(matching_core) = self.matching_cores.get(&order.instrument_id()) {
-            let mut bid = None;
-            let mut ask = None;
-            let mut last = None;
-
-            if matching_core.is_bid_initialized {
-                bid = matching_core.bid;
-            }
-            if matching_core.is_ask_initialized {
-                ask = matching_core.ask;
-            }
-            if matching_core.is_last_initialized {
-                last = matching_core.last;
-            }
-
-            let quote_tick = self
-                .cache
-                .borrow()
-                .quote(&matching_core.instrument_id)
-                .copied();
-            let trade_tick = self
-                .cache
-                .borrow()
-                .trade(&matching_core.instrument_id)
-                .copied();
-
-            if bid.is_none() && quote_tick.is_some() {
-                bid = Some(quote_tick.unwrap().bid_price);
-            }
-            if ask.is_none() && quote_tick.is_some() {
-                ask = Some(quote_tick.unwrap().ask_price);
-            }
-            if last.is_none() && trade_tick.is_some() {
-                last = Some(trade_tick.unwrap().price);
-            }
-
-            let (new_trigger_price, new_price) = if let Ok((new_trigger_price, new_price)) =
-                trailing_stop_calculate(matching_core.price_increment, order, bid, ask, last)
-            {
-                (new_trigger_price, new_price)
-            } else {
-                log::warn!("Cannot calculate trailing stop order");
-                return;
-            };
-
-            let (new_trigger_price, new_price) = match (new_trigger_price, new_price) {
-                (None, None) => return, // No updates
-                _ => (new_trigger_price, new_price),
-            };
-
-            // Generate event
-            let ts_now = self.clock.borrow().timestamp_ns();
-            let event = OrderUpdated::new(
-                order.trader_id(),
-                order.strategy_id(),
-                order.instrument_id(),
-                order.client_order_id(),
-                order.quantity(),
-                UUID4::new(),
-                ts_now,
-                ts_now,
-                false,
-                order.venue_order_id(),
-                order.account_id(),
-                new_price,
-                new_trigger_price,
-            );
-
-            if let Err(e) = order.apply(OrderEventAny::Updated(event)) {
-                log::error!("Failed to apply order event: {e}");
-            }
-            if let Err(e) = self.cache.borrow_mut().update_order(order) {
-                log::error!("Failed to update order: {e}");
-            }
-
-            self.manager.send_risk_event(OrderEventAny::Updated(event));
-        } else {
+        let Some(matching_core) = self.matching_cores.get(&order.instrument_id()) else {
             log::error!(
-                "Cannot update trailing stop order: no matching core for instrument {}",
+                "Cannot update trailing-stop order: no matching core for instrument {}",
                 order.instrument_id()
             );
+            return;
+        };
+
+        let mut bid = matching_core.bid;
+        let mut ask = matching_core.ask;
+        let mut last = matching_core.last;
+
+        if bid.is_none() || ask.is_none() || last.is_none() {
+            if let Some(q) = self.cache.borrow().quote(&matching_core.instrument_id) {
+                bid.get_or_insert(q.bid_price);
+                ask.get_or_insert(q.ask_price);
+            }
+            if let Some(t) = self.cache.borrow().trade(&matching_core.instrument_id) {
+                last.get_or_insert(t.price);
+            }
         }
+
+        let (new_trigger_px, new_limit_px) = match trailing_stop_calculate(
+            matching_core.price_increment,
+            order.trigger_price(),
+            order.activation_price(),
+            order,
+            bid,
+            ask,
+            last,
+        ) {
+            Ok(pair) => pair,
+            Err(e) => {
+                log::warn!("Cannot calculate trailing-stop update: {e}");
+                return;
+            }
+        };
+
+        if new_trigger_px.is_none() && new_limit_px.is_none() {
+            return;
+        }
+
+        let ts_now = self.clock.borrow().timestamp_ns();
+        let update = OrderUpdated::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            order.quantity(),
+            UUID4::new(),
+            ts_now,
+            ts_now,
+            false,
+            order.venue_order_id(),
+            order.account_id(),
+            new_limit_px,
+            new_trigger_px,
+        );
+        let wrapped = OrderEventAny::Updated(update);
+        if let Err(e) = order.apply(wrapped.clone()) {
+            log::error!("Failed to apply order event: {e}");
+            return;
+        }
+        if let Err(e) = self.cache.borrow_mut().update_order(order) {
+            log::error!("Failed to update order in cache: {e}");
+            return;
+        }
+        self.manager.send_risk_event(wrapped);
     }
 }
