@@ -20,7 +20,7 @@ import uuid
 from asyncio import Queue
 from collections import Counter
 from decimal import Decimal
-from typing import Any, Final
+from typing import Any, Final, cast
 
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
@@ -662,8 +662,19 @@ class LiveExecutionEngine(ExecutionEngine):
                 )
                 for c in clients
             ]
-            order_reports_all = await asyncio.gather(*tasks)
-            all_order_reports = [r for reports in order_reports_all for r in reports]
+
+            order_reports_all = await asyncio.gather(*tasks, return_exceptions=True)
+            all_order_reports: list[OrderStatusReport] = []
+
+            for reports_or_exception in order_reports_all:
+                if isinstance(reports_or_exception, Exception):
+                    self._log.error(
+                        f"Failed to generate order status reports: {reports_or_exception}",
+                    )
+                    continue
+
+                reports = cast(list[OrderStatusReport], reports_or_exception)
+                all_order_reports.extend(reports)
 
             # For each report, compare the reported open status with our cache
             # If there's a discrepancy, reconcile the order report
@@ -729,7 +740,7 @@ class LiveExecutionEngine(ExecutionEngine):
         else:
             self._log.warning(f"Reconciliation for {value} failed")
 
-    async def reconcile_state(self, timeout_secs: float = 10.0) -> bool:
+    async def reconcile_state(self, timeout_secs: float = 10.0) -> bool:  # noqa: C901 (too complex)
         """
         Reconcile the internal execution state with all execution clients (external
         state).
@@ -765,17 +776,23 @@ class LiveExecutionEngine(ExecutionEngine):
         mass_status_coros = [
             c.generate_mass_status(reconciliation_lookback_mins) for c in self._clients.values()
         ]
-        mass_status_all = await asyncio.gather(*mass_status_coros)
+        mass_status_all = await asyncio.gather(*mass_status_coros, return_exceptions=True)
 
         # Reconcile each mass status with the execution engine
-        for mass_status in mass_status_all:
-            if mass_status is None:
+        for mass_status_or_exception in mass_status_all:
+            if isinstance(mass_status_or_exception, Exception):
+                self._log.error(f"Failed to generate mass status: {mass_status_or_exception}")
+                results.append(False)
+                continue
+
+            if mass_status_or_exception is None:
                 self._log.warning(
                     "No execution mass status available for reconciliation "
                     "(likely due to an adapter client error when generating reports)",
                 )
                 continue
 
+            mass_status = cast("ExecutionMassStatus", mass_status_or_exception)
             client_id = mass_status.client_id
             venue = mass_status.venue
             result = self._reconcile_mass_status(mass_status)
@@ -817,13 +834,25 @@ class LiveExecutionEngine(ExecutionEngine):
                 self._log.info(f"Awaiting {len(report_tasks)} position reports for {client_id}")
                 position_results: list[bool] = []
 
-                for task_result in await asyncio.gather(*report_tasks):
+                for task_result_or_exception in await asyncio.gather(
+                    *report_tasks,
+                    return_exceptions=True,
+                ):
+                    if isinstance(task_result_or_exception, Exception):
+                        self._log.error(
+                            f"Failed to generate position status reports: {task_result_or_exception}",
+                        )
+                        position_results.append(False)
+                        continue
+
+                    task_result = cast("list[PositionStatusReport]", task_result_or_exception)
+
                     for report in task_result:
                         position_result = self._reconcile_position_report(report)
                         self._log_reconciliation_result(report.instrument_id, position_result)
                         position_results.append(position_result)
 
-                result = all(position_results)
+                result = result and all(position_results)
 
             self._log_reconciliation_result(client_id, result)
             results.append(result)
@@ -908,6 +937,7 @@ class LiveExecutionEngine(ExecutionEngine):
 
             if client_order_id is not None and client_order_id in reconciled_orders:
                 self._log.error(f"Duplicate {client_order_id!r} detected: {order_report}")
+                results.append(False)
                 continue  # Determine how to handle this
 
             # Check for duplicate trade IDs
@@ -1075,16 +1105,18 @@ class LiveExecutionEngine(ExecutionEngine):
             report.venue_order_id,
         )
         if client_order_id is None:
-            self._log.error(
-                f"Cannot reconcile FillReport: ClientOrderId not found for {report.venue_order_id!r}",
+            self._log.warning(
+                f"FillReport received before OrderStatusReport for {report.venue_order_id!r}, "
+                "deferring reconciliation - this may require a synthetic order",
             )
             return False  # Failed
 
         order: Order | None = self._cache.order(client_order_id)
 
         if order is None:
-            self._log.error(
-                f"Cannot reconcile FillReport: no order for {client_order_id!r}",
+            self._log.warning(
+                f"FillReport received before order cached for {client_order_id!r}, "
+                "deferring reconciliation",
             )
             return False  # Failed
 
@@ -1099,7 +1131,7 @@ class LiveExecutionEngine(ExecutionEngine):
 
         return self._reconcile_fill_report(order, report, instrument)
 
-    def _reconcile_fill_report(
+    def _reconcile_fill_report(  # noqa: C901 (too complex)
         self,
         order: Order,
         report: FillReport,
@@ -1113,15 +1145,32 @@ class LiveExecutionEngine(ExecutionEngine):
 
             if existing_fill:
                 if not self._fill_reports_equal(existing_fill, report):
+                    differences = []
+                    if existing_fill.last_qty != report.last_qty:
+                        differences.append(f"qty: {existing_fill.last_qty} → {report.last_qty}")
+
+                    if existing_fill.last_px != report.last_px:
+                        differences.append(f"px: {existing_fill.last_px} → {report.last_px}")
+
+                    if existing_fill.commission != report.commission:
+                        differences.append(
+                            f"commission: {existing_fill.commission} → {report.commission}",
+                        )
+
+                    if existing_fill.liquidity_side != report.liquidity_side:
+                        differences.append(
+                            f"liquidity: {existing_fill.liquidity_side} → {report.liquidity_side}",
+                        )
+
+                    if existing_fill.ts_event != report.ts_event:
+                        differences.append(
+                            f"ts_event: {existing_fill.ts_event} → {report.ts_event}",
+                        )
+
                     self._log.warning(
-                        f"Fill report data differs from existing data for trade_id {report.trade_id}. "
-                        f"Existing: qty={existing_fill.last_qty}, px={existing_fill.last_px}, "
-                        f"commission={existing_fill.commission}, liquidity={existing_fill.liquidity_side}, "
-                        f"ts_event={existing_fill.ts_event}. "
-                        f"Broker: qty={report.last_qty}, px={report.last_px}, "
-                        f"commission={report.commission}, liquidity={report.liquidity_side}, "
-                        f"ts_event={report.ts_event}. "
-                        f"Continuing reconciliation with existing data to avoid state corruption",
+                        f"Fill report data differs from existing data for trade_id {report.trade_id}, "
+                        f"differences: {', '.join(differences)}. "
+                        f"Continuing with existing cached data to maintain consistency",
                     )
 
             return True  # Fill already applied, continue with existing data
@@ -1226,6 +1275,12 @@ class LiveExecutionEngine(ExecutionEngine):
             diff = abs(position_signed_decimal_qty - report.signed_decimal_qty)
             diff_quantity = Quantity(diff, instrument.size_precision)
             self._log.info(f"{diff_quantity=}", LogColor.BLUE)
+
+            if diff_quantity == 0:
+                self._log.debug(
+                    f"Difference quantity rounds to zero for {instrument.id}, skipping order generation",
+                )
+                return True
 
             order_side = (
                 OrderSide.BUY
