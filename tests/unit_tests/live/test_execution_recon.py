@@ -35,6 +35,7 @@ from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
@@ -53,6 +54,7 @@ from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.position import Position
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.test_kit.functions import ensure_all_tasks_completed
 from nautilus_trader.test_kit.mocks.exec_clients import MockLiveExecutionClient
@@ -675,7 +677,7 @@ class TestReconciliationEdgeCases:
         clock = LiveClock()
         trader_id = TestIdStubs.trader_id()
         msgbus = MessageBus(trader_id=trader_id, clock=clock)
-        cache = TestComponentStubs.cache()
+        self.cache = TestComponentStubs.cache()
 
         client = MockLiveExecutionClient(
             loop=loop,
@@ -685,14 +687,14 @@ class TestReconciliationEdgeCases:
             base_currency=USD,
             instrument_provider=InstrumentProvider(),
             msgbus=msgbus,
-            cache=cache,
+            cache=self.cache,
             clock=clock,
         )
 
         exec_engine = LiveExecutionEngine(
             loop=loop,
             msgbus=msgbus,
-            cache=cache,
+            cache=self.cache,
             clock=clock,
             config=LiveExecEngineConfig(reconciliation=True),
         )
@@ -869,6 +871,511 @@ class TestReconciliationEdgeCases:
         live_exec_engine._generate_order_filled(order, fill_report, instrument)
 
         # Assert
-        # Verify the OrderFilled event was generated with correct position_id
         fill_events = [event for event in generated_events if isinstance(event, OrderFilled)]
         assert len(fill_events) == 1
+
+    @pytest.mark.asyncio()
+    async def test_long_position_reconciliation_quantity_mismatch(self, live_exec_engine):
+        """
+        Test reconciliation when internal long position quantity differs from external
+        report.
+        """
+        # Arrange
+        instrument = AUDUSD_SIM
+        self.cache.add_instrument(instrument)
+
+        # Enable missing order generation
+        live_exec_engine.generate_missing_orders = True
+
+        # Create internal long position (100 units)
+        order = TestExecStubs.limit_order(instrument=instrument, order_side=OrderSide.BUY)
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=instrument,
+            position_id=PositionId("P-1"),
+            last_qty=Quantity.from_int(100),
+            last_px=Price.from_str("1.0"),
+        )
+        internal_position = Position(instrument=instrument, fill=fill)
+        self.cache.add_position(internal_position, OmsType.NETTING)
+
+        # External report shows 150 units (need to generate 50 BUY order)
+        external_report = PositionStatusReport(
+            account_id=TestIdStubs.account_id(),
+            instrument_id=instrument.id,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_int(150),
+            report_id=UUID4(),
+            ts_last=0,
+            ts_init=0,
+        )
+
+        reconcile_calls = []
+        original_reconcile = live_exec_engine._reconcile_order_report
+
+        def spy_reconcile(order_report, trades):
+            reconcile_calls.append((order_report, trades))
+            return original_reconcile(order_report, trades)
+
+        live_exec_engine._reconcile_order_report = spy_reconcile
+
+        # Act
+        result = live_exec_engine._reconcile_position_report(external_report)
+
+        # Assert
+        assert result is True
+        assert len(reconcile_calls) == 1
+
+        order_report, _ = reconcile_calls[0]
+        assert order_report.order_side == OrderSide.BUY
+        assert order_report.quantity == Quantity.from_int(50)
+        assert order_report.filled_qty == Quantity.from_int(50)
+        assert order_report.order_status == OrderStatus.FILLED
+
+    @pytest.mark.asyncio()
+    async def test_short_position_reconciliation_quantity_mismatch(self, live_exec_engine):
+        """
+        Test reconciliation when internal short position quantity differs from external
+        report.
+        """
+        # Arrange
+        instrument = AUDUSD_SIM
+        self.cache.add_instrument(instrument)
+
+        # Enable missing order generation
+        live_exec_engine.generate_missing_orders = True
+
+        # Create internal short position (-100 units)
+        order = TestExecStubs.limit_order(instrument=instrument, order_side=OrderSide.SELL)
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=instrument,
+            position_id=PositionId("P-2"),
+            last_qty=Quantity.from_int(100),
+            last_px=Price.from_str("1.0"),
+        )
+        internal_position = Position(instrument=instrument, fill=fill)
+        self.cache.add_position(internal_position, OmsType.NETTING)
+
+        # External report shows -150 units (need to generate 50 SELL order)
+        external_report = PositionStatusReport(
+            account_id=TestIdStubs.account_id(),
+            instrument_id=instrument.id,
+            position_side=PositionSide.SHORT,
+            quantity=Quantity.from_int(150),
+            report_id=UUID4(),
+            ts_last=0,
+            ts_init=0,
+        )
+
+        reconcile_calls = []
+        original_reconcile = live_exec_engine._reconcile_order_report
+
+        def spy_reconcile(order_report, trades):
+            reconcile_calls.append((order_report, trades))
+            return original_reconcile(order_report, trades)
+
+        live_exec_engine._reconcile_order_report = spy_reconcile
+
+        # Act
+        result = live_exec_engine._reconcile_position_report(external_report)
+
+        # Assert
+        assert result is True
+        assert len(reconcile_calls) == 1
+
+        order_report, _ = reconcile_calls[0]
+        assert order_report.order_side == OrderSide.SELL
+        assert order_report.quantity == Quantity.from_int(50)
+        assert order_report.filled_qty == Quantity.from_int(50)
+        assert order_report.order_status == OrderStatus.FILLED
+
+    @pytest.mark.asyncio()
+    async def test_long_position_reconciliation_external_smaller(self, live_exec_engine):
+        """
+        Test reconciliation when external long position is smaller than internal
+        position.
+        """
+        # Arrange
+        instrument = AUDUSD_SIM
+        self.cache.add_instrument(instrument)
+
+        # Enable missing order generation
+        live_exec_engine.generate_missing_orders = True
+
+        # Create internal long position (150 units)
+        order = TestExecStubs.limit_order(instrument=instrument, order_side=OrderSide.BUY)
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=instrument,
+            position_id=PositionId("P-3"),
+            last_qty=Quantity.from_int(150),
+            last_px=Price.from_str("1.0"),
+        )
+        internal_position = Position(instrument=instrument, fill=fill)
+        self.cache.add_position(internal_position, OmsType.NETTING)
+
+        # External report shows 100 units (need to generate 50 SELL order to reduce)
+        external_report = PositionStatusReport(
+            account_id=TestIdStubs.account_id(),
+            instrument_id=instrument.id,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_int(100),
+            report_id=UUID4(),
+            ts_last=0,
+            ts_init=0,
+        )
+
+        reconcile_calls = []
+        original_reconcile = live_exec_engine._reconcile_order_report
+
+        def spy_reconcile(order_report, trades):
+            reconcile_calls.append((order_report, trades))
+            return original_reconcile(order_report, trades)
+
+        live_exec_engine._reconcile_order_report = spy_reconcile
+
+        # Act
+        result = live_exec_engine._reconcile_position_report(external_report)
+
+        # Assert
+        assert result is True
+        assert len(reconcile_calls) == 1
+
+        order_report, _ = reconcile_calls[0]
+        assert order_report.order_side == OrderSide.SELL
+        assert order_report.quantity == Quantity.from_int(50)
+        assert order_report.filled_qty == Quantity.from_int(50)
+        assert order_report.order_status == OrderStatus.FILLED
+
+    @pytest.mark.asyncio()
+    async def test_short_position_reconciliation_external_smaller(self, live_exec_engine):
+        """
+        Test reconciliation when external short position is smaller than internal
+        position.
+        """
+        # Arrange
+        instrument = AUDUSD_SIM
+        self.cache.add_instrument(instrument)
+
+        # Enable missing order generation
+        live_exec_engine.generate_missing_orders = True
+
+        # Create internal short position (-150 units)
+        order = TestExecStubs.limit_order(instrument=instrument, order_side=OrderSide.SELL)
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=instrument,
+            position_id=PositionId("P-4"),
+            last_qty=Quantity.from_int(150),
+            last_px=Price.from_str("1.0"),
+        )
+        internal_position = Position(instrument=instrument, fill=fill)
+        self.cache.add_position(internal_position, OmsType.NETTING)
+
+        # External report shows -100 units (need to generate 50 BUY order to reduce)
+        external_report = PositionStatusReport(
+            account_id=TestIdStubs.account_id(),
+            instrument_id=instrument.id,
+            position_side=PositionSide.SHORT,
+            quantity=Quantity.from_int(100),
+            report_id=UUID4(),
+            ts_last=0,
+            ts_init=0,
+        )
+
+        reconcile_calls = []
+        original_reconcile = live_exec_engine._reconcile_order_report
+
+        def spy_reconcile(order_report, trades):
+            reconcile_calls.append((order_report, trades))
+            return original_reconcile(order_report, trades)
+
+        live_exec_engine._reconcile_order_report = spy_reconcile
+
+        # Act
+        result = live_exec_engine._reconcile_position_report(external_report)
+
+        # Assert
+        assert result is True
+        assert len(reconcile_calls) == 1
+
+        order_report, _ = reconcile_calls[0]
+        assert order_report.order_side == OrderSide.BUY
+        assert order_report.quantity == Quantity.from_int(50)
+        assert order_report.filled_qty == Quantity.from_int(50)
+        assert order_report.order_status == OrderStatus.FILLED
+
+    @pytest.mark.asyncio()
+    async def test_position_reconciliation_cross_side_long_to_short(self, live_exec_engine):
+        """
+        Test reconciliation when internal long position conflicts with external short
+        position.
+        """
+        # Arrange
+        instrument = AUDUSD_SIM
+        self.cache.add_instrument(instrument)
+
+        # Enable missing order generation
+        live_exec_engine.generate_missing_orders = True
+
+        # Create internal long position (100 units)
+        order = TestExecStubs.limit_order(instrument=instrument, order_side=OrderSide.BUY)
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=instrument,
+            position_id=PositionId("P-5"),
+            last_qty=Quantity.from_int(100),
+            last_px=Price.from_str("1.0"),
+        )
+        internal_position = Position(instrument=instrument, fill=fill)
+        self.cache.add_position(internal_position, OmsType.NETTING)
+
+        # External report shows -50 units short (need to generate 150 SELL order)
+        external_report = PositionStatusReport(
+            account_id=TestIdStubs.account_id(),
+            instrument_id=instrument.id,
+            position_side=PositionSide.SHORT,
+            quantity=Quantity.from_int(50),
+            report_id=UUID4(),
+            ts_last=0,
+            ts_init=0,
+        )
+
+        # Spy on reconcile_order_report calls
+        reconcile_calls = []
+        original_reconcile = live_exec_engine._reconcile_order_report
+
+        def spy_reconcile(order_report, trades):
+            reconcile_calls.append((order_report, trades))
+            return original_reconcile(order_report, trades)
+
+        live_exec_engine._reconcile_order_report = spy_reconcile
+
+        # Act
+        result = live_exec_engine._reconcile_position_report(external_report)
+
+        # Assert
+        assert result is True
+        assert len(reconcile_calls) == 1
+
+        order_report, _ = reconcile_calls[0]
+        assert order_report.order_side == OrderSide.SELL
+        assert order_report.quantity == Quantity.from_int(150)  # 100 to close + 50 to open short
+        assert order_report.filled_qty == Quantity.from_int(150)
+        assert order_report.order_status == OrderStatus.FILLED
+
+    @pytest.mark.asyncio()
+    async def test_position_reconciliation_cross_side_short_to_long(self, live_exec_engine):
+        """
+        Test reconciliation when internal short position conflicts with external long
+        position.
+        """
+        # Arrange
+        instrument = AUDUSD_SIM
+        self.cache.add_instrument(instrument)
+
+        # Enable missing order generation
+        live_exec_engine.generate_missing_orders = True
+
+        # Create internal short position (-100 units)
+        order = TestExecStubs.limit_order(instrument=instrument, order_side=OrderSide.SELL)
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=instrument,
+            position_id=PositionId("P-6"),
+            last_qty=Quantity.from_int(100),
+            last_px=Price.from_str("1.0"),
+        )
+        internal_position = Position(instrument=instrument, fill=fill)
+        self.cache.add_position(internal_position, OmsType.NETTING)
+
+        # External report shows 75 units long (need to generate 175 BUY order)
+        external_report = PositionStatusReport(
+            account_id=TestIdStubs.account_id(),
+            instrument_id=instrument.id,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_int(75),
+            report_id=UUID4(),
+            ts_last=0,
+            ts_init=0,
+        )
+
+        reconcile_calls = []
+        original_reconcile = live_exec_engine._reconcile_order_report
+
+        def spy_reconcile(order_report, trades):
+            reconcile_calls.append((order_report, trades))
+            return original_reconcile(order_report, trades)
+
+        live_exec_engine._reconcile_order_report = spy_reconcile
+
+        # Act
+        result = live_exec_engine._reconcile_position_report(external_report)
+
+        # Assert
+        assert result is True
+        assert len(reconcile_calls) == 1
+
+        order_report, _ = reconcile_calls[0]
+        assert order_report.order_side == OrderSide.BUY
+        assert order_report.quantity == Quantity.from_int(175)  # 100 to close + 75 to open long
+        assert order_report.filled_qty == Quantity.from_int(175)
+        assert order_report.order_status == OrderStatus.FILLED
+
+    @pytest.mark.asyncio()
+    async def test_position_reconciliation_zero_difference_after_rounding(self, live_exec_engine):
+        """
+        Test that zero differences after rounding are handled correctly.
+        """
+        # Arrange
+        instrument = AUDUSD_SIM
+        self.cache.add_instrument(instrument)
+
+        # Enable missing order generation
+        live_exec_engine.generate_missing_orders = True
+
+        # Create internal long position (100 units)
+        order = TestExecStubs.limit_order(instrument=instrument, order_side=OrderSide.BUY)
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=instrument,
+            position_id=PositionId("P-7"),
+            last_qty=Quantity.from_int(100),
+            last_px=Price.from_str("1.0"),
+        )
+        internal_position = Position(instrument=instrument, fill=fill)
+        self.cache.add_position(internal_position, OmsType.NETTING)
+
+        # External report shows 100.00000001 units (rounds to 100)
+        external_report = PositionStatusReport(
+            account_id=TestIdStubs.account_id(),
+            instrument_id=instrument.id,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_str("100.00000001"),
+            report_id=UUID4(),
+            ts_last=0,
+            ts_init=0,
+        )
+
+        reconcile_calls = []
+        original_reconcile = live_exec_engine._reconcile_order_report
+
+        def spy_reconcile(order_report, trades):
+            reconcile_calls.append((order_report, trades))
+            return original_reconcile(order_report, trades)
+
+        live_exec_engine._reconcile_order_report = spy_reconcile
+
+        # Act
+        result = live_exec_engine._reconcile_position_report(external_report)
+
+        # Assert
+        assert result is True
+        assert len(reconcile_calls) == 0  # No order should be generated due to rounding
+
+    @pytest.mark.asyncio()
+    async def test_inferred_fill_with_negative_quantity_difference(self, live_exec_engine):
+        """
+        Test that inferred fill generation handles negative quantity differences
+        gracefully.
+
+        This can occur when report.filled_qty < order.filled_qty in edge cases.
+
+        """
+        # Arrange
+        instrument = AUDUSD_SIM
+        self.cache.add_instrument(instrument)
+
+        # Create an order that appears to have more filled quantity than the report
+        order = TestExecStubs.limit_order(instrument=instrument)
+        accepted = TestEventStubs.order_accepted(order)
+        order.apply(accepted)
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=instrument,
+            last_qty=Quantity.from_int(100),
+            last_px=Price.from_str("1.0"),
+        )
+        order.apply(fill)  # Order shows 100 filled
+        self.cache.add_order(order)
+
+        # Create a report that shows less filled quantity (edge case/reconciliation issue)
+        report = OrderStatusReport(
+            instrument_id=instrument.id,
+            account_id=TestIdStubs.account_id(),
+            client_order_id=order.client_order_id,
+            venue_order_id=VenueOrderId("V-1"),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            time_in_force=TimeInForce.DAY,
+            order_status=OrderStatus.PARTIALLY_FILLED,
+            quantity=Quantity.from_int(150),
+            filled_qty=Quantity.from_str("96.98"),  # Less than order's filled_qty (100)
+            avg_px=Price.from_str("1.0"),
+            report_id=UUID4(),
+            ts_accepted=0,
+            ts_last=0,
+            ts_init=0,
+        )
+
+        # Act
+        inferred_fill = live_exec_engine._generate_inferred_fill(order, report, instrument)
+
+        # Assert
+        assert inferred_fill is not None
+        assert isinstance(inferred_fill, OrderFilled)
+        assert inferred_fill.last_qty > 0  # Should be positive due to abs()
+        assert inferred_fill.last_qty == Quantity.from_int(3)  # abs(96.98 - 100) rounded
+
+    @pytest.mark.asyncio()
+    async def test_inferred_fill_with_positive_quantity_difference(self, live_exec_engine):
+        """
+        Test that inferred fill generation works correctly with normal positive quantity
+        differences.
+        """
+        # Arrange
+        instrument = AUDUSD_SIM
+        self.cache.add_instrument(instrument)
+
+        # Create an order with some filled quantity
+        order = TestExecStubs.limit_order(instrument=instrument)
+        accepted = TestEventStubs.order_accepted(order)
+        order.apply(accepted)
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=instrument,
+            last_qty=Quantity.from_int(50),
+            last_px=Price.from_str("1.0"),
+        )
+        order.apply(fill)  # Order shows 50 filled
+        self.cache.add_order(order)
+
+        # Create a report that shows more filled quantity (normal case)
+        report = OrderStatusReport(
+            instrument_id=instrument.id,
+            account_id=TestIdStubs.account_id(),
+            client_order_id=order.client_order_id,
+            venue_order_id=VenueOrderId("V-1"),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            time_in_force=TimeInForce.DAY,
+            order_status=OrderStatus.PARTIALLY_FILLED,
+            quantity=Quantity.from_int(100),
+            filled_qty=Quantity.from_int(75),  # More than order's filled_qty (50)
+            avg_px=Price.from_str("1.0"),
+            report_id=UUID4(),
+            ts_accepted=0,
+            ts_last=0,
+            ts_init=0,
+        )
+
+        # Act
+        inferred_fill = live_exec_engine._generate_inferred_fill(order, report, instrument)
+
+        # Assert
+        assert inferred_fill is not None
+        assert isinstance(inferred_fill, OrderFilled)
+        assert inferred_fill.last_qty == Quantity.from_int(25)  # 75 - 50
+        assert inferred_fill.last_px == Price.from_str("1.0")
+        assert inferred_fill.client_order_id == order.client_order_id
