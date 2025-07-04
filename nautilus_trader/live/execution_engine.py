@@ -1091,20 +1091,21 @@ class LiveExecutionEngine(ExecutionEngine):
         if report.avg_px is None:
             self._log.warning("report.avg_px was `None` when a value was expected")
 
+
         # Check reported filled qty against order filled qty
-        if report.filled_qty != order.filled_qty:
+        if report.filled_qty < order.filled_qty:
+            self._log.error(
+                f"report.filled_qty {report.filled_qty} < order.filled_qty {order.filled_qty}, "
+                "this could potentially be caused by corrupted cached state",
+            )
+            return False  # Failed
+
+        if report.filled_qty > order.filled_qty:
             # This is due to missing fill report(s), there may now be some
             # information loss if multiple fills occurred to reach the reported
             # state, or if commissions differed from the default.
             fill: OrderFilled = self._generate_inferred_fill(order, report, instrument)
             self._handle_event(fill)
-
-            if report.filled_qty != order.filled_qty:
-                self._log.error(
-                    f"report.filled_qty {report.filled_qty} != order.filled_qty {order.filled_qty}, "
-                    "this could potentially be caused by corrupted or incomplete cached state",
-                )
-                return False  # Failed
 
             if report.avg_px is not None and not math.isclose(report.avg_px, order.avg_px):
                 self._log.warning(
@@ -1347,7 +1348,7 @@ class LiveExecutionEngine(ExecutionEngine):
             liquidity_side = LiquiditySide.MAKER
 
         # Calculate last qty
-        last_qty: Quantity = instrument.make_qty(abs(report.filled_qty - order.filled_qty))
+        last_qty: Quantity = instrument.make_qty(report.filled_qty - order.filled_qty)
 
         # Calculate last px
         if order.avg_px is None:

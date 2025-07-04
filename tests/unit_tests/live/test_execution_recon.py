@@ -1275,60 +1275,6 @@ class TestReconciliationEdgeCases:
         assert len(reconcile_calls) == 0  # No order should be generated due to rounding
 
     @pytest.mark.asyncio()
-    async def test_inferred_fill_with_negative_quantity_difference(self, live_exec_engine):
-        """
-        Test that inferred fill generation handles negative quantity differences
-        gracefully.
-
-        This can occur when report.filled_qty < order.filled_qty in edge cases.
-
-        """
-        # Arrange
-        instrument = AUDUSD_SIM
-        self.cache.add_instrument(instrument)
-
-        # Create an order that appears to have more filled quantity than the report
-        order = TestExecStubs.limit_order(instrument=instrument)
-        accepted = TestEventStubs.order_accepted(order)
-        order.apply(accepted)
-        fill = TestEventStubs.order_filled(
-            order,
-            instrument=instrument,
-            last_qty=Quantity.from_int(100),
-            last_px=Price.from_str("1.0"),
-        )
-        order.apply(fill)  # Order shows 100 filled
-        self.cache.add_order(order)
-
-        # Create a report that shows less filled quantity (edge case/reconciliation issue)
-        report = OrderStatusReport(
-            instrument_id=instrument.id,
-            account_id=TestIdStubs.account_id(),
-            client_order_id=order.client_order_id,
-            venue_order_id=VenueOrderId("V-1"),
-            order_side=OrderSide.BUY,
-            order_type=OrderType.MARKET,
-            time_in_force=TimeInForce.DAY,
-            order_status=OrderStatus.PARTIALLY_FILLED,
-            quantity=Quantity.from_int(150),
-            filled_qty=Quantity.from_str("96.98"),  # Less than order's filled_qty (100)
-            avg_px=Price.from_str("1.0"),
-            report_id=UUID4(),
-            ts_accepted=0,
-            ts_last=0,
-            ts_init=0,
-        )
-
-        # Act
-        inferred_fill = live_exec_engine._generate_inferred_fill(order, report, instrument)
-
-        # Assert
-        assert inferred_fill is not None
-        assert isinstance(inferred_fill, OrderFilled)
-        assert inferred_fill.last_qty > 0  # Should be positive due to abs()
-        assert inferred_fill.last_qty == Quantity.from_int(3)  # abs(96.98 - 100) rounded
-
-    @pytest.mark.asyncio()
     async def test_inferred_fill_with_positive_quantity_difference(self, live_exec_engine):
         """
         Test that inferred fill generation works correctly with normal positive quantity
@@ -1379,3 +1325,52 @@ class TestReconciliationEdgeCases:
         assert inferred_fill.last_qty == Quantity.from_int(25)  # 75 - 50
         assert inferred_fill.last_px == Price.from_str("1.0")
         assert inferred_fill.client_order_id == order.client_order_id
+
+    @pytest.mark.asyncio()
+    async def test_reconcile_order_report_fails_when_report_filled_qty_less_than_order(self, live_exec_engine):
+        """
+        Test that order reconciliation fails when report.filled_qty < order.filled_qty.
+        This indicates corrupted cached state and should be treated as an error.
+        """
+        # Arrange
+        instrument = AUDUSD_SIM
+        self.cache.add_instrument(instrument)
+
+        # Create an order with filled quantity
+        order = TestExecStubs.limit_order(instrument=instrument)
+        accepted = TestEventStubs.order_accepted(order)
+        order.apply(accepted)
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=instrument,
+            last_qty=Quantity.from_int(100),
+            last_px=Price.from_str("1.0"),
+        )
+        order.apply(fill)  # Order shows 100 filled
+        self.cache.add_order(order)
+
+        # Create a report that shows less filled quantity (corrupted state scenario)
+        report = OrderStatusReport(
+            instrument_id=instrument.id,
+            account_id=TestIdStubs.account_id(),
+            client_order_id=order.client_order_id,
+            venue_order_id=VenueOrderId("V-1"),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            time_in_force=TimeInForce.DAY,
+            order_status=OrderStatus.PARTIALLY_FILLED,
+            quantity=Quantity.from_int(150),
+            filled_qty=Quantity.from_int(75),  # Less than order's filled_qty (100)
+            avg_px=Price.from_str("1.0"),
+            report_id=UUID4(),
+            ts_accepted=0,
+            ts_last=0,
+            ts_init=0,
+        )
+
+        # Act
+        result = live_exec_engine._reconcile_order_report(report, trades=[])
+
+        # Assert
+        assert result is False  # Reconciliation should fail
+        assert order.filled_qty == Quantity.from_int(100)  # No inferred fill
