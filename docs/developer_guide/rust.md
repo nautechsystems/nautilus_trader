@@ -373,6 +373,8 @@ impl Send for MessageBus {
 
 ### Testing Conventions
 
+- Do not use Arrange, Act, Assert separator comments for Rust tests.
+
 #### Test Organization
 
 Use consistent test module structure with section separators:
