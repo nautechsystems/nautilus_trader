@@ -193,7 +193,7 @@ time = { version = "0.3.41", default-features = false, features = [
   "serde",
   "std",
 ] }
-tokio = { version = "1.46.0", default-features = false, features = [
+tokio = { version = "1.46.1", default-features = false, features = [
   "rt-multi-thread",
   "sync",
   "fs",
