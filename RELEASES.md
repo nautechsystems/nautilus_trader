@@ -4,6 +4,7 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added `graceful_shutdown_on_exception` config option for live engines (default `False` to retain intended hard crash on unexpected system exceptions)
+- Added `purge_from_database` config option for `LiveExecEngineConfig` to support cache backing database management
 - Added support for data download during backtest (#2652), thanks @faysou
 - Added delete data range to catalog (#2744), thanks @faysou
 - Added consolidate catalog by period (#2727), thanks @faysou

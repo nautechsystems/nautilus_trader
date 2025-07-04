@@ -171,6 +171,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self.purge_closed_positions_buffer_mins = config.purge_closed_positions_buffer_mins
         self.purge_account_events_interval_mins = config.purge_account_events_interval_mins
         self.purge_account_events_lookback_mins = config.purge_account_events_lookback_mins
+        self.purge_from_database = config.purge_from_database
         self._inflight_check_threshold_ns: int = millis_to_nanos(self.inflight_check_threshold_ms)
         self.graceful_shutdown_on_exception: bool = config.graceful_shutdown_on_exception
         self._shutdown_initiated: bool = False
@@ -191,6 +192,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self._log.info(f"{config.purge_closed_positions_buffer_mins=}", LogColor.BLUE)
         self._log.info(f"{config.purge_account_events_interval_mins=}", LogColor.BLUE)
         self._log.info(f"{config.purge_account_events_lookback_mins=}", LogColor.BLUE)
+        self._log.info(f"{config.purge_from_database=}", LogColor.BLUE)
         self._log.info(f"{config.graceful_shutdown_on_exception=}", LogColor.BLUE)
 
         # Register endpoints
@@ -696,7 +698,11 @@ class LiveExecutionEngine(ExecutionEngine):
             while True:
                 await asyncio.sleep(interval_secs)
                 ts_now = self._clock.timestamp_ns()
-                self._cache.purge_closed_orders(ts_now=ts_now, buffer_secs=buffer_secs)
+                self._cache.purge_closed_orders(
+                    ts_now=ts_now,
+                    buffer_secs=buffer_secs,
+                    purge_from_database=self.purge_from_database,
+                )
         except asyncio.CancelledError:
             self._log.debug("Canceled task 'purge_closed_orders_loop'")
         except Exception as e:
@@ -711,7 +717,11 @@ class LiveExecutionEngine(ExecutionEngine):
             while True:
                 await asyncio.sleep(interval_secs)
                 ts_now = self._clock.timestamp_ns()
-                self._cache.purge_closed_positions(ts_now=ts_now, buffer_secs=buffer_secs)
+                self._cache.purge_closed_positions(
+                    ts_now=ts_now,
+                    buffer_secs=buffer_secs,
+                    purge_from_database=self.purge_from_database,
+                )
         except asyncio.CancelledError:
             self._log.debug("Canceled task 'purge_closed_positions_loop'")
         except Exception as e:
@@ -726,7 +736,11 @@ class LiveExecutionEngine(ExecutionEngine):
             while True:
                 await asyncio.sleep(interval_secs)
                 ts_now = self._clock.timestamp_ns()
-                self._cache.purge_account_events(ts_now=ts_now, lookback_secs=lookback_secs)
+                self._cache.purge_account_events(
+                    ts_now=ts_now,
+                    lookback_secs=lookback_secs,
+                    purge_from_database=self.purge_from_database,
+                )
         except asyncio.CancelledError:
             self._log.debug("Canceled task 'purge_account_events_loop'")
         except Exception as e:

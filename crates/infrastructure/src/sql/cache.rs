@@ -540,6 +540,22 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         todo!()
     }
 
+    fn delete_order(&self, client_order_id: &ClientOrderId) -> anyhow::Result<()> {
+        anyhow::bail!(
+            "delete_order not implemented for PostgreSQL cache adapter: {client_order_id}"
+        )
+    }
+
+    fn delete_position(&self, position_id: &PositionId) -> anyhow::Result<()> {
+        anyhow::bail!("delete_position not implemented for PostgreSQL cache adapter: {position_id}")
+    }
+
+    fn delete_account_event(&self, account_id: &AccountId, event_id: &str) -> anyhow::Result<()> {
+        anyhow::bail!(
+            "delete_account_event not implemented for PostgreSQL cache adapter: {account_id}, {event_id}"
+        )
+    }
+
     fn add(&self, key: String, value: Bytes) -> anyhow::Result<()> {
         let query = DatabaseQuery::Add(key, value.into());
         self.tx
