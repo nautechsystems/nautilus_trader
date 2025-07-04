@@ -22,6 +22,8 @@ from nautilus_trader.adapters.bybit import BybitExecClientConfig
 from nautilus_trader.adapters.bybit import BybitLiveDataClientFactory
 from nautilus_trader.adapters.bybit import BybitLiveExecClientFactory
 from nautilus_trader.adapters.bybit import BybitProductType
+from nautilus_trader.cache.config import CacheConfig
+from nautilus_trader.common.config import DatabaseConfig
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
@@ -65,19 +67,20 @@ config_node = TradingNodeConfig(
         # snapshot_orders=True,
         # snapshot_positions=True,
         # snapshot_positions_interval_secs=5.0,
-        purge_closed_orders_interval_mins=15,  # Example of purging closed orders for HFT
-        purge_closed_orders_buffer_mins=60,  # Purged orders closed for at least an hour
-        purge_closed_positions_interval_mins=15,  # Example of purging closed positions for HFT
-        purge_closed_positions_buffer_mins=60,  # Purge positions closed for at least an hour
-        purge_account_events_interval_mins=15,  # Example of purging account events for HFT
-        purge_account_events_lookback_mins=60,  # Purge account events occurring more than an hour ago
+        purge_closed_orders_interval_mins=1,  # Example of purging closed orders for HFT
+        purge_closed_orders_buffer_mins=0,  # Purged orders closed for at least an hour
+        purge_closed_positions_interval_mins=1,  # Example of purging closed positions for HFT
+        purge_closed_positions_buffer_mins=0,  # Purge positions closed for at least an hour
+        purge_account_events_interval_mins=1,  # Example of purging account events for HFT
+        purge_account_events_lookback_mins=0,  # Purge account events occurring more than an hour ago
+        purge_from_database=True,  # Set True with caution
         graceful_shutdown_on_exception=True,
     ),
-    # cache=CacheConfig(
-    #     # database=DatabaseConfig(),
-    #     timestamps_as_iso8601=True,
-    #     buffer_interval_ms=100,
-    # ),
+    cache=CacheConfig(
+        database=DatabaseConfig(),
+        timestamps_as_iso8601=True,
+        buffer_interval_ms=100,
+    ),
     # message_bus=MessageBusConfig(
     #     database=DatabaseConfig(),
     #     timestamps_as_iso8601=True,

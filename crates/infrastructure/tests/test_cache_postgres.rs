@@ -21,6 +21,7 @@ pub fn get_cache(cache_database: Option<Box<dyn CacheDatabaseAdapter>>) -> Cache
 }
 
 #[cfg(test)]
+#[cfg(feature = "postgres")]
 #[cfg(target_os = "linux")] // Databases only supported on Linux
 mod serial_tests {
     use std::time::Duration;

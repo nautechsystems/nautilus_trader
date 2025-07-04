@@ -23,6 +23,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.config import LoggingConfig
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
@@ -1431,6 +1432,132 @@ class TestCache:
         assert position1_id not in self.cache.positions_closed()
         assert self.cache.positions_total_count() == 0
         assert self.cache.positions_closed_count() == 0
+
+    def test_purge_order_with_database_enabled(self):
+        # Arrange
+        order = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        position_id = PositionId("P-1")
+        self.cache.add_order(order, position_id)
+
+        order.apply(TestEventStubs.order_submitted(order))
+        self.cache.update_order(order)
+
+        order.apply(TestEventStubs.order_accepted(order))
+        self.cache.update_order(order)
+
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("1.00000"),
+        )
+        order.apply(fill)
+        self.cache.update_order(order)
+
+        # Act
+        self.cache.purge_order(client_order_id=order.client_order_id, purge_from_database=True)
+
+        # Assert
+        assert not self.cache.order_exists(order.client_order_id)
+        assert self.cache.order(order.client_order_id) is None
+
+    def test_purge_position_with_database_enabled(self):
+        # Arrange
+        order = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        position_id = PositionId("P-1")
+        self.cache.add_order(order, position_id)
+
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("1.00000"),
+        )
+
+        position = Position(instrument=AUDUSD_SIM, fill=fill)
+        self.cache.add_position(position, OmsType.HEDGING)
+
+        # Act
+        self.cache.purge_position(position_id=position_id, purge_from_database=True)
+
+        # Assert
+        assert not self.cache.position_exists(position_id)
+        assert self.cache.position(position_id) is None
+
+    def test_purge_account_events_with_database_enabled(self):
+        # Arrange
+        account = TestExecStubs.cash_account()
+        self.cache.add_account(account)
+
+        # Add multiple account state events with different timestamps
+        from nautilus_trader.model.events import AccountState
+        from nautilus_trader.model.objects import AccountBalance
+
+        event1 = AccountState(
+            account_id=account.id,
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(1_000_000.00, USD),
+                    Money(0.00, USD),
+                    Money(1_000_000.00, USD),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=100_000_000,  # Old event
+            ts_init=100_000_000,
+        )
+
+        event2 = AccountState(
+            account_id=account.id,
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(1_500_000.00, USD),
+                    Money(0.00, USD),
+                    Money(1_500_000.00, USD),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=200_000_000,  # Newer event
+            ts_init=200_000_000,
+        )
+
+        account.apply(event1)
+        account.apply(event2)
+
+        # Verify we have 3 events (initial + 2 added)
+        initial_event_count = account.event_count
+
+        # Act - Enable database purging to test our implementation
+        self.cache.purge_account_events(
+            ts_now=1_000_000_000,
+            lookback_secs=0,
+            purge_from_database=True,
+        )
+
+        # Assert - Events should be purged and no exceptions raised
+        # Should retain exactly 1 event (the latest)
+        assert account.event_count == 1
+        assert account.event_count < initial_event_count
 
 
 class TestExecutionCacheIntegrityCheck:

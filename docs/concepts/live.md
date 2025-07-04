@@ -217,12 +217,13 @@ This ensures the trading node maintains a consistent execution state even under 
 
 | Setting                                | Default | Description                                                                                                                             |
 |----------------------------------------|---------|-----------------------------------------------------------------------------------------------------------------------------------------|
-| `purge_closed_orders_interval_mins`    | None    | Sets how frequently (in minutes) closed orders are purged from memory. Recommended: 10-15 minutes. Does not affect database records. |
-| `purge_closed_orders_buffer_mins`      | None    | Specifies how long (in minutes) an order must have been closed before purging. Recommended: 60 minutes to ensure processes complete. |
+| `purge_closed_orders_interval_mins`    | None    | Sets how frequently (in minutes) closed orders are purged from memory. Recommended: 10-15 minutes. Does not affect database records.    |
+| `purge_closed_orders_buffer_mins`      | None    | Specifies how long (in minutes) an order must have been closed before purging. Recommended: 60 minutes to ensure processes complete.    |
 | `purge_closed_positions_interval_mins` | None    | Sets how frequently (in minutes) closed positions are purged from memory. Recommended: 10-15 minutes. Does not affect database records. |
-| `purge_closed_positions_buffer_mins`   | None    | Specifies how long (in minutes) a position must have been closed before purging. Recommended: 60 minutes to ensure processes complete. |
-| `purge_account_events_interval_mins`   | None    | Sets how frequently (in minutes) account events are purged from memory. Recommended: 10-15 minutes. Does not affect database records. |
-| `purge_account_events_lookback_mins`   | None    | Specifies how long (in minutes) an account event must have occurred before purging. Recommended: 60 minutes. |
+| `purge_closed_positions_buffer_mins`   | None    | Specifies how long (in minutes) a position must have been closed before purging. Recommended: 60 minutes to ensure processes complete.  |
+| `purge_account_events_interval_mins`   | None    | Sets how frequently (in minutes) account events are purged from memory. Recommended: 10-15 minutes. Does not affect database records.   |
+| `purge_account_events_lookback_mins`   | None    | Specifies how long (in minutes) an account event must have occurred before purging. Recommended: 60 minutes.                            |
+| `purge_from_database`                  | False   | If enabled, purge operations will also delete data from the backing database (Redis/PostgreSQL), not just memory. **Use with caution**. |
 
 By configuring these memory management settings appropriately, you can prevent memory usage from growing
 indefinitely during long-running / HFT sessions while ensuring that recently closed orders, closed positions, and account events
@@ -295,16 +296,8 @@ This process is primarily applicable to live trading, which is why only the `Liv
 
 There are two main scenarios for reconciliation:
 
-- **Previous cached execution state**: Where cached execution state exists, information from reports is used to generate missing events to align the state
-- **No previous cached execution state**: Where there is no cached state, all orders and positions that exist externally are generated from scratch
-
-### Common reconciliation issues
-
-- **Missing trade reports**: Some venues filter out older trades, causing incomplete reconciliation. Increase `reconciliation_lookback_mins` or ensure all events are cached locally.
-- **Position mismatches**: If external orders predate the lookback window, positions may not align. Flatten the account before restarting the system to reset state.
-- **Duplicate order IDs**: Duplicate client order IDs in mass status reports will cause reconciliation failure. Ensure venue data integrity or contact support.
-- **Precision differences**: Small decimal differences in position quantities are handled automatically using instrument precision, but large discrepancies may indicate missing orders.
-- **Out-of-order reports**: Fill reports arriving before order status reports are deferred until order state is available.
+- **Previous cached execution state**: Where cached execution state exists, information from reports is used to generate missing events to align the state.
+- **No previous cached execution state**: Where there is no cached state, all orders and positions that exist externally are generated from scratch.
 
 :::tip
 **Best practice**: Persist all execution events to the cache database to minimize reliance on venue history, ensuring full recovery even with short lookback windows.
@@ -367,10 +360,14 @@ The system state is then reconciled with the reports, which represent external "
 
 If reconciliation fails, the system will not continue to start, and an error will be logged.
 
-:::tip
-The current reconciliation procedure can experience state mismatches if the lookback window is
-misconfigured or if the venue omits certain order or trade reports due to filter conditions.
+### Common reconciliation issues
 
-If you encounter reconciliation issues, drop any cached state or ensure the account is flat at
-system shutdown and startup.
+- **Missing trade reports**: Some venues filter out older trades, causing incomplete reconciliation. Increase `reconciliation_lookback_mins` or ensure all events are cached locally.
+- **Position mismatches**: If external orders predate the lookback window, positions may not align. Flatten the account before restarting the system to reset state.
+- **Duplicate order IDs**: Duplicate client order IDs in mass status reports will cause reconciliation failure. Ensure venue data integrity or contact support.
+- **Precision differences**: Small decimal differences in position quantities are handled automatically using instrument precision, but large discrepancies may indicate missing orders.
+- **Out-of-order reports**: Fill reports arriving before order status reports are deferred until order state is available.
+
+:::tip
+For persistent reconciliation issues, consider dropping cached state or flattening accounts before system restart.
 :::

@@ -779,7 +779,12 @@ cdef class Cache(CacheFacade):
         return residuals
 
 
-    cpdef void purge_closed_orders(self, uint64_t ts_now, uint64_t buffer_secs = 0):
+    cpdef void purge_closed_orders(
+        self,
+        uint64_t ts_now,
+        uint64_t buffer_secs = 0,
+        bint purge_from_database = False,
+    ):
         """
         Purge all closed orders from the cache.
 
@@ -791,6 +796,8 @@ cdef class Cache(CacheFacade):
             The purge buffer (seconds) from when the order was closed.
             Only orders that have been closed for at least this amount of time will be purged.
             A value of 0 means purge all closed orders regardless of when they were closed.
+        purge_from_database : bool, default False
+            If purging operations will also delete from the backing database, in addition to the cache.
 
         """
         cdef str buffer_secs_str = f" with {buffer_secs=:_}" if buffer_secs else ""
@@ -805,9 +812,14 @@ cdef class Cache(CacheFacade):
             order = self._orders.get(client_order_id)
 
             if order is not None and order.ts_closed + buffer_ns <= ts_now:
-                self.purge_order(client_order_id)
+                self.purge_order(client_order_id, purge_from_database)
 
-    cpdef void purge_closed_positions(self, uint64_t ts_now, uint64_t buffer_secs = 0):
+    cpdef void purge_closed_positions(
+        self,
+        uint64_t ts_now,
+        uint64_t buffer_secs = 0,
+        bint purge_from_database = False,
+    ):
         """
         Purge all closed positions from the cache.
 
@@ -819,6 +831,8 @@ cdef class Cache(CacheFacade):
             The purge buffer (seconds) from when the position was closed.
             Only positions that have been closed for at least this amount of time will be purged.
             A value of 0 means purge all closed positions regardless of when they were closed.
+        purge_from_database : bool, default False
+            If purging operations will also delete from the backing database, in addition to the cache.
 
         """
         cdef str buffer_secs_str = f" with {buffer_secs=:_}" if buffer_secs else ""
@@ -832,9 +846,9 @@ cdef class Cache(CacheFacade):
             position = self._positions.get(position_id)
 
             if position is not None and position.ts_closed + buffer_ns <= ts_now:
-                self.purge_position(position_id)
+                self.purge_position(position_id, purge_from_database)
 
-    cpdef void purge_order(self, ClientOrderId client_order_id):
+    cpdef void purge_order(self, ClientOrderId client_order_id, bint purge_from_database = False):
         """
         Purge the order for the given client order ID from the cache (if found).
 
@@ -844,6 +858,8 @@ cdef class Cache(CacheFacade):
         ----------
         client_order_id : ClientOrderId
             The client order ID to purge.
+        purge_from_database : bool, default False
+            If purging operations will also delete from the backing database, in addition to the cache.
 
         """
         Condition.not_none(client_order_id, "client_order_id")
@@ -882,7 +898,11 @@ cdef class Cache(CacheFacade):
         self._index_orders_inflight.discard(client_order_id)
         self._index_orders_pending_cancel.discard(client_order_id)
 
-    cpdef void purge_position(self, PositionId position_id):
+        # Delete from database if requested
+        if purge_from_database and self._database is not None:
+            self._database.delete_order(client_order_id)
+
+    cpdef void purge_position(self, PositionId position_id, bint purge_from_database = False):
         """
         Purge the position for the given position ID from the cache (if found).
 
@@ -890,6 +910,8 @@ cdef class Cache(CacheFacade):
         ----------
         position_id : PositionId
             The position ID to purge.
+        purge_from_database : bool, default False
+            If purging operations will also delete from the backing database, in addition to the cache.
 
         """
         Condition.not_none(position_id, "position_id")
@@ -914,7 +936,16 @@ cdef class Cache(CacheFacade):
         self._index_positions_open.discard(position_id)
         self._index_positions_closed.discard(position_id)
 
-    cpdef void purge_account_events(self, uint64_t ts_now, uint64_t lookback_secs = 0):
+        # Delete from database if requested
+        if purge_from_database and self._database is not None:
+            self._database.delete_position(position_id)
+
+    cpdef void purge_account_events(
+        self,
+        uint64_t ts_now,
+        uint64_t lookback_secs = 0,
+        bint purge_from_database = False,
+    ):
         """
         Purge all account state events which are outside the lookback window.
 
@@ -926,20 +957,37 @@ cdef class Cache(CacheFacade):
             The purge lookback window (seconds) from when the account state event occurred.
             Only events which are outside the lookback window will be purged.
             A value of 0 means purge all account state events.
+        purge_from_database : bool, default False
+            If purging operations will also delete from the backing database, in addition to the cache.
 
         """
         cdef str lookback_secs_str = f" with {lookback_secs=:_}" if lookback_secs else ""
         self._log.debug(f"Purging account events{lookback_secs_str}", LogColor.MAGENTA)
 
-        cdef:
-            Account account
+        cdef Account account
         for account in self._accounts.values():
             event_count = account.event_count_c()
+
+            # Track events before purging if database deletion is enabled
+            events_before = None
+            if purge_from_database and self._database is not None:
+                events_before = account.events.copy()  # Copy, not alias
+
             account.purge_account_events(ts_now, lookback_secs)
             count_diff = event_count - account.event_count_c()
 
             if count_diff > 0:
                 self._log.info(f"Purged {count_diff} event(s) from account {account.id}", LogColor.BLUE)
+
+                # Delete from database if enabled
+                if purge_from_database and self._database is not None and events_before is not None:
+                    events_after = account.events
+                    event_ids_before = {event.id for event in events_before}
+                    event_ids_after = {event.id for event in events_after}
+                    removed_event_ids = event_ids_before - event_ids_after
+
+                    for event_id in removed_event_ids:
+                        self._database.delete_account_event(account.id, event_id.value)
 
     cpdef void clear_index(self):
         self._log.debug(f"Clearing index")
