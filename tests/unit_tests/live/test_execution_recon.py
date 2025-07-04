@@ -1327,10 +1327,15 @@ class TestReconciliationEdgeCases:
         assert inferred_fill.client_order_id == order.client_order_id
 
     @pytest.mark.asyncio()
-    async def test_reconcile_order_report_fails_when_report_filled_qty_less_than_order(self, live_exec_engine):
+    async def test_reconcile_order_report_fails_when_report_filled_qty_less_than_order(
+        self,
+        live_exec_engine,
+    ):
         """
         Test that order reconciliation fails when report.filled_qty < order.filled_qty.
+
         This indicates corrupted cached state and should be treated as an error.
+
         """
         # Arrange
         instrument = AUDUSD_SIM

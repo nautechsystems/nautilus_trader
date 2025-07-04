@@ -1082,7 +1082,9 @@ class LiveExecutionEngine(ExecutionEngine):
 
             return True  # Reconciled
 
-        # Order has some fills from this point
+        #######################################################################
+        # Order has fills from this point
+        #######################################################################
 
         # Reconcile all trades
         for trade in trades:
@@ -1091,12 +1093,11 @@ class LiveExecutionEngine(ExecutionEngine):
         if report.avg_px is None:
             self._log.warning("report.avg_px was `None` when a value was expected")
 
-
         # Check reported filled qty against order filled qty
         if report.filled_qty < order.filled_qty:
             self._log.error(
                 f"report.filled_qty {report.filled_qty} < order.filled_qty {order.filled_qty}, "
-                "this could potentially be caused by corrupted cached state",
+                "this could potentially be caused by duplicate fills or corrupted cached state",
             )
             return False  # Failed
 
@@ -1287,12 +1288,11 @@ class LiveExecutionEngine(ExecutionEngine):
                 )
                 return False
 
-            diff = position_signed_decimal_qty - report.signed_decimal_qty
-            quantizer = Decimal(f"1e-{instrument.size_precision}")
-            diff_rounded = diff.quantize(quantizer)
-            self._log.info(f"{diff_rounded=}", LogColor.BLUE)
+            diff = abs(position_signed_decimal_qty - report.signed_decimal_qty)
+            diff_quantity = Quantity(diff, instrument.size_precision)
+            self._log.info(f"{diff_quantity=}", LogColor.BLUE)
 
-            if diff_rounded == 0:
+            if diff_quantity == 0:
                 self._log.debug(
                     f"Difference quantity rounds to zero for {instrument.id}, skipping order generation",
                 )
@@ -1303,8 +1303,6 @@ class LiveExecutionEngine(ExecutionEngine):
                 if report.signed_decimal_qty > position_signed_decimal_qty
                 else OrderSide.SELL
             )
-
-            diff_quantity = Quantity(abs(diff_rounded), instrument.size_precision)
 
             now = self._clock.timestamp_ns()
             diff_report = OrderStatusReport(
