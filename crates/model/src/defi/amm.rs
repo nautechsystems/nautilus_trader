@@ -94,10 +94,22 @@ impl Pool {
     }
 
     /// Returns the instrument ID for this pool.
+    ///
+    /// The identifier encodes the following components:
+    /// 1. `symbol`  – Base/quote ticker plus the pool fee tier (in hundred-thousandths).
+    /// 2. `venue`   – DEX name and contract address followed by chain name.
+    ///
+    /// The string representation therefore has the form:
+    /// `<BASE>/<QUOTE>-<FEE>.<DEX_NAME>:<DEX_FACTORY>:<CHAIN_NAME>`
+    ///
+    /// Example:
+    /// `WETH/USDT-3000.UniswapV3:0x1F98431c8aD98523631AE4a59f267346ea31F984:Arbitrum`
     #[must_use]
     pub fn instrument_id(&self) -> InstrumentId {
-        let id_string = format!("{}.{}", self.ticker(), self.dex.name);
-        InstrumentId::from(id_string.as_str())
+        let symbol = format!("{}-{}", self.ticker(), self.fee);
+        let venue = format!("{}:{}:{}", self.dex.name, self.dex.factory, self.chain.name);
+
+        InstrumentId::from(format!("{symbol}.{venue}").as_str())
     }
 }
 
@@ -198,5 +210,64 @@ mod tests {
         let instrument_id = pool.instrument_id();
         assert!(instrument_id.to_string().contains("WETH/USDT"));
         assert!(instrument_id.to_string().contains("UniswapV3"));
+    }
+
+    #[rstest]
+    fn test_pool_instrument_id_format() {
+        let chain = Arc::new(chains::ETHEREUM.clone());
+        let factory_address = "0x1F98431c8aD98523631AE4a59f267346ea31F984";
+
+        let dex = Dex::new(
+            chains::ETHEREUM.clone(),
+            "UniswapV3",
+            factory_address,
+            AmmType::CLAMM,
+            "PoolCreated(address,address,uint24,int24,address)",
+            "Swap(address,address,int256,int256,uint160,uint128,int24)",
+            "Mint(address,address,int24,int24,uint128,uint256,uint256)",
+            "Burn(address,int24,int24,uint128,uint256,uint256)",
+        );
+
+        let token0 = Token::new(
+            chain.clone(),
+            "0xA0b86a33E6441b936662bb6B5d1F8Fb0E2b57A5D"
+                .parse()
+                .unwrap(),
+            "Wrapped Ether".to_string(),
+            "WETH".to_string(),
+            18,
+        );
+
+        let token1 = Token::new(
+            chain.clone(),
+            "0xdAC17F958D2ee523a2206206994597C13D831ec7"
+                .parse()
+                .unwrap(),
+            "Tether USD".to_string(),
+            "USDT".to_string(),
+            6,
+        );
+
+        let pool = Pool::new(
+            chain.clone(),
+            dex,
+            "0x11b815efB8f581194ae79006d24E0d814B7697F6"
+                .parse()
+                .unwrap(),
+            0,
+            token0,
+            token1,
+            3000,
+            60,
+            UnixNanos::default(),
+        );
+
+        let instrument_id = pool.instrument_id();
+
+        let expected = format!(
+            "WETH/USDT-3000.UniswapV3:{}:{}",
+            factory_address, chain.name
+        );
+        assert_eq!(instrument_id.to_string(), expected);
     }
 }
