@@ -581,15 +581,6 @@ jobs:
           python-version: "3.13"
           free-disk-space: "true"
 
-      - name: Clean existing dist directory
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          echo "Cleaning existing dist/ directory"
-          rm -rf dist
-          mkdir -p dist
-
       - name: Build sdist
         run: |
           uv build --sdist
@@ -630,4 +621,4 @@ jobs:
           UV_PUBLISH_USERNAME: ${{ secrets.PYPI_USERNAME }}
           UV_PUBLISH_PASSWORD: ${{ secrets.PYPI_TOKEN }}
         run: |
-          uv publish dist/all
+          uv publish dist
