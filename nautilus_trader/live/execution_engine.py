@@ -1286,11 +1286,12 @@ class LiveExecutionEngine(ExecutionEngine):
                 )
                 return False
 
-            diff = abs(position_signed_decimal_qty - report.signed_decimal_qty)
-            diff_quantity = Quantity(diff, instrument.size_precision)
-            self._log.info(f"{diff_quantity=}", LogColor.BLUE)
+            diff = position_signed_decimal_qty - report.signed_decimal_qty
+            quantizer = Decimal(f"1e-{instrument.size_precision}")
+            diff_rounded = diff.quantize(quantizer)
+            self._log.info(f"{diff_rounded=}", LogColor.BLUE)
 
-            if diff_quantity == 0:
+            if diff_rounded == 0:
                 self._log.debug(
                     f"Difference quantity rounds to zero for {instrument.id}, skipping order generation",
                 )
@@ -1301,6 +1302,8 @@ class LiveExecutionEngine(ExecutionEngine):
                 if report.signed_decimal_qty > position_signed_decimal_qty
                 else OrderSide.SELL
             )
+
+            diff_quantity = Quantity(abs(diff_rounded), instrument.size_precision)
 
             now = self._clock.timestamp_ns()
             diff_report = OrderStatusReport(
@@ -1344,7 +1347,7 @@ class LiveExecutionEngine(ExecutionEngine):
             liquidity_side = LiquiditySide.MAKER
 
         # Calculate last qty
-        last_qty: Quantity = instrument.make_qty(report.filled_qty - order.filled_qty)
+        last_qty: Quantity = instrument.make_qty(abs(report.filled_qty - order.filled_qty))
 
         # Calculate last px
         if order.avg_px is None:
