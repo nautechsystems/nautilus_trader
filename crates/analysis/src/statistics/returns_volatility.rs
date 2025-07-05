@@ -15,6 +15,11 @@
 
 use crate::{Returns, statistic::PortfolioStatistic};
 
+/// Calculates the annualized volatility (standard deviation) of portfolio returns.
+///
+/// Volatility is calculated as the standard deviation of returns, annualized by
+/// multiplying the daily standard deviation by the square root of the period.
+/// This provides a measure of the portfolio's risk or uncertainty of returns.
 #[repr(C)]
 #[derive(Debug)]
 #[cfg_attr(
@@ -22,6 +27,7 @@ use crate::{Returns, statistic::PortfolioStatistic};
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.analysis")
 )]
 pub struct ReturnsVolatility {
+    /// The annualization period (default: 252 for daily data).
     period: usize,
 }
 

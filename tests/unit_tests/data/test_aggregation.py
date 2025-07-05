@@ -2047,7 +2047,7 @@ class TestTimeBarAggregator:
     ):
         # Arrange
         clock = TestClock()
-        clock.set_time(30 * 60 * NANOSECONDS_IN_SECOND)
+        clock.set_time((30 * 60 + 30) * NANOSECONDS_IN_SECOND + 10_000)
         handler = []
         instrument_id = TestIdStubs.audusd_id()
         bar_spec3 = BarSpecification(3, BarAggregation.MINUTE, PriceType.LAST)
@@ -2065,7 +2065,8 @@ class TestTimeBarAggregator:
             bar_type,
             handler.append,
             clock,
-            time_bars_origin=pd.Timedelta(seconds=30),
+            time_bars_origin_offset=pd.Timedelta(seconds=30),
+            bar_build_delay=10,
         )
         composite_bar_type = bar_type.composite()
 
@@ -2108,7 +2109,7 @@ class TestTimeBarAggregator:
         aggregator.handle_bar(bar1)
         aggregator.handle_bar(bar2)
         aggregator.handle_bar(bar3)
-        events = clock.advance_time(bar3.ts_event)
+        events = clock.advance_time((33 * 60 + 30) * NANOSECONDS_IN_SECOND + 10_000)
         events[0].handle()
 
         # Assert
@@ -2120,9 +2121,9 @@ class TestTimeBarAggregator:
         assert bar.low == Price.from_str("1.00003")
         assert bar.close == Price.from_str("1.00008")
         assert bar.volume == Quantity.from_int(3)
-        assert bar.ts_init == 33 * 60 * NANOSECONDS_IN_SECOND
-        assert initial_next_close == 1_980_000_000_000
-        assert aggregator.next_close_ns == 2_160_000_000_000
+        assert bar.ts_init == pd.Timestamp("1970-01-01 00:33:30.000010").value
+        assert initial_next_close == pd.Timestamp("1970-01-01 00:33:30.000010").value
+        assert aggregator.next_close_ns == pd.Timestamp("1970-01-01 00:36:30.000010").value
 
     def test_update_timer_with_test_clock_sends_single_monthly_bar_to_handler_with_bars(self):
         # Arrange

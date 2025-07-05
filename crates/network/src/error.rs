@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Network error types.
+
 use thiserror::Error;
 
 /// Error type for send operations in network clients.

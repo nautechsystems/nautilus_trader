@@ -13,109 +13,157 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    cell::{OnceCell, RefCell},
-    collections::VecDeque,
-    rc::Rc,
-};
+//! Global runtime machinery and thread-local storage.
+//!
+//! This module provides global access to shared runtime resources including clocks,
+//! message queues, and time event channels. It manages thread-local storage for
+//! system-wide components that need to be accessible across threads.
+
+use std::{cell::OnceCell, fmt::Debug, sync::Arc};
 
 use crate::{
-    clock::Clock,
     messages::{DataEvent, data::DataCommand},
-    timer::TimeEvent,
+    msgbus::{self, switchboard::MessagingSwitchboard},
+    timer::TimeEventHandlerV2,
 };
-
-pub type GlobalClock = Rc<RefCell<dyn Clock>>;
-
-/// # Panics
-///
-/// Panics if thread-local storage cannot be accessed or the global clock is uninitialized.
-#[must_use]
-pub fn get_global_clock() -> Rc<RefCell<dyn Clock>> {
-    CLOCK
-        .try_with(|clock| {
-            clock
-                .get()
-                .expect("Clock should be initialized by runner")
-                .clone()
-        })
-        .expect("Should be able to access thread local storage")
-}
-
-/// # Panics
-///
-/// Panics if thread-local storage cannot be accessed or the global clock is already set.
-pub fn set_global_clock(c: Rc<RefCell<dyn Clock>>) {
-    CLOCK
-        .try_with(|clock| {
-            assert!(clock.set(c).is_ok(), "Global clock already set");
-        })
-        .expect("Should be able to access thread local clock");
-}
-
-pub type DataCommandQueue = Rc<RefCell<VecDeque<DataCommand>>>;
-
-/// Get globally shared message bus command queue
-/// # Panics
-///
-/// Panics if thread-local storage cannot be accessed.
-#[must_use]
-pub fn get_data_cmd_queue() -> DataCommandQueue {
-    DATA_CMD_QUEUE
-        .try_with(std::clone::Clone::clone)
-        .expect("Should be able to access thread local storage")
-}
-
-pub trait DataQueue {
-    fn push(&mut self, event: DataEvent);
-}
-
-pub type GlobalDataQueue = Rc<RefCell<dyn DataQueue>>;
-
-#[derive(Debug)]
-pub struct SyncDataQueue(VecDeque<DataEvent>);
-
-impl DataQueue for SyncDataQueue {
-    fn push(&mut self, event: DataEvent) {
-        self.0.push_back(event);
-    }
-}
-
-/// # Panics
-///
-/// Panics if thread-local storage cannot be accessed or the data event queue is uninitialized.
-#[must_use]
-pub fn get_data_evt_queue() -> Rc<RefCell<dyn DataQueue>> {
-    DATA_EVT_QUEUE
-        .try_with(|dq| {
-            dq.get()
-                .expect("Data queue should be initialized by runner")
-                .clone()
-        })
-        .expect("Should be able to access thread local storage")
-}
-
-/// # Panics
-///
-/// Panics if thread-local storage cannot be accessed or the global data event queue is already set.
-pub fn set_data_evt_queue(dq: Rc<RefCell<dyn DataQueue>>) {
-    DATA_EVT_QUEUE
-        .try_with(|deque| {
-            assert!(deque.set(dq).is_ok(), "Global data queue already set");
-        })
-        .expect("Should be able to access thread local storage");
-}
-
-thread_local! {
-    static CLOCK: OnceCell<GlobalClock> = OnceCell::new();
-    static DATA_EVT_QUEUE: OnceCell<GlobalDataQueue> = OnceCell::new();
-    static DATA_CMD_QUEUE: DataCommandQueue = Rc::new(RefCell::new(VecDeque::new()));
-}
 
 // Represents different event types for the runner.
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum RunnerEvent {
+    Time(TimeEventHandlerV2),
     Data(DataEvent),
-    Timer(TimeEvent),
+}
+
+/// Trait for data command sending that can be implemented for both sync and async runners.
+pub trait DataCommandSender {
+    /// Executes a data command.
+    ///
+    /// - **Sync runners** send the command to a queue for synchronous execution.
+    /// - **Async runners** send the command to a channel for asynchronous execution.
+    fn execute(&self, command: DataCommand);
+}
+
+/// Synchronous implementation of DataCommandSender for backtest environments.
+#[derive(Debug)]
+pub struct SyncDataCommandSender;
+
+impl DataCommandSender for SyncDataCommandSender {
+    fn execute(&self, command: DataCommand) {
+        // TODO: Placeholder, we still need to queue and drain even for sync
+        let endpoint = MessagingSwitchboard::data_engine_execute();
+        msgbus::send_any(endpoint, &command);
+    }
+}
+
+/// Gets the global data command sender.
+///
+/// # Panics
+///
+/// Panics if the sender is uninitialized.
+#[must_use]
+pub fn get_data_cmd_sender() -> Arc<dyn DataCommandSender> {
+    DATA_CMD_SENDER.with(|sender| {
+        sender
+            .get()
+            .expect("Data command sender should be initialized by runner")
+            .clone()
+    })
+}
+
+/// Sets the global data command sender.
+///
+/// This should be called by the runner when it initializes.
+/// Can only be called once per thread.
+///
+/// # Panics
+///
+/// Panics if a sender has already been set.
+pub fn set_data_cmd_sender(sender: Arc<dyn DataCommandSender>) {
+    DATA_CMD_SENDER.with(|s| {
+        if s.set(sender).is_err() {
+            panic!("Data command sender can only be set once");
+        }
+    });
+}
+
+/// Trait for time event sending that can be implemented for both sync and async runners.
+pub trait TimeEventSender: Debug + Send + Sync {
+    /// Sends a time event handler.
+    fn send(&self, handler: TimeEventHandlerV2);
+}
+
+/// Gets the global time event sender.
+///
+/// # Panics
+///
+/// Panics if the sender is uninitialized.
+#[must_use]
+pub fn get_time_event_sender() -> Arc<dyn TimeEventSender> {
+    TIME_EVENT_SENDER.with(|sender| {
+        sender
+            .get()
+            .expect("Time event sender should be initialized by runner")
+            .clone()
+    })
+}
+
+/// Attempts to get the global time event sender without panicking.
+///
+/// Returns `None` if the sender is not initialized (e.g., in test environments).
+#[must_use]
+pub fn try_get_time_event_sender() -> Option<Arc<dyn TimeEventSender>> {
+    TIME_EVENT_SENDER.with(|sender| sender.get().cloned())
+}
+
+/// Sets the global time event sender.
+///
+/// Can only be called once per thread.
+///
+/// # Panics
+///
+/// Panics if a sender has already been set.
+pub fn set_time_event_sender(sender: Arc<dyn TimeEventSender>) {
+    TIME_EVENT_SENDER.with(|s| {
+        if s.set(sender).is_err() {
+            panic!("Time event sender can only be set once");
+        }
+    });
+}
+
+/// Gets the global data event sender.
+///
+/// # Panics
+///
+/// Panics if the sender is uninitialized.
+#[must_use]
+pub fn get_data_event_sender() -> tokio::sync::mpsc::UnboundedSender<DataEvent> {
+    DATA_EVENT_SENDER.with(|sender| {
+        sender
+            .get()
+            .expect("Data event sender should be initialized by runner")
+            .clone()
+    })
+}
+
+/// Sets the global data event sender.
+///
+/// Can only be called once per thread.
+///
+/// # Panics
+///
+/// Panics if a sender has already been set.
+pub fn set_data_event_sender(sender: tokio::sync::mpsc::UnboundedSender<DataEvent>) {
+    DATA_EVENT_SENDER.with(|s| {
+        if s.set(sender).is_err() {
+            panic!("Data event sender can only be set once");
+        }
+    });
+}
+
+// TODO: We can refine this for the synch runner later, data event sender won't be required
+thread_local! {
+    static TIME_EVENT_SENDER: OnceCell<Arc<dyn TimeEventSender>> = const { OnceCell::new() };
+    static DATA_EVENT_SENDER: OnceCell<tokio::sync::mpsc::UnboundedSender<DataEvent>> = const { OnceCell::new() };
+    static DATA_CMD_SENDER: OnceCell<Arc<dyn DataCommandSender>> = const { OnceCell::new() };
 }

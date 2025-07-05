@@ -5,11 +5,31 @@
 The current codebase can be used as a guide for formatting conventions.
 Additional guidelines are provided below.
 
-### Black
+### Universal formatting rules
 
-[Black](https://github.com/psf/black) is a PEP-8 compliant opinionated formatter and used during the pre-commit step.
+The following applies to **all** source files (Rust, Python, Cython, shell, etc.):
 
-We agree with Black’s style, but Black does not format Cython files. We therefore manually maintain Black-style formatting in Cython code for consistency.
+- Use **spaces only**, never hard tab characters.
+- Lines should generally stay below **100 characters**; wrap thoughtfully when necessary.
+- Prefer American English spelling (`color`, `serialize`, `behavior`).
+
+### Comment conventions
+
+1. Generally leave **one blank line above** every comment block or docstring so it is visually separated from code.
+2. Use *sentence case* – capitalize the first letter, keep the rest lowercase unless proper nouns or acronyms.
+3. Do not use double spaces after periods.
+4. **Single-line comments** *must not* end with a period *unless* the line ends with a URL or inline Markdown link – in those cases leave the punctuation exactly as the link requires.
+5. **Multi-line comments** should separate sentences with commas (not period-per-line). The final line *should* end with a period.
+6. Keep comments concise; favor clarity and only explain the non-obvious – *less is more*.
+7. Avoid emoji symbols in text.
+
+### Doc comment / docstring mood
+
+- **Python** docstrings should be written in the **imperative mood** – e.g. *“Return a cached client.”*
+- **Rust** doc comments should be written in the **indicative mood** – e.g. *“Returns a cached client.”*
+
+These conventions align with the prevailing styles of each language ecosystem and make generated
+documentation feel natural to end-users.
 
 ### Formatting
 

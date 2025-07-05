@@ -40,7 +40,7 @@ runs:
       shell: bash
       run: |
         sudo apt-get update
-        sudo apt-get install -y curl clang git libssl-dev make pkg-config
+        sudo apt-get install -y curl clang git make pkg-config
         sudo apt-get install -y python3-dev libpython3-dev
         sudo apt-get install -y capnproto libcapnp-dev
 
@@ -75,8 +75,8 @@ runs:
         override: true
 
     - name: Install cargo-nextest
-      # https://github.com/taiki-e/install-action # v2.50.10
-      uses: taiki-e/install-action@83254c543806f3224380bf1001d6fac8feaf2d0b
+      # https://github.com/taiki-e/install-action # v2.53.2
+      uses: taiki-e/install-action@d12e869b89167df346dd0ff65da342d1fb1202fb
       with:
         tool: nextest
 
@@ -86,9 +86,14 @@ runs:
       shell: bash
       run: |
         echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+
+        # Based on GitHub Actions runner constraints
+        # and Nautilus Trader uncompressed package final size (~1 GiB)
+        echo "SCCACHE_CACHE_SIZE=4G" >> $GITHUB_ENV
         echo "SCCACHE_IDLE_TIMEOUT=0" >> $GITHUB_ENV
         echo "SCCACHE_DIRECT=true" >> $GITHUB_ENV
         echo "SCCACHE_CACHE_MULTIARCH=1" >> $GITHUB_ENV
+
         echo "CARGO_INCREMENTAL=0" >> $GITHUB_ENV
 
     - name: Set sccache env vars (non-Windows)

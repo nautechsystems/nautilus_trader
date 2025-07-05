@@ -27,6 +27,10 @@ pub fn precision_from_str(s: &str) -> u8 {
 
     // Check for scientific notation
     if s.contains("e-") {
+        // SAFETY: Double unwrap is acceptable here because:
+        // 1. We already validated the string contains "e-"
+        // 2. Function is used only for parsing valid numeric strings in controlled contexts
+        // 3. Alternative error handling would complicate the API for minimal benefit
         return s.split("e-").last().unwrap().parse::<u8>().unwrap();
     }
 
@@ -41,18 +45,16 @@ pub fn precision_from_str(s: &str) -> u8 {
 
 /// Returns the minimum increment precision inferred from the given string,
 /// ignoring trailing zeros.
-/// Returns the minimum increment precision inferred from the given string,
-/// ignoring trailing zeros.
 #[must_use]
 #[allow(clippy::cast_possible_truncation)]
 pub fn min_increment_precision_from_str(s: &str) -> u8 {
     let s = s.trim().to_ascii_lowercase();
 
     // Check for scientific notation
-    if let Some(pos) = s.find('e') {
-        if s[pos + 1..].starts_with('-') {
-            return s[pos + 2..].parse::<u8>().unwrap_or(0);
-        }
+    if let Some(pos) = s.find('e')
+        && s[pos + 1..].starts_with('-')
+    {
+        return s[pos + 2..].parse::<u8>().unwrap_or(0);
     }
 
     // Check for decimal precision

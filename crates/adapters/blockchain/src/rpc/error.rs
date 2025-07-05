@@ -21,6 +21,9 @@ pub enum BlockchainRpcClientError {
     /// Occurs when the RPC client encounters a client-level error, such as connection failures.
     #[error("Client error: {0}")]
     ClientError(String),
+    /// Occurs when input parameters to an RPC call are invalid.
+    #[error("Invalid RPC parameters: {0}")]
+    InvalidParameters(String),
     /// Occurs when decoding contract ABI data fails.
     #[error("Decoding error: {0}")]
     AbiDecodingError(String),

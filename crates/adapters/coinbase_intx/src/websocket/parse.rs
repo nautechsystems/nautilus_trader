@@ -205,7 +205,7 @@ pub fn parse_orderbook_snapshot_msg(
     let ts_event = UnixNanos::from(msg.time);
 
     // Set the snapshot flag
-    let flags = RecordFlag::F_SNAPSHOT.value();
+    let flags = RecordFlag::F_SNAPSHOT as u8;
 
     // Allocate capacity for all bids and asks
     let mut deltas = Vec::with_capacity(msg.bids.len() + msg.asks.len());

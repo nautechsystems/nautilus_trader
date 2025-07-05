@@ -87,7 +87,7 @@ config_node = TradingNodeConfig(
             mbo_subscriptions_delay=10.0,
             instrument_ids=instrument_ids,
             parent_symbols={"GLBX.MDP3": {"ES.FUT"}},
-            # venue_dataset_map={"XNAS": "DBEQ.BASIC"},
+            # venue_dataset_map={"XNAS": "EQUS.MINI"},
         ),
     },
     timeout_connection=30.0,

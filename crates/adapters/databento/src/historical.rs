@@ -25,11 +25,11 @@ use std::{
 
 use ahash::AHashMap;
 use databento::{
-    dbn::{self},
+    dbn::{self, decode::DbnMetadata},
     historical::timeseries::GetRangeParams,
 };
 use indexmap::IndexMap;
-use nautilus_core::{UnixNanos, time::AtomicTime};
+use nautilus_core::{UnixNanos, consts::NAUTILUS_USER_AGENT, time::AtomicTime};
 use nautilus_model::{
     data::{Bar, Data, InstrumentStatus, QuoteTick, TradeTick},
     enums::BarAggregation,
@@ -97,6 +97,7 @@ impl DatabentoHistoricalClient {
         use_exchange_as_venue: bool,
     ) -> anyhow::Result<Self> {
         let client = databento::HistoricalClient::builder()
+            .user_agent_extension(NAUTILUS_USER_AGENT.into())
             .key(key.clone())
             .map_err(|e| anyhow::anyhow!("Failed to create client builder: {e}"))?
             .build()
@@ -174,10 +175,6 @@ impl DatabentoHistoricalClient {
             .get_range(&range_params)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to get range: {e}"))?;
-
-        decoder
-            .set_upgrade_policy(dbn::VersionUpgradePolicy::UpgradeToV2)
-            .map_err(|e| anyhow::anyhow!("Failed to set upgrade policy: {e}"))?;
 
         let metadata = decoder.metadata().clone();
         let mut metadata_cache = MetadataCache::new(metadata);

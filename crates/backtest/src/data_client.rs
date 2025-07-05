@@ -39,6 +39,12 @@ use nautilus_data::client::DataClient;
 use nautilus_model::identifiers::{ClientId, Venue};
 
 #[derive(Debug)]
+/// Data client implementation for backtesting market data operations.
+///
+/// The `BacktestDataClient` provides a data client interface specifically designed
+/// for backtesting environments. It handles market data subscriptions and requests
+/// during backtesting, coordinating with the backtesting engine to provide
+/// historical data replay functionality.
 pub struct BacktestDataClient {
     pub client_id: ClientId,
     pub venue: Venue,
@@ -65,27 +71,27 @@ impl DataClient for BacktestDataClient {
         Some(self.venue)
     }
 
-    fn start(&self) -> anyhow::Result<()> {
+    fn start(&mut self) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn stop(&self) -> anyhow::Result<()> {
+    fn stop(&mut self) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn reset(&self) -> anyhow::Result<()> {
+    fn reset(&mut self) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn dispose(&self) -> anyhow::Result<()> {
+    fn dispose(&mut self) -> anyhow::Result<()> {
         Ok(())
     }
 
-    async fn connect(&self) -> anyhow::Result<()> {
+    async fn connect(&mut self) -> anyhow::Result<()> {
         Ok(())
     }
 
-    async fn disconnect(&self) -> anyhow::Result<()> {
+    async fn disconnect(&mut self) -> anyhow::Result<()> {
         Ok(())
     }
 

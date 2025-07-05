@@ -14,12 +14,14 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import os
 from asyncio import Queue
 from typing import Final
 
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
+from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import LiveDataEngineConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
@@ -115,6 +117,11 @@ class LiveDataEngine(DataEngine):
         self._res_queue_task: asyncio.Task | None = None
         self._data_queue_task: asyncio.Task | None = None
         self._kill: bool = False
+
+        # Configuration
+        self.graceful_shutdown_on_exception: bool = config.graceful_shutdown_on_exception
+        self._shutdown_initiated: bool = False
+        self._log.info(f"{config.graceful_shutdown_on_exception=}", LogColor.BLUE)
 
     def connect(self) -> None:
         """
@@ -237,6 +244,13 @@ class LiveDataEngine(DataEngine):
         self._log.warning("Killing engine")
         self._kill = True
         self.stop()
+
+        # Cancel pending enqueuer tasks
+        self._cmd_enqueuer.cancel_pending_tasks()
+        self._req_enqueuer.cancel_pending_tasks()
+        self._res_enqueuer.cancel_pending_tasks()
+        self._data_enqueuer.cancel_pending_tasks()
+
         if self._cmd_queue_task:
             self._log.debug(f"Canceling task '{self._cmd_queue_task.get_name()}'")
             self._cmd_queue_task.cancel()
@@ -325,6 +339,26 @@ class LiveDataEngine(DataEngine):
 
     # -- INTERNAL -------------------------------------------------------------------------------------
 
+    def _handle_queue_exception(self, e: Exception, queue_name: str) -> None:
+        self._log.exception(
+            f"Unexpected exception in {queue_name} queue processing: {e!r}",
+            e,
+        )
+        if self.graceful_shutdown_on_exception:
+            if not self._shutdown_initiated:
+                self._log.warning(
+                    "Initiating graceful shutdown due to unexpected exception",
+                )
+                self.shutdown_system(
+                    f"Unexpected exception in {queue_name} queue processing: {e!r}",
+                )
+                self._shutdown_initiated = True
+        else:
+            self._log.error(
+                "System will terminate immediately to prevent operation in degraded state",
+            )
+            os._exit(1)  # Immediate crash
+
     def _enqueue_sentinels(self) -> None:
         self._loop.call_soon_threadsafe(self._cmd_queue.put_nowait, self._sentinel)
         self._loop.call_soon_threadsafe(self._req_queue.put_nowait, self._sentinel)
@@ -350,6 +384,12 @@ class LiveDataEngine(DataEngine):
         if self._kill:
             return  # Avoids queuing redundant sentinel messages
 
+        # Cancel pending enqueuer tasks
+        self._cmd_enqueuer.cancel_pending_tasks()
+        self._req_enqueuer.cancel_pending_tasks()
+        self._res_enqueuer.cancel_pending_tasks()
+        self._data_enqueuer.cancel_pending_tasks()
+
         # This will stop the queues processing as soon as they see the sentinel message
         self._enqueue_sentinels()
 
@@ -359,14 +399,17 @@ class LiveDataEngine(DataEngine):
         )
         try:
             while True:
-                command: DataCommand | None = await self._cmd_queue.get()
-                if command is self._sentinel:
+                try:
+                    command: DataCommand | None = await self._cmd_queue.get()
+                    if command is self._sentinel:
+                        break
+
+                    self._execute_command(command)
+                except asyncio.CancelledError:
+                    self._log.warning("DataCommand message queue canceled")
                     break
-                self._execute_command(command)
-        except asyncio.CancelledError:
-            self._log.warning("DataCommand message queue canceled")
-        except Exception as e:
-            self._log.exception(f"{e!r}", e)
+                except Exception as e:
+                    self._handle_queue_exception(e, "DataCommand")
         finally:
             stopped_msg = "DataCommand message queue stopped"
             if not self._cmd_queue.empty():
@@ -380,14 +423,17 @@ class LiveDataEngine(DataEngine):
         )
         try:
             while True:
-                request: RequestData | None = await self._req_queue.get()
-                if request is self._sentinel:
+                try:
+                    request: RequestData | None = await self._req_queue.get()
+                    if request is self._sentinel:
+                        break
+
+                    self._handle_request(request)
+                except asyncio.CancelledError:
+                    self._log.warning("RequestData message queue canceled")
                     break
-                self._handle_request(request)
-        except asyncio.CancelledError:
-            self._log.warning("RequestData message queue canceled")
-        except Exception as e:
-            self._log.exception(f"{e!r}", e)
+                except Exception as e:
+                    self._handle_queue_exception(e, "RequestData")
         finally:
             stopped_msg = "RequestData message queue stopped"
             if not self._req_queue.empty():
@@ -401,14 +447,17 @@ class LiveDataEngine(DataEngine):
         )
         try:
             while True:
-                response: DataResponse | None = await self._res_queue.get()
-                if response is self._sentinel:
+                try:
+                    response: DataResponse | None = await self._res_queue.get()
+                    if response is self._sentinel:
+                        break
+
+                    self._handle_response(response)
+                except asyncio.CancelledError:
+                    self._log.warning("DataResponse message queue canceled")
                     break
-                self._handle_response(response)
-        except asyncio.CancelledError:
-            self._log.warning("DataResponse message queue canceled")
-        except Exception as e:
-            self._log.exception(f"{e!r}", e)
+                except Exception as e:
+                    self._handle_queue_exception(e, "DataResponse")
         finally:
             stopped_msg = "DataResponse message queue stopped"
             if not self._res_queue.empty():
@@ -420,14 +469,17 @@ class LiveDataEngine(DataEngine):
         self._log.debug(f"Data queue processing starting (qsize={self.data_qsize()})")
         try:
             while True:
-                data: Data | None = await self._data_queue.get()
-                if data is self._sentinel:
+                try:
+                    data: Data | None = await self._data_queue.get()
+                    if data is self._sentinel:
+                        break
+
+                    self._handle_data(data)
+                except asyncio.CancelledError:
+                    self._log.warning("Data message queue canceled")
                     break
-                self._handle_data(data)
-        except asyncio.CancelledError:
-            self._log.warning("Data message queue canceled")
-        except Exception as e:
-            self._log.exception(f"{e!r}", e)
+                except Exception as e:
+                    self._handle_queue_exception(e, "Data")
         finally:
             stopped_msg = "Data message queue stopped"
             if not self._data_queue.empty():

@@ -17,7 +17,11 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use std::{cell::RefCell, rc::Rc};
+use std::{
+    any::Any,
+    cell::{Ref, RefCell},
+    rc::Rc,
+};
 
 use futures::future::join_all;
 use nautilus_common::{
@@ -30,8 +34,14 @@ use nautilus_common::{
         logger::{LogGuard, LoggerConfig},
         writer::FileWriterConfig,
     },
-    msgbus::{MessageBus, get_message_bus, set_message_bus},
-    runtime::get_runtime,
+    messages::{DataResponse, data::DataCommand},
+    msgbus::{
+        self, MessageBus, get_message_bus,
+        handler::{ShareableMessageHandler, TypedMessageHandler},
+        set_message_bus,
+        switchboard::MessagingSwitchboard,
+    },
+    runner::get_data_cmd_sender,
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_data::engine::DataEngine;
@@ -39,10 +49,9 @@ use nautilus_execution::engine::ExecutionEngine;
 use nautilus_model::identifiers::TraderId;
 use nautilus_portfolio::portfolio::Portfolio;
 use nautilus_risk::engine::RiskEngine;
-use nautilus_trading::trader::Trader;
 use ustr::Ustr;
 
-use crate::{builder::NautilusKernelBuilder, config::NautilusKernelConfig};
+use crate::{builder::NautilusKernelBuilder, config::NautilusKernelConfig, trader::Trader};
 
 /// Core Nautilus system kernel.
 ///
@@ -66,7 +75,7 @@ pub struct NautilusKernel {
     /// Guard for the logging subsystem (keeps logger thread alive).
     pub log_guard: LogGuard,
     /// The data engine instance.
-    pub data_engine: DataEngine,
+    pub data_engine: Rc<RefCell<DataEngine>>,
     /// The risk engine instance.
     pub risk_engine: RiskEngine,
     /// The execution engine instance.
@@ -124,7 +133,6 @@ impl NautilusKernel {
         set_message_bus(msgbus);
 
         let portfolio = Portfolio::new(cache.clone(), clock.clone(), config.portfolio());
-        let data_engine = DataEngine::new(clock.clone(), cache.clone(), config.data_engine());
         let risk_engine = RiskEngine::new(
             config.risk_engine().unwrap_or_default(),
             Portfolio::new(cache.clone(), clock.clone(), config.portfolio()),
@@ -133,11 +141,49 @@ impl NautilusKernel {
         );
         let exec_engine = ExecutionEngine::new(clock.clone(), cache.clone(), config.exec_engine());
 
+        let data_engine = DataEngine::new(clock.clone(), cache.clone(), config.data_engine());
+        let data_engine = Rc::new(RefCell::new(data_engine));
+
+        // Register DataEngine command execution
+        let data_engine_ref = data_engine.clone();
+        let endpoint = MessagingSwitchboard::data_engine_execute();
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |cmd: &DataCommand| data_engine_ref.borrow_mut().execute(cmd),
+        )));
+        msgbus::register(endpoint, handler);
+
+        // Register DataEngine command queueing
+        let endpoint = MessagingSwitchboard::data_engine_queue_execute();
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |cmd: &DataCommand| get_data_cmd_sender().clone().execute(cmd.clone()), // TODO:
+        )));
+        msgbus::register(endpoint, handler);
+
+        // Register DataEngine process handler
+        let data_engine_ref = data_engine.clone();
+        let endpoint = MessagingSwitchboard::data_engine_process();
+        // TODO: Optimize this back to a typed handler
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::with_any(
+            move |data: &dyn Any| {
+                data_engine_ref.borrow_mut().process(data);
+            },
+        )));
+        msgbus::register(endpoint, handler);
+
+        // Register DataEngine response handler
+        let data_engine_ref = data_engine.clone();
+        let endpoint = MessagingSwitchboard::data_engine_response();
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |resp: &DataResponse| data_engine_ref.borrow_mut().response(resp.clone()),
+        )));
+        msgbus::register(endpoint, handler);
+
         let trader = Trader::new(
             config.trader_id(),
             instance_id,
             config.environment(),
             clock.clone(),
+            cache.clone(),
         );
 
         let ts_created = clock.borrow().timestamp_ns();
@@ -189,7 +235,7 @@ impl NautilusKernel {
                 Rc::new(RefCell::new(test_clock))
             }
             Environment::Live | Environment::Sandbox => {
-                let live_clock = LiveClock::new();
+                let live_clock = LiveClock::default();
                 Rc::new(RefCell::new(live_clock))
             }
         }
@@ -300,8 +346,8 @@ impl NautilusKernel {
 
     /// Returns the kernel's data engine.
     #[must_use]
-    pub const fn data_engine(&self) -> &DataEngine {
-        &self.data_engine
+    pub fn data_engine(&self) -> Ref<'_, DataEngine> {
+        self.data_engine.borrow()
     }
 
     /// Returns the kernel's risk engine.
@@ -323,35 +369,34 @@ impl NautilusKernel {
     }
 
     /// Starts the Nautilus system kernel.
-    pub fn start(&mut self) {
+    pub async fn start_async(&mut self) {
+        log::info!("Starting engines...");
         self.start_engines();
 
-        // Initialize the trader first
+        log::info!("Initializing trader...");
         if let Err(e) = self.trader.initialize() {
             log::error!("Error initializing trader: {e:?}");
             return;
         }
 
-        // Start the trader (it will start all registered components)
+        log::info!("Connecting clients...");
+        if let Err(e) = self.connect_clients().await {
+            log::error!("Error connecting clients: {e:?}");
+        }
+        log::info!("Clients connected");
+
+        log::info!("Starting trader...");
         if let Err(e) = self.trader.start() {
             log::error!("Error starting trader: {e:?}");
         }
-
-        // Connect all adapter clients
-        tokio::task::block_in_place(|| {
-            get_runtime().block_on(async {
-                if let Err(e) = self.connect_clients().await {
-                    log::error!("Error connecting clients: {e:?}");
-                }
-            });
-        });
+        log::info!("Trader started");
 
         self.ts_started = Some(self.clock.borrow().timestamp_ns());
         log::info!("Nautilus system kernel started");
     }
 
     /// Stops the Nautilus system kernel.
-    pub fn stop(&mut self) {
+    pub async fn stop_async(&mut self) {
         log::info!("Stopping Nautilus system kernel");
 
         // Stop the trader (it will stop all registered components)
@@ -360,13 +405,9 @@ impl NautilusKernel {
         }
 
         // Disconnect all adapter clients
-        tokio::task::block_in_place(|| {
-            get_runtime().block_on(async {
-                if let Err(e) = self.disconnect_clients().await {
-                    log::error!("Error disconnecting clients: {e:?}");
-                }
-            });
-        });
+        if let Err(e) = self.disconnect_clients().await {
+            log::error!("Error disconnecting clients: {e:?}");
+        }
 
         self.stop_engines();
         self.cancel_timers();
@@ -382,7 +423,7 @@ impl NautilusKernel {
         }
 
         // Reset engines
-        self.data_engine.reset();
+        self.data_engine.borrow_mut().reset();
         // TODO: Reset other engines when reset methods are available
 
         self.ts_started = None;
@@ -399,7 +440,7 @@ impl NautilusKernel {
 
         self.stop_engines();
 
-        self.data_engine.dispose();
+        self.data_engine.borrow_mut().dispose();
         // TODO: Implement dispose methods for other engines
 
         log::info!("Nautilus system kernel disposed");
@@ -414,23 +455,25 @@ impl NautilusKernel {
 
     /// Starts all engine components.
     fn start_engines(&self) {
-        self.data_engine.start();
+        self.data_engine.borrow_mut().start();
         // TODO: Start other engines when methods are available
     }
 
     /// Stops all engine components.
     fn stop_engines(&self) {
-        self.data_engine.stop();
+        self.data_engine.borrow_mut().stop();
         // TODO: Stop other engines when methods are available
     }
 
     /// Connects all engine clients.
+    #[allow(clippy::await_holding_refcell_ref)]
     async fn connect_clients(&mut self) -> Result<(), Vec<anyhow::Error>> {
-        let data_adapters = self.data_engine.get_clients_mut();
+        let mut data_engine = self.data_engine.borrow_mut();
+        let mut data_adapters = data_engine.get_clients_mut();
         let mut futures = Vec::with_capacity(data_adapters.len());
 
-        for adapter in data_adapters {
-            futures.push(adapter.get_client().connect());
+        for adapter in &mut data_adapters {
+            futures.push(adapter.connect());
         }
 
         let results = join_all(futures).await;
@@ -444,12 +487,14 @@ impl NautilusKernel {
     }
 
     /// Disconnects all engine clients.
+    #[allow(clippy::await_holding_refcell_ref)]
     async fn disconnect_clients(&mut self) -> Result<(), Vec<anyhow::Error>> {
-        let data_adapters = self.data_engine.get_clients_mut();
+        let mut data_engine = self.data_engine.borrow_mut();
+        let mut data_adapters = data_engine.get_clients_mut();
         let mut futures = Vec::with_capacity(data_adapters.len());
 
-        for adapter in data_adapters {
-            futures.push(adapter.get_client().disconnect());
+        for adapter in &mut data_adapters {
+            futures.push(adapter.disconnect());
         }
 
         let results = join_all(futures).await;
@@ -464,7 +509,7 @@ impl NautilusKernel {
 
     /// Stops engine clients.
     fn stop_clients(&self) {
-        self.data_engine.stop();
+        self.data_engine.borrow_mut().stop();
     }
 
     /// Initializes the portfolio (orders & positions).

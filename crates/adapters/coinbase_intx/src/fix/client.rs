@@ -30,15 +30,16 @@ use std::{
     time::Duration,
 };
 
+use aws_lc_rs::hmac;
 use base64::prelude::*;
 use nautilus_common::logging::{log_task_started, log_task_stopped};
-use nautilus_core::{
-    env::get_env_var, python::IntoPyObjectNautilusExt, time::get_atomic_clock_realtime,
-};
+#[cfg(feature = "python")]
+use nautilus_core::python::IntoPyObjectNautilusExt;
+use nautilus_core::{env::get_env_var, time::get_atomic_clock_realtime};
 use nautilus_model::identifiers::AccountId;
 use nautilus_network::socket::{SocketClient, SocketConfig, WriterCommand};
+#[cfg(feature = "python")]
 use pyo3::prelude::*;
-use ring::hmac;
 use tokio::task::JoinHandle;
 use tokio_tungstenite::tungstenite::stream::Mode;
 
@@ -54,7 +55,10 @@ use crate::{
     },
 };
 
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
+)]
 #[derive(Debug, Clone)]
 pub struct CoinbaseIntxFixClient {
     endpoint: String,
@@ -175,7 +179,11 @@ impl CoinbaseIntxFixClient {
     /// # Errors
     ///
     /// Returns an error if network connection or FIX logon fails.
-    pub async fn connect(&mut self, handler: PyObject) -> anyhow::Result<()> {
+    pub async fn connect(
+        &mut self,
+        #[cfg(feature = "python")] handler: PyObject,
+        #[cfg(not(feature = "python"))] _handler: (),
+    ) -> anyhow::Result<()> {
         let config = SocketConfig {
             url: self.endpoint.clone(),
             mode: Mode::Tls,
@@ -237,6 +245,7 @@ impl CoinbaseIntxFixClient {
                                     match convert_to_order_status_report(
                                         &message, account_id, ts_init,
                                     ) {
+                                        #[cfg(feature = "python")]
                                         Ok(report) => Python::with_gil(|py| {
                                             call_python(
                                                 py,
@@ -244,6 +253,12 @@ impl CoinbaseIntxFixClient {
                                                 report.into_py_any_unwrap(py),
                                             );
                                         }),
+                                        #[cfg(not(feature = "python"))]
+                                        Ok(_report) => {
+                                            tracing::debug!(
+                                                "Order status report handled (Python disabled)"
+                                            );
+                                        }
                                         Err(e) => {
                                             tracing::error!(
                                                 "Failed to parse FIX execution report: {e}"
@@ -256,6 +271,7 @@ impl CoinbaseIntxFixClient {
                                     let clock = get_atomic_clock_realtime(); // TODO: Optimize
                                     let ts_init = clock.get_time_ns();
                                     match convert_to_fill_report(&message, account_id, ts_init) {
+                                        #[cfg(feature = "python")]
                                         Ok(report) => Python::with_gil(|py| {
                                             call_python(
                                                 py,
@@ -263,6 +279,12 @@ impl CoinbaseIntxFixClient {
                                                 report.into_py_any_unwrap(py),
                                             );
                                         }),
+                                        #[cfg(not(feature = "python"))]
+                                        Ok(_report) => {
+                                            tracing::debug!(
+                                                "Fill report handled (Python disabled)"
+                                            );
+                                        }
                                         Err(e) => {
                                             tracing::error!(
                                                 "Failed to parse FIX execution report: {e}"
@@ -285,11 +307,21 @@ impl CoinbaseIntxFixClient {
             }
         });
 
-        let socket =
-            match SocketClient::connect(config, Some(handle_message), None, None, None).await {
-                Ok(socket) => socket,
-                Err(e) => anyhow::bail!("Failed to connect to FIX endpoint: {e:?}"),
-            };
+        let socket = match SocketClient::connect(
+            config,
+            Some(handle_message),
+            #[cfg(feature = "python")]
+            None,
+            #[cfg(feature = "python")]
+            None,
+            #[cfg(feature = "python")]
+            None,
+        )
+        .await
+        {
+            Ok(socket) => socket,
+            Err(e) => anyhow::bail!("Failed to connect to FIX endpoint: {e:?}"),
+        };
 
         let writer_tx = socket.writer_tx.clone();
 
@@ -375,10 +407,10 @@ impl CoinbaseIntxFixClient {
     /// Returns an error if logout or socket closure fails.
     pub async fn close(&mut self) -> anyhow::Result<()> {
         // Send logout message if connected
-        if self.is_logged_on() {
-            if let Err(e) = self.send_logout("Normal logout").await {
-                tracing::warn!("Failed to send logout message: {e}");
-            }
+        if self.is_logged_on()
+            && let Err(e) = self.send_logout("Normal logout").await
+        {
+            tracing::warn!("Failed to send logout message: {e}");
         }
 
         // Close socket
@@ -425,9 +457,9 @@ impl CoinbaseIntxFixClient {
             .decode(&self.api_secret)
             .map_err(|e| anyhow::anyhow!("Invalid base64 secret key: {e}"))?;
 
-        let hmac_key = hmac::Key::new(hmac::HMAC_SHA256, &decoded_secret);
-        let signature = hmac::sign(&hmac_key, message.as_bytes());
-        let encoded_signature = BASE64_STANDARD.encode(signature);
+        let key = hmac::Key::new(hmac::HMAC_SHA256, &decoded_secret);
+        let tag = hmac::sign(&key, message.as_bytes());
+        let encoded_signature = BASE64_STANDARD.encode(tag.as_ref());
 
         let logon_msg = FixMessage::create_logon(
             1, // Always use 1 for new logon with reset
@@ -496,6 +528,7 @@ impl CoinbaseIntxFixClient {
 }
 
 // Can't be moved to core because we don't want to depend on tracing there
+#[cfg(feature = "python")]
 pub fn call_python(py: Python, callback: &PyObject, py_obj: PyObject) {
     if let Err(e) = callback.call1(py, (py_obj,)) {
         tracing::error!("Error calling Python: {e}");

@@ -19,8 +19,14 @@
 
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use nautilus_common::{clock::LiveClock, component::Component, enums::Environment};
+use nautilus_common::{
+    actor::{Actor, DataActor},
+    clock::LiveClock,
+    component::Component,
+    enums::Environment,
+};
 use nautilus_core::UUID4;
+use nautilus_data::client::DataClientAdapter;
 use nautilus_model::identifiers::TraderId;
 use nautilus_system::{
     config::NautilusKernelConfig,
@@ -78,9 +84,9 @@ impl LiveNode {
             }
         }
 
-        let clock = Rc::new(RefCell::new(LiveClock::new()));
+        let runner = AsyncRunner::new();
+        let clock = Rc::new(RefCell::new(LiveClock::default()));
         let kernel = NautilusKernel::new(name, config.clone())?;
-        let runner = AsyncRunner::new(clock.clone());
 
         log::info!("LiveNode built successfully with kernel config");
 
@@ -103,8 +109,9 @@ impl LiveNode {
             anyhow::bail!("LiveNode is already running");
         }
 
-        log::info!("Starting live node");
-        self.kernel.start();
+        log::info!("Starting LiveNode");
+
+        self.kernel.start_async().await;
         self.is_running = true;
 
         log::info!("LiveNode started successfully");
@@ -121,8 +128,9 @@ impl LiveNode {
             anyhow::bail!("LiveNode is not running");
         }
 
-        log::info!("Stopping live node");
-        self.kernel.stop();
+        log::info!("Stopping LiveNode");
+
+        self.kernel.stop_async().await;
         self.is_running = false;
 
         log::info!("LiveNode stopped successfully");
@@ -137,17 +145,31 @@ impl LiveNode {
     /// # Errors
     ///
     /// Returns an error if the node fails to start or encounters a runtime error.
-    pub async fn run_async(&mut self) -> anyhow::Result<()> {
+    pub async fn run(&mut self) -> anyhow::Result<()> {
         self.start().await?;
 
-        // Set up signal handling
-        let sigint = tokio::signal::ctrl_c();
-
         tokio::select! {
-            _ = sigint => {
-                log::info!("Received SIGINT, shutting down...");
+            // Run on main thread
+            () = self.runner.run() => {
+                log::info!("AsyncRunner finished");
+            }
+            // Handle SIGINT signal
+            result = tokio::signal::ctrl_c() => {
+                match result {
+                    Ok(()) => {
+                        log::info!("Received SIGINT, shutting down");
+                        self.runner.stop();
+                        // Give the AsyncRunner a moment to process the shutdown signal
+                        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                    }
+                    Err(e) => {
+                        log::error!("Failed to listen for SIGINT: {e}");
+                    }
+                }
             }
         }
+
+        log::debug!("AsyncRunner and signal handling finished"); // TODO: Temp logging
 
         self.stop().await?;
         Ok(())
@@ -195,7 +217,10 @@ impl LiveNode {
     /// - The trader is not in a valid state for adding components.
     /// - An actor with the same ID is already registered.
     /// - The node is currently running.
-    pub fn add_actor(&mut self, actor: Box<dyn Component>) -> anyhow::Result<()> {
+    pub fn add_actor<T>(&mut self, actor: T) -> anyhow::Result<()>
+    where
+        T: DataActor + Component + Actor + 'static,
+    {
         if self.is_running {
             anyhow::bail!(
                 "Cannot add actor while node is running. Add actors before calling start()."
@@ -320,20 +345,25 @@ impl LiveNodeBuilder {
     /// # Errors
     ///
     /// Returns an error if a client with the same name is already registered.
-    pub fn add_data_client(
+    pub fn add_data_client<F, C>(
         mut self,
         name: Option<String>,
-        factory: Box<dyn DataClientFactory>,
-        config: Box<dyn ClientConfig>,
-    ) -> anyhow::Result<Self> {
+        factory: F,
+        config: C,
+    ) -> anyhow::Result<Self>
+    where
+        F: DataClientFactory + 'static,
+        C: ClientConfig + 'static,
+    {
         let name = name.unwrap_or_else(|| factory.name().to_string());
 
         if self.data_client_factories.contains_key(&name) {
             anyhow::bail!("Data client '{name}' is already registered");
         }
 
-        self.data_client_factories.insert(name.clone(), factory);
-        self.data_client_configs.insert(name, config);
+        self.data_client_factories
+            .insert(name.clone(), Box::new(factory));
+        self.data_client_configs.insert(name, Box::new(config));
         Ok(self)
     }
 
@@ -342,46 +372,95 @@ impl LiveNodeBuilder {
     /// # Errors
     ///
     /// Returns an error if a client with the same name is already registered.
-    pub fn add_exec_client(
+    pub fn add_exec_client<F, C>(
         mut self,
         name: Option<String>,
-        factory: Box<dyn ExecutionClientFactory>,
-        config: Box<dyn ClientConfig>,
-    ) -> anyhow::Result<Self> {
+        factory: F,
+        config: C,
+    ) -> anyhow::Result<Self>
+    where
+        F: ExecutionClientFactory + 'static,
+        C: ClientConfig + 'static,
+    {
         let name = name.unwrap_or_else(|| factory.name().to_string());
 
         if self.exec_client_factories.contains_key(&name) {
             anyhow::bail!("Execution client '{name}' is already registered");
         }
 
-        self.exec_client_factories.insert(name.clone(), factory);
-        self.exec_client_configs.insert(name, config);
+        self.exec_client_factories
+            .insert(name.clone(), Box::new(factory));
+        self.exec_client_configs.insert(name, Box::new(config));
         Ok(self)
     }
 
     /// Build the [`LiveNode`] with the configured settings.
     ///
     /// This will:
-    /// 1. Build the underlying kernel
-    /// 2. Register all client factories
-    /// 3. Create and register all clients
+    /// 1. Build the underlying kernel.
+    /// 2. Register all client factories.
+    /// 3. Create and register all clients.
     ///
     /// # Errors
     ///
     /// Returns an error if node construction fails.
-    pub fn build(self) -> anyhow::Result<LiveNode> {
-        // TODO: Register client factories and create clients
-        // This would involve:
-        // 1. Creating clients using factories and configs
-        // 2. Registering clients with the data/execution engines
-        // 3. Setting up routing configurations
+    pub fn build(mut self) -> anyhow::Result<LiveNode> {
+        log::info!(
+            "Building LiveNode with {} data clients",
+            self.data_client_factories.len()
+        );
+
+        let runner = AsyncRunner::new();
+        let clock = Rc::new(RefCell::new(LiveClock::default()));
+        let kernel = NautilusKernel::new("LiveNode".to_string(), self.config.clone())?;
+
+        // Create and register data clients
+        for (name, factory) in self.data_client_factories {
+            if let Some(config) = self.data_client_configs.remove(&name) {
+                log::info!("Creating data client '{name}'");
+
+                let client =
+                    factory.create(&name, config.as_ref(), kernel.cache(), kernel.clock())?;
+
+                log::info!("Registering data client '{name}' with data engine");
+
+                let client_id = client.client_id();
+                let venue = client.venue();
+                let adapter = DataClientAdapter::new(
+                    client_id, venue, true, // handles_order_book_deltas
+                    true, // handles_order_book_snapshots
+                    client,
+                );
+
+                kernel
+                    .data_engine
+                    .borrow_mut()
+                    .register_client(adapter, venue);
+
+                log::info!("Successfully registered data client '{name}' ({client_id})");
+            } else {
+                log::warn!("No config found for data client factory '{name}'");
+            }
+        }
+
+        // Create and register execution clients
+        for (name, factory) in self.exec_client_factories {
+            if let Some(config) = self.exec_client_configs.remove(&name) {
+                log::info!("Creating execution client '{name}'");
+
+                let client =
+                    factory.create(&name, config.as_ref(), kernel.cache(), kernel.clock())?;
+
+                log::info!("Registering execution client '{name}' with execution engine");
+
+                // TODO: Implement when ExecutionEngine has a register_client method
+                // kernel.exec_engine().register_client(client);
+            } else {
+                log::warn!("No config found for execution client factory '{name}'");
+            }
+        }
 
         log::info!("LiveNode built successfully");
-
-        // Create kernel directly with the config
-        let clock = Rc::new(RefCell::new(LiveClock::new()));
-        let kernel = NautilusKernel::new("LiveNode".to_string(), self.config.clone())?;
-        let runner = AsyncRunner::new(clock.clone());
 
         Ok(LiveNode {
             clock,

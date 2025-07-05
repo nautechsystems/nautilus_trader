@@ -4,10 +4,14 @@
 [![Documentation](https://img.shields.io/docsrs/nautilus-databento)](https://docs.rs/nautilus-databento/latest/nautilus-databento/)
 [![crates.io version](https://img.shields.io/crates/v/nautilus-databento.svg)](https://crates.io/crates/nautilus-databento)
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
+[![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
 
-[NautilusTrader](https://nautilustrader.io) is an open-source, high-performance, production-grade algorithmic trading platform,
-providing quantitative traders with the ability to backtest portfolios of automated trading strategies
-on historical data with an event-driven engine, and also deploy those same strategies live, with no code changes.
+## Platform
+
+[NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
+algorithmic trading platform, providing quantitative traders with the ability to backtest
+portfolios of automated trading strategies on historical data with an event-driven engine,
+and also deploy those same strategies live, with no code changes.
 
 NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
 highest level, with the aim of supporting mission-critical, trading system backtesting and live deployment workloads.

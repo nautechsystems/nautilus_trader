@@ -275,7 +275,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             asset_type=AssetType.COLLATERAL,
             signature_type=self._config.signature_type,
         )
-        response = await asyncio.to_thread(
+        response: dict[str, Any] = await asyncio.to_thread(
             self._http_client.get_balance_allowance,
             params,
         )
@@ -490,17 +490,17 @@ class PolymarketExecutionClient(LiveExecutionClient):
         self._log.info(
             f"Generating OrderStatusReport for "
             f"{repr(command.client_order_id) if command.client_order_id else ''} "
-            f"{repr(venue_order_id) if venue_order_id else ''}",
+            f"{repr(command.venue_order_id) if command.venue_order_id else ''}",
         )
 
         retry_manager = await self._retry_manager_pool.acquire()
         try:
             response: JSON | None = await retry_manager.run(
                 "generate_order_status_report",
-                [command.client_order_id, venue_order_id],
+                [command.client_order_id, command.venue_order_id],
                 asyncio.to_thread,
                 self._http_client.get_order,
-                order_id=venue_order_id.value,
+                order_id=command.venue_order_id.value,
             )
             if not response:
                 return None
@@ -825,6 +825,9 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
         order = command.order
 
+        # --------------------------------------------------------------------------------------
+        # MARKET ORDER CHANGE
+        # --------------------------------------------------------------------------------------
         # if order.quantity.precision > POLYMARKET_MAX_PRECISION_TAKER:
         #     self._log.error(
         #         f"Market order quantity max precision {POLYMARKET_MAX_PRECISION_TAKER} on Polymarket, "
@@ -832,7 +835,9 @@ class PolymarketExecutionClient(LiveExecutionClient):
         #     )
         #     return  # TODO: Change to deny after next release
 
-        # Create signed Polymarket market order
+        # amount = round(order.quantity, POLYMARKET_MAX_PRECISION_TAKER)
+
+        # # Create signed Polymarket market order
         # market_order_args = MarketOrderArgs(
         #     token_id=get_polymarket_token_id(order.instrument_id),
         #     amount=amount,
@@ -849,8 +854,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
         # )
         # interval = self._clock.timestamp() - signing_start
         # self._log.info(f"Signed Polymarket market order in {interval:.3f}s", LogColor.BLUE)
-
-        # amount = round(order.quantity, POLYMARKET_MAX_PRECISION_TAKER)
+        # --------------------------------------------------------------------------------------
 
         price = POLYMARKET_MAX_PRICE if order.side == OrderSide.BUY else POLYMARKET_MIN_PRICE
 
@@ -944,7 +948,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
     def _handle_ws_message(self, raw: bytes) -> None:
         try:
             if self._config.log_raw_ws_messages:
-                self._log.debug(
+                self._log.info(
                     str(json.dumps(msgspec.json.decode(raw), indent=4)),
                     color=LogColor.MAGENTA,
                 )

@@ -62,6 +62,12 @@ use nautilus_model::{
 
 use crate::client::ExecutionClient;
 
+/// Central execution engine responsible for orchestrating order routing and execution.
+///
+/// The execution engine manages the entire order lifecycle from submission to completion,
+/// handling routing to appropriate execution clients, position management, and event
+/// processing. It supports multiple execution venues through registered clients and
+/// provides sophisticated order management capabilities.
 pub struct ExecutionEngine {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
@@ -83,6 +89,7 @@ impl Debug for ExecutionEngine {
 }
 
 impl ExecutionEngine {
+    /// Creates a new [`ExecutionEngine`] instance.
     pub fn new(
         clock: Rc<RefCell<dyn Clock>>,
         cache: Rc<RefCell<Cache>>,
@@ -103,31 +110,37 @@ impl ExecutionEngine {
     }
 
     #[must_use]
+    /// Returns the position ID count for the specified strategy.
     pub fn position_id_count(&self, strategy_id: StrategyId) -> usize {
         self.pos_id_generator.count(strategy_id)
     }
 
     #[must_use]
+    /// Checks the integrity of cached execution data.
     pub fn check_integrity(&self) -> bool {
         self.cache.borrow_mut().check_integrity()
     }
 
     #[must_use]
+    /// Returns true if all registered execution clients are connected.
     pub fn check_connected(&self) -> bool {
         self.clients.values().all(|c| c.is_connected())
     }
 
     #[must_use]
+    /// Returns true if all registered execution clients are disconnected.
     pub fn check_disconnected(&self) -> bool {
         self.clients.values().all(|c| !c.is_connected())
     }
 
     #[must_use]
+    /// Checks for residual positions and orders in the cache.
     pub fn check_residuals(&self) -> bool {
         self.cache.borrow().check_residuals()
     }
 
     #[must_use]
+    /// Returns the set of instruments that have external order claims.
     pub fn get_external_order_claims_instruments(&self) -> HashSet<InstrumentId> {
         self.external_order_claims.keys().copied().collect()
     }
@@ -152,12 +165,14 @@ impl ExecutionEngine {
         Ok(())
     }
 
+    /// Registers a default execution client for fallback routing.
     pub fn register_default_client(&mut self, client: Rc<dyn ExecutionClient>) {
         log::info!("Registered default client {}", client.client_id());
         self.default_client = Some(client);
     }
 
     #[must_use]
+    /// Returns the execution client registered with the given ID.
     pub fn get_client(&self, client_id: &ClientId) -> Option<Rc<dyn ExecutionClient>> {
         self.clients.get(client_id).cloned()
     }
@@ -244,14 +259,17 @@ impl ExecutionEngine {
         Ok(())
     }
 
+    /// Flushes the database to persist all cached data.
     pub fn flush_db(&self) {
         self.cache.borrow_mut().flush_db();
     }
 
+    /// Processes an order event, updating internal state and routing as needed.
     pub fn process(&mut self, event: &OrderEventAny) {
         self.handle_event(event);
     }
 
+    /// Executes a trading command by routing it to the appropriate execution client.
     pub fn execute(&self, command: &TradingCommand) {
         self.execute_command(command);
     }
@@ -482,11 +500,11 @@ impl ExecutionEngine {
             log::debug!("Creating order state snapshot for {order}");
         }
 
-        if self.cache.borrow().has_backing() {
-            if let Err(e) = self.cache.borrow().snapshot_order_state(order) {
-                log::error!("Failed to snapshot order state: {e}");
-                return;
-            }
+        if self.cache.borrow().has_backing()
+            && let Err(e) = self.cache.borrow().snapshot_order_state(order)
+        {
+            log::error!("Failed to snapshot order state: {e}");
+            return;
         }
 
         if get_message_bus().borrow().has_backing {
@@ -589,10 +607,10 @@ impl ExecutionEngine {
         }
 
         // Use native venue OMS
-        if let Some(client_id) = self.routing_map.get(&fill.instrument_id.venue) {
-            if let Some(client) = self.clients.get(client_id) {
-                return client.oms_type();
-            }
+        if let Some(client_id) = self.routing_map.get(&fill.instrument_id.venue)
+            && let Some(client) = self.clients.get(client_id)
+        {
+            return client.oms_type();
         }
 
         if let Some(client) = &self.default_client {
@@ -725,18 +743,18 @@ impl ExecutionEngine {
             for client_order_id in order.linked_order_ids().unwrap_or_default() {
                 let mut cache = self.cache.borrow_mut();
                 let contingent_order = cache.mut_order(client_order_id);
-                if let Some(contingent_order) = contingent_order {
-                    if contingent_order.position_id().is_none() {
-                        contingent_order.set_position_id(Some(position_id));
+                if let Some(contingent_order) = contingent_order
+                    && contingent_order.position_id().is_none()
+                {
+                    contingent_order.set_position_id(Some(position_id));
 
-                        if let Err(e) = self.cache.borrow_mut().add_position_id(
-                            &position_id,
-                            &contingent_order.instrument_id().venue,
-                            &contingent_order.client_order_id(),
-                            &contingent_order.strategy_id(),
-                        ) {
-                            log::error!("Failed to add position ID: {e}");
-                        }
+                    if let Err(e) = self.cache.borrow_mut().add_position_id(
+                        &position_id,
+                        &contingent_order.instrument_id().venue,
+                        &contingent_order.client_order_id(),
+                        &contingent_order.strategy_id(),
+                    ) {
+                        log::error!("Failed to add position ID: {e}");
                     }
                 }
             }
@@ -907,13 +925,12 @@ impl ExecutionEngine {
             commission2,
         );
 
-        if oms_type == OmsType::Hedging {
-            if let Some(position_id) = fill.position_id {
-                if position_id.is_virtual() {
-                    log::warn!("Closing position {fill_split1:?}");
-                    log::warn!("Flipping position {fill_split2:?}");
-                }
-            }
+        if oms_type == OmsType::Hedging
+            && let Some(position_id) = fill.position_id
+            && position_id.is_virtual()
+        {
+            log::warn!("Closing position {fill_split1:?}");
+            log::warn!("Flipping position {fill_split2:?}");
         }
 
         // Open flipped position
@@ -1063,7 +1080,7 @@ impl ExecutionEngine {
         }
     }
 
-    fn get_or_init_own_order_book(&self, instrument_id: &InstrumentId) -> RefMut<OwnOrderBook> {
+    fn get_or_init_own_order_book(&self, instrument_id: &InstrumentId) -> RefMut<'_, OwnOrderBook> {
         let mut cache = self.cache.borrow_mut();
         if cache.own_order_book_mut(instrument_id).is_none() {
             let own_book = OwnOrderBook::new(*instrument_id);

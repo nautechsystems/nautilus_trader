@@ -63,6 +63,23 @@ def should_retry(error: BaseException) -> bool:
 
     """
     if isinstance(error, BinanceError):
-        error_code = BinanceErrorCode(int(error.message["code"]))
-        return error_code in BINANCE_RETRY_ERRORS
+        try:
+            # Handle case where message might be a dict, string, or missing 'code' key
+            if isinstance(error.message, dict) and "code" in error.message:
+                error_code = BinanceErrorCode(int(error.message["code"]))
+                return error_code in BINANCE_RETRY_ERRORS
+            elif isinstance(error.message, str):
+                # Try to parse error code from string format like '{"code":-1021,"msg":"..."}'
+                import json
+
+                try:
+                    parsed_message = json.loads(error.message)
+                    if isinstance(parsed_message, dict) and "code" in parsed_message:
+                        error_code = BinanceErrorCode(int(parsed_message["code"]))
+                        return error_code in BINANCE_RETRY_ERRORS
+                except (json.JSONDecodeError, ValueError, KeyError):
+                    pass
+        except (ValueError, KeyError, TypeError):
+            pass  # If any parsing fails, don't retry
+
     return False

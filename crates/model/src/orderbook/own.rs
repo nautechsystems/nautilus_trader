@@ -474,8 +474,7 @@ impl OwnOrderBook {
 
 fn log_audit_error(client_order_id: &ClientOrderId) {
     log::error!(
-        "Audit error - {} cached order already closed, deleting from own book",
-        client_order_id
+        "Audit error - {client_order_id} cached order already closed, deleting from own book"
     );
 }
 

@@ -30,7 +30,10 @@ use crate::{
     enums::{BookAction, BookType, OrderSide, OrderSideSpecified, OrderStatus},
     identifiers::InstrumentId,
     orderbook::{InvalidBookOperation, ladder::BookLadder},
-    types::{Price, Quantity},
+    types::{
+        Price, Quantity,
+        price::{PRICE_ERROR, PRICE_UNDEF},
+    },
 };
 
 /// Provides a high-performance, versatile order book.
@@ -453,6 +456,24 @@ impl OrderBook {
     }
 
     fn increment(&mut self, sequence: u64, ts_event: UnixNanos) {
+        debug_assert!(
+            sequence >= self.sequence,
+            "Sequence number should not go backwards: old={}, new={}",
+            self.sequence,
+            sequence
+        );
+        debug_assert!(
+            ts_event >= self.ts_last,
+            "Timestamp should not go backwards: old={}, new={}",
+            self.ts_last,
+            ts_event
+        );
+        debug_assert!(
+            self.update_count < u64::MAX,
+            "Update count approaching overflow: {}",
+            self.update_count
+        );
+
         self.sequence = sequence;
         self.ts_last = ts_event;
         self.update_count += 1;
@@ -466,7 +487,24 @@ impl OrderBook {
     pub fn update_quote_tick(&mut self, quote: &QuoteTick) -> Result<(), InvalidBookOperation> {
         if self.book_type != BookType::L1_MBP {
             return Err(InvalidBookOperation::Update(self.book_type));
-        };
+        }
+
+        // Note: Crossed quotes (bid > ask) can occur temporarily in volatile markets or during updates
+        // This is more of a data quality warning than a hard invariant
+        if cfg!(debug_assertions) && quote.bid_price > quote.ask_price {
+            log::warn!(
+                "Quote has crossed prices: bid={}, ask={} for {}",
+                quote.bid_price,
+                quote.ask_price,
+                self.instrument_id
+            );
+        }
+        debug_assert!(
+            quote.bid_size.is_positive() && quote.ask_size.is_positive(),
+            "Quote has non-positive sizes: bid_size={}, ask_size={}",
+            quote.bid_size,
+            quote.ask_size
+        );
 
         let bid = BookOrder::new(
             OrderSide::Buy,
@@ -496,7 +534,19 @@ impl OrderBook {
     pub fn update_trade_tick(&mut self, trade: &TradeTick) -> Result<(), InvalidBookOperation> {
         if self.book_type != BookType::L1_MBP {
             return Err(InvalidBookOperation::Update(self.book_type));
-        };
+        }
+
+        // Note: Prices can be zero or negative for certain instruments (options, commodities, spreads)
+        debug_assert!(
+            trade.price.raw != PRICE_UNDEF && trade.price.raw != PRICE_ERROR,
+            "Trade has invalid/uninitialized price: {}",
+            trade.price
+        );
+        debug_assert!(
+            trade.size.is_positive(),
+            "Trade has non-positive size: {}",
+            trade.size
+        );
 
         let bid = BookOrder::new(
             OrderSide::Buy,

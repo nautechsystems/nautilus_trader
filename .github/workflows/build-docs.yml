@@ -1,5 +1,9 @@
 name: build-docs
 
+permissions: # Principle of least privilege
+  contents: read
+  actions: read
+
 on:
   push:
     branches: [master, nightly]
@@ -9,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+      - uses: step-security/harden-runner@002fdce3c6a235733a90a27c80493a3241e56863 # v2.12.1
         with:
           egress-policy: audit
 

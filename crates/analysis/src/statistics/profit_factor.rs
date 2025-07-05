@@ -15,6 +15,13 @@
 
 use crate::{Returns, statistic::PortfolioStatistic};
 
+/// Calculates the profit factor based on portfolio returns.
+///
+/// Profit factor is defined as the ratio of gross profits to gross losses:
+/// |Total Positive Returns| / |Total Negative Returns|
+///
+/// A profit factor greater than 1.0 indicates a profitable strategy, while
+/// a factor less than 1.0 indicates losses exceed gains.
 #[repr(C)]
 #[derive(Debug)]
 #[cfg_attr(

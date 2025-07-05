@@ -78,8 +78,8 @@ cdef class AccountState(Event):
         self.account_id = account_id
         self.account_type = account_type
         self.base_currency = base_currency
-        self.balances = balances
-        self.margins = margins
+        self.balances = [balance.copy() for balance in balances]
+        self.margins = [margin.copy() for margin in margins]
         self.is_reported = reported
         self.info = info
 

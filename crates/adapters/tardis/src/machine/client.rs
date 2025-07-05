@@ -157,11 +157,10 @@ where
                             .and_then(|map| determine_instrument_info(&msg, map))
                     });
 
-                    if let Some(info) = info {
-                        if let Some(data) = parse_tardis_ws_message(msg, info) {
+                    if let Some(info) = info
+                        && let Some(data) = parse_tardis_ws_message(msg, info) {
                             yield data;
                         }
-                    }
                 }
                 Err(e) => {
                     tracing::error!("Error in WebSocket stream: {e:?}");

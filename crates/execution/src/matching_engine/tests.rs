@@ -1020,8 +1020,10 @@ fn test_process_stop_market_order_triggered_rejected(
     );
 
     // Create order matching engine which rejects stop orders
-    let mut engine_config = OrderMatchingEngineConfig::default();
-    engine_config.reject_stop_orders = true;
+    let engine_config = OrderMatchingEngineConfig {
+        reject_stop_orders: true,
+        ..Default::default()
+    };
     let mut engine_l2 = get_order_matching_engine_l2(
         instrument_eth_usdt.clone(),
         None,
@@ -1664,8 +1666,10 @@ fn test_expire_order(
     );
 
     // Create order matching engine with gtd support
-    let mut engine_config = OrderMatchingEngineConfig::default();
-    engine_config.support_gtd_orders = true;
+    let engine_config = OrderMatchingEngineConfig {
+        support_gtd_orders: true,
+        ..Default::default()
+    };
     let mut engine_l2 = get_order_matching_engine_l2(
         instrument_eth_usdt.clone(),
         None,
@@ -2573,8 +2577,10 @@ fn test_updating_of_contingent_orders(
 
     let cache = Rc::new(RefCell::new(Cache::default()));
     // Create order matching engine which supports contingent orders
-    let mut engine_config = OrderMatchingEngineConfig::default();
-    engine_config.support_contingent_orders = true;
+    let engine_config = OrderMatchingEngineConfig {
+        support_contingent_orders: true,
+        ..Default::default()
+    };
     let mut engine_l2 = get_order_matching_engine_l2(
         instrument_eth_usdt.clone(),
         Some(cache.clone()),

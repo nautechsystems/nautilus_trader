@@ -13,6 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Implementation of a *margin* account capable of holding leveraged positions and tracking
+//! instrument-specific leverage ratios.
+
 #![allow(dead_code)]
 
 use std::{

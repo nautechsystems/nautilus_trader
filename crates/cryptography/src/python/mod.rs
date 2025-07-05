@@ -21,7 +21,7 @@ use pyo3::prelude::*;
 
 use crate::python;
 
-/// Loaded as `nautilus_pyo3.cryptography`
+/// Loaded as `nautilus_pyo3.cryptography`.
 ///
 /// # Errors
 ///

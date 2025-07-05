@@ -22,7 +22,7 @@ pub mod money;
 pub mod price;
 pub mod quantity;
 
-#[cfg(feature = "stubs")]
+#[cfg(any(test, feature = "stubs"))]
 pub mod stubs;
 
 // Re-exports

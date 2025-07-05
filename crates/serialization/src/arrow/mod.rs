@@ -89,9 +89,12 @@ fn get_raw_quantity(bytes: &[u8]) -> QuantityRaw {
     QuantityRaw::from_le_bytes(bytes.try_into().unwrap())
 }
 
+/// Provides Apache Arrow schema definitions for data types.
 pub trait ArrowSchemaProvider {
+    /// Returns the Arrow schema for this type with optional metadata.
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema;
 
+    /// Returns a map of field names to their Arrow data types.
     #[must_use]
     fn get_schema_map() -> HashMap<String, String> {
         let schema = Self::get_schema(None);
@@ -105,6 +108,7 @@ pub trait ArrowSchemaProvider {
     }
 }
 
+/// Encodes data types to Apache Arrow RecordBatch format.
 pub trait EncodeToRecordBatch
 where
     Self: Sized + ArrowSchemaProvider,
@@ -119,6 +123,7 @@ where
         data: &[Self],
     ) -> Result<RecordBatch, ArrowError>;
 
+    /// Returns the metadata for this data element.
     fn metadata(&self) -> HashMap<String, String>;
 
     /// Returns the metadata for the first element in a chunk.
@@ -134,6 +139,7 @@ where
     }
 }
 
+/// Decodes data types from Apache Arrow RecordBatch format.
 pub trait DecodeFromRecordBatch
 where
     Self: Sized + Into<Data> + ArrowSchemaProvider,
@@ -149,6 +155,7 @@ where
     ) -> Result<Vec<Self>, EncodingError>;
 }
 
+/// Decodes raw Data objects from Apache Arrow RecordBatch format.
 pub trait DecodeDataFromRecordBatch
 where
     Self: Sized + Into<Data> + ArrowSchemaProvider,
@@ -164,6 +171,7 @@ where
     ) -> Result<Vec<Data>, EncodingError>;
 }
 
+/// Writes RecordBatch data to output streams.
 pub trait WriteStream {
     /// Writes a `RecordBatch` to the implementing output stream.
     ///

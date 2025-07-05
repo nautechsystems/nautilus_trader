@@ -46,6 +46,18 @@ use crate::{
     execution_client::BacktestExecutionClient, modules::SimulationModule,
 };
 
+/// Core backtesting engine for running event-driven strategy backtests on historical data.
+///
+/// The `BacktestEngine` provides a high-fidelity simulation environment that processes
+/// historical market data chronologically through an event-driven architecture. It maintains
+/// simulated exchanges with realistic order matching and execution, allowing strategies
+/// to be tested exactly as they would run in live trading:
+///
+/// - Event-driven data replay with configurable latency models.
+/// - Multi-venue and multi-asset support.
+/// - Realistic order matching and execution simulation.
+/// - Strategy and portfolio performance analysis.
+/// - Seamless transition from backtesting to live trading.
 pub struct BacktestEngine {
     instance_id: UUID4,
     config: BacktestEngineConfig,
@@ -233,7 +245,10 @@ impl BacktestEngine {
         // Check client has been registered
         self.add_market_data_client_if_not_exists(instrument.id().venue);
 
-        self.kernel.data_engine.process(&instrument as &dyn Any);
+        self.kernel
+            .data_engine
+            .borrow_mut()
+            .process(&instrument as &dyn Any);
         log::info!(
             "Added instrument {} to exchange {}",
             instrument_id,
@@ -342,6 +357,7 @@ impl BacktestEngine {
         if !self
             .kernel
             .data_engine
+            .borrow()
             .registered_clients()
             .contains(&client_id)
         {
@@ -356,6 +372,7 @@ impl BacktestEngine {
             );
             self.kernel
                 .data_engine
+                .borrow_mut()
                 .register_client(data_client_adapter, None);
         }
     }
@@ -426,7 +443,7 @@ mod tests {
 
         // Check the venue and exec client has been added
         assert_eq!(engine.venues.len(), 1);
-        assert!(engine.venues.get(&venue).is_some());
+        assert!(engine.venues.contains_key(&venue));
         assert!(engine.kernel.exec_engine.get_client(&client_id).is_some());
 
         // Check the instrument has been added
@@ -436,11 +453,20 @@ mod tests {
                 .get(&venue)
                 .is_some_and(|venue| venue.borrow().get_matching_engine(&instrument_id).is_some())
         );
-        assert_eq!(engine.kernel.data_engine.registered_clients().len(), 1);
+        assert_eq!(
+            engine
+                .kernel
+                .data_engine
+                .borrow()
+                .registered_clients()
+                .len(),
+            1
+        );
         assert!(
             engine
                 .kernel
                 .data_engine
+                .borrow()
                 .registered_clients()
                 .contains(&client_id)
         );

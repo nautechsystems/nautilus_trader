@@ -16,7 +16,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use nautilus_core::consts::NAUTILUS_USER_AGENT;
-use nautilus_model::defi::{block::Block, chain::Chain, rpc::RpcNodeWssResponse};
+use nautilus_model::defi::{Block, Chain, rpc::RpcNodeWssResponse};
 use nautilus_network::websocket::{Consumer, WebSocketClient, WebSocketConfig};
 use reqwest::header::USER_AGENT;
 use tokio_tungstenite::tungstenite::Message;
@@ -30,11 +30,12 @@ use crate::rpc::{
 };
 
 /// Core implementation of a blockchain RPC client that serves as the base for all chain-specific clients.
-/// It provides a shared implementation of common blockchain RPC functionality. It handles:
-/// - WebSocket connection management with blockchain RPC node
-/// - Subscription lifecycle (creation, tracking, and termination)
-/// - Message serialization and deserialization of RPC messages
-/// - Event type mapping and dispatching
+///
+/// It provides a shared implementation of common blockchain RPC functionality, handling:
+/// - WebSocket connection management with blockchain RPC node.
+/// - Subscription lifecycle (creation, tracking, and termination).
+/// - Message serialization and deserialization of RPC messages.
+/// - Event type mapping and dispatching.
 #[derive(Debug)]
 pub struct CoreBlockchainRpcClient {
     /// The blockchain network type this client connects to.
@@ -81,16 +82,16 @@ impl CoreBlockchainRpcClient {
         let config = WebSocketConfig {
             url: self.wss_rpc_url.clone(),
             headers: vec![user_agent],
+            handler: Consumer::Rust(tx),
             heartbeat: Some(heartbeat_interval),
             heartbeat_msg: None,
-            handler: Consumer::Rust(tx),
             #[cfg(feature = "python")]
             ping_handler: None,
             reconnect_timeout_ms: Some(5_000),
             reconnect_delay_initial_ms: None,
-            reconnect_jitter_ms: None,
-            reconnect_backoff_factor: None,
             reconnect_delay_max_ms: None,
+            reconnect_backoff_factor: None,
+            reconnect_jitter_ms: None,
         };
         let client = WebSocketClient::connect(
             config,
@@ -118,7 +119,7 @@ impl CoreBlockchainRpcClient {
         subscription_id: String,
     ) -> Result<(), BlockchainRpcClientError> {
         if let Some(client) = &self.wss_client {
-            log::info!("Subscribing to new blocks on chain {}", self.chain.name);
+            log::info!("Subscribing to new blocks on chain '{}'", self.chain.name);
             let msg = serde_json::json!({
                 "method": "eth_subscribe",
                 "id": self.request_id,
@@ -219,8 +220,7 @@ impl CoreBlockchainRpcClient {
                                         >(json)
                                         {
                                             Ok(block_response) => {
-                                                let mut block = block_response.params.result;
-                                                block.set_chain(self.chain.clone());
+                                                let block = block_response.params.result;
                                                 Ok(BlockchainMessage::Block(block))
                                             }
                                             Err(e) => {

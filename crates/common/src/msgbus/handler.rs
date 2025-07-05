@@ -135,6 +135,10 @@ fn generate_handler_id<T: 'static + ?Sized, F: 'static + Fn(&T)>(callback: &F) -
     Ustr::from(&format!("<{callback_ptr:?}>-{uuid}"))
 }
 
+// ShareableMessageHandler contains Rc<dyn MessageHandler> which is not Send/Sync.
+// This is intentional - message handlers are designed for single-threaded use within
+// each async runtime. The MessageBus uses thread-local storage to ensure each thread
+// gets its own handlers, eliminating the need for unsafe Send/Sync implementations.
 #[repr(transparent)]
 #[derive(Clone)]
 pub struct ShareableMessageHandler(pub Rc<dyn MessageHandler>);
@@ -159,7 +163,3 @@ impl From<Rc<dyn MessageHandler>> for ShareableMessageHandler {
         Self(value)
     }
 }
-
-// SAFETY: Message handlers cannot be sent across thread boundaries
-#[allow(unsafe_code)]
-unsafe impl Send for ShareableMessageHandler {}

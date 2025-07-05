@@ -17,6 +17,7 @@ from decimal import Decimal
 
 import pytest
 
+from nautilus_trader.accounting.error import AccountBalanceNegative
 from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
@@ -256,7 +257,7 @@ class TestPortfolio:
         self.exec_engine.process(TestEventStubs.order_submitted(order, account_id=account_id))
 
         # Act, Assert: push account to negative balance (wouldn't normally be allowed by risk engine)
-        with pytest.raises(ValueError):
+        with pytest.raises(AccountBalanceNegative):
             fill = TestEventStubs.order_filled(
                 order,
                 instrument=AUDUSD_SIM,
@@ -1908,7 +1909,6 @@ class TestPortfolio:
         expected_unrealized: float,
     ) -> None:
         # Arrange
-        self.portfolio.set_specific_venue(Venue("BETFAIR"))
         self.portfolio.set_use_mark_prices(True)
         self.portfolio.set_use_mark_xrates(True)
 
@@ -2028,7 +2028,6 @@ class TestPortfolio:
         expected_unrealized: float,
     ) -> None:
         # Arrange
-        self.portfolio.set_specific_venue(Venue("BETFAIR"))
         self.portfolio.set_use_mark_prices(True)
         self.portfolio.set_use_mark_xrates(True)
 
@@ -2148,7 +2147,6 @@ class TestPortfolio:
         expected_unrealized: float,
     ) -> None:
         # Arrange
-        self.portfolio.set_specific_venue(Venue("BETFAIR"))
         self.portfolio.set_use_mark_prices(True)
         self.portfolio.set_use_mark_xrates(True)
 
@@ -2270,7 +2268,6 @@ class TestPortfolio:
         expected_unrealized: float,
     ) -> None:
         # Arrange
-        self.portfolio.set_specific_venue(Venue("BETFAIR"))
         self.portfolio.set_use_mark_prices(True)
         self.portfolio.set_use_mark_xrates(True)
 

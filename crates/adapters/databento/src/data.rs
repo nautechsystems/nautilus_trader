@@ -26,10 +26,16 @@ use std::{
 use ahash::AHashMap;
 use databento::live::Subscription;
 use indexmap::IndexMap;
-use nautilus_common::messages::data::{
-    RequestBars, RequestInstruments, RequestQuotes, RequestTrades, SubscribeBookDeltas,
-    SubscribeInstrumentStatus, SubscribeQuotes, SubscribeTrades, UnsubscribeBookDeltas,
-    UnsubscribeInstrumentStatus, UnsubscribeQuotes, UnsubscribeTrades,
+use nautilus_common::{
+    messages::{
+        DataEvent,
+        data::{
+            RequestBars, RequestInstruments, RequestQuotes, RequestTrades, SubscribeBookDeltas,
+            SubscribeInstrumentStatus, SubscribeQuotes, SubscribeTrades, UnsubscribeBookDeltas,
+            UnsubscribeInstrumentStatus, UnsubscribeQuotes, UnsubscribeTrades,
+        },
+    },
+    runner::get_data_event_sender,
 };
 use nautilus_core::time::AtomicTime;
 use nautilus_data::client::DataClient;
@@ -38,7 +44,8 @@ use nautilus_model::{
     identifiers::{ClientId, Symbol, Venue},
     instruments::Instrument,
 };
-use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
 
 use crate::{
     historical::{DatabentoHistoricalClient, RangeQueryParams},
@@ -64,7 +71,7 @@ pub struct DatabentoDataClientConfig {
 impl DatabentoDataClientConfig {
     /// Creates a new [`DatabentoDataClientConfig`] instance.
     #[must_use]
-    pub fn new(
+    pub const fn new(
         api_key: String,
         publishers_filepath: PathBuf,
         use_exchange_as_venue: bool,
@@ -98,11 +105,17 @@ pub struct DatabentoDataClient {
     /// Data loader for venue-to-dataset mapping.
     loader: DatabentoDataLoader,
     /// Feed handler command senders per dataset.
-    cmd_channels: Arc<Mutex<AHashMap<String, mpsc::UnboundedSender<LiveCommand>>>>,
+    cmd_channels: Arc<Mutex<AHashMap<String, tokio::sync::mpsc::UnboundedSender<LiveCommand>>>>,
+    /// Task handles for lifecycle management.
+    task_handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
+    /// Cancellation token for graceful shutdown.
+    cancellation_token: CancellationToken,
     /// Publisher to venue mapping.
     publisher_venue_map: Arc<IndexMap<PublisherId, Venue>>,
     /// Symbol to venue mapping (for caching).
     symbol_venue_map: Arc<RwLock<AHashMap<Symbol, Venue>>>,
+    /// Data event sender for forwarding data to the async runner.
+    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
 }
 
 impl DatabentoDataClient {
@@ -136,6 +149,8 @@ impl DatabentoDataClient {
             .map(|p| (p.publisher_id, Venue::from(p.venue.as_str())))
             .collect::<IndexMap<u16, Venue>>();
 
+        let data_sender = get_data_event_sender();
+
         Ok(Self {
             client_id,
             config,
@@ -143,8 +158,11 @@ impl DatabentoDataClient {
             historical,
             loader,
             cmd_channels: Arc::new(Mutex::new(AHashMap::new())),
+            task_handles: Arc::new(Mutex::new(Vec::new())),
+            cancellation_token: CancellationToken::new(),
             publisher_venue_map: Arc::new(publisher_venue_map),
             symbol_venue_map: Arc::new(RwLock::new(AHashMap::new())),
+            data_sender,
         })
     }
 
@@ -152,7 +170,7 @@ impl DatabentoDataClient {
     fn get_dataset_for_venue(&self, venue: Venue) -> anyhow::Result<String> {
         self.loader
             .get_dataset_for_venue(&venue)
-            .map(|dataset| dataset.to_string())
+            .map(ToString::to_string)
             .ok_or_else(|| anyhow::anyhow!("No dataset found for venue: {venue}"))
     }
 
@@ -169,7 +187,7 @@ impl DatabentoDataClient {
             let cmd_tx = self.initialize_live_feed(dataset.to_string())?;
             channels.insert(dataset.to_string(), cmd_tx);
 
-            self.send_command_to_dataset(dataset, LiveCommand::Start)?;
+            tracing::debug!("Feed handler created for dataset: {dataset}, channel stored");
         }
 
         Ok(())
@@ -199,9 +217,9 @@ impl DatabentoDataClient {
     fn initialize_live_feed(
         &self,
         dataset: String,
-    ) -> anyhow::Result<mpsc::UnboundedSender<LiveCommand>> {
-        let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
-        let (msg_tx, msg_rx) = mpsc::channel(1000);
+    ) -> anyhow::Result<tokio::sync::mpsc::UnboundedSender<LiveCommand>> {
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (msg_tx, msg_rx) = tokio::sync::mpsc::channel(1000);
 
         let mut feed_handler = DatabentoFeedHandler::new(
             self.config.api_key.clone(),
@@ -214,49 +232,81 @@ impl DatabentoDataClient {
             self.config.bars_timestamp_on_close,
         );
 
-        // Spawn the feed handler task
-        tokio::spawn(async move {
-            if let Err(e) = feed_handler.run().await {
-                tracing::error!("Feed handler error: {e}");
+        let cancellation_token = self.cancellation_token.clone();
+
+        // Spawn the feed handler task with cancellation support
+        let feed_handle = tokio::spawn(async move {
+            tokio::select! {
+                result = feed_handler.run() => {
+                    if let Err(e) = result {
+                        tracing::error!("Feed handler error: {e}");
+                    }
+                }
+                () = cancellation_token.cancelled() => {
+                    tracing::info!("Feed handler cancelled");
+                }
             }
         });
 
-        // Spawn message processing task
-        tokio::spawn(async move {
+        let cancellation_token = self.cancellation_token.clone();
+        let data_sender = self.data_sender.clone();
+
+        // Spawn message processing task with cancellation support
+        let msg_handle = tokio::spawn(async move {
             let mut msg_rx = msg_rx;
-            while let Some(msg) = msg_rx.recv().await {
-                match msg {
-                    LiveMessage::Data(data) => {
-                        tracing::debug!("Received data: {data:?}");
-                        // TODO: Forward to message bus or data engine
+            loop {
+                tokio::select! {
+                    msg = msg_rx.recv() => {
+                        match msg {
+                            Some(LiveMessage::Data(data)) => {
+                                tracing::debug!("Received data: {data:?}");
+                                if let Err(e) = data_sender.send(DataEvent::Data(data)) {
+                                    tracing::error!("Failed to send data event: {e}");
+                                }
+                            }
+                            Some(LiveMessage::Instrument(instrument)) => {
+                                tracing::debug!("Received instrument: {}", instrument.id());
+                                // TODO: Forward to cache or instrument manager
+                            }
+                            Some(LiveMessage::Status(status)) => {
+                                tracing::debug!("Received status: {status:?}");
+                                // TODO: Forward to appropriate handler
+                            }
+                            Some(LiveMessage::Imbalance(imbalance)) => {
+                                tracing::debug!("Received imbalance: {imbalance:?}");
+                                // TODO: Forward to appropriate handler
+                            }
+                            Some(LiveMessage::Statistics(statistics)) => {
+                                tracing::debug!("Received statistics: {statistics:?}");
+                                // TODO: Forward to appropriate handler
+                            }
+                            Some(LiveMessage::Error(error)) => {
+                                tracing::error!("Feed handler error: {error}");
+                                // TODO: Handle error appropriately
+                            }
+                            Some(LiveMessage::Close) => {
+                                tracing::info!("Feed handler closed");
+                                break;
+                            }
+                            None => {
+                                tracing::debug!("Message channel closed");
+                                break;
+                            }
+                        }
                     }
-                    LiveMessage::Instrument(instrument) => {
-                        tracing::debug!("Received instrument: {}", instrument.id());
-                        // TODO: Forward to cache or instrument manager
-                    }
-                    LiveMessage::Status(status) => {
-                        tracing::debug!("Received status: {status:?}");
-                        // TODO: Forward to appropriate handler
-                    }
-                    LiveMessage::Imbalance(imbalance) => {
-                        tracing::debug!("Received imbalance: {imbalance:?}");
-                        // TODO: Forward to appropriate handler
-                    }
-                    LiveMessage::Statistics(statistics) => {
-                        tracing::debug!("Received statistics: {statistics:?}");
-                        // TODO: Forward to appropriate handler
-                    }
-                    LiveMessage::Error(error) => {
-                        tracing::error!("Feed handler error: {error}");
-                        // TODO: Handle error appropriately
-                    }
-                    LiveMessage::Close => {
-                        tracing::info!("Feed handler closed");
+                    () = cancellation_token.cancelled() => {
+                        tracing::info!("Message processing cancelled");
                         break;
                     }
                 }
             }
         });
+
+        {
+            let mut handles = self.task_handles.lock().unwrap();
+            handles.push(feed_handle);
+            handles.push(msg_handle);
+        }
 
         Ok(cmd_tx)
     }
@@ -272,13 +322,16 @@ impl DataClient for DatabentoDataClient {
         None
     }
 
-    fn start(&self) -> anyhow::Result<()> {
+    fn start(&mut self) -> anyhow::Result<()> {
         tracing::debug!("Starting Databento data client");
         Ok(())
     }
 
-    fn stop(&self) -> anyhow::Result<()> {
+    fn stop(&mut self) -> anyhow::Result<()> {
         tracing::debug!("Stopping Databento data client");
+
+        // Signal cancellation to all running tasks
+        self.cancellation_token.cancel();
 
         // Send close command to all active feed handlers
         let channels = self.cmd_channels.lock().unwrap();
@@ -292,18 +345,18 @@ impl DataClient for DatabentoDataClient {
         Ok(())
     }
 
-    fn reset(&self) -> anyhow::Result<()> {
+    fn reset(&mut self) -> anyhow::Result<()> {
         tracing::debug!("Resetting Databento data client");
         self.is_connected.store(false, Ordering::Relaxed);
         Ok(())
     }
 
-    fn dispose(&self) -> anyhow::Result<()> {
+    fn dispose(&mut self) -> anyhow::Result<()> {
         tracing::debug!("Disposing Databento data client");
         self.stop()
     }
 
-    async fn connect(&self) -> anyhow::Result<()> {
+    async fn connect(&mut self) -> anyhow::Result<()> {
         tracing::debug!("Connecting Databento data client");
 
         // Connection will happen lazily when subscriptions are made
@@ -314,8 +367,11 @@ impl DataClient for DatabentoDataClient {
         Ok(())
     }
 
-    async fn disconnect(&self) -> anyhow::Result<()> {
+    async fn disconnect(&mut self) -> anyhow::Result<()> {
         tracing::debug!("Disconnecting Databento data client");
+
+        // Signal cancellation to all running tasks
+        self.cancellation_token.cancel();
 
         // Send close command to all active feed handlers
         {
@@ -327,9 +383,22 @@ impl DataClient for DatabentoDataClient {
             }
         }
 
+        // Wait for all spawned tasks to complete
+        let handles = {
+            let mut task_handles = self.task_handles.lock().unwrap();
+            std::mem::take(&mut *task_handles)
+        };
+
+        for handle in handles {
+            if let Err(e) = handle.await
+                && !e.is_cancelled()
+            {
+                tracing::error!("Task join error: {e}");
+            }
+        }
+
         self.is_connected.store(false, Ordering::Relaxed);
 
-        // Clear all command senders
         {
             let mut channels = self.cmd_channels.lock().unwrap();
             channels.clear();
@@ -352,7 +421,17 @@ impl DataClient for DatabentoDataClient {
         tracing::debug!("Subscribe quotes: {cmd:?}");
 
         let dataset = self.get_dataset_for_venue(cmd.instrument_id.venue)?;
+        let was_new_handler = {
+            let channels = self.cmd_channels.lock().unwrap();
+            !channels.contains_key(&dataset)
+        };
+
         self.get_or_create_feed_handler(&dataset)?;
+
+        // Start the feed handler if it was newly created
+        if was_new_handler {
+            self.send_command_to_dataset(&dataset, LiveCommand::Start)?;
+        }
 
         let symbol = instrument_id_to_symbol_string(
             cmd.instrument_id,
@@ -373,7 +452,17 @@ impl DataClient for DatabentoDataClient {
         tracing::debug!("Subscribe trades: {cmd:?}");
 
         let dataset = self.get_dataset_for_venue(cmd.instrument_id.venue)?;
+        let was_new_handler = {
+            let channels = self.cmd_channels.lock().unwrap();
+            !channels.contains_key(&dataset)
+        };
+
         self.get_or_create_feed_handler(&dataset)?;
+
+        // Start the feed handler if it was newly created
+        if was_new_handler {
+            self.send_command_to_dataset(&dataset, LiveCommand::Start)?;
+        }
 
         let symbol = instrument_id_to_symbol_string(
             cmd.instrument_id,
@@ -394,7 +483,17 @@ impl DataClient for DatabentoDataClient {
         tracing::debug!("Subscribe book deltas: {cmd:?}");
 
         let dataset = self.get_dataset_for_venue(cmd.instrument_id.venue)?;
+        let was_new_handler = {
+            let channels = self.cmd_channels.lock().unwrap();
+            !channels.contains_key(&dataset)
+        };
+
         self.get_or_create_feed_handler(&dataset)?;
+
+        // Start the feed handler if it was newly created
+        if was_new_handler {
+            self.send_command_to_dataset(&dataset, LiveCommand::Start)?;
+        }
 
         let symbol = instrument_id_to_symbol_string(
             cmd.instrument_id,
@@ -418,7 +517,17 @@ impl DataClient for DatabentoDataClient {
         tracing::debug!("Subscribe instrument status: {cmd:?}");
 
         let dataset = self.get_dataset_for_venue(cmd.instrument_id.venue)?;
+        let was_new_handler = {
+            let channels = self.cmd_channels.lock().unwrap();
+            !channels.contains_key(&dataset)
+        };
+
         self.get_or_create_feed_handler(&dataset)?;
+
+        // Start the feed handler if it was newly created
+        if was_new_handler {
+            self.send_command_to_dataset(&dataset, LiveCommand::Start)?;
+        }
 
         let symbol = instrument_id_to_symbol_string(
             cmd.instrument_id,
@@ -512,8 +621,7 @@ impl DataClient for DatabentoDataClient {
                 symbols,
                 start: request
                     .start
-                    .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0) as u64)
-                    .unwrap_or(0)
+                    .map_or(0, |dt| dt.timestamp_nanos_opt().unwrap_or(0) as u64)
                     .into(),
                 end: request
                     .end
@@ -554,8 +662,7 @@ impl DataClient for DatabentoDataClient {
                 symbols,
                 start: request
                     .start
-                    .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0) as u64)
-                    .unwrap_or(0)
+                    .map_or(0, |dt| dt.timestamp_nanos_opt().unwrap_or(0) as u64)
                     .into(),
                 end: request
                     .end
@@ -596,8 +703,7 @@ impl DataClient for DatabentoDataClient {
                 symbols,
                 start: request
                     .start
-                    .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0) as u64)
-                    .unwrap_or(0)
+                    .map_or(0, |dt| dt.timestamp_nanos_opt().unwrap_or(0) as u64)
                     .into(),
                 end: request
                     .end
@@ -638,8 +744,7 @@ impl DataClient for DatabentoDataClient {
                 symbols,
                 start: request
                     .start
-                    .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0) as u64)
-                    .unwrap_or(0)
+                    .map_or(0, |dt| dt.timestamp_nanos_opt().unwrap_or(0) as u64)
                     .into(),
                 end: request
                     .end

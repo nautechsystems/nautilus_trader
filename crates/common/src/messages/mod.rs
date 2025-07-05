@@ -13,19 +13,31 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Message types for system communication.
+//!
+//! This module provides message types used for communication between different
+//! parts of the NautilusTrader system, including data requests, execution commands,
+//! and system control messages.
+
 use nautilus_model::data::Data;
+use strum::Display;
 
 pub mod data;
 pub mod execution;
 pub mod system;
+
+#[cfg(feature = "defi")]
+pub mod defi;
 
 // Re-exports
 pub use data::{DataResponse, SubscribeCommand, UnsubscribeCommand};
 
 // TODO: Refine this to reduce disparity between enum sizes
 #[allow(clippy::large_enum_variant)]
-#[derive(Debug)]
+#[derive(Debug, Display)]
 pub enum DataEvent {
     Response(DataResponse),
     Data(Data),
+    #[cfg(feature = "defi")]
+    DeFi(nautilus_model::defi::data::DefiData),
 }

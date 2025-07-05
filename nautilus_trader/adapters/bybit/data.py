@@ -357,7 +357,7 @@ class BybitDataClient(LiveMarketDataClient):
             case _:
                 # Theoretically unreachable but retained to keep the match exhaustive
                 raise ValueError(
-                    f"Invalit Bybit product type {product_type}",
+                    f"Invalid Bybit product type {product_type}",
                 )
 
         if depth not in depths_available:
@@ -417,18 +417,21 @@ class BybitDataClient(LiveMarketDataClient):
         ws_client = self._ws_clients[bybit_symbol.product_type]
         depth = self._depths.get(command.instrument_id, 1)
         await ws_client.unsubscribe_order_book(bybit_symbol.raw_symbol, depth=depth)
+        self._depths.pop(command.instrument_id, None)
 
     async def _unsubscribe_order_book_snapshots(self, command: UnsubscribeOrderBook) -> None:
         bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
         ws_client = self._ws_clients[bybit_symbol.product_type]
         depth = self._depths.get(command.instrument_id, 1)
         await ws_client.unsubscribe_order_book(bybit_symbol.raw_symbol, depth=depth)
+        self._depths.pop(command.instrument_id, None)
 
     async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
         bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
         ws_client = self._ws_clients[bybit_symbol.product_type]
         if command.instrument_id in self._tob_quotes:
             await ws_client.unsubscribe_order_book(bybit_symbol.raw_symbol, depth=1)
+            self._tob_quotes.discard(command.instrument_id)
         else:
             await ws_client.unsubscribe_tickers(bybit_symbol.raw_symbol)
 
@@ -568,8 +571,8 @@ class BybitDataClient(LiveMarketDataClient):
             ts_init=self._clock.timestamp_ns(),
             timestamp_on_close=self._bars_timestamp_on_close,
         )
-        partial: Bar = bars.pop()
-        self._handle_bars(request.bar_type, bars, partial, request.id, request.params)
+        # For historical data requests, all bars are complete (no partial bars)
+        self._handle_bars(request.bar_type, bars, None, request.id, request.params)
 
     async def _handle_ticker_data_request(self, symbol: Symbol, correlation_id: UUID4) -> None:
         bybit_symbol = BybitSymbol(symbol.value)

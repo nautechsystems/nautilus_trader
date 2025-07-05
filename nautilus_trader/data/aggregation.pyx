@@ -693,10 +693,12 @@ cdef class TimeBarAggregator(BarAggregator):
         If will skip emitting a bar if the aggregation starts mid-interval.
     build_with_no_updates : bool, default True
         If build and emit bars with no new market updates.
-    time_bars_origin : pd.Timedelta or pd.DateOffset, optional
+    time_bars_origin_offset : pd.Timedelta or pd.DateOffset, optional
         The origin time offset.
-    composite_bar_build_delay : int, default 15
+    bar_build_delay : int, default 0
         The time delay (microseconds) before building and emitting a composite bar type.
+        15 microseconds can be useful in a backtest context, when aggregating internal bars
+        from internal bars several times so all messages are processed before a timer triggers.
 
     Raises
     ------
@@ -714,34 +716,15 @@ cdef class TimeBarAggregator(BarAggregator):
         bint timestamp_on_close = True,
         bint skip_first_non_full_bar = False,
         bint build_with_no_updates = True,
-        object time_bars_origin: pd.Timedelta | pd.DateOffset = None,
-        int composite_bar_build_delay = 15, # in microsecond
+        object time_bars_origin_offset: pd.Timedelta | pd.DateOffset = None,
+        int bar_build_delay = 0,
     ) -> None:
         super().__init__(
             instrument=instrument,
             bar_type=bar_type.standard(),
             handler=handler,
         )
-
         self._clock = clock
-        self.interval = self._get_interval()
-        self.interval_ns = self._get_interval_ns()
-        self._timer_name = None
-        self._set_build_timer()
-        self.next_close_ns = self._clock.next_time_ns(self._timer_name)
-        self._build_on_next_tick = False
-        cdef datetime now = self._clock.utc_now()
-        self._stored_open_ns = dt_to_unix_nanos(self.get_start_time(now))
-        self._stored_close_ns = 0
-        self._cached_update = None
-        self._build_with_no_updates = build_with_no_updates
-        self._timestamp_on_close = timestamp_on_close
-        self._composite_bar_build_delay = composite_bar_build_delay
-        self._add_delay = bar_type.is_composite() and bar_type.composite().is_internally_aggregated()
-        self._batch_open_ns = 0
-        self._batch_next_close_ns = 0
-        self._time_bars_origin = time_bars_origin
-        self._skip_first_non_full_bar = skip_first_non_full_bar
 
         if interval_type == "left-open":
             self._is_left_open = True
@@ -751,6 +734,26 @@ cdef class TimeBarAggregator(BarAggregator):
             raise ValueError(
                 f"Invalid interval_type: {interval_type}. Must be 'left-open' or 'right-open'.",
             )
+
+        self._timestamp_on_close = timestamp_on_close
+        self._skip_first_non_full_bar = skip_first_non_full_bar
+        self._build_with_no_updates = build_with_no_updates
+        self._time_bars_origin_offset = time_bars_origin_offset
+        self._bar_build_delay = bar_build_delay
+
+        self._timer_name = None
+        self._build_on_next_tick = False
+        self._batch_open_ns = 0
+        self._batch_next_close_ns = 0
+
+        self.interval = self._get_interval()
+        self.interval_ns = self._get_interval_ns()
+        self._set_build_timer()
+        self.next_close_ns = self._clock.next_time_ns(self._timer_name)
+
+        cdef datetime now = self._clock.utc_now()
+        self._stored_open_ns = dt_to_unix_nanos(self.get_start_time(now))
+        self._stored_close_ns = 0
 
     def __str__(self):
         return f"{type(self).__name__}(interval_ns={self.interval_ns}, next_close_ns={self.next_close_ns})"
@@ -771,8 +774,8 @@ cdef class TimeBarAggregator(BarAggregator):
         if aggregation == BarAggregation.MILLISECOND:
             start_time = now.floor(freq="s")
 
-            if self._time_bars_origin is not None:
-                start_time += self._time_bars_origin
+            if self._time_bars_origin_offset is not None:
+                start_time += self._time_bars_origin_offset
 
             if now < start_time:
                 start_time -= pd.Timedelta(seconds=1)
@@ -784,8 +787,8 @@ cdef class TimeBarAggregator(BarAggregator):
         elif aggregation == BarAggregation.SECOND:
             start_time = now.floor(freq="min")
 
-            if self._time_bars_origin is not None:
-                start_time += self._time_bars_origin
+            if self._time_bars_origin_offset is not None:
+                start_time += self._time_bars_origin_offset
 
             if now < start_time:
                 start_time -= pd.Timedelta(minutes=1)
@@ -797,8 +800,8 @@ cdef class TimeBarAggregator(BarAggregator):
         elif aggregation == BarAggregation.MINUTE:
             start_time = now.floor(freq="h")
 
-            if self._time_bars_origin is not None:
-                start_time += self._time_bars_origin
+            if self._time_bars_origin_offset is not None:
+                start_time += self._time_bars_origin_offset
 
             if now < start_time:
                 start_time -= pd.Timedelta(hours=1)
@@ -810,8 +813,8 @@ cdef class TimeBarAggregator(BarAggregator):
         elif aggregation == BarAggregation.HOUR:
             start_time = now.floor(freq="d")
 
-            if self._time_bars_origin is not None:
-                start_time += self._time_bars_origin
+            if self._time_bars_origin_offset is not None:
+                start_time += self._time_bars_origin_offset
 
             if now < start_time:
                 start_time -= pd.Timedelta(days=1)
@@ -823,24 +826,24 @@ cdef class TimeBarAggregator(BarAggregator):
         elif aggregation == BarAggregation.DAY:
             start_time = now.floor(freq="d")
 
-            if self._time_bars_origin is not None:
-                start_time += self._time_bars_origin
+            if self._time_bars_origin_offset is not None:
+                start_time += self._time_bars_origin_offset
 
             if now < start_time:
                 start_time -= pd.Timedelta(days=1)
         elif aggregation == BarAggregation.WEEK:
             start_time = (now - pd.Timedelta(days=now.dayofweek)).floor(freq="d")
 
-            if self._time_bars_origin is not None:
-                start_time += self._time_bars_origin
+            if self._time_bars_origin_offset is not None:
+                start_time += self._time_bars_origin_offset
 
             if now < start_time:
                 start_time -= pd.Timedelta(weeks=1)
         elif aggregation == BarAggregation.MONTH:
             start_time = (now - pd.DateOffset(months=now.month - 1, days=now.day - 1)).floor(freq="d")
 
-            if self._time_bars_origin is not None:
-                start_time += self._time_bars_origin
+            if self._time_bars_origin_offset is not None:
+                start_time += self._time_bars_origin_offset
 
             if now < start_time:
                 start_time -= pd.DateOffset(years=1)
@@ -916,8 +919,8 @@ cdef class TimeBarAggregator(BarAggregator):
         if start_time == now:
             self._skip_first_non_full_bar = False
 
-        if self._add_delay:
-            start_time += timedelta(microseconds=self._composite_bar_build_delay)
+        start_time += timedelta(microseconds=self._bar_build_delay)
+        self._log.debug(f"Timer {start_time=}")
 
         if self.bar_type.spec.aggregation != BarAggregation.MONTH:
             self._clock.set_timer(

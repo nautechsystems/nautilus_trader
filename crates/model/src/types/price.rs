@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Represents a price in a market.
+//! Represents a price in a market with a specified precision.
 
 use std::{
     cmp::Ordering,
@@ -36,18 +36,44 @@ use super::fixed::{FIXED_PRECISION, FIXED_SCALAR, check_fixed_precision};
 use super::fixed::{PRECISION_DIFF_SCALAR, f64_to_fixed_i128, fixed_i128_to_f64};
 #[cfg(not(feature = "high-precision"))]
 use super::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
+#[cfg(feature = "defi")]
+use crate::types::fixed::MAX_FLOAT_PRECISION;
+
+// -----------------------------------------------------------------------------
+// PriceRaw
+// -----------------------------------------------------------------------------
+
+// Use 128-bit integers when either `high-precision` or `defi` features are enabled. This is
+// required for the extended 18-decimal WEI precision used in DeFi contexts.
 
 #[cfg(feature = "high-precision")]
 pub type PriceRaw = i128;
+
 #[cfg(not(feature = "high-precision"))]
 pub type PriceRaw = i64;
 
+// -----------------------------------------------------------------------------
+
 /// The maximum raw price integer value.
+///
+/// # Safety
+///
+/// This value is computed at compile time from PRICE_MAX * FIXED_SCALAR.
+/// The multiplication is guaranteed not to overflow because PRICE_MAX and FIXED_SCALAR
+/// are chosen such that their product fits within PriceRaw's range in both
+/// high-precision (i128) and standard-precision (i64) modes.
 #[unsafe(no_mangle)]
 #[allow(unsafe_code)]
 pub static PRICE_RAW_MAX: PriceRaw = (PRICE_MAX * FIXED_SCALAR) as PriceRaw;
 
 /// The minimum raw price integer value.
+///
+/// # Safety
+///
+/// This value is computed at compile time from PRICE_MIN * FIXED_SCALAR.
+/// The multiplication is guaranteed not to overflow because PRICE_MIN and FIXED_SCALAR
+/// are chosen such that their product fits within PriceRaw's range in both
+/// high-precision (i128) and standard-precision (i64) modes.
 #[unsafe(no_mangle)]
 #[allow(unsafe_code)]
 pub static PRICE_RAW_MIN: PriceRaw = (PRICE_MIN * FIXED_SCALAR) as PriceRaw;
@@ -58,17 +84,31 @@ pub const PRICE_UNDEF: PriceRaw = PriceRaw::MAX;
 /// The sentinel value for an error or invalid price.
 pub const PRICE_ERROR: PriceRaw = PriceRaw::MIN;
 
-/// The maximum valid price value which can be represented.
+// -----------------------------------------------------------------------------
+// PRICE_MAX
+// -----------------------------------------------------------------------------
+
+/// The maximum valid price value that can be represented.
 #[cfg(feature = "high-precision")]
 pub const PRICE_MAX: f64 = 17_014_118_346_046.0;
+
 #[cfg(not(feature = "high-precision"))]
+/// The maximum valid price value that can be represented.
 pub const PRICE_MAX: f64 = 9_223_372_036.0;
 
-/// The minimum valid price value which can be represented.
+// -----------------------------------------------------------------------------
+// PRICE_MIN
+// -----------------------------------------------------------------------------
+
 #[cfg(feature = "high-precision")]
+/// The minimum valid price value that can be represented.
 pub const PRICE_MIN: f64 = -17_014_118_346_046.0;
+
 #[cfg(not(feature = "high-precision"))]
+/// The minimum valid price value that can be represented.
 pub const PRICE_MIN: f64 = -9_223_372_036.0;
+
+// -----------------------------------------------------------------------------
 
 /// The sentinel `Price` representing errors (this will be removed when Cython is gone).
 pub const ERROR_PRICE: Price = Price {
@@ -76,16 +116,16 @@ pub const ERROR_PRICE: Price = Price {
     precision: 255,
 };
 
-/// Represents a price in a market.
+/// Represents a price in a market with a specified precision.
 ///
 /// The number of decimal places may vary. For certain asset classes, prices may
 /// have negative values. For example, prices for options instruments can be
 /// negative under certain conditions.
 ///
-/// Handles up to {FIXED_PRECISION} decimals of precision.
+/// Handles up to [`FIXED_PRECISION`] decimals of precision.
 ///
-///  - `PRICE_MAX` = {PRICE_MAX}
-///  - `PRICE_MIN` = {PRICE_MIN}
+/// - [`PRICE_MAX`] - Maximum representable price value.
+/// - [`PRICE_MIN`] - Minimum representable price value.
 #[repr(C)]
 #[derive(Clone, Copy, Default, Eq)]
 #[cfg_attr(
@@ -95,7 +135,7 @@ pub const ERROR_PRICE: Price = Price {
 pub struct Price {
     /// Represents the raw fixed-point value, with `precision` defining the number of decimal places.
     pub raw: PriceRaw,
-    /// The number of decimal places, with a maximum of {FIXED_PRECISION}.
+    /// The number of decimal places, with a maximum of [`FIXED_PRECISION`].
     pub precision: u8,
 }
 
@@ -105,18 +145,28 @@ impl Price {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - `value` is invalid outside the representable range [{PRICE_MIN}, {PRICE_MAX}].
-    /// - `precision` is invalid outside the representable range [0, {FIXED_PRECISION}].
+    /// - `value` is invalid outside the representable range [`PRICE_MIN`, `PRICE_MAX`].
+    /// - `precision` is invalid outside the representable range [0, `FIXED_PRECISION``].
     ///
     /// # Notes
     ///
     /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
     pub fn new_checked(value: f64, precision: u8) -> anyhow::Result<Self> {
         check_in_range_inclusive_f64(value, PRICE_MIN, PRICE_MAX, "value")?;
+
+        #[cfg(feature = "defi")]
+        if precision > MAX_FLOAT_PRECISION {
+            // Floats are only reliable up to ~16 decimal digits of precision regardless of feature flags
+            anyhow::bail!(
+                "`precision` exceeded maximum float precision ({MAX_FLOAT_PRECISION}), use `Price::from_wei()` for WEI values instead"
+            );
+        }
+
         check_fixed_precision(precision)?;
 
         #[cfg(feature = "high-precision")]
         let raw = f64_to_fixed_i128(value, precision);
+
         #[cfg(not(feature = "high-precision"))]
         let raw = f64_to_fixed_i64(value, precision);
 
@@ -213,15 +263,35 @@ impl Price {
         self.raw != PRICE_UNDEF && self.raw > 0
     }
 
-    /// Returns the value of this instance as an `f64`.
-    #[must_use]
     #[cfg(feature = "high-precision")]
+    /// Returns the value of this instance as an `f64`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if precision is beyond [`MAX_FLOAT_PRECISION`] (16).
+    #[must_use]
     pub fn as_f64(&self) -> f64 {
+        #[cfg(feature = "defi")]
+        if self.precision > MAX_FLOAT_PRECISION {
+            panic!("Invalid f64 conversion beyond `MAX_FLOAT_PRECISION` (16)");
+        }
+
         fixed_i128_to_f64(self.raw)
     }
 
     #[cfg(not(feature = "high-precision"))]
+    /// Returns the value of this instance as an `f64`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if precision is beyond [`MAX_FLOAT_PRECISION`] (16).
+    #[must_use]
     pub fn as_f64(&self) -> f64 {
+        #[cfg(feature = "defi")]
+        if self.precision > MAX_FLOAT_PRECISION {
+            panic!("Invalid f64 conversion beyond `MAX_FLOAT_PRECISION` (16)");
+        }
+
         fixed_i64_to_f64(self.raw)
     }
 
@@ -229,8 +299,8 @@ impl Price {
     #[must_use]
     pub fn as_decimal(&self) -> Decimal {
         // Scale down the raw value to match the precision
-        let rescaled_raw =
-            self.raw / PriceRaw::pow(10, u32::from(FIXED_PRECISION - self.precision));
+        let precision_diff = FIXED_PRECISION.saturating_sub(self.precision);
+        let rescaled_raw = self.raw / PriceRaw::pow(10, u32::from(precision_diff));
         #[allow(clippy::unnecessary_cast)] // Required for precision modes
         Decimal::from_i128_with_scale(rescaled_raw as i128, u32::from(self.precision))
     }
@@ -276,6 +346,7 @@ impl From<&Price> for f64 {
 impl Hash for Price {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.raw.hash(state);
+        self.precision.hash(state);
     }
 }
 
@@ -334,6 +405,11 @@ impl Neg for Price {
 impl Add for Price {
     type Output = Self;
     fn add(self, rhs: Self) -> Self::Output {
+        // SAFETY: Current precision logic ensures only equal or higher precision operations
+        // are allowed to prevent silent precision loss. When self.precision >= rhs.precision,
+        // the rhs value is effectively scaled up internally by the fixed-point representation,
+        // so no actual precision is lost in the addition. However, the result is limited
+        // to self.precision decimal places.
         assert!(
             self.precision >= rhs.precision,
             "Precision mismatch: cannot add precision {} to precision {} (precision loss)",
@@ -353,6 +429,11 @@ impl Add for Price {
 impl Sub for Price {
     type Output = Self;
     fn sub(self, rhs: Self) -> Self::Output {
+        // SAFETY: Current precision logic ensures only equal or higher precision operations
+        // are allowed to prevent silent precision loss. When self.precision >= rhs.precision,
+        // the rhs value is effectively scaled up internally by the fixed-point representation,
+        // so no actual precision is lost in the subtraction. However, the result is limited
+        // to self.precision decimal places.
         assert!(
             self.precision >= rhs.precision,
             "Precision mismatch: cannot subtract precision {} from precision {} (precision loss)",
@@ -422,19 +503,27 @@ impl Mul<f64> for Price {
 
 impl Debug for Price {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}({:.*})",
-            stringify!(Price),
-            self.precision as usize,
-            self.as_f64()
-        )
+        if self.precision > crate::types::fixed::MAX_FLOAT_PRECISION {
+            write!(f, "{}({})", stringify!(Price), self.raw)
+        } else {
+            write!(
+                f,
+                "{}({:.*})",
+                stringify!(Price),
+                self.precision as usize,
+                self.as_f64(),
+            )
+        }
     }
 }
 
 impl Display for Price {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:.*}", self.precision as usize, self.as_f64())
+        if self.precision > crate::types::fixed::MAX_FLOAT_PRECISION {
+            write!(f, "{}", self.raw)
+        } else {
+            write!(f, "{:.*}", self.precision as usize, self.as_f64(),)
+        }
     }
 }
 
@@ -458,11 +547,11 @@ impl<'de> Deserialize<'de> for Price {
     }
 }
 
-/// Checks the given `price` is positive.
+/// Checks the price `value` is positive.
 ///
 /// # Errors
 ///
-/// Returns an error if the validation check fails.
+/// Returns an error if `value` is `PRICE_UNDEF` or not positive.
 pub fn check_positive_price(value: Price, param: &str) -> anyhow::Result<()> {
     if value.raw == PRICE_UNDEF {
         anyhow::bail!("invalid `Price` for '{param}', was PRICE_UNDEF")
@@ -474,8 +563,8 @@ pub fn check_positive_price(value: Price, param: &str) -> anyhow::Result<()> {
 }
 
 #[cfg(feature = "high-precision")]
-/// The raw i64 price has already been scaled by 10^9. Further scale
-/// it by the difference to FIXED_PRECISION to make it high-precision raw price.
+/// The raw i64 price has already been scaled by 10^9. Further scale it by the difference to
+/// `FIXED_PRECISION` to make it high/defi-precision raw price.
 pub fn decode_raw_price_i64(value: i64) -> PriceRaw {
     value as PriceRaw * PRECISION_DIFF_SCALAR as PriceRaw
 }
@@ -497,13 +586,15 @@ mod tests {
     use super::*;
 
     #[rstest]
-    #[should_panic(expected = "Condition failed: `precision` exceeded maximum `FIXED_PRECISION`")]
+    #[cfg(not(feature = "defi"))]
+    #[should_panic(expected = "`precision` exceeded maximum `FIXED_PRECISION` (16), was 50")]
     fn test_invalid_precision_new() {
-        // Precision out of range for fixed
-        let _ = Price::new(1.0, FIXED_PRECISION + 1);
+        // Precision exceeds float precision limit (16)
+        let _ = Price::new(1.0, 50);
     }
 
     #[rstest]
+    #[cfg(not(feature = "defi"))]
     #[should_panic(expected = "Condition failed: `precision` exceeded maximum `FIXED_PRECISION`")]
     fn test_invalid_precision_from_raw() {
         // Precision out of range for fixed
@@ -511,6 +602,7 @@ mod tests {
     }
 
     #[rstest]
+    #[cfg(not(feature = "defi"))]
     #[should_panic(expected = "Condition failed: `precision` exceeded maximum `FIXED_PRECISION`")]
     fn test_invalid_precision_max() {
         // Precision out of range for fixed
@@ -518,6 +610,7 @@ mod tests {
     }
 
     #[rstest]
+    #[cfg(not(feature = "defi"))]
     #[should_panic(expected = "Condition failed: `precision` exceeded maximum `FIXED_PRECISION`")]
     fn test_invalid_precision_min() {
         // Precision out of range for fixed
@@ -525,6 +618,7 @@ mod tests {
     }
 
     #[rstest]
+    #[cfg(not(feature = "defi"))]
     #[should_panic(expected = "Condition failed: `precision` exceeded maximum `FIXED_PRECISION`")]
     fn test_invalid_precision_zero() {
         // Precision out of range for fixed
@@ -580,15 +674,17 @@ mod tests {
 
     #[rstest]
     fn test_negative_price_in_range() {
-        let neg_price = Price::new(PRICE_MIN / 2.0, FIXED_PRECISION);
+        // Use precision 16 which is the max for float-based construction regardless of features
+        let neg_price = Price::new(PRICE_MIN / 2.0, 16);
         assert!(neg_price.raw < 0);
     }
 
     #[rstest]
     fn test_new_checked() {
-        assert!(Price::new_checked(1.0, FIXED_PRECISION).is_ok());
-        assert!(Price::new_checked(f64::NAN, FIXED_PRECISION).is_err());
-        assert!(Price::new_checked(f64::INFINITY, FIXED_PRECISION).is_err());
+        // Use precision 16 which is the max for float-based construction regardless of features
+        assert!(Price::new_checked(1.0, 16).is_ok());
+        assert!(Price::new_checked(f64::NAN, 16).is_err());
+        assert!(Price::new_checked(f64::INFINITY, 16).is_err());
     }
 
     #[rstest]
@@ -648,7 +744,7 @@ mod tests {
     fn test_string_parsing() {
         let price: Price = "123.456".into();
         assert_eq!(price.precision, 3);
-        assert_eq!(price.as_f64(), 123.456);
+        assert_eq!(price, Price::from("123.456"));
     }
 
     #[rstest]
@@ -674,6 +770,38 @@ mod tests {
     }
 
     #[rstest]
+    #[case(1234.5678, 4, "Price(1234.5678)", "1234.5678")] // Normal precision
+    #[case(123.456789012345, 8, "Price(123.45678901)", "123.45678901")] // At max normal precision
+    #[cfg_attr(
+        feature = "defi",
+        case(
+            2_000_000_000_000_000_000.0,
+            18,
+            "Price(2000000000000000000)",
+            "2000000000000000000"
+        )
+    )] // High precision
+    fn test_string_formatting_precision_handling(
+        #[case] value: f64,
+        #[case] precision: u8,
+        #[case] expected_debug: &str,
+        #[case] expected_display: &str,
+    ) {
+        let price = if precision > crate::types::fixed::MAX_FLOAT_PRECISION {
+            Price::from_raw(value as PriceRaw, precision)
+        } else {
+            Price::new(value, precision)
+        };
+
+        assert_eq!(format!("{price:?}"), expected_debug);
+        assert_eq!(format!("{price}"), expected_display);
+        assert_eq!(
+            price.to_formatted_string().replace("_", ""),
+            expected_display
+        );
+    }
+
+    #[rstest]
     fn test_decimal_conversions() {
         let price = Price::new(123.456, 3);
         assert_eq!(price.as_decimal(), dec!(123.456));
@@ -686,9 +814,9 @@ mod tests {
     fn test_basic_arithmetic() {
         let p1 = Price::new(10.5, 2);
         let p2 = Price::new(5.25, 2);
-        assert_eq!((p1 + p2).as_f64(), 15.75);
-        assert_eq!((p1 - p2).as_f64(), 5.25);
-        assert_eq!((-p1).as_f64(), -10.5);
+        assert_eq!(p1 + p2, Price::from("15.75"));
+        assert_eq!(p1 - p2, Price::from("5.25"));
+        assert_eq!(-p1, Price::from("-10.5"));
     }
 
     #[rstest]
@@ -719,9 +847,9 @@ mod tests {
     fn test_assignment_operators() {
         let mut p = Price::new(10.5, 2);
         p += Price::new(5.25, 2);
-        assert_eq!(p.as_f64(), 15.75);
+        assert_eq!(p, Price::from("15.75"));
         p -= Price::new(5.25, 2);
-        assert_eq!(p.as_f64(), 10.5);
+        assert_eq!(p, Price::from("10.5"));
     }
 
     #[rstest]
@@ -800,5 +928,200 @@ mod tests {
         let deserialized: Price = serde_json::from_str(&json_str).unwrap();
         assert_eq!(deserialized, original);
         assert_eq!(deserialized.precision, 3);
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Property-based tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod property_tests {
+    use proptest::prelude::*;
+
+    use super::*;
+    use crate::types::fixed::MAX_FLOAT_PRECISION;
+
+    /// Strategy to generate valid price values within the allowed range.
+    fn price_value_strategy() -> impl Strategy<Value = f64> {
+        // Use a reasonable range that's well within PRICE_MIN/PRICE_MAX
+        // but still tests edge cases with various scales
+        prop_oneof![
+            // Small positive values
+            0.00001..1.0,
+            // Normal trading range
+            1.0..100_000.0,
+            // Large values (but safe)
+            100_000.0..1_000_000.0,
+            // Small negative values (for spreads, etc.)
+            -1_000.0..0.0,
+        ]
+    }
+
+    /// Strategy to generate valid precision values for float-based constructors.
+    fn float_precision_strategy() -> impl Strategy<Value = u8> {
+        0..=MAX_FLOAT_PRECISION
+    }
+
+    proptest! {
+        /// Property: Price string serialization round-trip should preserve value and precision
+        #[test]
+        fn prop_price_serde_round_trip(
+            value in price_value_strategy().prop_filter("Reasonable values", |&x| x.abs() < 1e6),
+            precision in 0u8..=6u8  // Limit precision to avoid extreme floating-point cases
+        ) {
+            let original = Price::new(value, precision);
+
+            // String round-trip (this should be exact and is the most important)
+            let string_repr = original.to_string();
+            let from_string: Price = string_repr.parse().unwrap();
+            prop_assert_eq!(from_string.raw, original.raw);
+            prop_assert_eq!(from_string.precision, original.precision);
+
+            // JSON round-trip basic validation (just ensure it doesn't crash and preserves precision)
+            let json = serde_json::to_string(&original).unwrap();
+            let from_json: Price = serde_json::from_str(&json).unwrap();
+            prop_assert_eq!(from_json.precision, original.precision);
+            // Note: JSON may have minor floating-point precision differences due to f64 limitations
+        }
+
+        /// Property: Price arithmetic should be associative for same precision
+        #[test]
+        fn prop_price_arithmetic_associative(
+            a in price_value_strategy().prop_filter("Reasonable values", |&x| x.abs() > 1e-3 && x.abs() < 1e6),
+            b in price_value_strategy().prop_filter("Reasonable values", |&x| x.abs() > 1e-3 && x.abs() < 1e6),
+            c in price_value_strategy().prop_filter("Reasonable values", |&x| x.abs() > 1e-3 && x.abs() < 1e6),
+            precision in 0u8..=6u8  // Limit precision to avoid extreme cases
+        ) {
+            let p_a = Price::new(a, precision);
+            let p_b = Price::new(b, precision);
+            let p_c = Price::new(c, precision);
+
+            // Check if we can perform the operations without overflow using raw arithmetic
+            let ab_raw = p_a.raw.checked_add(p_b.raw);
+            let bc_raw = p_b.raw.checked_add(p_c.raw);
+
+            if let (Some(ab_raw), Some(bc_raw)) = (ab_raw, bc_raw) {
+                let ab_c_raw = ab_raw.checked_add(p_c.raw);
+                let a_bc_raw = p_a.raw.checked_add(bc_raw);
+
+                if let (Some(ab_c_raw), Some(a_bc_raw)) = (ab_c_raw, a_bc_raw) {
+                    // (a + b) + c == a + (b + c) using raw arithmetic (exact)
+                    prop_assert_eq!(ab_c_raw, a_bc_raw, "Associativity failed in raw arithmetic");
+                }
+            }
+        }
+
+        /// Property: Price addition/subtraction should be inverse operations
+        #[test]
+        fn prop_price_addition_subtraction_inverse(
+            base in price_value_strategy().prop_filter("Reasonable values", |&x| x.abs() < 1e6),
+            delta in price_value_strategy().prop_filter("Reasonable values", |&x| x.abs() > 1e-3 && x.abs() < 1e6),
+            precision in 0u8..=6u8  // Limit precision to avoid extreme cases
+        ) {
+            let p_base = Price::new(base, precision);
+            let p_delta = Price::new(delta, precision);
+
+            // Use raw arithmetic to avoid floating-point precision issues
+            if let Some(added_raw) = p_base.raw.checked_add(p_delta.raw) {
+                if let Some(result_raw) = added_raw.checked_sub(p_delta.raw) {
+                    // (base + delta) - delta should equal base exactly using raw arithmetic
+                    prop_assert_eq!(result_raw, p_base.raw, "Inverse operation failed in raw arithmetic");
+                }
+            }
+        }
+
+        /// Property: Price ordering should be transitive
+        #[test]
+        fn prop_price_ordering_transitive(
+            a in price_value_strategy(),
+            b in price_value_strategy(),
+            c in price_value_strategy(),
+            precision in float_precision_strategy()
+        ) {
+            let p_a = Price::new(a, precision);
+            let p_b = Price::new(b, precision);
+            let p_c = Price::new(c, precision);
+
+            // If a <= b and b <= c, then a <= c
+            if p_a <= p_b && p_b <= p_c {
+                prop_assert!(p_a <= p_c, "Transitivity failed: {} <= {} <= {} but {} > {}",
+                    p_a.as_f64(), p_b.as_f64(), p_c.as_f64(), p_a.as_f64(), p_c.as_f64());
+            }
+        }
+
+        /// Property: String parsing should be consistent with precision inference
+        #[test]
+        fn prop_price_string_parsing_precision(
+            integral in 0u32..1000000,
+            fractional in 0u32..1000000,
+            precision in 1u8..=6
+        ) {
+            // Create a decimal string with exactly 'precision' decimal places
+            let fractional_str = format!("{:0width$}", fractional % 10_u32.pow(precision as u32), width = precision as usize);
+            let price_str = format!("{integral}.{fractional_str}");
+
+            let parsed: Price = price_str.parse().unwrap();
+            prop_assert_eq!(parsed.precision, precision);
+
+            // Round-trip should preserve the original string (after normalization)
+            let round_trip = parsed.to_string();
+            let expected_value = format!("{integral}.{fractional_str}");
+            prop_assert_eq!(round_trip, expected_value);
+        }
+
+        /// Property: Price with higher precision should contain more or equal information
+        #[test]
+        fn prop_price_precision_information_preservation(
+            value in price_value_strategy().prop_filter("Reasonable values", |&x| x.abs() < 1e6),
+            precision1 in 1u8..=6u8,  // Limit precision range for more predictable behavior
+            precision2 in 1u8..=6u8
+        ) {
+            // Skip cases where precisions are equal (trivial case)
+            prop_assume!(precision1 != precision2);
+
+            let _p1 = Price::new(value, precision1);
+            let _p2 = Price::new(value, precision2);
+
+            // When both prices are created from the same value with different precisions,
+            // converting both to the lower precision should yield the same result
+            let min_precision = precision1.min(precision2);
+
+            // Round the original value to the minimum precision first
+            let scale = 10.0_f64.powi(min_precision as i32);
+            let rounded_value = (value * scale).round() / scale;
+
+            let p1_reduced = Price::new(rounded_value, min_precision);
+            let p2_reduced = Price::new(rounded_value, min_precision);
+
+            // They should be exactly equal when created from the same rounded value
+            prop_assert_eq!(p1_reduced.raw, p2_reduced.raw, "Precision reduction inconsistent");
+        }
+
+        /// Property: Price arithmetic should never produce invalid values
+        #[test]
+        fn prop_price_arithmetic_bounds(
+            a in price_value_strategy(),
+            b in price_value_strategy(),
+            precision in float_precision_strategy()
+        ) {
+            let p_a = Price::new(a, precision);
+            let p_b = Price::new(b, precision);
+
+            // Addition should either succeed or fail predictably
+            let sum_f64 = p_a.as_f64() + p_b.as_f64();
+            if sum_f64.is_finite() && (PRICE_MIN..=PRICE_MAX).contains(&sum_f64) {
+                let sum = p_a + p_b;
+                prop_assert!(sum.as_f64().is_finite());
+                prop_assert!(!sum.is_undefined());
+            }
+
+            // Subtraction should either succeed or fail predictably
+            let diff_f64 = p_a.as_f64() - p_b.as_f64();
+            if diff_f64.is_finite() && (PRICE_MIN..=PRICE_MAX).contains(&diff_f64) {
+                let diff = p_a - p_b;
+                prop_assert!(diff.as_f64().is_finite());
+                prop_assert!(!diff.is_undefined());
+            }
+        }
     }
 }

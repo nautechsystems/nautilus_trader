@@ -30,6 +30,9 @@ pub static UNISWAP_V4: LazyLock<DexExtended> = LazyLock::new(|| {
         "", // Factory address not provided
         AmmType::CLAMEnhanced,
         "",
+        "",
+        "",
+        "",
     );
     DexExtended::new(dex)
 });

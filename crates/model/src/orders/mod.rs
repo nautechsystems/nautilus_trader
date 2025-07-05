@@ -29,7 +29,7 @@ pub mod stop_market;
 pub mod trailing_stop_limit;
 pub mod trailing_stop_market;
 
-#[cfg(feature = "stubs")]
+#[cfg(any(test, feature = "stubs"))]
 pub mod stubs;
 
 // Re-exports
@@ -115,6 +115,7 @@ pub enum OrderError {
     Invariant(#[from] anyhow::Error),
 }
 
+/// Converts an IndexMap with `Ustr` keys and values to `String` keys and values.
 #[must_use]
 pub fn ustr_indexmap_to_str(h: IndexMap<Ustr, Ustr>) -> IndexMap<String, String> {
     h.into_iter()
@@ -122,6 +123,7 @@ pub fn ustr_indexmap_to_str(h: IndexMap<Ustr, Ustr>) -> IndexMap<String, String>
         .collect()
 }
 
+/// Converts an IndexMap with `String` keys and values to `Ustr` keys and values.
 #[must_use]
 pub fn str_indexmap_to_ustr(h: IndexMap<String, String>) -> IndexMap<Ustr, Ustr> {
     h.into_iter()
@@ -250,6 +252,9 @@ pub trait Order: 'static + Send {
     fn expire_time(&self) -> Option<UnixNanos>;
     fn price(&self) -> Option<Price>;
     fn trigger_price(&self) -> Option<Price>;
+    fn activation_price(&self) -> Option<Price> {
+        None
+    }
     fn trigger_type(&self) -> Option<TriggerType>;
     fn liquidity_side(&self) -> Option<LiquiditySide>;
     fn is_post_only(&self) -> bool;
@@ -747,6 +752,7 @@ impl OrderCore {
         });
     }
 
+    /// Returns the opposite order side.
     #[must_use]
     pub fn opposite_side(side: OrderSide) -> OrderSide {
         match side {
@@ -756,6 +762,7 @@ impl OrderCore {
         }
     }
 
+    /// Returns the order side needed to close a position.
     #[must_use]
     pub fn closing_side(side: PositionSide) -> OrderSide {
         match side {

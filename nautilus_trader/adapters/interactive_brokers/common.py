@@ -97,6 +97,8 @@ class IBContract(NautilusConfig, frozen=True, repr_omit_defaults=True):
         Search for full option chain
     build_futures_chain: bool (default: None)
         Search for full futures chain
+    options_chain_exchange: str (default : None)
+        optional exchange for options chain, in place of underlying exchange
     min_expiry_days: int (default: None)
         Filters the options_chain and futures_chain which are expiring after number of days specified.
     max_expiry_days: int (default: None)
@@ -156,6 +158,7 @@ class IBContract(NautilusConfig, frozen=True, repr_omit_defaults=True):
     # nautilus specific parameters
     build_futures_chain: bool | None = None
     build_options_chain: bool | None = None
+    options_chain_exchange: str | None = None
     min_expiry_days: int | None = None
     max_expiry_days: int | None = None
 
@@ -185,6 +188,10 @@ class IBOrderTags(NautilusConfig, frozen=True, repr_omit_defaults=True):
     sweepToFill = False
     outsideRth: bool = False
 
+    # If set to true, the order will not be visible when viewing the market depth.
+    # This option only applies to orders routed to the NASDAQ exchange.
+    hidden: bool = False
+
     @property
     def value(self):
         return f"IBOrderTags:{self.json().decode()}"
@@ -197,6 +204,9 @@ class IBContractDetails(NautilusConfig, frozen=True, repr_omit_defaults=True):
     """
     ContractDetails class to be used internally in Nautilus for ease of
     encoding/decoding.
+
+    Reference: https://ibkrcampus.com/campus/ibkr-api-page/twsapi-ref/#contract-pub-func
+
     """
 
     contract: IBContract | None = None
@@ -204,7 +214,7 @@ class IBContractDetails(NautilusConfig, frozen=True, repr_omit_defaults=True):
     minTick: float = 0
     orderTypes: str = ""
     validExchanges: str = ""
-    priceMagnifier: float = 0
+    priceMagnifier: int = 1
     underConId: int = 0
     longName: str = ""
     contractMonth: str = ""
@@ -215,7 +225,7 @@ class IBContractDetails(NautilusConfig, frozen=True, repr_omit_defaults=True):
     tradingHours: str = ""
     liquidHours: str = ""
     evRule: str = ""
-    evMultiplier: int = 0
+    evMultiplier: float = 0
     mdSizeMultiplier: int = 1  # obsolete
     aggGroup: int = 0
     underSymbol: str = ""
@@ -237,7 +247,7 @@ class IBContractDetails(NautilusConfig, frozen=True, repr_omit_defaults=True):
     couponType: str = ""
     callable: bool = False
     putable: bool = False
-    coupon: int = 0
+    coupon: float = 0
     convertible: bool = False
     maturity: str = ""
     issueDate: str = ""
@@ -267,3 +277,18 @@ class IBContractDetails(NautilusConfig, frozen=True, repr_omit_defaults=True):
     )
     fundAssetType: FundAssetType = FundAssetType.NoneItem
     ineligibilityReasonList: list = None
+
+
+def dict_to_contract_details(dict_details: dict) -> IBContractDetails:
+    details_copy = dict_details.copy()
+
+    if "contract" in details_copy and isinstance(details_copy["contract"], dict):
+        details_copy["contract"] = IBContract(**details_copy["contract"])
+
+    if details_copy.get("secIdList") and isinstance(details_copy["secIdList"], dict):
+        tag_values = [
+            TagValue(tag=tag, value=value) for tag, value in details_copy["secIdList"].items()
+        ]
+        details_copy["secIdList"] = tag_values
+
+    return IBContractDetails(**details_copy)

@@ -194,7 +194,7 @@ impl TestOrdersGenerator {
 
     fn generate_order(&self, instrument_id: InstrumentId, client_order_id_index: u32) -> OrderAny {
         let client_order_id =
-            ClientOrderId::from(format!("O-{}-{}", instrument_id, client_order_id_index));
+            ClientOrderId::from(format!("O-{instrument_id}-{client_order_id_index}"));
         OrderTestBuilder::new(self.order_type)
             .quantity(Quantity::from("1"))
             .price(Price::from("1"))
@@ -207,7 +207,7 @@ impl TestOrdersGenerator {
         let mut orders = Vec::new();
         for (venue, total_instruments) in self.venue_instruments.iter() {
             for i in 0..*total_instruments {
-                let instrument_id = InstrumentId::from(format!("SYMBOL-{}.{}", i, venue));
+                let instrument_id = InstrumentId::from(format!("SYMBOL-{i}.{venue}"));
                 for order_index in 0..self.orders_per_instrument {
                     let order = self.generate_order(instrument_id, order_index);
                     orders.push(order);
@@ -227,7 +227,7 @@ pub fn create_order_list_sample(
     // x venues * x instruments * x orders per instrument
     let mut order_generator = TestOrdersGenerator::new(OrderType::Limit);
     for i in 0..total_venues {
-        let venue = Venue::from(format!("VENUE-{}", i));
+        let venue = Venue::from(format!("VENUE-{i}"));
         order_generator.add_venue_and_total_instruments(venue, total_instruments);
     }
     order_generator.set_orders_per_instrument(orders_per_instrument);

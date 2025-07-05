@@ -10,6 +10,11 @@
 #ifdef __SIZEOF_INT128__
     typedef __uint128_t uint128_t;
     typedef __int128_t int128_t;
+#elif defined(_MSC_VER)
+    // MSVC doesn't support 128-bit integers, use 64-bit fallbacks
+    typedef uint64_t uint128_t;
+    typedef int64_t int128_t;
+    #undef HIGH_PRECISION
 #endif
 
 #define DEPTH10_LEN 10
@@ -35,6 +40,20 @@
 
 #if defined(HIGH_PRECISION)
 /**
+ * The width in bytes for fixed-point value types in high-precision mode (128-bit).
+ */
+#define PRECISION_BYTES 16
+#endif
+
+#if !defined(HIGH_PRECISION)
+/**
+ * The width in bytes for fixed-point value types in standard-precision mode (64-bit).
+ */
+#define PRECISION_BYTES 8
+#endif
+
+#if defined(HIGH_PRECISION)
+/**
  * The scalar value corresponding to the maximum precision (10^16).
  */
 #define FIXED_SCALAR 10000000000000000.0
@@ -47,68 +66,104 @@
 #define FIXED_SCALAR 1000000000.0
 #endif
 
+#if defined(HIGH_PRECISION)
 /**
  * The scalar representing the difference between high-precision and standard-precision modes.
  */
 #define PRECISION_DIFF_SCALAR 10000000.0
+#endif
+
+#if !defined(HIGH_PRECISION)
+/**
+ * The scalar representing the difference between high-precision and standard-precision modes.
+ */
+#define PRECISION_DIFF_SCALAR 1.0
+#endif
+
+/**
+ * The maximum precision that can be safely used with f64-based constructors.
+ *
+ * This is a hard limit imposed by IEEE 754 double-precision floating-point representation,
+ * which has approximately 15-17 significant decimal digits. Beyond 16 decimal places,
+ * floating-point arithmetic becomes unreliable due to rounding errors.
+ *
+ * For higher precision values (such as 18-decimal WEI values in DeFi), specialized
+ * constructors that work with integer representations should be used instead.
+ */
+#define MAX_FLOAT_PRECISION 16
 
 #if defined(HIGH_PRECISION)
 /**
- * The maximum valid money amount which can be represented.
+ * The maximum valid money amount that can be represented.
  */
 #define MONEY_MAX 17014118346046.0
 #endif
 
 #if !defined(HIGH_PRECISION)
+/**
+ * The maximum valid money amount that can be represented.
+ */
 #define MONEY_MAX 9223372036.0
 #endif
 
 #if defined(HIGH_PRECISION)
 /**
- * The minimum valid money amount which can be represented.
+ * The minimum valid money amount that can be represented.
  */
 #define MONEY_MIN -17014118346046.0
 #endif
 
 #if !defined(HIGH_PRECISION)
+/**
+ * The minimum valid money amount that can be represented.
+ */
 #define MONEY_MIN -9223372036.0
 #endif
 
 #if defined(HIGH_PRECISION)
 /**
- * The maximum valid price value which can be represented.
+ * The maximum valid price value that can be represented.
  */
 #define PRICE_MAX 17014118346046.0
 #endif
 
 #if !defined(HIGH_PRECISION)
+/**
+ * The maximum valid price value that can be represented.
+ */
 #define PRICE_MAX 9223372036.0
 #endif
 
 #if defined(HIGH_PRECISION)
 /**
- * The minimum valid price value which can be represented.
+ * The minimum valid price value that can be represented.
  */
 #define PRICE_MIN -17014118346046.0
 #endif
 
 #if !defined(HIGH_PRECISION)
+/**
+ * The minimum valid price value that can be represented.
+ */
 #define PRICE_MIN -9223372036.0
 #endif
 
 #if defined(HIGH_PRECISION)
 /**
- * The maximum valid quantity value which can be represented.
+ * The maximum valid quantity value that can be represented.
  */
 #define QUANTITY_MAX 34028236692093.0
 #endif
 
 #if !defined(HIGH_PRECISION)
+/**
+ * The maximum valid quantity value that can be represented.
+ */
 #define QUANTITY_MAX 18446744073.0
 #endif
 
 /**
- * The minimum valid quantity value which can be represented.
+ * The minimum valid quantity value that can be represented.
  */
 #define QUANTITY_MIN 0.0
 
@@ -914,16 +969,16 @@ typedef int64_t PriceRaw;
 #endif
 
 /**
- * Represents a price in a market.
+ * Represents a price in a market with a specified precision.
  *
  * The number of decimal places may vary. For certain asset classes, prices may
  * have negative values. For example, prices for options instruments can be
  * negative under certain conditions.
  *
- * Handles up to {FIXED_PRECISION} decimals of precision.
+ * Handles up to [`FIXED_PRECISION`] decimals of precision.
  *
- *  - `PRICE_MAX` = {PRICE_MAX}
- *  - `PRICE_MIN` = {PRICE_MIN}
+ * - [`PRICE_MAX`] - Maximum representable price value.
+ * - [`PRICE_MIN`] - Minimum representable price value.
  */
 typedef struct Price_t {
     /**
@@ -931,7 +986,7 @@ typedef struct Price_t {
      */
     PriceRaw raw;
     /**
-     * The number of decimal places, with a maximum of {FIXED_PRECISION}.
+     * The number of decimal places, with a maximum of [`FIXED_PRECISION`].
      */
     uint8_t precision;
 } Price_t;
@@ -945,16 +1000,16 @@ typedef uint64_t QuantityRaw;
 #endif
 
 /**
- * Represents a quantity with a non-negative value.
+ * Represents a quantity with a non-negative value and specified precision.
  *
  * Capable of storing either a whole number (no decimal places) of 'contracts'
  * or 'shares' (instruments denominated in whole units) or a decimal value
  * containing decimal places for instruments denominated in fractional units.
  *
- * Handles up to {FIXED_PRECISION} decimals of precision.
+ * Handles up to [`FIXED_PRECISION`] decimals of precision.
  *
- * - `QUANTITY_MAX` = {QUANTITY_MAX}
- * - `QUANTITY_MIN` = 0
+ * - [`QUANTITY_MAX`] - Maximum representable quantity value.
+ * - [`QUANTITY_MIN`] - 0 (non-negative values only).
  */
 typedef struct Quantity_t {
     /**
@@ -962,7 +1017,7 @@ typedef struct Quantity_t {
      */
     QuantityRaw raw;
     /**
-     * The number of decimal places, with a maximum of {FIXED_PRECISION}.
+     * The number of decimal places, with a maximum of [`FIXED_PRECISION`].
      */
     uint8_t precision;
 } Quantity_t;
@@ -1018,7 +1073,7 @@ typedef struct OrderBookDelta_t {
      */
     uint64_t ts_event;
     /**
-     * UNIX timestamp (nanoseconds) when the struct was initialized.
+     * UNIX timestamp (nanoseconds) when the instance was created.
      */
     uint64_t ts_init;
 } OrderBookDelta_t;
@@ -1082,7 +1137,7 @@ typedef struct OrderBookDepth10_t {
      */
     uint64_t ts_event;
     /**
-     * UNIX timestamp (nanoseconds) when the struct was initialized.
+     * UNIX timestamp (nanoseconds) when the instance was created.
      */
     uint64_t ts_init;
 } OrderBookDepth10_t;
@@ -1116,7 +1171,7 @@ typedef struct QuoteTick_t {
      */
     uint64_t ts_event;
     /**
-     * UNIX timestamp (nanoseconds) when the struct was initialized.
+     * UNIX timestamp (nanoseconds) when the instance was created.
      */
     uint64_t ts_init;
 } QuoteTick_t;
@@ -1167,7 +1222,7 @@ typedef struct TradeTick_t {
      */
     uint64_t ts_event;
     /**
-     * UNIX timestamp (nanoseconds) when the struct was initialized.
+     * UNIX timestamp (nanoseconds) when the instance was created.
      */
     uint64_t ts_init;
 } TradeTick_t;
@@ -1283,7 +1338,7 @@ typedef struct Bar_t {
      */
     uint64_t ts_event;
     /**
-     * UNIX timestamp (nanoseconds) when the struct was initialized.
+     * UNIX timestamp (nanoseconds) when the instance was created.
      */
     uint64_t ts_init;
 } Bar_t;
@@ -1305,7 +1360,7 @@ typedef struct MarkPriceUpdate_t {
      */
     uint64_t ts_event;
     /**
-     * UNIX timestamp (nanoseconds) when the struct was initialized.
+     * UNIX timestamp (nanoseconds) when the instance was created.
      */
     uint64_t ts_init;
 } MarkPriceUpdate_t;
@@ -1327,7 +1382,7 @@ typedef struct IndexPriceUpdate_t {
      */
     uint64_t ts_event;
     /**
-     * UNIX timestamp (nanoseconds) when the struct was initialized.
+     * UNIX timestamp (nanoseconds) when the instance was created.
      */
     uint64_t ts_init;
 } IndexPriceUpdate_t;
@@ -1353,7 +1408,7 @@ typedef struct InstrumentClose_t {
      */
     uint64_t ts_event;
     /**
-     * UNIX timestamp (nanoseconds) when the struct was initialized.
+     * UNIX timestamp (nanoseconds) when the instance was created.
      */
     uint64_t ts_init;
 } InstrumentClose_t;
@@ -1768,7 +1823,7 @@ typedef struct BookLevel_API {
 /**
  * Represents a medium of exchange in a specified denomination with a fixed decimal precision.
  *
- * Handles up to {FIXED_PRECISION} decimals of precision.
+ * Handles up to [`FIXED_PRECISION`] decimals of precision.
  */
 typedef struct Currency_t {
     /**
@@ -1804,8 +1859,8 @@ typedef int64_t MoneyRaw;
 /**
  * Represents an amount of money in a specified currency denomination.
  *
- * - `MONEY_MAX` = {MONEY_MAX}
- * - `MONEY_MIN` = {MONEY_MIN}
+ * - [`MONEY_MAX`] - Maximum representable money amount
+ * - [`MONEY_MIN`] - Minimum representable money amount
  */
 typedef struct Money_t {
     /**
@@ -1835,31 +1890,37 @@ typedef struct Money_t {
 
 
 /**
- * Indicates if high_precision mode is enabled.
+ * Indicates if high-precision mode is enabled.
+ *
+ * # Safety
+ *
+ * This static variable is initialized at compile time and never mutated,
+ * making it safe to read from multiple threads without synchronization.
+ * The value is determined by the "high-precision" feature flag.
  */
 extern const uint8_t HIGH_PRECISION_MODE;
 
-#if defined(HIGH_PRECISION)
-/**
- * The width in bytes for fixed-point value types in high-precision mode (128-bit).
- */
-extern const int32_t PRECISION_BYTES;
-#endif
-
-#if !defined(HIGH_PRECISION)
-/**
- * The width in bytes for fixed-point value types in standard-precision mode (64-bit).
- */
-extern const int32_t PRECISION_BYTES;
-#endif
-
 /**
  * The maximum raw price integer value.
+ *
+ * # Safety
+ *
+ * This value is computed at compile time from PRICE_MAX * FIXED_SCALAR.
+ * The multiplication is guaranteed not to overflow because PRICE_MAX and FIXED_SCALAR
+ * are chosen such that their product fits within PriceRaw's range in both
+ * high-precision (i128) and standard-precision (i64) modes.
  */
 extern const PriceRaw PRICE_RAW_MAX;
 
 /**
  * The minimum raw price integer value.
+ *
+ * # Safety
+ *
+ * This value is computed at compile time from PRICE_MIN * FIXED_SCALAR.
+ * The multiplication is guaranteed not to overflow because PRICE_MIN and FIXED_SCALAR
+ * are chosen such that their product fits within PriceRaw's range in both
+ * high-precision (i128) and standard-precision (i64) modes.
  */
 extern const PriceRaw PRICE_RAW_MIN;
 

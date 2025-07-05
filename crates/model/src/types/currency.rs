@@ -33,7 +33,7 @@ use crate::{currencies::CURRENCY_MAP, enums::CurrencyType};
 
 /// Represents a medium of exchange in a specified denomination with a fixed decimal precision.
 ///
-/// Handles up to {FIXED_PRECISION} decimals of precision.
+/// Handles up to [`FIXED_PRECISION`] decimals of precision.
 #[repr(C)]
 #[derive(Clone, Copy, Eq)]
 #[cfg_attr(
@@ -61,7 +61,7 @@ impl Currency {
     /// Returns an error if:
     /// - `code` is not a valid string.
     /// - `name` is the empty string.
-    /// - `precision` is invalid outside the valid representable range [0, {FIXED_PRECISION}].
+    /// - `precision` is invalid outside the valid representable range [0, FIXED_PRECISION].
     ///
     /// # Notes
     ///
@@ -273,11 +273,20 @@ mod tests {
         let _ = Currency::new("", 2, 840, "United States dollar", CurrencyType::Fiat);
     }
 
+    #[cfg(not(feature = "defi"))]
     #[rstest]
     #[should_panic(expected = "Condition failed: `precision` exceeded maximum `FIXED_PRECISION`")]
     fn test_invalid_precision() {
-        // Precision greater than maximum
-        let _ = Currency::new("USD", 17, 840, "United States dollar", CurrencyType::Fiat);
+        // Precision greater than maximum (use 19 which exceeds even defi precision of 18)
+        let _ = Currency::new("USD", 19, 840, "United States dollar", CurrencyType::Fiat);
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    #[should_panic(expected = "Condition failed: `precision` exceeded maximum `WEI_PRECISION`")]
+    fn test_invalid_precision() {
+        // Precision greater than maximum (use 19 which exceeds even defi precision of 18)
+        let _ = Currency::new("ETH", 19, 0, "Ethereum", CurrencyType::Crypto);
     }
 
     #[rstest]

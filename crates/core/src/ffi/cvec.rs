@@ -13,13 +13,31 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Utilities for transferring heap-allocated Rust `Vec<T>` values across an FFI boundary.
+//!
+//! The primary abstraction offered by this module is `CVec`, a C-compatible struct that stores
+//! a raw pointer (`ptr`) together with the vector’s logical `len` and `cap`.  By moving the
+//! allocation metadata into a plain `repr(C)` type we allow the memory created by Rust to be
+//! owned, inspected, and ultimately freed by foreign code (or vice-versa) without introducing
+//! undefined behaviour.
+//!
+//! Only a very small API surface is exposed to C:
+//!
+//! * `cvec_new` – create an empty vector representation.
+//! * `cvec_drop` – free a vector that was obtained from Rust.
+//!
+//! All other manipulation happens on the Rust side before relinquishing ownership.  This keeps the
+//! rules for memory safety straightforward: foreign callers must treat the memory region pointed
+//! to by `ptr` as *opaque* and interact with it solely through the functions provided here.
+
 use std::{ffi::c_void, fmt::Display, ptr::null};
 
 /// `CVec` is a C compatible struct that stores an opaque pointer to a block of
 /// memory, it's length and the capacity of the vector it was allocated from.
 ///
-/// NOTE: Changing the values here may lead to undefined behavior when the
-/// memory is dropped.
+/// # Safety
+///
+/// Changing the values here may lead to undefined behavior when the memory is dropped.
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct CVec {
@@ -38,6 +56,10 @@ pub struct CVec {
 unsafe impl Send for CVec {}
 
 impl CVec {
+    /// Returns an empty [`CVec`].
+    ///
+    /// This is primarily useful for constructing a sentinel value that represents the
+    /// absence of data when crossing the FFI boundary.
     #[must_use]
     pub const fn empty() -> Self {
         Self {
@@ -86,14 +108,27 @@ impl Display for CVec {
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
+/// Free the heap allocation represented by `cvec`.
+///
+/// # Safety
+///
+/// The pointer **must** either originate from the Rust side through the `From<Vec<T>>`
+/// implementation or be the return value of one of the exported functions in this module.  It is
+/// undefined behaviour to pass an arbitrary or already-freed pointer.
 #[cfg(feature = "ffi")]
 #[unsafe(no_mangle)]
 pub extern "C" fn cvec_drop(cvec: CVec) {
     let CVec { ptr, len, cap } = cvec;
+
+    // SAFETY: CVec currently only supports u8 data through FFI.
+    // The generic From<Vec<T>> implementation should only be used internally
+    // where the caller ensures proper type-matched deallocation.
+    // For FFI boundaries, we standardize on u8 to avoid type confusion.
     let data: Vec<u8> = unsafe { Vec::from_raw_parts(ptr.cast::<u8>(), len, cap) };
     drop(data); // Memory freed here
 }
 
+/// Construct a new *empty* [`CVec`] value for use as initialiser/sentinel in foreign code.
 #[cfg(feature = "ffi")]
 #[unsafe(no_mangle)]
 pub const extern "C" fn cvec_new() -> CVec {

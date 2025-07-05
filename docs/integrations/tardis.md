@@ -81,13 +81,13 @@ The Tardis integration ensures seamless compatibility with NautilusTrader’s cr
 by consistently normalizing symbols. Typically, NautilusTrader uses the native exchange naming conventions
 provided by Tardis. However, for certain exchanges, raw symbols are adjusted to adhere to the Nautilus symbology normalization, as outlined below:
 
-### Common rules
+### Common Rules
 
 - All symbols are converted to uppercase.
 - Market type suffixes are appended with a hyphen for some exchanges (see [exchange-specific normalizations](#exchange-specific-normalizations)).
 - Original exchange symbols are preserved in the Nautilus instrument definitions `raw_symbol` field.
 
-### Exchange-specific normalizations
+### Exchange-Specific Normalizations
 
 - **Binance**: Nautilus appends the suffix `-PERP` to all perpetual symbols.
 - **Bybit**: Nautilus uses specific product category suffixes, including `-SPOT`, `-LINEAR`, `-INVERSE`, `-OPTION`.
@@ -108,35 +108,38 @@ The table below outlines the mappings between Nautilus venues and corresponding 
 | Nautilus venue          | Tardis exchange(s)                                    |
 |:------------------------|:------------------------------------------------------|
 | `ASCENDEX`              | `ascendex`                                            |
-| `BINANCE`               | `binance`, `binance-dex`, `binance-futures`, `binance-jersey`, `binance-options`, `binance-us` |
+| `BINANCE`               | `binance`, `binance-dex`, `binance-european-options`, `binance-futures`, `binance-jersey`, `binance-options` |
 | `BINANCE_DELIVERY`      | `binance-delivery` (*COIN-margined contracts*)        |
 | `BINANCE_US`            | `binance-us`                                          |
 | `BITFINEX`              | `bitfinex`, `bitfinex-derivatives`                    |
 | `BITFLYER`              | `bitflyer`                                            |
+| `BITGET`                | `bitget`, `bitget-futures`                            |
 | `BITMEX`                | `bitmex`                                              |
 | `BITNOMIAL`             | `bitnomial`                                           |
 | `BITSTAMP`              | `bitstamp`                                            |
 | `BLOCKCHAIN_COM`        | `blockchain-com`                                      |
 | `BYBIT`                 | `bybit`, `bybit-options`, `bybit-spot`                |
 | `COINBASE`              | `coinbase`                                            |
+| `COINBASE_INTX`         | `coinbase-international`                              |
 | `COINFLEX`              | `coinflex` (*for historical research*)                |
-| `CRYPTO_COM`            | `crypto-com`                                          |
+| `CRYPTO_COM`            | `crypto-com`, `crypto-com-derivatives`                |
 | `CRYPTOFACILITIES`      | `cryptofacilities`                                    |
 | `DELTA`                 | `delta`                                               |
 | `DERIBIT`               | `deribit`                                             |
 | `DYDX`                  | `dydx`                                                |
-| `FTX`                   | `ftx` (*historical research*)                         |
-| `FTX_US`                | `ftx-us` (*historical research*)                      |
+| `DYDX_V4`               | `dydx-v4`                                             |
+| `FTX`                   | `ftx`, `ftx-us` (*historical research*)               |
 | `GATE_IO`               | `gate-io`, `gate-io-futures`                          |
 | `GEMINI`                | `gemini`                                              |
 | `HITBTC`                | `hitbtc`                                              |
 | `HUOBI`                 | `huobi`, `huobi-dm`, `huobi-dm-linear-swap`, `huobi-dm-options` |
 | `HUOBI_DELIVERY`        | `huobi-dm-swap`                                       |
-| `KRAKEN`                | `kraken`                                              |
-| `KUCOIN`                | `kucoin`                                              |
+| `HYPERLIQUID`           | `hyperliquid`                                         |
+| `KRAKEN`                | `kraken`, `kraken-futures`                            |
+| `KUCOIN`                | `kucoin`, `kucoin-futures`                            |
 | `MANGO`                 | `mango`                                               |
 | `OKCOIN`                | `okcoin`                                              |
-| `OKEX`                  | `okex`, `okex-futures`, `okex-options`, `okex-swap`   |
+| `OKEX`                  | `okex`, `okex-futures`, `okex-options`, `okex-spreads`, `okex-swap` |
 | `PHEMEX`                | `phemex`                                              |
 | `POLONIEX`              | `poloniex`                                            |
 | `SERUM`                 | `serum` (*historical research*)                       |
@@ -150,7 +153,7 @@ The following environment variables are used by Tardis and NautilusTrader.
 
 - `TM_API_KEY`: API key for the Tardis Machine.
 - `TARDIS_API_KEY`: API key for NautilusTrader Tardis clients.
-- `TARDIS_WS_URL` (optional): WebSocket URL for the `TardisMachineClient` in NautilusTrader.
+- `TARDIS_MACHINE_WS_URL` (optional): WebSocket URL for the `TardisMachineClient` in NautilusTrader.
 - `TARDIS_BASE_URL` (optional): Base URL for the `TardisHttpClient` in NautilusTrader.
 - `NAUTILUS_CATALOG_PATH` (optional): Root directory for writing replay data in the Nautilus catalog.
 
@@ -200,7 +203,7 @@ Next, ensure you have a configuration JSON file available.
 
 | Field               | Type              | Description                                                                         | Default                                                                                               |
 |:--------------------|:------------------|:------------------------------------------------------------------------------------|:------------------------------------------------------------------------------------------------------|
-| `tardis_ws_url`     | string (optional) | The Tardis Machine WebSocket URL.                                                   | If `null` then will use the `TARDIS_WS_URL` env var.                                                  |
+| `tardis_ws_url`     | string (optional) | The Tardis Machine WebSocket URL.                                                   | If `null` then will use the `TARDIS_MACHINE_WS_URL` env var.                                          |
 | `normalize_symbols` | bool (optional)   | If Nautilus [symbol normalization](#symbology-and-normalization) should be applied. | If `null` then will default to `true`.                                                                |
 | `output_path`       | string (optional) | The output directory path to write Nautilus Parquet data to.                        | If `null` then will use the `NAUTILUS_CATALOG_PATH` env var, otherwise the current working directory. |
 | `options`           | JSON[]            | An array of [ReplayNormalizedRequestOptions](https://docs.tardis.dev/api/tardis-machine#replay-normalized-options) objects.                                                                 |
@@ -228,7 +231,7 @@ An example configuration file, `example_config.json`, is available [here](https:
 }
 ```
 
-### Python replays
+### Python Replays
 
 To run a replay in Python, create a script similar to the following:
 
@@ -247,7 +250,7 @@ if __name__ == "__main__":
     asyncio.run(run())
 ```
 
-### Rust replays
+### Rust Replays
 
 To run a replay in Rust, create a binary similar to the following:
 
@@ -293,7 +296,7 @@ You can also optionally specify a `limit` parameter for the `load_*` functions/m
 Loading mixed-instrument CSV files is challenging due to precision requirements and is not recommended. Use single-instrument CSV files instead (see below).
 :::
 
-### Loading CSV data in Python
+### Loading CSV Data in Python
 
 You can load Tardis-format CSV data in Python using the `TardisCSVDataLoader`.
 When loading data, you can optionally specify the instrument ID but must specify both the price precision, and size precision.
@@ -319,7 +322,7 @@ limit = None
 deltas = loader.load_deltas(filepath, limit)
 ```
 
-### Loading CSV data in Rust
+### Loading CSV Data in Rust
 
 You can load Tardis-format CSV data in Rust using the loading functions found [here](https://github.com/nautechsystems/nautilus_trader/blob/develop/crates/adapters/tardis/src/csv/mod.rs).
 When loading data, you can optionally specify the instrument ID but must specify both the price precision and size precision.
@@ -372,7 +375,7 @@ Ensure that you use Tardis’s lower-kebab casing convention when referring to a
 A Tardis API key is required to access the instruments metadata API.
 :::
 
-### Requesting instruments in Python
+### Requesting Instruments in Python
 
 To request instrument definitions in Python, create a script similar to the following:
 
@@ -396,7 +399,7 @@ if __name__ == "__main__":
     asyncio.run(run())
 ```
 
-### Requesting instruments in Rust
+### Requesting Instruments in Rust
 
 To request instrument definitions in Rust, use code similar to the following.
 For a complete example, see the [example binary here](https://github.com/nautechsystems/nautilus_trader/blob/develop/crates/adapters/tardis/bin/example_http.rs).

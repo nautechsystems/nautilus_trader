@@ -14,11 +14,11 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import os
 from decimal import Decimal
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_MAX_CALLBACK_RATE
 from nautilus_trader.adapters.binance.common.constants import BINANCE_MIN_CALLBACK_RATE
-from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceEnumParser
 from nautilus_trader.adapters.binance.common.enums import BinanceFuturesPositionSide
@@ -65,7 +65,6 @@ from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import PositionSide
-from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.enums import trailing_offset_type_to_str
@@ -148,8 +147,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
     ) -> None:
         super().__init__(
             loop=loop,
-            client_id=ClientId(name or BINANCE_VENUE.value),
-            venue=BINANCE_VENUE,
+            client_id=ClientId(name or config.venue.value),
+            venue=config.venue,
             oms_type=OmsType.HEDGING if account_type.is_futures else OmsType.NETTING,
             instrument_provider=instrument_provider,
             account_type=AccountType.CASH if account_type.is_spot else AccountType.MARGIN,
@@ -166,19 +165,22 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._use_position_ids: bool = config.use_position_ids
         self._treat_expired_as_canceled: bool = config.treat_expired_as_canceled
         self._recv_window = config.recv_window_ms
+        self._max_retries = config.max_retries or 3
         self._log.info(f"Key type: {config.key_type.value}", LogColor.BLUE)
         self._log.info(f"Account type: {self._binance_account_type.value}", LogColor.BLUE)
         self._log.info(f"{config.use_gtd=}", LogColor.BLUE)
         self._log.info(f"{config.use_reduce_only=}", LogColor.BLUE)
         self._log.info(f"{config.use_position_ids=}", LogColor.BLUE)
         self._log.info(f"{config.treat_expired_as_canceled=}", LogColor.BLUE)
+        self._log.info(f"{config.recv_window_ms=}", LogColor.BLUE)
         self._log.info(f"{config.max_retries=}", LogColor.BLUE)
         self._log.info(f"{config.retry_delay_initial_ms=}", LogColor.BLUE)
         self._log.info(f"{config.retry_delay_max_ms=}", LogColor.BLUE)
+        self._log.info(f"{config.listen_key_ping_max_failures=}", LogColor.BLUE)
 
         self._is_dual_side_position: bool | None = None  # Initialized on connection
         self._set_account_id(
-            AccountId(f"{name or BINANCE_VENUE.value}-{self._binance_account_type.value}-master"),
+            AccountId(f"{name or config.venue.value}-{self._binance_account_type.value}-master"),
         )
 
         # Enum parser
@@ -194,6 +196,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._ping_listen_keys_interval: int = 60 * 5  # Once every 5 mins (hard-coded)
         self._ping_listen_keys_task: asyncio.Task | None = None
         self._listen_key: str | None = None
+        self._ping_consecutive_failures: int = 0
+        self._ping_max_failures: int = config.listen_key_ping_max_failures
+        self._last_successful_ping_ns: int = 0
 
         # WebSocket API
         self._ws_client = BinanceWebSocketClient(
@@ -282,6 +287,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
         # Set up WebSocket listen key
         self._listen_key = response.listenKey
+        self._last_successful_ping_ns = self._clock.timestamp_ns()  # Initialize on connection
         self._log.info(f"Listen key {self._listen_key}")
         self._ping_listen_keys_task = self.create_task(self._ping_listen_keys())
 
@@ -304,15 +310,86 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                     f"{self._ping_listen_keys_interval}s",
                 )
                 await asyncio.sleep(self._ping_listen_keys_interval)
-                if self._listen_key:
-                    self._log.debug(f"Pinging WebSocket listen key {self._listen_key}")
-                    try:
-                        await self._http_user.keepalive_listen_key(listen_key=self._listen_key)
-                    except BinanceClientError as e:
-                        # We may see this if an old listen key was used for the ping
-                        self._log.error(f"Error pinging listen key: {e}")
+
+                if not self._listen_key:
+                    self._log.warning("No listen key available for ping")
+                    continue
+
+                self._log.debug(f"Pinging WebSocket listen key {self._listen_key}")
+
+                try:
+                    await self._http_user.keepalive_listen_key(listen_key=self._listen_key)
+
+                    # Reset failure tracking on success
+                    self._ping_consecutive_failures = 0
+                    self._last_successful_ping_ns = self._clock.timestamp_ns()
+                    self._log.debug(f"Listen key ping successful: {self._listen_key}")
+
+                except (BinanceClientError, BinanceError) as e:
+                    self._ping_consecutive_failures += 1
+                    time_since_success_secs = (
+                        (self._clock.timestamp_ns() - self._last_successful_ping_ns) / 1_000_000_000
+                        if self._last_successful_ping_ns > 0
+                        else 0
+                    )
+
+                    self._log.error(
+                        f"Listen key ping failed (attempt {self._ping_consecutive_failures}/"
+                        f"{self._ping_max_failures}): {e}, "
+                        f"time since last success: {time_since_success_secs:.1f}s",
+                    )
+
+                    if self._ping_consecutive_failures >= self._ping_max_failures:
+                        self._log.error(
+                            f"Listen key ping failed {self._ping_max_failures} consecutive times; "
+                            "initiating WebSocket reconnection to prevent data loss",
+                        )
+                        await self._handle_listen_key_failure()
+                        self._ping_consecutive_failures = 0  # Reset after handling
+
         except asyncio.CancelledError:
             self._log.debug("Canceled task 'ping_listen_keys'")
+
+    async def _handle_listen_key_failure(self) -> None:
+        # Handle listen key authentication failure with full recovery.
+        #
+        # This method attempts to recover from listen key failures by:
+        # 1. Disconnecting the current WebSocket
+        # 2. Creating a new listen key
+        # 3. Reconnecting the WebSocket with the new key
+
+        try:
+            self._log.warning("Starting listen key recovery process")
+
+            # Disconnect current WebSocket
+            await self._ws_client.disconnect()
+            self._log.debug("Disconnected WebSocket for listen key recovery")
+
+            # Create new listen key
+            response: BinanceListenKey = await self._http_user.create_listen_key()
+            self._listen_key = response.listenKey
+            self._last_successful_ping_ns = self._clock.timestamp_ns()
+            self._log.info(f"Created new listen key for recovery: {self._listen_key}")
+
+            # Reconnect WebSocket with new key
+            await self._ws_client.subscribe_listen_key(self._listen_key)
+            self._log.info("WebSocket reconnected successfully with new listen key")
+
+        except Exception as e:
+            self._log.error(f"Failed to recover from listen key failure: {e}")
+
+            # Check if graceful shutdown is configured
+            if hasattr(self, "graceful_shutdown_on_exception"):
+                execution_engine = getattr(self, "_execution_engine", None)
+                if execution_engine and hasattr(execution_engine, "graceful_shutdown_on_exception"):
+                    if execution_engine.graceful_shutdown_on_exception:
+                        execution_engine.shutdown_system(f"Listen key recovery failed: {e}")
+                        return
+
+            self._log.error(
+                "Terminating process to prevent operation with invalid authentication",
+            )
+            os._exit(1)
 
     async def _disconnect(self) -> None:
         # Cancel tasks
@@ -325,7 +402,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
     # -- EXECUTION REPORTS ------------------------------------------------------------------------
 
-    async def generate_order_status_report(
+    async def generate_order_status_report(  # noqa: C901 (too complex)
         self,
         command: GenerateOrderStatusReport,
     ) -> OrderStatusReport | None:
@@ -335,12 +412,20 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         )
 
         retries = self._generate_order_status_retries.get(command.client_order_id, 0)
-        if retries > 3:
+        if retries > self._max_retries:
             self._log.error(
-                f"Reached maximum retries 3/3 for generating OrderStatusReport for "
+                f"Reached maximum retries {self._max_retries}/{self._max_retries} for generating OrderStatusReport for "
                 f"{repr(command.client_order_id) if command.client_order_id else ''} "
                 f"{repr(command.venue_order_id) if command.venue_order_id else ''}",
             )
+
+            # Clean up retry counter after max retries exceeded
+            if (
+                command.client_order_id
+                and command.client_order_id in self._generate_order_status_retries
+            ):
+                del self._generate_order_status_retries[command.client_order_id]
+
             return None
 
         self._log.info(
@@ -367,7 +452,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         except BinanceError as e:
             retries += 1
             self._log.error(
-                f"Cannot generate order status report for {command.client_order_id!r}: {e.message}. Retry {retries}/3",
+                f"Cannot generate order status report for {command.client_order_id!r}: {e.message}. Retry {retries}/{self._max_retries}",
             )
             self._generate_order_status_retries[command.client_order_id] = retries
             if not command.client_order_id:
@@ -380,10 +465,15 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 elif order.is_closed:
                     return None  # Nothing else to do
 
-                if retries >= 3:
+                if retries >= self._max_retries:
+                    # Clean up retry counter when order is finally rejected
+                    if (
+                        command.client_order_id
+                        and command.client_order_id in self._generate_order_status_retries
+                    ):
+                        del self._generate_order_status_retries[command.client_order_id]
+
                     # Order will no longer be considered in-flight once this event is applied.
-                    # We could pop the value out of the hashmap here, but better to leave it in
-                    # so that there are no longer subsequent retries (we don't expect many of these).
                     self.generate_order_rejected(
                         strategy_id=order.strategy_id,
                         instrument_id=command.instrument_id,
@@ -409,6 +499,13 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             treat_expired_as_canceled=self._treat_expired_as_canceled,
             ts_init=self._clock.timestamp_ns(),
         )
+
+        # Clean up retry counter on successful report generation
+        if (
+            command.client_order_id
+            and command.client_order_id in self._generate_order_status_retries
+        ):
+            del self._generate_order_status_retries[command.client_order_id]
 
         self._log.debug(f"Received {report}")
         return report
@@ -600,9 +697,19 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         raise NotImplementedError
 
     def _determine_time_in_force(self, order: Order) -> BinanceTimeInForce:
-        time_in_force = self._enum_parser.parse_internal_time_in_force(order.time_in_force)
-        if time_in_force == TimeInForce.GTD and not self._use_gtd:
-            time_in_force = TimeInForce.GTC
+        # Convert the internal TimeInForce enum to the Binance equivalent
+        time_in_force: BinanceTimeInForce = self._enum_parser.parse_internal_time_in_force(
+            order.time_in_force,
+        )
+
+        # When the client is configured *not* to make use of the native GTD
+        # (Good-Till-Date) support on Binance we transparently downgrade GTD to
+        # GTC. Comparison must be performed against the *Binance* enum; the
+        # previous implementation compared against the internal Nautilus enum
+        # which would always evaluate to ``False`` and therefore never apply
+        # the downgrade.
+        if time_in_force == BinanceTimeInForce.GTD and not self._use_gtd:
+            time_in_force = BinanceTimeInForce.GTC
             self._log.info(
                 f"Converted GTD `time_in_force` to GTC for {order.client_order_id}",
                 LogColor.BLUE,
@@ -823,7 +930,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         else:
             self._log.error(
                 f"Cannot submit order: invalid `order.trigger_type`, was "
-                f"{trigger_type_to_str(order.trigger_price)}, {order}",
+                f"{trigger_type_to_str(order.trigger_type)}, {order}",
             )
             return
 
@@ -855,7 +962,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         else:
             self._log.error(
                 f"Cannot submit order: invalid `order.trigger_type`, was "
-                f"{trigger_type_to_str(order.trigger_price)}, {order}",
+                f"{trigger_type_to_str(order.trigger_type)}, {order}",
             )
             return
 
@@ -867,8 +974,11 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             )
             return
 
-        # Convert basis points to percentage rounded to 1 decimal place
-        callback_rate = Decimal(f"{order.trailing_offset / 100:.1f}")
+        # Convert basis points to percentage, preserving precision
+        # Binance supports up to 1 decimal place precision for callback rates
+        callback_rate = Decimal(order.trailing_offset) / Decimal("100")
+        # Round to 1 decimal place only if necessary to meet Binance requirements
+        callback_rate = callback_rate.quantize(Decimal("0.1"))
 
         if callback_rate < BINANCE_MIN_CALLBACK_RATE or callback_rate > BINANCE_MAX_CALLBACK_RATE:
             self._log.error(
@@ -964,7 +1074,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 price=str(command.price) if command.price else str(order.price),
             )
             if not retry_manager.result:
-                self.generate_order_modify_reject(
+                self.generate_order_modify_rejected(
                     command.strategy_id,
                     command.instrument_id,
                     command.client_order_id,

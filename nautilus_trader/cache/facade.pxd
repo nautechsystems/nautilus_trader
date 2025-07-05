@@ -75,9 +75,7 @@ cdef class CacheDatabaseFacade:
     cpdef Order load_order(self, ClientOrderId order_id)
     cpdef Position load_position(self, PositionId position_id)
     cpdef dict load_actor(self, ComponentId component_id)
-    cpdef void delete_actor(self, ComponentId component_id)
     cpdef dict load_strategy(self, StrategyId strategy_id)
-    cpdef void delete_strategy(self, StrategyId strategy_id)
 
     cpdef void add(self, str key, bytes value)
     cpdef void add_currency(self, Currency currency)
@@ -98,5 +96,11 @@ cdef class CacheDatabaseFacade:
 
     cpdef void snapshot_order_state(self, Order order)
     cpdef void snapshot_position_state(self, Position position, uint64_t ts_snapshot, Money unrealized_pnl=*)
+
+    cpdef void delete_order(self, ClientOrderId client_order_id)
+    cpdef void delete_position(self, PositionId position_id)
+    cpdef void delete_account_event(self, AccountId account_id, str event_id)
+    cpdef void delete_actor(self, ComponentId component_id)
+    cpdef void delete_strategy(self, StrategyId strategy_id)
 
     cpdef void heartbeat(self, datetime timestamp)

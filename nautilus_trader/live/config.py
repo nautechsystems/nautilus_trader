@@ -43,10 +43,14 @@ class LiveDataEngineConfig(DataEngineConfig, frozen=True):
     ----------
     qsize : PositiveInt, default 100_000
         The queue size for the engines internal queue buffers.
+    graceful_shutdown_on_exception : bool, default False
+        If the system should perform a graceful shutdown when an unexpected exception
+        occurs during message queue processing (does not include user actor/strategy exceptions).
 
     """
 
     qsize: PositiveInt = 100_000
+    graceful_shutdown_on_exception: bool = False
 
 
 class LiveRiskEngineConfig(RiskEngineConfig, frozen=True):
@@ -57,10 +61,14 @@ class LiveRiskEngineConfig(RiskEngineConfig, frozen=True):
     ----------
     qsize : PositiveInt, default 100_000
         The queue size for the engines internal queue buffers.
+    graceful_shutdown_on_exception : bool, default False
+        If the system should perform a graceful shutdown when an unexpected exception
+        occurs during message queue processing (does not include user actor/strategy exceptions).
 
     """
 
     qsize: PositiveInt = 100_000
+    graceful_shutdown_on_exception: bool = False
 
 
 class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
@@ -136,8 +144,13 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
         The time buffer (minutes) from when an account event occurred before it can be purged.
         Only events outside the lookback window will be purged.
         A recommended setting is 60 minutes for HFT.
+    purge_from_database : bool, default False
+        If purging operations will also delete from the backing database, in addition to the in-memory cache.
     qsize : PositiveInt, default 100_000
         The queue size for the engines internal queue buffers.
+    graceful_shutdown_on_exception : bool, default False
+        If the system should perform a graceful shutdown when an unexpected exception
+        occurs during message queue processing (does not include user actor/strategy exceptions).
 
     """
 
@@ -158,7 +171,9 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
     purge_closed_positions_buffer_mins: NonNegativeInt | None = None
     purge_account_events_interval_mins: PositiveInt | None = None
     purge_account_events_lookback_mins: NonNegativeInt | None = None
+    purge_from_database: bool = False
     qsize: PositiveInt = 100_000
+    graceful_shutdown_on_exception: bool = False
 
 
 class RoutingConfig(NautilusConfig, frozen=True):

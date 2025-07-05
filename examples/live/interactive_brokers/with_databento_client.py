@@ -73,7 +73,7 @@ config_node = TradingNodeConfig(
             ibg_client_id=1,
             account_id="DU123456",  # This must match with the IB Gateway/TWS node is connecting to
             instrument_provider=InteractiveBrokersInstrumentProviderConfig(
-                symbology_method=SymbologyMethod.DATABENTO,
+                symbology_method=SymbologyMethod.IB_SIMPLIFIED,
                 load_ids=frozenset(instrument_ids),
             ),
             routing=RoutingConfig(

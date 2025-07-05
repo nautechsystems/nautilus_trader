@@ -1,10 +1,14 @@
 name: nightly-merge
 
+permissions: # Principle of least privilege
+  contents: write # Required for merging develop branch into nightly
+  actions: read
+
 on:
   push:
     branches: [nightly-merge-test]
   schedule:
-    - cron: '0 14 * * *'  # At 14:00 UTC every day
+    - cron: '0 14 * * *' # At 14:00 UTC every day
 
 jobs:
   check-develop-status:
@@ -13,7 +17,7 @@ jobs:
       develop_status: ${{ steps.check-workflow.outputs.status }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+      - uses: step-security/harden-runner@002fdce3c6a235733a90a27c80493a3241e56863 # v2.12.1
         with:
           egress-policy: audit
 
@@ -98,7 +102,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+      - uses: step-security/harden-runner@002fdce3c6a235733a90a27c80493a3241e56863 # v2.12.1
         with:
           egress-policy: audit
 
@@ -119,8 +123,8 @@ jobs:
         # https://github.com/robotology/gh-action-nightly-merge
         uses: robotology/gh-action-nightly-merge@81570ba03dd370f582bd3f52d47672d29191829f # v1.5.2
         with:
-          stable_branch: 'develop'  # Branch to merge from
-          development_branch: 'nightly'  # Branch to merge to
+          stable_branch: 'develop' # Branch to merge from
+          development_branch: 'nightly' # Branch to merge to
           allow_ff: true
           ff_only: true
           user_name: 'nautilus-trader-bot'

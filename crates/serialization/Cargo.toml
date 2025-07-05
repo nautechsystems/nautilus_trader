@@ -39,12 +39,13 @@ anyhow = { workspace = true }
 arrow = { workspace = true }
 parquet = { workspace = true }
 pyo3 = { workspace = true, optional = true }
-thiserror = { workspace = true }
+rust_decimal = { workspace = true }
+rust_decimal_macros = { workspace = true }
 serde = { workspace = true }
 strum = { workspace = true }
+thiserror = { workspace = true }
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }
-criterion = { workspace = true }
 pretty_assertions = { workspace = true }
 rstest = { workspace = true }

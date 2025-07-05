@@ -28,7 +28,7 @@ pub mod quote;
 pub mod status;
 pub mod trade;
 
-#[cfg(feature = "stubs")]
+#[cfg(any(test, feature = "stubs"))]
 pub mod stubs;
 
 use std::{
@@ -114,6 +114,10 @@ impl_try_from_data!(MarkPriceUpdate, MarkPriceUpdate);
 impl_try_from_data!(IndexPriceUpdate, IndexPriceUpdate);
 impl_try_from_data!(InstrumentClose, InstrumentClose);
 
+/// Converts a vector of `Data` items to a specific variant type.
+///
+/// Filters and converts the data vector, keeping only items that can be
+/// successfully converted to the target type `T`.
 pub fn to_variant<T: TryFrom<Data>>(data: Vec<Data>) -> Vec<T> {
     data.into_iter()
         .filter_map(|d| T::try_from(d).ok())
@@ -142,11 +146,17 @@ impl Data {
     }
 }
 
-pub trait GetTsInit {
+/// Marker trait for types that carry a creation timestamp.
+///
+/// `ts_init` is the moment (UNIX nanoseconds) when this value was first generated or
+/// ingested by Nautilus. It can be used for sequencing, latency measurements,
+/// or monitoring data-pipeline delays.
+pub trait HasTsInit {
+    /// Returns the UNIX timestamp (nanoseconds) when the instance was created.
     fn ts_init(&self) -> UnixNanos;
 }
 
-impl GetTsInit for Data {
+impl HasTsInit for Data {
     fn ts_init(&self) -> UnixNanos {
         match self {
             Self::Delta(d) => d.ts_init,
@@ -162,7 +172,10 @@ impl GetTsInit for Data {
     }
 }
 
-pub fn is_monotonically_increasing_by_init<T: GetTsInit>(data: &[T]) -> bool {
+/// Checks if the data slice is monotonically increasing by initialization timestamp.
+///
+/// Returns `true` if each element's `ts_init` is less than or equal to the next element's `ts_init`.
+pub fn is_monotonically_increasing_by_init<T: HasTsInit>(data: &[T]) -> bool {
     data.windows(2)
         .all(|window| window[0].ts_init() <= window[1].ts_init())
 }
@@ -241,10 +254,10 @@ impl DataType {
         let topic = if let Some(ref meta) = metadata {
             let meta_str = meta
                 .iter()
-                .map(|(k, v)| format!("{}={}", k, v))
+                .map(|(k, v)| format!("{k}={v}"))
                 .collect::<Vec<_>>()
                 .join(".");
-            format!("{}.{}", type_name, meta_str)
+            format!("{type_name}.{meta_str}")
         } else {
             type_name.to_string()
         };
@@ -533,7 +546,7 @@ mod tests {
         );
         let data_type = DataType::new("ExampleType", metadata);
 
-        assert_eq!(format!("{}", data_type), "ExampleType.key1=value1");
+        assert_eq!(format!("{data_type}"), "ExampleType.key1=value1");
     }
 
     #[rstest]

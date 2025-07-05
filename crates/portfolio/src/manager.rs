@@ -29,6 +29,10 @@ use nautilus_model::{
     types::{AccountBalance, Money},
 };
 use rust_decimal::{Decimal, prelude::ToPrimitive};
+/// Manages account balance updates and calculations for portfolio management.
+///
+/// The accounts manager handles balance updates for different account types,
+/// including cash and margin accounts, based on order fills and position changes.
 pub struct AccountsManager {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
@@ -41,6 +45,7 @@ impl Debug for AccountsManager {
 }
 
 impl AccountsManager {
+    /// Creates a new [`AccountsManager`] instance.
     pub fn new(clock: Rc<RefCell<dyn Clock>>, cache: Rc<RefCell<Cache>>) -> Self {
         Self { clock, cache }
     }
@@ -98,6 +103,10 @@ impl AccountsManager {
         self.generate_account_state(account, fill.ts_event)
     }
 
+    /// Updates account balances based on open orders.
+    ///
+    /// For cash accounts, updates the balance locked by open orders.
+    /// For margin accounts, updates the initial margin requirements.
     #[must_use]
     pub fn update_orders(
         &self,
@@ -480,29 +489,29 @@ impl AccountsManager {
         let mut balances = Vec::new();
         let mut commission = fill.commission;
 
-        if let Some(ref mut comm) = commission {
-            if comm.currency != base_currency {
-                let xrate = self.cache.borrow().get_xrate(
-                    fill.instrument_id.venue,
-                    comm.currency,
-                    base_currency,
-                    if fill.order_side == OrderSide::Sell {
-                        PriceType::Bid
-                    } else {
-                        PriceType::Ask
-                    },
-                );
-
-                if let Some(xrate) = xrate {
-                    *comm = Money::new(comm.as_f64() * xrate, base_currency);
+        if let Some(ref mut comm) = commission
+            && comm.currency != base_currency
+        {
+            let xrate = self.cache.borrow().get_xrate(
+                fill.instrument_id.venue,
+                comm.currency,
+                base_currency,
+                if fill.order_side == OrderSide::Sell {
+                    PriceType::Bid
                 } else {
-                    log::error!(
-                        "Cannot calculate account state: insufficient data for {}/{}",
-                        comm.currency,
-                        base_currency
-                    );
-                    return;
-                }
+                    PriceType::Ask
+                },
+            );
+
+            if let Some(xrate) = xrate {
+                *comm = Money::new(comm.as_f64() * xrate, base_currency);
+            } else {
+                log::error!(
+                    "Cannot calculate account state: insufficient data for {}/{}",
+                    comm.currency,
+                    base_currency
+                );
+                return;
             }
         }
 

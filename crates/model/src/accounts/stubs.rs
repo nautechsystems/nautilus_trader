@@ -13,6 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Lightweight stub implementations useful in unit tests where a full account object is
+//! unnecessary.
+
 use rstest::fixture;
 
 use crate::{

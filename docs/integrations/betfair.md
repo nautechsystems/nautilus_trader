@@ -91,7 +91,7 @@ Betfair operates as a betting exchange with unique characteristics compared to t
 | `FOK`         | -       | Betting exchange uses different model.  |
 | `IOC`         | -       | Betting exchange uses different model.  |
 
-### Advanced order features
+### Advanced Order Features
 
 | Feature            | Betfair | Notes                                    |
 |--------------------|---------|------------------------------------------|
@@ -99,7 +99,7 @@ Betfair operates as a betting exchange with unique characteristics compared to t
 | Bracket/OCO Orders | -       | *Not supported*.                         |
 | Iceberg Orders     | -       | *Not supported*.                         |
 
-### Configuration options
+### Configuration Options
 
 The following execution client configuration options affect order behavior:
 

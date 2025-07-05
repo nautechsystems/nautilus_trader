@@ -19,7 +19,7 @@ pub mod files;
 
 use pyo3::{prelude::*, wrap_pyfunction};
 
-/// Loaded as `nautilus_pyo3.testkit`
+/// Loaded as `nautilus_pyo3.testkit`.
 ///
 /// # Errors
 ///

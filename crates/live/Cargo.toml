@@ -44,7 +44,7 @@ python = [
   "nautilus-portfolio/python",
   "nautilus-risk/python",
 ]
-clock_v2 = ["nautilus-common/clock_v2"]
+defi = ["nautilus-common/defi"]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -63,15 +63,12 @@ nautilus-system = { workspace = true }
 
 anyhow = { workspace = true }
 async-trait = { workspace = true }
-chrono = { workspace = true }
 futures = { workspace = true }
-indexmap = { workspace = true }
 log = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 serde = { workspace = true }
-strum = { workspace = true }
 tokio = { workspace = true }
-ustr = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

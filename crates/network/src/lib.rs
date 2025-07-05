@@ -13,10 +13,21 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Network functionality for [NautilusTrader](http://nautilustrader.io).
+//!
+//! The *network* crate provides networking components including HTTP, WebSocket, and raw TCP socket
+//! clients, rate limiting, backoff strategies, and socket TLS utilities for connecting to
+//! trading venues and data providers.
+//!
+//! # Platform
+//!
 //! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
 //! algorithmic trading platform, providing quantitative traders with the ability to backtest
 //! portfolios of automated trading strategies on historical data with an event-driven engine,
 //! and also deploy those same strategies live, with no code changes.
+//!
+//! NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
+//! highest level, with the aim of supporting mission-critical, trading system backtesting and live deployment workloads.
 //!
 //! # Feature flags
 //!
@@ -39,6 +50,7 @@ pub mod backoff;
 pub mod fix;
 pub mod http;
 pub mod mode;
+pub mod net;
 pub mod socket;
 pub mod websocket;
 

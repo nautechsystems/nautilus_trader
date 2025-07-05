@@ -15,7 +15,7 @@
 
 use std::sync::Arc;
 
-use alloy::{sol, sol_types::SolCall};
+use alloy::{primitives::Address, sol, sol_types::SolCall};
 
 use crate::rpc::{error::BlockchainRpcClientError, http::BlockchainHttpRpcClient};
 
@@ -80,7 +80,7 @@ impl Erc20Contract {
     /// - [`BlockchainRpcClientError::AbiDecodingError`] if ABI decoding fails.
     pub async fn fetch_token_info(
         &self,
-        token_address: &str,
+        token_address: &Address,
     ) -> Result<TokenInfo, BlockchainRpcClientError> {
         let token_name = self.fetch_name(token_address).await?;
         let token_symbol = self.fetch_symbol(token_address).await?;
@@ -94,11 +94,14 @@ impl Erc20Contract {
     }
 
     /// Fetches the name of an ERC20 token.
-    async fn fetch_name(&self, token_address: &str) -> Result<String, BlockchainRpcClientError> {
+    async fn fetch_name(
+        &self,
+        token_address: &Address,
+    ) -> Result<String, BlockchainRpcClientError> {
         let name_call = ERC20::nameCall.abi_encode();
         let rpc_request = self
             .client
-            .construct_eth_call(token_address, name_call.as_slice());
+            .construct_eth_call(&token_address.to_string(), name_call.as_slice());
         let encoded_name = self
             .client
             .execute_eth_call::<String>(rpc_request)
@@ -115,11 +118,14 @@ impl Erc20Contract {
     }
 
     /// Fetches the symbol of an ERC20 token.
-    async fn fetch_symbol(&self, token_address: &str) -> Result<String, BlockchainRpcClientError> {
+    async fn fetch_symbol(
+        &self,
+        token_address: &Address,
+    ) -> Result<String, BlockchainRpcClientError> {
         let symbol_call = ERC20::symbolCall.abi_encode();
         let rpc_request = self
             .client
-            .construct_eth_call(token_address, symbol_call.as_slice());
+            .construct_eth_call(&token_address.to_string(), symbol_call.as_slice());
         let encoded_symbol = self
             .client
             .execute_eth_call::<String>(rpc_request)
@@ -136,11 +142,14 @@ impl Erc20Contract {
     }
 
     /// Fetches the number of decimals used by an ERC20 token.
-    async fn fetch_decimals(&self, token_address: &str) -> Result<u8, BlockchainRpcClientError> {
+    async fn fetch_decimals(
+        &self,
+        token_address: &Address,
+    ) -> Result<u8, BlockchainRpcClientError> {
         let decimals_call = ERC20::decimalsCall.abi_encode();
         let rpc_request = self
             .client
-            .construct_eth_call(token_address, decimals_call.as_slice());
+            .construct_eth_call(&token_address.to_string(), decimals_call.as_slice());
         let encoded_decimals = self
             .client
             .execute_eth_call::<String>(rpc_request)

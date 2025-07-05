@@ -299,8 +299,9 @@ class TardisDataClient(LiveMarketDataClient):
         self._dispose_websocket_client_by_key(ws_client_key)
 
     async def _unsubscribe_order_book_snapshots(self, command: UnsubscribeOrderBook) -> None:
-        tardis_data_type = convert_nautilus_data_type_to_tardis_data_type(OrderBookDepth10)
-        ws_client_key = get_ws_client_key(command.instrument_id, tardis_data_type)
+        base_type = convert_nautilus_data_type_to_tardis_data_type(OrderBookDepth10)
+        augmented_type = f"{base_type}_{command.depth}_0ms"
+        ws_client_key = get_ws_client_key(command.instrument_id, augmented_type)
         self._dispose_websocket_client_by_key(ws_client_key)
 
     async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:

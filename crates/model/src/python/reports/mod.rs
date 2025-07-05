@@ -24,7 +24,7 @@ pub mod mass_status;
 pub mod order;
 pub mod position;
 
-/// Loaded as nautilus_pyo3.execution
+/// Loaded as `nautilus_pyo3.execution`.
 ///
 /// # Errors
 ///

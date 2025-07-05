@@ -43,6 +43,11 @@ pub struct BookSnapshotInfo {
     pub interval_ms: NonZeroUsize,
 }
 
+/// Handles order book updates and delta processing for a specific instrument.
+///
+/// The `BookUpdater` processes incoming order book deltas and maintains
+/// the current state of an order book. It can handle both incremental
+/// updates and full snapshots for the instrument it's assigned to.
 #[derive(Debug)]
 pub struct BookUpdater {
     pub id: Ustr,
@@ -68,18 +73,17 @@ impl MessageHandler for BookUpdater {
 
     fn handle(&self, message: &dyn Any) {
         // TODO: Temporary handler implementation (this will be removed soon)
-        if let Some(data) = message.downcast_ref::<Data>() {
-            if let Some(book) = self
+        if let Some(data) = message.downcast_ref::<Data>()
+            && let Some(book) = self
                 .cache
                 .borrow_mut()
                 .order_book_mut(&data.instrument_id())
-            {
-                match data {
-                    Data::Delta(delta) => book.apply_delta(delta),
-                    Data::Deltas(deltas) => book.apply_deltas(deltas),
-                    Data::Depth10(depth) => book.apply_depth(depth),
-                    _ => log::error!("Invalid data type for book update, was {data:?}"),
-                }
+        {
+            match data {
+                Data::Delta(delta) => book.apply_delta(delta),
+                Data::Deltas(deltas) => book.apply_deltas(deltas),
+                Data::Depth10(depth) => book.apply_depth(depth),
+                _ => log::error!("Invalid data type for book update, was {data:?}"),
             }
         }
     }
@@ -89,6 +93,11 @@ impl MessageHandler for BookUpdater {
     }
 }
 
+/// Creates periodic snapshots of order books at configured intervals.
+///
+/// The `BookSnapshotter` generates order book snapshots on timer events,
+/// publishing them as market data. This is useful for providing periodic
+/// full order book state updates in addition to incremental delta updates.
 #[derive(Debug)]
 pub struct BookSnapshotter {
     pub id: Ustr,

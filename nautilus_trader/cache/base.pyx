@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.stdint cimport uint64_t
+
 from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarType
@@ -89,11 +91,11 @@ cdef class CacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `own_order_book` must be implemented in the subclass")  # pragma: no cover
 
-    cpdef dict[Decimal, list[Order]] own_bid_orders(self, InstrumentId instrument_id, set[OrderStatus] status = None):
+    cpdef dict[Decimal, list[Order]] own_bid_orders(self, InstrumentId instrument_id, set[OrderStatus] status = None, uint64_t accepted_buffer_ns = 0, uint64_t ts_now = 0):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `own_bid_book` must be implemented in the subclass")  # pragma: no cover
 
-    cpdef dict[Decimal, list[Order]] own_ask_orders(self, InstrumentId instrument_id, set[OrderStatus] status = None):
+    cpdef dict[Decimal, list[Order]] own_ask_orders(self, InstrumentId instrument_id, set[OrderStatus] status = None, uint64_t accepted_buffer_ns = 0, uint64_t ts_now = 0):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `own_ask_book` must be implemented in the subclass")  # pragma: no cover
 
@@ -237,6 +239,10 @@ cdef class CacheFacade:
     cpdef Account account(self, AccountId account_id):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `account` must be implemented in the subclass")  # pragma: no cover
+
+    cpdef void set_specific_venue(self, Venue venue):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method `set_specific_venue` must be implemented in the subclass")  # p
 
     cpdef Account account_for_venue(self, Venue venue):
         """Abstract method (implement in subclass)."""

@@ -501,7 +501,7 @@ impl GreeksCalculator {
     where
         F: Fn(GreeksData) + 'static + Send + Sync,
     {
-        let pattern = format!("data.GreeksData.instrument_id={}*", underlying).into();
+        let pattern = format!("data.GreeksData.instrument_id={underlying}*").into();
 
         if let Some(custom_handler) = handler {
             let handler = msgbus::handler::TypedMessageHandler::with_any(
