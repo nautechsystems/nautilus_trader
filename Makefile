@@ -221,11 +221,13 @@ cargo-test-coverage:  #-- Run Rust tests with coverage reporting
 # -----------------------------------------------------------------------------
 # Invoke as:
 #   make cargo-test-crate-<crate_name>
-# Example:
-#   make cargo-test-crate-nautilus_macro
+# Examples:
+#   make cargo-test-crate-nautilus-model
+#   make cargo-test-crate-nautilus-core FEATURES="python,ffi"
 #
 # This reuses the same flags as `cargo-test-lib` but targets only the specified
 # crate by replacing `--workspace` with `-p <crate>`.
+# To include specific features, use the FEATURES variable with comma-separated values.
 # -----------------------------------------------------------------------------
 
 .PHONY: cargo-test-crate-%
@@ -233,7 +235,7 @@ cargo-test-crate-%: RUST_BACKTRACE=1
 cargo-test-crate-%: HIGH_PRECISION=true
 cargo-test-crate-%: check-nextest
 cargo-test-crate-%:  #-- Run tests for a specific Rust crate (usage: make cargo-test-crate-<crate_name>)
-	cargo nextest run --lib --no-default-features --all-features --no-fail-fast --cargo-profile nextest -p $*
+	cargo nextest run --lib --no-fail-fast --cargo-profile nextest -p $* $(if $(FEATURES),--features "$(FEATURES)")
 
 .PHONY: cargo-bench
 cargo-bench:  #-- Run Rust benchmarks
