@@ -42,6 +42,7 @@ Released on TBD (UTC).
 - Added `check_positive_decimal` correctness function and use for instrument validations (#2736), thanks @nicolad
 - Added `check_positive_money` correctness function and use for instrument validations (#2738), thanks @nicolad
 - Ported data catalog refactor to Rust (#2681, #2720), thanks @faysou
+- Optimized `TardisCSVDataLoader` performance (~90% memory usage reduction, ~60-70% faster)
 - Consolidated the clocks and timers v2 feature from @twitu
 - Consolidated on pure Rust cryptography crates with no dependencies on native certs or openssl
 - Consolidated on `aws-lc-rs` cryptography for FIPS compliance

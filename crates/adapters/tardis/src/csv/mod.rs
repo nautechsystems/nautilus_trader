@@ -49,10 +49,12 @@ use super::{
 use crate::parse::parse_price;
 
 fn infer_precision(value: f64) -> u8 {
-    let str_value = value.to_string(); // Single allocation
-    match str_value.find('.') {
-        Some(decimal_idx) => (str_value.len() - decimal_idx - 1) as u8,
-        None => 0,
+    let mut buf = ryu::Buffer::new(); // Stack allocation
+    let s = buf.format(value);
+
+    match s.rsplit_once('.') {
+        Some((_, frac)) if frac != "0" => frac.len() as u8,
+        _ => 0,
     }
 }
 
@@ -62,6 +64,7 @@ fn create_csv_reader<P: AsRef<Path>>(
     let filepath_ref = filepath.as_ref();
     const MAX_RETRIES: u8 = 3;
     const DELAY_MS: u64 = 100;
+    const BUFFER_SIZE: usize = 8 * 1024 * 1024; // 8MB buffer for large files
 
     fn open_file_with_retry<P: AsRef<Path>>(
         path: P,
@@ -96,9 +99,10 @@ fn create_csv_reader<P: AsRef<Path>>(
         .is_some_and(|ext| ext.eq_ignore_ascii_case("gz"));
 
     if !is_gzipped {
-        let buf_reader = BufReader::new(file);
+        let buf_reader = BufReader::with_capacity(BUFFER_SIZE, file);
         return Ok(ReaderBuilder::new()
             .has_headers(true)
+            .buffer_capacity(1024 * 1024) // 1MB CSV buffer
             .from_reader(Box::new(buf_reader)));
     }
 
@@ -146,11 +150,12 @@ fn create_csv_reader<P: AsRef<Path>>(
         }
     }
 
-    let buf_reader = BufReader::new(file);
+    let buf_reader = BufReader::with_capacity(BUFFER_SIZE, file);
     let decoder = GzDecoder::new(buf_reader);
 
     Ok(ReaderBuilder::new()
         .has_headers(true)
+        .buffer_capacity(1024 * 1024) // 1MB CSV buffer
         .from_reader(Box::new(decoder)))
 }
 
@@ -171,72 +176,66 @@ pub fn load_deltas<P: AsRef<Path>>(
     instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
 ) -> Result<Vec<OrderBookDelta>, Box<dyn Error>> {
-    // Infer precisions if not provided
-    let (price_precision, size_precision) = match (price_precision, size_precision) {
-        (Some(p), Some(s)) => (p, s),
-        (price_precision, size_precision) => {
-            let mut reader = create_csv_reader(&filepath)?;
-            let mut record = StringRecord::new();
+    // Estimate capacity for Vec pre-allocation
+    let estimated_capacity = limit.unwrap_or(1_000_000).min(10_000_000);
+    let mut deltas: Vec<OrderBookDelta> = Vec::with_capacity(estimated_capacity);
 
-            let mut max_price_precision = 0u8;
-            let mut max_size_precision = 0u8;
-            let mut count = 0;
-
-            while reader.read_record(&mut record)? {
-                let parsed: TardisBookUpdateRecord = record.deserialize(None)?;
-
-                if price_precision.is_none() {
-                    max_price_precision = infer_precision(parsed.price).max(max_price_precision);
-                }
-
-                if size_precision.is_none() {
-                    max_size_precision = infer_precision(parsed.amount).max(max_size_precision);
-                }
-
-                if let Some(limit) = limit {
-                    if count >= limit {
-                        break;
-                    }
-                    count += 1;
-                }
-            }
-
-            drop(reader);
-
-            max_price_precision = max_price_precision.min(FIXED_PRECISION);
-            max_size_precision = max_size_precision.min(FIXED_PRECISION);
-
-            (
-                price_precision.unwrap_or(max_price_precision),
-                size_precision.unwrap_or(max_size_precision),
-            )
-        }
-    };
-
-    let mut deltas: Vec<OrderBookDelta> = Vec::new();
+    let mut current_price_precision = price_precision.unwrap_or(0);
+    let mut current_size_precision = size_precision.unwrap_or(0);
     let mut last_ts_event = UnixNanos::default();
 
     let mut reader = create_csv_reader(filepath)?;
     let mut record = StringRecord::new();
 
     while reader.read_record(&mut record)? {
-        let record: TardisBookUpdateRecord = record.deserialize(None)?;
+        let data: TardisBookUpdateRecord = record.deserialize(None)?;
+
+        // Update precisions dynamically if not explicitly set
+        let mut precision_updated = false;
+
+        if price_precision.is_none() {
+            let inferred_price_precision = infer_precision(data.price).min(FIXED_PRECISION);
+            if inferred_price_precision > current_price_precision {
+                current_price_precision = inferred_price_precision;
+                precision_updated = true;
+            }
+        }
+
+        if size_precision.is_none() {
+            let inferred_size_precision = infer_precision(data.amount).min(FIXED_PRECISION);
+            if inferred_size_precision > current_size_precision {
+                current_size_precision = inferred_size_precision;
+                precision_updated = true;
+            }
+        }
+
+        // If precision increased, update all previous deltas
+        if precision_updated {
+            for delta in deltas.iter_mut() {
+                if price_precision.is_none() {
+                    delta.order.price.precision = current_price_precision;
+                }
+                if size_precision.is_none() {
+                    delta.order.size.precision = current_size_precision;
+                }
+            }
+        }
 
         let instrument_id = match &instrument_id {
             Some(id) => *id,
-            None => parse_instrument_id(&record.exchange, record.symbol),
+            None => parse_instrument_id(&data.exchange, data.symbol),
         };
-        let side = parse_order_side(&record.side);
-        let price = parse_price(record.price, price_precision);
-        let size = Quantity::new(record.amount, size_precision);
+        let side = parse_order_side(&data.side);
+        let price = parse_price(data.price, current_price_precision);
+        let size = Quantity::new(data.amount, current_size_precision);
         let order_id = 0; // Not applicable for L2 data
         let order = BookOrder::new(side, price, size, order_id);
 
-        let action = parse_book_action(record.is_snapshot, size.as_f64());
+        let action = parse_book_action(data.is_snapshot, size.as_f64());
         let flags = 0; // Flags always zero until timestamp changes
         let sequence = 0; // Sequence not available
-        let ts_event = parse_timestamp(record.timestamp);
-        let ts_init = parse_timestamp(record.local_timestamp);
+        let ts_event = parse_timestamp(data.timestamp);
+        let ts_init = parse_timestamp(data.local_timestamp);
 
         // Check if timestamp is different from last timestamp
         if last_ts_event != ts_event
@@ -248,7 +247,7 @@ pub fn load_deltas<P: AsRef<Path>>(
 
         assert!(
             !(action != BookAction::Delete && size.is_zero()),
-            "Invalid delta: action {action} when size zero, check size_precision ({size_precision}) vs data; {record:?}"
+            "Invalid delta: action {action} when size zero, check size_precision ({current_size_precision}) vs data; {data:?}"
         );
 
         last_ts_event = ts_event;
@@ -318,66 +317,66 @@ pub fn load_depth10_from_snapshot5<P: AsRef<Path>>(
     instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
 ) -> Result<Vec<OrderBookDepth10>, Box<dyn Error>> {
-    // Infer precisions if not provided
-    let (price_precision, size_precision) = match (price_precision, size_precision) {
-        (Some(p), Some(s)) => (p, s),
-        (price_precision, size_precision) => {
-            let mut reader = create_csv_reader(&filepath)?;
-            let mut record = StringRecord::new();
+    // Estimate capacity for Vec pre-allocation
+    let estimated_capacity = limit.unwrap_or(1_000_000).min(10_000_000);
+    let mut depths: Vec<OrderBookDepth10> = Vec::with_capacity(estimated_capacity);
 
-            let mut max_price_precision = 0u8;
-            let mut max_size_precision = 0u8;
-            let mut count = 0;
-
-            while reader.read_record(&mut record)? {
-                let parsed: TardisOrderBookSnapshot5Record = record.deserialize(None)?;
-
-                if price_precision.is_none()
-                    && let Some(bid_price) = parsed.bids_0_price
-                {
-                    max_price_precision = infer_precision(bid_price).max(max_price_precision);
-                }
-
-                if size_precision.is_none()
-                    && let Some(bid_amount) = parsed.bids_0_amount
-                {
-                    max_size_precision = infer_precision(bid_amount).max(max_size_precision);
-                }
-
-                if let Some(limit) = limit {
-                    if count >= limit {
-                        break;
-                    }
-                    count += 1;
-                }
-            }
-
-            drop(reader);
-
-            max_price_precision = max_price_precision.min(FIXED_PRECISION);
-            max_size_precision = max_size_precision.min(FIXED_PRECISION);
-
-            (
-                price_precision.unwrap_or(max_price_precision),
-                size_precision.unwrap_or(max_size_precision),
-            )
-        }
-    };
-
-    let mut depths: Vec<OrderBookDepth10> = Vec::new();
+    let mut current_price_precision = price_precision.unwrap_or(0);
+    let mut current_size_precision = size_precision.unwrap_or(0);
 
     let mut reader = create_csv_reader(filepath)?;
     let mut record = StringRecord::new();
+
     while reader.read_record(&mut record)? {
-        let record: TardisOrderBookSnapshot5Record = record.deserialize(None)?;
+        let data: TardisOrderBookSnapshot5Record = record.deserialize(None)?;
+
+        // Update precisions dynamically if not explicitly set
+        let mut precision_updated = false;
+
+        if price_precision.is_none() {
+            if let Some(bid_price) = data.bids_0_price {
+                let inferred_price_precision = infer_precision(bid_price).min(FIXED_PRECISION);
+                if inferred_price_precision > current_price_precision {
+                    current_price_precision = inferred_price_precision;
+                    precision_updated = true;
+                }
+            }
+        }
+
+        if size_precision.is_none() {
+            if let Some(bid_amount) = data.bids_0_amount {
+                let inferred_size_precision = infer_precision(bid_amount).min(FIXED_PRECISION);
+                if inferred_size_precision > current_size_precision {
+                    current_size_precision = inferred_size_precision;
+                    precision_updated = true;
+                }
+            }
+        }
+
+        // If precision increased, update all previous depths
+        if precision_updated {
+            for depth in depths.iter_mut() {
+                for i in 0..DEPTH10_LEN {
+                    if price_precision.is_none() {
+                        depth.bids[i].price.precision = current_price_precision;
+                        depth.asks[i].price.precision = current_price_precision;
+                    }
+                    if size_precision.is_none() {
+                        depth.bids[i].size.precision = current_size_precision;
+                        depth.asks[i].size.precision = current_size_precision;
+                    }
+                }
+            }
+        }
+
         let instrument_id = match &instrument_id {
             Some(id) => *id,
-            None => parse_instrument_id(&record.exchange, record.symbol),
+            None => parse_instrument_id(&data.exchange, data.symbol),
         };
         let flags = RecordFlag::F_LAST.value();
         let sequence = 0; // Sequence not available
-        let ts_event = parse_timestamp(record.timestamp);
-        let ts_init = parse_timestamp(record.local_timestamp);
+        let ts_event = parse_timestamp(data.timestamp);
+        let ts_init = parse_timestamp(data.local_timestamp);
 
         // Initialize empty arrays
         let mut bids = [NULL_ORDER; DEPTH10_LEN];
@@ -390,23 +389,23 @@ pub fn load_depth10_from_snapshot5<P: AsRef<Path>>(
             let (bid_order, bid_count) = create_book_order(
                 OrderSide::Buy,
                 match i {
-                    0 => record.bids_0_price,
-                    1 => record.bids_1_price,
-                    2 => record.bids_2_price,
-                    3 => record.bids_3_price,
-                    4 => record.bids_4_price,
+                    0 => data.bids_0_price,
+                    1 => data.bids_1_price,
+                    2 => data.bids_2_price,
+                    3 => data.bids_3_price,
+                    4 => data.bids_4_price,
                     _ => panic!("Invalid level for snapshot5 -> depth10 parsing"),
                 },
                 match i {
-                    0 => record.bids_0_amount,
-                    1 => record.bids_1_amount,
-                    2 => record.bids_2_amount,
-                    3 => record.bids_3_amount,
-                    4 => record.bids_4_amount,
+                    0 => data.bids_0_amount,
+                    1 => data.bids_1_amount,
+                    2 => data.bids_2_amount,
+                    3 => data.bids_3_amount,
+                    4 => data.bids_4_amount,
                     _ => panic!("Invalid level for snapshot5 -> depth10 parsing"),
                 },
-                price_precision,
-                size_precision,
+                current_price_precision,
+                current_size_precision,
             );
             bids[i] = bid_order;
             bid_counts[i] = bid_count;
@@ -415,23 +414,23 @@ pub fn load_depth10_from_snapshot5<P: AsRef<Path>>(
             let (ask_order, ask_count) = create_book_order(
                 OrderSide::Sell,
                 match i {
-                    0 => record.asks_0_price,
-                    1 => record.asks_1_price,
-                    2 => record.asks_2_price,
-                    3 => record.asks_3_price,
-                    4 => record.asks_4_price,
+                    0 => data.asks_0_price,
+                    1 => data.asks_1_price,
+                    2 => data.asks_2_price,
+                    3 => data.asks_3_price,
+                    4 => data.asks_4_price,
                     _ => None, // Unreachable, but for safety
                 },
                 match i {
-                    0 => record.asks_0_amount,
-                    1 => record.asks_1_amount,
-                    2 => record.asks_2_amount,
-                    3 => record.asks_3_amount,
-                    4 => record.asks_4_amount,
+                    0 => data.asks_0_amount,
+                    1 => data.asks_1_amount,
+                    2 => data.asks_2_amount,
+                    3 => data.asks_3_amount,
+                    4 => data.asks_4_amount,
                     _ => None, // Unreachable, but for safety
                 },
-                price_precision,
-                size_precision,
+                current_price_precision,
+                current_size_precision,
             );
             asks[i] = ask_order;
             ask_counts[i] = ask_count;
@@ -478,67 +477,65 @@ pub fn load_depth10_from_snapshot25<P: AsRef<Path>>(
     instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
 ) -> Result<Vec<OrderBookDepth10>, Box<dyn Error>> {
-    // Infer precisions if not provided
-    let (price_precision, size_precision) = match (price_precision, size_precision) {
-        (Some(p), Some(s)) => (p, s),
-        (price_precision, size_precision) => {
-            let mut reader = create_csv_reader(&filepath)?;
-            let mut record = StringRecord::new();
+    // Estimate capacity for Vec pre-allocation
+    let estimated_capacity = limit.unwrap_or(1_000_000).min(10_000_000);
+    let mut depths: Vec<OrderBookDepth10> = Vec::with_capacity(estimated_capacity);
 
-            let mut max_price_precision = 0u8;
-            let mut max_size_precision = 0u8;
-            let mut count = 0;
-
-            while reader.read_record(&mut record)? {
-                let parsed: TardisOrderBookSnapshot25Record = record.deserialize(None)?;
-
-                if price_precision.is_none()
-                    && let Some(bid_price) = parsed.bids_0_price
-                {
-                    max_price_precision = infer_precision(bid_price).max(max_price_precision);
-                }
-
-                if size_precision.is_none()
-                    && let Some(bid_amount) = parsed.bids_0_amount
-                {
-                    max_size_precision = infer_precision(bid_amount).max(max_size_precision);
-                }
-
-                if let Some(limit) = limit {
-                    if count >= limit {
-                        break;
-                    }
-                    count += 1;
-                }
-            }
-
-            drop(reader);
-
-            max_price_precision = max_price_precision.min(FIXED_PRECISION);
-            max_size_precision = max_size_precision.min(FIXED_PRECISION);
-
-            (
-                price_precision.unwrap_or(max_price_precision),
-                size_precision.unwrap_or(max_size_precision),
-            )
-        }
-    };
-
-    let mut depths: Vec<OrderBookDepth10> = Vec::new();
+    let mut current_price_precision = price_precision.unwrap_or(0);
+    let mut current_size_precision = size_precision.unwrap_or(0);
     let mut reader = create_csv_reader(filepath)?;
     let mut record = StringRecord::new();
 
     while reader.read_record(&mut record)? {
-        let record: TardisOrderBookSnapshot25Record = record.deserialize(None)?;
+        let data: TardisOrderBookSnapshot25Record = record.deserialize(None)?;
+
+        // Update precisions dynamically if not explicitly set
+        let mut precision_updated = false;
+
+        if price_precision.is_none() {
+            if let Some(bid_price) = data.bids_0_price {
+                let inferred_price_precision = infer_precision(bid_price).min(FIXED_PRECISION);
+                if inferred_price_precision > current_price_precision {
+                    current_price_precision = inferred_price_precision;
+                    precision_updated = true;
+                }
+            }
+        }
+
+        if size_precision.is_none() {
+            if let Some(bid_amount) = data.bids_0_amount {
+                let inferred_size_precision = infer_precision(bid_amount).min(FIXED_PRECISION);
+                if inferred_size_precision > current_size_precision {
+                    current_size_precision = inferred_size_precision;
+                    precision_updated = true;
+                }
+            }
+        }
+
+        // If precision increased, update all previous depths
+        if precision_updated {
+            for depth in depths.iter_mut() {
+                for i in 0..DEPTH10_LEN {
+                    if price_precision.is_none() {
+                        depth.bids[i].price.precision = current_price_precision;
+                        depth.asks[i].price.precision = current_price_precision;
+                    }
+                    if size_precision.is_none() {
+                        depth.bids[i].size.precision = current_size_precision;
+                        depth.asks[i].size.precision = current_size_precision;
+                    }
+                }
+            }
+        }
 
         let instrument_id = match &instrument_id {
             Some(id) => *id,
-            None => parse_instrument_id(&record.exchange, record.symbol),
+            None => parse_instrument_id(&data.exchange, data.symbol),
         };
         let flags = RecordFlag::F_LAST.value();
         let sequence = 0; // Sequence not available
-        let ts_event = parse_timestamp(record.timestamp);
-        let ts_init = parse_timestamp(record.local_timestamp);
+        let ts_event = parse_timestamp(data.timestamp);
+        let ts_init = parse_timestamp(data.local_timestamp);
 
         // Initialize empty arrays for the first 10 levels only
         let mut bids = [NULL_ORDER; DEPTH10_LEN];
@@ -552,33 +549,33 @@ pub fn load_depth10_from_snapshot25<P: AsRef<Path>>(
             let (bid_order, bid_count) = create_book_order(
                 OrderSide::Buy,
                 match i {
-                    0 => record.bids_0_price,
-                    1 => record.bids_1_price,
-                    2 => record.bids_2_price,
-                    3 => record.bids_3_price,
-                    4 => record.bids_4_price,
-                    5 => record.bids_5_price,
-                    6 => record.bids_6_price,
-                    7 => record.bids_7_price,
-                    8 => record.bids_8_price,
-                    9 => record.bids_9_price,
+                    0 => data.bids_0_price,
+                    1 => data.bids_1_price,
+                    2 => data.bids_2_price,
+                    3 => data.bids_3_price,
+                    4 => data.bids_4_price,
+                    5 => data.bids_5_price,
+                    6 => data.bids_6_price,
+                    7 => data.bids_7_price,
+                    8 => data.bids_8_price,
+                    9 => data.bids_9_price,
                     _ => panic!("Invalid level for snapshot25 -> depth10 parsing"),
                 },
                 match i {
-                    0 => record.bids_0_amount,
-                    1 => record.bids_1_amount,
-                    2 => record.bids_2_amount,
-                    3 => record.bids_3_amount,
-                    4 => record.bids_4_amount,
-                    5 => record.bids_5_amount,
-                    6 => record.bids_6_amount,
-                    7 => record.bids_7_amount,
-                    8 => record.bids_8_amount,
-                    9 => record.bids_9_amount,
+                    0 => data.bids_0_amount,
+                    1 => data.bids_1_amount,
+                    2 => data.bids_2_amount,
+                    3 => data.bids_3_amount,
+                    4 => data.bids_4_amount,
+                    5 => data.bids_5_amount,
+                    6 => data.bids_6_amount,
+                    7 => data.bids_7_amount,
+                    8 => data.bids_8_amount,
+                    9 => data.bids_9_amount,
                     _ => panic!("Invalid level for snapshot25 -> depth10 parsing"),
                 },
-                price_precision,
-                size_precision,
+                current_price_precision,
+                current_size_precision,
             );
             bids[i] = bid_order;
             bid_counts[i] = bid_count;
@@ -587,33 +584,33 @@ pub fn load_depth10_from_snapshot25<P: AsRef<Path>>(
             let (ask_order, ask_count) = create_book_order(
                 OrderSide::Sell,
                 match i {
-                    0 => record.asks_0_price,
-                    1 => record.asks_1_price,
-                    2 => record.asks_2_price,
-                    3 => record.asks_3_price,
-                    4 => record.asks_4_price,
-                    5 => record.asks_5_price,
-                    6 => record.asks_6_price,
-                    7 => record.asks_7_price,
-                    8 => record.asks_8_price,
-                    9 => record.asks_9_price,
+                    0 => data.asks_0_price,
+                    1 => data.asks_1_price,
+                    2 => data.asks_2_price,
+                    3 => data.asks_3_price,
+                    4 => data.asks_4_price,
+                    5 => data.asks_5_price,
+                    6 => data.asks_6_price,
+                    7 => data.asks_7_price,
+                    8 => data.asks_8_price,
+                    9 => data.asks_9_price,
                     _ => panic!("Invalid level for snapshot25 -> depth10 parsing"),
                 },
                 match i {
-                    0 => record.asks_0_amount,
-                    1 => record.asks_1_amount,
-                    2 => record.asks_2_amount,
-                    3 => record.asks_3_amount,
-                    4 => record.asks_4_amount,
-                    5 => record.asks_5_amount,
-                    6 => record.asks_6_amount,
-                    7 => record.asks_7_amount,
-                    8 => record.asks_8_amount,
-                    9 => record.asks_9_amount,
+                    0 => data.asks_0_amount,
+                    1 => data.asks_1_amount,
+                    2 => data.asks_2_amount,
+                    3 => data.asks_3_amount,
+                    4 => data.asks_4_amount,
+                    5 => data.asks_5_amount,
+                    6 => data.asks_6_amount,
+                    7 => data.asks_7_amount,
+                    8 => data.asks_8_amount,
+                    9 => data.asks_9_amount,
                     _ => panic!("Invalid level for snapshot25 -> depth10 parsing"),
                 },
-                price_precision,
-                size_precision,
+                current_price_precision,
+                current_size_precision,
             );
             asks[i] = ask_order;
             ask_counts[i] = ask_count;
@@ -660,69 +657,65 @@ pub fn load_quote_ticks<P: AsRef<Path>>(
     instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
 ) -> Result<Vec<QuoteTick>, Box<dyn Error>> {
-    // Infer precisions if not provided
-    let (price_precision, size_precision) = match (price_precision, size_precision) {
-        (Some(p), Some(s)) => (p, s),
-        (price_precision, size_precision) => {
-            let mut reader = create_csv_reader(&filepath)?;
-            let mut record = StringRecord::new();
+    // Estimate capacity for Vec pre-allocation
+    let estimated_capacity = limit.unwrap_or(1_000_000).min(10_000_000);
+    let mut quotes: Vec<QuoteTick> = Vec::with_capacity(estimated_capacity);
 
-            let mut max_price_precision = 0u8;
-            let mut max_size_precision = 0u8;
-            let mut count = 0;
-
-            while reader.read_record(&mut record)? {
-                let parsed: TardisQuoteRecord = record.deserialize(None)?;
-
-                if price_precision.is_none()
-                    && let Some(bid_price) = parsed.bid_price
-                {
-                    max_price_precision = infer_precision(bid_price).max(max_price_precision);
-                }
-
-                if size_precision.is_none()
-                    && let Some(bid_amount) = parsed.bid_amount
-                {
-                    max_size_precision = infer_precision(bid_amount).max(max_size_precision);
-                }
-
-                if let Some(limit) = limit {
-                    if count >= limit {
-                        break;
-                    }
-                    count += 1;
-                }
-            }
-
-            drop(reader);
-
-            max_price_precision = max_price_precision.min(FIXED_PRECISION);
-            max_size_precision = max_size_precision.min(FIXED_PRECISION);
-
-            (
-                price_precision.unwrap_or(max_price_precision),
-                size_precision.unwrap_or(max_size_precision),
-            )
-        }
-    };
-
-    let mut quotes = Vec::new();
+    let mut current_price_precision = price_precision.unwrap_or(0);
+    let mut current_size_precision = size_precision.unwrap_or(0);
     let mut reader = create_csv_reader(filepath)?;
     let mut record = StringRecord::new();
 
     while reader.read_record(&mut record)? {
-        let record: TardisQuoteRecord = record.deserialize(None)?;
+        let data: TardisQuoteRecord = record.deserialize(None)?;
+
+        // Update precisions dynamically if not explicitly set
+        let mut precision_updated = false;
+
+        if price_precision.is_none() {
+            if let Some(bid_price) = data.bid_price {
+                let inferred_price_precision = infer_precision(bid_price).min(FIXED_PRECISION);
+                if inferred_price_precision > current_price_precision {
+                    current_price_precision = inferred_price_precision;
+                    precision_updated = true;
+                }
+            }
+        }
+
+        if size_precision.is_none() {
+            if let Some(bid_amount) = data.bid_amount {
+                let inferred_size_precision = infer_precision(bid_amount).min(FIXED_PRECISION);
+                if inferred_size_precision > current_size_precision {
+                    current_size_precision = inferred_size_precision;
+                    precision_updated = true;
+                }
+            }
+        }
+
+        // If precision increased, update all previous quotes
+        if precision_updated {
+            for quote in quotes.iter_mut() {
+                if price_precision.is_none() {
+                    quote.bid_price.precision = current_price_precision;
+                    quote.ask_price.precision = current_price_precision;
+                }
+                if size_precision.is_none() {
+                    quote.bid_size.precision = current_size_precision;
+                    quote.ask_size.precision = current_size_precision;
+                }
+            }
+        }
 
         let instrument_id = match &instrument_id {
             Some(id) => *id,
-            None => parse_instrument_id(&record.exchange, record.symbol),
+            None => parse_instrument_id(&data.exchange, data.symbol),
         };
-        let bid_price = parse_price(record.bid_price.unwrap_or(0.0), price_precision);
-        let bid_size = Quantity::new(record.bid_amount.unwrap_or(0.0), size_precision);
-        let ask_price = parse_price(record.ask_price.unwrap_or(0.0), price_precision);
-        let ask_size = Quantity::new(record.ask_amount.unwrap_or(0.0), size_precision);
-        let ts_event = parse_timestamp(record.timestamp);
-        let ts_init = parse_timestamp(record.local_timestamp);
+        let bid_price = parse_price(data.bid_price.unwrap_or(0.0), current_price_precision);
+        let bid_size = Quantity::new(data.bid_amount.unwrap_or(0.0), current_size_precision);
+        let ask_price = parse_price(data.ask_price.unwrap_or(0.0), current_price_precision);
+        let ask_size = Quantity::new(data.ask_amount.unwrap_or(0.0), current_size_precision);
+        let ts_event = parse_timestamp(data.timestamp);
+        let ts_init = parse_timestamp(data.local_timestamp);
 
         let quote = QuoteTick::new(
             instrument_id,
@@ -763,66 +756,60 @@ pub fn load_trade_ticks<P: AsRef<Path>>(
     instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
 ) -> Result<Vec<TradeTick>, Box<dyn Error>> {
-    // Infer precisions if not provided
-    let (price_precision, size_precision) = match (price_precision, size_precision) {
-        (Some(p), Some(s)) => (p, s),
-        (price_precision, size_precision) => {
-            let mut reader = create_csv_reader(&filepath)?;
-            let mut record = StringRecord::new();
+    // Estimate capacity for Vec pre-allocation
+    let estimated_capacity = limit.unwrap_or(1_000_000).min(10_000_000);
+    let mut trades: Vec<TradeTick> = Vec::with_capacity(estimated_capacity);
 
-            let mut max_price_precision = 0u8;
-            let mut max_size_precision = 0u8;
-            let mut count = 0;
-
-            while reader.read_record(&mut record)? {
-                let parsed: TardisTradeRecord = record.deserialize(None)?;
-
-                if price_precision.is_none() {
-                    max_price_precision = infer_precision(parsed.price).max(max_price_precision);
-                }
-
-                if size_precision.is_none() {
-                    max_size_precision = infer_precision(parsed.amount).max(max_size_precision);
-                }
-
-                if let Some(limit) = limit {
-                    if count >= limit {
-                        break;
-                    }
-                    count += 1;
-                }
-            }
-
-            drop(reader);
-
-            max_price_precision = max_price_precision.min(FIXED_PRECISION);
-            max_size_precision = max_size_precision.min(FIXED_PRECISION);
-
-            (
-                price_precision.unwrap_or(max_price_precision),
-                size_precision.unwrap_or(max_size_precision),
-            )
-        }
-    };
-
-    let mut trades = Vec::new();
+    let mut current_price_precision = price_precision.unwrap_or(0);
+    let mut current_size_precision = size_precision.unwrap_or(0);
     let mut reader = create_csv_reader(filepath)?;
     let mut record = StringRecord::new();
 
     while reader.read_record(&mut record)? {
-        let record: TardisTradeRecord = record.deserialize(None)?;
+        let data: TardisTradeRecord = record.deserialize(None)?;
+
+        // Update precisions dynamically if not explicitly set
+        let mut precision_updated = false;
+
+        if price_precision.is_none() {
+            let inferred_price_precision = infer_precision(data.price).min(FIXED_PRECISION);
+            if inferred_price_precision > current_price_precision {
+                current_price_precision = inferred_price_precision;
+                precision_updated = true;
+            }
+        }
+
+        if size_precision.is_none() {
+            let inferred_size_precision = infer_precision(data.amount).min(FIXED_PRECISION);
+            if inferred_size_precision > current_size_precision {
+                current_size_precision = inferred_size_precision;
+                precision_updated = true;
+            }
+        }
+
+        // If precision increased, update all previous trades
+        if precision_updated {
+            for trade in trades.iter_mut() {
+                if price_precision.is_none() {
+                    trade.price.precision = current_price_precision;
+                }
+                if size_precision.is_none() {
+                    trade.size.precision = current_size_precision;
+                }
+            }
+        }
 
         let instrument_id = match &instrument_id {
             Some(id) => *id,
-            None => parse_instrument_id(&record.exchange, record.symbol),
+            None => parse_instrument_id(&data.exchange, data.symbol),
         };
-        let price = parse_price(record.price, price_precision);
-        let size = Quantity::non_zero_checked(record.amount, size_precision)
-            .unwrap_or_else(|e| panic!("Invalid {record:?}: size {e}"));
-        let aggressor_side = parse_aggressor_side(&record.side);
-        let trade_id = TradeId::new(&record.id);
-        let ts_event = parse_timestamp(record.timestamp);
-        let ts_init = parse_timestamp(record.local_timestamp);
+        let price = parse_price(data.price, current_price_precision);
+        let size = Quantity::non_zero_checked(data.amount, current_size_precision)
+            .unwrap_or_else(|e| panic!("Invalid {data:?}: size {e}"));
+        let aggressor_side = parse_aggressor_side(&data.side);
+        let trade_id = TradeId::new(&data.id);
+        let ts_event = parse_timestamp(data.timestamp);
+        let ts_init = parse_timestamp(data.local_timestamp);
 
         let trade = TradeTick::new(
             instrument_id,
@@ -864,6 +851,86 @@ mod tests {
     use rstest::*;
 
     use super::*;
+
+    #[rstest]
+    #[case(0.0, 0)]
+    #[case(42.0, 0)]
+    #[case(0.1, 1)]
+    #[case(0.25, 2)]
+    #[case(123.0001, 4)]
+    #[case(-42.987654321,       9)]
+    #[case(1.234_567_890_123, 12)]
+    fn test_infer_precision(#[case] input: f64, #[case] expected: u8) {
+        assert_eq!(infer_precision(input), expected);
+    }
+
+    #[rstest]
+    pub fn test_dynamic_precision_inference() {
+        // Create synthetic CSV data with increasing precision
+        let csv_data = "exchange,symbol,timestamp,local_timestamp,is_snapshot,side,price,amount
+binance-futures,BTCUSDT,1640995200000000,1640995200100000,true,ask,50000.0,1.0
+binance-futures,BTCUSDT,1640995201000000,1640995201100000,false,bid,49999.5,2.0
+binance-futures,BTCUSDT,1640995202000000,1640995202100000,false,ask,50000.12,1.5
+binance-futures,BTCUSDT,1640995203000000,1640995203100000,false,bid,49999.123,3.0
+binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0.5";
+
+        // Write to temporary file
+        let temp_file = std::env::temp_dir().join("test_dynamic_precision.csv");
+        std::fs::write(&temp_file, csv_data).unwrap();
+
+        // Load with precision inference
+        let deltas = load_deltas(&temp_file, None, None, None, None).unwrap();
+
+        // Should have 5 deltas
+        assert_eq!(deltas.len(), 5);
+
+        // All deltas should have the maximum precision found (4 for price, 1 for size)
+        for (i, delta) in deltas.iter().enumerate() {
+            assert_eq!(
+                delta.order.price.precision, 4,
+                "Price precision should be 4 for delta {i}",
+            );
+            assert_eq!(
+                delta.order.size.precision, 1,
+                "Size precision should be 1 for delta {i}",
+            );
+        }
+
+        // Test exact values to catch precision issues
+        // First delta: 50000.0 with precision 4 should equal 50000.0000
+        assert_eq!(deltas[0].order.price, parse_price(50000.0, 4));
+        assert_eq!(deltas[0].order.size, Quantity::new(1.0, 1));
+
+        // Second delta: 49999.5 with precision 4 should equal 49999.5000
+        assert_eq!(deltas[1].order.price, parse_price(49999.5, 4));
+        assert_eq!(deltas[1].order.size, Quantity::new(2.0, 1));
+
+        // Third delta: 50000.12 with precision 4 should equal 50000.1200
+        assert_eq!(deltas[2].order.price, parse_price(50000.12, 4));
+        assert_eq!(deltas[2].order.size, Quantity::new(1.5, 1));
+
+        // Fourth delta: 49999.123 with precision 4 should equal 49999.1230
+        assert_eq!(deltas[3].order.price, parse_price(49999.123, 4));
+        assert_eq!(deltas[3].order.size, Quantity::new(3.0, 1));
+
+        // Fifth delta: 50000.1234 with precision 4 should equal 50000.1234
+        assert_eq!(deltas[4].order.price, parse_price(50000.1234, 4));
+        assert_eq!(deltas[4].order.size, Quantity::new(0.5, 1));
+
+        // Test that early records (with lower input precision) match expected values
+        // This verifies retroactive precision updates work correctly
+        assert_eq!(
+            deltas[0].order.price.precision,
+            deltas[4].order.price.precision
+        );
+        assert_eq!(
+            deltas[0].order.size.precision,
+            deltas[2].order.size.precision
+        );
+
+        // Clean up
+        std::fs::remove_file(&temp_file).ok();
+    }
 
     // TODO: Flaky in CI, potentially from syncing large test data files from cache
     #[ignore = "Flaky test: called `Result::unwrap()` on an `Err` value: Error(Io(Kind(UnexpectedEof)))"]
