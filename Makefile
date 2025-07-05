@@ -144,7 +144,7 @@ docs-rust:  #-- Build Rust documentation with cargo doc
 	RUSTDOCFLAGS="--enable-index-page -Zunstable-options" cargo +nightly doc --all-features --no-deps --workspace
 
 .PHONY: docsrs-check
-docsrs-check:  #-- Check documentation builds for docs.rs compatibility
+docsrs-check: check-hack-installed #-- Check documentation builds for docs.rs compatibility
 	RUSTDOCFLAGS="--cfg docsrs -D warnings" cargo hack --workspace doc --no-deps --all-features
 
 #== Rust Development
@@ -159,56 +159,67 @@ cargo-update:  #-- Update Rust dependencies and install test tools
 	&& cargo install cargo-nextest \
 	&& cargo install cargo-llvm-cov
 
-.PHONY:
+.PHONY: cargo-check
 cargo-check:  #-- Check Rust code without building
 	cargo check --workspace --all-features
 
-.PHONY: check-nextest
-check-nextest:  #-- Verify cargo-nextest is installed
+.PHONY: check-nextest-installed
+check-nextest-installed:  #-- Verify cargo-nextest is installed
 	@if ! cargo nextest --version >/dev/null 2>&1; then \
 		echo "cargo-nextest is not installed. You can install it using 'cargo install cargo-nextest'"; \
 		exit 1; \
 	fi
+
+.PHONY: check-hack-installed
+check-hack-installed:  #-- Verify cargo-hack is installed
+	@if ! cargo hack --version >/dev/null 2>&1; then \
+		echo "cargo-hack is not installed. You can install it using 'cargo install cargo-hack'"; \
+		exit 1; \
+	fi
+
+.PHONY: check-features  #-- Verify crate feature combinations compile correctly
+check-features: check-hack-installed
+	cargo hack check --each-feature
 
 #== Rust Testing
 
 .PHONY: cargo-test
 cargo-test: RUST_BACKTRACE=1
 cargo-test: HIGH_PRECISION=true
-cargo-test: check-nextest
+cargo-test: check-nextest-installed
 cargo-test:  #-- Run all Rust tests with high precision features
 	cargo nextest run --workspace --features "ffi,python,high-precision,defi" --no-fail-fast --cargo-profile nextest
 
 .PHONY: cargo-test-lib
-cargo-test: RUST_BACKTRACE=1
-cargo-test: HIGH_PRECISION=true
-cargo-test-lib: check-nextest
+cargo-test-lib: RUST_BACKTRACE=1
+cargo-test-lib: HIGH_PRECISION=true
+cargo-test-lib: check-nextest-installed
 cargo-test-lib:  #-- Run Rust library tests only with high precision
 	cargo nextest run --lib --workspace --no-default-features --features "ffi,python,high-precision,defi,stubs" --no-fail-fast --cargo-profile nextest
 
 .PHONY: cargo-test-standard-precision
 cargo-test-standard-precision: RUST_BACKTRACE=1
 cargo-test-standard-precision: HIGH_PRECISION=false
-cargo-test-standard-precision: check-nextest
+cargo-test-standard-precision: check-nextest-installed
 cargo-test-standard-precision:  #-- Run Rust tests with standard precision (64-bit)
 	cargo nextest run --workspace --features "ffi,python" --no-fail-fast --cargo-profile nextest
 
 .PHONY: cargo-test-debug
 cargo-test-debug: RUST_BACKTRACE=1
 cargo-test-debug: HIGH_PRECISION=true
-cargo-test-debug: check-nextest
+cargo-test-debug: check-nextest-installed
 cargo-test-debug:  #-- Run Rust tests in debug mode with high precision
 	cargo nextest run --workspace --features "ffi,python,high-precision,defi" --no-fail-fast
 
 .PHONY: cargo-test-standard-precision-debug
 cargo-test-standard-precision-debug: RUST_BACKTRACE=1
 cargo-test-standard-precision-debug: HIGH_PRECISION=false
-cargo-test-standard-precision-debug: check-nextest
+cargo-test-standard-precision-debug: check-nextest-installed
 cargo-test-standard-precision-debug:  #-- Run Rust tests in debug mode with standard precision
 	cargo nextest run --workspace --features "ffi,python"
 
 .PHONY: cargo-test-coverage
-cargo-test-coverage: check-nextest
+cargo-test-coverage: check-nextest-installed
 cargo-test-coverage:  #-- Run Rust tests with coverage reporting
 	@if ! cargo llvm-cov --version >/dev/null 2>&1; then \
 		echo "cargo-llvm-cov is not installed. You can install it using 'cargo install cargo-llvm-cov'"; \
@@ -233,7 +244,7 @@ cargo-test-coverage:  #-- Run Rust tests with coverage reporting
 .PHONY: cargo-test-crate-%
 cargo-test-crate-%: RUST_BACKTRACE=1
 cargo-test-crate-%: HIGH_PRECISION=true
-cargo-test-crate-%: check-nextest
+cargo-test-crate-%: check-nextest-installed
 cargo-test-crate-%:  #-- Run tests for a specific Rust crate (usage: make cargo-test-crate-<crate_name>)
 	cargo nextest run --lib --no-fail-fast --cargo-profile nextest -p $* $(if $(FEATURES),--features "$(FEATURES)")
 
