@@ -171,6 +171,7 @@ rust_decimal = "1.37.2"
 rust_decimal_macros = "1.37.1"
 rustls = { version = "0.23.28", default-features = false, features = ["aws-lc-rs"] }
 rustls-pemfile = "2.2.0"
+ryu = "1.0.20"
 semver = "1.0.25"
 serde = { version = "1.0.219", default-features = false, features = ["derive", "std", "rc"] }
 serde_json = { version = "1.0.140", default-features = false, features = ["std"] }
