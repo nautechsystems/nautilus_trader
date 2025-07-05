@@ -1,6 +1,6 @@
 # NautilusTrader 1.219.0 Beta
 
-Released on TBD (UTC).
+Released on 5th July 2025 (UTC).
 
 ### Enhancements
 - Added `graceful_shutdown_on_exception` config option for live engines (default `False` to retain intended hard crash on unexpected system exceptions)
