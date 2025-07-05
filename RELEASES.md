@@ -106,6 +106,7 @@ Released on TBD (UTC).
 - Fixed Bybit Unknown Error (#2742), thanks @DeevsDeevs
 - Fixed margin balance parsing for Bybit
 - Restore task error logs for IBKR (#2716), thanks @bartlaw
+- Fixed balance calculations on order fill to allow operating at near account balance capacity, thanks @petioptrv
 
 ### Documentation Updates
 - Updated IB adapter documentation (#2729), thanks @faysou
