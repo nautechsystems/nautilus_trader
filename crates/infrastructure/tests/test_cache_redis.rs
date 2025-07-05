@@ -15,6 +15,7 @@
 
 #[cfg(test)]
 #[cfg(feature = "redis")]
+#[cfg(target_os = "linux")] // Databases only tested and supported on Linux
 mod serial_tests {
     use std::time::Duration;
 
