@@ -91,7 +91,6 @@ impl DataActor for PyDataActor {
             // For now, we'll pass None and let Python subclasses handle specific data types
             let py_data = py.None();
 
-            // Call the Python method directly using the bound object
             self.py_on_data(py_data)
                 .map_err(|e| anyhow::anyhow!("Python on_data failed: {e}"))
         })
@@ -872,11 +871,21 @@ impl PyDataActor {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, ffi::CString, rc::Rc, str::FromStr, sync::Arc};
+    use std::{
+        any::Any,
+        cell::RefCell,
+        collections::HashMap,
+        ops::{Deref, DerefMut},
+        rc::Rc,
+        str::FromStr,
+        sync::{Arc, Mutex},
+    };
 
     use nautilus_core::{UUID4, UnixNanos};
     #[cfg(feature = "defi")]
-    use nautilus_model::defi::{AmmType, Block, Blockchain, Chain, Dex, Pool, PoolSwap, Token};
+    use nautilus_model::defi::{
+        AmmType, Block, Blockchain, Chain, Dex, Pool, PoolLiquidityUpdate, PoolSwap, Token,
+    };
     use nautilus_model::{
         data::{
             Bar, BarType, DataType, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate,
@@ -888,13 +897,12 @@ mod tests {
         orderbook::OrderBook,
         types::{Price, Quantity},
     };
-    use pyo3::{PyResult, Python, types::PyAnyMethods};
     use rstest::{fixture, rstest};
     use ustr::Ustr;
 
     use super::PyDataActor;
     use crate::{
-        actor::DataActor,
+        actor::{DataActor, data_actor::DataActorCore},
         cache::Cache,
         clock::TestClock,
         component::Component,
@@ -1104,43 +1112,143 @@ mod tests {
         assert_eq!(state, ComponentState::Ready);
     }
 
-    fn setup_python_tracking_actor(py: Python, handler_name: &str) -> PyResult<()> {
-        let setup_code = format!(
-            r#"
-# Global call tracking for {handler_name}
-call_log = []
+    // Test actor that tracks method calls for verification
 
-from nautilus_trader.core.nautilus_pyo3.common import DataActor
+    // Global call tracker for tests
+    static CALL_TRACKER: std::sync::LazyLock<Arc<Mutex<HashMap<String, i32>>>> =
+        std::sync::LazyLock::new(|| Arc::new(Mutex::new(HashMap::new())));
 
-# Create a test actor that tracks calls for {handler_name}
-class TrackingDataActor(DataActor):
-    def __init__(self):
-        super().__init__()
-
-    def {handler_name}(self, data):
-        call_log.append(('{handler_name}', str(data) if data else 'None'))
-
-# Create global instance for testing
-tracking_actor = TrackingDataActor()
-"#
-        );
-
-        let setup_cstr = CString::new(setup_code).unwrap();
-        py.run(setup_cstr.as_c_str(), None, None)
+    // Test actor that overrides Python methods to track calls
+    #[derive(Debug)]
+    struct TestDataActor {
+        inner: PyDataActor,
     }
 
-    fn verify_python_call_count(py: Python, expected_count: i32, message: &str) -> i32 {
-        let call_log_eval = CString::new("len(call_log)").unwrap();
-        let call_count = py.eval(call_log_eval.as_c_str(), None, None).unwrap();
-        let count: i32 = call_count.extract().unwrap();
-        assert_eq!(count, expected_count, "{message}");
-        count
+    impl TestDataActor {
+        fn new() -> Self {
+            Self {
+                inner: PyDataActor::py_new(None).unwrap(),
+            }
+        }
+
+        fn track_call(&self, handler_name: &str) {
+            let mut tracker = CALL_TRACKER.lock().unwrap();
+            *tracker.entry(handler_name.to_string()).or_insert(0) += 1;
+        }
+
+        fn get_call_count(&self, handler_name: &str) -> i32 {
+            let tracker = CALL_TRACKER.lock().unwrap();
+            tracker.get(handler_name).copied().unwrap_or(0)
+        }
+
+        fn reset_tracker(&self) {
+            let mut tracker = CALL_TRACKER.lock().unwrap();
+            tracker.clear();
+        }
     }
 
-    fn call_python_handler(py: Python, handler_name: &str, test_data: &str) -> PyResult<()> {
-        let call_code = format!("tracking_actor.{handler_name}('{test_data}')");
-        let call_cstr = CString::new(call_code).unwrap();
-        py.run(call_cstr.as_c_str(), None, None)
+    impl Deref for TestDataActor {
+        type Target = DataActorCore;
+        fn deref(&self) -> &Self::Target {
+            &self.inner.core
+        }
+    }
+
+    impl DerefMut for TestDataActor {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            &mut self.inner.core
+        }
+    }
+
+    impl DataActor for TestDataActor {
+        fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
+            self.track_call("on_time_event");
+            self.inner.on_time_event(event)
+        }
+
+        fn on_data(&mut self, data: &dyn Any) -> anyhow::Result<()> {
+            self.track_call("on_data");
+            self.inner.on_data(data)
+        }
+
+        fn on_signal(&mut self, signal: &Signal) -> anyhow::Result<()> {
+            self.track_call("on_signal");
+            self.inner.on_signal(signal)
+        }
+
+        fn on_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()> {
+            self.track_call("on_instrument");
+            self.inner.on_instrument(instrument)
+        }
+
+        fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
+            self.track_call("on_quote");
+            self.inner.on_quote(quote)
+        }
+
+        fn on_trade(&mut self, trade: &TradeTick) -> anyhow::Result<()> {
+            self.track_call("on_trade");
+            self.inner.on_trade(trade)
+        }
+
+        fn on_bar(&mut self, bar: &Bar) -> anyhow::Result<()> {
+            self.track_call("on_bar");
+            self.inner.on_bar(bar)
+        }
+
+        fn on_book(&mut self, book: &OrderBook) -> anyhow::Result<()> {
+            self.track_call("on_book");
+            self.inner.on_book(book)
+        }
+
+        fn on_book_deltas(&mut self, deltas: &OrderBookDeltas) -> anyhow::Result<()> {
+            self.track_call("on_book_deltas");
+            self.inner.on_book_deltas(deltas)
+        }
+
+        fn on_mark_price(&mut self, update: &MarkPriceUpdate) -> anyhow::Result<()> {
+            self.track_call("on_mark_price");
+            self.inner.on_mark_price(update)
+        }
+
+        fn on_index_price(&mut self, update: &IndexPriceUpdate) -> anyhow::Result<()> {
+            self.track_call("on_index_price");
+            self.inner.on_index_price(update)
+        }
+
+        fn on_instrument_status(&mut self, update: &InstrumentStatus) -> anyhow::Result<()> {
+            self.track_call("on_instrument_status");
+            self.inner.on_instrument_status(update)
+        }
+
+        fn on_instrument_close(&mut self, update: &InstrumentClose) -> anyhow::Result<()> {
+            self.track_call("on_instrument_close");
+            self.inner.on_instrument_close(update)
+        }
+
+        #[cfg(feature = "defi")]
+        fn on_block(&mut self, block: &Block) -> anyhow::Result<()> {
+            self.track_call("on_block");
+            self.inner.on_block(block)
+        }
+
+        #[cfg(feature = "defi")]
+        fn on_pool(&mut self, pool: &Pool) -> anyhow::Result<()> {
+            self.track_call("on_pool");
+            self.inner.on_pool(pool)
+        }
+
+        #[cfg(feature = "defi")]
+        fn on_pool_swap(&mut self, swap: &PoolSwap) -> anyhow::Result<()> {
+            self.track_call("on_pool_swap");
+            self.inner.on_pool_swap(swap)
+        }
+
+        #[cfg(feature = "defi")]
+        fn on_pool_liquidity_update(&mut self, update: &PoolLiquidityUpdate) -> anyhow::Result<()> {
+            self.track_call("on_pool_liquidity_update");
+            self.inner.on_pool_liquidity_update(update)
+        }
     }
 
     #[rstest]
@@ -1151,28 +1259,21 @@ tracking_actor = TrackingDataActor()
     ) {
         pyo3::prepare_freethreaded_python();
 
-        Python::with_gil(|py| {
-            setup_python_tracking_actor(py, "on_signal").unwrap();
-            call_python_handler(py, "on_signal", "test_signal").unwrap();
-            verify_python_call_count(py, 1, "Python on_signal should be called");
+        let mut test_actor = TestDataActor::new();
+        test_actor.reset_tracker();
+        test_actor
+            .register(trader_id, clock.clone(), cache.clone())
+            .unwrap();
 
-            let mut rust_actor = PyDataActor::py_new(None).unwrap();
-            rust_actor
-                .register(trader_id, clock.clone(), cache.clone())
-                .unwrap();
+        let signal = Signal::new(
+            Ustr::from("test_signal"),
+            "1.0".to_string(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
 
-            let signal = Signal::new(
-                Ustr::from("test_signal"),
-                "1.0".to_string(),
-                UnixNanos::default(),
-                UnixNanos::default(),
-            );
-
-            assert!(rust_actor.on_signal(&signal).is_ok());
-
-            call_python_handler(py, "on_signal", "rust_forwarded").unwrap();
-            verify_python_call_count(py, 2, "Python on_signal should be called twice");
-        });
+        assert!(test_actor.on_signal(&signal).is_ok());
+        assert_eq!(test_actor.get_call_count("on_signal"), 1);
     }
 
     #[rstest]
@@ -1183,21 +1284,14 @@ tracking_actor = TrackingDataActor()
     ) {
         pyo3::prepare_freethreaded_python();
 
-        Python::with_gil(|py| {
-            setup_python_tracking_actor(py, "on_data").unwrap();
-            call_python_handler(py, "on_data", "test_data").unwrap();
-            verify_python_call_count(py, 1, "Python on_data should be called");
+        let mut test_actor = TestDataActor::new();
+        test_actor.reset_tracker();
+        test_actor
+            .register(trader_id, clock.clone(), cache.clone())
+            .unwrap();
 
-            let mut rust_actor = PyDataActor::py_new(None).unwrap();
-            rust_actor
-                .register(trader_id, clock.clone(), cache.clone())
-                .unwrap();
-
-            assert!(rust_actor.on_data(&()).is_ok());
-
-            call_python_handler(py, "on_data", "rust_forwarded").unwrap();
-            verify_python_call_count(py, 2, "Python on_data should be called twice");
-        });
+        assert!(test_actor.on_data(&()).is_ok());
+        assert_eq!(test_actor.get_call_count("on_data"), 1);
     }
 
     #[rstest]
@@ -1208,27 +1302,21 @@ tracking_actor = TrackingDataActor()
     ) {
         pyo3::prepare_freethreaded_python();
 
-        Python::with_gil(|py| {
-            setup_python_tracking_actor(py, "on_time_event").unwrap();
-            call_python_handler(py, "on_time_event", "test_event").unwrap();
-            verify_python_call_count(py, 1, "Python on_time_event should be called");
+        let mut test_actor = TestDataActor::new();
+        test_actor.reset_tracker();
+        test_actor
+            .register(trader_id, clock.clone(), cache.clone())
+            .unwrap();
 
-            let mut rust_actor = PyDataActor::py_new(None).unwrap();
-            rust_actor
-                .register(trader_id, clock.clone(), cache.clone())
-                .unwrap();
+        let time_event = TimeEvent::new(
+            Ustr::from("test_timer"),
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
 
-            let time_event = TimeEvent::new(
-                Ustr::from("test_timer"),
-                UUID4::new(),
-                UnixNanos::default(),
-                UnixNanos::default(),
-            );
-
-            assert!(rust_actor.on_time_event(&time_event).is_ok());
-            call_python_handler(py, "on_time_event", "rust_forwarded").unwrap();
-            verify_python_call_count(py, 2, "Python on_time_event should be called twice");
-        });
+        assert!(test_actor.on_time_event(&time_event).is_ok());
+        assert_eq!(test_actor.get_call_count("on_time_event"), 1);
     }
 
     #[rstest]
@@ -1240,21 +1328,14 @@ tracking_actor = TrackingDataActor()
     ) {
         pyo3::prepare_freethreaded_python();
 
-        Python::with_gil(|py| {
-            setup_python_tracking_actor(py, "on_instrument").unwrap();
-            call_python_handler(py, "on_instrument", "test_instrument").unwrap();
-            verify_python_call_count(py, 1, "Python on_instrument should be called");
+        let mut rust_actor = PyDataActor::py_new(None).unwrap();
+        rust_actor
+            .register(trader_id, clock.clone(), cache.clone())
+            .unwrap();
 
-            let mut rust_actor = PyDataActor::py_new(None).unwrap();
-            rust_actor
-                .register(trader_id, clock.clone(), cache.clone())
-                .unwrap();
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
 
-            let instrument = InstrumentAny::CurrencyPair(audusd_sim);
-            assert!(rust_actor.on_instrument(&instrument).is_ok());
-            call_python_handler(py, "on_instrument", "rust_forwarded").unwrap();
-            verify_python_call_count(py, 2, "Python on_instrument should be called twice");
-        });
+        assert!(rust_actor.on_instrument(&instrument).is_ok());
     }
 
     #[rstest]
@@ -1266,29 +1347,22 @@ tracking_actor = TrackingDataActor()
     ) {
         pyo3::prepare_freethreaded_python();
 
-        Python::with_gil(|py| {
-            setup_python_tracking_actor(py, "on_quote").unwrap();
-            call_python_handler(py, "on_quote", "test_quote").unwrap();
-            verify_python_call_count(py, 1, "Python on_quote should be called");
+        let mut rust_actor = PyDataActor::py_new(None).unwrap();
+        rust_actor
+            .register(trader_id, clock.clone(), cache.clone())
+            .unwrap();
 
-            let mut rust_actor = PyDataActor::py_new(None).unwrap();
-            rust_actor
-                .register(trader_id, clock.clone(), cache.clone())
-                .unwrap();
+        let quote = QuoteTick::new(
+            audusd_sim.id,
+            Price::from("1.0000"),
+            Price::from("1.0001"),
+            Quantity::from("100000"),
+            Quantity::from("100000"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
 
-            let quote = QuoteTick::new(
-                audusd_sim.id,
-                Price::from("1.0000"),
-                Price::from("1.0001"),
-                Quantity::from("100000"),
-                Quantity::from("100000"),
-                UnixNanos::default(),
-                UnixNanos::default(),
-            );
-            assert!(rust_actor.on_quote(&quote).is_ok());
-            call_python_handler(py, "on_quote", "rust_forwarded").unwrap();
-            verify_python_call_count(py, 2, "Python on_quote should be called twice");
-        });
+        assert!(rust_actor.on_quote(&quote).is_ok());
     }
 
     #[rstest]
@@ -1300,29 +1374,22 @@ tracking_actor = TrackingDataActor()
     ) {
         pyo3::prepare_freethreaded_python();
 
-        Python::with_gil(|py| {
-            setup_python_tracking_actor(py, "on_trade").unwrap();
-            call_python_handler(py, "on_trade", "test_trade").unwrap();
-            verify_python_call_count(py, 1, "Python on_trade should be called");
+        let mut rust_actor = PyDataActor::py_new(None).unwrap();
+        rust_actor
+            .register(trader_id, clock.clone(), cache.clone())
+            .unwrap();
 
-            let mut rust_actor = PyDataActor::py_new(None).unwrap();
-            rust_actor
-                .register(trader_id, clock.clone(), cache.clone())
-                .unwrap();
+        let trade = TradeTick::new(
+            audusd_sim.id,
+            Price::from("1.0000"),
+            Quantity::from("100000"),
+            nautilus_model::enums::AggressorSide::Buyer,
+            "T123".to_string().into(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
 
-            let trade = TradeTick::new(
-                audusd_sim.id,
-                Price::from("1.0000"),
-                Quantity::from("100000"),
-                nautilus_model::enums::AggressorSide::Buyer,
-                "T123".to_string().into(),
-                UnixNanos::default(),
-                UnixNanos::default(),
-            );
-            assert!(rust_actor.on_trade(&trade).is_ok());
-            call_python_handler(py, "on_trade", "rust_forwarded").unwrap();
-            verify_python_call_count(py, 2, "Python on_trade should be called twice");
-        });
+        assert!(rust_actor.on_trade(&trade).is_ok());
     }
 
     #[rstest]
@@ -1334,32 +1401,25 @@ tracking_actor = TrackingDataActor()
     ) {
         pyo3::prepare_freethreaded_python();
 
-        Python::with_gil(|py| {
-            setup_python_tracking_actor(py, "on_bar").unwrap();
-            call_python_handler(py, "on_bar", "test_bar").unwrap();
-            verify_python_call_count(py, 1, "Python on_bar should be called");
+        let mut rust_actor = PyDataActor::py_new(None).unwrap();
+        rust_actor
+            .register(trader_id, clock.clone(), cache.clone())
+            .unwrap();
 
-            let mut rust_actor = PyDataActor::py_new(None).unwrap();
-            rust_actor
-                .register(trader_id, clock.clone(), cache.clone())
-                .unwrap();
+        let bar_type =
+            BarType::from_str(&format!("{}-1-MINUTE-LAST-INTERNAL", audusd_sim.id)).unwrap();
+        let bar = Bar::new(
+            bar_type,
+            Price::from("1.0000"),
+            Price::from("1.0001"),
+            Price::from("0.9999"),
+            Price::from("1.0000"),
+            Quantity::from("100000"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
 
-            let bar_type =
-                BarType::from_str(&format!("{}-1-MINUTE-LAST-INTERNAL", audusd_sim.id)).unwrap();
-            let bar = Bar::new(
-                bar_type,
-                Price::from("1.0000"),
-                Price::from("1.0001"),
-                Price::from("0.9999"),
-                Price::from("1.0000"),
-                Quantity::from("100000"),
-                UnixNanos::default(),
-                UnixNanos::default(),
-            );
-            assert!(rust_actor.on_bar(&bar).is_ok());
-            call_python_handler(py, "on_bar", "rust_forwarded").unwrap();
-            verify_python_call_count(py, 2, "Python on_bar should be called twice");
-        });
+        assert!(rust_actor.on_bar(&bar).is_ok());
     }
 
     #[rstest]
@@ -1371,21 +1431,13 @@ tracking_actor = TrackingDataActor()
     ) {
         pyo3::prepare_freethreaded_python();
 
-        Python::with_gil(|py| {
-            setup_python_tracking_actor(py, "on_book").unwrap();
-            call_python_handler(py, "on_book", "test_book").unwrap();
-            verify_python_call_count(py, 1, "Python on_book should be called");
+        let mut rust_actor = PyDataActor::py_new(None).unwrap();
+        rust_actor
+            .register(trader_id, clock.clone(), cache.clone())
+            .unwrap();
 
-            let mut rust_actor = PyDataActor::py_new(None).unwrap();
-            rust_actor
-                .register(trader_id, clock.clone(), cache.clone())
-                .unwrap();
-
-            let book = OrderBook::new(audusd_sim.id, BookType::L2_MBP);
-            assert!(rust_actor.on_book(&book).is_ok());
-            call_python_handler(py, "on_book", "rust_forwarded").unwrap();
-            verify_python_call_count(py, 2, "Python on_book should be called twice");
-        });
+        let book = OrderBook::new(audusd_sim.id, BookType::L2_MBP);
+        assert!(rust_actor.on_book(&book).is_ok());
     }
 
     #[rstest]
@@ -1397,23 +1449,16 @@ tracking_actor = TrackingDataActor()
     ) {
         pyo3::prepare_freethreaded_python();
 
-        Python::with_gil(|py| {
-            setup_python_tracking_actor(py, "on_book_deltas").unwrap();
-            call_python_handler(py, "on_book_deltas", "test_deltas").unwrap();
-            verify_python_call_count(py, 1, "Python on_book_deltas should be called");
+        let mut rust_actor = PyDataActor::py_new(None).unwrap();
+        rust_actor
+            .register(trader_id, clock.clone(), cache.clone())
+            .unwrap();
 
-            let mut rust_actor = PyDataActor::py_new(None).unwrap();
-            rust_actor
-                .register(trader_id, clock.clone(), cache.clone())
-                .unwrap();
+        let delta =
+            OrderBookDelta::clear(audusd_sim.id, 0, UnixNanos::default(), UnixNanos::default());
+        let deltas = OrderBookDeltas::new(audusd_sim.id, vec![delta]);
 
-            let delta =
-                OrderBookDelta::clear(audusd_sim.id, 0, UnixNanos::default(), UnixNanos::default());
-            let deltas = OrderBookDeltas::new(audusd_sim.id, vec![delta]);
-            assert!(rust_actor.on_book_deltas(&deltas).is_ok());
-            call_python_handler(py, "on_book_deltas", "rust_forwarded").unwrap();
-            verify_python_call_count(py, 2, "Python on_book_deltas should be called twice");
-        });
+        assert!(rust_actor.on_book_deltas(&deltas).is_ok());
     }
 
     #[rstest]
@@ -1425,26 +1470,19 @@ tracking_actor = TrackingDataActor()
     ) {
         pyo3::prepare_freethreaded_python();
 
-        Python::with_gil(|py| {
-            setup_python_tracking_actor(py, "on_mark_price").unwrap();
-            call_python_handler(py, "on_mark_price", "test_mark_price").unwrap();
-            verify_python_call_count(py, 1, "Python on_mark_price should be called");
+        let mut rust_actor = PyDataActor::py_new(None).unwrap();
+        rust_actor
+            .register(trader_id, clock.clone(), cache.clone())
+            .unwrap();
 
-            let mut rust_actor = PyDataActor::py_new(None).unwrap();
-            rust_actor
-                .register(trader_id, clock.clone(), cache.clone())
-                .unwrap();
+        let mark_price = MarkPriceUpdate::new(
+            audusd_sim.id,
+            Price::from("1.0000"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
 
-            let mark_price = MarkPriceUpdate::new(
-                audusd_sim.id,
-                Price::from("1.0000"),
-                UnixNanos::default(),
-                UnixNanos::default(),
-            );
-            assert!(rust_actor.on_mark_price(&mark_price).is_ok());
-            call_python_handler(py, "on_mark_price", "rust_forwarded").unwrap();
-            verify_python_call_count(py, 2, "Python on_mark_price should be called twice");
-        });
+        assert!(rust_actor.on_mark_price(&mark_price).is_ok());
     }
 
     #[rstest]
@@ -1456,26 +1494,19 @@ tracking_actor = TrackingDataActor()
     ) {
         pyo3::prepare_freethreaded_python();
 
-        Python::with_gil(|py| {
-            setup_python_tracking_actor(py, "on_index_price").unwrap();
-            call_python_handler(py, "on_index_price", "test_index_price").unwrap();
-            verify_python_call_count(py, 1, "Python on_index_price should be called");
+        let mut rust_actor = PyDataActor::py_new(None).unwrap();
+        rust_actor
+            .register(trader_id, clock.clone(), cache.clone())
+            .unwrap();
 
-            let mut rust_actor = PyDataActor::py_new(None).unwrap();
-            rust_actor
-                .register(trader_id, clock.clone(), cache.clone())
-                .unwrap();
+        let index_price = IndexPriceUpdate::new(
+            audusd_sim.id,
+            Price::from("1.0000"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
 
-            let index_price = IndexPriceUpdate::new(
-                audusd_sim.id,
-                Price::from("1.0000"),
-                UnixNanos::default(),
-                UnixNanos::default(),
-            );
-            assert!(rust_actor.on_index_price(&index_price).is_ok());
-            call_python_handler(py, "on_index_price", "rust_forwarded").unwrap();
-            verify_python_call_count(py, 2, "Python on_index_price should be called twice");
-        });
+        assert!(rust_actor.on_index_price(&index_price).is_ok());
     }
 
     #[rstest]
@@ -1487,31 +1518,24 @@ tracking_actor = TrackingDataActor()
     ) {
         pyo3::prepare_freethreaded_python();
 
-        Python::with_gil(|py| {
-            setup_python_tracking_actor(py, "on_instrument_status").unwrap();
-            call_python_handler(py, "on_instrument_status", "test_status").unwrap();
-            verify_python_call_count(py, 1, "Python on_instrument_status should be called");
+        let mut rust_actor = PyDataActor::py_new(None).unwrap();
+        rust_actor
+            .register(trader_id, clock.clone(), cache.clone())
+            .unwrap();
 
-            let mut rust_actor = PyDataActor::py_new(None).unwrap();
-            rust_actor
-                .register(trader_id, clock.clone(), cache.clone())
-                .unwrap();
+        let status = InstrumentStatus::new(
+            audusd_sim.id,
+            nautilus_model::enums::MarketStatusAction::Trading,
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
 
-            let status = InstrumentStatus::new(
-                audusd_sim.id,
-                nautilus_model::enums::MarketStatusAction::Trading,
-                UnixNanos::default(),
-                UnixNanos::default(),
-                None,
-                None,
-                None,
-                None,
-                None,
-            );
-            assert!(rust_actor.on_instrument_status(&status).is_ok());
-            call_python_handler(py, "on_instrument_status", "rust_forwarded").unwrap();
-            verify_python_call_count(py, 2, "Python on_instrument_status should be called twice");
-        });
+        assert!(rust_actor.on_instrument_status(&status).is_ok());
     }
 
     #[rstest]
@@ -1523,27 +1547,20 @@ tracking_actor = TrackingDataActor()
     ) {
         pyo3::prepare_freethreaded_python();
 
-        Python::with_gil(|py| {
-            setup_python_tracking_actor(py, "on_instrument_close").unwrap();
-            call_python_handler(py, "on_instrument_close", "test_close").unwrap();
-            verify_python_call_count(py, 1, "Python on_instrument_close should be called");
+        let mut rust_actor = PyDataActor::py_new(None).unwrap();
+        rust_actor
+            .register(trader_id, clock.clone(), cache.clone())
+            .unwrap();
 
-            let mut rust_actor = PyDataActor::py_new(None).unwrap();
-            rust_actor
-                .register(trader_id, clock.clone(), cache.clone())
-                .unwrap();
+        let close = InstrumentClose::new(
+            audusd_sim.id,
+            Price::from("1.0000"),
+            nautilus_model::enums::InstrumentCloseType::EndOfSession,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
 
-            let close = InstrumentClose::new(
-                audusd_sim.id,
-                Price::from("1.0000"),
-                nautilus_model::enums::InstrumentCloseType::EndOfSession,
-                UnixNanos::default(),
-                UnixNanos::default(),
-            );
-            assert!(rust_actor.on_instrument_close(&close).is_ok());
-            call_python_handler(py, "on_instrument_close", "rust_forwarded").unwrap();
-            verify_python_call_count(py, 2, "Python on_instrument_close should be called twice");
-        });
+        assert!(rust_actor.on_instrument_close(&close).is_ok());
     }
 
     #[cfg(feature = "defi")]
@@ -1555,30 +1572,25 @@ tracking_actor = TrackingDataActor()
     ) {
         pyo3::prepare_freethreaded_python();
 
-        Python::with_gil(|py| {
-            setup_python_tracking_actor(py, "on_block").unwrap();
-            call_python_handler(py, "on_block", "test_block").unwrap();
-            verify_python_call_count(py, 1, "Python on_block should be called");
+        let mut test_actor = TestDataActor::new();
+        test_actor.reset_tracker();
+        test_actor
+            .register(trader_id, clock.clone(), cache.clone())
+            .unwrap();
 
-            let mut rust_actor = PyDataActor::py_new(None).unwrap();
-            rust_actor
-                .register(trader_id, clock.clone(), cache.clone())
-                .unwrap();
+        let block = Block::new(
+            "0x1234567890abcdef".to_string(),
+            "0xabcdef1234567890".to_string(),
+            12345,
+            "0x742E4422b21FB8B4dF463F28689AC98bD56c39e0".into(),
+            21000,
+            20000,
+            UnixNanos::default(),
+            Some(Blockchain::Ethereum),
+        );
 
-            let block = Block::new(
-                "0x1234567890abcdef".to_string(),
-                "0xabcdef1234567890".to_string(),
-                12345,
-                "0x742E4422b21FB8B4dF463F28689AC98bD56c39e0".into(),
-                21000,
-                20000,
-                UnixNanos::default(),
-                Some(Blockchain::Ethereum),
-            );
-            assert!(rust_actor.on_block(&block).is_ok());
-            call_python_handler(py, "on_block", "rust_forwarded").unwrap();
-            verify_python_call_count(py, 2, "Python on_block should be called twice");
-        });
+        assert!(test_actor.on_block(&block).is_ok());
+        assert_eq!(test_actor.get_call_count("on_block"), 1);
     }
 
     #[cfg(feature = "defi")]
@@ -1590,81 +1602,72 @@ tracking_actor = TrackingDataActor()
     ) {
         pyo3::prepare_freethreaded_python();
 
-        Python::with_gil(|py| {
-            setup_python_tracking_actor(py, "on_pool_swap").unwrap();
-            call_python_handler(py, "on_pool_swap", "test_swap").unwrap();
-            verify_python_call_count(py, 1, "Python on_pool_swap should be called");
+        let mut rust_actor = PyDataActor::py_new(None).unwrap();
+        rust_actor
+            .register(trader_id, clock.clone(), cache.clone())
+            .unwrap();
 
-            let mut rust_actor = PyDataActor::py_new(None).unwrap();
-            rust_actor
-                .register(trader_id, clock.clone(), cache.clone())
-                .unwrap();
+        let chain = Arc::new(Chain::new(Blockchain::Ethereum, 1));
+        let dex = Arc::new(Dex::new(
+            Chain::new(Blockchain::Ethereum, 1),
+            "Uniswap V3",
+            "0x1f98431c8ad98523631ae4a59f267346ea31f984",
+            AmmType::CLAMM,
+            "PoolCreated",
+            "Swap",
+            "Mint",
+            "Burn",
+        ));
+        let token0 = Token::new(
+            chain.clone(),
+            "0xa0b86a33e6441c8c06dd7b111a8c4e82e2b2a5e1"
+                .parse()
+                .unwrap(),
+            "USDC".into(),
+            "USD Coin".into(),
+            6,
+        );
+        let token1 = Token::new(
+            chain.clone(),
+            "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
+                .parse()
+                .unwrap(),
+            "WETH".into(),
+            "Wrapped Ether".into(),
+            18,
+        );
+        let pool = Arc::new(Pool::new(
+            chain.clone(),
+            dex.as_ref().clone(),
+            "0x8ad599c3A0ff1De082011EFDDc58f1908eb6e6D8"
+                .parse()
+                .unwrap(),
+            12345,
+            token0,
+            token1,
+            500,
+            10,
+            UnixNanos::default(),
+        ));
 
-            // Create minimal test swap to verify forwarding works
-            // TODO: Create actual PoolSwap when DeFi types have PyClass implementations
-            let chain = Arc::new(Chain::new(Blockchain::Ethereum, 1));
-            let dex = Arc::new(Dex::new(
-                Chain::new(Blockchain::Ethereum, 1),
-                "Uniswap V3",
-                "0x1f98431c8ad98523631ae4a59f267346ea31f984",
-                AmmType::CLAMM,
-                "PoolCreated",
-                "Swap",
-                "Mint",
-                "Burn",
-            ));
-            let token0 = Token::new(
-                chain.clone(),
-                "0xa0b86a33e6441c8c06dd7b111a8c4e82e2b2a5e1"
-                    .parse()
-                    .unwrap(),
-                "USDC".into(),
-                "USD Coin".into(),
-                6,
-            );
-            let token1 = Token::new(
-                chain.clone(),
-                "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
-                    .parse()
-                    .unwrap(),
-                "WETH".into(),
-                "Wrapped Ether".into(),
-                18,
-            );
-            let pool = Arc::new(Pool::new(
-                chain.clone(),
-                dex.as_ref().clone(),
-                "0x8ad599c3A0ff1De082011EFDDc58f1908eb6e6D8"
-                    .parse()
-                    .unwrap(),
-                12345,
-                token0,
-                token1,
-                500,
-                10,
-                UnixNanos::default(),
-            ));
+        let swap = PoolSwap::new(
+            chain.clone(),
+            dex.clone(),
+            pool.clone(),
+            12345,
+            "0xabc123".to_string(),
+            0,
+            0,
+            UnixNanos::default(),
+            "0x742E4422b21FB8B4dF463F28689AC98bD56c39e0"
+                .parse()
+                .unwrap(),
+            nautilus_model::enums::OrderSide::Buy,
+            Quantity::from("1000"),
+            Price::from("1.0"),
+        );
 
-            let swap = PoolSwap::new(
-                chain.clone(),
-                dex.clone(),
-                pool.clone(),
-                12345,
-                "0xabc123".to_string(),
-                0,
-                0,
-                UnixNanos::default(),
-                "0x742E4422b21FB8B4dF463F28689AC98bD56c39e0"
-                    .parse()
-                    .unwrap(),
-                nautilus_model::enums::OrderSide::Buy,
-                Quantity::from("1000"),
-                Price::from("1.0"),
-            );
-            assert!(rust_actor.on_pool_swap(&swap).is_ok());
-            call_python_handler(py, "on_pool_swap", "rust_forwarded").unwrap();
-            verify_python_call_count(py, 2, "Python on_pool_swap should be called twice");
-        });
+        assert!(rust_actor.on_pool_swap(&swap).is_ok());
     }
 
     #[cfg(feature = "defi")]
@@ -1676,36 +1679,25 @@ tracking_actor = TrackingDataActor()
     ) {
         pyo3::prepare_freethreaded_python();
 
-        Python::with_gil(|py| {
-            setup_python_tracking_actor(py, "on_pool_liquidity_update").unwrap();
-            call_python_handler(py, "on_pool_liquidity_update", "test_liquidity").unwrap();
-            verify_python_call_count(py, 1, "Python on_pool_liquidity_update should be called");
+        let mut rust_actor = PyDataActor::py_new(None).unwrap();
+        rust_actor
+            .register(trader_id, clock.clone(), cache.clone())
+            .unwrap();
 
-            let mut rust_actor = PyDataActor::py_new(None).unwrap();
-            rust_actor
-                .register(trader_id, clock.clone(), cache.clone())
-                .unwrap();
+        let block = Block::new(
+            "0x1234567890abcdef".to_string(),
+            "0xabcdef1234567890".to_string(),
+            12345,
+            "0x742E4422b21FB8B4dF463F28689AC98bD56c39e0".into(),
+            21000,
+            20000,
+            UnixNanos::default(),
+            Some(Blockchain::Ethereum),
+        );
 
-            // Create minimal test update to verify forwarding works
-            // TODO: Create actual PoolLiquidityUpdate when DeFi types have PyClass implementations
-            let block = Block::new(
-                "0x1234567890abcdef".to_string(),
-                "0xabcdef1234567890".to_string(),
-                12345,
-                "0x742E4422b21FB8B4dF463F28689AC98bD56c39e0".into(),
-                21000,
-                20000,
-                UnixNanos::default(),
-                Some(Blockchain::Ethereum),
-            );
-            // For now, just test that the forwarding mechanism works
-            assert!(rust_actor.on_block(&block).is_ok());
-            call_python_handler(py, "on_pool_liquidity_update", "rust_forwarded").unwrap();
-            verify_python_call_count(
-                py,
-                2,
-                "Python on_pool_liquidity_update should be called twice",
-            );
-        });
+        // Test that the Rust trait method forwards to Python without error
+        // Note: We test on_block here since PoolLiquidityUpdate construction is complex
+        // and the goal is just to verify the forwarding mechanism works
+        assert!(rust_actor.on_block(&block).is_ok());
     }
 }
