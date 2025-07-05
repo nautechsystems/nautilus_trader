@@ -1,3 +1,27 @@
+# NautilusTrader 1.220.0 Beta
+
+Released on TBD (UTC).
+
+### Enhancements
+None
+
+### Breaking Changes
+None
+
+### Internal Improvements
+None
+
+### Fixes
+None
+
+### Documentation Updates
+None
+
+### Deprecations
+None
+
+---
+
 # NautilusTrader 1.219.0 Beta
 
 Released on 5th July 2025 (UTC).
@@ -105,7 +129,7 @@ Released on 5th July 2025 (UTC).
 - Fixed bar requests for Bybit where pagination was incorrect which limited bars being returned
 - Fixed Bybit Unknown Error (#2742), thanks @DeevsDeevs
 - Fixed margin balance parsing for Bybit
-- Restore task error logs for IBKR (#2716), thanks @bartlaw
+- Restored task error logs for IBKR (#2716), thanks @bartlaw
 
 ### Documentation Updates
 - Updated IB adapter documentation (#2729), thanks @faysou
