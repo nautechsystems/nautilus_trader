@@ -211,7 +211,7 @@ pub fn load_deltas<P: AsRef<Path>>(
 
         // If precision increased, update all previous deltas
         if precision_updated {
-            for delta in deltas.iter_mut() {
+            for delta in &mut deltas {
                 if price_precision.is_none() {
                     delta.order.price.precision = current_price_precision;
                 }
@@ -333,29 +333,29 @@ pub fn load_depth10_from_snapshot5<P: AsRef<Path>>(
         // Update precisions dynamically if not explicitly set
         let mut precision_updated = false;
 
-        if price_precision.is_none() {
-            if let Some(bid_price) = data.bids_0_price {
-                let inferred_price_precision = infer_precision(bid_price).min(FIXED_PRECISION);
-                if inferred_price_precision > current_price_precision {
-                    current_price_precision = inferred_price_precision;
-                    precision_updated = true;
-                }
+        if price_precision.is_none()
+            && let Some(bid_price) = data.bids_0_price
+        {
+            let inferred_price_precision = infer_precision(bid_price).min(FIXED_PRECISION);
+            if inferred_price_precision > current_price_precision {
+                current_price_precision = inferred_price_precision;
+                precision_updated = true;
             }
         }
 
-        if size_precision.is_none() {
-            if let Some(bid_amount) = data.bids_0_amount {
-                let inferred_size_precision = infer_precision(bid_amount).min(FIXED_PRECISION);
-                if inferred_size_precision > current_size_precision {
-                    current_size_precision = inferred_size_precision;
-                    precision_updated = true;
-                }
+        if size_precision.is_none()
+            && let Some(bid_amount) = data.bids_0_amount
+        {
+            let inferred_size_precision = infer_precision(bid_amount).min(FIXED_PRECISION);
+            if inferred_size_precision > current_size_precision {
+                current_size_precision = inferred_size_precision;
+                precision_updated = true;
             }
         }
 
         // If precision increased, update all previous depths
         if precision_updated {
-            for depth in depths.iter_mut() {
+            for depth in &mut depths {
                 for i in 0..DEPTH10_LEN {
                     if price_precision.is_none() {
                         depth.bids[i].price.precision = current_price_precision;
@@ -492,29 +492,29 @@ pub fn load_depth10_from_snapshot25<P: AsRef<Path>>(
         // Update precisions dynamically if not explicitly set
         let mut precision_updated = false;
 
-        if price_precision.is_none() {
-            if let Some(bid_price) = data.bids_0_price {
-                let inferred_price_precision = infer_precision(bid_price).min(FIXED_PRECISION);
-                if inferred_price_precision > current_price_precision {
-                    current_price_precision = inferred_price_precision;
-                    precision_updated = true;
-                }
+        if price_precision.is_none()
+            && let Some(bid_price) = data.bids_0_price
+        {
+            let inferred_price_precision = infer_precision(bid_price).min(FIXED_PRECISION);
+            if inferred_price_precision > current_price_precision {
+                current_price_precision = inferred_price_precision;
+                precision_updated = true;
             }
         }
 
-        if size_precision.is_none() {
-            if let Some(bid_amount) = data.bids_0_amount {
-                let inferred_size_precision = infer_precision(bid_amount).min(FIXED_PRECISION);
-                if inferred_size_precision > current_size_precision {
-                    current_size_precision = inferred_size_precision;
-                    precision_updated = true;
-                }
+        if size_precision.is_none()
+            && let Some(bid_amount) = data.bids_0_amount
+        {
+            let inferred_size_precision = infer_precision(bid_amount).min(FIXED_PRECISION);
+            if inferred_size_precision > current_size_precision {
+                current_size_precision = inferred_size_precision;
+                precision_updated = true;
             }
         }
 
         // If precision increased, update all previous depths
         if precision_updated {
-            for depth in depths.iter_mut() {
+            for depth in &mut depths {
                 for i in 0..DEPTH10_LEN {
                     if price_precision.is_none() {
                         depth.bids[i].price.precision = current_price_precision;
@@ -672,29 +672,29 @@ pub fn load_quote_ticks<P: AsRef<Path>>(
         // Update precisions dynamically if not explicitly set
         let mut precision_updated = false;
 
-        if price_precision.is_none() {
-            if let Some(bid_price) = data.bid_price {
-                let inferred_price_precision = infer_precision(bid_price).min(FIXED_PRECISION);
-                if inferred_price_precision > current_price_precision {
-                    current_price_precision = inferred_price_precision;
-                    precision_updated = true;
-                }
+        if price_precision.is_none()
+            && let Some(bid_price) = data.bid_price
+        {
+            let inferred_price_precision = infer_precision(bid_price).min(FIXED_PRECISION);
+            if inferred_price_precision > current_price_precision {
+                current_price_precision = inferred_price_precision;
+                precision_updated = true;
             }
         }
 
-        if size_precision.is_none() {
-            if let Some(bid_amount) = data.bid_amount {
-                let inferred_size_precision = infer_precision(bid_amount).min(FIXED_PRECISION);
-                if inferred_size_precision > current_size_precision {
-                    current_size_precision = inferred_size_precision;
-                    precision_updated = true;
-                }
+        if size_precision.is_none()
+            && let Some(bid_amount) = data.bid_amount
+        {
+            let inferred_size_precision = infer_precision(bid_amount).min(FIXED_PRECISION);
+            if inferred_size_precision > current_size_precision {
+                current_size_precision = inferred_size_precision;
+                precision_updated = true;
             }
         }
 
         // If precision increased, update all previous quotes
         if precision_updated {
-            for quote in quotes.iter_mut() {
+            for quote in &mut quotes {
                 if price_precision.is_none() {
                     quote.bid_price.precision = current_price_precision;
                     quote.ask_price.precision = current_price_precision;
@@ -789,7 +789,7 @@ pub fn load_trade_ticks<P: AsRef<Path>>(
 
         // If precision increased, update all previous trades
         if precision_updated {
-            for trade in trades.iter_mut() {
+            for trade in &mut trades {
                 if price_precision.is_none() {
                     trade.price.precision = current_price_precision;
                 }

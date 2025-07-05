@@ -322,7 +322,7 @@ impl RedisCacheDatabase {
         ];
 
         for index_key in &index_keys {
-            let key = index_key.to_string();
+            let key = (*index_key).to_string();
             log::debug!("Deleting from index: {key} (order_id: {client_order_id})");
             let payload = vec![order_id_bytes.clone()];
             let op = DatabaseCommand::new(DatabaseOperation::Delete, key, Some(payload));
@@ -334,7 +334,7 @@ impl RedisCacheDatabase {
         // Delete from hash indexes
         let hash_indexes = [INDEX_ORDER_POSITION, INDEX_ORDER_CLIENT];
         for index_key in &hash_indexes {
-            let key = index_key.to_string();
+            let key = (*index_key).to_string();
             log::debug!("Deleting from hash index: {key} (order_id: {client_order_id})");
             let payload = vec![order_id_bytes.clone()];
             let op = DatabaseCommand::new(DatabaseOperation::Delete, key, Some(payload));
@@ -374,7 +374,7 @@ impl RedisCacheDatabase {
         ];
 
         for index_key in &index_keys {
-            let key = index_key.to_string();
+            let key = (*index_key).to_string();
             log::debug!("Deleting from index: {key} (position_id: {position_id})");
             let payload = vec![position_id_bytes.clone()];
             let op = DatabaseCommand::new(DatabaseOperation::Delete, key, Some(payload));
@@ -505,7 +505,7 @@ async fn drain_buffer(
                     "Processing DELETE for collection: {}, key: {}, payload: {:?}",
                     collection,
                     key,
-                    msg.payload.as_ref().map(|p| p.len())
+                    msg.payload.as_ref().map(std::vec::Vec::len)
                 );
                 // `payload` can be `None` for a delete operation
                 if let Err(e) = delete(&mut pipe, collection, &key, msg.payload) {
@@ -809,7 +809,7 @@ fn delete_from_list(
             // (it's not the last event). We can safely remove it from the Redis list.
             // Since account events are stored as serialized objects, we need to find
             // and remove items that contain the event_id within their serialized data.
-            let lua_script = r#"
+            let lua_script = r"
                 local key = KEYS[1]
                 local event_id = ARGV[1]
                 local removed_count = 0
@@ -831,7 +831,7 @@ fn delete_from_list(
                 end
 
                 return removed_count
-            "#;
+            ";
 
             pipe.cmd("EVAL")
                 .arg(lua_script)
@@ -1106,7 +1106,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         ];
 
         for index_key in &index_keys {
-            let key = index_key.to_string();
+            let key = (*index_key).to_string();
             log::debug!("Deleting from index: {key} (order_id: {client_order_id})");
             let payload = vec![order_id_bytes.clone()];
             let op = DatabaseCommand::new(DatabaseOperation::Delete, key, Some(payload));
@@ -1119,7 +1119,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         // Delete from hash indexes
         let hash_indexes = [INDEX_ORDER_POSITION, INDEX_ORDER_CLIENT];
         for index_key in &hash_indexes {
-            let key = index_key.to_string();
+            let key = (*index_key).to_string();
             log::debug!("Deleting from hash index: {key} (order_id: {client_order_id})");
             let payload = vec![order_id_bytes.clone()];
             let op = DatabaseCommand::new(DatabaseOperation::Delete, key, Some(payload));
@@ -1151,7 +1151,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         ];
 
         for index_key in &index_keys {
-            let key = index_key.to_string();
+            let key = (*index_key).to_string();
             let payload = vec![position_id_bytes.clone()];
             let op = DatabaseCommand::new(DatabaseOperation::Delete, key, Some(payload));
             self.database.tx.send(op).map_err(|e| {
