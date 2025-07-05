@@ -15,7 +15,7 @@
 
 #[cfg(test)]
 #[cfg(feature = "postgres")]
-#[cfg(target_os = "linux")] // Databases only supported on Linux
+#[cfg(target_os = "linux")] // Databases only tested and supported on Linux
 mod serial_tests {
     use std::{collections::HashSet, time::Duration};
 
