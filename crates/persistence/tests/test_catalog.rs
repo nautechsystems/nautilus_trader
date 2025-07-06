@@ -2268,3 +2268,116 @@ fn test_delete_data_range_saturating_arithmetic_edge_cases() {
     assert_eq!(remaining_data.len(), 1);
     assert_eq!(remaining_data[0].ts_init.as_u64(), 2);
 }
+
+#[rstest]
+fn test_make_local_path() {
+    use std::path::PathBuf;
+
+    use nautilus_persistence::backend::catalog::make_local_path;
+
+    // Test basic path construction
+    let path = make_local_path("/base", &["data", "quotes", "EURUSD"]);
+    let expected = PathBuf::from("/base")
+        .join("data")
+        .join("quotes")
+        .join("EURUSD");
+    assert_eq!(path, expected);
+
+    // Test empty base path
+    let path = make_local_path("", &["data", "quotes"]);
+    let expected = PathBuf::from("data").join("quotes");
+    assert_eq!(path, expected);
+
+    // Test single component
+    let path = make_local_path("/base", &["data"]);
+    let expected = PathBuf::from("/base").join("data");
+    assert_eq!(path, expected);
+}
+
+#[rstest]
+fn test_make_object_store_path() {
+    use nautilus_persistence::backend::catalog::make_object_store_path;
+
+    // Test basic path construction
+    let path = make_object_store_path("base", &["data", "quotes", "EURUSD"]);
+    assert_eq!(path, "base/data/quotes/EURUSD");
+
+    // Test empty base path
+    let path = make_object_store_path("", &["data", "quotes"]);
+    assert_eq!(path, "data/quotes");
+
+    // Test with trailing slashes in base
+    let path = make_object_store_path("base/", &["data", "quotes"]);
+    assert_eq!(path, "base/data/quotes");
+
+    // Test with leading slashes in components
+    let path = make_object_store_path("base", &["/data", "/quotes"]);
+    assert_eq!(path, "base/data/quotes");
+
+    // Test with backslashes (Windows-style)
+    let path = make_object_store_path("base\\", &["data\\", "quotes"]);
+    assert_eq!(path, "base/data/quotes");
+}
+
+#[rstest]
+fn test_make_object_store_path_owned() {
+    use nautilus_persistence::backend::catalog::make_object_store_path_owned;
+
+    // Test with owned strings
+    let components = vec![
+        "data".to_string(),
+        "quotes".to_string(),
+        "EURUSD".to_string(),
+    ];
+    let path = make_object_store_path_owned("base", components);
+    assert_eq!(path, "base/data/quotes/EURUSD");
+
+    // Test empty base path
+    let components = vec!["data".to_string(), "quotes".to_string()];
+    let path = make_object_store_path_owned("", components);
+    assert_eq!(path, "data/quotes");
+}
+
+#[rstest]
+fn test_local_to_object_store_path() {
+    use std::path::PathBuf;
+
+    use nautilus_persistence::backend::catalog::local_to_object_store_path;
+
+    // Test Unix-style path
+    let local_path = PathBuf::from("data").join("quotes").join("EURUSD");
+    let object_path = local_to_object_store_path(&local_path);
+    assert_eq!(object_path, "data/quotes/EURUSD");
+
+    // Test with backslashes (simulating Windows)
+    let path_str = "data\\quotes\\EURUSD";
+    let local_path = PathBuf::from(path_str);
+    let object_path = local_to_object_store_path(&local_path);
+    // Should normalize backslashes to forward slashes
+    assert!(object_path.contains('/') || !object_path.contains('\\'));
+}
+
+#[rstest]
+fn test_extract_path_components() {
+    use nautilus_persistence::backend::catalog::extract_path_components;
+
+    // Test Unix-style path
+    let components = extract_path_components("data/quotes/EURUSD");
+    assert_eq!(components, vec!["data", "quotes", "EURUSD"]);
+
+    // Test Windows-style path
+    let components = extract_path_components("data\\quotes\\EURUSD");
+    assert_eq!(components, vec!["data", "quotes", "EURUSD"]);
+
+    // Test mixed separators
+    let components = extract_path_components("data/quotes\\EURUSD");
+    assert_eq!(components, vec!["data", "quotes", "EURUSD"]);
+
+    // Test with leading/trailing separators
+    let components = extract_path_components("/data/quotes/");
+    assert_eq!(components, vec!["data", "quotes"]);
+
+    // Test empty path
+    let components = extract_path_components("");
+    assert!(components.is_empty());
+}
