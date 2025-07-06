@@ -264,12 +264,12 @@ impl OrderMatchingCore {
             _ => {}
         }
 
-        if self.is_stop_matched(order.order_side_specified(), order.stop_px()) {
-            if let Some(handler) = &mut self.trigger_stop_order {
-                handler
-                    .0
-                    .trigger_stop_order(&mut OrderAny::from(order.clone()));
-            }
+        if self.is_stop_matched(order.order_side_specified(), order.stop_px())
+            && let Some(handler) = &mut self.trigger_stop_order
+        {
+            handler
+                .0
+                .trigger_stop_order(&mut OrderAny::from(order.clone()));
         }
     }
 

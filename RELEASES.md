@@ -1,6 +1,30 @@
-# NautilusTrader 1.219.0 Beta
+# NautilusTrader 1.220.0 Beta
 
 Released on TBD (UTC).
+
+### Enhancements
+None
+
+### Breaking Changes
+None
+
+### Internal Improvements
+None
+
+### Fixes
+None
+
+### Documentation Updates
+None
+
+### Deprecations
+None
+
+---
+
+# NautilusTrader 1.219.0 Beta
+
+Released on 5th July 2025 (UTC).
 
 ### Enhancements
 - Added `graceful_shutdown_on_exception` config option for live engines (default `False` to retain intended hard crash on unexpected system exceptions)
@@ -105,7 +129,7 @@ Released on TBD (UTC).
 - Fixed bar requests for Bybit where pagination was incorrect which limited bars being returned
 - Fixed Bybit Unknown Error (#2742), thanks @DeevsDeevs
 - Fixed margin balance parsing for Bybit
-- Restore task error logs for IBKR (#2716), thanks @bartlaw
+- Restored task error logs for IBKR (#2716), thanks @bartlaw
 - Fixed balance calculations on order fill to allow operating at near account balance capacity, thanks @petioptrv
 
 ### Documentation Updates
