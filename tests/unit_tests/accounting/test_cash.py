@@ -686,10 +686,10 @@ def test_cash_account_update_with_fill_to_zero():
                 Money(0.0, USDT),
                 Money(10000.0, USDT),
             ),
-            AccountBalance(
+            AccountBalance(  # simulating an existing order in our account
+                Money(10.0, ETH),
                 Money(10.0, ETH),
                 Money(0.0, ETH),
-                Money(10.0, ETH),
             ),
         ],
         margins=[],
