@@ -16,6 +16,7 @@
 //! Python bindings from [PyO3](https://pyo3.rs).
 
 pub mod actor;
+pub mod cache;
 pub mod clock;
 pub mod custom;
 pub mod enums;
@@ -44,6 +45,8 @@ use crate::python::msgbus::{
 pub fn common(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::custom::CustomData>()?;
     m.add_class::<crate::signal::Signal>()?;
+    m.add_class::<crate::cache::CacheConfig>()?;
+    m.add_class::<crate::cache::Cache>()?;
     m.add_class::<crate::python::clock::TestClock_Py>()?;
     m.add_class::<crate::python::clock::LiveClock_Py>()?;
     m.add_class::<crate::python::actor::PyDataActor>()?;
