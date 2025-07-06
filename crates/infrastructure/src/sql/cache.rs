@@ -14,10 +14,11 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::VecDeque,
     time::{Duration, Instant},
 };
 
+use ahash::AHashMap;
 use bytes::Bytes;
 use nautilus_common::{
     cache::database::{CacheDatabaseAdapter, CacheMap},
@@ -238,8 +239,8 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
 
         // For now, we don't load greeks and yield curves from the database
         // This will be implemented in the future
-        let greeks = HashMap::new();
-        let yield_curves = HashMap::new();
+        let greeks = AHashMap::new();
+        let yield_curves = AHashMap::new();
 
         Ok(CacheMap {
             currencies,
@@ -253,7 +254,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         })
     }
 
-    fn load(&self) -> anyhow::Result<HashMap<String, Bytes>> {
+    fn load(&self) -> anyhow::Result<AHashMap<String, Bytes>> {
         let pool = self.pool.clone();
         let (tx, rx) = std::sync::mpsc::channel();
         tokio::spawn(async move {
@@ -270,7 +271,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
                 }
                 Err(e) => {
                     log::error!("Failed to load general items: {e:?}");
-                    if let Err(e) = tx.send(HashMap::new()) {
+                    if let Err(e) = tx.send(AHashMap::new()) {
                         log::error!("Failed to send empty general items: {e:?}");
                     }
                 }
@@ -279,7 +280,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         Ok(rx.recv()?)
     }
 
-    async fn load_currencies(&self) -> anyhow::Result<HashMap<Ustr, Currency>> {
+    async fn load_currencies(&self) -> anyhow::Result<AHashMap<Ustr, Currency>> {
         let pool = self.pool.clone();
         let (tx, rx) = std::sync::mpsc::channel();
         tokio::spawn(async move {
@@ -296,7 +297,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
                 }
                 Err(e) => {
                     log::error!("Failed to load currencies: {e:?}");
-                    if let Err(e) = tx.send(HashMap::new()) {
+                    if let Err(e) = tx.send(AHashMap::new()) {
                         log::error!("Failed to send empty currencies: {e:?}");
                     }
                 }
@@ -305,7 +306,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         Ok(rx.recv()?)
     }
 
-    async fn load_instruments(&self) -> anyhow::Result<HashMap<InstrumentId, InstrumentAny>> {
+    async fn load_instruments(&self) -> anyhow::Result<AHashMap<InstrumentId, InstrumentAny>> {
         let pool = self.pool.clone();
         let (tx, rx) = std::sync::mpsc::channel();
         tokio::spawn(async move {
@@ -322,7 +323,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
                 }
                 Err(e) => {
                     log::error!("Failed to load instruments: {e:?}");
-                    if let Err(e) = tx.send(HashMap::new()) {
+                    if let Err(e) = tx.send(AHashMap::new()) {
                         log::error!("Failed to send empty instruments: {e:?}");
                     }
                 }
@@ -331,11 +332,11 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         Ok(rx.recv()?)
     }
 
-    async fn load_synthetics(&self) -> anyhow::Result<HashMap<InstrumentId, SyntheticInstrument>> {
+    async fn load_synthetics(&self) -> anyhow::Result<AHashMap<InstrumentId, SyntheticInstrument>> {
         todo!()
     }
 
-    async fn load_accounts(&self) -> anyhow::Result<HashMap<AccountId, AccountAny>> {
+    async fn load_accounts(&self) -> anyhow::Result<AHashMap<AccountId, AccountAny>> {
         let pool = self.pool.clone();
         let (tx, rx) = std::sync::mpsc::channel();
         tokio::spawn(async move {
@@ -352,7 +353,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
                 }
                 Err(e) => {
                     log::error!("Failed to load accounts: {e:?}");
-                    if let Err(e) = tx.send(HashMap::new()) {
+                    if let Err(e) = tx.send(AHashMap::new()) {
                         log::error!("Failed to send empty accounts: {e:?}");
                     }
                 }
@@ -361,7 +362,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         Ok(rx.recv()?)
     }
 
-    async fn load_orders(&self) -> anyhow::Result<HashMap<ClientOrderId, OrderAny>> {
+    async fn load_orders(&self) -> anyhow::Result<AHashMap<ClientOrderId, OrderAny>> {
         let pool = self.pool.clone();
         let (tx, rx) = std::sync::mpsc::channel();
         tokio::spawn(async move {
@@ -378,7 +379,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
                 }
                 Err(e) => {
                     log::error!("Failed to load orders: {e:?}");
-                    if let Err(e) = tx.send(HashMap::new()) {
+                    if let Err(e) = tx.send(AHashMap::new()) {
                         log::error!("Failed to send empty orders: {e:?}");
                     }
                 }
@@ -387,15 +388,15 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         Ok(rx.recv()?)
     }
 
-    async fn load_positions(&self) -> anyhow::Result<HashMap<PositionId, Position>> {
+    async fn load_positions(&self) -> anyhow::Result<AHashMap<PositionId, Position>> {
         todo!()
     }
 
-    fn load_index_order_position(&self) -> anyhow::Result<HashMap<ClientOrderId, Position>> {
+    fn load_index_order_position(&self) -> anyhow::Result<AHashMap<ClientOrderId, Position>> {
         todo!()
     }
 
-    fn load_index_order_client(&self) -> anyhow::Result<HashMap<ClientOrderId, ClientId>> {
+    fn load_index_order_client(&self) -> anyhow::Result<AHashMap<ClientOrderId, ClientId>> {
         let pool = self.pool.clone();
         let (tx, rx) = std::sync::mpsc::channel();
         tokio::spawn(async move {
@@ -408,7 +409,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
                 }
                 Err(e) => {
                     log::error!("Failed to run query load_distinct_order_event_client_ids: {e:?}");
-                    if let Err(e) = tx.send(HashMap::new()) {
+                    if let Err(e) = tx.send(AHashMap::new()) {
                         log::error!("Failed to send empty load_index_order_client result: {e:?}");
                     }
                 }
@@ -524,7 +525,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         todo!()
     }
 
-    fn load_actor(&self, component_id: &ComponentId) -> anyhow::Result<HashMap<String, Bytes>> {
+    fn load_actor(&self, component_id: &ComponentId) -> anyhow::Result<AHashMap<String, Bytes>> {
         todo!()
     }
 
@@ -532,7 +533,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         todo!()
     }
 
-    fn load_strategy(&self, strategy_id: &StrategyId) -> anyhow::Result<HashMap<String, Bytes>> {
+    fn load_strategy(&self, strategy_id: &StrategyId) -> anyhow::Result<AHashMap<String, Bytes>> {
         todo!()
     }
 

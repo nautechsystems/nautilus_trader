@@ -138,6 +138,7 @@ pem = "3.0.5"
 procfs = "0.17.0"
 pyo3 = { version = "0.25.1", default-features = false, features = [
   "chrono",
+  "hashbrown",
   "indexmap",
   "macros",
   "rust_decimal",

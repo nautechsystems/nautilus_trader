@@ -4639,6 +4639,7 @@ dependencies = [
 name = "nautilus-infrastructure"
 version = "0.50.0"
 dependencies = [
+ "ahash 0.8.12",
  "anyhow",
  "async-stream",
  "async-trait",
@@ -5895,6 +5896,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8970a78afe0628a3e3430376fc5fd76b6b45c4d43360ffd6cdd40bdde72b682a"
 dependencies = [
  "chrono",
+ "hashbrown 0.14.5",
  "indexmap 2.10.0",
  "indoc",
  "libc",

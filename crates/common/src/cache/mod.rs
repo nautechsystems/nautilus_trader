@@ -26,11 +26,12 @@ mod index;
 mod tests;
 
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    collections::VecDeque,
     fmt::Debug,
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use ahash::{AHashMap, AHashSet};
 use bytes::Bytes;
 pub use config::CacheConfig; // Re-export
 use database::{CacheDatabaseAdapter, CacheMap};
@@ -72,25 +73,25 @@ pub struct Cache {
     config: CacheConfig,
     index: CacheIndex,
     database: Option<Box<dyn CacheDatabaseAdapter>>,
-    general: HashMap<String, Bytes>,
-    currencies: HashMap<Ustr, Currency>,
-    instruments: HashMap<InstrumentId, InstrumentAny>,
-    synthetics: HashMap<InstrumentId, SyntheticInstrument>,
-    books: HashMap<InstrumentId, OrderBook>,
-    own_books: HashMap<InstrumentId, OwnOrderBook>,
-    quotes: HashMap<InstrumentId, VecDeque<QuoteTick>>,
-    trades: HashMap<InstrumentId, VecDeque<TradeTick>>,
-    mark_xrates: HashMap<(Currency, Currency), f64>,
-    mark_prices: HashMap<InstrumentId, VecDeque<MarkPriceUpdate>>,
-    index_prices: HashMap<InstrumentId, VecDeque<IndexPriceUpdate>>,
-    bars: HashMap<BarType, VecDeque<Bar>>,
-    greeks: HashMap<InstrumentId, GreeksData>,
-    yield_curves: HashMap<String, YieldCurveData>,
-    accounts: HashMap<AccountId, AccountAny>,
-    orders: HashMap<ClientOrderId, OrderAny>,
-    order_lists: HashMap<OrderListId, OrderList>,
-    positions: HashMap<PositionId, Position>,
-    position_snapshots: HashMap<PositionId, Bytes>,
+    general: AHashMap<String, Bytes>,
+    currencies: AHashMap<Ustr, Currency>,
+    instruments: AHashMap<InstrumentId, InstrumentAny>,
+    synthetics: AHashMap<InstrumentId, SyntheticInstrument>,
+    books: AHashMap<InstrumentId, OrderBook>,
+    own_books: AHashMap<InstrumentId, OwnOrderBook>,
+    quotes: AHashMap<InstrumentId, VecDeque<QuoteTick>>,
+    trades: AHashMap<InstrumentId, VecDeque<TradeTick>>,
+    mark_xrates: AHashMap<(Currency, Currency), f64>,
+    mark_prices: AHashMap<InstrumentId, VecDeque<MarkPriceUpdate>>,
+    index_prices: AHashMap<InstrumentId, VecDeque<IndexPriceUpdate>>,
+    bars: AHashMap<BarType, VecDeque<Bar>>,
+    greeks: AHashMap<InstrumentId, GreeksData>,
+    yield_curves: AHashMap<String, YieldCurveData>,
+    accounts: AHashMap<AccountId, AccountAny>,
+    orders: AHashMap<ClientOrderId, OrderAny>,
+    order_lists: AHashMap<OrderListId, OrderList>,
+    positions: AHashMap<PositionId, Position>,
+    position_snapshots: AHashMap<PositionId, Bytes>,
 }
 
 impl Debug for Cache {
@@ -142,25 +143,25 @@ impl Cache {
             config: config.unwrap_or_default(),
             index: CacheIndex::default(),
             database,
-            general: HashMap::new(),
-            currencies: HashMap::new(),
-            instruments: HashMap::new(),
-            synthetics: HashMap::new(),
-            books: HashMap::new(),
-            own_books: HashMap::new(),
-            quotes: HashMap::new(),
-            trades: HashMap::new(),
-            mark_xrates: HashMap::new(),
-            mark_prices: HashMap::new(),
-            index_prices: HashMap::new(),
-            bars: HashMap::new(),
-            greeks: HashMap::new(),
-            yield_curves: HashMap::new(),
-            accounts: HashMap::new(),
-            orders: HashMap::new(),
-            order_lists: HashMap::new(),
-            positions: HashMap::new(),
-            position_snapshots: HashMap::new(),
+            general: AHashMap::new(),
+            currencies: AHashMap::new(),
+            instruments: AHashMap::new(),
+            synthetics: AHashMap::new(),
+            books: AHashMap::new(),
+            own_books: AHashMap::new(),
+            quotes: AHashMap::new(),
+            trades: AHashMap::new(),
+            mark_xrates: AHashMap::new(),
+            mark_prices: AHashMap::new(),
+            index_prices: AHashMap::new(),
+            bars: AHashMap::new(),
+            greeks: AHashMap::new(),
+            yield_curves: AHashMap::new(),
+            accounts: AHashMap::new(),
+            orders: AHashMap::new(),
+            order_lists: AHashMap::new(),
+            positions: AHashMap::new(),
+            position_snapshots: AHashMap::new(),
         }
     }
 
@@ -180,7 +181,7 @@ impl Cache {
     pub fn cache_general(&mut self) -> anyhow::Result<()> {
         self.general = match &mut self.database {
             Some(db) => db.load()?,
-            None => HashMap::new(),
+            None => AHashMap::new(),
         };
 
         log::info!(
@@ -218,7 +219,7 @@ impl Cache {
     pub async fn cache_currencies(&mut self) -> anyhow::Result<()> {
         self.currencies = match &mut self.database {
             Some(db) => db.load_currencies().await?,
-            None => HashMap::new(),
+            None => AHashMap::new(),
         };
 
         log::info!("Cached {} currencies from database", self.general.len());
@@ -233,7 +234,7 @@ impl Cache {
     pub async fn cache_instruments(&mut self) -> anyhow::Result<()> {
         self.instruments = match &mut self.database {
             Some(db) => db.load_instruments().await?,
-            None => HashMap::new(),
+            None => AHashMap::new(),
         };
 
         log::info!("Cached {} instruments from database", self.general.len());
@@ -248,7 +249,7 @@ impl Cache {
     pub async fn cache_synthetics(&mut self) -> anyhow::Result<()> {
         self.synthetics = match &mut self.database {
             Some(db) => db.load_synthetics().await?,
-            None => HashMap::new(),
+            None => AHashMap::new(),
         };
 
         log::info!(
@@ -266,7 +267,7 @@ impl Cache {
     pub async fn cache_accounts(&mut self) -> anyhow::Result<()> {
         self.accounts = match &mut self.database {
             Some(db) => db.load_accounts().await?,
-            None => HashMap::new(),
+            None => AHashMap::new(),
         };
 
         log::info!(
@@ -284,7 +285,7 @@ impl Cache {
     pub async fn cache_orders(&mut self) -> anyhow::Result<()> {
         self.orders = match &mut self.database {
             Some(db) => db.load_orders().await?,
-            None => HashMap::new(),
+            None => AHashMap::new(),
         };
 
         log::info!("Cached {} orders from database", self.general.len());
@@ -299,7 +300,7 @@ impl Cache {
     pub async fn cache_positions(&mut self) -> anyhow::Result<()> {
         self.positions = match &mut self.database {
             Some(db) => db.load_positions().await?,
-            None => HashMap::new(),
+            None => AHashMap::new(),
         };
 
         log::info!("Cached {} positions from database", self.general.len());
@@ -1714,7 +1715,7 @@ impl Cache {
         let venue_positions = self.index.venue_positions.entry(venue).or_default();
         venue_positions.insert(position.id);
 
-        // Index: InstrumentId -> HashSet
+        // Index: InstrumentId -> AHashSet
         let instrument_id = position.instrument_id;
         let instrument_positions = self
             .index
@@ -1933,8 +1934,8 @@ impl Cache {
         venue: Option<&Venue>,
         instrument_id: Option<&InstrumentId>,
         strategy_id: Option<&StrategyId>,
-    ) -> Option<HashSet<ClientOrderId>> {
-        let mut query: Option<HashSet<ClientOrderId>> = None;
+    ) -> Option<AHashSet<ClientOrderId>> {
+        let mut query: Option<AHashSet<ClientOrderId>> = None;
 
         if let Some(venue) = venue {
             query = Some(
@@ -1990,8 +1991,8 @@ impl Cache {
         venue: Option<&Venue>,
         instrument_id: Option<&InstrumentId>,
         strategy_id: Option<&StrategyId>,
-    ) -> Option<HashSet<PositionId>> {
-        let mut query: Option<HashSet<PositionId>> = None;
+    ) -> Option<AHashSet<PositionId>> {
+        let mut query: Option<AHashSet<PositionId>> = None;
 
         if let Some(venue) = venue {
             query = Some(
@@ -2053,7 +2054,7 @@ impl Cache {
     /// Panics if any `client_order_id` in the set is not found in the cache.
     fn get_orders_for_ids(
         &self,
-        client_order_ids: &HashSet<ClientOrderId>,
+        client_order_ids: &AHashSet<ClientOrderId>,
         side: Option<OrderSide>,
     ) -> Vec<&OrderAny> {
         let side = side.unwrap_or(OrderSide::NoOrderSide);
@@ -2079,7 +2080,7 @@ impl Cache {
     /// Panics if any `position_id` in the set is not found in the cache.
     fn get_positions_for_ids(
         &self,
-        position_ids: &HashSet<PositionId>,
+        position_ids: &AHashSet<PositionId>,
         side: Option<PositionSide>,
     ) -> Vec<&Position> {
         let side = side.unwrap_or(PositionSide::NoPositionSide);
@@ -2105,7 +2106,7 @@ impl Cache {
         venue: Option<&Venue>,
         instrument_id: Option<&InstrumentId>,
         strategy_id: Option<&StrategyId>,
-    ) -> HashSet<ClientOrderId> {
+    ) -> AHashSet<ClientOrderId> {
         let query = self.build_order_query_filter_set(venue, instrument_id, strategy_id);
         match query {
             Some(query) => self.index.orders.intersection(&query).copied().collect(),
@@ -2120,7 +2121,7 @@ impl Cache {
         venue: Option<&Venue>,
         instrument_id: Option<&InstrumentId>,
         strategy_id: Option<&StrategyId>,
-    ) -> HashSet<ClientOrderId> {
+    ) -> AHashSet<ClientOrderId> {
         let query = self.build_order_query_filter_set(venue, instrument_id, strategy_id);
         match query {
             Some(query) => self
@@ -2140,7 +2141,7 @@ impl Cache {
         venue: Option<&Venue>,
         instrument_id: Option<&InstrumentId>,
         strategy_id: Option<&StrategyId>,
-    ) -> HashSet<ClientOrderId> {
+    ) -> AHashSet<ClientOrderId> {
         let query = self.build_order_query_filter_set(venue, instrument_id, strategy_id);
         match query {
             Some(query) => self
@@ -2160,7 +2161,7 @@ impl Cache {
         venue: Option<&Venue>,
         instrument_id: Option<&InstrumentId>,
         strategy_id: Option<&StrategyId>,
-    ) -> HashSet<ClientOrderId> {
+    ) -> AHashSet<ClientOrderId> {
         let query = self.build_order_query_filter_set(venue, instrument_id, strategy_id);
         match query {
             Some(query) => self
@@ -2180,7 +2181,7 @@ impl Cache {
         venue: Option<&Venue>,
         instrument_id: Option<&InstrumentId>,
         strategy_id: Option<&StrategyId>,
-    ) -> HashSet<ClientOrderId> {
+    ) -> AHashSet<ClientOrderId> {
         let query = self.build_order_query_filter_set(venue, instrument_id, strategy_id);
         match query {
             Some(query) => self
@@ -2200,7 +2201,7 @@ impl Cache {
         venue: Option<&Venue>,
         instrument_id: Option<&InstrumentId>,
         strategy_id: Option<&StrategyId>,
-    ) -> HashSet<PositionId> {
+    ) -> AHashSet<PositionId> {
         let query = self.build_position_query_filter_set(venue, instrument_id, strategy_id);
         match query {
             Some(query) => self.index.positions.intersection(&query).copied().collect(),
@@ -2215,7 +2216,7 @@ impl Cache {
         venue: Option<&Venue>,
         instrument_id: Option<&InstrumentId>,
         strategy_id: Option<&StrategyId>,
-    ) -> HashSet<PositionId> {
+    ) -> AHashSet<PositionId> {
         let query = self.build_position_query_filter_set(venue, instrument_id, strategy_id);
         match query {
             Some(query) => self
@@ -2235,7 +2236,7 @@ impl Cache {
         venue: Option<&Venue>,
         instrument_id: Option<&InstrumentId>,
         strategy_id: Option<&StrategyId>,
-    ) -> HashSet<PositionId> {
+    ) -> AHashSet<PositionId> {
         let query = self.build_position_query_filter_set(venue, instrument_id, strategy_id);
         match query {
             Some(query) => self
@@ -2250,19 +2251,19 @@ impl Cache {
 
     /// Returns the `ComponentId`s of all actors.
     #[must_use]
-    pub fn actor_ids(&self) -> HashSet<ComponentId> {
+    pub fn actor_ids(&self) -> AHashSet<ComponentId> {
         self.index.actors.clone()
     }
 
     /// Returns the `StrategyId`s of all strategies.
     #[must_use]
-    pub fn strategy_ids(&self) -> HashSet<StrategyId> {
+    pub fn strategy_ids(&self) -> AHashSet<StrategyId> {
         self.index.strategies.clone()
     }
 
     /// Returns the `ExecAlgorithmId`s of all execution algorithms.
     #[must_use]
-    pub fn exec_algorithm_ids(&self) -> HashSet<ExecAlgorithmId> {
+    pub fn exec_algorithm_ids(&self) -> AHashSet<ExecAlgorithmId> {
         self.index.exec_algorithms.clone()
     }
 
@@ -2548,7 +2549,7 @@ impl Cache {
             self.index
                 .exec_spawn_orders
                 .get(exec_spawn_id)
-                .unwrap_or(&HashSet::new()),
+                .unwrap_or(&AHashSet::new()),
             None,
         )
     }
@@ -2996,9 +2997,9 @@ impl Cache {
         }
     }
 
-    fn build_quote_table(&self, venue: &Venue) -> (HashMap<String, f64>, HashMap<String, f64>) {
-        let mut bid_quotes = HashMap::new();
-        let mut ask_quotes = HashMap::new();
+    fn build_quote_table(&self, venue: &Venue) -> (AHashMap<String, f64>, AHashMap<String, f64>) {
+        let mut bid_quotes = AHashMap::new();
+        let mut ask_quotes = AHashMap::new();
 
         for instrument_id in self.instruments.keys() {
             if instrument_id.venue != *venue {
