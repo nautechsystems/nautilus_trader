@@ -252,6 +252,9 @@ pub trait Order: 'static + Send {
     fn expire_time(&self) -> Option<UnixNanos>;
     fn price(&self) -> Option<Price>;
     fn trigger_price(&self) -> Option<Price>;
+    fn activation_price(&self) -> Option<Price> {
+        None
+    }
     fn trigger_type(&self) -> Option<TriggerType>;
     fn liquidity_side(&self) -> Option<LiquiditySide>;
     fn is_post_only(&self) -> bool;

@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#![allow(clippy::needless_return)]
+
 //! Build script for the `nautilus-core` crate.
 //!
 //! This script is executed by Cargo during compilation and is responsible for the ancillary
@@ -47,7 +49,7 @@ fn main() {
     println!("cargo:rerun-if-changed=Cargo.toml");
     println!("cargo:rerun-if-changed=../Cargo.toml");
 
-    let nautilus_version = "1.219.0"; // Hardcode to avoid including pyproject.toml in package
+    let nautilus_version = "1.220.0"; // Hardcode to avoid including pyproject.toml in package
 
     // Verify the hardcoded version matches the version from the top-level pyproject.toml
     if let Some(pyproject_version) = try_read_pyproject_version() {

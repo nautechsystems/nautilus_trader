@@ -61,11 +61,11 @@ fn mem_leak_test<T>(setup: impl FnOnce() -> T, run: impl Fn(&T), threshold: f64,
 
     let after = me.stat().unwrap().rss * page_size / 1024 - setup_mem;
 
-    if !(after.abs_diff(before) as f64 / (before as f64) < threshold) {
+    if (after.abs_diff(before) as f64 / (before as f64)) >= threshold {
         println!("Memory leak detected after {iter} iterations");
         println!("Memory before runs (in KB): {before}");
         println!("Memory after runs (in KB): {after}");
-        assert!(false);
+        panic!("Memory leak detected");
     }
 }
 
@@ -814,10 +814,10 @@ fn test_consolidate_data_by_period_basic() {
 
     // Create data spanning multiple hours
     let bars = vec![
-        create_bar(3600_000_000_000), // 1 hour
-        create_bar(3601_000_000_000), // 1 hour + 1 second
-        create_bar(7200_000_000_000), // 2 hours
-        create_bar(7201_000_000_000), // 2 hours + 1 second
+        create_bar(3_600_000_000_000), // 1 hour
+        create_bar(3_601_000_000_000), // 1 hour + 1 second
+        create_bar(7_200_000_000_000), // 2 hours
+        create_bar(7_201_000_000_000), // 2 hours + 1 second
     ];
     catalog.write_to_parquet(bars, None, None, None).unwrap();
 
@@ -826,7 +826,7 @@ fn test_consolidate_data_by_period_basic() {
         .consolidate_data_by_period(
             "bars",
             Some("AUD/USD.SIM".to_string()),
-            Some(3600_000_000_000), // 1 hour in nanoseconds
+            Some(3_600_000_000_000), // 1 hour in nanoseconds
             None,
             None,
             Some(true),
@@ -862,7 +862,7 @@ fn test_consolidate_data_by_period_with_time_range() {
         .consolidate_data_by_period(
             "bars",
             Some("AUD/USD.SIM".to_string()),
-            Some(86400_000_000_000), // 1 day in nanoseconds
+            Some(86_400_000_000_000), // 1 day in nanoseconds
             Some(UnixNanos::from(2000)),
             Some(UnixNanos::from(4000)),
             Some(false),
@@ -885,7 +885,7 @@ fn test_consolidate_data_by_period_empty_data() {
     let result = catalog.consolidate_data_by_period(
         "bars",
         Some("AUD/USD.SIM".to_string()),
-        Some(86400_000_000_000), // 1 day in nanoseconds
+        Some(86_400_000_000_000), // 1 day in nanoseconds
         None,
         None,
         Some(true),
@@ -911,9 +911,9 @@ fn test_consolidate_data_by_period_different_periods() {
 
     // Test different period sizes
     let periods = vec![
-        1800_000_000_000,  // 30 minutes
-        3600_000_000_000,  // 1 hour
-        86400_000_000_000, // 1 day
+        1_800_000_000_000,  // 30 minutes
+        3_600_000_000_000,  // 1 hour
+        86_400_000_000_000, // 1 day
     ];
 
     for period_nanos in periods {
@@ -946,7 +946,7 @@ fn test_consolidate_data_by_period_ensure_contiguous_files_false() {
         .consolidate_data_by_period(
             "bars",
             Some("AUD/USD.SIM".to_string()),
-            Some(86400_000_000_000), // 1 day in nanoseconds
+            Some(86_400_000_000_000), // 1 day in nanoseconds
             None,
             None,
             Some(false), // Use actual data timestamps for file naming
@@ -975,7 +975,7 @@ fn test_consolidate_catalog_by_period_basic() {
     // Act - consolidate entire catalog
     catalog
         .consolidate_catalog_by_period(
-            Some(86400_000_000_000), // 1 day in nanoseconds
+            Some(86_400_000_000_000), // 1 day in nanoseconds
             None,
             None,
             Some(true),
@@ -1006,7 +1006,7 @@ fn test_consolidate_catalog_by_period_with_time_range() {
     // Act - consolidate catalog with time range
     catalog
         .consolidate_catalog_by_period(
-            Some(86400_000_000_000), // 1 day in nanoseconds
+            Some(86_400_000_000_000), // 1 day in nanoseconds
             Some(UnixNanos::from(2000)),
             Some(UnixNanos::from(8000)),
             Some(false),
@@ -1027,7 +1027,7 @@ fn test_consolidate_catalog_by_period_empty_catalog() {
 
     // Act - consolidate empty catalog
     let result = catalog.consolidate_catalog_by_period(
-        Some(86400_000_000_000), // 1 day in nanoseconds
+        Some(86_400_000_000_000), // 1 day in nanoseconds
         None,
         None,
         Some(true),
@@ -1075,7 +1075,7 @@ fn test_consolidate_data_by_period_multiple_instruments() {
         .consolidate_data_by_period(
             "bars",
             Some("AUD/USD.SIM".to_string()),
-            Some(86400_000_000_000), // 1 day in nanoseconds
+            Some(86_400_000_000_000), // 1 day in nanoseconds
             None,
             None,
             Some(true),
@@ -1103,7 +1103,7 @@ fn test_consolidate_data_by_period_invalid_type() {
     let result = catalog.consolidate_data_by_period(
         "invalid_type",
         Some("AUD/USD.SIM".to_string()),
-        Some(86400_000_000_000), // 1 day in nanoseconds
+        Some(86_400_000_000_000), // 1 day in nanoseconds
         None,
         None,
         Some(true),
@@ -1120,7 +1120,7 @@ fn test_prepare_consolidation_queries_empty_intervals() {
 
     // Test with empty intervals
     let intervals = vec![];
-    let period_nanos = 86400_000_000_000; // 1 day
+    let period_nanos = 86_400_000_000_000; // 1 day
 
     let queries = catalog
         .prepare_consolidation_queries("quotes", None, &intervals, period_nanos, None, None, true)
@@ -1137,7 +1137,7 @@ fn test_prepare_consolidation_queries_filtered_intervals() {
 
     // Test with intervals that are filtered out by time range
     let intervals = vec![(1000, 2000), (3000, 4000)];
-    let period_nanos = 86400_000_000_000; // 1 day
+    let period_nanos = 86_400_000_000_000; // 1 day
     let start = Some(UnixNanos::from(5000)); // After all intervals
     let end = Some(UnixNanos::from(6000));
 
@@ -1271,7 +1271,7 @@ fn test_generic_consolidate_data_by_period_quotes() {
     catalog
         .consolidate_data_by_period_generic::<QuoteTick>(
             Some("ETH/USDT.BINANCE".to_string()),
-            Some(86400_000_000_000), // 1 day in nanoseconds
+            Some(86_400_000_000_000), // 1 day in nanoseconds
             None,
             None,
             Some(true),
@@ -1306,7 +1306,7 @@ fn test_generic_consolidate_data_by_period_bars() {
     catalog
         .consolidate_data_by_period_generic::<Bar>(
             Some("AUD/USD.SIM".to_string()),
-            Some(86400_000_000_000), // 1 day in nanoseconds
+            Some(86_400_000_000_000), // 1 day in nanoseconds
             None,
             None,
             Some(true),
@@ -1328,7 +1328,7 @@ fn test_generic_consolidate_data_by_period_empty_catalog() {
     // Act - consolidate empty catalog
     let result = catalog.consolidate_data_by_period_generic::<QuoteTick>(
         Some("ETH/USDT.BINANCE".to_string()),
-        Some(86400_000_000_000), // 1 day in nanoseconds
+        Some(86_400_000_000_000), // 1 day in nanoseconds
         None,
         None,
         Some(true),
@@ -1359,7 +1359,7 @@ fn test_generic_consolidate_data_by_period_with_time_range() {
     catalog
         .consolidate_data_by_period_generic::<QuoteTick>(
             Some("ETH/USDT.BINANCE".to_string()),
-            Some(86400_000_000_000), // 1 day in nanoseconds
+            Some(86_400_000_000_000), // 1 day in nanoseconds
             Some(UnixNanos::from(2000)),
             Some(UnixNanos::from(8000)),
             Some(false),
@@ -1426,7 +1426,7 @@ fn test_consolidation_preserves_data_integrity() {
         .consolidate_data_by_period(
             "bars",
             Some("AUD/USD.SIM".to_string()),
-            Some(86400_000_000_000), // 1 day in nanoseconds
+            Some(86_400_000_000_000), // 1 day in nanoseconds
             None,
             None,
             Some(true),
@@ -1751,9 +1751,7 @@ fn test_delete_data_range_complete_file_deletion() {
     ];
 
     // Write data
-    catalog
-        .write_to_parquet(quotes.clone(), None, None, None)
-        .unwrap();
+    catalog.write_to_parquet(quotes, None, None, None).unwrap();
 
     // Verify initial state
     let initial_data = catalog
@@ -1791,9 +1789,7 @@ fn test_delete_data_range_partial_file_overlap_start() {
     ];
 
     // Write data
-    catalog
-        .write_to_parquet(quotes.clone(), None, None, None)
-        .unwrap();
+    catalog.write_to_parquet(quotes, None, None, None).unwrap();
 
     // Act - delete first part of the data
     catalog
@@ -1827,9 +1823,7 @@ fn test_delete_data_range_partial_file_overlap_end() {
     ];
 
     // Write data
-    catalog
-        .write_to_parquet(quotes.clone(), None, None, None)
-        .unwrap();
+    catalog.write_to_parquet(quotes, None, None, None).unwrap();
 
     // Act - delete last part of the data
     catalog
@@ -1864,9 +1858,7 @@ fn test_delete_data_range_partial_file_overlap_middle() {
     ];
 
     // Write data
-    catalog
-        .write_to_parquet(quotes.clone(), None, None, None)
-        .unwrap();
+    catalog.write_to_parquet(quotes, None, None, None).unwrap();
 
     // Act - delete middle part of the data
     catalog
@@ -1919,9 +1911,7 @@ fn test_delete_data_range_no_intersection() {
     let quotes = vec![create_quote_tick(2_000_000_000)];
 
     // Write data
-    catalog
-        .write_to_parquet(quotes.clone(), None, None, None)
-        .unwrap();
+    catalog.write_to_parquet(quotes, None, None, None).unwrap();
 
     // Act - delete data outside existing range
     catalog
@@ -1953,12 +1943,8 @@ fn test_delete_catalog_range_multiple_data_types() {
     ];
     let bars = vec![create_bar(1_500_000_000), create_bar(2_500_000_000)];
 
-    catalog
-        .write_to_parquet(quotes.clone(), None, None, None)
-        .unwrap();
-    catalog
-        .write_to_parquet(bars.clone(), None, None, None)
-        .unwrap();
+    catalog.write_to_parquet(quotes, None, None, None).unwrap();
+    catalog.write_to_parquet(bars, None, None, None).unwrap();
 
     // Verify initial state
     let initial_quotes = catalog
@@ -2004,12 +1990,8 @@ fn test_delete_catalog_range_complete_deletion() {
     let quotes = vec![create_quote_tick(1_000_000_000)];
     let bars = vec![create_bar(2_000_000_000)];
 
-    catalog
-        .write_to_parquet(quotes.clone(), None, None, None)
-        .unwrap();
-    catalog
-        .write_to_parquet(bars.clone(), None, None, None)
-        .unwrap();
+    catalog.write_to_parquet(quotes, None, None, None).unwrap();
+    catalog.write_to_parquet(bars, None, None, None).unwrap();
 
     // Verify initial state
     assert_eq!(
@@ -2098,12 +2080,8 @@ fn test_delete_catalog_range_open_boundaries() {
         create_bar(3_500_000_000),
     ];
 
-    catalog
-        .write_to_parquet(quotes.clone(), None, None, None)
-        .unwrap();
-    catalog
-        .write_to_parquet(bars.clone(), None, None, None)
-        .unwrap();
+    catalog.write_to_parquet(quotes, None, None, None).unwrap();
+    catalog.write_to_parquet(bars, None, None, None).unwrap();
 
     // Act - delete from beginning to middle (open start)
     catalog
@@ -2198,9 +2176,7 @@ fn test_delete_data_range_nanosecond_precision_boundaries() {
         create_quote_tick(1_000_000_003), // +3 nanoseconds
     ];
 
-    catalog
-        .write_to_parquet(quotes.clone(), None, None, None)
-        .unwrap();
+    catalog.write_to_parquet(quotes, None, None, None).unwrap();
 
     // Act - delete exactly the middle two timestamps [1_000_000_001, 1_000_000_002]
     catalog
@@ -2235,9 +2211,7 @@ fn test_delete_data_range_single_file_double_split() {
         create_quote_tick(5_000_000_000),
     ];
 
-    catalog
-        .write_to_parquet(quotes.clone(), None, None, None)
-        .unwrap();
+    catalog.write_to_parquet(quotes, None, None, None).unwrap();
 
     // Act - delete middle range [2_500_000_000, 3_500_000_000]
     // This should create both split_before and split_after operations
@@ -2275,9 +2249,7 @@ fn test_delete_data_range_saturating_arithmetic_edge_cases() {
         create_quote_tick(2),
     ];
 
-    catalog
-        .write_to_parquet(quotes.clone(), None, None, None)
-        .unwrap();
+    catalog.write_to_parquet(quotes, None, None, None).unwrap();
 
     // Act - delete range [0, 1] which tests saturating_sub(1) on timestamp 0
     catalog
@@ -2295,4 +2267,117 @@ fn test_delete_data_range_saturating_arithmetic_edge_cases() {
         .unwrap();
     assert_eq!(remaining_data.len(), 1);
     assert_eq!(remaining_data[0].ts_init.as_u64(), 2);
+}
+
+#[rstest]
+fn test_make_local_path() {
+    use std::path::PathBuf;
+
+    use nautilus_persistence::backend::catalog::make_local_path;
+
+    // Test basic path construction
+    let path = make_local_path("/base", &["data", "quotes", "EURUSD"]);
+    let expected = PathBuf::from("/base")
+        .join("data")
+        .join("quotes")
+        .join("EURUSD");
+    assert_eq!(path, expected);
+
+    // Test empty base path
+    let path = make_local_path("", &["data", "quotes"]);
+    let expected = PathBuf::from("data").join("quotes");
+    assert_eq!(path, expected);
+
+    // Test single component
+    let path = make_local_path("/base", &["data"]);
+    let expected = PathBuf::from("/base").join("data");
+    assert_eq!(path, expected);
+}
+
+#[rstest]
+fn test_make_object_store_path() {
+    use nautilus_persistence::backend::catalog::make_object_store_path;
+
+    // Test basic path construction
+    let path = make_object_store_path("base", &["data", "quotes", "EURUSD"]);
+    assert_eq!(path, "base/data/quotes/EURUSD");
+
+    // Test empty base path
+    let path = make_object_store_path("", &["data", "quotes"]);
+    assert_eq!(path, "data/quotes");
+
+    // Test with trailing slashes in base
+    let path = make_object_store_path("base/", &["data", "quotes"]);
+    assert_eq!(path, "base/data/quotes");
+
+    // Test with leading slashes in components
+    let path = make_object_store_path("base", &["/data", "/quotes"]);
+    assert_eq!(path, "base/data/quotes");
+
+    // Test with backslashes (Windows-style)
+    let path = make_object_store_path("base\\", &["data\\", "quotes"]);
+    assert_eq!(path, "base/data/quotes");
+}
+
+#[rstest]
+fn test_make_object_store_path_owned() {
+    use nautilus_persistence::backend::catalog::make_object_store_path_owned;
+
+    // Test with owned strings
+    let components = vec![
+        "data".to_string(),
+        "quotes".to_string(),
+        "EURUSD".to_string(),
+    ];
+    let path = make_object_store_path_owned("base", components);
+    assert_eq!(path, "base/data/quotes/EURUSD");
+
+    // Test empty base path
+    let components = vec!["data".to_string(), "quotes".to_string()];
+    let path = make_object_store_path_owned("", components);
+    assert_eq!(path, "data/quotes");
+}
+
+#[rstest]
+fn test_local_to_object_store_path() {
+    use std::path::PathBuf;
+
+    use nautilus_persistence::backend::catalog::local_to_object_store_path;
+
+    // Test Unix-style path
+    let local_path = PathBuf::from("data").join("quotes").join("EURUSD");
+    let object_path = local_to_object_store_path(&local_path);
+    assert_eq!(object_path, "data/quotes/EURUSD");
+
+    // Test with backslashes (simulating Windows)
+    let path_str = "data\\quotes\\EURUSD";
+    let local_path = PathBuf::from(path_str);
+    let object_path = local_to_object_store_path(&local_path);
+    // Should normalize backslashes to forward slashes
+    assert!(object_path.contains('/') || !object_path.contains('\\'));
+}
+
+#[rstest]
+fn test_extract_path_components() {
+    use nautilus_persistence::backend::catalog::extract_path_components;
+
+    // Test Unix-style path
+    let components = extract_path_components("data/quotes/EURUSD");
+    assert_eq!(components, vec!["data", "quotes", "EURUSD"]);
+
+    // Test Windows-style path
+    let components = extract_path_components("data\\quotes\\EURUSD");
+    assert_eq!(components, vec!["data", "quotes", "EURUSD"]);
+
+    // Test mixed separators
+    let components = extract_path_components("data/quotes\\EURUSD");
+    assert_eq!(components, vec!["data", "quotes", "EURUSD"]);
+
+    // Test with leading/trailing separators
+    let components = extract_path_components("/data/quotes/");
+    assert_eq!(components, vec!["data", "quotes"]);
+
+    // Test empty path
+    let components = extract_path_components("");
+    assert!(components.is_empty());
 }

@@ -53,6 +53,7 @@ pub use unsubscribe::{
 #[cfg(feature = "defi")]
 use crate::messages::defi::{DefiSubscribeCommand, DefiUnsubscribeCommand};
 
+#[non_exhaustive]
 #[derive(Clone, Debug, PartialEq)]
 pub enum DataCommand {
     Request(RequestCommand),

@@ -1495,7 +1495,7 @@ cdef class Portfolio(PortfolioFacade):
                 bet_position = self._bet_positions.get(position.id)
 
                 if bet_position is None:
-                    self._log.error(
+                    self._log.debug(
                         f"Cannot calculate unrealized PnL: no `BetPosition` for {position.id}",
                     )
                     return None  # Cannot calculate
@@ -1594,7 +1594,7 @@ cdef class Portfolio(PortfolioFacade):
                 bet_position = self._bet_positions.get(position.id)
 
                 if bet_position is None:
-                    self._log.error(
+                    self._log.debug(
                         f"Cannot calculate unrealized PnL: no `BetPosition` for {position.id}",
                     )
                     return None  # Cannot calculate

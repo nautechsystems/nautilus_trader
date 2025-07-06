@@ -130,6 +130,8 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
         The initial leverage to be used for each symbol. It's applicable to futures only.
     futures_margin_types : dict[BinanceSymbol, BinanceFuturesMarginType], optional
         Margin type (isolated or cross) to be used for each symbol. It's applicable to futures only.
+    listen_key_ping_max_failures : PositiveInt, default 3
+        The maximum number of consecutive listen key ping failures before triggering recovery.
 
     Warnings
     --------
@@ -157,3 +159,4 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
     retry_delay_max_ms: PositiveInt | None = None
     futures_leverages: dict[BinanceSymbol, PositiveInt] | None = None
     futures_margin_types: dict[BinanceSymbol, BinanceFuturesMarginType] | None = None
+    listen_key_ping_max_failures: PositiveInt = 3

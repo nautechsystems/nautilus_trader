@@ -1127,14 +1127,14 @@ mod property_tests {
         ) {
             // Create a decimal string with exactly 'precision' decimal places
             let fractional_str = format!("{:0width$}", fractional % 10_u32.pow(precision as u32), width = precision as usize);
-            let quantity_str = format!("{}.{}", integral, fractional_str);
+            let quantity_str = format!("{integral}.{fractional_str}");
 
             let parsed: Quantity = quantity_str.parse().unwrap();
             prop_assert_eq!(parsed.precision, precision);
 
             // Round-trip should preserve the original string (after normalization)
             let round_trip = parsed.to_string();
-            let expected_value = format!("{}.{}", integral, fractional_str);
+            let expected_value = format!("{integral}.{fractional_str}");
             prop_assert_eq!(round_trip, expected_value);
         }
 
@@ -1178,7 +1178,7 @@ mod property_tests {
 
             // Addition should either succeed or fail predictably
             let sum_f64 = q_a.as_f64() + q_b.as_f64();
-            if sum_f64.is_finite() && sum_f64 >= QUANTITY_MIN && sum_f64 <= QUANTITY_MAX {
+            if sum_f64.is_finite() && (QUANTITY_MIN..=QUANTITY_MAX).contains(&sum_f64) {
                 let sum = q_a + q_b;
                 prop_assert!(sum.as_f64().is_finite());
                 prop_assert!(!sum.is_undefined());
@@ -1186,7 +1186,7 @@ mod property_tests {
 
             // Subtraction should either succeed or fail predictably
             let diff_f64 = q_a.as_f64() - q_b.as_f64();
-            if diff_f64.is_finite() && diff_f64 >= QUANTITY_MIN && diff_f64 <= QUANTITY_MAX {
+            if diff_f64.is_finite() && (QUANTITY_MIN..=QUANTITY_MAX).contains(&diff_f64) {
                 let diff = q_a - q_b;
                 prop_assert!(diff.as_f64().is_finite());
                 prop_assert!(!diff.is_undefined());

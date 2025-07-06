@@ -17,8 +17,7 @@
 //!
 //! An exchange rate is the value of one asset versus that of another.
 
-use std::collections::{HashMap, HashSet};
-
+use ahash::{AHashMap, AHashSet};
 use nautilus_model::enums::PriceType;
 use ustr::Ustr;
 
@@ -40,8 +39,8 @@ pub fn get_exchange_rate(
     from_currency: Ustr,
     to_currency: Ustr,
     price_type: PriceType,
-    quotes_bid: HashMap<String, f64>,
-    quotes_ask: HashMap<String, f64>,
+    quotes_bid: AHashMap<String, f64>,
+    quotes_ask: AHashMap<String, f64>,
 ) -> anyhow::Result<Option<f64>> {
     if from_currency == to_currency {
         // When the source and target currencies are identical,
@@ -57,11 +56,11 @@ pub fn get_exchange_rate(
     }
 
     // Build effective quotes based on the requested price type
-    let effective_quotes: HashMap<String, f64> = match price_type {
+    let effective_quotes: AHashMap<String, f64> = match price_type {
         PriceType::Bid => quotes_bid,
         PriceType::Ask => quotes_ask,
         PriceType::Mid => {
-            let mut mid_quotes = HashMap::new();
+            let mut mid_quotes = AHashMap::new();
             for (pair, bid) in &quotes_bid {
                 let ask = quotes_ask
                     .get(pair)
@@ -74,7 +73,7 @@ pub fn get_exchange_rate(
     };
 
     // Construct a graph: each currency maps to its neighbors and corresponding conversion rate
-    let mut graph: HashMap<Ustr, Vec<(Ustr, f64)>> = HashMap::new();
+    let mut graph: AHashMap<Ustr, Vec<(Ustr, f64)>> = AHashMap::new();
     for (pair, rate) in effective_quotes {
         let parts: Vec<&str> = pair.split('/').collect();
         if parts.len() != 2 {
@@ -90,7 +89,7 @@ pub fn get_exchange_rate(
 
     // DFS: search for a conversion path from `from_currency` to `to_currency`
     let mut stack: Vec<(Ustr, f64)> = vec![(from_currency, 1.0)];
-    let mut visited: HashSet<Ustr> = HashSet::new();
+    let mut visited: AHashSet<Ustr> = AHashSet::new();
     visited.insert(from_currency);
 
     while let Some((current, current_rate)) = stack.pop() {
@@ -115,16 +114,15 @@ pub fn get_exchange_rate(
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
+    use ahash::AHashMap;
     use rstest::rstest;
     use ustr::Ustr;
 
     use super::*;
 
-    fn setup_test_quotes() -> (HashMap<String, f64>, HashMap<String, f64>) {
-        let mut quotes_bid = HashMap::new();
-        let mut quotes_ask = HashMap::new();
+    fn setup_test_quotes() -> (AHashMap<String, f64>, AHashMap<String, f64>) {
+        let mut quotes_bid = AHashMap::new();
+        let mut quotes_ask = AHashMap::new();
 
         // Direct pairs
         quotes_bid.insert("EUR/USD".to_string(), 1.1000);
@@ -144,8 +142,8 @@ mod tests {
 
     #[rstest]
     fn test_invalid_pair_string() {
-        let mut quotes_bid = HashMap::new();
-        let mut quotes_ask = HashMap::new();
+        let mut quotes_bid = AHashMap::new();
+        let mut quotes_ask = AHashMap::new();
         // Invalid pair string (missing '/')
         quotes_bid.insert("EURUSD".to_string(), 1.1000);
         quotes_ask.insert("EURUSD".to_string(), 1.1002);
@@ -254,8 +252,8 @@ mod tests {
 
     #[rstest]
     fn test_no_conversion_path() {
-        let mut quotes_bid = HashMap::new();
-        let mut quotes_ask = HashMap::new();
+        let mut quotes_bid = AHashMap::new();
+        let mut quotes_ask = AHashMap::new();
 
         // Only one pair provided
         quotes_bid.insert("EUR/USD".to_string(), 1.1000);
@@ -275,8 +273,8 @@ mod tests {
 
     #[rstest]
     fn test_empty_quotes() {
-        let quotes_bid: HashMap<String, f64> = HashMap::new();
-        let quotes_ask: HashMap<String, f64> = HashMap::new();
+        let quotes_bid: AHashMap<String, f64> = AHashMap::new();
+        let quotes_ask: AHashMap<String, f64> = AHashMap::new();
         let result = get_exchange_rate(
             Ustr::from("EUR"),
             Ustr::from("USD"),
@@ -289,8 +287,8 @@ mod tests {
 
     #[rstest]
     fn test_unequal_quotes_length() {
-        let mut quotes_bid = HashMap::new();
-        let mut quotes_ask = HashMap::new();
+        let mut quotes_bid = AHashMap::new();
+        let mut quotes_ask = AHashMap::new();
 
         quotes_bid.insert("EUR/USD".to_string(), 1.1000);
         quotes_bid.insert("GBP/USD".to_string(), 1.3000);
@@ -323,8 +321,8 @@ mod tests {
 
     #[rstest]
     fn test_cycle_handling() {
-        let mut quotes_bid = HashMap::new();
-        let mut quotes_ask = HashMap::new();
+        let mut quotes_bid = AHashMap::new();
+        let mut quotes_ask = AHashMap::new();
         // Create a cycle by including both EUR/USD and USD/EUR quotes
         quotes_bid.insert("EUR/USD".to_string(), 1.1);
         quotes_ask.insert("EUR/USD".to_string(), 1.1002);
@@ -347,8 +345,8 @@ mod tests {
 
     #[rstest]
     fn test_multiple_paths() {
-        let mut quotes_bid = HashMap::new();
-        let mut quotes_ask = HashMap::new();
+        let mut quotes_bid = AHashMap::new();
+        let mut quotes_ask = AHashMap::new();
         // Direct conversion
         quotes_bid.insert("EUR/USD".to_string(), 1.1000);
         quotes_ask.insert("EUR/USD".to_string(), 1.1002);

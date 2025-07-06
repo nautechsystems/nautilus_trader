@@ -785,6 +785,57 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         self._log.info(f"Deleted {repr(strategy_id)}")
 
+    cpdef void delete_order(self, ClientOrderId client_order_id):
+        """
+        Delete the given order from the database.
+
+        Parameters
+        ----------
+        client_order_id : ClientOrderId
+            The client order ID to delete.
+
+        """
+        Condition.not_none(client_order_id, "client_order_id")
+
+        self._backing.delete_order(client_order_id.to_str())
+
+        self._log.info(f"Deleted order {repr(client_order_id)}")
+
+    cpdef void delete_position(self, PositionId position_id):
+        """
+        Delete the given position from the database.
+
+        Parameters
+        ----------
+        position_id : PositionId
+            The position ID to delete.
+
+        """
+        Condition.not_none(position_id, "position_id")
+
+        self._backing.delete_position(position_id.to_str())
+
+        self._log.info(f"Deleted position {repr(position_id)}")
+
+    cpdef void delete_account_event(self, AccountId account_id, str event_id):
+        """
+        Delete the given account event from the database.
+
+        Parameters
+        ----------
+        account_id : AccountId
+            The account ID to delete events for.
+        event_id : str
+            The event ID to delete.
+
+        """
+        Condition.not_none(account_id, "account_id")
+        Condition.not_none(event_id, "event_id")
+
+        self._backing.delete_account_event(account_id.to_str(), event_id)
+
+        self._log.info(f"Deleted account event {repr(account_id)}:{event_id}")
+
     cpdef void add(self, str key, bytes value):
         """
         Add the given general object value to the database.

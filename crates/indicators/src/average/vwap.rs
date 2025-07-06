@@ -311,7 +311,7 @@ mod tests {
     #[rstest]
     #[case(1.0e-9, 1.0e-9)]
     #[case(1.0e9, 1.0e6)]
-    #[case(42.4242, 3.1415)]
+    #[case(42.4242, std::f64::consts::PI)]
     fn test_extreme_prices_and_volumes_do_not_overflow(#[case] price: f64, #[case] volume: f64) {
         let mut vwap = VolumeWeightedAveragePrice::new();
         vwap.update_raw(price, volume, DAY0);

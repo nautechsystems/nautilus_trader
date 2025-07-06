@@ -31,6 +31,10 @@ use crate::defi::{
 /// Represents an Ethereum-compatible blockchain block with essential metadata.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct Block {
     /// The blockchain network this block is part of.
     #[serde(skip)]
@@ -333,7 +337,7 @@ mod tests {
         let mut block =
             match serde_json::from_str::<RpcNodeWssResponse<Block>>(&eth_rpc_block_response) {
                 Ok(rpc_response) => rpc_response.params.result,
-                Err(e) => panic!("Failed to deserialize block response with error {}", e),
+                Err(e) => panic!("Failed to deserialize block response with error {e}"),
             };
         block.set_chain(Blockchain::Ethereum);
 
@@ -369,7 +373,7 @@ mod tests {
         let mut block =
             match serde_json::from_str::<RpcNodeWssResponse<Block>>(&polygon_rpc_block_response) {
                 Ok(rpc_response) => rpc_response.params.result,
-                Err(e) => panic!("Failed to deserialize block response with error {}", e),
+                Err(e) => panic!("Failed to deserialize block response with error {e}"),
             };
         block.set_chain(Blockchain::Polygon);
 
@@ -404,7 +408,7 @@ mod tests {
         let mut block =
             match serde_json::from_str::<RpcNodeWssResponse<Block>>(&base_rpc_block_response) {
                 Ok(rpc_response) => rpc_response.params.result,
-                Err(e) => panic!("Failed to deserialize block response with error {}", e),
+                Err(e) => panic!("Failed to deserialize block response with error {e}"),
             };
         block.set_chain(Blockchain::Base);
 
@@ -440,7 +444,7 @@ mod tests {
         let mut block =
             match serde_json::from_str::<RpcNodeWssResponse<Block>>(&arbitrum_rpc_block_response) {
                 Ok(rpc_response) => rpc_response.params.result,
-                Err(e) => panic!("Failed to deserialize block response with error {}", e),
+                Err(e) => panic!("Failed to deserialize block response with error {e}"),
             };
         block.set_chain(Blockchain::Arbitrum);
 

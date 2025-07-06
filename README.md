@@ -382,7 +382,7 @@ See the **Redis** section of the [Installation Guide](https://nautilustrader.io/
 
 ## Makefile
 
-A `Makefile` is provided to automate most installation and build tasks for development. It provides the following targets:
+A `Makefile` is provided to automate most installation and build tasks for development. Some of the targets include:
 
 - `make install`: Installs in `release` build mode with all dependency groups and extras.
 - `make install-debug`: Same as `make install` but with `debug` build mode.
@@ -391,6 +391,7 @@ A `Makefile` is provided to automate most installation and build tasks for devel
 - `make build-debug`: Runs the build script in `debug` build mode.
 - `make build-wheel`: Runs uv build with a wheel format in `release` mode.
 - `make build-wheel-debug`: Runs uv build with a wheel format in `debug` mode.
+- `make cargo-test`: Runs all Rust crate tests using `cargo-nextest`.
 - `make clean`: Deletes all build results, such as `.so` or `.dll` files.
 - `make distclean`: **CAUTION** Removes all artifacts not in the git index from the repository. This includes source files which have not been `git add`ed.
 - `make docs`: Builds the documentation HTML using Sphinx.
@@ -401,7 +402,7 @@ A `Makefile` is provided to automate most installation and build tasks for devel
 
 > [!TIP]
 >
-> Run `make build-debug` to compile after changes to Rust or Cython code for the most efficient development workflow.
+> Run `make help` for documentation on all available make targets.
 
 ## Examples
 
@@ -458,6 +459,10 @@ http://127.0.0.1:8888/lab
 
 We aim to provide the most pleasant developer experience possible for this hybrid codebase of Python, Cython and Rust.
 See the [Developer Guide](https://nautilustrader.io/docs/latest/developer_guide/index.html) for helpful information.
+
+> [!TIP]
+>
+> Run `make build-debug` to compile after changes to Rust or Cython code for the most efficient development workflow.
 
 ### Testing with Rust
 

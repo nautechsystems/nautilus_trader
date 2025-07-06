@@ -867,13 +867,13 @@ class TestBacktestAcceptanceTestsMarketMaking:
         self.engine.run()
 
         # Assert
-        assert self.engine.kernel.msgbus.sent_count == 16_575
-        assert self.engine.kernel.msgbus.pub_count == 16_146
-        assert self.engine.iteration == 4_216
+        assert self.engine.kernel.msgbus.sent_count == 23_688
+        assert self.engine.kernel.msgbus.pub_count == 24_983
+        assert self.engine.iteration == 8_198
         account = self.engine.portfolio.account(self.venue)
         assert account is not None
-        assert account.event_count == 3_067
-        assert account.balance_total(GBP) == Money(924.64, GBP)
+        assert account.event_count == 3_530
+        assert account.balance_total(GBP) == Money(-19_351.96, GBP)
 
 
 class TestBacktestNodeWithBacktestDataIterator:

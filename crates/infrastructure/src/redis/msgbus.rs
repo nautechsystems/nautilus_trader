@@ -640,8 +640,10 @@ mod serial_tests {
 
         let trader_id = TraderId::from("tester-001");
         let instance_id = UUID4::new();
-        let mut config = MessageBusConfig::default();
-        config.database = Some(DatabaseConfig::default());
+        let config = MessageBusConfig {
+            database: Some(DatabaseConfig::default()),
+            ..Default::default()
+        };
 
         let stream_key = get_stream_key(trader_id, instance_id, &config);
         let external_streams = vec![stream_key.clone()];
@@ -679,8 +681,10 @@ mod serial_tests {
 
         let trader_id = TraderId::from("tester-001");
         let instance_id = UUID4::new();
-        let mut config = MessageBusConfig::default();
-        config.database = Some(DatabaseConfig::default());
+        let config = MessageBusConfig {
+            database: Some(DatabaseConfig::default()),
+            ..Default::default()
+        };
 
         let stream_key = get_stream_key(trader_id, instance_id, &config);
         let external_streams = vec![stream_key.clone()];
@@ -730,8 +734,10 @@ mod serial_tests {
 
         let trader_id = TraderId::from("tester-001");
         let instance_id = UUID4::new();
-        let mut config = MessageBusConfig::default();
-        config.database = Some(DatabaseConfig::default());
+        let config = MessageBusConfig {
+            database: Some(DatabaseConfig::default()),
+            ..Default::default()
+        };
 
         let stream_key = get_stream_key(trader_id, instance_id, &config);
         let external_streams = vec![stream_key.clone()];
@@ -785,9 +791,11 @@ mod serial_tests {
 
         let trader_id = TraderId::from("tester-001");
         let instance_id = UUID4::new();
-        let mut config = MessageBusConfig::default();
-        config.database = Some(DatabaseConfig::default());
-        config.stream_per_topic = false;
+        let config = MessageBusConfig {
+            database: Some(DatabaseConfig::default()),
+            stream_per_topic: false,
+            ..Default::default()
+        };
         let stream_key = get_stream_key(trader_id, instance_id, &config);
 
         // Start the publish_messages task
@@ -839,8 +847,10 @@ mod serial_tests {
     async fn test_close() {
         let trader_id = TraderId::from("tester-001");
         let instance_id = UUID4::new();
-        let mut config = MessageBusConfig::default();
-        config.database = Some(DatabaseConfig::default());
+        let config = MessageBusConfig {
+            database: Some(DatabaseConfig::default()),
+            ..Default::default()
+        };
 
         let mut db = RedisMessageBusDatabase::new(trader_id, instance_id, config).unwrap();
 

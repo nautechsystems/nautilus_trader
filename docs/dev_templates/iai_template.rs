@@ -3,7 +3,7 @@
 //! Copy this file into `crates/<my_crate>/benches/` and adjust names and
 //! imports.
 
-use iai::black_box;
+use std::hint::black_box;
 
 // -----------------------------------------------------------------------------
 // Replace `fast_add` with the real function you want to measure.

@@ -1,26 +1,57 @@
-# NautilusTrader 1.219.0 Beta
+# NautilusTrader 1.220.0 Beta
 
 Released on TBD (UTC).
 
 ### Enhancements
+- Added `use_hyphens_in_client_order_ids` config option for `StrategyConfig`
+
+### Breaking Changes
+None
+
+### Internal Improvements
+- Refined Rust catalog path handling (#2743), thanks @faysou
+
+### Fixes
+- Fixed balance calculations on order fill to allow operating at near account balance capacity (#2752), thanks @petioptrv
+
+### Documentation Updates
+None
+
+### Deprecations
+None
+
+---
+
+# NautilusTrader 1.219.0 Beta
+
+Released on 5th July 2025 (UTC).
+
+### Enhancements
 - Added `graceful_shutdown_on_exception` config option for live engines (default `False` to retain intended hard crash on unexpected system exceptions)
+- Added `purge_from_database` config option for `LiveExecEngineConfig` to support cache backing database management
 - Added support for data download during backtest (#2652), thanks @faysou
+- Added delete data range to catalog (#2744), thanks @faysou
 - Added consolidate catalog by period (#2727), thanks @faysou
 - Added `fire_immediately` flag parameter for timers where a time event will be fired at the `start` instant and then every interval thereafter (default `False` to retain current behavior) (#2600), thanks for the idea @stastnypremysl
 - Added `time_bars_build_delay` config option for `DataEngineConfig` (#2676), thanks @faysou
+- Added immediate firing capability for time alerts and corresponding test (#2745), thanks @stastnypremysl
 - Added missing serialization mappings for some instruments (#2702), thanks @faysou
 - Added support for DEX swaps for blockchain adapter (#2683), thanks @filipmacek
 - Added support for Pool liquidity updates for blockchain adapter (#2692), thanks @filipmacek
 - Added fill report reconciliation warning when discrepancy with existing fill (#2706), thanks @faysou
 - Added optional metadata function for custom data query (#2724), thanks @faysou
 - Added support for order-list submission in the sandbox execution client (#2714), thanks @petioptrv
-- Added `bid_levels` and `ask_levels` for `OrderBook.pprint`
 - Added hidden order support for IBKR (#2739), thanks @sunlei
+- Added `subscribe_order_book_deltas` support for IBKR (#2749), thanks @sunlei
+- Added `bid_levels` and `ask_levels` for `OrderBook.pprint`
+- Added `accepted_buffer_ns` filter param for `Cache.own_bid_orders(...)` and `Cache.own_ask_orders(...)`
+- Added trailing stop orders `activation_price` support in Rust (#2750), thanks @nicolad
 
 ### Breaking Changes
 - Changed timer `allow_past=False` behavior: now validates the `next_event_time` instead of the `start_time`. This allows timers with past start times as long as their next scheduled event is still in the future
 - Changed behavior of timers `allow_past=False` to permit start times in the past if the next event time is still in the future
 - Changed Databento DBN upgrade policy to default v3
+- Removed problematic negative balance check for margin accounts (cash account negative balance check remains unchanged)
 - Removed support for Databento DBN v1 schemas (migrate to DBN v2 or v3, see [DBN Changelog](https://github.com/databento/dbn/blob/main/CHANGELOG.md#0350---2025-05-28))
 
 ### Internal Improvements
@@ -35,18 +66,24 @@ Released on TBD (UTC).
 - Added `check_positive_decimal` correctness function and use for instrument validations (#2736), thanks @nicolad
 - Added `check_positive_money` correctness function and use for instrument validations (#2738), thanks @nicolad
 - Ported data catalog refactor to Rust (#2681, #2720), thanks @faysou
+- Optimized `TardisCSVDataLoader` performance (~90% memory usage reduction, ~60-70% faster)
 - Consolidated the clocks and timers v2 feature from @twitu
 - Consolidated on pure Rust cryptography crates with no dependencies on native certs or openssl
 - Consolidated on `aws-lc-rs` cryptography for FIPS compliance
 - Confirmed parity between Cython and Rust indicators (#2700, #2710, #2713), thanks @nicolad
 - Implemented `From<Pool>` -> `CurrencyPair` & `InstrumentAny` (#2693), thanks @nicolad
+- Updated `Makefile` to use new docker compose syntax (#2746), thanks @stastnypremysl
 - Updated Tardis exchange mappings
 - Improved live engine message processing to ensure unexpected exceptions result in an immediate hard crash rather than continuing without the queue processing messages
+- Improved live reconciliation robustness and testing
+- Improved listen key error handling and recovery for Binance
 - Improved handling of negative balances in backtests (#2730), thanks @ms32035
 - Improved robustness of cash and margin account locked balance calculations to avoid negative free balance
+- Improved robustness of fill price parsing for Betfair
 - Improved implementation, validations and testing for Rust instruments (#2723, #2733), thanks @nicolad
 - Improved `Currency` equality to use `strcmp` to avoid C pointer comparison issues with `ustr` string interning
 - Improved unsubscribe cleanup(s) for Bybit adapter
+- Improved `Makefile` to be self-documenting (#2741), thanks @sunlei
 - Refactored IB adapter (#2647), thanks @faysou
 - Refactored data catalog (#2652, #2740), thanks @faysou
 - Refined Rust data catalog (#2734), thanks @faysou
@@ -55,10 +92,11 @@ Released on TBD (UTC).
 - Refined CI/CD and build system (#2707), thanks @stastnypremysl
 - Upgraded Rust (MSRV) to 1.88.0
 - Upgraded Cython to v3.1.2
-- Upgraded `databento` crate to v0.27.1
+- Upgraded `databento` crate to v0.28.0
 - Upgraded `datafusion` crate to v48.0.0
 - Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.25.1
-- Upgraded `redis` crate to v0.32.2
+- Upgraded `redis` crate to v0.32.3
+- Upgraded `tokio` crate to v1.46.1
 - Upgraded `tokio-tungstenite` crate to v0.27.0
 
 ### Fixes
@@ -88,11 +126,14 @@ Released on TBD (UTC).
 - Fixed instrument message decoding when no `exchange` value for Databento US equities
 - Fixed fetching single-instrument trading fees for `Binance`, thanks @petioptrv
 - Fixed IB-TWS connection issue with international languages (#2726), thanks @DracheShiki
+- Fixed bar requests for Bybit where pagination was incorrect which limited bars being returned
+- Fixed Bybit Unknown Error (#2742), thanks @DeevsDeevs
 - Fixed margin balance parsing for Bybit
-- Restore task error logs for IBKR (#2716), thanks @bartlaw
+- Restored task error logs for IBKR (#2716), thanks @bartlaw
 
 ### Documentation Updates
 - Updated IB adapter documentation (#2729), thanks @faysou
+- Improved reconciliation docs in live concept guide
 
 ### Deprecations
 - Deprecated `Portfolio.set_specific_venue(...)`, to be removed in a future release; use `Cache.set_specific_venue(...)` instead

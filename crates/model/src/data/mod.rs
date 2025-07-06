@@ -546,7 +546,7 @@ mod tests {
         );
         let data_type = DataType::new("ExampleType", metadata);
 
-        assert_eq!(format!("{}", data_type), "ExampleType.key1=value1");
+        assert_eq!(format!("{data_type}"), "ExampleType.key1=value1");
     }
 
     #[rstest]

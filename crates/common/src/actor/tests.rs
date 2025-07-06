@@ -176,7 +176,7 @@ impl DataActor for TestDataActor {
     }
 
     fn on_historical_data(&mut self, data: &dyn Any) -> anyhow::Result<()> {
-        self.received_data.push(format!("{:?}", data));
+        self.received_data.push(format!("{data:?}"));
         Ok(())
     }
 
@@ -384,7 +384,7 @@ fn test_subscribe_and_receive_custom_data(
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
-    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor_id = register_data_actor(clock, cache, trader_id);
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
@@ -406,7 +406,7 @@ fn test_unsubscribe_custom_data(
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
-    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor_id = register_data_actor(clock, cache, trader_id);
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
@@ -438,7 +438,7 @@ fn test_subscribe_and_receive_book_deltas(
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
 ) {
-    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor_id = register_data_actor(clock, cache, trader_id);
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
@@ -475,7 +475,7 @@ fn test_unsubscribe_book_deltas(
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
 ) {
-    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor_id = register_data_actor(clock, cache, trader_id);
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
@@ -530,7 +530,7 @@ fn test_subscribe_and_receive_book_at_interval(
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
 ) {
-    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor_id = register_data_actor(clock, cache, trader_id);
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
@@ -554,7 +554,7 @@ fn test_unsubscribe_book_at_interval(
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
 ) {
-    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor_id = register_data_actor(clock, cache, trader_id);
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
@@ -587,7 +587,7 @@ fn test_subscribe_and_receive_quotes(
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
 ) {
-    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor_id = register_data_actor(clock, cache, trader_id);
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
@@ -608,7 +608,7 @@ fn test_unsubscribe_quotes(
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
 ) {
-    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor_id = register_data_actor(clock, cache, trader_id);
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
@@ -636,7 +636,7 @@ fn test_subscribe_and_receive_trades(
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
 ) {
-    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor_id = register_data_actor(clock, cache, trader_id);
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
@@ -657,7 +657,7 @@ fn test_unsubscribe_trades(
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
 ) {
-    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor_id = register_data_actor(clock, cache, trader_id);
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
@@ -685,7 +685,7 @@ fn test_subscribe_and_receive_bars(
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
 ) {
-    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor_id = register_data_actor(clock, cache, trader_id);
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
@@ -706,7 +706,7 @@ fn test_unsubscribe_bars(
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
 ) {
-    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor_id = register_data_actor(clock, cache, trader_id);
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
@@ -735,7 +735,7 @@ fn test_request_instrument(
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
 ) {
-    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor_id = register_data_actor(clock, cache, trader_id);
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
@@ -772,7 +772,7 @@ fn test_request_instruments(
     audusd_sim: CurrencyPair,
     gbpusd_sim: CurrencyPair,
 ) {
-    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor_id = register_data_actor(clock, cache, trader_id);
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
@@ -811,7 +811,7 @@ fn test_request_quotes(
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
 ) {
-    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor_id = register_data_actor(clock, cache, trader_id);
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
@@ -847,7 +847,7 @@ fn test_request_trades(
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
 ) {
-    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor_id = register_data_actor(clock, cache, trader_id);
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
@@ -883,7 +883,7 @@ fn test_request_bars(
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
 ) {
-    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor_id = register_data_actor(clock, cache, trader_id);
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
@@ -922,7 +922,7 @@ fn test_subscribe_and_receive_instruments(
     audusd_sim: CurrencyPair,
     gbpusd_sim: CurrencyPair,
 ) {
-    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor_id = register_data_actor(clock, cache, trader_id);
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
@@ -930,9 +930,9 @@ fn test_subscribe_and_receive_instruments(
     actor.subscribe_instruments(venue, None, None);
 
     let topic = get_instruments_topic(venue);
-    let inst1 = InstrumentAny::CurrencyPair(audusd_sim.clone());
+    let inst1 = InstrumentAny::CurrencyPair(audusd_sim);
     msgbus::publish(topic, &inst1);
-    let inst2 = InstrumentAny::CurrencyPair(gbpusd_sim.clone());
+    let inst2 = InstrumentAny::CurrencyPair(gbpusd_sim);
     msgbus::publish(topic, &inst2);
 
     assert_eq!(actor.received_instruments.len(), 2);
@@ -948,15 +948,15 @@ fn test_subscribe_and_receive_instrument(
     audusd_sim: CurrencyPair,
     gbpusd_sim: CurrencyPair,
 ) {
-    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor_id = register_data_actor(clock, cache, trader_id);
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
     actor.subscribe_instrument(audusd_sim.id, None, None);
 
     let topic = get_instrument_topic(audusd_sim.id);
-    let inst1 = InstrumentAny::CurrencyPair(audusd_sim.clone());
-    let inst2 = InstrumentAny::CurrencyPair(gbpusd_sim.clone());
+    let inst1 = InstrumentAny::CurrencyPair(audusd_sim);
+    let inst2 = InstrumentAny::CurrencyPair(gbpusd_sim);
     msgbus::publish(topic, &inst1);
     msgbus::publish(topic, &inst2);
 
@@ -972,7 +972,7 @@ fn test_subscribe_and_receive_mark_prices(
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
 ) {
-    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor_id = register_data_actor(clock, cache, trader_id);
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
@@ -1006,7 +1006,7 @@ fn test_subscribe_and_receive_index_prices(
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
 ) {
-    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor_id = register_data_actor(clock, cache, trader_id);
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
@@ -1032,7 +1032,7 @@ fn test_subscribe_and_receive_instrument_status(
     trader_id: TraderId,
     stub_instrument_status: InstrumentStatus,
 ) {
-    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor_id = register_data_actor(clock, cache, trader_id);
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
@@ -1053,7 +1053,7 @@ fn test_subscribe_and_receive_instrument_close(
     trader_id: TraderId,
     stub_instrument_close: InstrumentClose,
 ) {
-    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor_id = register_data_actor(clock, cache, trader_id);
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
@@ -1075,7 +1075,7 @@ fn test_unsubscribe_instruments(
     audusd_sim: CurrencyPair,
     gbpusd_sim: CurrencyPair,
 ) {
-    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor_id = register_data_actor(clock, cache, trader_id);
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
@@ -1083,18 +1083,18 @@ fn test_unsubscribe_instruments(
     actor.subscribe_instruments(venue, None, None);
 
     let topic = get_instruments_topic(venue);
-    let inst1 = InstrumentAny::CurrencyPair(audusd_sim.clone());
+    let inst1 = InstrumentAny::CurrencyPair(audusd_sim);
     msgbus::publish(topic, &inst1);
-    let inst2 = InstrumentAny::CurrencyPair(gbpusd_sim.clone());
+    let inst2 = InstrumentAny::CurrencyPair(gbpusd_sim);
     msgbus::publish(topic, &inst2);
 
     assert_eq!(actor.received_instruments.len(), 2);
 
     actor.unsubscribe_instruments(venue, None, None);
 
-    let inst3 = InstrumentAny::CurrencyPair(audusd_sim.clone());
+    let inst3 = InstrumentAny::CurrencyPair(audusd_sim);
     msgbus::publish(topic, &inst3);
-    let inst4 = InstrumentAny::CurrencyPair(gbpusd_sim.clone());
+    let inst4 = InstrumentAny::CurrencyPair(gbpusd_sim);
     msgbus::publish(topic, &inst4);
 
     assert_eq!(actor.received_instruments.len(), 2);
@@ -1108,25 +1108,25 @@ fn test_unsubscribe_instrument(
     audusd_sim: CurrencyPair,
     gbpusd_sim: CurrencyPair,
 ) {
-    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor_id = register_data_actor(clock, cache, trader_id);
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
     actor.subscribe_instrument(audusd_sim.id, None, None);
 
     let topic = get_instrument_topic(audusd_sim.id);
-    let inst1 = InstrumentAny::CurrencyPair(audusd_sim.clone());
+    let inst1 = InstrumentAny::CurrencyPair(audusd_sim);
     msgbus::publish(topic, &inst1);
-    let inst2 = InstrumentAny::CurrencyPair(gbpusd_sim.clone());
+    let inst2 = InstrumentAny::CurrencyPair(gbpusd_sim);
     msgbus::publish(topic, &inst2);
 
     assert_eq!(actor.received_instruments.len(), 2);
 
     actor.unsubscribe_instrument(audusd_sim.id, None, None);
 
-    let inst3 = InstrumentAny::CurrencyPair(audusd_sim.clone());
+    let inst3 = InstrumentAny::CurrencyPair(audusd_sim);
     msgbus::publish(topic, &inst3);
-    let inst4 = InstrumentAny::CurrencyPair(gbpusd_sim.clone());
+    let inst4 = InstrumentAny::CurrencyPair(gbpusd_sim);
     msgbus::publish(topic, &inst4);
 
     assert_eq!(actor.received_instruments.len(), 2);
@@ -1139,7 +1139,7 @@ fn test_unsubscribe_mark_prices(
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
 ) {
-    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor_id = register_data_actor(clock, cache, trader_id);
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
@@ -1190,7 +1190,7 @@ fn test_unsubscribe_index_prices(
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
 ) {
-    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor_id = register_data_actor(clock, cache, trader_id);
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
@@ -1227,7 +1227,7 @@ fn test_unsubscribe_instrument_status(
     trader_id: TraderId,
     stub_instrument_status: InstrumentStatus,
 ) {
-    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor_id = register_data_actor(clock, cache, trader_id);
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
@@ -1241,7 +1241,7 @@ fn test_unsubscribe_instrument_status(
 
     actor.unsubscribe_instrument_status(instrument_id, None, None);
 
-    let stub2 = stub_instrument_status.clone();
+    let stub2 = stub_instrument_status;
     msgbus::publish(topic, &stub2);
 
     assert_eq!(actor.received_status.len(), 1);
@@ -1254,7 +1254,7 @@ fn test_unsubscribe_instrument_close(
     trader_id: TraderId,
     stub_instrument_close: InstrumentClose,
 ) {
-    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor_id = register_data_actor(clock, cache, trader_id);
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
@@ -1268,7 +1268,7 @@ fn test_unsubscribe_instrument_close(
 
     actor.unsubscribe_instrument_close(instrument_id, None, None);
 
-    let stub2 = stub_instrument_close.clone();
+    let stub2 = stub_instrument_close;
     msgbus::publish(topic, &stub2);
 
     assert_eq!(actor.received_closes.len(), 1);
@@ -1281,7 +1281,7 @@ fn test_request_book_snapshot(
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
 ) {
-    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor_id = register_data_actor(clock, cache, trader_id);
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
@@ -1321,7 +1321,7 @@ fn test_request_data(
 ) {
     test_logging();
 
-    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor_id = register_data_actor(clock, cache, trader_id);
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
@@ -1329,7 +1329,7 @@ fn test_request_data(
     let data_type = DataType::new("TestData", None);
     let client_id = ClientId::new("TestClient");
     let request_id = actor
-        .request_data(data_type.clone(), client_id.clone(), None, None, None, None)
+        .request_data(data_type.clone(), client_id, None, None, None, None)
         .unwrap();
 
     // Build a response payload containing a String
@@ -1339,9 +1339,9 @@ fn test_request_data(
     // Create response with payload type String
     let response = CustomDataResponse::new(
         request_id,
-        client_id.clone(),
+        client_id,
         None,
-        data_type.clone(),
+        data_type,
         payload,
         UnixNanos::from(946684800_000_000_000), // 2000-01-01
         UnixNanos::from(946771200_000_000_000), // 2000-01-02
@@ -1368,7 +1368,7 @@ fn test_subscribe_and_receive_blocks(
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
-    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor_id = register_data_actor(clock, cache, trader_id);
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
@@ -1399,7 +1399,7 @@ fn test_unsubscribe_blocks(
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
-    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor_id = register_data_actor(clock, cache, trader_id);
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
@@ -1446,7 +1446,7 @@ fn test_subscribe_and_receive_pools(
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
-    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor_id = register_data_actor(clock, cache, trader_id);
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
@@ -1512,7 +1512,7 @@ fn test_subscribe_and_receive_pool_swaps(
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
-    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor_id = register_data_actor(clock, cache, trader_id);
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
@@ -1556,8 +1556,8 @@ fn test_subscribe_and_receive_pool_swaps(
         dex.clone(),
         address,
         0u64,
-        token0.clone(),
-        token1.clone(),
+        token0,
+        token1,
         500u32,
         10u32,
         UnixNanos::from(1),
@@ -1569,7 +1569,7 @@ fn test_subscribe_and_receive_pool_swaps(
     };
 
     let swap = PoolSwap::new(
-        chain,
+        chain.clone(),
         Arc::new(dex),
         Arc::new(pool),
         1000u64,
@@ -1595,7 +1595,7 @@ fn test_unsubscribe_pool_swaps(
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
-    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor_id = register_data_actor(clock, cache, trader_id);
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
@@ -1639,8 +1639,8 @@ fn test_unsubscribe_pool_swaps(
         dex.clone(),
         address,
         0u64,
-        token0.clone(),
-        token1.clone(),
+        token0,
+        token1,
         500u32,
         10u32,
         UnixNanos::from(1),
@@ -1666,7 +1666,7 @@ fn test_unsubscribe_pool_swaps(
     actor.unsubscribe_pool_swaps(address, None, None);
 
     let swap2 = PoolSwap::new(
-        chain,
+        chain.clone(),
         Arc::new(dex),
         Arc::new(pool),
         2000u64,

@@ -237,9 +237,9 @@ mod tests {
         let filepath = temp_dir.path().join("testfile.txt");
         let filepath_clone = filepath.clone();
 
-        let server_content = Some("Server file content".to_string());
+        let server_content = "Server file content".to_string();
         let status_code = StatusCode::OK;
-        let addr = setup_test_server(server_content.clone(), status_code).await;
+        let addr = setup_test_server(Some(server_content.clone()), status_code).await;
         let url = format!("http://{addr}/testfile.txt");
 
         let result = tokio::task::spawn_blocking(move || {
@@ -250,7 +250,7 @@ mod tests {
 
         assert!(result.is_ok());
         let content = fs::read_to_string(&filepath).unwrap();
-        assert_eq!(content, server_content.unwrap());
+        assert_eq!(content, server_content);
     }
 
     #[tokio::test]

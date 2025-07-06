@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import os
 from decimal import Decimal
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_MAX_CALLBACK_RATE
@@ -175,6 +176,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._log.info(f"{config.max_retries=}", LogColor.BLUE)
         self._log.info(f"{config.retry_delay_initial_ms=}", LogColor.BLUE)
         self._log.info(f"{config.retry_delay_max_ms=}", LogColor.BLUE)
+        self._log.info(f"{config.listen_key_ping_max_failures=}", LogColor.BLUE)
 
         self._is_dual_side_position: bool | None = None  # Initialized on connection
         self._set_account_id(
@@ -194,6 +196,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._ping_listen_keys_interval: int = 60 * 5  # Once every 5 mins (hard-coded)
         self._ping_listen_keys_task: asyncio.Task | None = None
         self._listen_key: str | None = None
+        self._ping_consecutive_failures: int = 0
+        self._ping_max_failures: int = config.listen_key_ping_max_failures
+        self._last_successful_ping_ns: int = 0
 
         # WebSocket API
         self._ws_client = BinanceWebSocketClient(
@@ -282,6 +287,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
         # Set up WebSocket listen key
         self._listen_key = response.listenKey
+        self._last_successful_ping_ns = self._clock.timestamp_ns()  # Initialize on connection
         self._log.info(f"Listen key {self._listen_key}")
         self._ping_listen_keys_task = self.create_task(self._ping_listen_keys())
 
@@ -304,15 +310,86 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                     f"{self._ping_listen_keys_interval}s",
                 )
                 await asyncio.sleep(self._ping_listen_keys_interval)
-                if self._listen_key:
-                    self._log.debug(f"Pinging WebSocket listen key {self._listen_key}")
-                    try:
-                        await self._http_user.keepalive_listen_key(listen_key=self._listen_key)
-                    except BinanceClientError as e:
-                        # We may see this if an old listen key was used for the ping
-                        self._log.error(f"Error pinging listen key: {e}")
+
+                if not self._listen_key:
+                    self._log.warning("No listen key available for ping")
+                    continue
+
+                self._log.debug(f"Pinging WebSocket listen key {self._listen_key}")
+
+                try:
+                    await self._http_user.keepalive_listen_key(listen_key=self._listen_key)
+
+                    # Reset failure tracking on success
+                    self._ping_consecutive_failures = 0
+                    self._last_successful_ping_ns = self._clock.timestamp_ns()
+                    self._log.debug(f"Listen key ping successful: {self._listen_key}")
+
+                except (BinanceClientError, BinanceError) as e:
+                    self._ping_consecutive_failures += 1
+                    time_since_success_secs = (
+                        (self._clock.timestamp_ns() - self._last_successful_ping_ns) / 1_000_000_000
+                        if self._last_successful_ping_ns > 0
+                        else 0
+                    )
+
+                    self._log.error(
+                        f"Listen key ping failed (attempt {self._ping_consecutive_failures}/"
+                        f"{self._ping_max_failures}): {e}, "
+                        f"time since last success: {time_since_success_secs:.1f}s",
+                    )
+
+                    if self._ping_consecutive_failures >= self._ping_max_failures:
+                        self._log.error(
+                            f"Listen key ping failed {self._ping_max_failures} consecutive times; "
+                            "initiating WebSocket reconnection to prevent data loss",
+                        )
+                        await self._handle_listen_key_failure()
+                        self._ping_consecutive_failures = 0  # Reset after handling
+
         except asyncio.CancelledError:
             self._log.debug("Canceled task 'ping_listen_keys'")
+
+    async def _handle_listen_key_failure(self) -> None:
+        # Handle listen key authentication failure with full recovery.
+        #
+        # This method attempts to recover from listen key failures by:
+        # 1. Disconnecting the current WebSocket
+        # 2. Creating a new listen key
+        # 3. Reconnecting the WebSocket with the new key
+
+        try:
+            self._log.warning("Starting listen key recovery process")
+
+            # Disconnect current WebSocket
+            await self._ws_client.disconnect()
+            self._log.debug("Disconnected WebSocket for listen key recovery")
+
+            # Create new listen key
+            response: BinanceListenKey = await self._http_user.create_listen_key()
+            self._listen_key = response.listenKey
+            self._last_successful_ping_ns = self._clock.timestamp_ns()
+            self._log.info(f"Created new listen key for recovery: {self._listen_key}")
+
+            # Reconnect WebSocket with new key
+            await self._ws_client.subscribe_listen_key(self._listen_key)
+            self._log.info("WebSocket reconnected successfully with new listen key")
+
+        except Exception as e:
+            self._log.error(f"Failed to recover from listen key failure: {e}")
+
+            # Check if graceful shutdown is configured
+            if hasattr(self, "graceful_shutdown_on_exception"):
+                execution_engine = getattr(self, "_execution_engine", None)
+                if execution_engine and hasattr(execution_engine, "graceful_shutdown_on_exception"):
+                    if execution_engine.graceful_shutdown_on_exception:
+                        execution_engine.shutdown_system(f"Listen key recovery failed: {e}")
+                        return
+
+            self._log.error(
+                "Terminating process to prevent operation with invalid authentication",
+            )
+            os._exit(1)
 
     async def _disconnect(self) -> None:
         # Cancel tasks

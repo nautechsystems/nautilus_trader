@@ -1258,7 +1258,7 @@ mod rust_tests {
         // Server task: accept one connection and then drop it
         let server = task::spawn(async move {
             if let Ok((mut sock, _)) = listener.accept().await {
-                let _ = sock.shutdown();
+                drop(sock.shutdown());
             }
             // Keep listener alive briefly to avoid premature exit
             sleep(Duration::from_secs(1)).await;

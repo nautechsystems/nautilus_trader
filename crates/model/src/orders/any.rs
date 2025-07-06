@@ -258,12 +258,12 @@ impl StopOrderAny {
     #[must_use]
     pub fn stop_px(&self) -> Price {
         match self {
-            Self::LimitIfTouched(order) => order.trigger_price,
-            Self::MarketIfTouched(order) => order.trigger_price,
-            Self::StopLimit(order) => order.trigger_price,
-            Self::StopMarket(order) => order.trigger_price,
-            Self::TrailingStopLimit(order) => order.trigger_price,
-            Self::TrailingStopMarket(order) => order.trigger_price,
+            Self::LimitIfTouched(o) => o.trigger_price,
+            Self::MarketIfTouched(o) => o.trigger_price,
+            Self::StopLimit(o) => o.trigger_price,
+            Self::StopMarket(o) => o.trigger_price,
+            Self::TrailingStopLimit(o) => o.activation_price.unwrap_or(o.trigger_price),
+            Self::TrailingStopMarket(o) => o.activation_price.unwrap_or(o.trigger_price),
         }
     }
 }
@@ -306,7 +306,7 @@ mod tests {
         let market_order = OrderTestBuilder::new(OrderType::Market)
             .instrument_id(InstrumentId::from("BTC-USDT.BINANCE"))
             .quantity(Quantity::from(10))
-            .client_order_id(client_order_id.clone())
+            .client_order_id(client_order_id)
             .build();
 
         let limit_order = OrderTestBuilder::new(OrderType::Limit)

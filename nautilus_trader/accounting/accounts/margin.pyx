@@ -15,8 +15,6 @@
 
 from decimal import Decimal
 
-from nautilus_trader.accounting.error import AccountMarginExceeded
-
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport AccountType
 from nautilus_trader.core.rust.model cimport LiquiditySide

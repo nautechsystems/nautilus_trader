@@ -29,6 +29,10 @@ use crate::{
 
 /// Represents a token swap transaction on a decentralized exchange (DEX).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct PoolSwap {
     /// The blockchain network where the swap occurred.
     pub chain: SharedChain,

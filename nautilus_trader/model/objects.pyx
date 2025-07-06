@@ -1615,8 +1615,6 @@ cdef class AccountBalance:
     ValueError
         If money currencies are not equal.
     ValueError
-        If any money is negative (< 0).
-    ValueError
         If `total` - `locked` != `free`.
     """
 
@@ -1628,9 +1626,6 @@ cdef class AccountBalance:
     ) -> None:
         Condition.equal(total.currency, locked.currency, "total.currency", "locked.currency")
         Condition.equal(total.currency, free.currency, "total.currency", "free.currency")
-        Condition.is_true(total.raw_int_c() >= 0, "`total` amount was negative")
-        Condition.is_true(locked.raw_int_c() >= 0, "`locked` amount was negative")
-        Condition.is_true(free.raw_int_c() >= 0, "`free` amount was negative")
         Condition.is_true(total.raw_int_c() - locked.raw_int_c() == free.raw_int_c(), "`total` - `locked` != `free` amount")
 
         self.total = total

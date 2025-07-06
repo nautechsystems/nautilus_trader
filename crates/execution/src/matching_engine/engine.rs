@@ -1106,31 +1106,119 @@ impl OrderMatchingEngine {
         self.iterate_orders(timestamp_ns, &orders_ask);
     }
 
+    fn maybe_activate_trailing_stop(
+        &mut self,
+        order: &mut OrderAny,
+        bid: Option<Price>,
+        ask: Option<Price>,
+    ) -> bool {
+        match order {
+            OrderAny::TrailingStopMarket(inner) => {
+                if inner.is_activated {
+                    return true;
+                }
+
+                if inner.activation_price.is_none() {
+                    let px = match inner.order_side() {
+                        OrderSide::Buy => ask,
+                        OrderSide::Sell => bid,
+                        _ => None,
+                    };
+                    if let Some(p) = px {
+                        inner.activation_price = Some(p);
+                        inner.set_activated();
+                        if let Err(e) = self.cache.borrow_mut().update_order(order) {
+                            log::error!("Failed to update order: {e}");
+                        }
+                        return true;
+                    }
+                    return false;
+                }
+
+                let activation_price = inner.activation_price.unwrap();
+                let hit = match inner.order_side() {
+                    OrderSide::Buy => ask.is_some_and(|a| a <= activation_price),
+                    OrderSide::Sell => bid.is_some_and(|b| b >= activation_price),
+                    _ => false,
+                };
+                if hit {
+                    inner.set_activated();
+                    if let Err(e) = self.cache.borrow_mut().update_order(order) {
+                        log::error!("Failed to update order: {e}");
+                    }
+                }
+                hit
+            }
+            OrderAny::TrailingStopLimit(inner) => {
+                if inner.is_activated {
+                    return true;
+                }
+
+                if inner.activation_price.is_none() {
+                    let px = match inner.order_side() {
+                        OrderSide::Buy => ask,
+                        OrderSide::Sell => bid,
+                        _ => None,
+                    };
+                    if let Some(p) = px {
+                        inner.activation_price = Some(p);
+                        inner.set_activated();
+                        if let Err(e) = self.cache.borrow_mut().update_order(order) {
+                            log::error!("Failed to update order: {e}");
+                        }
+                        return true;
+                    }
+                    return false;
+                }
+
+                let activation_price = inner.activation_price.unwrap();
+                let hit = match inner.order_side() {
+                    OrderSide::Buy => ask.is_some_and(|a| a <= activation_price),
+                    OrderSide::Sell => bid.is_some_and(|b| b >= activation_price),
+                    _ => false,
+                };
+                if hit {
+                    inner.set_activated();
+                    if let Err(e) = self.cache.borrow_mut().update_order(order) {
+                        log::error!("Failed to update order: {e}");
+                    }
+                }
+                hit
+            }
+            _ => true,
+        }
+    }
+
     fn iterate_orders(&mut self, timestamp_ns: UnixNanos, orders: &[PassiveOrderAny]) {
         for order in orders {
             if order.is_closed() {
                 continue;
             }
 
-            // Check expiration
             if self.config.support_gtd_orders
-                && let Some(expire_time) = order.expire_time()
-                && timestamp_ns >= expire_time
+                && order
+                    .expire_time()
+                    .is_some_and(|expire_timestamp_ns| timestamp_ns >= expire_timestamp_ns)
             {
-                // SAFTEY: We know this order is in the core
-                self.core.delete_order(order).unwrap();
+                let _ = self.core.delete_order(order);
                 self.cached_filled_qty.remove(&order.client_order_id());
                 self.expire_order(order);
+                continue;
             }
 
-            // Manage trailing stop
-            if let PassiveOrderAny::Stop(o) = order
-                && let PassiveOrderAny::Stop(
-                    StopOrderAny::TrailingStopMarket(_) | StopOrderAny::TrailingStopLimit(_),
-                ) = order
-            {
-                let mut order = OrderAny::from(o.to_owned());
-                self.update_trailing_stop_order(&mut order);
+            if matches!(
+                order,
+                PassiveOrderAny::Stop(
+                    StopOrderAny::TrailingStopMarket(_) | StopOrderAny::TrailingStopLimit(_)
+                )
+            ) {
+                let mut any = OrderAny::from(order.clone());
+
+                if !self.maybe_activate_trailing_stop(&mut any, self.core.bid, self.core.ask) {
+                    continue;
+                }
+
+                self.update_trailing_stop_order(&mut any);
             }
 
             // Move market back to targets
@@ -1138,11 +1226,15 @@ impl OrderMatchingEngine {
                 self.core.bid = Some(target_bid);
                 self.target_bid = None;
             }
-            if let Some(target_ask) = self.target_ask {
+            if let Some(target_bid) = self.target_bid.take() {
+                self.core.bid = Some(target_bid);
+                self.target_bid = None;
+            }
+            if let Some(target_ask) = self.target_ask.take() {
                 self.core.ask = Some(target_ask);
                 self.target_ask = None;
             }
-            if let Some(target_last) = self.target_last {
+            if let Some(target_last) = self.target_last.take() {
                 self.core.last = Some(target_last);
                 self.target_last = None;
             }
@@ -1950,6 +2042,8 @@ impl OrderMatchingEngine {
     fn update_trailing_stop_order(&mut self, order: &mut OrderAny) {
         let (new_trigger_price, new_price) = trailing_stop_calculate(
             self.instrument.price_increment(),
+            order.trigger_price(),
+            order.activation_price(),
             order,
             self.core.bid,
             self.core.ask,
