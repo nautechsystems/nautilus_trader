@@ -21,6 +21,10 @@ use crate::defi::{chain::Chain, hex::deserialize_hex_number};
 /// Represents a transaction on an EVM based blockchain.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct Transaction {
     /// The blockchain network identifier where this transaction occurred.
     #[serde(rename = "chainId", deserialize_with = "deserialize_chain")]

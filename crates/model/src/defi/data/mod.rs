@@ -37,6 +37,10 @@ pub use swap::PoolSwap;
 pub use transaction::Transaction;
 
 /// Represents DeFi-specific data events in a decentralized exchange ecosystem.
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum DefiData {

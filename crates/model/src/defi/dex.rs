@@ -25,7 +25,21 @@ use crate::{
 };
 
 /// Represents different types of Automated Market Makers (AMMs) in DeFi protocols.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    strum::EnumString,
+    strum::Display,
+    strum::EnumIter,
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 #[non_exhaustive]
 pub enum AmmType {
     /// Constant Product Automated Market Maker.
@@ -44,6 +58,10 @@ pub enum AmmType {
 
 /// Represents a decentralized exchange (DEX) in a blockchain ecosystem.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct Dex {
     /// The blockchain network where this DEX operates.
     pub chain: Chain,

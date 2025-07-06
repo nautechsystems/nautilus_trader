@@ -31,6 +31,10 @@ use crate::defi::{
 /// Represents an Ethereum-compatible blockchain block with essential metadata.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct Block {
     /// The blockchain network this block is part of.
     #[serde(skip)]
