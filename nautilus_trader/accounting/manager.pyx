@@ -530,7 +530,8 @@ cdef class AccountsManager:
                 new_total = new_total.add(pnl)
                 instrument = self._cache.instrument(fill._instrument_id)
                 if (
-                    fill.order_type == OrderType.MARKET
+                    pnl.is_positive()
+                    or fill.order_type == OrderType.MARKET
                     or instrument.instrument_class in [InstrumentClass.SPORTS_BETTING]
                 ):
                     new_free = new_free.add(pnl)
