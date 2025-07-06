@@ -24,6 +24,10 @@ use serde::{Deserialize, Serialize};
 use crate::defi::chain::SharedChain;
 
 /// Represents a cryptocurrency token on a blockchain network.
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Token {
     /// The blockchain network where this token exists.

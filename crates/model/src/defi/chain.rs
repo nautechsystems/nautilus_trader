@@ -21,7 +21,7 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
-use strum::{Display, EnumString};
+use strum::{Display, EnumIter, EnumString};
 
 /// Represents different blockchain networks.
 #[derive(
@@ -34,11 +34,16 @@ use strum::{Display, EnumString};
     Ord,
     Eq,
     Display,
+    EnumIter,
     EnumString,
     Serialize,
     Deserialize,
 )]
 #[non_exhaustive]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub enum Blockchain {
     Abstract,
     Arbitrum,
@@ -123,6 +128,7 @@ pub enum Blockchain {
 }
 
 /// Defines a blockchain with its unique identifiers and connection details for network interaction.
+#[cfg_attr(feature = "python", pyo3::pyclass(module = "nautilus_pyo3.model"))]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Chain {
     /// The blockchain network type.

@@ -18,7 +18,7 @@ use std::fmt::Display;
 use alloy_primitives::Address;
 use nautilus_core::UnixNanos;
 use serde::{Deserialize, Serialize};
-use strum::{Display, EnumString};
+use strum::{Display, EnumIter, EnumString};
 
 use crate::{
     data::HasTsInit,
@@ -37,9 +37,14 @@ use crate::{
     Ord,
     Eq,
     Display,
+    EnumIter,
     EnumString,
     Serialize,
     Deserialize,
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 /// Represents the type of liquidity update operation in a DEX pool.
 #[non_exhaustive]
@@ -52,6 +57,10 @@ pub enum PoolLiquidityUpdateType {
 
 /// Represents a liquidity update event in a decentralized exchange (DEX) pool.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct PoolLiquidityUpdate {
     /// The blockchain network where the liquidity update occurred.
     pub chain: SharedChain,

@@ -28,6 +28,10 @@ use crate::{
 };
 
 /// Represents a liquidity pool in a decentralized exchange.
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Pool {
     /// The blockchain network where this pool exists.
