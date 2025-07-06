@@ -933,10 +933,8 @@ class DYDXDataClient(LiveMarketDataClient):
         return nautilus_instrument_id
 
     async def _request_bars(self, request: RequestBars) -> None:
-        max_bars = 100
+        max_bars = 1000
         limit = request.limit
-        if limit == 0 or limit > max_bars:
-            limit = max_bars
 
         if request.bar_type.is_internally_aggregated():
             self._log.error(
@@ -965,18 +963,21 @@ class DYDXDataClient(LiveMarketDataClient):
             self._log.error(f"Cannot parse kline data: no instrument for {instrument_id}")
             return
 
-        candles = await self._http_market.get_candles(
-            symbol=symbol,
-            resolution=self._enum_parser.parse_dydx_kline(request.bar_type),
-            limit=limit,
-            start=request.start,
-            end=request.end,
-        )
-
-        if candles is not None:
+        async def _fetch_candles(start, end, request_limit) -> list[Bar]:
+            """Fetch candles from API and convert to bars."""
+            candles = await self._http_market.get_candles(
+                symbol=symbol,
+                resolution=self._enum_parser.parse_dydx_kline(request.bar_type),
+                limit=request_limit,
+                start=start,
+                end=end,
+            )
+            
+            if candles is None or not candles.candles:
+                return []
+            
             ts_init = self._clock.timestamp_ns()
-
-            bars = [
+            return [
                 candle.parse_to_bar(
                     bar_type=request.bar_type,
                     price_precision=instrument.price_precision,
@@ -986,5 +987,43 @@ class DYDXDataClient(LiveMarketDataClient):
                 for candle in candles.candles
             ]
 
-            partial: Bar = bars.pop()
-            self._handle_bars(request.bar_type, bars, partial, request.id, request.params)
+        def _should_partition_request(request: RequestBars, max_bars: int) -> bool:
+            """Check if request should be partitioned based on expected bar count."""
+            bar_timedelta = request.bar_type.spec.timedelta
+            total_duration = request.end - request.start
+            expected_bars = int(total_duration / bar_timedelta)
+            return expected_bars > max_bars
+        
+        all_bars = []
+        
+        # Check if we need to partition the request
+        if (request.start is not None and request.end is not None and
+            _should_partition_request(request, max_bars)):
+            # Partition into multiple requests
+            self._log.info(
+                f"Expected bars exceed limit of {max_bars}, partitioning into multiple requests"
+            )
+            
+            chunk_duration = request.bar_type.spec.timedelta * max_bars
+            current_start = request.start
+            
+            while current_start < request.end:
+                current_end = min(current_start + chunk_duration, request.end)
+                
+                chunk_bars = await _fetch_candles(current_start, current_end, max_bars)
+                all_bars.extend(chunk_bars)
+                
+                current_start = current_end
+                
+                # Apply overall limit if specified
+                if limit > 0 and len(all_bars) >= limit:
+                    all_bars = all_bars[:limit]
+                    break
+        else:
+            # Single request
+            all_bars = await _fetch_candles(request.start, request.end, limit)
+
+        if all_bars:
+            # For historical data, the last bar might be partial
+            partial: Bar = all_bars.pop() if all_bars else None
+            self._handle_bars(request.bar_type, all_bars, partial, request.id, request.params)
