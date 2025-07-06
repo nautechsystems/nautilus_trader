@@ -14,11 +14,12 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::VecDeque,
     fmt::Debug,
     time::{Duration, Instant},
 };
 
+use ahash::AHashMap;
 use bytes::Bytes;
 use nautilus_common::{
     cache::{
@@ -936,12 +937,12 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         })
     }
 
-    fn load(&self) -> anyhow::Result<HashMap<String, Bytes>> {
+    fn load(&self) -> anyhow::Result<AHashMap<String, Bytes>> {
         // self.database.load()
-        Ok(HashMap::new()) // TODO
+        Ok(AHashMap::new()) // TODO
     }
 
-    async fn load_currencies(&self) -> anyhow::Result<HashMap<Ustr, Currency>> {
+    async fn load_currencies(&self) -> anyhow::Result<AHashMap<Ustr, Currency>> {
         DatabaseQueries::load_currencies(
             &self.database.con,
             &self.database.trader_key,
@@ -950,7 +951,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         .await
     }
 
-    async fn load_instruments(&self) -> anyhow::Result<HashMap<InstrumentId, InstrumentAny>> {
+    async fn load_instruments(&self) -> anyhow::Result<AHashMap<InstrumentId, InstrumentAny>> {
         DatabaseQueries::load_instruments(
             &self.database.con,
             &self.database.trader_key,
@@ -959,7 +960,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         .await
     }
 
-    async fn load_synthetics(&self) -> anyhow::Result<HashMap<InstrumentId, SyntheticInstrument>> {
+    async fn load_synthetics(&self) -> anyhow::Result<AHashMap<InstrumentId, SyntheticInstrument>> {
         DatabaseQueries::load_synthetics(
             &self.database.con,
             &self.database.trader_key,
@@ -968,17 +969,17 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         .await
     }
 
-    async fn load_accounts(&self) -> anyhow::Result<HashMap<AccountId, AccountAny>> {
+    async fn load_accounts(&self) -> anyhow::Result<AHashMap<AccountId, AccountAny>> {
         DatabaseQueries::load_accounts(&self.database.con, &self.database.trader_key, self.encoding)
             .await
     }
 
-    async fn load_orders(&self) -> anyhow::Result<HashMap<ClientOrderId, OrderAny>> {
+    async fn load_orders(&self) -> anyhow::Result<AHashMap<ClientOrderId, OrderAny>> {
         DatabaseQueries::load_orders(&self.database.con, &self.database.trader_key, self.encoding)
             .await
     }
 
-    async fn load_positions(&self) -> anyhow::Result<HashMap<PositionId, Position>> {
+    async fn load_positions(&self) -> anyhow::Result<AHashMap<PositionId, Position>> {
         DatabaseQueries::load_positions(
             &self.database.con,
             &self.database.trader_key,
@@ -987,11 +988,11 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         .await
     }
 
-    fn load_index_order_position(&self) -> anyhow::Result<HashMap<ClientOrderId, Position>> {
+    fn load_index_order_position(&self) -> anyhow::Result<AHashMap<ClientOrderId, Position>> {
         todo!()
     }
 
-    fn load_index_order_client(&self) -> anyhow::Result<HashMap<ClientOrderId, ClientId>> {
+    fn load_index_order_client(&self) -> anyhow::Result<AHashMap<ClientOrderId, ClientId>> {
         todo!()
     }
 
@@ -1064,7 +1065,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         .await
     }
 
-    fn load_actor(&self, component_id: &ComponentId) -> anyhow::Result<HashMap<String, Bytes>> {
+    fn load_actor(&self, component_id: &ComponentId) -> anyhow::Result<AHashMap<String, Bytes>> {
         todo!()
     }
 
@@ -1072,7 +1073,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         todo!()
     }
 
-    fn load_strategy(&self, strategy_id: &StrategyId) -> anyhow::Result<HashMap<String, Bytes>> {
+    fn load_strategy(&self, strategy_id: &StrategyId) -> anyhow::Result<AHashMap<String, Bytes>> {
         todo!()
     }
 

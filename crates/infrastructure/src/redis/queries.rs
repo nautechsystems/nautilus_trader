@@ -15,6 +15,7 @@
 
 use std::{collections::HashMap, str::FromStr};
 
+use ahash::AHashMap;
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
 use futures::{StreamExt, future::join_all};
@@ -171,8 +172,8 @@ impl DatabaseQueries {
 
         // For now, we don't load greeks and yield curves from the database
         // This will be implemented in the future
-        let greeks = HashMap::new();
-        let yield_curves = HashMap::new();
+        let greeks = AHashMap::new();
+        let yield_curves = AHashMap::new();
 
         Ok(CacheMap {
             currencies,
@@ -195,8 +196,8 @@ impl DatabaseQueries {
         con: &ConnectionManager,
         trader_key: &str,
         encoding: SerializationEncoding,
-    ) -> anyhow::Result<HashMap<Ustr, Currency>> {
-        let mut currencies = HashMap::new();
+    ) -> anyhow::Result<AHashMap<Ustr, Currency>> {
+        let mut currencies = AHashMap::new();
         let pattern = format!("{trader_key}{REDIS_DELIMITER}{CURRENCIES}*");
         tracing::debug!("Loading {pattern}");
 
@@ -251,8 +252,8 @@ impl DatabaseQueries {
         con: &ConnectionManager,
         trader_key: &str,
         encoding: SerializationEncoding,
-    ) -> anyhow::Result<HashMap<InstrumentId, InstrumentAny>> {
-        let mut instruments = HashMap::new();
+    ) -> anyhow::Result<AHashMap<InstrumentId, InstrumentAny>> {
+        let mut instruments = AHashMap::new();
         let pattern = format!("{trader_key}{REDIS_DELIMITER}{INSTRUMENTS}*");
         tracing::debug!("Loading {pattern}");
 
@@ -320,8 +321,8 @@ impl DatabaseQueries {
         con: &ConnectionManager,
         trader_key: &str,
         encoding: SerializationEncoding,
-    ) -> anyhow::Result<HashMap<InstrumentId, SyntheticInstrument>> {
-        let mut synthetics = HashMap::new();
+    ) -> anyhow::Result<AHashMap<InstrumentId, SyntheticInstrument>> {
+        let mut synthetics = AHashMap::new();
         let pattern = format!("{trader_key}{REDIS_DELIMITER}{SYNTHETICS}*");
         tracing::debug!("Loading {pattern}");
 
@@ -389,8 +390,8 @@ impl DatabaseQueries {
         con: &ConnectionManager,
         trader_key: &str,
         encoding: SerializationEncoding,
-    ) -> anyhow::Result<HashMap<AccountId, AccountAny>> {
-        let mut accounts = HashMap::new();
+    ) -> anyhow::Result<AHashMap<AccountId, AccountAny>> {
+        let mut accounts = AHashMap::new();
         let pattern = format!("{trader_key}{REDIS_DELIMITER}{ACCOUNTS}*");
         tracing::debug!("Loading {pattern}");
 
@@ -445,8 +446,8 @@ impl DatabaseQueries {
         con: &ConnectionManager,
         trader_key: &str,
         encoding: SerializationEncoding,
-    ) -> anyhow::Result<HashMap<ClientOrderId, OrderAny>> {
-        let mut orders = HashMap::new();
+    ) -> anyhow::Result<AHashMap<ClientOrderId, OrderAny>> {
+        let mut orders = AHashMap::new();
         let pattern = format!("{trader_key}{REDIS_DELIMITER}{ORDERS}*");
         tracing::debug!("Loading {pattern}");
 
@@ -501,8 +502,8 @@ impl DatabaseQueries {
         con: &ConnectionManager,
         trader_key: &str,
         encoding: SerializationEncoding,
-    ) -> anyhow::Result<HashMap<PositionId, Position>> {
-        let mut positions = HashMap::new();
+    ) -> anyhow::Result<AHashMap<PositionId, Position>> {
+        let mut positions = AHashMap::new();
         let pattern = format!("{trader_key}{REDIS_DELIMITER}{POSITIONS}*");
         tracing::debug!("Loading {pattern}");
 

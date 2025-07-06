@@ -45,6 +45,7 @@ nautilus-core = { workspace = true }
 nautilus-cryptography = { workspace = true }
 nautilus-model = { workspace = true, features = ["stubs"] }
 
+ahash = { workspace = true }
 anyhow = { workspace = true }
 async-stream = { workspace = true }
 async-trait = { workspace = true }
