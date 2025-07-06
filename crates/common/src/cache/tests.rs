@@ -15,8 +15,13 @@
 
 //! Tests module for `Cache`.
 
+#[cfg(feature = "defi")]
+use std::sync::Arc;
+
 use bytes::Bytes;
 use nautilus_core::UnixNanos;
+#[cfg(feature = "defi")]
+use nautilus_model::defi::{AmmType, Dex, Pool, Token, chain::chains};
 use nautilus_model::{
     accounts::AccountAny,
     data::{Bar, MarkPriceUpdate, QuoteTick, TradeTick},
@@ -728,6 +733,106 @@ fn test_order_book_mut_when_some(mut cache: Cache, audusd_sim: CurrencyPair) {
     cache.add_order_book(book.clone()).unwrap();
     let result = cache.order_book_mut(&audusd_sim.id);
     assert_eq!(result, Some(&mut book));
+}
+
+#[cfg(feature = "defi")]
+#[fixture]
+fn test_pool() -> Pool {
+    let chain = Arc::new(chains::ETHEREUM.clone());
+    let dex = Dex::new(
+        chains::ETHEREUM.clone(),
+        "UniswapV3",
+        "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+        AmmType::CLAMM,
+        "PoolCreated(address,address,uint24,int24,address)",
+        "Swap(address,address,int256,int256,uint160,uint128,int24)",
+        "Mint(address,address,int24,int24,uint128,uint256,uint256)",
+        "Burn(address,int24,int24,uint128,uint256,uint256)",
+    );
+
+    let token0 = Token::new(
+        chain.clone(),
+        "0xA0b86a33E6441b936662bb6B5d1F8Fb0E2b57A5D"
+            .parse()
+            .unwrap(),
+        "Wrapped Ether".to_string(),
+        "WETH".to_string(),
+        18,
+    );
+
+    let token1 = Token::new(
+        chain.clone(),
+        "0xdAC17F958D2ee523a2206206994597C13D831ec7"
+            .parse()
+            .unwrap(),
+        "Tether USD".to_string(),
+        "USDT".to_string(),
+        6,
+    );
+
+    Pool::new(
+        chain,
+        dex,
+        "0x11b815efB8f581194ae79006d24E0d814B7697F6"
+            .parse()
+            .unwrap(),
+        12345678,
+        token0,
+        token1,
+        3000,
+        60,
+        UnixNanos::from(1_234_567_890_000_000_000u64),
+    )
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_pool_when_empty(cache: Cache, test_pool: Pool) {
+    let instrument_id = test_pool.instrument_id();
+    let result = cache.pool(&instrument_id);
+    assert!(result.is_none());
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_pool_when_some(mut cache: Cache, test_pool: Pool) {
+    let instrument_id = test_pool.instrument_id();
+    cache.add_pool(test_pool.clone()).unwrap();
+    let result = cache.pool(&instrument_id);
+    assert_eq!(result, Some(&test_pool));
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_pool_mut_when_empty(mut cache: Cache, test_pool: Pool) {
+    let instrument_id = test_pool.instrument_id();
+    let result = cache.pool_mut(&instrument_id);
+    assert!(result.is_none());
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_pool_mut_when_some(mut cache: Cache, test_pool: Pool) {
+    let instrument_id = test_pool.instrument_id();
+    cache.add_pool(test_pool.clone()).unwrap();
+    let result = cache.pool_mut(&instrument_id);
+
+    assert!(result.is_some());
+    if let Some(pool_ref) = result {
+        assert_eq!(pool_ref.fee, 3000);
+    }
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_add_pool(mut cache: Cache, test_pool: Pool) {
+    let instrument_id = test_pool.instrument_id();
+
+    cache.add_pool(test_pool.clone()).unwrap();
+
+    let cached_pool = cache.pool(&instrument_id);
+    assert!(cached_pool.is_some());
+    assert_eq!(cached_pool.unwrap(), &test_pool);
 }
 
 #[rstest]
