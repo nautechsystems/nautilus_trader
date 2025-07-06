@@ -28,6 +28,8 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.core.uuid cimport UUID4
+from nautilus_trader.model.enums import InstrumentClass
+from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport AccountBalance
@@ -521,10 +523,26 @@ cdef class AccountsManager:
                     free=pnl,
                 )
             else:
-                new_total = balance.total.as_decimal() + pnl.as_decimal()
-                new_free = balance.free.as_decimal() + pnl.as_decimal()
-                total = Money(new_total, pnl.currency)
-                free = Money(new_free, pnl.currency)
+                new_total = balance.total
+                new_free = balance.free
+                new_locked = balance.locked
+
+                new_total = new_total.add(pnl)
+                instrument = self._cache.instrument(fill._instrument_id)
+                if (
+                    pnl.is_positive()
+                    or fill.order_type == OrderType.MARKET
+                    or instrument.instrument_class in [InstrumentClass.SPORTS_BETTING]
+                ):
+                    new_free = new_free.add(pnl)
+                else:
+                    new_locked = new_locked.add(pnl)
+
+                if apply_commission and pnl.currency == commission.currency:
+                    new_total = new_total.sub(commission)
+                    new_free = new_free.sub(commission)
+                    # Ensure we only apply commission once
+                    apply_commission = False
 
                 # TODO: Until the platform can accurately track account equity and
                 # cross-margin requirements this condition check is inaccurate and
@@ -537,9 +555,9 @@ cdef class AccountsManager:
                 #     )
 
                 new_balance = AccountBalance(
-                    total=total,
-                    locked=balance.locked,
-                    free=free,
+                    total=new_total,
+                    locked=new_locked,
+                    free=new_free,
                 )
 
             balances.append(new_balance)
