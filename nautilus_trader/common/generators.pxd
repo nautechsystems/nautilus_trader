@@ -32,6 +32,10 @@ cdef class ClientOrderIdGenerator(IdentifierGenerator):
 
     cdef readonly int count
     """The count of IDs generated.\n\n:returns: `int`"""
+    cdef readonly bint use_uuids
+    """If UUID4's should be used for client order ID values.\n\n:returns: `bool`"""
+    cdef readonly bint remove_hyphens
+    """If hyphens should be removed from generated client order ID values.\n\n:returns: `bool`"""
 
     cpdef void set_count(self, int count)
     cpdef ClientOrderId generate(self)

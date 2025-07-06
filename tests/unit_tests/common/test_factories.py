@@ -68,6 +68,41 @@ class TestOrderFactory:
         assert order_factory.use_uuid_client_order_ids
         assert len(result.value) == 36
 
+    def test_generate_client_order_id_with_hyphens_removed(self):
+        # Arrange
+        order_factory = OrderFactory(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            clock=TestClock(),
+            remove_hyphens_from_client_order_ids=True,
+        )
+
+        # Act
+        result = order_factory.generate_client_order_id()
+
+        # Assert
+        assert result == ClientOrderId("O197001010000000000011")
+        assert order_factory.remove_hyphens_from_client_order_ids
+
+    def test_generate_uuid_client_order_id_with_hyphens_removed(self):
+        # Arrange
+        order_factory = OrderFactory(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            clock=TestClock(),
+            use_uuid_client_order_ids=True,
+            remove_hyphens_from_client_order_ids=True,
+        )
+
+        # Act
+        result = order_factory.generate_client_order_id()
+
+        # Assert
+        assert order_factory.use_uuid_client_order_ids
+        assert order_factory.remove_hyphens_from_client_order_ids
+        assert len(result.value) == 32  # UUID without hyphens is 32 characters
+        assert "-" not in result.value
+
     def test_generate_order_list_id(self):
         # Arrange, Act
         result = self.order_factory.generate_order_list_id()

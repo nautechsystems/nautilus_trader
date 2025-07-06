@@ -70,6 +70,8 @@ cdef class Strategy(Actor):
     """The order ID tag for the strategy.\n\n:returns: `str`"""
     cdef readonly bint use_uuid_client_order_ids
     """If UUID4's should be used for client order ID values.\n\n:returns: `bool`"""
+    cdef readonly bint remove_hyphens_from_client_order_ids
+    """If hyphens should be removed from generated client order ID values.\n\n:returns: `bool`"""
     cdef readonly OmsType oms_type
     """The order management system for the strategy.\n\n:returns: `OmsType`"""
     cdef readonly list external_order_claims
