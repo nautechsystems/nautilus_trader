@@ -74,7 +74,7 @@ class TestOrderFactory:
             trader_id=self.trader_id,
             strategy_id=self.strategy_id,
             clock=TestClock(),
-            remove_hyphens_from_client_order_ids=True,
+            use_hyphens_in_client_order_ids=False,
         )
 
         # Act
@@ -82,7 +82,7 @@ class TestOrderFactory:
 
         # Assert
         assert result == ClientOrderId("O197001010000000000011")
-        assert order_factory.remove_hyphens_from_client_order_ids
+        assert not order_factory.use_hyphens_in_client_order_ids
 
     def test_generate_uuid_client_order_id_with_hyphens_removed(self):
         # Arrange
@@ -91,7 +91,7 @@ class TestOrderFactory:
             strategy_id=self.strategy_id,
             clock=TestClock(),
             use_uuid_client_order_ids=True,
-            remove_hyphens_from_client_order_ids=True,
+            use_hyphens_in_client_order_ids=False,
         )
 
         # Act
@@ -99,7 +99,7 @@ class TestOrderFactory:
 
         # Assert
         assert order_factory.use_uuid_client_order_ids
-        assert order_factory.remove_hyphens_from_client_order_ids
+        assert not order_factory.use_hyphens_in_client_order_ids
         assert len(result.value) == 32  # UUID without hyphens is 32 characters
         assert "-" not in result.value
 

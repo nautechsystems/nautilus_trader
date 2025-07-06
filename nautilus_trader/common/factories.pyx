@@ -65,8 +65,8 @@ cdef class OrderFactory:
         The cache facade for the order factory.
     use_uuid_client_order_ids : bool, default False
         If UUID4's should be used for client order ID values.
-    remove_hyphens_from_client_order_ids : bool, default False
-        If hyphens should be removed from generated client order ID values.
+    use_hyphens_in_client_order_ids : bool, default True
+        If hyphens should be used in generated client order ID values.
 
     """
 
@@ -77,21 +77,21 @@ cdef class OrderFactory:
         Clock clock not None,
         CacheFacade cache: CacheFacade | None = None,
         bint use_uuid_client_order_ids = False,
-        bint remove_hyphens_from_client_order_ids = False,
+        bint use_hyphens_in_client_order_ids = True,
     ) -> None:
         self._clock = clock
         self._cache = cache
         self.trader_id = trader_id
         self.strategy_id = strategy_id
         self.use_uuid_client_order_ids = use_uuid_client_order_ids
-        self.remove_hyphens_from_client_order_ids = remove_hyphens_from_client_order_ids
+        self.use_hyphens_in_client_order_ids = use_hyphens_in_client_order_ids
 
         self._order_id_generator = ClientOrderIdGenerator(
             trader_id=trader_id,
             strategy_id=strategy_id,
             clock=clock,
             use_uuids=use_uuid_client_order_ids,
-            remove_hyphens=remove_hyphens_from_client_order_ids,
+            use_hyphens=use_hyphens_in_client_order_ids,
         )
         self._order_list_id_generator = OrderListIdGenerator(
             trader_id=trader_id,

@@ -3,13 +3,13 @@
 Released on TBD (UTC).
 
 ### Enhancements
-- Added `remove_hyphens_from_client_order_ids` config option for `StrategyConfig`
+- Added `use_hyphens_in_client_order_ids` config option for `StrategyConfig`
 
 ### Breaking Changes
 None
 
 ### Internal Improvements
-None
+- Refined Rust catalog path handling (#2743), thanks @faysou
 
 ### Fixes
 None

@@ -26,7 +26,7 @@ pub struct ClientOrderIdGenerator {
     strategy_id: StrategyId,
     count: usize,
     use_uuids: bool,
-    remove_hyphens: bool,
+    use_hyphens: bool,
 }
 
 impl ClientOrderIdGenerator {
@@ -38,7 +38,7 @@ impl ClientOrderIdGenerator {
         initial_count: usize,
         clock: &'static AtomicTime,
         use_uuids: bool,
-        remove_hyphens: bool,
+        use_hyphens: bool,
     ) -> Self {
         Self {
             trader_id,
@@ -46,7 +46,7 @@ impl ClientOrderIdGenerator {
             count: initial_count,
             clock,
             use_uuids,
-            remove_hyphens,
+            use_hyphens,
         }
     }
 
@@ -64,22 +64,31 @@ impl ClientOrderIdGenerator {
     }
 
     pub fn generate(&mut self) -> ClientOrderId {
-        let mut value = if self.use_uuids {
-            UUID4::new().to_string()
+        let value = if self.use_uuids {
+            let mut uuid_value = UUID4::new().to_string();
+            if !self.use_hyphens {
+                uuid_value = uuid_value.replace('-', "");
+            }
+            uuid_value
         } else {
             let datetime_tag = get_datetime_tag(self.clock.get_time_ms());
             let trader_tag = self.trader_id.get_tag();
             let strategy_tag = self.strategy_id.get_tag();
             self.count += 1;
-            format!(
-                "O-{}-{}-{}-{}",
-                datetime_tag, trader_tag, strategy_tag, self.count
-            )
-        };
 
-        if self.remove_hyphens {
-            value = value.replace('-', "");
-        }
+            if !self.use_hyphens {
+                let datetime_no_hyphens = datetime_tag.replace('-', "");
+                format!(
+                    "O{}{}{}{}",
+                    datetime_no_hyphens, trader_tag, strategy_tag, self.count
+                )
+            } else {
+                format!(
+                    "O-{}-{}-{}-{}",
+                    datetime_tag, trader_tag, strategy_tag, self.count
+                )
+            }
+        };
 
         ClientOrderId::from(value)
     }
@@ -99,7 +108,7 @@ mod tests {
     fn get_client_order_id_generator(
         initial_count: Option<usize>,
         use_uuids: bool,
-        remove_hyphens: bool,
+        use_hyphens: bool,
     ) -> ClientOrderIdGenerator {
         ClientOrderIdGenerator::new(
             TraderId::default(),
@@ -107,25 +116,25 @@ mod tests {
             initial_count.unwrap_or(0),
             get_atomic_clock_static(),
             use_uuids,
-            remove_hyphens,
+            use_hyphens,
         )
     }
 
     #[rstest]
     fn test_init() {
-        let generator = get_client_order_id_generator(None, false, false);
+        let generator = get_client_order_id_generator(None, false, true);
         assert_eq!(generator.count(), 0);
     }
 
     #[rstest]
     fn test_init_with_initial_count() {
-        let generator = get_client_order_id_generator(Some(7), false, false);
+        let generator = get_client_order_id_generator(Some(7), false, true);
         assert_eq!(generator.count(), 7);
     }
 
     #[rstest]
     fn test_generate_client_order_id_from_start() {
-        let mut generator = get_client_order_id_generator(None, false, false);
+        let mut generator = get_client_order_id_generator(None, false, true);
         let result1 = generator.generate();
         let result2 = generator.generate();
         let result3 = generator.generate();
@@ -137,7 +146,7 @@ mod tests {
 
     #[rstest]
     fn test_generate_client_order_id_from_initial() {
-        let mut generator = get_client_order_id_generator(Some(5), false, false);
+        let mut generator = get_client_order_id_generator(Some(5), false, true);
         let result1 = generator.generate();
         let result2 = generator.generate();
         let result3 = generator.generate();
@@ -149,7 +158,7 @@ mod tests {
 
     #[rstest]
     fn test_generate_client_order_id_with_hyphens_removed() {
-        let mut generator = get_client_order_id_generator(None, false, true);
+        let mut generator = get_client_order_id_generator(None, false, false);
         let result = generator.generate();
 
         assert_eq!(result, ClientOrderId::new("O197001010000000010011"));
@@ -157,7 +166,7 @@ mod tests {
 
     #[rstest]
     fn test_generate_uuid_client_order_id() {
-        let mut generator = get_client_order_id_generator(None, true, false);
+        let mut generator = get_client_order_id_generator(None, true, true);
         let result = generator.generate();
 
         // UUID should be 36 characters with hyphens
@@ -167,7 +176,7 @@ mod tests {
 
     #[rstest]
     fn test_generate_uuid_client_order_id_with_hyphens_removed() {
-        let mut generator = get_client_order_id_generator(None, true, true);
+        let mut generator = get_client_order_id_generator(None, true, false);
         let result = generator.generate();
 
         // UUID without hyphens should be 32 characters
@@ -177,7 +186,7 @@ mod tests {
 
     #[rstest]
     fn test_reset() {
-        let mut generator = get_client_order_id_generator(None, false, false);
+        let mut generator = get_client_order_id_generator(None, false, true);
         generator.generate();
         generator.generate();
         generator.reset();

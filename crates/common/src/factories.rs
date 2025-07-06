@@ -50,7 +50,7 @@ impl OrderFactory {
         init_order_list_id_count: Option<usize>,
         clock: &'static AtomicTime,
         use_uuids_for_client_order_ids: bool,
-        remove_hyphens_from_client_order_ids: bool,
+        use_hyphens_in_client_order_ids: bool,
     ) -> Self {
         let order_id_generator = ClientOrderIdGenerator::new(
             trader_id,
@@ -58,7 +58,7 @@ impl OrderFactory {
             init_order_id_count.unwrap_or(0),
             clock,
             use_uuids_for_client_order_ids,
-            remove_hyphens_from_client_order_ids,
+            use_hyphens_in_client_order_ids,
         );
         let order_list_id_generator = OrderListIdGenerator::new(
             trader_id,
@@ -176,7 +176,7 @@ pub mod tests {
             None,
             get_atomic_clock_static(),
             false, // use_uuids_for_client_order_ids
-            false, // remove_hyphens_from_client_order_ids
+            true,  // use_hyphens_in_client_order_ids
         )
     }
 
@@ -245,8 +245,8 @@ pub mod tests {
             None,
             None,
             get_atomic_clock_static(),
-            true,  // use_uuids_for_client_order_ids
-            false, // remove_hyphens_from_client_order_ids
+            true, // use_uuids_for_client_order_ids
+            true, // use_hyphens_in_client_order_ids
         )
     }
 
@@ -261,7 +261,7 @@ pub mod tests {
             None,
             get_atomic_clock_static(),
             false, // use_uuids_for_client_order_ids
-            true,  // remove_hyphens_from_client_order_ids
+            false, // use_hyphens_in_client_order_ids
         )
     }
 
@@ -275,8 +275,8 @@ pub mod tests {
             None,
             None,
             get_atomic_clock_static(),
-            true, // use_uuids_for_client_order_ids
-            true, // remove_hyphens_from_client_order_ids
+            true,  // use_uuids_for_client_order_ids
+            false, // use_hyphens_in_client_order_ids
         )
     }
 
