@@ -30,7 +30,8 @@ use object_store::path::Path as ObjectPath;
 use crate::{
     backend::catalog::{
         CatalogPathPrefix, ParquetDataCatalog, are_intervals_contiguous, are_intervals_disjoint,
-        parse_filename_timestamps, timestamps_to_filename,
+        extract_path_components, make_object_store_path, parse_filename_timestamps,
+        timestamps_to_filename,
     },
     parquet::{
         combine_parquet_files_from_object_store, min_max_from_parquet_metadata_object_store,
@@ -308,7 +309,7 @@ impl ParquetDataCatalog {
                 UnixNanos::from(intervals[0].0),
                 UnixNanos::from(intervals.last().unwrap().1),
             );
-            let path = format!("{directory}/{file_name}");
+            let path = make_object_store_path(directory, &[&file_name]);
 
             // Convert string paths to ObjectPath for the function call
             let object_paths: Vec<ObjectPath> = files_to_consolidate
@@ -527,18 +528,18 @@ impl ParquetDataCatalog {
         &self,
         path: &str,
     ) -> Result<(Option<String>, Option<String>)> {
-        // Split the path and look for the data directory structure
-        let path_parts: Vec<&str> = path.split('/').collect();
+        // Use cross-platform path parsing
+        let path_components = extract_path_components(path);
 
         // Find the "data" directory in the path
-        if let Some(data_index) = path_parts.iter().position(|&part| part == "data")
-            && data_index + 1 < path_parts.len()
+        if let Some(data_index) = path_components.iter().position(|part| part == "data")
+            && data_index + 1 < path_components.len()
         {
-            let data_cls = path_parts[data_index + 1].to_string();
+            let data_cls = path_components[data_index + 1].clone();
 
             // Check if there's an identifier (instrument ID) after the data class
-            let identifier = if data_index + 2 < path_parts.len() {
-                Some(path_parts[data_index + 2].to_string())
+            let identifier = if data_index + 2 < path_components.len() {
+                Some(path_components[data_index + 2].clone())
             } else {
                 None
             };
@@ -1299,7 +1300,7 @@ impl ParquetDataCatalog {
 
             let new_filename =
                 timestamps_to_filename(UnixNanos::from(first_ts), UnixNanos::from(last_ts));
-            let new_file_path = format!("{directory}/{new_filename}");
+            let new_file_path = make_object_store_path(directory, &[&new_filename]);
             let new_object_path = ObjectPath::from(new_file_path);
 
             self.move_file(&object_path, &new_object_path)?;
@@ -1345,11 +1346,7 @@ impl ParquetDataCatalog {
     /// # Ok::<(), anyhow::Error>(())
     /// ```
     pub fn find_leaf_data_directories(&self) -> anyhow::Result<Vec<String>> {
-        let data_dir = if self.base_path.is_empty() {
-            "data".to_string()
-        } else {
-            format!("{}/data", self.base_path)
-        };
+        let data_dir = make_object_store_path(&self.base_path, &["data"]);
 
         let leaf_dirs = self.execute_async(async {
             let mut all_paths = std::collections::HashSet::new();
@@ -1386,7 +1383,7 @@ impl ParquetDataCatalog {
                     .is_some_and(|files| !files.is_empty());
                 let has_subdirs = directories
                     .iter()
-                    .any(|d| d.starts_with(&format!("{dir}/")) && d != dir);
+                    .any(|d| d.starts_with(&make_object_store_path(dir, &[""])) && d != dir);
 
                 if has_files && !has_subdirs {
                     leaf_dirs.push(dir.clone());
@@ -1747,7 +1744,7 @@ impl ParquetDataCatalog {
                 UnixNanos::from(file_start_ns),
                 UnixNanos::from(file_end_ns),
             );
-            let file_path = format!("{directory}/{filename}");
+            let file_path = make_object_store_path(&directory, &[&filename]);
 
             // Determine what type of operation is needed
             let file_completely_within_range = (delete_start_ns.is_none()
