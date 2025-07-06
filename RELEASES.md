@@ -3,7 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Added `remove_hyphens_from_client_order_ids` config option for `StrategyConfig`
 
 ### Breaking Changes
 None

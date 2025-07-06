@@ -145,6 +145,7 @@ cdef class Strategy(Actor):
         self.id = StrategyId(f"{component_id}-{config.order_id_tag}")
         self.order_id_tag = str(config.order_id_tag)
         self.use_uuid_client_order_ids = config.use_uuid_client_order_ids
+        self.remove_hyphens_from_client_order_ids = config.remove_hyphens_from_client_order_ids
         self._log = Logger(name=component_id)
 
         oms_type = config.oms_type or OmsType.UNSPECIFIED
@@ -288,7 +289,8 @@ cdef class Strategy(Actor):
             strategy_id=self.id,
             clock=clock,
             cache=cache,
-            use_uuid_client_order_ids=self.use_uuid_client_order_ids
+            use_uuid_client_order_ids=self.use_uuid_client_order_ids,
+            remove_hyphens_from_client_order_ids=self.remove_hyphens_from_client_order_ids
         )
 
         self._manager = OrderManager(

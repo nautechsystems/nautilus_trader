@@ -59,6 +59,8 @@ cdef class OrderFactory:
     """The order factories trading strategy ID.\n\n:returns: `StrategyId`"""
     cdef readonly bint use_uuid_client_order_ids
     """If UUID4's should be used for client order ID values.\n\n:returns: `bool`"""
+    cdef readonly bint remove_hyphens_from_client_order_ids
+    """If hyphens should be removed from generated client order ID values.\n\n:returns: `bool`"""
 
     cpdef get_client_order_id_count(self)
     cpdef get_order_list_id_count(self)

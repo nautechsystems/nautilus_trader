@@ -49,12 +49,16 @@ impl OrderFactory {
         init_order_id_count: Option<usize>,
         init_order_list_id_count: Option<usize>,
         clock: &'static AtomicTime,
+        use_uuids_for_client_order_ids: bool,
+        remove_hyphens_from_client_order_ids: bool,
     ) -> Self {
         let order_id_generator = ClientOrderIdGenerator::new(
             trader_id,
             strategy_id,
             init_order_id_count.unwrap_or(0),
             clock,
+            use_uuids_for_client_order_ids,
+            remove_hyphens_from_client_order_ids,
         );
         let order_list_id_generator = OrderListIdGenerator::new(
             trader_id,
@@ -171,6 +175,8 @@ pub mod tests {
             None,
             None,
             get_atomic_clock_static(),
+            false, // use_uuids_for_client_order_ids
+            false, // remove_hyphens_from_client_order_ids
         )
     }
 
@@ -227,6 +233,85 @@ pub mod tests {
             order_list_id,
             OrderListId::new("OL-19700101-000000-001-001-1")
         );
+    }
+
+    #[fixture]
+    pub fn order_factory_with_uuids() -> OrderFactory {
+        let trader_id = trader_id();
+        let strategy_id = strategy_id_ema_cross();
+        OrderFactory::new(
+            trader_id,
+            strategy_id,
+            None,
+            None,
+            get_atomic_clock_static(),
+            true,  // use_uuids_for_client_order_ids
+            false, // remove_hyphens_from_client_order_ids
+        )
+    }
+
+    #[fixture]
+    pub fn order_factory_with_hyphens_removed() -> OrderFactory {
+        let trader_id = trader_id();
+        let strategy_id = strategy_id_ema_cross();
+        OrderFactory::new(
+            trader_id,
+            strategy_id,
+            None,
+            None,
+            get_atomic_clock_static(),
+            false, // use_uuids_for_client_order_ids
+            true,  // remove_hyphens_from_client_order_ids
+        )
+    }
+
+    #[fixture]
+    pub fn order_factory_with_uuids_and_hyphens_removed() -> OrderFactory {
+        let trader_id = trader_id();
+        let strategy_id = strategy_id_ema_cross();
+        OrderFactory::new(
+            trader_id,
+            strategy_id,
+            None,
+            None,
+            get_atomic_clock_static(),
+            true, // use_uuids_for_client_order_ids
+            true, // remove_hyphens_from_client_order_ids
+        )
+    }
+
+    #[rstest]
+    fn test_generate_client_order_id_with_uuids(mut order_factory_with_uuids: OrderFactory) {
+        let client_order_id = order_factory_with_uuids.generate_client_order_id();
+
+        // UUID should be 36 characters with hyphens
+        assert_eq!(client_order_id.as_str().len(), 36);
+        assert!(client_order_id.as_str().contains('-'));
+    }
+
+    #[rstest]
+    fn test_generate_client_order_id_with_hyphens_removed(
+        mut order_factory_with_hyphens_removed: OrderFactory,
+    ) {
+        let client_order_id = order_factory_with_hyphens_removed.generate_client_order_id();
+
+        assert_eq!(
+            client_order_id,
+            ClientOrderId::new("O197001010000000010011")
+        );
+        assert!(!client_order_id.as_str().contains('-'));
+    }
+
+    #[rstest]
+    fn test_generate_client_order_id_with_uuids_and_hyphens_removed(
+        mut order_factory_with_uuids_and_hyphens_removed: OrderFactory,
+    ) {
+        let client_order_id =
+            order_factory_with_uuids_and_hyphens_removed.generate_client_order_id();
+
+        // UUID without hyphens should be 32 characters
+        assert_eq!(client_order_id.as_str().len(), 32);
+        assert!(!client_order_id.as_str().contains('-'));
     }
 
     #[rstest]
