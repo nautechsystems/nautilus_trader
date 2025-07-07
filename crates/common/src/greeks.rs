@@ -29,6 +29,9 @@ use nautilus_model::{
 
 use crate::{cache::Cache, clock::Clock, msgbus};
 
+/// Type alias for a greeks filter function.
+pub type GreeksFilter = Box<dyn Fn(&GreeksData) -> bool>;
+
 /// Calculates instrument and portfolio greeks (sensitivities of price moves with respect to market data moves).
 ///
 /// Useful for risk management of options and futures portfolios.
@@ -405,6 +408,10 @@ impl GreeksCalculator {
     /// # Errors
     ///
     /// Returns an error if any underlying greeks calculation fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `greeks_filter` is `Some` but the filter function panics when called.
     #[allow(clippy::too_many_arguments)]
     pub fn portfolio_greeks(
         &self,
@@ -424,6 +431,7 @@ impl GreeksCalculator {
         percent_greeks: Option<bool>,
         index_instrument_id: Option<InstrumentId>,
         beta_weights: Option<HashMap<InstrumentId, f64>>,
+        greeks_filter: Option<GreeksFilter>,
     ) -> anyhow::Result<PortfolioGreeks> {
         let ts_event = self.clock.borrow().timestamp_ns();
         let mut portfolio_greeks =
@@ -488,7 +496,12 @@ impl GreeksCalculator {
                 index_instrument_id,
                 beta_weights.clone(),
             )?;
-            portfolio_greeks = portfolio_greeks + (quantity * &instrument_greeks).into();
+            let position_greeks = (quantity * &instrument_greeks).into();
+
+            // Apply greeks filter if provided
+            if greeks_filter.is_none() || greeks_filter.as_ref().unwrap()(&instrument_greeks) {
+                portfolio_greeks = portfolio_greeks + position_greeks;
+            }
         }
 
         Ok(portfolio_greeks)
