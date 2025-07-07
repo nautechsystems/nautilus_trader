@@ -32,7 +32,7 @@ use nautilus_model::{
         OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick, close::InstrumentClose, stubs::*,
     },
     enums::{BookAction, BookType, OrderSide},
-    identifiers::{ClientId, TraderId, Venue},
+    identifiers::{ClientId, InstrumentId, TraderId, Venue},
     instruments::{CurrencyPair, InstrumentAny, stubs::*},
     orderbook::OrderBook,
     types::{Price, Quantity},
@@ -1396,11 +1396,6 @@ fn test_subscribe_and_receive_pools(
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    let address = Address::from([0x12; 20]);
-    actor.subscribe_pool(address, None, None);
-
-    let topic = get_defi_pool_topic(address);
-
     // Create a minimal pool using the existing pattern
     use std::sync::Arc;
 
@@ -1445,6 +1440,11 @@ fn test_subscribe_and_receive_pools(
         UnixNanos::from(1),
     );
 
+    let instrument_id = pool.instrument_id;
+    actor.subscribe_pool(instrument_id, None, None);
+
+    let topic = get_defi_pool_topic(instrument_id);
+
     msgbus::publish(topic, &pool);
 
     assert_eq!(actor.received_pools.len(), 1);
@@ -1462,15 +1462,8 @@ fn test_subscribe_and_receive_pool_swaps(
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    let address = Address::from([0x12; 20]);
-    actor.subscribe_pool_swaps(address, None, None);
-
-    let topic = get_defi_pool_swaps_topic(address);
-
     // Create a minimal pool swap
-    use std::sync::Arc;
-
-    use nautilus_model::defi::{Dex, Pool, Token, chain::chains, dex::AmmType};
+    use nautilus_model::defi::{AmmType, Dex, chain::chains};
 
     let chain = Arc::new(chains::ETHEREUM.clone());
     let dex = Dex::new(
@@ -1483,51 +1476,30 @@ fn test_subscribe_and_receive_pool_swaps(
         "Mint",
         "Burn",
     );
-    let token0 = Token::new(
-        chain.clone(),
-        Address::from([0x11; 20]),
-        "WETH".to_string(),
-        "WETH".to_string(),
-        18,
-    );
-    let token1 = Token::new(
-        chain.clone(),
-        Address::from([0x22; 20]),
-        "USDC".to_string(),
-        "USDC".to_string(),
-        6,
-    );
-    let pool = Pool::new(
-        chain.clone(),
-        dex.clone(),
-        address,
-        0u64,
-        token0,
-        token1,
-        500u32,
-        10u32,
-        UnixNanos::from(1),
-    );
 
-    use nautilus_model::{
-        enums::OrderSide,
-        types::{Price, Quantity},
-    };
+    let pool_address = Address::from_str("0xC31E54c7A869B9fCbECC14363CF510d1C41Fa443").unwrap();
+    let instrument_id = InstrumentId::from("WETH/USDC-30.UniswapV3:Ethereum");
 
     let swap = PoolSwap::new(
         chain.clone(),
         Arc::new(dex),
-        Arc::new(pool),
+        instrument_id,
+        pool_address,
         1000u64,
         "0x123".to_string(),
         0,
         0,
         UnixNanos::from(1),
-        address,
+        Address::from([0x12; 20]),
         OrderSide::Buy,
         Quantity::from("1000"),
         Price::from("500"),
     );
+
+    actor.subscribe_pool_swaps(instrument_id, None, None);
+
+    let topic = get_defi_pool_swaps_topic(instrument_id);
+
     msgbus::publish(topic, &swap);
 
     assert_eq!(actor.received_pool_swaps.len(), 1);
@@ -1545,14 +1517,7 @@ fn test_unsubscribe_pool_swaps(
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    let address = Address::from([0x12; 20]);
-    actor.subscribe_pool_swaps(address, None, None);
-
-    let topic = get_defi_pool_swaps_topic(address);
-
     // Create a minimal pool swap
-    use std::sync::Arc;
-
     use nautilus_model::defi::{Dex, Pool, Token, chain::chains, dex::AmmType};
 
     let chain = Arc::new(chains::ETHEREUM.clone());
@@ -1580,28 +1545,24 @@ fn test_unsubscribe_pool_swaps(
         "USDC".to_string(),
         6,
     );
-    let pool = Pool::new(
-        chain.clone(),
-        dex.clone(),
-        address,
-        0u64,
-        token0,
-        token1,
-        500u32,
-        10u32,
-        UnixNanos::from(1),
-    );
+    let pool_address = Address::from_str("0xC31E54c7A869B9fCbECC14363CF510d1C41Fa443").unwrap();
+    let instrument_id = Pool::create_instrument_id(chain.name, &dex, &token0, &token1, 50);
+
+    actor.subscribe_pool_swaps(instrument_id, None, None);
+
+    let topic = get_defi_pool_swaps_topic(instrument_id);
 
     let swap1 = PoolSwap::new(
         chain.clone(),
         Arc::new(dex.clone()),
-        Arc::new(pool.clone()),
+        instrument_id,
+        pool_address,
         1000u64,
         "0x123".to_string(),
         0,
         0,
         UnixNanos::from(1),
-        address,
+        Address::from([0x12; 20]),
         OrderSide::Buy,
         Quantity::from("1000"),
         Price::from("500"),
@@ -1609,18 +1570,19 @@ fn test_unsubscribe_pool_swaps(
     msgbus::publish(topic, &swap1);
 
     // Unsubscribe
-    actor.unsubscribe_pool_swaps(address, None, None);
+    actor.unsubscribe_pool_swaps(instrument_id, None, None);
 
     let swap2 = PoolSwap::new(
         chain.clone(),
         Arc::new(dex),
-        Arc::new(pool),
+        instrument_id,
+        pool_address,
         2000u64,
         "0x456".to_string(),
         0,
         0,
         UnixNanos::from(2),
-        address,
+        Address::from([0x12; 20]),
         OrderSide::Sell,
         Quantity::from("2000"),
         Price::from("1000"),

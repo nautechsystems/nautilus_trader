@@ -227,7 +227,7 @@ impl BlockchainCacheDatabase {
         ",
         )
         .bind(chain_id as i32)
-        .bind(swap.pool.address.to_string())
+        .bind(swap.pool_address.to_string())
         .bind(swap.block as i64)
         .bind(swap.transaction_hash.as_str())
         .bind(swap.transaction_index as i32)
@@ -259,7 +259,7 @@ impl BlockchainCacheDatabase {
         ",
         )
         .bind(chain_id as i32)
-        .bind(liquidity_update.pool.address.to_string())
+        .bind(liquidity_update.pool_address.to_string())
         .bind(liquidity_update.block as i64)
         .bind(liquidity_update.transaction_hash.as_str())
         .bind(liquidity_update.transaction_index as i32)

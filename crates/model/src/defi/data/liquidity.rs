@@ -22,7 +22,7 @@ use strum::{Display, EnumIter, EnumString};
 
 use crate::{
     data::HasTsInit,
-    defi::{amm::SharedPool, chain::SharedChain, dex::SharedDex},
+    defi::{SharedChain, SharedDex},
     identifiers::InstrumentId,
     types::Quantity,
 };
@@ -66,8 +66,10 @@ pub struct PoolLiquidityUpdate {
     pub chain: SharedChain,
     /// The decentralized exchange where the liquidity update was executed.
     pub dex: SharedDex,
-    /// The DEX liquidity pool
-    pub pool: SharedPool,
+    /// The DEX liquidity pool instrument ID.
+    pub instrument_id: InstrumentId,
+    /// The blockchain address of the pool smart contract.
+    pub pool_address: Address,
     /// The type of the pool liquidity update.
     pub kind: PoolLiquidityUpdateType,
     /// The blockchain block number where the liquidity update occurred.
@@ -105,7 +107,8 @@ impl PoolLiquidityUpdate {
     pub const fn new(
         chain: SharedChain,
         dex: SharedDex,
-        pool: SharedPool,
+        instrument_id: InstrumentId,
+        pool_address: Address,
         kind: PoolLiquidityUpdateType,
         block: u64,
         transaction_hash: String,
@@ -123,7 +126,8 @@ impl PoolLiquidityUpdate {
         Self {
             chain,
             dex,
-            pool,
+            instrument_id,
+            pool_address,
             kind,
             block,
             transaction_hash,
@@ -140,24 +144,14 @@ impl PoolLiquidityUpdate {
             ts_init: timestamp,
         }
     }
-
-    /// Returns the instrument ID for this liquidity update.
-    #[must_use]
-    pub fn instrument_id(&self) -> InstrumentId {
-        self.pool.instrument_id()
-    }
 }
 
 impl Display for PoolLiquidityUpdate {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "PoolLiquidityUpdate(kind={}, pool={}, amount0={}, amount1={}, liquidity={})",
-            self.kind,
-            self.pool.ticker(),
-            self.amount0,
-            self.amount1,
-            self.position_liquidity
+            "PoolLiquidityUpdate(instrument_id={}, kind={}, amount0={}, amount1={}, liquidity={})",
+            self.instrument_id, self.kind, self.amount0, self.amount1, self.position_liquidity
         )
     }
 }
