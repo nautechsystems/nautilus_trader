@@ -185,7 +185,6 @@ check-hack-installed:  #-- Verify cargo-hack is installed
 check-features: check-hack-installed
 	cargo hack check --each-feature
 
-
 #== Rust Testing
 
 .PHONY: cargo-test
@@ -274,10 +273,6 @@ cargo-ci-benches:  #-- Run Rust benches for the crates included in the CI perfor
 	  echo "Running benches for $$crate"; \
 	  cargo bench -p $$crate --profile bench --benches --no-fail-fast; \
 	done
-
-.PHONY: cargo-doc
-cargo-doc:  #-- Generate Rust documentation
-	cargo doc
 
 #== Docker
 
