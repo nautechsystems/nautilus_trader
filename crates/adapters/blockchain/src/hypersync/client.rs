@@ -93,10 +93,99 @@ impl HyperSyncClient {
         self.pool_addresses.get(&instrument_id)
     }
 
+    /// Creates token objects from an instrument ID by parsing the symbol and looking up addresses.
+    fn create_tokens_from_instrument_id(
+        chain: SharedChain,
+        instrument_id: InstrumentId,
+    ) -> anyhow::Result<(Arc<Token>, Arc<Token>)> {
+        // Parse instrument ID format: "WETH/USDC-3000.UniswapV3:Arbitrum"
+        let instrument_str = instrument_id.to_string();
+        let symbol_part = instrument_str
+            .split('.')
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("Invalid instrument ID format"))?;
+
+        let tokens_and_fee = symbol_part.split('/').collect::<Vec<&str>>();
+
+        if tokens_and_fee.len() != 2 {
+            anyhow::bail!("Invalid token pair format in instrument ID");
+        }
+
+        let token0_symbol = tokens_and_fee[0];
+        let token1_with_fee = tokens_and_fee[1]
+            .split('-')
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("Invalid token1 format"))?;
+
+        // Look up token addresses and metadata based on chain and symbols
+        let (token0_address, token0_name, token0_decimals) =
+            Self::get_token_metadata_from_registry(&chain.name, token0_symbol)?;
+        let (token1_address, token1_name, token1_decimals) =
+            Self::get_token_metadata_from_registry(&chain.name, token1_with_fee)?;
+
+        let token0 = Arc::new(Token::new(
+            chain.clone(),
+            token0_address,
+            token0_name,
+            token0_symbol.to_string(),
+            token0_decimals,
+        ));
+
+        let token1 = Arc::new(Token::new(
+            chain.clone(),
+            token1_address,
+            token1_name,
+            token1_with_fee.to_string(),
+            token1_decimals,
+        ));
+
+        Ok((token0, token1))
+    }
+
+    /// Gets token metadata (address, name, decimals) for a given symbol on a specific chain
+    /// using the centralized token registries.
+    fn get_token_metadata_from_registry(
+        chain: &Blockchain,
+        symbol: &str,
+    ) -> anyhow::Result<(Address, String, u8)> {
+        // Use centralized token registries from exchanges module
+        let token_symbol = match chain {
+            Blockchain::Ethereum => crate::exchanges::ethereum::get_token_symbol_reverse(symbol),
+            Blockchain::Arbitrum => crate::exchanges::arbitrum::get_token_symbol_reverse(symbol),
+            Blockchain::Base => crate::exchanges::base::get_token_symbol_reverse(symbol),
+            _ => anyhow::bail!("Unsupported chain for token lookup: {chain}"),
+        }?;
+
+        // Get standard token metadata - this is a simplified approach
+        // In a more complete implementation, we'd have a comprehensive token metadata registry
+        let (name, decimals) = match symbol {
+            "WETH" => ("Wrapped Ether", 18),
+            "USDC" | "USDbC" => ("USD Coin", 6),
+            "USDT" => ("Tether USD", 6),
+            "DAI" => ("Dai Stablecoin", 18),
+            "WBTC" | "cbBTC" => ("Wrapped Bitcoin", 8),
+            "UNI" => ("Uniswap", 18),
+            "LINK" => ("Chainlink", 18),
+            "AAVE" => ("Aave", 18),
+            "ARB" => ("Arbitrum", 18),
+            "AERO" => ("Aerodrome", 18),
+            "cbETH" => ("Coinbase Wrapped Staked ETH", 18),
+            "BUSD" => ("Binance USD", 18),
+            "USDC.e" => ("USD Coin (Ethereum)", 6),
+            _ => anyhow::bail!("Unknown token metadata for symbol: {symbol}"),
+        };
+
+        Ok((token_symbol, name.to_string(), decimals))
+    }
+
     /// Populates the pool_addresses index by discovering all pools created on the given chain.
     ///
     /// This method queries the Uniswap V3 Factory PoolCreated events to discover all pools
     /// and map their InstrumentIds to their contract addresses.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if processing pool creation events fails.
     pub async fn populate_pools_index(&mut self, from_block: u64) -> anyhow::Result<()> {
         // Get the Uniswap V3 DEX for this chain
         let uniswap_v3_dex = match self.chain.name {
@@ -104,7 +193,10 @@ impl HyperSyncClient {
             Blockchain::Arbitrum => &exchanges::arbitrum::UNISWAP_V3,
             Blockchain::Base => &exchanges::base::UNISWAP_V3,
             _ => {
-                tracing::warn!("No Uniswap V3 DEX found for chain: {}", self.chain.name);
+                tracing::warn!(
+                    "No Uniswap V3 DEX found for chain: {chain}",
+                    chain = self.chain.name
+                );
                 return Ok(()); // Return early for unsupported chains
             }
         };
@@ -135,14 +227,14 @@ impl HyperSyncClient {
         // Process the pool creation events
         while let Some(log) = event_stream.next().await {
             if let Err(e) = self.process_pool_created_log(&log).await {
-                tracing::warn!("Failed to process pool created log: {}", e);
+                tracing::warn!("Failed to process pool created log: {e}");
                 continue;
             }
             pools_discovered += 1;
 
             // Log progress every 1000 pools
             if pools_discovered % 1000 == 0 {
-                tracing::info!("Discovered {} pools so far...", pools_discovered);
+                tracing::info!("Discovered {pools_discovered} pools so far...");
             }
         }
 
@@ -156,6 +248,10 @@ impl HyperSyncClient {
     }
 
     /// Processes a single PoolCreated log entry and adds the pool mapping to our cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if log data is missing or malformed.
     async fn process_pool_created_log(
         &mut self,
         log: &hypersync_client::simple_types::Log,
@@ -207,14 +303,20 @@ impl HyperSyncClient {
             Blockchain::Ethereum => crate::exchanges::ethereum::get_token_symbol(token0_address),
             Blockchain::Arbitrum => crate::exchanges::arbitrum::get_token_symbol(token0_address),
             Blockchain::Base => crate::exchanges::base::get_token_symbol(token0_address),
-            _ => format!("TOKEN_{}", &token0_address.to_string()[2..8].to_uppercase()),
+            _ => format!(
+                "TOKEN_{addr}",
+                addr = &token0_address.to_string()[2..8].to_uppercase()
+            ),
         };
 
         let token1_symbol = match self.chain.name {
             Blockchain::Ethereum => crate::exchanges::ethereum::get_token_symbol(token1_address),
             Blockchain::Arbitrum => crate::exchanges::arbitrum::get_token_symbol(token1_address),
             Blockchain::Base => crate::exchanges::base::get_token_symbol(token1_address),
-            _ => format!("TOKEN_{}", &token1_address.to_string()[2..8].to_uppercase()),
+            _ => format!(
+                "TOKEN_{addr}",
+                addr = &token1_address.to_string()[2..8].to_uppercase()
+            ),
         };
 
         let uniswap_v3_dex = match self.chain.name {
@@ -225,18 +327,17 @@ impl HyperSyncClient {
         };
 
         // Create the instrument ID using the same format as Pool::create_instrument_id
-        let symbol = format!("{}/{}-{}", token0_symbol, token1_symbol, fee);
-        let venue = format!("{}:{}", uniswap_v3_dex.dex.name, self.chain.name);
-        let instrument_id = InstrumentId::from(format!("{}.{}", symbol, venue).as_str());
+        let symbol = format!("{token0_symbol}/{token1_symbol}-{fee}");
+        let venue = format!(
+            "{dex_name}:{chain_name}",
+            dex_name = uniswap_v3_dex.dex.name,
+            chain_name = self.chain.name
+        );
+        let instrument_id = InstrumentId::from(format!("{symbol}.{venue}").as_str());
 
         self.pool_addresses.insert(instrument_id, pool_address);
 
-        tracing::debug!(
-            "Cached pool mapping: {} -> {} (fee: {})",
-            instrument_id,
-            pool_address,
-            fee
-        );
+        tracing::debug!("Cached pool mapping: {instrument_id} -> {pool_address}");
 
         Ok(())
     }
@@ -251,7 +352,7 @@ impl HyperSyncClient {
         additional_topics: Vec<String>,
     ) -> impl Stream<Item = Log> + use<> {
         let event_hash = keccak256(event_signature.as_bytes());
-        let topic0 = format!("0x{}", hex::encode(event_hash));
+        let topic0 = format!("0x{encoded_hash}", encoded_hash = hex::encode(event_hash));
 
         let mut topics_array = Vec::new();
         topics_array.push(vec![topic0]);
@@ -318,11 +419,19 @@ impl HyperSyncClient {
     }
 
     /// Returns the current block
+    ///
+    /// # Panics
+    ///
+    /// Panics if the client height request fails.
     pub async fn current_block(&self) -> u64 {
         self.client.get_height().await.unwrap()
     }
 
     /// Creates a stream that yields blockchain blocks within the specified range.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the stream creation or block transformation fails.
     pub async fn request_blocks_stream(
         &self,
         from_block: u64,
@@ -352,6 +461,10 @@ impl HyperSyncClient {
     }
 
     /// Starts a background task that continuously polls for new blockchain blocks.
+    ///
+    /// # Panics
+    ///
+    /// Panics if client height requests or block transformations fail.
     pub fn subscribe_blocks(&mut self) {
         let chain = self.chain.name;
         let client = self.client.clone();
@@ -414,6 +527,10 @@ impl HyperSyncClient {
     }
 
     /// Subscribes to swap events for a specific pool address.
+    ///
+    /// # Panics
+    ///
+    /// Panics if client height requests fail during subscription.
     pub fn subscribe_pool_swaps(&mut self, instrument_id: InstrumentId, pool_address: Address) {
         let chain_ref = self.chain.clone(); // Use existing SharedChain
         let client = self.client.clone();
@@ -422,27 +539,29 @@ impl HyperSyncClient {
         let task = tokio::spawn(async move {
             tracing::debug!("Starting task 'swaps_feed' for pool: {pool_address}");
 
-            // TODO: These objects should be fetched from cache or RPC calls
-            // For now, create minimal objects just to get compilation working
-            let token0 = std::sync::Arc::new(Token::new(
-                chain_ref.clone(),
-                "0xA0b86a33E6441b936662bb6B5d1F8Fb0E2b57A5D"
-                    .parse()
-                    .unwrap(), // WETH
-                "Wrapped Ether".to_string(),
-                "WETH".to_string(),
-                18,
-            ));
+            // Create token objects from instrument ID
+            let (token0, token1) =
+                match Self::create_tokens_from_instrument_id(chain_ref.clone(), instrument_id) {
+                    Ok(tokens) => tokens,
+                    Err(e) => {
+                        tracing::error!("Failed to create tokens for {instrument_id}: {e}");
+                        return;
+                    }
+                };
 
-            let token1 = std::sync::Arc::new(Token::new(
-                chain_ref.clone(),
-                "0xdAC17F958D2ee523a2206206994597C13D831ec7"
-                    .parse()
-                    .unwrap(), // USDT
-                "Tether USD".to_string(),
-                "USDT".to_string(),
-                6, // USDT has 6 decimals
-            ));
+            // Get the appropriate DEX definition for this chain
+            let dex = match chain_ref.name {
+                Blockchain::Ethereum => exchanges::ethereum::UNISWAP_V3.dex.clone(),
+                Blockchain::Arbitrum => exchanges::arbitrum::UNISWAP_V3.dex.clone(),
+                Blockchain::Base => exchanges::base::UNISWAP_V3.dex.clone(),
+                _ => {
+                    tracing::error!(
+                        "Unsupported chain for swaps: {chain}",
+                        chain = chain_ref.name
+                    );
+                    return;
+                }
+            };
 
             let current_block_height = client.get_height().await.unwrap();
             let mut query =
@@ -463,16 +582,7 @@ impl HyperSyncClient {
                         );
                         match transform_hypersync_swap_log(
                             chain_ref.clone(),
-                            std::sync::Arc::new(nautilus_model::defi::Dex::new(
-                                (*chain_ref).clone(),
-                                "Uniswap V3",
-                                "0x1F98431c8aD98523631AE4a59f267346ea31F984",
-                                nautilus_model::defi::AmmType::CLAMM,
-                                "PoolCreated(address,address,uint24,int24,address)",
-                                "Swap(address,address,int256,int256,uint160,uint128,int24)",
-                                "Mint(address,address,int24,int24,uint128,uint256,uint256)",
-                                "Burn(address,int24,int24,uint128,uint256,uint256)",
-                            )),
+                            dex.clone(),
                             instrument_id,
                             pool_address,
                             token0.clone(),
@@ -514,6 +624,10 @@ impl HyperSyncClient {
     }
 
     /// Subscribes to liquidity update events (mint/burn) for a specific pool address.
+    ///
+    /// # Panics
+    ///
+    /// Panics if client height requests fail during subscription.
     pub fn subscribe_pool_liquidity_updates(
         &mut self,
         instrument_id: InstrumentId,
@@ -526,27 +640,29 @@ impl HyperSyncClient {
         let task = tokio::spawn(async move {
             tracing::debug!("Starting task 'liquidity_updates_feed' for pool: {pool_address}");
 
-            // TODO: These objects should be fetched from cache or RPC calls
-            // For now, create minimal objects just to get compilation working
-            let token0 = std::sync::Arc::new(Token::new(
-                chain_ref.clone(),
-                "0xA0b86a33E6441b936662bb6B5d1F8Fb0E2b57A5D"
-                    .parse()
-                    .unwrap(), // WETH
-                "Wrapped Ether".to_string(),
-                "WETH".to_string(),
-                18,
-            ));
+            // Create token objects from instrument ID
+            let (token0, token1) =
+                match Self::create_tokens_from_instrument_id(chain_ref.clone(), instrument_id) {
+                    Ok(tokens) => tokens,
+                    Err(e) => {
+                        tracing::error!("Failed to create tokens for {instrument_id}: {e}");
+                        return;
+                    }
+                };
 
-            let token1 = std::sync::Arc::new(Token::new(
-                chain_ref.clone(),
-                "0xdAC17F958D2ee523a2206206994597C13D831ec7"
-                    .parse()
-                    .unwrap(), // USDT
-                "Tether USD".to_string(),
-                "USDT".to_string(),
-                6, // USDT has 6 decimals
-            ));
+            // Get the appropriate DEX definition for this chain
+            let dex = match chain_ref.name {
+                Blockchain::Ethereum => exchanges::ethereum::UNISWAP_V3.dex.clone(),
+                Blockchain::Arbitrum => exchanges::arbitrum::UNISWAP_V3.dex.clone(),
+                Blockchain::Base => exchanges::base::UNISWAP_V3.dex.clone(),
+                _ => {
+                    tracing::error!(
+                        "Unsupported chain for liquidity updates: {}",
+                        chain_ref.name
+                    );
+                    return;
+                }
+            };
 
             let current_block_height = client.get_height().await.unwrap();
             let mut mint_query =
@@ -568,16 +684,7 @@ impl HyperSyncClient {
                         );
                         match transform_hypersync_mint_log(
                             chain_ref.clone(),
-                            std::sync::Arc::new(nautilus_model::defi::Dex::new(
-                                (*chain_ref).clone(),
-                                "Uniswap V3",
-                                "0x1F98431c8aD98523631AE4a59f267346ea31F984",
-                                nautilus_model::defi::AmmType::CLAMM,
-                                "PoolCreated(address,address,uint24,int24,address)",
-                                "Swap(address,address,int256,int256,uint160,uint128,int24)",
-                                "Mint(address,address,int24,int24,uint128,uint256,uint256)",
-                                "Burn(address,int24,int24,uint128,uint256,uint256)",
-                            )),
+                            dex.clone(),
                             instrument_id,
                             pool_address,
                             token0.clone(),
@@ -617,16 +724,7 @@ impl HyperSyncClient {
                         );
                         match transform_hypersync_burn_log(
                             chain_ref.clone(),
-                            std::sync::Arc::new(nautilus_model::defi::Dex::new(
-                                (*chain_ref).clone(),
-                                "Uniswap V3",
-                                "0x1F98431c8aD98523631AE4a59f267346ea31F984",
-                                nautilus_model::defi::AmmType::CLAMM,
-                                "PoolCreated(address,address,uint24,int24,address)",
-                                "Swap(address,address,int256,int256,uint160,uint128,int24)",
-                                "Mint(address,address,int24,int24,uint128,uint256,uint256)",
-                                "Burn(address,int24,int24,uint128,uint256,uint256)",
-                            )),
+                            dex.clone(),
                             instrument_id,
                             pool_address,
                             token0.clone(),
@@ -817,7 +915,7 @@ impl HyperSyncClient {
     pub fn unsubscribe_pool_swaps(&mut self, pool_address: Address) {
         if let Some(task) = self.swaps_tasks.remove(&pool_address) {
             task.abort();
-            tracing::debug!("Unsubscribed from swaps for pool: {}", pool_address);
+            tracing::debug!("Unsubscribed from swaps for pool: {pool_address}");
         }
     }
 
@@ -825,7 +923,7 @@ impl HyperSyncClient {
     pub fn unsubscribe_all_swaps(&mut self) {
         for (pool_address, task) in self.swaps_tasks.drain() {
             task.abort();
-            tracing::debug!("Unsubscribed from swaps for pool: {}", pool_address);
+            tracing::debug!("Unsubscribed from swaps for pool: {pool_address}");
         }
     }
 

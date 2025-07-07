@@ -38,6 +38,10 @@ use crate::{
 };
 
 /// Converts a HyperSync block format to our internal [`Block`] type.
+///
+/// # Errors
+///
+/// Returns an error if required block fields are missing or if hex parsing fails.
 pub fn transform_hypersync_block(
     chain: Blockchain,
     received_block: hypersync_client::simple_types::Block,
@@ -119,7 +123,16 @@ pub fn transform_hypersync_block(
     Ok(block)
 }
 
-/// Converts a HyperSync log entry to a [`PoolSwap`] using provided context.
+/// Converts a HyperSync log entry to a [`PoolSwap`].
+///
+/// # Errors
+///
+/// Returns an error if log parsing, data extraction, or conversion fails.
+///
+/// # Panics
+///
+/// Panics if byte array conversion fails during amount parsing.
+#[allow(clippy::too_many_arguments)]
 pub fn transform_hypersync_swap_log(
     chain_ref: Arc<Chain>,
     dex: Arc<Dex>,
@@ -249,7 +262,16 @@ pub fn transform_hypersync_swap_log(
     Ok(swap)
 }
 
-/// Converts a HyperSync log entry to a [`PoolLiquidityUpdate`] for mint events using provided context.
+/// Converts a HyperSync log entry to a [`PoolLiquidityUpdate`] for mint events.
+///
+/// # Errors
+///
+/// Returns an error if log parsing, data extraction, or conversion fails.
+///
+/// # Panics
+///
+/// Panics if the byte array conversion fails during amount parsing.
+#[allow(clippy::too_many_arguments)]
 pub fn transform_hypersync_mint_log(
     chain_ref: Arc<Chain>,
     dex: Arc<Dex>,
@@ -337,7 +359,16 @@ pub fn transform_hypersync_mint_log(
     Ok(liquidity_update)
 }
 
-/// Converts a HyperSync log entry to a [`PoolLiquidityUpdate`] for burn events using provided context.
+/// Converts a HyperSync log entry to a [`PoolLiquidityUpdate`] for burn events.
+///
+/// # Errors
+///
+/// Returns an error if log parsing, data extraction, or conversion fails.
+///
+/// # Panics
+///
+/// Panics if the byte array conversion fails during amount parsing.
+#[allow(clippy::too_many_arguments)]
 pub fn transform_hypersync_burn_log(
     chain_ref: Arc<Chain>,
     dex: Arc<Dex>,

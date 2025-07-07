@@ -30,6 +30,10 @@ pub struct BlockchainCacheDatabase {
 
 impl BlockchainCacheDatabase {
     /// Initializes a new database instance by establishing a connection to PostgreSQL.
+    ///
+    /// # Panics
+    ///
+    /// Panics if unable to connect to PostgreSQL with the provided options.
     pub async fn init(pg_options: PgConnectOptions) -> Self {
         let pool = PgPool::connect_with(pg_options)
             .await
@@ -38,6 +42,10 @@ impl BlockchainCacheDatabase {
     }
 
     /// Seeds the database with a blockchain chain record.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operation fails.
     pub async fn seed_chain(&self, chain: &Chain) -> anyhow::Result<()> {
         sqlx::query(
             r"
@@ -57,6 +65,10 @@ impl BlockchainCacheDatabase {
     }
 
     /// Inserts or updates a block record in the database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operation fails.
     pub async fn add_block(&self, chain_id: u32, block: &Block) -> anyhow::Result<()> {
         sqlx::query(
             r"
@@ -105,6 +117,10 @@ impl BlockchainCacheDatabase {
     }
 
     /// Retrieves block timestamps for a given chain starting from a specific block number.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database query fails.
     pub async fn load_block_timestamps(
         &self,
         chain: SharedChain,
@@ -128,6 +144,10 @@ impl BlockchainCacheDatabase {
     }
 
     /// Adds or updates a DEX (Decentralized Exchange) record in the database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operation fails.
     pub async fn add_dex(&self, dex: &Dex) -> anyhow::Result<()> {
         sqlx::query(
             r"
@@ -150,6 +170,10 @@ impl BlockchainCacheDatabase {
     }
 
     /// Adds or updates a liquidity pool/pair record in the database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operation fails.
     pub async fn add_pool(&self, pool: &Pool) -> anyhow::Result<()> {
         sqlx::query(
             r"
@@ -189,6 +213,10 @@ impl BlockchainCacheDatabase {
     }
 
     /// Adds or updates a token record in the database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operation fails.
     pub async fn add_token(&self, token: &Token) -> anyhow::Result<()> {
         sqlx::query(
             r"
@@ -215,6 +243,10 @@ impl BlockchainCacheDatabase {
     }
 
     /// Persists a token swap transaction event to the `pool_swap` table.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operation fails.
     pub async fn add_swap(&self, chain_id: u32, swap: &PoolSwap) -> anyhow::Result<()> {
         sqlx::query(
             r"
@@ -243,6 +275,10 @@ impl BlockchainCacheDatabase {
     }
 
     /// Persists a liquidity position change (mint/burn) event to the `pool_liquidity` table.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operation fails.
     pub async fn add_pool_liquidity_update(
         &self,
         chain_id: u32,
@@ -279,6 +315,10 @@ impl BlockchainCacheDatabase {
     }
 
     /// Retrieves all token records for the given chain and converts them into `Token` domain objects.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database query fails.
     pub async fn load_tokens(&self, chain: SharedChain) -> anyhow::Result<Vec<Token>> {
         sqlx::query_as::<_, TokenRow>("SELECT * FROM token WHERE chain_id = $1")
             .bind(chain.chain_id as i32)

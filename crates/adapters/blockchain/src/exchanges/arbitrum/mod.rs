@@ -81,6 +81,26 @@ pub fn get_token_symbol(token_address: Address) -> String {
         "0x912ce59144191c1204e64559fe8253a0e49e6548" => "ARB".to_string(),
         "0xf97f4df75117a78c1a5a0dbb814af92458539fb4" => "LINK".to_string(),
         "0xfa7f8980b0f1e64a2062791cc3b0871572f1f7f0" => "UNI".to_string(),
-        _ => format!("TOKEN_{}", &token_address.to_string()[2..8].to_uppercase()),
+        _ => format!(
+            "TOKEN_{addr}",
+            addr = &token_address.to_string()[2..8].to_uppercase()
+        ),
+    }
+}
+
+/// Returns the token address for a given Arbitrum token symbol.
+#[must_use]
+pub fn get_token_symbol_reverse(symbol: &str) -> anyhow::Result<Address> {
+    match symbol {
+        "WETH" => Ok("0x82af49447d8a07e3bd95bd0d56f35241523fbab1".parse()?),
+        "USDC" => Ok("0xaf88d065e77c8cc2239327c5edb3a432268e5831".parse()?),
+        "USDT" => Ok("0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9".parse()?),
+        "DAI" => Ok("0xda10009cbd5d07dd0cecc66161fc93d7c9000da1".parse()?),
+        "WBTC" => Ok("0x2f2a2543b76a4166549f7aab2e75bef0aefc5b0f".parse()?),
+        "USDC.e" => Ok("0xff970a61a04b1ca14834a43f5de4533ebddb5cc8".parse()?),
+        "ARB" => Ok("0x912ce59144191c1204e64559fe8253a0e49e6548".parse()?),
+        "LINK" => Ok("0xf97f4df75117a78c1a5a0dbb814af92458539fb4".parse()?),
+        "UNI" => Ok("0xfa7f8980b0f1e64a2062791cc3b0871572f1f7f0".parse()?),
+        _ => anyhow::bail!("Unknown token symbol for Arbitrum: {symbol}"),
     }
 }
