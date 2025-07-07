@@ -1653,7 +1653,8 @@ mod tests {
         let swap = PoolSwap::new(
             chain.clone(),
             dex.clone(),
-            pool.clone(),
+            pool.instrument_id,
+            pool.address,
             12345,
             "0xabc123".to_string(),
             0,

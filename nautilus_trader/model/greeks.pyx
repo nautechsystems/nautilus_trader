@@ -58,9 +58,9 @@ cdef class GreeksCalculator:
     Notes
     ----------
     Currently implemented greeks are:
-    - Delta (first derivative of price with respect to spot move)
-    - Gamma (second derivative of price with respect to spot move)
-    - Vega (first derivative of price with respect to implied volatility of an option)
+    - Delta (first derivative of price with respect to spot move).
+    - Gamma (second derivative of price with respect to spot move).
+    - Vega (first derivative of price with respect to implied volatility of an option).
     - Theta (first derivative of price with respect to time to expiry).
 
     Vega is expressed in terms of absolute percent changes ((dV / dVol) / 100).
@@ -347,6 +347,7 @@ cdef class GreeksCalculator:
         percent_greeks: bool = False,
         index_instrument_id: InstrumentId | None = None,
         beta_weights: dict[InstrumentId, float] | None = None,
+        greeks_filter: callable | None = None,
     ) -> PortfolioGreeks:
         """
         Calculate the portfolio Greeks for a given set of positions.
@@ -399,6 +400,8 @@ cdef class GreeksCalculator:
             The reference instrument id beta is computed with respect to.
         beta_weights : dict[InstrumentId, float], optional
             Dictionary of beta weights used to compute portfolio delta and gamma.
+        greeks_filter : callable, optional
+            Filter function to select which greeks to add to the portfolio_greeks.
 
         Returns
         -------
@@ -449,7 +452,9 @@ cdef class GreeksCalculator:
                 beta_weights,
             )
             position_greeks = quantity * instrument_greeks
-            portfolio_greeks += position_greeks
+
+            if greeks_filter is None or greeks_filter(position_greeks):
+                portfolio_greeks += position_greeks
 
         return portfolio_greeks
 

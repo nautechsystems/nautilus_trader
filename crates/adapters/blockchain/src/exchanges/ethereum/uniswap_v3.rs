@@ -160,7 +160,7 @@ fn parse_swap_event(log: Log) -> anyhow::Result<SwapEvent> {
             Ok(decoded) => decoded,
             Err(e) => anyhow::bail!("Failed to decode swap event data: {e}"),
         };
-        decoded.amount0;
+        let _ = decoded.amount0;
 
         Ok(SwapEvent::new(
             extract_block_number(&log)?,

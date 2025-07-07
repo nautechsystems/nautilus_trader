@@ -25,8 +25,6 @@ use std::{
 };
 
 use ahash::AHashSet;
-#[cfg(feature = "defi")]
-use alloy_primitives::Address;
 use nautilus_common::messages::data::{
     RequestBars, RequestBookSnapshot, RequestCustomData, RequestInstrument, RequestInstruments,
     RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
@@ -565,11 +563,11 @@ pub struct DataClientAdapter {
     #[cfg(feature = "defi")]
     pub subscriptions_blocks: AHashSet<Blockchain>,
     #[cfg(feature = "defi")]
-    pub subscriptions_pools: AHashSet<Address>,
+    pub subscriptions_pools: AHashSet<InstrumentId>,
     #[cfg(feature = "defi")]
-    pub subscriptions_pool_swaps: AHashSet<Address>,
+    pub subscriptions_pool_swaps: AHashSet<InstrumentId>,
     #[cfg(feature = "defi")]
-    pub subscriptions_pool_liquidity_updates: AHashSet<Address>,
+    pub subscriptions_pool_liquidity_updates: AHashSet<InstrumentId>,
 }
 
 impl Deref for DataClientAdapter {
@@ -1145,8 +1143,8 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client subscribe operation fails.
     fn subscribe_pool(&mut self, cmd: &SubscribePool) -> anyhow::Result<()> {
-        if !self.subscriptions_pools.contains(&cmd.address) {
-            self.subscriptions_pools.insert(cmd.address);
+        if !self.subscriptions_pools.contains(&cmd.instrument_id) {
+            self.subscriptions_pools.insert(cmd.instrument_id);
             self.client.subscribe_pool(cmd)?;
         }
         Ok(())
@@ -1159,8 +1157,8 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client subscribe operation fails.
     fn subscribe_swaps(&mut self, cmd: &SubscribePoolSwaps) -> anyhow::Result<()> {
-        if !self.subscriptions_pool_swaps.contains(&cmd.address) {
-            self.subscriptions_pool_swaps.insert(cmd.address);
+        if !self.subscriptions_pool_swaps.contains(&cmd.instrument_id) {
+            self.subscriptions_pool_swaps.insert(cmd.instrument_id);
             self.client.subscribe_pool_swaps(cmd)?;
         }
         Ok(())
@@ -1178,10 +1176,10 @@ impl DataClientAdapter {
     ) -> anyhow::Result<()> {
         if !self
             .subscriptions_pool_liquidity_updates
-            .contains(&cmd.address)
+            .contains(&cmd.instrument_id)
         {
             self.subscriptions_pool_liquidity_updates
-                .insert(cmd.address);
+                .insert(cmd.instrument_id);
             self.client.subscribe_pool_liquidity_updates(cmd)?;
         }
         Ok(())
@@ -1194,8 +1192,8 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client unsubscribe operation fails.
     fn unsubscribe_pool(&mut self, cmd: &UnsubscribePool) -> anyhow::Result<()> {
-        if self.subscriptions_pools.contains(&cmd.address) {
-            self.subscriptions_pools.remove(&cmd.address);
+        if self.subscriptions_pools.contains(&cmd.instrument_id) {
+            self.subscriptions_pools.remove(&cmd.instrument_id);
             self.client.unsubscribe_pool(cmd)?;
         }
         Ok(())
@@ -1208,8 +1206,8 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client unsubscribe operation fails.
     fn unsubscribe_swaps(&mut self, cmd: &UnsubscribePoolSwaps) -> anyhow::Result<()> {
-        if self.subscriptions_pool_swaps.contains(&cmd.address) {
-            self.subscriptions_pool_swaps.remove(&cmd.address);
+        if self.subscriptions_pool_swaps.contains(&cmd.instrument_id) {
+            self.subscriptions_pool_swaps.remove(&cmd.instrument_id);
             self.client.unsubscribe_pool_swaps(cmd)?;
         }
         Ok(())
@@ -1227,10 +1225,10 @@ impl DataClientAdapter {
     ) -> anyhow::Result<()> {
         if self
             .subscriptions_pool_liquidity_updates
-            .contains(&cmd.address)
+            .contains(&cmd.instrument_id)
         {
             self.subscriptions_pool_liquidity_updates
-                .remove(&cmd.address);
+                .remove(&cmd.instrument_id);
             self.client.unsubscribe_pool_liquidity_updates(cmd)?;
         }
         Ok(())

@@ -134,6 +134,10 @@ clippy:  #-- Run Rust clippy linter with fixes
 clippy-nightly:  #-- Run Rust clippy linter with nightly toolchain
 	cargo +nightly clippy --fix --all-targets --all-features --allow-dirty --allow-staged -- -D warnings -W clippy::pedantic -W clippy::nursery -W clippy::unwrap_used -W clippy::expect_used
 
+.PHONY: clippy-crate-%
+clippy-crate-%:  #-- Run clippy for a specific Rust crate (usage: make clippy-crate-<crate_name>)
+	cargo clippy --all-targets --all-features -p $* -- -D warnings
+
 #== Dependencies
 
 .PHONY: outdated
@@ -203,15 +207,17 @@ check-hack-installed:  #-- Verify cargo-hack is installed
 check-features: check-hack-installed
 	cargo hack check --each-feature
 
+
 #== Rust Testing
 
 .PHONY: cargo-test
+
 cargo-test: export RUST_BACKTRACE=1
 cargo-test: export HIGH_PRECISION=true
 cargo-test: export PYO3_CONFIG_FILE=$(shell pwd)/.pyo3-config.txt
 cargo-test: pyo3-config check-nextest-installed
-cargo-test:  #-- Run all Rust tests with high precision features
-	cargo nextest run --workspace --features "ffi,python,postgres,defi,high-precision" --cargo-profile nextest --no-fail-fast
+cargo-test:  #-- Run all Rust tests with ffi,python,high-precision,defi features
+	cargo nextest run --workspace --features "ffi,python,high-precision,defi" --no-fail-fast --cargo-profile nextest
 
 .PHONY: cargo-test-lib
 cargo-test-lib: export RUST_BACKTRACE=1
@@ -270,6 +276,7 @@ cargo-test-coverage:  #-- Run Rust tests with coverage reporting
 # -----------------------------------------------------------------------------
 
 .PHONY: cargo-test-crate-%
+
 cargo-test-crate-%: export RUST_BACKTRACE=1
 cargo-test-crate-%: export HIGH_PRECISION=true
 cargo-test-crate-%: export PYO3_CONFIG_FILE=$(shell pwd)/.pyo3-config.txt
@@ -277,10 +284,28 @@ cargo-test-crate-%: pyo3-config check-nextest-installed
 cargo-test-crate-%:  #-- Run tests for a specific Rust crate (usage: make cargo-test-crate-<crate_name>)
 	cargo nextest run --lib --no-fail-fast --cargo-profile nextest -p $* $(if $(FEATURES),--features "$(FEATURES)")
 
-.PHONY: cargo-bench
-cargo-bench: export PYO3_CONFIG_FILE=$(shell pwd)/.pyo3-config.txt
-cargo-bench: pyo3-config  #-- Run Rust benchmarks
-	cargo bench
+#------------------------------------------------------------------------------
+# Benchmarks
+#------------------------------------------------------------------------------
+
+# List of crates whose criterion/iai benches run in the performance workflow
+CI_BENCH_CRATES := nautilus-core nautilus-model nautilus-common
+
+# NOTE:
+# - We invoke `cargo bench` *once per crate* to avoid the well-known
+#   "mixed panic strategy" linker error that appears when crates which specify
+#   different `panic` strategies (e.g. `abort` for cdylib/staticlib targets vs
+#   `unwind` for Criterion) are linked into the *same* benchmark binary.
+# - Cargo will still reuse compiled artifacts between iterations, so the cost
+#   of the extra invocations is marginal while the linker remains happy.
+
+.PHONY: cargo-ci-benches
+cargo-ci-benches: export PYO3_CONFIG_FILE=$(shell pwd)/.pyo3-config.txt
+cargo-ci-benches: pyo3-config #-- Run Rust benches for the crates included in the CI performance workflow
+	@for crate in $(CI_BENCH_CRATES); do \
+	  echo "Running benches for $$crate"; \
+	  cargo bench -p $$crate --profile bench --benches --no-fail-fast; \
+	done
 
 .PHONY: cargo-doc
 cargo-doc: export PYO3_CONFIG_FILE=$(shell pwd)/.pyo3-config.txt

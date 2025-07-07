@@ -53,10 +53,7 @@ impl Chain {
     }
 
     fn __repr__(&self) -> String {
-        format!(
-            "Chain(name={}, chain_id={}, hypersync_url='{}')",
-            self.name, self.chain_id, self.hypersync_url
-        )
+        format!("{self:?}")
     }
 
     fn __hash__(&self) -> u64 {
@@ -93,10 +90,7 @@ impl Token {
     }
 
     fn __repr__(&self) -> String {
-        format!(
-            "Token(chain={}, address={}, name='{}', symbol='{}', decimals={})",
-            self.chain.name, self.address, self.name, self.symbol, self.decimals
-        )
+        format!("{self:?}")
     }
 
     fn __hash__(&self) -> u64 {
@@ -147,10 +141,7 @@ impl Dex {
     }
 
     fn __repr__(&self) -> String {
-        format!(
-            "Dex(chain={}, name='{}', factory='{}', amm_type={})",
-            self.chain.name, self.name, self.factory, self.amm_type
-        )
+        format!("{self:?}")
     }
 
     fn __hash__(&self) -> u64 {
@@ -199,14 +190,9 @@ impl Pool {
         ))
     }
 
-    #[pyo3(name = "ticker")]
-    fn py_ticker(&self) -> String {
-        self.ticker()
-    }
-
     #[pyo3(name = "instrument_id")]
     fn py_instrument_id(&self) -> InstrumentId {
-        self.instrument_id()
+        self.instrument_id
     }
 
     fn __str__(&self) -> String {
@@ -214,14 +200,7 @@ impl Pool {
     }
 
     fn __repr__(&self) -> String {
-        format!(
-            "Pool(chain={}, dex={}, ticker='{}', address={}, fee={})",
-            self.chain.name,
-            self.dex.name,
-            self.ticker(),
-            self.address,
-            self.fee
-        )
+        format!("{self:?}")
     }
 
     fn __hash__(&self) -> u64 {

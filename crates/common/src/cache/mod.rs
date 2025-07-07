@@ -1186,10 +1186,9 @@ impl Cache {
     /// This function currently does not return errors but follows the same pattern as other add methods for consistency.
     #[cfg(feature = "defi")]
     pub fn add_pool(&mut self, pool: Pool) -> anyhow::Result<()> {
-        let instrument_id = pool.instrument_id();
-        log::debug!("Adding `Pool` {instrument_id}");
+        log::debug!("Adding `Pool` {}", pool.instrument_id);
 
-        self.pools.insert(instrument_id, pool);
+        self.pools.insert(pool.instrument_id, pool);
         Ok(())
     }
 

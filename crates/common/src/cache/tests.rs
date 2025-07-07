@@ -788,7 +788,7 @@ fn test_pool() -> Pool {
 #[cfg(feature = "defi")]
 #[rstest]
 fn test_pool_when_empty(cache: Cache, test_pool: Pool) {
-    let instrument_id = test_pool.instrument_id();
+    let instrument_id = test_pool.instrument_id;
     let result = cache.pool(&instrument_id);
     assert!(result.is_none());
 }
@@ -796,7 +796,7 @@ fn test_pool_when_empty(cache: Cache, test_pool: Pool) {
 #[cfg(feature = "defi")]
 #[rstest]
 fn test_pool_when_some(mut cache: Cache, test_pool: Pool) {
-    let instrument_id = test_pool.instrument_id();
+    let instrument_id = test_pool.instrument_id;
     cache.add_pool(test_pool.clone()).unwrap();
     let result = cache.pool(&instrument_id);
     assert_eq!(result, Some(&test_pool));
@@ -805,7 +805,7 @@ fn test_pool_when_some(mut cache: Cache, test_pool: Pool) {
 #[cfg(feature = "defi")]
 #[rstest]
 fn test_pool_mut_when_empty(mut cache: Cache, test_pool: Pool) {
-    let instrument_id = test_pool.instrument_id();
+    let instrument_id = test_pool.instrument_id;
     let result = cache.pool_mut(&instrument_id);
     assert!(result.is_none());
 }
@@ -813,7 +813,7 @@ fn test_pool_mut_when_empty(mut cache: Cache, test_pool: Pool) {
 #[cfg(feature = "defi")]
 #[rstest]
 fn test_pool_mut_when_some(mut cache: Cache, test_pool: Pool) {
-    let instrument_id = test_pool.instrument_id();
+    let instrument_id = test_pool.instrument_id;
     cache.add_pool(test_pool.clone()).unwrap();
     let result = cache.pool_mut(&instrument_id);
 
@@ -826,7 +826,7 @@ fn test_pool_mut_when_some(mut cache: Cache, test_pool: Pool) {
 #[cfg(feature = "defi")]
 #[rstest]
 fn test_add_pool(mut cache: Cache, test_pool: Pool) {
-    let instrument_id = test_pool.instrument_id();
+    let instrument_id = test_pool.instrument_id;
 
     cache.add_pool(test_pool.clone()).unwrap();
 

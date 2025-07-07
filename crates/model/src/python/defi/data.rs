@@ -18,15 +18,17 @@
 use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
+    str::FromStr,
     sync::Arc,
 };
 
+use alloy_primitives::Address;
 use nautilus_core::python::to_pyvalue_err;
 use pyo3::{basic::CompareOp, prelude::*};
 
 use crate::{
     defi::{
-        Chain, Dex, Pool,
+        Chain, Dex,
         data::{Block, PoolLiquidityUpdate, PoolLiquidityUpdateType, PoolSwap},
     },
     enums::OrderSide,
@@ -41,7 +43,8 @@ impl PoolSwap {
     fn py_new(
         chain: Chain,
         dex: Dex,
-        pool: Pool,
+        instrument_id: InstrumentId,
+        pool_address: String,
         block: u64,
         transaction_hash: String,
         transaction_index: u32,
@@ -56,7 +59,8 @@ impl PoolSwap {
         Ok(Self::new(
             Arc::new(chain),
             Arc::new(dex),
-            Arc::new(pool),
+            instrument_id,
+            Address::from_str(&pool_address).map_err(to_pyvalue_err)?,
             block,
             transaction_hash,
             transaction_index,
@@ -71,7 +75,7 @@ impl PoolSwap {
 
     #[pyo3(name = "instrument_id")]
     fn py_instrument_id(&self) -> InstrumentId {
-        self.instrument_id()
+        self.instrument_id
     }
 
     fn __str__(&self) -> String {
@@ -79,15 +83,7 @@ impl PoolSwap {
     }
 
     fn __repr__(&self) -> String {
-        format!(
-            "PoolSwap(chain={}, dex={}, pool={}, side={}, size={}, price={})",
-            self.chain.name,
-            self.dex.name,
-            self.pool.ticker(),
-            self.side,
-            self.size,
-            self.price
-        )
+        format!("{self:?}")
     }
 
     fn __hash__(&self) -> u64 {
@@ -114,7 +110,8 @@ impl PoolLiquidityUpdate {
     fn py_new(
         chain: Chain,
         dex: Dex,
-        pool: Pool,
+        instrument_id: InstrumentId,
+        pool_address: String,
         kind: PoolLiquidityUpdateType,
         block: u64,
         transaction_hash: String,
@@ -137,7 +134,8 @@ impl PoolLiquidityUpdate {
         Ok(Self::new(
             Arc::new(chain),
             Arc::new(dex),
-            Arc::new(pool),
+            instrument_id,
+            Address::from_str(&pool_address).map_err(to_pyvalue_err)?,
             kind,
             block,
             transaction_hash,
@@ -156,7 +154,7 @@ impl PoolLiquidityUpdate {
 
     #[pyo3(name = "instrument_id")]
     fn py_instrument_id(&self) -> crate::identifiers::InstrumentId {
-        self.instrument_id()
+        self.instrument_id
     }
 
     fn __str__(&self) -> String {
