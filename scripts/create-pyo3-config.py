@@ -43,7 +43,7 @@ def detect_python_build_flags():
         if 'Py_REF_DEBUG' not in flags:  # Avoid duplicates
             # Note: Py_REF_DEBUG is typically implied by Py_DEBUG
             # but we check separately for completeness
-            pass
+            flags.append('Py_REF_DEBUG')
 
     # Method 2: Check sysconfig for additional flags
     config_vars = sysconfig.get_config_vars()
