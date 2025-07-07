@@ -451,18 +451,11 @@ jobs:
         with:
           cleanup-local-dist: "false"
 
-      - name: List local wheels
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          # Safely list wheel files; only regular files, no directories
-          if [[ -d dist ]]; then
-            echo "Found dist directory, listing wheel files:"
-            find dist -type f -name '*.whl'
-          else
-            echo "No dist directory found"
-          fi
+      - name: Download built wheels
+        uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e
+        with:
+          path: dist/
+          pattern: "*.whl"
 
       - name: Upload wheels to GitHub release
         run: |
@@ -476,6 +469,20 @@ jobs:
               "${{ needs.tag-release.outputs.upload_url }}?name=$asset_name"
           done
 
+      - name: Consolidate wheels for PyPI
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Create dist/all directory for consolidated wheels
+          mkdir -p dist/all
+
+          # Move all .whl files from subdirectories to dist/all (exclude dist/all itself)
+          find dist/ -path dist/all -prune -o -name "*.whl" -type f -exec mv {} dist/all/ \;
+
+          echo "Consolidated wheels in dist/all:"
+          ls -la dist/all/
+
       - name: Publish to PyPI
         if: success()
         env:
@@ -483,15 +490,6 @@ jobs:
           UV_PUBLISH_PASSWORD: ${{ secrets.PYPI_TOKEN }}
         run: |
           uv publish dist/all
-
-      - name: Clean up local dist directory
-        if: success()
-        shell: bash
-        run: |
-          set -euo pipefail
-          ls -lh dist/ || echo "No dist directory found"
-          rm -rf dist/* 2>/dev/null || true
-          echo "Cleanup completed"
 
       - name: Fetch and delete artifacts for current run
         shell: bash
@@ -563,6 +561,8 @@ jobs:
     needs: [tag-release]
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # Required for uploading release assets
     env:
       COPY_TO_SOURCE: false # Do not copy built *.so files back into source tree
     steps:
