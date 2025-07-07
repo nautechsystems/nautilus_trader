@@ -952,6 +952,11 @@ impl DataClient for BlockchainDataClient {
         }
 
         let from_block = self.config.from_block.unwrap_or(0);
+
+        self.hypersync_client
+            .populate_pools_index(from_block)
+            .await?; // TODO: Could also be cached?
+
         self.cache.connect(from_block).await?;
         self.sync_blocks(self.config.from_block).await?;
         // self.subscribe_blocks().await?;
