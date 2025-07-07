@@ -26,15 +26,18 @@ IS_MACOS = platform.system() == "Darwin"
 IS_WINDOWS = platform.system() == "Windows"
 IS_ARM64 = platform.machine() in ("arm64", "aarch64")
 
+
 def _verify_pyo3_config(config_path: Path) -> bool:
-    """Verify if the PyO3 config file is correct for the current Python environment.
-    
+    """
+    Verify if the PyO3 config file is correct for the current Python environment.
+
     This prevents PyO3 build failures by detecting stale configs from UV's temporary
     environments or different Python versions. See scripts/README.md for details.
+
     """
     if not config_path.exists():
         return False
-    
+
     try:
         content = config_path.read_text()
 
@@ -51,29 +54,39 @@ def _verify_pyo3_config(config_path: Path) -> bool:
                     return False
 
         if not executable_path or not Path(executable_path).exists():
-            print(f"PyO3 config has invalid Python executable path: {executable_path}, regenerating...")
+            print(
+                f"PyO3 config has invalid Python executable path: {executable_path}, regenerating...",
+            )
             return False
 
         # Get version from the executable in the config
         try:
             result = subprocess.run(
-                [executable_path, "-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"],
+                [
+                    executable_path,
+                    "-c",
+                    "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')",
+                ],
                 capture_output=True,
                 text=True,
                 check=True,
-                timeout=10
+                timeout=10,
             )
             config_python_version = result.stdout.strip()
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError) as e:
-            print(f"Failed to get Python version from executable {executable_path}: {e}, regenerating...")
+            print(
+                f"Failed to get Python version from executable {executable_path}: {e}, regenerating...",
+            )
             return False
 
         # Compare with current Python version
         current_version = f"{sys.version_info.major}.{sys.version_info.minor}"
         if config_python_version != current_version:
-            print(f"PyO3 config Python version ({config_python_version}) doesn't match current Python ({current_version}), regenerating...")
+            print(
+                f"PyO3 config Python version ({config_python_version}) doesn't match current Python ({current_version}), regenerating...",
+            )
             return False
-        
+
         return True
     except Exception as e:
         print(f"Error reading PyO3 config: {e}, regenerating...")
