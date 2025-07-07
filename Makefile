@@ -45,7 +45,7 @@ install-just-deps:  #-- Install dependencies only without building the package
 
 .PHONY: build
 build: export PYO3_CONFIG_FILE=$(shell pwd)/.pyo3-config.txt
-buiid: export BUILD_MODE=release
+build: export BUILD_MODE=release
 build: pyo3-config  #-- Build the package in release mode
 	uv run --active --no-sync build.py
 
