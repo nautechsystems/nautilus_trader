@@ -882,7 +882,7 @@ class DatabentoDataClient(LiveMarketDataClient):
     async def _request_instrument(self, request: RequestInstrument) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(request.instrument_id.venue)
 
-        if not request.end:
+        if request.end:
             end = request.end
         else:
             _, available_end = await self._get_dataset_range(dataset)
@@ -917,7 +917,7 @@ class DatabentoDataClient(LiveMarketDataClient):
     async def _request_instruments(self, request: RequestInstruments) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(request.venue)
 
-        if not request.end:
+        if request.end:
             end = request.end
         else:
             _, available_end = await self._get_dataset_range(dataset)
@@ -951,7 +951,7 @@ class DatabentoDataClient(LiveMarketDataClient):
     async def _request_quote_ticks(self, request: RequestQuoteTicks) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(request.instrument_id.venue)
 
-        if not request.end:
+        if request.end:
             end = request.end
         else:
             _, available_end = await self._get_dataset_range(dataset)
@@ -994,7 +994,7 @@ class DatabentoDataClient(LiveMarketDataClient):
     async def _request_trade_ticks(self, request: RequestTradeTicks) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(request.instrument_id.venue)
 
-        if not request.end:
+        if request.end:
             end = request.end
         else:
             _, available_end = await self._get_dataset_range(dataset)
@@ -1026,7 +1026,7 @@ class DatabentoDataClient(LiveMarketDataClient):
     async def _request_bars(self, request: RequestBars) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(request.bar_type.instrument_id.venue)
 
-        if not request.end:
+        if request.end:
             end = request.end
         else:
             _, available_end = await self._get_dataset_range(dataset)
