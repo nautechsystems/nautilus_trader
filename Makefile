@@ -185,13 +185,14 @@ check-hack-installed:  #-- Verify cargo-hack is installed
 check-features: check-hack-installed
 	cargo hack check --each-feature
 
+
 #== Rust Testing
 
 .PHONY: cargo-test
 cargo-test: RUST_BACKTRACE=1
 cargo-test: HIGH_PRECISION=true
 cargo-test: check-nextest-installed
-cargo-test:  #-- Run all Rust tests with high precision features
+cargo-test:  #-- Run all Rust tests with ffi,python,high-precision,defi features
 	cargo nextest run --workspace --features "ffi,python,high-precision,defi" --no-fail-fast --cargo-profile nextest
 
 .PHONY: cargo-test-lib
@@ -249,12 +250,30 @@ cargo-test-coverage:  #-- Run Rust tests with coverage reporting
 cargo-test-crate-%: RUST_BACKTRACE=1
 cargo-test-crate-%: HIGH_PRECISION=true
 cargo-test-crate-%: check-nextest-installed
-cargo-test-crate-%:  #-- Run tests for a specific Rust crate (usage: make cargo-test-crate-<crate_name>)
+cargo-test-crate-%:  #-- Run Rust tests for a specific crate (usage: make cargo-test-crate-<crate_name>)
 	cargo nextest run --lib --no-fail-fast --cargo-profile nextest -p $* $(if $(FEATURES),--features "$(FEATURES)")
 
-.PHONY: cargo-bench
-cargo-bench:  #-- Run Rust benchmarks
-	cargo bench
+#------------------------------------------------------------------------------
+# Benchmarks
+#------------------------------------------------------------------------------
+
+# List of crates whose criterion/iai benches run in the performance workflow
+CI_BENCH_CRATES := nautilus-core nautilus-model nautilus-common
+
+# NOTE:
+# - We invoke `cargo bench` *once per crate* to avoid the well-known
+#   "mixed panic strategy" linker error that appears when crates which specify
+#   different `panic` strategies (e.g. `abort` for cdylib/staticlib targets vs
+#   `unwind` for Criterion) are linked into the *same* benchmark binary.
+# - Cargo will still reuse compiled artifacts between iterations, so the cost
+#   of the extra invocations is marginal while the linker remains happy.
+
+.PHONY: cargo-ci-benches
+cargo-ci-benches:  #-- Run Rust benches for the crates included in the CI performance workflow
+	@for crate in $(CI_BENCH_CRATES); do \
+	  echo "Running benches for $$crate"; \
+	  cargo bench -p $$crate --profile bench --benches --no-fail-fast; \
+	done
 
 .PHONY: cargo-doc
 cargo-doc:  #-- Generate Rust documentation

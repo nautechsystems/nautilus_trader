@@ -71,23 +71,7 @@ jobs:
 
       # TODO: Add nautilus-persistence once required test data available
       - name: Run Rust benchmarks crate-by-crate
-        run: |
-          # Workspace-wide `cargo bench` fails due to mixed panic strategies
-          # (`abort` from our cdylib/staticlib targets vs `unwind` from
-          # Criterion/iai).  Invoking benches one crate at a time keeps each
-          # link step internally consistent while Cargo reuses artifacts so we
-          # don't pay the full compile cost for every crate.
-
-          CRATES=(
-            nautilus-common
-            nautilus-core
-            nautilus-model
-          )
-
-          for crate in "${CRATES[@]}"; do
-            echo "▶▶ Running benches for $crate"
-            cargo bench -p "$crate" --benches --no-fail-fast --profile bench
-          done
+        run: make cargo-ci-benches
 
       - name: Build and install wheel
         uses: ./.github/actions/common-wheel-build
