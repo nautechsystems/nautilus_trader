@@ -359,8 +359,6 @@ jobs:
 
       - name: Publish wheels to Cloudflare R2
         uses: ./.github/actions/publish-wheels
-        with:
-          cleanup-local-dist: "true"
 
       - name: Fetch and delete artifacts for current run
         shell: bash
@@ -398,8 +396,6 @@ jobs:
 
       - name: Publish wheels to Cloudflare R2
         uses: ./.github/actions/publish-wheels
-        with:
-          cleanup-local-dist: "true"
 
       - name: Fetch and delete artifacts for current run
         shell: bash
@@ -448,8 +444,6 @@ jobs:
 
       - name: Publish wheels to Cloudflare R2
         uses: ./.github/actions/publish-wheels
-        with:
-          cleanup-local-dist: "false"
 
       - name: Download built wheels
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
