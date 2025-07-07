@@ -48,6 +48,30 @@ Most users will simply define a configuration for a live trading node (as below)
 and won't need to necessarily work with these lower level components directly.
 :::
 
+:::warning First-time account activation
+A dYdX v4 trading account (sub-account 0) is created **only after** the wallet’s first deposit or trade.
+Until then, every gRPC/Indexer query returns `NOT_FOUND`, so `DYDXExecutionClient.connect()` fails.
+
+**Action →** Before starting a live `TradingNode`, send any positive amount of USDC (≥ 1 wei) or other supported collateral from the same wallet **on the same network** (mainnet / testnet).
+Once the transaction has finalised (a few blocks) restart the node; the client will connect cleanly.
+:::
+
+## Troubleshooting
+
+### `StatusCode.NOT_FOUND` — account … /0 not found
+
+**Cause** *The wallet/sub-account has never been funded and therefore does not yet exist on-chain.*
+
+**Fix**
+
+1. Deposit any positive amount of USDC to sub-account 0 on the correct network.
+2. Wait for finality (≈ 30 s on mainnet, longer on testnet).
+3. Restart the `TradingNode`; the connection should now succeed.
+
+:::tip
+In unattended deployments, wrap the `connect()` call in an exponential-backoff loop so the client retries until the deposit appears.
+:::
+
 ## Symbology
 
 Only perpetual contracts are available on dYdX. To be consistent with other adapters and to be
@@ -147,38 +171,38 @@ dYdX supports perpetual futures trading with a comprehensive set of order types 
 
 ### Execution Instructions
 
-| Instruction   | Perpetuals | Notes                                           |
-|---------------|------------|-------------------------------------------------|
-| `post_only`   | ✓          | Supported on all order types.                   |
-| `reduce_only` | ✓          | Supported on all order types.                   |
+| Instruction   | Perpetuals | Notes                          |
+|---------------|------------|--------------------------------|
+| `post_only`   | ✓          | Supported on all order types.  |
+| `reduce_only` | ✓          | Supported on all order types.  |
 
 ### Time-in-Force Options
 
-| Time-in-Force | Perpetuals | Notes                                           |
-|---------------|------------|-------------------------------------------------|
-| `GTC`         | ✓          | Good Till Canceled.                             |
-| `GTD`         | ✓          | Good Till Date.                                 |
-| `FOK`         | ✓          | Fill or Kill.                                   |
-| `IOC`         | ✓          | Immediate or Cancel.                            |
+| Time-in-Force| Perpetuals | Notes                |
+|--------------|------------|----------------------|
+| `GTC`        | ✓          | Good Till Canceled.  |
+| `GTD`        | ✓          | Good Till Date.      |
+| `FOK`        | ✓          | Fill or Kill.        |
+| `IOC`        | ✓          | Immediate or Cancel. |
 
 ### Advanced Order Features
 
-| Feature            | Perpetuals | Notes                                           |
-|--------------------|------------|-------------------------------------------------|
-| Order Modification | ✓          | Short-term orders only; cancel-replace method.  |
-| Bracket/OCO Orders | -          | *Not supported*.                                |
-| Iceberg Orders     | -          | *Not supported*.                                |
+| Feature            | Perpetuals | Notes                                          |
+|--------------------|------------|------------------------------------------------|
+| Order Modification | ✓          | Short-term orders only; cancel-replace method. |
+| Bracket/OCO Orders | -          | *Not supported*.                               |
+| Iceberg Orders     | -          | *Not supported*.                               |
 
 ### Configuration Options
 
 The following execution client configuration options are available:
 
-| Option                       | Default | Description                                          |
-|------------------------------|---------|------------------------------------------------------|
-| `subaccount`                 | `0`     | Subaccount number (venue creates subaccount 0 by default). |
-| `wallet_address`             | `None`  | dYdX wallet address for the account. |
-| `mnemonic`                   | `None`  | Mnemonic for generating private key for order signing. |
-| `is_testnet`                 | `False` | If `True`, connects to testnet; if `False`, connects to mainnet. |
+| Option           | Default | Description                                                      |
+|------------------|---------|------------------------------------------------------------------|
+| `subaccount`     | `0`     | Subaccount number (venue creates subaccount 0 by default).       |
+| `wallet_address` | `None`  | dYdX wallet address for the account.                             |
+| `mnemonic`       | `None`  | Mnemonic for generating private key for order signing.           |
+| `is_testnet`     | `False` | If `True`, connects to testnet; if `False`, connects to mainnet. |
 
 ### Order Classification
 
