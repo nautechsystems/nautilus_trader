@@ -32,7 +32,7 @@ use nautilus_model::{
         OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick, close::InstrumentClose, stubs::*,
     },
     enums::{BookAction, BookType, OrderSide},
-    identifiers::{ClientId, InstrumentId, TraderId, Venue},
+    identifiers::{ClientId, TraderId, Venue},
     instruments::{CurrencyPair, InstrumentAny, stubs::*},
     orderbook::OrderBook,
     types::{Price, Quantity},
@@ -1396,9 +1396,6 @@ fn test_subscribe_and_receive_pools(
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    // Create a minimal pool using the existing pattern
-    use std::sync::Arc;
-
     use nautilus_model::defi::{Dex, Pool, Token, chain::chains, dex::AmmType};
 
     use crate::msgbus::switchboard::get_defi_pool_topic;
@@ -1462,8 +1459,10 @@ fn test_subscribe_and_receive_pool_swaps(
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    // Create a minimal pool swap
-    use nautilus_model::defi::{AmmType, Dex, chain::chains};
+    use nautilus_model::{
+        defi::{AmmType, Dex, chain::chains},
+        identifiers::InstrumentId,
+    };
 
     let chain = Arc::new(chains::ETHEREUM.clone());
     let dex = Dex::new(
@@ -1517,7 +1516,6 @@ fn test_unsubscribe_pool_swaps(
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    // Create a minimal pool swap
     use nautilus_model::defi::{Dex, Pool, Token, chain::chains, dex::AmmType};
 
     let chain = Arc::new(chains::ETHEREUM.clone());
