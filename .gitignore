@@ -42,7 +42,7 @@ logs/
 .coverage*
 
 # Rust related
-*target/
+target/
 
 # Python related
 *.pyc
@@ -62,7 +62,7 @@ __pycache__/
 # Build environment and temp
 _build/
 build/
-dist/
+dist*/
 env/
 *tmp/
 *temp/
@@ -100,3 +100,6 @@ tests/test_data/**/backtest/**
 !tests/test_data/nautilus/*/**.parquet
 !tests/integration_tests/adapters/betfair/responses/*.log
 !/nautilus_core/adapters/src/databento/test_data/*
+
+# PyO3 stable config file (generated)
+.pyo3-config.txt

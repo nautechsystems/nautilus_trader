@@ -26,6 +26,72 @@ IS_MACOS = platform.system() == "Darwin"
 IS_WINDOWS = platform.system() == "Windows"
 IS_ARM64 = platform.machine() in ("arm64", "aarch64")
 
+def _verify_pyo3_config(config_path: Path) -> bool:
+    """Verify if the PyO3 config file is correct for the current Python environment.
+    
+    This prevents PyO3 build failures by detecting stale configs from UV's temporary
+    environments or different Python versions. See scripts/README.md for details.
+    """
+    if not config_path.exists():
+        return False
+    
+    try:
+        content = config_path.read_text()
+
+        # Extract executable path from config
+        executable_path = None
+        for line in content.splitlines():
+            if line.startswith("executable="):
+                executable_path = line.split("=", 1)[1]
+
+            if line.startswith("lib_dir="):
+                lib_dir = line.split("=", 1)[1]
+                if lib_dir and not Path(lib_dir).exists():
+                    print(f"PyO3 config has invalid library directory: {lib_dir}, regenerating...")
+                    return False
+
+        if not executable_path or not Path(executable_path).exists():
+            print(f"PyO3 config has invalid Python executable path: {executable_path}, regenerating...")
+            return False
+
+        # Get version from the executable in the config
+        try:
+            result = subprocess.run(
+                [executable_path, "-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=10
+            )
+            config_python_version = result.stdout.strip()
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError) as e:
+            print(f"Failed to get Python version from executable {executable_path}: {e}, regenerating...")
+            return False
+
+        # Compare with current Python version
+        current_version = f"{sys.version_info.major}.{sys.version_info.minor}"
+        if config_python_version != current_version:
+            print(f"PyO3 config Python version ({config_python_version}) doesn't match current Python ({current_version}), regenerating...")
+            return False
+        
+        return True
+    except Exception as e:
+        print(f"Error reading PyO3 config: {e}, regenerating...")
+        return False
+
+
+# Create or verify PyO3 config if PYO3_CONFIG_FILE is not set
+# If it is set, it is set by Make or user, who is responsible to keep it up to date
+if not os.getenv("PYO3_CONFIG_FILE"):
+    pyo3_config = Path(".pyo3-config.txt")
+    if not _verify_pyo3_config(pyo3_config):
+        # Run the pyo3 config script
+        print("Creating/regenerating PyO3 config file...")
+        pyo3_script = Path(__file__).parent / "scripts" / "create-pyo3-config.py"
+        subprocess.run([sys.executable, str(pyo3_script)], check=True)
+    # Set the environment variable to use the config file
+    os.environ["PYO3_CONFIG_FILE"] = str(pyo3_config.absolute())
+
 
 # The Rust toolchain to use for builds
 RUSTUP_TOOLCHAIN = os.getenv("RUSTUP_TOOLCHAIN", "stable")

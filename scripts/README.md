@@ -66,6 +66,67 @@ and downstream tooling can verify the checksum.
 
 ---
 
+## `create-pyo3-config.py` – create stable PyO3 configuration
+
+`create-pyo3-config.py` creates a `.pyo3-config.txt` file that prevents PyO3
+from rebuilding when switching between different build commands. This script
+addresses a build performance issue where PyO3 would detect environment
+changes and trigger full rebuilds (5-30 minutes) unnecessarily.
+
+### Why this script is necessary
+
+When using `uv build`, PyO3's build system detects changes in the Python environment 
+paths and triggers complete rebuilds of all PyO3 modules. This happens because:
+
+1. **UV creates temporary environments**: Each `uv build` creates a new temporary
+   Python environment with a unique path like `/.cache/uv/builds-v0/<hash>/`
+2. **PyO3 embeds environment paths**: The pyo3-build-config crate detects these
+   path changes and invalidates its cache
+
+### What the script does
+
+The script creates a stable PyO3 configuration file that:
+- Uses the Python on the $PATH instead of temporary build environment Python
+  (unless called from inside the temporary build environment)
+- Provides consistent paths that don't change between builds
+- Finally, this prevents PyO3 from auto-detecting environment changes
+
+The file is not regenerated if it already exists and is identical to what would
+be generated. It would cause a rebuild, if file timestamps were changed.
+
+### Usage
+
+The script is automatically called by the Makefile's `pyo3-config` target (which is 
+dependently run by all build targets, test targets and other targets, which might 
+cause the PyO3 build to be triggered), and by `build.py` when it is stalled or
+nonexistent. 
+
+It can also be run manually:
+
+```bash
+scripts/create-pyo3-config.py
+```
+
+This creates `.pyo3-config.txt` in the project root with the current Python
+environment configuration.
+
+### Integration with build system
+
+The build system uses this configuration through environment variables:
+- `PYO3_CONFIG_FILE`: Points to the generated config file
+
+In this case, it is not validated, as it is assumed to be created by the
+Make or an user, who is responsible for ensuring its correctness.
+
+If the environment variable isn't set, the setup script will look for
+`.pyo3-config.txt` in the project root and validate it. 
+
+If the validation fails, it will be regenerated automatically with paths, 
+which will further cause the PyO3 rebuilds. This ensures that the build
+won't fail due to missing or stalled PyO3 configuration.
+
+---
+
 For details on the other helper scripts, run them with `-h` or read the
 inline comments; they are mostly invoked from CI and rarely need manual
 execution.

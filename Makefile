@@ -25,14 +25,16 @@ RESET  := $(shell tput -Txterm sgr0)
 #== Installation
 
 .PHONY: install
+install: export BUILD_MODE=release
 install:  #-- Install in release mode with all dependencies and extras
 	$(info $(M) Installing Nautilus Trader in release mode with all dependencies and extras...)
-	$Q BUILD_MODE=release uv sync --active --all-groups --all-extras --verbose
+	$Q uv sync --active --all-groups --all-extras --verbose
 
 .PHONY: install-debug
+install-debug: export BUILD_MODE=debug
 install-debug:  #-- Install in debug mode for development
 	$(info $(M) Installing Nautilus Trader in debug mode for development...)
-	$Q BUILD_MODE=debug uv sync --active --all-groups --all-extras --verbose
+	$Q uv sync --active --all-groups --all-extras --verbose
 
 .PHONY: install-just-deps
 install-just-deps:  #-- Install dependencies only without building the package
@@ -42,41 +44,50 @@ install-just-deps:  #-- Install dependencies only without building the package
 #== Build
 
 .PHONY: build
-build:  #-- Build the package in release mode
-	BUILD_MODE=release uv run --active --no-sync build.py
+build: export PYO3_CONFIG_FILE=$(shell pwd)/.pyo3-config.txt
+buiid: export BUILD_MODE=release
+build: pyo3-config  #-- Build the package in release mode
+	uv run --active --no-sync build.py
 
 .PHONY: build-debug
-build-debug:  #-- Build the package in debug mode (recommended for development)
-	BUILD_MODE=debug uv run --active --no-sync build.py
+build-debug: export PYO3_CONFIG_FILE=$(shell pwd)/.pyo3-config.txt
+build-debug: export BUILD_MODE=debug
+build-debug: pyo3-config  #-- Build the package in debug mode (recommended for development)
+	uv run --active --no-sync build.py
 
 .PHONY: build-wheel
-build-wheel:  #-- Build wheel distribution in release mode
-	BUILD_MODE=release uv build --wheel
+build-wheel: export PYO3_CONFIG_FILE=$(shell pwd)/.pyo3-config.txt
+build-wheel: export BUILD_MODE=release
+build-wheel: pyo3-config  #-- Build wheel distribution in release mode
+	uv build --wheel --out-dir dist-release
 
 .PHONY: build-wheel-debug
-build-wheel-debug:  #-- Build wheel distribution in debug mode
-	BUILD_MODE=debug uv build --wheel
+build-wheel-debug: export PYO3_CONFIG_FILE=$(shell pwd)/.pyo3-config.txt
+build-wheel-debug: export BUILD_MODE=debug
+build-wheel-debug: pyo3-config  #-- Build wheel distribution in debug mode
+	uv build --wheel --out-dir dist-debug
 
 .PHONY: build-dry-run
+build-dry-run: DRY_RUN=true
 build-dry-run:  #-- Show build commands without executing them
-	DRY_RUN=true uv run --active --no-sync build.py
+	uv run --active --no-sync build.py
 
 #== Clean
 
 .PHONY: clean
-clean: clean-build-artifacts clean-caches clean-builds  #-- Clean all build artifacts, caches, and builds
+clean: clean-build-artifacts clean-caches clean-builds  clean-pyo3-config #-- Clean all build artifacts, caches, and builds
 
 .PHONY: clean-builds
 clean-builds:  #-- Clean distribution and target directories
-	$Q rm -rf dist target 2>/dev/null || true
+	$Q rm -rf dist dist-debug dist-release target*/ 2>/dev/null || true
 
 .PHONY: clean-build-artifacts
-clean-build-artifacts:  #-- Clean compiled artifacts (.so, .dll, .pyc files)
+clean-build-artifacts:  #-- Clean compiled artifacts (.so, .dll, .pyc,... files)
 	@echo "Cleaning build artifacts..."
 	# Clean Rust build artifacts (keep final libraries)
-	find target -name "*.rlib" -delete 2>/dev/null || true
-	find target -name "*.rmeta" -delete 2>/dev/null || true
-	rm -rf target/*/build target/*/deps 2>/dev/null || true
+	find target/ -name "*.rlib" -delete 2>/dev/null || true
+	find target/ -name "*.rmeta" -delete 2>/dev/null || true
+	rm -rf target/*/build target*/*/deps 2>/dev/null || true
 	# Clean Python build artifacts
 	rm -rf build/ 2>/dev/null || true
 	find . -type d -name "__pycache__" -not -path "./.venv*" -print0 | xargs -0 rm -rf
@@ -84,6 +95,10 @@ clean-build-artifacts:  #-- Clean compiled artifacts (.so, .dll, .pyc files)
 	find . -type f -a \( -name "*.so" -o -name "*.dll" -o -name "*.dylib" \) -not -path "./.venv*" -print0 | xargs -0 rm -f
 	# Clean test artifacts
 	rm -rf .coverage .benchmarks 2>/dev/null || true
+
+clean-pyo3-config: #-- Deletes PyO3 config file
+	# Clean PyO3 config
+	rm -f .pyo3-config.txt 2>/dev/null || true
 
 .PHONY: clean-caches
 clean-caches:  #-- Clean pytest, mypy, ruff, uv, and cargo caches
@@ -136,22 +151,28 @@ update: cargo-update  #-- Update all dependencies (uv and cargo)
 docs: docs-python docs-rust  #-- Build all documentation (Python and Rust)
 
 .PHONY: docs-python
+docs-python: BUILD_MODE=debug
 docs-python:  #-- Build Python documentation with Sphinx
-	BUILD_MODE=debug uv run --active sphinx-build -M markdown ./docs/api_reference ./api_reference
+	uv run --active sphinx-build -M markdown ./docs/api_reference ./api_reference
 
 .PHONY: docs-rust
-docs-rust:  #-- Build Rust documentation with cargo doc
-	RUSTDOCFLAGS="--enable-index-page -Zunstable-options" cargo +nightly doc --all-features --no-deps --workspace
+docs-rust: export PYO3_CONFIG_FILE=$(shell pwd)/.pyo3-config.txt
+docs-rust: export RUSTDOCFLAGS=--enable-index-page -Zunstable-options
+docs-rust: pyo3-config  #-- Build Rust documentation with cargo doc
+	cargo +nightly doc --all-features --no-deps --workspace
 
 .PHONY: docsrs-check
-docsrs-check: check-hack-installed #-- Check documentation builds for docs.rs compatibility
-	RUSTDOCFLAGS="--cfg docsrs -D warnings" cargo hack --workspace doc --no-deps --all-features
+docsrs-check: export PYO3_CONFIG_FILE=$(shell pwd)/.pyo3-config.txt
+docsrs-check: export RUSTDOCFLAGS="--cfg docsrs -D warnings"
+docsrs-check: pyo3-config check-hack-installed  #-- Check documentation builds for docs.rs compatibility
+	cargo hack --workspace doc --no-deps --all-features
 
 #== Rust Development
 
 .PHONY: cargo-build
-cargo-build:  #-- Build Rust crates in release mode
-	cargo build --release --all-features
+cargo-build: export PYO3_CONFIG_FILE=$(shell pwd)/.pyo3-config.txt
+cargo-build: pyo3-config  #-- Build Rust crates in release mode
+	cargo build --release --features "ffi,python,extension-module,postgres,defi,high-precision"
 
 .PHONY: cargo-update
 cargo-update:  #-- Update Rust dependencies and install test tools
@@ -160,7 +181,8 @@ cargo-update:  #-- Update Rust dependencies and install test tools
 	&& cargo install cargo-llvm-cov
 
 .PHONY: cargo-check
-cargo-check:  #-- Check Rust code without building
+cargo-check: export PYO3_CONFIG_FILE=$(shell pwd)/.pyo3-config.txt
+cargo-check: pyo3-config  #-- Check Rust code without building
 	cargo check --workspace --all-features
 
 .PHONY: check-nextest-installed
@@ -184,42 +206,48 @@ check-features: check-hack-installed
 #== Rust Testing
 
 .PHONY: cargo-test
-cargo-test: RUST_BACKTRACE=1
-cargo-test: HIGH_PRECISION=true
-cargo-test: check-nextest-installed
+cargo-test: export RUST_BACKTRACE=1
+cargo-test: export HIGH_PRECISION=true
+cargo-test: export PYO3_CONFIG_FILE=$(shell pwd)/.pyo3-config.txt
+cargo-test: pyo3-config check-nextest-installed
 cargo-test:  #-- Run all Rust tests with high precision features
-	cargo nextest run --workspace --features "ffi,python,high-precision,defi" --no-fail-fast --cargo-profile nextest
+	cargo nextest run --workspace --features "ffi,python,postgres,defi,high-precision" --cargo-profile nextest --no-fail-fast
 
 .PHONY: cargo-test-lib
-cargo-test-lib: RUST_BACKTRACE=1
-cargo-test-lib: HIGH_PRECISION=true
-cargo-test-lib: check-nextest-installed
+cargo-test-lib: export RUST_BACKTRACE=1
+cargo-test-lib: export HIGH_PRECISION=true
+cargo-test-lib: export PYO3_CONFIG_FILE=$(shell pwd)/.pyo3-config.txt
+cargo-test-lib: pyo3-config check-nextest-installed
 cargo-test-lib:  #-- Run Rust library tests only with high precision
-	cargo nextest run --lib --workspace --no-default-features --features "ffi,python,high-precision,defi,stubs" --no-fail-fast --cargo-profile nextest
+	cargo nextest run --lib --workspace --no-default-features --features "ffi,python,high-precision,defi,stubs" --cargo-profile nextest --no-fail-fast
 
 .PHONY: cargo-test-standard-precision
-cargo-test-standard-precision: RUST_BACKTRACE=1
-cargo-test-standard-precision: HIGH_PRECISION=false
-cargo-test-standard-precision: check-nextest-installed
+cargo-test-standard-precision: export RUST_BACKTRACE=1
+cargo-test-standard-precision: export HIGH_PRECISION=false
+cargo-test-standard-precision: export PYO3_CONFIG_FILE=$(shell pwd)/.pyo3-config.txt
+cargo-test-standard-precision: pyo3-config check-nextest-installed
 cargo-test-standard-precision:  #-- Run Rust tests with standard precision (64-bit)
-	cargo nextest run --workspace --features "ffi,python" --no-fail-fast --cargo-profile nextest
+	cargo nextest run --workspace --features "ffi,python" --cargo-profile nextest --no-fail-fast
 
 .PHONY: cargo-test-debug
-cargo-test-debug: RUST_BACKTRACE=1
-cargo-test-debug: HIGH_PRECISION=true
-cargo-test-debug: check-nextest-installed
+cargo-test-debug: export RUST_BACKTRACE=1
+cargo-test-debug: export HIGH_PRECISION=true
+cargo-test-debug: export PYO3_CONFIG_FILE=$(shell pwd)/.pyo3-config.txt
+cargo-test-debug: pyo3-config check-nextest-installed
 cargo-test-debug:  #-- Run Rust tests in debug mode with high precision
-	cargo nextest run --workspace --features "ffi,python,high-precision,defi" --no-fail-fast
+	cargo nextest run --workspace --features "ffi,python,postgres,defi,high-precision" --cargo-profile dev --no-fail-fast
 
 .PHONY: cargo-test-standard-precision-debug
-cargo-test-standard-precision-debug: RUST_BACKTRACE=1
-cargo-test-standard-precision-debug: HIGH_PRECISION=false
-cargo-test-standard-precision-debug: check-nextest-installed
+cargo-test-standard-precision-debug: export RUST_BACKTRACE=1
+cargo-test-standard-precision-debug: export HIGH_PRECISION=false
+cargo-test-standard-precision-debug: export PYO3_CONFIG_FILE=$(shell pwd)/.pyo3-config.txt
+cargo-test-standard-precision-debug: pyo3-config check-nextest-installed
 cargo-test-standard-precision-debug:  #-- Run Rust tests in debug mode with standard precision
-	cargo nextest run --workspace --features "ffi,python"
+	cargo nextest run --workspace --features "ffi,python" --cargo-profile dev
 
 .PHONY: cargo-test-coverage
-cargo-test-coverage: check-nextest-installed
+cargo-test-coverage: export PYO3_CONFIG_FILE=$(shell pwd)/.pyo3-config.txt
+cargo-test-coverage: pyo3-config check-nextest-installed
 cargo-test-coverage:  #-- Run Rust tests with coverage reporting
 	@if ! cargo llvm-cov --version >/dev/null 2>&1; then \
 		echo "cargo-llvm-cov is not installed. You can install it using 'cargo install cargo-llvm-cov'"; \
@@ -242,18 +270,21 @@ cargo-test-coverage:  #-- Run Rust tests with coverage reporting
 # -----------------------------------------------------------------------------
 
 .PHONY: cargo-test-crate-%
-cargo-test-crate-%: RUST_BACKTRACE=1
-cargo-test-crate-%: HIGH_PRECISION=true
-cargo-test-crate-%: check-nextest-installed
+cargo-test-crate-%: export RUST_BACKTRACE=1
+cargo-test-crate-%: export HIGH_PRECISION=true
+cargo-test-crate-%: export PYO3_CONFIG_FILE=$(shell pwd)/.pyo3-config.txt
+cargo-test-crate-%: pyo3-config check-nextest-installed
 cargo-test-crate-%:  #-- Run tests for a specific Rust crate (usage: make cargo-test-crate-<crate_name>)
 	cargo nextest run --lib --no-fail-fast --cargo-profile nextest -p $* $(if $(FEATURES),--features "$(FEATURES)")
 
 .PHONY: cargo-bench
-cargo-bench:  #-- Run Rust benchmarks
+cargo-bench: export PYO3_CONFIG_FILE=$(shell pwd)/.pyo3-config.txt
+cargo-bench: pyo3-config  #-- Run Rust benchmarks
 	cargo bench
 
 .PHONY: cargo-doc
-cargo-doc:  #-- Generate Rust documentation
+cargo-doc: export PYO3_CONFIG_FILE=$(shell pwd)/.pyo3-config.txt
+cargo-doc: pyo3-config  #-- Generate Rust documentation
 	cargo doc
 
 #== Docker
@@ -303,6 +334,14 @@ test-performance:  #-- Run performance tests with codspeed benchmarking
 install-cli:  #-- Install Nautilus CLI tool from source
 	cargo install --path crates/cli --bin nautilus --force
 
+#== Miscellaneous
+
+.PHONY: pyo3-config
+pyo3-config:  #-- Create PyO3 config file if it doesn't exist
+    # See scripts/README.md for why this is necessary (prevents PyO3 rebuilds)
+	$Q uv run --no-sync scripts/create-pyo3-config.py
+
+
 #== Internal
 
 .PHONY: help
@@ -326,7 +365,7 @@ help:  #-- Show this help message and exit
 
 	@awk '\
 	BEGIN { FS = ":.*#--"; target_maxlen = 0 } \
-	/^[$$()% a-zA-Z_-]+:.*?#--/ { \
+	/^[$$()% a-zA-Z_0-9-]+:.*?#--/ { \
 		if (length($$1) > target_maxlen) target_maxlen = length($$1); \
 		targets[NR] = $$1; descriptions[NR] = $$2; \
 	} \
