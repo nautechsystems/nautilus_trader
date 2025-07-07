@@ -23,11 +23,17 @@ use hypersync_client::{
     simple_types::Log,
 };
 use nautilus_core::UnixNanos;
-use nautilus_model::defi::{AmmType, Block, Dex, Pool, SharedChain, Token};
+use nautilus_model::{
+    defi::{Block, SharedChain, Token},
+    identifiers::InstrumentId,
+};
 use reqwest::Url;
 
 use crate::{
-    hypersync::transform::{transform_hypersync_block, transform_hypersync_swap_log},
+    hypersync::transform::{
+        transform_hypersync_block, transform_hypersync_burn_log, transform_hypersync_mint_log,
+        transform_hypersync_swap_log,
+    },
     rpc::types::BlockchainMessage,
 };
 
@@ -46,8 +52,12 @@ pub struct HyperSyncClient {
     blocks_task: Option<tokio::task::JoinHandle<()>>,
     /// Background task handles for swap subscription tasks (keyed by pool address).
     swaps_tasks: AHashMap<Address, tokio::task::JoinHandle<()>>,
+    /// Background task handles for liquidity update subscription tasks (keyed by pool address).
+    liquidity_tasks: AHashMap<Address, tokio::task::JoinHandle<()>>,
     /// Channel for sending blockchain messages to the adapter data client.
     tx: tokio::sync::mpsc::UnboundedSender<BlockchainMessage>,
+    /// Index of pool addressed keyed by instrument ID.
+    pool_addresses: AHashMap<InstrumentId, Address>,
 }
 
 impl HyperSyncClient {
@@ -72,8 +82,14 @@ impl HyperSyncClient {
             client: Arc::new(client),
             blocks_task: None,
             swaps_tasks: AHashMap::new(),
+            liquidity_tasks: AHashMap::new(),
             tx,
+            pool_addresses: AHashMap::new(),
         }
+    }
+
+    pub fn get_pool_address(&self, instrument_id: InstrumentId) -> Option<&Address> {
+        self.pool_addresses.get(&instrument_id)
     }
 
     /// Creates a stream of contract event logs matching the specified criteria.
@@ -149,6 +165,7 @@ impl HyperSyncClient {
     pub fn disconnect(&mut self) {
         self.unsubscribe_blocks();
         self.unsubscribe_all_swaps();
+        self.unsubscribe_all_liquidity_updates();
     }
 
     /// Returns the current block
@@ -248,7 +265,7 @@ impl HyperSyncClient {
     }
 
     /// Subscribes to swap events for a specific pool address.
-    pub fn subscribe_pool_swaps(&mut self, pool_address: Address) {
+    pub fn subscribe_pool_swaps(&mut self, instrument_id: InstrumentId, pool_address: Address) {
         let chain_ref = self.chain.clone(); // Use existing SharedChain
         let client = self.client.clone();
         let tx = self.tx.clone();
@@ -258,18 +275,7 @@ impl HyperSyncClient {
 
             // TODO: These objects should be fetched from cache or RPC calls
             // For now, create minimal objects just to get compilation working
-            let dex = std::sync::Arc::new(Dex::new(
-                (*chain_ref).clone(),
-                "Uniswap V3",
-                "0x1F98431c8aD98523631AE4a59f267346ea31F984", // Uniswap V3 factory
-                AmmType::CLAMM,
-                "PoolCreated(address,address,uint24,int24,address)",
-                "Swap(address,address,int256,int256,uint160,uint128,int24)",
-                "Mint(address,address,int24,int24,uint128,uint256,uint256)",
-                "Burn(address,int24,int24,uint128,uint256,uint256)",
-            ));
-
-            let token0 = Token::new(
+            let token0 = std::sync::Arc::new(Token::new(
                 chain_ref.clone(),
                 "0xA0b86a33E6441b936662bb6B5d1F8Fb0E2b57A5D"
                     .parse()
@@ -277,9 +283,9 @@ impl HyperSyncClient {
                 "Wrapped Ether".to_string(),
                 "WETH".to_string(),
                 18,
-            );
+            ));
 
-            let token1 = Token::new(
+            let token1 = std::sync::Arc::new(Token::new(
                 chain_ref.clone(),
                 "0xdAC17F958D2ee523a2206206994597C13D831ec7"
                     .parse()
@@ -287,18 +293,6 @@ impl HyperSyncClient {
                 "Tether USD".to_string(),
                 "USDT".to_string(),
                 6, // USDT has 6 decimals
-            );
-
-            let pool = std::sync::Arc::new(Pool::new(
-                chain_ref.clone(),
-                (*dex).clone(),
-                pool_address,
-                0, // creation block - TODO: fetch from cache
-                token0,
-                token1,
-                3000, // 0.3% fee tier
-                60,   // tick spacing
-                UnixNanos::default(),
             ));
 
             let current_block_height = client.get_height().await.unwrap();
@@ -320,8 +314,20 @@ impl HyperSyncClient {
                         );
                         match transform_hypersync_swap_log(
                             chain_ref.clone(),
-                            dex.clone(),
-                            pool.clone(),
+                            std::sync::Arc::new(nautilus_model::defi::Dex::new(
+                                (*chain_ref).clone(),
+                                "Uniswap V3",
+                                "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+                                nautilus_model::defi::AmmType::CLAMM,
+                                "PoolCreated(address,address,uint24,int24,address)",
+                                "Swap(address,address,int256,int256,uint160,uint128,int24)",
+                                "Mint(address,address,int24,int24,uint128,uint256,uint256)",
+                                "Burn(address,int24,int24,uint128,uint256,uint256)",
+                            )),
+                            instrument_id,
+                            pool_address,
+                            token0.clone(),
+                            token1.clone(),
                             UnixNanos::default(), // TODO: block timestamp placeholder
                             &log,
                         ) {
@@ -356,6 +362,171 @@ impl HyperSyncClient {
         });
 
         self.swaps_tasks.insert(pool_address, task);
+    }
+
+    /// Subscribes to liquidity update events (mint/burn) for a specific pool address.
+    pub fn subscribe_pool_liquidity_updates(
+        &mut self,
+        instrument_id: InstrumentId,
+        pool_address: Address,
+    ) {
+        let chain_ref = self.chain.clone();
+        let client = self.client.clone();
+        let tx = self.tx.clone();
+
+        let task = tokio::spawn(async move {
+            tracing::debug!("Starting task 'liquidity_updates_feed' for pool: {pool_address}");
+
+            // TODO: These objects should be fetched from cache or RPC calls
+            // For now, create minimal objects just to get compilation working
+            let token0 = std::sync::Arc::new(Token::new(
+                chain_ref.clone(),
+                "0xA0b86a33E6441b936662bb6B5d1F8Fb0E2b57A5D"
+                    .parse()
+                    .unwrap(), // WETH
+                "Wrapped Ether".to_string(),
+                "WETH".to_string(),
+                18,
+            ));
+
+            let token1 = std::sync::Arc::new(Token::new(
+                chain_ref.clone(),
+                "0xdAC17F958D2ee523a2206206994597C13D831ec7"
+                    .parse()
+                    .unwrap(), // USDT
+                "Tether USD".to_string(),
+                "USDT".to_string(),
+                6, // USDT has 6 decimals
+            ));
+
+            let current_block_height = client.get_height().await.unwrap();
+            let mut mint_query =
+                Self::construct_pool_mint_query(pool_address, current_block_height, None);
+            let mut burn_query =
+                Self::construct_pool_burn_query(pool_address, current_block_height, None);
+
+            loop {
+                // Process mint events
+                let mint_response = client.get(&mint_query).await.unwrap();
+                for batch in mint_response.data.logs {
+                    for log in batch {
+                        tracing::debug!(
+                            "Received mint log from pool {pool_address}: topics={:?}, data={:?}, block={:?}, tx_hash={:?}",
+                            log.topics,
+                            log.data,
+                            log.block_number,
+                            log.transaction_hash
+                        );
+                        match transform_hypersync_mint_log(
+                            chain_ref.clone(),
+                            std::sync::Arc::new(nautilus_model::defi::Dex::new(
+                                (*chain_ref).clone(),
+                                "Uniswap V3",
+                                "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+                                nautilus_model::defi::AmmType::CLAMM,
+                                "PoolCreated(address,address,uint24,int24,address)",
+                                "Swap(address,address,int256,int256,uint160,uint128,int24)",
+                                "Mint(address,address,int24,int24,uint128,uint256,uint256)",
+                                "Burn(address,int24,int24,uint128,uint256,uint256)",
+                            )),
+                            instrument_id,
+                            pool_address,
+                            token0.clone(),
+                            token1.clone(),
+                            UnixNanos::default(), // TODO: block timestamp placeholder
+                            &log,
+                        ) {
+                            Ok(liquidity_update) => {
+                                let msg = crate::rpc::types::BlockchainMessage::LiquidityUpdate(
+                                    liquidity_update,
+                                );
+                                if let Err(e) = tx.send(msg) {
+                                    tracing::error!(
+                                        "Error sending mint liquidity update message: {e}"
+                                    );
+                                }
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    "Failed to transform mint log from pool {pool_address}: {e}"
+                                );
+                            }
+                        }
+                    }
+                }
+
+                // Process burn events
+                let burn_response = client.get(&burn_query).await.unwrap();
+                for batch in burn_response.data.logs {
+                    for log in batch {
+                        tracing::debug!(
+                            "Received burn log from pool {pool_address}: topics={:?}, data={:?}, block={:?}, tx_hash={:?}",
+                            log.topics,
+                            log.data,
+                            log.block_number,
+                            log.transaction_hash
+                        );
+                        match transform_hypersync_burn_log(
+                            chain_ref.clone(),
+                            std::sync::Arc::new(nautilus_model::defi::Dex::new(
+                                (*chain_ref).clone(),
+                                "Uniswap V3",
+                                "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+                                nautilus_model::defi::AmmType::CLAMM,
+                                "PoolCreated(address,address,uint24,int24,address)",
+                                "Swap(address,address,int256,int256,uint160,uint128,int24)",
+                                "Mint(address,address,int24,int24,uint128,uint256,uint256)",
+                                "Burn(address,int24,int24,uint128,uint256,uint256)",
+                            )),
+                            instrument_id,
+                            pool_address,
+                            token0.clone(),
+                            token1.clone(),
+                            UnixNanos::default(), // TODO: block timestamp placeholder
+                            &log,
+                        ) {
+                            Ok(liquidity_update) => {
+                                let msg = crate::rpc::types::BlockchainMessage::LiquidityUpdate(
+                                    liquidity_update,
+                                );
+                                if let Err(e) = tx.send(msg) {
+                                    tracing::error!(
+                                        "Error sending burn liquidity update message: {e}"
+                                    );
+                                }
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    "Failed to transform burn log from pool {pool_address}: {e}"
+                                );
+                            }
+                        }
+                    }
+                }
+
+                // Handle archive height and polling similar to swaps
+                let next_block = mint_response.next_block.max(burn_response.next_block);
+                let archive_height = mint_response
+                    .archive_height
+                    .and(burn_response.archive_height);
+
+                if let Some(archive_block_height) = archive_height
+                    && archive_block_height < next_block
+                {
+                    while client.get_height().await.unwrap() < next_block {
+                        tokio::time::sleep(std::time::Duration::from_millis(
+                            BLOCK_POLLING_INTERVAL_MS,
+                        ))
+                        .await;
+                    }
+                }
+
+                mint_query.from_block = next_block;
+                burn_query.from_block = next_block;
+            }
+        });
+
+        self.liquidity_tasks.insert(pool_address, task);
     }
 
     /// Constructs a HyperSync query for fetching swap events from a specific pool.
@@ -403,6 +574,96 @@ impl HyperSyncClient {
         serde_json::from_value(query_value).unwrap()
     }
 
+    /// Constructs a HyperSync query for fetching mint events from a specific pool.
+    fn construct_pool_mint_query(
+        pool_address: alloy::primitives::Address,
+        from_block: u64,
+        to_block: Option<u64>,
+    ) -> Query {
+        // Uniswap V3 Mint event signature:
+        // Mint(address indexed sender, address indexed owner, int24 indexed tickLower, int24 indexed tickUpper, uint128 amount, uint256 amount0, uint256 amount1)
+        let mint_topic = "0x7a53080ba414158be7ec69b987b5fb7d07dee101fe85488f0853ae16239d0bde";
+
+        let mut query_value = serde_json::json!({
+            "from_block": from_block,
+            "logs": [{
+                "topics": [
+                    [mint_topic]
+                ],
+                "address": [
+                    pool_address.to_string(),
+                ]
+            }],
+            "field_selection": {
+                "log": [
+                    "block_number",
+                    "transaction_hash",
+                    "transaction_index",
+                    "log_index",
+                    "address",
+                    "data",
+                    "topic0",
+                    "topic1",
+                    "topic2",
+                    "topic3",
+                ]
+            }
+        });
+
+        if let Some(to_block) = to_block
+            && let Some(obj) = query_value.as_object_mut()
+        {
+            obj.insert("to_block".to_string(), serde_json::json!(to_block));
+        }
+
+        serde_json::from_value(query_value).unwrap()
+    }
+
+    /// Constructs a HyperSync query for fetching burn events from a specific pool.
+    fn construct_pool_burn_query(
+        pool_address: alloy::primitives::Address,
+        from_block: u64,
+        to_block: Option<u64>,
+    ) -> Query {
+        // Uniswap V3 Burn event signature:
+        // Burn(address indexed owner, int24 indexed tickLower, int24 indexed tickUpper, uint128 amount, uint256 amount0, uint256 amount1)
+        let burn_topic = "0x0c396cd989a39f4459b5fa1aed6a9a8dcdbc45908acfd67e028cd568da98982c";
+
+        let mut query_value = serde_json::json!({
+            "from_block": from_block,
+            "logs": [{
+                "topics": [
+                    [burn_topic]
+                ],
+                "address": [
+                    pool_address.to_string(),
+                ]
+            }],
+            "field_selection": {
+                "log": [
+                    "block_number",
+                    "transaction_hash",
+                    "transaction_index",
+                    "log_index",
+                    "address",
+                    "data",
+                    "topic0",
+                    "topic1",
+                    "topic2",
+                    "topic3",
+                ]
+            }
+        });
+
+        if let Some(to_block) = to_block
+            && let Some(obj) = query_value.as_object_mut()
+        {
+            obj.insert("to_block".to_string(), serde_json::json!(to_block));
+        }
+
+        serde_json::from_value(query_value).unwrap()
+    }
+
     /// Unsubscribes from swap events for a specific pool address.
     pub fn unsubscribe_pool_swaps(&mut self, pool_address: Address) {
         if let Some(task) = self.swaps_tasks.remove(&pool_address) {
@@ -416,6 +677,28 @@ impl HyperSyncClient {
         for (pool_address, task) in self.swaps_tasks.drain() {
             task.abort();
             tracing::debug!("Unsubscribed from swaps for pool: {}", pool_address);
+        }
+    }
+
+    /// Unsubscribes from liquidity update events for a specific pool address.
+    pub fn unsubscribe_pool_liquidity_updates(&mut self, pool_address: Address) {
+        if let Some(task) = self.liquidity_tasks.remove(&pool_address) {
+            task.abort();
+            tracing::debug!(
+                "Unsubscribed from liquidity updates for pool: {}",
+                pool_address
+            );
+        }
+    }
+
+    /// Unsubscribes from all liquidity update events by stopping all liquidity update background tasks.
+    pub fn unsubscribe_all_liquidity_updates(&mut self) {
+        for (pool_address, task) in self.liquidity_tasks.drain() {
+            task.abort();
+            tracing::debug!(
+                "Unsubscribed from liquidity updates for pool: {}",
+                pool_address
+            );
         }
     }
 

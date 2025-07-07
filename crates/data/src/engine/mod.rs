@@ -42,8 +42,6 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet};
-#[cfg(feature = "defi")]
-use alloy_primitives::Address;
 use book::{BookSnapshotInfo, BookSnapshotter, BookUpdater};
 use config::DataEngineConfig;
 use handlers::{BarBarHandler, BarQuoteHandler, BarTradeHandler};
@@ -463,23 +461,23 @@ impl DataEngine {
     }
 
     #[cfg(feature = "defi")]
-    /// Returns all pool addresses for which pool subscriptions exist.
+    /// Returns all instrument IDs for which pool subscriptions exist.
     #[must_use]
-    pub fn subscribed_pools(&self) -> Vec<Address> {
+    pub fn subscribed_pools(&self) -> Vec<InstrumentId> {
         self.collect_subscriptions(|client| &client.subscriptions_pools)
     }
 
     #[cfg(feature = "defi")]
-    /// Returns all pool addresses for which swap subscriptions exist.
+    /// Returns all instrument IDs for which swap subscriptions exist.
     #[must_use]
-    pub fn subscribed_pool_swaps(&self) -> Vec<Address> {
+    pub fn subscribed_pool_swaps(&self) -> Vec<InstrumentId> {
         self.collect_subscriptions(|client| &client.subscriptions_pool_swaps)
     }
 
     #[cfg(feature = "defi")]
-    /// Returns all pool addresses for which liquidity update subscriptions exist.
+    /// Returns all instrument IDs for which liquidity update subscriptions exist.
     #[must_use]
-    pub fn subscribed_pool_liquidity_updates(&self) -> Vec<Address> {
+    pub fn subscribed_pool_liquidity_updates(&self) -> Vec<InstrumentId> {
         self.collect_subscriptions(|client| &client.subscriptions_pool_liquidity_updates)
     }
 
@@ -714,15 +712,15 @@ impl DataEngine {
                 msgbus::publish(topic, &block as &dyn Any);
             }
             DefiData::Pool(pool) => {
-                let topic = switchboard::get_defi_pool_topic(pool.address);
+                let topic = switchboard::get_defi_pool_topic(pool.instrument_id);
                 msgbus::publish(topic, &pool as &dyn Any);
             }
             DefiData::PoolSwap(swap) => {
-                let topic = switchboard::get_defi_pool_swaps_topic(swap.pool.address);
+                let topic = switchboard::get_defi_pool_swaps_topic(swap.instrument_id);
                 msgbus::publish(topic, &swap as &dyn Any);
             }
             DefiData::PoolLiquidityUpdate(update) => {
-                let topic = switchboard::get_defi_liquidity_topic(update.pool.address);
+                let topic = switchboard::get_defi_liquidity_topic(update.instrument_id);
                 msgbus::publish(topic, &update as &dyn Any);
             }
         }

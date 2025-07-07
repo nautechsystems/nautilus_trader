@@ -19,9 +19,13 @@ use alloy::primitives::{Address, I256, U256};
 use hypersync_client::format::Hex;
 use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_SECOND};
 use nautilus_model::{
-    defi::{Block, Blockchain, Chain, Dex, Pool, PoolSwap, hex::from_str_hex_to_u64},
+    defi::{
+        Block, Blockchain, Chain, Dex, PoolLiquidityUpdate, PoolLiquidityUpdateType, PoolSwap,
+        Token, hex::from_str_hex_to_u64,
+    },
     enums::OrderSide,
-    types::{Price, Quantity},
+    identifiers::InstrumentId,
+    types::Quantity,
 };
 use ustr::Ustr;
 
@@ -119,7 +123,10 @@ pub fn transform_hypersync_block(
 pub fn transform_hypersync_swap_log(
     chain_ref: Arc<Chain>,
     dex: Arc<Dex>,
-    pool: Arc<Pool>,
+    instrument_id: InstrumentId,
+    pool_address: Address,
+    token0: Arc<Token>,
+    token1: Arc<Token>,
     block_timestamp: UnixNanos,
     log: &hypersync_client::simple_types::Log,
 ) -> Result<PoolSwap, anyhow::Error> {
@@ -178,38 +185,47 @@ pub fn transform_hypersync_swap_log(
         OrderSide::Buy // Buying token0 (pool gave token0)
     };
 
-    let quantity = if pool.token0.decimals == 18 {
+    let quantity = if token0.decimals == 18 {
         Quantity::from_wei(amount0)
     } else {
-        u256_to_quantity(amount0, pool.token0.decimals)?
+        u256_to_quantity(amount0, token0.decimals)?
     };
 
-    let amount1_quantity = if pool.token1.decimals == 18 {
+    let amount1_quantity = if token1.decimals == 18 {
         Quantity::from_wei(amount1)
     } else {
-        u256_to_quantity(amount1, pool.token1.decimals)?
+        u256_to_quantity(amount1, token1.decimals)?
     };
 
     tracing::debug!(
         "Converted amounts: amount0={} -> {} {}, amount1={} -> {} {}",
         amount0,
         quantity,
-        pool.token0.symbol,
+        token0.symbol,
         amount1,
         amount1_quantity,
-        pool.token1.symbol
+        token1.symbol
     );
 
     let price = if !amount0.is_zero() && !amount1.is_zero() {
-        let price_precision = pool.token0.decimals.max(pool.token1.decimals);
-        let scaled_amount1 = amount1 * U256::from(10_u128.pow(u32::from(price_precision)));
-        let price_raw = scaled_amount1 / amount0;
+        // Calculate price as amount1/amount0, adjusting for decimal differences
+        // Price precision should account for token decimal differences
+        let price_precision = token1.decimals.min(9);
 
-        if price_precision == 18 {
-            Price::from_wei(price_raw)
+        // Scale amount1 to have same precision as token0, then divide
+        let amount0_scaled = if token0.decimals > token1.decimals {
+            amount0 / U256::from(10_u128.pow(u32::from(token0.decimals - token1.decimals)))
+        } else if token1.decimals > token0.decimals {
+            amount0 * U256::from(10_u128.pow(u32::from(token1.decimals - token0.decimals)))
         } else {
-            u256_to_price(price_raw, price_precision)?
-        }
+            amount0
+        };
+
+        // Calculate price with appropriate scaling
+        let price_raw =
+            amount1 * U256::from(10_u128.pow(u32::from(price_precision))) / amount0_scaled;
+
+        u256_to_price(price_raw, price_precision)?
     } else {
         anyhow::bail!("Invalid swap: amount0 or amount1 is zero, cannot calculate price");
     };
@@ -217,7 +233,8 @@ pub fn transform_hypersync_swap_log(
     let swap = PoolSwap::new(
         chain_ref,
         dex,
-        pool,
+        instrument_id,
+        pool_address,
         block_number,
         transaction_hash,
         transaction_index,
@@ -232,6 +249,175 @@ pub fn transform_hypersync_swap_log(
     Ok(swap)
 }
 
+/// Converts a HyperSync log entry to a [`PoolLiquidityUpdate`] for mint events using provided context.
+pub fn transform_hypersync_mint_log(
+    chain_ref: Arc<Chain>,
+    dex: Arc<Dex>,
+    instrument_id: InstrumentId,
+    pool_address: Address,
+    token0: Arc<Token>,
+    token1: Arc<Token>,
+    block_timestamp: UnixNanos,
+    log: &hypersync_client::simple_types::Log,
+) -> Result<PoolLiquidityUpdate, anyhow::Error> {
+    let block_number = extract_block_number(log)?;
+    let transaction_hash = extract_transaction_hash(log)?;
+    let transaction_index = extract_transaction_index(log)?;
+    let log_index = extract_log_index(log)?;
+
+    let sender = log
+        .topics
+        .get(1)
+        .and_then(|t| t.as_ref())
+        .map(|t| Address::from_slice(&t[12..32]))
+        .ok_or_else(|| anyhow::anyhow!("Missing sender address in mint log"))?;
+
+    let owner = log
+        .topics
+        .get(2)
+        .and_then(|t| t.as_ref())
+        .map(|t| Address::from_slice(&t[12..32]))
+        .ok_or_else(|| anyhow::anyhow!("Missing owner address in mint log"))?;
+
+    let data = log
+        .data
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("Missing data field in mint log"))?;
+
+    if data.len() < 160 {
+        // 5 * 32 bytes = 160 bytes minimum (amount, amount0, amount1, tick_lower, tick_upper)
+        anyhow::bail!("Insufficient data length for Uniswap V3 mint event");
+    }
+
+    let amount_bytes = &data[0..32];
+    let amount0_bytes = &data[32..64];
+    let amount1_bytes = &data[64..96];
+
+    let amount = U256::from_be_bytes::<32>(amount_bytes.try_into().unwrap());
+    let amount0 = U256::from_be_bytes::<32>(amount0_bytes.try_into().unwrap());
+    let amount1 = U256::from_be_bytes::<32>(amount1_bytes.try_into().unwrap());
+
+    let liquidity = u256_to_quantity(amount, 18)?; // Liquidity is typically 18 decimals
+    let amount0_quantity = u256_to_quantity(amount0, token0.decimals)?;
+    let amount1_quantity = u256_to_quantity(amount1, token1.decimals)?;
+
+    // Extract tick information from topics (indexed parameters)
+    let tick_lower = if let Some(topic3) = log.topics.get(3).and_then(|t| t.as_ref()) {
+        i32::from_be_bytes([topic3[28], topic3[29], topic3[30], topic3[31]])
+    } else {
+        0 // Default value if not available
+    };
+
+    let tick_upper = if let Some(topic4) = log.topics.get(4).and_then(|t| t.as_ref()) {
+        i32::from_be_bytes([topic4[28], topic4[29], topic4[30], topic4[31]])
+    } else {
+        0 // Default value if not available
+    };
+
+    let liquidity_update = PoolLiquidityUpdate::new(
+        chain_ref,
+        dex,
+        instrument_id,
+        pool_address,
+        PoolLiquidityUpdateType::Mint,
+        block_number,
+        transaction_hash,
+        transaction_index,
+        log_index,
+        Some(sender),
+        owner,
+        liquidity,
+        amount0_quantity,
+        amount1_quantity,
+        tick_lower,
+        tick_upper,
+        block_timestamp,
+    );
+
+    Ok(liquidity_update)
+}
+
+/// Converts a HyperSync log entry to a [`PoolLiquidityUpdate`] for burn events using provided context.
+pub fn transform_hypersync_burn_log(
+    chain_ref: Arc<Chain>,
+    dex: Arc<Dex>,
+    instrument_id: InstrumentId,
+    pool_address: Address,
+    token0: Arc<Token>,
+    token1: Arc<Token>,
+    block_timestamp: UnixNanos,
+    log: &hypersync_client::simple_types::Log,
+) -> Result<PoolLiquidityUpdate, anyhow::Error> {
+    let block_number = extract_block_number(log)?;
+    let transaction_hash = extract_transaction_hash(log)?;
+    let transaction_index = extract_transaction_index(log)?;
+    let log_index = extract_log_index(log)?;
+
+    let owner = log
+        .topics
+        .get(1)
+        .and_then(|t| t.as_ref())
+        .map(|t| Address::from_slice(&t[12..32]))
+        .ok_or_else(|| anyhow::anyhow!("Missing owner address in burn log"))?;
+
+    let data = log
+        .data
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("Missing data field in burn log"))?;
+
+    if data.len() < 96 {
+        // 3 * 32 bytes = 96 bytes minimum (amount, amount0, amount1)
+        anyhow::bail!("Insufficient data length for Uniswap V3 burn event");
+    }
+
+    let amount_bytes = &data[0..32];
+    let amount0_bytes = &data[32..64];
+    let amount1_bytes = &data[64..96];
+
+    let amount = U256::from_be_bytes::<32>(amount_bytes.try_into().unwrap());
+    let amount0 = U256::from_be_bytes::<32>(amount0_bytes.try_into().unwrap());
+    let amount1 = U256::from_be_bytes::<32>(amount1_bytes.try_into().unwrap());
+
+    let liquidity = u256_to_quantity(amount, 18)?; // Liquidity is typically 18 decimals
+    let amount0_quantity = u256_to_quantity(amount0, token0.decimals)?;
+    let amount1_quantity = u256_to_quantity(amount1, token1.decimals)?;
+
+    // Extract tick information from topics (indexed parameters)
+    let tick_lower = if let Some(topic2) = log.topics.get(2).and_then(|t| t.as_ref()) {
+        i32::from_be_bytes([topic2[28], topic2[29], topic2[30], topic2[31]])
+    } else {
+        0 // Default value if not available
+    };
+
+    let tick_upper = if let Some(topic3) = log.topics.get(3).and_then(|t| t.as_ref()) {
+        i32::from_be_bytes([topic3[28], topic3[29], topic3[30], topic3[31]])
+    } else {
+        0 // Default value if not available
+    };
+
+    let liquidity_update = PoolLiquidityUpdate::new(
+        chain_ref,
+        dex,
+        instrument_id,
+        pool_address,
+        PoolLiquidityUpdateType::Burn,
+        block_number,
+        transaction_hash,
+        transaction_index,
+        log_index,
+        None, // Burn events don't have a sender
+        owner,
+        liquidity,
+        amount0_quantity,
+        amount1_quantity,
+        tick_lower,
+        tick_upper,
+        block_timestamp,
+    );
+
+    Ok(liquidity_update)
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
@@ -240,7 +426,7 @@ pub fn transform_hypersync_swap_log(
 mod tests {
     use std::sync::Arc;
 
-    use nautilus_model::defi::{AmmType, Chain, Dex, Token};
+    use nautilus_model::defi::{AmmType, Chain, Dex, Pool, Token};
     use rstest::rstest;
     use serde_json::json;
 
@@ -261,7 +447,7 @@ mod tests {
             "Burn(address,int24,int24,uint128,uint256,uint256)",
         ));
 
-        let token0 = Token::new(
+        let token0 = Arc::new(Token::new(
             chain.clone(),
             "0xA0b86a33E6441b936662bb6B5d1F8Fb0E2b57A5D"
                 .parse()
@@ -269,9 +455,9 @@ mod tests {
             "Wrapped Ether".to_string(),
             "WETH".to_string(),
             18,
-        );
+        ));
 
-        let token1 = Token::new(
+        let token1 = Arc::new(Token::new(
             chain.clone(),
             "0xdAC17F958D2ee523a2206206994597C13D831ec7"
                 .parse()
@@ -279,7 +465,7 @@ mod tests {
             "Tether USD".to_string(),
             "USDT".to_string(),
             6,
-        );
+        ));
 
         let pool = Arc::new(Pool::new(
             chain.clone(),
@@ -288,8 +474,8 @@ mod tests {
                 .parse()
                 .unwrap(),
             12345678,
-            token0,
-            token1,
+            (*token0).clone(),
+            (*token1).clone(),
             3000,
             60,
             UnixNanos::default(),
@@ -314,7 +500,10 @@ mod tests {
         let result = transform_hypersync_swap_log(
             chain.clone(),
             dex.clone(),
-            pool.clone(),
+            pool.instrument_id,
+            pool.address,
+            token0.clone(),
+            token1.clone(),
             UnixNanos::default(),
             &log,
         );
@@ -337,19 +526,19 @@ mod tests {
         assert_eq!(
             swap.sender,
             "0x3fc91a3afd70395cd496c647d5a6cc9d4b2b7fad"
-                .parse()
+                .parse::<Address>()
                 .unwrap()
         );
         assert_eq!(swap.side, OrderSide::Sell); // amount0 is positive (1 ETH), so selling token0
 
         // Test data has amount0 = 1 ETH (0x0de0b6b3a7640000) and amount1 = 500 USDT (0x1dcd6500)
         // amount0 = 1000000000000000000 wei = 1.0 ETH
-        assert_eq!(swap.quantity.as_f64(), 1.0);
-        assert_eq!(swap.quantity.precision, 18);
+        assert_eq!(swap.size.precision, 18);
+        assert_eq!(swap.size.raw, 1_000_000_000_000_000_000_u128); // 1 ETH in wei
 
         // Price should be amount1/amount0 = 500 USDT / 1 ETH = 500.0
         assert_eq!(swap.price.as_f64(), 500.0);
-        assert_eq!(swap.price.precision, 18);
+        assert_eq!(swap.price.precision, 6); // USDT has 6 decimals, so price uses 6 precision for the quote token
     }
 
     #[rstest]
@@ -391,14 +580,14 @@ mod tests {
         assert_eq!(transformed_block.gas_limit, 0x1c9c380);
         assert_eq!(transformed_block.gas_used, 0x5208);
 
-        // timestamp 0x61bc3f2d = 1639659309 seconds = 1639659309000000000 nanoseconds
-        let expected_timestamp = UnixNanos::new(1639659309 * NANOSECONDS_IN_SECOND);
+        // timestamp 0x61bc3f2d = 1639726893 seconds = 1639726893000000000 nanoseconds
+        let expected_timestamp = UnixNanos::new(1639726893 * NANOSECONDS_IN_SECOND);
         assert_eq!(transformed_block.timestamp, expected_timestamp);
 
         assert_eq!(transformed_block.chain, Some(Blockchain::Ethereum));
 
         // Optional fields should be None when not provided in test data
-        assert!(transformed_block.base_fee.is_none());
+        assert!(transformed_block.base_fee_per_gas.is_none());
         assert!(transformed_block.blob_gas_used.is_none());
         assert!(transformed_block.excess_blob_gas.is_none());
     }

@@ -15,7 +15,7 @@
 
 //! Data types specific to automated-market-maker (AMM) protocols.
 
-use std::sync::Arc;
+use std::{fmt::Display, sync::Arc};
 
 use alloy_primitives::Address;
 use nautilus_core::UnixNanos;
@@ -23,11 +23,21 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     data::HasTsInit,
-    defi::{chain::SharedChain, dex::Dex, token::Token},
+    defi::{Blockchain, chain::SharedChain, dex::Dex, token::Token},
     identifiers::InstrumentId,
 };
 
 /// Represents a liquidity pool in a decentralized exchange.
+///
+/// The instrument ID encodes with the following components:
+/// `symbol` – The base/quote ticker plus the pool fee tier (in hundred-thousandths).
+/// `venue`  – The DEX name plus chain name.
+///
+/// The string representation therefore has the form:
+/// `<BASE>/<QUOTE>-<FEE>.<DEX_NAME>:<CHAIN_NAME>`
+///
+/// Example:
+/// `WETH/USDT-3000.UniswapV3:Arbitrum`
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
@@ -40,6 +50,8 @@ pub struct Pool {
     pub dex: Dex,
     /// The blockchain address of the pool smart contract.
     pub address: Address,
+    /// The instrument ID for the pool.
+    pub instrument_id: InstrumentId,
     /// The block number when this pool was created on the blockchain.
     pub creation_block: u64,
     /// The first token in the trading pair.
@@ -78,10 +90,13 @@ impl Pool {
         tick_spacing: u32,
         ts_init: UnixNanos,
     ) -> Self {
+        let instrument_id = Self::create_instrument_id(chain.name, &dex, &token0, &token1, fee);
+
         Self {
             chain,
             dex,
             address,
+            instrument_id,
             creation_block,
             token0,
             token1,
@@ -91,41 +106,25 @@ impl Pool {
         }
     }
 
-    /// Returns the ticker symbol for this pool as a formatted string.
-    #[must_use]
-    pub fn ticker(&self) -> String {
-        format!("{}/{}", self.token0.symbol, self.token1.symbol)
-    }
-
-    /// Returns the instrument ID for this pool.
-    ///
-    /// The identifier encodes the following components:
-    /// 1. `symbol`  – Base/quote ticker plus the pool fee tier (in hundred-thousandths).
-    /// 2. `venue`   – DEX name and contract address followed by chain name.
-    ///
-    /// The string representation therefore has the form:
-    /// `<BASE>/<QUOTE>-<FEE>.<DEX_NAME>:<DEX_FACTORY>:<CHAIN_NAME>`
-    ///
-    /// Example:
-    /// `WETH/USDT-3000.UniswapV3:0x1F98431c8aD98523631AE4a59f267346ea31F984:Arbitrum`
-    #[must_use]
-    pub fn instrument_id(&self) -> InstrumentId {
-        let symbol = format!("{}-{}", self.ticker(), self.fee);
-        let venue = format!("{}:{}:{}", self.dex.name, self.dex.factory, self.chain.name);
-
+    pub fn create_instrument_id(
+        chain: Blockchain,
+        dex: &Dex,
+        token0: &Token,
+        token1: &Token,
+        fee: u32,
+    ) -> InstrumentId {
+        let symbol = format!("{}/{}-{}", token0.symbol, token1.symbol, fee);
+        let venue = format!("{}:{}", dex.name, chain);
         InstrumentId::from(format!("{symbol}.{venue}").as_str())
     }
 }
 
-impl std::fmt::Display for Pool {
+impl Display for Pool {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Pool(ticker={}, dex={}, fee={}, address={})",
-            self.ticker(),
-            self.dex.name,
-            self.fee,
-            self.address
+            "Pool(instrument_id={}, dex={}, fee={}, address={})",
+            self.instrument_id, self.dex.name, self.fee, self.address
         )
     }
 }
@@ -209,9 +208,9 @@ mod tests {
         assert_eq!(pool.fee, 3000);
         assert_eq!(pool.tick_spacing, 60);
         assert_eq!(pool.ts_init, ts_init);
-        assert_eq!(pool.ticker(), "WETH/USDT");
+        assert_eq!(pool.instrument_id.symbol.as_str(), "WETH/USDT-3000");
 
-        let instrument_id = pool.instrument_id();
+        let instrument_id = pool.instrument_id;
         assert!(instrument_id.to_string().contains("WETH/USDT"));
         assert!(instrument_id.to_string().contains("UniswapV3"));
     }
@@ -266,12 +265,9 @@ mod tests {
             UnixNanos::default(),
         );
 
-        let instrument_id = pool.instrument_id();
-
-        let expected = format!(
-            "WETH/USDT-3000.UniswapV3:{}:{}",
-            factory_address, chain.name
+        assert_eq!(
+            pool.instrument_id.to_string(),
+            "WETH/USDT-3000.UniswapV3:Ethereum"
         );
-        assert_eq!(instrument_id.to_string(), expected);
     }
 }

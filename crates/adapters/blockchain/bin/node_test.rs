@@ -15,12 +15,10 @@
 
 use std::{
     ops::{Deref, DerefMut},
-    str::FromStr,
     sync::Arc,
     time::Duration,
 };
 
-use alloy::primitives::Address;
 use nautilus_blockchain::{
     config::BlockchainDataClientConfig, factories::BlockchainDataClientFactory,
 };
@@ -33,7 +31,7 @@ use nautilus_core::env::get_env_var;
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
     defi::{Block, Blockchain, Pool, PoolLiquidityUpdate, PoolSwap, chain::chains},
-    identifiers::{ClientId, TraderId},
+    identifiers::{ClientId, InstrumentId, TraderId},
 };
 
 // Requires capnp installed on the machine
@@ -78,8 +76,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create and register a blockchain subscriber actor
     let client_id = ClientId::new(format!("BLOCKCHAIN-{}", chain.name));
+
     let pools = vec![
-        Address::from_str("0xC31E54c7A869B9fCbECC14363CF510d1C41Fa443")?, // WETH/USDC Arbitrum One
+        InstrumentId::from("WETH/USDC-3000.UniswapV3:Arbitrum"), // Arbitrum WETH/USDC 0.30% pool
     ];
 
     let actor_config = BlockchainSubscriberActorConfig::new(client_id, chain.name, pools);
@@ -101,14 +100,14 @@ pub struct BlockchainSubscriberActorConfig {
     pub client_id: ClientId,
     /// The blockchain to subscribe for.
     pub chain: Blockchain,
-    /// Pool addresses to monitor for swaps and liquidity updates.
-    pub pools: Vec<Address>,
+    /// Pool instrument IDs to monitor for swaps and liquidity updates.
+    pub pools: Vec<InstrumentId>,
 }
 
 impl BlockchainSubscriberActorConfig {
     /// Creates a new [`BlockchainSubscriberActorConfig`] instance.
     #[must_use]
-    pub fn new(client_id: ClientId, chain: Blockchain, pools: Vec<Address>) -> Self {
+    pub fn new(client_id: ClientId, chain: Blockchain, pools: Vec<InstrumentId>) -> Self {
         Self {
             base: DataActorConfig::default(),
             client_id,
@@ -153,11 +152,11 @@ impl DataActor for BlockchainSubscriberActor {
 
         self.subscribe_blocks(self.config.chain, Some(client_id), None);
 
-        let pool_addresses = self.config.pools.clone();
-        for address in pool_addresses {
-            self.subscribe_pool(address, Some(client_id), None);
-            self.subscribe_pool_swaps(address, Some(client_id), None);
-            self.subscribe_pool_liquidity_updates(address, Some(client_id), None);
+        let pool_instrument_ids = self.config.pools.clone();
+        for instrument_id in pool_instrument_ids {
+            self.subscribe_pool(instrument_id, Some(client_id), None);
+            self.subscribe_pool_swaps(instrument_id, Some(client_id), None);
+            self.subscribe_pool_liquidity_updates(instrument_id, Some(client_id), None);
         }
 
         self.clock().set_timer(
@@ -188,11 +187,11 @@ impl DataActor for BlockchainSubscriberActor {
 
         self.unsubscribe_blocks(self.config.chain, Some(client_id), None);
 
-        let pool_addresses = self.config.pools.clone();
-        for address in pool_addresses {
-            self.unsubscribe_pool(address, Some(client_id), None);
-            self.unsubscribe_pool_swaps(address, Some(client_id), None);
-            self.unsubscribe_pool_liquidity_updates(address, Some(client_id), None);
+        let pool_instrument_ids = self.config.pools.clone();
+        for instrument_id in pool_instrument_ids {
+            self.unsubscribe_pool(instrument_id, Some(client_id), None);
+            self.unsubscribe_pool_swaps(instrument_id, Some(client_id), None);
+            self.unsubscribe_pool_liquidity_updates(instrument_id, Some(client_id), None);
         }
 
         Ok(())

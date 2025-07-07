@@ -15,8 +15,6 @@
 
 use ahash::AHashMap;
 #[cfg(feature = "defi")]
-use alloy_primitives::Address;
-#[cfg(feature = "defi")]
 use nautilus_model::defi::Blockchain;
 use nautilus_model::{
     data::{BarType, DataType},
@@ -175,29 +173,29 @@ pub fn get_defi_blocks_topic(chain: Blockchain) -> MStr<Topic> {
 
 #[cfg(feature = "defi")]
 #[must_use]
-pub fn get_defi_pool_topic(address: Address) -> MStr<Topic> {
+pub fn get_defi_pool_topic(instrument_id: InstrumentId) -> MStr<Topic> {
     get_message_bus()
         .borrow_mut()
         .switchboard
-        .get_defi_pool_topic(address)
+        .get_defi_pool_topic(instrument_id)
 }
 
 #[cfg(feature = "defi")]
 #[must_use]
-pub fn get_defi_pool_swaps_topic(address: Address) -> MStr<Topic> {
+pub fn get_defi_pool_swaps_topic(instrument_id: InstrumentId) -> MStr<Topic> {
     get_message_bus()
         .borrow_mut()
         .switchboard
-        .get_defi_pool_swaps_topic(address)
+        .get_defi_pool_swaps_topic(instrument_id)
 }
 
 #[cfg(feature = "defi")]
 #[must_use]
-pub fn get_defi_liquidity_topic(address: Address) -> MStr<Topic> {
+pub fn get_defi_liquidity_topic(instrument_id: InstrumentId) -> MStr<Topic> {
     get_message_bus()
         .borrow_mut()
         .switchboard
-        .get_defi_pool_liquidity_topic(address)
+        .get_defi_pool_liquidity_topic(instrument_id)
 }
 
 /// Represents a switchboard of built-in messaging endpoint names.
@@ -223,11 +221,11 @@ pub struct MessagingSwitchboard {
     #[cfg(feature = "defi")]
     defi_block_topics: AHashMap<Blockchain, MStr<Topic>>,
     #[cfg(feature = "defi")]
-    defi_pool_topics: AHashMap<Address, MStr<Topic>>,
+    defi_pool_topics: AHashMap<InstrumentId, MStr<Topic>>,
     #[cfg(feature = "defi")]
-    defi_pool_swap_topics: AHashMap<Address, MStr<Topic>>,
+    defi_pool_swap_topics: AHashMap<InstrumentId, MStr<Topic>>,
     #[cfg(feature = "defi")]
-    defi_pool_liquidity_topics: AHashMap<Address, MStr<Topic>>,
+    defi_pool_liquidity_topics: AHashMap<InstrumentId, MStr<Topic>>,
 }
 
 impl Default for MessagingSwitchboard {
@@ -495,29 +493,29 @@ impl MessagingSwitchboard {
 
     #[cfg(feature = "defi")]
     #[must_use]
-    pub fn get_defi_pool_topic(&mut self, address: Address) -> MStr<Topic> {
+    pub fn get_defi_pool_topic(&mut self, instrument_id: InstrumentId) -> MStr<Topic> {
         *self
             .defi_pool_topics
-            .entry(address)
-            .or_insert_with(|| format!("data.defi.pool.{address}").into())
+            .entry(instrument_id)
+            .or_insert_with(|| format!("data.defi.pool.{instrument_id}").into())
     }
 
     #[cfg(feature = "defi")]
     #[must_use]
-    pub fn get_defi_pool_swaps_topic(&mut self, address: Address) -> MStr<Topic> {
+    pub fn get_defi_pool_swaps_topic(&mut self, instrument_id: InstrumentId) -> MStr<Topic> {
         *self
             .defi_pool_swap_topics
-            .entry(address)
-            .or_insert_with(|| format!("data.defi.pool_swaps.{address}").into())
+            .entry(instrument_id)
+            .or_insert_with(|| format!("data.defi.pool_swaps.{instrument_id}").into())
     }
 
     #[cfg(feature = "defi")]
     #[must_use]
-    pub fn get_defi_pool_liquidity_topic(&mut self, address: Address) -> MStr<Topic> {
+    pub fn get_defi_pool_liquidity_topic(&mut self, instrument_id: InstrumentId) -> MStr<Topic> {
         *self
             .defi_pool_liquidity_topics
-            .entry(address)
-            .or_insert_with(|| format!("data.defi.pool_liquidity.{address}").into())
+            .entry(instrument_id)
+            .or_insert_with(|| format!("data.defi.pool_liquidity.{instrument_id}").into())
     }
 }
 

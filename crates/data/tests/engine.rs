@@ -17,6 +17,7 @@ mod common;
 
 use std::{any::Any, cell::RefCell, num::NonZeroUsize, rc::Rc, sync::Arc};
 
+use alloy_primitives::Address;
 use common::mocks::MockDataClient;
 #[cfg(feature = "defi")]
 use nautilus_common::messages::defi::{
@@ -52,22 +53,20 @@ use nautilus_model::{
         prices::{IndexPriceUpdate, MarkPriceUpdate},
         stubs::{stub_delta, stub_deltas, stub_depth10},
     },
+    defi::{AmmType, Dex, chain::chains},
     enums::{BookType, PriceType},
-    identifiers::{ClientId, TraderId, Venue},
+    identifiers::{ClientId, InstrumentId, TraderId, Venue},
     instruments::{CurrencyPair, Instrument, InstrumentAny, stubs::audusd_sim},
     types::Price,
 };
-use rstest::*;
 #[cfg(feature = "defi")]
-use {
-    alloy_primitives::Address,
-    nautilus_model::{
-        defi::{Block, Blockchain, DefiData, PoolSwap},
-        defi::{Pool, Token},
-        enums::OrderSide,
-        types::Quantity,
-    },
+use nautilus_model::{
+    defi::{Block, Blockchain, DefiData, PoolSwap},
+    defi::{Pool, Token},
+    enums::OrderSide,
+    types::Quantity,
 };
+use rstest::*;
 
 #[fixture]
 fn client_id() -> ClientId {
@@ -1550,9 +1549,10 @@ fn test_execute_subscribe_pool_swaps(
         &mut data_engine,
     );
 
-    let address = Address::from([0x12; 20]);
+    let instrument_id = InstrumentId::from("WETH/USDT-3000.UniswapV3:Arbitrum");
+
     let sub_cmd = DataCommand::DefiSubscribe(DefiSubscribeCommand::PoolSwaps(SubscribePoolSwaps {
-        address,
+        instrument_id,
         client_id: Some(client_id),
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
@@ -1560,14 +1560,14 @@ fn test_execute_subscribe_pool_swaps(
     }));
     data_engine.execute(&sub_cmd);
 
-    assert!(data_engine.subscribed_pool_swaps().contains(&address));
+    assert!(data_engine.subscribed_pool_swaps().contains(&instrument_id));
     {
         assert_eq!(recorder.borrow().as_slice(), &[sub_cmd.clone()]);
     }
 
     let unsub_cmd =
         DataCommand::DefiUnsubscribe(DefiUnsubscribeCommand::PoolSwaps(UnsubscribePoolSwaps {
-            address,
+            instrument_id,
             client_id: Some(client_id),
             command_id: UUID4::new(),
             ts_init: UnixNanos::default(),
@@ -1575,7 +1575,7 @@ fn test_execute_subscribe_pool_swaps(
         }));
     data_engine.execute(&unsub_cmd);
 
-    assert!(!data_engine.subscribed_pool_swaps().contains(&address));
+    assert!(!data_engine.subscribed_pool_swaps().contains(&instrument_id));
     assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
 }
 
@@ -1623,23 +1623,8 @@ fn test_process_block(data_engine: Rc<RefCell<DataEngine>>, data_client: DataCli
 #[cfg(feature = "defi")]
 #[rstest]
 fn test_process_pool_swap(data_engine: Rc<RefCell<DataEngine>>, data_client: DataClientAdapter) {
-    use nautilus_model::defi::{AmmType, Dex, chain::chains};
-
     let client_id = data_client.client_id;
     data_engine.borrow_mut().register_client(data_client, None);
-
-    let address = Address::from([0x12; 20]);
-    let sub = DefiSubscribeCommand::PoolSwaps(SubscribePoolSwaps {
-        address,
-        client_id: Some(client_id),
-        command_id: UUID4::new(),
-        ts_init: UnixNanos::default(),
-        params: None,
-    });
-    let cmd = DataCommand::DefiSubscribe(sub);
-
-    let endpoint = MessagingSwitchboard::data_engine_execute();
-    msgbus::send_any(endpoint, &cmd as &dyn Any);
 
     // Create a pool swap
     let chain = Arc::new(chains::ETHEREUM.clone());
@@ -1670,7 +1655,7 @@ fn test_process_pool_swap(data_engine: Rc<RefCell<DataEngine>>, data_client: Dat
     let pool = Pool::new(
         chain.clone(),
         dex.clone(),
-        address,
+        Address::from([0x12; 20]),
         0u64,
         token0,
         token1,
@@ -1679,23 +1664,38 @@ fn test_process_pool_swap(data_engine: Rc<RefCell<DataEngine>>, data_client: Dat
         UnixNanos::from(1),
     );
 
+    let instrument_id = pool.instrument_id;
+
     let swap = PoolSwap::new(
         chain,
         Arc::new(dex),
-        Arc::new(pool),
+        pool.instrument_id,
+        pool.address,
         1000u64,
         "0x123".to_string(),
         0,
         0,
         UnixNanos::from(1),
-        address,
+        Address::from([0x12; 20]),
         OrderSide::Buy,
         Quantity::from("1000"),
         Price::from("500"),
     );
 
+    let sub = DefiSubscribeCommand::PoolSwaps(SubscribePoolSwaps {
+        instrument_id,
+        client_id: Some(client_id),
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        params: None,
+    });
+    let cmd = DataCommand::DefiSubscribe(sub);
+
+    let endpoint = MessagingSwitchboard::data_engine_execute();
+    msgbus::send_any(endpoint, &cmd as &dyn Any);
+
     let handler = get_message_saving_handler::<PoolSwap>(None);
-    let topic = switchboard::get_defi_pool_swaps_topic(address);
+    let topic = switchboard::get_defi_pool_swaps_topic(instrument_id);
     msgbus::subscribe_topic(topic, handler.clone(), None);
 
     let mut data_engine = data_engine.borrow_mut();
