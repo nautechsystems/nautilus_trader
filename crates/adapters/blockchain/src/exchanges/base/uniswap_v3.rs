@@ -29,10 +29,10 @@ pub static UNISWAP_V3: LazyLock<DexExtended> = LazyLock::new(|| {
         "Uniswap V3",
         "0x33128a8fC17869897dcE68Ed026d694621f6FDfD",
         AmmType::CLAMM,
-        "",
-        "",
-        "",
-        "",
+        "PoolCreated(address,address,uint24,int24,address)",
+        "Swap(address,address,int256,int256,uint160,uint128,int24)",
+        "Mint(address,address,int24,int24,uint128,uint256,uint256)",
+        "Burn(address,int24,int24,uint128,uint256,uint256)",
     );
     DexExtended::new(dex)
 });

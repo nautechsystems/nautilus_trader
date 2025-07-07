@@ -15,6 +15,8 @@
 
 use std::collections::HashMap;
 
+use alloy::primitives::Address;
+
 use crate::exchanges::extended::DexExtended;
 
 mod camelot_v3;
@@ -63,4 +65,22 @@ pub fn dex_map() -> HashMap<&'static str, &'static DexExtended> {
     map.insert("uniswap_v3", &*UNISWAP_V3);
     map.insert("uniswap_v4", &*UNISWAP_V4);
     map
+}
+
+/// Returns the token symbol for a given Arbitrum token address.
+/// Falls back to address-based naming for unknown tokens.
+#[must_use]
+pub fn get_token_symbol(token_address: Address) -> String {
+    match token_address.to_string().to_lowercase().as_str() {
+        "0x82af49447d8a07e3bd95bd0d56f35241523fbab1" => "WETH".to_string(),
+        "0xaf88d065e77c8cc2239327c5edb3a432268e5831" => "USDC".to_string(),
+        "0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9" => "USDT".to_string(),
+        "0xda10009cbd5d07dd0cecc66161fc93d7c9000da1" => "DAI".to_string(),
+        "0x2f2a2543b76a4166549f7aab2e75bef0aefc5b0f" => "WBTC".to_string(),
+        "0xff970a61a04b1ca14834a43f5de4533ebddb5cc8" => "USDC.e".to_string(),
+        "0x912ce59144191c1204e64559fe8253a0e49e6548" => "ARB".to_string(),
+        "0xf97f4df75117a78c1a5a0dbb814af92458539fb4" => "LINK".to_string(),
+        "0xfa7f8980b0f1e64a2062791cc3b0871572f1f7f0" => "UNI".to_string(),
+        _ => format!("TOKEN_{}", &token_address.to_string()[2..8].to_uppercase()),
+    }
 }

@@ -15,6 +15,8 @@
 
 use std::collections::HashMap;
 
+use alloy::primitives::Address;
+
 use crate::exchanges::extended::DexExtended;
 
 mod aerodrome_slipstream;
@@ -75,4 +77,20 @@ pub fn dex_map() -> HashMap<&'static str, &'static DexExtended> {
     map.insert("basex", &*BASEX);
     map.insert("baseswap_v2", &*BASESWAP_V2);
     map
+}
+
+/// Returns the token symbol for a given Base token address.
+/// Falls back to address-based naming for unknown tokens.
+#[must_use]
+pub fn get_token_symbol(token_address: Address) -> String {
+    match token_address.to_string().to_lowercase().as_str() {
+        "0x4200000000000000000000000000000000000006" => "WETH".to_string(),
+        "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913" => "USDC".to_string(),
+        "0xd9aaec86b65d86f6a7b5b1b0c42ffa531710b6ca" => "USDbC".to_string(),
+        "0x50c5725949a6f0c72e6c4a641f24049a917db0cb" => "DAI".to_string(),
+        "0xc1cba3fcea344f92d9239c08c0568f6f2f0ee452" => "cbETH".to_string(),
+        "0x2ae3f1ec7f1f5012cfeab0185bfc7aa3cf0dec22" => "cbBTC".to_string(),
+        "0x940181a94a35a4569e4529a3cdfb74e38fd98631" => "AERO".to_string(),
+        _ => format!("TOKEN_{}", &token_address.to_string()[2..8].to_uppercase()),
+    }
 }

@@ -17,19 +17,20 @@ use std::{collections::BTreeSet, sync::Arc};
 
 use ahash::AHashMap;
 use alloy::primitives::{Address, keccak256};
-use futures_util::Stream;
+use futures_util::{Stream, StreamExt};
 use hypersync_client::{
     net_types::{BlockSelection, FieldSelection, Query},
     simple_types::Log,
 };
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    defi::{Block, SharedChain, Token},
+    defi::{Block, Blockchain, SharedChain, Token},
     identifiers::InstrumentId,
 };
 use reqwest::Url;
 
 use crate::{
+    exchanges,
     hypersync::transform::{
         transform_hypersync_block, transform_hypersync_burn_log, transform_hypersync_mint_log,
         transform_hypersync_swap_log,
@@ -90,6 +91,154 @@ impl HyperSyncClient {
 
     pub fn get_pool_address(&self, instrument_id: InstrumentId) -> Option<&Address> {
         self.pool_addresses.get(&instrument_id)
+    }
+
+    /// Populates the pool_addresses index by discovering all pools created on the given chain.
+    ///
+    /// This method queries the Uniswap V3 Factory PoolCreated events to discover all pools
+    /// and map their InstrumentIds to their contract addresses.
+    pub async fn populate_pools_index(&mut self, from_block: u64) -> anyhow::Result<()> {
+        // Get the Uniswap V3 DEX for this chain
+        let uniswap_v3_dex = match self.chain.name {
+            Blockchain::Ethereum => &exchanges::ethereum::UNISWAP_V3,
+            Blockchain::Arbitrum => &exchanges::arbitrum::UNISWAP_V3,
+            Blockchain::Base => &exchanges::base::UNISWAP_V3,
+            _ => {
+                tracing::warn!("No Uniswap V3 DEX found for chain: {}", self.chain.name);
+                return Ok(()); // Return early for unsupported chains
+            }
+        };
+
+        let factory_address = uniswap_v3_dex.dex.factory.as_ref();
+        let pool_created_signature = uniswap_v3_dex.dex.pool_created_event.as_ref();
+
+        tracing::info!(
+            "Discovering pools for {} from factory {} starting at block {}",
+            self.chain.name,
+            factory_address,
+            from_block
+        );
+
+        let event_stream = self
+            .request_contract_events_stream(
+                from_block,
+                None, // Query to latest block
+                factory_address,
+                pool_created_signature,
+                vec![], // No additional topic filters
+            )
+            .await;
+
+        let mut pools_discovered = 0;
+        let mut event_stream = std::pin::pin!(event_stream);
+
+        // Process the pool creation events
+        while let Some(log) = event_stream.next().await {
+            if let Err(e) = self.process_pool_created_log(&log).await {
+                tracing::warn!("Failed to process pool created log: {}", e);
+                continue;
+            }
+            pools_discovered += 1;
+
+            // Log progress every 1000 pools
+            if pools_discovered % 1000 == 0 {
+                tracing::info!("Discovered {} pools so far...", pools_discovered);
+            }
+        }
+
+        tracing::info!(
+            "Pool discovery complete for {}. Total pools discovered: {}",
+            self.chain.name,
+            pools_discovered
+        );
+
+        Ok(())
+    }
+
+    /// Processes a single PoolCreated log entry and adds the pool mapping to our cache.
+    async fn process_pool_created_log(
+        &mut self,
+        log: &hypersync_client::simple_types::Log,
+    ) -> anyhow::Result<()> {
+        // Extract data from the PoolCreated event
+        let data = log
+            .data
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Missing data field in PoolCreated log"))?;
+
+        if data.len() < 64 {
+            anyhow::bail!("Insufficient data length for PoolCreated event");
+        }
+
+        // Parse the event data
+        // Data layout: tickSpacing (int24, 32 bytes) + pool (address, 32 bytes)
+        // We only need the pool address, so skip tick spacing
+        let pool_address_bytes = &data[32..64];
+
+        // Extract pool address (last 20 bytes of the 32-byte word)
+        let pool_address = Address::from_slice(&pool_address_bytes[12..32]);
+
+        // Extract indexed parameters from topics
+        let token0_address = log
+            .topics
+            .get(1)
+            .and_then(|t| t.as_ref())
+            .map(|t| Address::from_slice(&t[12..32]))
+            .ok_or_else(|| anyhow::anyhow!("Missing token0 address in PoolCreated log"))?;
+
+        let token1_address = log
+            .topics
+            .get(2)
+            .and_then(|t| t.as_ref())
+            .map(|t| Address::from_slice(&t[12..32]))
+            .ok_or_else(|| anyhow::anyhow!("Missing token1 address in PoolCreated log"))?;
+
+        let fee_topic = log
+            .topics
+            .get(3)
+            .and_then(|t| t.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("Missing fee in PoolCreated log"))?;
+
+        // Fee is uint24 but stored in 32 bytes (last 3 bytes)
+        let fee = u32::from_be_bytes([0, fee_topic[29], fee_topic[30], fee_topic[31]]);
+
+        // Try to get token symbols from chain-specific token registries
+        let token0_symbol = match self.chain.name {
+            Blockchain::Ethereum => crate::exchanges::ethereum::get_token_symbol(token0_address),
+            Blockchain::Arbitrum => crate::exchanges::arbitrum::get_token_symbol(token0_address),
+            Blockchain::Base => crate::exchanges::base::get_token_symbol(token0_address),
+            _ => format!("TOKEN_{}", &token0_address.to_string()[2..8].to_uppercase()),
+        };
+
+        let token1_symbol = match self.chain.name {
+            Blockchain::Ethereum => crate::exchanges::ethereum::get_token_symbol(token1_address),
+            Blockchain::Arbitrum => crate::exchanges::arbitrum::get_token_symbol(token1_address),
+            Blockchain::Base => crate::exchanges::base::get_token_symbol(token1_address),
+            _ => format!("TOKEN_{}", &token1_address.to_string()[2..8].to_uppercase()),
+        };
+
+        let uniswap_v3_dex = match self.chain.name {
+            Blockchain::Ethereum => &exchanges::ethereum::UNISWAP_V3,
+            Blockchain::Arbitrum => &exchanges::arbitrum::UNISWAP_V3,
+            Blockchain::Base => &exchanges::base::UNISWAP_V3,
+            _ => return Ok(()), // Skip if unsupported chain
+        };
+
+        // Create the instrument ID using the same format as Pool::create_instrument_id
+        let symbol = format!("{}/{}-{}", token0_symbol, token1_symbol, fee);
+        let venue = format!("{}:{}", uniswap_v3_dex.dex.name, self.chain.name);
+        let instrument_id = InstrumentId::from(format!("{}.{}", symbol, venue).as_str());
+
+        self.pool_addresses.insert(instrument_id, pool_address);
+
+        tracing::debug!(
+            "Cached pool mapping: {} -> {} (fee: {})",
+            instrument_id,
+            pool_address,
+            fee
+        );
+
+        Ok(())
     }
 
     /// Creates a stream of contract event logs matching the specified criteria.

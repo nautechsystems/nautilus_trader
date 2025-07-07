@@ -15,6 +15,8 @@
 
 use std::collections::HashMap;
 
+use alloy::primitives::Address;
+
 use crate::exchanges::extended::DexExtended;
 
 pub mod balancer_v2;
@@ -67,4 +69,22 @@ pub fn dex_map() -> HashMap<&'static str, &'static DexExtended> {
     map.insert("balancer_v3", &*BALANCER_V3);
     map.insert("pancakeswap_v3", &*PANCAKESWAP_V3);
     map
+}
+
+/// Returns the token symbol for a given Ethereum token address.
+/// Falls back to address-based naming for unknown tokens.
+#[must_use]
+pub fn get_token_symbol(token_address: Address) -> String {
+    match token_address.to_string().to_lowercase().as_str() {
+        "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2" => "WETH".to_string(),
+        "0xa0b86a33e6441b936662bb6b5d1f8fb0e2b57a5d" => "USDC".to_string(),
+        "0xdac17f958d2ee523a2206206994597c13d831ec7" => "USDT".to_string(),
+        "0x6b175474e89094c44da98b954eedeac495271d0f" => "DAI".to_string(),
+        "0x2260fac5e5542a773aa44fbcfedf7c193bc2c599" => "WBTC".to_string(),
+        "0x1f9840a85d5af5bf1d1762f925bdaddc4201f984" => "UNI".to_string(),
+        "0x514910771af9ca656af840dff83e8264ecf986ca" => "LINK".to_string(),
+        "0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9" => "AAVE".to_string(),
+        "0x4fabb145d64652a948d72533023f6e7a623c7c53" => "BUSD".to_string(),
+        _ => format!("TOKEN_{}", &token_address.to_string()[2..8].to_uppercase()),
+    }
 }
