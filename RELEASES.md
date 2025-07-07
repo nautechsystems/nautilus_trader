@@ -3,6 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added streaming methods for `TardisCSVDataLoader`
 - Added `use_hyphens_in_client_order_ids` config option for `StrategyConfig`
 
 ### Breaking Changes
