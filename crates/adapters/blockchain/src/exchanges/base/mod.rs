@@ -91,6 +91,24 @@ pub fn get_token_symbol(token_address: Address) -> String {
         "0xc1cba3fcea344f92d9239c08c0568f6f2f0ee452" => "cbETH".to_string(),
         "0x2ae3f1ec7f1f5012cfeab0185bfc7aa3cf0dec22" => "cbBTC".to_string(),
         "0x940181a94a35a4569e4529a3cdfb74e38fd98631" => "AERO".to_string(),
-        _ => format!("TOKEN_{}", &token_address.to_string()[2..8].to_uppercase()),
+        _ => format!(
+            "TOKEN_{addr}",
+            addr = &token_address.to_string()[2..8].to_uppercase()
+        ),
+    }
+}
+
+/// Returns the token address for a given Base token symbol.
+#[must_use]
+pub fn get_token_symbol_reverse(symbol: &str) -> anyhow::Result<Address> {
+    match symbol {
+        "WETH" => Ok("0x4200000000000000000000000000000000000006".parse()?),
+        "USDC" => Ok("0x833589fcd6edb6e08f4c7c32d4f71b54bda02913".parse()?),
+        "USDbC" => Ok("0xd9aaec86b65d86f6a7b5b1b0c42ffa531710b6ca".parse()?),
+        "DAI" => Ok("0x50c5725949a6f0c72e6c4a641f24049a917db0cb".parse()?),
+        "cbETH" => Ok("0xc1cba3fcea344f92d9239c08c0568f6f2f0ee452".parse()?),
+        "cbBTC" => Ok("0x2ae3f1ec7f1f5012cfeab0185bfc7aa3cf0dec22".parse()?),
+        "AERO" => Ok("0x940181a94a35a4569e4529a3cdfb74e38fd98631".parse()?),
+        _ => anyhow::bail!("Unknown token symbol for Base: {symbol}"),
     }
 }

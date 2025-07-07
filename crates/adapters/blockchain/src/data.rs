@@ -312,7 +312,7 @@ impl BlockchainDataClient {
 
                 match hypersync_client.get_pool_address(cmd.instrument_id) {
                     Some(address) => {
-                        hypersync_client.subscribe_pool_swaps(cmd.instrument_id, address.clone());
+                        hypersync_client.subscribe_pool_swaps(cmd.instrument_id, *address);
                         tracing::info!("Subscribed to pool swaps for {}", cmd.instrument_id);
                     }
                     None => {
@@ -337,7 +337,7 @@ impl BlockchainDataClient {
                 match hypersync_client.get_pool_address(cmd.instrument_id) {
                     Some(address) => {
                         hypersync_client
-                            .subscribe_pool_liquidity_updates(cmd.instrument_id, address.clone());
+                            .subscribe_pool_liquidity_updates(cmd.instrument_id, *address);
                         tracing::info!(
                             "Subscribed to pool liquidity updates for {}",
                             cmd.instrument_id
@@ -400,7 +400,7 @@ impl BlockchainDataClient {
 
                 match hypersync_client.get_pool_address(cmd.instrument_id) {
                     Some(address) => {
-                        hypersync_client.unsubscribe_pool_liquidity_updates(address.clone());
+                        hypersync_client.unsubscribe_pool_liquidity_updates(*address);
                         tracing::info!(
                             "Unsubscribed to pool liquidity updates for {}",
                             cmd.instrument_id
@@ -417,6 +417,10 @@ impl BlockchainDataClient {
     }
 
     /// Synchronizes blockchain data by fetching and caching all blocks from the starting block to the current chain head.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if block streaming or database operations fail.
     pub async fn sync_blocks(&mut self, from_block: Option<u64>) -> anyhow::Result<()> {
         let from_block = if let Some(b) = from_block {
             b
@@ -449,6 +453,14 @@ impl BlockchainDataClient {
     }
 
     /// Fetches and caches all swap events for a specific liquidity pool within the given block range.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if DEX lookup, event streaming, or database operations fail.
+    ///
+    /// # Panics
+    ///
+    /// Panics if swap event conversion to trade data fails.
     pub async fn sync_pool_swaps(
         &mut self,
         dex_id: &str,
@@ -922,22 +934,34 @@ impl DataClient for BlockchainDataClient {
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
-        tracing::info!("Starting blockchain data client for '{}'", self.chain.name);
+        tracing::info!(
+            "Starting blockchain data client for '{chain_name}'",
+            chain_name = self.chain.name
+        );
         Ok(())
     }
 
     fn stop(&mut self) -> anyhow::Result<()> {
-        tracing::info!("Stopping blockchain data client for '{}'", self.chain.name);
+        tracing::info!(
+            "Stopping blockchain data client for '{chain_name}'",
+            chain_name = self.chain.name
+        );
         Ok(())
     }
 
     fn reset(&mut self) -> anyhow::Result<()> {
-        tracing::info!("Resetting blockchain data client for '{}'", self.chain.name);
+        tracing::info!(
+            "Resetting blockchain data client for '{chain_name}'",
+            chain_name = self.chain.name
+        );
         Ok(())
     }
 
     fn dispose(&mut self) -> anyhow::Result<()> {
-        tracing::info!("Disposing blockchain data client for '{}'", self.chain.name);
+        tracing::info!(
+            "Disposing blockchain data client for '{chain_name}'",
+            chain_name = self.chain.name
+        );
         Ok(())
     }
 

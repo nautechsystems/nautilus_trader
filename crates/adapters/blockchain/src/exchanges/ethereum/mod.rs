@@ -85,6 +85,26 @@ pub fn get_token_symbol(token_address: Address) -> String {
         "0x514910771af9ca656af840dff83e8264ecf986ca" => "LINK".to_string(),
         "0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9" => "AAVE".to_string(),
         "0x4fabb145d64652a948d72533023f6e7a623c7c53" => "BUSD".to_string(),
-        _ => format!("TOKEN_{}", &token_address.to_string()[2..8].to_uppercase()),
+        _ => format!(
+            "TOKEN_{addr}",
+            addr = &token_address.to_string()[2..8].to_uppercase()
+        ),
+    }
+}
+
+/// Returns the token address for a given Ethereum token symbol.
+#[must_use]
+pub fn get_token_symbol_reverse(symbol: &str) -> anyhow::Result<Address> {
+    match symbol {
+        "WETH" => Ok("0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2".parse()?),
+        "USDC" => Ok("0xa0b86a33e6441b936662bb6b5d1f8fb0e2b57a5d".parse()?),
+        "USDT" => Ok("0xdac17f958d2ee523a2206206994597c13d831ec7".parse()?),
+        "DAI" => Ok("0x6b175474e89094c44da98b954eedeac495271d0f".parse()?),
+        "WBTC" => Ok("0x2260fac5e5542a773aa44fbcfedf7c193bc2c599".parse()?),
+        "UNI" => Ok("0x1f9840a85d5af5bf1d1762f925bdaddc4201f984".parse()?),
+        "LINK" => Ok("0x514910771af9ca656af840dff83e8264ecf986ca".parse()?),
+        "AAVE" => Ok("0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9".parse()?),
+        "BUSD" => Ok("0x4fabb145d64652a948d72533023f6e7a623c7c53".parse()?),
+        _ => anyhow::bail!("Unknown token symbol for Ethereum: {symbol}"),
     }
 }
