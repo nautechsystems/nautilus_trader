@@ -781,7 +781,7 @@ pub fn load_depth10_from_snapshot25<P: AsRef<Path>>(
 /// # Panics
 ///
 /// Panics if a record has invalid data or CSV parsing errors.
-pub fn load_quote_ticks<P: AsRef<Path>>(
+pub fn load_quotes<P: AsRef<Path>>(
     filepath: P,
     price_precision: Option<u8>,
     size_precision: Option<u8>,
@@ -863,7 +863,7 @@ pub fn load_quote_ticks<P: AsRef<Path>>(
 /// # Panics
 ///
 /// Panics if a record has invalid trade size or CSV parsing errors.
-pub fn load_trade_ticks<P: AsRef<Path>>(
+pub fn load_trades<P: AsRef<Path>>(
     filepath: P,
     price_precision: Option<u8>,
     size_precision: Option<u8>,
@@ -2090,7 +2090,7 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
         #[case] size_precision: Option<u8>,
     ) {
         let filepath = ensure_data_exists_tardis_huobi_quotes();
-        let quotes = load_quote_ticks(
+        let quotes = load_quotes(
             filepath,
             price_precision,
             size_precision,
@@ -2122,7 +2122,7 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
         #[case] size_precision: Option<u8>,
     ) {
         let filepath = ensure_data_exists_tardis_bitmex_trades();
-        let trades = load_trade_ticks(
+        let trades = load_trades(
             filepath,
             price_precision,
             size_precision,
