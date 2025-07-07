@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::path::PathBuf;
+use std::{fmt::Debug, path::PathBuf};
 
 use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
@@ -24,8 +24,39 @@ use pyo3::prelude::*;
 
 use crate::csv::{
     load_deltas, load_depth10_from_snapshot5, load_depth10_from_snapshot25, load_quote_ticks,
-    load_trade_ticks,
+    load_trade_ticks, stream_deltas, stream_depth10_from_snapshot5, stream_depth10_from_snapshot25,
+    stream_quotes, stream_trades,
 };
+
+macro_rules! impl_tardis_stream_iterator {
+    ($struct_name:ident, $data_type:ty, $type_name:expr) => {
+        #[pyclass(unsendable)]
+        pub struct $struct_name {
+            stream: Box<dyn Iterator<Item = anyhow::Result<Vec<$data_type>>>>,
+        }
+
+        impl Debug for $struct_name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "{} {{ stream: ... }}", $type_name)
+            }
+        }
+
+        #[pymethods]
+        impl $struct_name {
+            fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+                slf
+            }
+
+            fn __next__(&mut self) -> PyResult<Option<Vec<$data_type>>> {
+                match self.stream.next() {
+                    Some(Ok(chunk)) => Ok(Some(chunk)),
+                    Some(Err(e)) => Err(to_pyvalue_err(e)),
+                    None => Ok(None),
+                }
+            }
+        }
+    };
+}
 
 /// # Errors
 ///
@@ -135,4 +166,164 @@ pub fn py_load_tardis_trades(
         limit,
     )
     .map_err(to_pyvalue_err)
+}
+
+impl_tardis_stream_iterator!(TardisStreamIterator, OrderBookDelta, "TardisStreamIterator");
+
+/// Streams order book deltas from a Tardis CSV file.
+///
+/// # Errors
+///
+/// Returns a Python error if loading or parsing the CSV file fails.
+#[pyfunction(name = "stream_tardis_deltas")]
+#[pyo3(signature = (filepath, chunk_size, price_precision=None, size_precision=None, instrument_id=None))]
+pub fn py_stream_tardis_deltas(
+    filepath: PathBuf,
+    chunk_size: usize,
+    price_precision: Option<u8>,
+    size_precision: Option<u8>,
+    instrument_id: Option<InstrumentId>,
+) -> PyResult<TardisStreamIterator> {
+    let stream = stream_deltas(
+        filepath,
+        chunk_size,
+        price_precision,
+        size_precision,
+        instrument_id,
+    )
+    .map_err(to_pyvalue_err)?;
+
+    Ok(TardisStreamIterator {
+        stream: Box::new(stream),
+    })
+}
+
+impl_tardis_stream_iterator!(
+    TardisQuoteStreamIterator,
+    QuoteTick,
+    "TardisQuoteStreamIterator"
+);
+
+/// Streams quote ticks from a Tardis CSV file.
+///
+/// # Errors
+///
+/// Returns a Python error if loading or parsing the CSV file fails.
+#[pyfunction(name = "stream_tardis_quotes")]
+#[pyo3(signature = (filepath, chunk_size, price_precision=None, size_precision=None, instrument_id=None))]
+pub fn py_stream_tardis_quotes(
+    filepath: PathBuf,
+    chunk_size: usize,
+    price_precision: Option<u8>,
+    size_precision: Option<u8>,
+    instrument_id: Option<InstrumentId>,
+) -> PyResult<TardisQuoteStreamIterator> {
+    let stream = stream_quotes(
+        filepath,
+        chunk_size,
+        price_precision,
+        size_precision,
+        instrument_id,
+    )
+    .map_err(to_pyvalue_err)?;
+
+    Ok(TardisQuoteStreamIterator {
+        stream: Box::new(stream),
+    })
+}
+
+impl_tardis_stream_iterator!(
+    TardisTradeStreamIterator,
+    TradeTick,
+    "TardisTradeStreamIterator"
+);
+
+/// Streams trade ticks from a Tardis CSV file.
+///
+/// # Errors
+///
+/// Returns a Python error if loading or parsing the CSV file fails.
+#[pyfunction(name = "stream_tardis_trades")]
+#[pyo3(signature = (filepath, chunk_size, price_precision=None, size_precision=None, instrument_id=None))]
+pub fn py_stream_tardis_trades(
+    filepath: PathBuf,
+    chunk_size: usize,
+    price_precision: Option<u8>,
+    size_precision: Option<u8>,
+    instrument_id: Option<InstrumentId>,
+) -> PyResult<TardisTradeStreamIterator> {
+    let stream = stream_trades(
+        filepath,
+        chunk_size,
+        price_precision,
+        size_precision,
+        instrument_id,
+    )
+    .map_err(to_pyvalue_err)?;
+
+    Ok(TardisTradeStreamIterator {
+        stream: Box::new(stream),
+    })
+}
+
+impl_tardis_stream_iterator!(
+    TardisDepth10StreamIterator,
+    OrderBookDepth10,
+    "TardisDepth10StreamIterator"
+);
+
+/// Streams order book depth10 from a Tardis snapshot5 CSV file.
+///
+/// # Errors
+///
+/// Returns a Python error if loading or parsing the CSV file fails.
+#[pyfunction(name = "stream_tardis_depth10_from_snapshot5")]
+#[pyo3(signature = (filepath, chunk_size, price_precision=None, size_precision=None, instrument_id=None))]
+pub fn py_stream_tardis_depth10_from_snapshot5(
+    filepath: PathBuf,
+    chunk_size: usize,
+    price_precision: Option<u8>,
+    size_precision: Option<u8>,
+    instrument_id: Option<InstrumentId>,
+) -> PyResult<TardisDepth10StreamIterator> {
+    let stream = stream_depth10_from_snapshot5(
+        filepath,
+        chunk_size,
+        price_precision,
+        size_precision,
+        instrument_id,
+    )
+    .map_err(to_pyvalue_err)?;
+
+    Ok(TardisDepth10StreamIterator {
+        stream: Box::new(stream),
+    })
+}
+
+/// Streams order book depth10 from a Tardis snapshot25 CSV file.
+///
+/// # Errors
+///
+/// Returns a Python error if loading or parsing the CSV file fails.
+#[pyfunction(name = "stream_tardis_depth10_from_snapshot25")]
+#[pyo3(signature = (filepath, chunk_size, price_precision=None, size_precision=None, instrument_id=None))]
+pub fn py_stream_tardis_depth10_from_snapshot25(
+    filepath: PathBuf,
+    chunk_size: usize,
+    price_precision: Option<u8>,
+    size_precision: Option<u8>,
+    instrument_id: Option<InstrumentId>,
+) -> PyResult<TardisDepth10StreamIterator> {
+    let stream = stream_depth10_from_snapshot25(
+        filepath,
+        chunk_size,
+        price_precision,
+        size_precision,
+        instrument_id,
+    )
+    .map_err(to_pyvalue_err)?;
+
+    Ok(TardisDepth10StreamIterator {
+        stream: Box::new(stream),
+    })
 }

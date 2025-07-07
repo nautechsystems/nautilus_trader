@@ -275,3 +275,233 @@ class TardisCSVDataLoader:
             return TradeTick.from_pyo3_list(pyo3_trades)
 
         return pyo3_trades
+
+    def stream_deltas(
+        self,
+        filepath: PathLike[str] | str,
+        chunk_size: int,
+        as_legacy_cython: bool = True,
+    ):
+        """
+        Stream order book deltas data from the given `filepath` in chunks.
+
+        CSV file must be Tardis incremental book L2 format.
+
+        Parameters
+        ----------
+        filepath : PathLike[str] | str
+            The path for the CSV data file (must be Tardis deltas format).
+        chunk_size : int
+            The number of records to read per chunk.
+        as_legacy_cython : bool, True
+            If data should be converted to 'legacy Cython' objects.
+
+        Yields
+        ------
+        list[OrderBookDelta] | list[nautilus_pyo3.OrderBookDelta]
+            Each chunk of order book deltas.
+
+        References
+        ----------
+        https://docs.tardis.dev/downloadable-csv-files#incremental_book_l2
+
+        """
+        if isinstance(filepath, Path):
+            filepath = str(filepath.resolve())
+
+        # Get streaming iterator from Rust
+        stream_iter = nautilus_pyo3.stream_tardis_deltas(  # type: ignore [attr-defined]
+            filepath=str(filepath),
+            chunk_size=chunk_size,
+            price_precision=self._price_precision,
+            size_precision=self._size_precision,
+            instrument_id=self._instrument_id,
+        )
+
+        # Yield each chunk from the iterator
+        for chunk in stream_iter:
+            if as_legacy_cython:
+                yield OrderBookDelta.from_pyo3_list(chunk)
+            else:
+                yield chunk
+
+    def stream_quotes(
+        self,
+        filepath: PathLike[str] | str,
+        chunk_size: int,
+        as_legacy_cython: bool = True,
+    ):
+        """
+        Stream quote tick data from the given `filepath` in chunks.
+
+        CSV file must be Tardis quotes format.
+
+        Parameters
+        ----------
+        filepath : PathLike[str] | str
+            The path for the CSV data file (must be Tardis quotes format).
+        chunk_size : int
+            The number of records to read per chunk.
+        as_legacy_cython : bool, True
+            If data should be converted to 'legacy Cython' objects.
+
+        Yields
+        ------
+        list[QuoteTick] | list[nautilus_pyo3.QuoteTick]
+            Each chunk of quote ticks.
+
+        References
+        ----------
+        https://docs.tardis.dev/downloadable-csv-files#quotes
+
+        """
+        if isinstance(filepath, Path):
+            filepath = str(filepath.resolve())
+
+        # Get streaming iterator from Rust
+        stream_iter = nautilus_pyo3.stream_tardis_quotes(  # type: ignore [attr-defined]
+            filepath=str(filepath),
+            chunk_size=chunk_size,
+            price_precision=self._price_precision,
+            size_precision=self._size_precision,
+            instrument_id=self._instrument_id,
+        )
+
+        # Yield each chunk from the iterator
+        for chunk in stream_iter:
+            if as_legacy_cython:
+                yield QuoteTick.from_pyo3_list(chunk)
+            else:
+                yield chunk
+
+    def stream_trades(
+        self,
+        filepath: PathLike[str] | str,
+        chunk_size: int,
+        as_legacy_cython: bool = True,
+    ):
+        """
+        Stream trade tick data from the given `filepath` in chunks.
+
+        CSV file must be Tardis trades format.
+
+        Parameters
+        ----------
+        filepath : PathLike[str] | str
+            The path for the CSV data file (must be Tardis trades format).
+        chunk_size : int
+            The number of records to read per chunk.
+        as_legacy_cython : bool, True
+            If data should be converted to 'legacy Cython' objects.
+
+        Yields
+        ------
+        list[TradeTick] | list[nautilus_pyo3.TradeTick]
+            Each chunk of trade ticks.
+
+        References
+        ----------
+        https://docs.tardis.dev/downloadable-csv-files#trades
+
+        """
+        if isinstance(filepath, Path):
+            filepath = str(filepath.resolve())
+
+        # Get streaming iterator from Rust
+        stream_iter = nautilus_pyo3.stream_tardis_trades(  # type: ignore [attr-defined]
+            filepath=str(filepath),
+            chunk_size=chunk_size,
+            price_precision=self._price_precision,
+            size_precision=self._size_precision,
+            instrument_id=self._instrument_id,
+        )
+
+        # Yield each chunk from the iterator
+        for chunk in stream_iter:
+            if as_legacy_cython:
+                yield TradeTick.from_pyo3_list(chunk)
+            else:
+                yield chunk
+
+    def stream_depth10(
+        self,
+        filepath: PathLike[str] | str,
+        levels: int,
+        chunk_size: int,
+        as_legacy_cython: bool = True,
+    ):
+        """
+        Stream order book depth snapshots from the given `filepath` in chunks.
+
+        CSV file must be Tardis book snapshot 5 or snapshot 25 format.
+
+        - For snapshot 5, levels beyond 5 will be filled with null orders.
+        - For snapshot 25, levels beyond 10 are discarded.
+
+        Parameters
+        ----------
+        filepath : PathLike[str] | str
+            The path for the CSV data file (must be Tardis snapshot format).
+        levels : int
+            The number of levels in the snapshots CSV data (must be either 5 or 25).
+        chunk_size : int
+            The number of records to read per chunk.
+        as_legacy_cython : bool, True
+            If data should be converted to 'legacy Cython' objects.
+
+        Yields
+        ------
+        list[OrderBookDepth10] | list[nautilus_pyo3.OrderBookDepth10]
+            Each chunk of order book depth snapshots.
+
+        Raises
+        ------
+        ValueError
+            If `levels` is not either 5 or 25.
+
+        References
+        ----------
+        https://docs.tardis.dev/downloadable-csv-files#book_snapshot_5
+        https://docs.tardis.dev/downloadable-csv-files#book_snapshot_25
+
+        """
+        if isinstance(filepath, Path):
+            filepath = str(filepath.resolve())
+
+        match levels:
+            case 5:
+                # Get streaming iterator from Rust
+                stream_iter = nautilus_pyo3.stream_tardis_depth10_from_snapshot5(  # type: ignore [attr-defined]
+                    filepath=str(filepath),
+                    chunk_size=chunk_size,
+                    price_precision=self._price_precision,
+                    size_precision=self._size_precision,
+                    instrument_id=self._instrument_id,
+                )
+
+                # Yield each chunk from the iterator
+                for chunk in stream_iter:
+                    if as_legacy_cython:
+                        yield OrderBookDepth10.from_pyo3_list(chunk)
+                    else:
+                        yield chunk
+            case 25:
+                # Get streaming iterator from Rust
+                stream_iter = nautilus_pyo3.stream_tardis_depth10_from_snapshot25(  # type: ignore [attr-defined]
+                    filepath=str(filepath),
+                    chunk_size=chunk_size,
+                    price_precision=self._price_precision,
+                    size_precision=self._size_precision,
+                    instrument_id=self._instrument_id,
+                )
+
+                # Yield each chunk from the iterator
+                for chunk in stream_iter:
+                    if as_legacy_cython:
+                        yield OrderBookDepth10.from_pyo3_list(chunk)
+                    else:
+                        yield chunk
+            case _:
+                raise ValueError(
+                    "invalid `levels`, use either 5 or 25 corresponding to number of levels in the CSV data",
+                )

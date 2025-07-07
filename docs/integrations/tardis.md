@@ -6,7 +6,7 @@ trades, open interest, funding rates, options chains and liquidations data for l
 NautilusTrader provides an integration with the Tardis API and data formats, enabling seamless access.
 The capabilities of this adapter include:
 
-- `TardisCSVDataLoader`: Reads Tardis-format CSV files and converts them into Nautilus data.
+- `TardisCSVDataLoader`: Reads Tardis-format CSV files and converts them into Nautilus data, with support for both bulk loading and memory-efficient streaming.
 - `TardisMachineClient`: Supports live streaming and historical replay of data from the Tardis Machine WebSocket server - converting messages into Nautilus data.
 - `TardisHttpClient`: Requests instrument definition metadata from the Tardis HTTP API, parsing it into Nautilus instrument definitions.
 - `TardisDataClient`: Provides a live data client for subscribing to data streams from a Tardis Machine WebSocket server.
@@ -358,6 +358,139 @@ async fn main() {
         limit,
     )
     .unwrap();
+}
+```
+
+## Streaming Tardis CSV Data
+
+For memory-efficient processing of large CSV files, the Tardis integration provides streaming capabilities that load and process data in configurable chunks rather than loading entire files into memory at once. This is particularly useful for processing multi-gigabyte CSV files without exhausting system memory.
+
+The streaming functionality is available for all supported Tardis data types:
+
+- Order book deltas (`stream_deltas`).
+- Quote ticks (`stream_quotes`).
+- Trade ticks (`stream_trades`).
+- Order book depth snapshots (`stream_depth10`).
+
+### Streaming CSV Data in Python
+
+The `TardisCSVDataLoader` provides streaming methods that yield chunks of data as iterators. Each method accepts a `chunk_size` parameter that controls how many records are read from the CSV file per chunk:
+
+```python
+from nautilus_trader.adapters.tardis import TardisCSVDataLoader
+from nautilus_trader.model import InstrumentId
+
+instrument_id = InstrumentId.from_str("BTC-PERPETUAL.DERIBIT")
+loader = TardisCSVDataLoader(
+    price_precision=1,
+    size_precision=0,
+    instrument_id=instrument_id,
+)
+
+filepath = Path("large_trades_file.csv")
+chunk_size = 10_000  # Process 10,000 records per chunk
+
+# Stream trade ticks in chunks
+for chunk in loader.stream_trades(filepath, chunk_size):
+    print(f"Processing chunk with {len(chunk)} trades")
+    # Process each chunk - only this chunk is in memory
+    for trade in chunk:
+        # Your processing logic here
+        pass
+```
+
+### Streaming Order Book Data
+
+For order book data, streaming is available for both deltas and depth snapshots:
+
+```python
+# Stream order book deltas
+for chunk in loader.stream_deltas(filepath, chunk_size=5_000):
+    print(f"Processing {len(chunk)} deltas")
+    # Process delta chunk
+
+# Stream depth10 snapshots (specify levels: 5 or 25)
+for chunk in loader.stream_depth10(filepath, levels=5, chunk_size=1_000):
+    print(f"Processing {len(chunk)} depth snapshots")
+    # Process depth chunk
+```
+
+### Streaming Quote Data
+
+Quote data can be streamed similarly:
+
+```python
+# Stream quote ticks
+for chunk in loader.stream_quotes(filepath, chunk_size=8_000):
+    print(f"Processing {len(chunk)} quotes")
+    # Process quote chunk
+```
+
+### Memory Efficiency Benefits
+
+The streaming approach provides significant memory efficiency advantages:
+
+- **Controlled Memory Usage**: Only one chunk is loaded in memory at a time.
+- **Scalable Processing**: Can process files larger than available RAM.
+- **Configurable Chunk Sizes**: Tune `chunk_size` based on your system's memory and performance requirements.
+- **Dynamic Precision Inference**: Precision is still inferred correctly across chunks.
+
+:::warning
+When using streaming with precision inference (not providing explicit precisions), the inferred precision may differ from bulk loading the entire file. This is because precision inference works within chunk boundaries, and different chunks may contain values with different precision requirements. For deterministic precision behavior, provide explicit `price_precision` and `size_precision` parameters when calling streaming methods.
+:::
+
+### Choosing Chunk Size
+
+The optimal `chunk_size` depends on several factors:
+
+- **Available Memory**: Larger chunks use more memory but may have better performance.
+- **Processing Complexity**: Complex processing per record may benefit from smaller chunks.
+- **I/O Patterns**: Larger chunks reduce I/O overhead but increase memory usage.
+
+**Recommended starting values:**
+
+- For simple processing: 10,000 - 50,000 records per chunk.
+- For complex processing: 1,000 - 10,000 records per chunk.
+- For memory-constrained environments: 500 - 5,000 records per chunk.
+
+### Streaming CSV Data in Rust
+
+The underlying streaming functionality is implemented in Rust and can be used directly:
+
+```rust
+use std::path::Path;
+use nautilus_adapters::tardis::csv::{stream_trades, stream_deltas};
+use nautilus_model::identifiers::InstrumentId;
+
+#[tokio::main]
+async fn main() {
+    let filepath = Path::new("large_trades_file.csv");
+    let chunk_size = 10_000;
+    let price_precision = Some(1);
+    let size_precision = Some(0);
+    let instrument_id = Some(InstrumentId::from("BTC-PERPETUAL.DERIBIT"));
+
+    // Stream trades in chunks
+    let stream = stream_trades(
+        filepath,
+        chunk_size,
+        price_precision,
+        size_precision,
+        instrument_id,
+    ).unwrap();
+
+    for chunk_result in stream {
+        match chunk_result {
+            Ok(chunk) => {
+                println!("Processing chunk with {} trades", chunk.len());
+                // Process chunk
+            }
+            Err(e) => {
+                eprintln!("Error processing chunk: {}", e);
+                break;
+            }
+        }
+    }
 }
 ```
 
