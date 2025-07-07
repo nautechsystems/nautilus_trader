@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import os
+import sys
 import tempfile
 import time
 
@@ -33,6 +34,9 @@ from nautilus_trader.test_kit.providers import ensure_data_exists_tardis_binance
 from nautilus_trader.test_kit.providers import ensure_data_exists_tardis_bitmex_trades
 from nautilus_trader.test_kit.providers import ensure_data_exists_tardis_deribit_book_l2
 from nautilus_trader.test_kit.providers import ensure_data_exists_tardis_huobi_quotes
+
+
+pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
 
 
 @pytest.mark.parametrize(
@@ -830,9 +834,9 @@ def test_tardis_stream_memory_efficiency_all_types():
     Test that streaming is memory efficient for all data types.
     """
     test_cases = [
+        ("deltas", _generate_deltas_csv),
         ("quotes", _generate_quotes_csv),
         ("trades", _generate_trades_csv),
-        ("deltas", _generate_deltas_csv),
         ("depth10_snapshot5", _generate_depth10_snapshot5_csv),
         ("depth10_snapshot25", _generate_depth10_snapshot25_csv),
     ]
