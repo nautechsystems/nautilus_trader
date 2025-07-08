@@ -31,6 +31,8 @@
 pub mod book;
 pub mod config;
 mod handlers;
+#[cfg(feature = "defi")]
+pub mod pool;
 
 use std::{
     any::Any,
@@ -86,6 +88,8 @@ use nautilus_model::{
 use nautilus_persistence::backend::catalog::ParquetDataCatalog;
 use ustr::Ustr;
 
+#[cfg(feature = "defi")]
+use crate::engine::pool::PoolUpdater;
 use crate::{
     aggregation::{
         BarAggregator, TickBarAggregator, TimeBarAggregator, ValueBarAggregator,
@@ -114,6 +118,8 @@ pub struct DataEngine {
     buffered_deltas_map: AHashMap<InstrumentId, OrderBookDeltas>,
     msgbus_priority: u8,
     config: DataEngineConfig,
+    #[cfg(feature = "defi")]
+    pool_updaters: AHashMap<InstrumentId, Rc<crate::engine::pool::PoolUpdater>>,
 }
 
 impl DataEngine {
@@ -151,6 +157,8 @@ impl DataEngine {
             buffered_deltas_map: AHashMap::new(),
             msgbus_priority: 10, // High-priority for built-in component
             config,
+            #[cfg(feature = "defi")]
+            pool_updaters: AHashMap::new(),
         }
     }
 
@@ -556,6 +564,15 @@ impl DataEngine {
             return Ok(());
         }
 
+        match cmd {
+            DefiSubscribeCommand::Pool(cmd) => self.setup_pool_updater(&cmd.instrument_id),
+            DefiSubscribeCommand::PoolSwaps(cmd) => self.setup_pool_updater(&cmd.instrument_id),
+            DefiSubscribeCommand::PoolLiquidityUpdates(cmd) => {
+                self.setup_pool_updater(&cmd.instrument_id)
+            }
+            _ => {}
+        }
+
         // Forward command to client
         if let Some(client) = self.get_client(cmd.client_id(), cmd.venue()) {
             client.execute_defi_subscribe(cmd);
@@ -712,6 +729,10 @@ impl DataEngine {
                 msgbus::publish(topic, &block as &dyn Any);
             }
             DefiData::Pool(pool) => {
+                if let Err(err) = self.cache.borrow_mut().add_pool(pool.clone()) {
+                    log::error!("Failed to add Pool to cache: {err}");
+                }
+
                 let topic = switchboard::get_defi_pool_topic(pool.instrument_id);
                 msgbus::publish(topic, &pool as &dyn Any);
             }
@@ -1207,6 +1228,38 @@ impl DataEngine {
         }
 
         Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn setup_pool_updater(&mut self, instrument_id: &InstrumentId) {
+        if self.pool_updaters.contains_key(instrument_id) {
+            return;
+        }
+
+        let updater = Rc::new(PoolUpdater::new(instrument_id, self.cache.clone()));
+        let handler = ShareableMessageHandler(updater.clone());
+
+        // Subscribe to pool swaps and liquidity updates
+        let swap_topic = switchboard::get_defi_pool_swaps_topic(*instrument_id);
+        if !msgbus::is_subscribed(swap_topic.as_str(), handler.clone()) {
+            msgbus::subscribe(
+                swap_topic.into(),
+                handler.clone(),
+                Some(self.msgbus_priority),
+            );
+        }
+
+        let liquidity_topic = switchboard::get_defi_liquidity_topic(*instrument_id);
+        if !msgbus::is_subscribed(liquidity_topic.as_str(), handler.clone()) {
+            msgbus::subscribe(
+                liquidity_topic.into(),
+                handler.clone(),
+                Some(self.msgbus_priority),
+            );
+        }
+
+        self.pool_updaters.insert(*instrument_id, updater);
+        log::debug!("Created PoolUpdater for instrument ID {instrument_id}");
     }
 
     fn create_bar_aggregator(
