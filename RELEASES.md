@@ -12,8 +12,10 @@ None
 
 ### Internal Improvements
 - Refined Rust catalog path handling (#2743), thanks @faysou
+- Upgraded `datafusion` crate to v48.0.1
 
 ### Fixes
+- Fixed Tardis Machine replay processing and Parquet file writing
 - Fixed balance calculations on order fill to allow operating at near account balance capacity (#2752), thanks @petioptrv
 - Fixed time range end in some databento request functions (#2755), thanks @faysou
 
