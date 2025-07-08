@@ -13,5 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod cache;
-pub mod pg;
+use pyo3::prelude::*;
+
+use crate::sql::pg::PostgresConnectOptions;
+
+#[pymethods]
+impl PostgresConnectOptions {
+    /// Creates a new `PostgresConnectOptions` instance.
+    #[new]
+    #[pyo3(signature = (host, port, user, password, database))]
+    const fn py_new(host: String, port: u16, user: String, password: String, database: String) -> Self {
+        Self::new(host, port, user, password, database)
+    }
+}

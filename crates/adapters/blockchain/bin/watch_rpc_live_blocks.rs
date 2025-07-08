@@ -87,6 +87,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(wss_rpc_url),
         false, // Don't use hypersync for live data
         None,  // from_block
+        None,  // postgres_cache_database_config
     );
 
     let mut data_client = BlockchainDataClient::new(blockchain_config);

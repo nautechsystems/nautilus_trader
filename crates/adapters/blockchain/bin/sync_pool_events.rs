@@ -24,10 +24,10 @@ use nautilus_common::logging::{
 };
 use nautilus_core::{UUID4, env::get_env_var};
 use nautilus_data::DataClient;
+use nautilus_infrastructure::sql::pg::PostgresConnectOptions;
 use nautilus_live::runner::AsyncRunner;
 use nautilus_model::{defi::chain::chains, identifiers::TraderId};
 use tokio::sync::Notify;
-
 // Run with `cargo run -p nautilus-blockchain --bin sync_pool_events --features hypersync`
 
 #[tokio::main]
@@ -74,10 +74,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None,    // WSS RPC URL
         true,    // Use hypersync for live data
         from_block,
+        Some(PostgresConnectOptions::default()),
     );
 
     let mut data_client = BlockchainDataClient::new(blockchain_config);
-    data_client.initialize_cache_database(None).await;
 
     let univ3 = exchanges::ethereum::UNISWAP_V3.clone();
     let dex_id = univ3.id();

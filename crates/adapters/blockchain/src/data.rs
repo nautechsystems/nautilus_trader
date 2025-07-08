@@ -159,15 +159,14 @@ impl BlockchainDataClient {
     /// Initializes the database connection for the blockchain cache.
     pub async fn initialize_cache_database(
         &mut self,
-        pg_connect_options: Option<PostgresConnectOptions>,
+        pg_connect_options: PostgresConnectOptions
     ) {
-        let pg_connect_options = pg_connect_options.unwrap_or_default();
         tracing::info!(
             "Initializing blockchain cache on database '{}'",
             pg_connect_options.database
         );
         self.cache
-            .initialize_database(pg_connect_options.into())
+            .initialize_database(pg_connect_options.clone().into())
             .await;
     }
 
@@ -970,6 +969,10 @@ impl DataClient for BlockchainDataClient {
             "Connecting blockchain data client for '{}'",
             self.chain.name
         );
+        
+        if let Some(pg_connect_options) = self.config.postgres_cache_database_config.clone(){
+            self.initialize_cache_database(pg_connect_options).await;
+        }
 
         if let Some(ref mut rpc_client) = self.rpc_client {
             rpc_client.connect().await?;

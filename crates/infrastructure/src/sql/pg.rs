@@ -17,6 +17,10 @@ use derive_builder::Builder;
 use sqlx::{ConnectOptions, PgPool, postgres::PgConnectOptions};
 
 #[derive(Debug, Clone, Builder)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.infrastructure")
+)]
 #[builder(default)]
 pub struct PostgresConnectOptions {
     pub host: String,

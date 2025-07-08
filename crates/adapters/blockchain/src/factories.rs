@@ -105,6 +105,7 @@ mod tests {
             None,
             false,
             None,
+            None,
         );
 
         assert_eq!(config.chain.name, Blockchain::Ethereum);
