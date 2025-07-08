@@ -528,14 +528,15 @@ impl DataEngine {
             _ => {} // Do nothing else
         }
 
-        // Check if client declared as external
         if let Some(client_id) = cmd.client_id()
             && self.external_clients.contains(client_id)
         {
+            if self.config.debug {
+                log::debug!("Skipping subscribe command for external client {client_id}: {cmd:?}",);
+            }
             return Ok(());
         }
 
-        // Forward command to client
         if let Some(client) = self.get_client(cmd.client_id(), cmd.venue()) {
             client.execute_subscribe(cmd);
         } else {
@@ -557,10 +558,12 @@ impl DataEngine {
     /// Returns an error if the subscription is invalid (e.g., synthetic instrument for book data),
     /// or if the underlying client operation fails.
     pub fn execute_defi_subscribe(&mut self, cmd: &DefiSubscribeCommand) -> anyhow::Result<()> {
-        // Check if client declared as external
         if let Some(client_id) = cmd.client_id()
             && self.external_clients.contains(client_id)
         {
+            if self.config.debug {
+                log::debug!("Skipping defi subscribe for external client {client_id}: {cmd:?}",);
+            }
             return Ok(());
         }
 
@@ -601,14 +604,17 @@ impl DataEngine {
             _ => {} // Do nothing else
         }
 
-        // Check if client declared as external
         if let Some(client_id) = cmd.client_id()
             && self.external_clients.contains(client_id)
         {
+            if self.config.debug {
+                log::debug!(
+                    "Skipping unsubscribe command for external client {client_id}: {cmd:?}",
+                );
+            }
             return Ok(());
         }
 
-        // Forward command to the client
         if let Some(client) = self.get_client(cmd.client_id(), cmd.venue()) {
             client.execute_unsubscribe(cmd);
         } else {
@@ -629,14 +635,15 @@ impl DataEngine {
     ///
     /// Returns an error if the underlying client operation fails.
     pub fn execute_defi_unsubscribe(&mut self, cmd: &DefiUnsubscribeCommand) -> anyhow::Result<()> {
-        // Check if client declared as external
         if let Some(client_id) = cmd.client_id()
             && self.external_clients.contains(client_id)
         {
+            if self.config.debug {
+                log::debug!("Skipping defi unsubscribe for external client {client_id}: {cmd:?}",);
+            }
             return Ok(());
         }
 
-        // Forward command to the client
         if let Some(client) = self.get_client(cmd.client_id(), cmd.venue()) {
             client.execute_defi_unsubscribe(cmd);
         } else {
@@ -661,6 +668,9 @@ impl DataEngine {
         if let Some(cid) = req.client_id()
             && self.external_clients.contains(cid)
         {
+            if self.config.debug {
+                log::debug!("Skipping data request for external client {cid}: {req:?}");
+            }
             return Ok(());
         }
         if let Some(client) = self.get_client(req.client_id(), req.venue()) {

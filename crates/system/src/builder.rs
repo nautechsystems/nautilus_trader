@@ -168,7 +168,7 @@ impl NautilusKernelBuilder {
 
     /// Set the execution engine configuration.
     #[must_use]
-    pub const fn with_exec_engine_config(mut self, config: ExecutionEngineConfig) -> Self {
+    pub fn with_exec_engine_config(mut self, config: ExecutionEngineConfig) -> Self {
         self.exec_engine = Some(config);
         self
     }

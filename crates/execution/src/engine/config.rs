@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_model::identifiers::ClientId;
 use serde::{Deserialize, Serialize};
 
 /// Configuration for `ExecutionEngine` instances.
@@ -36,6 +37,13 @@ pub struct ExecutionEngineConfig {
     /// If None then no additional snapshots will be taken.
     #[serde(default)]
     pub snapshot_positions_interval_secs: Option<f64>,
+    /// The client IDs declared for external stream processing.
+    ///
+    /// The execution engine will not attempt to send trading commands to these
+    /// client IDs, assuming an external process will consume the serialized
+    /// command messages from the bus and handle execution.
+    #[serde(default)]
+    pub external_clients: Option<Vec<ClientId>>,
     /// If debug mode is active (will provide extra debug logging).
     #[serde(default)]
     pub debug: bool,
@@ -53,6 +61,7 @@ impl Default for ExecutionEngineConfig {
             snapshot_orders: false,
             snapshot_positions: false,
             snapshot_positions_interval_secs: None,
+            external_clients: None,
             debug: false,
         }
     }
