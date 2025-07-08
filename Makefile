@@ -10,6 +10,9 @@ V = 0  # 0 / 1 - verbose mode
 Q = $(if $(filter 1,$V),,@) # Quiet mode, suppress command output
 M = $(shell printf "$(BLUE)>$(RESET)") # Message prefix for commands
 
+# Verbose options for specific targets (defaults to true, can be overridden)
+VERBOSE ?= true
+
 # > Colors
 RED    := $(shell tput -Txterm setaf 1)
 GREEN  := $(shell tput -Txterm setaf 2)
@@ -47,7 +50,13 @@ build:  #-- Build the package in release mode
 
 .PHONY: build-debug
 build-debug:  #-- Build the package in debug mode (recommended for development)
+ifeq ($(VERBOSE),true)
+	$(info $(M) Building in debug mode with verbose output...)
 	BUILD_MODE=debug uv run --active --no-sync build.py
+else
+	$(info $(M) Building in debug mode (errors will still be shown)...)
+	BUILD_MODE=debug uv run --active --no-sync build.py 2>&1 | grep -E "(Error|error|ERROR|Failed|failed|FAILED|Warning|warning|WARNING|Build completed|Build time:|Traceback)" || true
+endif
 
 .PHONY: build-wheel
 build-wheel:  #-- Build wheel distribution in release mode
@@ -192,7 +201,13 @@ cargo-test: RUST_BACKTRACE=1
 cargo-test: HIGH_PRECISION=true
 cargo-test: check-nextest-installed
 cargo-test:  #-- Run all Rust tests with ffi,python,high-precision,defi features
-	cargo nextest run --workspace --features "ffi,python,high-precision,defi" --no-fail-fast --cargo-profile nextest
+ifeq ($(VERBOSE),true)
+	$(info $(M) Running Rust tests with verbose output...)
+	cargo nextest run --workspace --features "ffi,python,high-precision,defi" --no-fail-fast --cargo-profile nextest --verbose
+else
+	$(info $(M) Running Rust tests (showing summary and failures only)...)
+	cargo nextest run --workspace --features "ffi,python,high-precision,defi" --no-fail-fast --cargo-profile nextest --status-level fail --final-status-level flaky
+endif
 
 .PHONY: cargo-test-lib
 cargo-test-lib: RUST_BACKTRACE=1
@@ -309,7 +324,13 @@ stop-services:  #-- Stop development services
 
 .PHONY: pytest
 pytest:  #-- Run Python tests with pytest
-	uv run --active --no-sync pytest --new-first --failed-first
+ifeq ($(VERBOSE),true)
+	$(info $(M) Running Python tests with verbose output...)
+	uv run --active --no-sync pytest --new-first --failed-first -v
+else
+	$(info $(M) Running Python tests (showing failures and summary only)...)
+	uv run --active --no-sync pytest --new-first --failed-first --tb=short
+endif
 
 .PHONY: test-performance
 test-performance:  #-- Run performance tests with codspeed benchmarking
@@ -327,7 +348,8 @@ install-cli:  #-- Install Nautilus CLI tool from source
 help:  #-- Show this help message and exit
 	@printf "Nautilus Trader Makefile\n\n"
 	@printf "$(GREEN)Usage:$(RESET) make $(CYAN)<target>$(RESET)\n\n"
-	@printf "$(GRAY)Tips: Use $(CYAN)make <target> V=1$(GRAY) for verbose output$(RESET)\n\n"
+	@printf "$(GRAY)Tips: Use $(CYAN)make <target> V=1$(GRAY) for verbose output$(RESET)\n"
+	@printf "$(GRAY)      Use $(CYAN)make <target> VERBOSE=false$(GRAY) to disable verbose output for build-debug, cargo-test, and pytest$(RESET)\n\n"
 
 	@printf "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣴⣶⡟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n"
 	@printf "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣰⣾⣿⣿⣿⠀⢸⣿⣿⣿⣿⣶⣶⣤⣀⠀⠀⠀⠀⠀\n"
