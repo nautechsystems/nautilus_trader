@@ -682,7 +682,7 @@ impl DataClientAdapter {
         if let Err(e) = match cmd {
             DefiSubscribeCommand::Blocks(cmd) => self.subscribe_blocks(cmd),
             DefiSubscribeCommand::Pool(cmd) => self.subscribe_pool(cmd),
-            DefiSubscribeCommand::PoolSwaps(cmd) => self.subscribe_swaps(cmd),
+            DefiSubscribeCommand::PoolSwaps(cmd) => self.subscribe_pool_swaps(cmd),
             DefiSubscribeCommand::PoolLiquidityUpdates(cmd) => {
                 self.subscribe_pool_liquidity_updates(cmd)
             }
@@ -718,7 +718,7 @@ impl DataClientAdapter {
         if let Err(e) = match cmd {
             DefiUnsubscribeCommand::Blocks(cmd) => self.unsubscribe_blocks(cmd),
             DefiUnsubscribeCommand::Pool(cmd) => self.unsubscribe_pool(cmd),
-            DefiUnsubscribeCommand::PoolSwaps(cmd) => self.unsubscribe_swaps(cmd),
+            DefiUnsubscribeCommand::PoolSwaps(cmd) => self.unsubscribe_pool_swaps(cmd),
             DefiUnsubscribeCommand::PoolLiquidityUpdates(cmd) => {
                 self.unsubscribe_pool_liquidity_updates(cmd)
             }
@@ -1156,7 +1156,7 @@ impl DataClientAdapter {
     /// # Errors
     ///
     /// Returns an error if the underlying client subscribe operation fails.
-    fn subscribe_swaps(&mut self, cmd: &SubscribePoolSwaps) -> anyhow::Result<()> {
+    fn subscribe_pool_swaps(&mut self, cmd: &SubscribePoolSwaps) -> anyhow::Result<()> {
         if !self.subscriptions_pool_swaps.contains(&cmd.instrument_id) {
             self.subscriptions_pool_swaps.insert(cmd.instrument_id);
             self.client.subscribe_pool_swaps(cmd)?;
@@ -1205,7 +1205,7 @@ impl DataClientAdapter {
     /// # Errors
     ///
     /// Returns an error if the underlying client unsubscribe operation fails.
-    fn unsubscribe_swaps(&mut self, cmd: &UnsubscribePoolSwaps) -> anyhow::Result<()> {
+    fn unsubscribe_pool_swaps(&mut self, cmd: &UnsubscribePoolSwaps) -> anyhow::Result<()> {
         if self.subscriptions_pool_swaps.contains(&cmd.instrument_id) {
             self.subscriptions_pool_swaps.remove(&cmd.instrument_id);
             self.client.unsubscribe_pool_swaps(cmd)?;
