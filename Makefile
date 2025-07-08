@@ -207,7 +207,6 @@ check-hack-installed:  #-- Verify cargo-hack is installed
 check-features: check-hack-installed
 	cargo hack check --each-feature
 
-
 #== Rust Testing
 
 .PHONY: cargo-test
@@ -306,11 +305,6 @@ cargo-ci-benches: pyo3-config #-- Run Rust benches for the crates included in th
 	  echo "Running benches for $$crate"; \
 	  cargo bench -p $$crate --profile bench --benches --no-fail-fast; \
 	done
-
-.PHONY: cargo-doc
-cargo-doc: export PYO3_CONFIG_FILE=$(shell pwd)/.pyo3-config.txt
-cargo-doc: pyo3-config  #-- Generate Rust documentation
-	cargo doc
 
 #== Docker
 

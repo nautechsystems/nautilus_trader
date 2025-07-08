@@ -46,11 +46,12 @@ from nautilus_trader.trading.strategy cimport Strategy
 cdef class ExecutionEngine(Component):
     cdef readonly Cache _cache
     cdef readonly ExecutionClient _default_client
-    cdef readonly PositionIdGenerator _pos_id_generator
+    cdef readonly set[ClientId] _external_clients
     cdef readonly dict[ClientId, ExecutionClient] _clients
     cdef readonly dict[Venue, ExecutionClient] _routing_map
     cdef readonly dict[StrategyId, OmsType] _oms_overrides
     cdef readonly dict[InstrumentId, StrategyId] _external_order_claims
+    cdef readonly PositionIdGenerator _pos_id_generator
     cdef readonly str snapshot_positions_timer_name
     cdef list[PositionEvent] _pending_position_events
 
