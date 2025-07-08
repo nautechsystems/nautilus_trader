@@ -361,9 +361,9 @@ install-cli:  #-- Install Nautilus CLI tool from source
 
 #== Miscellaneous
 
+# See scripts/README.md for why this is necessary (prevents PyO3 rebuilds)
 .PHONY: pyo3-config
 pyo3-config:  #-- Create PyO3 config file if it doesn't exist
-	# See scripts/README.md for why this is necessary (prevents PyO3 rebuilds)
 	$Q uv run --no-sync scripts/create-pyo3-config.py
 
 

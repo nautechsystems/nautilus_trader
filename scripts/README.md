@@ -87,10 +87,10 @@ paths and triggers complete rebuilds of all PyO3 modules. This happens because:
 
 The script creates a stable PyO3 configuration file that:
 
-* Uses the Python on the $PATH instead of temporary build environment Python
+- Uses the Python on the $PATH instead of temporary build environment Python
    (unless called from inside the temporary build environment)
-* Provides consistent paths that don't change between builds
-* Finally, this prevents PyO3 from auto-detecting environment changes
+- Provides consistent paths that don't change between builds
+- Finally, this prevents PyO3 from auto-detecting environment changes
 
 The file is not regenerated if it already exists and is identical to what would
 be generated. It would cause a rebuild, if file timestamps were changed.
@@ -115,7 +115,7 @@ environment configuration.
 
 The build system uses this configuration through environment variables:
 
-* `PYO3_CONFIG_FILE`: Points to the generated config file
+- `PYO3_CONFIG_FILE`: Points to the generated config file
 
 In this case, it is not validated, as it is assumed to be created by the
 Make or an user, who is responsible for ensuring its correctness.
