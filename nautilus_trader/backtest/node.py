@@ -401,16 +401,7 @@ class BacktestNode:
                 trade_execution=venue_config.trade_execution,
             )
 
-        # Load instruments from configured catalogs
-        for catalog_config in engine_config.catalogs if engine_config else []:
-            catalog = ParquetDataCatalog(path=catalog_config.path)
-            instruments = catalog.instruments()
-
-            for instrument in instruments or []:
-                if instrument.id not in engine.cache.instrument_ids():
-                    engine.add_instrument(instrument)
-
-        # Load instruments from data configs (if any additional ones are needed)
+        # Add instruments
         for data_config in data_configs:
             if is_nautilus_class(data_config.data_type):
                 catalog = self.load_catalog(data_config)
