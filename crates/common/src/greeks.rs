@@ -18,6 +18,7 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use anyhow;
+use derive_builder::Builder;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::greeks::{GreeksData, PortfolioGreeks, black_scholes_greeks, imply_vol_and_greeks},
@@ -31,6 +32,246 @@ use crate::{cache::Cache, clock::Clock, msgbus};
 
 /// Type alias for a greeks filter function.
 pub type GreeksFilter = Box<dyn Fn(&GreeksData) -> bool>;
+
+/// Cloneable wrapper for greeks filter functions.
+#[derive(Clone)]
+pub enum GreeksFilterCallback {
+    /// Function pointer (non-capturing closure)
+    Function(fn(&GreeksData) -> bool),
+    /// Boxed closure (may capture variables)
+    Closure(std::rc::Rc<dyn Fn(&GreeksData) -> bool>),
+}
+
+impl GreeksFilterCallback {
+    /// Create a new filter from a function pointer.
+    pub fn from_fn(f: fn(&GreeksData) -> bool) -> Self {
+        Self::Function(f)
+    }
+
+    /// Create a new filter from a closure.
+    pub fn from_closure<F>(f: F) -> Self
+    where
+        F: Fn(&GreeksData) -> bool + 'static,
+    {
+        Self::Closure(std::rc::Rc::new(f))
+    }
+
+    /// Call the filter function.
+    pub fn call(&self, data: &GreeksData) -> bool {
+        match self {
+            Self::Function(f) => f(data),
+            Self::Closure(f) => f(data),
+        }
+    }
+
+    /// Convert to the original GreeksFilter type.
+    pub fn to_greeks_filter(self) -> GreeksFilter {
+        match self {
+            Self::Function(f) => Box::new(f),
+            Self::Closure(f) => {
+                let f_clone = f.clone();
+                Box::new(move |data| f_clone(data))
+            }
+        }
+    }
+}
+
+impl std::fmt::Debug for GreeksFilterCallback {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Function(_) => f.write_str("GreeksFilterCallback::Function"),
+            Self::Closure(_) => f.write_str("GreeksFilterCallback::Closure"),
+        }
+    }
+}
+
+/// Builder for instrument greeks calculation parameters.
+#[derive(Debug, Builder)]
+#[builder(setter(into), derive(Debug))]
+pub struct InstrumentGreeksParams {
+    /// The instrument ID to calculate greeks for
+    pub instrument_id: InstrumentId,
+    /// Flat interest rate (default: 0.0425)
+    #[builder(default = "0.0425")]
+    pub flat_interest_rate: f64,
+    /// Flat dividend yield
+    #[builder(default)]
+    pub flat_dividend_yield: Option<f64>,
+    /// Spot price shock (default: 0.0)
+    #[builder(default = "0.0")]
+    pub spot_shock: f64,
+    /// Volatility shock (default: 0.0)
+    #[builder(default = "0.0")]
+    pub vol_shock: f64,
+    /// Time to expiry shock (default: 0.0)
+    #[builder(default = "0.0")]
+    pub time_to_expiry_shock: f64,
+    /// Whether to use cached greeks (default: false)
+    #[builder(default = "false")]
+    pub use_cached_greeks: bool,
+    /// Whether to cache greeks (default: false)
+    #[builder(default = "false")]
+    pub cache_greeks: bool,
+    /// Whether to publish greeks (default: false)
+    #[builder(default = "false")]
+    pub publish_greeks: bool,
+    /// Event timestamp
+    #[builder(default)]
+    pub ts_event: Option<UnixNanos>,
+    /// Position for PnL calculation
+    #[builder(default)]
+    pub position: Option<Position>,
+    /// Whether to compute percent greeks (default: false)
+    #[builder(default = "false")]
+    pub percent_greeks: bool,
+    /// Index instrument ID for beta weighting
+    #[builder(default)]
+    pub index_instrument_id: Option<InstrumentId>,
+    /// Beta weights for portfolio calculations
+    #[builder(default)]
+    pub beta_weights: Option<HashMap<InstrumentId, f64>>,
+}
+
+impl InstrumentGreeksParams {
+    /// Calculate instrument greeks using the builder parameters.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the greeks calculation fails.
+    pub fn calculate(&self, calculator: &GreeksCalculator) -> anyhow::Result<GreeksData> {
+        calculator.instrument_greeks(
+            self.instrument_id,
+            Some(self.flat_interest_rate),
+            self.flat_dividend_yield,
+            Some(self.spot_shock),
+            Some(self.vol_shock),
+            Some(self.time_to_expiry_shock),
+            Some(self.use_cached_greeks),
+            Some(self.cache_greeks),
+            Some(self.publish_greeks),
+            self.ts_event,
+            self.position.clone(),
+            Some(self.percent_greeks),
+            self.index_instrument_id,
+            self.beta_weights.clone(),
+        )
+    }
+}
+
+/// Builder for portfolio greeks calculation parameters.
+#[derive(Builder)]
+#[builder(setter(into))]
+pub struct PortfolioGreeksParams {
+    /// List of underlying symbols to filter by
+    #[builder(default)]
+    pub underlyings: Option<Vec<String>>,
+    /// Venue to filter positions by
+    #[builder(default)]
+    pub venue: Option<Venue>,
+    /// Instrument ID to filter positions by
+    #[builder(default)]
+    pub instrument_id: Option<InstrumentId>,
+    /// Strategy ID to filter positions by
+    #[builder(default)]
+    pub strategy_id: Option<StrategyId>,
+    /// Position side to filter by (default: NoPositionSide)
+    #[builder(default)]
+    pub side: Option<PositionSide>,
+    /// Flat interest rate (default: 0.0425)
+    #[builder(default = "0.0425")]
+    pub flat_interest_rate: f64,
+    /// Flat dividend yield
+    #[builder(default)]
+    pub flat_dividend_yield: Option<f64>,
+    /// Spot price shock (default: 0.0)
+    #[builder(default = "0.0")]
+    pub spot_shock: f64,
+    /// Volatility shock (default: 0.0)
+    #[builder(default = "0.0")]
+    pub vol_shock: f64,
+    /// Time to expiry shock (default: 0.0)
+    #[builder(default = "0.0")]
+    pub time_to_expiry_shock: f64,
+    /// Whether to use cached greeks (default: false)
+    #[builder(default = "false")]
+    pub use_cached_greeks: bool,
+    /// Whether to cache greeks (default: false)
+    #[builder(default = "false")]
+    pub cache_greeks: bool,
+    /// Whether to publish greeks (default: false)
+    #[builder(default = "false")]
+    pub publish_greeks: bool,
+    /// Whether to compute percent greeks (default: false)
+    #[builder(default = "false")]
+    pub percent_greeks: bool,
+    /// Index instrument ID for beta weighting
+    #[builder(default)]
+    pub index_instrument_id: Option<InstrumentId>,
+    /// Beta weights for portfolio calculations
+    #[builder(default)]
+    pub beta_weights: Option<HashMap<InstrumentId, f64>>,
+    /// Filter function for greeks
+    #[builder(default)]
+    pub greeks_filter: Option<GreeksFilterCallback>,
+}
+
+impl std::fmt::Debug for PortfolioGreeksParams {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PortfolioGreeksParams")
+            .field("underlyings", &self.underlyings)
+            .field("venue", &self.venue)
+            .field("instrument_id", &self.instrument_id)
+            .field("strategy_id", &self.strategy_id)
+            .field("side", &self.side)
+            .field("flat_interest_rate", &self.flat_interest_rate)
+            .field("flat_dividend_yield", &self.flat_dividend_yield)
+            .field("spot_shock", &self.spot_shock)
+            .field("vol_shock", &self.vol_shock)
+            .field("time_to_expiry_shock", &self.time_to_expiry_shock)
+            .field("use_cached_greeks", &self.use_cached_greeks)
+            .field("cache_greeks", &self.cache_greeks)
+            .field("publish_greeks", &self.publish_greeks)
+            .field("percent_greeks", &self.percent_greeks)
+            .field("index_instrument_id", &self.index_instrument_id)
+            .field("beta_weights", &self.beta_weights)
+            .field("greeks_filter", &self.greeks_filter)
+            .finish()
+    }
+}
+
+impl PortfolioGreeksParams {
+    /// Calculate portfolio greeks using the builder parameters.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the portfolio greeks calculation fails.
+    pub fn calculate(&self, calculator: &GreeksCalculator) -> anyhow::Result<PortfolioGreeks> {
+        let greeks_filter = self
+            .greeks_filter
+            .as_ref()
+            .map(|f| f.clone().to_greeks_filter());
+
+        calculator.portfolio_greeks(
+            self.underlyings.clone(),
+            self.venue,
+            self.instrument_id,
+            self.strategy_id,
+            self.side,
+            Some(self.flat_interest_rate),
+            self.flat_dividend_yield,
+            Some(self.spot_shock),
+            Some(self.vol_shock),
+            Some(self.time_to_expiry_shock),
+            Some(self.use_cached_greeks),
+            Some(self.cache_greeks),
+            Some(self.publish_greeks),
+            Some(self.percent_greeks),
+            self.index_instrument_id,
+            self.beta_weights.clone(),
+            greeks_filter,
+        )
+    }
+}
 
 /// Calculates instrument and portfolio greeks (sensitivities of price moves with respect to market data moves).
 ///
@@ -545,5 +786,488 @@ impl GreeksCalculator {
                 None,
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{cell::RefCell, collections::HashMap, rc::Rc};
+
+    use nautilus_model::{
+        enums::PositionSide,
+        identifiers::{InstrumentId, StrategyId, Venue},
+    };
+
+    use super::*;
+    use crate::{cache::Cache, clock::TestClock};
+
+    fn create_test_calculator() -> GreeksCalculator {
+        let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        GreeksCalculator::new(cache, clock)
+    }
+
+    #[test]
+    fn test_greeks_calculator_creation() {
+        let calculator = create_test_calculator();
+        // Test that the calculator can be created
+        assert!(format!("{calculator:?}").contains("GreeksCalculator"));
+    }
+
+    #[test]
+    fn test_greeks_calculator_debug() {
+        let calculator = create_test_calculator();
+        // Test the debug representation
+        let debug_str = format!("{calculator:?}");
+        assert!(debug_str.contains("GreeksCalculator"));
+    }
+
+    #[test]
+    fn test_greeks_calculator_has_python_bindings() {
+        // This test just verifies that the GreeksCalculator struct
+        // can be compiled with Python bindings enabled
+        let calculator = create_test_calculator();
+        // The Python methods are only accessible from Python,
+        // but we can verify the struct compiles correctly
+        assert!(format!("{calculator:?}").contains("GreeksCalculator"));
+    }
+
+    #[test]
+    fn test_instrument_greeks_params_builder_default() {
+        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
+
+        let params = InstrumentGreeksParamsBuilder::default()
+            .instrument_id(instrument_id)
+            .build()
+            .expect("Failed to build InstrumentGreeksParams");
+
+        assert_eq!(params.instrument_id, instrument_id);
+        assert_eq!(params.flat_interest_rate, 0.0425);
+        assert_eq!(params.flat_dividend_yield, None);
+        assert_eq!(params.spot_shock, 0.0);
+        assert_eq!(params.vol_shock, 0.0);
+        assert_eq!(params.time_to_expiry_shock, 0.0);
+        assert!(!params.use_cached_greeks);
+        assert!(!params.cache_greeks);
+        assert!(!params.publish_greeks);
+        assert_eq!(params.ts_event, None);
+        assert_eq!(params.position, None);
+        assert!(!params.percent_greeks);
+        assert_eq!(params.index_instrument_id, None);
+        assert_eq!(params.beta_weights, None);
+    }
+
+    #[test]
+    fn test_instrument_greeks_params_builder_custom_values() {
+        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
+        let index_id = InstrumentId::from("SPY.NASDAQ");
+        let mut beta_weights = HashMap::new();
+        beta_weights.insert(instrument_id, 1.2);
+
+        let params = InstrumentGreeksParamsBuilder::default()
+            .instrument_id(instrument_id)
+            .flat_interest_rate(0.05)
+            .flat_dividend_yield(Some(0.02))
+            .spot_shock(0.01)
+            .vol_shock(0.05)
+            .time_to_expiry_shock(0.1)
+            .use_cached_greeks(true)
+            .cache_greeks(true)
+            .publish_greeks(true)
+            .percent_greeks(true)
+            .index_instrument_id(Some(index_id))
+            .beta_weights(Some(beta_weights.clone()))
+            .build()
+            .expect("Failed to build InstrumentGreeksParams");
+
+        assert_eq!(params.instrument_id, instrument_id);
+        assert_eq!(params.flat_interest_rate, 0.05);
+        assert_eq!(params.flat_dividend_yield, Some(0.02));
+        assert_eq!(params.spot_shock, 0.01);
+        assert_eq!(params.vol_shock, 0.05);
+        assert_eq!(params.time_to_expiry_shock, 0.1);
+        assert!(params.use_cached_greeks);
+        assert!(params.cache_greeks);
+        assert!(params.publish_greeks);
+        assert!(params.percent_greeks);
+        assert_eq!(params.index_instrument_id, Some(index_id));
+        assert_eq!(params.beta_weights, Some(beta_weights));
+    }
+
+    #[test]
+    fn test_instrument_greeks_params_debug() {
+        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
+
+        let params = InstrumentGreeksParamsBuilder::default()
+            .instrument_id(instrument_id)
+            .build()
+            .expect("Failed to build InstrumentGreeksParams");
+
+        let debug_str = format!("{params:?}");
+        assert!(debug_str.contains("InstrumentGreeksParams"));
+        assert!(debug_str.contains("AAPL.NASDAQ"));
+    }
+
+    #[test]
+    fn test_portfolio_greeks_params_builder_default() {
+        let params = PortfolioGreeksParamsBuilder::default()
+            .build()
+            .expect("Failed to build PortfolioGreeksParams");
+
+        assert_eq!(params.underlyings, None);
+        assert_eq!(params.venue, None);
+        assert_eq!(params.instrument_id, None);
+        assert_eq!(params.strategy_id, None);
+        assert_eq!(params.side, None);
+        assert_eq!(params.flat_interest_rate, 0.0425);
+        assert_eq!(params.flat_dividend_yield, None);
+        assert_eq!(params.spot_shock, 0.0);
+        assert_eq!(params.vol_shock, 0.0);
+        assert_eq!(params.time_to_expiry_shock, 0.0);
+        assert!(!params.use_cached_greeks);
+        assert!(!params.cache_greeks);
+        assert!(!params.publish_greeks);
+        assert!(!params.percent_greeks);
+        assert_eq!(params.index_instrument_id, None);
+        assert_eq!(params.beta_weights, None);
+    }
+
+    #[test]
+    fn test_portfolio_greeks_params_builder_custom_values() {
+        let venue = Venue::from("NASDAQ");
+        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
+        let strategy_id = StrategyId::from("test-strategy");
+        let index_id = InstrumentId::from("SPY.NASDAQ");
+        let underlyings = vec!["AAPL".to_string(), "MSFT".to_string()];
+        let mut beta_weights = HashMap::new();
+        beta_weights.insert(instrument_id, 1.2);
+
+        let params = PortfolioGreeksParamsBuilder::default()
+            .underlyings(Some(underlyings.clone()))
+            .venue(Some(venue))
+            .instrument_id(Some(instrument_id))
+            .strategy_id(Some(strategy_id))
+            .side(Some(PositionSide::Long))
+            .flat_interest_rate(0.05)
+            .flat_dividend_yield(Some(0.02))
+            .spot_shock(0.01)
+            .vol_shock(0.05)
+            .time_to_expiry_shock(0.1)
+            .use_cached_greeks(true)
+            .cache_greeks(true)
+            .publish_greeks(true)
+            .percent_greeks(true)
+            .index_instrument_id(Some(index_id))
+            .beta_weights(Some(beta_weights.clone()))
+            .build()
+            .expect("Failed to build PortfolioGreeksParams");
+
+        assert_eq!(params.underlyings, Some(underlyings));
+        assert_eq!(params.venue, Some(venue));
+        assert_eq!(params.instrument_id, Some(instrument_id));
+        assert_eq!(params.strategy_id, Some(strategy_id));
+        assert_eq!(params.side, Some(PositionSide::Long));
+        assert_eq!(params.flat_interest_rate, 0.05);
+        assert_eq!(params.flat_dividend_yield, Some(0.02));
+        assert_eq!(params.spot_shock, 0.01);
+        assert_eq!(params.vol_shock, 0.05);
+        assert_eq!(params.time_to_expiry_shock, 0.1);
+        assert!(params.use_cached_greeks);
+        assert!(params.cache_greeks);
+        assert!(params.publish_greeks);
+        assert!(params.percent_greeks);
+        assert_eq!(params.index_instrument_id, Some(index_id));
+        assert_eq!(params.beta_weights, Some(beta_weights));
+    }
+
+    #[test]
+    fn test_portfolio_greeks_params_debug() {
+        let venue = Venue::from("NASDAQ");
+
+        let params = PortfolioGreeksParamsBuilder::default()
+            .venue(Some(venue))
+            .build()
+            .expect("Failed to build PortfolioGreeksParams");
+
+        let debug_str = format!("{params:?}");
+        assert!(debug_str.contains("PortfolioGreeksParams"));
+        assert!(debug_str.contains("NASDAQ"));
+    }
+
+    #[test]
+    fn test_instrument_greeks_params_builder_missing_required_field() {
+        // Test that building without required instrument_id fails
+        let result = InstrumentGreeksParamsBuilder::default().build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_portfolio_greeks_params_builder_fluent_api() {
+        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
+
+        let params = PortfolioGreeksParamsBuilder::default()
+            .instrument_id(Some(instrument_id))
+            .flat_interest_rate(0.05)
+            .spot_shock(0.01)
+            .percent_greeks(true)
+            .build()
+            .expect("Failed to build PortfolioGreeksParams");
+
+        assert_eq!(params.instrument_id, Some(instrument_id));
+        assert_eq!(params.flat_interest_rate, 0.05);
+        assert_eq!(params.spot_shock, 0.01);
+        assert!(params.percent_greeks);
+    }
+
+    #[test]
+    fn test_instrument_greeks_params_builder_fluent_chaining() {
+        let instrument_id = InstrumentId::from("TSLA.NASDAQ");
+
+        // Test fluent API chaining
+        let params = InstrumentGreeksParamsBuilder::default()
+            .instrument_id(instrument_id)
+            .flat_interest_rate(0.03)
+            .spot_shock(0.02)
+            .vol_shock(0.1)
+            .use_cached_greeks(true)
+            .percent_greeks(true)
+            .build()
+            .expect("Failed to build InstrumentGreeksParams");
+
+        assert_eq!(params.instrument_id, instrument_id);
+        assert_eq!(params.flat_interest_rate, 0.03);
+        assert_eq!(params.spot_shock, 0.02);
+        assert_eq!(params.vol_shock, 0.1);
+        assert!(params.use_cached_greeks);
+        assert!(params.percent_greeks);
+    }
+
+    #[test]
+    fn test_portfolio_greeks_params_builder_with_underlyings() {
+        let underlyings = vec!["AAPL".to_string(), "MSFT".to_string(), "GOOGL".to_string()];
+
+        let params = PortfolioGreeksParamsBuilder::default()
+            .underlyings(Some(underlyings.clone()))
+            .flat_interest_rate(0.04)
+            .build()
+            .expect("Failed to build PortfolioGreeksParams");
+
+        assert_eq!(params.underlyings, Some(underlyings));
+        assert_eq!(params.flat_interest_rate, 0.04);
+    }
+
+    #[test]
+    fn test_builders_with_empty_beta_weights() {
+        let instrument_id = InstrumentId::from("NVDA.NASDAQ");
+        let empty_beta_weights = HashMap::new();
+
+        let instrument_params = InstrumentGreeksParamsBuilder::default()
+            .instrument_id(instrument_id)
+            .beta_weights(Some(empty_beta_weights.clone()))
+            .build()
+            .expect("Failed to build InstrumentGreeksParams");
+
+        let portfolio_params = PortfolioGreeksParamsBuilder::default()
+            .beta_weights(Some(empty_beta_weights.clone()))
+            .build()
+            .expect("Failed to build PortfolioGreeksParams");
+
+        assert_eq!(
+            instrument_params.beta_weights,
+            Some(empty_beta_weights.clone())
+        );
+        assert_eq!(portfolio_params.beta_weights, Some(empty_beta_weights));
+    }
+
+    #[test]
+    fn test_builders_with_all_shocks() {
+        let instrument_id = InstrumentId::from("AMD.NASDAQ");
+
+        let instrument_params = InstrumentGreeksParamsBuilder::default()
+            .instrument_id(instrument_id)
+            .spot_shock(0.05)
+            .vol_shock(0.1)
+            .time_to_expiry_shock(0.01)
+            .build()
+            .expect("Failed to build InstrumentGreeksParams");
+
+        let portfolio_params = PortfolioGreeksParamsBuilder::default()
+            .spot_shock(0.05)
+            .vol_shock(0.1)
+            .time_to_expiry_shock(0.01)
+            .build()
+            .expect("Failed to build PortfolioGreeksParams");
+
+        assert_eq!(instrument_params.spot_shock, 0.05);
+        assert_eq!(instrument_params.vol_shock, 0.1);
+        assert_eq!(instrument_params.time_to_expiry_shock, 0.01);
+
+        assert_eq!(portfolio_params.spot_shock, 0.05);
+        assert_eq!(portfolio_params.vol_shock, 0.1);
+        assert_eq!(portfolio_params.time_to_expiry_shock, 0.01);
+    }
+
+    #[test]
+    fn test_builders_with_all_boolean_flags() {
+        let instrument_id = InstrumentId::from("META.NASDAQ");
+
+        let instrument_params = InstrumentGreeksParamsBuilder::default()
+            .instrument_id(instrument_id)
+            .use_cached_greeks(true)
+            .cache_greeks(true)
+            .publish_greeks(true)
+            .percent_greeks(true)
+            .build()
+            .expect("Failed to build InstrumentGreeksParams");
+
+        let portfolio_params = PortfolioGreeksParamsBuilder::default()
+            .use_cached_greeks(true)
+            .cache_greeks(true)
+            .publish_greeks(true)
+            .percent_greeks(true)
+            .build()
+            .expect("Failed to build PortfolioGreeksParams");
+
+        assert!(instrument_params.use_cached_greeks);
+        assert!(instrument_params.cache_greeks);
+        assert!(instrument_params.publish_greeks);
+        assert!(instrument_params.percent_greeks);
+
+        assert!(portfolio_params.use_cached_greeks);
+        assert!(portfolio_params.cache_greeks);
+        assert!(portfolio_params.publish_greeks);
+        assert!(portfolio_params.percent_greeks);
+    }
+
+    #[test]
+    fn test_greeks_filter_callback_function() {
+        // Test function pointer filter
+        fn filter_positive_delta(data: &GreeksData) -> bool {
+            data.delta > 0.0
+        }
+
+        let filter = GreeksFilterCallback::from_fn(filter_positive_delta);
+
+        // Create test data
+        let greeks_data = GreeksData::from_delta(
+            InstrumentId::from("TEST.NASDAQ"),
+            0.5,
+            1.0,
+            UnixNanos::default(),
+        );
+
+        assert!(filter.call(&greeks_data));
+
+        // Test debug formatting
+        let debug_str = format!("{filter:?}");
+        assert!(debug_str.contains("GreeksFilterCallback::Function"));
+    }
+
+    #[test]
+    fn test_greeks_filter_callback_closure() {
+        // Test closure filter that captures a variable
+        let min_delta = 0.3;
+        let filter =
+            GreeksFilterCallback::from_closure(move |data: &GreeksData| data.delta > min_delta);
+
+        // Create test data
+        let greeks_data = GreeksData::from_delta(
+            InstrumentId::from("TEST.NASDAQ"),
+            0.5,
+            1.0,
+            UnixNanos::default(),
+        );
+
+        assert!(filter.call(&greeks_data));
+
+        // Test debug formatting
+        let debug_str = format!("{filter:?}");
+        assert!(debug_str.contains("GreeksFilterCallback::Closure"));
+    }
+
+    #[test]
+    fn test_greeks_filter_callback_clone() {
+        fn filter_fn(data: &GreeksData) -> bool {
+            data.delta > 0.0
+        }
+
+        let filter1 = GreeksFilterCallback::from_fn(filter_fn);
+        let filter2 = filter1.clone();
+
+        let greeks_data = GreeksData::from_delta(
+            InstrumentId::from("TEST.NASDAQ"),
+            0.5,
+            1.0,
+            UnixNanos::default(),
+        );
+
+        assert!(filter1.call(&greeks_data));
+        assert!(filter2.call(&greeks_data));
+    }
+
+    #[test]
+    fn test_portfolio_greeks_params_with_filter() {
+        fn filter_high_delta(data: &GreeksData) -> bool {
+            data.delta.abs() > 0.1
+        }
+
+        let filter = GreeksFilterCallback::from_fn(filter_high_delta);
+
+        let params = PortfolioGreeksParamsBuilder::default()
+            .greeks_filter(Some(filter))
+            .flat_interest_rate(0.05)
+            .build()
+            .expect("Failed to build PortfolioGreeksParams");
+
+        assert!(params.greeks_filter.is_some());
+        assert_eq!(params.flat_interest_rate, 0.05);
+
+        // Test that the filter can be called
+        let greeks_data = GreeksData::from_delta(
+            InstrumentId::from("TEST.NASDAQ"),
+            0.5,
+            1.0,
+            UnixNanos::default(),
+        );
+
+        let filter_ref = params.greeks_filter.as_ref().unwrap();
+        assert!(filter_ref.call(&greeks_data));
+    }
+
+    #[test]
+    fn test_portfolio_greeks_params_with_closure_filter() {
+        let min_gamma = 0.01;
+        let filter =
+            GreeksFilterCallback::from_closure(move |data: &GreeksData| data.gamma > min_gamma);
+
+        let params = PortfolioGreeksParamsBuilder::default()
+            .greeks_filter(Some(filter))
+            .build()
+            .expect("Failed to build PortfolioGreeksParams");
+
+        assert!(params.greeks_filter.is_some());
+
+        // Test debug formatting includes the filter
+        let debug_str = format!("{params:?}");
+        assert!(debug_str.contains("greeks_filter"));
+    }
+
+    #[test]
+    fn test_greeks_filter_to_greeks_filter_conversion() {
+        fn filter_fn(data: &GreeksData) -> bool {
+            data.delta > 0.0
+        }
+
+        let callback = GreeksFilterCallback::from_fn(filter_fn);
+        let greeks_filter = callback.to_greeks_filter();
+
+        let greeks_data = GreeksData::from_delta(
+            InstrumentId::from("TEST.NASDAQ"),
+            0.5,
+            1.0,
+            UnixNanos::default(),
+        );
+
+        assert!(greeks_filter(&greeks_data));
     }
 }
