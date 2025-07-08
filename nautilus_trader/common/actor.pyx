@@ -2612,6 +2612,8 @@ cdef class Actor(Component):
         # Handle None values for start by replacing with current UTC time
         if start is None:
             start = self.clock.utc_now()
+            if end is None:
+                end = start
 
         start, end = self._validate_datetime_range(start, end)
 
