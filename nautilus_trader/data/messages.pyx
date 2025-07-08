@@ -2391,7 +2391,7 @@ cdef class DataResponse(Response):
     start : datetime
         The start datetime (UTC) of response time range (inclusive).
     end : datetime
-        The end datetime (UTC) of response time range.
+        The end datetime (UTC) of response time range (inclusive).
     params : dict[str, object], optional
         Additional parameters for the response.
 
