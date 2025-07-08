@@ -47,8 +47,9 @@ class DataEngineConfig(NautilusConfig, frozen=True):
     buffer_deltas : bool, default False
         If order book deltas should be buffered until the F_LAST flag is set for a delta.
     external_clients : list[ClientId], optional
-        The client IDs declared for external stream processing.
-        The data engine will not attempt to send data commands to these client IDs.
+        Client IDs representing external data streams.
+        Commands with these client IDs will be published on the message bus only;
+        the data engine will not attempt to forward them to a local `DataClient`.
     debug : bool, default False
         If debug mode is active (will provide extra debug logging).
 

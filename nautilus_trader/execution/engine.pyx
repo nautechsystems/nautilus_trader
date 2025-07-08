@@ -138,6 +138,7 @@ cdef class ExecutionEngine(Component):
         self._clients: dict[ClientId, ExecutionClient] = {}
         self._routing_map: dict[Venue, ExecutionClient] = {}
         self._default_client: ExecutionClient | None = None
+        self._external_clients: set[ClientId] = set((config.external_clients or []))
         self._oms_overrides: dict[StrategyId, OmsType] = {}
         self._external_order_claims: dict[InstrumentId, StrategyId] = {}
 
@@ -155,6 +156,7 @@ cdef class ExecutionEngine(Component):
         self.snapshot_positions = config.snapshot_positions
         self.snapshot_positions_interval_secs = config.snapshot_positions_interval_secs or 0
         self.snapshot_positions_timer_name = "ExecEngine_SNAPSHOT_POSITIONS"
+
 
         self._log.info(f"{config.snapshot_orders=}", LogColor.BLUE)
         self._log.info(f"{config.snapshot_positions=}", LogColor.BLUE)
@@ -862,6 +864,14 @@ cdef class ExecutionEngine(Component):
         if self.debug:
             self._log.debug(f"{RECV}{CMD} {command}", LogColor.MAGENTA)
         self.command_count += 1
+
+        if command.client_id in self._external_clients:
+            if self.debug:
+                self._log.debug(
+                    f"Skipping execution command for external client {command.client_id}: {command}",
+                    LogColor.MAGENTA,
+                )
+            return
 
         cdef ExecutionClient client = self._clients.get(command.client_id)
         if client is None:

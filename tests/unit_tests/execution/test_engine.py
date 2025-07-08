@@ -179,6 +179,39 @@ class TestExecutionEngine:
             self.exec_client.id,
         ]
 
+    def test_execute_skips_commands_for_external_clients(self):
+        # Arrange
+        ext_client_id = ClientId("EXT_EXEC")
+
+        msgbus = MessageBus(trader_id=self.trader_id, clock=self.clock)
+        cache = Cache(database=MockCacheDatabase())
+
+        engine = ExecutionEngine(
+            msgbus=msgbus,
+            cache=cache,
+            clock=self.clock,
+            config=ExecEngineConfig(external_clients=[ext_client_id], debug=True),
+        )
+
+        order = self.order_factory.market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(1),
+        )
+
+        cmd = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            order=order,
+            position_id=None,
+            client_id=ext_client_id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act / Assert: no error even though no client registered for EXT_EXEC
+        engine.execute(cmd)
+
     def test_register_venue_routing(self) -> None:
         # Arrange
         exec_client = MockExecutionClient(
