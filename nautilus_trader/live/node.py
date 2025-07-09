@@ -16,6 +16,7 @@
 import asyncio
 import signal
 import time
+from collections.abc import Callable
 from datetime import timedelta
 
 from nautilus_trader.cache.base import CacheFacade
@@ -84,6 +85,8 @@ class TradingNode:
         has_msgbus_backing = bool(config.message_bus and config.message_bus.database)
         self.kernel.logger.info(f"{has_cache_backing=}", LogColor.BLUE)
         self.kernel.logger.info(f"{has_msgbus_backing=}", LogColor.BLUE)
+
+        self._stream_processors: list[Callable] = []
 
         # Async tasks
         self._task_streaming: asyncio.Future | None = None
@@ -207,6 +210,18 @@ class TradingNode:
         """
         return self.kernel.logger
 
+    def add_stream_processor(self, callback: Callable) -> None:
+        """
+        Add the given stream processor callback.
+
+        Parameters
+        ----------
+        callback : Callable
+            The callback to add.
+
+        """
+        self._stream_processors.append(callback)
+
     def add_data_client_factory(self, name: str, factory: type[LiveDataClientFactory]) -> None:
         """
         Add the given data client factory to the node.
@@ -293,12 +308,18 @@ class TradingNode:
             The bus message to publish.
 
         """
-        msg = self.kernel.msgbus_serializer.deserialize(bus_msg.payload)
+        try:
+            msg = self.kernel.msgbus_serializer.deserialize(bus_msg.payload)
 
-        if not self.kernel.msgbus.is_streaming_type(type(msg)):
-            return  # Type has not been registered for message streaming
+            for processor in self._stream_processors:
+                processor(msg)
 
-        self.kernel.msgbus.publish(bus_msg.topic, msg, external_pub=False)
+            if not self.kernel.msgbus.is_streaming_type(type(msg)):
+                return  # Type has not been registered for message streaming
+
+            self.kernel.msgbus.publish(bus_msg.topic, msg, external_pub=False)
+        except Exception as e:
+            self.kernel.logger.error(f"Failed to publish bus message: {e}")
 
     async def run_async(self) -> None:
         """
@@ -368,11 +389,6 @@ class TradingNode:
         If save strategy is configured, then strategy states will be saved.
 
         """
-        if self._task_streaming:
-            self.kernel.logger.info("Canceling task 'streaming'")
-            self._task_streaming.cancel()
-            self._task_streaming = None
-
         await self.kernel.stop_async()
 
     def dispose(self) -> None:
@@ -401,6 +417,11 @@ class TradingNode:
                     break
 
             self.kernel.logger.debug("DISPOSING")
+
+            if self._task_streaming:
+                self.kernel.logger.info("Canceling task 'streaming'")
+                self._task_streaming.cancel()
+                self._task_streaming = None
 
             self.kernel.logger.debug(str(self.kernel.data_engine.get_cmd_queue_task()))
             self.kernel.logger.debug(str(self.kernel.data_engine.get_req_queue_task()))

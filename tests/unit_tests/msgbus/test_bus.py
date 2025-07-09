@@ -568,6 +568,7 @@ def test_streaming_type_registration(bus):
 
     # Assert
     assert bus.is_streaming_type(int)
+    assert int in bus.streaming_types()
 
 
 def test_add_listener_receives_byte_messages(bus):

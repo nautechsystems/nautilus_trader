@@ -295,6 +295,7 @@ cdef class MessageBus:
     cpdef list endpoints(self)
     cpdef list topics(self)
     cpdef list subscriptions(self, str pattern=*)
+    cpdef set streaming_types(self)
     cpdef bint has_subscribers(self, str pattern=*)
     cpdef bint is_subscribed(self, str topic, handler)
     cpdef bint is_pending_request(self, UUID4 request_id)
