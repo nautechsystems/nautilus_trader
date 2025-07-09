@@ -26,7 +26,7 @@ use crate::exchanges::extended::DexExtended;
 pub static UNISWAP_V3: LazyLock<DexExtended> = LazyLock::new(|| {
     let dex = Dex::new(
         chains::BASE.clone(),
-        "Uniswap V3",
+        "UniswapV3",
         "0x33128a8fC17869897dcE68Ed026d694621f6FDfD",
         AmmType::CLAMM,
         "PoolCreated(address,address,uint24,int24,address)",

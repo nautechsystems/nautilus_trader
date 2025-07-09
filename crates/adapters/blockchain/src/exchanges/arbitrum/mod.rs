@@ -54,16 +54,16 @@ pub fn all() -> Vec<&'static DexExtended> {
 
 /// Returns a map of Arbitrum DEX name to Dex reference for easy lookup.
 #[must_use]
-pub fn dex_map() -> HashMap<&'static str, &'static DexExtended> {
+pub fn dex_map() -> HashMap<String, &'static DexExtended> {
     let mut map = HashMap::new();
-    map.insert("camelot_v3", &*CAMELOT_V3);
-    map.insert("curve_finance", &*CURVE_FINANCE);
-    map.insert("fluid_dex", &*FLUID_DEX);
-    map.insert("pancakeswap_v3", &*PANCAKESWAP_V3);
-    map.insert("sushiswap_v2", &*SUSHISWAP_V2);
-    map.insert("sushiswap_v3", &*SUSHISWAP_V3);
-    map.insert("uniswap_v3", &*UNISWAP_V3);
-    map.insert("uniswap_v4", &*UNISWAP_V4);
+    map.insert(CAMELOT_V3.id(), &*CAMELOT_V3);
+    map.insert(CURVE_FINANCE.id(), &*CURVE_FINANCE);
+    map.insert(FLUID_DEX.id(), &*FLUID_DEX);
+    map.insert(PANCAKESWAP_V3.id(), &*PANCAKESWAP_V3);
+    map.insert(SUSHISWAP_V2.id(), &*SUSHISWAP_V2);
+    map.insert(SUSHISWAP_V3.id(), &*SUSHISWAP_V3);
+    map.insert(UNISWAP_V3.id(), &*UNISWAP_V3);
+    map.insert(UNISWAP_V4.id(), &*UNISWAP_V4);
     map
 }
 

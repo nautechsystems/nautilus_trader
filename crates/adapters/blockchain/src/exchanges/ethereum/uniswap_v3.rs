@@ -54,7 +54,7 @@ const BURN_EVENT_SIGNATURE_HASH: &str =
 pub static UNISWAP_V3: LazyLock<DexExtended> = LazyLock::new(|| {
     let mut dex = DexExtended::new(Dex::new(
         chains::ETHEREUM.clone(),
-        "Uniswap V3",
+        "UniswapV3",
         "0x1F98431c8aD98523631AE4a59f267346ea31F984",
         AmmType::CLAMM,
         "PoolCreated(address,address,uint24,int24,address)",

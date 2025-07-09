@@ -15,8 +15,6 @@
 
 use std::collections::HashMap;
 
-use alloy::primitives::Address;
-
 use crate::exchanges::extended::DexExtended;
 
 mod aerodrome_slipstream;
@@ -63,52 +61,18 @@ pub fn all() -> Vec<&'static DexExtended> {
 
 /// Returns a map of Base DEX name to Dex reference for easy lookup
 #[must_use]
-pub fn dex_map() -> HashMap<&'static str, &'static DexExtended> {
+pub fn dex_map() -> HashMap<String, &'static DexExtended> {
     let mut map = HashMap::new();
-    map.insert("aerodrome_slipstream", &*AERODROME_SLIPSTREAM);
-    map.insert("aerodrome_v1", &*AERODROME_V1);
-    map.insert("uniswap_v2", &*UNISWAP_V2);
-    map.insert("uniswap_v3", &*UNISWAP_V3);
-    map.insert("uniswap_v4", &*UNISWAP_V4);
-    map.insert("pancakeswap_v3", &*PANCAKESWAP_V3);
-    map.insert("maverick_v1", &*MAVERICK_V1);
-    map.insert("maverick_v2", &*MAVERICK_V2);
-    map.insert("sushiswap_v3", &*SUSHISWAP_V3);
-    map.insert("basex", &*BASEX);
-    map.insert("baseswap_v2", &*BASESWAP_V2);
+    map.insert(AERODROME_SLIPSTREAM.id(), &*AERODROME_SLIPSTREAM);
+    map.insert(AERODROME_V1.id(), &*AERODROME_V1);
+    map.insert(UNISWAP_V2.id(), &*UNISWAP_V2);
+    map.insert(UNISWAP_V3.id(), &*UNISWAP_V3);
+    map.insert(UNISWAP_V4.id(), &*UNISWAP_V4);
+    map.insert(PANCAKESWAP_V3.id(), &*PANCAKESWAP_V3);
+    map.insert(MAVERICK_V1.id(), &*MAVERICK_V1);
+    map.insert(MAVERICK_V2.id(), &*MAVERICK_V2);
+    map.insert(SUSHISWAP_V3.id(), &*SUSHISWAP_V3);
+    map.insert(BASEX.id(), &*BASEX);
+    map.insert(BASESWAP_V2.id(), &*BASESWAP_V2);
     map
-}
-
-/// Returns the token symbol for a given Base token address.
-/// Falls back to address-based naming for unknown tokens.
-#[must_use]
-pub fn get_token_symbol(token_address: Address) -> String {
-    match token_address.to_string().to_lowercase().as_str() {
-        "0x4200000000000000000000000000000000000006" => "WETH".to_string(),
-        "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913" => "USDC".to_string(),
-        "0xd9aaec86b65d86f6a7b5b1b0c42ffa531710b6ca" => "USDbC".to_string(),
-        "0x50c5725949a6f0c72e6c4a641f24049a917db0cb" => "DAI".to_string(),
-        "0xc1cba3fcea344f92d9239c08c0568f6f2f0ee452" => "cbETH".to_string(),
-        "0x2ae3f1ec7f1f5012cfeab0185bfc7aa3cf0dec22" => "cbBTC".to_string(),
-        "0x940181a94a35a4569e4529a3cdfb74e38fd98631" => "AERO".to_string(),
-        _ => format!(
-            "TOKEN_{addr}",
-            addr = &token_address.to_string()[2..8].to_uppercase()
-        ),
-    }
-}
-
-/// Returns the token address for a given Base token symbol.
-#[must_use]
-pub fn get_token_symbol_reverse(symbol: &str) -> anyhow::Result<Address> {
-    match symbol {
-        "WETH" => Ok("0x4200000000000000000000000000000000000006".parse()?),
-        "USDC" => Ok("0x833589fcd6edb6e08f4c7c32d4f71b54bda02913".parse()?),
-        "USDbC" => Ok("0xd9aaec86b65d86f6a7b5b1b0c42ffa531710b6ca".parse()?),
-        "DAI" => Ok("0x50c5725949a6f0c72e6c4a641f24049a917db0cb".parse()?),
-        "cbETH" => Ok("0xc1cba3fcea344f92d9239c08c0568f6f2f0ee452".parse()?),
-        "cbBTC" => Ok("0x2ae3f1ec7f1f5012cfeab0185bfc7aa3cf0dec22".parse()?),
-        "AERO" => Ok("0x940181a94a35a4569e4529a3cdfb74e38fd98631".parse()?),
-        _ => anyhow::bail!("Unknown token symbol for Base: {symbol}"),
-    }
 }
