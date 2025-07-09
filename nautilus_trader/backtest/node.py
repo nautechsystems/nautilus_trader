@@ -624,7 +624,6 @@ class BacktestNode:
     ) -> CatalogDataResult:
         catalog: ParquetDataCatalog = cls.load_catalog(config)
         used_instrument_ids = get_instrument_ids(config)
-
         instruments = (
             catalog.instruments(instrument_ids=used_instrument_ids)
             if len(used_instrument_ids) > 0
@@ -644,9 +643,11 @@ class BacktestNode:
             result = min_date(config_query["end"], end)
             config_query["end"] = result.isoformat() if result else None
 
+        data = catalog.query(**config_query)
+
         return CatalogDataResult(
             data_cls=config.data_type,
-            data=catalog.query(**config_query),
+            data=data,
             instruments=instruments,
             client_id=ClientId(config.client_id) if config.client_id else None,
         )
