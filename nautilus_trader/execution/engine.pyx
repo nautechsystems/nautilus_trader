@@ -866,6 +866,10 @@ cdef class ExecutionEngine(Component):
         self.command_count += 1
 
         if command.client_id in self._external_clients:
+            self._msgbus.publish_c(
+                topic=f"commands.trading.{command.client_id}",
+                msg=command,
+            )
             if self.debug:
                 self._log.debug(
                     f"Skipping execution command for external client {command.client_id}: {command}",

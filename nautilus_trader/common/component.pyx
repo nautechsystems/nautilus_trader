@@ -2308,6 +2308,17 @@ cdef class MessageBus:
 
         return [s for s in self._subscriptions if is_matching(s.topic, pattern)]
 
+    cpdef set streaming_types(self):
+        """
+        Return all types registered for external streaming -> internal publishing.
+
+        Returns
+        -------
+        set[type]
+
+        """
+        return self._streaming_types.copy()
+
     cpdef bint has_subscribers(self, str pattern = None):
         """
         If the message bus has subscribers for the give topic `pattern`.
