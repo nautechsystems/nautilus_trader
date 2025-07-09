@@ -141,6 +141,9 @@ class InteractiveBrokersClient(
 
         # MarketDataMixin
         self._bar_type_to_last_bar: dict[str, BarData | None] = {}
+        self._bar_timeout_tasks: dict[str, asyncio.Task] = (
+            {}
+        )  # Track timeout tasks for each bar type
 
         # OrderMixin
         self._exec_id_details: dict[
