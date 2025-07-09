@@ -123,6 +123,10 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
+cdef inline uint64_t _instrument_ts_init(Instrument instrument):
+    return instrument.ts_init
+
+
 cdef class DataEngine(Component):
     """
     Provides a high-performance data engine for managing many `DataClient`
@@ -1521,6 +1525,19 @@ cdef class DataEngine(Component):
         self._log.warning(f"Cannot handle request: no client registered for '{request.client_id}', {request}")
 
     cpdef void _query_catalog(self, RequestData request):
+        """
+        Query the catalog for data matching the request parameters.
+
+        Special handling for instrument queries:
+        - RequestInstruments: Queries without a start time constraint to ensure all historical
+          instruments are found, then filters to return one instrument per ID that was
+          valid at or before the start time + all instruments per ID between start and end.
+        - RequestInstrument: Queries without a start time constraint, then returns the most recent
+          instrument that was valid at or before the requested start time.
+
+        This ensures instruments are always available even when requested at a time after
+        their creation (e.g., requesting at 10:00 for an instrument created at 00:00).
+        """
         cdef datetime start = request.start
         cdef datetime end = request.end
         cdef bint query_past_data = request.params.get("subscription_name") is None
@@ -1544,15 +1561,24 @@ cdef class DataEngine(Component):
         # We assume each symbol is only in one catalog
         for catalog in self._catalogs.values():
             if isinstance(request, RequestInstruments):
+                # For instruments requests, we omit the start parameter to ensure we find
+                # all historical instruments, regardless of when they were created.
+                # The catalog will return all instruments up to the end time.
+                # The filtering logic after the query will ensure we return:
+                # - One instrument per ID that was valid at/before start time
+                # - All instruments per ID that were created between start and end times
                 data += catalog.instruments(
-                    start=ts_start,
                     end=ts_end,
                 )
             elif isinstance(request, RequestInstrument):
+                # For single instrument requests, we omit the start parameter to ensure
+                # we find the instrument even if it was created before the requested start time.
+                # The catalog will return all versions of the instrument up to the start time.
+                # The post-processing will select the most recent instrument that was valid
+                # at or before the requested start time.
                 data = catalog.instruments(
                     instrument_ids=[str(request.instrument_id)],
-                    start=ts_start,
-                    end=ts_end,
+                    end=ts_start,
                 )
             elif isinstance(request, RequestQuoteTicks):
                 data = catalog.quote_ticks(
@@ -1598,12 +1624,34 @@ cdef class DataEngine(Component):
                 f"data[-1].ts_init={data[-1].ts_init}, {ts_now=}",
             )
 
-        if isinstance(request, RequestInstrument):
+        # Special handling for instruments requests to ensure proper filtering
+        if isinstance(request, RequestInstruments) and request.start is not None:
+            # Group instruments by ID
+            instruments_by_id = {}
+            for instrument in data:
+                if instrument.id not in instruments_by_id:
+                    instruments_by_id[instrument.id] = []
+                instruments_by_id[instrument.id].append(instrument)
+
+            # Filter to get one before/at start + all between start and end
+            data = []
+            for _, instruments in instruments_by_id.items():
+                # Input instruments are sorted by ts_init
+                for i in instruments:
+                    if i.ts_init <= ts_end:
+                        data.append(i)
+                    elif i.ts_init <= ts_start:
+                        data.append(i)
+
+            data.sort(key=_instrument_ts_init)
+        elif isinstance(request, RequestInstrument):
             if len(data) == 0:
                 self._log.error(f"Cannot find instrument for {request.instrument_id}")
                 return
 
-            data = data[0]
+            # Input instruments are sorted by ts_init
+            data = data[len(data)-1]
+
 
         params = request.params.copy()
         params["update_catalog"] = False

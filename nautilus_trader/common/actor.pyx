@@ -2604,6 +2604,14 @@ cdef class Actor(Component):
         TypeError
             If `callback` is not `None` and not of type `Callable`.
 
+        Notes
+        -----
+        When querying from a catalog, the engine will return the most recent instrument
+        that was valid at or before the requested start time. This ensures that
+        instruments are available even when requested at a time after their creation.
+        This also enables the possibility of having data with "hole optimization", where
+        identical instruments are not duplicated in the catalog.
+
         """
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
         Condition.not_none(instrument_id, "instrument_id")
@@ -2696,6 +2704,16 @@ cdef class Actor(Component):
             If `start` is > `end`.
         TypeError
             If `callback` is not `None` and not of type `Callable`.
+
+        Notes
+        -----
+        When querying from a catalog, the engine will return:
+        - One instrument per instrument ID that was valid at or before the start time
+        - All instruments per instrument ID that were created between start and end times
+        This ensures that the most recent instrument specifications are always available,
+        even when requested at a time after their creation.This also enables the possibility
+        of having data with "hole optimization", where identical instruments are not duplicated
+        in the catalog.
 
         """
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
