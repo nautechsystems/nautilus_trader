@@ -36,6 +36,8 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport AccountType
 from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.rust.model cimport OmsType
+from nautilus_trader.core.rust.model cimport OrderStatus
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.messages cimport BatchCancelOrders
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
@@ -48,6 +50,8 @@ from nautilus_trader.model.data cimport InstrumentClose
 from nautilus_trader.model.data cimport InstrumentStatus
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
+from nautilus_trader.model.events.order cimport OrderModifyRejected
+from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.functions cimport account_type_to_str
 from nautilus_trader.model.functions cimport oms_type_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -956,6 +960,7 @@ cdef class SimulatedExchange:
         self._log.info("Reset")
 
     cdef void _process_trading_command(self, TradingCommand command):
+
         cdef OrderMatchingEngine matching_engine = self._matching_engines.get(command.instrument_id)
         if matching_engine is None:
             raise RuntimeError(f"Cannot process command: no matching engine for {command.instrument_id}")
@@ -969,13 +974,106 @@ cdef class SimulatedExchange:
             for order in command.order_list.orders:
                 matching_engine.process_order(order, self.exec_client.account_id)
         elif isinstance(command, ModifyOrder):
-            matching_engine.process_modify(command, self.exec_client.account_id)
+            # Check if order is in SUBMITTED status or PENDING_UPDATE with previous SUBMITTED status
+            # (bracket orders not yet at matching engine)
+            order = self.cache.order(command.client_order_id)
+            if (order is not None and
+                (order.status_c() == OrderStatus.SUBMITTED or
+                 (order.status_c() == OrderStatus.PENDING_UPDATE and order._previous_status == OrderStatus.SUBMITTED))):
+                # Handle modification locally for bracket orders not yet sent to matching engine
+                self._process_modify_submitted_order(command)
+            else:
+                matching_engine.process_modify(command, self.exec_client.account_id)
         elif isinstance(command, CancelOrder):
             matching_engine.process_cancel(command, self.exec_client.account_id)
         elif isinstance(command, CancelAllOrders):
             matching_engine.process_cancel_all(command, self.exec_client.account_id)
         elif isinstance(command, BatchCancelOrders):
             matching_engine.process_batch_cancel(command, self.exec_client.account_id)
+
+    cdef void _process_modify_submitted_order(self, ModifyOrder command):
+        """
+        Process modification of an order that is in SUBMITTED status.
+
+        This handles bracket orders (TP/SL) that haven't been sent to the matching engine yet.
+        """
+        cdef Order order = self.cache.order(command.client_order_id)
+        if order is None:
+            self._generate_order_modify_rejected(
+                command.trader_id,
+                command.strategy_id,
+                command.instrument_id,
+                command.client_order_id,
+                None,
+                f"{command.client_order_id!r} not found",
+                self.exec_client.account_id,
+            )
+            return
+
+        # Apply the modification directly to the order
+        cdef:
+            Quantity new_quantity = command.quantity if command.quantity is not None else order.quantity
+            Price new_price = command.price if command.price is not None else (order.price if hasattr(order, 'price') else None)
+            Price new_trigger_price = command.trigger_price if command.trigger_price is not None else (order.trigger_price if hasattr(order, 'trigger_price') else None)
+
+        # Generate OrderUpdated event
+        self._generate_order_updated(
+            order,
+            new_quantity,
+            new_price,
+            new_trigger_price,
+        )
+
+    cdef void _generate_order_modify_rejected(
+        self,
+        TraderId trader_id,
+        StrategyId strategy_id,
+        InstrumentId instrument_id,
+        ClientOrderId client_order_id,
+        VenueOrderId venue_order_id,
+        str reason,
+        AccountId account_id,
+    ):
+        """Generate an OrderModifyRejected event."""
+        cdef uint64_t ts_now = self._clock.timestamp_ns()
+        cdef OrderModifyRejected event = OrderModifyRejected(
+            trader_id=trader_id,
+            strategy_id=strategy_id,
+            instrument_id=instrument_id,
+            client_order_id=client_order_id,
+            venue_order_id=venue_order_id,
+            account_id=account_id,
+            reason=reason,
+            event_id=UUID4(),
+            ts_event=ts_now,
+            ts_init=ts_now,
+        )
+        self.msgbus.send(endpoint="ExecEngine.process", msg=event)
+
+    cdef void _generate_order_updated(
+        self,
+        Order order,
+        Quantity quantity,
+        Price price,
+        Price trigger_price,
+    ):
+        """Generate an OrderUpdated event."""
+        cdef uint64_t ts_now = self._clock.timestamp_ns()
+        cdef OrderUpdated event = OrderUpdated(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            account_id=order.account_id,
+            quantity=quantity,
+            price=price,
+            trigger_price=trigger_price,
+            event_id=UUID4(),
+            ts_event=ts_now,
+            ts_init=ts_now,
+        )
+        self.msgbus.send(endpoint="ExecEngine.process", msg=event)
 
 # -- EVENT GENERATORS -----------------------------------------------------------------------------
 
