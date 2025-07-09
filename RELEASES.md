@@ -13,14 +13,18 @@ None
 
 ### Internal Improvements
 - Improved efficiency of message bus external streams buffer flushing
+- Improved `databento_test_request_bars` example (#2762), thanks @faysou
 - Refined Rust catalog path handling (#2743), thanks @faysou
 - Refined Rust `GreeksCalculator` (#2760), thanks @faysou
 - Upgraded `datafusion` crate to v48.0.1
 
 ### Fixes
 - Fixed Tardis Machine replay processing and Parquet file writing
+- Fixed modification of contingent orders in backtest (#2761), thanks faysou
 - Fixed balance calculations on order fill to allow operating at near account balance capacity (#2752), thanks @petioptrv
 - Fixed time range end in some databento request functions (#2755), thanks @faysou
+- Fixed EOD bar for Interactive Brokers (#2764), thanks @faysou
+- Fixed dYdX Take Profit order type mapping error (#2758), thanks @nicolad
 
 ### Documentation Updates
 - Improved dYdX integration guide (#2751), thanks @nicolad
