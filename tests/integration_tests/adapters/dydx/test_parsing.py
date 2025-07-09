@@ -53,7 +53,7 @@ def enum_parser() -> DYDXEnumParser:
         (DYDXOrderType.STOP_MARKET, OrderType.STOP_MARKET),
         (DYDXOrderType.TAKE_PROFIT, OrderType.LIMIT_IF_TOUCHED),
         (DYDXOrderType.TAKE_PROFIT_MARKET, OrderType.MARKET_IF_TOUCHED),
-    ]
+    ],
 )
 def test_parse_order_type(
     dydx_order_type: DYDXOrderType,
