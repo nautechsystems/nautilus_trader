@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.16.6
+#       jupytext_version: 1.17.2
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -105,6 +105,7 @@ class TestHistoricalAggConfig(StrategyConfig, frozen=True):
     symbol_id: InstrumentId
     historical_start_delay: int = 10
     historical_end_delay: int = 1
+    data_type: str = "bars"
 
 
 class TestHistoricalAggStrategy(Strategy):
@@ -115,88 +116,105 @@ class TestHistoricalAggStrategy(Strategy):
         # self.composite_sma = SimpleMovingAverage(2)
 
     def on_start(self):
-        ######### for testing bars
-        utc_now = self._clock.utc_now()
-        start_historical_bars = utc_now - pd.Timedelta(minutes=self.config.historical_start_delay)
-        end_historical_bars = utc_now - pd.Timedelta(minutes=self.config.historical_end_delay)
-        self.user_log(f"on_start: {start_historical_bars=}, {end_historical_bars=}")
+        if self.config.data_type == "bars":
+            ######### for testing bars
+            utc_now = self._clock.utc_now()
+            start_historical_bars = utc_now - pd.Timedelta(
+                minutes=self.config.historical_start_delay,
+            )
+            end_historical_bars = utc_now - pd.Timedelta(minutes=self.config.historical_end_delay)
+            self.user_log(f"on_start: {start_historical_bars=}, {end_historical_bars=}")
 
-        symbol_id = self.config.symbol_id
-        self.external_bar_type = BarType.from_str(f"{symbol_id}-1-MINUTE-LAST-EXTERNAL")
-        self.bar_type_1 = BarType.from_str(f"{symbol_id}-2-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL")
-        self.bar_type_2 = BarType.from_str(f"{symbol_id}-4-MINUTE-LAST-INTERNAL@2-MINUTE-INTERNAL")
-        self.bar_type_3 = BarType.from_str(f"{symbol_id}-5-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL")
+            symbol_id = self.config.symbol_id
+            self.external_bar_type = BarType.from_str(f"{symbol_id}-1-MINUTE-LAST-EXTERNAL")
+            self.bar_type_1 = BarType.from_str(
+                f"{symbol_id}-2-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL",
+            )
+            self.bar_type_2 = BarType.from_str(
+                f"{symbol_id}-4-MINUTE-LAST-INTERNAL@2-MINUTE-INTERNAL",
+            )
+            self.bar_type_3 = BarType.from_str(
+                f"{symbol_id}-5-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL",
+            )
 
-        self.request_instrument(symbol_id)
-        # self.subscribe_instruments(symbol_id.venue)
+            self.request_instrument(symbol_id)
+            # self.subscribe_instruments(symbol_id.venue)
 
-        # registering bar types with indicators, request_aggregated_bars below will update both indicators
-        # self.register_indicator_for_bars(self.external_bar_type, self.external_sma)
-        # self.register_indicator_for_bars(self.bar_type_1, self.composite_sma)
+            # registering bar types with indicators, request_aggregated_bars below will update both indicators
+            # self.register_indicator_for_bars(self.external_bar_type, self.external_sma)
+            # self.register_indicator_for_bars(self.bar_type_1, self.composite_sma)
 
-        self.request_aggregated_bars(
-            [self.bar_type_1, self.bar_type_2, self.bar_type_3],
-            start=start_historical_bars,
-            end=end_historical_bars,
-            update_subscriptions=True,
-            # includes external bars in the response, not just internally aggregated ones
-            include_external_data=True,
-        )
+            self.request_aggregated_bars(
+                [self.bar_type_1, self.bar_type_2, self.bar_type_3],
+                start=start_historical_bars,
+                end=end_historical_bars,
+                update_subscriptions=True,
+                # includes external bars in the response, not just internally aggregated ones
+                include_external_data=True,
+            )
 
-        self.user_log("request_aggregated_bars done")
+            self.user_log("request_aggregated_bars done")
 
-        self.subscribe_bars(self.external_bar_type)
-        self.subscribe_bars(self.bar_type_1)
-        self.subscribe_bars(self.bar_type_2)
-        self.subscribe_bars(self.bar_type_3)
+            self.subscribe_bars(self.external_bar_type)
+            self.subscribe_bars(self.bar_type_1)
+            self.subscribe_bars(self.bar_type_2)
+            self.subscribe_bars(self.bar_type_3)
 
-        self.user_log("subscribe_bars done")
+            self.user_log("subscribe_bars done")
+        elif self.config.data_type == "quotes":
+            ######## for testing quotes
+            utc_now = self._clock.utc_now()
+            start_historical_bars = utc_now - pd.Timedelta(
+                minutes=self.config.historical_start_delay,
+            )
+            end_historical_bars = utc_now - pd.Timedelta(
+                minutes=self.config.historical_end_delay,
+                milliseconds=1,
+            )
+            self.user_log(f"on_start: {start_historical_bars=}, {end_historical_bars=}")
 
-        ######### for testing quotes
-        # utc_now = self._clock.utc_now()
-        # start_historical_bars = utc_now - pd.Timedelta(minutes=self.config.historical_start_delay)
-        # end_historical_bars = utc_now - pd.Timedelta(
-        #     minutes=self.config.historical_end_delay,
-        #     milliseconds=1,
-        # )
-        # self.user_log(f"on_start: {start_historical_bars=}, {end_historical_bars=}")
+            self.bar_type_1 = BarType.from_str(f"{self.config.symbol_id}-1-MINUTE-BID-INTERNAL")
+            self.bar_type_2 = BarType.from_str(
+                f"{self.config.symbol_id}-2-MINUTE-BID-INTERNAL@1-MINUTE-INTERNAL",
+            )
 
-        # self.bar_type_1 = BarType.from_str(f"{self.config.symbol_id}-1-MINUTE-BID-INTERNAL")
-        # self.bar_type_2 = BarType.from_str(f"{self.config.symbol_id}-2-MINUTE-BID-INTERNAL@1-MINUTE-INTERNAL")
+            self.request_aggregated_bars(
+                [self.bar_type_1, self.bar_type_2],
+                start=start_historical_bars,
+                end=end_historical_bars,
+                update_subscriptions=True,
+                include_external_data=False,
+            )
 
-        # self.request_aggregated_bars(
-        #     [self.bar_type_1, self.bar_type_2],
-        #     start=start_historical_bars,
-        #     end=end_historical_bars,
-        #     update_subscriptions=True,
-        #     include_external_data=False,
-        # )
+            self.subscribe_bars(self.bar_type_1)
+            self.subscribe_bars(self.bar_type_2)
+        if self.config.data_type == "trades":
+            ######## for testing trades
+            utc_now = self._clock.utc_now()
+            start_historical_bars = utc_now - pd.Timedelta(
+                minutes=self.config.historical_start_delay,
+            )
+            end_historical_bars = utc_now - pd.Timedelta(
+                minutes=self.config.historical_end_delay,
+                milliseconds=1,
+            )
+            self.user_log(f"on_start: {start_historical_bars=}, {end_historical_bars=}")
 
-        # self.subscribe_bars(self.bar_type_1)
-        # self.subscribe_bars(self.bar_type_2)
+            self.bar_type_1 = BarType.from_str(f"{self.config.symbol_id}-1-MINUTE-LAST-INTERNAL")
+            self.bar_type_2 = BarType.from_str(
+                f"{self.config.symbol_id}-2-MINUTE-LAST-INTERNAL@1-MINUTE-INTERNAL",
+            )
 
-        ######### for testing trades
-        # utc_now = self._clock.utc_now()
-        # start_historical_bars = utc_now - pd.Timedelta(minutes=self.config.historical_start_delay)
-        # end_historical_bars = utc_now - pd.Timedelta(
-        #     minutes=self.config.historical_end_delay,
-        #     milliseconds=1,
-        # )
-        # self.user_log(f"on_start: {start_historical_bars=}, {end_historical_bars=}")
+            self.request_aggregated_bars(
+                [self.bar_type_1, self.bar_type_2],
+                start=start_historical_bars,
+                end=end_historical_bars,
+                update_subscriptions=True,
+                include_external_data=False,
+            )
 
-        # self.bar_type_1 = BarType.from_str(f"{self.config.symbol_id}-1-MINUTE-LAST-INTERNAL")
-        # self.bar_type_2 = BarType.from_str(f"{self.config.symbol_id}-2-MINUTE-LAST-INTERNAL@1-MINUTE-INTERNAL")
-
-        # self.request_aggregated_bars(
-        #     [self.bar_type_1, self.bar_type_2],
-        #     start=start_historical_bars,
-        #     end=end_historical_bars,
-        #     update_subscriptions=True,
-        #     include_external_data=False,
-        # )
-
-        # self.subscribe_bars(self.bar_type_1)
-        # self.subscribe_bars(self.bar_type_2)
+            self.subscribe_bars(self.bar_type_1)
+            self.subscribe_bars(self.bar_type_2)
 
     def on_historical_data(self, data):
         if type(data) is Bar:
@@ -219,10 +237,14 @@ class TestHistoricalAggStrategy(Strategy):
         self.log.warning(str(msg), color=LogColor.GREEN)
 
     def on_stop(self):
-        # self.subscribe_bars(self.external_bar_type)
-        self.unsubscribe_bars(self.bar_type_1)
-        self.unsubscribe_bars(self.bar_type_2)
-        # self.subscribe_bars(self.bar_type_3)
+        if self.config.data_type == "bars":
+            self.unsubscribe_bars(self.external_bar_type)
+            self.unsubscribe_bars(self.bar_type_1)
+            self.unsubscribe_bars(self.bar_type_2)
+            self.unsubscribe_bars(self.bar_type_3)
+        elif self.config.data_type in ["quote", "trades"]:
+            self.unsubscribe_bars(self.bar_type_1)
+            self.unsubscribe_bars(self.bar_type_2)
 
 
 # %% [markdown]
@@ -230,7 +252,7 @@ class TestHistoricalAggStrategy(Strategy):
 
 # %%
 # BacktestEngineConfig
-tested_market_data = "bars"  # or "quotes" or "trades"
+tested_market_data = "bars"  # "bars" | "quotes" | "trades"
 
 historical_start_delay = 10 if tested_market_data == "bars" else 2
 historical_end_delay = 1 if tested_market_data == "bars" else 0
@@ -246,6 +268,7 @@ strategies = [
             "symbol_id": InstrumentId.from_str(f"{future_symbols[0]}.XCME"),
             "historical_start_delay": historical_start_delay,
             "historical_end_delay": historical_end_delay,
+            "data_type": tested_market_data,
         },
     ),
 ]
@@ -287,30 +310,39 @@ engine_config = BacktestEngineConfig(
 
 # BacktestRunConfig
 
-data = [
-    BacktestDataConfig(
-        data_cls=Bar,
-        catalog_path=catalog.path,
-        instrument_id=InstrumentId.from_str(f"{future_symbols[0]}.XCME"),
-        bar_spec="1-MINUTE-LAST",
-        start_time="2024-07-01T23:40",
-        end_time="2024-07-02T00:10",
-    ),
-    BacktestDataConfig(
-        data_cls=QuoteTick,
-        catalog_path=catalog.path,
-        instrument_id=InstrumentId.from_str(f"{future_symbols[0]}.XCME"),
-        start_time="2024-07-01T23:58",
-        end_time="2024-07-02T00:02",
-    ),
-    BacktestDataConfig(
-        data_cls=TradeTick,
-        catalog_path=catalog.path,
-        instrument_id=InstrumentId.from_str(f"{future_symbols[0]}.XCME"),
-        start_time="2024-07-01T23:58",
-        end_time="2024-07-02T00:02",
-    ),
-]
+data = []
+
+if tested_market_data == "bars":
+    data.append(
+        BacktestDataConfig(
+            data_cls=Bar,
+            catalog_path=catalog.path,
+            instrument_id=InstrumentId.from_str(f"{future_symbols[0]}.XCME"),
+            bar_spec="1-MINUTE-LAST",
+            start_time=backtest_start,
+            end_time=backtest_end,
+        ),
+    )
+elif tested_market_data == "quotes":
+    data.append(
+        BacktestDataConfig(
+            data_cls=QuoteTick,
+            catalog_path=catalog.path,
+            instrument_id=InstrumentId.from_str(f"{future_symbols[0]}.XCME"),
+            start_time=backtest_start,
+            end_time=backtest_end,
+        ),
+    )
+elif tested_market_data == "trades":
+    data.append(
+        BacktestDataConfig(
+            data_cls=TradeTick,
+            catalog_path=catalog.path,
+            instrument_id=InstrumentId.from_str(f"{future_symbols[0]}.XCME"),
+            start_time=backtest_start,
+            end_time=backtest_end,
+        ),
+    )
 
 venues = [
     BacktestVenueConfig(
