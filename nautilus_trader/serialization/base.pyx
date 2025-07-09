@@ -20,8 +20,11 @@ from nautilus_trader.common.messages cimport ComponentStateChanged
 from nautilus_trader.common.messages cimport ShutdownSystem
 from nautilus_trader.common.messages cimport TradingStateChanged
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.execution.messages cimport BatchCancelOrders
+from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
+from nautilus_trader.execution.messages cimport QueryOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.model.data cimport Bar
@@ -51,7 +54,6 @@ from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.events.position cimport PositionChanged
 from nautilus_trader.model.events.position cimport PositionClosed
 from nautilus_trader.model.events.position cimport PositionOpened
-from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.betting cimport BettingInstrument
 from nautilus_trader.model.instruments.binary_option cimport BinaryOption
 from nautilus_trader.model.instruments.cfd cimport Cfd
@@ -72,9 +74,12 @@ from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
 # Default mappings for Nautilus objects
 _OBJECT_TO_DICT_MAP: dict[str, Callable[[None], dict]] = {
     CancelOrder.__name__: CancelOrder.to_dict_c,
+    CancelAllOrders.__name__: CancelAllOrders.to_dict_c,
+    BatchCancelOrders.__name__: BatchCancelOrders.to_dict_c,
     SubmitOrder.__name__: SubmitOrder.to_dict_c,
     SubmitOrderList.__name__: SubmitOrderList.to_dict_c,
     ModifyOrder.__name__: ModifyOrder.to_dict_c,
+    QueryOrder.__name__: QueryOrder.to_dict_c,
     ShutdownSystem.__name__: ShutdownSystem.to_dict_c,
     ComponentStateChanged.__name__: ComponentStateChanged.to_dict_c,
     TradingStateChanged.__name__: TradingStateChanged.to_dict_c,
@@ -98,7 +103,6 @@ _OBJECT_TO_DICT_MAP: dict[str, Callable[[None], dict]] = {
     PositionOpened.__name__: PositionOpened.to_dict_c,
     PositionChanged.__name__: PositionChanged.to_dict_c,
     PositionClosed.__name__: PositionClosed.to_dict_c,
-    Instrument.__name__: Instrument.base_to_dict_c,
     SyntheticInstrument.__name__: SyntheticInstrument.to_dict_c,
     BettingInstrument.__name__: BettingInstrument.to_dict_c,
     BinaryOption.__name__: BinaryOption.to_dict_c,
@@ -127,9 +131,12 @@ _OBJECT_TO_DICT_MAP: dict[str, Callable[[None], dict]] = {
 # Default mappings for Nautilus objects
 _OBJECT_FROM_DICT_MAP: dict[str, Callable[[dict], Any]] = {
     CancelOrder.__name__: CancelOrder.from_dict_c,
+    CancelAllOrders.__name__: CancelAllOrders.from_dict_c,
+    BatchCancelOrders.__name__: BatchCancelOrders.from_dict_c,
     SubmitOrder.__name__: SubmitOrder.from_dict_c,
     SubmitOrderList.__name__: SubmitOrderList.from_dict_c,
     ModifyOrder.__name__: ModifyOrder.from_dict_c,
+    QueryOrder.__name__: QueryOrder.from_dict_c,
     ShutdownSystem.__name__: ShutdownSystem.from_dict_c,
     ComponentStateChanged.__name__: ComponentStateChanged.from_dict_c,
     TradingStateChanged.__name__: TradingStateChanged.from_dict_c,
@@ -153,7 +160,6 @@ _OBJECT_FROM_DICT_MAP: dict[str, Callable[[dict], Any]] = {
     PositionOpened.__name__: PositionOpened.from_dict_c,
     PositionChanged.__name__: PositionChanged.from_dict_c,
     PositionClosed.__name__: PositionClosed.from_dict_c,
-    Instrument.__name__: Instrument.base_from_dict_c,
     SyntheticInstrument.__name__: SyntheticInstrument.from_dict_c,
     BettingInstrument.__name__: BettingInstrument.from_dict_c,
     BinaryOption.__name__: BinaryOption.from_dict_c,
@@ -188,6 +194,9 @@ _EXTERNAL_PUBLISHABLE_TYPES = {
     SubmitOrderList,
     ModifyOrder,
     CancelOrder,
+    CancelAllOrders,
+    BatchCancelOrders,
+    QueryOrder,
     ShutdownSystem,
     ComponentStateChanged,
     TradingStateChanged,
@@ -211,7 +220,6 @@ _EXTERNAL_PUBLISHABLE_TYPES = {
     PositionOpened,
     PositionChanged,
     PositionClosed,
-    Instrument,
     SyntheticInstrument,
     BettingInstrument,
     BinaryOption,
