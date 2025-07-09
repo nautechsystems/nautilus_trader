@@ -1622,22 +1622,22 @@ impl Depth10StreamIterator {
                 _ => unreachable!(),
             };
 
-            if self.price_precision.is_none() {
-                if let (Some(bp), Some(ap)) = (bid_price, ask_price) {
-                    self.current_price_precision = self
-                        .current_price_precision
-                        .max(infer_precision(bp))
-                        .max(infer_precision(ap));
-                }
+            if self.price_precision.is_none()
+                && let (Some(bp), Some(ap)) = (bid_price, ask_price)
+            {
+                self.current_price_precision = self
+                    .current_price_precision
+                    .max(infer_precision(bp))
+                    .max(infer_precision(ap));
             }
 
-            if self.size_precision.is_none() {
-                if let (Some(ba), Some(aa)) = (bid_amount, ask_amount) {
-                    self.current_size_precision = self
-                        .current_size_precision
-                        .max(infer_precision(ba))
-                        .max(infer_precision(aa));
-                }
+            if self.size_precision.is_none()
+                && let (Some(ba), Some(aa)) = (bid_amount, ask_amount)
+            {
+                self.current_size_precision = self
+                    .current_size_precision
+                    .max(infer_precision(ba))
+                    .max(infer_precision(aa));
             }
 
             let (bid_order, bid_count) = create_book_order(
@@ -1719,22 +1719,22 @@ impl Depth10StreamIterator {
                 _ => unreachable!(),
             };
 
-            if self.price_precision.is_none() {
-                if let (Some(bp), Some(ap)) = (bid_price, ask_price) {
-                    self.current_price_precision = self
-                        .current_price_precision
-                        .max(infer_precision(bp))
-                        .max(infer_precision(ap));
-                }
+            if self.price_precision.is_none()
+                && let (Some(bp), Some(ap)) = (bid_price, ask_price)
+            {
+                self.current_price_precision = self
+                    .current_price_precision
+                    .max(infer_precision(bp))
+                    .max(infer_precision(ap));
             }
 
-            if self.size_precision.is_none() {
-                if let (Some(ba), Some(aa)) = (bid_amount, ask_amount) {
-                    self.current_size_precision = self
-                        .current_size_precision
-                        .max(infer_precision(ba))
-                        .max(infer_precision(aa));
-                }
+            if self.size_precision.is_none()
+                && let (Some(ba), Some(aa)) = (bid_amount, ask_amount)
+            {
+                self.current_size_precision = self
+                    .current_size_precision
+                    .max(infer_precision(ba))
+                    .max(infer_precision(aa));
             }
 
             let (bid_order, bid_count) = create_book_order(

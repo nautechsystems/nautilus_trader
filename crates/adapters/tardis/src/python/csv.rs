@@ -43,7 +43,7 @@ macro_rules! impl_tardis_stream_iterator {
 
         #[pymethods]
         impl $struct_name {
-            fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+            const fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
                 slf
             }
 
