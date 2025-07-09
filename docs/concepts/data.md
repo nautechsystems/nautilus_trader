@@ -1209,25 +1209,6 @@ greeks_data = catalog.query(
 )
 ```
 
-### Best Practices
-
-**Query Optimization:**
-
-- Use Rust backend for core data types (QuoteTick, TradeTick, etc.)
-- Always specify time ranges to limit data scanning
-- Use meaningful basename templates for data partitioning
-
-**Storage:**
-
-- Parquet provides excellent compression ratios
-- Use regional cloud storage for better performance
-- Consider file size limits for optimal query performance
-
-**Memory Management:**
-
-- Use streaming for large backtests and custom datasets
-- Monitor memory usage during data operations
-
 ### Catalog Summary
 
 The NautilusTrader data catalog provides comprehensive market data management:
