@@ -219,7 +219,7 @@ pip install -U nautilus_trader
 
 ### From the Nautech Systems package index
 
-The Nautech Systems package index (`packages.nautechsystems.io`) is [PEP-503](https://peps.python.org/pep-0503/) compliant and hosts both stable and development binary wheels for `nautilus_trader`.
+The Nautech Systems package index (`packages.nautechsystems.io`) complies with [PEP-503](https://peps.python.org/pep-0503/) and hosts both stable and development binary wheels for `nautilus_trader`.
 This enables users to install either the latest stable release or pre-release versions for testing.
 
 #### Stable wheels
@@ -255,11 +255,11 @@ while adhering to [PEP-440](https://peps.python.org/pep-0440/) versioning standa
 
 > [!WARNING]
 >
-> We don't recommend using development wheels in production environments, such as live trading controlling real capital.
+> We do not recommend using development wheels in production environments, such as live trading controlling real capital.
 
 #### Installation commands
 
-By default, pip installs the latest stable release. Adding the `--pre` flag ensures that pre-release versions, including development wheels, are considered.
+By default, pip will install the latest stable release. Adding the `--pre` flag ensures that pre-release versions, including development wheels, are considered.
 
 To install the latest available pre-release (including development wheels):
 
@@ -285,13 +285,13 @@ curl -s https://packages.nautechsystems.io/simple/nautilus-trader/index.html | g
 
 #### Branch updates
 
-- `develop` branch wheels (`.dev`): Are built and published continuously with every merged commit.
-- `nightly` branch wheels (`a`): Are built and published daily when `develop` branch is automatically merged at **14:00 UTC** (if there are changes).
+- `develop` branch wheels (`.dev`): Build and publish continuously with every merged commit.
+- `nightly` branch wheels (`a`): Build and publish daily when we automatically merge the `develop` branch at **14:00 UTC** (if there are changes).
 
 #### Retention policies
 
-- `develop` branch wheels (`.dev`): Only the most recent wheel build is retained.
-- `nightly` branch wheels (`a`): Only the 10 most recent wheel builds are retained.
+- `develop` branch wheels (`.dev`): We retain only the most recent wheel build.
+- `nightly` branch wheels (`a`): We retain only the 10 most recent wheel builds.
 
 ### From Source
 
@@ -447,8 +447,8 @@ http://127.0.0.1:8888/lab
 > [!WARNING]
 >
 > NautilusTrader currently exceeds the rate limit for Jupyter notebook logging (stdout output).
-> As a result, the `log_level` in the examples is set to `ERROR`. Lowering this level to see more
-> logging will cause the notebook to hang during cell execution. We are investigating a fix, which
+> Therefore, we set the `log_level` to `ERROR` in the examples. Lowering this level to see more
+> logging will cause the notebook to hang during cell execution. We are investigating a fix that
 > may involve either raising the configured rate limits for Jupyter or throttling the log flushing
 > from Nautilus.
 >
