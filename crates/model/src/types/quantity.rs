@@ -595,7 +595,7 @@ mod tests {
 
     #[rstest]
     #[cfg(not(feature = "defi"))]
-    #[should_panic(expected = "`precision` exceeded maximum `FIXED_PRECISION` (16), was 17")]
+    #[should_panic(expected = "`precision` exceeded maximum `FIXED_PRECISION` (9), was 17")]
     fn test_invalid_precision_new() {
         // Precision 17 should fail due to DeFi validation
         let _ = Quantity::new(1.0, 17);
