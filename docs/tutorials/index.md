@@ -18,13 +18,12 @@ Each tutorial is generated from a Jupyter notebook located in the docs [tutorial
 
 ## Running in docker
 
-Alternatively, a self-contained dockerized Jupyter notebook server is available for download, which does not require any setup or
-installation. This is the fastest way to get up and running to try out NautilusTrader. Bear in mind that any data will be
-deleted when the container is deleted.
+Alternatively, a self-contained dockerized Jupyter notebook server is available for download, which requires no setup or
+installation. This is the fastest way to get up and running to try out NautilusTrader. Note that deleting the container will also delete any data.
 
 - To get started, install docker:
-  - Go to [docker.com](https://docs.docker.com/get-docker/) and follow the instructions
-- From a terminal, download the latest image
+  - Go to [Docker installation guide](https://docs.docker.com/get-docker/) and follow the instructions.
+- From a terminal, download the latest image:
   - `docker pull ghcr.io/nautechsystems/jupyterlab:nightly --platform linux/amd64`
 - Run the docker container, exposing the Jupyter port:
   - `docker run -p 8888:8888 ghcr.io/nautechsystems/jupyterlab:nightly`
@@ -33,9 +32,9 @@ deleted when the container is deleted.
 
 :::info
 NautilusTrader currently exceeds the rate limit for Jupyter notebook logging (stdout output),
-this is why `log_level` in the examples is set to `ERROR`. If you lower this level to see
-more logging then the notebook will hang during cell execution. A fix is currently
-being investigated which involves either raising the configured rate limits for
+therefore we set `log_level` to `ERROR` in the examples. Lowering this level to see
+more logging will cause the notebook to hang during cell execution. We are currently
+investigating a fix that involves either raising the configured rate limits for
 Jupyter, or throttling the log flushing from Nautilus.
 
 - <https://github.com/jupyterlab/jupyterlab/issues/12845>
