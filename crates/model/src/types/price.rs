@@ -587,9 +587,9 @@ mod tests {
 
     #[rstest]
     #[cfg(not(feature = "defi"))]
-    #[should_panic(expected = "`precision` exceeded maximum `FIXED_PRECISION` (16), was 50")]
+    #[should_panic(expected = "`precision` exceeded maximum `FIXED_PRECISION` (9), was 50")]
     fn test_invalid_precision_new() {
-        // Precision exceeds float precision limit (16)
+        // Precision exceeds float precision limit
         let _ = Price::new(1.0, 50);
     }
 
@@ -674,17 +674,17 @@ mod tests {
 
     #[rstest]
     fn test_negative_price_in_range() {
-        // Use precision 16 which is the max for float-based construction regardless of features
-        let neg_price = Price::new(PRICE_MIN / 2.0, 16);
+        // Use max fixed precision which varies based on feature flags
+        let neg_price = Price::new(PRICE_MIN / 2.0, FIXED_PRECISION);
         assert!(neg_price.raw < 0);
     }
 
     #[rstest]
     fn test_new_checked() {
-        // Use precision 16 which is the max for float-based construction regardless of features
-        assert!(Price::new_checked(1.0, 16).is_ok());
-        assert!(Price::new_checked(f64::NAN, 16).is_err());
-        assert!(Price::new_checked(f64::INFINITY, 16).is_err());
+        // Use max fixed precision which varies based on feature flags
+        assert!(Price::new_checked(1.0, FIXED_PRECISION).is_ok());
+        assert!(Price::new_checked(f64::NAN, FIXED_PRECISION).is_err());
+        assert!(Price::new_checked(f64::INFINITY, FIXED_PRECISION).is_err());
     }
 
     #[rstest]
@@ -939,7 +939,6 @@ mod property_tests {
     use proptest::prelude::*;
 
     use super::*;
-    use crate::types::fixed::MAX_FLOAT_PRECISION;
 
     /// Strategy to generate valid price values within the allowed range.
     fn price_value_strategy() -> impl Strategy<Value = f64> {
@@ -959,7 +958,7 @@ mod property_tests {
 
     /// Strategy to generate valid precision values for float-based constructors.
     fn float_precision_strategy() -> impl Strategy<Value = u8> {
-        0..=MAX_FLOAT_PRECISION
+        0..=FIXED_PRECISION
     }
 
     proptest! {
