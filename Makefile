@@ -338,8 +338,7 @@ purge-services:  #-- Purge all development services (stop containers and remove 
 .PHONY: init-db
 init-db:  #-- Initialize PostgreSQL database schema
 	$(info $(M) Initializing PostgreSQL database schema...)
-	cat schema/sql/tables.sql | docker exec -i nautilus-database psql -U nautilus -d nautilus
-	cat schema/sql/functions.sql | docker exec -i nautilus-database psql -U nautilus -d nautilus
+	cat schema/sql/*.sql | docker exec -i nautilus-database psql -U nautilus -d nautilus
 
 #== Python Testing
 
