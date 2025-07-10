@@ -277,28 +277,11 @@ pub async fn publish_messages(
     loop {
         tokio::select! {
             maybe_msg = rx.recv() => {
-                match maybe_msg {
-                    Some(msg) => {
-                        if msg.topic == CLOSE_TOPIC {
-                            tracing::debug!("Received close message");
-                            // Ensure we exit the loop after flushing any remaining messages.
-                            if !buffer.is_empty() {
-                                drain_buffer(
-                                    &mut con,
-                                    &stream_key,
-                                    config.stream_per_topic,
-                                    autotrim_duration,
-                                    &mut last_trim_index,
-                                    &mut buffer,
-                                ).await?;
-                            }
-                            break;
-                        }
-
-                        buffer.push_back(msg);
-
-                        if buffer_interval.is_zero() {
-                            // Immediate flush mode
+                if let Some(msg) = maybe_msg {
+                    if msg.topic == CLOSE_TOPIC {
+                        tracing::debug!("Received close message");
+                        // Ensure we exit the loop after flushing any remaining messages.
+                        if !buffer.is_empty() {
                             drain_buffer(
                                 &mut con,
                                 &stream_key,
@@ -308,16 +291,30 @@ pub async fn publish_messages(
                                 &mut buffer,
                             ).await?;
                         }
-                    }
-                    None => {
-                        tracing::debug!("Channel hung up");
                         break;
                     }
+
+                    buffer.push_back(msg);
+
+                    if buffer_interval.is_zero() {
+                        // Immediate flush mode
+                        drain_buffer(
+                            &mut con,
+                            &stream_key,
+                            config.stream_per_topic,
+                            autotrim_duration,
+                            &mut last_trim_index,
+                            &mut buffer,
+                        ).await?;
+                    }
+                } else {
+                    tracing::debug!("Channel hung up");
+                    break;
                 }
             }
             // Only poll the timer when the interval is non-zero. This avoids
             // unnecessarily waking the task when immediate flushing is enabled.
-            _ = &mut flush_timer, if !buffer_interval.is_zero() => {
+            () = &mut flush_timer, if !buffer_interval.is_zero() => {
                 if !buffer.is_empty() {
                     drain_buffer(
                         &mut con,

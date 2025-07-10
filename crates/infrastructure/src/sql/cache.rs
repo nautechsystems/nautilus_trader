@@ -132,26 +132,23 @@ impl PostgresCacheDatabase {
         loop {
             tokio::select! {
                 maybe_msg = rx.recv() => {
-                    match maybe_msg {
-                        Some(msg) => {
-                            tracing::debug!("Received {msg:?}");
-                            if matches!(msg, DatabaseQuery::Close) {
-                                break;
-                            }
-                            buffer.push_back(msg);
-
-                            // If interval is zero flush straight away so tests remain fast
-                            if buffer_interval.is_zero() {
-                                drain_buffer(&pool, &mut buffer).await;
-                            }
-                        }
-                        None => {
-                            tracing::debug!("Command channel closed");
+                    if let Some(msg) = maybe_msg {
+                        tracing::debug!("Received {msg:?}");
+                        if matches!(msg, DatabaseQuery::Close) {
                             break;
                         }
+                        buffer.push_back(msg);
+
+                        // If interval is zero flush straight away so tests remain fast
+                        if buffer_interval.is_zero() {
+                            drain_buffer(&pool, &mut buffer).await;
+                        }
+                    } else {
+                        tracing::debug!("Command channel closed");
+                        break;
                     }
                 }
-                _ = &mut flush_timer, if !buffer_interval.is_zero() => {
+                () = &mut flush_timer, if !buffer_interval.is_zero() => {
                     if !buffer.is_empty() {
                         drain_buffer(&pool, &mut buffer).await;
                     }

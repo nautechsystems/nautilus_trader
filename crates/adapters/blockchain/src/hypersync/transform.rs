@@ -529,12 +529,12 @@ mod tests {
             serde_json::from_value(log_json).expect("Failed to deserialize log");
 
         let result = transform_hypersync_swap_log(
-            chain.clone(),
-            dex.clone(),
+            chain,
+            dex,
             pool.instrument_id,
             pool.address,
-            token0.clone(),
-            token1.clone(),
+            token0,
+            token1,
             UnixNanos::default(),
             &log,
         );

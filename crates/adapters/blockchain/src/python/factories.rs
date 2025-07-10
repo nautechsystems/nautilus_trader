@@ -23,17 +23,17 @@ use crate::factories::BlockchainDataClientFactory;
 impl BlockchainDataClientFactory {
     /// Creates a new `BlockchainDataClientFactory` instance.
     #[new]
-    fn py_new() -> Self {
+    const fn py_new() -> Self {
         Self::new()
     }
 
     /// Returns the factory name.
-    fn name(&self) -> &'static str {
+    const fn name(&self) -> &'static str {
         "BLOCKCHAIN"
     }
 
     /// Returns the configuration type.
-    fn config_type(&self) -> &'static str {
+    const fn config_type(&self) -> &'static str {
         "BlockchainDataClientConfig"
     }
 

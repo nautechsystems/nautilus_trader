@@ -45,7 +45,7 @@ impl LiveNode {
         trader_id: TraderId,
         environment: Environment,
     ) -> PyResult<LiveNodeBuilderPy> {
-        match LiveNode::builder(name, trader_id, environment) {
+        match Self::builder(name, trader_id, environment) {
             Ok(builder) => Ok(LiveNodeBuilderPy {
                 inner: Rc::new(RefCell::new(Some(builder))),
             }),
@@ -69,13 +69,13 @@ impl LiveNode {
 
     /// Returns the node's instance ID.
     #[getter]
-    fn py_instance_id(&self) -> UUID4 {
+    const fn py_instance_id(&self) -> UUID4 {
         self.instance_id()
     }
 
     /// Returns whether the node is running.
     #[getter]
-    fn py_is_running(&self) -> bool {
+    const fn py_is_running(&self) -> bool {
         self.is_running()
     }
 
