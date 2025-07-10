@@ -589,8 +589,8 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             )
         else:
             # Convert from timestamps to milliseconds
-            start_time_ms = int(request.start.timestamp() * 1000)
-            end_time_ms = int(request.end.timestamp() * 1000)
+            start_time_ms = secs_to_millis(request.start.timestamp())
+            end_time_ms = secs_to_millis(request.end.timestamp())
             ticks = await self._http_market.request_agg_trade_ticks(
                 instrument_id=request.instrument_id,
                 limit=limit,
