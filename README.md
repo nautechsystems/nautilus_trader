@@ -404,6 +404,10 @@ A `Makefile` is provided to automate most installation and build tasks for devel
 >
 > Run `make help` for documentation on all available make targets.
 
+> [!TIP]
+>
+> See the [crates/infrastructure/TESTS.md](https://github.com/nautechsystems/nautilus_trader/blob/develop/crates/infrastructure/TESTS.md) file for running the infrastructure integration tests.
+
 ## Examples
 
 Indicators and strategies can be developed in both Python and Cython. For performance and
