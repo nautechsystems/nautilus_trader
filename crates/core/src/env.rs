@@ -29,3 +29,43 @@ pub fn get_env_var(key: &str) -> anyhow::Result<String> {
         Err(_) => anyhow::bail!("environment variable '{key}' must be set"),
     }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use rstest::*;
+
+    use super::*;
+
+    #[rstest]
+    fn test_get_env_var_success() {
+        // Test with a commonly available environment variable
+        if let Ok(path) = std::env::var("PATH") {
+            let result = get_env_var("PATH");
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap(), path);
+        }
+    }
+
+    #[rstest]
+    fn test_get_env_var_not_set() {
+        // Use a highly unlikely environment variable name
+        let result = get_env_var("NONEXISTENT_ENV_VAR_THAT_SHOULD_NOT_EXIST_12345");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains(
+            "environment variable 'NONEXISTENT_ENV_VAR_THAT_SHOULD_NOT_EXIST_12345' must be set"
+        ));
+    }
+
+    #[rstest]
+    fn test_get_env_var_error_message_format() {
+        let var_name = "DEFINITELY_NONEXISTENT_VAR_123456789";
+        let result = get_env_var(var_name);
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains(var_name));
+        assert!(error_msg.contains("must be set"));
+    }
+}
