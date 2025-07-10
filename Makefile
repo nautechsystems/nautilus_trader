@@ -316,7 +316,8 @@ docker-push-jupyter:  #-- Push JupyterLab Docker image to registry
 init-services:  #-- Initialize development services eg. for integration tests (start containers and setup database)
 	$(info $(M) Initializing development services...)
 	@$(MAKE) start-services
-	@sleep 5  # Wait for PostgreSQL to be ready
+	@echo "${PURPLE}Waiting for PostgreSQL to be ready...${RESET}"
+	@sleep 10
 	@$(MAKE) init-db
 
 .PHONY: start-services
