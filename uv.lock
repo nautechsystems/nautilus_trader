@@ -1417,7 +1417,7 @@ requires-dist = [
     { name = "bech32", marker = "extra == 'dydx'", specifier = ">=1.2.0,<2.0.0" },
     { name = "betfair-parser", marker = "extra == 'betfair'", specifier = "==0.14.4" },
     { name = "bip-utils", marker = "extra == 'dydx'", specifier = ">=2.9.3,<3.0.0" },
-    { name = "click", specifier = ">=8.2.1,<9.0.0" },
+    { name = "click", specifier = ">=8.0.0,<9.0.0" },
     { name = "defusedxml", marker = "extra == 'ib'", specifier = ">=0.7.1,<1.0.0" },
     { name = "docker", marker = "extra == 'docker'", specifier = ">=7.1.0,<8.0.0" },
     { name = "ecdsa", marker = "extra == 'dydx'", specifier = ">=0.19.0,<1.0.0" },
