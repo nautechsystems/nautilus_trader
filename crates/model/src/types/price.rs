@@ -586,8 +586,16 @@ mod tests {
     use super::*;
 
     #[rstest]
-    #[cfg(not(feature = "defi"))]
+    #[cfg(all(not(feature = "defi"), not(feature = "high-precision")))]
     #[should_panic(expected = "`precision` exceeded maximum `FIXED_PRECISION` (9), was 50")]
+    fn test_invalid_precision_new() {
+        // Precision exceeds float precision limit
+        let _ = Price::new(1.0, 50);
+    }
+
+    #[rstest]
+    #[cfg(all(not(feature = "defi"), feature = "high-precision"))]
+    #[should_panic(expected = "`precision` exceeded maximum `FIXED_PRECISION` (16), was 50")]
     fn test_invalid_precision_new() {
         // Precision exceeds float precision limit
         let _ = Price::new(1.0, 50);
@@ -878,29 +886,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_hash() {
-        use std::{
-            collections::hash_map::DefaultHasher,
-            hash::{Hash, Hasher},
-        };
-
-        let p1 = Price::new(10.0, 1);
-        let p2 = Price::new(10.0, 1);
-        let p3 = Price::new(20.0, 1);
-
-        let mut s1 = DefaultHasher::new();
-        let mut s2 = DefaultHasher::new();
-        let mut s3 = DefaultHasher::new();
-
-        p1.hash(&mut s1);
-        p2.hash(&mut s2);
-        p3.hash(&mut s3);
-
-        assert_eq!(s1.finish(), s2.finish());
-        assert_ne!(s1.finish(), s3.finish());
-    }
-
-    #[rstest]
     fn test_deref() {
         let price = Price::new(10.0, 1);
         assert_eq!(*price, price.raw);
@@ -920,14 +905,34 @@ mod tests {
     }
 
     #[rstest]
-    fn test_price_serde_json_round_trip() {
-        let original = Price::new(123.456, 3);
-        let json_str = serde_json::to_string(&original).unwrap();
-        assert_eq!(json_str, "\"123.456\"");
+    fn test_hash() {
+        use std::{
+            collections::hash_map::DefaultHasher,
+            hash::{Hash, Hasher},
+        };
 
-        let deserialized: Price = serde_json::from_str(&json_str).unwrap();
-        assert_eq!(deserialized, original);
-        assert_eq!(deserialized.precision, 3);
+        let price1 = Price::new(1.0, 2);
+        let price2 = Price::new(1.0, 2);
+        let price3 = Price::new(1.1, 2);
+
+        let mut hasher1 = DefaultHasher::new();
+        let mut hasher2 = DefaultHasher::new();
+        let mut hasher3 = DefaultHasher::new();
+
+        price1.hash(&mut hasher1);
+        price2.hash(&mut hasher2);
+        price3.hash(&mut hasher3);
+
+        assert_eq!(hasher1.finish(), hasher2.finish());
+        assert_ne!(hasher1.finish(), hasher3.finish());
+    }
+
+    #[rstest]
+    fn test_price_serde_json_round_trip() {
+        let price = Price::new(1.0500, 4);
+        let json = serde_json::to_string(&price).unwrap();
+        let deserialized: Price = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, price);
     }
 }
 

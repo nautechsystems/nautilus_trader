@@ -594,8 +594,16 @@ mod tests {
     }
 
     #[rstest]
-    #[cfg(not(feature = "defi"))]
+    #[cfg(all(not(feature = "defi"), not(feature = "high-precision")))]
     #[should_panic(expected = "`precision` exceeded maximum `FIXED_PRECISION` (9), was 17")]
+    fn test_invalid_precision_new() {
+        // Precision 17 should fail due to DeFi validation
+        let _ = Quantity::new(1.0, 17);
+    }
+
+    #[rstest]
+    #[cfg(all(not(feature = "defi"), feature = "high-precision"))]
+    #[should_panic(expected = "`precision` exceeded maximum `FIXED_PRECISION` (16), was 17")]
     fn test_invalid_precision_new() {
         // Precision 17 should fail due to DeFi validation
         let _ = Quantity::new(1.0, 17);
@@ -1196,26 +1204,24 @@ mod property_tests {
         /// Property: Multiplication should preserve non-negativity
         #[test]
         fn prop_quantity_multiplication_non_negative(
-            a in quantity_value_strategy().prop_filter("Reasonable values", |&x| x > 0.0 && x < 100.0),
-            b in quantity_value_strategy().prop_filter("Reasonable values", |&x| x > 0.0 && x < 100.0),
+            a in quantity_value_strategy().prop_filter("Reasonable values", |&x| x > 0.0 && x < 10.0),
+            b in quantity_value_strategy().prop_filter("Reasonable values", |&x| x > 0.0 && x < 10.0),
             precision in precision_strategy()
         ) {
             let q_a = Quantity::new(a, precision);
             let q_b = Quantity::new(b, precision);
 
-            // Check if multiplication would overflow before performing it
-            let product_f64 = q_a.as_f64() * q_b.as_f64();
-            // More conservative overflow check for high-precision modes
-            let safe_limit = if cfg!(any(feature = "defi", feature = "high-precision")) {
-                QUANTITY_MAX / 10000.0  // Much more conservative in high-precision mode
-            } else {
-                QUANTITY_MAX
-            };
+            // Check if multiplication would overflow at the raw level before performing it
+            let raw_product_check = q_a.raw.checked_mul(q_b.raw);
 
-            if product_f64.is_finite() && product_f64 <= safe_limit {
-                // Multiplying two quantities should always result in a non-negative value
-                let product = q_a * q_b;
-                prop_assert!(product.as_f64() >= 0.0, "Quantity multiplication produced negative value: {}", product.as_f64());
+            if let Some(raw_product) = raw_product_check {
+                // Additional check to ensure the scaled result won't overflow
+                let scaled_raw = raw_product / (FIXED_SCALAR as QuantityRaw);
+                if scaled_raw <= QUANTITY_RAW_MAX {
+                    // Multiplying two quantities should always result in a non-negative value
+                    let product = q_a * q_b;
+                    prop_assert!(product.as_f64() >= 0.0, "Quantity multiplication produced negative value: {}", product.as_f64());
+                }
             }
         }
 

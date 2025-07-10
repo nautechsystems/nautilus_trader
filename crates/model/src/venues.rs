@@ -86,3 +86,222 @@ pub static VENUE_MAP: LazyLock<Mutex<HashMap<&str, Venue>>> = LazyLock::new(|| {
     map.insert(Venue::XNYM().inner().as_str(), Venue::XNYM());
     Mutex::new(map)
 });
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use rstest::*;
+
+    use super::*;
+
+    #[rstest]
+    fn test_venue_constants() {
+        // Test that all venue constants return consistent values
+        let cbcm1 = Venue::CBCM();
+        let cbcm2 = Venue::CBCM();
+        assert_eq!(cbcm1, cbcm2);
+        assert_eq!(cbcm1.inner().as_str(), "CBCM");
+
+        let glbx1 = Venue::GLBX();
+        let glbx2 = Venue::GLBX();
+        assert_eq!(glbx1, glbx2);
+        assert_eq!(glbx1.inner().as_str(), "GLBX");
+
+        let nyum1 = Venue::NYUM();
+        let nyum2 = Venue::NYUM();
+        assert_eq!(nyum1, nyum2);
+        assert_eq!(nyum1.inner().as_str(), "NYUM");
+
+        let xcbt1 = Venue::XCBT();
+        let xcbt2 = Venue::XCBT();
+        assert_eq!(xcbt1, xcbt2);
+        assert_eq!(xcbt1.inner().as_str(), "XCBT");
+
+        let xcec1 = Venue::XCEC();
+        let xcec2 = Venue::XCEC();
+        assert_eq!(xcec1, xcec2);
+        assert_eq!(xcec1.inner().as_str(), "XCEC");
+
+        let xcme1 = Venue::XCME();
+        let xcme2 = Venue::XCME();
+        assert_eq!(xcme1, xcme2);
+        assert_eq!(xcme1.inner().as_str(), "XCME");
+
+        let xfxs1 = Venue::XFXS();
+        let xfxs2 = Venue::XFXS();
+        assert_eq!(xfxs1, xfxs2);
+        assert_eq!(xfxs1.inner().as_str(), "XFXS");
+
+        let xnym1 = Venue::XNYM();
+        let xnym2 = Venue::XNYM();
+        assert_eq!(xnym1, xnym2);
+        assert_eq!(xnym1.inner().as_str(), "XNYM");
+    }
+
+    #[rstest]
+    fn test_venue_constants_uniqueness() {
+        // Test that all venue constants are different from each other
+        let venues = [
+            Venue::CBCM(),
+            Venue::GLBX(),
+            Venue::NYUM(),
+            Venue::XCBT(),
+            Venue::XCEC(),
+            Venue::XCME(),
+            Venue::XFXS(),
+            Venue::XNYM(),
+        ];
+
+        // Check that all venues are unique
+        for (i, venue1) in venues.iter().enumerate() {
+            for (j, venue2) in venues.iter().enumerate() {
+                if i != j {
+                    assert_ne!(
+                        venue1, venue2,
+                        "Venues at indices {i} and {j} should be different"
+                    );
+                }
+            }
+        }
+    }
+
+    #[rstest]
+    fn test_venue_map_contains_all_venues() {
+        let venue_map = VENUE_MAP.lock().unwrap();
+
+        // Test that all venue constants are in the map
+        assert!(venue_map.contains_key("CBCM"));
+        assert!(venue_map.contains_key("GLBX"));
+        assert!(venue_map.contains_key("NYUM"));
+        assert!(venue_map.contains_key("XCBT"));
+        assert!(venue_map.contains_key("XCEC"));
+        assert!(venue_map.contains_key("XCME"));
+        assert!(venue_map.contains_key("XFXS"));
+        assert!(venue_map.contains_key("XNYM"));
+
+        // Test that the map has exactly 8 entries
+        assert_eq!(venue_map.len(), 8);
+    }
+
+    #[rstest]
+    fn test_venue_map_values_match_constants() {
+        let venue_map = VENUE_MAP.lock().unwrap();
+
+        // Test that map values match the venue constants
+        assert_eq!(venue_map.get("CBCM").unwrap(), &Venue::CBCM());
+        assert_eq!(venue_map.get("GLBX").unwrap(), &Venue::GLBX());
+        assert_eq!(venue_map.get("NYUM").unwrap(), &Venue::NYUM());
+        assert_eq!(venue_map.get("XCBT").unwrap(), &Venue::XCBT());
+        assert_eq!(venue_map.get("XCEC").unwrap(), &Venue::XCEC());
+        assert_eq!(venue_map.get("XCME").unwrap(), &Venue::XCME());
+        assert_eq!(venue_map.get("XFXS").unwrap(), &Venue::XFXS());
+        assert_eq!(venue_map.get("XNYM").unwrap(), &Venue::XNYM());
+    }
+
+    #[rstest]
+    fn test_venue_map_lookup_nonexistent() {
+        let venue_map = VENUE_MAP.lock().unwrap();
+
+        // Test that non-existent venues return None
+        assert!(venue_map.get("INVALID").is_none());
+        assert!(venue_map.get("").is_none());
+        assert!(venue_map.get("NYSE").is_none()); // Valid venue but not in our constants
+    }
+
+    #[rstest]
+    fn test_venue_constants_lazy_initialization() {
+        // Test that venue constants work with lazy initialization
+        // This implicitly tests that OnceLock works correctly
+
+        // Multiple calls should return the same instance
+        let cbcm_calls = (0..10).map(|_| Venue::CBCM()).collect::<Vec<_>>();
+        let first_cbcm = cbcm_calls[0];
+
+        for cbcm in cbcm_calls {
+            assert_eq!(cbcm, first_cbcm);
+        }
+    }
+
+    #[rstest]
+    fn test_all_venue_strings() {
+        // Test the string representations of all venues
+        let expected_venues = vec![
+            ("CBCM", Venue::CBCM()),
+            ("GLBX", Venue::GLBX()),
+            ("NYUM", Venue::NYUM()),
+            ("XCBT", Venue::XCBT()),
+            ("XCEC", Venue::XCEC()),
+            ("XCME", Venue::XCME()),
+            ("XFXS", Venue::XFXS()),
+            ("XNYM", Venue::XNYM()),
+        ];
+
+        for (expected_str, venue) in expected_venues {
+            assert_eq!(venue.inner().as_str(), expected_str);
+            assert_eq!(format!("{venue}"), expected_str);
+        }
+    }
+
+    #[rstest]
+    fn test_venue_constants_thread_safety() {
+        use std::thread;
+
+        // Test that venue constants are thread-safe
+        let handles: Vec<_> = (0..4)
+            .map(|_| {
+                thread::spawn(|| {
+                    // Access all venue constants from different threads
+                    let venues = vec![
+                        Venue::CBCM(),
+                        Venue::GLBX(),
+                        Venue::NYUM(),
+                        Venue::XCBT(),
+                        Venue::XCEC(),
+                        Venue::XCME(),
+                        Venue::XFXS(),
+                        Venue::XNYM(),
+                    ];
+                    venues
+                })
+            })
+            .collect();
+
+        let results: Vec<Vec<Venue>> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+
+        // All threads should return the same venue instances
+        for venues in &results {
+            assert_eq!(venues[0], Venue::CBCM());
+            assert_eq!(venues[1], Venue::GLBX());
+            assert_eq!(venues[2], Venue::NYUM());
+            assert_eq!(venues[3], Venue::XCBT());
+            assert_eq!(venues[4], Venue::XCEC());
+            assert_eq!(venues[5], Venue::XCME());
+            assert_eq!(venues[6], Venue::XFXS());
+            assert_eq!(venues[7], Venue::XNYM());
+        }
+    }
+
+    #[rstest]
+    fn test_venue_map_thread_safety() {
+        use std::thread;
+
+        // Test that VENUE_MAP is thread-safe
+        let handles: Vec<_> = (0..4)
+            .map(|_| {
+                thread::spawn(|| {
+                    let venue_map = VENUE_MAP.lock().unwrap();
+                    venue_map.get("XCME").copied()
+                })
+            })
+            .collect();
+
+        let results: Vec<Option<Venue>> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+
+        // All threads should return the same result
+        for result in results {
+            assert_eq!(result, Some(Venue::XCME()));
+        }
+    }
+}
