@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pandas as pd
+
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.core.data import Data
@@ -271,14 +273,28 @@ class TestMarketDataClient:
 
     def test_handle_quote_ticks_sends_to_data_engine(self):
         # Arrange, Act
-        self.client._handle_quote_ticks_py(AUDUSD_SIM.id, [], UUID4(), None)
+        self.client._handle_quote_ticks_py(
+            AUDUSD_SIM.id,
+            [],
+            UUID4(),
+            pd.Timestamp("2023-01-01"),
+            pd.Timestamp("2023-01-02"),
+            None,
+        )
 
         # Assert
         assert self.data_engine.response_count == 1
 
     def test_handle_trade_ticks_sends_to_data_engine(self):
         # Arrange, Act
-        self.client._handle_trade_ticks_py(AUDUSD_SIM.id, [], UUID4(), None)
+        self.client._handle_trade_ticks_py(
+            AUDUSD_SIM.id,
+            [],
+            UUID4(),
+            pd.Timestamp("2023-01-01"),
+            pd.Timestamp("2023-01-02"),
+            None,
+        )
 
         # Assert
         assert self.data_engine.response_count == 1
@@ -290,6 +306,8 @@ class TestMarketDataClient:
             [],
             None,
             UUID4(),
+            pd.Timestamp("2023-01-01"),
+            pd.Timestamp("2023-01-02"),
             None,
         )
 

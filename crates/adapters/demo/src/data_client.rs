@@ -135,6 +135,8 @@ impl MockDataClient {
                 Some(Venue::new("http positive stream")),
                 DataType::new("positive_stream", None),
                 Arc::new(value),
+                UnixNanos::new(1_699_000_000_000_000_000),
+                UnixNanos::new(1_699_500_000_000_000_000),
                 UnixNanos::new(0),
                 None,
             ));
@@ -172,6 +174,8 @@ impl MockDataClient {
                 Some(Venue::new("http positive stream")),
                 DataType::new("positive_stream", None),
                 Arc::new(value),
+                UnixNanos::new(1_698_000_000_000_000_000),
+                UnixNanos::new(1_698_500_000_000_000_000),
                 UnixNanos::new(0),
                 None,
             ));

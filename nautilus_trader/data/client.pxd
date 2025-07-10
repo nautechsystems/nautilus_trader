@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.datetime cimport datetime
+
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.core.data cimport Data
@@ -167,8 +169,8 @@ cdef class MarketDataClient(DataClient):
 
 # -- DATA HANDLERS --------------------------------------------------------------------------------
 
-    cpdef void _handle_instrument(self, Instrument instrument, UUID4 correlation_id, dict[str, object] params)
-    cpdef void _handle_instruments(self, Venue venue, list instruments, UUID4 correlation_id, dict[str, object] params)
-    cpdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id, dict[str, object] params)
-    cpdef void _handle_trade_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id, dict[str, object] params)
-    cpdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID4 correlation_id, dict[str, object] params)
+    cdef void _handle_instrument(self, Instrument instrument, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params)
+    cdef void _handle_instruments(self, Venue venue, list instruments, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params)
+    cdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params)
+    cdef void _handle_trade_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params)
+    cdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params)

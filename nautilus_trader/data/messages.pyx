@@ -2388,6 +2388,10 @@ cdef class DataResponse(Response):
         The response ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
+    start : datetime
+        The start datetime (UTC) of response time range (inclusive).
+    end : datetime
+        The end datetime (UTC) of response time range (inclusive).
     params : dict[str, object], optional
         Additional parameters for the response.
 
@@ -2407,6 +2411,8 @@ cdef class DataResponse(Response):
             UUID4 correlation_id not None,
             UUID4 response_id not None,
             uint64_t ts_init,
+            datetime start,
+            datetime end,
             dict[str, object] params: dict | None = None,
     ) -> None:
         Condition.is_true(client_id or venue, "Both `client_id` and `venue` were None")
@@ -2420,6 +2426,8 @@ cdef class DataResponse(Response):
         self.venue = venue
         self.data_type = data_type
         self.data = data
+        self.start = start
+        self.end = end
         self.params = params or {}
 
     def __str__(self) -> str:

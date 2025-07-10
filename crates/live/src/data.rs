@@ -25,7 +25,7 @@ use nautilus_common::{
         },
     },
 };
-use nautilus_core::UUID4;
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_data::client::DataClient;
 use nautilus_model::{
     data::{
@@ -85,12 +85,20 @@ pub trait LiveDataClient: DataClient {
         }
     }
 
-    fn send_instrument_response(&self, instrument: InstrumentAny, correlation_id: UUID4) {
+    fn send_instrument_response(
+        &self,
+        instrument: InstrumentAny,
+        correlation_id: UUID4,
+        start: UnixNanos,
+        end: UnixNanos,
+    ) {
         let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
             correlation_id,
             self.client_id(),
             instrument.id(),
             instrument,
+            start,
+            end,
             self.get_clock().timestamp_ns(),
             None,
         )));
@@ -103,12 +111,16 @@ pub trait LiveDataClient: DataClient {
         venue: Venue,
         instruments: Vec<InstrumentAny>,
         correlation_id: UUID4,
+        start: UnixNanos,
+        end: UnixNanos,
     ) {
         let response = DataResponse::Instruments(InstrumentsResponse::new(
             correlation_id,
             self.client_id(),
             venue,
             instruments,
+            start,
+            end,
             self.get_clock().timestamp_ns(),
             None,
         ));
@@ -116,12 +128,20 @@ pub trait LiveDataClient: DataClient {
         self.send_response(response);
     }
 
-    fn send_book_response(&self, book: OrderBook, correlation_id: UUID4) {
+    fn send_book_response(
+        &self,
+        book: OrderBook,
+        correlation_id: UUID4,
+        start: UnixNanos,
+        end: UnixNanos,
+    ) {
         let response = DataResponse::Book(BookResponse::new(
             correlation_id,
             self.client_id(),
             book.instrument_id,
             book,
+            start,
+            end,
             self.get_clock().timestamp_ns(),
             None,
         ));
@@ -134,12 +154,16 @@ pub trait LiveDataClient: DataClient {
         instrument_id: InstrumentId,
         quotes: Vec<QuoteTick>,
         correlation_id: UUID4,
+        start: UnixNanos,
+        end: UnixNanos,
     ) {
         let response = DataResponse::Quotes(QuotesResponse::new(
             correlation_id,
             self.client_id(),
             instrument_id,
             quotes,
+            start,
+            end,
             self.get_clock().timestamp_ns(),
             None,
         ));
@@ -152,12 +176,16 @@ pub trait LiveDataClient: DataClient {
         instrument_id: InstrumentId,
         trades: Vec<TradeTick>,
         correlation_id: UUID4,
+        start: UnixNanos,
+        end: UnixNanos,
     ) {
         let response = DataResponse::Trades(TradesResponse::new(
             correlation_id,
             self.client_id(),
             instrument_id,
             trades,
+            start,
+            end,
             self.get_clock().timestamp_ns(),
             None,
         ));
@@ -165,12 +193,21 @@ pub trait LiveDataClient: DataClient {
         self.send_response(response);
     }
 
-    fn send_bars(&self, bar_type: BarType, bars: Vec<Bar>, correlation_id: UUID4) {
+    fn send_bars(
+        &self,
+        bar_type: BarType,
+        bars: Vec<Bar>,
+        correlation_id: UUID4,
+        start: UnixNanos,
+        end: UnixNanos,
+    ) {
         let response = DataResponse::Bars(BarsResponse::new(
             correlation_id,
             self.client_id(),
             bar_type,
             bars,
+            start,
+            end,
             self.get_clock().timestamp_ns(),
             None,
         ));

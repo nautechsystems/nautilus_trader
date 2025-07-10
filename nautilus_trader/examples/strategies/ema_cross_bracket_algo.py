@@ -153,7 +153,10 @@ class EMACrossBracketAlgo(Strategy):
         self.register_indicator_for_bars(self.config.bar_type, self.slow_ema)
 
         # Get historical data
-        self.request_bars(self.config.bar_type)
+        self.request_bars(
+            self.config.bar_type,
+            start=self._clock.utc_now() - timedelta(days=1),
+        )
 
         # Subscribe to live data
         self.subscribe_bars(self.config.bar_type)
