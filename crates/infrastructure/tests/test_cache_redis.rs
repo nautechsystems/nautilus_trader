@@ -808,4 +808,205 @@ mod serial_tests {
         let mut adapter = adapter;
         adapter.flush().unwrap();
     }
+
+    #[tokio::test]
+    async fn test_delete_account_events_batch() {
+        let adapter = get_redis_cache_adapter().await.unwrap();
+
+        // Use unique account ID to avoid interference
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let account_id = AccountId::new(format!("ACCOUNT-BATCH-{timestamp}"));
+
+        // Create test account events (simulate serialized account events)
+        let event_id_1 = "event-1";
+        let event_id_2 = "event-2";
+        let event_id_3 = "event-3";
+        let event_id_keep = "event-keep";
+
+        let event_data_1 =
+            format!(r#"{{"event_id":"{event_id_1}","account_id":"{account_id}","data":"test1"}}"#);
+        let event_data_2 =
+            format!(r#"{{"event_id":"{event_id_2}","account_id":"{account_id}","data":"test2"}}"#);
+        let event_data_3 =
+            format!(r#"{{"event_id":"{event_id_3}","account_id":"{account_id}","data":"test3"}}"#);
+        let event_data_keep = format!(
+            r#"{{"event_id":"{event_id_keep}","account_id":"{account_id}","data":"keep"}}"#
+        );
+
+        // Set up Redis list with test data
+        let list_key = format!("{}:accounts:{}", adapter.database.trader_key, account_id);
+        use redis::AsyncCommands;
+        let mut conn = adapter.database.con.clone();
+
+        // Add events to the list
+        let _: () = conn
+            .rpush(
+                &list_key,
+                &[
+                    &event_data_1,
+                    &event_data_2,
+                    &event_data_3,
+                    &event_data_keep,
+                ],
+            )
+            .await
+            .unwrap();
+
+        // Verify initial state
+        let initial_count: i32 = conn.llen(&list_key).await.unwrap();
+        assert_eq!(initial_count, 4);
+
+        // Delete multiple events in batch
+        let events_to_delete = [event_id_1, event_id_2, event_id_3];
+        adapter
+            .database
+            .delete_account_events_batch(&account_id, &events_to_delete)
+            .unwrap();
+
+        // Wait for operation to complete
+        let list_key_clone = list_key.clone();
+        let conn_clone = conn.clone();
+
+        wait_until_async(
+            move || {
+                let list_key = list_key_clone.clone();
+                let mut conn = conn_clone.clone();
+                async move {
+                    let count: i32 = conn.llen(&list_key).await.unwrap();
+                    count == 1
+                }
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        // Verify batch deletion worked
+        let final_count: i32 = conn.llen(&list_key).await.unwrap();
+        assert_eq!(final_count, 1);
+
+        // Verify the kept event is still there
+        let remaining_events: Vec<String> = conn.lrange(&list_key, 0, -1).await.unwrap();
+
+        assert_eq!(remaining_events.len(), 1);
+        assert!(remaining_events[0].contains(event_id_keep));
+        assert!(!remaining_events[0].contains(event_id_1));
+        assert!(!remaining_events[0].contains(event_id_2));
+        assert!(!remaining_events[0].contains(event_id_3));
+
+        // Clean up
+        let _: () = conn.del(&list_key).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_delete_account_events_batch_empty() {
+        let adapter = get_redis_cache_adapter().await.unwrap();
+        let account_id = AccountId::new("ACCOUNT-BATCH-EMPTY");
+
+        // Test with empty event list - should not fail
+        let empty_vec: Vec<&str> = vec![];
+        let result = adapter
+            .database
+            .delete_account_events_batch(&account_id, &empty_vec);
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_delete_account_events_batch_nonexistent() {
+        let adapter = get_redis_cache_adapter().await.unwrap();
+        let account_id = AccountId::new("ACCOUNT-BATCH-NONEXISTENT");
+
+        // Test with nonexistent events - should not fail
+        let result = adapter
+            .database
+            .delete_account_events_batch(&account_id, &["fake-event-1", "fake-event-2"]);
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_delete_account_events_batch_stress() {
+        let adapter = get_redis_cache_adapter().await.unwrap();
+
+        // Use unique account ID
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let account_id = AccountId::new(format!("ACCOUNT-STRESS-{timestamp}"));
+
+        let list_key = format!("{}:accounts:{}", adapter.database.trader_key, account_id);
+        use redis::AsyncCommands;
+        let mut conn = adapter.database.con.clone();
+
+        // Create 2,000 events (reasonable stress test)
+        println!("Creating 2,000 test events...");
+        let start_setup = std::time::Instant::now();
+
+        let mut events_data = Vec::new();
+        let mut events_to_delete = Vec::new();
+
+        // Create events with realistic timestamps (simulating time-based purging)
+        let base_timestamp = 1000000000000000000u64; // Base nanosecond timestamp
+        for i in 0..2_000 {
+            let event_id = format!("event-{i}");
+            let timestamp = base_timestamp + (i * 60_000_000_000); // Events every minute
+            let event_data = format!(
+                r#"{{"event_id":"{event_id}","account_id":"{account_id}","ts_event":{timestamp},"data":"stress_test_{i}"}}"#
+            );
+            events_data.push(event_data);
+
+            // Simulate time-based purging: delete first 1000 events (oldest)
+            // This creates a realistic contiguous head deletion pattern
+            if i < 1_000 {
+                events_to_delete.push(event_id);
+            }
+        }
+
+        // Batch insert all events
+        let _: () = conn.rpush(&list_key, &events_data).await.unwrap();
+        let setup_duration = start_setup.elapsed();
+        println!("Setup took: {:?}", setup_duration);
+
+        // Verify initial count
+        let initial_count: i32 = conn.llen(&list_key).await.unwrap();
+        assert_eq!(initial_count, 2_000);
+
+        // Perform batch deletion with timing
+        println!("Starting batch deletion of 1,000 events...");
+        let start_delete = std::time::Instant::now();
+
+        let result = adapter
+            .database
+            .delete_account_events_batch(&account_id, &events_to_delete);
+
+        let delete_duration = start_delete.elapsed();
+        println!("Batch deletion took: {:?}", delete_duration);
+
+        assert!(result.is_ok(), "Batch deletion should succeed");
+
+        // Check what actually happened without waiting
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+        let actual_count: i32 = conn.llen(&list_key).await.unwrap();
+        println!("Actual count after deletion: {}", actual_count);
+
+        // Get some of the remaining items to debug
+        let remaining_items: Vec<String> = conn.lrange(&list_key, 0, 10).await.unwrap();
+        println!("First 10 remaining items: {:?}", remaining_items);
+        println!("Events we tried to delete: {:?}", &events_to_delete[0..10]);
+
+        // Verify final count matches expectation
+        assert_eq!(
+            actual_count, 1_000,
+            "Should have 1,000 events remaining after deletion"
+        );
+
+        println!("Stress test completed successfully!");
+        println!("Total time: {:?}", setup_duration + delete_duration);
+
+        // Clean up
+        let _: () = conn.del(&list_key).await.unwrap();
+    }
 }
