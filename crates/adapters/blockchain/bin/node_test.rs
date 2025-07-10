@@ -138,13 +138,13 @@ impl BlockchainSubscriberActorConfig {
 
     /// Returns the client ID.
     #[getter]
-    fn client_id(&self) -> ClientId {
+    const fn client_id(&self) -> ClientId {
         self.client_id
     }
 
     /// Returns the blockchain.
     #[getter]
-    fn chain(&self) -> Blockchain {
+    const fn chain(&self) -> Blockchain {
         self.chain
     }
 
@@ -311,22 +311,22 @@ impl BlockchainSubscriberActor {
     }
 
     /// Returns the number of blocks received by this actor.
-    fn py_block_count(&self) -> usize {
+    const fn py_block_count(&self) -> usize {
         self.block_count()
     }
 
     /// Returns the number of pools received by this actor.
-    fn py_pool_count(&self) -> usize {
+    const fn py_pool_count(&self) -> usize {
         self.pool_count()
     }
 
     /// Returns the number of swaps received by this actor.
-    fn py_pool_swap_count(&self) -> usize {
+    const fn py_pool_swap_count(&self) -> usize {
         self.pool_swap_count()
     }
 
     /// Returns the number of liquidity updates received by this actor.
-    fn py_pool_liquidity_update_count(&self) -> usize {
+    const fn py_pool_liquidity_update_count(&self) -> usize {
         self.pool_liquidity_update_count()
     }
 

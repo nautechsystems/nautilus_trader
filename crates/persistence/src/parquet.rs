@@ -700,7 +700,7 @@ fn parse_url_and_path(uri: &str) -> anyhow::Result<(url::Url, String)> {
 /// Helper function to extract host from URL with error handling.
 fn extract_host(url: &url::Url, error_msg: &str) -> anyhow::Result<String> {
     url.host_str()
-        .map(std::string::ToString::to_string)
+        .map(ToString::to_string)
         .ok_or_else(|| anyhow::anyhow!("{}", error_msg))
 }
 

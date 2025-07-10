@@ -65,20 +65,20 @@ impl BlockchainDataClientConfig {
 
     /// Returns the RPC requests per second limit.
     #[getter]
-    fn rpc_requests_per_second(&self) -> Option<u32> {
+    const fn rpc_requests_per_second(&self) -> Option<u32> {
         self.rpc_requests_per_second
     }
 
     /// Returns whether to use HyperSync for live data.
     #[getter]
-    fn use_hypersync_for_live_data(&self) -> bool {
+    const fn use_hypersync_for_live_data(&self) -> bool {
         self.use_hypersync_for_live_data
     }
 
     /// Returns the starting block for sync.
     #[getter]
     #[allow(clippy::wrong_self_convention)]
-    fn from_block(&self) -> Option<u64> {
+    const fn from_block(&self) -> Option<u64> {
         self.from_block
     }
 

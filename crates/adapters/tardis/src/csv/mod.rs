@@ -2299,26 +2299,26 @@ binance,BTCUSDT,1640995202000000,1640995202100000,50001.12,1.12,49999.12,1.62,50
         // Add bid levels (first 5 with data, rest empty)
         for i in 0..25 {
             if i < 5 {
-                let bid_price = 49999.0 - i as f64 * 0.01;
-                let bid_amount = 1.0 + i as f64;
+                let bid_price = f64::from(i).mul_add(-0.01, 49999.0);
+                let bid_amount = 1.0 + f64::from(i);
                 row1_parts.push(bid_price.to_string());
                 row1_parts.push(bid_amount.to_string());
             } else {
-                row1_parts.push("".to_string());
-                row1_parts.push("".to_string());
+                row1_parts.push(String::new());
+                row1_parts.push(String::new());
             }
         }
 
         // Add ask levels (first 5 with data, rest empty)
         for i in 0..25 {
             if i < 5 {
-                let ask_price = 50000.0 + i as f64 * 0.01;
-                let ask_amount = 1.0 + i as f64;
+                let ask_price = f64::from(i).mul_add(0.01, 50000.0);
+                let ask_amount = 1.0 + f64::from(i);
                 row1_parts.push(ask_price.to_string());
                 row1_parts.push(ask_amount.to_string());
             } else {
-                row1_parts.push("".to_string());
-                row1_parts.push("".to_string());
+                row1_parts.push(String::new());
+                row1_parts.push(String::new());
             }
         }
 
