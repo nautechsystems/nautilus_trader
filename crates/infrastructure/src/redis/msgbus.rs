@@ -20,7 +20,7 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use bytes::Bytes;
@@ -42,6 +42,7 @@ use nautilus_cryptography::providers::install_cryptographic_provider;
 use nautilus_model::identifiers::TraderId;
 use redis::{AsyncCommands, streams};
 use streams::StreamReadOptions;
+use tokio::time::Instant;
 use ustr::Ustr;
 
 use super::{REDIS_MINID, REDIS_XTRIM, await_handle};
@@ -265,31 +266,72 @@ pub async fn publish_messages(
 
     // Buffering
     let mut buffer: VecDeque<BusMessage> = VecDeque::new();
-    let mut last_drain = Instant::now();
     let buffer_interval = Duration::from_millis(u64::from(config.buffer_interval_ms.unwrap_or(0)));
 
+    // A sleep used to trigger periodic flushing of the buffer.
+    // When `buffer_interval` is zero we skip using the timer and flush immediately
+    // after every message.
+    let flush_timer = tokio::time::sleep(buffer_interval);
+    tokio::pin!(flush_timer);
+
     loop {
-        if last_drain.elapsed() >= buffer_interval && !buffer.is_empty() {
-            drain_buffer(
-                &mut con,
-                &stream_key,
-                config.stream_per_topic,
-                autotrim_duration,
-                &mut last_trim_index,
-                &mut buffer,
-            )
-            .await?;
-            last_drain = Instant::now();
-        } else if let Some(msg) = rx.recv().await {
-            if msg.topic == CLOSE_TOPIC {
-                tracing::debug!("Received close message");
-                drop(rx);
-                break;
+        tokio::select! {
+            maybe_msg = rx.recv() => {
+                match maybe_msg {
+                    Some(msg) => {
+                        if msg.topic == CLOSE_TOPIC {
+                            tracing::debug!("Received close message");
+                            // Ensure we exit the loop after flushing any remaining messages.
+                            if !buffer.is_empty() {
+                                drain_buffer(
+                                    &mut con,
+                                    &stream_key,
+                                    config.stream_per_topic,
+                                    autotrim_duration,
+                                    &mut last_trim_index,
+                                    &mut buffer,
+                                ).await?;
+                            }
+                            break;
+                        }
+
+                        buffer.push_back(msg);
+
+                        if buffer_interval.is_zero() {
+                            // Immediate flush mode
+                            drain_buffer(
+                                &mut con,
+                                &stream_key,
+                                config.stream_per_topic,
+                                autotrim_duration,
+                                &mut last_trim_index,
+                                &mut buffer,
+                            ).await?;
+                        }
+                    }
+                    None => {
+                        tracing::debug!("Channel hung up");
+                        break;
+                    }
+                }
             }
-            buffer.push_back(msg);
-        } else {
-            tracing::debug!("Channel hung up");
-            break;
+            // Only poll the timer when the interval is non-zero. This avoids
+            // unnecessarily waking the task when immediate flushing is enabled.
+            _ = &mut flush_timer, if !buffer_interval.is_zero() => {
+                if !buffer.is_empty() {
+                    drain_buffer(
+                        &mut con,
+                        &stream_key,
+                        config.stream_per_topic,
+                        autotrim_duration,
+                        &mut last_trim_index,
+                        &mut buffer,
+                    ).await?;
+                }
+
+                // Schedule the next tick
+                flush_timer.as_mut().reset(Instant::now() + buffer_interval);
+            }
         }
     }
 

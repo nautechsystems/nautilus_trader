@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.1
+#       jupytext_version: 1.17.2
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -213,8 +213,8 @@ data_clients: dict = {
     "databento-001": DatabentoDataClientConfig(
         api_key=None,  # 'DATABENTO_API_KEY' env var is used
         routing=RoutingConfig(
-            default=True,
-            # venues=frozenset(["XCME"]),
+            default=False,
+            venues=frozenset(["XCME"]),
         ),
     ),
 }

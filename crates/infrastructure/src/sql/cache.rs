@@ -13,10 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    collections::VecDeque,
-    time::{Duration, Instant},
-};
+use std::{collections::VecDeque, time::Duration};
 
 use ahash::AHashMap;
 use bytes::Bytes;
@@ -43,7 +40,7 @@ use nautilus_model::{
     types::Currency,
 };
 use sqlx::{PgPool, postgres::PgConnectOptions};
-use tokio::try_join;
+use tokio::{time::Instant, try_join};
 use ustr::Ustr;
 
 use crate::sql::{
@@ -123,25 +120,44 @@ impl PostgresCacheDatabase {
 
         // Buffering
         let mut buffer: VecDeque<DatabaseQuery> = VecDeque::new();
-        let mut last_drain = Instant::now();
 
-        // TODO: Add `buffer_interval_ms` to config, setting this above 0 currently fails tests
+        // TODO: expose this via configuration once tests are fixed
         let buffer_interval = Duration::from_millis(0);
+
+        // Use a timer so the task wakes up even when no new message arrives
+        let flush_timer = tokio::time::sleep(buffer_interval);
+        tokio::pin!(flush_timer);
 
         // Continue to receive and handle messages until channel is hung up
         loop {
-            if last_drain.elapsed() >= buffer_interval && !buffer.is_empty() {
-                drain_buffer(&pool, &mut buffer).await;
-                last_drain = Instant::now();
-            } else if let Some(msg) = rx.recv().await {
-                tracing::debug!("Received {msg:?}");
-                match msg {
-                    DatabaseQuery::Close => break,
-                    _ => buffer.push_back(msg),
+            tokio::select! {
+                maybe_msg = rx.recv() => {
+                    match maybe_msg {
+                        Some(msg) => {
+                            tracing::debug!("Received {msg:?}");
+                            if matches!(msg, DatabaseQuery::Close) {
+                                break;
+                            }
+                            buffer.push_back(msg);
+
+                            // If interval is zero flush straight away so tests remain fast
+                            if buffer_interval.is_zero() {
+                                drain_buffer(&pool, &mut buffer).await;
+                            }
+                        }
+                        None => {
+                            tracing::debug!("Command channel closed");
+                            break;
+                        }
+                    }
                 }
-            } else {
-                tracing::debug!("Command channel closed");
-                break;
+                _ = &mut flush_timer, if !buffer_interval.is_zero() => {
+                    if !buffer.is_empty() {
+                        drain_buffer(&pool, &mut buffer).await;
+                    }
+
+                    flush_timer.as_mut().reset(Instant::now() + buffer_interval);
+                }
             }
         }
 

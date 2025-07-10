@@ -76,6 +76,7 @@ pub struct ExecutionEngine {
     routing_map: HashMap<Venue, ClientId>,
     oms_overrides: HashMap<StrategyId, OmsType>,
     external_order_claims: HashMap<InstrumentId, StrategyId>,
+    external_clients: HashSet<ClientId>,
     pos_id_generator: PositionIdGenerator,
     config: ExecutionEngineConfig,
 }
@@ -104,6 +105,12 @@ impl ExecutionEngine {
             routing_map: HashMap::new(),
             oms_overrides: HashMap::new(),
             external_order_claims: HashMap::new(),
+            external_clients: config
+                .as_ref()
+                .and_then(|c| c.external_clients.clone())
+                .unwrap_or_default()
+                .into_iter()
+                .collect(),
             pos_id_generator: PositionIdGenerator::new(trader_id, clock),
             config: config.unwrap_or_default(),
         }
@@ -279,6 +286,14 @@ impl ExecutionEngine {
     fn execute_command(&self, command: &TradingCommand) {
         if self.config.debug {
             log::debug!("{RECV}{CMD} {command:?}");
+        }
+
+        if self.external_clients.contains(&command.client_id()) {
+            if self.config.debug {
+                let cid = command.client_id();
+                log::debug!("Skipping execution command for external client {cid}: {command:?}");
+            }
+            return;
         }
 
         let client: Rc<dyn ExecutionClient> = if let Some(client) = self

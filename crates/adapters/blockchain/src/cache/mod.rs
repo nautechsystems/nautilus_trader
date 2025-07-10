@@ -86,6 +86,10 @@ impl BlockchainCache {
     }
 
     /// Connects to the database and loads initial data.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if database seeding, token loading, or block loading fails.
     pub async fn connect(&mut self, from_block: u64) -> anyhow::Result<()> {
         // Seed target adapter chain in database
         if let Some(database) = &self.database
@@ -152,6 +156,10 @@ impl BlockchainCache {
     }
 
     /// Adds a block to the cache and persists it to the database if available.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if adding the block to the database fails.
     pub async fn add_block(&mut self, block: Block) -> anyhow::Result<()> {
         if let Some(database) = &self.database {
             database.add_block(self.chain.chain_id, &block).await?;
@@ -161,6 +169,10 @@ impl BlockchainCache {
     }
 
     /// Adds a DEX to the cache with the specified identifier.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if adding the DEX to the database fails.
     pub async fn add_dex(&mut self, dex_id: String, dex: DexExtended) -> anyhow::Result<()> {
         log::info!("Adding dex {dex_id} to the cache");
 
@@ -173,6 +185,10 @@ impl BlockchainCache {
     }
 
     /// Adds a liquidity pool/pair to the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if adding the pool to the database fails.
     pub async fn add_pool(&mut self, pool: Pool) -> anyhow::Result<()> {
         let pool_address = pool.address;
         log::info!("Adding dex pool {pool_address} to the cache");
@@ -186,6 +202,10 @@ impl BlockchainCache {
     }
 
     /// Adds a [`Token`] to the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if adding the token to the database fails.
     pub async fn add_token(&mut self, token: Token) -> anyhow::Result<()> {
         if let Some(database) = &self.database {
             database.add_token(&token).await?;
@@ -195,6 +215,10 @@ impl BlockchainCache {
     }
 
     /// Adds a [`PoolSwap`] to the cache database if available.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if adding the swap to the database fails.
     pub async fn add_pool_swap(&self, swap: &PoolSwap) -> anyhow::Result<()> {
         if let Some(database) = &self.database {
             database.add_swap(self.chain.chain_id, swap).await?;
@@ -204,6 +228,10 @@ impl BlockchainCache {
     }
 
     /// Adds a [`PoolLiquidityUpdate`] to the cache database if available.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if adding the liquidity update to the database fails.
     pub async fn add_liquidity_update(
         &self,
         liquidity_update: &PoolLiquidityUpdate,

@@ -3,19 +3,27 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added streaming methods for `TardisCSVDataLoader`
 - Added `use_hyphens_in_client_order_ids` config option for `StrategyConfig`
+- Added `greeks_filter` function to `portfolio_greeks` (#2756), thanks @faysou
+- Added `VERBOSE` option to common make targets (#2759), thanks @faysou
 
 ### Breaking Changes
 None
 
 ### Internal Improvements
+- Improved efficiency of message bus external streams buffer flushing
 - Refined Rust catalog path handling (#2743), thanks @faysou
+- Refined Rust `GreeksCalculator` (#2760), thanks @faysou
+- Upgraded `datafusion` crate to v48.0.1
 
 ### Fixes
+- Fixed Tardis Machine replay processing and Parquet file writing
 - Fixed balance calculations on order fill to allow operating at near account balance capacity (#2752), thanks @petioptrv
+- Fixed time range end in some databento request functions (#2755), thanks @faysou
 
 ### Documentation Updates
-None
+- Improved dYdX integration guide (#2751), thanks @nicolad
 
 ### Deprecations
 None

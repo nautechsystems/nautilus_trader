@@ -14,7 +14,6 @@
 // -------------------------------------------------------------------------------------------------
 
 mod common;
-
 use std::{cell::RefCell, num::NonZeroUsize, rc::Rc};
 
 use common::mocks::MockDataClient;
@@ -69,13 +68,12 @@ use nautilus_data::client::DataClientAdapter;
 use nautilus_model::{
     data::{BarType, DataType},
     enums::BookType,
-    identifiers::{ClientId, Venue},
+    identifiers::{ClientId, InstrumentId, Venue},
     instruments::stubs::audusd_sim,
 };
 use rstest::{fixture, rstest};
 #[cfg(feature = "defi")]
 use {
-    alloy_primitives::Address,
     nautilus_common::messages::defi::{
         DefiSubscribeCommand, DefiUnsubscribeCommand, SubscribeBlocks, SubscribePoolSwaps,
         UnsubscribeBlocks, UnsubscribePoolSwaps,
@@ -1678,31 +1676,31 @@ fn test_defi_pool_swaps_subscription(
     let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
-    let address = Address::from([0x12; 20]);
+    let instrument_id = InstrumentId::from("WETH/USDT-3000.UniswapV3:Arbitrum");
 
     let sub = DefiSubscribeCommand::PoolSwaps(SubscribePoolSwaps {
-        address,
+        instrument_id,
         client_id: Some(client_id),
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
         params: None,
     });
     adapter.execute_defi_subscribe(&sub);
-    assert!(adapter.subscriptions_pool_swaps.contains(&address));
+    assert!(adapter.subscriptions_pool_swaps.contains(&instrument_id));
 
     // Idempotency check
     adapter.execute_defi_subscribe(&sub);
     assert_eq!(adapter.subscriptions_pool_swaps.len(), 1);
 
     let unsub = DefiUnsubscribeCommand::PoolSwaps(UnsubscribePoolSwaps {
-        address,
+        instrument_id,
         client_id: Some(client_id),
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
         params: None,
     });
     adapter.execute_defi_unsubscribe(&unsub);
-    assert!(!adapter.subscriptions_pool_swaps.contains(&address));
+    assert!(!adapter.subscriptions_pool_swaps.contains(&instrument_id));
 }
 
 #[cfg(feature = "defi")]
@@ -1777,17 +1775,18 @@ fn test_defi_pool_swaps_unsubscribe_noop(
     let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
+    let instrument_id = InstrumentId::from("WETH/USDT-3000.UniswapV3:Arbitrum");
+
     // Unsubscribe without prior subscribe should be no-op
-    let address = Address::from([0x12; 20]);
     let unsub = DefiUnsubscribeCommand::PoolSwaps(UnsubscribePoolSwaps {
-        address,
+        instrument_id,
         client_id: Some(client_id),
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
         params: None,
     });
     adapter.execute_defi_unsubscribe(&unsub);
-    assert!(!adapter.subscriptions_pool_swaps.contains(&address));
+    assert!(!adapter.subscriptions_pool_swaps.contains(&instrument_id));
     assert!(adapter.subscriptions_pool_swaps.is_empty());
 }
 
@@ -1802,10 +1801,11 @@ fn test_defi_pool_swaps_unsubscribe_idempotent(
     let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
+    let instrument_id = InstrumentId::from("WETH/USDT-3000.UniswapV3:Arbitrum");
+
     // Subscribe then unsubscribe twice
-    let address = Address::from([0x12; 20]);
     let sub = DefiSubscribeCommand::PoolSwaps(SubscribePoolSwaps {
-        address,
+        instrument_id,
         client_id: Some(client_id),
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
@@ -1814,7 +1814,7 @@ fn test_defi_pool_swaps_unsubscribe_idempotent(
     adapter.execute_defi_subscribe(&sub);
 
     let unsub = DefiUnsubscribeCommand::PoolSwaps(UnsubscribePoolSwaps {
-        address,
+        instrument_id,
         client_id: Some(client_id),
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
@@ -1824,5 +1824,5 @@ fn test_defi_pool_swaps_unsubscribe_idempotent(
     adapter.execute_defi_unsubscribe(&unsub);
 
     // Expect adapter state cleared and no panic on second unsubscribe
-    assert!(!adapter.subscriptions_pool_swaps.contains(&address));
+    assert!(!adapter.subscriptions_pool_swaps.contains(&instrument_id));
 }

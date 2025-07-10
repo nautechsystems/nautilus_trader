@@ -61,6 +61,10 @@ pub fn tardis(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<super::machine::types::StreamNormalizedRequestOptions>()?;
     m.add_class::<super::machine::TardisMachineClient>()?;
     m.add_class::<super::http::client::TardisHttpClient>()?;
+    m.add_class::<csv::TardisStreamIterator>()?;
+    m.add_class::<csv::TardisQuoteStreamIterator>()?;
+    m.add_class::<csv::TardisTradeStreamIterator>()?;
+    m.add_class::<csv::TardisDepth10StreamIterator>()?;
     m.add_function(wrap_pyfunction!(
         enums::py_tardis_exchange_from_venue_str,
         m
@@ -81,6 +85,17 @@ pub fn tardis(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     )?)?;
     m.add_function(wrap_pyfunction!(csv::py_load_tardis_quotes, m)?)?;
     m.add_function(wrap_pyfunction!(csv::py_load_tardis_trades, m)?)?;
+    m.add_function(wrap_pyfunction!(csv::py_stream_tardis_deltas, m)?)?;
+    m.add_function(wrap_pyfunction!(csv::py_stream_tardis_quotes, m)?)?;
+    m.add_function(wrap_pyfunction!(csv::py_stream_tardis_trades, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        csv::py_stream_tardis_depth10_from_snapshot5,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        csv::py_stream_tardis_depth10_from_snapshot25,
+        m
+    )?)?;
     m.add_function(wrap_pyfunction!(py_tardis_normalize_symbol_str, m)?)?;
 
     Ok(())

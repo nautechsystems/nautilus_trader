@@ -90,9 +90,11 @@ iai::main!(bench_add);
 
 ## Running benches locally
 
-- **All benches** for every crate: `make cargo-bench` (delegates to `cargo bench`).
 - **Single crate**: `cargo bench -p nautilus-core`.
-- **Single benchmark file**: `cargo bench -p nautilus-core --bench time`.
+- **Single benchmark module**: `cargo bench -p nautilus-core --bench time`.
+- **CI performance benches**: `make cargo-ci-benches` (runs the crates included
+  in the CI performance workflow one at a time to avoid the mixed-panic-strategy
+  linker issue).
 
 Criterion writes HTML reports to `target/criterion/`; open `target/criterion/report/index.html` in your browser.
 

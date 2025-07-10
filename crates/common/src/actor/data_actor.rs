@@ -31,8 +31,6 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet};
-#[cfg(feature = "defi")]
-use alloy_primitives::Address;
 use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
 use nautilus_core::{UUID4, UnixNanos, correctness::check_predicate_true};
@@ -1095,38 +1093,38 @@ pub trait DataActor:
     }
 
     #[cfg(feature = "defi")]
-    /// Subscribe to streaming [`Pool`] definition updates for the AMM pool at the `address`.
+    /// Subscribe to streaming [`Pool`] definition updates for the AMM pool at the `instrument_id`.
     fn subscribe_pool(
         &mut self,
-        address: Address,
+        instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) where
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.actor_id().inner();
-        let topic = get_defi_pool_topic(address);
+        let topic = get_defi_pool_topic(instrument_id);
 
         let handler =
             ShareableMessageHandler(Rc::new(TypedMessageHandler::from(move |pool: &Pool| {
                 get_actor_unchecked::<Self>(&actor_id).handle_pool(pool);
             })));
 
-        DataActorCore::subscribe_pool(self, topic, handler, address, client_id, params);
+        DataActorCore::subscribe_pool(self, topic, handler, instrument_id, client_id, params);
     }
 
     #[cfg(feature = "defi")]
-    /// Subscribe to streaming [`PoolSwap`] data for the `address`.
+    /// Subscribe to streaming [`PoolSwap`] data for the `instrument_id`.
     fn subscribe_pool_swaps(
         &mut self,
-        address: Address,
+        instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) where
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.actor_id().inner();
-        let topic = get_defi_pool_swaps_topic(address);
+        let topic = get_defi_pool_swaps_topic(instrument_id);
 
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
             move |swap: &PoolSwap| {
@@ -1134,21 +1132,21 @@ pub trait DataActor:
             },
         )));
 
-        DataActorCore::subscribe_pool_swaps(self, topic, handler, address, client_id, params);
+        DataActorCore::subscribe_pool_swaps(self, topic, handler, instrument_id, client_id, params);
     }
 
     #[cfg(feature = "defi")]
-    /// Subscribe to streaming [`PoolLiquidityUpdate`] data for the `address`.
+    /// Subscribe to streaming [`PoolLiquidityUpdate`] data for the `instrument_id`.
     fn subscribe_pool_liquidity_updates(
         &mut self,
-        address: Address,
+        instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) where
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.actor_id().inner();
-        let topic = get_defi_liquidity_topic(address);
+        let topic = get_defi_liquidity_topic(instrument_id);
 
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
             move |update: &PoolLiquidityUpdate| {
@@ -1157,7 +1155,12 @@ pub trait DataActor:
         )));
 
         DataActorCore::subscribe_pool_liquidity_updates(
-            self, topic, handler, address, client_id, params,
+            self,
+            topic,
+            handler,
+            instrument_id,
+            client_id,
+            params,
         );
     }
 
@@ -1326,42 +1329,42 @@ pub trait DataActor:
     }
 
     #[cfg(feature = "defi")]
-    /// Unsubscribe from streaming [`Pool`] definition updates for the AMM pool at the `address`.
+    /// Unsubscribe from streaming [`Pool`] definition updates for the AMM pool at the `instrument_id`.
     fn unsubscribe_pool(
         &mut self,
-        address: Address,
+        instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) where
         Self: 'static + Debug + Sized,
     {
-        DataActorCore::unsubscribe_pool(self, address, client_id, params);
+        DataActorCore::unsubscribe_pool(self, instrument_id, client_id, params);
     }
 
     #[cfg(feature = "defi")]
-    /// Unsubscribe from streaming [`PoolSwap`] data for the `address`.
+    /// Unsubscribe from streaming [`PoolSwap`] data for the `instrument_id`.
     fn unsubscribe_pool_swaps(
         &mut self,
-        address: Address,
+        instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) where
         Self: 'static + Debug + Sized,
     {
-        DataActorCore::unsubscribe_pool_swaps(self, address, client_id, params);
+        DataActorCore::unsubscribe_pool_swaps(self, instrument_id, client_id, params);
     }
 
     #[cfg(feature = "defi")]
-    /// Unsubscribe from streaming [`PoolLiquidityUpdate`] data for the `address`.
+    /// Unsubscribe from streaming [`PoolLiquidityUpdate`] data for the `instrument_id`.
     fn unsubscribe_pool_liquidity_updates(
         &mut self,
-        address: Address,
+        instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) where
         Self: 'static + Debug + Sized,
     {
-        DataActorCore::unsubscribe_pool_liquidity_updates(self, address, client_id, params);
+        DataActorCore::unsubscribe_pool_liquidity_updates(self, instrument_id, client_id, params);
     }
 
     /// Request historical custom data of the given `data_type`.
@@ -2280,7 +2283,7 @@ impl DataActorCore {
         &mut self,
         topic: MStr<Topic>,
         handler: ShareableMessageHandler,
-        address: Address,
+        instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) {
@@ -2292,7 +2295,7 @@ impl DataActorCore {
         msgbus::subscribe_topic(topic, handler, None);
 
         let command = DefiSubscribeCommand::Pool(SubscribePool {
-            address,
+            instrument_id,
             client_id,
             command_id: UUID4::new(),
             ts_init: self.timestamp_ns(),
@@ -2308,7 +2311,7 @@ impl DataActorCore {
         &mut self,
         topic: MStr<Topic>,
         handler: ShareableMessageHandler,
-        address: Address,
+        instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) {
@@ -2320,7 +2323,7 @@ impl DataActorCore {
         msgbus::subscribe_topic(topic, handler, None);
 
         let command = DefiSubscribeCommand::PoolSwaps(SubscribePoolSwaps {
-            address,
+            instrument_id,
             client_id,
             command_id: UUID4::new(),
             ts_init: self.timestamp_ns(),
@@ -2336,7 +2339,7 @@ impl DataActorCore {
         &mut self,
         topic: MStr<Topic>,
         handler: ShareableMessageHandler,
-        address: Address,
+        instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) {
@@ -2348,7 +2351,7 @@ impl DataActorCore {
         msgbus::subscribe_topic(topic, handler, None);
 
         let command = DefiSubscribeCommand::PoolLiquidityUpdates(SubscribePoolLiquidityUpdates {
-            address,
+            instrument_id,
             client_id,
             command_id: UUID4::new(),
             ts_init: self.timestamp_ns(),
@@ -2706,7 +2709,7 @@ impl DataActorCore {
     /// Helper method for unsubscribing from pool definition updates.
     pub fn unsubscribe_pool(
         &mut self,
-        address: Address,
+        instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) {
@@ -2714,13 +2717,13 @@ impl DataActorCore {
 
         self.check_registered();
 
-        let topic = get_defi_pool_topic(address);
+        let topic = get_defi_pool_topic(instrument_id);
         if let Some(handler) = self.topic_handlers.get(&topic) {
             msgbus::unsubscribe_topic(topic, handler.clone());
         };
 
         let command = DefiUnsubscribeCommand::Pool(UnsubscribePool {
-            address,
+            instrument_id,
             client_id,
             command_id: UUID4::new(),
             ts_init: self.timestamp_ns(),
@@ -2734,7 +2737,7 @@ impl DataActorCore {
     /// Helper method for unsubscribing from pool swaps.
     pub fn unsubscribe_pool_swaps(
         &mut self,
-        address: Address,
+        instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) {
@@ -2742,13 +2745,13 @@ impl DataActorCore {
 
         self.check_registered();
 
-        let topic = get_defi_pool_swaps_topic(address);
+        let topic = get_defi_pool_swaps_topic(instrument_id);
         if let Some(handler) = self.topic_handlers.get(&topic) {
             msgbus::unsubscribe_topic(topic, handler.clone());
         };
 
         let command = DefiUnsubscribeCommand::PoolSwaps(UnsubscribePoolSwaps {
-            address,
+            instrument_id,
             client_id,
             command_id: UUID4::new(),
             ts_init: self.timestamp_ns(),
@@ -2762,7 +2765,7 @@ impl DataActorCore {
     /// Helper method for unsubscribing from pool liquidity updates.
     pub fn unsubscribe_pool_liquidity_updates(
         &mut self,
-        address: Address,
+        instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) {
@@ -2770,14 +2773,14 @@ impl DataActorCore {
 
         self.check_registered();
 
-        let topic = get_defi_liquidity_topic(address);
+        let topic = get_defi_liquidity_topic(instrument_id);
         if let Some(handler) = self.topic_handlers.get(&topic) {
             msgbus::unsubscribe_topic(topic, handler.clone());
         };
 
         let command =
             DefiUnsubscribeCommand::PoolLiquidityUpdates(UnsubscribePoolLiquidityUpdates {
-                address,
+                instrument_id,
                 client_id,
                 command_id: UUID4::new(),
                 ts_init: self.timestamp_ns(),

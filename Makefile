@@ -10,6 +10,9 @@ V = 0  # 0 / 1 - verbose mode
 Q = $(if $(filter 1,$V),,@) # Quiet mode, suppress command output
 M = $(shell printf "$(BLUE)>$(RESET)") # Message prefix for commands
 
+# Verbose options for specific targets (defaults to true, can be overridden)
+VERBOSE ?= true
+
 # > Colors
 RED    := $(shell tput -Txterm setaf 1)
 GREEN  := $(shell tput -Txterm setaf 2)
@@ -47,7 +50,13 @@ build:  #-- Build the package in release mode
 
 .PHONY: build-debug
 build-debug:  #-- Build the package in debug mode (recommended for development)
+ifeq ($(VERBOSE),true)
+	$(info $(M) Building in debug mode with verbose output...)
 	BUILD_MODE=debug uv run --active --no-sync build.py
+else
+	$(info $(M) Building in debug mode (errors will still be shown)...)
+	BUILD_MODE=debug uv run --active --no-sync build.py 2>&1 | grep -E "(Error|error|ERROR|Failed|failed|FAILED|Warning|warning|WARNING|Build completed|Build time:|Traceback)" || true
+endif
 
 .PHONY: build-wheel
 build-wheel:  #-- Build wheel distribution in release mode
@@ -119,6 +128,10 @@ clippy:  #-- Run Rust clippy linter with fixes
 clippy-nightly:  #-- Run Rust clippy linter with nightly toolchain
 	cargo +nightly clippy --fix --all-targets --all-features --allow-dirty --allow-staged -- -D warnings -W clippy::pedantic -W clippy::nursery -W clippy::unwrap_used -W clippy::expect_used
 
+.PHONY: clippy-crate-%
+clippy-crate-%:  #-- Run clippy for a specific Rust crate (usage: make clippy-crate-<crate_name>)
+	cargo clippy --all-targets --all-features -p $* -- -D warnings
+
 #== Dependencies
 
 .PHONY: outdated
@@ -187,8 +200,14 @@ check-features: check-hack-installed
 cargo-test: RUST_BACKTRACE=1
 cargo-test: HIGH_PRECISION=true
 cargo-test: check-nextest-installed
-cargo-test:  #-- Run all Rust tests with high precision features
-	cargo nextest run --workspace --features "ffi,python,high-precision,defi" --no-fail-fast --cargo-profile nextest
+cargo-test:  #-- Run all Rust tests with ffi,python,high-precision,defi features
+ifeq ($(VERBOSE),true)
+	$(info $(M) Running Rust tests with verbose output...)
+	cargo nextest run --workspace --features "ffi,python,high-precision,defi" --no-fail-fast --cargo-profile nextest --verbose
+else
+	$(info $(M) Running Rust tests (showing summary and failures only)...)
+	cargo nextest run --workspace --features "ffi,python,high-precision,defi" --no-fail-fast --cargo-profile nextest --status-level fail --final-status-level flaky
+endif
 
 .PHONY: cargo-test-lib
 cargo-test-lib: RUST_BACKTRACE=1
@@ -245,16 +264,30 @@ cargo-test-coverage:  #-- Run Rust tests with coverage reporting
 cargo-test-crate-%: RUST_BACKTRACE=1
 cargo-test-crate-%: HIGH_PRECISION=true
 cargo-test-crate-%: check-nextest-installed
-cargo-test-crate-%:  #-- Run tests for a specific Rust crate (usage: make cargo-test-crate-<crate_name>)
+cargo-test-crate-%:  #-- Run Rust tests for a specific crate (usage: make cargo-test-crate-<crate_name>)
 	cargo nextest run --lib --no-fail-fast --cargo-profile nextest -p $* $(if $(FEATURES),--features "$(FEATURES)")
 
-.PHONY: cargo-bench
-cargo-bench:  #-- Run Rust benchmarks
-	cargo bench
+#------------------------------------------------------------------------------
+# Benchmarks
+#------------------------------------------------------------------------------
 
-.PHONY: cargo-doc
-cargo-doc:  #-- Generate Rust documentation
-	cargo doc
+# List of crates whose criterion/iai benches run in the performance workflow
+CI_BENCH_CRATES := nautilus-core nautilus-model nautilus-common
+
+# NOTE:
+# - We invoke `cargo bench` *once per crate* to avoid the well-known
+#   "mixed panic strategy" linker error that appears when crates which specify
+#   different `panic` strategies (e.g. `abort` for cdylib/staticlib targets vs
+#   `unwind` for Criterion) are linked into the *same* benchmark binary.
+# - Cargo will still reuse compiled artifacts between iterations, so the cost
+#   of the extra invocations is marginal while the linker remains happy.
+
+.PHONY: cargo-ci-benches
+cargo-ci-benches:  #-- Run Rust benches for the crates included in the CI performance workflow
+	@for crate in $(CI_BENCH_CRATES); do \
+	  echo "Running benches for $$crate"; \
+	  cargo bench -p $$crate --profile bench --benches --no-fail-fast; \
+	done
 
 #== Docker
 
@@ -291,7 +324,13 @@ stop-services:  #-- Stop development services
 
 .PHONY: pytest
 pytest:  #-- Run Python tests with pytest
-	uv run --active --no-sync pytest --new-first --failed-first
+ifeq ($(VERBOSE),true)
+	$(info $(M) Running Python tests with verbose output...)
+	uv run --active --no-sync pytest --new-first --failed-first -v
+else
+	$(info $(M) Running Python tests (showing failures and summary only)...)
+	uv run --active --no-sync pytest --new-first --failed-first --tb=short
+endif
 
 .PHONY: test-performance
 test-performance:  #-- Run performance tests with codspeed benchmarking
@@ -309,7 +348,8 @@ install-cli:  #-- Install Nautilus CLI tool from source
 help:  #-- Show this help message and exit
 	@printf "Nautilus Trader Makefile\n\n"
 	@printf "$(GREEN)Usage:$(RESET) make $(CYAN)<target>$(RESET)\n\n"
-	@printf "$(GRAY)Tips: Use $(CYAN)make <target> V=1$(GRAY) for verbose output$(RESET)\n\n"
+	@printf "$(GRAY)Tips: Use $(CYAN)make <target> V=1$(GRAY) for verbose output$(RESET)\n"
+	@printf "$(GRAY)      Use $(CYAN)make <target> VERBOSE=false$(GRAY) to disable verbose output for build-debug, cargo-test, and pytest$(RESET)\n\n"
 
 	@printf "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣴⣶⡟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n"
 	@printf "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣰⣾⣿⣿⣿⠀⢸⣿⣿⣿⣿⣶⣶⣤⣀⠀⠀⠀⠀⠀\n"
