@@ -1009,7 +1009,7 @@ class LiveExecutionEngine(ExecutionEngine):
         # Reset retry count
         self._inflight_check_retries.pop(client_order_id, None)
 
-        self._log.info(f"Reconciling order for {client_order_id!r}", LogColor.BLUE)
+        self._log.debug(f"Reconciling order for {client_order_id!r}", LogColor.MAGENTA)
         order: Order = self._cache.order(client_order_id)
 
         if order is None:
@@ -1385,12 +1385,8 @@ class LiveExecutionEngine(ExecutionEngine):
         return filled
 
     def _generate_external_order(self, report: OrderStatusReport) -> Order | None:
-        self._log.info(
-            f"Generating order {report.client_order_id!r}",
-            color=LogColor.BLUE,
-        )
+        self._log.debug(f"Generating order {report.client_order_id!r}", color=LogColor.MAGENTA)
 
-        # Prepare order options
         options: dict[str, Any] = {}
 
         if report.price is not None:
