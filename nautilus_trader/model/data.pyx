@@ -13,10 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+cimport cython
+
 import pickle
 import warnings
 
 import numpy as np
+import pandas as pd
 
 from nautilus_trader.core import nautilus_pyo3
 
@@ -34,6 +37,8 @@ from libc.stdint cimport uintptr_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.core cimport CVec
+from nautilus_trader.core.rust.core cimport millis_to_nanos
+from nautilus_trader.core.rust.core cimport secs_to_nanos
 from nautilus_trader.core.rust.model cimport DEPTH10_LEN
 from nautilus_trader.core.rust.model cimport AggregationSource
 from nautilus_trader.core.rust.model cimport AggressorSide
@@ -132,6 +137,7 @@ from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.core.string cimport ustr_to_pystr
 from nautilus_trader.model.data cimport BarAggregation
+from nautilus_trader.model.data cimport BarIntervalType
 from nautilus_trader.model.functions cimport aggregation_source_from_str
 from nautilus_trader.model.functions cimport aggressor_side_from_str
 from nautilus_trader.model.functions cimport aggressor_side_to_str
@@ -251,25 +257,133 @@ cpdef Data capsule_to_data(capsule):
         raise RuntimeError("Invalid data element to convert from `PyCapsule`")
 
 
+@cython.final
+@cython.boundscheck(False)
+@cython.wraparound(False)
 cdef class BarSpecification:
     """
-    Represents a bar aggregation specification including a step, aggregation
-    method/rule and price type.
+    Represents a bar aggregation specification that defines how market data should be
+    aggregated into bars (candlesticks).
+
+    A bar specification consists of three main components:
+    - **Step**: The quantity or interval for aggregation (e.g., 5 for 5-minute bars)
+    - **Aggregation**: The method/rule for aggregation (time, tick, volume, value, etc.)
+    - **Price Type**: Which price to use for aggregation (BID, ASK, MID, LAST)
+
+    Bar specifications are used to define different types of bars:
+
+    **Time-based bars**: Aggregate data over fixed time intervals
+    - Examples: 1-MINUTE-LAST, 5-MINUTE-MID, 1-HOUR-BID
+
+    **Tick-based bars**: Aggregate data after a certain number of ticks
+    - Examples: 100-TICK-LAST, 1000-TICK-MID
+
+    **Volume-based bars**: Aggregate data after a certain volume threshold
+    - Examples: 1000-VOLUME-LAST, 10000-VOLUME-MID
+
+    **Value-based bars**: Aggregate data after a certain dollar value threshold
+    - Examples: 100000-VALUE-LAST, 1000000-VALUE-MID
+
+    **Information-based bars**: Advanced aggregation based on information flow
+    - Examples: 1000-VALUE_IMBALANCE-MID, 500-VALUE_RUNS-LAST
+
+    The specification determines:
+    - What triggers bar creation (aggregation method)
+    - How often bars are created (step size)
+    - Which price level to use for OHLCV calculation (price type)
 
     Parameters
     ----------
     step : int
-        The step for binning samples for bar aggregation (> 0).
+        The step size for bar aggregation. Must be positive.
+        - For time bars: interval in time units (1=1min, 5=5min, etc.)
+        - For tick bars: number of ticks per bar
+        - For volume/value bars: threshold amount
     aggregation : BarAggregation
-        The type of bar aggregation.
+        The aggregation method (MINUTE, TICK, VOLUME, VALUE, etc.)
     price_type : PriceType
-        The price type to use for aggregation.
+        The price type to use (BID, ASK, MID, LAST)
 
     Raises
     ------
     ValueError
-        If `step` is not positive (> 0).
+        If step is not valid or if invalid aggregation/price_type combinations
 
+    Notes
+    -----
+    **Time Bar Aggregation Steps**:
+
+    Time-based bars have specific constraints on allowed step values to ensure
+    alignment with standard market time intervals:
+
+    - **MILLISECOND**: Steps 1-999 milliseconds (must divide evenly into 1000)
+        Valid: 1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500
+    - **SECOND**: Steps 1-59 seconds (must divide evenly into 60)
+        Valid: 1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30
+    - **MINUTE**: Steps 1-59 minutes (must divide evenly into 60)
+        Valid: 1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30
+    - **HOUR**: Steps 1-23 hours (must divide evenly into 24)
+        Valid: 1, 2, 3, 4, 6, 8, 12
+    - **DAY**: Only step=1 allowed (1 day intervals)
+    - **WEEK**: Only step=1 allowed (1 week intervals)
+    - **MONTH**: Steps 1-11 months (must divide evenly into 12)
+        Valid: 1, 2, 3, 4, 6 (e.g., 1-month, quarterly, semi-annual)
+
+    Invalid step values will raise ValueError during construction.
+
+    **Composite Bars**:
+
+    Composite bars are created by aggregating smaller time frame bars into larger
+    time frame bars internally within the system.
+    For example, a 5-minute composite bar can be created by aggregating five 1-minute
+    bars.
+
+    Examples
+    --------
+    Create time bar specifications with valid steps:
+
+    >>> spec1 = BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST)   # 1-min
+    >>> spec4h = BarSpecification(4, BarAggregation.HOUR, PriceType.LAST)    # 4-hour
+    >>> spec6m = BarSpecification(6, BarAggregation.MONTH, PriceType.LAST)   # semi-annual
+
+    >>> # Invalid steps will raise ValueError
+    >>> try:
+    ...     invalid = BarSpecification(7, BarAggregation.MINUTE, PriceType.LAST)  # 7 doesn't divide 60
+    ... except ValueError as e:
+    ...     print(f"Error: {e}")
+
+    Create composite bar setup:
+
+    >>> # Composite 5-minute specification for internal aggregation
+    >>> composite_spec = BarSpecification(5, BarAggregation.MINUTE, PriceType.LAST)
+    >>> composite_bar_type = BarType(instrument_id, composite_spec, AggregationSource.INTERNAL)
+
+    Check aggregation type and get timedelta:
+
+    >>> spec = BarSpecification(30, BarAggregation.SECOND, PriceType.LAST)
+    >>> spec.is_time_aggregated()
+    True
+    >>> spec.timedelta
+    datetime.timedelta(seconds=30)
+
+    >>> # Note: MONTH and YEAR aggregation doesn't support timedelta conversion
+    >>> month_spec = BarSpecification(1, BarAggregation.MONTH, PriceType.LAST)
+    >>> month_spec.is_time_aggregated()
+    True
+    >>> # month_spec.timedelta  # This would raise ValueError
+
+    >>> # Threshold-based bars
+    >>> tick_spec = BarSpecification(1000, BarAggregation.TICK, PriceType.MID)
+    >>> tick_spec.is_threshold_aggregated()
+    True
+    >>> tick_spec.is_time_aggregated()
+    False
+
+    Parse from string representation:
+
+    >>> spec = BarSpecification.from_str("15-MINUTE-BID")
+    >>> print(f"Step: {spec.step}, Aggregation: {spec.aggregation}")
+    Step: 15, Aggregation: BarAggregation.MINUTE
     """
 
     def __init__(
@@ -279,6 +393,42 @@ cdef class BarSpecification:
         PriceType price_type,
     ) -> None:
         Condition.positive_int(step, "step")
+
+
+        def validate_step(subunits: int, allow_equal: bool = False):
+            if subunits % step != 0:
+                raise ValueError(
+                    f"Invalid step in bar_type.spec.step: "
+                    f"{step} for aggregation={aggregation}. "
+                    f"step must evenly divide {subunits} (so it is periodic)."
+                )
+            if not allow_equal and subunits == step:
+                raise ValueError(
+                    f"Invalid step in bar_type.spec.step: "
+                    f"{step} for aggregation={aggregation}. "
+                    f"step must not be {subunits}. "
+                    "Use higher aggregation unit instead."
+                )
+
+        if aggregation is BarAggregation.MILLISECOND:
+            validate_step(1000)
+        elif aggregation is BarAggregation.SECOND:
+            validate_step(60)
+        elif aggregation is BarAggregation.MINUTE:
+            validate_step(60)
+        elif aggregation is BarAggregation.HOUR:
+            validate_step(24)
+        elif aggregation is BarAggregation.DAY:
+            validate_step(1, allow_equal=True)
+        elif aggregation is BarAggregation.WEEK:
+            validate_step(1, allow_equal=True)
+        elif aggregation is BarAggregation.MONTH:
+            validate_step(12)
+        elif aggregation is BarAggregation.YEAR:
+            # Allow any step for YEAR aggregation (1-YEAR, 2-YEAR, 5-YEAR, etc.).
+            # No further validation needed as any positive int step is valid for
+            # years.
+            pass
 
         self._mem = bar_specification_new(
             step,
@@ -363,14 +513,86 @@ cdef class BarSpecification:
         """
         return self._mem.price_type
 
+    cpdef uint64_t get_interval_ns(self):
+            """
+            Return the interval length in nanoseconds for time-based bar specifications.
+
+            Converts the bar specification's time interval to nanoseconds based on its
+            aggregation type and step size. This method is used for time calculations
+            and (TODO: bar alignment).
+
+            Returns
+            -------
+            uint64_t
+                The interval length in nanoseconds.
+
+            Raises
+            ------
+            ValueError
+                If the aggregation is MONTH or YEAR (since months and years have variable
+                lengths 28-31 days or 365-366 days, making fixed nanosecond conversion
+                impossible).
+                If the aggregation is not a time-based aggregation.
+
+            Notes
+            -----
+            Only time-based aggregations can be converted to nanosecond intervals.
+            Threshold-based and information-based aggregations will raise a ValueError.
+
+            Month or year intervals require special handling due to their variable length,
+            which cannot be expressed as a fixed number of nanoseconds. DateOffset is used
+            instead for these aggregations.
+
+            Examples
+            --------
+            >>> spec = BarSpecification(5, BarAggregation.MINUTE, PriceType.LAST)
+            >>> spec.get_interval_ns()  # Returns 5 minutes in nanoseconds
+            300000000000
+            """
+            cdef BarAggregation aggregation = <BarAggregation>self._mem.aggregation
+            cdef int step = self._mem.step
+
+            if aggregation is BarAggregation.MILLISECOND:
+                return millis_to_nanos(step)
+            elif aggregation is BarAggregation.SECOND:
+                return secs_to_nanos(step)
+            elif aggregation is BarAggregation.MINUTE:
+                return secs_to_nanos(step) * 60
+            elif aggregation is BarAggregation.HOUR:
+                return secs_to_nanos(step) * 60 * 60
+            elif aggregation is BarAggregation.DAY:
+                return secs_to_nanos(step) * 60 * 60 * 24
+            elif aggregation is BarAggregation.WEEK:
+                return secs_to_nanos(step) * 60 * 60 * 24 * 7
+            elif aggregation is BarAggregation.MONTH:
+                # Not actually used for the aggregation. DateOffset are used instead
+                # given the fact, the lengths of the months differs.
+                raise ValueError(
+                    f"get_interval_ns not supported for the `BarAggregation.MONTH` aggregation "
+                    f"`DateOffset` is used instead."
+                )
+            elif aggregation is BarAggregation.YEAR:
+                # Not actually used for the aggregation. DateOffset are used instead
+                # given the fact, the lengths of the years differs (leap years).
+                raise ValueError(
+                    f"get_interval_ns not supported for the `BarAggregation.YEAR` aggregation "
+                    f"`DateOffset` is used instead."
+                )
+            else:
+                # Design time error
+                raise ValueError(
+                    f"Aggregation not time based, was {bar_aggregation_to_str(aggregation)}",
+                )
+
+
     @property
-    def timedelta(self) -> timedelta:
+    def timedelta(self) -> pd.Timedelta:
         """
         Return the timedelta for the specification.
 
         Returns
         -------
-        timedelta
+        pandas.Timedelta
 
         Raises
         ------
@@ -378,23 +600,8 @@ cdef class BarSpecification:
             If `aggregation` is not a time aggregation, or is``MONTH`` (which is ambiguous).
 
         """
-        if self.aggregation == BarAggregation.MILLISECOND:
-            return timedelta(milliseconds=self.step)
-        elif self.aggregation == BarAggregation.SECOND:
-            return timedelta(seconds=self.step)
-        elif self.aggregation == BarAggregation.MINUTE:
-            return timedelta(minutes=self.step)
-        elif self.aggregation == BarAggregation.HOUR:
-            return timedelta(hours=self.step)
-        elif self.aggregation == BarAggregation.DAY:
-            return timedelta(days=self.step)
-        elif self.aggregation == BarAggregation.WEEK:
-            return timedelta(days=self.step * 7)
-        else:
-            raise ValueError(
-                f"timedelta not supported for aggregation "
-                f"{bar_aggregation_to_str(self.aggregation)}",
-            )
+        return pd.Timedelta(self.get_interval_ns())
+
 
     cdef str aggregation_string_c(self):
         return bar_aggregation_to_str(self.aggregation)
@@ -432,6 +639,7 @@ cdef class BarSpecification:
             or aggregation == BarAggregation.DAY
             or aggregation == BarAggregation.WEEK
             or aggregation == BarAggregation.MONTH
+            or aggregation == BarAggregation.YEAR
         ):
             return True
         else:
@@ -537,7 +745,25 @@ cdef class BarSpecification:
     @staticmethod
     def check_time_aggregated(BarAggregation aggregation):
         """
-        Check the given aggregation is a type of time aggregation.
+        Check if the given aggregation is a time-based aggregation type.
+
+        Time-based aggregation creates bars at fixed time intervals, where each bar
+        represents market data for a specific time period. These bars are emitted
+        when the time interval expires, regardless of trading activity level.
+
+        Time-based aggregation types include:
+        - ``MILLISECOND``: Bars created every N milliseconds
+        - ``SECOND``: Bars created every N seconds
+        - ``MINUTE``: Bars created every N minutes
+        - ``HOUR``: Bars created every N hours
+        - ``DAY``: Bars created every N days (calendar days)
+        - ``WEEK``: Bars created every N weeks (calendar weeks)
+        - ``MONTH``: Bars created every N months (calendar months)
+        - ``YEAR``: Bars created every N years (calendar years)
+
+        This is distinct from threshold-based aggregation (TICK, VOLUME, VALUE)
+        which creates bars when activity thresholds are reached, and information-based
+        aggregation (RUNS) which creates bars based on market microstructure patterns.
 
         Parameters
         ----------
@@ -547,7 +773,14 @@ cdef class BarSpecification:
         Returns
         -------
         bool
-            True if time aggregated, else False.
+            True if the aggregation is time-based, else False.
+
+        Examples
+        --------
+        >>> BarSpecification.check_time_aggregated(BarAggregation.MINUTE)
+        True
+        >>> BarSpecification.check_time_aggregated(BarAggregation.TICK)
+        False
 
         """
         return BarSpecification.check_time_aggregated_c(aggregation)
@@ -555,7 +788,24 @@ cdef class BarSpecification:
     @staticmethod
     def check_threshold_aggregated(BarAggregation aggregation):
         """
-        Check the given aggregation is a type of threshold aggregation.
+        Check if the given aggregation is a threshold-based aggregation type.
+
+        Threshold-based aggregation creates bars when accumulated market activity
+        reaches predefined thresholds, providing activity-driven sampling rather
+        than time-driven sampling. These bars capture market dynamics based on
+        actual trading patterns and volumes.
+
+        Threshold-based aggregation types include:
+        - ``TICK``: Bars created after N ticks (price changes)
+        - ``TICK_IMBALANCE``: Bars created when tick imbalance reaches threshold
+        - ``VOLUME``: Bars created after N units of volume are traded
+        - ``VOLUME_IMBALANCE``: Bars created when volume imbalance reaches threshold
+        - ``VALUE``: Bars created after N units of notional value are traded
+        - ``VALUE_IMBALANCE``: Bars created when value imbalance reaches threshold
+
+        This differs from time-based aggregation which creates bars at fixed time
+        intervals, and information-based aggregation which creates bars based on
+        market microstructure patterns and runs.
 
         Parameters
         ----------
@@ -565,7 +815,14 @@ cdef class BarSpecification:
         Returns
         -------
         bool
-            True if threshold aggregated, else False.
+            True if the aggregation is threshold-based, else False.
+
+        Examples
+        --------
+        >>> BarSpecification.check_threshold_aggregated(BarAggregation.VOLUME)
+        True
+        >>> BarSpecification.check_threshold_aggregated(BarAggregation.MINUTE)
+        False
 
         """
         return BarSpecification.check_threshold_aggregated_c(aggregation)
@@ -573,7 +830,26 @@ cdef class BarSpecification:
     @staticmethod
     def check_information_aggregated(BarAggregation aggregation):
         """
-        Check the given aggregation is a type of information aggregation.
+        Check if the given aggregation is an information-based aggregation type.
+
+        Information-based aggregation creates bars based on market microstructure
+        patterns and sequential runs of similar market events. These bars capture
+        information flow and market efficiency patterns by detecting sequences
+        of directionally similar price movements or trading activity.
+
+        Information-based aggregation types include:
+        - ``TICK_RUNS``: Bars created when runs of tick price movements occur
+        - ``VOLUME_RUNS``: Bars created when runs of volume patterns occur
+        - ``VALUE_RUNS``: Bars created when runs of value patterns occur
+
+        Runs are sequences of consecutive events with the same directional property
+        (e.g., consecutive upticks or downticks). This aggregation method is useful
+        for analyzing market microstructure, information flow, and detecting
+        patterns in high-frequency trading activity.
+
+        This differs from time-based aggregation (fixed intervals) and threshold-based
+        aggregation (activity levels), focusing instead on sequential patterns and
+        information content of market events.
 
         Parameters
         ----------
@@ -583,7 +859,14 @@ cdef class BarSpecification:
         Returns
         -------
         bool
-            True if information aggregated, else False.
+            True if the aggregation is information-based, else False.
+
+        Examples
+        --------
+        >>> BarSpecification.check_information_aggregated(BarAggregation.TICK_RUNS)
+        True
+        >>> BarSpecification.check_information_aggregated(BarAggregation.VOLUME)
+        False
 
         """
         return BarSpecification.check_information_aggregated_c(aggregation)
@@ -592,51 +875,179 @@ cdef class BarSpecification:
         """
         Return a value indicating whether the aggregation method is time-driven.
 
-        - ``SECOND``
-        - ``MINUTE``
-        - ``HOUR``
-        - ``DAY``
-        - ``WEEK``
-        - ``MONTH``
+        Time-based aggregation creates bars at fixed time intervals based on calendar
+        or clock time, providing consistent temporal sampling of market data. Each bar
+        covers a specific time period regardless of trading activity level.
+
+        Time-based aggregation types supported:
+        - ``MILLISECOND``: Fixed millisecond intervals (high-frequency sampling)
+        - ``SECOND``: Fixed second intervals (short-term patterns)
+        - ``MINUTE``: Fixed minute intervals (most common for retail trading)
+        - ``HOUR``: Fixed hour intervals (intraday analysis)
+        - ``DAY``: Fixed daily intervals (daily charts, longer-term analysis)
+        - ``WEEK``: Fixed weekly intervals (weekly patterns, medium-term trends)
+        - ``MONTH``: Fixed monthly intervals (long-term analysis, seasonal patterns)
+        - ``YEAR``: Fixed yearly intervals (annual trends, long-term investment)
+
+        Time-based bars are ideal for:
+        - Regular time-series analysis and charting
+        - Consistent temporal sampling across different market conditions
+        - Traditional technical analysis and pattern recognition
+        - Comparing market behavior across fixed time periods
+
+        This differs from threshold aggregation (volume/tick-based) which creates
+        bars when activity levels are reached, and information aggregation which
+        creates bars based on market microstructure patterns.
 
         Returns
         -------
         bool
+            True if the aggregation method is time-based, else False.
 
+        See Also
+        --------
+        is_threshold_aggregated : Check for threshold-based aggregation
+        is_information_aggregated : Check for information-based aggregation
+
+        Examples
+        --------
+        Create a 5-minute bar specification using last price:
+
+        >>> spec = BarSpecification(5, BarAggregation.MINUTE, PriceType.LAST)
+        >>> str(spec)
+        '5-MINUTE-LAST'
+
+        Create a tick bar specification:
+
+        >>> spec = BarSpecification(1000, BarAggregation.TICK, PriceType.MID)
+        >>> str(spec)
+        '1000-TICK-MID'
+
+        Parse from string:
+
+        >>> spec = BarSpecification.from_str("15-MINUTE-BID")
+        >>> spec.step
+        15
+        >>> spec.aggregation
+        BarAggregation.MINUTE
+
+        Check aggregation type:
+
+        >>> spec = BarSpecification(1, BarAggregation.HOUR, PriceType.LAST)
+        >>> spec.is_time_aggregated()
+        True
+        >>> spec.is_threshold_aggregated()
+        False
         """
         return BarSpecification.check_time_aggregated_c(self.aggregation)
 
     cpdef bint is_threshold_aggregated(self):
         """
-        Return a value indicating whether the bar aggregation method is
-        threshold-driven.
+        Return a value indicating whether the aggregation method is threshold-based.
 
-        - ``TICK``
-        - ``TICK_IMBALANCE``
-        - ``VOLUME``
-        - ``VOLUME_IMBALANCE``
-        - ``VALUE``
-        - ``VALUE_IMBALANCE``
+        Threshold-based aggregation types trigger bar creation when cumulative
+        activity reaches predefined levels, making them ideal for volume and
+        value-driven analysis rather than time-based intervals.
+
+        **Threshold-Based Aggregation Types**
+
+        Activity threshold types supported:
+        - ``TICK``: Bars based on tick count thresholds (every N ticks)
+        - ``VOLUME``: Bars based on volume thresholds (every N units traded)
+        - ``VALUE``: Bars based on notional value thresholds (every N dollars/currency traded)
+
+        Imbalance threshold types supported:
+        - ``TICK_IMBALANCE``: Bars based on cumulative tick flow imbalances
+        - ``VOLUME_IMBALANCE``: Bars based on cumulative volume imbalances
+        - ``VALUE_IMBALANCE``: Bars based on cumulative value flow imbalances
+
+        Threshold-based bars are ideal for:
+        - Volume and activity-based analysis independent of time
+        - Capturing market activity during varying trading intensities
+        - Equal-activity sampling for statistical analysis
+        - Risk management based on position sizing and exposure levels
+        - Algorithmic trading strategies sensitive to market participation
+
+        This differs from time-based aggregation (fixed time intervals) and
+        information-based aggregation (information content patterns), focusing
+        instead on measurable activity and participation thresholds.
 
         Returns
         -------
         bool
+            True if the aggregation method is threshold-based, else False.
+
+        See Also
+        --------
+        check_threshold_aggregated : Static method for threshold aggregation checking
+        is_time_aggregated : Check for time-based aggregation
+        is_information_aggregated : Check for information-based aggregation
+
+        Examples
+        --------
+        >>> spec = BarSpecification(1000, BarAggregation.TICK, PriceType.LAST)
+        >>> spec.is_threshold_aggregated()
+        True
+        >>> spec = BarSpecification(100000, BarAggregation.VOLUME, PriceType.LAST)
+        >>> spec.is_threshold_aggregated()
+        True
+        >>> spec = BarSpecification(5, BarAggregation.MINUTE, PriceType.LAST)
+        >>> spec.is_threshold_aggregated()
+        False
 
         """
         return BarSpecification.check_threshold_aggregated_c(self.aggregation)
 
     cpdef bint is_information_aggregated(self):
         """
-        Return a value indicating whether the aggregation method is
-        information-driven.
+        Return a value indicating whether the aggregation method is information-driven.
 
-        - ``TICK_RUNS``
-        - ``VOLUME_RUNS``
-        - ``VALUE_RUNS``
+        Information-based aggregation creates bars based on market microstructure
+        patterns and sequential runs of similar market events. This aggregation
+        method captures information flow, market efficiency patterns, and the
+        sequential nature of trading activity by detecting directional runs.
+
+        Information-based aggregation types supported:
+        - ``TICK_RUNS``: Bars based on runs of directional tick movements (upticks/downticks)
+        - ``VOLUME_RUNS``: Bars based on runs of volume patterns and clustering
+        - ``VALUE_RUNS``: Bars based on runs of notional value patterns
+
+        A "run" is a sequence of consecutive market events with the same directional
+        or categorical property. For example, a tick run might be 5 consecutive
+        upticks followed by 3 consecutive downticks.
+
+        Information-based bars are ideal for:
+        - Market microstructure analysis and information flow studies
+        - Detecting patterns in high-frequency trading and market efficiency
+        - Analyzing sequential dependencies in market data
+        - Capturing information content rather than just time or activity levels
+        - Studying market maker behavior and order flow dynamics
+
+        This differs from time-based aggregation (fixed time intervals) and
+        threshold-based aggregation (activity levels), focusing instead on the
+        sequential information content and patterns within market events.
 
         Returns
         -------
         bool
+            True if the aggregation method is information-based, else False.
+
+        See Also
+        --------
+        Get timedelta for time-based bars:
+
+        >>> spec = BarSpecification(30, BarAggregation.SECOND, PriceType.LAST)
+        >>> spec.timedelta
+        datetime.timedelta(seconds=30)
+
+        Examples
+        --------
+        >>> spec = BarSpecification(1000, BarAggregation.VALUE_RUNS, PriceType.LAST)
+        >>> spec.is_information_aggregated()
+        True
+        >>> spec = BarSpecification(1000, BarAggregation.VOLUME, PriceType.LAST)
+        >>> spec.is_information_aggregated()
+        False
 
         """
         return BarSpecification.check_information_aggregated_c(self.aggregation)
@@ -661,8 +1072,12 @@ cdef class BarType:
 
     Notes
     -----
-    It is expected that all bar aggregation methods other than time will be
-    internally aggregated.
+    - Time aggregations support timedelta conversion
+    - Threshold aggregations (tick, volume, value) don't have fixed time intervals
+    - Information aggregations use complex algorithms for bar creation
+    - String representation format: "{step}-{aggregation}-{price_type}"
+        It is expected that all bar aggregation methods other than time will be
+        internally aggregated.
 
     """
 
