@@ -322,13 +322,33 @@ docker-build-jupyter:  #-- Build JupyterLab Docker image
 docker-push-jupyter:  #-- Push JupyterLab Docker image to registry
 	docker push $(IMAGE):jupyter
 
+.PHONY: init-services
+init-services:  #-- Initialize development services eg. for integration tests (start containers and setup database)
+	$(info $(M) Initializing development services...)
+	@$(MAKE) start-services
+	@echo "${PURPLE}Waiting for PostgreSQL to be ready...${RESET}"
+	@sleep 10
+	@$(MAKE) init-db
+
 .PHONY: start-services
-start-services:  #-- Start development services with docker-compose
+start-services:  #-- Start development services (without reinitializing database)
+	$(info $(M) Starting development services...)
 	docker compose -f .docker/docker-compose.yml up -d
 
 .PHONY: stop-services
-stop-services:  #-- Stop development services
+stop-services:  #-- Stop development services (preserves data)
+	$(info $(M) Stopping development services...)
 	docker compose -f .docker/docker-compose.yml down
+
+.PHONY: purge-services
+purge-services:  #-- Purge all development services (stop containers and remove volumes)
+	$(info $(M) Purging integration test services...)
+	docker compose -f .docker/docker-compose.yml down -v
+
+.PHONY: init-db
+init-db:  #-- Initialize PostgreSQL database schema
+	$(info $(M) Initializing PostgreSQL database schema...)
+	cat schema/sql/*.sql | docker exec -i nautilus-database psql -U nautilus -d nautilus
 
 #== Python Testing
 
