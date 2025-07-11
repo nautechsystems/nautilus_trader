@@ -967,7 +967,7 @@ mod serial_tests {
         // Batch insert all events
         let _: () = conn.rpush(&list_key, &events_data).await.unwrap();
         let setup_duration = start_setup.elapsed();
-        println!("Setup took: {:?}", setup_duration);
+        println!("Setup took: {setup_duration:?}");
 
         // Verify initial count
         let initial_count: i32 = conn.llen(&list_key).await.unwrap();
@@ -982,7 +982,7 @@ mod serial_tests {
             .delete_account_events_batch(&account_id, &events_to_delete);
 
         let delete_duration = start_delete.elapsed();
-        println!("Batch deletion took: {:?}", delete_duration);
+        println!("Batch deletion took: {delete_duration:?}");
 
         assert!(result.is_ok(), "Batch deletion should succeed");
 
@@ -990,11 +990,11 @@ mod serial_tests {
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
         let actual_count: i32 = conn.llen(&list_key).await.unwrap();
-        println!("Actual count after deletion: {}", actual_count);
+        println!("Actual count after deletion: {actual_count}");
 
         // Get some of the remaining items to debug
         let remaining_items: Vec<String> = conn.lrange(&list_key, 0, 10).await.unwrap();
-        println!("First 10 remaining items: {:?}", remaining_items);
+        println!("First 10 remaining items: {remaining_items:?}");
         println!("Events we tried to delete: {:?}", &events_to_delete[0..10]);
 
         // Verify final count matches expectation
