@@ -152,17 +152,19 @@ impl BlockchainCacheDatabase {
         sqlx::query(
             r"
             INSERT INTO dex (
-                chain_id, name, factory_address
-            ) VALUES ($1, $2, $3)
+                chain_id, name, factory_address, creation_block
+            ) VALUES ($1, $2, $3, $4)
             ON CONFLICT (chain_id, name)
             DO UPDATE
             SET
-                factory_address = $3
+                factory_address = $3,
+                creation_block = $4
         ",
         )
         .bind(dex.chain.chain_id as i32)
         .bind(dex.name.as_ref())
         .bind(dex.factory.as_ref())
+        .bind(dex.factory_creation_block as i64)
         .execute(&self.pool)
         .await
         .map(|_| ())
