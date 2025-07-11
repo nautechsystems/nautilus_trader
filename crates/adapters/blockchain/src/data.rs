@@ -57,6 +57,7 @@ use crate::{
         http::BlockchainHttpRpcClient,
         types::BlockchainMessage,
     },
+    reporting::BlockSyncMetrics,
     validation::validate_address,
 };
 
@@ -442,18 +443,7 @@ impl BlockchainDataClient {
 
         tokio::pin!(blocks_stream);
 
-        // Performance tracking variables
-        let start_time = std::time::Instant::now();
-        let mut last_progress_time = start_time;
-        let mut blocks_processed = 0u64;
-        let mut total_db_time = std::time::Duration::ZERO;
-        let mut db_operations = 0u64;
-        let mut min_db_time = std::time::Duration::MAX;
-        let mut max_db_time = std::time::Duration::ZERO;
-        
-        // Progress tracking variables
-        let progress_update_interval = 50000; // Update every 10% or 10000 blocks, whichever is larger
-        let mut next_progress_threshold = from_block + progress_update_interval;
+        let mut metrics = BlockSyncMetrics::new(from_block, total_blocks, 50000);
 
         while let Some(block) = blocks_stream.next().await {
             let block_number = block.number;
@@ -463,93 +453,16 @@ impl BlockchainDataClient {
             self.cache.add_block(block).await?;
             let db_elapsed = db_start.elapsed();
             
-            // Update performance metrics
-            total_db_time += db_elapsed;
-            db_operations += 1;
-            min_db_time = min_db_time.min(db_elapsed);
-            max_db_time = max_db_time.max(db_elapsed);
-            blocks_processed += 1;
-
-            // Log progress when we pass the threshold
-            if block_number >= next_progress_threshold || block_number >= current_block {
-                let elapsed = start_time.elapsed();
-                let interval_elapsed = last_progress_time.elapsed();
-                let interval_blocks = if block_number > next_progress_threshold - progress_update_interval {
-                    block_number - (next_progress_threshold - progress_update_interval)
-                } else {
-                    progress_update_interval
-                };
-                
-                // Calculate rates
-                let avg_rate = blocks_processed as f64 / elapsed.as_secs_f64();
-                let current_rate = interval_blocks as f64 / interval_elapsed.as_secs_f64();
-                let db_time_pct = (total_db_time.as_secs_f64() / elapsed.as_secs_f64()) * 100.0;
-                let progress_pct = (blocks_processed as f64 / total_blocks as f64 * 100.0).min(100.0);
-                
-                // Estimate remaining time
-                let blocks_remaining = total_blocks.saturating_sub(blocks_processed);
-                let eta_seconds = blocks_remaining as f64 / avg_rate;
-                let eta_display = if eta_seconds < 60.0 {
-                    format!("{:.0}s", eta_seconds)
-                } else if eta_seconds < 3600.0 {
-                    format!("{:.0}m", eta_seconds / 60.0)
-                } else if eta_seconds < 86400.0 {
-                    format!("{:.1}h", eta_seconds / 3600.0)
-                } else {
-                    format!("{:.1}d", eta_seconds / 86400.0)
-                };
-
-                tracing::info!(
-                    "Block sync progress: {:.1}% | Block: {} | Rate: {:.0} blocks/s | Avg: {:.0} blocks/s | DB time: {:.1}% | ETA: {}",
-                    progress_pct,
-                    block_number,
-                    current_rate,
-                    avg_rate,
-                    db_time_pct,
-                    eta_display
-                );
-
-                next_progress_threshold = block_number + progress_update_interval;
-                last_progress_time = std::time::Instant::now();
+            // Update metrics
+            metrics.update(db_elapsed);
+            
+            // Log progress if needed
+            if metrics.should_log_progress(block_number, current_block) {
+                metrics.log_progress(block_number);
             }
         }
 
-        // Final statistics
-        let total_elapsed = start_time.elapsed();
-        let avg_rate = blocks_processed as f64 / total_elapsed.as_secs_f64();
-        let db_time_pct = (total_db_time.as_secs_f64() / total_elapsed.as_secs_f64()) * 100.0;
-        let avg_db_time = total_db_time / db_operations as u32;
-        
-        // Estimate time for full chain sync (356M blocks)
-        let full_chain_blocks = 356_000_000u64;
-        let full_sync_seconds = full_chain_blocks as f64 / avg_rate;
-        let full_sync_display = if full_sync_seconds < 3600.0 {
-            format!("{:.0} minutes", full_sync_seconds / 60.0)
-        } else if full_sync_seconds < 86400.0 {
-            format!("{:.1} hours", full_sync_seconds / 3600.0)
-        } else {
-            format!("{:.1} days", full_sync_seconds / 86400.0)
-        };
-        
-        tracing::info!(
-            "Finished syncing blocks | Total: {} blocks in {:.1}s | Avg rate: {:.0} blocks/s",
-            blocks_processed,
-            total_elapsed.as_secs_f64(),
-            avg_rate
-        );
-        tracing::info!(
-            "Database performance | Operations: {} | DB time: {:.1}% | Avg: {:.3}ms | Min: {:.3}ms | Max: {:.3}ms",
-            db_operations,
-            db_time_pct,
-            avg_db_time.as_secs_f64() * 1000.0,
-            min_db_time.as_secs_f64() * 1000.0,
-            max_db_time.as_secs_f64() * 1000.0
-        );
-        tracing::info!(
-            "Estimated time for full chain sync (356M blocks): {}",
-            full_sync_display
-        );
-        
+        metrics.log_final_stats();
         Ok(())
     }
 
