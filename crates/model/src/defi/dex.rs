@@ -120,11 +120,7 @@ impl Dex {
 
     /// Returns a unique identifier for this DEX, combining chain and protocol name.
     pub fn id(&self) -> String {
-        format!(
-            "{}:{}",
-            self.chain.name,
-            self.name.to_lowercase().replace(' ', "_")
-        )
+        format!("{}:{}", self.chain.name, self.name)
     }
 }
 
