@@ -977,7 +977,7 @@ class DYDXDataClient(LiveMarketDataClient):
 
     async def _request_bars(self, request: RequestBars) -> None:
         max_bars = 1000
-        limit = request.limit
+        limit = request.limit if request.limit > 0 else max_bars
 
         if request.bar_type.is_internally_aggregated():
             self._log.error(
