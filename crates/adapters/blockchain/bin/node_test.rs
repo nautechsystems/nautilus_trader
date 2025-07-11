@@ -63,6 +63,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client_factory = BlockchainDataClientFactory::new();
     let client_config = BlockchainDataClientConfig::new(
         Arc::new(chain.clone()),
+        vec!["Arbitrum:UniswapV3".to_string()],
         http_rpc_url,
         None, // RPC requests per second
         Some(wss_rpc_url),

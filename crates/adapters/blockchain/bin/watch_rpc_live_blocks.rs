@@ -82,6 +82,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let http_rpc_url = get_env_var("RPC_HTTP_URL")?;
     let blockchain_config = BlockchainDataClientConfig::new(
         chain.clone(),
+        vec![],
         http_rpc_url,
         None, // RPC requests per second
         Some(wss_rpc_url),

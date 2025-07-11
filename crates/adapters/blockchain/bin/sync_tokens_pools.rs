@@ -66,6 +66,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let from_block = Some(22327045);
     let blockchain_config = BlockchainDataClientConfig::new(
         chain.clone(),
+        vec![],
         http_rpc_url,
         Some(3), // RPC requests per second
         None,    // WSS RPC URL

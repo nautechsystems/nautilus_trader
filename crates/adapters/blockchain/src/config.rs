@@ -27,6 +27,7 @@ use nautilus_model::defi::Chain;
 pub struct BlockchainDataClientConfig {
     /// The blockchain chain configuration.
     pub chain: Arc<Chain>,
+    pub dex_ids: Vec<String>,
     /// Determines if the client should use Hypersync for live data streaming.
     pub use_hypersync_for_live_data: bool,
     /// The HTTP URL for the blockchain RPC endpoint.
@@ -46,6 +47,7 @@ impl BlockchainDataClientConfig {
     #[must_use]
     pub const fn new(
         chain: Arc<Chain>,
+        dex_ids: Vec<String>,
         http_rpc_url: String,
         rpc_requests_per_second: Option<u32>,
         wss_rpc_url: Option<String>,
@@ -55,6 +57,7 @@ impl BlockchainDataClientConfig {
     ) -> Self {
         Self {
             chain,
+            dex_ids,
             use_hypersync_for_live_data,
             http_rpc_url,
             rpc_requests_per_second,
