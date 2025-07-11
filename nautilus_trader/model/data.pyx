@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-cimport cython
-
 import pickle
 import warnings
 
@@ -257,9 +255,6 @@ cpdef Data capsule_to_data(capsule):
         raise RuntimeError("Invalid data element to convert from `PyCapsule`")
 
 
-@cython.final
-@cython.boundscheck(False)
-@cython.wraparound(False)
 cdef class BarSpecification:
     """
     Represents a bar aggregation specification that defines how market data should be
@@ -584,7 +579,6 @@ cdef class BarSpecification:
                     f"Aggregation not time based, was {bar_aggregation_to_str(aggregation)}",
                 )
 
-
     @property
     def timedelta(self) -> pd.Timedelta:
         """
@@ -601,7 +595,6 @@ cdef class BarSpecification:
 
         """
         return pd.Timedelta(self.get_interval_ns())
-
 
     cdef str aggregation_string_c(self):
         return bar_aggregation_to_str(self.aggregation)
