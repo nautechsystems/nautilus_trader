@@ -444,22 +444,37 @@ impl BlockchainDataClient {
         tokio::pin!(blocks_stream);
 
         let mut metrics = BlockSyncMetrics::new(from_block, total_blocks, 50000);
+        
+        // Batch configuration
+        const BATCH_SIZE: usize =  1000;
+        let mut batch: Vec<Block> = Vec::with_capacity(BATCH_SIZE);
 
         while let Some(block) = blocks_stream.next().await {
             let block_number = block.number;
+            batch.push(block);
             
-            // Measure database operation time
-            let db_start = std::time::Instant::now();
-            self.cache.add_block(block).await?;
-            let db_elapsed = db_start.elapsed();
-            
-            // Update metrics
-            metrics.update(db_elapsed);
+            // Process batch when full or last block
+            if batch.len() >= BATCH_SIZE || block_number >= current_block {
+                let batch_size = batch.len();
+                
+                self.cache.add_blocks_batch(batch).await?;
+                metrics.update(batch_size);
+                
+                // Re-initialize batch vector
+                batch = Vec::with_capacity(BATCH_SIZE);
+            }
             
             // Log progress if needed
             if metrics.should_log_progress(block_number, current_block) {
                 metrics.log_progress(block_number);
             }
+        }
+        
+        // Process any remaining blocks
+        if !batch.is_empty() {
+            let batch_size = batch.len();
+            self.cache.add_blocks_batch(batch).await?;
+            metrics.update(batch_size);
         }
 
         metrics.log_final_stats();

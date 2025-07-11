@@ -156,6 +156,11 @@ impl BlockchainCache {
                     );
                 }
             }
+            
+            if block_timestamps.is_empty() {
+                log::info!("No blocks found in database");
+                return Ok(());           
+            }
 
             log::info!(
                 "Loading {} blocks timestamps from the cache database with last block number {}",
@@ -179,6 +184,29 @@ impl BlockchainCache {
             database.add_block(self.chain.chain_id, &block).await?;
         }
         self.block_timestamps.insert(block.number, block.timestamp);
+        Ok(())
+    }
+
+    /// Adds multiple blocks to the cache and persists them to the database in batch if available.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if adding the blocks to the database fails.
+    pub async fn add_blocks_batch(&mut self, blocks: Vec<Block>) -> anyhow::Result<()> {
+        if blocks.is_empty() {
+            return Ok(());
+        }
+        
+        // Batch insert to database if available
+        if let Some(database) = &self.database {
+            database.add_blocks_batch(self.chain.chain_id, &blocks).await?;
+        }
+        
+        // Update in-memory cache
+        for block in blocks {
+            self.block_timestamps.insert(block.number, block.timestamp);
+        }
+        
         Ok(())
     }
 

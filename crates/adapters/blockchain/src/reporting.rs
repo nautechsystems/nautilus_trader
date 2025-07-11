@@ -23,10 +23,6 @@ pub struct BlockSyncMetrics {
     start_time: Instant,
     last_progress_time: Instant,
     blocks_processed: u64,
-    total_db_time: Duration,
-    db_operations: u64,
-    min_db_time: Duration,
-    max_db_time: Duration,
     from_block: u64,
     total_blocks: u64,
     progress_update_interval: u64,
@@ -41,10 +37,6 @@ impl BlockSyncMetrics {
             start_time: now,
             last_progress_time: now,
             blocks_processed: 0,
-            total_db_time: Duration::ZERO,
-            db_operations: 0,
-            min_db_time: Duration::MAX,
-            max_db_time: Duration::ZERO,
             from_block,
             total_blocks,
             progress_update_interval: update_interval,
@@ -53,12 +45,8 @@ impl BlockSyncMetrics {
     }
 
     /// Updates metrics after a database operation
-    pub fn update(&mut self, db_elapsed: Duration) {
-        self.total_db_time += db_elapsed;
-        self.db_operations += 1;
-        self.min_db_time = self.min_db_time.min(db_elapsed);
-        self.max_db_time = self.max_db_time.max(db_elapsed);
-        self.blocks_processed += 1;
+    pub fn update(&mut self, batch_size: usize) {
+        self.blocks_processed += batch_size as u64;
     }
 
     /// Checks if progress should be logged based on the current block number
@@ -79,7 +67,6 @@ impl BlockSyncMetrics {
         // Calculate rates
         let avg_rate = self.blocks_processed as f64 / elapsed.as_secs_f64();
         let current_rate = interval_blocks as f64 / interval_elapsed.as_secs_f64();
-        let db_time_pct = (self.total_db_time.as_secs_f64() / elapsed.as_secs_f64()) * 100.0;
         let progress_pct = (self.blocks_processed as f64 / self.total_blocks as f64 * 100.0).min(100.0);
         
         // Estimate remaining time
@@ -87,12 +74,11 @@ impl BlockSyncMetrics {
         let eta_display = calculate_eta(blocks_remaining, avg_rate);
 
         tracing::info!(
-            "Block sync progress: {:.1}% | Block: {} | Rate: {:.0} blocks/s | Avg: {:.0} blocks/s | DB time: {:.1}% | ETA: {}",
+            "Block sync progress: {:.1}% | Block: {} | Rate: {:.0} blocks/s | Avg: {:.0} blocks/s | ETA: {}",
             progress_pct,
             block_number,
             current_rate,
             avg_rate,
-            db_time_pct,
             eta_display
         );
 
@@ -104,12 +90,6 @@ impl BlockSyncMetrics {
     pub fn log_final_stats(&self) {
         let total_elapsed = self.start_time.elapsed();
         let avg_rate = self.blocks_processed as f64 / total_elapsed.as_secs_f64();
-        let db_time_pct = (self.total_db_time.as_secs_f64() / total_elapsed.as_secs_f64()) * 100.0;
-        let avg_db_time = if self.db_operations > 0 {
-            self.total_db_time / self.db_operations as u32
-        } else {
-            Duration::ZERO
-        };
         
         // Estimate time for full chain sync (356M blocks)
         let full_chain_blocks = 356_000_000u64;
@@ -121,14 +101,6 @@ impl BlockSyncMetrics {
             self.blocks_processed,
             total_elapsed.as_secs_f64(),
             avg_rate
-        );
-        tracing::info!(
-            "Database performance | Operations: {} | DB time: {:.1}% | Avg: {:.3}ms | Min: {:.3}ms | Max: {:.3}ms",
-            self.db_operations,
-            db_time_pct,
-            avg_db_time.as_secs_f64() * 1000.0,
-            self.min_db_time.as_secs_f64() * 1000.0,
-            self.max_db_time.as_secs_f64() * 1000.0
         );
         tracing::info!(
             "Estimated time for full chain sync (356M blocks): {}",
