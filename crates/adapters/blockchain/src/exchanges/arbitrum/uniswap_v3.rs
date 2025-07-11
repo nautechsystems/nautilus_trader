@@ -28,6 +28,7 @@ pub static UNISWAP_V3: LazyLock<DexExtended> = LazyLock::new(|| {
         chains::ARBITRUM.clone(),
         "UniswapV3",
         "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+        165,
         AmmType::CLAMM,
         "PoolCreated(address,address,uint24,int24,address)",
         "Swap(address,address,int256,int256,uint160,uint128,int24)",

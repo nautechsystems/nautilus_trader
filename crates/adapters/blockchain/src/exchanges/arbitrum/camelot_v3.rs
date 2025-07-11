@@ -28,6 +28,7 @@ pub static CAMELOT_V3: LazyLock<DexExtended> = LazyLock::new(|| {
         chains::ARBITRUM.clone(),
         "CamelotV3",
         "0x1a3c9b1d2f0529d97f2afc5136cc23e58f1fd35b",
+        102286676,
         AmmType::CLAMM,
         "",
         "",

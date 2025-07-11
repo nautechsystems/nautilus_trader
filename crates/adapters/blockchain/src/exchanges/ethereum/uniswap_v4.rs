@@ -27,7 +27,8 @@ pub static UNISWAP_V4: LazyLock<DexExtended> = LazyLock::new(|| {
     let dex = Dex::new(
         chains::ETHEREUM.clone(),
         "UniswapV4",
-        "", // Factory address not provided
+        "", // Factory address not provided,
+        0,
         AmmType::CLAMEnhanced,
         "",
         "",

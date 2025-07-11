@@ -28,6 +28,7 @@ pub static BASESWAP_V2: LazyLock<DexExtended> = LazyLock::new(|| {
         chains::BASE.clone(),
         "BaseSwapV2",
         "0xFDa619b6d20975be80A10332cD39b9a4b0FAa8BB",
+        2059124,
         AmmType::CPAMM,
         "",
         "",

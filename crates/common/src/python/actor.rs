@@ -1612,6 +1612,7 @@ mod tests {
             Chain::new(Blockchain::Ethereum, 1),
             "Uniswap V3",
             "0x1f98431c8ad98523631ae4a59f267346ea31f984",
+            0,
             AmmType::CLAMM,
             "PoolCreated",
             "Swap",

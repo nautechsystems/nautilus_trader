@@ -28,6 +28,7 @@ pub static UNISWAP_V4: LazyLock<DexExtended> = LazyLock::new(|| {
         chains::BASE.clone(),
         "UniswapV4",
         "", // Factory address not provided
+        0,
         AmmType::CLAMEnhanced,
         "",
         "",

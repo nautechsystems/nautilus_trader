@@ -28,6 +28,7 @@ pub static BALANCER_V2: LazyLock<DexExtended> = LazyLock::new(|| {
         chains::ETHEREUM.clone(),
         "BalancerV2",
         "0x8E9aa87E45e92bad84D5F8DD1bFf34Fb92637de9",
+        12272147,
         AmmType::WeightedPool,
         "",
         "",

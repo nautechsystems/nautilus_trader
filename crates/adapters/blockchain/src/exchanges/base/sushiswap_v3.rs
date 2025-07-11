@@ -28,6 +28,7 @@ pub static SUSHISWAP_V3: LazyLock<DexExtended> = LazyLock::new(|| {
         chains::BASE.clone(),
         "SushiSwapV3",
         "0x93395129bd3fcf49d95730D3C2737c17990fF328",
+        0,
         AmmType::CLAMM,
         "",
         "",

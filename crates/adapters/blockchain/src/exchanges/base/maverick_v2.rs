@@ -28,6 +28,7 @@ pub static MAVERICK_V2: LazyLock<DexExtended> = LazyLock::new(|| {
         chains::BASE.clone(),
         "MaverickV2",
         "0x76311728FF86054Ad4Ac52D2E9Ca005B49BaCbd3",
+        0,
         AmmType::CLAMM,
         "",
         "",

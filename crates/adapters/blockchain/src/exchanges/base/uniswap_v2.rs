@@ -28,6 +28,7 @@ pub static UNISWAP_V2: LazyLock<DexExtended> = LazyLock::new(|| {
         chains::BASE.clone(),
         "UniswapV2",
         "0x8909Dc15e40173Ff4699343b6eB8132c65e18eC6",
+        6601915,
         AmmType::CPAMM,
         "",
         "",

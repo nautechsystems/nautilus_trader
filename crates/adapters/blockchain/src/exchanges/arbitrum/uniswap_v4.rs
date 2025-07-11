@@ -27,7 +27,8 @@ pub static UNISWAP_V4: LazyLock<DexExtended> = LazyLock::new(|| {
     let dex = Dex::new(
         chains::ARBITRUM.clone(),
         "UniswapV4",
-        "0x4E3288c9ca110bCC82bf38F09A7b425c095d92Bf",
+        "0x360E68faCcca8cA495c1B759Fd9EEe466db9FB32", // Pool Manager
+        304081360,
         AmmType::CLAMEnhanced,
         "",
         "",

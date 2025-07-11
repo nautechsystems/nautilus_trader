@@ -28,6 +28,7 @@ pub static PANCAKESWAP_V3: LazyLock<DexExtended> = LazyLock::new(|| {
         chains::BASE.clone(),
         "PancakeSwapV3",
         "0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865",
+        3040154,
         AmmType::CLAMM,
         "",
         "",
