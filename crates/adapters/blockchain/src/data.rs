@@ -157,10 +157,7 @@ impl BlockchainDataClient {
     }
 
     /// Initializes the database connection for the blockchain cache.
-    pub async fn initialize_cache_database(
-        &mut self,
-        pg_connect_options: PostgresConnectOptions
-    ) {
+    pub async fn initialize_cache_database(&mut self, pg_connect_options: PostgresConnectOptions) {
         tracing::info!(
             "Initializing blockchain cache on database '{}'",
             pg_connect_options.database
@@ -310,9 +307,9 @@ impl BlockchainDataClient {
                 }
 
                 match hypersync_client.get_pool_address(cmd.instrument_id) {
-                    Some(address) => {
-                        hypersync_client.subscribe_pool_swaps(cmd.instrument_id, *address);
+                    Some(_address) => {
                         tracing::info!("Subscribed to pool swaps for {}", cmd.instrument_id);
+                        todo!("Implement pool swaps subscription logic");
                     }
                     None => {
                         tracing::error!("Failed to fetch pool address for {}", cmd.instrument_id);
@@ -334,13 +331,12 @@ impl BlockchainDataClient {
                 }
 
                 match hypersync_client.get_pool_address(cmd.instrument_id) {
-                    Some(address) => {
-                        hypersync_client
-                            .subscribe_pool_liquidity_updates(cmd.instrument_id, *address);
+                    Some(_address) => {
                         tracing::info!(
                             "Subscribed to pool liquidity updates for {}",
                             cmd.instrument_id
                         );
+                        todo!("Implement pool liquidity updates subscription logic");
                     }
                     None => {
                         tracing::error!("Failed to fetch pool address for {}", cmd.instrument_id);
@@ -969,8 +965,8 @@ impl DataClient for BlockchainDataClient {
             "Connecting blockchain data client for '{}'",
             self.chain.name
         );
-        
-        if let Some(pg_connect_options) = self.config.postgres_cache_database_config.clone(){
+
+        if let Some(pg_connect_options) = self.config.postgres_cache_database_config.clone() {
             self.initialize_cache_database(pg_connect_options).await;
         }
 
@@ -979,10 +975,6 @@ impl DataClient for BlockchainDataClient {
         }
 
         let from_block = self.config.from_block.unwrap_or(0);
-
-        self.hypersync_client
-            .populate_pools_index(from_block)
-            .await?; // TODO: Could also be cached?
 
         self.cache.connect(from_block).await?;
         self.sync_blocks(self.config.from_block).await?;

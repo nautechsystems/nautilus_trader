@@ -18,6 +18,7 @@ use std::{
     sync::Arc,
     time::Duration,
 };
+
 use nautilus_blockchain::{
     config::BlockchainDataClientConfig, factories::BlockchainDataClientFactory,
 };
