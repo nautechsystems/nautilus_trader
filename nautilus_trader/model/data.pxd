@@ -102,6 +102,13 @@ cpdef enum BarAggregation:
     DAY = 14
     WEEK = 15
     MONTH = 16
+    YEAR = 17
+
+
+cpdef enum BarIntervalType:
+    LEFT_OPEN=0
+    RIGHT_OPEN=1
+
 
 
 cdef class BarSpecification:
@@ -109,6 +116,8 @@ cdef class BarSpecification:
 
     cdef str to_str(self)
     cdef str aggregation_string_c(self)
+
+    cpdef uint64_t get_interval_ns(self)
 
     @staticmethod
     cdef BarSpecification from_mem_c(BarSpecification_t raw)
