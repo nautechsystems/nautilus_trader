@@ -80,7 +80,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let univ3 = exchanges::ethereum::UNISWAP_V3.clone();
     let dex_id = univ3.id();
     data_client.connect().await?;
-    data_client.register_exchange(univ3.clone()).await?;
+    data_client.register_dex_exchange(&dex_id).await?;
 
     loop {
         tokio::select! {

@@ -46,7 +46,7 @@ use crate::{
     contracts::erc20::Erc20Contract,
     decode::u256_to_quantity,
     events::pool_created::PoolCreatedEvent,
-    exchanges::extended::DexExtended,
+    exchanges::{dex_extended_map, extended::DexExtended},
     hypersync::client::HyperSyncClient,
     rpc::{
         BlockchainRpcClient, BlockchainRpcClientAny,
@@ -430,7 +430,10 @@ impl BlockchainDataClient {
         };
 
         let current_block = self.hypersync_client.current_block().await;
-        tracing::info!("Syncing blocks from {from_block} to {current_block}");
+        let total_blocks = current_block.saturating_sub(from_block) + 1;
+        tracing::info!(
+            "Syncing blocks from {from_block} to {current_block} (total: {total_blocks} blocks)"
+        );
 
         let blocks_stream = self
             .hypersync_client
@@ -439,11 +442,114 @@ impl BlockchainDataClient {
 
         tokio::pin!(blocks_stream);
 
+        // Performance tracking variables
+        let start_time = std::time::Instant::now();
+        let mut last_progress_time = start_time;
+        let mut blocks_processed = 0u64;
+        let mut total_db_time = std::time::Duration::ZERO;
+        let mut db_operations = 0u64;
+        let mut min_db_time = std::time::Duration::MAX;
+        let mut max_db_time = std::time::Duration::ZERO;
+        
+        // Progress tracking variables
+        let progress_update_interval = 50000; // Update every 10% or 10000 blocks, whichever is larger
+        let mut next_progress_threshold = from_block + progress_update_interval;
+
         while let Some(block) = blocks_stream.next().await {
+            let block_number = block.number;
+            
+            // Measure database operation time
+            let db_start = std::time::Instant::now();
             self.cache.add_block(block).await?;
+            let db_elapsed = db_start.elapsed();
+            
+            // Update performance metrics
+            total_db_time += db_elapsed;
+            db_operations += 1;
+            min_db_time = min_db_time.min(db_elapsed);
+            max_db_time = max_db_time.max(db_elapsed);
+            blocks_processed += 1;
+
+            // Log progress when we pass the threshold
+            if block_number >= next_progress_threshold || block_number >= current_block {
+                let elapsed = start_time.elapsed();
+                let interval_elapsed = last_progress_time.elapsed();
+                let interval_blocks = if block_number > next_progress_threshold - progress_update_interval {
+                    block_number - (next_progress_threshold - progress_update_interval)
+                } else {
+                    progress_update_interval
+                };
+                
+                // Calculate rates
+                let avg_rate = blocks_processed as f64 / elapsed.as_secs_f64();
+                let current_rate = interval_blocks as f64 / interval_elapsed.as_secs_f64();
+                let db_time_pct = (total_db_time.as_secs_f64() / elapsed.as_secs_f64()) * 100.0;
+                let progress_pct = (blocks_processed as f64 / total_blocks as f64 * 100.0).min(100.0);
+                
+                // Estimate remaining time
+                let blocks_remaining = total_blocks.saturating_sub(blocks_processed);
+                let eta_seconds = blocks_remaining as f64 / avg_rate;
+                let eta_display = if eta_seconds < 60.0 {
+                    format!("{:.0}s", eta_seconds)
+                } else if eta_seconds < 3600.0 {
+                    format!("{:.0}m", eta_seconds / 60.0)
+                } else if eta_seconds < 86400.0 {
+                    format!("{:.1}h", eta_seconds / 3600.0)
+                } else {
+                    format!("{:.1}d", eta_seconds / 86400.0)
+                };
+
+                tracing::info!(
+                    "Block sync progress: {:.1}% | Block: {} | Rate: {:.0} blocks/s | Avg: {:.0} blocks/s | DB time: {:.1}% | ETA: {}",
+                    progress_pct,
+                    block_number,
+                    current_rate,
+                    avg_rate,
+                    db_time_pct,
+                    eta_display
+                );
+
+                next_progress_threshold = block_number + progress_update_interval;
+                last_progress_time = std::time::Instant::now();
+            }
         }
 
-        tracing::info!("Finished syncing blocks");
+        // Final statistics
+        let total_elapsed = start_time.elapsed();
+        let avg_rate = blocks_processed as f64 / total_elapsed.as_secs_f64();
+        let db_time_pct = (total_db_time.as_secs_f64() / total_elapsed.as_secs_f64()) * 100.0;
+        let avg_db_time = total_db_time / db_operations as u32;
+        
+        // Estimate time for full chain sync (356M blocks)
+        let full_chain_blocks = 356_000_000u64;
+        let full_sync_seconds = full_chain_blocks as f64 / avg_rate;
+        let full_sync_display = if full_sync_seconds < 3600.0 {
+            format!("{:.0} minutes", full_sync_seconds / 60.0)
+        } else if full_sync_seconds < 86400.0 {
+            format!("{:.1} hours", full_sync_seconds / 3600.0)
+        } else {
+            format!("{:.1} days", full_sync_seconds / 86400.0)
+        };
+        
+        tracing::info!(
+            "Finished syncing blocks | Total: {} blocks in {:.1}s | Avg rate: {:.0} blocks/s",
+            blocks_processed,
+            total_elapsed.as_secs_f64(),
+            avg_rate
+        );
+        tracing::info!(
+            "Database performance | Operations: {} | DB time: {:.1}% | Avg: {:.3}ms | Min: {:.3}ms | Max: {:.3}ms",
+            db_operations,
+            db_time_pct,
+            avg_db_time.as_secs_f64() * 1000.0,
+            min_db_time.as_secs_f64() * 1000.0,
+            max_db_time.as_secs_f64() * 1000.0
+        );
+        tracing::info!(
+            "Estimated time for full chain sync (356M blocks): {}",
+            full_sync_display
+        );
+        
         Ok(())
     }
 
@@ -768,11 +874,16 @@ impl BlockchainDataClient {
     }
 
     /// Registers a decentralized exchange with the client.
-    pub async fn register_exchange(&mut self, dex: DexExtended) -> anyhow::Result<()> {
-        let dex_id = dex.id();
-        tracing::info!("Registering blockchain exchange {dex_id}");
-        self.cache.add_dex(dex_id, dex).await?;
-        Ok(())
+    pub async fn register_dex_exchange(&mut self, dex_id: &str) -> anyhow::Result<()> {
+        if let Some(dex) = dex_extended_map().get(dex_id) {
+            tracing::info!("Registering blockchain exchange {dex_id}");
+            self.cache
+                .add_dex(dex_id.to_string(), dex.to_owned().clone())
+                .await?;
+            Ok(())
+        } else {
+            anyhow::bail!("Unknown DEX ID: {dex_id}")
+        }
     }
 
     /// Processes incoming messages from the HyperSync client.
@@ -892,6 +1003,18 @@ impl BlockchainDataClient {
         }
     }
 
+    /// Determines the starting block for syncing operations.
+    ///
+    /// # Returns
+    /// - The configured `from_block` if provided
+    /// - Otherwise, the earliest DEX factory deployment block from the cache
+    /// - If no DEXes are registered, defaults to block 0 (genesis)
+    fn determine_from_block(&self) -> u64 {
+        self.config
+            .from_block
+            .unwrap_or_else(|| self.cache.min_dex_creation_block().unwrap_or(0))
+    }
+
     fn send_block(&self, block: Block) {
         let data = DataEvent::DeFi(DefiData::Block(block));
         self.send_data(data);
@@ -974,9 +1097,24 @@ impl DataClient for BlockchainDataClient {
             rpc_client.connect().await?;
         }
 
-        let from_block = self.config.from_block.unwrap_or(0);
+        // Initialize the chain and register the Dex exchanges in the cache.
+        self.cache.initialize_chain().await;
+        for dex_id in self.config.dex_ids.clone() {
+            self.register_dex_exchange(&dex_id).await?;
+        }
 
+        let from_block = self.determine_from_block();
+        tracing::info!(
+            "Connecting to blockchain data source for '{chain_name}' from block {from_block}",
+            chain_name = self.chain.name
+        );
+        // Import the cached blockchain data.
         self.cache.connect(from_block).await?;
+        // Sync the remaining blocks which are missing.
+        self.sync_blocks(Some(from_block)).await?;
+
+        todo!("FINISH HERE");
+
         self.sync_blocks(self.config.from_block).await?;
         // self.subscribe_blocks().await?;
 

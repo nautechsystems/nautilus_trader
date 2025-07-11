@@ -73,6 +73,15 @@ impl BlockchainCache {
         self.block_timestamps.last_key_value().map(|(k, _)| *k)
     }
 
+    /// Returns the earliest block number where any DEX in the cache was created on the blockchain.
+    #[must_use]
+    pub fn min_dex_creation_block(&self) -> Option<u64> {
+        self.dexes
+            .values()
+            .map(|dex| dex.factory_creation_block)
+            .min()
+    }
+
     /// Returns the timestamp for the specified block number if it exists in the cache.
     #[must_use]
     pub fn get_block_timestamp(&self, block_number: u64) -> Option<&UnixNanos> {
@@ -85,20 +94,24 @@ impl BlockchainCache {
         self.database = Some(database);
     }
 
+    pub async fn initialize_chain(&self) {
+        // Seed target adapter chain in database
+        if let Some(database) = &self.database {
+            if let Err(e) = database.seed_chain(&self.chain).await {
+                log::error!("Error seeding chain in database: {e}");
+                log::warn!("Continuing without database cache functionality");
+            } else {
+                log::info!("Chain seeded in database");
+            }
+        }
+    }
+
     /// Connects to the database and loads initial data.
     ///
     /// # Errors
     ///
     /// Returns an error if database seeding, token loading, or block loading fails.
     pub async fn connect(&mut self, from_block: u64) -> anyhow::Result<()> {
-        // Seed target adapter chain in database
-        if let Some(database) = &self.database
-            && let Err(e) = database.seed_chain(&self.chain).await
-        {
-            log::error!("Error seeding chain in database: {e}");
-            log::warn!("Continuing without database cache functionality");
-        }
-
         if let Err(e) = self.load_tokens().await {
             log::error!("Error loading tokens from database: {e}");
         }
@@ -145,8 +158,9 @@ impl BlockchainCache {
             }
 
             log::info!(
-                "Loading {} blocks timestamps from the cache database",
-                block_timestamps.len()
+                "Loading {} blocks timestamps from the cache database with last block number {}",
+                block_timestamps.len(),
+                block_timestamps.last().unwrap().number,
             );
             for block in block_timestamps {
                 self.block_timestamps.insert(block.number, block.timestamp);
