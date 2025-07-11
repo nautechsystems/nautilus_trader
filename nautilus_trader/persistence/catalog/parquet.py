@@ -1631,7 +1631,9 @@ class ParquetDataCatalog(BaseDataCatalog):
             self._register_object_store_with_session(session)
 
         for idx, file in enumerate(file_list):
-            table = f"{file_prefix}_{idx}"
+            identifier = file.split("/")[-2]
+            safe_sql_identifier = urisafe_identifier(identifier).replace(".", "_").replace("-", "_").lower()
+            table = f"{file_prefix}_{safe_sql_identifier}_{idx}"
             query = self._build_query(
                 table,
                 start=start,
