@@ -417,7 +417,11 @@ impl BlockchainDataClient {
     /// # Errors
     ///
     /// Returns an error if block streaming or database operations fail.
-    pub async fn sync_blocks(&mut self, from_block: Option<u64>) -> anyhow::Result<()> {
+    pub async fn sync_blocks(
+        &mut self, 
+        from_block: Option<u64>,
+        to_block: Option<u64>,
+    ) -> anyhow::Result<()> {
         let from_block = if let Some(b) = from_block {
             b
         } else {
@@ -430,15 +434,19 @@ impl BlockchainDataClient {
             Some(cached_block_number) => max(from_block, cached_block_number + 1),
         };
 
-        let current_block = self.hypersync_client.current_block().await;
-        let total_blocks = current_block.saturating_sub(from_block) + 1;
+        let to_block = if let Some(block) = to_block {
+            block
+        } else {
+            self.hypersync_client.current_block().await
+        };
+        let total_blocks = to_block.saturating_sub(from_block) + 1;
         tracing::info!(
-            "Syncing blocks from {from_block} to {current_block} (total: {total_blocks} blocks)"
+            "Syncing blocks from {from_block} to {to_block} (total: {total_blocks} blocks)"
         );
 
         let blocks_stream = self
             .hypersync_client
-            .request_blocks_stream(from_block, Some(current_block))
+            .request_blocks_stream(from_block, Some(to_block))
             .await;
 
         tokio::pin!(blocks_stream);
@@ -454,7 +462,7 @@ impl BlockchainDataClient {
             batch.push(block);
             
             // Process batch when full or last block
-            if batch.len() >= BATCH_SIZE || block_number >= current_block {
+            if batch.len() >= BATCH_SIZE || block_number >= to_block {
                 let batch_size = batch.len();
                 
                 self.cache.add_blocks_batch(batch).await?;
@@ -465,7 +473,7 @@ impl BlockchainDataClient {
             }
             
             // Log progress if needed
-            if metrics.should_log_progress(block_number, current_block) {
+            if metrics.should_log_progress(block_number, to_block) {
                 metrics.log_progress(block_number);
             }
         }
@@ -1039,11 +1047,7 @@ impl DataClient for BlockchainDataClient {
         // Import the cached blockchain data.
         self.cache.connect(from_block).await?;
         // Sync the remaining blocks which are missing.
-        self.sync_blocks(Some(from_block)).await?;
-
-        todo!("FINISH HERE");
-
-        self.sync_blocks(self.config.from_block).await?;
+        self.sync_blocks(Some(from_block), None).await?;
         // self.subscribe_blocks().await?;
 
         if self.process_task.is_none() {
