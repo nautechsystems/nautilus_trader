@@ -4,6 +4,7 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added streaming methods for `TardisCSVDataLoader`
+- Added `YEAR` aggregation and improved bar specification validation (#2771), thanks @stastnypremysl
 - Added `use_hyphens_in_client_order_ids` config option for `StrategyConfig`
 - Added `greeks_filter` function to `portfolio_greeks` (#2756), thanks @faysou
 - Added `VERBOSE` option to common make targets (#2759), thanks @faysou
@@ -12,6 +13,7 @@ Released on TBD (UTC).
 None
 
 ### Internal Improvements
+- Added integration test service management targets (#2765), thanks @stastnypremysl
 - Improved efficiency of message bus external streams buffer flushing
 - Improved `databento_test_request_bars` example (#2762), thanks @faysou
 - Optimized account event purging for Redis where large lists could consume excessive memory and cause Redis to freeze
