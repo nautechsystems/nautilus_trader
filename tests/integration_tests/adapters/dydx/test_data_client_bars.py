@@ -357,7 +357,7 @@ class TestDYDXDataClientBarPartitioning:
     @pytest.mark.asyncio
     async def test_api_error_handling_during_partitioning(self):
         """
-        Test that API errors are handled gracefully during partitioned requests.
+        Test that API errors are propagated during partitioned requests.
         """
         # Arrange
         start_time = datetime(2024, 1, 1, tzinfo=UTC)
@@ -393,17 +393,9 @@ class TestDYDXDataClientBarPartitioning:
         with patch.object(self.data_client, "_http_market") as mock_http:
             mock_http.get_candles = AsyncMock(side_effect=mock_api_call)
 
-            with patch.object(self.data_client, "_handle_bars") as mock_handle:
-                # Act
+            # Act & Assert - should propagate the API error
+            with pytest.raises(Exception, match="API Error"):
                 await self.data_client._request_bars(request)
-
-                # Assert - should handle partial failure gracefully
-                mock_handle.assert_called_once()
-                call_args = mock_handle.call_args
-                bars = call_args[0][1]  # The bars argument
-
-                # Should have data from successful chunks only
-                assert len(bars) >= 0  # At least some data should be available
 
     @pytest.mark.asyncio
     async def test_rate_limiting_simulation(self):
