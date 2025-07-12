@@ -271,7 +271,7 @@ class TestDYDXDataClientBarPartitioning:
         async def mock_fetch_candles(symbol, bar_type, instrument, start, end, request_limit):
             nonlocal fetch_call_count
             fetch_call_count += 1
-            
+
             # Return a small number of bars to avoid overwhelming the system
             bars = []
             for i in range(min(5, request_limit)):  # Return at most 5 bars per chunk
@@ -287,7 +287,7 @@ class TestDYDXDataClientBarPartitioning:
                     ts_init=int(bar_time.timestamp() * 1_000_000_000),
                 )
                 bars.append(bar)
-            
+
             return bars
 
         # Mock the fetch_candles method
@@ -489,22 +489,22 @@ class TestDYDXDataClientBarPartitioning:
         async def mock_fetch_candles(symbol, bar_type, instrument, start, end, request_limit):
             nonlocal fetch_call_count, all_bars_returned
             fetch_call_count += 1
-            
+
             # Calculate how many bars this chunk should return
             if start and end:
                 chunk_minutes = min(int((end - start).total_seconds() / 60), request_limit)
             else:
                 chunk_minutes = min(total_bars, request_limit)
-                
+
             # Apply the overall limit if set
             if limit > 0:
                 remaining_bars = limit - all_bars_returned
                 chunk_minutes = min(chunk_minutes, remaining_bars)
-                
+
             # For this test, return a manageable number of bars per chunk
             # to avoid overwhelming the system
             actual_bars_to_return = min(chunk_minutes, 100)  # Cap at 100 bars per chunk
-            
+
             # Create bars for this chunk
             bars = []
             for i in range(actual_bars_to_return):
@@ -520,7 +520,7 @@ class TestDYDXDataClientBarPartitioning:
                     ts_init=int(bar_time.timestamp() * 1_000_000_000),
                 )
                 bars.append(bar)
-            
+
             all_bars_returned += len(bars)
             return bars
 
@@ -534,7 +534,7 @@ class TestDYDXDataClientBarPartitioning:
                 mock_handle.assert_called_once()
                 call_args = mock_handle.call_args
                 bars = call_args[0][1]  # The bars argument
-                
+
                 # For the test, we just verify that bars were returned
                 # and that the limit was applied if specified
                 if limit > 0:
