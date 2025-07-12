@@ -225,6 +225,18 @@ class DYDXTransferType(Enum):
     WITHDRAWAL = "WITHDRAWAL"
 
 
+@unique
+class DYDXPnlTickInterval(str, Enum):
+    """
+    Define the resolution intervals for PnL queries.
+    """
+
+    ONE_HOUR = "ONE_HOUR"
+    ONE_DAY = "ONE_DAY"
+    SEVEN_DAYS = "SEVEN_DAYS"
+    THIRTY_DAYS = "THIRTY_DAYS"
+
+
 class DYDXEnumParser:
     """
     Convert dYdX enums to Nautilus enums.

@@ -23,6 +23,7 @@ from nautilus_trader.adapters.dydx.common.enums import DYDXOrderSide
 from nautilus_trader.adapters.dydx.common.enums import DYDXOrderStatus
 from nautilus_trader.adapters.dydx.common.enums import DYDXOrderType
 from nautilus_trader.adapters.dydx.common.enums import DYDXPerpetualPositionStatus
+from nautilus_trader.adapters.dydx.common.enums import DYDXPnlTickInterval
 from nautilus_trader.adapters.dydx.endpoints.account.address import DYDXGetAddressEndpoint
 from nautilus_trader.adapters.dydx.endpoints.account.address import DYDXGetAddressGetParams
 
@@ -39,6 +40,14 @@ from nautilus_trader.adapters.dydx.endpoints.account.perpetual_positions import 
 from nautilus_trader.adapters.dydx.endpoints.account.perpetual_positions import DYDXGetPerpetualPositionsGetParams
 from nautilus_trader.adapters.dydx.endpoints.account.subaccount import DYDXGetSubaccountEndpoint
 from nautilus_trader.adapters.dydx.endpoints.account.subaccount import DYDXGetSubaccountGetParams
+from nautilus_trader.adapters.dydx.endpoints.vault.megavault_historical_pnl import DYDXMegaVaultHistoricalPnlEndpoint
+from nautilus_trader.adapters.dydx.endpoints.vault.megavault_historical_pnl import DYDXMegaVaultHistoricalPnlGetParams
+from nautilus_trader.adapters.dydx.endpoints.vault.megavault_historical_pnl import DYDXPnlTicksResponseObject
+from nautilus_trader.adapters.dydx.endpoints.vault.megavault_positions import DYDXMegaVaultPositionsEndpoint
+from nautilus_trader.adapters.dydx.endpoints.vault.megavault_positions import DYDXVaultPosition
+from nautilus_trader.adapters.dydx.endpoints.vault.vaults_historical_pnl import DYDXVaultHistoricalPnl
+from nautilus_trader.adapters.dydx.endpoints.vault.vaults_historical_pnl import DYDXVaultsHistoricalPnlEndpoint
+from nautilus_trader.adapters.dydx.endpoints.vault.vaults_historical_pnl import DYDXVaultsHistoricalPnlGetParams
 from nautilus_trader.adapters.dydx.http.client import DYDXHttpClient
 from nautilus_trader.adapters.dydx.schemas.account.address import DYDXAddressResponse
 from nautilus_trader.adapters.dydx.schemas.account.address import DYDXSubaccountResponse
@@ -76,6 +85,11 @@ class DYDXAccountHttpAPI:
         self._endpoint_get_orders = DYDXGetOrdersEndpoint(client)
         self._endpoint_get_order = DYDXGetOrderEndpoint(client)
         self._endpoint_get_fills = DYDXGetFillsEndpoint(client)
+
+        # Vault endpoints
+        self._endpoint_megavault_pnl = DYDXMegaVaultHistoricalPnlEndpoint(client)
+        self._endpoint_vaults_pnl = DYDXVaultsHistoricalPnlEndpoint(client)
+        self._endpoint_megavault_positions = DYDXMegaVaultPositionsEndpoint(client)
 
     async def get_adress_subaccounts(
         self,
@@ -205,3 +219,36 @@ class DYDXAccountHttpAPI:
                 page=page,
             ),
         )
+
+    # --------------------------------------------------------------------- #
+    # Vault API                                                             #
+    # --------------------------------------------------------------------- #
+
+    async def get_megavault_historical_pnl(
+        self,
+        resolution: DYDXPnlTickInterval,
+    ) -> list[DYDXPnlTicksResponseObject]:
+        """
+        Return MegaVault historical P&L ticks.
+        """
+        params = DYDXMegaVaultHistoricalPnlGetParams(resolution=resolution)
+        resp = await self._endpoint_megavault_pnl.get(params)
+        return resp.megavault_pnl if resp else []
+
+    async def get_vaults_historical_pnl(
+        self,
+        resolution: DYDXPnlTickInterval,
+    ) -> list[DYDXVaultHistoricalPnl]:
+        """
+        Return aggregate vaults historical P&L ticks (all vaults).
+        """
+        params = DYDXVaultsHistoricalPnlGetParams(resolution=resolution)
+        resp = await self._endpoint_vaults_pnl.get(params)
+        return resp.vaults_pnl if resp else []
+
+    async def get_megavault_positions(self) -> list[DYDXVaultPosition]:
+        """
+        Return current MegaVault open positions.
+        """
+        resp = await self._endpoint_megavault_positions.get()
+        return resp.positions if resp else []
