@@ -113,7 +113,7 @@ It improves readability, reduces cognitive load, and is more accessible for inte
 
 ## Line length and wrapping
 
-- Wrap lines at 80-100 characters for better readability and diff reviews.
+- Wrap lines at no more than ~100-120 characters for better readability and diff reviews.
 - Break long sentences at natural points (after commas, conjunctions, or phrases).
 - Avoid orphaned words on new lines when possible.
 - Code blocks and URLs can exceed the line limit when necessary.

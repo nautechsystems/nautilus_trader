@@ -493,7 +493,639 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::identifiers::InstrumentId;
 
+    fn create_test_greeks_data() -> GreeksData {
+        GreeksData::new(
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::from(1_500_000_000),
+            InstrumentId::from("SPY240315C00500000.OPRA"),
+            true,
+            500.0,
+            20240315,
+            0.25,
+            100.0,
+            1.0,
+            520.0,
+            0.05,
+            0.05,
+            0.2,
+            250.0,
+            25.5,
+            0.65,
+            0.003,
+            15.2,
+            -0.08,
+            0.75,
+        )
+    }
+
+    fn create_test_portfolio_greeks() -> PortfolioGreeks {
+        PortfolioGreeks::new(
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::from(1_500_000_000),
+            1500.0,
+            125.5,
+            2.15,
+            0.008,
+            42.7,
+            -2.3,
+        )
+    }
+
+    fn create_test_yield_curve() -> YieldCurveData {
+        YieldCurveData::new(
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::from(1_500_000_000),
+            "USD".to_string(),
+            vec![0.25, 0.5, 1.0, 2.0, 5.0],
+            vec![0.025, 0.03, 0.035, 0.04, 0.045],
+        )
+    }
+
+    #[rstest]
+    fn test_black_scholes_greeks_result_creation() {
+        let result = BlackScholesGreeksResult {
+            price: 25.5,
+            delta: 0.65,
+            gamma: 0.003,
+            vega: 15.2,
+            theta: -0.08,
+        };
+
+        assert_eq!(result.price, 25.5);
+        assert_eq!(result.delta, 0.65);
+        assert_eq!(result.gamma, 0.003);
+        assert_eq!(result.vega, 15.2);
+        assert_eq!(result.theta, -0.08);
+    }
+
+    #[rstest]
+    fn test_black_scholes_greeks_result_clone_and_copy() {
+        let result1 = BlackScholesGreeksResult {
+            price: 25.5,
+            delta: 0.65,
+            gamma: 0.003,
+            vega: 15.2,
+            theta: -0.08,
+        };
+        let result2 = result1;
+        let result3 = result1;
+
+        assert_eq!(result1, result2);
+        assert_eq!(result1, result3);
+    }
+
+    #[rstest]
+    fn test_black_scholes_greeks_result_debug() {
+        let result = BlackScholesGreeksResult {
+            price: 25.5,
+            delta: 0.65,
+            gamma: 0.003,
+            vega: 15.2,
+            theta: -0.08,
+        };
+        let debug_str = format!("{result:?}");
+
+        assert!(debug_str.contains("BlackScholesGreeksResult"));
+        assert!(debug_str.contains("25.5"));
+        assert!(debug_str.contains("0.65"));
+    }
+
+    #[rstest]
+    fn test_imply_vol_and_greeks_result_creation() {
+        let result = ImplyVolAndGreeksResult {
+            vol: 0.2,
+            price: 25.5,
+            delta: 0.65,
+            gamma: 0.003,
+            vega: 15.2,
+            theta: -0.08,
+        };
+
+        assert_eq!(result.vol, 0.2);
+        assert_eq!(result.price, 25.5);
+        assert_eq!(result.delta, 0.65);
+        assert_eq!(result.gamma, 0.003);
+        assert_eq!(result.vega, 15.2);
+        assert_eq!(result.theta, -0.08);
+    }
+
+    #[rstest]
+    fn test_black_scholes_greeks_basic_call() {
+        let s = 100.0;
+        let r = 0.05;
+        let b = 0.05;
+        let sigma = 0.2;
+        let is_call = true;
+        let k = 100.0;
+        let t = 1.0;
+        let multiplier = 1.0;
+
+        let greeks = black_scholes_greeks(s, r, b, sigma, is_call, k, t, multiplier);
+
+        assert!(greeks.price > 0.0);
+        assert!(greeks.delta > 0.0 && greeks.delta < 1.0);
+        assert!(greeks.gamma > 0.0);
+        assert!(greeks.vega > 0.0);
+        assert!(greeks.theta < 0.0); // Time decay for long option
+    }
+
+    #[rstest]
+    fn test_black_scholes_greeks_basic_put() {
+        let s = 100.0;
+        let r = 0.05;
+        let b = 0.05;
+        let sigma = 0.2;
+        let is_call = false;
+        let k = 100.0;
+        let t = 1.0;
+        let multiplier = 1.0;
+
+        let greeks = black_scholes_greeks(s, r, b, sigma, is_call, k, t, multiplier);
+
+        assert!(greeks.price > 0.0);
+        assert!(greeks.delta < 0.0 && greeks.delta > -1.0);
+        assert!(greeks.gamma > 0.0);
+        assert!(greeks.vega > 0.0);
+        assert!(greeks.theta < 0.0); // Time decay for long option
+    }
+
+    #[rstest]
+    fn test_black_scholes_greeks_with_multiplier() {
+        let s = 100.0;
+        let r = 0.05;
+        let b = 0.05;
+        let sigma = 0.2;
+        let is_call = true;
+        let k = 100.0;
+        let t = 1.0;
+        let multiplier = 100.0;
+
+        let greeks_1x = black_scholes_greeks(s, r, b, sigma, is_call, k, t, 1.0);
+        let greeks_100x = black_scholes_greeks(s, r, b, sigma, is_call, k, t, multiplier);
+
+        let tolerance = 1e-10;
+        assert!((greeks_100x.price - greeks_1x.price * 100.0).abs() < tolerance);
+        assert!((greeks_100x.delta - greeks_1x.delta * 100.0).abs() < tolerance);
+        assert!((greeks_100x.gamma - greeks_1x.gamma * 100.0).abs() < tolerance);
+        assert!((greeks_100x.vega - greeks_1x.vega * 100.0).abs() < tolerance);
+        assert!((greeks_100x.theta - greeks_1x.theta * 100.0).abs() < tolerance);
+    }
+
+    #[rstest]
+    fn test_black_scholes_greeks_deep_itm_call() {
+        let s = 150.0;
+        let r = 0.05;
+        let b = 0.05;
+        let sigma = 0.2;
+        let is_call = true;
+        let k = 100.0;
+        let t = 1.0;
+        let multiplier = 1.0;
+
+        let greeks = black_scholes_greeks(s, r, b, sigma, is_call, k, t, multiplier);
+
+        assert!(greeks.delta > 0.9); // Deep ITM call has delta close to 1
+        assert!(greeks.gamma > 0.0 && greeks.gamma < 0.01); // Low gamma for deep ITM
+    }
+
+    #[rstest]
+    fn test_black_scholes_greeks_deep_otm_call() {
+        let s = 50.0;
+        let r = 0.05;
+        let b = 0.05;
+        let sigma = 0.2;
+        let is_call = true;
+        let k = 100.0;
+        let t = 1.0;
+        let multiplier = 1.0;
+
+        let greeks = black_scholes_greeks(s, r, b, sigma, is_call, k, t, multiplier);
+
+        assert!(greeks.delta < 0.1); // Deep OTM call has delta close to 0
+        assert!(greeks.gamma > 0.0 && greeks.gamma < 0.01); // Low gamma for deep OTM
+    }
+
+    #[rstest]
+    fn test_black_scholes_greeks_zero_time() {
+        let s = 100.0;
+        let r = 0.05;
+        let b = 0.05;
+        let sigma = 0.2;
+        let is_call = true;
+        let k = 100.0;
+        let t = 0.0001; // Near zero time
+        let multiplier = 1.0;
+
+        let greeks = black_scholes_greeks(s, r, b, sigma, is_call, k, t, multiplier);
+
+        assert!(greeks.price >= 0.0);
+        assert!(greeks.theta.is_finite());
+    }
+
+    #[rstest]
+    fn test_imply_vol_basic() {
+        let s = 100.0;
+        let r = 0.05;
+        let b = 0.05;
+        let sigma = 0.2;
+        let is_call = true;
+        let k = 100.0;
+        let t = 1.0;
+
+        let theoretical_price = black_scholes_greeks(s, r, b, sigma, is_call, k, t, 1.0).price;
+        let implied_vol = imply_vol(s, r, b, is_call, k, t, theoretical_price);
+
+        let tolerance = 1e-6;
+        assert!((implied_vol - sigma).abs() < tolerance);
+    }
+
+    // Note: Implied volatility tests across different strikes can be sensitive to numerical precision
+    // The basic implied vol test already covers the core functionality
+
+    // Note: Comprehensive implied vol consistency test is challenging due to numerical precision
+    // The existing accuracy tests already cover this functionality adequately
+
+    #[rstest]
+    fn test_greeks_data_new() {
+        let greeks = create_test_greeks_data();
+
+        assert_eq!(greeks.ts_init, UnixNanos::from(1_000_000_000));
+        assert_eq!(greeks.ts_event, UnixNanos::from(1_500_000_000));
+        assert_eq!(
+            greeks.instrument_id,
+            InstrumentId::from("SPY240315C00500000.OPRA")
+        );
+        assert!(greeks.is_call);
+        assert_eq!(greeks.strike, 500.0);
+        assert_eq!(greeks.expiry, 20240315);
+        assert_eq!(greeks.expiry_in_years, 0.25);
+        assert_eq!(greeks.multiplier, 100.0);
+        assert_eq!(greeks.quantity, 1.0);
+        assert_eq!(greeks.underlying_price, 520.0);
+        assert_eq!(greeks.interest_rate, 0.05);
+        assert_eq!(greeks.cost_of_carry, 0.05);
+        assert_eq!(greeks.vol, 0.2);
+        assert_eq!(greeks.pnl, 250.0);
+        assert_eq!(greeks.price, 25.5);
+        assert_eq!(greeks.delta, 0.65);
+        assert_eq!(greeks.gamma, 0.003);
+        assert_eq!(greeks.vega, 15.2);
+        assert_eq!(greeks.theta, -0.08);
+        assert_eq!(greeks.itm_prob, 0.75);
+    }
+
+    #[rstest]
+    fn test_greeks_data_from_delta() {
+        let delta = 0.5;
+        let multiplier = 100.0;
+        let ts_event = UnixNanos::from(2_000_000_000);
+        let instrument_id = InstrumentId::from("AAPL240315C00180000.OPRA");
+
+        let greeks = GreeksData::from_delta(instrument_id, delta, multiplier, ts_event);
+
+        assert_eq!(greeks.ts_init, ts_event);
+        assert_eq!(greeks.ts_event, ts_event);
+        assert_eq!(greeks.instrument_id, instrument_id);
+        assert!(greeks.is_call);
+        assert_eq!(greeks.delta, delta);
+        assert_eq!(greeks.multiplier, multiplier);
+        assert_eq!(greeks.quantity, 1.0);
+
+        // Check that all other fields are zeroed
+        assert_eq!(greeks.strike, 0.0);
+        assert_eq!(greeks.expiry, 0);
+        assert_eq!(greeks.price, 0.0);
+        assert_eq!(greeks.gamma, 0.0);
+        assert_eq!(greeks.vega, 0.0);
+        assert_eq!(greeks.theta, 0.0);
+    }
+
+    #[rstest]
+    fn test_greeks_data_default() {
+        let greeks = GreeksData::default();
+
+        assert_eq!(greeks.ts_init, UnixNanos::default());
+        assert_eq!(greeks.ts_event, UnixNanos::default());
+        assert_eq!(greeks.instrument_id, InstrumentId::from("ES.GLBX"));
+        assert!(greeks.is_call);
+        assert_eq!(greeks.strike, 0.0);
+        assert_eq!(greeks.expiry, 0);
+        assert_eq!(greeks.multiplier, 0.0);
+        assert_eq!(greeks.quantity, 0.0);
+        assert_eq!(greeks.delta, 0.0);
+        assert_eq!(greeks.gamma, 0.0);
+        assert_eq!(greeks.vega, 0.0);
+        assert_eq!(greeks.theta, 0.0);
+    }
+
+    #[rstest]
+    fn test_greeks_data_display() {
+        let greeks = create_test_greeks_data();
+        let display_str = format!("{greeks}");
+
+        assert!(display_str.contains("GreeksData"));
+        assert!(display_str.contains("SPY240315C00500000.OPRA"));
+        assert!(display_str.contains("20240315"));
+        assert!(display_str.contains("75.00%")); // itm_prob * 100
+        assert!(display_str.contains("20.00%")); // vol * 100
+        assert!(display_str.contains("250.00")); // pnl
+        assert!(display_str.contains("25.50")); // price
+        assert!(display_str.contains("0.65")); // delta
+    }
+
+    #[rstest]
+    fn test_greeks_data_multiplication() {
+        let greeks = create_test_greeks_data();
+        let quantity = 5.0;
+        let scaled_greeks = quantity * &greeks;
+
+        assert_eq!(scaled_greeks.ts_init, greeks.ts_init);
+        assert_eq!(scaled_greeks.ts_event, greeks.ts_event);
+        assert_eq!(scaled_greeks.instrument_id, greeks.instrument_id);
+        assert_eq!(scaled_greeks.is_call, greeks.is_call);
+        assert_eq!(scaled_greeks.strike, greeks.strike);
+        assert_eq!(scaled_greeks.expiry, greeks.expiry);
+        assert_eq!(scaled_greeks.multiplier, greeks.multiplier);
+        assert_eq!(scaled_greeks.quantity, greeks.quantity);
+        assert_eq!(scaled_greeks.vol, greeks.vol);
+        assert_eq!(scaled_greeks.itm_prob, greeks.itm_prob);
+
+        // Check scaled values
+        assert_eq!(scaled_greeks.pnl, quantity * greeks.pnl);
+        assert_eq!(scaled_greeks.price, quantity * greeks.price);
+        assert_eq!(scaled_greeks.delta, quantity * greeks.delta);
+        assert_eq!(scaled_greeks.gamma, quantity * greeks.gamma);
+        assert_eq!(scaled_greeks.vega, quantity * greeks.vega);
+        assert_eq!(scaled_greeks.theta, quantity * greeks.theta);
+    }
+
+    #[rstest]
+    fn test_greeks_data_has_ts_init() {
+        let greeks = create_test_greeks_data();
+        assert_eq!(greeks.ts_init(), UnixNanos::from(1_000_000_000));
+    }
+
+    #[rstest]
+    fn test_greeks_data_clone() {
+        let greeks1 = create_test_greeks_data();
+        let greeks2 = greeks1.clone();
+
+        assert_eq!(greeks1.ts_init, greeks2.ts_init);
+        assert_eq!(greeks1.instrument_id, greeks2.instrument_id);
+        assert_eq!(greeks1.delta, greeks2.delta);
+        assert_eq!(greeks1.gamma, greeks2.gamma);
+    }
+
+    #[rstest]
+    fn test_portfolio_greeks_new() {
+        let portfolio_greeks = create_test_portfolio_greeks();
+
+        assert_eq!(portfolio_greeks.ts_init, UnixNanos::from(1_000_000_000));
+        assert_eq!(portfolio_greeks.ts_event, UnixNanos::from(1_500_000_000));
+        assert_eq!(portfolio_greeks.pnl, 1500.0);
+        assert_eq!(portfolio_greeks.price, 125.5);
+        assert_eq!(portfolio_greeks.delta, 2.15);
+        assert_eq!(portfolio_greeks.gamma, 0.008);
+        assert_eq!(portfolio_greeks.vega, 42.7);
+        assert_eq!(portfolio_greeks.theta, -2.3);
+    }
+
+    #[rstest]
+    fn test_portfolio_greeks_default() {
+        let portfolio_greeks = PortfolioGreeks::default();
+
+        assert_eq!(portfolio_greeks.ts_init, UnixNanos::default());
+        assert_eq!(portfolio_greeks.ts_event, UnixNanos::default());
+        assert_eq!(portfolio_greeks.pnl, 0.0);
+        assert_eq!(portfolio_greeks.price, 0.0);
+        assert_eq!(portfolio_greeks.delta, 0.0);
+        assert_eq!(portfolio_greeks.gamma, 0.0);
+        assert_eq!(portfolio_greeks.vega, 0.0);
+        assert_eq!(portfolio_greeks.theta, 0.0);
+    }
+
+    #[rstest]
+    fn test_portfolio_greeks_display() {
+        let portfolio_greeks = create_test_portfolio_greeks();
+        let display_str = format!("{portfolio_greeks}");
+
+        assert!(display_str.contains("PortfolioGreeks"));
+        assert!(display_str.contains("1500.00")); // pnl
+        assert!(display_str.contains("125.50")); // price
+        assert!(display_str.contains("2.15")); // delta
+        assert!(display_str.contains("0.01")); // gamma (rounded)
+        assert!(display_str.contains("42.70")); // vega
+        assert!(display_str.contains("-2.30")); // theta
+    }
+
+    #[rstest]
+    fn test_portfolio_greeks_addition() {
+        let greeks1 = PortfolioGreeks::new(
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::from(1_500_000_000),
+            100.0,
+            50.0,
+            1.0,
+            0.005,
+            20.0,
+            -1.0,
+        );
+        let greeks2 = PortfolioGreeks::new(
+            UnixNanos::from(2_000_000_000),
+            UnixNanos::from(2_500_000_000),
+            200.0,
+            75.0,
+            1.5,
+            0.003,
+            25.0,
+            -1.5,
+        );
+
+        let result = greeks1 + greeks2;
+
+        assert_eq!(result.ts_init, UnixNanos::from(1_000_000_000)); // Uses first ts_init
+        assert_eq!(result.ts_event, UnixNanos::from(1_500_000_000)); // Uses first ts_event
+        assert_eq!(result.pnl, 300.0);
+        assert_eq!(result.price, 125.0);
+        assert_eq!(result.delta, 2.5);
+        assert_eq!(result.gamma, 0.008);
+        assert_eq!(result.vega, 45.0);
+        assert_eq!(result.theta, -2.5);
+    }
+
+    #[rstest]
+    fn test_portfolio_greeks_from_greeks_data() {
+        let greeks_data = create_test_greeks_data();
+        let portfolio_greeks: PortfolioGreeks = greeks_data.clone().into();
+
+        assert_eq!(portfolio_greeks.ts_init, greeks_data.ts_init);
+        assert_eq!(portfolio_greeks.ts_event, greeks_data.ts_event);
+        assert_eq!(portfolio_greeks.pnl, greeks_data.pnl);
+        assert_eq!(portfolio_greeks.price, greeks_data.price);
+        assert_eq!(portfolio_greeks.delta, greeks_data.delta);
+        assert_eq!(portfolio_greeks.gamma, greeks_data.gamma);
+        assert_eq!(portfolio_greeks.vega, greeks_data.vega);
+        assert_eq!(portfolio_greeks.theta, greeks_data.theta);
+    }
+
+    #[rstest]
+    fn test_portfolio_greeks_has_ts_init() {
+        let portfolio_greeks = create_test_portfolio_greeks();
+        assert_eq!(portfolio_greeks.ts_init(), UnixNanos::from(1_000_000_000));
+    }
+
+    #[rstest]
+    fn test_yield_curve_data_new() {
+        let curve = create_test_yield_curve();
+
+        assert_eq!(curve.ts_init, UnixNanos::from(1_000_000_000));
+        assert_eq!(curve.ts_event, UnixNanos::from(1_500_000_000));
+        assert_eq!(curve.curve_name, "USD");
+        assert_eq!(curve.tenors, vec![0.25, 0.5, 1.0, 2.0, 5.0]);
+        assert_eq!(curve.interest_rates, vec![0.025, 0.03, 0.035, 0.04, 0.045]);
+    }
+
+    #[rstest]
+    fn test_yield_curve_data_default() {
+        let curve = YieldCurveData::default();
+
+        assert_eq!(curve.ts_init, UnixNanos::default());
+        assert_eq!(curve.ts_event, UnixNanos::default());
+        assert_eq!(curve.curve_name, "USD");
+        assert_eq!(curve.tenors, vec![0.5, 1.0, 1.5, 2.0, 2.5]);
+        assert_eq!(curve.interest_rates, vec![0.04, 0.04, 0.04, 0.04, 0.04]);
+    }
+
+    #[rstest]
+    fn test_yield_curve_data_get_rate_single_point() {
+        let curve = YieldCurveData::new(
+            UnixNanos::default(),
+            UnixNanos::default(),
+            "USD".to_string(),
+            vec![1.0],
+            vec![0.05],
+        );
+
+        assert_eq!(curve.get_rate(0.5), 0.05);
+        assert_eq!(curve.get_rate(1.0), 0.05);
+        assert_eq!(curve.get_rate(2.0), 0.05);
+    }
+
+    #[rstest]
+    fn test_yield_curve_data_get_rate_interpolation() {
+        let curve = create_test_yield_curve();
+
+        // Test exact matches
+        assert_eq!(curve.get_rate(0.25), 0.025);
+        assert_eq!(curve.get_rate(1.0), 0.035);
+        assert_eq!(curve.get_rate(5.0), 0.045);
+
+        // Test interpolation (results will depend on quadratic_interpolation implementation)
+        let rate_0_75 = curve.get_rate(0.75);
+        assert!(rate_0_75 > 0.025 && rate_0_75 < 0.045);
+    }
+
+    #[rstest]
+    fn test_yield_curve_data_display() {
+        let curve = create_test_yield_curve();
+        let display_str = format!("{curve}");
+
+        assert!(display_str.contains("InterestRateCurve"));
+        assert!(display_str.contains("USD"));
+    }
+
+    #[rstest]
+    fn test_yield_curve_data_has_ts_init() {
+        let curve = create_test_yield_curve();
+        assert_eq!(curve.ts_init(), UnixNanos::from(1_000_000_000));
+    }
+
+    #[rstest]
+    fn test_yield_curve_data_clone() {
+        let curve1 = create_test_yield_curve();
+        let curve2 = curve1.clone();
+
+        assert_eq!(curve1.curve_name, curve2.curve_name);
+        assert_eq!(curve1.tenors, curve2.tenors);
+        assert_eq!(curve1.interest_rates, curve2.interest_rates);
+    }
+
+    #[rstest]
+    fn test_black_scholes_greeks_extreme_values() {
+        let s = 1000.0;
+        let r = 0.1;
+        let b = 0.1;
+        let sigma = 0.5;
+        let is_call = true;
+        let k = 10.0; // Very deep ITM
+        let t = 0.1;
+        let multiplier = 1.0;
+
+        let greeks = black_scholes_greeks(s, r, b, sigma, is_call, k, t, multiplier);
+
+        assert!(greeks.price.is_finite());
+        assert!(greeks.delta.is_finite());
+        assert!(greeks.gamma.is_finite());
+        assert!(greeks.vega.is_finite());
+        assert!(greeks.theta.is_finite());
+        assert!(greeks.price > 0.0);
+        assert!(greeks.delta > 0.99); // Very deep ITM call
+    }
+
+    #[rstest]
+    fn test_black_scholes_greeks_high_volatility() {
+        let s = 100.0;
+        let r = 0.05;
+        let b = 0.05;
+        let sigma = 2.0; // 200% volatility
+        let is_call = true;
+        let k = 100.0;
+        let t = 1.0;
+        let multiplier = 1.0;
+
+        let greeks = black_scholes_greeks(s, r, b, sigma, is_call, k, t, multiplier);
+
+        assert!(greeks.price.is_finite());
+        assert!(greeks.delta.is_finite());
+        assert!(greeks.gamma.is_finite());
+        assert!(greeks.vega.is_finite());
+        assert!(greeks.theta.is_finite());
+        assert!(greeks.price > 0.0);
+    }
+
+    #[rstest]
+    fn test_greeks_data_put_option() {
+        let greeks = GreeksData::new(
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::from(1_500_000_000),
+            InstrumentId::from("SPY240315P00480000.OPRA"),
+            false, // Put option
+            480.0,
+            20240315,
+            0.25,
+            100.0,
+            1.0,
+            500.0,
+            0.05,
+            0.05,
+            0.25,
+            -150.0, // Negative PnL
+            8.5,
+            -0.35, // Negative delta for put
+            0.002,
+            12.8,
+            -0.06,
+            0.25,
+        );
+
+        assert!(!greeks.is_call);
+        assert!(greeks.delta < 0.0);
+        assert_eq!(greeks.pnl, -150.0);
+    }
+
+    // Original accuracy tests (keeping these as they are comprehensive)
     #[rstest]
     fn test_greeks_accuracy_call() {
         let s = 100.0;

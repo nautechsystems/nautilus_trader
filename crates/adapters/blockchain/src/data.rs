@@ -316,7 +316,7 @@ impl BlockchainDataClient {
                         tracing::info!("Subscribed to pool swaps for {}", cmd.instrument_id);
                     }
                     None => {
-                        tracing::error!("Failed to fetch pool address for {}", cmd.instrument_id)
+                        tracing::error!("Failed to fetch pool address for {}", cmd.instrument_id);
                     }
                 }
 
@@ -344,7 +344,7 @@ impl BlockchainDataClient {
                         );
                     }
                     None => {
-                        tracing::error!("Failed to fetch pool address for {}", cmd.instrument_id)
+                        tracing::error!("Failed to fetch pool address for {}", cmd.instrument_id);
                     }
                 }
 
@@ -407,7 +407,7 @@ impl BlockchainDataClient {
                         );
                     }
                     None => {
-                        tracing::error!("Failed to fetch pool address for {}", cmd.instrument_id)
+                        tracing::error!("Failed to fetch pool address for {}", cmd.instrument_id);
                     }
                 }
 

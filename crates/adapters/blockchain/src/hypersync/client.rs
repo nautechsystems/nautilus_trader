@@ -89,6 +89,7 @@ impl HyperSyncClient {
         }
     }
 
+    #[must_use]
     pub fn get_pool_address(&self, instrument_id: InstrumentId) -> Option<&Address> {
         self.pool_addresses.get(&instrument_id)
     }
@@ -132,7 +133,7 @@ impl HyperSyncClient {
         ));
 
         let token1 = Arc::new(Token::new(
-            chain.clone(),
+            chain,
             token1_address,
             token1_name,
             token1_with_fee.to_string(),
@@ -178,10 +179,10 @@ impl HyperSyncClient {
         Ok((token_symbol, name.to_string(), decimals))
     }
 
-    /// Populates the pool_addresses index by discovering all pools created on the given chain.
+    /// Populates the `pool_addresses` index by discovering all pools created on the given chain.
     ///
-    /// This method queries the Uniswap V3 Factory PoolCreated events to discover all pools
-    /// and map their InstrumentIds to their contract addresses.
+    /// This method queries the Uniswap V3 Factory `PoolCreated` events to discover all pools
+    /// and map their `InstrumentIds` to their contract addresses.
     ///
     /// # Errors
     ///
@@ -247,7 +248,7 @@ impl HyperSyncClient {
         Ok(())
     }
 
-    /// Processes a single PoolCreated log entry and adds the pool mapping to our cache.
+    /// Processes a single `PoolCreated` log entry and adds the pool mapping to our cache.
     ///
     /// # Errors
     ///

@@ -1811,7 +1811,7 @@ fn urisafe_instrument_id(instrument_id: &str) -> String {
     instrument_id.replace('/', "")
 }
 
-/// Creates a platform-appropriate local path using PathBuf.
+/// Creates a platform-appropriate local path using `PathBuf`.
 ///
 /// This function constructs file system paths using the platform's native path separators.
 /// Use this for local file operations that need to work with the actual file system.
@@ -1862,6 +1862,7 @@ pub fn make_local_path<P: AsRef<Path>>(base_path: P, components: &[&str]) -> Pat
 /// let path = make_object_store_path("base", &["data", "quotes", "EURUSD"]);
 /// assert_eq!(path, "base/data/quotes/EURUSD");
 /// ```
+#[must_use]
 pub fn make_object_store_path(base_path: &str, components: &[&str]) -> String {
     let mut parts = Vec::new();
 
@@ -1901,6 +1902,7 @@ pub fn make_object_store_path(base_path: &str, components: &[&str]) -> String {
 /// # Returns
 ///
 /// A string path with forward slash separators
+#[must_use]
 pub fn make_object_store_path_owned(base_path: &str, components: Vec<String>) -> String {
     let mut parts = Vec::new();
 
@@ -1928,14 +1930,14 @@ pub fn make_object_store_path_owned(base_path: &str, components: Vec<String>) ->
     parts.join("/")
 }
 
-/// Converts a local PathBuf to an object store path string.
+/// Converts a local `PathBuf` to an object store path string.
 ///
 /// This function normalizes a local file system path to the forward-slash format
 /// expected by object stores, handling platform differences.
 ///
 /// # Arguments
 ///
-/// * `local_path` - The local PathBuf to convert
+/// * `local_path` - The local `PathBuf` to convert
 ///
 /// # Returns
 ///
@@ -1950,6 +1952,7 @@ pub fn make_object_store_path_owned(base_path: &str, components: Vec<String>) ->
 /// let object_path = local_to_object_store_path(&local_path);
 /// assert_eq!(object_path, "data/quotes/EURUSD");
 /// ```
+#[must_use]
 pub fn local_to_object_store_path(local_path: &Path) -> String {
     local_path.to_string_lossy().replace('\\', "/")
 }
@@ -1978,13 +1981,14 @@ pub fn local_to_object_store_path(local_path: &Path) -> String {
 /// let components = extract_path_components("data\\quotes\\EURUSD");
 /// assert_eq!(components, vec!["data", "quotes", "EURUSD"]);
 /// ```
+#[must_use]
 pub fn extract_path_components(path_str: &str) -> Vec<String> {
     // Normalize separators and split
     let normalized = path_str.replace('\\', "/");
     normalized
         .split('/')
         .filter(|s| !s.is_empty())
-        .map(|s| s.to_string())
+        .map(ToString::to_string)
         .collect()
 }
 

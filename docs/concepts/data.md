@@ -1,6 +1,6 @@
 # Data
 
-The NautilusTrader platform provides a set of built-in data types specifically designed to represent a trading domain.
+NautilusTrader provides a set of built-in data types specifically designed to represent a trading domain.
 These data types include:
 
 - `OrderBookDelta` (L1/L2/L3): Represents the most granular order book updates.
@@ -120,7 +120,7 @@ NautilusTrader defines a unique *bar type* (`BarType` class) based on the follow
   - `step`: Defines the interval or frequency of each bar.
   - `aggregation`: Specifies the method used for data aggregation (see the above table).
   - `price_type`: Indicates the price basis of the bar (e.g., bid, ask, mid, last).
-- **Aggregation Source** (`AggregationSource`): Indicates whether the bar was aggregated internally (within Nautilus)
+- **Aggregation Source** (`AggregationSource`): Indicates whether the bar was aggregated internally (within Nautilus).
 - or externally (by a trading venue or data provider).
 
 Bar types can also be classified as either *standard* or *composite*:
@@ -422,8 +422,8 @@ Regardless of the destination, the process remains the same: converting diverse 
 
 To achieve this, two main components are necessary:
 
-- A type of DataLoader (normally specific per raw source/format) which can read the data and return a `pd.DataFrame` with the correct schema for the desired Nautilus object
-- A type of DataWrangler (specific per data type) which takes this `pd.DataFrame` and returns a `list[Data]` of Nautilus objects
+- A type of DataLoader (normally specific per raw source/format) which can read the data and return a `pd.DataFrame` with the correct schema for the desired Nautilus object.
+- A type of DataWrangler (specific per data type) which takes this `pd.DataFrame` and returns a `list[Data]` of Nautilus objects.
 
 ### Data loaders
 
@@ -508,25 +508,25 @@ The NautilusTrader data catalog is built on a dual-backend architecture that com
 
 **Core Components:**
 
-- **ParquetDataCatalog**: The main Python interface for data operations
-- **Rust Backend**: High-performance query engine for core data types (OrderBookDelta, QuoteTick, TradeTick, Bar, MarkPriceUpdate)
-- **PyArrow Backend**: Flexible fallback for custom data types and advanced filtering
-- **fsspec Integration**: Support for local and cloud storage (S3, GCS, Azure, etc.)
+- **ParquetDataCatalog**: The main Python interface for data operations.
+- **Rust Backend**: High-performance query engine for core data types (OrderBookDelta, QuoteTick, TradeTick, Bar, MarkPriceUpdate).
+- **PyArrow Backend**: Flexible fallback for custom data types and advanced filtering.
+- **fsspec Integration**: Support for local and cloud storage (S3, GCS, Azure, etc.).
 
 **Key Benefits:**
 
-- **Performance**: Rust backend provides optimized query performance for core market data types
-- **Flexibility**: PyArrow backend handles custom data types and complex filtering scenarios
-- **Scalability**: Efficient compression and columnar storage reduce storage costs and improve I/O performance
-- **Cloud Native**: Built-in support for cloud storage providers through fsspec
-- **No Dependencies**: Self-contained solution requiring no external databases or services
+- **Performance**: Rust backend provides optimized query performance for core market data types.
+- **Flexibility**: PyArrow backend handles custom data types and complex filtering scenarios.
+- **Scalability**: Efficient compression and columnar storage reduce storage costs and improve I/O performance.
+- **Cloud Native**: Built-in support for cloud storage providers through fsspec.
+- **No Dependencies**: Self-contained solution requiring no external databases or services.
 
 **Storage Format Advantages:**
 
-- Superior compression ratio and read performance compared to CSV/JSON/HDF5
-- Columnar storage enables efficient filtering and aggregation
-- Schema evolution support for data model changes
-- Cross-language compatibility (Python, Rust, Java, C++, etc.)
+- Superior compression ratio and read performance compared to CSV/JSON/HDF5.
+- Columnar storage enables efficient filtering and aggregation.
+- Schema evolution support for data model changes.
+- Cross-language compatibility (Python, Rust, Java, C++, etc.).
 
 The Arrow schemas used for the Parquet format are primarily single-sourced in the core `persistence` Rust crate, with some legacy schemas available from the `/serialization/arrow/schema.py` module.
 
@@ -644,8 +644,8 @@ catalog.write_data(quote_ticks)
 # Write with custom timestamp range
 catalog.write_data(
     trade_ticks,
-    start=1704067200000000000,  # Optional start timestamp override
-    end=1704153600000000000,    # Optional end timestamp override
+    start=1704067200000000000,  # Optional start timestamp override (UNIX nanoseconds)
+    end=1704153600000000000,    # Optional end timestamp override (UNIX nanoseconds)
 )
 
 # Skip disjoint check for overlapping data
@@ -673,13 +673,13 @@ catalog/
 
 The following data types use optimized Rust implementations:
 
-- `OrderBookDelta`
-- `OrderBookDeltas`
-- `OrderBookDepth10`
-- `QuoteTick`
-- `TradeTick`
-- `Bar`
-- `MarkPriceUpdate`
+- `OrderBookDelta`.
+- `OrderBookDeltas`.
+- `OrderBookDepth10`.
+- `QuoteTick`.
+- `TradeTick`.
+- `Bar`.
+- `MarkPriceUpdate`.
 
 :::warning
 By default, data that overlaps with existing files will cause an assertion error to maintain data integrity. Use `skip_disjoint_check=True` in `write_data()` to bypass this check when needed.
@@ -718,22 +718,22 @@ The `BacktestDataConfig` class is the primary mechanism for specifying data requ
 
 **Required Parameters:**
 
-- `catalog_path`: Path to the data catalog directory
-- `data_cls`: The data type class (e.g., QuoteTick, TradeTick, OrderBookDelta, Bar)
+- `catalog_path`: Path to the data catalog directory.
+- `data_cls`: The data type class (e.g., QuoteTick, TradeTick, OrderBookDelta, Bar).
 
 **Optional Parameters:**
 
-- `catalog_fs_protocol`: Filesystem protocol ('file', 's3', 'gcs', etc.)
-- `catalog_fs_storage_options`: Storage-specific options (credentials, region, etc.)
-- `instrument_id`: Specific instrument to load data for
-- `instrument_ids`: List of instruments (alternative to single instrument_id)
-- `start_time`: Start time for data filtering (ISO string or UNIX nanoseconds)
-- `end_time`: End time for data filtering (ISO string or UNIX nanoseconds)
-- `filter_expr`: Additional PyArrow filter expressions
-- `client_id`: Client ID for custom data types
-- `metadata`: Additional metadata for data queries
-- `bar_spec`: Bar specification for bar data (e.g., "1-MINUTE-LAST")
-- `bar_types`: List of bar types (alternative to bar_spec)
+- `catalog_fs_protocol`: Filesystem protocol ('file', 's3', 'gcs', etc.).
+- `catalog_fs_storage_options`: Storage-specific options (credentials, region, etc.).
+- `instrument_id`: Specific instrument to load data for.
+- `instrument_ids`: List of instruments (alternative to single instrument_id).
+- `start_time`: Start time for data filtering (ISO string or UNIX nanoseconds).
+- `end_time`: End time for data filtering (ISO string or UNIX nanoseconds).
+- `filter_expr`: Additional PyArrow filter expressions.
+- `client_id`: Client ID for custom data types.
+- `metadata`: Additional metadata for data queries.
+- `bar_spec`: Bar specification for bar data (e.g., "1-MINUTE-LAST").
+- `bar_types`: List of bar types (alternative to bar_spec).
 
 #### Basic Usage Examples
 
@@ -759,8 +759,8 @@ data_config = BacktestDataConfig(
     catalog_path="/path/to/catalog",
     data_cls=TradeTick,
     instrument_ids=["BTC/USD.BINANCE", "ETH/USD.BINANCE"],
-    start_time=1704067200000000000,  # UNIX nanoseconds
-    end_time=1704153600000000000,
+    start_time="2024-01-01T00:00:00Z",
+    end_time="2024-01-02T00:00:00Z",
 )
 ```
 
@@ -849,18 +849,18 @@ run_config = BacktestRunConfig(
 
 When a backtest runs, the `BacktestNode` processes each `BacktestDataConfig`:
 
-1. **Catalog Loading**: Creates a `ParquetDataCatalog` instance from the config
-2. **Query Construction**: Builds query parameters from config attributes
-3. **Data Retrieval**: Executes catalog queries using the appropriate backend
-4. **Instrument Loading**: Loads instrument definitions if needed
-5. **Engine Integration**: Adds data to the backtest engine with proper sorting
+1. **Catalog Loading**: Creates a `ParquetDataCatalog` instance from the config.
+2. **Query Construction**: Builds query parameters from config attributes.
+3. **Data Retrieval**: Executes catalog queries using the appropriate backend.
+4. **Instrument Loading**: Loads instrument definitions if needed.
+5. **Engine Integration**: Adds data to the backtest engine with proper sorting.
 
 The system automatically handles:
 
-- Instrument ID resolution and validation
-- Data type validation and conversion
-- Memory-efficient streaming for large datasets
-- Error handling and logging
+- Instrument ID resolution and validation.
+- Data type validation and conversion.
+- Memory-efficient streaming for large datasets.
+- Error handling and logging.
 
 ### DataCatalogConfig - On-the-Fly Data Loading
 
@@ -872,13 +872,13 @@ Catalogs defined this way can also be used for requesting historical data.
 
 **Required Parameters:**
 
-- `path`: Path to the data catalog directory
+- `path`: Path to the data catalog directory.
 
 **Optional Parameters:**
 
-- `fs_protocol`: Filesystem protocol ('file', 's3', 'gcs', 'azure', etc.)
-- `fs_storage_options`: Protocol-specific storage options
-- `name`: Optional name identifier for the catalog configuration
+- `fs_protocol`: Filesystem protocol ('file', 's3', 'gcs', 'azure', etc.).
+- `fs_storage_options`: Protocol-specific storage options.
+- `name`: Optional name identifier for the catalog configuration.
 
 #### Basic Usage Examples
 
@@ -958,21 +958,21 @@ streaming_config = StreamingConfig(
 
 **Historical Data Analysis:**
 
-- Load historical data during live trading for strategy calculations
-- Access reference data for instrument lookups
-- Retrieve past performance metrics
+- Load historical data during live trading for strategy calculations.
+- Access reference data for instrument lookups.
+- Retrieve past performance metrics.
 
 **Dynamic Data Loading:**
 
-- Load data based on runtime conditions
-- Implement custom data loading strategies
-- Support multiple catalog sources
+- Load data based on runtime conditions.
+- Implement custom data loading strategies.
+- Support multiple catalog sources.
 
 **Research and Development:**
 
-- Interactive data exploration in Jupyter notebooks
-- Ad-hoc analysis and backtesting
-- Data quality validation and monitoring
+- Interactive data exploration in Jupyter notebooks.
+- Ad-hoc analysis and backtesting.
+- Data quality validation and monitoring.
 
 ### Query System and Dual Backend Architecture
 
@@ -982,15 +982,15 @@ The catalog's query system leverages a sophisticated dual-backend architecture t
 
 **Rust Backend (High Performance):**
 
-- **Supported Types**: OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick, Bar, MarkPriceUpdate
-- **Conditions**: Used when `files` parameter is None (automatic file discovery)
-- **Benefits**: Optimized performance, memory efficiency, native Arrow integration
+- **Supported Types**: OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick, Bar, MarkPriceUpdate.
+- **Conditions**: Used when `files` parameter is None (automatic file discovery).
+- **Benefits**: Optimized performance, memory efficiency, native Arrow integration.
 
 **PyArrow Backend (Flexible):**
 
-- **Supported Types**: All data types including custom data classes
-- **Conditions**: Used for custom data types or when `files` parameter is specified
-- **Benefits**: Advanced filtering, custom data support, complex query expressions
+- **Supported Types**: All data types including custom data classes.
+- **Conditions**: Used for custom data types or when `files` parameter is specified.
+- **Benefits**: Advanced filtering, custom data support, complex query expressions.
 
 #### Query Methods and Parameters
 
@@ -1009,10 +1009,10 @@ catalog.query(
 
 **Time Format Support:**
 
-- ISO 8601 strings: `"2024-01-01T00:00:00Z"`
-- UNIX nanoseconds: `1704067200000000000`
-- Pandas Timestamps: `pd.Timestamp("2024-01-01", tz="UTC")`
-- Python datetime objects (timezone-aware recommended)
+- ISO 8601 strings: `"2024-01-01T00:00:00Z"`.
+- UNIX nanoseconds: `1704067200000000000` (or ISO format: `"2024-01-01T00:00:00Z"`).
+- Pandas Timestamps: `pd.Timestamp("2024-01-01", tz="UTC")`.
+- Python datetime objects (timezone-aware recommended).
 
 **Advanced Filtering Examples:**
 
@@ -1215,17 +1215,17 @@ The NautilusTrader data catalog provides comprehensive market data management:
 
 **Core Features:**
 
-- **Dual Backend**: Rust performance + Python flexibility
-- **Multi-Protocol**: Local, S3, GCS, Azure storage
-- **Streaming**: Feather → Parquet conversion pipeline
-- **Operations**: Reset file names, consolidate data, period-based organization
+- **Dual Backend**: Rust performance + Python flexibility.
+- **Multi-Protocol**: Local, S3, GCS, Azure storage.
+- **Streaming**: Feather → Parquet conversion pipeline.
+- **Operations**: Reset file names, consolidate data, period-based organization.
 
 **Key Use Cases:**
 
-- **Backtesting**: Pre-configured data loading via BacktestDataConfig
-- **Live Trading**: On-demand data access via DataCatalogConfig
-- **Maintenance**: File consolidation and organization operations
-- **Research**: Interactive querying and analysis
+- **Backtesting**: Pre-configured data loading via BacktestDataConfig.
+- **Live Trading**: On-demand data access via DataCatalogConfig.
+- **Maintenance**: File consolidation and organization operations.
+- **Research**: Interactive querying and analysis.
 
 ## Data migrations
 
@@ -1260,10 +1260,10 @@ Converts Parquet files to JSON while preserving metadata:
 
 Converts JSON back to Parquet format:
 
-- Reads both the data JSON and metadata JSON files
-- Preserves row group sizes from original metadata
-- Uses ZSTD compression
-- Creates `<input>.parquet`
+- Reads both the data JSON and metadata JSON files.
+- Preserves row group sizes from original metadata.
+- Uses ZSTD compression.
+- Creates `<input>.parquet`.
 
 ### Migration Process
 

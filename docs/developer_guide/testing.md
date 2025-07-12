@@ -12,9 +12,9 @@ The performance tests exist to aid development of performance-critical component
 
 Tests can be run using [pytest](https://docs.pytest.org), which is our primary test runner. We recommend using parametrized tests and fixtures (e.g., `@pytest.mark.parametrize`) to avoid repetitive code and improve clarity.
 
-## Running Tests
+## Running tests
 
-### Python Tests
+### Python tests
 
 From the repository root:
 
@@ -34,7 +34,7 @@ make test-performance
 uv run --active --no-sync pytest tests/performance_tests --benchmark-disable-gc --codspeed
 ```
 
-### Rust Tests
+### Rust tests
 
 ```bash
 make cargo-test
@@ -42,7 +42,7 @@ make cargo-test
 cargo nextest run --workspace --features "python,ffi,high-precision,defi" --cargo-profile nextest
 ```
 
-### IDE Integration
+### IDE integration
 
 - **PyCharm**: Right-click on tests folder or file → "Run pytest"
 - **VS Code**: Use the Python Test Explorer extension
@@ -53,7 +53,7 @@ Unit tests will often include other components acting as mocks. The intent of th
 the test suite to avoid extensive use of a mocking framework, although `MagicMock` objects are
 currently used in particular cases.
 
-## Code Coverage
+## Code coverage
 
 Code coverage output is generated using `coverage` and reported using [codecov](https://about.codecov.io/).
 
@@ -88,7 +88,7 @@ offer little to no benefit in return. The intention is for all abstract method
 implementations to be fully covered by tests. Therefore `pragma: no cover` should be judiciously
 removed when no longer appropriate, and its use *restricted* to the above cases.
 
-## Debugging Rust Tests
+## Debugging Rust tests
 
 Rust tests can be debugged using the default test configuration.
 

@@ -89,7 +89,7 @@ To compile in debug mode, use:
 make build-debug
 ```
 
-## Faster builds 🏁
+## Faster builds
 
 The cranelift backends reduces build time significantly for dev, testing and IDE checks. However, cranelift is available on the nightly toolchain and needs extra configuration. Install the nightly toolchain
 
@@ -183,7 +183,7 @@ CREATE DATABASE
 
 ```
 
-## Nautilus CLI Developer Guide
+## Nautilus CLI developer guide
 
 ## Introduction
 

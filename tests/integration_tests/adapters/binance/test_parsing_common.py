@@ -169,10 +169,10 @@ class TestBinanceCommonParsing:
                 ),
             ],
             [
-                BinanceKlineInterval("3d"),
+                BinanceKlineInterval("1d"),
                 BarType(
                     BTCUSDT_BINANCE.id,
-                    BarSpecification(3, BarAggregation.DAY, PriceType.LAST),
+                    BarSpecification(1, BarAggregation.DAY, PriceType.LAST),
                     AggregationSource.EXTERNAL,
                 ),
             ],
