@@ -1142,3 +1142,164 @@ def test_delete_data_range_file_contiguity_verification(catalog: ParquetDataCata
         if timestamps[i] == 1_000_000_001:
             # Should jump from 1_000_000_001 to 1_000_000_003 (skipping 1_000_000_002)
             assert timestamps[i + 1] == 1_000_000_003
+
+
+# ================================================================================================
+# Table naming fix tests for pyo3 bindings
+# ================================================================================================
+
+
+def test_pyo3_query_multiple_instruments_table_naming(catalog: ParquetDataCatalog):
+    """
+    Test that pyo3 bindings handle multiple instruments correctly with identifier-
+    dependent table names.
+
+    This test verifies the fix for the table naming bug where multiple instruments would
+    cause table name conflicts in DataFusion queries when using the Rust backend.
+
+    """
+    # Arrange
+    pyo3_catalog = ParquetDataCatalogV2(catalog.path)
+
+    # Create quote ticks for multiple instruments with different identifier patterns
+    eurusd_quotes = [
+        TestDataProviderPyo3.quote_tick(
+            ts_init=1000 + i * 100,
+            instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
+        )
+        for i in range(3)
+    ]
+
+    btcusd_quotes = [
+        TestDataProviderPyo3.quote_tick(
+            ts_init=2000 + i * 100,
+            instrument_id=InstrumentId.from_str("BTC-USD.COINBASE"),
+        )
+        for i in range(3)
+    ]
+
+    ethusdt_quotes = [
+        TestDataProviderPyo3.quote_tick(
+            ts_init=3000 + i * 100,
+            instrument_id=InstrumentId.from_str("ETH/USDT.BINANCE"),
+        )
+        for i in range(3)
+    ]
+
+    # Write data for all instruments
+    pyo3_catalog.write_quote_ticks(eurusd_quotes)
+    pyo3_catalog.write_quote_ticks(btcusd_quotes)
+    pyo3_catalog.write_quote_ticks(ethusdt_quotes)
+
+    # Act - Query all instruments simultaneously using pyo3 bindings
+    instrument_ids = ["EUR/USD.SIM", "BTC-USD.COINBASE", "ETH/USDT.BINANCE"]
+    quotes = pyo3_catalog.query_quote_ticks(instrument_ids)
+
+    # Assert - Should get all 9 quotes without table name conflicts
+    assert len(quotes) == 9
+
+    # Verify we have data from all three instruments
+    instrument_counts: dict[str, int] = {}
+    for quote in quotes:
+        instrument_id = quote.instrument_id.value
+        instrument_counts[instrument_id] = instrument_counts.get(instrument_id, 0) + 1
+
+    assert len(instrument_counts) == 3
+    assert instrument_counts.get("EUR/USD.SIM") == 3
+    assert instrument_counts.get("BTC-USD.COINBASE") == 3
+    assert instrument_counts.get("ETH/USDT.BINANCE") == 3
+
+    # Verify data is properly ordered by timestamp
+    timestamps = [quote.ts_init for quote in quotes]
+    assert timestamps == sorted(timestamps)
+
+
+def test_pyo3_query_bars_multiple_instruments_table_naming(catalog: ParquetDataCatalog):
+    """
+    Test that pyo3 bindings handle multiple bar types correctly with identifier-
+    dependent table names.
+    """
+    # Arrange
+    pyo3_catalog = ParquetDataCatalogV2(catalog.path)
+
+    # Create bars using the existing bar helper function but with different timestamps
+    bars_set1 = [bar(1000000000 + i * 60000000000) for i in range(2)]  # Use nanosecond timestamps
+    bars_set2 = [bar(2000000000000 + i * 60000000000) for i in range(2)]  # Much later timestamps
+
+    # Write data for both sets
+    pyo3_catalog.write_bars(bars_set1)
+    pyo3_catalog.write_bars(bars_set2)
+
+    # Act - Query all bars (this tests the table naming fix)
+    bars = pyo3_catalog.query_bars()
+
+    # Assert - Should get all 4 bars without table name conflicts
+    assert len(bars) == 4
+
+    # Verify data is properly ordered by timestamp
+    timestamps = [bar_data.ts_init for bar_data in bars]
+    assert timestamps == sorted(timestamps)
+
+
+def test_pyo3_backend_session_special_characters_table_naming(catalog: ParquetDataCatalog):
+    """
+    Test that pyo3 backend session handles special characters in identifiers correctly.
+
+    This test verifies that identifiers with dots, hyphens, and slashes are properly
+    converted to safe SQL table names in the Rust backend.
+
+    """
+    # Arrange
+    pyo3_catalog = ParquetDataCatalogV2(catalog.path)
+
+    # Create trade ticks for instruments with various special characters
+    trades_complex = [
+        TestDataProviderPyo3.trade_tick(
+            ts_init=1000 + i * 100,
+            instrument_id=InstrumentId.from_str("BTC/USD.COINBASE-PRO"),
+        )
+        for i in range(2)
+    ]
+
+    trades_dots = [
+        TestDataProviderPyo3.trade_tick(
+            ts_init=2000 + i * 100,
+            instrument_id=InstrumentId.from_str("ETH.USD.KRAKEN"),
+        )
+        for i in range(2)
+    ]
+
+    trades_mixed = [
+        TestDataProviderPyo3.trade_tick(
+            ts_init=3000 + i * 100,
+            instrument_id=InstrumentId.from_str("ADA-BTC.BINANCE_SPOT"),
+        )
+        for i in range(2)
+    ]
+
+    # Write data
+    pyo3_catalog.write_trade_ticks(trades_complex)
+    pyo3_catalog.write_trade_ticks(trades_dots)
+    pyo3_catalog.write_trade_ticks(trades_mixed)
+
+    # Act - Query all instruments with special characters
+    instrument_ids = [
+        "BTC/USD.COINBASE-PRO",
+        "ETH.USD.KRAKEN",
+        "ADA-BTC.BINANCE_SPOT",
+    ]
+    trades = pyo3_catalog.query_trade_ticks(instrument_ids)
+
+    # Assert - Should handle all special characters correctly
+    assert len(trades) == 6
+
+    # Verify we have data from all instruments
+    instrument_counts: dict[str, int] = {}
+    for trade in trades:
+        instrument_id = trade.instrument_id.value
+        instrument_counts[instrument_id] = instrument_counts.get(instrument_id, 0) + 1
+
+    assert len(instrument_counts) == 3
+    assert instrument_counts.get("BTC/USD.COINBASE-PRO") == 2
+    assert instrument_counts.get("ETH.USD.KRAKEN") == 2
+    assert instrument_counts.get("ADA-BTC.BINANCE_SPOT") == 2
