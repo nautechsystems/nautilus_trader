@@ -18,7 +18,8 @@ use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
     data::{
         Bar, BarSpecification, BarType, BookOrder, Data, IndexPriceUpdate, MarkPriceUpdate,
-        OrderBookDelta, OrderBookDeltas, OrderBookDeltas_API, QuoteTick, TradeTick,
+        OrderBookDelta, OrderBookDeltas, OrderBookDeltas_API, OrderBookDepth10, QuoteTick,
+        TradeTick, depth::DEPTH10_LEN,
     },
     enums::{
         AggregationSource, AggressorSide, BookAction, LiquiditySide, OrderSide, OrderStatus,
@@ -200,6 +201,29 @@ pub fn parse_candle_msg_vec(
     Ok(bars)
 }
 
+pub fn parse_book10_msg_vec(
+    data: Vec<OKXBookMsg>,
+    instrument_id: &InstrumentId,
+    price_precision: u8,
+    size_precision: u8,
+    ts_init: UnixNanos,
+) -> anyhow::Result<Vec<Data>> {
+    let mut depth10_updates = Vec::with_capacity(data.len());
+
+    for msg in data {
+        let depth10 = parse_book10_msg(
+            &msg,
+            *instrument_id,
+            price_precision,
+            size_precision,
+            ts_init,
+        )?;
+        depth10_updates.push(Data::Depth10(Box::new(depth10)));
+    }
+
+    Ok(depth10_updates)
+}
+
 pub fn parse_book_msg(
     msg: &OKXBookMsg,
     instrument_id: InstrumentId,
@@ -295,64 +319,61 @@ pub fn parse_quote_msg(
     )
 }
 
-// TODO: Parsing depth10 messages
-// #[must_use]
-// #[allow(clippy::too_many_arguments)]
-// pub fn parse_book10_msg(
-//     msg: OrderBook10Msg,
-//     price_precision: u8,
-//     ts_init: UnixNanos,
-// ) -> OrderBookDepth10 {
-//     let instrument_id = parse_instrument_id(&msg.symbol);
-//
-//     let mut bids = Vec::with_capacity(DEPTH10_LEN);
-//     let mut asks = Vec::with_capacity(DEPTH10_LEN);
-//
-//     // Initialized with zeros
-//     let mut bid_counts: [u32; DEPTH10_LEN] = [0; DEPTH10_LEN];
-//     let mut ask_counts: [u32; DEPTH10_LEN] = [0; DEPTH10_LEN];
-//
-//     for (i, level) in msg.bids.iter().enumerate() {
-//         let bid_order = BookOrder::new(
-//             OrderSide::Buy,
-//             Price::new(level[0], price_precision),
-//             Quantity::new(level[1], 0),
-//             0,
-//         );
-//
-//         bids.push(bid_order);
-//         bid_counts[i] = 1;
-//     }
-//
-//     for (i, level) in msg.asks.iter().enumerate() {
-//         let ask_order = BookOrder::new(
-//             OrderSide::Sell,
-//             Price::new(level[0], price_precision),
-//             Quantity::new(level[1], 0),
-//             0,
-//         );
-//
-//         asks.push(ask_order);
-//         ask_counts[i] = 1;
-//     }
-//
-//     let bids: [BookOrder; DEPTH10_LEN] = bids.try_into().expect("`bids` length should be 10");
-//     let asks: [BookOrder; DEPTH10_LEN] = asks.try_into().expect("`asks` length should be 10");
-//
-//     let ts_event = UnixNanos::from(msg.timestamp);
-//
-//     OrderBookDepth10::new(
-//         instrument_id,
-//         bids,
-//         asks,
-//         bid_counts,
-//         ask_counts,
-//         RecordFlag::F_SNAPSHOT.value(),
-//         0, // Not applicable for OKX L2 books
-//         ts_event,
-//         ts_init,
-//     )
-// }
+/// Parses an OKX book message into a Nautilus [`OrderBookDepth10`].
+///
+/// This function converts order book data from OKX's format into a fixed-depth
+/// order book snapshot with the top 10 levels for both bids and asks.
+pub fn parse_book10_msg(
+    msg: &OKXBookMsg,
+    instrument_id: InstrumentId,
+    price_precision: u8,
+    size_precision: u8,
+    ts_init: UnixNanos,
+) -> anyhow::Result<OrderBookDepth10> {
+    // Initialize arrays with default empty orders
+    let mut bids: [BookOrder; DEPTH10_LEN] = [BookOrder::default(); DEPTH10_LEN];
+    let mut asks: [BookOrder; DEPTH10_LEN] = [BookOrder::default(); DEPTH10_LEN];
+    let mut bid_counts: [u32; DEPTH10_LEN] = [0; DEPTH10_LEN];
+    let mut ask_counts: [u32; DEPTH10_LEN] = [0; DEPTH10_LEN];
+
+    // Parse available bid levels (up to 10)
+    for (i, level) in msg.bids.iter().take(DEPTH10_LEN).enumerate() {
+        let price = parse_price(&level.price, price_precision)?;
+        let size = parse_quantity(&level.size, size_precision)?;
+        let orders_count = level.orders_count.parse::<u32>().unwrap_or(1);
+
+        let bid_order = BookOrder::new(OrderSide::Buy, price, size, 0);
+        bids[i] = bid_order;
+        bid_counts[i] = orders_count;
+    }
+
+    // Parse available ask levels (up to 10)
+    for (i, level) in msg.asks.iter().take(DEPTH10_LEN).enumerate() {
+        let price = parse_price(&level.price, price_precision)?;
+        let size = parse_quantity(&level.size, size_precision)?;
+        let orders_count = level.orders_count.parse::<u32>().unwrap_or(1);
+
+        let ask_order = BookOrder::new(OrderSide::Sell, price, size, 0);
+        asks[i] = ask_order;
+        ask_counts[i] = orders_count;
+    }
+
+    // Arrays are already fixed size, no conversion needed
+
+    let ts_event = parse_millisecond_timestamp(msg.ts);
+
+    Ok(OrderBookDepth10::new(
+        instrument_id,
+        bids,
+        asks,
+        bid_counts,
+        ask_counts,
+        RecordFlag::F_SNAPSHOT as u8,
+        msg.seq_id, // Use sequence ID for OKX L2 books
+        ts_event,
+        ts_init,
+    ))
+}
 
 pub fn parse_ticker_msg(
     msg: &OKXTickerMsg,
@@ -465,7 +486,7 @@ pub fn parse_order_msg_vec(
     for msg in data {
         let inst = instruments
             .get(&msg.inst_id)
-            .expect("No instrument found for inst_id");
+            .ok_or_else(|| anyhow::anyhow!("No instrument found for inst_id: {}", msg.inst_id))?;
 
         let result = match &msg.state {
             OKXOrderStatus::Filled | OKXOrderStatus::PartiallyFilled => {
@@ -1158,5 +1179,129 @@ mod tests {
         assert_eq!(fill_report.last_px, Price::from("103698.90"));
         assert_eq!(fill_report.last_qty, Quantity::from("0.03000000"));
         assert_eq!(fill_report.liquidity_side, LiquiditySide::Maker);
+    }
+
+    #[rstest]
+    fn test_parse_book10_msg() {
+        let json_data = load_test_json("ws_books_snapshot.json");
+        let event: OKXWebSocketEvent = serde_json::from_str(&json_data).unwrap();
+        let msgs: Vec<OKXBookMsg> = match event {
+            OKXWebSocketEvent::BookData { data, .. } => data,
+            _ => panic!("Expected BookData"),
+        };
+
+        let instrument_id = InstrumentId::from("BTC-USDT.OKX");
+        let depth10 =
+            parse_book10_msg(&msgs[0], instrument_id, 2, 0, UnixNanos::default()).unwrap();
+
+        assert_eq!(depth10.instrument_id, instrument_id);
+        assert_eq!(depth10.sequence, 123456);
+        assert_eq!(depth10.ts_event, UnixNanos::from(1597026383085000000));
+        assert_eq!(depth10.flags, RecordFlag::F_SNAPSHOT as u8);
+
+        // Check bid levels (available in test data: 8 levels)
+        assert_eq!(depth10.bids[0].price, Price::from("8476.97"));
+        assert_eq!(depth10.bids[0].size, Quantity::from("256"));
+        assert_eq!(depth10.bids[0].side, OrderSide::Buy);
+        assert_eq!(depth10.bid_counts[0], 12);
+
+        assert_eq!(depth10.bids[1].price, Price::from("8475.55"));
+        assert_eq!(depth10.bids[1].size, Quantity::from("101"));
+        assert_eq!(depth10.bid_counts[1], 1);
+
+        // Check that levels beyond available data are padded with empty orders
+        assert_eq!(depth10.bids[8].price, Price::from("0"));
+        assert_eq!(depth10.bids[8].size, Quantity::from("0"));
+        assert_eq!(depth10.bid_counts[8], 0);
+
+        // Check ask levels (available in test data: 8 levels)
+        assert_eq!(depth10.asks[0].price, Price::from("8476.98"));
+        assert_eq!(depth10.asks[0].size, Quantity::from("415"));
+        assert_eq!(depth10.asks[0].side, OrderSide::Sell);
+        assert_eq!(depth10.ask_counts[0], 13);
+
+        assert_eq!(depth10.asks[1].price, Price::from("8477.00"));
+        assert_eq!(depth10.asks[1].size, Quantity::from("7"));
+        assert_eq!(depth10.ask_counts[1], 2);
+
+        // Check that levels beyond available data are padded with empty orders
+        assert_eq!(depth10.asks[8].price, Price::from("0"));
+        assert_eq!(depth10.asks[8].size, Quantity::from("0"));
+        assert_eq!(depth10.ask_counts[8], 0);
+    }
+
+    #[rstest]
+    fn test_parse_book10_msg_vec() {
+        let json_data = load_test_json("ws_books_snapshot.json");
+        let event: OKXWebSocketEvent = serde_json::from_str(&json_data).unwrap();
+        let msgs: Vec<OKXBookMsg> = match event {
+            OKXWebSocketEvent::BookData { data, .. } => data,
+            _ => panic!("Expected BookData"),
+        };
+
+        let instrument_id = InstrumentId::from("BTC-USDT.OKX");
+        let depth10_vec =
+            parse_book10_msg_vec(msgs, &instrument_id, 2, 0, UnixNanos::default()).unwrap();
+
+        assert_eq!(depth10_vec.len(), 1);
+
+        if let Data::Depth10(d) = &depth10_vec[0] {
+            assert_eq!(d.instrument_id, instrument_id);
+            assert_eq!(d.sequence, 123456);
+            assert_eq!(d.bids[0].price, Price::from("8476.97"));
+            assert_eq!(d.asks[0].price, Price::from("8476.98"));
+        } else {
+            panic!("Expected Depth10");
+        }
+    }
+
+    #[rstest]
+    fn test_parse_book10_msg_partial_levels() {
+        // Test with fewer than 10 levels - should pad with empty orders
+        let book_msg = OKXBookMsg {
+            asks: vec![
+                OrderBookEntry {
+                    price: "8476.98".to_string(),
+                    size: "415".to_string(),
+                    liquidated_orders_count: "0".to_string(),
+                    orders_count: "13".to_string(),
+                },
+                OrderBookEntry {
+                    price: "8477.00".to_string(),
+                    size: "7".to_string(),
+                    liquidated_orders_count: "0".to_string(),
+                    orders_count: "2".to_string(),
+                },
+            ],
+            bids: vec![OrderBookEntry {
+                price: "8476.97".to_string(),
+                size: "256".to_string(),
+                liquidated_orders_count: "0".to_string(),
+                orders_count: "12".to_string(),
+            }],
+            ts: 1597026383085,
+            checksum: None,
+            prev_seq_id: None,
+            seq_id: 123456,
+        };
+
+        let instrument_id = InstrumentId::from("BTC-USDT.OKX");
+        let depth10 =
+            parse_book10_msg(&book_msg, instrument_id, 2, 0, UnixNanos::default()).unwrap();
+
+        // Check that first levels have data
+        assert_eq!(depth10.bids[0].price, Price::from("8476.97"));
+        assert_eq!(depth10.bids[0].size, Quantity::from("256"));
+        assert_eq!(depth10.bid_counts[0], 12);
+
+        // Check that remaining levels are padded with default (empty) orders
+        assert_eq!(depth10.bids[1].price, Price::from("0"));
+        assert_eq!(depth10.bids[1].size, Quantity::from("0"));
+        assert_eq!(depth10.bid_counts[1], 0);
+
+        // Check asks
+        assert_eq!(depth10.asks[0].price, Price::from("8476.98"));
+        assert_eq!(depth10.asks[1].price, Price::from("8477.00"));
+        assert_eq!(depth10.asks[2].price, Price::from("0")); // padded with empty
     }
 }
