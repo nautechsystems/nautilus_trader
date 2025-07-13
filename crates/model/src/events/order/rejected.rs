@@ -306,10 +306,90 @@ impl OrderEvent for OrderRejected {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use nautilus_core::UnixNanos;
     use rstest::rstest;
+    use ustr::Ustr;
 
     use super::*;
-    use crate::events::order::stubs::*;
+    use crate::{
+        events::order::stubs::*,
+        identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId},
+    };
+
+    fn create_test_order_rejected() -> OrderRejected {
+        OrderRejected::new(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("EMA-CROSS"),
+            InstrumentId::from("EURUSD.SIM"),
+            ClientOrderId::from("O-19700101-000000-001-001-1"),
+            AccountId::from("SIM-001"),
+            Ustr::from("INSUFFICIENT_MARGIN"),
+            Default::default(),
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::from(2_000_000_000),
+            false,
+        )
+    }
+
+    #[rstest]
+    fn test_order_rejected_new() {
+        let order_rejected = create_test_order_rejected();
+
+        assert_eq!(order_rejected.trader_id, TraderId::from("TRADER-001"));
+        assert_eq!(order_rejected.strategy_id, StrategyId::from("EMA-CROSS"));
+        assert_eq!(
+            order_rejected.instrument_id,
+            InstrumentId::from("EURUSD.SIM")
+        );
+        assert_eq!(
+            order_rejected.client_order_id,
+            ClientOrderId::from("O-19700101-000000-001-001-1")
+        );
+        assert_eq!(order_rejected.account_id, AccountId::from("SIM-001"));
+        assert_eq!(order_rejected.reason, Ustr::from("INSUFFICIENT_MARGIN"));
+        assert_eq!(order_rejected.ts_event, UnixNanos::from(1_000_000_000));
+        assert_eq!(order_rejected.ts_init, UnixNanos::from(2_000_000_000));
+        assert_eq!(order_rejected.reconciliation, 0);
+    }
+
+    #[rstest]
+    fn test_order_rejected_new_with_reconciliation() {
+        let order_rejected = OrderRejected::new(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("EMA-CROSS"),
+            InstrumentId::from("EURUSD.SIM"),
+            ClientOrderId::from("O-19700101-000000-001-001-1"),
+            AccountId::from("SIM-001"),
+            Ustr::from("INVALID_PRICE"),
+            Default::default(),
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::from(2_000_000_000),
+            true,
+        );
+
+        assert_eq!(order_rejected.reconciliation, 1);
+    }
+
+    #[rstest]
+    fn test_order_rejected_clone() {
+        let order_rejected1 = create_test_order_rejected();
+        let order_rejected2 = order_rejected1;
+
+        assert_eq!(order_rejected1, order_rejected2);
+    }
+
+    #[rstest]
+    fn test_order_rejected_debug() {
+        let order_rejected = create_test_order_rejected();
+        let debug_str = format!("{order_rejected:?}");
+
+        assert!(debug_str.contains("OrderRejected"));
+        assert!(debug_str.contains("TRADER-001"));
+        assert!(debug_str.contains("EMA-CROSS"));
+        assert!(debug_str.contains("EURUSD.SIM"));
+        assert!(debug_str.contains("O-19700101-000000-001-001-1"));
+        assert!(debug_str.contains("INSUFFICIENT_MARGIN"));
+    }
 
     #[rstest]
     fn test_order_rejected_display(order_rejected_insufficient_margin: OrderRejected) {
@@ -318,6 +398,144 @@ mod tests {
             display,
             "OrderRejected(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-000000-001-001-1, \
         account_id=SIM-001, reason='INSUFFICIENT_MARGIN', ts_event=0)"
+        );
+    }
+
+    #[rstest]
+    fn test_order_rejected_partial_eq() {
+        let order_rejected1 = create_test_order_rejected();
+        let mut order_rejected2 = create_test_order_rejected();
+        order_rejected2.event_id = order_rejected1.event_id; // Make event_ids equal
+        let mut order_rejected3 = create_test_order_rejected();
+        order_rejected3.reason = Ustr::from("INVALID_ORDER");
+
+        assert_eq!(order_rejected1, order_rejected2);
+        assert_ne!(order_rejected1, order_rejected3);
+    }
+
+    #[rstest]
+    fn test_order_rejected_default() {
+        let order_rejected = OrderRejected::default();
+
+        assert_eq!(order_rejected.trader_id, TraderId::default());
+        assert_eq!(order_rejected.strategy_id, StrategyId::default());
+        assert_eq!(order_rejected.instrument_id, InstrumentId::default());
+        assert_eq!(order_rejected.client_order_id, ClientOrderId::default());
+        assert_eq!(order_rejected.account_id, AccountId::default());
+        assert_eq!(order_rejected.reconciliation, 0);
+    }
+
+    #[rstest]
+    fn test_order_rejected_order_event_trait() {
+        let order_rejected = create_test_order_rejected();
+
+        assert_eq!(order_rejected.id(), order_rejected.event_id);
+        assert_eq!(order_rejected.kind(), "OrderRejected");
+        assert_eq!(order_rejected.order_type(), None);
+        assert_eq!(order_rejected.order_side(), None);
+        assert_eq!(order_rejected.trader_id(), TraderId::from("TRADER-001"));
+        assert_eq!(order_rejected.strategy_id(), StrategyId::from("EMA-CROSS"));
+        assert_eq!(
+            order_rejected.instrument_id(),
+            InstrumentId::from("EURUSD.SIM")
+        );
+        assert_eq!(order_rejected.trade_id(), None);
+        assert_eq!(order_rejected.currency(), None);
+        assert_eq!(
+            order_rejected.client_order_id(),
+            ClientOrderId::from("O-19700101-000000-001-001-1")
+        );
+        assert_eq!(
+            order_rejected.reason(),
+            Some(Ustr::from("INSUFFICIENT_MARGIN"))
+        );
+        assert_eq!(order_rejected.quantity(), None);
+        assert_eq!(order_rejected.time_in_force(), None);
+        assert_eq!(order_rejected.liquidity_side(), None);
+        assert_eq!(order_rejected.post_only(), None);
+        assert_eq!(order_rejected.reduce_only(), None);
+        assert_eq!(order_rejected.quote_quantity(), None);
+        assert!(!order_rejected.reconciliation());
+        assert_eq!(order_rejected.venue_order_id(), None);
+        assert_eq!(
+            order_rejected.account_id(),
+            Some(AccountId::from("SIM-001"))
+        );
+        assert_eq!(order_rejected.position_id(), None);
+        assert_eq!(order_rejected.commission(), None);
+        assert_eq!(order_rejected.ts_event(), UnixNanos::from(1_000_000_000));
+        assert_eq!(order_rejected.ts_init(), UnixNanos::from(2_000_000_000));
+    }
+
+    #[rstest]
+    fn test_order_rejected_different_reasons() {
+        let mut insufficient_margin = create_test_order_rejected();
+        insufficient_margin.reason = Ustr::from("INSUFFICIENT_MARGIN");
+
+        let mut invalid_price = create_test_order_rejected();
+        invalid_price.reason = Ustr::from("INVALID_PRICE");
+
+        let mut market_closed = create_test_order_rejected();
+        market_closed.reason = Ustr::from("MARKET_CLOSED");
+
+        assert_ne!(insufficient_margin, invalid_price);
+        assert_ne!(invalid_price, market_closed);
+        assert_eq!(
+            insufficient_margin.reason,
+            Ustr::from("INSUFFICIENT_MARGIN")
+        );
+        assert_eq!(invalid_price.reason, Ustr::from("INVALID_PRICE"));
+        assert_eq!(market_closed.reason, Ustr::from("MARKET_CLOSED"));
+    }
+
+    #[rstest]
+    fn test_order_rejected_timestamps() {
+        let order_rejected = create_test_order_rejected();
+
+        assert_eq!(order_rejected.ts_event, UnixNanos::from(1_000_000_000));
+        assert_eq!(order_rejected.ts_init, UnixNanos::from(2_000_000_000));
+        assert!(order_rejected.ts_event < order_rejected.ts_init);
+    }
+
+    #[rstest]
+    fn test_order_rejected_serialization() {
+        let original = create_test_order_rejected();
+
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: OrderRejected = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(original, deserialized);
+    }
+
+    #[rstest]
+    fn test_order_rejected_different_accounts() {
+        let mut live_account = create_test_order_rejected();
+        live_account.account_id = AccountId::from("LIVE-001");
+
+        let mut sim_account = create_test_order_rejected();
+        sim_account.account_id = AccountId::from("SIM-001");
+
+        assert_ne!(live_account, sim_account);
+        assert_eq!(live_account.account_id, AccountId::from("LIVE-001"));
+        assert_eq!(sim_account.account_id, AccountId::from("SIM-001"));
+    }
+
+    #[rstest]
+    fn test_order_rejected_different_instruments() {
+        let mut btc_order = create_test_order_rejected();
+        btc_order.instrument_id = InstrumentId::from("BTCUSD.COINBASE");
+
+        let mut eth_order = create_test_order_rejected();
+        eth_order.instrument_id = InstrumentId::from("ETHUSD.COINBASE");
+
+        assert_ne!(btc_order, eth_order);
+        assert_eq!(
+            btc_order.instrument_id,
+            InstrumentId::from("BTCUSD.COINBASE")
+        );
+        assert_eq!(
+            eth_order.instrument_id,
+            InstrumentId::from("ETHUSD.COINBASE")
         );
     }
 }

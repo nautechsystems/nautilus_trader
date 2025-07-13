@@ -344,3 +344,335 @@ impl Display for OrderStatusReport {
         )
     }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use nautilus_core::UnixNanos;
+    use rstest::*;
+    use rust_decimal::Decimal;
+
+    use super::*;
+    use crate::{
+        enums::{
+            ContingencyType, OrderSide, OrderStatus, OrderType, TimeInForce, TrailingOffsetType,
+            TriggerType,
+        },
+        identifiers::{
+            AccountId, ClientOrderId, InstrumentId, OrderListId, PositionId, VenueOrderId,
+        },
+        types::{Price, Quantity},
+    };
+
+    fn test_order_status_report() -> OrderStatusReport {
+        OrderStatusReport::new(
+            AccountId::from("SIM-001"),
+            InstrumentId::from("AUDUSD.SIM"),
+            Some(ClientOrderId::from("O-19700101-000000-001-001-1")),
+            VenueOrderId::from("1"),
+            OrderSide::Buy,
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            Quantity::from("100"),
+            Quantity::from("0"),
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::from(2_000_000_000),
+            UnixNanos::from(3_000_000_000),
+            None,
+        )
+    }
+
+    #[rstest]
+    fn test_order_status_report_new() {
+        let report = test_order_status_report();
+
+        assert_eq!(report.account_id, AccountId::from("SIM-001"));
+        assert_eq!(report.instrument_id, InstrumentId::from("AUDUSD.SIM"));
+        assert_eq!(
+            report.client_order_id,
+            Some(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        );
+        assert_eq!(report.venue_order_id, VenueOrderId::from("1"));
+        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.order_type, OrderType::Limit);
+        assert_eq!(report.time_in_force, TimeInForce::Gtc);
+        assert_eq!(report.order_status, OrderStatus::Accepted);
+        assert_eq!(report.quantity, Quantity::from("100"));
+        assert_eq!(report.filled_qty, Quantity::from("0"));
+        assert_eq!(report.ts_accepted, UnixNanos::from(1_000_000_000));
+        assert_eq!(report.ts_last, UnixNanos::from(2_000_000_000));
+        assert_eq!(report.ts_init, UnixNanos::from(3_000_000_000));
+
+        // Test default values
+        assert_eq!(report.order_list_id, None);
+        assert_eq!(report.venue_position_id, None);
+        assert_eq!(report.contingency_type, ContingencyType::default());
+        assert_eq!(report.expire_time, None);
+        assert_eq!(report.price, None);
+        assert_eq!(report.trigger_price, None);
+        assert_eq!(report.trigger_type, None);
+        assert_eq!(report.limit_offset, None);
+        assert_eq!(report.trailing_offset, None);
+        assert_eq!(report.trailing_offset_type, TrailingOffsetType::default());
+        assert_eq!(report.avg_px, None);
+        assert_eq!(report.display_qty, None);
+        assert!(!report.post_only);
+        assert!(!report.reduce_only);
+        assert_eq!(report.cancel_reason, None);
+        assert_eq!(report.ts_triggered, None);
+    }
+
+    #[rstest]
+    fn test_order_status_report_with_generated_report_id() {
+        let report = OrderStatusReport::new(
+            AccountId::from("SIM-001"),
+            InstrumentId::from("AUDUSD.SIM"),
+            None,
+            VenueOrderId::from("1"),
+            OrderSide::Buy,
+            OrderType::Market,
+            TimeInForce::Ioc,
+            OrderStatus::Filled,
+            Quantity::from("100"),
+            Quantity::from("100"),
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::from(2_000_000_000),
+            UnixNanos::from(3_000_000_000),
+            None, // No report ID provided, should generate one
+        );
+
+        // Should have a generated UUID
+        assert_ne!(
+            report.report_id.to_string(),
+            "00000000-0000-0000-0000-000000000000"
+        );
+    }
+
+    #[rstest]
+    fn test_order_status_report_builder_methods() {
+        let report = test_order_status_report()
+            .with_client_order_id(ClientOrderId::from("O-19700101-000000-001-001-2"))
+            .with_order_list_id(OrderListId::from("OL-001"))
+            .with_venue_position_id(PositionId::from("P-001"))
+            .with_price(Price::from("1.00000"))
+            .with_avg_px(1.00001)
+            .with_trigger_price(Price::from("0.99000"))
+            .with_trigger_type(TriggerType::Default)
+            .with_limit_offset(Decimal::from_f64_retain(0.0001).unwrap())
+            .with_trailing_offset(Decimal::from_f64_retain(0.0002).unwrap())
+            .with_trailing_offset_type(TrailingOffsetType::BasisPoints)
+            .with_display_qty(Quantity::from("50"))
+            .with_expire_time(UnixNanos::from(4_000_000_000))
+            .with_post_only(true)
+            .with_reduce_only(true)
+            .with_cancel_reason("User requested".to_string())
+            .with_ts_triggered(UnixNanos::from(1_500_000_000))
+            .with_contingency_type(ContingencyType::Oco);
+
+        assert_eq!(
+            report.client_order_id,
+            Some(ClientOrderId::from("O-19700101-000000-001-001-2"))
+        );
+        assert_eq!(report.order_list_id, Some(OrderListId::from("OL-001")));
+        assert_eq!(report.venue_position_id, Some(PositionId::from("P-001")));
+        assert_eq!(report.price, Some(Price::from("1.00000")));
+        assert_eq!(report.avg_px, Some(1.00001));
+        assert_eq!(report.trigger_price, Some(Price::from("0.99000")));
+        assert_eq!(report.trigger_type, Some(TriggerType::Default));
+        assert_eq!(
+            report.limit_offset,
+            Some(Decimal::from_f64_retain(0.0001).unwrap())
+        );
+        assert_eq!(
+            report.trailing_offset,
+            Some(Decimal::from_f64_retain(0.0002).unwrap())
+        );
+        assert_eq!(report.trailing_offset_type, TrailingOffsetType::BasisPoints);
+        assert_eq!(report.display_qty, Some(Quantity::from("50")));
+        assert_eq!(report.expire_time, Some(UnixNanos::from(4_000_000_000)));
+        assert!(report.post_only);
+        assert!(report.reduce_only);
+        assert_eq!(report.cancel_reason, Some("User requested".to_string()));
+        assert_eq!(report.ts_triggered, Some(UnixNanos::from(1_500_000_000)));
+        assert_eq!(report.contingency_type, ContingencyType::Oco);
+    }
+
+    #[rstest]
+    fn test_display() {
+        let report = test_order_status_report();
+        let display_str = format!("{report}");
+
+        assert!(display_str.contains("OrderStatusReport"));
+        assert!(display_str.contains("SIM-001"));
+        assert!(display_str.contains("AUDUSD.SIM"));
+        assert!(display_str.contains("BUY"));
+        assert!(display_str.contains("LIMIT"));
+        assert!(display_str.contains("GTC"));
+        assert!(display_str.contains("ACCEPTED"));
+        assert!(display_str.contains("100"));
+    }
+
+    #[rstest]
+    fn test_clone_and_equality() {
+        let report1 = test_order_status_report();
+        let report2 = report1.clone();
+
+        assert_eq!(report1, report2);
+    }
+
+    #[rstest]
+    fn test_serialization_roundtrip() {
+        let original = test_order_status_report();
+
+        // Test JSON serialization
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: OrderStatusReport = serde_json::from_str(&json).unwrap();
+        assert_eq!(original, deserialized);
+    }
+
+    #[rstest]
+    fn test_order_status_report_different_order_types() {
+        let market_report = OrderStatusReport::new(
+            AccountId::from("SIM-001"),
+            InstrumentId::from("AUDUSD.SIM"),
+            None,
+            VenueOrderId::from("1"),
+            OrderSide::Buy,
+            OrderType::Market,
+            TimeInForce::Ioc,
+            OrderStatus::Filled,
+            Quantity::from("100"),
+            Quantity::from("100"),
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::from(2_000_000_000),
+            UnixNanos::from(3_000_000_000),
+            None,
+        );
+
+        let stop_report = OrderStatusReport::new(
+            AccountId::from("SIM-001"),
+            InstrumentId::from("AUDUSD.SIM"),
+            None,
+            VenueOrderId::from("2"),
+            OrderSide::Sell,
+            OrderType::StopMarket,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            Quantity::from("50"),
+            Quantity::from("0"),
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::from(2_000_000_000),
+            UnixNanos::from(3_000_000_000),
+            None,
+        );
+
+        assert_eq!(market_report.order_type, OrderType::Market);
+        assert_eq!(stop_report.order_type, OrderType::StopMarket);
+        assert_ne!(market_report, stop_report);
+    }
+
+    #[rstest]
+    fn test_order_status_report_different_statuses() {
+        let accepted_report = test_order_status_report();
+
+        let filled_report = OrderStatusReport::new(
+            AccountId::from("SIM-001"),
+            InstrumentId::from("AUDUSD.SIM"),
+            Some(ClientOrderId::from("O-19700101-000000-001-001-1")),
+            VenueOrderId::from("1"),
+            OrderSide::Buy,
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Filled,
+            Quantity::from("100"),
+            Quantity::from("100"), // Fully filled
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::from(2_000_000_000),
+            UnixNanos::from(3_000_000_000),
+            None,
+        );
+
+        assert_eq!(accepted_report.order_status, OrderStatus::Accepted);
+        assert_eq!(filled_report.order_status, OrderStatus::Filled);
+        assert_ne!(accepted_report, filled_report);
+    }
+
+    #[rstest]
+    fn test_order_status_report_with_optional_fields() {
+        let mut report = test_order_status_report();
+
+        // Initially no optional fields set
+        assert_eq!(report.price, None);
+        assert_eq!(report.avg_px, None);
+        assert!(!report.post_only);
+        assert!(!report.reduce_only);
+
+        // Test builder pattern with various optional fields
+        report = report
+            .with_price(Price::from("1.00000"))
+            .with_avg_px(1.00001)
+            .with_post_only(true)
+            .with_reduce_only(true);
+
+        assert_eq!(report.price, Some(Price::from("1.00000")));
+        assert_eq!(report.avg_px, Some(1.00001));
+        assert!(report.post_only);
+        assert!(report.reduce_only);
+    }
+
+    #[rstest]
+    fn test_order_status_report_partial_fill() {
+        let partial_fill_report = OrderStatusReport::new(
+            AccountId::from("SIM-001"),
+            InstrumentId::from("AUDUSD.SIM"),
+            Some(ClientOrderId::from("O-19700101-000000-001-001-1")),
+            VenueOrderId::from("1"),
+            OrderSide::Buy,
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::PartiallyFilled,
+            Quantity::from("100"),
+            Quantity::from("30"), // Partially filled
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::from(2_000_000_000),
+            UnixNanos::from(3_000_000_000),
+            None,
+        );
+
+        assert_eq!(partial_fill_report.quantity, Quantity::from("100"));
+        assert_eq!(partial_fill_report.filled_qty, Quantity::from("30"));
+        assert_eq!(
+            partial_fill_report.order_status,
+            OrderStatus::PartiallyFilled
+        );
+    }
+
+    #[rstest]
+    fn test_order_status_report_with_all_timestamp_fields() {
+        let report = OrderStatusReport::new(
+            AccountId::from("SIM-001"),
+            InstrumentId::from("AUDUSD.SIM"),
+            None,
+            VenueOrderId::from("1"),
+            OrderSide::Buy,
+            OrderType::StopLimit,
+            TimeInForce::Gtc,
+            OrderStatus::Triggered,
+            Quantity::from("100"),
+            Quantity::from("0"),
+            UnixNanos::from(1_000_000_000), // ts_accepted
+            UnixNanos::from(2_000_000_000), // ts_last
+            UnixNanos::from(3_000_000_000), // ts_init
+            None,
+        )
+        .with_ts_triggered(UnixNanos::from(1_500_000_000));
+
+        assert_eq!(report.ts_accepted, UnixNanos::from(1_000_000_000));
+        assert_eq!(report.ts_last, UnixNanos::from(2_000_000_000));
+        assert_eq!(report.ts_init, UnixNanos::from(3_000_000_000));
+        assert_eq!(report.ts_triggered, Some(UnixNanos::from(1_500_000_000)));
+    }
+}

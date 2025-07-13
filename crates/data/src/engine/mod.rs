@@ -571,7 +571,7 @@ impl DataEngine {
             DefiSubscribeCommand::Pool(cmd) => self.setup_pool_updater(&cmd.instrument_id),
             DefiSubscribeCommand::PoolSwaps(cmd) => self.setup_pool_updater(&cmd.instrument_id),
             DefiSubscribeCommand::PoolLiquidityUpdates(cmd) => {
-                self.setup_pool_updater(&cmd.instrument_id)
+                self.setup_pool_updater(&cmd.instrument_id);
             }
             _ => {}
         }
@@ -1261,11 +1261,7 @@ impl DataEngine {
 
         let liquidity_topic = switchboard::get_defi_liquidity_topic(*instrument_id);
         if !msgbus::is_subscribed(liquidity_topic.as_str(), handler.clone()) {
-            msgbus::subscribe(
-                liquidity_topic.into(),
-                handler.clone(),
-                Some(self.msgbus_priority),
-            );
+            msgbus::subscribe(liquidity_topic.into(), handler, Some(self.msgbus_priority));
         }
 
         self.pool_updaters.insert(*instrument_id, updater);

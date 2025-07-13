@@ -5749,6 +5749,225 @@ class CoinbaseIntxFixClient:
     async def connect(self, handler: object) -> Awaitable: ...
     async def close(self) -> None: ...
 
+# OKX
+
+class OKXHttpClient:
+    def __init__(
+        self,
+        api_key: str | None = None,
+        api_secret: str | None = None,
+        api_passphrase: str | None = None,
+        base_url: str | None = None,
+        timeout_secs: int | None = None,
+    ) -> None: ...
+    @staticmethod
+    def from_env() -> OKXHttpClient: ...
+    @property
+    def base_url(self) -> str: ...
+    @property
+    def api_key(self) -> str | None: ...
+    def is_initialized(self) -> bool: ...
+    def get_cached_symbols(self) -> list[str]: ...
+    def add_instrument(self, instrument: Instrument) -> None: ...
+    async def set_position_mode(self, mode: OKXPositionMode) -> None: ...
+    async def request_instruments(self, instrument_type: OKXInstrumentType) -> list[Instrument]: ...
+    async def request_account_state(self, account_id: AccountId) -> AccountState: ...
+    async def request_trades(
+        self,
+        instrument_id: InstrumentId,
+        start: dt.datetime | None = None,
+        end: dt.datetime | None = None,
+        limit: int | None = None,
+    ) -> list[TradeTick]: ...
+    async def request_bars(
+        self,
+        bar_type: BarType,
+        start: dt.datetime | None = None,
+        end: dt.datetime | None = None,
+        limit: int | None = None,
+    ) -> list[Bar]: ...
+    async def request_mark_price(
+        self,
+        instrument_id: InstrumentId,
+    ) -> MarkPriceUpdate: ...
+    async def request_index_price(
+        self,
+        instrument_id: InstrumentId,
+    ) -> IndexPriceUpdate: ...
+    async def request_order_status_reports(
+        self,
+        account_id: AccountId,
+        instrument_type: OKXInstrumentType | None = None,
+        instrument_id: InstrumentId | None = None,
+        start: dt.datetime | None = None,
+        end: dt.datetime | None = None,
+        open_only: bool = False,
+        limit: int | None = None,
+    ) -> list[OrderStatusReport]: ...
+    async def request_fill_reports(
+        self,
+        account_id: AccountId,
+        instrument_type: OKXInstrumentType | None = None,
+        instrument_id: InstrumentId | None = None,
+        start: dt.datetime | None = None,
+        end: dt.datetime | None = None,
+        limit: int | None = None,
+    ) -> list[FillReport]: ...
+    async def request_position_status_reports(
+        self,
+        account_id: AccountId,
+        instrument_type: OKXInstrumentType | None = None,
+        instrument_id: InstrumentId | None = None,
+    ) -> list[PositionStatusReport]: ...
+
+class OKXWebSocketClient:
+    def __init__(
+        self,
+        url: str | None = None,
+        api_key: str | None = None,
+        api_secret: str | None = None,
+        api_passphrase: str | None = None,
+        account_id: AccountId | None = None,
+        heartbeat: int | None = None,
+    ) -> None: ...
+    @staticmethod
+    def with_credentials(
+        url: str | None = None,
+        api_key: str | None = None,
+        api_secret: str | None = None,
+        api_passphrase: str | None = None,
+        account_id: AccountId | None = None,
+        heartbeat: int | None = None,
+    ) -> OKXWebSocketClient: ...
+    @staticmethod
+    def from_env() -> OKXWebSocketClient: ...
+    @property
+    def url(self) -> str: ...
+    @property
+    def api_key(self) -> str | None: ...
+    def is_active(self) -> bool: ...
+    def is_closed(self) -> bool: ...
+    async def connect(
+        self,
+        instruments: list[Instrument],
+        callback: Callable,
+    ) -> Awaitable: ...
+    async def close(self) -> None: ...
+    async def subscribe_instruments(self, instrument_type: OKXInstrumentType) -> None: ...
+    async def subscribe_instrument(self, instrument_id: InstrumentId) -> None: ...
+    async def subscribe_order_book(self, instrument_id: InstrumentId) -> None: ...
+    async def subscribe_quotes(self, instrument_id: InstrumentId) -> None: ...
+    async def subscribe_trades(self, instrument_id: InstrumentId, aggregated: bool) -> None: ...
+    async def subscribe_bars(self, bar_type: BarType) -> None: ...
+    async def unsubscribe_order_book(self, instrument_id: InstrumentId) -> None: ...
+    async def unsubscribe_quotes(self, instrument_id: InstrumentId) -> None: ...
+    async def unsubscribe_trades(self, instrument_id: InstrumentId, aggregated: bool) -> None: ...
+    async def unsubscribe_bars(self, bar_type: BarType) -> None: ...
+    async def subscribe_ticker(self, instrument_id: InstrumentId) -> None: ...
+    async def unsubscribe_ticker(self, instrument_id: InstrumentId) -> None: ...
+    async def subscribe_mark_prices(self, instrument_id: InstrumentId) -> None: ...
+    async def unsubscribe_mark_prices(self, instrument_id: InstrumentId) -> None: ...
+    async def subscribe_index_prices(self, instrument_id: InstrumentId) -> None: ...
+    async def unsubscribe_index_prices(self, instrument_id: InstrumentId) -> None: ...
+    async def subscribe_orders(self, instrument_type: OKXInstrumentType) -> None: ...
+    async def unsubscribe_orders(self, instrument_type: OKXInstrumentType) -> None: ...
+    async def subscribe_fills(self, instrument_type: OKXInstrumentType) -> None: ...
+    async def unsubscribe_fills(self, instrument_type: OKXInstrumentType) -> None: ...
+    async def subscribe_account(self) -> None: ...
+    async def unsubscribe_account(self) -> None: ...
+    async def submit_order(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        td_mode: OKXTradeMode,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        quantity: Quantity,
+        price: Price | None = None,
+        trigger_price: Price | None = None,
+        post_only: bool | None = None,
+        reduce_only: bool | None = None,
+        position_side: PositionSide | None = None,
+    ) -> None: ...
+    async def cancel_order(
+        self,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        position_side: PositionSide | None = None,
+    ) -> None: ...
+    async def modify_order(
+        self,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        new_client_order_id: ClientOrderId,
+        price: Price | None = None,
+        quantity: Quantity | None = None,
+        position_side: PositionSide | None = None,
+    ) -> None: ...
+    async def batch_submit_orders(
+        self,
+        orders: list[Any],
+    ) -> None: ...
+    async def batch_cancel_orders(
+        self,
+        orders: list[Any],
+    ) -> None: ...
+    async def batch_modify_orders(
+        self,
+        orders: list[Any],
+    ) -> None: ...
+
+class OKXWebSocketError:
+    @property
+    def code(self) -> str: ...
+    @property
+    def message(self) -> str: ...
+    @property
+    def conn_id(self) -> str | None: ...
+    @property
+    def ts_event(self) -> int: ...
+
+class OKXEndpointType(Enum):
+    Public = "Public"
+    Private = "Private"
+    Business = "Business"
+
+def get_okx_http_base_url() -> str: ...
+def get_okx_ws_url_public(is_demo: bool) -> str: ...
+def get_okx_ws_url_private(is_demo: bool) -> str: ...
+def get_okx_ws_url_business(is_demo: bool) -> str: ...
+def okx_requires_authentication(endpoint_type: OKXEndpointType) -> bool: ...
+
+class OKXInstrumentType(Enum):
+    ANY = "ANY"
+    SPOT = "SPOT"
+    MARGIN = "MARGIN"
+    SWAP = "SWAP"
+    FUTURES = "FUTURES"
+    OPTION = "OPTION"
+
+class OKXContractType(Enum):
+    NONE = "NONE"
+    LINEAR = "LINEAR"
+    INVERSE = "INVERSE"
+
+class OKXMarginMode(Enum):
+    NONE = "NONE"
+    ISOLATED = "ISOLATED"
+    CROSS = "CROSS"
+
+class OKXTradeMode(Enum):
+    CASH = "CASH"
+    ISOLATED = "ISOLATED"
+    CROSS = "CROSS"
+    SPOT_ISOLATED = "SPOT_ISOLATED"
+
+class OKXPositionMode(Enum):
+    NET_MODE = "NET_MODE"
+    LONG_SHORT_MODE = "LONG_SHORT_MODE"
+
 # Greeks
 
 class BlackScholesGreeksResult:

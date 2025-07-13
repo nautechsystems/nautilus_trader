@@ -2,13 +2,13 @@
 
 The [Rust](https://www.rust-lang.org/learn) programming language is an ideal fit for implementing the mission-critical core of the platform and systems. Its strong type system, ownership model, and compile-time checks eliminate memory errors and data races by construction, while zero-cost abstractions and the absence of a garbage collector deliver C-like performance—critical for high-frequency trading workloads.
 
-## Python Bindings
+## Python bindings
 
 Python bindings are provided via Cython and [PyO3](https://pyo3.rs), allowing users to import NautilusTrader crates directly in Python without a Rust toolchain.
 
-## Code Style and Conventions
+## Code style and conventions
 
-### File Header Requirements
+### File header requirements
 
 All Rust files must include the standardized copyright header:
 
@@ -29,7 +29,7 @@ All Rust files must include the standardized copyright header:
 // -------------------------------------------------------------------------------------------------
 ```
 
-### Code Formatting
+### Code formatting
 
 Import formatting is automatically handled by rustfmt when running `make format`.
 The tool organizes imports into groups (standard library, external crates, local imports) and sorts them alphabetically within each group.
@@ -57,7 +57,7 @@ pub fn py_do_something() -> PyResult<()> {
 }
 ```
 
-### Error Handling
+### Error handling
 
 Use structured error handling patterns consistently:
 
@@ -114,7 +114,7 @@ Use structured error handling patterns consistently:
 
    This makes error messages more readable and self-documenting, especially when there are multiple variables.
 
-### Attribute Patterns
+### Attribute patterns
 
 Consistent attribute usage and ordering:
 
@@ -161,7 +161,7 @@ pub enum AccountType {
 }
 ```
 
-### Constructor Patterns
+### Constructor patterns
 
 Use the `new()` vs `new_checked()` convention consistently:
 
@@ -195,7 +195,7 @@ Always use the `FAILED` constant for `.expect()` messages related to correctness
 use nautilus_core::correctness::FAILED;
 ```
 
-### Constants and Naming Conventions
+### Constants and naming conventions
 
 Use SCREAMING_SNAKE_CASE for constants with descriptive names:
 
@@ -211,7 +211,7 @@ pub const BAR_SPEC_1_MINUTE_LAST: BarSpecification = BarSpecification {
 };
 ```
 
-### Re-export Patterns
+### Re-export patterns
 
 Organize re-exports alphabetically and place at the end of lib.rs files:
 
@@ -231,7 +231,7 @@ pub use crate::identifiers::{
 };
 ```
 
-### Documentation Standards
+### Documentation standards
 
 #### Module-Level Documentation
 
@@ -371,7 +371,7 @@ impl Send for MessageBus {
 }
 ```
 
-### Testing Conventions
+### Testing conventions
 
 - Do not use Arrange, Act, Assert separator comments for Rust tests.
 
@@ -434,7 +434,7 @@ the contract between the interface and caller, shifting some responsibility for 
 from the Rust compiler, and onto us. The goal is to realize the advantages of the `unsafe` facility, whilst avoiding *any* undefined behavior.
 The definition for what the Rust language designers consider undefined behavior can be found in the [language reference](https://doc.rust-lang.org/stable/reference/behavior-considered-undefined.html).
 
-### Safety Policy
+### Safety policy
 
 To maintain correctness, any use of `unsafe` Rust must follow our policy:
 
@@ -449,7 +449,7 @@ and covering the invariants which the function expects the callers to uphold, an
 unsafe impl Send for MessageBus {}
 ```
 
-## Tooling Configuration
+## Tooling configuration
 
 The project uses several tools for code quality:
 

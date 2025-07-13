@@ -19,6 +19,10 @@ use nautilus_model::defi::Chain;
 
 /// Configuration for blockchain data clients.
 #[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.blockchain")
+)]
 pub struct BlockchainDataClientConfig {
     /// The blockchain chain configuration.
     pub chain: Arc<Chain>,

@@ -1722,11 +1722,11 @@ class TestTimeBarAggregator:
                 pd.Timestamp(1970, 1, 1, 0, 0, 10).value,
             ],
             [
-                BarSpecification(60, BarAggregation.SECOND, PriceType.MID),
+                BarSpecification(1, BarAggregation.MINUTE, PriceType.MID),
                 pd.Timestamp(1970, 1, 1, 0, 1, 0).value,
             ],
             [
-                BarSpecification(300, BarAggregation.SECOND, PriceType.MID),
+                BarSpecification(5, BarAggregation.MINUTE, PriceType.MID),
                 pd.Timestamp(1970, 1, 1, 0, 5, 0).value,
             ],
             [
@@ -1734,7 +1734,7 @@ class TestTimeBarAggregator:
                 pd.Timestamp(1970, 1, 1, 0, 1).value,
             ],
             [
-                BarSpecification(60, BarAggregation.MINUTE, PriceType.MID),
+                BarSpecification(1, BarAggregation.HOUR, PriceType.MID),
                 pd.Timestamp(1970, 1, 1, 1, 0).value,
             ],
             [
@@ -2350,20 +2350,7 @@ class TestTimeBarAggregator:
         assert bar.volume == Quantity.from_int(3)
         assert bar.ts_init == 3 * 60 * NANOSECONDS_IN_SECOND
 
-    @pytest.mark.parametrize(
-        ("step", "aggregation"),
-        [
-            [
-                1,
-                BarAggregation.SECOND,
-            ],
-            [
-                1000,
-                BarAggregation.MILLISECOND,
-            ],
-        ],
-    )
-    def test_aggregation_for_same_sec_and_minute_intervals(self, step, aggregation):
+    def test_aggregation_for_same_sec_and_minute_intervals(self):
         # Arrange - prepare data
         path = TEST_DATA_DIR / "binance/btcusdt-quotes.parquet"
         df_ticks = ParquetTickDataLoader.load(path)
@@ -2374,7 +2361,7 @@ class TestTimeBarAggregator:
         clock.set_time(ticks[0].ts_init)
         handler = []
 
-        bar_spec = BarSpecification(step, aggregation, PriceType.BID)
+        bar_spec = BarSpecification(1, BarAggregation.SECOND, PriceType.BID)
         bar_type = BarType(BTCUSDT_BINANCE.id, bar_spec, AggregationSource.INTERNAL)
         aggregator = TimeBarAggregator(
             BTCUSDT_BINANCE,

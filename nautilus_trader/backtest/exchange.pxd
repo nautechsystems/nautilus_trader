@@ -29,6 +29,7 @@ from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.model cimport AccountType
 from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.rust.model cimport OmsType
+from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.model.book cimport OrderBook
 from nautilus_trader.model.data cimport Bar
@@ -39,12 +40,19 @@ from nautilus_trader.model.data cimport OrderBookDeltas
 from nautilus_trader.model.data cimport OrderBookDepth10
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
+from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.orders.base cimport Order
 
 
 cdef class SimulatedExchange:
@@ -151,6 +159,24 @@ cdef class SimulatedExchange:
     cpdef void reset(self)
 
     cdef void _process_trading_command(self, TradingCommand command)
+    cdef void _process_modify_submitted_order(self, ModifyOrder command)
+    cdef void _generate_order_modify_rejected(
+        self,
+        TraderId trader_id,
+        StrategyId strategy_id,
+        InstrumentId instrument_id,
+        ClientOrderId client_order_id,
+        VenueOrderId venue_order_id,
+        str reason,
+        AccountId account_id,
+    )
+    cdef void _generate_order_updated(
+        self,
+        Order order,
+        Quantity quantity,
+        Price price,
+        Price trigger_price,
+    )
 
 # -- EVENT GENERATORS -----------------------------------------------------------------------------
 

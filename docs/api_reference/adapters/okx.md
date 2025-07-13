@@ -28,16 +28,6 @@
    :member-order: bysource
 ```
 
-## Enums
-
-```{eval-rst}
-.. automodule:: nautilus_trader.adapters.okx.common.enums
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```
-
 ## Providers
 
 ```{eval-rst}

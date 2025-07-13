@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
 import functools
 from collections import defaultdict
 from collections.abc import Callable
@@ -888,6 +889,68 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
 
         return await self._await_request(request, timeout=60)
 
+    async def _schedule_bar_completion_timeout(self, bar_type_str: str, bar: BarData) -> None:
+        """
+        Schedule a timeout to publish a bar after its period ends.
+
+        This ensures bars are published when their time period is complete,
+        rather than waiting for the next bar to arrive. This is especially
+        important for EOD bars and provides more timely bar delivery.
+
+        Parameters
+        ----------
+        bar_type_str : str
+            The string representation of the bar type.
+        bar : BarData
+            The bar data to potentially publish after timeout.
+
+        """
+        # Cancel any existing timeout task for this bar type
+        if bar_type_str in self._bar_timeout_tasks:
+            self._bar_timeout_tasks[bar_type_str].cancel()
+
+        # Calculate when this bar period should end
+        bar_type = BarType.from_str(bar_type_str)
+        bar_duration_seconds = bar_type.spec.timedelta.total_seconds()
+
+        # Add a small buffer (1 seconds) after the bar period ends to ensure it's complete
+        timeout_seconds = bar_duration_seconds + 1.0
+
+        async def completion_handler():
+            try:
+                await asyncio.sleep(timeout_seconds)
+
+                # Check if this bar is still the current bar (hasn't been superseded)
+                current_bar = self._bar_type_to_last_bar.get(bar_type_str)
+                if current_bar and int(current_bar.date) == int(bar.date):
+                    self._log.debug(f"Publishing bar after period completion for {bar_type_str}")
+                    ts_init = self._clock.timestamp_ns()
+
+                    # Convert the bar to Nautilus format
+                    nautilus_bar = await self._ib_bar_to_nautilus_bar(
+                        bar_type=bar_type,
+                        bar=current_bar,
+                        ts_init=ts_init,
+                        is_revision=False,
+                    )
+
+                    # Handle the bar
+                    if nautilus_bar and not (
+                        nautilus_bar.is_single_price() and nautilus_bar.open.as_double() == 0
+                    ):
+                        await self._handle_data(nautilus_bar)
+
+            except asyncio.CancelledError:
+                # Task was cancelled, which is expected when a new bar arrives
+                pass
+            finally:
+                # Clean up the task reference
+                self._bar_timeout_tasks.pop(bar_type_str, None)
+
+        # Create and store the timeout task
+        task = asyncio.create_task(completion_handler())
+        self._bar_timeout_tasks[bar_type_str] = task
+
     async def _process_bar_data(
         self,
         bar_type_str: str,
@@ -933,9 +996,15 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
 
         if not handle_revised_bars:
             if previous_bar and is_new_bar:
+                # New bar arrived - publish the previous (completed) bar immediately
+                # and schedule completion timeout for the current bar
+                await self._schedule_bar_completion_timeout(bar_type_str, bar)
                 bar = previous_bar
             else:
-                return None  # Wait for bar to close
+                # First bar or same timestamp - schedule completion timeout
+                # but don't publish yet (wait for bar period to complete)
+                await self._schedule_bar_completion_timeout(bar_type_str, bar)
+                return None  # Wait for bar period to complete
 
             if historical:
                 ts_init = await self._ib_bar_to_ts_init(bar, bar_type)

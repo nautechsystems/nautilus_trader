@@ -183,6 +183,13 @@ check-nextest-installed:  #-- Verify cargo-nextest is installed
 		exit 1; \
 	fi
 
+.PHONY: check-llvm-cov-installed
+check-llvm-cov-installed:  #-- Verify cargo-llvm-cov is installed
+	@if ! cargo llvm-cov --version >/dev/null 2>&1; then \
+		echo "cargo-llvm-cov is not installed. You can install it using 'cargo install cargo-llvm-cov'"; \
+		exit 1; \
+	fi
+
 .PHONY: check-hack-installed
 check-hack-installed:  #-- Verify cargo-hack is installed
 	@if ! cargo hack --version >/dev/null 2>&1; then \
@@ -238,12 +245,8 @@ cargo-test-standard-precision-debug:  #-- Run Rust tests in debug mode with stan
 	cargo nextest run --workspace --features "ffi,python"
 
 .PHONY: cargo-test-coverage
-cargo-test-coverage: check-nextest-installed
+cargo-test-coverage: check-nextest-installed check-llvm-cov-installed
 cargo-test-coverage:  #-- Run Rust tests with coverage reporting
-	@if ! cargo llvm-cov --version >/dev/null 2>&1; then \
-		echo "cargo-llvm-cov is not installed. You can install it using 'cargo install cargo-llvm-cov'"; \
-		exit 1; \
-	fi
 	cargo llvm-cov nextest run --workspace
 
 # -----------------------------------------------------------------------------
@@ -266,6 +269,13 @@ cargo-test-crate-%: HIGH_PRECISION=true
 cargo-test-crate-%: check-nextest-installed
 cargo-test-crate-%:  #-- Run Rust tests for a specific crate (usage: make cargo-test-crate-<crate_name>)
 	cargo nextest run --lib --no-fail-fast --cargo-profile nextest -p $* $(if $(FEATURES),--features "$(FEATURES)")
+
+.PHONY: cargo-test-coverage-crate-%
+cargo-test-coverage-crate-%: RUST_BACKTRACE=1
+cargo-test-coverage-crate-%: HIGH_PRECISION=true
+cargo-test-coverage-crate-%: check-nextest-installed check-llvm-cov-installed
+cargo-test-coverage-crate-%:  #-- Run Rust tests with coverage reporting for a specific crate (usage: make cargo-test-coverage-crate-<crate_name>)
+	cargo llvm-cov nextest --lib --no-fail-fast --cargo-profile nextest -p $* $(if $(FEATURES),--features "$(FEATURES)")
 
 #------------------------------------------------------------------------------
 # Benchmarks
@@ -312,13 +322,33 @@ docker-build-jupyter:  #-- Build JupyterLab Docker image
 docker-push-jupyter:  #-- Push JupyterLab Docker image to registry
 	docker push $(IMAGE):jupyter
 
+.PHONY: init-services
+init-services:  #-- Initialize development services eg. for integration tests (start containers and setup database)
+	$(info $(M) Initializing development services...)
+	@$(MAKE) start-services
+	@echo "${PURPLE}Waiting for PostgreSQL to be ready...${RESET}"
+	@sleep 10
+	@$(MAKE) init-db
+
 .PHONY: start-services
-start-services:  #-- Start development services with docker-compose
+start-services:  #-- Start development services (without reinitializing database)
+	$(info $(M) Starting development services...)
 	docker compose -f .docker/docker-compose.yml up -d
 
 .PHONY: stop-services
-stop-services:  #-- Stop development services
+stop-services:  #-- Stop development services (preserves data)
+	$(info $(M) Stopping development services...)
 	docker compose -f .docker/docker-compose.yml down
+
+.PHONY: purge-services
+purge-services:  #-- Purge all development services (stop containers and remove volumes)
+	$(info $(M) Purging integration test services...)
+	docker compose -f .docker/docker-compose.yml down -v
+
+.PHONY: init-db
+init-db:  #-- Initialize PostgreSQL database schema
+	$(info $(M) Initializing PostgreSQL database schema...)
+	cat schema/sql/*.sql | docker exec -i nautilus-database psql -U nautilus -d nautilus
 
 #== Python Testing
 

@@ -41,6 +41,10 @@ use crate::{config::LiveNodeConfig, runner::AsyncRunner};
 /// Provides a simplified interface for running live systems
 /// with automatic client management and lifecycle handling.
 #[derive(Debug)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.live", unsendable)
+)]
 pub struct LiveNode {
     clock: Rc<RefCell<LiveClock>>,
     kernel: NautilusKernel,
@@ -236,6 +240,10 @@ impl LiveNode {
 /// Provides configuration options specific to live nodes,
 /// including client factory registration and timeout settings.
 #[derive(Debug)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.live", unsendable)
+)]
 pub struct LiveNodeBuilder {
     config: LiveNodeConfig,
     data_client_factories: HashMap<String, Box<dyn DataClientFactory>>,

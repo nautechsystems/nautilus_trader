@@ -27,6 +27,7 @@ from nautilus_trader.indicators.atr import AverageTrueRange
 from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import MarkPriceUpdate
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
@@ -143,6 +144,8 @@ class VolatilityMarketMaker(Strategy):
         #     interval_ms=1000,
         #     client_id=self.client_id,
         # )  # For debugging
+        # self.subscribe_mark_prices(self.config.instrument_id, client_id=self.client_id)
+        # self.subscribe_index_prices(self.config.instrument_id, client_id=self.client_id)
 
         # self.subscribe_data(
         #     data_type=DataType(
@@ -244,6 +247,34 @@ class VolatilityMarketMaker(Strategy):
         """
         # For debugging (must add a subscription)
         self.log.info(repr(tick), LogColor.CYAN)
+
+    def on_mark_price(self, update: MarkPriceUpdate) -> None:
+        """
+        Actions to be performed when the strategy is running and receives a mark price
+        update.
+
+        Parameters
+        ----------
+        update : MarkPriceUpdate
+            The update received.
+
+        """
+        # For debugging (must add a subscription)
+        self.log.info(repr(update), LogColor.CYAN)
+
+    def on_index_price(self, update: MarkPriceUpdate) -> None:
+        """
+        Actions to be performed when the strategy is running and receives an index price
+        update.
+
+        Parameters
+        ----------
+        update : IndexPriceUpdate
+            The update received.
+
+        """
+        # For debugging (must add a subscription)
+        self.log.info(repr(update), LogColor.CYAN)
 
     def on_bar(self, bar: Bar) -> None:
         """

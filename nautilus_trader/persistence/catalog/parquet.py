@@ -1630,8 +1630,18 @@ class ParquetDataCatalog(BaseDataCatalog):
         if self.fs_protocol != "file":
             self._register_object_store_with_session(session)
 
-        for idx, file in enumerate(file_list):
-            table = f"{file_prefix}_{idx}"
+        for file in file_list:
+            # Extract identifier from file path and filename to create meaningful table names
+            identifier = file.split("/")[-2]
+            safe_sql_identifier = (
+                urisafe_identifier(identifier)
+                .replace(".", "_")
+                .replace("-", "_")
+                .replace(" ", "_")
+                .lower()
+            )
+            safe_filename = _extract_sql_safe_filename(file)
+            table = f"{file_prefix}_{safe_sql_identifier}_{safe_filename}"
             query = self._build_query(
                 table,
                 start=start,
@@ -2374,3 +2384,19 @@ def _get_integer_interval_set(intervals: list[tuple[int, int]]) -> P.Interval:
         union_result |= P.closedopen(interval[0], interval[1] + 1)
 
     return union_result
+
+
+def _extract_sql_safe_filename(file_path: str) -> str:
+    if not file_path:
+        return "unknown_file"
+
+    filename = file_path.split("/")[-1]
+
+    # Remove .parquet extension
+    if filename.endswith(".parquet"):
+        name_without_ext = filename[:-8]  # Remove ".parquet"
+    else:
+        name_without_ext = filename
+
+    # Remove characters that can pose problems: hyphens, colons, etc.
+    return name_without_ext.replace("-", "_").replace(":", "_").replace(".", "_").lower()

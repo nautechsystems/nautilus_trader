@@ -51,6 +51,8 @@ def enum_parser() -> DYDXEnumParser:
         (DYDXOrderType.MARKET, OrderType.MARKET),
         (DYDXOrderType.STOP_LIMIT, OrderType.STOP_LIMIT),
         (DYDXOrderType.STOP_MARKET, OrderType.STOP_MARKET),
+        (DYDXOrderType.TAKE_PROFIT, OrderType.LIMIT_IF_TOUCHED),
+        (DYDXOrderType.TAKE_PROFIT_MARKET, OrderType.MARKET_IF_TOUCHED),
     ],
 )
 def test_parse_order_type(
@@ -274,3 +276,34 @@ def test_parse_dydx_kline_incorrect(bar_type: str) -> None:
     """
     with pytest.raises(KeyError):
         get_interval_from_bar_type(BarType.from_str(bar_type))
+
+
+def test_order_type_bidirectional_mapping_consistency(
+    enum_parser: DYDXEnumParser,
+) -> None:
+    """
+    Test that bidirectional order type mapping is consistent.
+    """
+    basic_nautilus_types = [
+        OrderType.LIMIT,
+        OrderType.MARKET,
+        OrderType.STOP_LIMIT,
+        OrderType.STOP_MARKET,
+    ]
+
+    for nautilus_type in basic_nautilus_types:
+        dydx_type = enum_parser.parse_nautilus_order_type(nautilus_type)
+        back_to_nautilus = enum_parser.parse_dydx_order_type(dydx_type)
+        assert back_to_nautilus == nautilus_type, f"Inconsistent mapping for {nautilus_type}"
+
+    take_profit_mappings = [
+        (DYDXOrderType.TAKE_PROFIT, OrderType.LIMIT_IF_TOUCHED),
+        (DYDXOrderType.TAKE_PROFIT_MARKET, OrderType.MARKET_IF_TOUCHED),
+    ]
+
+    for dydx_type, expected_nautilus_type in take_profit_mappings:
+        actual_nautilus_type = enum_parser.parse_dydx_order_type(dydx_type)
+        assert actual_nautilus_type == expected_nautilus_type, (
+            f"DYDX {dydx_type} should map to Nautilus {expected_nautilus_type}, "
+            f"got {actual_nautilus_type}"
+        )
