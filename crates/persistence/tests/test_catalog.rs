@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::str::FromStr;
+
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{
@@ -2380,4 +2382,207 @@ fn test_extract_path_components() {
     // Test empty path
     let components = extract_path_components("");
     assert!(components.is_empty());
+}
+
+#[rstest]
+fn test_extract_identifier_from_path() {
+    use nautilus_persistence::backend::catalog::extract_identifier_from_path;
+
+    // Test typical parquet file path
+    let identifier = extract_identifier_from_path("data/quote_tick/EURUSD/file.parquet");
+    assert_eq!(identifier, "EURUSD");
+
+    // Test bar file path
+    let identifier =
+        extract_identifier_from_path("data/bar/BTCUSD-1-MINUTE-LAST-EXTERNAL/file.parquet");
+    assert_eq!(identifier, "BTCUSD-1-MINUTE-LAST-EXTERNAL");
+
+    // Test path with fewer components
+    let identifier = extract_identifier_from_path("EURUSD/file.parquet");
+    assert_eq!(identifier, "EURUSD");
+
+    // Test path with single component
+    let identifier = extract_identifier_from_path("file.parquet");
+    assert_eq!(identifier, "unknown");
+
+    // Test empty path
+    let identifier = extract_identifier_from_path("");
+    assert_eq!(identifier, "unknown");
+}
+
+#[rstest]
+fn test_make_sql_safe_identifier() {
+    use nautilus_persistence::backend::catalog::make_sql_safe_identifier;
+
+    // Test identifier with forward slash
+    let safe_id = make_sql_safe_identifier("EUR/USD");
+    assert_eq!(safe_id, "eurusd");
+
+    // Test identifier with dots and hyphens
+    let safe_id = make_sql_safe_identifier("BTC-USD.COINBASE");
+    assert_eq!(safe_id, "btc_usd_coinbase");
+
+    // Test complex bar type identifier
+    let safe_id = make_sql_safe_identifier("BTCUSD-1-MINUTE-LAST-EXTERNAL");
+    assert_eq!(safe_id, "btcusd_1_minute_last_external");
+
+    // Test already safe identifier
+    let safe_id = make_sql_safe_identifier("btcusd");
+    assert_eq!(safe_id, "btcusd");
+
+    // Test mixed case with special characters
+    let safe_id = make_sql_safe_identifier("ETH/USDT.Binance-Spot");
+    assert_eq!(safe_id, "ethusdt_binance_spot");
+
+    // Test identifier with spaces (like option symbols)
+    let safe_id = make_sql_safe_identifier("ESM4 P5230.XCME");
+    assert_eq!(safe_id, "esm4_p5230_xcme");
+}
+
+#[rstest]
+fn test_extract_sql_safe_filename() {
+    use nautilus_persistence::backend::catalog::extract_sql_safe_filename;
+
+    // Test actual timestamp range filename format
+    let filename = extract_sql_safe_filename(
+        "data/quote_tick/EURUSD/2021-01-01T00-00-00-000000000Z_2021-01-02T00-00-00-000000000Z.parquet",
+    );
+    assert_eq!(
+        filename,
+        "2021_01_01t00_00_00_000000000z_2021_01_02t00_00_00_000000000z"
+    );
+
+    // Test bar filename with timestamp range
+    let filename = extract_sql_safe_filename(
+        "data/bar/BTCUSD/2021-01-01T00-00-00-000000000Z_2021-01-01T23-59-59-999999999Z.parquet",
+    );
+    assert_eq!(
+        filename,
+        "2021_01_01t00_00_00_000000000z_2021_01_01t23_59_59_999999999z"
+    );
+
+    // Test filename with various problematic characters
+    let filename = extract_sql_safe_filename("path/to/data-file:with.dots.parquet");
+    assert_eq!(filename, "data_file_with_dots");
+
+    // Test simple filename
+    let filename = extract_sql_safe_filename("simple_file.parquet");
+    assert_eq!(filename, "simple_file");
+
+    // Test filename without extension
+    let filename = extract_sql_safe_filename("path/to/datafile");
+    assert_eq!(filename, "datafile");
+
+    // Test empty path
+    let filename = extract_sql_safe_filename("");
+    assert_eq!(filename, "unknown_file");
+}
+
+#[rstest]
+fn test_catalog_query_multiple_instruments_table_naming() {
+    // Test that querying multiple instruments with different identifiers works correctly
+    // This verifies the table naming fix for identifier-dependent table names
+
+    let temp_dir = TempDir::new().unwrap();
+    let mut catalog =
+        ParquetDataCatalog::new(temp_dir.path().to_path_buf(), None, None, None, None);
+
+    // Create quote ticks for multiple instruments with different identifier patterns
+    let eurusd_quotes = create_quote_ticks_for_instrument("EUR/USD.SIM", 1000, 3);
+    let btcusd_quotes = create_quote_ticks_for_instrument("BTC-USD.COINBASE", 2000, 3);
+    let ethusdt_quotes = create_quote_ticks_for_instrument("ETH/USDT.BINANCE", 3000, 3);
+
+    // Write data for all instruments
+    catalog
+        .write_to_parquet(eurusd_quotes, None, None, None)
+        .unwrap();
+    catalog
+        .write_to_parquet(btcusd_quotes, None, None, None)
+        .unwrap();
+    catalog
+        .write_to_parquet(ethusdt_quotes, None, None, None)
+        .unwrap();
+
+    // Query all instruments simultaneously
+    let instrument_ids = vec![
+        "EUR/USD.SIM".to_string(),
+        "BTC-USD.COINBASE".to_string(),
+        "ETH/USDT.BINANCE".to_string(),
+    ];
+
+    let result = catalog.query::<QuoteTick>(Some(instrument_ids), None, None, None, None);
+    assert!(
+        result.is_ok(),
+        "Query should succeed with multiple instruments"
+    );
+
+    let query_result = result.unwrap();
+    let data: Vec<Data> = query_result.collect();
+
+    // Should get all 9 quotes (3 from each instrument)
+    assert_eq!(data.len(), 9);
+
+    // Verify we have data from all three instruments
+    let mut instrument_counts = std::collections::HashMap::new();
+    for item in &data {
+        if let Data::Quote(quote) = item {
+            *instrument_counts
+                .entry(quote.instrument_id.to_string())
+                .or_insert(0) += 1;
+        }
+    }
+
+    assert_eq!(instrument_counts.len(), 3);
+    assert_eq!(instrument_counts.get("EUR/USD.SIM"), Some(&3));
+    assert_eq!(instrument_counts.get("BTC-USD.COINBASE"), Some(&3));
+    assert_eq!(instrument_counts.get("ETH/USDT.BINANCE"), Some(&3));
+
+    // Verify data is properly ordered by timestamp
+    assert!(is_monotonically_increasing_by_init(&data));
+}
+
+#[rstest]
+fn test_duplicate_table_registration() {
+    // Test that registering the same table twice doesn't cause duplicate data
+    let mut session = DataBackendSession::new(1000);
+    let file_path = get_nautilus_test_data_file_path("quotes.parquet");
+
+    // First registration
+    session
+        .add_file::<QuoteTick>("test_table", file_path.as_str(), None)
+        .unwrap();
+
+    // Second registration of the same table (should not add duplicate data)
+    session
+        .add_file::<QuoteTick>("test_table", file_path.as_str(), None)
+        .unwrap();
+
+    let query_result: QueryResult = session.get_query_result();
+    let data: Vec<Data> = query_result.collect();
+
+    // Should only get data once, not duplicated
+    // The quotes.parquet file contains 9500 quotes
+    assert_eq!(data.len(), 9500);
+    assert!(is_monotonically_increasing_by_init(&data));
+}
+
+fn create_quote_ticks_for_instrument(
+    instrument_id: &str,
+    base_ts: u64,
+    count: usize,
+) -> Vec<QuoteTick> {
+    let instrument_id = InstrumentId::from_str(instrument_id).unwrap();
+    (0..count)
+        .map(|i| {
+            QuoteTick::new(
+                instrument_id,
+                Price::from("1.0001"),
+                Price::from("1.0002"),
+                Quantity::from("100"),
+                Quantity::from("100"),
+                UnixNanos::from(base_ts + i as u64 * 1000),
+                UnixNanos::from(base_ts + i as u64 * 1000),
+            )
+        })
+        .collect()
 }

@@ -63,6 +63,7 @@ pub struct DataBackendSession {
     pub runtime: Arc<tokio::runtime::Runtime>,
     session_ctx: SessionContext,
     batch_streams: Vec<EagerStream<IntoIter<Data>>>,
+    registered_tables: std::collections::HashSet<String>,
 }
 
 impl DataBackendSession {
@@ -82,6 +83,7 @@ impl DataBackendSession {
             batch_streams: Vec::default(),
             chunk_size,
             runtime: Arc::new(runtime),
+            registered_tables: std::collections::HashSet::new(),
         }
     }
 
@@ -153,28 +155,36 @@ impl DataBackendSession {
     where
         T: DecodeDataFromRecordBatch + Into<Data>,
     {
-        let parquet_options = ParquetReadOptions::<'_> {
-            skip_metadata: Some(false),
-            file_sort_order: vec![vec![Sort {
-                expr: col("ts_init"),
-                asc: true,
-                nulls_first: false,
-            }]],
-            ..Default::default()
-        };
-        self.runtime.block_on(self.session_ctx.register_parquet(
-            table_name,
-            file_path,
-            parquet_options,
-        ))?;
+        // Check if table is already registered to avoid duplicates
+        let is_new_table = !self.registered_tables.contains(table_name);
 
-        let default_query = format!("SELECT * FROM {} ORDER BY ts_init", &table_name);
-        let sql_query = sql_query.unwrap_or(&default_query);
-        let query = self.runtime.block_on(self.session_ctx.sql(sql_query))?;
+        if is_new_table {
+            // Register the table only if it doesn't exist
+            let parquet_options = ParquetReadOptions::<'_> {
+                skip_metadata: Some(false),
+                file_sort_order: vec![vec![Sort {
+                    expr: col("ts_init"),
+                    asc: true,
+                    nulls_first: false,
+                }]],
+                ..Default::default()
+            };
+            self.runtime.block_on(self.session_ctx.register_parquet(
+                table_name,
+                file_path,
+                parquet_options,
+            ))?;
 
-        let batch_stream = self.runtime.block_on(query.execute_stream())?;
+            self.registered_tables.insert(table_name.to_string());
 
-        self.add_batch_stream::<T>(batch_stream);
+            // Only add batch stream for newly registered tables to avoid duplicates
+            let default_query = format!("SELECT * FROM {} ORDER BY ts_init", &table_name);
+            let sql_query = sql_query.unwrap_or(&default_query);
+            let query = self.runtime.block_on(self.session_ctx.sql(sql_query))?;
+            let batch_stream = self.runtime.block_on(query.execute_stream())?;
+            self.add_batch_stream::<T>(batch_stream);
+        }
+
         Ok(())
     }
 
@@ -208,6 +218,21 @@ impl DataBackendSession {
             .for_each(|eager_stream| kmerge.push_iter(eager_stream));
 
         kmerge
+    }
+
+    /// Clears all registered tables and batch streams.
+    ///
+    /// This is useful when the underlying files have changed and we need to
+    /// re-register tables with updated data.
+    pub fn clear_registered_tables(&mut self) {
+        self.registered_tables.clear();
+        self.batch_streams.clear();
+
+        // Create a new session context to completely reset the DataFusion state
+        let session_cfg = SessionConfig::new()
+            .set_str("datafusion.optimizer.repartition_file_scans", "false")
+            .set_str("datafusion.optimizer.prefer_existing_sort", "true");
+        self.session_ctx = SessionContext::new_with_config(session_cfg);
     }
 }
 
