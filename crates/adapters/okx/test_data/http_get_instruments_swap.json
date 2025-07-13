@@ -1,0 +1,40 @@
+{
+  "code": "0",
+  "msg": "",
+  "data": [
+    {
+      "alias": "",
+      "auctionEndTime": "",
+      "baseCcy": "",
+      "category": "1",
+      "ctMult": "1",
+      "ctType": "inverse",
+      "ctVal": "100",
+      "ctValCcy": "USD",
+      "expTime": "",
+      "instFamily": "BTC-USD",
+      "instId": "BTC-USD-SWAP",
+      "instType": "SWAP",
+      "lever": "100",
+      "listTime": "1535424203000",
+      "lotSz": "1",
+      "maxIcebergSz": "100000000.0000000000000000",
+      "maxLmtAmt": "20000000",
+      "maxLmtSz": "100000000",
+      "maxMktAmt": "",
+      "maxMktSz": "30000",
+      "maxStopSz": "30000",
+      "maxTriggerSz": "100000000.0000000000000000",
+      "maxTwapSz": "100000000.0000000000000000",
+      "minSz": "1",
+      "optType": "",
+      "quoteCcy": "",
+      "ruleType": "normal",
+      "settleCcy": "BTC",
+      "state": "live",
+      "stk": "",
+      "tickSz": "0.1",
+      "uly": "BTC-USD"
+    }
+  ]
+}

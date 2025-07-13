@@ -432,8 +432,6 @@ mod tests {
 
     #[rstest]
     fn test_engine_venue_and_instrument_initialization(crypto_perpetual_ethusdt: CryptoPerpetual) {
-        pyo3::prepare_freethreaded_python();
-
         let venue = Venue::from("BINANCE");
         let client_id = ClientId::from(venue.as_str());
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);

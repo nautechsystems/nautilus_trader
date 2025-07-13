@@ -35,6 +35,7 @@ extension-module = [
   "nautilus-trading/extension-module",
   "nautilus-coinbase-intx/extension-module",
   "nautilus-databento/extension-module",
+  "nautilus-okx/extension-module",
   "nautilus-tardis/extension-module",
 ]
 ffi = [
@@ -69,6 +70,7 @@ nautilus-trading = { workspace = true, features = ["python"] }
 # Adapters
 nautilus-coinbase-intx = { workspace = true, features = ["python"] }
 nautilus-databento = { workspace = true, features = ["python"] }
+nautilus-okx = { workspace = true, features = ["python"] }
 nautilus-tardis = { workspace = true, features = ["python"] }
 
 pyo3 = { workspace = true }

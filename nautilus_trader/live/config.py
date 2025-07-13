@@ -29,6 +29,8 @@ from nautilus_trader.common.config import resolve_path
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.data.config import DataEngineConfig
 from nautilus_trader.execution.config import ExecEngineConfig
+from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.risk.config import RiskEngineConfig
 from nautilus_trader.system.config import NautilusKernelConfig
@@ -92,6 +94,10 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
         If position status reports are filtered from reconciliation.
         This may be applicable when other nodes are trading the same instrument(s), on the same
         account - which could cause conflicts in position status.
+    filtered_instrument_ids : list[InstrumentId], optional
+        A list of instrument IDs to filter from reconciliation.
+    filtered_client_order_ids : list[ClientOrderId], optional
+        A list of client order IDs to filter from reconciliation.
     generate_missing_orders : bool, default True
         If MARKET order events will be generated during reconciliation to align discrepancies
         between internal and external positions.
@@ -158,6 +164,8 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
     reconciliation_lookback_mins: NonNegativeInt | None = None
     filter_unclaimed_external_orders: bool = False
     filter_position_reports: bool = False
+    filtered_instrument_ids: list[InstrumentId] | None = None
+    filtered_client_order_ids: list[ClientOrderId] | None = None
     generate_missing_orders: bool = True
     inflight_check_interval_ms: NonNegativeInt = 2_000
     inflight_check_threshold_ms: NonNegativeInt = 5_000
