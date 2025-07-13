@@ -299,6 +299,28 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
                 name=name,
                 config=config,
             )
+        if config.account_type.is_portfolio_margin:
+            # Portfolio Margin uses futures instrument provider as it supports futures markets
+            provider = get_cached_binance_futures_instrument_provider(
+                client=client,
+                clock=clock,
+                account_type=config.account_type,
+                config=config.instrument_provider,
+                venue=config.venue,
+            )
+
+            return BinanceFuturesDataClient(
+                loop=loop,
+                client=client,
+                msgbus=msgbus,
+                cache=cache,
+                clock=clock,
+                instrument_provider=provider,
+                account_type=config.account_type,
+                base_url_ws=config.base_url_ws or default_base_url_ws,
+                name=name,
+                config=config,
+            )
         else:
             # Get instrument provider singleton
             provider = get_cached_binance_futures_instrument_provider(
