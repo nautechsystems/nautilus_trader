@@ -150,6 +150,8 @@ See also the `LiveExecEngineConfig` [API Reference](../api_reference/config#clas
 |--------------------------------|---------|---------------------------------------------------------------------------------------------------|
 | `reconciliation`               | True    | Activates reconciliation at startup, aligning the system's internal state with the venue's state. |
 | `reconciliation_lookback_mins` | None    | Specifies how far back (in minutes) the system requests past events to reconcile uncached state.  |
+| `filtered_instrument_ids`      | None    | A list of instrument IDs to filter from reconciliation.                                          |
+| `filtered_client_order_ids`    | None    | A list of client order IDs to filter from reconciliation.                                        |
 
 :::info
 See also [Execution reconciliation](../concepts/execution#execution-reconciliation) for further details.

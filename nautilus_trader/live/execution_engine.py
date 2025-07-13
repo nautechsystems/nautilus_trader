@@ -158,6 +158,8 @@ class LiveExecutionEngine(ExecutionEngine):
         self.reconciliation_lookback_mins: int = config.reconciliation_lookback_mins or 0
         self.filter_unclaimed_external_orders: bool = config.filter_unclaimed_external_orders
         self.filter_position_reports: bool = config.filter_position_reports
+        self.filter_instrument_ids: list[InstrumentId] = config.filtered_instrument_ids or []
+        self.filter_client_order_ids: list[ClientOrderId] = config.filtered_client_order_ids or []
         self.generate_missing_orders: bool = config.generate_missing_orders
         self.inflight_check_interval_ms: int = config.inflight_check_interval_ms
         self.inflight_check_threshold_ms: int = config.inflight_check_threshold_ms
@@ -172,14 +174,14 @@ class LiveExecutionEngine(ExecutionEngine):
         self.purge_account_events_interval_mins = config.purge_account_events_interval_mins
         self.purge_account_events_lookback_mins = config.purge_account_events_lookback_mins
         self.purge_from_database = config.purge_from_database
-        self._inflight_check_threshold_ns: int = millis_to_nanos(self.inflight_check_threshold_ms)
         self.graceful_shutdown_on_exception: bool = config.graceful_shutdown_on_exception
-        self._shutdown_initiated: bool = False
 
         self._log.info(f"{config.reconciliation=}", LogColor.BLUE)
         self._log.info(f"{config.reconciliation_lookback_mins=}", LogColor.BLUE)
         self._log.info(f"{config.filter_unclaimed_external_orders=}", LogColor.BLUE)
         self._log.info(f"{config.filter_position_reports=}", LogColor.BLUE)
+        self._log.info(f"{config.filtered_instrument_ids=}", LogColor.BLUE)
+        self._log.info(f"{config.filtered_client_order_ids=}", LogColor.BLUE)
         self._log.info(f"{config.inflight_check_interval_ms=}", LogColor.BLUE)
         self._log.info(f"{config.inflight_check_threshold_ms=}", LogColor.BLUE)
         self._log.info(f"{config.inflight_check_retries=}", LogColor.BLUE)
@@ -194,6 +196,9 @@ class LiveExecutionEngine(ExecutionEngine):
         self._log.info(f"{config.purge_account_events_lookback_mins=}", LogColor.BLUE)
         self._log.info(f"{config.purge_from_database=}", LogColor.BLUE)
         self._log.info(f"{config.graceful_shutdown_on_exception=}", LogColor.BLUE)
+
+        self._inflight_check_threshold_ns: int = millis_to_nanos(self.inflight_check_threshold_ms)
+        self._shutdown_initiated: bool = False
 
         # Register endpoints
         self._msgbus.register(endpoint="ExecEngine.reconcile_report", handler=self.reconcile_report)
@@ -926,7 +931,7 @@ class LiveExecutionEngine(ExecutionEngine):
         """
         self._reconcile_mass_status(report)
 
-    def _reconcile_mass_status(
+    def _reconcile_mass_status(  # noqa: C901 (too complex)
         self,
         mass_status: ExecutionMassStatus,
     ) -> bool:
@@ -946,13 +951,28 @@ class LiveExecutionEngine(ExecutionEngine):
         for venue_order_id, order_report in mass_status.order_reports.items():
             trades = mass_status.fill_reports.get(venue_order_id, [])
 
+            if order_report.instrument_id in self.filter_instrument_ids:
+                self._log.debug(
+                    f"Filtering order report for {order_report.instrument_id!r}",
+                    LogColor.MAGENTA,
+                )
+                continue
+
             # Check and handle duplicate client order IDs
             client_order_id = order_report.client_order_id
 
-            if client_order_id is not None and client_order_id in reconciled_orders:
-                self._log.error(f"Duplicate {client_order_id!r} detected: {order_report}")
-                results.append(False)
-                continue  # Determine how to handle this
+            if client_order_id is not None:
+                if client_order_id in self.filter_client_order_ids:
+                    self._log.debug(
+                        f"Filtering order report for {client_order_id!r}",
+                        LogColor.MAGENTA,
+                    )
+                    continue
+
+                if client_order_id in reconciled_orders:
+                    self._log.error(f"Duplicate {client_order_id!r} detected: {order_report}")
+                    results.append(False)
+                    continue  # Determine how to handle this
 
             # Check for duplicate trade IDs
             for fill_report in trades:
@@ -1117,6 +1137,13 @@ class LiveExecutionEngine(ExecutionEngine):
         return True  # Reconciled
 
     def _reconcile_fill_report_single(self, report: FillReport) -> bool:
+        if report.instrument_id in self.filter_instrument_ids:
+            self._log.debug(
+                f"Filtering fill report for {report.instrument_id!r}",
+                LogColor.MAGENTA,
+            )
+            return True  # Filtered
+
         client_order_id: ClientOrderId | None = self._cache.client_order_id(
             report.venue_order_id,
         )
@@ -1225,6 +1252,13 @@ class LiveExecutionEngine(ExecutionEngine):
         )
 
     def _reconcile_position_report(self, report: PositionStatusReport) -> bool:
+        if report.instrument_id in self.filter_instrument_ids:
+            self._log.debug(
+                f"Filtering position report for {report.instrument_id!r}",
+                LogColor.MAGENTA,
+            )
+            return True  # Filtered
+
         if report.venue_position_id is not None:
             return self._reconcile_position_report_hedging(report)
         else:
