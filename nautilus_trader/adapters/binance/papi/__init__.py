@@ -18,3 +18,11 @@ Binance Portfolio API (PAPI) adapter integration.
 This subpackage provides the Portfolio Margin account specific components 
 for connecting to and interacting with Binance's Portfolio API.
 """
+
+from nautilus_trader.adapters.binance.papi.execution import BinancePortfolioMarginExecutionClient
+from nautilus_trader.adapters.binance.papi.providers import BinancePortfolioMarginInstrumentProvider
+
+__all__ = [
+    "BinancePortfolioMarginExecutionClient",
+    "BinancePortfolioMarginInstrumentProvider",
+]

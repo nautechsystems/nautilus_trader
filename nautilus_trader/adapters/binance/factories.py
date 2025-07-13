@@ -31,6 +31,7 @@ from nautilus_trader.adapters.binance.futures.execution import BinanceFuturesExe
 from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesInstrumentProvider
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.papi.execution import BinancePortfolioMarginExecutionClient
+from nautilus_trader.adapters.binance.papi.providers import BinancePortfolioMarginInstrumentProvider
 from nautilus_trader.adapters.binance.spot.data import BinanceSpotDataClient
 from nautilus_trader.adapters.binance.spot.execution import BinanceSpotExecutionClient
 from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider
@@ -215,6 +216,46 @@ def get_cached_binance_futures_instrument_provider(
     )
 
 
+@lru_cache(1)
+def get_cached_binance_portfolio_margin_instrument_provider(
+    client: BinanceHttpClient,
+    clock: LiveClock,
+    account_type: BinanceAccountType,
+    config: InstrumentProviderConfig,
+    venue: Venue,
+) -> BinancePortfolioMarginInstrumentProvider:
+    """
+    Cache and return an instrument provider for the Binance Portfolio Margin exchange.
+
+    If a cached provider already exists, then that provider will be returned.
+
+    Parameters
+    ----------
+    client : BinanceHttpClient
+        The client for the instrument provider.
+    clock : LiveClock
+        The clock for the instrument provider.
+    account_type : BinanceAccountType
+        The Binance account type for the instrument provider.
+    config : InstrumentProviderConfig
+        The configuration for the instrument provider.
+    venue : Venue
+        The venue for the instrument provider.
+
+    Returns
+    -------
+    BinancePortfolioMarginInstrumentProvider
+
+    """
+    return BinancePortfolioMarginInstrumentProvider(
+        client=client,
+        clock=clock,
+        account_type=account_type,
+        config=config,
+        venue=venue,
+    )
+
+
 class BinanceLiveDataClientFactory(LiveDataClientFactory):
     """
     Provides a Binance live data client factory.
@@ -275,7 +316,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
             is_us=config.us,
         )
 
-        provider: BinanceSpotInstrumentProvider | BinanceFuturesInstrumentProvider
+        provider: BinanceSpotInstrumentProvider | BinanceFuturesInstrumentProvider | BinancePortfolioMarginInstrumentProvider
         if config.account_type.is_spot_or_margin:
             # Get instrument provider singleton
             provider = get_cached_binance_spot_instrument_provider(
@@ -300,8 +341,8 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
                 config=config,
             )
         if config.account_type.is_portfolio_margin:
-            # Portfolio Margin uses futures instrument provider as it supports futures markets
-            provider = get_cached_binance_futures_instrument_provider(
+            # Portfolio Margin uses specialized instrument provider for cross-market support
+            provider = get_cached_binance_portfolio_margin_instrument_provider(
                 client=client,
                 clock=clock,
                 account_type=config.account_type,
@@ -358,7 +399,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-    ) -> BinanceSpotExecutionClient | BinanceFuturesExecutionClient:
+    ) -> BinanceSpotExecutionClient | BinanceFuturesExecutionClient | BinancePortfolioMarginExecutionClient:
         """
         Create a new Binance execution client.
 
@@ -405,7 +446,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
             is_us=config.us,
         )
 
-        provider: BinanceSpotInstrumentProvider | BinanceFuturesInstrumentProvider
+        provider: BinanceSpotInstrumentProvider | BinanceFuturesInstrumentProvider | BinancePortfolioMarginInstrumentProvider
         if config.account_type.is_spot or config.account_type.is_margin:
             # Get instrument provider singleton
             provider = get_cached_binance_spot_instrument_provider(
@@ -430,8 +471,8 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
                 config=config,
             )
         elif config.account_type.is_portfolio_margin:
-            # Portfolio Margin uses futures instrument provider as it supports futures markets
-            provider = get_cached_binance_futures_instrument_provider(
+            # Portfolio Margin uses specialized instrument provider for cross-market support
+            provider = get_cached_binance_portfolio_margin_instrument_provider(
                 client=client,
                 clock=clock,
                 account_type=config.account_type,

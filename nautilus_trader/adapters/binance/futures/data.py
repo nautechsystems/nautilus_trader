@@ -85,15 +85,19 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
         name: str | None = None,
     ) -> None:
         PyCondition.is_true(
-            account_type.is_futures,
-            "account_type was not USDT_FUTURE or COIN_FUTURE",
+            account_type.is_futures or account_type.is_portfolio_margin,
+            "account_type was not USDT_FUTURE, COIN_FUTURE or PORTFOLIO_MARGIN",
         )
 
-        # Futures HTTP API
-        self._futures_http_market = BinanceFuturesMarketHttpAPI(client, account_type)
+        if account_type.is_portfolio_margin:
+            self._futures_http_market = None
+            self._futures_enum_parser = None
+        else:
+            # Futures HTTP API
+            self._futures_http_market = BinanceFuturesMarketHttpAPI(client, account_type)
 
-        # Futures enum parser
-        self._futures_enum_parser = BinanceFuturesEnumParser()
+            # Futures enum parser
+            self._futures_enum_parser = BinanceFuturesEnumParser()
 
         # Instantiate common base class
         super().__init__(

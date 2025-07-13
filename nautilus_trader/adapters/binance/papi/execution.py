@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from typing import TYPE_CHECKING
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
@@ -24,6 +25,7 @@ from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.papi.http.account import BinancePortfolioMarginAccountHttpAPI
 from nautilus_trader.adapters.binance.papi.http.execution import BinancePortfolioMarginExecutionHttpAPI
 from nautilus_trader.adapters.binance.papi.http.user import BinancePortfolioMarginUserDataHttpAPI
+from nautilus_trader.adapters.binance.papi.providers import BinancePortfolioMarginInstrumentProvider
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
@@ -49,7 +51,7 @@ class BinancePortfolioMarginExecutionClient(BinanceCommonExecutionClient):
         The cache for the client.
     clock : LiveClock
         The clock for the client.
-    instrument_provider : BinanceFuturesInstrumentProvider
+    instrument_provider : BinanceFuturesInstrumentProvider | BinancePortfolioMarginInstrumentProvider
         The instrument provider.
     base_url_ws : str
         The base URL for the WebSocket client.
@@ -67,7 +69,7 @@ class BinancePortfolioMarginExecutionClient(BinanceCommonExecutionClient):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        instrument_provider: BinanceFuturesInstrumentProvider,
+        instrument_provider: BinanceFuturesInstrumentProvider | BinancePortfolioMarginInstrumentProvider,
         base_url_ws: str,
         config: BinanceExecClientConfig,
         name: str | None = None,
@@ -119,12 +121,12 @@ class BinancePortfolioMarginExecutionClient(BinanceCommonExecutionClient):
             # Query UM position risk
             um_positions = await self._papi_http_account.query_um_position_risk()
             
-            # Query CM position risk  
+            # Query CM position risk
             cm_positions = await self._papi_http_account.query_cm_position_risk()
-            
+
             # Process account updates
             # TODO: Convert to Nautilus account events and send to cache
-            
+
             self._log.debug(f"Updated Portfolio Margin account: {len(balances)} balances, "
                           f"{len(um_positions)} UM positions, {len(cm_positions)} CM positions")
                           
