@@ -26,6 +26,9 @@ def get_http_base_url(account_type: BinanceAccountType, is_testnet: bool, is_us:
             or account_type == BinanceAccountType.COIN_FUTURE
         ):
             return "https://testnet.binancefuture.com"
+        elif account_type == BinanceAccountType.PORTFOLIO_MARGIN:
+            # Portfolio margin testnet uses same as futures testnet
+            return "https://testnet.binancefuture.com"
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
                 f"invalid `BinanceAccountType`, was {account_type}",  # pragma: no cover
@@ -41,6 +44,8 @@ def get_http_base_url(account_type: BinanceAccountType, is_testnet: bool, is_us:
         return f"https://fapi.binance.{top_level_domain}"
     elif account_type == BinanceAccountType.COIN_FUTURE:
         return f"https://dapi.binance.{top_level_domain}"
+    elif account_type == BinanceAccountType.PORTFOLIO_MARGIN:
+        return f"https://papi.binance.{top_level_domain}"
     else:
         raise RuntimeError(  # pragma: no cover (design-time error)
             f"invalid `BinanceAccountType`, was {account_type}",  # pragma: no cover
@@ -56,6 +61,9 @@ def get_ws_base_url(account_type: BinanceAccountType, is_testnet: bool, is_us: b
             return "wss://stream.binancefuture.com"
         elif account_type == BinanceAccountType.COIN_FUTURE:
             raise ValueError("no testnet for COIN-M futures")
+        elif account_type == BinanceAccountType.PORTFOLIO_MARGIN:
+            # Portfolio margin testnet uses futures stream endpoint
+            return "wss://stream.binancefuture.com"
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
                 f"invalid `BinanceAccountType`, was {account_type}",  # pragma: no cover
@@ -69,6 +77,9 @@ def get_ws_base_url(account_type: BinanceAccountType, is_testnet: bool, is_us: b
         return f"wss://fstream.binance.{top_level_domain}"
     elif account_type == BinanceAccountType.COIN_FUTURE:
         return f"wss://dstream.binance.{top_level_domain}"
+    elif account_type == BinanceAccountType.PORTFOLIO_MARGIN:
+        # Portfolio margin uses special path on futures stream
+        return f"wss://fstream.binance.{top_level_domain}/pm"
     else:
         raise RuntimeError(
             f"invalid `BinanceAccountType`, was {account_type}",

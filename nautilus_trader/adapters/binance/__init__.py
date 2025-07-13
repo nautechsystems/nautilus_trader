@@ -42,6 +42,9 @@ from nautilus_trader.adapters.binance.factories import get_cached_binance_http_c
 from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesInstrumentProvider
 from nautilus_trader.adapters.binance.futures.types import BinanceFuturesMarkPriceUpdate
 from nautilus_trader.adapters.binance.loaders import BinanceOrderBookDeltaDataLoader
+from nautilus_trader.adapters.binance.papi.execution import BinancePortfolioMarginExecutionClient
+from nautilus_trader.adapters.binance.papi.types import BinancePortfolioMarginBalance
+from nautilus_trader.adapters.binance.papi.types import BinancePortfolioMarginPositionRisk
 from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider
 from nautilus_trader.serialization import register_serializable_type
 from nautilus_trader.serialization.arrow.schema import NAUTILUS_ARROW_SCHEMA
@@ -101,6 +104,9 @@ __all__ = [
     "BinanceLiveDataClientFactory",
     "BinanceLiveExecClientFactory",
     "BinanceOrderBookDeltaDataLoader",
+    "BinancePortfolioMarginExecutionClient",
+    "BinancePortfolioMarginBalance",
+    "BinancePortfolioMarginPositionRisk",
     "BinanceSpotInstrumentProvider",
     "get_cached_binance_http_client",
 ]

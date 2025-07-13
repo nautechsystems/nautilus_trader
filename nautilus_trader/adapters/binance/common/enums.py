@@ -149,6 +149,7 @@ class BinanceAccountType(Enum):
     ISOLATED_MARGIN = "ISOLATED_MARGIN"
     USDT_FUTURE = "USDT_FUTURE"
     COIN_FUTURE = "COIN_FUTURE"
+    PORTFOLIO_MARGIN = "PORTFOLIO_MARGIN"
 
     @property
     def is_spot(self):
@@ -175,6 +176,10 @@ class BinanceAccountType(Enum):
             BinanceAccountType.USDT_FUTURE,
             BinanceAccountType.COIN_FUTURE,
         )
+
+    @property
+    def is_portfolio_margin(self) -> bool:
+        return self == BinanceAccountType.PORTFOLIO_MARGIN
 
 
 @unique

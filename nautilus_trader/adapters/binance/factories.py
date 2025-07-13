@@ -30,6 +30,7 @@ from nautilus_trader.adapters.binance.futures.data import BinanceFuturesDataClie
 from nautilus_trader.adapters.binance.futures.execution import BinanceFuturesExecutionClient
 from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesInstrumentProvider
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
+from nautilus_trader.adapters.binance.papi.execution import BinancePortfolioMarginExecutionClient
 from nautilus_trader.adapters.binance.spot.data import BinanceSpotDataClient
 from nautilus_trader.adapters.binance.spot.execution import BinanceSpotExecutionClient
 from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider
@@ -110,7 +111,7 @@ def get_cached_binance_http_client(
             ("allOrders", Quota.rate_per_minute(int(3000 / 20))),
         ]
     else:
-        # Futures
+        # Futures and Portfolio Margin
         ratelimiter_default_quota = Quota.rate_per_minute(2400)
         ratelimiter_quotas = [
             ("order", Quota.rate_per_minute(1200)),
@@ -403,6 +404,27 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
                 instrument_provider=provider,
                 base_url_ws=config.base_url_ws or default_base_url_ws,
                 account_type=config.account_type,
+                name=name,
+                config=config,
+            )
+        elif config.account_type.is_portfolio_margin:
+            # Portfolio Margin uses futures instrument provider as it supports futures markets
+            provider = get_cached_binance_futures_instrument_provider(
+                client=client,
+                clock=clock,
+                account_type=config.account_type,
+                config=config.instrument_provider,
+                venue=config.venue,
+            )
+
+            return BinancePortfolioMarginExecutionClient(
+                loop=loop,
+                client=client,
+                msgbus=msgbus,
+                cache=cache,
+                clock=clock,
+                instrument_provider=provider,
+                base_url_ws=config.base_url_ws or default_base_url_ws,
                 name=name,
                 config=config,
             )
