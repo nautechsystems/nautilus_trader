@@ -592,7 +592,7 @@ mod tests {
     use nautilus_model::{
         data::bar::BAR_SPEC_1_DAY_LAST,
         enums::AggressorSide,
-        identifiers::InstrumentId,
+        identifiers::{ClientOrderId, InstrumentId},
         types::{Price, Quantity},
     };
     use rstest::rstest;
@@ -931,41 +931,232 @@ mod tests {
         assert_eq!(state.balances.len(), 3);
     }
 
-    #[ignore] // TODO: Requires instrument
     #[rstest]
     fn test_parse_order_msg() {
+        use ahash::AHashMap;
+        use nautilus_core::nanos::UnixNanos;
+        use nautilus_model::{
+            identifiers::Symbol,
+            instruments::CryptoPerpetual,
+            types::{Currency, Price, Quantity},
+        };
+        use ustr::Ustr;
+
         let json_data = load_test_json("ws_orders.json");
         let ws_msg: serde_json::Value = serde_json::from_str(&json_data).unwrap();
 
         let data: Vec<OKXOrderMsg> = serde_json::from_value(ws_msg["data"].clone()).unwrap();
 
         let account_id = AccountId::new("OKX-001");
-        let instruments = AHashMap::new(); // TODO: Required BTC/USDT-SWAP
+        let mut instruments = AHashMap::new();
+
+        // Create a mock instrument for testing
+        let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
+        let instrument = CryptoPerpetual::new(
+            instrument_id,
+            Symbol::from("BTC-USDT-SWAP"),
+            Currency::BTC(),
+            Currency::USDT(),
+            Currency::USDT(),
+            false, // is_inverse
+            2,     // price_precision
+            8,     // size_precision
+            Price::from("0.01"),
+            Quantity::from("0.00000001"),
+            None, // multiplier
+            None, // lot_size
+            None, // max_quantity
+            None, // min_quantity
+            None, // max_notional
+            None, // min_notional
+            None, // max_price
+            None, // min_price
+            None, // margin_init
+            None, // margin_maint
+            None, // maker_fee
+            None, // taker_fee
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        instruments.insert(
+            Ustr::from("BTC-USDT-SWAP"),
+            InstrumentAny::CryptoPerpetual(instrument),
+        );
+
         let ts_init = UnixNanos::default();
 
         let result = parse_order_msg_vec(data, account_id, &instruments, ts_init);
 
         assert!(result.is_ok());
         let order_reports = result.unwrap();
-        // Now parsing function works and should return 1 order report
         assert_eq!(order_reports.len(), 1);
 
         // Verify the parsed order report
-        let _report = &order_reports[0];
+        let report = &order_reports[0];
 
-        // TODO
-        // assert_eq!(
-        //     report.client_order_id,
-        //     Some(ClientOrderId::new("001BTCUSDT20250106001"))
-        // );
-        // assert_eq!(
-        //     report.venue_order_id,
-        //     VenueOrderId::new("2497956918703120384")
-        // );
-        // assert_eq!(
-        //     report.instrument_id,
-        //     InstrumentId::from("BTC-USDT-SWAP.OKX")
-        // );
-        // assert_eq!(report.order_status, OrderStatus::Filled);
+        if let ExecutionReport::Fill(fill_report) = report {
+            assert_eq!(fill_report.account_id, account_id);
+            assert_eq!(fill_report.instrument_id, instrument_id);
+            assert_eq!(
+                fill_report.client_order_id,
+                Some(ClientOrderId::new("001BTCUSDT20250106001"))
+            );
+            assert_eq!(
+                fill_report.venue_order_id,
+                VenueOrderId::new("2497956918703120384")
+            );
+            assert_eq!(fill_report.trade_id, TradeId::from("1518905529"));
+            assert_eq!(fill_report.order_side, OrderSide::Buy);
+            assert_eq!(fill_report.last_px, Price::from("103698.90"));
+            assert_eq!(fill_report.last_qty, Quantity::from("0.03000000"));
+            assert_eq!(fill_report.liquidity_side, LiquiditySide::Maker);
+        } else {
+            panic!("Expected Fill report for filled order");
+        }
+    }
+
+    #[rstest]
+    fn test_parse_order_status_report() {
+        use nautilus_core::nanos::UnixNanos;
+        use nautilus_model::{
+            enums::OrderStatus,
+            identifiers::Symbol,
+            instruments::CryptoPerpetual,
+            types::{Currency, Price, Quantity},
+        };
+
+        let json_data = load_test_json("ws_orders.json");
+        let ws_msg: serde_json::Value = serde_json::from_str(&json_data).unwrap();
+        let data: Vec<OKXOrderMsg> = serde_json::from_value(ws_msg["data"].clone()).unwrap();
+        let order_msg = &data[0];
+
+        let account_id = AccountId::new("OKX-001");
+        let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
+        let instrument = CryptoPerpetual::new(
+            instrument_id,
+            Symbol::from("BTC-USDT-SWAP"),
+            Currency::BTC(),
+            Currency::USDT(),
+            Currency::USDT(),
+            false, // is_inverse
+            2,     // price_precision
+            8,     // size_precision
+            Price::from("0.01"),
+            Quantity::from("0.00000001"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        let ts_init = UnixNanos::default();
+
+        let result = parse_order_status_report(
+            order_msg,
+            &InstrumentAny::CryptoPerpetual(instrument),
+            account_id,
+            ts_init,
+        );
+
+        assert!(result.is_ok());
+        let order_status_report = result.unwrap();
+
+        assert_eq!(order_status_report.account_id, account_id);
+        assert_eq!(order_status_report.instrument_id, instrument_id);
+        assert_eq!(
+            order_status_report.client_order_id,
+            Some(ClientOrderId::new("001BTCUSDT20250106001"))
+        );
+        assert_eq!(
+            order_status_report.venue_order_id,
+            VenueOrderId::new("2497956918703120384")
+        );
+        assert_eq!(order_status_report.order_side, OrderSide::Buy);
+        assert_eq!(order_status_report.order_status, OrderStatus::Filled);
+        assert_eq!(order_status_report.quantity, Quantity::from("0.03000000"));
+        assert_eq!(order_status_report.filled_qty, Quantity::from("0.03000000"));
+    }
+
+    #[rstest]
+    fn test_parse_fill_report() {
+        use nautilus_core::nanos::UnixNanos;
+        use nautilus_model::{
+            identifiers::Symbol,
+            instruments::CryptoPerpetual,
+            types::{Currency, Price, Quantity},
+        };
+
+        let json_data = load_test_json("ws_orders.json");
+        let ws_msg: serde_json::Value = serde_json::from_str(&json_data).unwrap();
+        let data: Vec<OKXOrderMsg> = serde_json::from_value(ws_msg["data"].clone()).unwrap();
+        let order_msg = &data[0];
+
+        let account_id = AccountId::new("OKX-001");
+        let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
+        let instrument = CryptoPerpetual::new(
+            instrument_id,
+            Symbol::from("BTC-USDT-SWAP"),
+            Currency::BTC(),
+            Currency::USDT(),
+            Currency::USDT(),
+            false, // is_inverse
+            2,     // price_precision
+            8,     // size_precision
+            Price::from("0.01"),
+            Quantity::from("0.00000001"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        let ts_init = UnixNanos::default();
+
+        let result = parse_fill_report(
+            order_msg,
+            &InstrumentAny::CryptoPerpetual(instrument),
+            account_id,
+            ts_init,
+        );
+
+        assert!(result.is_ok());
+        let fill_report = result.unwrap();
+
+        assert_eq!(fill_report.account_id, account_id);
+        assert_eq!(fill_report.instrument_id, instrument_id);
+        assert_eq!(
+            fill_report.client_order_id,
+            Some(ClientOrderId::new("001BTCUSDT20250106001"))
+        );
+        assert_eq!(
+            fill_report.venue_order_id,
+            VenueOrderId::new("2497956918703120384")
+        );
+        assert_eq!(fill_report.trade_id, TradeId::from("1518905529"));
+        assert_eq!(fill_report.order_side, OrderSide::Buy);
+        assert_eq!(fill_report.last_px, Price::from("103698.90"));
+        assert_eq!(fill_report.last_qty, Quantity::from("0.03000000"));
+        assert_eq!(fill_report.liquidity_side, LiquiditySide::Maker);
     }
 }

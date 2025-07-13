@@ -353,6 +353,11 @@ pub enum OKXTradeMode {
     SpotIsolated,
 }
 
+/// Represents an OKX account mode.
+///
+/// # References
+///
+/// <https://www.okx.com/docs-v5/en/#overview-account-mode>
 #[derive(
     Clone,
     Debug,
@@ -378,6 +383,12 @@ pub enum OKXAccountMode {
 }
 
 /// Represents the margin mode for OKX accounts.
+///
+/// # Reference
+///
+/// - <https://www.okx.com/en-au/help/iv-isolated-margin-mode>
+/// - <https://www.okx.com/en-au/help/iii-single-currency-margin-cross-margin-trading>
+/// - <https://www.okx.com/en-au/help/iv-multi-currency-margin-mode-cross-margin-trading>
 #[derive(
     Copy,
     Clone,
@@ -407,6 +418,10 @@ pub enum OKXMarginMode {
 }
 
 /// Represents the position mode for OKX accounts.
+///
+/// # References
+///
+/// <https://www.okx.com/docs-v5/en/#trading-account-rest-api-set-position-mode>
 #[derive(
     Copy,
     Clone,
@@ -575,7 +590,6 @@ impl From<OKXOrderType> for OrderType {
     }
 }
 
-// Conversion from Nautilus model enums to OKX enums
 impl From<OrderType> for OKXOrderType {
     fn from(value: OrderType) -> Self {
         match value {

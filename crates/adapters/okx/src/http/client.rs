@@ -843,7 +843,7 @@ impl OKXHttpClient {
 
     /// Requests historical candlestick bars for the `instrument_id` and `start` -> `end` time range.
     ///
-    /// # Reference
+    /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-market-data-get-candlesticks-history>.
     pub async fn request_bars(
@@ -1005,7 +1005,7 @@ impl OKXHttpClient {
 
     /// Requests historical order status reports for the given parameters.
     ///
-    /// # Reference
+    /// # References
     ///
     /// - <https://www.okx.com/docs-v5/en/#order-book-trading-trade-get-order-history-last-7-days>.
     /// - <https://www.okx.com/docs-v5/en/#order-book-trading-trade-get-order-history-last-3-months>.
@@ -1127,7 +1127,7 @@ impl OKXHttpClient {
 
     /// Requests fill reports (transaction details) for the given parameters.
     ///
-    /// # Reference
+    /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-trade-get-transaction-details-last-3-days>.
     pub async fn request_fill_reports(
@@ -1211,7 +1211,7 @@ impl OKXHttpClient {
 
     /// Requests current position status reports for the given parameters.
     ///
-    /// # Reference
+    /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#trading-account-rest-api-get-positions>.
     pub async fn request_position_status_reports(
