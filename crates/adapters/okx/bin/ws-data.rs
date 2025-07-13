@@ -22,8 +22,61 @@ use nautilus_model::identifiers::InstrumentId;
 use nautilus_okx::{
     common::enums::OKXInstrumentType, http::client::OKXHttpClient, websocket::OKXWebSocketClient,
 };
-use tokio::{pin, signal};
+use std::time::Duration;
+use tokio::{pin, signal, time::interval};
 use tracing::level_filters::LevelFilter;
+
+/// Helper function to attempt reconnection and restore subscriptions
+async fn attempt_reconnect(
+    client: &mut OKXWebSocketClient,
+    instruments: Vec<nautilus_model::instruments::InstrumentAny>,
+    active_instrument_types: &[OKXInstrumentType],
+    active_instrument_ids: &[InstrumentId],
+) -> Result<(), Box<dyn std::error::Error>> {
+    const MAX_RECONNECT_ATTEMPTS: usize = 5;
+    const RECONNECT_DELAY: Duration = Duration::from_secs(2);
+
+    for attempt in 1..=MAX_RECONNECT_ATTEMPTS {
+        tracing::info!("Reconnection attempt {attempt}/{MAX_RECONNECT_ATTEMPTS}");
+
+        // Wait before attempting reconnection
+        tokio::time::sleep(RECONNECT_DELAY).await;
+
+        // Attempt to connect
+        match client.connect(instruments.clone()).await {
+            Ok(_) => {
+                tracing::info!("Successfully reconnected on attempt {attempt}");
+
+                // Restore all subscriptions
+                for instrument_type in active_instrument_types {
+                    if let Err(e) = client.subscribe_instruments(*instrument_type).await {
+                        tracing::error!("Failed to restore instrument subscription: {e}");
+                    }
+                }
+
+                for instrument_id in active_instrument_ids {
+                    if let Err(e) = client.subscribe_order_book(*instrument_id).await {
+                        tracing::error!("Failed to restore order book subscription: {e}");
+                    }
+                }
+
+                tracing::info!("All subscriptions restored successfully");
+                return Ok(());
+            }
+            Err(e) => {
+                tracing::error!("Reconnection attempt {attempt} failed: {e}");
+                if attempt == MAX_RECONNECT_ATTEMPTS {
+                    return Err(format!(
+                        "Failed to reconnect after {MAX_RECONNECT_ATTEMPTS} attempts"
+                    )
+                    .into());
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -31,8 +84,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_max_level(LevelFilter::TRACE)
         .init();
 
+    // Configuration - similar to Python implementation
+    let instrument_type = OKXInstrumentType::Swap;
+
     let client = OKXHttpClient::from_env().unwrap();
-    let instruments = client.request_instruments(OKXInstrumentType::Swap).await?;
+    let instruments = client.request_instruments(instrument_type).await?;
+
+    // TODO: Filter instruments by contract type - requires access to raw OKXInstrument
+    // For now, we'll work with all instruments of the specified type
+    tracing::info!("Loaded {} instruments", instruments.len());
 
     let mut client = OKXWebSocketClient::from_env().unwrap();
     client.connect(instruments.clone()).await?;
@@ -76,13 +136,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sigint = signal::ctrl_c();
     pin!(sigint);
 
+    // Add a reconnection check interval (every 30 seconds)
+    let mut reconnect_interval = interval(Duration::from_secs(30));
+
     let stream = client.stream();
     tokio::pin!(stream); // Pin the stream to allow polling in the loop
 
+    // Keep track of active subscriptions for reconnection
+    let active_instrument_types = vec![OKXInstrumentType::Swap];
+    let active_instrument_ids = vec![instrument_id];
+
     loop {
         tokio::select! {
-            Some(data) = stream.next() => {
-                tracing::debug!("{data:?}");
+            Some(msg) = stream.next() => {
+                tracing::debug!("{msg:?}");
+                // Check if connection is still active after receiving message
+                if !client.is_active() {
+                    tracing::error!("Connection lost, attempting to reconnect...");
+                    attempt_reconnect(&mut client, instruments.clone(),
+                                     &active_instrument_types, &active_instrument_ids).await?;
+                }
+            }
+            _ = reconnect_interval.tick() => {
+                // Periodic connection check
+                if !client.is_active() {
+                    tracing::info!("Connection check failed, attempting to reconnect...");
+                    attempt_reconnect(&mut client, instruments.clone(),
+                                     &active_instrument_types, &active_instrument_ids).await?;
+                } else {
+                    tracing::debug!("Connection check: Connection is active");
+                }
             }
             _ = &mut sigint => {
                 tracing::info!("Received SIGINT, closing connection...");
