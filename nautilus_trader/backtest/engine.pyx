@@ -1681,7 +1681,27 @@ cdef class BacktestEngine:
 
 
 cdef class BacktestDataIterator:
-    def __init__(self, empty_data_callback: Callable[[str, uint64_t], None] | None = None) -> None:
+    """
+    Time-ordered multiplexer for historical ``Data`` streams.
+
+    The iterator holds any number of *pre-sorted* lists of ``Data`` objects –
+    each object must expose a ``ts_init`` nanosecond timestamp.  It yields those
+    objects back in strict chronological order:
+
+    - If exactly one stream is loaded, a fast array walk is used.
+    - With two or more streams, a binary min-heap performs a k-way merge.
+
+    Parameters
+    ----------
+    empty_data_callback : Callable[[str, int], None], optional
+        Called once per stream when it is exhausted.  Arguments are the stream
+        name and the final ``ts_init`` observed.
+
+    """
+    def __init__(
+        self,
+        empty_data_callback: Callable[[str, uint64_t], None] | None = None,
+    ) -> None:
         self._empty_data_callback = empty_data_callback
         self._log = Logger(type(self).__name__)
 
@@ -1692,6 +1712,8 @@ cdef class BacktestDataIterator:
         self._data_index = {} # key=data_priority, value=current index of data_list
 
         self._heap = []
+        # Counter for assigning priorities to data streams.
+        # Incremented before use so that a priority of zero is never assigned.
         self._next_data_priority = 0
         self._reset_single_data()
 
@@ -1704,6 +1726,27 @@ cdef class BacktestDataIterator:
         self._is_single_data = False
 
     cpdef void add_data(self, str data_name, list data_list, bint append_data=True):
+        """
+        Add (or replace) a named, pre-sorted `data_list`.
+
+        Parameters
+        ----------
+        data_name : str
+            Unique identifier for the data stream.
+        data_list : list[Data]
+            Data instances sorted ascending by `ts_init`.
+        append_data : bool, default ``True``
+            ``True`` – lower priority (appended).
+            ``False`` – higher priority (prepended).
+
+        Raises
+        ------
+        ValueError
+            If `data_name` is not a valid string.
+
+        """
+        Condition.valid_string(data_name, "data_name")
+
         # closures inside cpdef functions not yet supported
         self._add_data(data_name, data_list, append_data)
 
@@ -1717,9 +1760,12 @@ cdef class BacktestDataIterator:
             data_priority = self._data_priority[data_name]
             self.remove_data(data_name)
         else:
-            # heapq is a min priority queue so lower number means higher priority
-            data_priority = (1 if append_data else -1) * self._next_data_priority
+            # heapq is a min priority queue so smaller values are popped first.
+            # Increment the counter *before* applying the sign so that priority
+            # zero is never produced (zero would undermine prepend/append
+            # semantics when ordering streams).
             self._next_data_priority += 1
+            data_priority = (1 if append_data else -1) * self._next_data_priority
 
         if self._is_single_data:
             self._deactivate_single_data()
@@ -1737,6 +1783,17 @@ cdef class BacktestDataIterator:
         self._push_data(data_priority, 0)
 
     cpdef void remove_data(self, str data_name):
+        """
+        Remove the stream identified by `data_name` (silently ignored if absent).
+
+        Raises
+        ------
+        ValueError
+            If `data_name` is not a valid string.
+
+        """
+        Condition.valid_string(data_name, "data_name")
+
         if data_name not in self._data_priority:
             return
 
@@ -1781,10 +1838,14 @@ cdef class BacktestDataIterator:
         self._reset_single_data()
 
     cpdef Data next(self):
-        cdef uint64_t ts_init
-        cdef int data_priority
-        cdef int cursor
-        cdef Data object_to_return
+        """
+        Return the next ``Data`` object, or ``None`` when all streams are exhausted.
+        """
+        cdef:
+            uint64_t ts_init
+            int data_priority
+            int cursor
+            Data object_to_return
 
         if not self._is_single_data:
             if not self._heap:
@@ -1821,6 +1882,9 @@ cdef class BacktestDataIterator:
                 self._empty_data_callback(self._data_name[data_priority], self._data[data_priority][-1].ts_init)
 
     cpdef void reset(self):
+        """
+        Rewind all cursors and rebuild the internal heap for iteration restart.
+        """
         for data_priority in self._data_index:
             self._data_index[data_priority] = 0
 
@@ -1841,6 +1905,17 @@ cdef class BacktestDataIterator:
             self._push_data(data_priority, index)
 
     cpdef void set_index(self, str data_name, int index):
+        """
+        Move the cursor of `data_name` to `index` and rebuild ordering.
+
+        Raises
+        ------
+        ValueError
+            If `data_name` is not a valid string.
+
+        """
+        Condition.valid_string(data_name, "data_name")
+
         if data_name not in self._data_priority:
             return
 
@@ -1849,16 +1924,35 @@ cdef class BacktestDataIterator:
         self._reset_heap()
 
     cpdef bint is_done(self):
+        """
+        Return ``True`` when every stream has been fully consumed.
+        """
         if self._is_single_data:
             return self._single_data_index >= self._single_data_len
         else:
             return not self._heap
 
     cpdef dict all_data(self):
+        """
+        Return a *shallow* mapping of ``{stream_name: list[Data]}``.
+        """
         # we assume dicts are ordered by order of insertion
         return {data_name:self._data[data_priority] for data_priority, data_name in self._data_name.items()}
 
     cpdef list data(self, str data_name):
+        """
+        Return the underlying list for `data_name`.
+
+        Raises
+        ------
+        ValueError
+            If `data_name` is not a valid string.
+        KeyError
+            If the stream is unknown.
+
+        """
+        Condition.valid_string(data_name, "data_name")
+
         return self._data[self._data_priority[data_name]]
 
     def __iter__(self):
