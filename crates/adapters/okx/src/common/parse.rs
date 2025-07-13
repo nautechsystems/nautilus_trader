@@ -113,16 +113,16 @@ fn get_currency(code: &str) -> Currency {
 
 /// Gets the OKX instrument type for the given instrument.
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics if the instrument is not valid for OKX (not an available product).
-pub fn okx_instrument_type(instrument: &InstrumentAny) -> OKXInstrumentType {
+/// Returns an error if the instrument is not valid for OKX (not an available product).
+pub fn okx_instrument_type(instrument: &InstrumentAny) -> anyhow::Result<OKXInstrumentType> {
     match instrument {
-        InstrumentAny::CurrencyPair(_) => OKXInstrumentType::Spot,
-        InstrumentAny::CryptoPerpetual(_) => OKXInstrumentType::Swap,
-        InstrumentAny::CryptoFuture(_) => OKXInstrumentType::Futures,
-        InstrumentAny::CryptoOption(_) => OKXInstrumentType::Option,
-        _ => panic!("Invalid instrument type for OKX {instrument:?}"),
+        InstrumentAny::CurrencyPair(_) => Ok(OKXInstrumentType::Spot),
+        InstrumentAny::CryptoPerpetual(_) => Ok(OKXInstrumentType::Swap),
+        InstrumentAny::CryptoFuture(_) => Ok(OKXInstrumentType::Futures),
+        InstrumentAny::CryptoOption(_) => Ok(OKXInstrumentType::Option),
+        _ => anyhow::bail!("Invalid instrument type for OKX: {instrument:?}"),
     }
 }
 
@@ -655,7 +655,9 @@ pub fn parse_swap_instrument(
     let is_inverse = match definition.ct_type {
         OKXContractType::Linear => false,
         OKXContractType::Inverse => true,
-        OKXContractType::None => panic!("Invaid contract type for swap: {}", definition.ct_type),
+        OKXContractType::None => {
+            anyhow::bail!("Invalid contract type for swap: {}", definition.ct_type)
+        }
     };
     let price_increment = match Price::from_str(&definition.tick_sz) {
         Ok(price) => price,
@@ -742,7 +744,9 @@ pub fn parse_futures_instrument(
     let is_inverse = match definition.ct_type {
         OKXContractType::Linear => false,
         OKXContractType::Inverse => true,
-        OKXContractType::None => panic!("Invaid contract type for Swap: {}", definition.ct_type),
+        OKXContractType::None => {
+            anyhow::bail!("Invalid contract type for futures: {}", definition.ct_type)
+        }
     };
     let listing_time = definition
         .list_time
