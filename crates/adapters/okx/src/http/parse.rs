@@ -398,4 +398,127 @@ mod tests {
         assert_eq!(detail_old.spot_in_use_amt, "40.0");
         assert_eq!(detail_old.cl_spot_in_use_amt, "35.0");
     }
+
+    #[rstest]
+    fn test_parse_place_order_response() {
+        use crate::http::models::OKXPlaceOrderResponse;
+
+        let json_data = r#"{
+            "ordId": "12345678901234567890",
+            "clOrdId": "client_order_123",
+            "tag": "",
+            "sCode": "0",
+            "sMsg": ""
+        }"#;
+
+        let parsed: OKXPlaceOrderResponse = serde_json::from_str(json_data).unwrap();
+        assert_eq!(
+            parsed.ord_id,
+            Some(ustr::Ustr::from("12345678901234567890"))
+        );
+        assert_eq!(parsed.cl_ord_id, Some(ustr::Ustr::from("client_order_123")));
+        assert_eq!(parsed.tag, Some("".to_string()));
+    }
+
+    #[rstest]
+    fn test_parse_transaction_details() {
+        use crate::http::models::OKXTransactionDetail;
+
+        let json_data = r#"{
+            "instType": "SPOT",
+            "instId": "BTC-USDT",
+            "tradeId": "123456789",
+            "ordId": "987654321",
+            "clOrdId": "client_123",
+            "billId": "bill_456",
+            "fillPx": "42000.5",
+            "fillSz": "0.001",
+            "side": "buy",
+            "execType": "T",
+            "feeCcy": "USDT",
+            "fee": "0.042",
+            "ts": "1625097600000"
+        }"#;
+
+        let parsed: OKXTransactionDetail = serde_json::from_str(json_data).unwrap();
+        assert_eq!(
+            parsed.inst_type,
+            crate::common::enums::OKXInstrumentType::Spot
+        );
+        assert_eq!(parsed.inst_id, ustr::Ustr::from("BTC-USDT"));
+        assert_eq!(parsed.trade_id, ustr::Ustr::from("123456789"));
+        assert_eq!(parsed.ord_id, ustr::Ustr::from("987654321"));
+        assert_eq!(parsed.cl_ord_id, ustr::Ustr::from("client_123"));
+        assert_eq!(parsed.bill_id, ustr::Ustr::from("bill_456"));
+        assert_eq!(parsed.fill_px, "42000.5");
+        assert_eq!(parsed.fill_sz, "0.001");
+        assert_eq!(parsed.side, crate::common::enums::OKXSide::Buy);
+        assert_eq!(parsed.exec_type, crate::common::enums::OKXExecType::Taker);
+        assert_eq!(parsed.fee_ccy, "USDT");
+        assert_eq!(parsed.fee, Some("0.042".to_string()));
+        assert_eq!(parsed.ts, 1625097600000);
+    }
+
+    #[rstest]
+    fn test_parse_empty_fee_field() {
+        use crate::http::models::OKXTransactionDetail;
+
+        let json_data = r#"{
+            "instType": "SPOT",
+            "instId": "BTC-USDT",
+            "tradeId": "123456789",
+            "ordId": "987654321",
+            "clOrdId": "client_123",
+            "billId": "bill_456",
+            "fillPx": "42000.5",
+            "fillSz": "0.001",
+            "side": "buy",
+            "execType": "T",
+            "feeCcy": "USDT",
+            "fee": "",
+            "ts": "1625097600000"
+        }"#;
+
+        let parsed: OKXTransactionDetail = serde_json::from_str(json_data).unwrap();
+        assert_eq!(parsed.fee, None);
+    }
+
+    #[rstest]
+    fn test_parse_optional_string_to_u64() {
+        use serde::Deserialize;
+
+        #[derive(Deserialize)]
+        struct TestStruct {
+            #[serde(deserialize_with = "crate::common::parse::deserialize_optional_string_to_u64")]
+            value: Option<u64>,
+        }
+
+        // Test with valid string
+        let json_value = r#"{"value": "12345"}"#;
+        let result: TestStruct = serde_json::from_str(json_value).unwrap();
+        assert_eq!(result.value, Some(12345));
+
+        // Test with empty string
+        let json_empty = r#"{"value": ""}"#;
+        let result_empty: TestStruct = serde_json::from_str(json_empty).unwrap();
+        assert_eq!(result_empty.value, None);
+
+        // Test with null
+        let json_null = r#"{"value": null}"#;
+        let result_null: TestStruct = serde_json::from_str(json_null).unwrap();
+        assert_eq!(result_null.value, None);
+    }
+
+    #[rstest]
+    fn test_parse_error_handling() {
+        // Test error handling with invalid price string
+        let invalid_price = "invalid-price";
+        let result = crate::common::parse::parse_price(invalid_price, 2);
+        assert!(result.is_err());
+
+        // Test error handling with invalid quantity string
+        let invalid_quantity = "invalid-quantity";
+        let result = crate::common::parse::parse_quantity(invalid_quantity, 8);
+        assert!(result.is_err());
+    }
 }

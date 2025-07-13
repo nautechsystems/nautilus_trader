@@ -1209,4 +1209,176 @@ mod tests {
         assert_eq!(bar.volume, Quantity::from("778.83800000"));
         assert_eq!(bar.ts_event, UnixNanos::from(1625097600000000000));
     }
+
+    #[rstest]
+    fn test_parse_millisecond_timestamp() {
+        let timestamp_ms = 1625097600000u64;
+        let result = parse_millisecond_timestamp(timestamp_ms);
+        assert_eq!(result, UnixNanos::from(1625097600000000000));
+    }
+
+    #[rstest]
+    fn test_parse_rfc3339_timestamp() {
+        let timestamp_str = "2021-07-01T00:00:00.000Z";
+        let result = parse_rfc3339_timestamp(timestamp_str).unwrap();
+        assert_eq!(result, UnixNanos::from(1625097600000000000));
+
+        // Test with timezone
+        let timestamp_str_tz = "2021-07-01T08:00:00.000+08:00";
+        let result_tz = parse_rfc3339_timestamp(timestamp_str_tz).unwrap();
+        assert_eq!(result_tz, UnixNanos::from(1625097600000000000));
+
+        // Test error case
+        let invalid_timestamp = "invalid-timestamp";
+        assert!(parse_rfc3339_timestamp(invalid_timestamp).is_err());
+    }
+
+    #[rstest]
+    fn test_parse_price() {
+        let price_str = "42219.5";
+        let precision = 2;
+        let result = parse_price(price_str, precision).unwrap();
+        assert_eq!(result, Price::from("42219.50"));
+
+        // Test error case
+        let invalid_price = "invalid-price";
+        assert!(parse_price(invalid_price, precision).is_err());
+    }
+
+    #[rstest]
+    fn test_parse_quantity() {
+        let quantity_str = "0.12345678";
+        let precision = 8;
+        let result = parse_quantity(quantity_str, precision).unwrap();
+        assert_eq!(result, Quantity::from("0.12345678"));
+
+        // Test error case
+        let invalid_quantity = "invalid-quantity";
+        assert!(parse_quantity(invalid_quantity, precision).is_err());
+    }
+
+    #[rstest]
+    fn test_parse_aggressor_side() {
+        assert_eq!(
+            parse_aggressor_side(&Some(OKXSide::Buy)),
+            AggressorSide::Buyer
+        );
+        assert_eq!(
+            parse_aggressor_side(&Some(OKXSide::Sell)),
+            AggressorSide::Seller
+        );
+        assert_eq!(parse_aggressor_side(&None), AggressorSide::NoAggressor);
+    }
+
+    #[rstest]
+    fn test_parse_execution_type() {
+        assert_eq!(
+            parse_execution_type(&Some(OKXExecType::Maker)),
+            LiquiditySide::Maker
+        );
+        assert_eq!(
+            parse_execution_type(&Some(OKXExecType::Taker)),
+            LiquiditySide::Taker
+        );
+        assert_eq!(parse_execution_type(&None), LiquiditySide::NoLiquiditySide);
+    }
+
+    #[rstest]
+    fn test_parse_position_side() {
+        assert_eq!(parse_position_side(Some(100)), PositionSide::Long);
+        assert_eq!(parse_position_side(Some(-100)), PositionSide::Short);
+        assert_eq!(parse_position_side(Some(0)), PositionSide::Flat);
+        assert_eq!(parse_position_side(None), PositionSide::Flat);
+    }
+
+    #[rstest]
+    fn test_parse_order_side() {
+        assert_eq!(parse_order_side(&Some(OKXSide::Buy)), OrderSide::Buy);
+        assert_eq!(parse_order_side(&Some(OKXSide::Sell)), OrderSide::Sell);
+        assert_eq!(parse_order_side(&None), OrderSide::NoOrderSide);
+    }
+
+    #[rstest]
+    fn test_parse_client_order_id() {
+        let valid_id = "client_order_123";
+        let result = parse_client_order_id(valid_id);
+        assert_eq!(result, Some(ClientOrderId::new(valid_id)));
+
+        let empty_id = "";
+        let result_empty = parse_client_order_id(empty_id);
+        assert_eq!(result_empty, None);
+    }
+
+    #[rstest]
+    fn test_deserialize_empty_string_as_none() {
+        let json_with_empty = r#""""#;
+        let result: Option<String> = serde_json::from_str(json_with_empty).unwrap();
+        let processed = result.filter(|s| !s.is_empty());
+        assert_eq!(processed, None);
+
+        let json_with_value = r#""test_value""#;
+        let result: Option<String> = serde_json::from_str(json_with_value).unwrap();
+        let processed = result.filter(|s| !s.is_empty());
+        assert_eq!(processed, Some("test_value".to_string()));
+    }
+
+    #[rstest]
+    fn test_deserialize_string_to_u64() {
+        use serde::Deserialize;
+
+        #[derive(Deserialize)]
+        struct TestStruct {
+            #[serde(deserialize_with = "deserialize_string_to_u64")]
+            value: u64,
+        }
+
+        let json_value = r#"{"value": "12345"}"#;
+        let result: TestStruct = serde_json::from_str(json_value).unwrap();
+        assert_eq!(result.value, 12345);
+
+        let json_empty = r#"{"value": ""}"#;
+        let result_empty: TestStruct = serde_json::from_str(json_empty).unwrap();
+        assert_eq!(result_empty.value, 0);
+    }
+
+    #[rstest]
+    fn test_fill_report_parsing() {
+        // Create a mock transaction detail for testing
+        let transaction_detail = crate::http::models::OKXTransactionDetail {
+            inst_type: OKXInstrumentType::Spot,
+            inst_id: Ustr::from("BTC-USDT"),
+            trade_id: Ustr::from("12345"),
+            ord_id: Ustr::from("67890"),
+            cl_ord_id: Ustr::from("client_123"),
+            bill_id: Ustr::from("bill_456"),
+            fill_px: "42219.5".to_string(),
+            fill_sz: "0.001".to_string(),
+            side: OKXSide::Buy,
+            exec_type: OKXExecType::Taker,
+            fee_ccy: "USDT".to_string(),
+            fee: Some("0.042".to_string()),
+            ts: 1625097600000,
+        };
+
+        let account_id = AccountId::new("OKX-001");
+        let instrument_id = InstrumentId::from("BTC-USDT.OKX");
+        let fill_report = parse_fill_report(
+            transaction_detail,
+            account_id,
+            instrument_id,
+            2,
+            8,
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(fill_report.account_id, account_id);
+        assert_eq!(fill_report.instrument_id, instrument_id);
+        assert_eq!(fill_report.trade_id, TradeId::new("12345"));
+        assert_eq!(fill_report.venue_order_id, VenueOrderId::new("67890"));
+        assert_eq!(fill_report.order_side, OrderSide::Buy);
+        assert_eq!(fill_report.last_px, Price::from("42219.50"));
+        assert_eq!(fill_report.last_qty, Quantity::from("0.00100000"));
+        assert_eq!(fill_report.liquidity_side, LiquiditySide::Taker);
+    }
 }

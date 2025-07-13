@@ -1148,7 +1148,7 @@ impl OKXWebSocketClient {
 
     /// Submits a new order using Nautilus domain types via WebSocket.
     ///
-    /// # Reference
+    /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-place-order>.
     #[allow(clippy::too_many_arguments)]
@@ -1272,7 +1272,7 @@ impl OKXWebSocketClient {
 
     /// Cancels an existing order via WebSocket using Nautilus domain types.
     ///
-    /// # Reference
+    /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-cancel-order>.
     #[allow(clippy::too_many_arguments)]
@@ -1300,7 +1300,7 @@ impl OKXWebSocketClient {
 
     /// Modifies an existing order via WebSocket using Nautilus domain types.
     ///
-    /// # Reference
+    /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-amend-order>.
     #[allow(clippy::too_many_arguments)]
