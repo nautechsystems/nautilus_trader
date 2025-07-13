@@ -1030,7 +1030,7 @@ impl OKXHttpClient {
                 anyhow::anyhow!("Instrument ID required if `instrument_type` not provided")
             })?;
             let instrument = self.get_instrument_from_cache(instrument_id.symbol.inner())?;
-            okx_instrument_type(&instrument)
+            okx_instrument_type(&instrument)?
         };
 
         history_params.inst_type(instrument_type);
@@ -1148,14 +1148,14 @@ impl OKXHttpClient {
                 anyhow::anyhow!("Instrument ID required if `instrument_type` not provided")
             })?;
             let instrument = self.get_instrument_from_cache(instrument_id.symbol.inner())?;
-            okx_instrument_type(&instrument)
+            okx_instrument_type(&instrument)?
         };
 
         params.inst_type(instrument_type);
 
         if let Some(instrument_id) = instrument_id {
             let instrument = self.get_instrument_from_cache(instrument_id.symbol.inner())?;
-            let instrument_type = okx_instrument_type(&instrument);
+            let instrument_type = okx_instrument_type(&instrument)?;
             params.inst_type(instrument_type);
             params.inst_id(instrument_id.symbol.inner().to_string());
         }

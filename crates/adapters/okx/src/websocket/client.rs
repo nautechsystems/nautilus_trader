@@ -1181,7 +1181,8 @@ impl OKXWebSocketClient {
                 OKXWsError::ClientError(format!("Unknown instrument {instrument_id}"))
             })?;
 
-        let instrument_type = okx_instrument_type(instrument);
+        let instrument_type =
+            okx_instrument_type(instrument).map_err(|e| OKXWsError::ClientError(e.to_string()))?;
         let quote_currency = instrument.quote_currency();
 
         match instrument_type {
