@@ -113,10 +113,49 @@ impl Pool {
         token1: &Token,
         fee: u32,
     ) -> InstrumentId {
-        let symbol = format!("{}/{}-{}", token0.symbol, token1.symbol, fee);
+        let symbol = format!(
+            "{}/{}-{}",
+            sanitize_symbol(&token0.symbol),
+            sanitize_symbol(&token1.symbol),
+            fee
+        );
         let venue = format!("{}:{}", dex.name, chain);
         InstrumentId::from(format!("{symbol}.{venue}").as_str())
     }
+}
+
+fn sanitize_symbol(symbol: &str) -> String {
+    symbol
+        .chars()
+        .map(|c| match c {
+            '₮' => 'T', // Tugrik sign
+            '₽' => 'R', // Ruble sign
+            '₹' => 'R', // Rupee sign
+            '₩' => 'W', // Won sign
+            '₴' => 'H', // Hryvnia sign
+            '₡' => 'C', // Colon sign
+            '₪' => 'S', // Shekel sign
+            '₫' => 'D', // Dong sign
+            '₦' => 'N', // Naira sign
+            '₨' => 'R', // Rupee sign
+            '₧' => 'P', // Peseta sign
+            '₭' => 'K', // Kip sign
+            '₵' => 'C', // Cedi sign
+            '₱' => 'P', // Peso sign
+            '₲' => 'G', // Guarani sign
+            '₳' => 'A', // Austral sign
+            '₸' => 'T', // Tenge sign
+            '₶' => 'L', // Livre sign
+            '₷' => 'S', // Spesmilo sign
+            '₺' => 'T', // Lira sign
+            '₻' => 'N', // Nordic mark sign
+            '₼' => 'M', // Manat sign
+            '₾' => 'L', // Lari sign
+            '₿' => 'B', // Bitcoin sign
+            _ if c.is_ascii() => c,
+            _ => '_', // Replace any other non-ASCII with underscore
+        })
+        .collect()
 }
 
 impl Display for Pool {
@@ -155,6 +194,7 @@ mod tests {
             chains::ETHEREUM.clone(),
             "UniswapV3",
             "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+            0,
             AmmType::CLAMM,
             "PoolCreated(address,address,uint24,int24,address)",
             "Swap(address,address,int256,int256,uint160,uint128,int24)",
@@ -224,6 +264,7 @@ mod tests {
             chains::ETHEREUM.clone(),
             "UniswapV3",
             factory_address,
+            0,
             AmmType::CLAMM,
             "PoolCreated(address,address,uint24,int24,address)",
             "Swap(address,address,int256,int256,uint160,uint128,int24)",

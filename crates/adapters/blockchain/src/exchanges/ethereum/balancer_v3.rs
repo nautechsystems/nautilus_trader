@@ -26,8 +26,9 @@ use crate::exchanges::extended::DexExtended;
 pub static BALANCER_V3: LazyLock<DexExtended> = LazyLock::new(|| {
     let dex = Dex::new(
         chains::ETHEREUM.clone(),
-        "Balancer V3",
+        "BalancerV3",
         "0x43A0F3e8F0E2d9F35E82A5092D5B3CfB9C041CcC",
+        0,
         AmmType::ComposablePool,
         "",
         "",

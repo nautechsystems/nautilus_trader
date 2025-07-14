@@ -110,6 +110,13 @@ impl Erc20Contract {
                 BlockchainRpcClientError::ClientError(format!("Error fetching name: {e}"))
             })?;
         let bytes = decode_hex_response(&encoded_name)?;
+
+        if bytes.is_empty() {
+            return Err(BlockchainRpcClientError::AbiDecodingError(
+                "Token does not implement name() function or returned empty response".to_string(),
+            ));
+        }
+
         ERC20::nameCall::abi_decode_returns(&bytes).map_err(|e| {
             BlockchainRpcClientError::AbiDecodingError(format!(
                 "Error decoding ERC20 contract name with error {e}"
@@ -134,6 +141,13 @@ impl Erc20Contract {
                 BlockchainRpcClientError::ClientError(format!("Error fetching symbol: {e}"))
             })?;
         let bytes = decode_hex_response(&encoded_symbol)?;
+
+        if bytes.is_empty() {
+            return Err(BlockchainRpcClientError::AbiDecodingError(
+                "Token not implement symbol() function or returned empty response".to_string(),
+            ));
+        }
+
         ERC20::symbolCall::abi_decode_returns(&bytes).map_err(|e| {
             BlockchainRpcClientError::AbiDecodingError(format!(
                 "Error decoding ERC20 contract symbol with error {e}"
@@ -158,6 +172,14 @@ impl Erc20Contract {
                 BlockchainRpcClientError::ClientError(format!("Error fetching decimals: {e}"))
             })?;
         let bytes = decode_hex_response(&encoded_decimals)?;
+
+        if bytes.is_empty() {
+            return Err(BlockchainRpcClientError::AbiDecodingError(
+                "Token does not implement decimals() function or returned empty response"
+                    .to_string(),
+            ));
+        }
+
         ERC20::decimalsCall::abi_decode_returns(&bytes).map_err(|e| {
             BlockchainRpcClientError::AbiDecodingError(format!(
                 "Error decoding ERC20 contract decimals with error {e}"

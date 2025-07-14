@@ -69,6 +69,8 @@ pub struct Dex {
     pub name: Cow<'static, str>,
     /// The blockchain address of the DEX factory contract.
     pub factory: Cow<'static, str>,
+    /// The block number at which the DEX factory contract was deployed.
+    pub factory_creation_block: u64,
     /// The event signature or identifier used to detect pool creation events.
     pub pool_created_event: Cow<'static, str>,
     /// The event signature or identifier used to detect swap events.
@@ -95,6 +97,7 @@ impl Dex {
         chain: Chain,
         name: impl Into<Cow<'static, str>>,
         factory: impl Into<Cow<'static, str>>,
+        factory_creation_block: u64,
         amm_type: AmmType,
         pool_created_event: impl Into<Cow<'static, str>>,
         swap_created_event: impl Into<Cow<'static, str>>,
@@ -105,6 +108,7 @@ impl Dex {
             chain,
             name: name.into(),
             factory: factory.into(),
+            factory_creation_block,
             pool_created_event: pool_created_event.into(),
             swap_created_event: swap_created_event.into(),
             mint_created_event: mint_created_event.into(),
@@ -116,11 +120,7 @@ impl Dex {
 
     /// Returns a unique identifier for this DEX, combining chain and protocol name.
     pub fn id(&self) -> String {
-        format!(
-            "{}:{}",
-            self.chain.name,
-            self.name.to_lowercase().replace(' ', "_")
-        )
+        format!("{}:{}", self.chain.name, self.name)
     }
 }
 

@@ -26,8 +26,9 @@ use crate::exchanges::extended::DexExtended;
 pub static UNISWAP_V4: LazyLock<DexExtended> = LazyLock::new(|| {
     let dex = Dex::new(
         chains::BASE.clone(),
-        "Uniswap V4",
+        "UniswapV4",
         "", // Factory address not provided
+        0,
         AmmType::CLAMEnhanced,
         "",
         "",

@@ -24,15 +24,19 @@ use crate::exchanges::extended::DexExtended;
 
 /// Uniswap V3 DEX on Arbitrum.
 pub static UNISWAP_V3: LazyLock<DexExtended> = LazyLock::new(|| {
-    let dex = Dex::new(
+    let mut dex = DexExtended::new(Dex::new(
         chains::ARBITRUM.clone(),
-        "Uniswap V3",
+        "UniswapV3",
         "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+        165,
         AmmType::CLAMM,
         "PoolCreated(address,address,uint24,int24,address)",
         "Swap(address,address,int256,int256,uint160,uint128,int24)",
         "Mint(address,address,int24,int24,uint128,uint256,uint256)",
         "Burn(address,int24,int24,uint128,uint256,uint256)",
+    ));
+    dex.set_pool_created_event_parsing(
+        crate::exchanges::ethereum::uniswap_v3::parse_pool_created_event,
     );
-    DexExtended::new(dex)
+    dex
 });

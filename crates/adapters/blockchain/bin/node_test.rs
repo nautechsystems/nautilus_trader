@@ -28,6 +28,7 @@ use nautilus_common::{
     logging::log_info,
 };
 use nautilus_core::env::get_env_var;
+use nautilus_infrastructure::sql::pg::PostgresConnectOptions;
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
     defi::{Block, Blockchain, Pool, PoolLiquidityUpdate, PoolSwap, chain::chains},
@@ -56,18 +57,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let wss_rpc_url = get_env_var("RPC_WSS_URL")?;
     let http_rpc_url = get_env_var("RPC_HTTP_URL")?;
     // let from_block = Some(22_735_000_u64); // Ethereum
-    // let from_block = Some(348_860_000_u64); // Arbitrum
-    let from_block = None; // No sync
+    let from_block = Some(348_860_000_u64); // Arbitrum
+    // let from_block = None; // No sync
 
     let client_factory = BlockchainDataClientFactory::new();
     let client_config = BlockchainDataClientConfig::new(
         Arc::new(chain.clone()),
+        vec!["Arbitrum:UniswapV3".to_string()],
         http_rpc_url,
         None, // RPC requests per second
         Some(wss_rpc_url),
         true, // Use HyperSync for live data
         // Some(from_block), // from_block
         from_block,
+        Some(PostgresConnectOptions::default()),
     );
 
     let mut node = LiveNode::builder(node_name, trader_id, environment)?

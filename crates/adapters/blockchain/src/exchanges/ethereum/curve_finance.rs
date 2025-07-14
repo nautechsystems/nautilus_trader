@@ -26,8 +26,9 @@ use crate::exchanges::extended::DexExtended;
 pub static CURVE_FINANCE: LazyLock<DexExtended> = LazyLock::new(|| {
     let dex = Dex::new(
         chains::ETHEREUM.clone(),
-        "Curve Finance",
+        "CurveFinance",
         "0xB9fC157394Af804a3578134A6585C0dc9cc990d4",
+        12903979,
         AmmType::StableSwap,
         "",
         "",
