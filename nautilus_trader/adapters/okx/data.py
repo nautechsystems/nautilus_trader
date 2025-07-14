@@ -25,6 +25,7 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.datetime import ensure_pydatetime_utc
 from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestInstrument
@@ -335,8 +336,8 @@ class OKXDataClient(LiveMarketDataClient):
         instruments = self._instrument_provider.get_all()
 
         self._handle_instruments(
-            instruments,
             request.venue,
+            instruments,
             request.id,
             request.start,
             request.end,
