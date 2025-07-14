@@ -71,7 +71,7 @@ pub static UNISWAP_V3: LazyLock<DexExtended> = LazyLock::new(|| {
     dex
 });
 
-fn parse_pool_created_event(log: Log) -> anyhow::Result<PoolCreatedEvent> {
+pub fn parse_pool_created_event(log: Log) -> anyhow::Result<PoolCreatedEvent> {
     validate_event_signature_hash("PoolCreatedEvent", POOL_CREATED_EVENT_SIGNATURE_HASH, &log)?;
 
     let block_number = log
