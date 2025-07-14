@@ -90,21 +90,11 @@ impl BlockSyncMetrics {
     pub fn log_final_stats(&self) {
         let total_elapsed = self.start_time.elapsed();
         let avg_rate = self.blocks_processed as f64 / total_elapsed.as_secs_f64();
-        
-        // Estimate time for full chain sync (356M blocks)
-        let full_chain_blocks = 356_000_000u64;
-        let full_sync_seconds = full_chain_blocks as f64 / avg_rate;
-        let full_sync_display = format_duration(full_sync_seconds);
-        
         tracing::info!(
             "Finished syncing blocks | Total: {} blocks in {:.1}s | Avg rate: {:.0} blocks/s",
             self.blocks_processed,
             total_elapsed.as_secs_f64(),
             avg_rate
-        );
-        tracing::info!(
-            "Estimated time for full chain sync (356M blocks): {}",
-            full_sync_display
         );
     }
 }
