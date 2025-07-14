@@ -19,7 +19,7 @@ use ustr::Ustr;
 use super::enums::OKXOptionType;
 use crate::common::{
     enums::{OKXContractType, OKXInstrumentStatus, OKXInstrumentType},
-    parse::{deserialize_optional_string_to_u64, deserialize_string_to_u64},
+    parse::deserialize_optional_string_to_u64,
 };
 
 /// Represents an instrument on the OKX exchange.
@@ -86,19 +86,4 @@ pub struct OKXInstrument {
     pub max_trigger_sz: String,
     /// Maximum stop order size.
     pub max_stop_sz: String,
-}
-
-/// Represents a mark price update the OKX exchange.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct OKXMarkPriceUpdate {
-    /// Product type (SPOT, MARGIN, SWAP, FUTURES, OPTION).
-    pub inst_type: OKXInstrumentType,
-    /// Instrument ID, e.g. "BTC-USD-SWAP".
-    pub inst_id: Ustr,
-    /// Mark price.
-    pub mark_px: String,
-    /// Timestamp of the data generation, Unix timestamp format in milliseconds.
-    #[serde(deserialize_with = "deserialize_string_to_u64")]
-    pub ts: u64,
 }
