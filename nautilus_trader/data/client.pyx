@@ -1074,7 +1074,7 @@ cdef class MarketDataClient(DataClient):
     cpdef void _handle_data(self, Data data):
         self._msgbus.send(endpoint="DataEngine.process", msg=data)
 
-    cdef void _handle_instrument(self, Instrument instrument, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params):
+    cpdef void _handle_instrument(self, Instrument instrument, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params):
         cdef DataResponse response = DataResponse(
             client_id=self.id,
             venue=instrument.venue,
@@ -1090,7 +1090,7 @@ cdef class MarketDataClient(DataClient):
 
         self._msgbus.send(endpoint="DataEngine.response", msg=response)
 
-    cdef void _handle_instruments(self, Venue venue, list instruments, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params):
+    cpdef void _handle_instruments(self, Venue venue, list instruments, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params):
         cdef DataResponse response = DataResponse(
             client_id=self.id,
             venue=venue,
@@ -1106,7 +1106,7 @@ cdef class MarketDataClient(DataClient):
 
         self._msgbus.send(endpoint="DataEngine.response", msg=response)
 
-    cdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params):
+    cpdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params):
         cdef DataResponse response = DataResponse(
             client_id=self.id,
             venue=instrument_id.venue,
@@ -1122,7 +1122,7 @@ cdef class MarketDataClient(DataClient):
 
         self._msgbus.send(endpoint="DataEngine.response", msg=response)
 
-    cdef void _handle_trade_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params):
+    cpdef void _handle_trade_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params):
         cdef DataResponse response = DataResponse(
             client_id=self.id,
             venue=instrument_id.venue,
@@ -1138,7 +1138,7 @@ cdef class MarketDataClient(DataClient):
 
         self._msgbus.send(endpoint="DataEngine.response", msg=response)
 
-    cdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params):
+    cpdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params):
         cdef DataResponse response = DataResponse(
             client_id=self.id,
             venue=bar_type.instrument_id.venue,
