@@ -169,11 +169,11 @@ impl BlockchainCacheDatabase {
                 chain_id, number, hash, parent_hash, miner, gas_limit, gas_used, timestamp,
                 base_fee_per_gas, blob_gas_used, excess_blob_gas,
                 l1_gas_price, l1_gas_used, l1_fee_scalar
-            ) 
-            SELECT 
-                $1, * 
+            )
+            SELECT
+                $1, *
             FROM UNNEST(
-                $2::int8[], $3::text[], $4::text[], $5::text[], 
+                $2::int8[], $3::text[], $4::text[], $5::text[],
                 $6::int8[], $7::int8[], $8::text[],
                 $9::text[], $10::text[], $11::text[],
                 $12::text[], $13::int8[], $14::int8[]

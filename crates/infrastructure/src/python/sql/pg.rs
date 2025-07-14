@@ -22,7 +22,13 @@ impl PostgresConnectOptions {
     /// Creates a new `PostgresConnectOptions` instance.
     #[new]
     #[pyo3(signature = (host, port, user, password, database))]
-    const fn py_new(host: String, port: u16, user: String, password: String, database: String) -> Self {
+    const fn py_new(
+        host: String,
+        port: u16,
+        user: String,
+        password: String,
+        database: String,
+    ) -> Self {
         Self::new(host, port, user, password, database)
     }
 }

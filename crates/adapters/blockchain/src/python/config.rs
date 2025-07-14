@@ -27,6 +27,7 @@ use crate::config::BlockchainDataClientConfig;
 impl BlockchainDataClientConfig {
     /// Creates a new `BlockchainDataClientConfig` instance.
     #[new]
+    #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (chain, dex_ids, http_rpc_url, rpc_requests_per_second=None, wss_rpc_url=None, use_hypersync_for_live_data=true, from_block=None, postgres_cache_database_config=None))]
     fn py_new(
         chain: &Chain,

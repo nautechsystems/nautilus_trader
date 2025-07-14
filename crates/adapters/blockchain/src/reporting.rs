@@ -31,7 +31,7 @@ pub struct BlockSyncMetrics {
 
 impl BlockSyncMetrics {
     /// Creates a new metrics tracker for block synchronization
-    #[must_use] 
+    #[must_use]
     pub fn new(from_block: u64, total_blocks: u64, update_interval: u64) -> Self {
         let now = Instant::now();
         Self {
@@ -51,7 +51,7 @@ impl BlockSyncMetrics {
     }
 
     /// Checks if progress should be logged based on the current block number
-    #[must_use] 
+    #[must_use]
     pub const fn should_log_progress(&self, block_number: u64, current_block: u64) -> bool {
         block_number >= self.next_progress_threshold || block_number >= current_block
     }
