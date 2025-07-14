@@ -41,6 +41,8 @@ from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.enums import AggregationSource
+from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.events import OrderDenied
 from nautilus_trader.model.identifiers import AccountId
@@ -67,6 +69,21 @@ from nautilus_trader.trading.filters import NewsImpact
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
+
+
+def _create_composite_bar_type() -> BarType:
+    """
+    Create an internally aggregated composite bar type for testing
+    request_aggregated_bars.
+    """
+    return BarType.new_composite(
+        instrument_id=AUDUSD_SIM.id,
+        bar_spec=TestDataStubs.bar_spec_1min_bid(),
+        aggregation_source=AggregationSource.INTERNAL,
+        composite_step=2,
+        composite_aggregation=BarAggregation.MINUTE,
+        composite_aggregation_source=AggregationSource.INTERNAL,
+    )
 
 
 class TestActor:
@@ -2011,6 +2028,28 @@ class TestActor:
         assert self.data_engine.subscribed_bars() == []
         assert self.data_engine.command_count == 2
 
+    def assert_successful_request(self, actor, request_id, method_name):
+        """
+        Do assert the request is successful.
+
+        Helper method for common request assertions.
+
+        """
+        method_info = f" for method '{method_name}'"
+        assert request_id is not None, f"Request ID should not be None{method_info}"
+        assert (
+            self.data_engine.request_count == 1
+        ), f"Expected 1 request in data engine{method_info}, got {self.data_engine.request_count}"
+        assert (
+            not actor.has_pending_requests()
+        ), f"Actor should not have pending requests{method_info}"
+        assert not actor.is_pending_request(
+            request_id,
+        ), f"Request {request_id} should not be pending{method_info}"
+        assert (
+            request_id not in actor.pending_requests()
+        ), f"Request {request_id} should not be in pending requests list{method_info}"
+
     def test_request_data_sends_request_to_data_engine(self) -> None:
         # Arrange
         handler: list[NewsEvent] = []
@@ -2025,17 +2064,18 @@ class TestActor:
         data_type = DataType(NewsEvent, {"type": "NEWS_WIRE", "topic": "Earthquakes"})
 
         # Act
+        start_time = self.clock.utc_now() - timedelta(hours=1)
+        end_time = self.clock.utc_now()
         request_id = actor.request_data(
             data_type,
             ClientId("BLOOMBERG-01"),
+            start=start_time,
+            end=end_time,
             callback=handler.append,
         )
 
         # Assert
-        assert self.data_engine.request_count == 1
-        assert not actor.has_pending_requests()
-        assert not actor.is_pending_request(request_id)
-        assert request_id not in actor.pending_requests()
+        self.assert_successful_request(actor, request_id, "request_data")
 
     def test_request_order_book_snapshots_sends_request_to_data_engine(self) -> None:
         # Arrange
@@ -2057,17 +2097,18 @@ class TestActor:
         )
 
         # Act
+        start_time = self.clock.utc_now() - timedelta(hours=1)
+        end_time = self.clock.utc_now()
         request_id = actor.request_data(
             data_type,
             ClientId("BLOOMBERG-01"),
+            start=start_time,
+            end=end_time,
             callback=handler.append,
         )
 
         # Assert
-        assert self.data_engine.request_count == 1
-        assert not actor.has_pending_requests()
-        assert not actor.is_pending_request(request_id)
-        assert request_id not in actor.pending_requests()
+        self.assert_successful_request(actor, request_id, "request_data")
 
     def test_request_quote_ticks_sends_request_to_data_engine(self) -> None:
         # Arrange
@@ -2080,13 +2121,12 @@ class TestActor:
         )
 
         # Act
-        request_id = actor.request_quote_ticks(AUDUSD_SIM.id)
+        start_time = self.clock.utc_now() - timedelta(hours=1)
+        end_time = self.clock.utc_now()
+        request_id = actor.request_quote_ticks(AUDUSD_SIM.id, start=start_time, end=end_time)
 
         # Assert
-        assert self.data_engine.request_count == 1
-        assert not actor.has_pending_requests()
-        assert not actor.is_pending_request(request_id)
-        assert request_id not in actor.pending_requests()
+        self.assert_successful_request(actor, request_id, "request_quote_ticks")
 
     def test_request_quote_ticks_with_registered_callback(self) -> None:
         # Arrange
@@ -2102,7 +2142,14 @@ class TestActor:
         tick = TestDataStubs.quote_tick()
 
         # Act
-        request_id = actor.request_quote_ticks(AUDUSD_SIM.id, callback=handler.append)
+        start_time = self.clock.utc_now() - timedelta(hours=1)
+        end_time = self.clock.utc_now()
+        request_id = actor.request_quote_ticks(
+            AUDUSD_SIM.id,
+            start=start_time,
+            end=end_time,
+            callback=handler.append,
+        )
 
         response = DataResponse(
             client_id=ClientId("SIM"),
@@ -2111,16 +2158,15 @@ class TestActor:
             data=[tick],
             correlation_id=request_id,
             response_id=UUID4(),
+            start=start_time,
+            end=end_time,
             ts_init=self.clock.timestamp_ns(),
         )
 
         self.msgbus.response(response)
 
         # Assert
-        assert self.data_engine.request_count == 1
-        assert not actor.has_pending_requests()
-        assert not actor.is_pending_request(request_id)
-        assert request_id not in actor.pending_requests()
+        self.assert_successful_request(actor, request_id, "request_quote_ticks")
         assert request_id in handler
 
     def test_request_trade_ticks_sends_request_to_data_engine(self) -> None:
@@ -2134,13 +2180,12 @@ class TestActor:
         )
 
         # Act
-        request_id = actor.request_trade_ticks(AUDUSD_SIM.id)
+        start_time = self.clock.utc_now() - timedelta(hours=1)
+        end_time = self.clock.utc_now()
+        request_id = actor.request_trade_ticks(AUDUSD_SIM.id, start=start_time, end=end_time)
 
         # Assert
-        assert self.data_engine.request_count == 1
-        assert not actor.has_pending_requests()
-        assert not actor.is_pending_request(request_id)
-        assert request_id not in actor.pending_requests()
+        self.assert_successful_request(actor, request_id, "request_trade_ticks")
 
     def test_request_trade_ticks_with_registered_callback(self) -> None:
         # Arrange
@@ -2156,7 +2201,14 @@ class TestActor:
         tick = TestDataStubs.trade_tick()
 
         # Act
-        request_id = actor.request_trade_ticks(AUDUSD_SIM.id, callback=handler.append)
+        start_time = self.clock.utc_now() - timedelta(hours=1)
+        end_time = self.clock.utc_now()
+        request_id = actor.request_trade_ticks(
+            AUDUSD_SIM.id,
+            start=start_time,
+            end=end_time,
+            callback=handler.append,
+        )
 
         response = DataResponse(
             client_id=ClientId("SIM"),
@@ -2165,15 +2217,14 @@ class TestActor:
             data=[tick],
             correlation_id=request_id,
             response_id=UUID4(),
+            start=start_time,
+            end=end_time,
             ts_init=self.clock.timestamp_ns(),
         )
 
         self.msgbus.response(response)
         # Assert
-        assert self.data_engine.request_count == 1
-        assert not actor.has_pending_requests()
-        assert not actor.is_pending_request(request_id)
-        assert request_id not in actor.pending_requests()
+        self.assert_successful_request(actor, request_id, "request_trade_ticks")
         assert request_id in handler
 
     def test_request_bars_sends_request_to_data_engine(self) -> None:
@@ -2189,13 +2240,12 @@ class TestActor:
         bar_type = TestDataStubs.bartype_audusd_1min_bid()
 
         # Act
-        request_id = actor.request_bars(bar_type)
+        start_time = self.clock.utc_now() - timedelta(hours=1)
+        end_time = self.clock.utc_now()
+        request_id = actor.request_bars(bar_type, start=start_time, end=end_time)
 
         # Assert
-        assert self.data_engine.request_count == 1
-        assert not actor.has_pending_requests()
-        assert not actor.is_pending_request(request_id)
-        assert request_id not in actor.pending_requests()
+        self.assert_successful_request(actor, request_id, "request_bars")
 
     def test_request_bars_with_registered_callback(self) -> None:
         # Arrange
@@ -2212,7 +2262,14 @@ class TestActor:
         bar = TestDataStubs.bar_5decimal()
 
         # Act
-        request_id = actor.request_bars(bar_type, callback=handler.append)
+        start_time = self.clock.utc_now() - timedelta(hours=1)
+        end_time = self.clock.utc_now()
+        request_id = actor.request_bars(
+            bar_type,
+            start=start_time,
+            end=end_time,
+            callback=handler.append,
+        )
 
         response = DataResponse(
             client_id=ClientId("SIM"),
@@ -2221,16 +2278,15 @@ class TestActor:
             data=[bar],
             correlation_id=request_id,
             response_id=UUID4(),
+            start=start_time,
+            end=end_time,
             ts_init=self.clock.timestamp_ns(),
         )
 
         self.msgbus.response(response)
 
         # Assert
-        assert self.data_engine.request_count == 1
-        assert not actor.has_pending_requests()
-        assert not actor.is_pending_request(request_id)
-        assert request_id not in actor.pending_requests()
+        self.assert_successful_request(actor, request_id, "request_bars")
         assert request_id in handler
 
     def test_request_aggregated_bars_with_registered_callback(self) -> None:
@@ -2248,7 +2304,14 @@ class TestActor:
         bar = TestDataStubs.bar_5decimal()
 
         # Act
-        request_id = actor.request_aggregated_bars([bar_type], callback=handler.append)
+        start = self.clock.utc_now() - timedelta(hours=1)
+        end = self.clock.utc_now()
+        request_id = actor.request_aggregated_bars(
+            [bar_type],
+            start=start,
+            end=end,
+            callback=handler.append,
+        )
 
         response = DataResponse(
             client_id=ClientId("SIM"),
@@ -2257,16 +2320,15 @@ class TestActor:
             data={"bars": {bar_type: [bar]}, "quote_ticks": [], "trade_ticks": []},
             correlation_id=request_id,
             response_id=UUID4(),
+            start=start,
+            end=end,
             ts_init=self.clock.timestamp_ns(),
         )
 
         self.msgbus.response(response)
 
         # Assert
-        assert self.data_engine.request_count == 1
-        assert not actor.has_pending_requests()
-        assert not actor.is_pending_request(request_id)
-        assert request_id not in actor.pending_requests()
+        self.assert_successful_request(actor, request_id, "request_aggregated_bars")
         assert request_id in handler
 
     @pytest.mark.parametrize(
@@ -2290,3 +2352,247 @@ class TestActor:
         # Act, Assert
         with pytest.raises(ValueError):
             actor.request_bars(bar_type, start, stop)
+
+    # Parameter definitions for tests
+    REQUEST_METHODS_INSTRUMENT = [
+        ("request_instrument", {"instrument_id": AUDUSD_SIM.id}),
+        ("request_instruments", {"venue": AUDUSD_SIM.id.venue}),
+    ]
+
+    REQUEST_METHODS_WITHOUT_NONE_START_HANDLING = [
+        (
+            "request_data",
+            {
+                "data_type": DataType(NewsEvent, {"type": "NEWS_WIRE", "topic": "Earthquake"}),
+                "client_id": ClientId("SIM"),
+            },
+        ),
+        ("request_quote_ticks", {"instrument_id": AUDUSD_SIM.id}),
+        ("request_trade_ticks", {"instrument_id": AUDUSD_SIM.id}),
+        ("request_bars", {"bar_type": TestDataStubs.bartype_audusd_1min_bid()}),
+        ("request_aggregated_bars", {"bar_types": [_create_composite_bar_type()]}),
+    ]
+
+    # Derived from combining the above two lists
+    REQUEST_METHODS_ALL = REQUEST_METHODS_INSTRUMENT + REQUEST_METHODS_WITHOUT_NONE_START_HANDLING
+
+    @pytest.mark.parametrize("method_name,args", REQUEST_METHODS_INSTRUMENT)
+    def test_none_start_and_end_replaced_with_current_time(self, method_name, args):
+        """
+        Test that None start and end values are replaced with current time.
+        """
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        request_method = getattr(actor, method_name)
+
+        # Act
+        request_id = request_method(**args, start=None, end=None)
+
+        # Assert
+        self.assert_successful_request(actor, request_id, method_name)
+
+    @pytest.mark.parametrize("method_name,args", REQUEST_METHODS_INSTRUMENT)
+    def test_none_start_replaced_with_current_time(self, method_name, args):
+        """
+        Test that None start value is replaced with current time.
+        """
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        request_method = getattr(actor, method_name)
+
+        # Act
+        current_time = self.clock.utc_now()
+        request_id = request_method(**args, start=None, end=current_time)
+
+        # Assert
+        self.assert_successful_request(actor, request_id, method_name)
+
+    @pytest.mark.parametrize("method_name,args", REQUEST_METHODS_INSTRUMENT)
+    def test_none_end_replaced_with_current_time(self, method_name, args):
+        """
+        Test that None end value is replaced with current time.
+        """
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        specific_start_time = self.clock.utc_now() - timedelta(hours=1)
+        request_method = getattr(actor, method_name)
+
+        # Act
+        request_id = request_method(**args, start=specific_start_time, end=None)
+
+        # Assert
+        self.assert_successful_request(actor, request_id, method_name)
+
+    @pytest.mark.parametrize(
+        "request_method_name,method_args",
+        REQUEST_METHODS_WITHOUT_NONE_START_HANDLING,
+    )
+    def test_start_parameter_none_causes_failure(self, request_method_name, method_args):
+        """
+        Test that None start parameter causes failure for non-instrument request
+        methods.
+        """
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        request_method = getattr(actor, request_method_name)
+        end_time = self.clock.utc_now() - timedelta(hours=1)
+
+        # Act & Assert
+        with pytest.raises(TypeError, match=r"'start' argument was `None`"):
+            request_method(**method_args, start=None, end=end_time)
+
+    @pytest.mark.parametrize("request_method_name,method_args", REQUEST_METHODS_ALL)
+    def test_start_parameter_future_time_causes_failure(self, request_method_name, method_args):
+        """
+        Test that future start times cause failure for all request methods.
+        """
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        future_start = self.clock.utc_now() + timedelta(hours=1)
+        end_time = self.clock.utc_now() - timedelta(hours=1)
+        request_method = getattr(actor, request_method_name)
+
+        # Act & Assert
+        with pytest.raises(ValueError, match="start was > now"):
+            request_method(**method_args, start=future_start, end=end_time)
+
+    @pytest.mark.parametrize("request_method_name,method_args", REQUEST_METHODS_ALL)
+    def test_end_parameter_none_succeeds(self, request_method_name, method_args):
+        """
+        Test that end=None succeeds for all request methods (replaces with current
+        time).
+        """
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        start_time = self.clock.utc_now() - timedelta(hours=1)
+        request_method = getattr(actor, request_method_name)
+
+        # Act
+        request_id = request_method(**method_args, start=start_time, end=None)
+        # Assert
+        self.assert_successful_request(actor, request_id, request_method_name)
+
+    @pytest.mark.parametrize("request_method_name,method_args", REQUEST_METHODS_ALL)
+    def test_end_parameter_future_time_causes_failure(self, request_method_name, method_args):
+        """
+        Test that future end times cause failure for all request methods.
+        """
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        start_time = self.clock.utc_now() - timedelta(hours=1)
+        future_end = self.clock.utc_now() + timedelta(hours=1)
+        request_method = getattr(actor, request_method_name)
+
+        # Act & Assert
+        with pytest.raises(ValueError, match="end was > now"):
+            request_method(**method_args, start=start_time, end=future_end)
+
+    @pytest.mark.parametrize("request_method_name,method_args", REQUEST_METHODS_ALL)
+    def test_start_after_end_causes_failure(self, request_method_name, method_args):
+        """
+        Test that start > end causes failure for all request methods.
+        """
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        # Create start time after end time, both in the past
+        end_time = self.clock.utc_now() - timedelta(hours=2)
+        start_time = self.clock.utc_now() - timedelta(hours=1)
+        request_method = getattr(actor, request_method_name)
+
+        # Act & Assert
+        with pytest.raises(ValueError, match="start was > end"):
+            request_method(**method_args, start=start_time, end=end_time)
+
+    @pytest.mark.parametrize("request_method_name,method_args", REQUEST_METHODS_ALL)
+    def test_start_equals_end_succeeds(self, request_method_name, method_args):
+        """
+        Test that start == end succeeds for all request methods.
+        """
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        # Create same time for start and end, in the past
+        same_time = self.clock.utc_now() - timedelta(hours=1)
+        request_method = getattr(actor, request_method_name)
+
+        # Act
+        request_id = request_method(**method_args, start=same_time, end=same_time)
+        # Assert
+        self.assert_successful_request(actor, request_id, request_method_name)
+
+    # Additional start/stop relationship validation test
+    @pytest.mark.parametrize("request_method_name,method_args", REQUEST_METHODS_ALL)
+    def test_start_before_stop_succeeds(self, request_method_name, method_args):
+        """
+        Test that start < stop succeeds for all request methods.
+        """
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        # Create start time before stop time, both in the past
+        start_time = self.clock.utc_now() - timedelta(hours=2)
+        stop_time = self.clock.utc_now() - timedelta(hours=1)
+        request_method = getattr(actor, request_method_name)
+
+        # Act
+        request_id = request_method(**method_args, start=start_time, end=stop_time)
+        # Assert
+        self.assert_successful_request(actor, request_id, request_method_name)

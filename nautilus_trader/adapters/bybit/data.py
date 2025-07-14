@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import defaultdict
+from datetime import timedelta
 from functools import partial
 from typing import TYPE_CHECKING
 
@@ -43,6 +44,7 @@ from nautilus_trader.adapters.bybit.schemas.ws import decoder_ws_orderbook
 from nautilus_trader.adapters.bybit.schemas.ws import decoder_ws_trade
 from nautilus_trader.adapters.bybit.websocket.client import BybitWebSocketClient
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.datetime import secs_to_millis
 from nautilus_trader.core.nautilus_pyo3 import Symbol
@@ -215,6 +217,8 @@ class BybitDataClient(LiveMarketDataClient):
             data=tickers,
             correlation_id=id,
             response_id=UUID4(),
+            start=self._clock.utc_now() - timedelta(hours=24),
+            end=self._clock.utc_now(),
             ts_init=self._clock.timestamp_ns(),
         )
         self._msgbus.response(data)
@@ -462,12 +466,18 @@ class BybitDataClient(LiveMarketDataClient):
             await self._handle_ticker_data_request(symbol, request.id)
 
     async def _request_instrument(self, request: RequestInstrument) -> None:
-        if request.start is not None:
+        # Check if start/end times are too far from current time
+        now = self._clock.utc_now()
+        now_ns = dt_to_unix_nanos(now)
+        start_ns = dt_to_unix_nanos(request.start)
+        end_ns = dt_to_unix_nanos(request.end)
+
+        if abs(start_ns - now_ns) > 10_000_000:  # More than 10ms difference
             self._log.warning(
                 f"Requesting instrument {request.instrument_id} with specified `start` which has no effect",
             )
 
-        if request.end is not None:
+        if abs(end_ns - now_ns) > 10_000_000:  # More than 10ms difference
             self._log.warning(
                 f"Requesting instrument {request.instrument_id} with specified `end` which has no effect",
             )
@@ -477,15 +487,21 @@ class BybitDataClient(LiveMarketDataClient):
             self._log.error(f"Cannot find instrument for {request.instrument_id}")
             return
 
-        self._handle_instrument(instrument, request.id, request.params)
+        self._handle_instrument(instrument, request.id, request.start, request.end, request.params)
 
     async def _request_instruments(self, request: RequestInstruments) -> None:
-        if request.start is not None:
+        # Check if start/end times are too far from current time
+        now = self._clock.utc_now()
+        now_ns = dt_to_unix_nanos(now)
+        start_ns = dt_to_unix_nanos(request.start)
+        end_ns = dt_to_unix_nanos(request.end)
+
+        if abs(start_ns - now_ns) > 10_000_000:  # More than 10ms difference
             self._log.warning(
                 f"Requesting instruments for {request.venue} with specified `start` which has no effect",
             )
 
-        if request.end is not None:
+        if abs(end_ns - now_ns) > 10_000_000:  # More than 10ms difference
             self._log.warning(
                 f"Requesting instruments for {request.venue} with specified `end` which has no effect",
             )
@@ -500,6 +516,8 @@ class BybitDataClient(LiveMarketDataClient):
             request.venue,
             target_instruments,
             request.id,
+            request.start,
+            request.end,
             request.params,
         )
 
@@ -514,13 +532,16 @@ class BybitDataClient(LiveMarketDataClient):
         if limit == 0 or limit > 1000:
             limit = 1000
 
-        if request.start is not None:
+        # Check if request is for trades older than one day
+        now = self._clock.utc_now()
+        now_ns = dt_to_unix_nanos(now)
+        start_ns = dt_to_unix_nanos(request.start)
+        end_ns = dt_to_unix_nanos(request.end)
+        one_day_ns = 86_400_000_000_000  # One day in nanoseconds
+
+        if (now_ns - start_ns) > one_day_ns:
             self._log.error(
-                "Cannot specify `start` for historical trades: Bybit only provides 'recent trades'",
-            )
-        if request.end is not None:
-            self._log.error(
-                "Cannot specify `end` for historical trades: Bybit only provides 'recent trades'",
+                "Cannot specify `start` older then 1 day for historical trades: Bybit only provides '1 day old trades'",
             )
 
         trades = await self._http_market.request_bybit_trades(
@@ -529,7 +550,17 @@ class BybitDataClient(LiveMarketDataClient):
             ts_init=self._clock.timestamp_ns(),
         )
 
-        self._handle_trade_ticks(request.instrument_id, trades, request.id, request.params)
+        # Filter trades to only include those within the requested time range
+        filtered_trades = [trade for trade in trades if start_ns <= trade.ts_init <= end_ns]
+
+        self._handle_trade_ticks(
+            request.instrument_id,
+            filtered_trades,
+            request.id,
+            request.start,
+            request.end,
+            request.params,
+        )
 
     async def _request_bars(self, request: RequestBars) -> None:
         if request.bar_type.is_internally_aggregated():
@@ -553,12 +584,8 @@ class BybitDataClient(LiveMarketDataClient):
             return
 
         bybit_interval = self._enum_parser.parse_bybit_kline(request.bar_type)
-        start_time_ms = None
-        if request.start is not None:
-            start_time_ms = secs_to_millis(request.start.timestamp())
-        end_time_ms = None
-        if request.end is not None:
-            end_time_ms = secs_to_millis(request.end.timestamp())
+        start_time_ms = secs_to_millis(request.start.timestamp())
+        end_time_ms = secs_to_millis(request.end.timestamp())
 
         self._log.debug(f"Requesting klines {start_time_ms=}, {end_time_ms=}, {request.limit=}")
 
@@ -572,6 +599,15 @@ class BybitDataClient(LiveMarketDataClient):
             timestamp_on_close=self._bars_timestamp_on_close,
         )
         # For historical data requests, all bars are complete (no partial bars)
+        self._handle_bars(
+            request.bar_type,
+            bars,
+            None,
+            request.id,
+            request.start,
+            request.end,
+            request.params,
+        )
         self._handle_bars(request.bar_type, bars, None, request.id, request.params)
 
     async def _handle_ticker_data_request(self, symbol: Symbol, correlation_id: UUID4) -> None:

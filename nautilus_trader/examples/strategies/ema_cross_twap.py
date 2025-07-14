@@ -16,6 +16,8 @@
 from decimal import Decimal
 from typing import Any
 
+import pandas as pd
+
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import PositiveFloat
 from nautilus_trader.config import PositiveInt
@@ -140,7 +142,10 @@ class EMACrossTWAP(Strategy):
         self.register_indicator_for_bars(self.config.bar_type, self.slow_ema)
 
         # Get historical data
-        self.request_bars(self.config.bar_type)
+        self.request_bars(
+            self.config.bar_type,
+            start=self._clock.utc_now() - pd.Timedelta(days=1),
+        )
 
         # Subscribe to live data
         self.subscribe_bars(self.config.bar_type)
