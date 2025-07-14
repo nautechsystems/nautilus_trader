@@ -292,7 +292,7 @@ class TestDYDXDataClientBarPartitioning:
 
         # Mock the fetch_candles method
         with patch.object(self.data_client, "_fetch_candles", side_effect=mock_fetch_candles):
-            with patch.object(self.data_client, "_handle_bars") as mock_handle:
+            with patch.object(self.data_client, "_handle_bars_py") as mock_handle:
                 # Act
                 await self.data_client._request_bars(request)
 
@@ -336,7 +336,7 @@ class TestDYDXDataClientBarPartitioning:
         with patch.object(self.data_client, "_http_market") as mock_http:
             mock_http.get_candles = AsyncMock(return_value=mock_response)
 
-            with patch.object(self.data_client, "_handle_bars") as mock_handle:
+            with patch.object(self.data_client, "_handle_bars_py") as mock_handle:
                 # Act
                 await self.data_client._request_bars(request)
 
@@ -429,7 +429,7 @@ class TestDYDXDataClientBarPartitioning:
         with patch.object(self.data_client, "_http_market") as mock_http:
             mock_http.get_candles = AsyncMock(side_effect=mock_api_with_delay)
 
-            with patch.object(self.data_client, "_handle_bars") as mock_handle:
+            with patch.object(self.data_client, "_handle_bars_py") as mock_handle:
                 # Act
                 start_time_test = asyncio.get_event_loop().time()
                 await self.data_client._request_bars(request)
@@ -518,7 +518,7 @@ class TestDYDXDataClientBarPartitioning:
 
         # Mock the _fetch_candles method
         with patch.object(self.data_client, "_fetch_candles", side_effect=mock_fetch_candles):
-            with patch.object(self.data_client, "_handle_bars") as mock_handle:
+            with patch.object(self.data_client, "_handle_bars_py") as mock_handle:
                 # Act
                 await self.data_client._request_bars(request)
 
