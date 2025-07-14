@@ -760,8 +760,17 @@ impl BlockchainDataClient {
 
         while let Some(log) = pools_stream.next().await {
             let pool = dex.parse_pool_created_event(log)?;
-            self.process_token(pool.token0.to_string()).await?;
-            self.process_token(pool.token1.to_string()).await?;
+            
+            // If any of the tokens are properly processed, skip the pool creation.
+            if let Err(e) = self.process_token(pool.token0.to_string()).await {
+                tracing::warn!("Failed to process token {} with error {e}. Skipping pool {}.", pool.token0, pool.pool_address );
+                continue;
+            }
+            if let Err(e) = self.process_token(pool.token1.to_string()).await{
+                tracing::warn!("Failed to process token {} with error {e}. Skipping pool {}.", pool.token1, pool.pool_address );
+                continue;
+            }
+            
             self.process_pool(&dex.dex, pool).await?;
         }
         Ok(())
