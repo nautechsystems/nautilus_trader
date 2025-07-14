@@ -77,7 +77,7 @@ nautilus-okx = { path = "crates/adapters/okx", version = "0.50.0" }
 nautilus-tardis = { path = "crates/adapters/tardis", version = "0.50.0" }
 
 ahash = "0.8.12"
-alloy = { version = "1.0.20", default-features = false, features = ["sol-types", "contract"] }
+alloy = { version = "1.0.22", default-features = false, features = ["sol-types", "contract"] }
 alloy-primitives = { version = "1.2.1", features = ["serde"] }
 anyhow = "1.0.98"
 arraydeque = "0.5.1"
@@ -154,7 +154,7 @@ pyo3-async-runtimes = { version = "0.25.0", default-features = false, features =
   "tokio-runtime",
 ] }
 rand = { version = "0.9.1", default-features = false, features = ["std", "thread_rng"] }
-redis = { version = "0.32.3", features = [
+redis = { version = "0.32.4", features = [
   "connection-manager",
   "keep-alive",
   "sentinel",
@@ -189,7 +189,7 @@ sqlx = { version = "0.8.6", default-features = false, features = [
   "derive",
 ] }
 strum = { version = "0.27.1", features = ["derive"] }
-sysinfo = { version = "0.35.2", default-features = false, features = ["system"] }
+sysinfo = { version = "0.36.0", default-features = false, features = ["system"] }
 tabled = { version = "0.20.0", default-features = false, features = ["std", "derive"] }
 thiserror = "2.0.12"
 thousands = "0.2.0"
@@ -213,7 +213,7 @@ tokio-rustls = "0.26.2"
 tokio-stream = "0.1.17"
 tokio-tungstenite = { version = "0.27.0", features = ["rustls-tls-webpki-roots"] }
 tokio-util = { version = "0.7.15", default-features = false, features = ["io"] }
-toml = { version = "0.8.23", default-features = false, features = ["parse"] }
+toml = { version = "0.9.2", default-features = false, features = ["parse", "serde"] }
 tracing = { version = "0.1.41", default-features = false, features = ["std", "attributes"] }
 # Disable default feature "tracing-log" since it interferes with custom logging
 tracing-subscriber = { version = "0.3.19", default-features = false, features = [
