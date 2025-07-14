@@ -15,7 +15,7 @@
 
 //! Performance reporting and metrics tracking for blockchain operations.
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 /// Tracks performance metrics during block synchronization
 #[derive(Debug)]
@@ -31,6 +31,7 @@ pub struct BlockSyncMetrics {
 
 impl BlockSyncMetrics {
     /// Creates a new metrics tracker for block synchronization
+    #[must_use] 
     pub fn new(from_block: u64, total_blocks: u64, update_interval: u64) -> Self {
         let now = Instant::now();
         Self {
@@ -45,12 +46,13 @@ impl BlockSyncMetrics {
     }
 
     /// Updates metrics after a database operation
-    pub fn update(&mut self, batch_size: usize) {
+    pub const fn update(&mut self, batch_size: usize) {
         self.blocks_processed += batch_size as u64;
     }
 
     /// Checks if progress should be logged based on the current block number
-    pub fn should_log_progress(&self, block_number: u64, current_block: u64) -> bool {
+    #[must_use] 
+    pub const fn should_log_progress(&self, block_number: u64, current_block: u64) -> bool {
         block_number >= self.next_progress_threshold || block_number >= current_block
     }
 
@@ -58,17 +60,19 @@ impl BlockSyncMetrics {
     pub fn log_progress(&mut self, block_number: u64) {
         let elapsed = self.start_time.elapsed();
         let interval_elapsed = self.last_progress_time.elapsed();
-        let interval_blocks = if block_number > self.next_progress_threshold - self.progress_update_interval {
-            block_number - (self.next_progress_threshold - self.progress_update_interval)
-        } else {
-            self.progress_update_interval
-        };
-        
+        let interval_blocks =
+            if block_number > self.next_progress_threshold - self.progress_update_interval {
+                block_number - (self.next_progress_threshold - self.progress_update_interval)
+            } else {
+                self.progress_update_interval
+            };
+
         // Calculate rates
         let avg_rate = self.blocks_processed as f64 / elapsed.as_secs_f64();
         let current_rate = interval_blocks as f64 / interval_elapsed.as_secs_f64();
-        let progress_pct = (self.blocks_processed as f64 / self.total_blocks as f64 * 100.0).min(100.0);
-        
+        let progress_pct =
+            (self.blocks_processed as f64 / self.total_blocks as f64 * 100.0).min(100.0);
+
         // Estimate remaining time
         let blocks_remaining = self.total_blocks.saturating_sub(self.blocks_processed);
         let eta_display = calculate_eta(blocks_remaining, avg_rate);
@@ -102,7 +106,7 @@ impl BlockSyncMetrics {
 /// Formats duration into human-readable time (e.g., "3.2h", "45m", "2.5d")
 fn format_duration(seconds: f64) -> String {
     if seconds < 60.0 {
-        format!("{:.0}s", seconds)
+        format!("{seconds:.0}s")
     } else if seconds < 3600.0 {
         format!("{:.0} minutes", seconds / 60.0)
     } else if seconds < 86400.0 {
@@ -116,7 +120,7 @@ fn format_duration(seconds: f64) -> String {
 fn calculate_eta(blocks_remaining: u64, avg_rate: f64) -> String {
     let eta_seconds = blocks_remaining as f64 / avg_rate;
     if eta_seconds < 60.0 {
-        format!("{:.0}s", eta_seconds)
+        format!("{eta_seconds:.0}s")
     } else if eta_seconds < 3600.0 {
         format!("{:.0}m", eta_seconds / 60.0)
     } else if eta_seconds < 86400.0 {

@@ -156,10 +156,10 @@ impl BlockchainCache {
                     );
                 }
             }
-            
+
             if block_timestamps.is_empty() {
                 log::info!("No blocks found in database");
-                return Ok(());           
+                return Ok(());
             }
 
             log::info!(
@@ -196,17 +196,19 @@ impl BlockchainCache {
         if blocks.is_empty() {
             return Ok(());
         }
-        
+
         // Batch insert to database if available
         if let Some(database) = &self.database {
-            database.add_blocks_batch(self.chain.chain_id, &blocks).await?;
+            database
+                .add_blocks_batch(self.chain.chain_id, &blocks)
+                .await?;
         }
-        
+
         // Update in-memory cache
         for block in blocks {
             self.block_timestamps.insert(block.number, block.timestamp);
         }
-        
+
         Ok(())
     }
 

@@ -48,6 +48,7 @@ use crate::{
     events::pool_created::PoolCreatedEvent,
     exchanges::{dex_extended_map, extended::DexExtended},
     hypersync::client::HyperSyncClient,
+    reporting::BlockSyncMetrics,
     rpc::{
         BlockchainRpcClient, BlockchainRpcClientAny,
         chains::{
@@ -57,7 +58,6 @@ use crate::{
         http::BlockchainHttpRpcClient,
         types::BlockchainMessage,
     },
-    reporting::BlockSyncMetrics,
     validation::validate_address,
 };
 
@@ -306,9 +306,12 @@ impl BlockchainDataClient {
                         "RPC pool swaps subscription not yet implemented, using HyperSync"
                     );
                 }
-                
+
                 // TODO: Implement pool swaps subscription logic
-                tracing::error!("Implement pool swap subscription logic for {}", cmd.instrument_id);
+                tracing::error!(
+                    "Implement pool swap subscription logic for {}",
+                    cmd.instrument_id
+                );
 
                 Ok(())
             }
@@ -323,9 +326,12 @@ impl BlockchainDataClient {
                         "RPC pool liquidity updates subscription not yet implemented, using HyperSync"
                     );
                 }
-                
+
                 // TODO: Implement pool liquidity updates subscription logic
-                tracing::error!("Implement pool liquidity updates subscription logic for {}", cmd.instrument_id);
+                tracing::error!(
+                    "Implement pool liquidity updates subscription logic for {}",
+                    cmd.instrument_id
+                );
 
                 Ok(())
             }
@@ -401,7 +407,7 @@ impl BlockchainDataClient {
     ///
     /// Returns an error if block streaming or database operations fail.
     pub async fn sync_blocks(
-        &mut self, 
+        &mut self,
         from_block: Option<u64>,
         to_block: Option<u64>,
     ) -> anyhow::Result<()> {
@@ -435,32 +441,32 @@ impl BlockchainDataClient {
         tokio::pin!(blocks_stream);
 
         let mut metrics = BlockSyncMetrics::new(from_block, total_blocks, 50000);
-        
+
         // Batch configuration
-        const BATCH_SIZE: usize =  1000;
+        const BATCH_SIZE: usize = 1000;
         let mut batch: Vec<Block> = Vec::with_capacity(BATCH_SIZE);
 
         while let Some(block) = blocks_stream.next().await {
             let block_number = block.number;
             batch.push(block);
-            
+
             // Process batch when full or last block
             if batch.len() >= BATCH_SIZE || block_number >= to_block {
                 let batch_size = batch.len();
-                
+
                 self.cache.add_blocks_batch(batch).await?;
                 metrics.update(batch_size);
-                
+
                 // Re-initialize batch vector
                 batch = Vec::with_capacity(BATCH_SIZE);
             }
-            
+
             // Log progress if needed
             if metrics.should_log_progress(block_number, to_block) {
                 metrics.log_progress(block_number);
             }
         }
-        
+
         // Process any remaining blocks
         if !batch.is_empty() {
             let batch_size = batch.len();
@@ -743,17 +749,25 @@ impl BlockchainDataClient {
 
         while let Some(log) = pools_stream.next().await {
             let pool = dex.parse_pool_created_event(log)?;
-            
+
             // If any of the tokens are properly processed, skip the pool creation.
             if let Err(e) = self.process_token(pool.token0.to_string()).await {
-                tracing::warn!("Failed to process token {} with error {e}. Skipping pool {}.", pool.token0, pool.pool_address );
+                tracing::warn!(
+                    "Failed to process token {} with error {e}. Skipping pool {}.",
+                    pool.token0,
+                    pool.pool_address
+                );
                 continue;
             }
-            if let Err(e) = self.process_token(pool.token1.to_string()).await{
-                tracing::warn!("Failed to process token {} with error {e}. Skipping pool {}.", pool.token1, pool.pool_address );
+            if let Err(e) = self.process_token(pool.token1.to_string()).await {
+                tracing::warn!(
+                    "Failed to process token {} with error {e}. Skipping pool {}.",
+                    pool.token1,
+                    pool.pool_address
+                );
                 continue;
             }
-            
+
             self.process_pool(&dex.dex, pool).await?;
         }
         Ok(())
@@ -1034,7 +1048,8 @@ impl DataClient for BlockchainDataClient {
         self.sync_blocks(Some(from_block), None).await?;
         for dex_id in self.config.dex_ids.clone() {
             self.register_dex_exchange(&dex_id).await?;
-            self.sync_exchange_pools(&dex_id, Some(from_block), None).await?;
+            self.sync_exchange_pools(&dex_id, Some(from_block), None)
+                .await?;
         }
 
         tracing::info!(

@@ -36,8 +36,8 @@ impl BlockchainCacheDatabase {
     /// Panics if unable to connect to PostgreSQL with the provided options.
     pub async fn init(pg_options: PgConnectOptions) -> Self {
         let pool = sqlx::postgres::PgPoolOptions::new()
-            .max_connections(32)     // Increased from default 10
-            .min_connections(5)      // Keep some connections warm
+            .max_connections(32) // Increased from default 10
+            .min_connections(5) // Keep some connections warm
             .acquire_timeout(std::time::Duration::from_secs(3))
             .connect_with(pg_options)
             .await

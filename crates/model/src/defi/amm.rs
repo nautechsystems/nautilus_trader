@@ -125,38 +125,38 @@ impl Pool {
 }
 
 fn sanitize_symbol(symbol: &str) -> String {
-    symbol.chars()
+    symbol
+        .chars()
         .map(|c| match c {
-            '₮' => 'T',  // Tugrik sign
-            '₽' => 'R',  // Ruble sign
-            '₹' => 'R',  // Rupee sign
-            '₩' => 'W',  // Won sign
-            '₴' => 'H',  // Hryvnia sign
-            '₡' => 'C',  // Colon sign
-            '₪' => 'S',  // Shekel sign
-            '₫' => 'D',  // Dong sign
-            '₦' => 'N',  // Naira sign
-            '₨' => 'R',  // Rupee sign
-            '₧' => 'P',  // Peseta sign
-            '₭' => 'K',  // Kip sign
-            '₵' => 'C',  // Cedi sign
-            '₱' => 'P',  // Peso sign
-            '₲' => 'G',  // Guarani sign
-            '₳' => 'A',  // Austral sign
-            '₸' => 'T',  // Tenge sign
-            '₶' => 'L',  // Livre sign
-            '₷' => 'S',  // Spesmilo sign
-            '₺' => 'T',  // Lira sign
-            '₻' => 'N',  // Nordic mark sign
-            '₼' => 'M',  // Manat sign
-            '₾' => 'L',  // Lari sign
-            '₿' => 'B',  // Bitcoin sign
+            '₮' => 'T', // Tugrik sign
+            '₽' => 'R', // Ruble sign
+            '₹' => 'R', // Rupee sign
+            '₩' => 'W', // Won sign
+            '₴' => 'H', // Hryvnia sign
+            '₡' => 'C', // Colon sign
+            '₪' => 'S', // Shekel sign
+            '₫' => 'D', // Dong sign
+            '₦' => 'N', // Naira sign
+            '₨' => 'R', // Rupee sign
+            '₧' => 'P', // Peseta sign
+            '₭' => 'K', // Kip sign
+            '₵' => 'C', // Cedi sign
+            '₱' => 'P', // Peso sign
+            '₲' => 'G', // Guarani sign
+            '₳' => 'A', // Austral sign
+            '₸' => 'T', // Tenge sign
+            '₶' => 'L', // Livre sign
+            '₷' => 'S', // Spesmilo sign
+            '₺' => 'T', // Lira sign
+            '₻' => 'N', // Nordic mark sign
+            '₼' => 'M', // Manat sign
+            '₾' => 'L', // Lari sign
+            '₿' => 'B', // Bitcoin sign
             _ if c.is_ascii() => c,
-            _ => '_',    // Replace any other non-ASCII with underscore
+            _ => '_', // Replace any other non-ASCII with underscore
         })
         .collect()
 }
-
 
 impl Display for Pool {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

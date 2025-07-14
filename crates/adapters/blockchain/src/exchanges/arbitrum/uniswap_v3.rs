@@ -35,6 +35,8 @@ pub static UNISWAP_V3: LazyLock<DexExtended> = LazyLock::new(|| {
         "Mint(address,address,int24,int24,uint128,uint256,uint256)",
         "Burn(address,int24,int24,uint128,uint256,uint256)",
     ));
-    dex.set_pool_created_event_parsing(crate::exchanges::ethereum::uniswap_v3::parse_pool_created_event);
+    dex.set_pool_created_event_parsing(
+        crate::exchanges::ethereum::uniswap_v3::parse_pool_created_event,
+    );
     dex
 });

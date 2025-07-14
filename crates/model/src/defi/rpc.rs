@@ -15,7 +15,6 @@
 
 use serde::{Deserialize, de::DeserializeOwned};
 
-
 /// A response structure received from a WebSocket JSON-RPC blockchain node subscription.
 #[derive(Debug, Deserialize)]
 pub struct RpcNodeWssResponse<T>

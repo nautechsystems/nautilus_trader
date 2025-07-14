@@ -16,7 +16,7 @@
 use std::{collections::HashMap, num::NonZeroU32};
 
 use bytes::Bytes;
-use nautilus_model::defi::rpc::{RpcNodeHttpResponse};
+use nautilus_model::defi::rpc::RpcNodeHttpResponse;
 use nautilus_network::{http::HttpClient, ratelimiter::quota::Quota};
 use reqwest::Method;
 use serde::de::DeserializeOwned;
@@ -92,13 +92,19 @@ impl BlockchainHttpRpcClient {
             Ok(bytes) => match serde_json::from_slice::<RpcNodeHttpResponse<T>>(bytes.as_ref()) {
                 Ok(parsed) => {
                     if let Some(error) = parsed.error {
-                        Err(anyhow::anyhow!("RPC error {}: {}", error.code, error.message))
+                        Err(anyhow::anyhow!(
+                            "RPC error {}: {}",
+                            error.code,
+                            error.message
+                        ))
                     } else if let Some(result) = parsed.result {
                         Ok(result)
                     } else {
-                        Err(anyhow::anyhow!("Response missing both result and error fields"))
+                        Err(anyhow::anyhow!(
+                            "Response missing both result and error fields"
+                        ))
                     }
-                },
+                }
                 Err(e) => Err(anyhow::anyhow!("Failed to parse eth call response: {}", e)),
             },
             Err(e) => Err(anyhow::anyhow!(
