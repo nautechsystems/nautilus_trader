@@ -27,6 +27,7 @@ use nautilus_model::defi::Chain;
 pub struct BlockchainDataClientConfig {
     /// The blockchain chain configuration.
     pub chain: Arc<Chain>,
+    /// List of decentralized exchange IDs to register and sync during connection.
     pub dex_ids: Vec<String>,
     /// Determines if the client should use Hypersync for live data streaming.
     pub use_hypersync_for_live_data: bool,

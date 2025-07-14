@@ -1033,21 +1033,23 @@ impl DataClient for BlockchainDataClient {
             rpc_client.connect().await?;
         }
 
+        let from_block = self.determine_from_block();
         // Initialize the chain and register the Dex exchanges in the cache.
         self.cache.initialize_chain().await;
-        for dex_id in self.config.dex_ids.clone() {
-            self.register_dex_exchange(&dex_id).await?;
-        }
-
-        let from_block = self.determine_from_block();
-        tracing::info!(
-            "Connecting to blockchain data source for '{chain_name}' from block {from_block}",
-            chain_name = self.chain.name
-        );
         // Import the cached blockchain data.
         self.cache.connect(from_block).await?;
         // Sync the remaining blocks which are missing.
         self.sync_blocks(Some(from_block), None).await?;
+        for dex_id in self.config.dex_ids.clone() {
+            self.register_dex_exchange(&dex_id).await?;
+            self.sync_exchange_pools(&dex_id, None, None).await?;
+        }
+
+        tracing::info!(
+            "Connecting to blockchain data source for '{chain_name}' from block {from_block}",
+            chain_name = self.chain.name
+        );
+
         // self.subscribe_blocks().await?;
 
         if self.process_task.is_none() {
