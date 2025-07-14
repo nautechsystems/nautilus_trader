@@ -23,6 +23,7 @@ import pytz
 from nautilus_trader.core.datetime import as_utc_index
 from nautilus_trader.core.datetime import as_utc_timestamp
 from nautilus_trader.core.datetime import dt_to_unix_nanos
+from nautilus_trader.core.datetime import ensure_pydatetime_utc
 from nautilus_trader.core.datetime import format_iso8601
 from nautilus_trader.core.datetime import format_optional_iso8601
 from nautilus_trader.core.datetime import is_datetime_utc
@@ -488,3 +489,89 @@ class TestDatetimeFunctions:
         # Assert
         assert result1.index[0] == result2.index[0]
         assert result1.index.tz == result2.index.tz
+
+    def test_ensure_pydatetime_utc_given_none_returns_none(self):
+        # Arrange, Act
+        result = ensure_pydatetime_utc(None)
+
+        # Assert
+        assert result is None
+
+    def test_ensure_pydatetime_utc_unix_epoch(self):
+        # Arrange
+        timestamp = UNIX_EPOCH
+
+        # Act
+        result = ensure_pydatetime_utc(timestamp)
+
+        # Assert
+        assert isinstance(result, datetime)
+        assert str(result.tzinfo) == "UTC"
+        assert result.year == 1970
+        assert result.month == 1
+        assert result.day == 1
+        assert result.hour == 0
+        assert result.minute == 0
+        assert result.second == 0
+
+    def test_ensure_pydatetime_utc_given_utc_timestamp_returns_pydatetime(self):
+        # Arrange
+        timestamp = pd.Timestamp("2023-01-15 14:30:00", tz="UTC")
+
+        # Act
+        result = ensure_pydatetime_utc(timestamp)
+
+        # Assert
+        assert isinstance(result, datetime)
+        assert str(result.tzinfo) == "UTC"
+        assert result.year == 2023
+        assert result.month == 1
+        assert result.day == 15
+        assert result.hour == 14
+        assert result.minute == 30
+        assert result.second == 0
+
+    def test_ensure_pydatetime_utc_given_non_utc_timestamp_converts_to_utc(self):
+        # Arrange
+        est = pytz.timezone("US/Eastern")
+        timestamp = pd.Timestamp("2023-06-15 10:30:00", tz=est)
+
+        # Act
+        result = ensure_pydatetime_utc(timestamp)
+
+        # Assert
+        assert isinstance(result, datetime)
+        assert str(result.tzinfo) == "UTC"
+        # EST is UTC-5, but in June it's EDT (UTC-4), so 10:30 EST becomes 14:30 UTC
+        assert result.hour == 14
+        assert result.minute == 30
+
+    def test_ensure_pydatetime_utc_given_naive_timestamp_raises_error(self):
+        # Arrange
+        timestamp = pd.Timestamp("2023-01-15 14:30:00")
+
+        # Act & Assert
+        with pytest.raises(TypeError, match="Cannot convert tz-naive Timestamp"):
+            ensure_pydatetime_utc(timestamp)
+
+    @pytest.mark.parametrize(
+        ("timezone", "expected_hour"),
+        [
+            ("UTC", 12),
+            ("US/Pacific", 20),  # UTC-8, so 12:00 PST becomes 20:00 UTC
+            ("Europe/London", 12),  # UTC+0 in winter
+            ("Asia/Tokyo", 3),  # UTC+9, so 12:00 JST becomes 03:00 UTC (next day)
+        ],
+    )
+    def test_ensure_pydatetime_utc_timezone_conversion(self, timezone, expected_hour):
+        # Arrange
+        tz = pytz.timezone(timezone)
+        timestamp = pd.Timestamp("2023-01-15 12:00:00", tz=tz)
+
+        # Act
+        result = ensure_pydatetime_utc(timestamp)
+
+        # Assert
+        assert isinstance(result, datetime)
+        assert str(result.tzinfo) == "UTC"
+        assert result.hour == expected_hour
