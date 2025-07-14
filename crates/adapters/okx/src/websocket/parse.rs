@@ -32,21 +32,27 @@ use nautilus_model::{
 };
 use ustr::Ustr;
 
-use super::messages::{
-    OKXBookMsg, OKXCandleMsg, OKXIndexPriceMsg, OKXMarkPriceMsg, OKXOrderMsg, OKXTickerMsg,
-    OKXTradeMsg, OrderBookEntry,
+use super::{
+    enums::OKXWsChannel,
+    messages::{
+        OKXBookMsg, OKXCandleMsg, OKXIndexPriceMsg, OKXMarkPriceMsg, OKXOrderMsg, OKXTickerMsg,
+        OKXTradeMsg, OrderBookEntry,
+    },
 };
 use crate::{
     common::{
         enums::{OKXBookAction, OKXCandleConfirm, OKXOrderStatus, OKXOrderType},
+        models::OKXInstrument,
         parse::{
-            parse_client_order_id, parse_millisecond_timestamp, parse_order_side, parse_price,
+            okx_channel_to_bar_spec, parse_client_order_id, parse_instrument_any,
+            parse_message_vec, parse_millisecond_timestamp, parse_order_side, parse_price,
             parse_quantity,
         },
     },
-    websocket::messages::ExecutionReport,
+    websocket::messages::{ExecutionReport, NautilusWsMessage},
 };
 
+/// Parses vector of OKX book messages into Nautilus order book deltas.
 pub fn parse_book_msg_vec(
     data: Vec<OKXBookMsg>,
     instrument_id: &InstrumentId,
@@ -72,6 +78,7 @@ pub fn parse_book_msg_vec(
     Ok(deltas)
 }
 
+/// Parses vector of OKX ticker messages into Nautilus quote ticks.
 pub fn parse_ticker_msg_vec(
     data: serde_json::Value,
     instrument_id: &InstrumentId,
@@ -79,23 +86,22 @@ pub fn parse_ticker_msg_vec(
     size_precision: u8,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Vec<Data>> {
-    let msgs: Vec<OKXTickerMsg> = serde_json::from_value(data)?;
-    let mut quotes = Vec::with_capacity(msgs.len());
-
-    for msg in msgs {
-        let quote = parse_ticker_msg(
-            &msg,
-            *instrument_id,
-            price_precision,
-            size_precision,
-            ts_init,
-        )?;
-        quotes.push(Data::Quote(quote));
-    }
-
-    Ok(quotes)
+    parse_message_vec(
+        data,
+        |msg| {
+            parse_ticker_msg(
+                msg,
+                *instrument_id,
+                price_precision,
+                size_precision,
+                ts_init,
+            )
+        },
+        Data::Quote,
+    )
 }
 
+/// Parses vector of OKX book messages into Nautilus quote ticks.
 pub fn parse_quote_msg_vec(
     data: serde_json::Value,
     instrument_id: &InstrumentId,
@@ -103,23 +109,22 @@ pub fn parse_quote_msg_vec(
     size_precision: u8,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Vec<Data>> {
-    let msgs: Vec<OKXBookMsg> = serde_json::from_value(data)?;
-    let mut quotes = Vec::with_capacity(msgs.len());
-
-    for msg in msgs {
-        let quote = parse_quote_msg(
-            &msg,
-            *instrument_id,
-            price_precision,
-            size_precision,
-            ts_init,
-        )?;
-        quotes.push(Data::Quote(quote));
-    }
-
-    Ok(quotes)
+    parse_message_vec(
+        data,
+        |msg| {
+            parse_quote_msg(
+                msg,
+                *instrument_id,
+                price_precision,
+                size_precision,
+                ts_init,
+            )
+        },
+        Data::Quote,
+    )
 }
 
+/// Parses vector of OKX trade messages into Nautilus trade ticks.
 pub fn parse_trade_msg_vec(
     data: serde_json::Value,
     instrument_id: &InstrumentId,
@@ -127,57 +132,50 @@ pub fn parse_trade_msg_vec(
     size_precision: u8,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Vec<Data>> {
-    let msgs: Vec<OKXTradeMsg> = serde_json::from_value(data)?;
-    let mut trades = Vec::with_capacity(msgs.len());
-
-    for msg in msgs {
-        let trade = parse_trade_msg(
-            &msg,
-            *instrument_id,
-            price_precision,
-            size_precision,
-            ts_init,
-        )?;
-        trades.push(Data::Trade(trade));
-    }
-
-    Ok(trades)
+    parse_message_vec(
+        data,
+        |msg| {
+            parse_trade_msg(
+                msg,
+                *instrument_id,
+                price_precision,
+                size_precision,
+                ts_init,
+            )
+        },
+        Data::Trade,
+    )
 }
 
+/// Parses vector of OKX mark price messages into Nautilus mark price updates.
 pub fn parse_mark_price_msg_vec(
     data: serde_json::Value,
     instrument_id: &InstrumentId,
     price_precision: u8,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Vec<Data>> {
-    let msgs: Vec<OKXMarkPriceMsg> = serde_json::from_value(data)?;
-    let mut updates = Vec::with_capacity(msgs.len());
-
-    for msg in msgs {
-        let update = parse_mark_price_msg(&msg, *instrument_id, price_precision, ts_init)?;
-        updates.push(Data::MarkPriceUpdate(update));
-    }
-
-    Ok(updates)
+    parse_message_vec(
+        data,
+        |msg| parse_mark_price_msg(msg, *instrument_id, price_precision, ts_init),
+        Data::MarkPriceUpdate,
+    )
 }
 
+/// Parses vector of OKX index price messages into Nautilus index price updates.
 pub fn parse_index_price_msg_vec(
     data: serde_json::Value,
     instrument_id: &InstrumentId,
     price_precision: u8,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Vec<Data>> {
-    let msgs: Vec<OKXIndexPriceMsg> = serde_json::from_value(data)?;
-    let mut updates = Vec::with_capacity(msgs.len());
-
-    for msg in msgs {
-        let update = parse_index_price_msg(&msg, *instrument_id, price_precision, ts_init)?;
-        updates.push(Data::IndexPriceUpdate(update));
-    }
-
-    Ok(updates)
+    parse_message_vec(
+        data,
+        |msg| parse_index_price_msg(msg, *instrument_id, price_precision, ts_init),
+        Data::IndexPriceUpdate,
+    )
 }
 
+/// Parses vector of OKX candle messages into Nautilus bars.
 pub fn parse_candle_msg_vec(
     data: serde_json::Value,
     instrument_id: &InstrumentId,
@@ -201,6 +199,7 @@ pub fn parse_candle_msg_vec(
     Ok(bars)
 }
 
+/// Parses vector of OKX book messages into Nautilus depth10 updates.
 pub fn parse_book10_msg_vec(
     data: Vec<OKXBookMsg>,
     instrument_id: &InstrumentId,
@@ -224,6 +223,7 @@ pub fn parse_book10_msg_vec(
     Ok(depth10_updates)
 }
 
+/// Parses an OKX book message into Nautilus order book deltas.
 pub fn parse_book_msg(
     msg: &OKXBookMsg,
     instrument_id: InstrumentId,
@@ -292,6 +292,7 @@ pub fn parse_book_msg(
     OrderBookDeltas::new_checked(instrument_id, deltas)
 }
 
+/// Parses an OKX book message into a Nautilus quote tick.
 pub fn parse_quote_msg(
     msg: &OKXBookMsg,
     instrument_id: InstrumentId,
@@ -321,8 +322,7 @@ pub fn parse_quote_msg(
 
 /// Parses an OKX book message into a Nautilus [`OrderBookDepth10`].
 ///
-/// This function converts order book data from OKX's format into a fixed-depth
-/// order book snapshot with the top 10 levels for both bids and asks.
+/// Converts order book data into a fixed-depth snapshot with top 10 levels for both sides.
 pub fn parse_book10_msg(
     msg: &OKXBookMsg,
     instrument_id: InstrumentId,
@@ -375,6 +375,7 @@ pub fn parse_book10_msg(
     ))
 }
 
+/// Parses an OKX ticker message into a Nautilus quote tick.
 pub fn parse_ticker_msg(
     msg: &OKXTickerMsg,
     instrument_id: InstrumentId,
@@ -399,6 +400,7 @@ pub fn parse_ticker_msg(
     )
 }
 
+/// Parses an OKX trade message into a Nautilus trade tick.
 pub fn parse_trade_msg(
     msg: &OKXTradeMsg,
     instrument_id: InstrumentId,
@@ -423,6 +425,7 @@ pub fn parse_trade_msg(
     )
 }
 
+/// Parses an OKX mark price message into a Nautilus mark price update.
 pub fn parse_mark_price_msg(
     msg: &OKXMarkPriceMsg,
     instrument_id: InstrumentId,
@@ -440,6 +443,7 @@ pub fn parse_mark_price_msg(
     ))
 }
 
+/// Parses an OKX index price message into a Nautilus index price update.
 pub fn parse_index_price_msg(
     msg: &OKXIndexPriceMsg,
     instrument_id: InstrumentId,
@@ -457,6 +461,7 @@ pub fn parse_index_price_msg(
     ))
 }
 
+/// Parses an OKX candle message into a Nautilus bar.
 pub fn parse_candle_msg(
     msg: &OKXCandleMsg,
     bar_type: BarType,
@@ -474,7 +479,7 @@ pub fn parse_candle_msg(
     Bar::new_checked(bar_type, open, high, low, close, volume, ts_event, ts_init)
 }
 
-/// Parses OKX WebSocket order messages into Nautilus order events.
+/// Parses vector of OKX order messages into Nautilus execution reports.
 pub fn parse_order_msg_vec(
     data: Vec<OKXOrderMsg>,
     account_id: AccountId,
@@ -505,7 +510,7 @@ pub fn parse_order_msg_vec(
     Ok(order_reports)
 }
 
-/// Parses an OrderStatusReport from an OKX order message.
+/// Parses an OKX order message into a Nautilus order status report.
 pub fn parse_order_status_report(
     msg: &OKXOrderMsg,
     instrument: &InstrumentAny,
@@ -563,7 +568,7 @@ pub fn parse_order_status_report(
     Ok(report)
 }
 
-/// Parses a FillReport from an OKX order message.
+/// Parses an OKX order message into a Nautilus fill report.
 pub fn parse_fill_report(
     msg: &OKXOrderMsg,
     instrument: &InstrumentAny,
@@ -603,6 +608,104 @@ pub fn parse_fill_report(
     );
 
     Ok(report)
+}
+
+/// Parses OKX WebSocket message data based on channel type.
+pub fn parse_ws_message_data(
+    channel: &OKXWsChannel,
+    data: serde_json::Value,
+    instrument_id: &InstrumentId,
+    price_precision: u8,
+    size_precision: u8,
+    ts_init: UnixNanos,
+) -> anyhow::Result<Option<NautilusWsMessage>> {
+    match channel {
+        OKXWsChannel::Instruments => {
+            if let Ok(msg) = serde_json::from_value::<OKXInstrument>(data) {
+                match parse_instrument_any(&msg, ts_init)? {
+                    Some(inst_any) => Ok(Some(NautilusWsMessage::Instrument(Box::new(inst_any)))),
+                    None => {
+                        tracing::warn!("Empty instrument payload: {:?}", msg);
+                        Ok(None)
+                    }
+                }
+            } else {
+                anyhow::bail!("Failed to deserialize instrument payload")
+            }
+        }
+        OKXWsChannel::BboTbt => {
+            let data_vec = parse_quote_msg_vec(
+                data,
+                instrument_id,
+                price_precision,
+                size_precision,
+                ts_init,
+            )?;
+            Ok(Some(NautilusWsMessage::Data(data_vec)))
+        }
+        OKXWsChannel::Tickers => {
+            let data_vec = parse_ticker_msg_vec(
+                data,
+                instrument_id,
+                price_precision,
+                size_precision,
+                ts_init,
+            )?;
+            Ok(Some(NautilusWsMessage::Data(data_vec)))
+        }
+        OKXWsChannel::Trades => {
+            let data_vec = parse_trade_msg_vec(
+                data,
+                instrument_id,
+                price_precision,
+                size_precision,
+                ts_init,
+            )?;
+            Ok(Some(NautilusWsMessage::Data(data_vec)))
+        }
+        OKXWsChannel::MarkPrice => {
+            let data_vec = parse_mark_price_msg_vec(data, instrument_id, price_precision, ts_init)?;
+            Ok(Some(NautilusWsMessage::Data(data_vec)))
+        }
+        OKXWsChannel::IndexTickers => {
+            let data_vec =
+                parse_index_price_msg_vec(data, instrument_id, price_precision, ts_init)?;
+            Ok(Some(NautilusWsMessage::Data(data_vec)))
+        }
+        channel if okx_channel_to_bar_spec(channel).is_some() => {
+            let bar_spec = okx_channel_to_bar_spec(channel).unwrap();
+            let data_vec = parse_candle_msg_vec(
+                data,
+                instrument_id,
+                price_precision,
+                size_precision,
+                bar_spec,
+                ts_init,
+            )?;
+            Ok(Some(NautilusWsMessage::Data(data_vec)))
+        }
+        OKXWsChannel::Books
+        | OKXWsChannel::BooksTbt
+        | OKXWsChannel::Books5
+        | OKXWsChannel::Books50Tbt => {
+            if let Ok(book_msgs) = serde_json::from_value::<Vec<OKXBookMsg>>(data) {
+                let data_vec = parse_book10_msg_vec(
+                    book_msgs,
+                    instrument_id,
+                    price_precision,
+                    size_precision,
+                    ts_init,
+                )?;
+                Ok(Some(NautilusWsMessage::Data(data_vec)))
+            } else {
+                anyhow::bail!("Failed to deserialize Books channel data as Vec<OKXBookMsg>")
+            }
+        }
+        _ => {
+            tracing::warn!("Unsupported channel for message parsing: {channel:?}");
+            Ok(None)
+        }
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
