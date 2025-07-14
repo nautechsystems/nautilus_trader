@@ -36,6 +36,7 @@ from nautilus_trader.system.kernel import NautilusKernel
 from nautilus_trader.trading.trader import Trader
 
 from cpython.object cimport PyObject
+from libc.stdint cimport UINT64_MAX
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.backtest.data_client cimport BacktestDataClient
@@ -749,6 +750,60 @@ cdef class BacktestEngine:
             f"Added {len(data):_} {data_added_str} element{'' if len(data) == 1 else 's'}",
         )
 
+    def add_data_iterators(
+        self,
+        list iterators,
+        object chunk_duration = "1h",
+        ClientId client_id = None,
+    ) -> None:
+        """
+        Add stream iterators that yield ``Data`` objects for the low-level streaming backtest API.
+
+        Parameters
+        ----------
+        iterators : list[tuple[str, Iterator[Data]]]
+            A list of (name, iterator) pairs where each iterator yields ``Data`` objects.
+        chunk_duration : str or pd.Timedelta, default '1h' (1 hour)
+            The duration of each chunk to load from iterators (e.g., "1h", "30min").
+        client_id : ClientId, optional
+            The client ID to associate with the data.
+
+        Raises
+        ------
+        ValueError
+            If `iterators` is empty.
+        TypeError
+            If `iterators` don't yield ``Data`` objects with `ts_init`.
+
+        Notes
+        -----
+        This method enables streaming large datasets by loading data in chunks.
+        Data from all iterators is merged in chronological order (k-way merge).
+        Each iterator should yield Data objects sorted by ts_init timestamp.
+
+        """
+        Condition.not_empty(iterators, "iterators")
+        Condition.is_true(isinstance(chunk_duration, (str, pd.Timedelta)), "`chunk_duration` must be of type `str` or `pd.Timedelta`")
+
+        # Convert chunk_duration to nanoseconds
+        if isinstance(chunk_duration, str):
+            chunk_duration_ns = pd.Timedelta(chunk_duration).value
+        else:
+            chunk_duration_ns = chunk_duration.value
+
+        for data_name, iterator in iterators:
+            self._data_iterator.add_stream_iterator(
+                data_name,
+                iterator,
+                chunk_duration_ns,
+                append_data=True
+            )
+
+        self._log.info(
+            f"Added {len(iterators)} stream iterator{'' if len(iterators) == 1 else 's'} "
+            f"with chunk duration {chunk_duration}",
+        )
+
     cpdef void _handle_data_command(self, DataCommand command):
         if not(command.data_type.type in [Bar, QuoteTick, TradeTick]
                or type(command) not in [SubscribeData, UnsubscribeData, SubscribeInstruments, UnsubscribeInstruments]):
@@ -807,6 +862,10 @@ cdef class BacktestEngine:
 
     cpdef void _handle_empty_data(self, str subscription_name, uint64_t last_ts_init):
         if subscription_name == "backtest_data":
+            return
+
+        # Skip handling for streaming iterators (they don't have data requests)
+        if subscription_name not in self._data_requests:
             return
 
         cdef RequestData request = self._data_requests[subscription_name]
@@ -1211,8 +1270,7 @@ cdef class BacktestEngine:
         # Time range check and set
         if start is None:
             # Set `start` to start of data
-            Condition.not_empty(self._data, "data")
-            start_ns = self._data[0].ts_init
+            start_ns = self._data[0].ts_init if self._data else 0
             start = unix_nanos_to_dt(start_ns)
         else:
             start = pd.to_datetime(start, utc=True)
@@ -1220,8 +1278,7 @@ cdef class BacktestEngine:
 
         if end is None:
             # Set `end` to end of data
-            Condition.not_empty(self._data, "data")
-            end_ns = self._data[-1].ts_init
+            end_ns = self._data[-1].ts_init if self._data else 4102444800000000000  # Year 2100-01-01 00:00:00 UTC
             end = unix_nanos_to_dt(end_ns)
         else:
             end = pd.to_datetime(end, utc=True)
@@ -1232,8 +1289,8 @@ cdef class BacktestEngine:
 
         # Set clocks
         self._last_ns = start_ns
-        cdef TestClock clock
 
+        cdef TestClock clock
         for clock in get_component_clocks(self._instance_id):
             clock.set_time(start_ns)
 
@@ -1717,6 +1774,13 @@ cdef class BacktestDataIterator:
         self._next_data_priority = 0
         self._reset_single_data()
 
+        # Stream iterators
+        self._stream_iterators = {} # key=data_name, value=iterator
+        self._stream_current_window_start = {} # key=data_name, value=current window start time
+        self._stream_exhausted = {} # key=data_name, value=bool indicating if iterator is exhausted
+        self._stream_append_data = {} # key=data_name, value=bool indicating append_data setting
+        self._stream_chunk_duration_ns = {} # key=data_name, value=chunk_duration_ns
+
     cpdef void _reset_single_data(self):
         self._single_data = []
         self._single_data_name = ""
@@ -1794,27 +1858,44 @@ cdef class BacktestDataIterator:
         """
         Condition.valid_string(data_name, "data_name")
 
-        if data_name not in self._data_priority:
+        # Check if this is a stream iterator (even if no data loaded yet)
+        cdef bint is_stream = data_name in self._stream_iterators
+        cdef bint has_loaded_data = data_name in self._data_priority
+        cdef int data_priority
+
+        # If neither stream nor loaded data exists, nothing to remove
+        if not is_stream and not has_loaded_data:
             return
 
-        cdef int data_priority = self._data_priority[data_name]
-        del self._data[data_priority]
-        del self._data_name[data_priority]
-        del self._data_priority[data_name]
-        del self._data_len[data_priority]
-        del self._data_index[data_priority]
+        # Clean up loaded data if it exists
+        if has_loaded_data:
+            data_priority = self._data_priority[data_name]
+            del self._data[data_priority]
+            del self._data_name[data_priority]
+            del self._data_priority[data_name]
+            del self._data_len[data_priority]
+            del self._data_index[data_priority]
 
-        if len(self._data) == 1:
-            self._activate_single_data()
-            return
+            # Rebuild heap and single data mode if we had loaded data
+            if len(self._data) == 1:
+                self._activate_single_data()
+                return
 
-        if len(self._data) == 0:
-            self._reset_single_data()
-            return
+            if len(self._data) == 0:
+                self._reset_single_data()
+                return
 
-        # rebuild heap excluding data_priority
-        self._heap = [item for item in self._heap if item[1] != data_priority]
-        heapq.heapify(self._heap)
+            # Rebuild heap excluding data_priority
+            self._heap = [item for item in self._heap if item[1] != data_priority]
+            heapq.heapify(self._heap)
+
+        # Clean up stream-related state if this was a stream
+        if is_stream:
+            del self._stream_iterators[data_name]
+            del self._stream_current_window_start[data_name]
+            del self._stream_exhausted[data_name]
+            del self._stream_append_data[data_name]
+            del self._stream_chunk_duration_ns[data_name]
 
     cpdef void _activate_single_data(self):
         assert len(self._data) == 1
@@ -1847,9 +1928,18 @@ cdef class BacktestDataIterator:
             int cursor
             Data object_to_return
 
+        # Load more chunks if needed before getting next data
+        self.load_next_chunks_if_needed()
+
         if not self._is_single_data:
             if not self._heap:
-                return None
+                # Check if we have stream data remaining and try to load more
+                if self.has_stream_data_remaining():
+                    self.load_next_chunks_if_needed()
+                    if not self._heap:
+                        return None
+                else:
+                    return None
 
             ts_init, data_priority, cursor = heapq.heappop(self._heap)
             object_to_return = self._data[data_priority][cursor]
@@ -1860,7 +1950,14 @@ cdef class BacktestDataIterator:
             return object_to_return
 
         if self._single_data_index >= self._single_data_len:
-            return None
+            # Check if we have stream data remaining and try to load more
+            if self.has_stream_data_remaining():
+                self.load_next_chunks_if_needed()
+                # Check if we now have data after loading
+                if self._single_data_index >= self._single_data_len:
+                    return None
+            else:
+                return None
 
         object_to_return = self._single_data[self._single_data_index]
         self._single_data_index += 1
@@ -1887,6 +1984,11 @@ cdef class BacktestDataIterator:
         """
         for data_priority in self._data_index:
             self._data_index[data_priority] = 0
+
+        # Reset stream iterator state
+        for data_name in self._stream_iterators:
+            self._stream_current_window_start[data_name] = UINT64_MAX  # Sentinel value for uninitialized
+            self._stream_exhausted[data_name] = False
 
         self._reset_heap()
 
@@ -1930,7 +2032,10 @@ cdef class BacktestDataIterator:
         if self._is_single_data:
             return self._single_data_index >= self._single_data_len
         else:
-            return not self._heap
+            # Check if heap is empty AND no streams have remaining data
+            if self._heap:
+                return False
+            return not self.has_stream_data_remaining()
 
     cpdef dict all_data(self):
         """
@@ -1966,3 +2071,197 @@ cdef class BacktestDataIterator:
             raise StopIteration
 
         return element
+
+    cpdef void add_stream_iterator(
+        self,
+        str data_name,
+        object iterator,
+        uint64_t chunk_duration_ns,
+        bint append_data=True,
+    ):
+        """
+        Add a stream iterator that yields ``Data`` objects.
+
+        Parameters
+        ----------
+        data_name : str
+            The unique identifier for the data stream.
+        iterator : Iterator[Data]
+            The iterator that yields ``Data`` objects with `ts_init` timestamps.
+        chunk_duration_ns : uint64_t
+            Duration of each chunk to load from the iterator in nanoseconds (minimum 1 second).
+        append_data : bool, default True
+            True for lower priority (appended), False for higher priority (prepended).
+
+        Raises
+        ------
+        ValueError
+            If `data_name` is not a valid string.
+        ValueError
+            If `chunk_duration_ns` is less than the minimum of 1_000_000_000 (1 second in nanoseconds).
+
+        """
+        Condition.valid_string(data_name, "data_name")
+        Condition.not_none(iterator, "iterator")
+        Condition.is_true(chunk_duration_ns >= nautilus_pyo3.secs_to_nanos(1), f"`chunk_duration_ns` less than minimum 1 second, was {chunk_duration_ns:_}")
+
+        # Remove existing data for this stream name if it exists
+        if data_name in self._data_priority:
+            self.remove_data(data_name)
+
+        self._stream_iterators[data_name] = iterator
+        self._stream_current_window_start[data_name] = UINT64_MAX  # Sentinel value for uninitialized
+        self._stream_exhausted[data_name] = False
+        self._stream_append_data[data_name] = append_data
+        self._stream_chunk_duration_ns[data_name] = chunk_duration_ns
+
+        # Don't load initial chunk here - defer to lazy loading during iteration
+        # This allows proper exception handling during iteration rather than setup
+
+    cpdef uint64_t get_stream_chunk_duration(self, str data_name):
+        """
+        Get the chunk duration for a specific stream.
+
+        Parameters
+        ----------
+        data_name : str
+            The name of the stream.
+
+        Returns
+        -------
+        uint64_t
+            The chunk duration in nanoseconds for the specified stream.
+
+        Raises
+        ------
+        KeyError
+            If the stream does not exist.
+
+        """
+        return self._stream_chunk_duration_ns[data_name]
+
+    cpdef bint has_stream_data_remaining(self):
+        """
+        Return True if any stream iterators have more data to load.
+        """
+        for data_name, exhausted in self._stream_exhausted.items():
+            if not exhausted:
+                return True
+        return False
+
+    cpdef void load_next_chunks_if_needed(self):
+        """
+        Load next chunks from stream iterators when current chunk is exhausted.
+        """
+        cdef:
+            str data_name
+            int data_priority
+
+        # Check each stream to see if we need to load more data
+        for data_name in self._stream_iterators:
+            if self._stream_exhausted.get(data_name, True):
+                continue
+
+            # Load next chunk when current chunk is exhausted
+            if data_name in self._data_priority:
+                data_priority = self._data_priority[data_name]
+                current_index = self._data_index.get(data_priority, 0)
+                total_length = self._data_len.get(data_priority, 0)
+
+                # Load next chunk only when current chunk is exhausted
+                if current_index >= total_length:
+                    self._load_next_chunk(data_name, self._stream_append_data[data_name])
+            else:
+                # No data loaded yet for this stream, try to load initial chunk
+                self._load_next_chunk(data_name, self._stream_append_data[data_name])
+
+    cdef void _load_next_chunk(self, str data_name, bint append_data=True):
+        if self._stream_exhausted.get(data_name, True):
+            return
+
+        cdef:
+            object iterator = self._stream_iterators[data_name]
+            uint64_t window_start_val = self._stream_current_window_start[data_name]
+            uint64_t window_end
+            list chunk_data = []
+            Data data_item
+
+        # Handle potential overflow by using uint64_t throughout
+        if window_start_val > UINT64_MAX - self._stream_chunk_duration_ns[data_name]:
+            # Prevent overflow, use max value
+            window_end = UINT64_MAX
+        else:
+            window_end = window_start_val + self._stream_chunk_duration_ns[data_name]
+
+        while True:
+            try:
+                data_item = next(iterator)
+            except StopIteration:
+                # Iterator is exhausted normally
+                self._stream_exhausted[data_name] = True
+                break
+
+            # If this is the first item and we haven't set a window start, use its timestamp
+            if window_start_val == UINT64_MAX:
+                window_start_val = data_item.ts_init
+                if window_start_val > UINT64_MAX - self._stream_chunk_duration_ns[data_name]:
+                    window_end = UINT64_MAX
+                else:
+                    window_end = window_start_val + self._stream_chunk_duration_ns[data_name]
+                self._stream_current_window_start[data_name] = window_start_val
+
+            # Add data items within the current time window
+            if data_item.ts_init < window_end:
+                chunk_data.append(data_item)
+            else:
+                # This item is beyond the current window
+                # We need to stop the current chunk and save this item for the next window
+                # Since we can't put it back in a Python iterator, we have to include it
+                # in the current chunk, but mark the next window to start AFTER this item
+                chunk_data.append(data_item)
+                # Set next window to start after this item to avoid including it twice
+                if data_item.ts_init < UINT64_MAX:
+                    self._stream_current_window_start[data_name] = data_item.ts_init + 1
+                else:
+                    self._stream_current_window_start[data_name] = UINT64_MAX
+                break
+
+        if chunk_data:
+            # Add the loaded chunk to the existing data
+            if data_name in self._data_priority:
+                # Stream already exists, append chunk data to existing data list
+                data_priority = self._data_priority[data_name]
+                existing_data = self._data[data_priority]
+                old_len = len(existing_data)
+                existing_data.extend(chunk_data)
+                self._data_len[data_priority] = len(existing_data)
+
+                # Add newly loaded items to the heap if we're in multi-stream mode
+                if not self._is_single_data:
+                    # Only push if we were at the end of the previous data (no items left to consume)
+                    current_index = self._data_index[data_priority]
+                    if current_index == old_len and current_index < len(existing_data):
+                        self._push_data(data_priority, current_index)
+
+                # Update single data mode variables if this is the active single stream
+                if self._is_single_data and data_priority == self._single_data_priority:
+                    self._single_data_len = len(existing_data)
+            else:
+                # First chunk for this stream, add normally
+                self.add_data(data_name, chunk_data, append_data)
+
+            # Update window start for next chunk only if not already set during boundary handling
+            if chunk_data and data_name in self._stream_current_window_start:
+                # Only update if we consumed all data without hitting a boundary
+                # (boundary case is handled above in the loop)
+                current_window_start = self._stream_current_window_start[data_name]
+                last_ts = chunk_data[-1].ts_init
+
+                # If the current window start is still the same as when we started,
+                # it means we didn't hit a boundary, so update normally
+                if current_window_start == window_start_val:
+                    # Prevent overflow when incrementing
+                    if last_ts < UINT64_MAX:
+                        self._stream_current_window_start[data_name] = last_ts + 1
+                    else:
+                        self._stream_current_window_start[data_name] = last_ts
