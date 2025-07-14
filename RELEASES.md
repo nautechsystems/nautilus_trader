@@ -11,10 +11,11 @@ Released on TBD (UTC).
 - Added `VERBOSE` option to common make targets (#2759), thanks @faysou
 
 ### Breaking Changes
-None
+- Changed `start` to required for `Actor` data request methods
 
 ### Internal Improvements
 - Refactored OKX adapter to Rust API clients
+- Added `start` and `stop` to response data (#2748), thanks @stastnypremysl
 - Added integration test service management targets (#2765), thanks @stastnypremysl
 - Added integration tests for dYdX bar-partitioning and large-history handling (#2773), thanks @nicolad
 - Improved efficiency of message bus external streams buffer flushing
@@ -26,6 +27,7 @@ None
 
 ### Fixes
 - Fixed Tardis Machine replay processing and Parquet file writing
+- Fixed catalog query of multiple instruments of same type (#2772), thanks @faysou
 - Fixed modification of contingent orders in backtest (#2761), thanks faysou
 - Fixed balance calculations on order fill to allow operating at near account balance capacity (#2752), thanks @petioptrv
 - Fixed time range end in some databento request functions (#2755), thanks @faysou
