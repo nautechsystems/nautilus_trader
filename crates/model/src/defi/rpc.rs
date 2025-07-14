@@ -15,6 +15,7 @@
 
 use serde::{Deserialize, de::DeserializeOwned};
 
+
 /// A response structure received from a WebSocket JSON-RPC blockchain node subscription.
 #[derive(Debug, Deserialize)]
 pub struct RpcNodeWssResponse<T>
@@ -55,5 +56,16 @@ where
     pub id: u64,
     /// Deserialized result.
     #[serde(bound(deserialize = ""))]
-    pub result: T,
+    pub result: Option<T>,
+    /// Error information if the request failed.
+    pub error: Option<RpcError>,
+}
+
+/// JSON-RPC error structure.
+#[derive(Debug, Deserialize)]
+pub struct RpcError {
+    /// Error code.
+    pub code: i32,
+    /// Error message.
+    pub message: String,
 }

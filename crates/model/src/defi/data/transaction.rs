@@ -171,7 +171,7 @@ mod tests {
         let tx = match serde_json::from_str::<RpcNodeHttpResponse<Transaction>>(
             &eth_rpc_response_eth_transfer_tx,
         ) {
-            Ok(rpc_response) => rpc_response.result,
+            Ok(rpc_response) => rpc_response.result.unwrap(),
             Err(e) => panic!("Failed to deserialize transaction RPC response: {e}"),
         };
         assert_eq!(tx.chain.name, Blockchain::Ethereum);
@@ -207,7 +207,7 @@ mod tests {
         let tx = match serde_json::from_str::<RpcNodeHttpResponse<Transaction>>(
             &eth_rpc_response_smart_contract_interaction_tx,
         ) {
-            Ok(rpc_response) => rpc_response.result,
+            Ok(rpc_response) => rpc_response.result.unwrap(),
             Err(e) => panic!("Failed to deserialize transaction RPC response: {e}"),
         };
         assert_eq!(tx.chain.name, Blockchain::Ethereum);
@@ -259,7 +259,8 @@ mod tests {
 
         let tx = serde_json::from_str::<RpcNodeHttpResponse<Transaction>>(large_value_tx)
             .expect("Should parse large value transaction")
-            .result;
+            .result
+            .unwrap();
 
         // Test that large values are handled correctly with U256
         assert_eq!(tx.gas, U256::from(u64::MAX));
