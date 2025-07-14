@@ -20,12 +20,14 @@ Released on TBD (UTC).
 - Added `start` and `stop` to response data (#2748), thanks @stastnypremysl
 - Added integration test service management targets (#2765), thanks @stastnypremysl
 - Added integration tests for dYdX bar-partitioning and large-history handling (#2773), thanks @nicolad
+- Improved data client for blockchain adapter (#2787), thanks @filipmacek
 - Improved efficiency of message bus external streams buffer flushing
 - Improved `databento_test_request_bars` example (#2762), thanks @faysou
 - Optimized account event purging for Redis where large lists could consume excessive memory and cause Redis to freeze
 - Refined Rust catalog path handling (#2743), thanks @faysou
 - Refined Rust `GreeksCalculator` (#2760), thanks @faysou
 - Upgraded `datafusion` crate to v48.0.1
+- Upgraded `redis` crate to v0.32.4
 
 ### Fixes
 - Fixed Tardis Machine replay processing and Parquet file writing
