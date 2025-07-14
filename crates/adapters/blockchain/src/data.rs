@@ -306,16 +306,9 @@ impl BlockchainDataClient {
                         "RPC pool swaps subscription not yet implemented, using HyperSync"
                     );
                 }
-
-                match hypersync_client.get_pool_address(cmd.instrument_id) {
-                    Some(_address) => {
-                        tracing::info!("Subscribed to pool swaps for {}", cmd.instrument_id);
-                        todo!("Implement pool swaps subscription logic");
-                    }
-                    None => {
-                        tracing::error!("Failed to fetch pool address for {}", cmd.instrument_id);
-                    }
-                }
+                
+                // TODO: Implement pool swaps subscription logic
+                tracing::error!("Implement pool swap subscription logic for {}", cmd.instrument_id);
 
                 Ok(())
             }
@@ -330,19 +323,9 @@ impl BlockchainDataClient {
                         "RPC pool liquidity updates subscription not yet implemented, using HyperSync"
                     );
                 }
-
-                match hypersync_client.get_pool_address(cmd.instrument_id) {
-                    Some(_address) => {
-                        tracing::info!(
-                            "Subscribed to pool liquidity updates for {}",
-                            cmd.instrument_id
-                        );
-                        todo!("Implement pool liquidity updates subscription logic");
-                    }
-                    None => {
-                        tracing::error!("Failed to fetch pool address for {}", cmd.instrument_id);
-                    }
-                }
+                
+                // TODO: Implement pool liquidity updates subscription logic
+                tracing::error!("Implement pool liquidity updates subscription logic for {}", cmd.instrument_id);
 
                 Ok(())
             }
@@ -1051,7 +1034,7 @@ impl DataClient for BlockchainDataClient {
         self.sync_blocks(Some(from_block), None).await?;
         for dex_id in self.config.dex_ids.clone() {
             self.register_dex_exchange(&dex_id).await?;
-            self.sync_exchange_pools(&dex_id, None, None).await?;
+            self.sync_exchange_pools(&dex_id, Some(from_block), None).await?;
         }
 
         tracing::info!(
