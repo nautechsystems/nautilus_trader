@@ -70,6 +70,7 @@ nautilus-trading = { workspace = true, features = ["python"] }
 # Adapters
 nautilus-coinbase-intx = { workspace = true, features = ["python"] }
 nautilus-databento = { workspace = true, features = ["python"] }
+nautilus-hyperliquid = { workspace = true, features = ["python"] }
 nautilus-okx = { workspace = true, features = ["python"] }
 nautilus-tardis = { workspace = true, features = ["python"] }
 
