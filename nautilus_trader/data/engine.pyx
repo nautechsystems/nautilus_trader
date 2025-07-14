@@ -123,6 +123,10 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
+cdef inline uint64_t _instrument_ts_init(Instrument instrument):
+    return instrument.ts_init
+
+
 cdef class DataEngine(Component):
     """
     Provides a high-performance data engine for managing many `DataClient`
@@ -1429,6 +1433,7 @@ cdef class DataEngine(Component):
         # Capping dates to the now datetime
         cdef bint query_past_data = request.params.get("subscription_name") is None
         cdef datetime now = self._clock.utc_now()
+
         cdef datetime start = request.start if request.start is not None else time_object_to_dt(0)
         cdef datetime end = request.end if request.end is not None else now
 
@@ -1474,6 +1479,8 @@ cdef class DataEngine(Component):
                 data=[],
                 correlation_id=request.id,
                 response_id=UUID4(),
+                start=request.start,
+                end=request.end,
                 ts_init=self._clock.timestamp_ns(),
                 params=request.params,
             )
@@ -1519,6 +1526,19 @@ cdef class DataEngine(Component):
         self._log.warning(f"Cannot handle request: no client registered for '{request.client_id}', {request}")
 
     cpdef void _query_catalog(self, RequestData request):
+        """
+        Query the catalog for data matching the request parameters.
+
+        Special handling for instrument queries:
+        - RequestInstruments: Queries without a start time constraint to ensure all historical
+          instruments are found, then filters to return one instrument per ID that was
+          valid at or before the start time + all instruments per ID between start and end.
+        - RequestInstrument: Queries without a start time constraint, then returns the most recent
+          instrument that was valid at or before the requested start time.
+
+        This ensures instruments are always available even when requested at a time after
+        their creation (e.g., requesting at 10:00 for an instrument created at 00:00).
+        """
         cdef datetime start = request.start
         cdef datetime end = request.end
         cdef bint query_past_data = request.params.get("subscription_name") is None
@@ -1542,15 +1562,24 @@ cdef class DataEngine(Component):
         # We assume each symbol is only in one catalog
         for catalog in self._catalogs.values():
             if isinstance(request, RequestInstruments):
+                # For instruments requests, we omit the start parameter to ensure we find
+                # all historical instruments, regardless of when they were created.
+                # The catalog will return all instruments up to the end time.
+                # The filtering logic after the query will ensure we return:
+                # - One instrument per ID that was valid at/before start time
+                # - All instruments per ID that were created between start and end times
                 data += catalog.instruments(
-                    start=ts_start,
                     end=ts_end,
                 )
             elif isinstance(request, RequestInstrument):
+                # For single instrument requests, we omit the start parameter to ensure
+                # we find the instrument even if it was created before the requested start time.
+                # The catalog will return all versions of the instrument up to the start time.
+                # The post-processing will select the most recent instrument that was valid
+                # at or before the requested start time.
                 data = catalog.instruments(
                     instrument_ids=[str(request.instrument_id)],
-                    start=ts_start,
-                    end=ts_end,
+                    end=ts_start,
                 )
             elif isinstance(request, RequestQuoteTicks):
                 data = catalog.quote_ticks(
@@ -1596,12 +1625,34 @@ cdef class DataEngine(Component):
                 f"data[-1].ts_init={data[-1].ts_init}, {ts_now=}",
             )
 
-        if isinstance(request, RequestInstrument):
+        # Special handling for instruments requests to ensure proper filtering
+        if isinstance(request, RequestInstruments) and request.start is not None:
+            # Group instruments by ID
+            instruments_by_id = {}
+            for instrument in data:
+                if instrument.id not in instruments_by_id:
+                    instruments_by_id[instrument.id] = []
+                instruments_by_id[instrument.id].append(instrument)
+
+            # Filter to get one before/at start + all between start and end
+            data = []
+            for _, instruments in instruments_by_id.items():
+                # Input instruments are sorted by ts_init
+                for i in instruments:
+                    if i.ts_init <= ts_end:
+                        data.append(i)
+                    elif i.ts_init <= ts_start:
+                        data.append(i)
+
+            data.sort(key=_instrument_ts_init)
+        elif isinstance(request, RequestInstrument):
             if len(data) == 0:
                 self._log.error(f"Cannot find instrument for {request.instrument_id}")
                 return
 
-            data = data[0]
+            # Input instruments are sorted by ts_init
+            data = data[len(data)-1]
+
 
         params = request.params.copy()
         params["update_catalog"] = False
@@ -1613,6 +1664,8 @@ cdef class DataEngine(Component):
             data=data,
             correlation_id=request.id,
             response_id=UUID4(),
+            start=request.start,
+            end=request.end,
             ts_init=self._clock.timestamp_ns(),
             params=params,
         )
@@ -1887,19 +1940,19 @@ cdef class DataEngine(Component):
                     self._handle_instrument(response_2.data, update_catalog, force_update_catalog)
             elif response_2.data_type.type == QuoteTick:
                 if response_2.params.get("bars_market_data_type"):
-                    response_2.data = self._handle_aggregated_bars(response_2.data, response_2.params)
+                    response_2.data = self._handle_aggregated_bars(response_2)
                     response_2.data_type = DataType(Bar)
                 else:
                     self._handle_quote_ticks(response_2.data)
             elif response_2.data_type.type == TradeTick:
                 if response_2.params.get("bars_market_data_type"):
-                    response_2.data = self._handle_aggregated_bars(response_2.data, response_2.params)
+                    response_2.data = self._handle_aggregated_bars(response_2)
                     response_2.data_type = DataType(Bar)
                 else:
                     self._handle_trade_ticks(response_2.data)
             elif response_2.data_type.type == Bar:
                 if response_2.params.get("bars_market_data_type"):
-                    response_2.data = self._handle_aggregated_bars(response_2.data, response_2.params)
+                    response_2.data = self._handle_aggregated_bars(response_2)
                 else:
                     self._handle_bars(response_2.data, response_2.data_type.metadata.get("partial"))
             # Note: custom data will use the callback submitted by the user in actor.request_data
@@ -2076,18 +2129,24 @@ cdef class DataEngine(Component):
                     # - with the partial bar being for a now removed aggregator.
                     self._log.error("No aggregator for partial bar update")
 
-    cpdef dict _handle_aggregated_bars(self, list ticks, dict params):
+    cpdef dict _handle_aggregated_bars(self, DataResponse response):
         # Closure is not allowed in cpdef functions so we call a cdef function
-        return self._handle_aggregated_bars_aux(ticks, params)
+        return self._handle_aggregated_bars_aux(response)
 
-    cdef dict _handle_aggregated_bars_aux(self, list ticks, dict params):
-        result = {}
+    cdef dict _handle_aggregated_bars_aux(self, DataResponse response):
+        cdef dict result = {}
+        cdef list ticks = response.data
+        cdef dict params = response.params
 
         if len(ticks) == 0:
             self._log.warning("_handle_aggregated_bars: No data to aggregate")
             return result
 
-        bars_result = {}
+        # Extract start and end time from original request timing
+        cdef uint64_t start_ns = dt_to_unix_nanos(response.start)
+        cdef uint64_t end_ns = dt_to_unix_nanos(response.end)
+
+        cdef dict bars_result = {}
 
         if params["include_external_data"]:
             if params["bars_market_data_type"] == "quote_ticks":
@@ -2119,24 +2178,19 @@ cdef class DataEngine(Component):
                     self._bar_aggregators[bar_type.standard()] = aggregator
 
             aggregated_bars = []
-            handler = lambda bar: aggregated_bars.append(bar)
+            handler = aggregated_bars.append
+            aggregator.start_batch_update(handler, start_ns)
 
             if params["bars_market_data_type"] == "quote_ticks" and not bar_type.is_composite():
-                aggregator.start_batch_update(handler, ticks[0].ts_event)
-
                 for tick in ticks:
                     aggregator.handle_quote_tick(tick)
             elif params["bars_market_data_type"] == "trade_ticks" and not bar_type.is_composite():
-                aggregator.start_batch_update(handler, ticks[0].ts_event)
-
                 for tick in ticks:
                     aggregator.handle_trade_tick(tick)
             else:
                 input_bars = bars_result[bar_type.composite()]
 
                 if len(input_bars) > 0:
-                    aggregator.start_batch_update(handler, input_bars[0].ts_init)
-
                     for bar in input_bars:
                         aggregator.handle_bar(bar)
 

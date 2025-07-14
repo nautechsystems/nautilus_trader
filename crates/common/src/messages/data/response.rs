@@ -33,18 +33,23 @@ pub struct CustomDataResponse {
     pub venue: Option<Venue>,
     pub data_type: DataType,
     pub data: Payload,
+    pub start: UnixNanos,
+    pub end: UnixNanos,
     pub ts_init: UnixNanos,
     pub params: Option<IndexMap<String, String>>,
 }
 
 impl CustomDataResponse {
     /// Creates a new [`CustomDataResponse`] instance.
+    #[allow(clippy::too_many_arguments)]
     pub fn new<T: Any + Send + Sync>(
         correlation_id: UUID4,
         client_id: ClientId,
         venue: Option<Venue>,
         data_type: DataType,
         data: T,
+        start: UnixNanos,
+        end: UnixNanos,
         ts_init: UnixNanos,
         params: Option<IndexMap<String, String>>,
     ) -> Self {
@@ -54,6 +59,8 @@ impl CustomDataResponse {
             venue,
             data_type,
             data: Arc::new(data),
+            start,
+            end,
             ts_init,
             params,
         }
@@ -71,6 +78,8 @@ pub struct InstrumentResponse {
     pub client_id: ClientId,
     pub instrument_id: InstrumentId,
     pub data: InstrumentAny,
+    pub start: UnixNanos,
+    pub end: UnixNanos,
     pub ts_init: UnixNanos,
     pub params: Option<IndexMap<String, String>>,
 }
@@ -82,11 +91,14 @@ impl InstrumentResponse {
     }
 
     /// Creates a new [`InstrumentResponse`] instance.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         correlation_id: UUID4,
         client_id: ClientId,
         instrument_id: InstrumentId,
         data: InstrumentAny,
+        start: UnixNanos,
+        end: UnixNanos,
         ts_init: UnixNanos,
         params: Option<IndexMap<String, String>>,
     ) -> Self {
@@ -95,6 +107,8 @@ impl InstrumentResponse {
             client_id,
             instrument_id,
             data,
+            start,
+            end,
             ts_init,
             params,
         }
@@ -107,6 +121,8 @@ pub struct InstrumentsResponse {
     pub client_id: ClientId,
     pub venue: Venue,
     pub data: Vec<InstrumentAny>,
+    pub start: UnixNanos,
+    pub end: UnixNanos,
     pub ts_init: UnixNanos,
     pub params: Option<IndexMap<String, String>>,
 }
@@ -118,11 +134,14 @@ impl InstrumentsResponse {
     }
 
     /// Creates a new [`InstrumentsResponse`] instance.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         correlation_id: UUID4,
         client_id: ClientId,
         venue: Venue,
         data: Vec<InstrumentAny>,
+        start: UnixNanos,
+        end: UnixNanos,
         ts_init: UnixNanos,
         params: Option<IndexMap<String, String>>,
     ) -> Self {
@@ -131,6 +150,8 @@ impl InstrumentsResponse {
             client_id,
             venue,
             data,
+            start,
+            end,
             ts_init,
             params,
         }
@@ -143,6 +164,8 @@ pub struct BookResponse {
     pub client_id: ClientId,
     pub instrument_id: InstrumentId,
     pub data: OrderBook,
+    pub start: UnixNanos,
+    pub end: UnixNanos,
     pub ts_init: UnixNanos,
     pub params: Option<IndexMap<String, String>>,
 }
@@ -154,11 +177,14 @@ impl BookResponse {
     }
 
     /// Creates a new [`BookResponse`] instance.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         correlation_id: UUID4,
         client_id: ClientId,
         instrument_id: InstrumentId,
         data: OrderBook,
+        start: UnixNanos,
+        end: UnixNanos,
         ts_init: UnixNanos,
         params: Option<IndexMap<String, String>>,
     ) -> Self {
@@ -167,6 +193,8 @@ impl BookResponse {
             client_id,
             instrument_id,
             data,
+            start,
+            end,
             ts_init,
             params,
         }
@@ -179,6 +207,8 @@ pub struct QuotesResponse {
     pub client_id: ClientId,
     pub instrument_id: InstrumentId,
     pub data: Vec<QuoteTick>,
+    pub start: UnixNanos,
+    pub end: UnixNanos,
     pub ts_init: UnixNanos,
     pub params: Option<IndexMap<String, String>>,
 }
@@ -190,11 +220,14 @@ impl QuotesResponse {
     }
 
     /// Creates a new [`QuotesResponse`] instance.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         correlation_id: UUID4,
         client_id: ClientId,
         instrument_id: InstrumentId,
         data: Vec<QuoteTick>,
+        start: UnixNanos,
+        end: UnixNanos,
         ts_init: UnixNanos,
         params: Option<IndexMap<String, String>>,
     ) -> Self {
@@ -203,6 +236,8 @@ impl QuotesResponse {
             client_id,
             instrument_id,
             data,
+            start,
+            end,
             ts_init,
             params,
         }
@@ -215,6 +250,8 @@ pub struct TradesResponse {
     pub client_id: ClientId,
     pub instrument_id: InstrumentId,
     pub data: Vec<TradeTick>,
+    pub start: UnixNanos,
+    pub end: UnixNanos,
     pub ts_init: UnixNanos,
     pub params: Option<IndexMap<String, String>>,
 }
@@ -226,11 +263,14 @@ impl TradesResponse {
     }
 
     /// Creates a new [`TradesResponse`] instance.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         correlation_id: UUID4,
         client_id: ClientId,
         instrument_id: InstrumentId,
         data: Vec<TradeTick>,
+        start: UnixNanos,
+        end: UnixNanos,
         ts_init: UnixNanos,
         params: Option<IndexMap<String, String>>,
     ) -> Self {
@@ -239,6 +279,8 @@ impl TradesResponse {
             client_id,
             instrument_id,
             data,
+            start,
+            end,
             ts_init,
             params,
         }
@@ -252,6 +294,8 @@ pub struct BarsResponse {
     pub bar_type: BarType,
     pub data: Vec<Bar>,
     pub ts_init: UnixNanos,
+    pub start: UnixNanos,
+    pub end: UnixNanos,
     pub params: Option<IndexMap<String, String>>,
 }
 
@@ -262,11 +306,14 @@ impl BarsResponse {
     }
 
     /// Creates a new [`BarsResponse`] instance.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         correlation_id: UUID4,
         client_id: ClientId,
         bar_type: BarType,
         data: Vec<Bar>,
+        start: UnixNanos,
+        end: UnixNanos,
         ts_init: UnixNanos,
         params: Option<IndexMap<String, String>>,
     ) -> Self {
@@ -275,6 +322,8 @@ impl BarsResponse {
             client_id,
             bar_type,
             data,
+            start,
+            end,
             ts_init,
             params,
         }
