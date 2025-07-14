@@ -27,6 +27,7 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.datetime import ensure_pydatetime_utc
 from nautilus_trader.core.nautilus_pyo3 import OKXInstrumentType
 from nautilus_trader.core.nautilus_pyo3 import OKXTradeMode
 from nautilus_trader.execution.messages import CancelAllOrders
@@ -254,8 +255,8 @@ class OKXExecutionClient(LiveExecutionClient):
                 response = await self._http_client.request_order_status_reports(
                     account_id=self.pyo3_account_id,
                     instrument_id=pyo3_instrument_id,
-                    start=command.start,
-                    end=command.end,
+                    start=ensure_pydatetime_utc(command.start),
+                    end=ensure_pydatetime_utc(command.end),
                     open_only=command.open_only,
                 )
                 pyo3_reports.extend(response)
@@ -264,8 +265,8 @@ class OKXExecutionClient(LiveExecutionClient):
                     response = await self._http_client.request_order_status_reports(
                         account_id=self.pyo3_account_id,
                         instrument_type=instrument_type,
-                        start=command.start,
-                        end=command.end,
+                        start=ensure_pydatetime_utc(command.start),
+                        end=ensure_pydatetime_utc(command.end),
                         open_only=command.open_only,
                     )
                     pyo3_reports.extend(response)
@@ -370,8 +371,8 @@ class OKXExecutionClient(LiveExecutionClient):
                 response = await self._http_client.request_fill_reports(
                     account_id=self.pyo3_account_id,
                     instrument_id=pyo3_instrument_id,
-                    start=command.start,
-                    end=command.end,
+                    start=ensure_pydatetime_utc(command.start),
+                    end=ensure_pydatetime_utc(command.end),
                 )
                 pyo3_reports.extend(response)
             else:
@@ -379,8 +380,8 @@ class OKXExecutionClient(LiveExecutionClient):
                     response = await self._http_client.request_fill_reports(
                         account_id=self.pyo3_account_id,
                         instrument_type=instrument_type,
-                        start=command.start,
-                        end=command.end,
+                        start=ensure_pydatetime_utc(command.start),
+                        end=ensure_pydatetime_utc(command.end),
                     )
                     pyo3_reports.extend(response)
 

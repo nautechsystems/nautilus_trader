@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import datetime
 from typing import Any
 
 from nautilus_trader.adapters.okx.config import OKXDataClientConfig
@@ -26,8 +25,7 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.core.datetime import dt_to_unix_nanos
-from nautilus_trader.core.datetime import time_object_to_dt
+from nautilus_trader.core.datetime import ensure_pydatetime_utc
 from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
@@ -359,27 +357,24 @@ class OKXDataClient(LiveMarketDataClient):
             )
             return
 
-        start = time_object_to_dt(request.start) if request.start is not None else None
-        end = time_object_to_dt(request.end) if request.end is not None else None
-
-        # Ensure datetime objects have proper UTC timezone for PyO3
-        if start is not None and start.tzinfo != datetime.UTC:
-            start = start.replace(tzinfo=datetime.UTC)
-        if end is not None and end.tzinfo != datetime.UTC:
-            end = end.replace(tzinfo=datetime.UTC)
-
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(request.instrument_id.value)
         trades = await self._http_client.request_trades(
             instrument_id=pyo3_instrument_id,
-            start=start,
-            end=end,
+            start=ensure_pydatetime_utc(request.start),
+            end=ensure_pydatetime_utc(request.end),
             limit=request.limit,
         )
 
         self._handle_trade_ticks(trades, request.id, request.params)
 
     async def _request_bars(self, request: RequestBars) -> None:
-        # OKX API works best without time range parameters for recent data
+        start = request.start
+        end = request.end
+
+        self._log.warning(
+            f"Bar requests time range not implemented: start={start}, end={end}, using no time range",
+        )
+        # TODO: Implement correct time range requests
         start = None
         end = None
 
@@ -399,8 +394,8 @@ class OKXDataClient(LiveMarketDataClient):
 
         pyo3_bars = await self._http_client.request_bars(
             bar_type=pyo3_bar_type,
-            start=start,
-            end=end,
+            start=ensure_pydatetime_utc(start),
+            end=ensure_pydatetime_utc(end),
             limit=limit,
         )
         bars = Bar.from_pyo3_list(pyo3_bars)
