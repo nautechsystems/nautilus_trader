@@ -226,7 +226,7 @@ impl BlockchainCacheDatabase {
     ) -> anyhow::Result<Vec<BlockTimestampRow>> {
         sqlx::query_as::<_, BlockTimestampRow>(
             r"
-            SELECT DISTINCT ON (block.chain_id, number)
+            SELECT
                 number,
                 timestamp
             FROM block
