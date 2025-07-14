@@ -608,7 +608,15 @@ class BybitDataClient(LiveMarketDataClient):
             request.end,
             request.params,
         )
-        self._handle_bars(request.bar_type, bars, None, request.id, request.params)
+        self._handle_bars(
+            request.bar_type,
+            bars,
+            None,
+            request.id,
+            request.start,
+            request.end,
+            request.params,
+        )
 
     async def _handle_ticker_data_request(self, symbol: Symbol, correlation_id: UUID4) -> None:
         bybit_symbol = BybitSymbol(symbol.value)

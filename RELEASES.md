@@ -11,7 +11,7 @@ Released on TBD (UTC).
 - Added `VERBOSE` option to common make targets (#2759), thanks @faysou
 
 ### Breaking Changes
-- Changed `start` to required for `Actor` data request methods
+- Changed `start` parameter to required for `Actor` data request methods
 
 ### Internal Improvements
 - Refactored OKX adapter to Rust API clients

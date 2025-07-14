@@ -314,7 +314,13 @@ class OKXDataClient(LiveMarketDataClient):
             self._log.error(f"Cannot find instrument for {request.instrument_id}")
             return
 
-        self._handle_instrument(instrument, request.id, request.start, request.end, request.params)
+        self._handle_instrument(
+            instrument,
+            request.id,
+            request.start,
+            request.end,
+            request.params,
+        )
 
     async def _request_instruments(self, request: RequestInstruments) -> None:
         # Check if start/end times are too far from current time
@@ -401,7 +407,15 @@ class OKXDataClient(LiveMarketDataClient):
         )
         bars = Bar.from_pyo3_list(pyo3_bars)
 
-        self._handle_bars(request.bar_type, bars, None, request.id, request.params)
+        self._handle_bars(
+            request.bar_type,
+            bars,
+            None,
+            request.id,
+            request.start,
+            request.end,
+            request.params,
+        )
 
     # -- WEBSOCKET HANDLERS -----------------------------------------------------------------------
 
