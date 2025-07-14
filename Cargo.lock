@@ -4612,6 +4612,49 @@ dependencies = [
 ]
 
 [[package]]
+name = "nautilus-hyperliquid"
+version = "0.50.0"
+dependencies = [
+ "ahash 0.8.12",
+ "anyhow",
+ "async-stream",
+ "aws-lc-rs",
+ "base64",
+ "chrono",
+ "criterion",
+ "dashmap",
+ "derive_builder",
+ "futures-util",
+ "indexmap 2.10.0",
+ "log",
+ "nautilus-common",
+ "nautilus-core",
+ "nautilus-execution",
+ "nautilus-model",
+ "nautilus-network",
+ "nautilus-serialization",
+ "nautilus-testkit",
+ "pyo3",
+ "pyo3-async-runtimes",
+ "reqwest",
+ "rstest",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
+ "serde_urlencoded",
+ "strum",
+ "thiserror 2.0.12",
+ "tokio",
+ "tokio-tungstenite",
+ "tracing",
+ "tracing-subscriber",
+ "tracing-test",
+ "ustr",
+ "uuid",
+]
+
+[[package]]
 name = "nautilus-indicators"
 version = "0.50.0"
 dependencies = [
@@ -4859,6 +4902,7 @@ dependencies = [
  "nautilus-cryptography",
  "nautilus-databento",
  "nautilus-execution",
+ "nautilus-hyperliquid",
  "nautilus-indicators",
  "nautilus-infrastructure",
  "nautilus-model",
