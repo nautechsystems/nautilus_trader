@@ -25,27 +25,6 @@ You can find live example scripts [here](https://github.com/nautechsystems/nauti
 
 ## Overview
 
-The Binance adapter supports the following product types:
-
-- Spot markets (including Binance US)
-- USDT-Margined Futures (perpetual and delivery)
-- Coin-Margined Futures
-
-:::note
-Margin trading (cross & isolated) is not implemented at this time.
-Contributions via [GitHub issue #2631](https://github.com/nautechsystems/nautilus_trader/issues/#2631)
-or pull requests to add margin trading functionality are welcome.
-:::
-
-### Product Support Matrix
-
-| Product Type                             | Supported | Notes                               |
-|------------------------------------------|-----------|-------------------------------------|
-| Spot Markets (incl. Binance US)          | ✓         |                                     |
-| Margin Accounts (Cross & Isolated)       | ✗         | Margin trading not implemented      |
-| USDT-Margined Futures (PERP & Delivery)  | ✓         |                                     |
-| Coin-Margined Futures                    | ✓         |                                     |
-
 This guide assumes a trader is setting up for both live market data feeds, and trade execution.
 The Binance adapter includes multiple components, which can be used together or separately depending
 on the use case.
@@ -61,6 +40,21 @@ on the use case.
 :::note
 Most users will simply define a configuration for a live trading node (as below),
 and won't need to necessarily work with these lower level components directly.
+:::
+
+### Product Support Matrix
+
+| Product Type                             | Supported | Notes                               |
+|------------------------------------------|-----------|-------------------------------------|
+| Spot Markets (incl. Binance US)          | ✓         |                                     |
+| Margin Accounts (Cross & Isolated)       | ✗         | Margin trading not implemented      |
+| USDT-Margined Futures (PERP & Delivery)  | ✓         |                                     |
+| Coin-Margined Futures                    | ✓         |                                     |
+
+:::note
+Margin trading (cross & isolated) is not implemented at this time.
+Contributions via [GitHub issue #2631](https://github.com/nautechsystems/nautilus_trader/issues/#2631)
+or pull requests to add margin trading functionality are welcome.
 :::
 
 ## Data Types

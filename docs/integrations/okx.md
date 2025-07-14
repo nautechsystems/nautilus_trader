@@ -8,25 +8,19 @@ Founded in 2017, OKX is a leading cryptocurrency exchange offering spot, perpetu
 futures, and options trading. This integration supports live market data ingest and order
 execution on OKX.
 
-## Installation
+## Overview
 
-To install NautilusTrader with OKX support:
+This adapter is implemented in Rust, with optional Python bindings for ease of use in Python-based workflows.
+It does not require any external OKX client library dependencies.
 
-```bash
-pip install --upgrade "nautilus_trader[okx]"
-```
-
-To build from source with all extras (including OKX):
-
-```bash
-uv sync --all-extras
-```
+:::info
+There is **no** need for additional installation steps for `okx`.
+The core components of the adapter are compiled as static libraries and automatically linked during the build process.
+:::
 
 ## Examples
 
 You can find live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/okx/).
-
-## Overview
 
 ### Product Support Matrix
 
@@ -65,15 +59,15 @@ for linear perpetual swap products on OKX.
 
 ### Order Types
 
-| Order Type          | Linear Perpetual Swap | Notes                 |
-|---------------------|-----------------------|-----------------------|
-| `MARKET`            | ✓                     |                       |
-| `LIMIT`             | ✓                     |                       |
-| `STOP_MARKET`       | ✓                     |                       |
-| `STOP_LIMIT`        | ✓                     |                       |
-| `MARKET_IF_TOUCHED` | ✓                     |                       |
-| `LIMIT_IF_TOUCHED`  | ✓                     |                       |
-| `TRAILING_STOP`     | -                     | *Not yet supported*.  |
+| Order Type          | Linear Perpetual Swap | Notes                |
+|---------------------|-----------------------|----------------------|
+| `MARKET`            | ✓                     |                      |
+| `LIMIT`             | ✓                     |                      |
+| `STOP_MARKET`       | ✓                     |                      |
+| `STOP_LIMIT`        | ✓                     |                      |
+| `MARKET_IF_TOUCHED` | ✓                     |                      |
+| `LIMIT_IF_TOUCHED`  | ✓                     |                      |
+| `TRAILING_STOP`     | -                     | *Not yet supported*. |
 
 ### Execution Instructions
 
@@ -84,7 +78,7 @@ for linear perpetual swap products on OKX.
 
 ### Time-in-Force Options
 
-| Time-in-Force | Linear Perpetual Swap | Notes               |
+| Time-in-Force | Linear Perpetual Swap | Notes                |
 |---------------|-----------------------|----------------------|
 | `GTC`         | ✓                     | Good Till Canceled.  |
 | `FOK`         | ✓                     | Fill or Kill.        |
