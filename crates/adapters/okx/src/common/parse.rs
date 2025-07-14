@@ -23,7 +23,7 @@ use nautilus_core::{
 use nautilus_model::{
     currencies::CURRENCY_MAP,
     data::{
-        Bar, BarSpecification, BarType, IndexPriceUpdate, MarkPriceUpdate, TradeTick,
+        Bar, BarSpecification, BarType, Data, IndexPriceUpdate, MarkPriceUpdate, TradeTick,
         bar::{
             BAR_SPEC_1_DAY_LAST, BAR_SPEC_1_HOUR_LAST, BAR_SPEC_1_MINUTE_LAST,
             BAR_SPEC_1_MONTH_LAST, BAR_SPEC_1_SECOND_LAST, BAR_SPEC_1_WEEK_LAST,
@@ -45,7 +45,7 @@ use nautilus_model::{
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, de::DeserializeOwned};
 use ustr::Ustr;
 
 use super::enums::OKXContractType;
@@ -61,6 +61,7 @@ use crate::{
     websocket::enums::OKXWsChannel,
 };
 
+/// Deserializes empty strings as None for optional fields.
 pub fn deserialize_empty_string_as_none<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
 where
     D: Deserializer<'de>,
@@ -69,6 +70,7 @@ where
     Ok(opt.filter(|s| !s.is_empty()))
 }
 
+/// Deserializes empty Ustr values as None for optional fields.
 pub fn deserialize_empty_ustr_as_none<'de, D>(deserializer: D) -> Result<Option<Ustr>, D::Error>
 where
     D: Deserializer<'de>,
@@ -77,6 +79,7 @@ where
     Ok(opt.filter(|s| !s.is_empty()))
 }
 
+/// Deserializes string values to u64 integers.
 pub fn deserialize_string_to_u64<'de, D>(deserializer: D) -> Result<u64, D::Error>
 where
     D: Deserializer<'de>,
@@ -89,6 +92,7 @@ where
     }
 }
 
+/// Deserializes optional string values to u64 integers.
 pub fn deserialize_optional_string_to_u64<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
 where
     D: Deserializer<'de>,
@@ -112,10 +116,6 @@ fn get_currency(code: &str) -> Currency {
 }
 
 /// Gets the OKX instrument type for the given instrument.
-///
-/// # Errors
-///
-/// Returns an error if the instrument is not valid for OKX (not an available product).
 pub fn okx_instrument_type(instrument: &InstrumentAny) -> anyhow::Result<OKXInstrumentType> {
     match instrument {
         InstrumentAny::CurrencyPair(_) => Ok(OKXInstrumentType::Spot),
@@ -162,6 +162,7 @@ pub fn parse_quantity(value: &str, precision: u8) -> anyhow::Result<Quantity> {
     Quantity::new_checked(value.parse::<f64>()?, precision)
 }
 
+/// Parses OKX side to Nautilus aggressor side.
 pub fn parse_aggressor_side(side: &Option<OKXSide>) -> AggressorSide {
     match side {
         Some(OKXSide::Buy) => nautilus_model::enums::AggressorSide::Buyer,
@@ -170,6 +171,7 @@ pub fn parse_aggressor_side(side: &Option<OKXSide>) -> AggressorSide {
     }
 }
 
+/// Parses OKX execution type to Nautilus liquidity side.
 pub fn parse_execution_type(liquidity: &Option<OKXExecType>) -> LiquiditySide {
     match liquidity {
         Some(OKXExecType::Maker) => nautilus_model::enums::LiquiditySide::Maker,
@@ -178,6 +180,7 @@ pub fn parse_execution_type(liquidity: &Option<OKXExecType>) -> LiquiditySide {
     }
 }
 
+/// Parses quantity to Nautilus position side.
 pub fn parse_position_side(current_qty: Option<i64>) -> PositionSide {
     match current_qty {
         Some(qty) if qty > 0 => PositionSide::Long,
@@ -186,6 +189,7 @@ pub fn parse_position_side(current_qty: Option<i64>) -> PositionSide {
     }
 }
 
+/// Parses OKX side to Nautilus order side.
 pub fn parse_order_side(order_side: &Option<OKXSide>) -> OrderSide {
     match order_side {
         Some(OKXSide::Buy) => OrderSide::Buy,
@@ -447,6 +451,31 @@ pub fn parse_fill_report(
     ))
 }
 
+/// Parses vector messages from OKX WebSocket data.
+///
+/// Reduces code duplication by providing a common pattern for deserializing JSON arrays,
+/// parsing each message, and wrapping results in Nautilus Data enum variants.
+pub fn parse_message_vec<T, R, F, W>(
+    data: serde_json::Value,
+    parser: F,
+    wrapper: W,
+) -> anyhow::Result<Vec<Data>>
+where
+    T: DeserializeOwned,
+    F: Fn(&T) -> anyhow::Result<R>,
+    W: Fn(R) -> Data,
+{
+    let msgs: Vec<T> = serde_json::from_value(data)?;
+    let mut results = Vec::with_capacity(msgs.len());
+
+    for msg in msgs {
+        let parsed = parser(&msg)?;
+        results.push(wrapper(parsed));
+    }
+
+    Ok(results)
+}
+
 pub fn bar_spec_as_okx_channel(bar_spec: BarSpecification) -> anyhow::Result<OKXWsChannel> {
     let channel = match bar_spec {
         BAR_SPEC_1_SECOND_LAST => OKXWsChannel::Candle1Second,
@@ -474,6 +503,7 @@ pub fn bar_spec_as_okx_channel(bar_spec: BarSpecification) -> anyhow::Result<OKX
     Ok(channel)
 }
 
+/// Converts Nautilus bar specification to OKX mark price channel.
 pub fn bar_spec_as_okx_mark_price_channel(
     bar_spec: BarSpecification,
 ) -> anyhow::Result<OKXWsChannel> {
@@ -501,6 +531,7 @@ pub fn bar_spec_as_okx_mark_price_channel(
     Ok(channel)
 }
 
+/// Converts Nautilus bar specification to OKX timeframe string.
 pub fn bar_spec_as_okx_timeframe(bar_spec: BarSpecification) -> anyhow::Result<&'static str> {
     let timeframe = match bar_spec {
         BAR_SPEC_1_SECOND_LAST => "1s",
@@ -528,6 +559,7 @@ pub fn bar_spec_as_okx_timeframe(bar_spec: BarSpecification) -> anyhow::Result<&
     Ok(timeframe)
 }
 
+/// Converts OKX timeframe string to Nautilus bar specification.
 pub fn okx_timeframe_as_bar_spec(timeframe: &str) -> anyhow::Result<BarSpecification> {
     let bar_spec = match timeframe {
         "1s" => BAR_SPEC_1_SECOND_LAST,
@@ -555,6 +587,35 @@ pub fn okx_timeframe_as_bar_spec(timeframe: &str) -> anyhow::Result<BarSpecifica
     Ok(bar_spec)
 }
 
+/// Converts OKX WebSocket channel to bar specification if it's a candle channel.
+pub fn okx_channel_to_bar_spec(channel: &OKXWsChannel) -> Option<BarSpecification> {
+    use OKXWsChannel::*;
+    match channel {
+        Candle1Second | MarkPriceCandle1Second => Some(BAR_SPEC_1_SECOND_LAST),
+        Candle1Minute | MarkPriceCandle1Minute => Some(BAR_SPEC_1_MINUTE_LAST),
+        Candle3Minute | MarkPriceCandle3Minute => Some(BAR_SPEC_3_MINUTE_LAST),
+        Candle5Minute | MarkPriceCandle5Minute => Some(BAR_SPEC_5_MINUTE_LAST),
+        Candle15Minute | MarkPriceCandle15Minute => Some(BAR_SPEC_15_MINUTE_LAST),
+        Candle30Minute | MarkPriceCandle30Minute => Some(BAR_SPEC_30_MINUTE_LAST),
+        Candle1Hour | MarkPriceCandle1Hour => Some(BAR_SPEC_1_HOUR_LAST),
+        Candle2Hour | MarkPriceCandle2Hour => Some(BAR_SPEC_2_HOUR_LAST),
+        Candle4Hour | MarkPriceCandle4Hour => Some(BAR_SPEC_4_HOUR_LAST),
+        Candle6Hour | MarkPriceCandle6Hour => Some(BAR_SPEC_6_HOUR_LAST),
+        Candle12Hour | MarkPriceCandle12Hour => Some(BAR_SPEC_12_HOUR_LAST),
+        Candle1Day | MarkPriceCandle1Day => Some(BAR_SPEC_1_DAY_LAST),
+        Candle2Day | MarkPriceCandle2Day => Some(BAR_SPEC_2_DAY_LAST),
+        Candle3Day | MarkPriceCandle3Day => Some(BAR_SPEC_3_DAY_LAST),
+        Candle5Day | MarkPriceCandle5Day => Some(BAR_SPEC_5_DAY_LAST),
+        Candle1Week | MarkPriceCandle1Week => Some(BAR_SPEC_1_WEEK_LAST),
+        Candle1Month | MarkPriceCandle1Month => Some(BAR_SPEC_1_MONTH_LAST),
+        Candle3Month | MarkPriceCandle3Month => Some(BAR_SPEC_3_MONTH_LAST),
+        Candle6Month => Some(BAR_SPEC_6_MONTH_LAST),
+        Candle1Year => Some(BAR_SPEC_12_MONTH_LAST),
+        _ => None,
+    }
+}
+
+/// Parses an OKX instrument definition into a Nautilus instrument.
 pub fn parse_instrument_any(
     instrument: &OKXInstrument,
     ts_init: UnixNanos,
@@ -576,29 +637,57 @@ pub fn parse_instrument_any(
     }
 }
 
-pub fn parse_spot_instrument(
-    definition: &OKXInstrument,
+/// Common parsed instrument data extracted from OKX definitions.
+#[derive(Debug)]
+struct CommonInstrumentData {
+    instrument_id: InstrumentId,
+    raw_symbol: Symbol,
+    price_increment: Price,
+    size_increment: Quantity,
+    lot_size: Option<Quantity>,
+    max_quantity: Option<Quantity>,
+    min_quantity: Option<Quantity>,
+    max_notional: Option<Money>,
+    min_notional: Option<Money>,
+    max_price: Option<Price>,
+    min_price: Option<Price>,
+}
+
+/// Margin and fee configuration for an instrument.
+struct MarginAndFees {
     margin_init: Option<Decimal>,
     margin_maint: Option<Decimal>,
     maker_fee: Option<Decimal>,
     taker_fee: Option<Decimal>,
-    ts_init: UnixNanos,
-) -> anyhow::Result<InstrumentAny> {
+}
+
+/// Trait for instrument-specific parsing logic.
+trait InstrumentParser {
+    /// Parses instrument-specific fields and creates the final instrument.
+    fn parse_specific_fields(
+        &self,
+        definition: &OKXInstrument,
+        common: CommonInstrumentData,
+        margin_fees: MarginAndFees,
+        ts_init: UnixNanos,
+    ) -> anyhow::Result<InstrumentAny>;
+}
+
+/// Extracts common fields shared across all instrument types.
+fn parse_common_instrument_data(
+    definition: &OKXInstrument,
+) -> anyhow::Result<CommonInstrumentData> {
     let instrument_id = parse_instrument_id(definition.inst_id);
     let raw_symbol = Symbol::from_ustr_unchecked(definition.inst_id);
-    let base_currency = get_currency(&definition.base_ccy);
-    let quote_currency = get_currency(&definition.quote_ccy);
 
-    let price_increment = match Price::from_str(&definition.tick_sz) {
-        Ok(price) => price,
-        Err(e) => {
-            anyhow::bail!(
-                "Failed to parse tick_sz '{}' into Price: {}",
-                definition.tick_sz,
-                e
-            );
-        }
-    };
+    let price_increment = Price::from_str(&definition.tick_sz).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to parse tick_sz '{}' into Price: {}",
+            definition.tick_sz,
+            e
+        )
+    })?;
+
     let size_increment = Quantity::from(&definition.lot_sz);
     let lot_size = Some(Quantity::from(&definition.lot_sz));
     let max_quantity = Some(Quantity::from(&definition.max_mkt_sz));
@@ -608,13 +697,9 @@ pub fn parse_spot_instrument(
     let max_price = None; // TBD
     let min_price = None; // TBD
 
-    let instrument = CurrencyPair::new(
+    Ok(CommonInstrumentData {
         instrument_id,
         raw_symbol,
-        base_currency,
-        quote_currency,
-        price_increment.precision,
-        size_increment.precision,
         price_increment,
         size_increment,
         lot_size,
@@ -624,17 +709,96 @@ pub fn parse_spot_instrument(
         min_notional,
         max_price,
         min_price,
+    })
+}
+
+/// Generic instrument parsing function that delegates to type-specific parsers.
+fn parse_instrument_with_parser<P: InstrumentParser>(
+    definition: &OKXInstrument,
+    parser: P,
+    margin_init: Option<Decimal>,
+    margin_maint: Option<Decimal>,
+    maker_fee: Option<Decimal>,
+    taker_fee: Option<Decimal>,
+    ts_init: UnixNanos,
+) -> anyhow::Result<InstrumentAny> {
+    let common = parse_common_instrument_data(definition)?;
+    parser.parse_specific_fields(
+        definition,
+        common,
+        MarginAndFees {
+            margin_init,
+            margin_maint,
+            maker_fee,
+            taker_fee,
+        },
+        ts_init,
+    )
+}
+
+/// Parser for spot trading pairs (CurrencyPair).
+struct SpotInstrumentParser;
+
+impl InstrumentParser for SpotInstrumentParser {
+    fn parse_specific_fields(
+        &self,
+        definition: &OKXInstrument,
+        common: CommonInstrumentData,
+        margin_fees: MarginAndFees,
+        ts_init: UnixNanos,
+    ) -> anyhow::Result<InstrumentAny> {
+        let base_currency = get_currency(&definition.base_ccy);
+        let quote_currency = get_currency(&definition.quote_ccy);
+
+        let instrument = CurrencyPair::new(
+            common.instrument_id,
+            common.raw_symbol,
+            base_currency,
+            quote_currency,
+            common.price_increment.precision,
+            common.size_increment.precision,
+            common.price_increment,
+            common.size_increment,
+            common.lot_size,
+            common.max_quantity,
+            common.min_quantity,
+            common.max_notional,
+            common.min_notional,
+            common.max_price,
+            common.min_price,
+            margin_fees.margin_init,
+            margin_fees.margin_maint,
+            margin_fees.maker_fee,
+            margin_fees.taker_fee,
+            ts_init,
+            ts_init,
+        );
+
+        Ok(InstrumentAny::CurrencyPair(instrument))
+    }
+}
+
+/// Parses an OKX spot instrument definition into a Nautilus currency pair.
+pub fn parse_spot_instrument(
+    definition: &OKXInstrument,
+    margin_init: Option<Decimal>,
+    margin_maint: Option<Decimal>,
+    maker_fee: Option<Decimal>,
+    taker_fee: Option<Decimal>,
+    ts_init: UnixNanos,
+) -> anyhow::Result<InstrumentAny> {
+    parse_instrument_with_parser(
+        definition,
+        SpotInstrumentParser,
         margin_init,
         margin_maint,
         maker_fee,
         taker_fee,
-        ts_init, // No ts_event for response
         ts_init,
-    );
-
-    Ok(InstrumentAny::CurrencyPair(instrument))
+    )
 }
 
+/// Parses an OKX swap instrument definition into a Nautilus crypto perpetual.
 pub fn parse_swap_instrument(
     definition: &OKXInstrument,
     margin_init: Option<Decimal>,
@@ -724,6 +888,7 @@ pub fn parse_swap_instrument(
     Ok(InstrumentAny::CryptoPerpetual(instrument))
 }
 
+/// Parses an OKX futures instrument definition into a Nautilus crypto future.
 pub fn parse_futures_instrument(
     definition: &OKXInstrument,
     margin_init: Option<Decimal>,
@@ -799,6 +964,7 @@ pub fn parse_futures_instrument(
     Ok(InstrumentAny::CryptoFuture(instrument))
 }
 
+/// Parses an OKX option instrument definition into a Nautilus option contract.
 pub fn parse_option_instrument(
     definition: &OKXInstrument,
     margin_init: Option<Decimal>,
@@ -870,6 +1036,7 @@ pub fn parse_option_instrument(
     Ok(InstrumentAny::OptionContract(instrument))
 }
 
+/// Parses an OKX account into a Nautilus account state.
 pub fn parse_account_state(
     okx_account: &OKXAccount,
     account_id: AccountId,
