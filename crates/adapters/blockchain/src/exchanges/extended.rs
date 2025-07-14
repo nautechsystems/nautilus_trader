@@ -112,7 +112,7 @@ impl DexExtended {
         } else {
             anyhow::bail!(
                 "Parsing of pool created event in not defined in this dex: {}",
-                self.dex.name
+                self.dex.id()
             )
         }
     }

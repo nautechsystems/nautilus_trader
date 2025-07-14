@@ -1632,6 +1632,7 @@ fn test_process_pool_swap(data_engine: Rc<RefCell<DataEngine>>, data_client: Dat
         chains::ETHEREUM.clone(),
         "Uniswap V3",
         "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+        0,
         AmmType::CLAMM,
         "PoolCreated",
         "Swap",

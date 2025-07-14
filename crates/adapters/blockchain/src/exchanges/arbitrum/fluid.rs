@@ -26,8 +26,9 @@ use crate::exchanges::extended::DexExtended;
 pub static FLUID_DEX: LazyLock<DexExtended> = LazyLock::new(|| {
     let dex = Dex::new(
         chains::ARBITRUM.clone(),
-        "Fluid DEX",
+        "FluidDEX",
         "0x91716C4EDA1Fb55e84Bf8b4c7085f84285c19085",
+        269528370,
         AmmType::CLAMM,
         "",
         "",

@@ -100,10 +100,12 @@ mod tests {
         let chain = Arc::new(chains::ETHEREUM.clone());
         let config = BlockchainDataClientConfig::new(
             chain,
+            vec![],
             "https://eth-mainnet.example.com".to_string(),
             None,
             None,
             false,
+            None,
             None,
         );
 

@@ -90,7 +90,21 @@ impl BlockchainHttpRpcClient {
     ) -> anyhow::Result<T> {
         match self.send_rpc_request(rpc_request).await {
             Ok(bytes) => match serde_json::from_slice::<RpcNodeHttpResponse<T>>(bytes.as_ref()) {
-                Ok(parsed) => Ok(parsed.result),
+                Ok(parsed) => {
+                    if let Some(error) = parsed.error {
+                        Err(anyhow::anyhow!(
+                            "RPC error {}: {}",
+                            error.code,
+                            error.message
+                        ))
+                    } else if let Some(result) = parsed.result {
+                        Ok(result)
+                    } else {
+                        Err(anyhow::anyhow!(
+                            "Response missing both result and error fields"
+                        ))
+                    }
+                }
                 Err(e) => Err(anyhow::anyhow!("Failed to parse eth call response: {}", e)),
             },
             Err(e) => Err(anyhow::anyhow!(
@@ -103,7 +117,7 @@ impl BlockchainHttpRpcClient {
     /// Creates a properly formatted `eth_call` JSON-RPC request object targeting a specific contract address with encoded function data.
     #[must_use]
     pub fn construct_eth_call(&self, to: &str, call_data: &[u8]) -> serde_json::Value {
-        let encoded_data = hex::encode(call_data);
+        let encoded_data = format!("0x{}", hex::encode(call_data));
         let call = serde_json::json!({
             "to": to,
             "data": encoded_data

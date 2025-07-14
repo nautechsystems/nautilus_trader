@@ -13,27 +13,22 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::sync::LazyLock;
+use pyo3::prelude::*;
 
-use nautilus_model::defi::{
-    chain::chains,
-    dex::{AmmType, Dex},
-};
+use crate::sql::pg::PostgresConnectOptions;
 
-use crate::exchanges::extended::DexExtended;
-
-/// Aerodrome V1 DEX on Base.
-pub static AERODROME_V1: LazyLock<DexExtended> = LazyLock::new(|| {
-    let dex = Dex::new(
-        chains::BASE.clone(),
-        "AerodromeV1",
-        "0x420DD381b31aEf6683db6B902084cB0FFECe40Da",
-        3200559,
-        AmmType::CPAMM,
-        "",
-        "",
-        "",
-        "",
-    );
-    DexExtended::new(dex)
-});
+#[pymethods]
+impl PostgresConnectOptions {
+    /// Creates a new `PostgresConnectOptions` instance.
+    #[new]
+    #[pyo3(signature = (host, port, user, password, database))]
+    const fn py_new(
+        host: String,
+        port: u16,
+        user: String,
+        password: String,
+        database: String,
+    ) -> Self {
+        Self::new(host, port, user, password, database)
+    }
+}
