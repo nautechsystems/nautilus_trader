@@ -20,5 +20,5 @@ from nautilus_trader.model.identifiers import Venue
 
 
 HYPERLIQUID: Final[str] = "HYPERLIQUID"
-HYPERLIQUID_VENUE: Final[Venue] = Venue()
+HYPERLIQUID_VENUE: Final[Venue] = Venue(HYPERLIQUID)
 HYPERLIQUID_CLIENT_ID: Final[ClientId] = ClientId(HYPERLIQUID)
