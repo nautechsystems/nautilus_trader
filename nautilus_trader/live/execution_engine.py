@@ -1013,6 +1013,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self,
         report: OrderStatusReport,
         trades: list[FillReport],
+        is_external: bool = True,
     ) -> bool:
         client_order_id: ClientOrderId = report.client_order_id
 
@@ -1033,7 +1034,7 @@ class LiveExecutionEngine(ExecutionEngine):
         order: Order = self._cache.order(client_order_id)
 
         if order is None:
-            order = self._generate_external_order(report)
+            order = self._generate_order(report, is_external)
 
             if order is None:
                 # External order dropped
@@ -1354,7 +1355,7 @@ class LiveExecutionEngine(ExecutionEngine):
                 ts_last=now,
                 ts_init=now,
             )
-            self._reconcile_order_report(diff_report, trades=[])  # Will infer trade
+            self._reconcile_order_report(diff_report, trades=[], is_external=False)
 
         return True  # Reconciled
 
@@ -1418,7 +1419,7 @@ class LiveExecutionEngine(ExecutionEngine):
 
         return filled
 
-    def _generate_external_order(self, report: OrderStatusReport) -> Order | None:
+    def _generate_order(self, report: OrderStatusReport, is_external: bool = True) -> Order | None:
         self._log.debug(f"Generating order {report.client_order_id!r}", color=LogColor.MAGENTA)
 
         options: dict[str, Any] = {}
@@ -1453,8 +1454,14 @@ class LiveExecutionEngine(ExecutionEngine):
         strategy_id = self.get_external_order_claim(report.instrument_id)
 
         if strategy_id is None:
-            strategy_id = StrategyId("EXTERNAL")
-            tags = ["EXTERNAL"]
+            if is_external:
+                # Generating from external order
+                strategy_id = StrategyId("EXTERNAL")
+                tags = ["EXTERNAL"]
+            else:
+                # Generating from internal position diff alignment
+                strategy_id = StrategyId("INTERNAL-DIFF")
+                tags = ["INTERNAL"]
         else:
             tags = None
 
