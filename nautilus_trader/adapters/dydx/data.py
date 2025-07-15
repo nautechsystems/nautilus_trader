@@ -622,7 +622,7 @@ class DYDXDataClient(LiveMarketDataClient):
         book = self._books.get(instrument_id)
 
         if book is None:
-            self.log.error(
+            self._log.error(
                 f"Cannot resolve crossed order book: order book not found for {instrument_id}",
             )
             return
