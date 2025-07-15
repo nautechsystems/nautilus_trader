@@ -1127,3 +1127,105 @@ class TestBacktestEngineStreaming:
 
             # Reset for next iteration
             self.engine.clear_data()
+
+    def test_extreme_varying_density_large_chunks(self):  # noqa: C901 (too complex)
+        """
+        Test extreme varying density with large chunks (100k elements) to verify time
+        ordering is maintained across streams with different data densities.
+        """
+        start_ts = 1_609_459_200_000_000_000  # 2021-01-01 00:00:00 UTC
+        chunk_size = 100_000  # 100k elements per chunk
+
+        def create_ultra_dense_iterator(name: str, start_ts: int, chunks: int):
+            """
+            Create iterator with ultra-dense data (microsecond intervals).
+            """
+
+            def ultra_dense_generator():
+                for chunk in range(chunks):
+                    chunk_data = []
+                    base_ts = start_ts + (chunk * chunk_size * 1_000)  # 1ms per chunk offset
+                    for i in range(chunk_size):
+                        chunk_data.append(
+                            MyData(
+                                value=f"{name}_ultra_{chunk}_{i}",
+                                ts_init=base_ts + (i * 1_000),  # 1 microsecond intervals
+                            ),
+                        )
+                    yield chunk_data
+
+            return ultra_dense_generator()
+
+        def create_ultra_sparse_iterator(name: str, start_ts: int, chunks: int):
+            """
+            Create iterator with ultra-sparse data (hour intervals).
+            """
+
+            def ultra_sparse_generator():
+                for chunk in range(chunks):
+                    chunk_data = []
+                    base_ts = start_ts + (
+                        chunk * chunk_size * 3_600_000_000_000
+                    )  # 1 hour per chunk
+                    for i in range(chunk_size):
+                        chunk_data.append(
+                            MyData(
+                                value=f"{name}_sparse_{chunk}_{i}",
+                                ts_init=base_ts + (i * 3_600_000_000_000),  # 1 hour intervals
+                            ),
+                        )
+                    yield chunk_data
+
+            return ultra_sparse_generator()
+
+        def create_mixed_density_iterator(name: str, start_ts: int, chunks: int):
+            """
+            Create iterator with mixed density patterns within chunks.
+            """
+
+            def mixed_density_generator():
+                for chunk in range(chunks):
+                    chunk_data = []
+                    base_ts = start_ts + (chunk * chunk_size * 60_000_000_000)  # 1 minute per chunk
+                    for i in range(chunk_size):
+                        # Alternate between dense and sparse within chunk
+                        if i % 1000 < 500:  # First half of each 1000 items: dense
+                            interval = 1_000_000  # 1ms
+                        else:  # Second half: sparse
+                            interval = 60_000_000_000  # 1 minute
+
+                        chunk_data.append(
+                            MyData(
+                                value=f"{name}_mixed_{chunk}_{i}",
+                                ts_init=base_ts + (i * interval),
+                            ),
+                        )
+                    yield chunk_data
+
+            return mixed_density_generator()
+
+        large_chunk_iterators = [
+            ("ultra_dense_stream", create_ultra_dense_iterator("dense", start_ts, 2)),
+            (
+                "ultra_sparse_stream",
+                create_ultra_sparse_iterator("sparse", start_ts + 1_000_000_000, 2),
+            ),
+            (
+                "mixed_density_stream",
+                create_mixed_density_iterator("mixed", start_ts + 2_000_000_000, 2),
+            ),
+        ]
+
+        for data_name, generator in large_chunk_iterators:
+            self.engine.add_data_iterator(data_name, generator)
+
+        initial_iteration = self.engine.iteration
+
+        # Process all data - this tests the heap-based merging with large chunks
+        # Verify time ordering is maintained despite varying densities:
+        # If ordering was broken, the engine would process events out of sequence
+        # and raise an exception.
+        self.engine.run()
+
+        # Verify data was processed
+        assert self.engine.iteration > initial_iteration

@@ -59,7 +59,7 @@ cdef class BacktestEngine:
     cdef uint64_t _data_len
     cdef uint64_t _index
     cdef uint64_t _iteration
-    cdef object _backtest_data_iterator
+    cdef object _data_iterator
     cdef uint64_t _last_ns
     cdef uint64_t _end_ns
     cdef dict[str, RequestData] _data_requests
