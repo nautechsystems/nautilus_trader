@@ -41,7 +41,21 @@ mirrors the default behavior of `rustfmt`.
 - Leave **one blank line above every doc comment** (`///` or `//!`) so that the comment is clearly
   detached from the previous code block.
 
-#### PyO3 naming convention
+#### String formatting
+
+Prefer inline format strings over positional arguments:
+
+```rust
+// Preferred - inline format with variable names
+anyhow::bail!("Failed to subtract {n} months from {datetime}");
+
+// Instead of - positional arguments
+anyhow::bail!("Failed to subtract {} months from {}", n, datetime);
+```
+
+This makes messages more readable and self-documenting, especially when there are multiple variables.
+
+#### PyO3 naming conventions
 
 When exposing Rust functions to Python **via PyO3**:
 
@@ -101,18 +115,6 @@ Use structured error handling patterns consistently:
    ```
 
    **Note**: Use `anyhow::bail!` for early returns, but `anyhow::anyhow!` in closure contexts like `ok_or_else()` where early returns aren't possible.
-
-5. **Error Message Formatting**: Prefer inline format strings over positional arguments:
-
-   ```rust
-   // Preferred - inline format with variable names
-   anyhow::bail!("Failed to subtract {n} months from {datetime}");
-
-   // Instead of - positional arguments
-   anyhow::bail!("Failed to subtract {} months from {}", n, datetime);
-   ```
-
-   This makes error messages more readable and self-documenting, especially when there are multiple variables.
 
 ### Attribute patterns
 
@@ -373,7 +375,9 @@ impl Send for MessageBus {
 
 ### Testing conventions
 
-- Do not use Arrange, Act, Assert separator comments for Rust tests.
+- Use `mod tests` as the standard test module name unless you need to specifically compartmentalize.
+- Use `#[rstest]` attributes consistently, this standardization reduces cognitive overhead.
+- Do *not* use Arrange, Act, Assert separator comments in Rust tests.
 
 #### Test Organization
 
