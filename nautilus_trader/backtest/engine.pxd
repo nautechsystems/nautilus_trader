@@ -59,11 +59,13 @@ cdef class BacktestEngine:
     cdef uint64_t _data_len
     cdef uint64_t _index
     cdef uint64_t _iteration
-    cdef object _data_iterator
+    cdef object _backtest_data_iterator
     cdef uint64_t _last_ns
     cdef uint64_t _end_ns
     cdef dict[str, RequestData] _data_requests
     cdef set[str] _backtest_subscription_names
+    cdef dict[str, uint64_t] _last_subscription_ts
+    cdef list _response_data
 
     cdef CVec _advance_time(self, uint64_t ts_now)
     cdef void _process_raw_time_event_handlers(
@@ -75,10 +77,10 @@ cdef class BacktestEngine:
     )
 
     cpdef void _handle_data_command(self, DataCommand command)
-    cpdef void _handle_subscribe(self, SubscribeData command)
+    cdef void _handle_subscribe(self, SubscribeData command)
+    cpdef void _update_subscription_data(self, str subscription_name, object duration_seconds)
     cpdef void _handle_data_response(self, DataResponse response)
     cpdef void _handle_unsubscribe(self, UnsubscribeData command)
-    cpdef void _handle_empty_data(self, str subscription_name, uint64_t last_ts_init)
 
 
 cdef inline bint should_skip_time_event(
@@ -113,6 +115,7 @@ cdef class BacktestDataIterator:
     cdef int _single_data_len
     cdef int _single_data_index
     cdef bint _is_single_data
+    cdef dict _data_update_function
 
     cdef dict[str, object] _stream_iterators
     cdef dict[str, uint64_t] _stream_current_window_start
@@ -121,22 +124,15 @@ cdef class BacktestDataIterator:
     cdef dict[str, uint64_t] _stream_chunk_duration_ns
 
     cpdef void _reset_single_data(self)
-    cpdef void add_data(self, str data_name, list data_list, bint append_data=*)
     cdef void _add_data(self, str data_name, list data_list, bint append_data=*)
-    cpdef void remove_data(self, str data_name)
+    cpdef void remove_data(self, str data_name, bint complete_remove=*)
     cpdef void _activate_single_data(self)
     cpdef void _deactivate_single_data(self)
     cpdef Data next(self)
     cpdef void _push_data(self, int data_priority, int data_index)
-    cpdef void reset(self)
+    cpdef void _update_data(self, int data_priority)
     cpdef void _reset_heap(self)
     cpdef void set_index(self, str data_name, int index)
     cpdef bint is_done(self)
     cpdef dict all_data(self)
     cpdef list data(self, str data_name)
-
-    cpdef void add_stream_iterator(self, str data_name, object iterator, uint64_t chunk_duration_ns, bint append_data=*)
-    cpdef uint64_t get_stream_chunk_duration(self, str data_name)
-    cpdef bint has_stream_data_remaining(self)
-    cpdef void load_next_chunks_if_needed(self)
-    cdef void _load_next_chunk(self, str data_name, bint append_data=*)
