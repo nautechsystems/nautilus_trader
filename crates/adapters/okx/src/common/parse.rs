@@ -162,6 +162,12 @@ pub fn parse_quantity(value: &str, precision: u8) -> anyhow::Result<Quantity> {
     Quantity::new_checked(value.parse::<f64>()?, precision)
 }
 
+pub fn parse_fee(value: Option<&str>, currency: Currency) -> anyhow::Result<Money> {
+    // OKX report positive fees with negative signs (i.e., fee charged)
+    let fee_f64 = value.unwrap_or("0").parse::<f64>()?;
+    Money::new_checked(-fee_f64, currency)
+}
+
 /// Parses OKX side to Nautilus aggressor side.
 pub fn parse_aggressor_side(side: &Option<OKXSide>) -> AggressorSide {
     match side {
