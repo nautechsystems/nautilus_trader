@@ -21,6 +21,7 @@ Released on TBD (UTC).
 - Added `start` and `stop` to response data (#2748), thanks @stastnypremysl
 - Added integration test service management targets (#2765), thanks @stastnypremysl
 - Added integration tests for dYdX bar-partitioning and large-history handling (#2773), thanks @nicolad
+- Improved reconciliation handling of internally generated orders to align positions (now uses the `INTERNAL-DIFF` strategy ID)
 - Improved data client for blockchain adapter (#2787), thanks @filipmacek
 - Improved efficiency of message bus external streams buffer flushing
 - Improved `databento_test_request_bars` example (#2762), thanks @faysou

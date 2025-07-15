@@ -913,9 +913,9 @@ class TestReconciliationEdgeCases:
         reconcile_calls = []
         original_reconcile = live_exec_engine._reconcile_order_report
 
-        def spy_reconcile(order_report, trades):
+        def spy_reconcile(order_report, trades, is_external=True):
             reconcile_calls.append((order_report, trades))
-            return original_reconcile(order_report, trades)
+            return original_reconcile(order_report, trades, is_external)
 
         live_exec_engine._reconcile_order_report = spy_reconcile
 
@@ -971,9 +971,9 @@ class TestReconciliationEdgeCases:
         reconcile_calls = []
         original_reconcile = live_exec_engine._reconcile_order_report
 
-        def spy_reconcile(order_report, trades):
+        def spy_reconcile(order_report, trades, is_external=True):
             reconcile_calls.append((order_report, trades))
-            return original_reconcile(order_report, trades)
+            return original_reconcile(order_report, trades, is_external)
 
         live_exec_engine._reconcile_order_report = spy_reconcile
 
@@ -1029,9 +1029,9 @@ class TestReconciliationEdgeCases:
         reconcile_calls = []
         original_reconcile = live_exec_engine._reconcile_order_report
 
-        def spy_reconcile(order_report, trades):
+        def spy_reconcile(order_report, trades, is_external=True):
             reconcile_calls.append((order_report, trades))
-            return original_reconcile(order_report, trades)
+            return original_reconcile(order_report, trades, is_external)
 
         live_exec_engine._reconcile_order_report = spy_reconcile
 
@@ -1087,9 +1087,9 @@ class TestReconciliationEdgeCases:
         reconcile_calls = []
         original_reconcile = live_exec_engine._reconcile_order_report
 
-        def spy_reconcile(order_report, trades):
+        def spy_reconcile(order_report, trades, is_external=True):
             reconcile_calls.append((order_report, trades))
-            return original_reconcile(order_report, trades)
+            return original_reconcile(order_report, trades, is_external)
 
         live_exec_engine._reconcile_order_report = spy_reconcile
 
@@ -1146,9 +1146,9 @@ class TestReconciliationEdgeCases:
         reconcile_calls = []
         original_reconcile = live_exec_engine._reconcile_order_report
 
-        def spy_reconcile(order_report, trades):
+        def spy_reconcile(order_report, trades, is_external=True):
             reconcile_calls.append((order_report, trades))
-            return original_reconcile(order_report, trades)
+            return original_reconcile(order_report, trades, is_external)
 
         live_exec_engine._reconcile_order_report = spy_reconcile
 
@@ -1204,9 +1204,9 @@ class TestReconciliationEdgeCases:
         reconcile_calls = []
         original_reconcile = live_exec_engine._reconcile_order_report
 
-        def spy_reconcile(order_report, trades):
+        def spy_reconcile(order_report, trades, is_external=True):
             reconcile_calls.append((order_report, trades))
-            return original_reconcile(order_report, trades)
+            return original_reconcile(order_report, trades, is_external)
 
         live_exec_engine._reconcile_order_report = spy_reconcile
 
@@ -1261,9 +1261,9 @@ class TestReconciliationEdgeCases:
         reconcile_calls = []
         original_reconcile = live_exec_engine._reconcile_order_report
 
-        def spy_reconcile(order_report, trades):
+        def spy_reconcile(order_report, trades, is_external=True):
             reconcile_calls.append((order_report, trades))
-            return original_reconcile(order_report, trades)
+            return original_reconcile(order_report, trades, is_external)
 
         live_exec_engine._reconcile_order_report = spy_reconcile
 
@@ -1379,3 +1379,124 @@ class TestReconciliationEdgeCases:
         # Assert
         assert result is False  # Reconciliation should fail
         assert order.filled_qty == Quantity.from_int(100)  # No inferred fill
+
+    @pytest.mark.asyncio()
+    async def test_internal_diff_order_not_filtered_when_filter_unclaimed_external_orders_enabled(
+        self,
+        live_exec_engine,
+    ):
+        """
+        Test that INTERNAL-DIFF orders are not filtered out when
+        filter_unclaimed_external_orders is enabled.
+
+        This ensures that position reconciliation orders are generated even when
+        external order filtering is active.
+
+        """
+        # Arrange
+        instrument = AUDUSD_SIM
+        self.cache.add_instrument(instrument)
+
+        # Enable external order filtering and missing order generation
+        live_exec_engine.filter_unclaimed_external_orders = True
+        live_exec_engine.generate_missing_orders = True
+
+        # Create internal long position (100 units)
+        order = TestExecStubs.limit_order(instrument=instrument, order_side=OrderSide.BUY)
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=instrument,
+            position_id=PositionId("P-1"),
+            last_qty=Quantity.from_int(100),
+            last_px=Price.from_str("1.0"),
+        )
+        internal_position = Position(instrument=instrument, fill=fill)
+        self.cache.add_position(internal_position, OmsType.NETTING)
+
+        # External report shows 150 units (need to generate 50 BUY order)
+        external_report = PositionStatusReport(
+            account_id=TestIdStubs.account_id(),
+            instrument_id=instrument.id,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_int(150),
+            report_id=UUID4(),
+            ts_last=0,
+            ts_init=0,
+        )
+
+        # Count orders before reconciliation
+        orders_before = len(self.cache.orders())
+
+        # Act
+        result = live_exec_engine._reconcile_position_report(external_report)
+
+        # Assert
+        assert result is True
+
+        # Verify that a new order was generated (not filtered out)
+        orders_after = self.cache.orders()
+        assert len(orders_after) == orders_before + 1
+
+        # Find the newly generated order
+        new_orders = [o for o in orders_after if o.strategy_id.value == "INTERNAL-DIFF"]
+        assert len(new_orders) == 1
+
+        generated_order = new_orders[0]
+        assert generated_order.strategy_id.value == "INTERNAL-DIFF"
+        assert generated_order.side == OrderSide.BUY
+        assert generated_order.quantity == Quantity.from_int(50)
+        assert generated_order.status == OrderStatus.FILLED
+
+    @pytest.mark.asyncio()
+    async def test_external_order_filtered_when_filter_unclaimed_external_orders_enabled(
+        self,
+        live_exec_engine,
+    ):
+        """
+        Test that regular EXTERNAL orders are filtered out when
+        filter_unclaimed_external_orders is enabled.
+
+        This ensures that the filtering mechanism works correctly for regular external
+        orders.
+
+        """
+        # Arrange
+        instrument = AUDUSD_SIM
+        self.cache.add_instrument(instrument)
+
+        # Enable external order filtering
+        live_exec_engine.filter_unclaimed_external_orders = True
+
+        # Create external order report (not claimed by any strategy)
+        external_report = OrderStatusReport(
+            account_id=TestIdStubs.account_id(),
+            instrument_id=instrument.id,
+            client_order_id=ClientOrderId("EXTERNAL-ORDER-123"),
+            venue_order_id=VenueOrderId("V-123"),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.LIMIT,
+            time_in_force=TimeInForce.GTC,
+            order_status=OrderStatus.FILLED,
+            price=Price.from_str("1.0"),
+            quantity=Quantity.from_int(100),
+            filled_qty=Quantity.from_int(100),
+            report_id=UUID4(),
+            ts_accepted=0,
+            ts_last=0,
+            ts_init=0,
+        )
+
+        # Count orders before reconciliation
+        orders_before = len(self.cache.orders())
+
+        # Act
+        result = live_exec_engine._reconcile_order_report(
+            external_report,
+            trades=[],
+            is_external=True,
+        )
+
+        # Assert - reconciliation should succeed but no order should be added (filtered out)
+        assert result is True
+        orders_after = self.cache.orders()
+        assert len(orders_after) == orders_before  # No new orders added due to filtering
