@@ -18,7 +18,7 @@ name = "nautilus_tardis"
 crate-type = ["rlib", "cdylib"]
 
 [features]
-default = []
+default = ["replay"]
 extension-module = [
   "pyo3/extension-module",
   "nautilus-core/extension-module",
@@ -32,6 +32,7 @@ python = [
   "nautilus-model/python",
   "nautilus-serialization/python",
 ]
+replay = []
 
 [package.metadata.docs.rs]
 all-features = true
@@ -87,3 +88,9 @@ path = "bin/example_http.rs"
 [[bin]]
 name = "tardis-replay"
 path = "bin/example_replay.rs"
+required-features = ["replay"]
+
+# Run with `cargo run --bin stream_deltas_bench --profile bench`
+[[bin]]
+name = "stream_deltas_bench"
+path = "bin/stream_deltas_bench.rs"

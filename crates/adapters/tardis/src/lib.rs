@@ -43,6 +43,8 @@ pub mod enums;
 pub mod http;
 pub mod machine;
 pub mod parse;
+
+#[cfg(feature = "replay")]
 pub mod replay;
 
 #[cfg(feature = "python")]

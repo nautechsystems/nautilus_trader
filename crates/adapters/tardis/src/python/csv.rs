@@ -23,9 +23,14 @@ use nautilus_model::{
 use pyo3::prelude::*;
 
 use crate::csv::{
-    load_deltas, load_depth10_from_snapshot5, load_depth10_from_snapshot25, load_quotes,
-    load_trades, stream_deltas, stream_depth10_from_snapshot5, stream_depth10_from_snapshot25,
-    stream_quotes, stream_trades,
+    load::{
+        load_deltas, load_depth10_from_snapshot5, load_depth10_from_snapshot25, load_quotes,
+        load_trades,
+    },
+    stream::{
+        stream_deltas, stream_depth10_from_snapshot5, stream_depth10_from_snapshot25,
+        stream_quotes, stream_trades,
+    },
 };
 
 macro_rules! impl_tardis_stream_iterator {
