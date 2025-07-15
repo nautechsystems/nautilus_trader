@@ -173,7 +173,7 @@ repos:
       - id: nbstripout
 
   - repo: https://github.com/DavidAnson/markdownlint-cli2
-    rev: v0.17.2  # Pin v0.17.2 to depend on default node version for GitHub actions runners
+    rev: v0.18.1
     hooks:
       - id: markdownlint-cli2
         name: markdownlint
