@@ -39,11 +39,11 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::BarType,
-    enums::{OrderSide, OrderType, PositionSide},
+    enums::{OrderSide, OrderStatus, OrderType, PositionSide},
     events::{AccountState, OrderRejected},
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId},
     instruments::{Instrument, InstrumentAny},
-    types::{Price, Quantity},
+    types::{Money, Price, Quantity},
 };
 use nautilus_network::{
     ratelimiter::quota::Quota,
@@ -59,11 +59,11 @@ use super::{
     enums::{OKXWsChannel, OKXWsOperation},
     error::OKXWsError,
     messages::{
-        NautilusWsMessage, OKXSubscription, OKXSubscriptionArg, OKXWebSocketError,
+        ExecutionReport, NautilusWsMessage, OKXSubscription, OKXSubscriptionArg, OKXWebSocketError,
         OKXWebSocketEvent, OKXWsRequest, WsAmendOrderParams, WsAmendOrderParamsBuilder,
         WsCancelOrderParams, WsCancelOrderParamsBuilder, WsPostOrderParamsBuilder,
     },
-    parse::{self, parse_book_msg_vec, parse_ws_message_data},
+    parse::{parse_book_msg_vec, parse_ws_message_data},
 };
 use crate::{
     common::{
@@ -73,7 +73,7 @@ use crate::{
         parse::{bar_spec_as_okx_channel, okx_instrument_type, parse_account_state},
     },
     http::models::OKXAccount,
-    websocket::messages::OKXOrderMsg,
+    websocket::{messages::OKXOrderMsg, parse::parse_order_msg_vec},
 };
 
 /// Default OKX WebSocket rate limit: 3 requests per second.
@@ -1631,11 +1631,12 @@ impl OKXFeedHandler {
 
 struct OKXWsMessageHandler {
     account_id: AccountId,
-    instruments: AHashMap<Ustr, InstrumentAny>,
     handler: OKXFeedHandler,
     tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
-    last_account_state: Option<AccountState>,
     pending_requests: Arc<DashMap<String, (ClientOrderId, TraderId, StrategyId, InstrumentId)>>,
+    instruments: AHashMap<Ustr, InstrumentAny>,
+    last_account_state: Option<AccountState>,
+    fee_cache: AHashMap<Ustr, Money>, // Key is order ID
 }
 
 impl OKXWsMessageHandler {
@@ -1648,14 +1649,14 @@ impl OKXWsMessageHandler {
         tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
         pending_requests: Arc<DashMap<String, (ClientOrderId, TraderId, StrategyId, InstrumentId)>>,
     ) -> Self {
-        let handler = OKXFeedHandler::new(reader, signal);
         Self {
-            instruments,
-            handler,
-            tx,
             account_id,
-            last_account_state: None,
+            handler: OKXFeedHandler::new(reader, signal),
+            tx,
             pending_requests,
+            instruments,
+            last_account_state: None,
+            fee_cache: AHashMap::new(),
         }
     }
 
@@ -1827,24 +1828,54 @@ impl OKXWsMessageHandler {
 
                     let data: Vec<OKXOrderMsg> = serde_json::from_value(data.clone()).unwrap();
 
-                    match parse::parse_order_msg_vec(
-                        data,
-                        self.account_id,
-                        &self.instruments,
-                        ts_init,
-                    ) {
-                        Ok(exec_reports) => {
-                            if exec_reports.is_empty() {
-                                tracing::warn!("Order reports was empty");
+                    let mut exec_reports = Vec::with_capacity(data.len());
+
+                    for msg in data {
+                        match parse_order_msg_vec(
+                            vec![msg],
+                            self.account_id,
+                            &self.instruments,
+                            &self.fee_cache,
+                            ts_init,
+                        ) {
+                            Ok(mut reports) => {
+                                // Update fee cache based on the new reports
+                                for report in &reports {
+                                    match report {
+                                        ExecutionReport::Fill(fill_report) => {
+                                            let order_id = fill_report.venue_order_id.inner();
+                                            let current_fee = self
+                                                .fee_cache
+                                                .get(&order_id)
+                                                .copied()
+                                                .unwrap_or_else(|| {
+                                                    Money::new(0.0, fill_report.commission.currency)
+                                                });
+                                            let total_fee = current_fee + fill_report.commission;
+                                            self.fee_cache.insert(order_id, total_fee);
+                                        }
+                                        ExecutionReport::Order(status_report) => {
+                                            if matches!(
+                                                status_report.order_status,
+                                                OrderStatus::Filled,
+                                            ) {
+                                                self.fee_cache
+                                                    .remove(&status_report.venue_order_id.inner());
+                                            }
+                                        }
+                                    }
+                                }
+                                exec_reports.append(&mut reports);
+                            }
+                            Err(e) => {
+                                tracing::error!("Failed to parse order message: {e}");
                                 continue;
                             }
+                        }
+                    }
 
-                            return Some(NautilusWsMessage::ExecutionReports(exec_reports));
-                        }
-                        Err(e) => {
-                            tracing::error!("Failed to parse order message: {e}");
-                            continue;
-                        }
+                    if !exec_reports.is_empty() {
+                        return Some(NautilusWsMessage::ExecutionReports(exec_reports));
                     }
                 }
 
