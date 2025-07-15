@@ -955,7 +955,7 @@ impl ParquetDataCatalog {
             self.query_files(T::path_prefix(), instrument_ids, start, end)?
         };
 
-        for file_uri in files_list.iter() {
+        for file_uri in &files_list {
             // Extract identifier from file path and filename to create meaningful table names
             let identifier = extract_identifier_from_path(file_uri);
             let safe_sql_identifier = make_sql_safe_identifier(&identifier);
@@ -1827,7 +1827,8 @@ fn urisafe_instrument_id(instrument_id: &str) -> String {
 /// Extracts the identifier from a file path.
 ///
 /// The identifier is typically the second-to-last path component (directory name).
-/// For example, from "data/quote_tick/EURUSD/file.parquet", extracts "EURUSD".
+/// For example, from "`data/quote_tick/EURUSD/file.parquet`", extracts "EURUSD".
+#[must_use]
 pub fn extract_identifier_from_path(file_path: &str) -> String {
     let path_parts: Vec<&str> = file_path.split('/').collect();
     if path_parts.len() >= 2 {
@@ -1840,6 +1841,7 @@ pub fn extract_identifier_from_path(file_path: &str) -> String {
 /// Makes an identifier safe for use in SQL table names.
 ///
 /// Removes forward slashes, replaces dots, hyphens, and spaces with underscores, and converts to lowercase.
+#[must_use]
 pub fn make_sql_safe_identifier(identifier: &str) -> String {
     urisafe_instrument_id(identifier)
         .replace(['.', '-', ' '], "_")
@@ -1849,7 +1851,8 @@ pub fn make_sql_safe_identifier(identifier: &str) -> String {
 /// Extracts the filename from a file path and makes it SQL-safe.
 ///
 /// For example, from "data/quote_tick/EURUSD/2021-01-01T00-00-00-000000000Z_2021-01-02T00-00-00-000000000Z.parquet",
-/// extracts "2021_01_01t00_00_00_000000000z_2021_01_02t00_00_00_000000000z".
+/// extracts "`2021_01_01t00_00_00_000000000z_2021_01_02t00_00_00_000000000z`".
+#[must_use]
 pub fn extract_sql_safe_filename(file_path: &str) -> String {
     if file_path.is_empty() {
         return "unknown_file".to_string();

@@ -37,6 +37,7 @@ Released on TBD (UTC).
 - Fixed time range end in some databento request functions (#2755), thanks @faysou
 - Fixed EOD bar for Interactive Brokers (#2764), thanks @faysou
 - Fixed dYdX Take Profit order type mapping error (#2758), thanks @nicolad
+- Fixed typo in logging for dYdX adapter (#2790), thanks @DeirhX
 
 ### Documentation Updates
 - Improved dYdX integration guide (#2751), thanks @nicolad
