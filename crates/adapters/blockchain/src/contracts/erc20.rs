@@ -28,6 +28,27 @@ sol! {
     }
 }
 
+sol! {
+    #[sol(rpc)]
+    contract Multicall3 {
+        struct Call3 {
+            address target;
+            bool allowFailure;
+            bytes callData;
+        }
+        
+        struct Result {
+            bool success;
+            bytes returnData;
+        }
+        
+        function aggregate3(Call3[] calldata calls) external payable returns (Result[] memory returnData);
+    }
+}
+
+/// Standard Multicall3 address (same on all EVM chains)
+const MULTICALL3_ADDRESS: &str = "0xcA11bde05977b3631167028862bE2a173976CA11";
+
 /// Represents the essential metadata information for an ERC20 token.
 #[derive(Debug, Clone)]
 pub struct TokenInfo {
@@ -82,14 +103,96 @@ impl Erc20Contract {
         &self,
         token_address: &Address,
     ) -> Result<TokenInfo, BlockchainRpcClientError> {
-        let token_name = self.fetch_name(token_address).await?;
-        let token_symbol = self.fetch_symbol(token_address).await?;
-        let token_decimals = self.fetch_decimals(token_address).await?;
+        // Try multicall first, fallback to individual calls if it fails
+        match self.fetch_token_info_multicall(token_address).await {
+            Ok(info) => Ok(info),
+            Err(_) => {
+                // Fallback to individual calls
+                let token_name = self.fetch_name(token_address).await?;
+                let token_symbol = self.fetch_symbol(token_address).await?;
+                let token_decimals = self.fetch_decimals(token_address).await?;
+
+                Ok(TokenInfo {
+                    name: token_name,
+                    symbol: token_symbol,
+                    decimals: token_decimals,
+                })
+            }
+        }
+    }
+
+    /// Fetches complete token information using multicall for efficiency.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the multicall fails or decoding fails.
+    pub async fn fetch_token_info_multicall(
+        &self,
+        token_address: &Address,
+    ) -> Result<TokenInfo, BlockchainRpcClientError> {
+        let multicall_address = Address::parse_checksummed(MULTICALL3_ADDRESS, None)
+            .map_err(|e| {
+                BlockchainRpcClientError::AbiDecodingError(format!("Invalid multicall address: {e}"))
+            })?;
+
+        // Prepare the three calls
+        let calls = vec![
+            Multicall3::Call3 {
+                target: *token_address,
+                allowFailure: false,
+                callData: ERC20::nameCall.abi_encode().into(),
+            },
+            Multicall3::Call3 {
+                target: *token_address,
+                allowFailure: false,
+                callData: ERC20::symbolCall.abi_encode().into(),
+            },
+            Multicall3::Call3 {
+                target: *token_address,
+                allowFailure: false,
+                callData: ERC20::decimalsCall.abi_encode().into(),
+            },
+        ];
+
+        // Encode the multicall
+        let multicall_data = Multicall3::aggregate3Call { calls }.abi_encode();
+
+        // Execute the multicall
+        let rpc_request = self
+            .client
+            .construct_eth_call(&multicall_address.to_string(), multicall_data.as_slice());
+
+        let encoded_response = self
+            .client
+            .execute_eth_call::<String>(rpc_request)
+            .await
+            .map_err(|e| BlockchainRpcClientError::ClientError(format!("Multicall failed: {e}")))?;
+
+        let bytes = decode_hex_response(&encoded_response)?;
+
+        // Decode the multicall results
+        let results = Multicall3::aggregate3Call::abi_decode_returns(&bytes)
+            .map_err(|e| {
+                BlockchainRpcClientError::AbiDecodingError(format!(
+                    "Failed to decode multicall results: {e}"
+                ))
+            })?;
+
+        // Parse individual results
+        if results.len() != 3 {
+            return Err(BlockchainRpcClientError::AbiDecodingError(
+                "Unexpected number of results from multicall".to_string(),
+            ));
+        }
+
+        let name = parse_multicall_string_result(&results[0], "name")?;
+        let symbol = parse_multicall_string_result(&results[1], "symbol")?;
+        let decimals = parse_multicall_u8_result(&results[2], "decimals")?;
 
         Ok(TokenInfo {
-            name: token_name,
-            symbol: token_symbol,
-            decimals: token_decimals,
+            name,
+            symbol,
+            decimals,
         })
     }
 
@@ -186,4 +289,70 @@ impl Erc20Contract {
             ))
         })
     }
+}
+
+/// Parses a string result from a multicall response.
+///
+/// # Errors
+///
+/// Returns an error if the call failed or decoding fails.
+fn parse_multicall_string_result(
+    result: &Multicall3::Result,
+    field_name: &str,
+) -> Result<String, BlockchainRpcClientError> {
+    if !result.success {
+        return Err(BlockchainRpcClientError::AbiDecodingError(format!(
+            "Multicall failed for {field_name}"
+        )));
+    }
+
+    if result.returnData.is_empty() {
+        return Err(BlockchainRpcClientError::AbiDecodingError(format!(
+            "Empty response for {field_name}"
+        )));
+    }
+
+    match field_name {
+        "name" => ERC20::nameCall::abi_decode_returns(&result.returnData).map_err(|e| {
+            BlockchainRpcClientError::AbiDecodingError(format!(
+                "Failed to decode {field_name}: {e}"
+            ))
+        }),
+        "symbol" => ERC20::symbolCall::abi_decode_returns(&result.returnData).map_err(|e| {
+            BlockchainRpcClientError::AbiDecodingError(format!(
+                "Failed to decode {field_name}: {e}"
+            ))
+        }),
+        _ => Err(BlockchainRpcClientError::AbiDecodingError(format!(
+            "Unknown field: {field_name}"
+        ))),
+    }
+}
+
+/// Parses a u8 result from a multicall response.
+///
+/// # Errors
+///
+/// Returns an error if the call failed or decoding fails.
+fn parse_multicall_u8_result(
+    result: &Multicall3::Result,
+    field_name: &str,
+) -> Result<u8, BlockchainRpcClientError> {
+    if !result.success {
+        return Err(BlockchainRpcClientError::AbiDecodingError(format!(
+            "Multicall failed for {field_name}"
+        )));
+    }
+
+    if result.returnData.is_empty() {
+        return Err(BlockchainRpcClientError::AbiDecodingError(format!(
+            "Empty response for {field_name}"
+        )));
+    }
+
+    ERC20::decimalsCall::abi_decode_returns(&result.returnData).map_err(|e| {
+        BlockchainRpcClientError::AbiDecodingError(format!(
+            "Failed to decode {field_name}: {e}"
+        ))
+    })
 }
