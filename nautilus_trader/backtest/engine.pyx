@@ -173,7 +173,7 @@ cdef class BacktestEngine:
         self._last_subscription_ts: dict[str, uint64_t] = {}
         self._backtest_subscription_names = set()
         self._response_data = []
-        self._backtest_data_iterator = BacktestDataIterator()
+        self._data_iterator = BacktestDataIterator()
         self._kernel.msgbus.register(endpoint="BacktestEngine.execute", handler=self._handle_data_command)
 
     def __del__(self) -> None:
@@ -736,7 +736,7 @@ cdef class BacktestEngine:
         if sort:
             self._data = sorted(self._data, key=lambda x: x.ts_init)
 
-        self._backtest_data_iterator.add_data("backtest_data", self._data)
+        self._data_iterator.add_data("backtest_data", self._data)
 
         for data_point in data:
             data_type = type(data_point)
@@ -773,18 +773,16 @@ cdef class BacktestEngine:
         Notes
         -----
         This method enables streaming large datasets by loading data in chunks.
-        The generator should yield Data objects sorted by ts_init timestamp.
+        The generator should yield Data objects sorted by `ts_init` timestamp.
 
         """
-        self._backtest_data_iterator.init_data(
+        self._data_iterator.init_data(
             data_name,
             generator,
             append_data=True
         )
 
-        self._log.info(
-            f"Added {data_name} stream generator"
-        )
+        self._log.info(f"Added {data_name} stream generator")
 
     cpdef void _handle_data_command(self, DataCommand command):
         if not(command.data_type.type in [Bar, QuoteTick, TradeTick]
@@ -808,10 +806,10 @@ cdef class BacktestEngine:
         self._data_requests[subscription_name] = request
         self._last_subscription_ts[subscription_name] = self._last_ns - 1
         cdef bint append_data = request.params.get("append_data", True)
-        self._backtest_data_iterator.init_data(subscription_name, self._subscription_generator(subscription_name), append_data)
+        self._data_iterator.init_data(subscription_name, self._subscription_generator(subscription_name), append_data)
 
     def _subscription_generator(self, str subscription_name):
-        """Create a generator for subscription data."""
+        # Create a generator for subscription data
         iteration_index = 0
         durations_seconds = self._data_requests[subscription_name].params.get("durations_seconds", [None])
         durations_ns = [duration_seconds * 1e9 if duration_seconds else None for duration_seconds in durations_seconds]
@@ -876,7 +874,7 @@ cdef class BacktestEngine:
             subscription_name = f"{command.data_type.type.__name__}.{command.instrument_id}"
 
         self._log.debug(f"Unsubscribing {subscription_name}")
-        self._backtest_data_iterator.remove_data(subscription_name)
+        self._data_iterator.remove_data(subscription_name, complete_remove=True)
         self._data_requests.pop(subscription_name, None)
 
     def dump_pickled_data(self) -> bytes:
@@ -1043,8 +1041,8 @@ cdef class BacktestEngine:
 
         # Reset timing
         self._iteration = 0
-        self._backtest_data_iterator = BacktestDataIterator()
-        self._backtest_data_iterator.add_data("backtest_data", self._data)
+        self._data_iterator = BacktestDataIterator()
+        self._data_iterator.add_data("backtest_data", self._data)
         self._run_started = None
         self._run_finished = None
         self._backtest_start = None
@@ -1063,7 +1061,7 @@ cdef class BacktestEngine:
         self._has_book_data.clear()
         self._data.clear()
         self._data_len = 0
-        self._backtest_data_iterator = BacktestDataIterator()
+        self._data_iterator = BacktestDataIterator()
 
     def clear_actors(self) -> None:
         """
@@ -1342,13 +1340,13 @@ cdef class BacktestEngine:
         if self._data_len > 0:
             for i in range(self._data_len):
                 if start_ns <= self._data[i].ts_init:
-                    self._backtest_data_iterator.set_index("backtest_data", i)
+                    self._data_iterator.set_index("backtest_data", i)
                     break
 
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
         self._last_ns = 0
         cdef uint64_t raw_handlers_count = 0
-        cdef Data data = self._backtest_data_iterator.next()
+        cdef Data data = self._data_iterator.next()
         cdef CVec raw_handlers
         try:
             while data is not None:
@@ -1397,7 +1395,7 @@ cdef class BacktestEngine:
                 for exchange in self._venues.values():
                     exchange.process(data.ts_init)
 
-                data = self._backtest_data_iterator.next()
+                data = self._data_iterator.next()
 
                 if data is None or data.ts_init > self._last_ns:
                     # Finally process the time events
@@ -1781,7 +1779,7 @@ cdef class BacktestDataIterator:
         ----------
         data_name : str
             Unique identifier for the data stream.
-        data_list : list[Data]
+        data : list[Data]
             Data instances sorted ascending by `ts_init`.
         append_data : bool, default ``True``
             ``True`` – lower priority (appended).
@@ -1802,7 +1800,6 @@ cdef class BacktestDataIterator:
 
         self.init_data(data_name, data_generator(), append_data)
 
-
     def init_data(self, data_name, data_generator, bint append_data=True):
         """
         Add (or replace) a named data generator.
@@ -1812,7 +1809,7 @@ cdef class BacktestDataIterator:
         data_name : str
             Unique identifier for the data stream.
         data_generator : Generator[list[Data], None, None]
-            A Python generator that yields lists of Data instances sorted ascending by `ts_init`.
+            A Python generator that yields lists of ``Data`` instances sorted ascending by `ts_init`.
         append_data : bool, default ``True``
             ``True`` – lower priority (appended).
             ``False`` – higher priority (prepended).
@@ -1966,7 +1963,7 @@ cdef class BacktestDataIterator:
             self._update_data(data_priority)
 
     cpdef void _update_data(self, int data_priority):
-        data_name = self._data_name[data_priority]
+        cdef str data_name = self._data_name[data_priority]
 
         if data_name not in self._data_update_function:
             return
