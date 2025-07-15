@@ -830,10 +830,12 @@ class TestBacktestEngineStreaming:
 
         def data_generator():
             for i in range(count):
-                yield MyData(
-                    value=f"{name}_{i}",
-                    ts_init=start_ts + (i * interval),
-                )
+                yield [
+                    MyData(
+                        value=f"{name}_{i}",
+                        ts_init=start_ts + (i * interval),
+                    ),
+                ]
 
         return data_generator()
 
@@ -846,10 +848,12 @@ class TestBacktestEngineStreaming:
             # Create data with increasing gaps between items
             ts = start_ts
             for i in range(count):
-                yield MyData(
-                    value=f"{name}_sparse_{i}",
-                    ts_init=ts,
-                )
+                yield [
+                    MyData(
+                        value=f"{name}_sparse_{i}",
+                        ts_init=ts,
+                    ),
+                ]
                 # Exponentially increasing gaps: 1s, 2s, 4s, 8s, etc.
                 ts += (2**i) * 1_000_000_000
 
@@ -862,10 +866,12 @@ class TestBacktestEngineStreaming:
 
         def dense_generator():
             for i in range(count):
-                yield MyData(
-                    value=f"{name}_dense_{i}",
-                    ts_init=start_ts + (i * 1_000_000),  # 1ms intervals
-                )
+                yield [
+                    MyData(
+                        value=f"{name}_dense_{i}",
+                        ts_init=start_ts + (i * 1_000_000),  # 1ms intervals
+                    ),
+                ]
 
         return dense_generator()
 
@@ -897,7 +903,8 @@ class TestBacktestEngineStreaming:
             ),  # Sparse data
         ]
 
-        self.engine.add_data_iterators(batch_1_iterators, chunk_duration="1h")
+        for data_name, generator in batch_1_iterators:
+            self.engine.add_data_iterator(data_name, generator)
         batch_1_initial = self.engine.iteration
         self.engine.run()  # Process all batch 1 data
 
@@ -924,7 +931,8 @@ class TestBacktestEngineStreaming:
             ),  # 45s intervals, offset
         ]
 
-        self.engine.add_data_iterators(batch_2_iterators, chunk_duration="30min")
+        for data_name, generator in batch_2_iterators:
+            self.engine.add_data_iterator(data_name, generator)
         batch_2_initial = self.engine.iteration
         self.engine.run()  # Process all batch 2 data
 
@@ -951,7 +959,8 @@ class TestBacktestEngineStreaming:
             ),  # 20s intervals
         ]
 
-        self.engine.add_data_iterators(batch_3_iterators, chunk_duration="15min")
+        for data_name, generator in batch_3_iterators:
+            self.engine.add_data_iterator(data_name, generator)
         batch_3_initial = self.engine.iteration
         self.engine.run()  # Process all batch 3 data
 
@@ -982,8 +991,9 @@ class TestBacktestEngineStreaming:
             ("large_stream_C", self.create_dense_iterator("C_dense", start_ts, 50)),  # Dense data
         ]
 
-        # Use 2-hour chunks to test larger memory windows
-        self.engine.add_data_iterators(large_iterators, chunk_duration="2h")
+        # Add iterators individually
+        for data_name, generator in large_iterators:
+            self.engine.add_data_iterator(data_name, generator)
 
         # Verify streams were registered by checking that no exception was raised
         # Direct access to _data_iterator may not work due to Cython implementation
@@ -1010,10 +1020,11 @@ class TestBacktestEngineStreaming:
         ]
 
         # Add the stream iterator
-        self.engine.add_data_iterators(simple_iterators, chunk_duration="1h")
+        for data_name, generator in simple_iterators:
+            self.engine.add_data_iterator(data_name, generator)
 
         # Verify the method exists and was called successfully
-        assert hasattr(self.engine, "add_data_iterators")
+        assert hasattr(self.engine, "add_data_iterator")
 
         # The data iterator might not be directly accessible due to Cython implementation
         # Instead, verify functionality by checking that the method completed without error
@@ -1032,10 +1043,11 @@ class TestBacktestEngineStreaming:
         start_ts = 1_609_459_200_000_000_000
 
         def empty_iterator():
-            return iter([])  # Empty iterator
+            return
+            yield []  # Empty generator
 
         def single_item_iterator():
-            yield MyData(value="single", ts_init=start_ts + 60_000_000_000)
+            yield [MyData(value="single", ts_init=start_ts + 60_000_000_000)]
 
         edge_case_iterators = [
             ("empty_stream", empty_iterator()),
@@ -1047,7 +1059,8 @@ class TestBacktestEngineStreaming:
         from nautilus_trader.model.identifiers import ClientId
 
         self.engine.add_data([MyData(value="baseline", ts_init=start_ts)], ClientId("TEST"))
-        self.engine.add_data_iterators(edge_case_iterators, chunk_duration="1h")
+        for data_name, generator in edge_case_iterators:
+            self.engine.add_data_iterator(data_name, generator)
 
         # Verify streams were registered by checking that no exception was raised
         # Direct access to _data_iterator may not work due to Cython implementation
@@ -1102,7 +1115,8 @@ class TestBacktestEngineStreaming:
                 ]
 
             # Verify iteration setup
-            self.engine.add_data_iterators(iterators, chunk_duration="1h")
+            for data_name, generator in iterators:
+                self.engine.add_data_iterator(data_name, generator)
             initial_iteration = self.engine.iteration
 
             # Run the engine
