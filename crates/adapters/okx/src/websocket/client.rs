@@ -40,8 +40,8 @@ use nautilus_core::{
 use nautilus_model::{
     data::BarType,
     enums::{OrderSide, OrderStatus, OrderType, PositionSide},
-    events::{AccountState, OrderRejected},
-    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId},
+    events::{AccountState, OrderCancelRejected, OrderModifyRejected, OrderRejected},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     types::{Money, Price, Quantity},
 };
@@ -61,7 +61,8 @@ use super::{
     messages::{
         ExecutionReport, NautilusWsMessage, OKXSubscription, OKXSubscriptionArg, OKXWebSocketError,
         OKXWebSocketEvent, OKXWsRequest, WsAmendOrderParams, WsAmendOrderParamsBuilder,
-        WsCancelOrderParams, WsCancelOrderParamsBuilder, WsPostOrderParamsBuilder,
+        WsCancelOrderParams, WsCancelOrderParamsBuilder, WsPostOrderParams,
+        WsPostOrderParamsBuilder,
     },
     parse::{parse_book_msg_vec, parse_ws_message_data},
 };
@@ -75,6 +76,22 @@ use crate::{
     http::models::OKXAccount,
     websocket::{messages::OKXOrderMsg, parse::parse_order_msg_vec},
 };
+
+type PlaceRequestData = (ClientOrderId, TraderId, StrategyId, InstrumentId);
+type CancelRequestData = (
+    ClientOrderId,
+    TraderId,
+    StrategyId,
+    InstrumentId,
+    Option<VenueOrderId>,
+);
+type AmendRequestData = (
+    ClientOrderId,
+    TraderId,
+    StrategyId,
+    InstrumentId,
+    Option<VenueOrderId>,
+);
 
 /// Default OKX WebSocket rate limit: 3 requests per second.
 ///
@@ -112,7 +129,9 @@ pub struct OKXWebSocketClient {
     subscriptions_inst_family: Arc<Mutex<AHashMap<OKXWsChannel, AHashSet<Ustr>>>>,
     subscriptions_inst_id: Arc<Mutex<AHashMap<OKXWsChannel, AHashSet<Ustr>>>>,
     request_id_counter: Arc<AtomicU64>,
-    pending_requests: Arc<DashMap<String, (ClientOrderId, TraderId, StrategyId, InstrumentId)>>,
+    pending_place_requests: Arc<DashMap<String, PlaceRequestData>>,
+    pending_cancel_requests: Arc<DashMap<String, CancelRequestData>>,
+    pending_amend_requests: Arc<DashMap<String, AmendRequestData>>,
     instruments_cache: Arc<AHashMap<Ustr, InstrumentAny>>,
 }
 
@@ -176,7 +195,9 @@ impl OKXWebSocketClient {
             subscriptions_inst_family,
             subscriptions_inst_id,
             request_id_counter: Arc::new(AtomicU64::new(1)),
-            pending_requests: Arc::new(DashMap::new()),
+            pending_place_requests: Arc::new(DashMap::new()),
+            pending_cancel_requests: Arc::new(DashMap::new()),
+            pending_amend_requests: Arc::new(DashMap::new()),
             instruments_cache: Arc::new(AHashMap::new()),
         })
     }
@@ -309,7 +330,9 @@ impl OKXWebSocketClient {
 
         self.rx = Some(Arc::new(rx));
         let signal = self.signal.clone();
-        let pending_requests = self.pending_requests.clone();
+        let pending_place_requests = self.pending_place_requests.clone();
+        let pending_cancel_requests = self.pending_cancel_requests.clone();
+        let pending_amend_requests = self.pending_amend_requests.clone();
 
         let stream_handle = get_runtime().spawn(async move {
             OKXWsMessageHandler::new(
@@ -318,7 +341,9 @@ impl OKXWebSocketClient {
                 reader,
                 signal,
                 tx,
-                pending_requests,
+                pending_place_requests,
+                pending_cancel_requests,
+                pending_amend_requests,
             )
             .run()
             .await;
@@ -953,12 +978,17 @@ impl OKXWebSocketClient {
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-websocket-cancel-order>
-    async fn ws_cancel_order(&self, params: WsCancelOrderParams) -> Result<(), OKXWsError> {
+    async fn ws_cancel_order(
+        &self,
+        params: WsCancelOrderParams,
+        request_id: Option<String>,
+    ) -> Result<(), OKXWsError> {
         // Generate unique request ID for WebSocket message
-        let request_id = self
-            .request_id_counter
-            .fetch_add(1, Ordering::SeqCst)
-            .to_string();
+        let request_id = request_id.unwrap_or(
+            self.request_id_counter
+                .fetch_add(1, Ordering::SeqCst)
+                .to_string(),
+        );
 
         let req = OKXWsRequest {
             id: Some(request_id),
@@ -1014,12 +1044,17 @@ impl OKXWebSocketClient {
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-websocket-amend-order>
-    async fn ws_amend_order(&self, params: WsAmendOrderParams) -> Result<(), OKXWsError> {
+    async fn ws_amend_order(
+        &self,
+        params: WsAmendOrderParams,
+        request_id: Option<String>,
+    ) -> Result<(), OKXWsError> {
         // Generate unique request ID for WebSocket message
-        let request_id = self
-            .request_id_counter
-            .fetch_add(1, Ordering::SeqCst)
-            .to_string();
+        let request_id = request_id.unwrap_or(
+            self.request_id_counter
+                .fetch_add(1, Ordering::SeqCst)
+                .to_string(),
+        );
 
         let req = OKXWsRequest {
             id: Some(request_id),
@@ -1231,9 +1266,77 @@ impl OKXWebSocketClient {
             .fetch_add(1, Ordering::SeqCst)
             .to_string();
 
-        self.pending_requests.insert(
+        self.pending_place_requests.insert(
             request_id.clone(),
             (client_order_id, trader_id, strategy_id, instrument_id),
+        );
+
+        self.ws_place_order(params, Some(request_id)).await
+    }
+
+    /// Cancels an existing order via WebSocket using Nautilus domain types.
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-cancel-order>.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn cancel_order(
+        &self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        venue_order_id: Option<VenueOrderId>,
+        position_side: Option<PositionSide>,
+    ) -> Result<(), OKXWsError> {
+        let mut builder = WsCancelOrderParamsBuilder::default();
+        // Note: instType should NOT be included in cancel order requests
+        // For WebSocket orders, use the full symbol (including SWAP/FUTURES suffix if present)
+        builder.inst_id(instrument_id.symbol.as_str());
+        builder.cl_ord_id(client_order_id.as_str());
+        if let Some(ps) = position_side {
+            builder.pos_side(OKXPositionSide::from(ps));
+        }
+
+        let params = builder
+            .build()
+            .map_err(|e| OKXWsError::ClientError(format!("Build cancel params error: {e}")))?;
+
+        // Generate unique request ID for WebSocket message
+        let request_id = self
+            .request_id_counter
+            .fetch_add(1, Ordering::SeqCst)
+            .to_string();
+
+        self.pending_cancel_requests.insert(
+            request_id.clone(),
+            (
+                client_order_id,
+                trader_id,
+                strategy_id,
+                instrument_id,
+                venue_order_id,
+            ),
+        );
+
+        self.ws_cancel_order(params, Some(request_id)).await
+    }
+
+    /// Place a new order via WebSocket.
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/en/#order-book-trading-websocket-place-order>
+    async fn ws_place_order(
+        &self,
+        params: WsPostOrderParams,
+        request_id: Option<String>,
+    ) -> Result<(), OKXWsError> {
+        // Generate unique request ID for WebSocket message
+        let request_id = request_id.unwrap_or(
+            self.request_id_counter
+                .fetch_add(1, Ordering::SeqCst)
+                .to_string(),
         );
 
         let req = OKXWsRequest {
@@ -1254,34 +1357,6 @@ impl OKXWebSocketClient {
         }
     }
 
-    /// Cancels an existing order via WebSocket using Nautilus domain types.
-    ///
-    /// # References
-    ///
-    /// <https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-cancel-order>.
-    #[allow(clippy::too_many_arguments)]
-    pub async fn cancel_order(
-        &self,
-        instrument_id: InstrumentId,
-        client_order_id: ClientOrderId,
-        position_side: Option<PositionSide>,
-    ) -> Result<(), OKXWsError> {
-        let mut builder = WsCancelOrderParamsBuilder::default();
-        // Note: instType should NOT be included in cancel order requests
-        // For WebSocket orders, use the full symbol (including SWAP/FUTURES suffix if present)
-        builder.inst_id(instrument_id.symbol.as_str());
-        builder.cl_ord_id(client_order_id.as_str());
-        if let Some(ps) = position_side {
-            builder.pos_side(OKXPositionSide::from(ps));
-        }
-
-        let params = builder
-            .build()
-            .map_err(|e| OKXWsError::ClientError(format!("Build cancel params error: {e}")))?;
-
-        self.ws_cancel_order(params).await
-    }
-
     /// Modifies an existing order via WebSocket using Nautilus domain types.
     ///
     /// # References
@@ -1290,11 +1365,14 @@ impl OKXWebSocketClient {
     #[allow(clippy::too_many_arguments)]
     pub async fn modify_order(
         &self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
         instrument_id: InstrumentId,
         client_order_id: ClientOrderId,
         new_client_order_id: ClientOrderId,
         price: Option<Price>,
         quantity: Option<Quantity>,
+        venue_order_id: Option<VenueOrderId>,
         position_side: Option<PositionSide>,
     ) -> Result<(), OKXWsError> {
         let mut builder = WsAmendOrderParamsBuilder::default();
@@ -1316,7 +1394,24 @@ impl OKXWebSocketClient {
             .build()
             .map_err(|e| OKXWsError::ClientError(format!("Build amend params error: {e}")))?;
 
-        self.ws_amend_order(params).await
+        // Generate unique request ID for WebSocket message
+        let request_id = self
+            .request_id_counter
+            .fetch_add(1, Ordering::SeqCst)
+            .to_string();
+
+        self.pending_amend_requests.insert(
+            request_id.clone(),
+            (
+                client_order_id,
+                trader_id,
+                strategy_id,
+                instrument_id,
+                venue_order_id,
+            ),
+        );
+
+        self.ws_amend_order(params, Some(request_id)).await
     }
 
     /// Submits multiple orders via WebSocket using Nautilus domain types.
@@ -1633,7 +1728,9 @@ struct OKXWsMessageHandler {
     account_id: AccountId,
     handler: OKXFeedHandler,
     tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
-    pending_requests: Arc<DashMap<String, (ClientOrderId, TraderId, StrategyId, InstrumentId)>>,
+    pending_place_requests: Arc<DashMap<String, PlaceRequestData>>,
+    pending_cancel_requests: Arc<DashMap<String, CancelRequestData>>,
+    pending_amend_requests: Arc<DashMap<String, AmendRequestData>>,
     instruments: AHashMap<Ustr, InstrumentAny>,
     last_account_state: Option<AccountState>,
     fee_cache: AHashMap<Ustr, Money>, // Key is order ID
@@ -1641,19 +1738,24 @@ struct OKXWsMessageHandler {
 
 impl OKXWsMessageHandler {
     /// Creates a new [`OKXFeedHandler`] instance.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         account_id: AccountId,
         instruments: AHashMap<Ustr, InstrumentAny>,
         reader: MessageReader,
         signal: Arc<AtomicBool>,
         tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
-        pending_requests: Arc<DashMap<String, (ClientOrderId, TraderId, StrategyId, InstrumentId)>>,
+        pending_place_requests: Arc<DashMap<String, PlaceRequestData>>,
+        pending_cancel_requests: Arc<DashMap<String, CancelRequestData>>,
+        pending_amend_requests: Arc<DashMap<String, AmendRequestData>>,
     ) -> Self {
         Self {
             account_id,
             handler: OKXFeedHandler::new(reader, signal),
             tx,
-            pending_requests,
+            pending_place_requests,
+            pending_cancel_requests,
+            pending_amend_requests,
             instruments,
             last_account_state: None,
             fee_cache: AHashMap::new(),
@@ -1751,26 +1853,95 @@ impl OKXWsMessageHandler {
                         id
                     );
 
-                    // Fetch pending request mapping for rejection
+                    // Fetch pending request mapping for rejection based on operation type
                     if let Some(id) = &id {
-                        if let Some((_, (client_order_id, trader_id, strategy_id, instrument_id))) =
-                            self.pending_requests.remove(id)
-                        {
-                            let ts_event = clock.get_time_ns();
-                            let rejected = OrderRejected::new(
-                                trader_id,
-                                strategy_id,
-                                instrument_id,
-                                client_order_id,
-                                self.account_id,
-                                Ustr::from(error_msg), // Rejection reason from OKX
-                                UUID4::new(),
-                                ts_event,
-                                ts_event,
-                                false, // Not from reconciliation
-                            );
+                        match op {
+                            OKXWsOperation::Order => {
+                                if let Some((
+                                    _,
+                                    (client_order_id, trader_id, strategy_id, instrument_id),
+                                )) = self.pending_place_requests.remove(id)
+                                {
+                                    let ts_event = clock.get_time_ns();
+                                    let rejected = OrderRejected::new(
+                                        trader_id,
+                                        strategy_id,
+                                        instrument_id,
+                                        client_order_id,
+                                        self.account_id,
+                                        Ustr::from(error_msg), // Rejection reason from OKX
+                                        UUID4::new(),
+                                        ts_event,
+                                        ts_init,
+                                        false, // Not from reconciliation
+                                    );
 
-                            return Some(NautilusWsMessage::OrderRejected(rejected));
+                                    return Some(NautilusWsMessage::OrderRejected(rejected));
+                                }
+                            }
+                            OKXWsOperation::CancelOrder => {
+                                if let Some((
+                                    _,
+                                    (
+                                        client_order_id,
+                                        trader_id,
+                                        strategy_id,
+                                        instrument_id,
+                                        venue_order_id,
+                                    ),
+                                )) = self.pending_cancel_requests.remove(id)
+                                {
+                                    let ts_event = clock.get_time_ns();
+                                    let rejected = OrderCancelRejected::new(
+                                        trader_id,
+                                        strategy_id,
+                                        instrument_id,
+                                        client_order_id,
+                                        Ustr::from(error_msg), // Rejection reason from OKX
+                                        UUID4::new(),
+                                        ts_event,
+                                        ts_init,
+                                        false, // Not from reconciliation
+                                        venue_order_id,
+                                        Some(self.account_id),
+                                    );
+
+                                    return Some(NautilusWsMessage::OrderCancelRejected(rejected));
+                                }
+                            }
+                            OKXWsOperation::AmendOrder => {
+                                if let Some((
+                                    _,
+                                    (
+                                        client_order_id,
+                                        trader_id,
+                                        strategy_id,
+                                        instrument_id,
+                                        venue_order_id,
+                                    ),
+                                )) = self.pending_amend_requests.remove(id)
+                                {
+                                    let ts_event = clock.get_time_ns();
+                                    let rejected = OrderModifyRejected::new(
+                                        trader_id,
+                                        strategy_id,
+                                        instrument_id,
+                                        client_order_id,
+                                        Ustr::from(error_msg), // Rejection reason from OKX
+                                        UUID4::new(),
+                                        ts_event,
+                                        ts_init,
+                                        false, // Not from reconciliation
+                                        venue_order_id,
+                                        Some(self.account_id),
+                                    );
+
+                                    return Some(NautilusWsMessage::OrderModifyRejected(rejected));
+                                }
+                            }
+                            _ => {
+                                tracing::warn!("Unhandled operation type for rejection: {op}");
+                            }
                         }
                     }
 

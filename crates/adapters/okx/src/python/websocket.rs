@@ -20,7 +20,7 @@ use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
     data::{BarType, Data, OrderBookDeltas_API},
     enums::{OrderSide, OrderType, PositionSide},
-    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     python::{
         data::data_to_pycapsule,
         instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
@@ -179,6 +179,12 @@ impl OKXWebSocketClient {
                         }
                     }),
                     NautilusWsMessage::OrderRejected(msg) => {
+                        call_python_with_data(&callback, |py| msg.into_py_any(py))
+                    }
+                    NautilusWsMessage::OrderCancelRejected(msg) => {
+                        call_python_with_data(&callback, |py| msg.into_py_any(py))
+                    }
+                    NautilusWsMessage::OrderModifyRejected(msg) => {
                         call_python_with_data(&callback, |py| msg.into_py_any(py))
                     }
                     NautilusWsMessage::ExecutionReports(msg) => {
@@ -634,22 +640,36 @@ impl OKXWebSocketClient {
     /// Cancels an existing order via WebSocket.
     #[pyo3(name = "cancel_order")]
     #[pyo3(signature = (
+        trader_id,
+        strategy_id,
         instrument_id,
         client_order_id,
-        position_side=None
+        venue_order_id=None,
+        position_side=None,
     ))]
+    #[allow(clippy::too_many_arguments)]
     fn py_cancel_order<'py>(
         &self,
         py: Python<'py>,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
         instrument_id: InstrumentId,
         client_order_id: ClientOrderId,
+        venue_order_id: Option<VenueOrderId>,
         position_side: Option<PositionSide>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client
-                .cancel_order(instrument_id, client_order_id, position_side)
+                .cancel_order(
+                    trader_id,
+                    strategy_id,
+                    instrument_id,
+                    client_order_id,
+                    venue_order_id,
+                    position_side,
+                )
                 .await
                 .map_err(to_pyvalue_err)?;
             Ok(())
@@ -659,22 +679,28 @@ impl OKXWebSocketClient {
     /// Modify an existing order via WebSocket.
     #[pyo3(name = "modify_order")]
     #[pyo3(signature = (
+        trader_id,
+        strategy_id,
         instrument_id,
         client_order_id,
         new_client_order_id,
         price=None,
         quantity=None,
-        position_side=None
+        venue_order_id=None,
+        position_side=None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn py_modify_order<'py>(
         &self,
         py: Python<'py>,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
         instrument_id: InstrumentId,
         client_order_id: ClientOrderId,
         new_client_order_id: ClientOrderId,
         price: Option<Price>,
         quantity: Option<Quantity>,
+        venue_order_id: Option<VenueOrderId>,
         position_side: Option<PositionSide>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -682,11 +708,14 @@ impl OKXWebSocketClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client
                 .modify_order(
+                    trader_id,
+                    strategy_id,
                     instrument_id,
                     client_order_id,
                     new_client_order_id,
                     price,
                     quantity,
+                    venue_order_id,
                     position_side,
                 )
                 .await
