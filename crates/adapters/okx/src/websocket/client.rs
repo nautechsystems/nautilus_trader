@@ -50,7 +50,7 @@ use nautilus_network::{
     websocket::{Consumer, MessageReader, WebSocketClient, WebSocketConfig},
 };
 use reqwest::header::USER_AGENT;
-use serde_json::{self, Value};
+use serde_json::Value;
 use tokio::sync::Mutex;
 use tokio_tungstenite::tungstenite::{Error, Message};
 use ustr::Ustr;
@@ -460,6 +460,12 @@ impl OKXWebSocketClient {
         log::debug!("Close process completed");
 
         Ok(())
+    }
+
+    fn generate_unique_request_id(&self) -> String {
+        self.request_id_counter
+            .fetch_add(1, Ordering::SeqCst)
+            .to_string()
     }
 
     async fn subscribe(&self, args: Vec<OKXSubscriptionArg>) -> Result<(), OKXWsError> {
@@ -983,12 +989,7 @@ impl OKXWebSocketClient {
         params: WsCancelOrderParams,
         request_id: Option<String>,
     ) -> Result<(), OKXWsError> {
-        // Generate unique request ID for WebSocket message
-        let request_id = request_id.unwrap_or(
-            self.request_id_counter
-                .fetch_add(1, Ordering::SeqCst)
-                .to_string(),
-        );
+        let request_id = request_id.unwrap_or(self.generate_unique_request_id());
 
         let req = OKXWsRequest {
             id: Some(request_id),
@@ -1049,12 +1050,7 @@ impl OKXWebSocketClient {
         params: WsAmendOrderParams,
         request_id: Option<String>,
     ) -> Result<(), OKXWsError> {
-        // Generate unique request ID for WebSocket message
-        let request_id = request_id.unwrap_or(
-            self.request_id_counter
-                .fetch_add(1, Ordering::SeqCst)
-                .to_string(),
-        );
+        let request_id = request_id.unwrap_or(self.generate_unique_request_id());
 
         let req = OKXWsRequest {
             id: Some(request_id),
@@ -1080,11 +1076,7 @@ impl OKXWebSocketClient {
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-websocket-batch-orders>
     async fn ws_batch_place_orders(&self, args: Vec<Value>) -> Result<(), OKXWsError> {
-        // Generate unique request ID for WebSocket message
-        let request_id = self
-            .request_id_counter
-            .fetch_add(1, Ordering::SeqCst)
-            .to_string();
+        let request_id = self.generate_unique_request_id();
 
         let req = OKXWsRequest {
             id: Some(request_id),
@@ -1110,11 +1102,7 @@ impl OKXWebSocketClient {
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-websocket-batch-cancel-orders>
     async fn ws_batch_cancel_orders(&self, args: Vec<Value>) -> Result<(), OKXWsError> {
-        // Generate unique request ID for WebSocket message
-        let request_id = self
-            .request_id_counter
-            .fetch_add(1, Ordering::SeqCst)
-            .to_string();
+        let request_id = self.generate_unique_request_id();
 
         let req = OKXWsRequest {
             id: Some(request_id),
@@ -1140,11 +1128,7 @@ impl OKXWebSocketClient {
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-websocket-batch-amend-orders>
     async fn ws_batch_amend_orders(&self, args: Vec<Value>) -> Result<(), OKXWsError> {
-        // Generate unique request ID for WebSocket message
-        let request_id = self
-            .request_id_counter
-            .fetch_add(1, Ordering::SeqCst)
-            .to_string();
+        let request_id = self.generate_unique_request_id();
 
         let req = OKXWsRequest {
             id: Some(request_id),
@@ -1261,10 +1245,7 @@ impl OKXWebSocketClient {
             .build()
             .map_err(|e| OKXWsError::ClientError(format!("Build order params error: {e}")))?;
 
-        let request_id = self
-            .request_id_counter
-            .fetch_add(1, Ordering::SeqCst)
-            .to_string();
+        let request_id = self.generate_unique_request_id();
 
         self.pending_place_requests.insert(
             request_id.clone(),
@@ -1302,11 +1283,7 @@ impl OKXWebSocketClient {
             .build()
             .map_err(|e| OKXWsError::ClientError(format!("Build cancel params error: {e}")))?;
 
-        // Generate unique request ID for WebSocket message
-        let request_id = self
-            .request_id_counter
-            .fetch_add(1, Ordering::SeqCst)
-            .to_string();
+        let request_id = self.generate_unique_request_id();
 
         self.pending_cancel_requests.insert(
             request_id.clone(),
@@ -1332,12 +1309,7 @@ impl OKXWebSocketClient {
         params: WsPostOrderParams,
         request_id: Option<String>,
     ) -> Result<(), OKXWsError> {
-        // Generate unique request ID for WebSocket message
-        let request_id = request_id.unwrap_or(
-            self.request_id_counter
-                .fetch_add(1, Ordering::SeqCst)
-                .to_string(),
-        );
+        let request_id = request_id.unwrap_or(self.generate_unique_request_id());
 
         let req = OKXWsRequest {
             id: Some(request_id),
@@ -2115,47 +2087,38 @@ impl OKXWsMessageHandler {
     }
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use rstest::rstest;
 
-    #[test]
+    use super::*;
+    use futures_util;
+
+    #[rstest]
     fn test_timestamp_format_for_websocket_auth() {
-        // Generate timestamp like in authenticate method
         let timestamp = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .expect("System time should be after UNIX epoch")
             .as_secs()
             .to_string();
 
-        // Should be numeric string representing Unix seconds
-        assert!(
-            timestamp.parse::<u64>().is_ok(),
-            "Timestamp should be numeric"
-        );
-        assert!(
-            timestamp.len() == 10,
-            "Unix timestamp should be 10 digits for current era"
-        );
-
-        // Should not contain any non-numeric characters
-        assert!(
-            timestamp.chars().all(|c| c.is_ascii_digit()),
-            "Timestamp should only contain digits"
-        );
+        assert!(timestamp.parse::<u64>().is_ok());
+        assert_eq!(timestamp.len(), 10);
+        assert!(timestamp.chars().all(|c| c.is_ascii_digit()));
     }
 
-    #[test]
+    #[rstest]
     fn test_new_without_credentials() {
-        // Should create client without credentials (for public endpoints)
         let client = OKXWebSocketClient::default();
         assert!(client.credential.is_none());
         assert_eq!(client.api_key(), None);
     }
 
-    #[test]
+    #[rstest]
     fn test_new_with_credentials() {
-        // Should create client with credentials
         let client = OKXWebSocketClient::new(
             None,
             Some("test_key".to_string()),
@@ -2169,17 +2132,245 @@ mod tests {
         assert_eq!(client.api_key(), Some("test_key"));
     }
 
-    #[test]
+    #[rstest]
     fn test_new_partial_credentials_fails() {
-        // Should fail when only some credentials are provided
         let result = OKXWebSocketClient::new(
             None,
             Some("test_key".to_string()),
-            None, // Missing secret
+            None,
             Some("test_passphrase".to_string()),
             None,
             None,
         );
         assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_request_id_generation() {
+        let client = OKXWebSocketClient::default();
+
+        let initial_counter = client.request_id_counter.load(Ordering::SeqCst);
+
+        let id1 = client.request_id_counter.fetch_add(1, Ordering::SeqCst);
+        let id2 = client.request_id_counter.fetch_add(1, Ordering::SeqCst);
+
+        assert_eq!(id1, initial_counter);
+        assert_eq!(id2, initial_counter + 1);
+        assert_eq!(
+            client.request_id_counter.load(Ordering::SeqCst),
+            initial_counter + 2
+        );
+    }
+
+    #[rstest]
+    fn test_client_state_management() {
+        let client = OKXWebSocketClient::default();
+
+        assert!(client.is_closed());
+        assert!(!client.is_active());
+
+        let client_with_heartbeat =
+            OKXWebSocketClient::new(None, None, None, None, None, Some(30)).unwrap();
+
+        assert!(client_with_heartbeat.heartbeat.is_some());
+        assert_eq!(client_with_heartbeat.heartbeat.unwrap(), 30);
+    }
+
+    #[rstest]
+    fn test_request_cache_operations() {
+        let client = OKXWebSocketClient::default();
+
+        assert_eq!(client.pending_place_requests.len(), 0);
+        assert_eq!(client.pending_cancel_requests.len(), 0);
+        assert_eq!(client.pending_amend_requests.len(), 0);
+
+        let client_order_id = ClientOrderId::from("test-order-123");
+        let trader_id = TraderId::from("test-trader-001");
+        let strategy_id = StrategyId::from("test-strategy-001");
+        let instrument_id = InstrumentId::from("BTC-USDT.OKX");
+
+        client.pending_place_requests.insert(
+            "place-123".to_string(),
+            (client_order_id, trader_id, strategy_id, instrument_id),
+        );
+
+        assert_eq!(client.pending_place_requests.len(), 1);
+        assert!(client.pending_place_requests.contains_key("place-123"));
+
+        let removed = client.pending_place_requests.remove("place-123");
+        assert!(removed.is_some());
+        assert_eq!(client.pending_place_requests.len(), 0);
+    }
+
+    #[rstest]
+    fn test_websocket_error_handling() {
+        let clock = get_atomic_clock_realtime();
+        let ts = clock.get_time_ns().as_u64();
+
+        let error = OKXWebSocketError {
+            code: "60012".to_string(),
+            message: "Invalid request".to_string(),
+            conn_id: None,
+            timestamp: ts,
+        };
+
+        assert_eq!(error.code, "60012");
+        assert_eq!(error.message, "Invalid request");
+        assert_eq!(error.timestamp, ts);
+
+        let nautilus_msg = NautilusWsMessage::Error(error);
+        match nautilus_msg {
+            NautilusWsMessage::Error(err) => {
+                assert_eq!(err.code, "60012");
+                assert_eq!(err.message, "Invalid request");
+            }
+            _ => panic!("Expected Error variant"),
+        }
+    }
+
+    #[rstest]
+    fn test_request_id_generation_sequence() {
+        let client = OKXWebSocketClient::default();
+
+        let initial_counter = client
+            .request_id_counter
+            .load(std::sync::atomic::Ordering::SeqCst);
+        let mut ids = Vec::new();
+        for _ in 0..10 {
+            let id = client
+                .request_id_counter
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            ids.push(id);
+        }
+
+        for (i, &id) in ids.iter().enumerate() {
+            assert_eq!(id, initial_counter + i as u64);
+        }
+
+        assert_eq!(
+            client
+                .request_id_counter
+                .load(std::sync::atomic::Ordering::SeqCst),
+            initial_counter + 10
+        );
+    }
+
+    #[rstest]
+    fn test_client_state_transitions() {
+        let client = OKXWebSocketClient::default();
+
+        assert!(client.is_closed());
+        assert!(!client.is_active());
+
+        let client_with_heartbeat = OKXWebSocketClient::new(
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(30), // 30 second heartbeat
+        )
+        .unwrap();
+
+        assert!(client_with_heartbeat.heartbeat.is_some());
+        assert_eq!(client_with_heartbeat.heartbeat.unwrap(), 30);
+
+        let account_id = AccountId::from("test-account-123");
+        let client_with_account =
+            OKXWebSocketClient::new(None, None, None, None, Some(account_id), None).unwrap();
+
+        assert_eq!(client_with_account.account_id, account_id);
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_request_handling() {
+        let client = Arc::new(OKXWebSocketClient::default());
+
+        let initial_counter = client
+            .request_id_counter
+            .load(std::sync::atomic::Ordering::SeqCst);
+        let mut handles = Vec::new();
+
+        for i in 0..10 {
+            let client_clone = Arc::clone(&client);
+            let handle = tokio::spawn(async move {
+                let client_order_id = ClientOrderId::from(format!("order-{i}").as_str());
+                let trader_id = TraderId::from("trader-001");
+                let strategy_id = StrategyId::from("strategy-001");
+                let instrument_id = InstrumentId::from("BTC-USDT.OKX");
+
+                let request_id = client_clone
+                    .request_id_counter
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let request_id_str = request_id.to_string();
+
+                client_clone.pending_place_requests.insert(
+                    request_id_str.clone(),
+                    (client_order_id, trader_id, strategy_id, instrument_id),
+                );
+
+                // Simulate processing delay
+                tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
+
+                // Remove from cache (simulating response processing)
+                let removed = client_clone.pending_place_requests.remove(&request_id_str);
+                assert!(removed.is_some());
+
+                request_id
+            });
+            handles.push(handle);
+        }
+
+        // Wait for all operations to complete
+        let results: Vec<_> = futures_util::future::join_all(handles).await;
+
+        assert_eq!(results.len(), 10);
+        for result in results {
+            assert!(result.is_ok());
+        }
+
+        assert_eq!(client.pending_place_requests.len(), 0);
+
+        let final_counter = client
+            .request_id_counter
+            .load(std::sync::atomic::Ordering::SeqCst);
+        assert_eq!(final_counter, initial_counter + 10);
+    }
+
+    #[rstest]
+    fn test_websocket_error_scenarios() {
+        let clock = get_atomic_clock_realtime();
+        let ts = clock.get_time_ns().as_u64();
+
+        let error_scenarios = vec![
+            ("60012", "Invalid request", None),
+            ("60009", "Invalid API key", Some("conn-123".to_string())),
+            ("60014", "Too many requests", None),
+            ("50001", "Order not found", None),
+        ];
+
+        for (code, message, conn_id) in error_scenarios {
+            let error = OKXWebSocketError {
+                code: code.to_string(),
+                message: message.to_string(),
+                conn_id: conn_id.clone(),
+                timestamp: ts,
+            };
+
+            assert_eq!(error.code, code);
+            assert_eq!(error.message, message);
+            assert_eq!(error.conn_id, conn_id);
+            assert_eq!(error.timestamp, ts);
+
+            let nautilus_msg = NautilusWsMessage::Error(error);
+            match nautilus_msg {
+                NautilusWsMessage::Error(err) => {
+                    assert_eq!(err.code, code);
+                    assert_eq!(err.message, message);
+                    assert_eq!(err.conn_id, conn_id);
+                }
+                _ => panic!("Expected Error variant"),
+            }
+        }
     }
 }
