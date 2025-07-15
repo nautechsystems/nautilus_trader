@@ -46,6 +46,8 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.events import AccountState
+from nautilus_trader.model.events import OrderCancelRejected
+from nautilus_trader.model.events import OrderModifyRejected
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.functions import order_side_to_pyo3
 from nautilus_trader.model.functions import order_type_to_pyo3
@@ -458,24 +460,24 @@ class OKXExecutionClient(LiveExecutionClient):
             )
             return
 
-        try:
-            pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-            pyo3_client_order_id = nautilus_pyo3.ClientOrderId(command.client_order_id.value)
+        pyo3_trader_id = nautilus_pyo3.TraderId.from_str(order.trader_id.value)
+        pyo3_strategy_id = nautilus_pyo3.StrategyId.from_str(order.strategy_id.value)
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        pyo3_client_order_id = nautilus_pyo3.ClientOrderId(command.client_order_id.value)
+        pyo3_venue_order_id = (
+            nautilus_pyo3.VenueOrderId(command.venue_order_id.value)
+            if command.venue_order_id
+            else None
+        )
 
-            await self._ws_client.cancel_order(
-                instrument_id=pyo3_instrument_id,
-                client_order_id=pyo3_client_order_id,
-                position_side=None,  # Will be determined by the Rust client
-            )
-        except Exception as e:
-            self.generate_order_cancel_rejected(
-                order.strategy_id,
-                order.instrument_id,
-                order.client_order_id,
-                order.venue_order_id,
-                str(e),
-                self._clock.timestamp_ns(),
-            )
+        await self._ws_client.cancel_order(
+            trader_id=pyo3_trader_id,
+            strategy_id=pyo3_strategy_id,
+            instrument_id=pyo3_instrument_id,
+            client_order_id=pyo3_client_order_id,
+            venue_order_id=pyo3_venue_order_id,
+            position_side=None,  # Will be determined by the Rust client
+        )
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
         # For simplicity, cancel orders one by one
@@ -508,35 +510,35 @@ class OKXExecutionClient(LiveExecutionClient):
             )
             return
 
-        try:
-            # Generate a new client order ID for the amended order
-            new_client_order_id = self._cache.client_order_id_generator.generate()
+        # Generate a new client order ID for the amended order
+        new_client_order_id = self._cache.client_order_id_generator.generate()
 
-            pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-            pyo3_client_order_id = nautilus_pyo3.ClientOrderId(command.client_order_id.value)
-            pyo3_new_client_order_id = nautilus_pyo3.ClientOrderId(new_client_order_id.value)
-            pyo3_price = nautilus_pyo3.Price.from_str(str(command.price)) if command.price else None
-            pyo3_quantity = (
-                nautilus_pyo3.Quantity.from_str(str(command.quantity)) if command.quantity else None
-            )
+        pyo3_trader_id = nautilus_pyo3.TraderId.from_str(order.trader_id.value)
+        pyo3_strategy_id = nautilus_pyo3.StrategyId.from_str(order.strategy_id.value)
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        pyo3_client_order_id = nautilus_pyo3.ClientOrderId(command.client_order_id.value)
+        pyo3_new_client_order_id = nautilus_pyo3.ClientOrderId(new_client_order_id.value)
+        pyo3_price = nautilus_pyo3.Price.from_str(str(command.price)) if command.price else None
+        pyo3_quantity = (
+            nautilus_pyo3.Quantity.from_str(str(command.quantity)) if command.quantity else None
+        )
+        pyo3_venue_order_id = (
+            nautilus_pyo3.VenueOrderId(command.venue_order_id.value)
+            if command.venue_order_id
+            else None
+        )
 
-            await self._ws_client.modify_order(
-                instrument_id=pyo3_instrument_id,
-                client_order_id=pyo3_client_order_id,
-                new_client_order_id=pyo3_new_client_order_id,
-                price=pyo3_price,
-                quantity=pyo3_quantity,
-                position_side=None,  # Will be determined by the Rust client
-            )
-        except Exception as e:
-            self.generate_order_modify_rejected(
-                order.strategy_id,
-                order.instrument_id,
-                order.client_order_id,
-                order.venue_order_id,
-                str(e),
-                self._clock.timestamp_ns(),
-            )
+        await self._ws_client.modify_order(
+            trader_id=pyo3_trader_id,
+            strategy_id=pyo3_strategy_id,
+            instrument_id=pyo3_instrument_id,
+            client_order_id=pyo3_client_order_id,
+            new_client_order_id=pyo3_new_client_order_id,
+            price=pyo3_price,
+            quantity=pyo3_quantity,
+            venue_order_id=pyo3_venue_order_id,
+            position_side=None,  # Will be determined by the Rust client
+        )
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         order = command.order
@@ -559,48 +561,35 @@ class OKXExecutionClient(LiveExecutionClient):
             ts_event=self._clock.timestamp_ns(),
         )
 
-        try:
-            pyo3_trader_id = nautilus_pyo3.TraderId.from_str(order.trader_id.value)
-            pyo3_strategy_id = nautilus_pyo3.StrategyId.from_str(order.strategy_id.value)
-            pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(order.instrument_id.value)
-            pyo3_client_order_id = nautilus_pyo3.ClientOrderId(order.client_order_id.value)
-            pyo3_order_side = order_side_to_pyo3(order.side)
-            pyo3_order_type = order_type_to_pyo3(order.order_type)
-            pyo3_quantity = nautilus_pyo3.Quantity.from_str(str(order.quantity))
-            pyo3_price = (
-                nautilus_pyo3.Price.from_str(str(order.price))
-                if getattr(order, "price", None)
-                else None
-            )
-            pyo3_trigger_price = (
-                nautilus_pyo3.Price.from_str(str(order.trigger_price))
-                if getattr(order, "trigger_price", None)
-                else None
-            )
+        pyo3_trader_id = nautilus_pyo3.TraderId.from_str(order.trader_id.value)
+        pyo3_strategy_id = nautilus_pyo3.StrategyId.from_str(order.strategy_id.value)
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(order.instrument_id.value)
+        pyo3_client_order_id = nautilus_pyo3.ClientOrderId(order.client_order_id.value)
+        pyo3_order_side = order_side_to_pyo3(order.side)
+        pyo3_order_type = order_type_to_pyo3(order.order_type)
+        pyo3_quantity = nautilus_pyo3.Quantity.from_str(str(order.quantity))
+        pyo3_price = nautilus_pyo3.Price.from_str(str(order.price)) if order.has_price else None
+        pyo3_trigger_price = (
+            nautilus_pyo3.Price.from_str(str(order.trigger_price))
+            if order.has_trigger_price
+            else None
+        )
 
-            await self._ws_client.submit_order(
-                trader_id=pyo3_trader_id,
-                strategy_id=pyo3_strategy_id,
-                instrument_id=pyo3_instrument_id,
-                td_mode=self._trade_mode,
-                client_order_id=pyo3_client_order_id,
-                order_side=pyo3_order_side,
-                order_type=pyo3_order_type,
-                quantity=pyo3_quantity,
-                price=pyo3_price,
-                trigger_price=pyo3_trigger_price,
-                post_only=getattr(order, "is_post_only", None),
-                reduce_only=getattr(order, "is_reduce_only", None),
-                position_side=None,  # Will be determined by the Rust client
-            )
-        except Exception as e:
-            self.generate_order_rejected(
-                strategy_id=order.strategy_id,
-                instrument_id=order.instrument_id,
-                client_order_id=order.client_order_id,
-                reason=str(e),
-                ts_event=self._clock.timestamp_ns(),
-            )
+        await self._ws_client.submit_order(
+            trader_id=pyo3_trader_id,
+            strategy_id=pyo3_strategy_id,
+            instrument_id=pyo3_instrument_id,
+            td_mode=self._trade_mode,
+            client_order_id=pyo3_client_order_id,
+            order_side=pyo3_order_side,
+            order_type=pyo3_order_type,
+            quantity=pyo3_quantity,
+            price=pyo3_price,
+            trigger_price=pyo3_trigger_price,
+            post_only=order.is_post_only,
+            reduce_only=order.is_reduce_only,
+            position_side=None,  # Will be determined by the Rust client
+        )
 
     # -- WEBSOCKET HANDLERS -----------------------------------------------------------------------
 
@@ -616,6 +605,10 @@ class OKXExecutionClient(LiveExecutionClient):
                 self._handle_account_state(msg)
             elif isinstance(msg, nautilus_pyo3.OrderRejected):
                 self._handle_order_rejected_pyo3(msg)
+            elif isinstance(msg, nautilus_pyo3.OrderCancelRejected):
+                self._handle_order_cancel_rejected_pyo3(msg)
+            elif isinstance(msg, nautilus_pyo3.OrderModifyRejected):
+                self._handle_order_modify_rejected_pyo3(msg)
             elif isinstance(msg, nautilus_pyo3.OrderStatusReport):
                 self._handle_order_status_report_pyo3(msg)
             elif isinstance(msg, nautilus_pyo3.FillReport):
@@ -643,6 +636,20 @@ class OKXExecutionClient(LiveExecutionClient):
 
     def _handle_order_rejected_pyo3(self, pyo3_event: nautilus_pyo3.OrderRejected) -> None:
         event = OrderRejected.from_dict(pyo3_event.to_dict())
+        self._send_order_event(event)
+
+    def _handle_order_cancel_rejected_pyo3(
+        self,
+        pyo3_event: nautilus_pyo3.OrderCancelRejected,
+    ) -> None:
+        event = OrderCancelRejected.from_dict(pyo3_event.to_dict())
+        self._send_order_event(event)
+
+    def _handle_order_modify_rejected_pyo3(
+        self,
+        pyo3_event: nautilus_pyo3.OrderModifyRejected,
+    ) -> None:
+        event = OrderModifyRejected.from_dict(pyo3_event.to_dict())
         self._send_order_event(event)
 
     def _handle_order_status_report_pyo3(self, msg: nautilus_pyo3.OrderStatusReport) -> None:
