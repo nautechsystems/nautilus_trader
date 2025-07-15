@@ -2089,9 +2089,9 @@ checksum = "2a2330da5de22e8a3cb63252ce2abb30116bf5265e89c0e01bc17015ce30a476"
 
 [[package]]
 name = "databento"
-version = "0.28.0"
+version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c39510ec6350b08c91b0e77592996aa6a076ba4274db89d1c29e1ea3e89b287"
+checksum = "8c3d31471341afdb503fc27cba2bdf95104f2ce7ebcc51914a6dfec56b4738d6"
 dependencies = [
  "async-compression",
  "dbn",
@@ -2668,9 +2668,9 @@ dependencies = [
 
 [[package]]
 name = "dbn"
-version = "0.36.2"
+version = "0.37.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6ddec35178bf69ee95755d26d5177c76ea56b2183e6a216af7cdd3758bfa692b"
+checksum = "8806dd5710513448dc30eadf5c63c5840dee134eb9c082373ba851aaa29e53b9"
 dependencies = [
  "async-compression",
  "csv",
@@ -2689,9 +2689,9 @@ dependencies = [
 
 [[package]]
 name = "dbn-macros"
-version = "0.36.2"
+version = "0.37.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "20b7f315d3c3c7857d712bf130cb3cb80e2addefb6a1e24504c310d82af0ab4a"
+checksum = "8b10fcf371f3f3e5a4a9adc12fe7fd6734dba6f36f334aed1d3966c1208dd597"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -6664,15 +6664,15 @@ dependencies = [
 
 [[package]]
 name = "rustix"
-version = "1.0.7"
+version = "1.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c71e83d6afe7ff64890ec6b71d6a69bb8a610ab78ce364b3352876bb4c801266"
+checksum = "11181fbabf243db407ef8df94a6ce0b2f9a733bd8be4ad02b4eda9602296cac8"
 dependencies = [
  "bitflags",
  "errno",
  "libc",
  "linux-raw-sys 0.9.4",
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -7627,7 +7627,7 @@ dependencies = [
  "fastrand",
  "getrandom 0.3.3",
  "once_cell",
- "rustix 1.0.7",
+ "rustix 1.0.8",
  "windows-sys 0.59.0",
 ]
 

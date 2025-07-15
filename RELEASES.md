@@ -16,6 +16,7 @@ Released on TBD (UTC).
 
 ### Internal Improvements
 - Refactored OKX adapter to Rust API clients
+- Refactored `BacktestDataIterator` (#2791) to consolidate data generator usage, thanks @faysou
 - Added stream iterators support `BacktestDataIterator`
 - Added `DataTester` standardized data testing actor for integration adapters
 - Added `start` and `stop` to response data (#2748), thanks @stastnypremysl
@@ -28,6 +29,7 @@ Released on TBD (UTC).
 - Optimized account event purging for Redis where large lists could consume excessive memory and cause Redis to freeze
 - Refined Rust catalog path handling (#2743), thanks @faysou
 - Refined Rust `GreeksCalculator` (#2760), thanks @faysou
+- Upgraded `databento` crate to v0.29.0
 - Upgraded `datafusion` crate to v48.0.1
 - Upgraded `redis` crate to v0.32.4
 
