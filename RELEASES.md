@@ -17,6 +17,7 @@ Released on TBD (UTC).
 ### Internal Improvements
 - Refactored OKX adapter to Rust API clients
 - Added stream iterators support `BacktestDataIterator`
+- Added `DataTester` standardized data testing actor for integration adapters
 - Added `start` and `stop` to response data (#2748), thanks @stastnypremysl
 - Added integration test service management targets (#2765), thanks @stastnypremysl
 - Added integration tests for dYdX bar-partitioning and large-history handling (#2773), thanks @nicolad
