@@ -300,6 +300,14 @@ impl ParquetDataCatalog {
         self.base_path.clone()
     }
 
+    /// Resets the backend session to clear any cached table registrations.
+    ///
+    /// This is useful during catalog operations when files are being modified
+    /// and we need to ensure fresh data is loaded.
+    pub fn reset_session(&mut self) {
+        self.session.clear_registered_tables();
+    }
+
     /// Writes mixed data types to the catalog by separating them into type-specific collections.
     ///
     /// This method takes a heterogeneous collection of market data and separates it by type,
@@ -947,14 +955,19 @@ impl ParquetDataCatalog {
             self.query_files(T::path_prefix(), instrument_ids, start, end)?
         };
 
-        // Use a unique timestamp-based suffix to avoid table name conflicts
-        let unique_suffix = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
+        for file_uri in files_list.iter() {
+            // Extract identifier from file path and filename to create meaningful table names
+            let identifier = extract_identifier_from_path(file_uri);
+            let safe_sql_identifier = make_sql_safe_identifier(&identifier);
+            let safe_filename = extract_sql_safe_filename(file_uri);
 
-        for (idx, file_uri) in files_list.iter().enumerate() {
-            let table_name = format!("{}_{}_{}", T::path_prefix(), unique_suffix, idx);
+            // Create table name from path_prefix, identifier, and filename
+            let table_name = format!(
+                "{}_{}_{}",
+                T::path_prefix(),
+                safe_sql_identifier,
+                safe_filename
+            );
             let query = build_query(&table_name, start, end, where_clause);
 
             // Convert object store path to filesystem path for DataFusion
@@ -1809,6 +1822,52 @@ fn iso_to_unix_nanos(iso_timestamp: &str) -> anyhow::Result<u64> {
 /// ```
 fn urisafe_instrument_id(instrument_id: &str) -> String {
     instrument_id.replace('/', "")
+}
+
+/// Extracts the identifier from a file path.
+///
+/// The identifier is typically the second-to-last path component (directory name).
+/// For example, from "data/quote_tick/EURUSD/file.parquet", extracts "EURUSD".
+pub fn extract_identifier_from_path(file_path: &str) -> String {
+    let path_parts: Vec<&str> = file_path.split('/').collect();
+    if path_parts.len() >= 2 {
+        path_parts[path_parts.len() - 2].to_string()
+    } else {
+        "unknown".to_string()
+    }
+}
+
+/// Makes an identifier safe for use in SQL table names.
+///
+/// Removes forward slashes, replaces dots, hyphens, and spaces with underscores, and converts to lowercase.
+pub fn make_sql_safe_identifier(identifier: &str) -> String {
+    urisafe_instrument_id(identifier)
+        .replace(['.', '-', ' '], "_")
+        .to_lowercase()
+}
+
+/// Extracts the filename from a file path and makes it SQL-safe.
+///
+/// For example, from "data/quote_tick/EURUSD/2021-01-01T00-00-00-000000000Z_2021-01-02T00-00-00-000000000Z.parquet",
+/// extracts "2021_01_01t00_00_00_000000000z_2021_01_02t00_00_00_000000000z".
+pub fn extract_sql_safe_filename(file_path: &str) -> String {
+    if file_path.is_empty() {
+        return "unknown_file".to_string();
+    }
+
+    let filename = file_path.split('/').next_back().unwrap_or("unknown_file");
+
+    // Remove .parquet extension
+    let name_without_ext = if let Some(dot_pos) = filename.rfind(".parquet") {
+        &filename[..dot_pos]
+    } else {
+        filename
+    };
+
+    // Remove characters that can pose problems: hyphens, colons, etc.
+    name_without_ext
+        .replace(['-', ':', '.'], "_")
+        .to_lowercase()
 }
 
 /// Creates a platform-appropriate local path using `PathBuf`.

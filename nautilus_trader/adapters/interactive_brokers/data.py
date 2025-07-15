@@ -29,6 +29,7 @@ from nautilus_trader.adapters.interactive_brokers.providers import InteractiveBr
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
+from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestData
 from nautilus_trader.data.messages import RequestInstrument
@@ -307,12 +308,18 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         )
 
     async def _request_instrument(self, request: RequestInstrument) -> None:
-        if request.start is not None:
+        # Check if start/end times are too far from current time
+        now = self._clock.utc_now()
+        now_ns = dt_to_unix_nanos(now)
+        start_ns = dt_to_unix_nanos(request.start)
+        end_ns = dt_to_unix_nanos(request.end)
+
+        if abs(start_ns - now_ns) > 10_000_000:  # More than 10ms difference
             self._log.warning(
                 f"Requesting instrument {request.instrument_id} with specified `start` which has no effect",
             )
 
-        if request.end is not None:
+        if abs(end_ns - now_ns) > 10_000_000:  # More than 10ms difference
             self._log.warning(
                 f"Requesting instrument {request.instrument_id} with specified `end` which has no effect",
             )
@@ -329,7 +336,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             self._log.warning(f"Instrument for {request.instrument_id} not available")
             return
 
-        self._handle_instrument(instrument, request.id, request.params)
+        self._handle_instrument(instrument, request.id, request.start, request.end, request.params)
 
     async def _request_instruments(self, request: RequestInstruments) -> None:
         # We ensure existing instruments in the cache have their IB representations loaded as well in the adapter
@@ -361,7 +368,14 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             self._log.warning(f"No quote tick data received for {request.instrument_id}")
             return
 
-        self._handle_quote_ticks(request.instrument_id, ticks, request.id, request.params)
+        self._handle_quote_ticks(
+            request.instrument_id,
+            ticks,
+            request.id,
+            request.start,
+            request.end,
+            request.params,
+        )
 
     async def _request_trade_ticks(self, request: RequestTradeTicks) -> None:
         if not (instrument := self._cache.instrument(request.instrument_id)):
@@ -389,7 +403,14 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             self._log.warning(f"No trades received for {request.instrument_id}")
             return
 
-        self._handle_trade_ticks(request.instrument_id, ticks, request.id, request.params)
+        self._handle_trade_ticks(
+            request.instrument_id,
+            ticks,
+            request.id,
+            request.start,
+            request.end,
+            request.params,
+        )
 
     async def _handle_ticks_request(
         self,
@@ -440,44 +461,30 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             )
             return
 
-        limit = request.limit
+        duration = request.end - request.start
+        duration_str = timedelta_to_duration_str(duration)
 
-        if not request.start and limit == 0:
-            limit = 1000
-
-        end = request.end
-
-        if not request.end:
-            end = pd.Timestamp.utcnow()
-
-        if request.start:
-            duration = end - request.start
-            duration_str = timedelta_to_duration_str(duration)
-        else:
-            duration_str = "7 D" if request.bar_type.spec.timedelta.total_seconds() >= 60 else "1 D"
-
-        bars: list[Bar] = []
-
-        while (request.start and end > request.start) or (len(bars) < limit > 0):
-            bars_part: list[Bar] = await self._client.get_historical_bars(
-                bar_type=request.bar_type,
-                contract=IBContract(**instrument.info["contract"]),
-                use_rth=self._use_regular_trading_hours,
-                end_date_time=end,
-                duration=duration_str,
-                timeout=self._request_timeout,
-            )
-            bars.extend(bars_part)
-
-            if not bars_part or request.start:
-                break
-
-            end = pd.Timestamp(min(bars, key=attrgetter("ts_event")).ts_event, tz="UTC")
+        bars: list[Bar] = await self._client.get_historical_bars(
+            bar_type=request.bar_type,
+            contract=IBContract(**instrument.info["contract"]),
+            use_rth=self._use_regular_trading_hours,
+            end_date_time=request.end,
+            duration=duration_str,
+            timeout=self._request_timeout,
+        )
 
         if bars:
             bars = list(set(bars))
             bars.sort(key=lambda x: x.ts_init)
-            self._handle_bars(request.bar_type, bars, bars[0], request.id, request.params)
+            self._handle_bars(
+                request.bar_type,
+                bars,
+                bars[0],
+                request.id,
+                request.start,
+                request.end,
+                request.params,
+            )
             status_msg = {"id": request.id, "status": "Success"}
         else:
             self._log.warning(f"No bar data received for {request.bar_type}")

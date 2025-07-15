@@ -46,8 +46,9 @@ use crate::{
     contracts::erc20::Erc20Contract,
     decode::u256_to_quantity,
     events::pool_created::PoolCreatedEvent,
-    exchanges::extended::DexExtended,
+    exchanges::{dex_extended_map, extended::DexExtended},
     hypersync::client::HyperSyncClient,
+    reporting::BlockSyncMetrics,
     rpc::{
         BlockchainRpcClient, BlockchainRpcClientAny,
         chains::{
@@ -157,17 +158,13 @@ impl BlockchainDataClient {
     }
 
     /// Initializes the database connection for the blockchain cache.
-    pub async fn initialize_cache_database(
-        &mut self,
-        pg_connect_options: Option<PostgresConnectOptions>,
-    ) {
-        let pg_connect_options = pg_connect_options.unwrap_or_default();
+    pub async fn initialize_cache_database(&mut self, pg_connect_options: PostgresConnectOptions) {
         tracing::info!(
             "Initializing blockchain cache on database '{}'",
             pg_connect_options.database
         );
         self.cache
-            .initialize_database(pg_connect_options.into())
+            .initialize_database(pg_connect_options.clone().into())
             .await;
     }
 
@@ -310,15 +307,11 @@ impl BlockchainDataClient {
                     );
                 }
 
-                match hypersync_client.get_pool_address(cmd.instrument_id) {
-                    Some(address) => {
-                        hypersync_client.subscribe_pool_swaps(cmd.instrument_id, *address);
-                        tracing::info!("Subscribed to pool swaps for {}", cmd.instrument_id);
-                    }
-                    None => {
-                        tracing::error!("Failed to fetch pool address for {}", cmd.instrument_id);
-                    }
-                }
+                // TODO: Implement pool swaps subscription logic
+                tracing::error!(
+                    "Implement pool swap subscription logic for {}",
+                    cmd.instrument_id
+                );
 
                 Ok(())
             }
@@ -334,19 +327,11 @@ impl BlockchainDataClient {
                     );
                 }
 
-                match hypersync_client.get_pool_address(cmd.instrument_id) {
-                    Some(address) => {
-                        hypersync_client
-                            .subscribe_pool_liquidity_updates(cmd.instrument_id, *address);
-                        tracing::info!(
-                            "Subscribed to pool liquidity updates for {}",
-                            cmd.instrument_id
-                        );
-                    }
-                    None => {
-                        tracing::error!("Failed to fetch pool address for {}", cmd.instrument_id);
-                    }
-                }
+                // TODO: Implement pool liquidity updates subscription logic
+                tracing::error!(
+                    "Implement pool liquidity updates subscription logic for {}",
+                    cmd.instrument_id
+                );
 
                 Ok(())
             }
@@ -421,7 +406,11 @@ impl BlockchainDataClient {
     /// # Errors
     ///
     /// Returns an error if block streaming or database operations fail.
-    pub async fn sync_blocks(&mut self, from_block: Option<u64>) -> anyhow::Result<()> {
+    pub async fn sync_blocks(
+        &mut self,
+        from_block: Option<u64>,
+        to_block: Option<u64>,
+    ) -> anyhow::Result<()> {
         let from_block = if let Some(b) = from_block {
             b
         } else {
@@ -434,21 +423,58 @@ impl BlockchainDataClient {
             Some(cached_block_number) => max(from_block, cached_block_number + 1),
         };
 
-        let current_block = self.hypersync_client.current_block().await;
-        tracing::info!("Syncing blocks from {from_block} to {current_block}");
+        let to_block = if let Some(block) = to_block {
+            block
+        } else {
+            self.hypersync_client.current_block().await
+        };
+        let total_blocks = to_block.saturating_sub(from_block) + 1;
+        tracing::info!(
+            "Syncing blocks from {from_block} to {to_block} (total: {total_blocks} blocks)"
+        );
 
         let blocks_stream = self
             .hypersync_client
-            .request_blocks_stream(from_block, Some(current_block))
+            .request_blocks_stream(from_block, Some(to_block))
             .await;
 
         tokio::pin!(blocks_stream);
 
+        let mut metrics = BlockSyncMetrics::new(from_block, total_blocks, 50000);
+
+        // Batch configuration
+        const BATCH_SIZE: usize = 1000;
+        let mut batch: Vec<Block> = Vec::with_capacity(BATCH_SIZE);
+
         while let Some(block) = blocks_stream.next().await {
-            self.cache.add_block(block).await?;
+            let block_number = block.number;
+            batch.push(block);
+
+            // Process batch when full or last block
+            if batch.len() >= BATCH_SIZE || block_number >= to_block {
+                let batch_size = batch.len();
+
+                self.cache.add_blocks_batch(batch).await?;
+                metrics.update(batch_size);
+
+                // Re-initialize batch vector
+                batch = Vec::with_capacity(BATCH_SIZE);
+            }
+
+            // Log progress if needed
+            if metrics.should_log_progress(block_number, to_block) {
+                metrics.log_progress(block_number);
+            }
         }
 
-        tracing::info!("Finished syncing blocks");
+        // Process any remaining blocks
+        if !batch.is_empty() {
+            let batch_size = batch.len();
+            self.cache.add_blocks_batch(batch).await?;
+            metrics.update(batch_size);
+        }
+
+        metrics.log_final_stats();
         Ok(())
     }
 
@@ -723,8 +749,25 @@ impl BlockchainDataClient {
 
         while let Some(log) = pools_stream.next().await {
             let pool = dex.parse_pool_created_event(log)?;
-            self.process_token(pool.token0.to_string()).await?;
-            self.process_token(pool.token1.to_string()).await?;
+
+            // If any of the tokens are properly processed, skip the pool creation.
+            if let Err(e) = self.process_token(pool.token0.to_string()).await {
+                tracing::warn!(
+                    "Failed to process token {} with error {e}. Skipping pool {}.",
+                    pool.token0,
+                    pool.pool_address
+                );
+                continue;
+            }
+            if let Err(e) = self.process_token(pool.token1.to_string()).await {
+                tracing::warn!(
+                    "Failed to process token {} with error {e}. Skipping pool {}.",
+                    pool.token1,
+                    pool.pool_address
+                );
+                continue;
+            }
+
             self.process_pool(&dex.dex, pool).await?;
         }
         Ok(())
@@ -773,11 +816,16 @@ impl BlockchainDataClient {
     }
 
     /// Registers a decentralized exchange with the client.
-    pub async fn register_exchange(&mut self, dex: DexExtended) -> anyhow::Result<()> {
-        let dex_id = dex.id();
-        tracing::info!("Registering blockchain exchange {dex_id}");
-        self.cache.add_dex(dex_id, dex).await?;
-        Ok(())
+    pub async fn register_dex_exchange(&mut self, dex_id: &str) -> anyhow::Result<()> {
+        if let Some(dex) = dex_extended_map().get(dex_id) {
+            tracing::info!("Registering blockchain exchange {dex_id}");
+            self.cache
+                .add_dex(dex_id.to_string(), dex.to_owned().clone())
+                .await?;
+            Ok(())
+        } else {
+            anyhow::bail!("Unknown DEX ID: {dex_id}")
+        }
     }
 
     /// Processes incoming messages from the HyperSync client.
@@ -897,6 +945,18 @@ impl BlockchainDataClient {
         }
     }
 
+    /// Determines the starting block for syncing operations.
+    ///
+    /// # Returns
+    /// - The configured `from_block` if provided
+    /// - Otherwise, the earliest DEX factory deployment block from the cache
+    /// - If no DEXes are registered, defaults to block 0 (genesis)
+    fn determine_from_block(&self) -> u64 {
+        self.config
+            .from_block
+            .unwrap_or_else(|| self.cache.min_dex_creation_block().unwrap_or(0))
+    }
+
     fn send_block(&self, block: Block) {
         let data = DataEvent::DeFi(DefiData::Block(block));
         self.send_data(data);
@@ -971,18 +1031,32 @@ impl DataClient for BlockchainDataClient {
             self.chain.name
         );
 
+        if let Some(pg_connect_options) = self.config.postgres_cache_database_config.clone() {
+            self.initialize_cache_database(pg_connect_options).await;
+        }
+
         if let Some(ref mut rpc_client) = self.rpc_client {
             rpc_client.connect().await?;
         }
 
-        let from_block = self.config.from_block.unwrap_or(0);
-
-        self.hypersync_client
-            .populate_pools_index(from_block)
-            .await?; // TODO: Could also be cached?
-
+        let from_block = self.determine_from_block();
+        // Initialize the chain and register the Dex exchanges in the cache.
+        self.cache.initialize_chain().await;
+        // Import the cached blockchain data.
         self.cache.connect(from_block).await?;
-        self.sync_blocks(self.config.from_block).await?;
+        // Sync the remaining blocks which are missing.
+        self.sync_blocks(Some(from_block), None).await?;
+        for dex_id in self.config.dex_ids.clone() {
+            self.register_dex_exchange(&dex_id).await?;
+            self.sync_exchange_pools(&dex_id, Some(from_block), None)
+                .await?;
+        }
+
+        tracing::info!(
+            "Connecting to blockchain data source for '{chain_name}' from block {from_block}",
+            chain_name = self.chain.name
+        );
+
         // self.subscribe_blocks().await?;
 
         if self.process_task.is_none() {

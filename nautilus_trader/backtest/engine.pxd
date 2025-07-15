@@ -114,6 +114,12 @@ cdef class BacktestDataIterator:
     cdef int _single_data_index
     cdef bint _is_single_data
 
+    cdef dict[str, object] _stream_iterators
+    cdef dict[str, uint64_t] _stream_current_window_start
+    cdef dict[str, bint] _stream_exhausted
+    cdef dict[str, bint] _stream_append_data
+    cdef dict[str, uint64_t] _stream_chunk_duration_ns
+
     cpdef void _reset_single_data(self)
     cpdef void add_data(self, str data_name, list data_list, bint append_data=*)
     cdef void _add_data(self, str data_name, list data_list, bint append_data=*)
@@ -128,3 +134,9 @@ cdef class BacktestDataIterator:
     cpdef bint is_done(self)
     cpdef dict all_data(self)
     cpdef list data(self, str data_name)
+
+    cpdef void add_stream_iterator(self, str data_name, object iterator, uint64_t chunk_duration_ns, bint append_data=*)
+    cpdef uint64_t get_stream_chunk_duration(self, str data_name)
+    cpdef bint has_stream_data_remaining(self)
+    cpdef void load_next_chunks_if_needed(self)
+    cdef void _load_next_chunk(self, str data_name, bint append_data=*)

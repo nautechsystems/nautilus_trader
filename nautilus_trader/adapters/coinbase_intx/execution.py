@@ -23,7 +23,6 @@ from nautilus_trader.adapters.coinbase_intx.constants import COINBASE_INTX
 from nautilus_trader.adapters.coinbase_intx.constants import COINBASE_INTX_SUPPORTED_ORDER_TYPES
 from nautilus_trader.adapters.coinbase_intx.constants import COINBASE_INTX_SUPPORTED_TIF
 from nautilus_trader.adapters.coinbase_intx.constants import COINBASE_INTX_VENUE
-from nautilus_trader.adapters.coinbase_intx.functions import convert_expire_time_to_pydatetime
 from nautilus_trader.adapters.coinbase_intx.providers import CoinbaseIntxInstrumentProvider
 from nautilus_trader.adapters.env import get_env_key
 from nautilus_trader.cache.cache import Cache
@@ -33,6 +32,7 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.datetime import ensure_pydatetime_utc
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import GenerateFillReports
@@ -571,7 +571,7 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
             order_side=order_side_to_pyo3(order.side),
             order_type=nautilus_pyo3.OrderType.LIMIT,
             time_in_force=time_in_force_to_pyo3(order.time_in_force),
-            expire_time=convert_expire_time_to_pydatetime(order),
+            expire_time=ensure_pydatetime_utc(order.expire_time),
             quantity=nautilus_pyo3.Quantity.from_str(str(order.quantity)),
             price=nautilus_pyo3.Price.from_str(str(order.price)),
             post_only=order.is_post_only if order.is_post_only else None,
@@ -589,7 +589,7 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
             order_side=order_side_to_pyo3(order.side),
             order_type=nautilus_pyo3.OrderType.STOP_MARKET,
             time_in_force=time_in_force_to_pyo3(order.time_in_force),
-            expire_time=convert_expire_time_to_pydatetime(order),
+            expire_time=ensure_pydatetime_utc(order.expire_time),
             quantity=nautilus_pyo3.Quantity.from_str(str(order.quantity)),
             trigger_price=nautilus_pyo3.Price.from_str(str(order.trigger_price)),
             reduce_only=order.is_reduce_only if order.is_reduce_only else None,
@@ -606,7 +606,7 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
             order_side=order_side_to_pyo3(order.side),
             order_type=nautilus_pyo3.OrderType.STOP_LIMIT,
             time_in_force=time_in_force_to_pyo3(order.time_in_force),
-            expire_time=convert_expire_time_to_pydatetime(order),
+            expire_time=ensure_pydatetime_utc(order.expire_time),
             quantity=nautilus_pyo3.Quantity.from_str(str(order.quantity)),
             price=nautilus_pyo3.Price.from_str(str(order.price)),
             trigger_price=nautilus_pyo3.Price.from_str(str(order.trigger_price)),

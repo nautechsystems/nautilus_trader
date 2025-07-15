@@ -4,25 +4,34 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added streaming methods for `TardisCSVDataLoader`
+- Added stream iterators support for `BacktestEngine` low-level streaming API
 - Added `YEAR` aggregation and improved bar specification validation (#2771), thanks @stastnypremysl
+- Added support for requesting any number of historical bars for dYdX (#2766, #2777), thanks @DeirhX
 - Added `use_hyphens_in_client_order_ids` config option for `StrategyConfig`
 - Added `greeks_filter` function to `portfolio_greeks` (#2756), thanks @faysou
 - Added `VERBOSE` option to common make targets (#2759), thanks @faysou
 
 ### Breaking Changes
-None
+- Changed `start` parameter to required for `Actor` data request methods
 
 ### Internal Improvements
+- Refactored OKX adapter to Rust API clients
+- Added stream iterators support `BacktestDataIterator`
+- Added `start` and `stop` to response data (#2748), thanks @stastnypremysl
 - Added integration test service management targets (#2765), thanks @stastnypremysl
+- Added integration tests for dYdX bar-partitioning and large-history handling (#2773), thanks @nicolad
+- Improved data client for blockchain adapter (#2787), thanks @filipmacek
 - Improved efficiency of message bus external streams buffer flushing
 - Improved `databento_test_request_bars` example (#2762), thanks @faysou
 - Optimized account event purging for Redis where large lists could consume excessive memory and cause Redis to freeze
 - Refined Rust catalog path handling (#2743), thanks @faysou
 - Refined Rust `GreeksCalculator` (#2760), thanks @faysou
 - Upgraded `datafusion` crate to v48.0.1
+- Upgraded `redis` crate to v0.32.4
 
 ### Fixes
 - Fixed Tardis Machine replay processing and Parquet file writing
+- Fixed catalog query of multiple instruments of same type (#2772), thanks @faysou
 - Fixed modification of contingent orders in backtest (#2761), thanks faysou
 - Fixed balance calculations on order fill to allow operating at near account balance capacity (#2752), thanks @petioptrv
 - Fixed time range end in some databento request functions (#2755), thanks @faysou

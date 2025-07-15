@@ -1055,4 +1055,12 @@ class DYDXDataClient(LiveMarketDataClient):
         if all_bars:
             # For historical data, the last bar might be partial, don't include it
             partial: Bar = all_bars.pop() if all_bars else None
-            self._handle_bars(request.bar_type, all_bars, partial, request.id, request.params)
+            self._handle_bars_py(
+                request.bar_type,
+                all_bars,
+                partial,
+                request.id,
+                request.start,
+                request.end,
+                request.params,
+            )

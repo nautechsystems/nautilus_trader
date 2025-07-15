@@ -26,8 +26,9 @@ use crate::exchanges::extended::DexExtended;
 pub static SUSHISWAP_V2: LazyLock<DexExtended> = LazyLock::new(|| {
     let dex = Dex::new(
         chains::ARBITRUM.clone(),
-        "SushiSwap V2",
+        "SushiSwapV2",
         "0xc35DADB65012eC5796536bD9864eD8773aBc74C4",
+        70,
         AmmType::CPAMM,
         "",
         "",
