@@ -204,10 +204,12 @@ class PolymarketDataClient(LiveMarketDataClient):
     async def _delayed_ws_client_connection(
         self,
         ws_client: PolymarketWebSocketClient,
-        sleep_secs: float,
+        delay_secs: float,
     ) -> None:
         try:
-            await asyncio.sleep(sleep_secs)
+            self._log.info(f"Delaying websocket connections start for {delay_secs}s...")
+
+            await asyncio.sleep(delay_secs)
             self._ws_clients.append(ws_client)
             await ws_client.connect()
         finally:
