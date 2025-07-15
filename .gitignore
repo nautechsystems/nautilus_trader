@@ -73,6 +73,7 @@ env/
 .null-ls*
 CLAUDE.md
 CODEX.md
+GEMINI.md
 PERF.JSON
 output.json
 
