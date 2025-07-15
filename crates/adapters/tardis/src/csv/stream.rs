@@ -52,6 +52,11 @@ struct DeltaStreamIterator {
 }
 
 impl DeltaStreamIterator {
+    /// Creates a new [`DeltaStreamIterator`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file cannot be opened or read.
     fn new<P: AsRef<Path>>(
         filepath: P,
         chunk_size: usize,
@@ -59,28 +64,22 @@ impl DeltaStreamIterator {
         size_precision: Option<u8>,
         instrument_id: Option<InstrumentId>,
     ) -> anyhow::Result<Self> {
-        let mut reader = create_csv_reader(&filepath)?;
-        let mut record = StringRecord::new();
-
-        // Pre-scan first 10,000 records to determine precision if not explicitly set
-        let (final_price_precision, final_size_precision) = match (price_precision, size_precision)
-        {
-            (Some(price_prec), Some(size_prec)) => {
+        let (final_price_precision, final_size_precision) =
+            if let (Some(price_prec), Some(size_prec)) = (price_precision, size_precision) {
                 // Both precisions provided, use them directly
                 (price_prec, size_prec)
-            }
-            _ => {
+            } else {
                 // One or both precisions missing, detect only the missing ones
+                let mut reader = create_csv_reader(&filepath)?;
+                let mut record = StringRecord::new();
                 let (detected_price, detected_size) =
                     Self::detect_precision_from_sample(&mut reader, &mut record, 10_000)?;
                 (
                     price_precision.unwrap_or(detected_price),
                     size_precision.unwrap_or(detected_size),
                 )
-            }
-        };
+            };
 
-        // Reset reader for actual streaming
         let reader = create_csv_reader(filepath)?;
 
         Ok(Self {
@@ -247,28 +246,22 @@ impl QuoteStreamIterator {
         size_precision: Option<u8>,
         instrument_id: Option<InstrumentId>,
     ) -> anyhow::Result<Self> {
-        let mut reader = create_csv_reader(&filepath)?;
-        let mut record = StringRecord::new();
-
-        // Pre-scan first 10,000 records to determine precision if not explicitly set
-        let (final_price_precision, final_size_precision) = match (price_precision, size_precision)
-        {
-            (Some(price_prec), Some(size_prec)) => {
+        let (final_price_precision, final_size_precision) =
+            if let (Some(price_prec), Some(size_prec)) = (price_precision, size_precision) {
                 // Both precisions provided, use them directly
                 (price_prec, size_prec)
-            }
-            _ => {
+            } else {
                 // One or both precisions missing, detect only the missing ones
+                let mut reader = create_csv_reader(&filepath)?;
+                let mut record = StringRecord::new();
                 let (detected_price, detected_size) =
                     Self::detect_precision_from_sample(&mut reader, &mut record, 10_000)?;
                 (
                     price_precision.unwrap_or(detected_price),
                     size_precision.unwrap_or(detected_size),
                 )
-            }
-        };
+            };
 
-        // Reset reader for actual streaming
         let reader = create_csv_reader(filepath)?;
 
         Ok(Self {
@@ -425,30 +418,23 @@ impl TradeStreamIterator {
         size_precision: Option<u8>,
         instrument_id: Option<InstrumentId>,
     ) -> anyhow::Result<Self> {
-        let reader = create_csv_reader(&filepath)?;
-
-        // Pre-scan first 10,000 records to determine precision if not explicitly set
-        let (final_price_precision, final_size_precision) = match (price_precision, size_precision)
-        {
-            (Some(price_prec), Some(size_prec)) => {
+        let (final_price_precision, final_size_precision) =
+            if let (Some(price_prec), Some(size_prec)) = (price_precision, size_precision) {
                 // Both precisions provided, use them directly
                 (price_prec, size_prec)
-            }
-            _ => {
+            } else {
                 // One or both precisions missing, detect only the missing ones
-                let mut reader_for_detection = create_csv_reader(&filepath)?;
+                let mut reader = create_csv_reader(&filepath)?;
                 let mut record = StringRecord::new();
-                let (detected_price, detected_size) = Self::detect_precision_from_sample(
-                    &mut reader_for_detection,
-                    &mut record,
-                    10_000,
-                )?;
+                let (detected_price, detected_size) =
+                    Self::detect_precision_from_sample(&mut reader, &mut record, 10_000)?;
                 (
                     price_precision.unwrap_or(detected_price),
                     size_precision.unwrap_or(detected_size),
                 )
-            }
-        };
+            };
+
+        let reader = create_csv_reader(filepath)?;
 
         Ok(Self {
             reader,
@@ -591,30 +577,23 @@ impl Depth10StreamIterator {
         size_precision: Option<u8>,
         instrument_id: Option<InstrumentId>,
     ) -> anyhow::Result<Self> {
-        let reader = create_csv_reader(&filepath)?;
-
-        // Pre-scan first 10,000 records to determine precision if not explicitly set
-        let (final_price_precision, final_size_precision) = match (price_precision, size_precision)
-        {
-            (Some(price_prec), Some(size_prec)) => {
+        let (final_price_precision, final_size_precision) =
+            if let (Some(price_prec), Some(size_prec)) = (price_precision, size_precision) {
                 // Both precisions provided, use them directly
                 (price_prec, size_prec)
-            }
-            _ => {
+            } else {
                 // One or both precisions missing, detect only the missing ones
-                let mut reader_for_detection = create_csv_reader(&filepath)?;
+                let mut reader = create_csv_reader(&filepath)?;
                 let mut record = StringRecord::new();
-                let (detected_price, detected_size) = Self::detect_precision_from_sample(
-                    &mut reader_for_detection,
-                    &mut record,
-                    10_000,
-                )?;
+                let (detected_price, detected_size) =
+                    Self::detect_precision_from_sample(&mut reader, &mut record, 10_000)?;
                 (
                     price_precision.unwrap_or(detected_price),
                     size_precision.unwrap_or(detected_size),
                 )
-            }
-        };
+            };
+
+        let reader = create_csv_reader(filepath)?;
 
         Ok(Self {
             reader,
