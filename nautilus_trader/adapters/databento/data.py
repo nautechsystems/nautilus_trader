@@ -402,7 +402,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
     def subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
         if command.book_type != BookType.L3_MBO:
-            raise NotImplementedError
+            raise NotImplementedError("Use Booktype.L3_MBO for Databento")
 
         self.create_task(
             self._subscribe_order_book_deltas(command),
