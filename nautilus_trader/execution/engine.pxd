@@ -17,6 +17,7 @@ from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.component cimport TimeEvent
 from nautilus_trader.common.generators cimport PositionIdGenerator
+from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.rust.model cimport OmsType
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.execution.client cimport ExecutionClient
@@ -24,10 +25,10 @@ from nautilus_trader.execution.messages cimport BatchCancelOrders
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
+from nautilus_trader.execution.messages cimport QueryAccount
 from nautilus_trader.execution.messages cimport QueryOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
-from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.position cimport PositionEvent
@@ -109,19 +110,20 @@ cdef class ExecutionEngine(Component):
 
     cpdef void stop_clients(self)
     cpdef void load_cache(self)
-    cpdef void execute(self, TradingCommand command)
+    cpdef void execute(self, Command command)
     cpdef void process(self, OrderEvent event)
     cpdef void flush_db(self)
 
 # -- COMMAND HANDLERS -----------------------------------------------------------------------------
 
-    cpdef void _execute_command(self, TradingCommand command)
+    cpdef void _execute_command(self, Command command)
     cpdef void _handle_submit_order(self, ExecutionClient client, SubmitOrder command)
     cpdef void _handle_submit_order_list(self, ExecutionClient client, SubmitOrderList command)
     cpdef void _handle_modify_order(self, ExecutionClient client, ModifyOrder command)
     cpdef void _handle_cancel_order(self, ExecutionClient client, CancelOrder command)
     cpdef void _handle_cancel_all_orders(self, ExecutionClient client, CancelAllOrders command)
     cpdef void _handle_batch_cancel_orders(self, ExecutionClient client, BatchCancelOrders command)
+    cpdef void _handle_query_account(self, ExecutionClient client, QueryAccount command)
     cpdef void _handle_query_order(self, ExecutionClient client, QueryOrder command)
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------

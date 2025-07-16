@@ -1268,3 +1268,102 @@ cdef class QueryOrder(TradingCommand):
 
         """
         return QueryOrder.to_dict_c(obj)
+
+
+cdef class QueryAccount(Command):
+    """
+    Represents a command to query an account.
+
+    Parameters
+    ----------
+    trader_id : TraderId
+        The trader ID for the command.
+    account_id : AccountId
+        The account ID to query.
+    command_id : UUID4
+        The command ID.
+    ts_init : uint64_t
+        UNIX timestamp (nanoseconds) when the object was initialized.
+    client_id : ClientId, optional
+        The execution client ID for the command.
+    params : dict[str, object], optional
+        Additional parameters for the command.
+    """
+
+    def __init__(
+        self,
+        TraderId trader_id not None,
+        AccountId account_id not None,
+        UUID4 command_id not None,
+        uint64_t ts_init,
+        ClientId client_id = None,
+        dict[str, object] params: dict | None = None,
+    ) -> None:
+        super().__init__(command_id, ts_init)
+
+        self.client_id = client_id
+        self.trader_id = trader_id
+        self.account_id = account_id
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"client_id={self.client_id}, "  # Can be None
+            f"trader_id={self.trader_id.to_str()}, "
+            f"account_id={self.account_id.to_str()}, "
+            f"command_id={self.id.to_str()}, "
+            f"ts_init={self.ts_init})"
+        )
+
+    @staticmethod
+    cdef QueryAccount from_dict_c(dict values):
+        Condition.not_none(values, "values")
+        cdef str c = values["client_id"]
+        return QueryAccount(
+            client_id=ClientId(c) if c is not None else None,
+            trader_id=TraderId(values["trader_id"]),
+            account_id=AccountId(values["account_id"]),
+            command_id=UUID4.from_str_c(values["command_id"]),
+            ts_init=values["ts_init"],
+        )
+
+    @staticmethod
+    cdef dict to_dict_c(QueryAccount obj):
+        Condition.not_none(obj, "obj")
+        return {
+            "type": "QueryAccount",
+            "client_id": obj.client_id.to_str() if obj.client_id is not None else None,
+            "trader_id": obj.trader_id.to_str(),
+            "account_id": obj.account_id.to_str() if obj.account_id is not None else None,
+            "command_id": obj.id.to_str(),
+            "ts_init": obj.ts_init,
+        }
+
+    @staticmethod
+    def from_dict(dict values) -> QueryAccount:
+        """
+        Return a query account command from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        QueryAccount
+
+        """
+        return QueryAccount.from_dict_c(values)
+
+    @staticmethod
+    def to_dict(QueryAccount obj):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return QueryAccount.to_dict_c(obj)

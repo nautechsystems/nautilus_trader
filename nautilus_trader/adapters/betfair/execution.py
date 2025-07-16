@@ -71,6 +71,7 @@ from nautilus_trader.execution.messages import GenerateOrderStatusReport
 from nautilus_trader.execution.messages import GenerateOrderStatusReports
 from nautilus_trader.execution.messages import GeneratePositionStatusReports
 from nautilus_trader.execution.messages import ModifyOrder
+from nautilus_trader.execution.messages import QueryAccount
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
@@ -445,6 +446,10 @@ class BetfairExecutionClient(LiveExecutionClient):
         return []
 
     # -- COMMAND HANDLERS -------------------------------------------------------------------------
+
+    async def _query_account(self, _command: QueryAccount) -> None:
+        account_state = await self.request_account_state()
+        self._send_account_state(account_state)
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         instrument = self._cache.instrument(command.instrument_id)
