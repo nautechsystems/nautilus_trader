@@ -13,9 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{cmp::max, sync::Arc};
+use std::{cmp::max, collections::HashSet, sync::Arc};
 
-use alloy::primitives::U256;
+use alloy::primitives::{Address, U256};
 use futures_util::StreamExt;
 use nautilus_common::{
     messages::{
@@ -47,8 +47,8 @@ use crate::{
     decode::u256_to_quantity,
     events::pool_created::PoolCreatedEvent,
     exchanges::{dex_extended_map, extended::DexExtended},
-    hypersync::client::HyperSyncClient,
-    reporting::BlockSyncMetrics,
+    hypersync::{client::HyperSyncClient, helpers::extract_block_number},
+    reporting::{BlockchainItem, BlockchainSyncReporter},
     rpc::{
         BlockchainRpcClient, BlockchainRpcClientAny,
         chains::{
@@ -440,7 +440,8 @@ impl BlockchainDataClient {
 
         tokio::pin!(blocks_stream);
 
-        let mut metrics = BlockSyncMetrics::new(from_block, total_blocks, 50000);
+        let mut metrics =
+            BlockchainSyncReporter::new(BlockchainItem::Blocks, from_block, total_blocks, 50000);
 
         // Batch configuration
         const BATCH_SIZE: usize = 1000;
@@ -725,10 +726,21 @@ impl BlockchainDataClient {
         to_block: Option<u64>,
     ) -> anyhow::Result<()> {
         let from_block = from_block.unwrap_or(0);
-
+        let to_block = if let Some(block) = to_block {
+            block
+        } else {
+            self.hypersync_client.current_block().await
+        };
+        let total_blocks = to_block.saturating_sub(from_block) + 1;
         tracing::info!(
-            "Syncing Dex exchange pools for {dex_id} from block {from_block}{}",
-            to_block.map_or(String::new(), |block| format!(" to {block}"))
+            "Syncing DEX exchange pools from {from_block} to {to_block} (total: {total_blocks} blocks)"
+        );
+
+        let mut metrics = BlockchainSyncReporter::new(
+            BlockchainItem::PoolCreatedEvents,
+            from_block,
+            total_blocks,
+            500,
         );
 
         let dex = self.get_dex(dex_id)?.clone();
@@ -738,7 +750,7 @@ impl BlockchainDataClient {
             .hypersync_client
             .request_contract_events_stream(
                 from_block,
-                to_block,
+                Some(to_block),
                 factory_address,
                 pair_created_event_signature,
                 Vec::new(),
@@ -747,65 +759,120 @@ impl BlockchainDataClient {
 
         tokio::pin!(pools_stream);
 
+        const TOKEN_BATCH_SIZE: usize = 100;
+        let mut token_buffer: HashSet<Address> = HashSet::new();
+        let mut pool_buffer: Vec<PoolCreatedEvent> = Vec::new();
+        let mut last_block_saved = from_block;
+        let mut blocks_processed = 0;
+
         while let Some(log) = pools_stream.next().await {
+            let block_number = extract_block_number(&log)?;
             let pool = dex.parse_pool_created_event(log)?;
 
-            // If any of the tokens are properly processed, skip the pool creation.
-            if let Err(e) = self.process_token(pool.token0.to_string()).await {
-                tracing::warn!(
-                    "Failed to process token {} with error {e}. Skipping pool {}.",
-                    pool.token0,
-                    pool.pool_address
-                );
-                continue;
-            }
-            if let Err(e) = self.process_token(pool.token1.to_string()).await {
-                tracing::warn!(
-                    "Failed to process token {} with error {e}. Skipping pool {}.",
-                    pool.token1,
-                    pool.pool_address
-                );
+            // If we have both tokens cached, we can process the pool immediately.
+            if self.cache.get_token(&pool.token0).is_some()
+                && self.cache.get_token(&pool.token1).is_some()
+            {
+                self.process_pool(&dex.dex, &pool).await?;
+                blocks_processed += (block_number - last_block_saved);
+                last_block_saved = block_number;
                 continue;
             }
 
-            self.process_pool(&dex.dex, pool).await?;
+            if self.cache.get_token(&pool.token0).is_none() {
+                token_buffer.insert(pool.token0);
+            }
+            if self.cache.get_token(&pool.token1).is_none() {
+                token_buffer.insert(pool.token1);
+            }
+            // Buffer the pool for later processing
+            pool_buffer.push(pool);
+
+            if token_buffer.len() >= TOKEN_BATCH_SIZE {
+                let batch_addresses: Vec<Address> = token_buffer.drain().collect();
+                let token_infos = self.tokens.batch_fetch_token_info(&batch_addresses).await?;
+                for (token_address, token_info) in token_infos {
+                    let token = Token::new(
+                        self.chain.clone(),
+                        token_address,
+                        token_info.name,
+                        token_info.symbol,
+                        token_info.decimals,
+                    );
+                    self.cache.add_token(token).await?;
+                }
+
+                for pool in &pool_buffer {
+                    if let Err(e) = self.process_pool(&dex.dex, pool).await {
+                        tracing::error!("Failed to process {} with error {}", pool.pool_address, e)
+                    }
+                }
+
+                pool_buffer.clear();
+                metrics.update(blocks_processed as usize);
+                blocks_processed = 0;
+
+                // Log progress if needed
+                if metrics.should_log_progress(block_number, to_block) {
+                    metrics.log_progress(block_number);
+                }
+            }
+
+            blocks_processed += block_number - last_block_saved;
+            last_block_saved = block_number;
         }
-        Ok(())
-    }
 
-    /// Processes a token by address, fetching and caching its metadata if not already cached.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if fetching token info or adding to cache fails.
-    pub async fn process_token(&mut self, token_address: String) -> anyhow::Result<()> {
-        let token_address = validate_address(&token_address)?;
+        if !token_buffer.is_empty() {
+            let batch_addresses: Vec<Address> = token_buffer.drain().collect();
+            let token_infos = self.tokens.batch_fetch_token_info(&batch_addresses).await?;
+            for (token_address, token_info) in token_infos {
+                let token = Token::new(
+                    self.chain.clone(),
+                    token_address,
+                    token_info.name,
+                    token_info.symbol,
+                    token_info.decimals,
+                );
+                self.cache.add_token(token).await?;
+            }
 
-        if self.cache.get_token(&token_address).is_none() {
-            let token_info = self.tokens.fetch_token_info(&token_address).await?;
-            let token = Token::new(
-                self.chain.clone(),
-                token_address,
-                token_info.name,
-                token_info.symbol,
-                token_info.decimals,
-            );
-            tracing::info!("Saving fetched token {token} in the cache");
-            self.cache.add_token(token).await?;
+            for pool in &pool_buffer {
+                if let Err(e) = self.process_pool(&dex.dex, pool).await {
+                    tracing::error!("Failed to process {} with error {}", pool.pool_address, e)
+                }
+            }
+
+            pool_buffer.clear();
+            metrics.update(blocks_processed as usize);
+            blocks_processed = 0;
         }
 
+        metrics.log_final_stats();
         Ok(())
     }
 
     /// Processes a pool creation event by creating and caching a `Pool` entity.
-    async fn process_pool(&mut self, dex: &Dex, event: PoolCreatedEvent) -> anyhow::Result<()> {
+    async fn process_pool(&mut self, dex: &Dex, event: &PoolCreatedEvent) -> anyhow::Result<()> {
+        let token0 = match self.cache.get_token(&event.token0) {
+            Some(token) => token.clone(),
+            None => {
+                anyhow::bail!("Token {} should be initialized in the cache", event.token0);
+            }
+        };
+        let token1 = match self.cache.get_token(&event.token1) {
+            Some(token) => token.clone(),
+            None => {
+                anyhow::bail!("Token {} should be initialized in the cache", event.token1);
+            }
+        };
+
         let pool = Pool::new(
             self.chain.clone(),
             dex.clone(),
             event.pool_address,
             event.block_number,
-            self.cache.get_token(&event.token0).cloned().unwrap(),
-            self.cache.get_token(&event.token1).cloned().unwrap(),
+            token0,
+            token1,
             event.fee,
             event.tick_spacing,
             UnixNanos::default(), // TODO: Use default timestamp for now

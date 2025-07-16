@@ -235,8 +235,6 @@ impl BlockchainCache {
     /// Returns an error if adding the pool to the database fails.
     pub async fn add_pool(&mut self, pool: Pool) -> anyhow::Result<()> {
         let pool_address = pool.address;
-        log::info!("Adding dex pool {pool_address} to the cache");
-
         if let Some(database) = &self.database {
             database.add_pool(&pool).await?;
         }
