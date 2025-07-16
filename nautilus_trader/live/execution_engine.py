@@ -32,12 +32,12 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.fsm import InvalidStateTrigger
+from nautilus_trader.core.message import Command
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.execution.messages import GenerateOrderStatusReports
 from nautilus_trader.execution.messages import GeneratePositionStatusReports
 from nautilus_trader.execution.messages import QueryOrder
-from nautilus_trader.execution.messages import TradingCommand
 from nautilus_trader.execution.reports import ExecutionMassStatus
 from nautilus_trader.execution.reports import ExecutionReport
 from nautilus_trader.execution.reports import FillReport
@@ -127,7 +127,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self._evt_queue: asyncio.Queue = Queue(maxsize=config.qsize)
         self._inflight_check_retries: Counter[ClientOrderId] = Counter()
 
-        self._cmd_enqueuer: ThrottledEnqueuer[TradingCommand] = ThrottledEnqueuer(
+        self._cmd_enqueuer: ThrottledEnqueuer[Command] = ThrottledEnqueuer(
             qname="cmd_queue",
             queue=self._cmd_queue,
             loop=self._loop,
@@ -342,7 +342,7 @@ class LiveExecutionEngine(ExecutionEngine):
             self._evt_queue_task.cancel()
             self._evt_queue_task = None
 
-    def execute(self, command: TradingCommand) -> None:
+    def execute(self, command: Command) -> None:
         """
         Execute the given command.
 
@@ -351,7 +351,7 @@ class LiveExecutionEngine(ExecutionEngine):
 
         Parameters
         ----------
-        command : TradingCommand
+        command : Command
             The command to execute.
 
         """
@@ -491,7 +491,7 @@ class LiveExecutionEngine(ExecutionEngine):
         try:
             while True:
                 try:
-                    command: TradingCommand | None = await self._cmd_queue.get()
+                    command: Command | None = await self._cmd_queue.get()
                     if command is self._sentinel:
                         break
 

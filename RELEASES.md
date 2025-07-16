@@ -3,6 +3,8 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added `query_account` method for `Strategy`
+- Added `QueryAccount` execution message
 - Added streaming methods for `TardisCSVDataLoader`
 - Added stream iterators support for `BacktestEngine` low-level streaming API
 - Added `YEAR` aggregation and improved bar specification validation (#2771), thanks @stastnypremysl

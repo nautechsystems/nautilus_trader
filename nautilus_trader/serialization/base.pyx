@@ -24,6 +24,7 @@ from nautilus_trader.execution.messages cimport BatchCancelOrders
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
+from nautilus_trader.execution.messages cimport QueryAccount
 from nautilus_trader.execution.messages cimport QueryOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
@@ -79,6 +80,7 @@ _OBJECT_TO_DICT_MAP: dict[str, Callable[[None], dict]] = {
     SubmitOrder.__name__: SubmitOrder.to_dict_c,
     SubmitOrderList.__name__: SubmitOrderList.to_dict_c,
     ModifyOrder.__name__: ModifyOrder.to_dict_c,
+    QueryAccount.__name__: QueryAccount.to_dict_c,
     QueryOrder.__name__: QueryOrder.to_dict_c,
     ShutdownSystem.__name__: ShutdownSystem.to_dict_c,
     ComponentStateChanged.__name__: ComponentStateChanged.to_dict_c,
@@ -136,6 +138,7 @@ _OBJECT_FROM_DICT_MAP: dict[str, Callable[[dict], Any]] = {
     SubmitOrder.__name__: SubmitOrder.from_dict_c,
     SubmitOrderList.__name__: SubmitOrderList.from_dict_c,
     ModifyOrder.__name__: ModifyOrder.from_dict_c,
+    QueryAccount.__name__: QueryAccount.from_dict_c,
     QueryOrder.__name__: QueryOrder.from_dict_c,
     ShutdownSystem.__name__: ShutdownSystem.from_dict_c,
     ComponentStateChanged.__name__: ComponentStateChanged.from_dict_c,
@@ -196,6 +199,7 @@ _EXTERNAL_PUBLISHABLE_TYPES = {
     CancelOrder,
     CancelAllOrders,
     BatchCancelOrders,
+    QueryAccount,
     QueryOrder,
     ShutdownSystem,
     ComponentStateChanged,

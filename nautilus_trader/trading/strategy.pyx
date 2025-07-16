@@ -53,6 +53,7 @@ from nautilus_trader.execution.messages cimport BatchCancelOrders
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
+from nautilus_trader.execution.messages cimport QueryAccount
 from nautilus_trader.execution.messages cimport QueryOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
@@ -85,6 +86,7 @@ from nautilus_trader.model.functions cimport oms_type_from_str
 from nautilus_trader.model.functions cimport order_side_to_str
 from nautilus_trader.model.functions cimport order_status_to_str
 from nautilus_trader.model.functions cimport position_side_to_str
+from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecAlgorithmId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -1357,6 +1359,37 @@ cdef class Strategy(Actor):
         cdef Position position
         for position in positions_open:
             self.close_position(position, client_id, tags, time_in_force, reduce_only, params)
+
+    cpdef void query_account(self, AccountId account_id, ClientId client_id = None, dict[str, object] params = None):
+        """
+        Query the account with optional routing instructions.
+
+        A `QueryAccount` command will be created and then sent to the
+        `ExecutionEngine`.
+
+        Parameters
+        ----------
+        account_id : AccountId
+            The account to query.
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If ``None`` then will be inferred from the venue in the instrument ID.
+        params : dict[str, Any], optional
+            Additional parameters potentially used by a specific client.
+
+        """
+        Condition.is_true(self.trader_id is not None, "The strategy has not been registered")
+
+        cdef QueryAccount command = QueryAccount(
+            trader_id=self.trader_id,
+            account_id=account_id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            client_id=client_id,
+            params=params,
+        )
+
+        self._manager.send_exec_command(command)
 
     cpdef void query_order(self, Order order, ClientId client_id = None, dict[str, object] params = None):
         """

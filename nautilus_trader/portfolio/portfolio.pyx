@@ -433,18 +433,12 @@ cdef class Portfolio(PortfolioFacade):
         """
         Condition.not_none(event, "event")
 
-        cdef Account account = self._cache.account(event.account_id)
+        self._update_account(event)
 
-        if account is None:
-            # Generate account
-            account = AccountFactory.create_c(event)
-            # Add to cache
-            self._cache.add_account(account)
-        else:
-            account.apply(event)
-            self._cache.update_account(account)
-
-        self._log.info(f"Updated {event}")
+        self._msgbus.publish_c(
+            topic=f"events.account.{event.account_id}",
+            msg=event,
+        )
 
     cpdef void update_order(self, OrderEvent event):
         """
@@ -552,7 +546,7 @@ cdef class Portfolio(PortfolioFacade):
             self._pending_calcs.add(instrument.id)
         elif account.is_cash_account or not isinstance(event, OrderFilled):
             # Only update account state for other than fill events (these will be updated on position update)
-            self.update_account(self._accounts.generate_account_state(account, event.ts_event))
+            self._update_account(self._accounts.generate_account_state(account, event.ts_event))
 
         self._log.debug(f"Updated from {event}")
 
@@ -614,7 +608,7 @@ cdef class Portfolio(PortfolioFacade):
 
         if result:
             account_state = self._accounts.generate_account_state(account, event.ts_event)
-            self.update_account(account_state)
+            self._update_account(account_state)
 
     cpdef void on_order_event(self, OrderEvent event):
         """
@@ -1354,8 +1348,18 @@ cdef class Portfolio(PortfolioFacade):
 
 # -- INTERNAL -------------------------------------------------------------------------------------
 
-    cdef object _net_position(self, InstrumentId instrument_id):
-        return self._net_positions.get(instrument_id, Decimal(0))
+    cdef void _update_account(self, AccountState event):
+        cdef Account account = self._cache.account(event.account_id)
+
+        if account is None:
+            # Generate account
+            account = AccountFactory.create_c(event)
+            self._cache.add_account(account)
+        else:
+            account.apply(event)
+            self._cache.update_account(account)
+
+        self._log.info(f"Updated {event}")
 
     cdef void _update_net_position(self, InstrumentId instrument_id, list positions_open):
         net_position = Decimal(0)
@@ -1435,6 +1439,9 @@ cdef class Portfolio(PortfolioFacade):
 
             if not self._pending_calcs:
                 self.initialized = True
+
+    cdef object _net_position(self, InstrumentId instrument_id):
+        return self._net_positions.get(instrument_id, Decimal(0))
 
     cdef Money _calculate_realized_pnl(self, InstrumentId instrument_id):
         cdef Account account = self._cache.account_for_venue(instrument_id.venue)

@@ -53,6 +53,7 @@ from nautilus_trader.execution.messages import GenerateOrderStatusReport
 from nautilus_trader.execution.messages import GenerateOrderStatusReports
 from nautilus_trader.execution.messages import GeneratePositionStatusReports
 from nautilus_trader.execution.messages import ModifyOrder
+from nautilus_trader.execution.messages import QueryAccount
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.execution.reports import FillReport
@@ -768,6 +769,10 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             "HedgeModePositionSides",
         )
         return position_side
+
+    async def _query_account(self, _command: QueryAccount) -> None:
+        # Specific account ID (sub account) not yet supported
+        await self._update_account_state()
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         position_side = self._get_position_side_from_position_id(

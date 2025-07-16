@@ -18,6 +18,7 @@ from cpython.datetime cimport datetime
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.rust.common cimport LogLevel
 from nautilus_trader.core.rust.model cimport OrderSide
+from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecAlgorithmId
@@ -175,3 +176,18 @@ cdef class QueryOrder(TradingCommand):
 
     @staticmethod
     cdef dict to_dict_c(QueryOrder obj)
+
+
+cdef class QueryAccount(Command):
+    cdef readonly ClientId client_id
+    """The execution client ID for the command.\n\n:returns: `ClientId` or ``None``"""
+    cdef readonly TraderId trader_id
+    """The trader ID associated with the command.\n\n:returns: `TraderId`"""
+    cdef readonly AccountId account_id
+    """The account ID to query.\n\n:returns: `AccountId`"""
+
+    @staticmethod
+    cdef QueryAccount from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(QueryAccount obj)

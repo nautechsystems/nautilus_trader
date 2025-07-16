@@ -20,10 +20,13 @@ from nautilus_trader.execution.messages import BatchCancelOrders
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
+from nautilus_trader.execution.messages import QueryAccount
 from nautilus_trader.execution.messages import QueryOrder
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecAlgorithmId
 from nautilus_trader.model.identifiers import PositionId
@@ -420,4 +423,27 @@ class TestCommands:
         assert (
             repr(command)
             == f"QueryOrder(client_id=SIM, trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=None, command_id={uuid}, ts_init=0)"  # noqa
+        )
+
+    def test_query_account_command_to_from_dict_and_str_repr(self):
+        # Arrange
+        uuid = UUID4()
+
+        command = QueryAccount(
+            trader_id=TraderId("TRADER-001"),
+            account_id=AccountId("ACCOUNT-001"),
+            command_id=uuid,
+            client_id=ClientId("BROKER"),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act, Assert
+        assert QueryAccount.from_dict(QueryAccount.to_dict(command)) == command
+        assert (
+            str(command)
+            == f"QueryAccount(client_id=BROKER, trader_id=TRADER-001, account_id=ACCOUNT-001, command_id={uuid}, ts_init=0)"
+        )
+        assert (
+            repr(command)
+            == f"QueryAccount(client_id=BROKER, trader_id=TRADER-001, account_id=ACCOUNT-001, command_id={uuid}, ts_init=0)"
         )

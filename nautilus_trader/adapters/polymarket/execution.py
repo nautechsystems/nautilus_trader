@@ -71,6 +71,7 @@ from nautilus_trader.execution.messages import GenerateFillReports
 from nautilus_trader.execution.messages import GenerateOrderStatusReport
 from nautilus_trader.execution.messages import GenerateOrderStatusReports
 from nautilus_trader.execution.messages import GeneratePositionStatusReports
+from nautilus_trader.execution.messages import QueryAccount
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
@@ -643,6 +644,10 @@ class PolymarketExecutionClient(LiveExecutionClient):
         return reports
 
     # -- COMMAND HANDLERS -------------------------------------------------------------------------
+
+    async def _query_account(self, _command: QueryAccount) -> None:
+        # Specific account ID (sub account) not yet supported
+        await self._update_account_state()
 
     async def _cancel_order(self, command: CancelOrder) -> None:
         # https://docs.polymarket.com/#cancel-an-order
