@@ -27,9 +27,9 @@ from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class MarginAccount(Account):
+    cdef MarginModel _margin_model
     cdef dict _leverages
     cdef dict _margins
-    cdef MarginModel _margin_model
 
     cdef readonly default_leverage
     """The accounts default leverage setting.\n\n:returns: `Decimal`"""

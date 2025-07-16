@@ -218,7 +218,7 @@ class TestBacktestConfigParsing:
         )
         json = msgspec.json.encode(run_config)
         result = len(msgspec.json.encode(json))
-        assert result == 1402  # UNIX
+        assert result == 1358  # UNIX
 
     @pytest.mark.skipif(sys.platform == "win32", reason="redundant to also test Windows")
     def test_run_config_parse_obj(self) -> None:
@@ -239,7 +239,7 @@ class TestBacktestConfigParsing:
         assert isinstance(config, BacktestRunConfig)
         node = BacktestNode(configs=[config])
         assert isinstance(node, BacktestNode)
-        assert len(raw) == 1049  # UNIX
+        assert len(raw) == 1015  # UNIX
 
     @pytest.mark.skipif(sys.platform == "win32", reason="redundant to also test Windows")
     def test_backtest_data_config_to_dict(self) -> None:
@@ -260,7 +260,7 @@ class TestBacktestConfigParsing:
         )
         json = msgspec.json.encode(run_config)
         result = len(msgspec.json.encode(json))
-        assert result == 2254
+        assert result == 2210
 
     @pytest.mark.skipif(sys.platform == "win32", reason="redundant to also test Windows")
     def test_backtest_run_config_id(self) -> None:
@@ -268,7 +268,7 @@ class TestBacktestConfigParsing:
         print("token:", token)
         value: bytes = self.backtest_config.json()
         print("token_value:", value.decode())
-        assert token == "f46b202e92bc6eed19aacf61585da453b857695e6b9e3568982ba582a5d48508"
+        assert token == "4301bdb81ad6ef2e6683565187995fa32f2ce361383f54533cdef4c8469c8281"
 
     @pytest.mark.skipif(sys.platform == "win32", reason="redundant to also test Windows")
     @pytest.mark.parametrize(
@@ -278,7 +278,7 @@ class TestBacktestConfigParsing:
                 TestConfigStubs.venue_config,
                 (),
                 {},
-                ("e97c864ff5dbef69a4a163b6c4db5ceb2bca0bbcbc7633ba8d4428e48c730698",),
+                ("981a3c21ef4c0af5e36377536728d5cf85e95d6843889021be965bae4ebecd5e",),
             ),
             (
                 TestConfigStubs.backtest_data_config,

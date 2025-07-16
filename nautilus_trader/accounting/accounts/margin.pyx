@@ -60,11 +60,11 @@ cdef class MarginAccount(Account):
 
         super().__init__(event, calculate_account_state)
 
+        # Default to leveraged margin model for backward compatibility
+        self._margin_model = LeveragedMarginModel()
         self.default_leverage = Decimal(1)
         self._leverages: dict[InstrumentId, Decimal] = {}
         self._margins: dict[InstrumentId, MarginBalance] = {m.instrument_id: m for m in event.margins}
-        # Default to leveraged margin model for backward compatibility
-        self._margin_model = LeveragedMarginModel()
 
     @staticmethod
     cdef dict to_dict_c(MarginAccount obj):
@@ -301,6 +301,7 @@ cdef class MarginAccount(Account):
 
         """
         Condition.not_none(margin_model, "margin_model")
+
         self._margin_model = margin_model
 
     cpdef void update_margin_init(self, InstrumentId instrument_id, Money margin_init):

@@ -181,9 +181,9 @@ class TestMarginAccountWithModels:
 class TestCustomMarginModelConfig:
     def test_custom_model_receives_config(self):
         # Arrange
-        from nautilus_trader.accounting.margin_config import MarginModelConfig
-        from nautilus_trader.accounting.margin_config import MarginModelFactory
         from nautilus_trader.accounting.margin_models import MarginModel
+        from nautilus_trader.backtest.config import MarginModelConfig
+        from nautilus_trader.backtest.config import MarginModelFactory
 
         class TestCustomMarginModel(MarginModel):
             def __init__(self, config):
@@ -251,3 +251,83 @@ class TestCustomMarginModelConfig:
 
         # Should be (80,000 / 50) * 0.03 * 2.0 = 96.00
         assert result == Money(96.00, USD)
+
+
+class TestLeveragedMarginModelEdgeCases:
+    def test_calculate_margin_init_zero_leverage_raises_error(self):
+        # Arrange
+        model = LeveragedMarginModel()
+        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+        quantity = Quantity.from_int(100_000)
+        price = Price.from_str("0.80000")
+        leverage = Decimal(0)  # Zero leverage
+
+        # Act & Assert
+        import pytest
+
+        with pytest.raises(Exception):  # Should raise validation error
+            model.calculate_margin_init(
+                instrument=instrument,
+                quantity=quantity,
+                price=price,
+                leverage=leverage,
+            )
+
+    def test_calculate_margin_init_negative_leverage_raises_error(self):
+        # Arrange
+        model = LeveragedMarginModel()
+        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+        quantity = Quantity.from_int(100_000)
+        price = Price.from_str("0.80000")
+        leverage = Decimal(-10)  # Negative leverage
+
+        # Act & Assert
+        import pytest
+
+        with pytest.raises(Exception):  # Should raise validation error
+            model.calculate_margin_init(
+                instrument=instrument,
+                quantity=quantity,
+                price=price,
+                leverage=leverage,
+            )
+
+    def test_calculate_margin_maint_zero_leverage_raises_error(self):
+        # Arrange
+        model = LeveragedMarginModel()
+        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+        quantity = Quantity.from_int(100_000)
+        price = Price.from_str("0.80000")
+        leverage = Decimal(0)  # Zero leverage
+
+        # Act & Assert
+        import pytest
+
+        with pytest.raises(Exception):  # Should raise validation error
+            model.calculate_margin_maint(
+                instrument=instrument,
+                side=PositionSide.LONG,
+                quantity=quantity,
+                price=price,
+                leverage=leverage,
+            )
+
+    def test_calculate_margin_maint_negative_leverage_raises_error(self):
+        # Arrange
+        model = LeveragedMarginModel()
+        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+        quantity = Quantity.from_int(100_000)
+        price = Price.from_str("0.80000")
+        leverage = Decimal(-10)  # Negative leverage
+
+        # Act & Assert
+        import pytest
+
+        with pytest.raises(Exception):  # Should raise validation error
+            model.calculate_margin_maint(
+                instrument=instrument,
+                side=PositionSide.LONG,
+                quantity=quantity,
+                price=price,
+                leverage=leverage,
+            )

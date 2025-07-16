@@ -16,6 +16,7 @@
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.accounting.accounts.base cimport Account
+from nautilus_trader.accounting.margin_models cimport MarginModel
 from nautilus_trader.backtest.execution_client cimport BacktestExecClient
 from nautilus_trader.backtest.matching_engine cimport OrderMatchingEngine
 from nautilus_trader.backtest.models cimport FeeModel
@@ -82,7 +83,7 @@ cdef class SimulatedExchange:
     """The accounts default leverage.\n\n:returns: `Decimal`"""
     cdef readonly dict leverages
     """The accounts instrument specific leverage configuration.\n\n:returns: `dict[InstrumentId, Decimal]`"""
-    cdef readonly object margin_model
+    cdef readonly MarginModel margin_model
     """The margin calculation model for the exchange.\n\n:returns: `MarginModel`"""
     cdef readonly bint is_frozen_account
     """If the account for the exchange is frozen.\n\n:returns: `bool`"""

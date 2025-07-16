@@ -28,7 +28,7 @@ cdef class MarginModel:
         Instrument instrument,
         Quantity quantity,
         Price price,
-        object leverage,
+        leverage,
         bint use_quote_for_inverse=*,
     )
 
@@ -38,7 +38,7 @@ cdef class MarginModel:
         PositionSide side,
         Quantity quantity,
         Price price,
-        object leverage,
+        leverage,
         bint use_quote_for_inverse=*,
     )
 

@@ -22,6 +22,7 @@ from nautilus_trader.common.config import InvalidConfiguration
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.accounting.accounts.base cimport Account
+from nautilus_trader.accounting.margin_models cimport MarginModel
 from nautilus_trader.backtest.execution_client cimport BacktestExecClient
 from nautilus_trader.backtest.matching_engine cimport OrderMatchingEngine
 from nautilus_trader.backtest.models cimport FeeModel
@@ -170,7 +171,7 @@ cdef class SimulatedExchange:
         FillModel fill_model not None,
         FeeModel fee_model not None,
         LatencyModel latency_model = None,
-        margin_model = None,
+        MarginModel margin_model = None,
         BookType book_type = BookType.L1_MBP,
         bint frozen_account = False,
         bint reject_stop_orders = True,
