@@ -82,6 +82,8 @@ cdef class SimulatedExchange:
     """The accounts default leverage.\n\n:returns: `Decimal`"""
     cdef readonly dict leverages
     """The accounts instrument specific leverage configuration.\n\n:returns: `dict[InstrumentId, Decimal]`"""
+    cdef readonly object margin_model
+    """The margin calculation model for the exchange.\n\n:returns: `MarginModel`"""
     cdef readonly bint is_frozen_account
     """If the account for the exchange is frozen.\n\n:returns: `bool`"""
     cdef readonly LatencyModel latency_model
