@@ -2092,10 +2092,10 @@ impl OKXWsMessageHandler {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use futures_util;
     use rstest::rstest;
 
     use super::*;
-    use futures_util;
 
     #[rstest]
     fn test_timestamp_format_for_websocket_auth() {
