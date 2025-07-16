@@ -18,6 +18,7 @@ from decimal import Decimal
 
 import pandas as pd
 
+from nautilus_trader.accounting.margin_config import MarginModelFactory
 from nautilus_trader.backtest.config import BacktestDataConfig
 from nautilus_trader.backtest.config import BacktestRunConfig
 from nautilus_trader.backtest.config import BacktestVenueConfig
@@ -383,6 +384,7 @@ class BacktestNode:
                 starting_balances=get_starting_balances(venue_config),
                 default_leverage=Decimal(venue_config.default_leverage),
                 leverages=get_leverages(venue_config),
+                margin_model=get_margin_model(venue_config),
                 book_type=book_type_from_str(venue_config.book_type),
                 routing=venue_config.routing,
                 modules=[ActorFactory.create(module) for module in (venue_config.modules or [])],
@@ -778,3 +780,10 @@ def get_fee_model(config: BacktestVenueConfig) -> FeeModel | None:
         return None
 
     return FeeModelFactory.create(config.fee_model)
+
+
+def get_margin_model(config: BacktestVenueConfig):
+    """
+    Create a MarginModel from the venue configuration.
+    """
+    return MarginModelFactory.create(config.margin_model)

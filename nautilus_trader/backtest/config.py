@@ -21,6 +21,7 @@ from typing import Any
 import msgspec
 import pandas as pd
 
+from nautilus_trader.accounting.margin_config import MarginModelConfig
 from nautilus_trader.common import Environment
 from nautilus_trader.common.config import ActorConfig
 from nautilus_trader.common.config import ImportableActorConfig
@@ -123,6 +124,9 @@ class BacktestVenueConfig(NautilusConfig, frozen=True):
         The account default leverage (for margin accounts).
     leverages : dict[str, float], optional
         The instrument specific leverage configuration (for margin accounts).
+    margin_model : MarginModelConfig, optional
+        The margin calculation model configuration.
+        Default is MarginModelConfig(model_type='leveraged') for backward compatibility.
     book_type : str
         The default order book type.
     routing : bool, default False
@@ -171,6 +175,7 @@ class BacktestVenueConfig(NautilusConfig, frozen=True):
     base_currency: str | None = None
     default_leverage: float = 1.0
     leverages: dict[str, float] | None = None
+    margin_model: MarginModelConfig = MarginModelConfig()
     book_type: str = "L1_MBP"
     routing: bool = False
     frozen_account: bool = False
