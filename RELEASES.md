@@ -39,6 +39,7 @@ Released on TBD (UTC).
 ### Fixes
 - Fixed decoding zero-sized trades for Databento MBO data
 - Fixed Tardis Machine replay processing and Parquet file writing
+- Fixed Polymarket reconciliation for signature type 2 trades where wallet address differs from funder address
 - Fixed catalog query of multiple instruments of same type (#2772), thanks @faysou
 - Fixed modification of contingent orders in backtest (#2761), thanks faysou
 - Fixed balance calculations on order fill to allow operating at near account balance capacity (#2752), thanks @petioptrv
