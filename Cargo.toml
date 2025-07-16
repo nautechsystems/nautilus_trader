@@ -129,7 +129,7 @@ log = { version = "0.4.27", features = [
 ] }
 memchr = "2.7.4"
 nonzero_ext = "0.3.0"
-object_store = { version = "0.12.2", default-features = false, features = [
+object_store = { version = "0.12.3", default-features = false, features = [
   "fs",
   "aws",
   "azure",
