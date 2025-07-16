@@ -37,6 +37,7 @@ Released on TBD (UTC).
 - Upgraded `redis` crate to v0.32.4
 
 ### Fixes
+- Fixed decoding zero-sized trades for Databento MBO data
 - Fixed Tardis Machine replay processing and Parquet file writing
 - Fixed catalog query of multiple instruments of same type (#2772), thanks @faysou
 - Fixed modification of contingent orders in backtest (#2761), thanks faysou

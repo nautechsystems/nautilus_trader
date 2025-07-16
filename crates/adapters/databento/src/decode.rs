@@ -309,7 +309,7 @@ pub fn decode_mbo_msg(
 ) -> anyhow::Result<(Option<OrderBookDelta>, Option<TradeTick>)> {
     let side = parse_order_side(msg.side);
     if is_trade_msg(side, msg.action) {
-        if include_trades {
+        if include_trades && msg.size > 0 {
             let ts_event = msg.ts_recv.into();
             let ts_init = ts_init.unwrap_or(ts_event);
 
