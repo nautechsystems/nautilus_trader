@@ -22,6 +22,7 @@
 # %%
 import pandas as pd
 
+from nautilus_trader.accounting.margin_config import MarginModelConfig
 from nautilus_trader.adapters.databento.data_utils import data_path
 from nautilus_trader.adapters.databento.data_utils import databento_data
 from nautilus_trader.adapters.databento.data_utils import load_catalog
@@ -325,6 +326,9 @@ venues = [
         account_type="MARGIN",
         base_currency="USD",
         starting_balances=["1_000_000 USD"],
+        margin_model=MarginModelConfig(
+            model_type="standard",
+        ),  # Use standard margin model for options trading
     ),
 ]
 

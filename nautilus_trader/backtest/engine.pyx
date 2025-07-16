@@ -407,6 +407,7 @@ cdef class BacktestEngine:
         base_currency: Currency | None = None,
         default_leverage: Decimal | None = None,
         leverages: dict[InstrumentId, Decimal] | None = None,
+        margin_model = None,
         modules: list[SimulationModule] | None = None,
         fill_model: FillModel | None = None,
         fee_model: FeeModel | None = None,
@@ -526,6 +527,7 @@ cdef class BacktestEngine:
             base_currency=base_currency,
             default_leverage=default_leverage,
             leverages=leverages or {},
+            margin_model=margin_model,
             modules=modules,
             portfolio=self._kernel.portfolio,
             msgbus=self._kernel.msgbus,
@@ -837,10 +839,7 @@ cdef class BacktestEngine:
                 break  # No more data, end generator
 
     cpdef void _update_subscription_data(self, str subscription_name, object duration_ns):
-        if subscription_name == "backtest_data":
-            return
-
-        if subscription_name not in self._data_requests:
+        if subscription_name == "backtest_data" or subscription_name not in self._data_requests:
             return
 
         cdef uint64_t start_time = self._last_subscription_ts[subscription_name] + 1 # to avoid duplicate data
@@ -848,10 +847,10 @@ cdef class BacktestEngine:
         if start_time > self._end_ns:
             return
 
-        cdef RequestData request = self._data_requests[subscription_name]
         cdef uint64_t end_time = min(start_time + duration_ns, self._end_ns) if duration_ns else self._end_ns
         self._last_subscription_ts[subscription_name] = end_time
 
+        cdef RequestData request = self._data_requests[subscription_name]
         self._log.debug(f"Renewing {request.data_type.type.__name__} data from {unix_nanos_to_dt(start_time)} to {unix_nanos_to_dt(end_time)}, {duration_ns=}")
         cdef RequestData new_request = request.with_dates(unix_nanos_to_dt(start_time), unix_nanos_to_dt(end_time), self._last_ns)
         self._kernel._msgbus.request(endpoint="DataEngine.request", request=new_request)

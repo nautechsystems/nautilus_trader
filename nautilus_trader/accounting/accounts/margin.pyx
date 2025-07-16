@@ -15,6 +15,8 @@
 
 from decimal import Decimal
 
+from nautilus_trader.accounting.margin_models cimport LeveragedMarginModel
+from nautilus_trader.accounting.margin_models cimport MarginModel
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport AccountType
 from nautilus_trader.core.rust.model cimport LiquiditySide
@@ -61,6 +63,8 @@ cdef class MarginAccount(Account):
         self.default_leverage = Decimal(1)
         self._leverages: dict[InstrumentId, Decimal] = {}
         self._margins: dict[InstrumentId, MarginBalance] = {m.instrument_id: m for m in event.margins}
+        # Default to leveraged margin model for backward compatibility
+        self._margin_model = LeveragedMarginModel()
 
     @staticmethod
     cdef dict to_dict_c(MarginAccount obj):
@@ -285,6 +289,19 @@ cdef class MarginAccount(Account):
         Condition.is_true(leverage >= 1, "leverage was not >= 1")
 
         self._leverages[instrument_id] = leverage
+
+    cpdef void set_margin_model(self, MarginModel margin_model):
+        """
+        Set the margin calculation model for the account.
+
+        Parameters
+        ----------
+        margin_model : MarginModel
+            The margin model to use for calculations.
+
+        """
+        Condition.not_none(margin_model, "margin_model")
+        self._margin_model = margin_model
 
     cpdef void update_margin_init(self, InstrumentId instrument_id, Money margin_init):
         """
@@ -595,24 +612,18 @@ cdef class MarginAccount(Account):
         Condition.not_none(quantity, "quantity")
         Condition.not_none(price, "price")
 
-        notional = instrument.notional_value(
-            quantity=quantity,
-            price=price,
-            use_quote_for_inverse=use_quote_for_inverse,
-        ).as_decimal()
-
         leverage = self._leverages.get(instrument.id, Decimal(0))
         if leverage == 0:
             leverage = self.default_leverage
             self._leverages[instrument.id] = leverage
 
-        adjusted_notional = notional / leverage
-        margin = adjusted_notional * instrument.margin_init
-
-        if instrument.is_inverse and not use_quote_for_inverse:
-            return Money(margin, instrument.base_currency)
-        else:
-            return Money(margin, instrument.quote_currency)
+        return self._margin_model.calculate_margin_init(
+            instrument=instrument,
+            quantity=quantity,
+            price=price,
+            leverage=leverage,
+            use_quote_for_inverse=use_quote_for_inverse,
+        )
 
     cpdef Money calculate_margin_maint(
         self,
@@ -649,24 +660,19 @@ cdef class MarginAccount(Account):
         Condition.not_none(instrument, "instrument")
         Condition.not_none(quantity, "quantity")
 
-        notional = instrument.notional_value(
-            quantity=quantity,
-            price=price,
-            use_quote_for_inverse=use_quote_for_inverse,
-        ).as_decimal()
-
         leverage = self._leverages.get(instrument.id, Decimal(0))
         if leverage == 0:
             leverage = self.default_leverage
             self._leverages[instrument.id] = leverage
 
-        adjusted_notional = notional / leverage
-        margin = adjusted_notional * instrument.margin_maint
-
-        if instrument.is_inverse and not use_quote_for_inverse:
-            return Money(margin, instrument.base_currency)
-        else:
-            return Money(margin, instrument.quote_currency)
+        return self._margin_model.calculate_margin_maint(
+            instrument=instrument,
+            side=side,
+            quantity=quantity,
+            price=price,
+            leverage=leverage,
+            use_quote_for_inverse=use_quote_for_inverse,
+        )
 
     cpdef list calculate_pnls(
         self,
