@@ -18,13 +18,13 @@ from decimal import Decimal
 
 import pandas as pd
 
-from nautilus_trader.accounting.margin_config import MarginModelFactory
 from nautilus_trader.backtest.config import BacktestDataConfig
 from nautilus_trader.backtest.config import BacktestRunConfig
 from nautilus_trader.backtest.config import BacktestVenueConfig
 from nautilus_trader.backtest.config import FeeModelFactory
 from nautilus_trader.backtest.config import FillModelFactory
 from nautilus_trader.backtest.config import LatencyModelFactory
+from nautilus_trader.backtest.config import MarginModelFactory
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FeeModel
@@ -786,4 +786,7 @@ def get_margin_model(config: BacktestVenueConfig):
     """
     Create a MarginModel from the venue configuration.
     """
+    if config.margin_model is None:
+        return None
+
     return MarginModelFactory.create(config.margin_model)

@@ -37,7 +37,7 @@ cdef class MarginModel:
         Instrument instrument,
         Quantity quantity,
         Price price,
-        object leverage,
+        leverage: Decimal,
         bint use_quote_for_inverse=False,
     ):
         """
@@ -69,7 +69,7 @@ cdef class MarginModel:
         PositionSide side,
         Quantity quantity,
         Price price,
-        object leverage,
+        leverage: Decimal,
         bint use_quote_for_inverse=False,
     ):
         """
@@ -116,10 +116,12 @@ cdef class StandardMarginModel(MarginModel):
         Instrument instrument,
         Quantity quantity,
         Price price,
-        object leverage,
+        leverage: Decimal,
         bint use_quote_for_inverse=False,
     ):
-        """Calculate initial margin using fixed percentage of notional value."""
+        """
+        Calculate initial margin using fixed percentage of notional value.
+        """
         Condition.not_none(instrument, "instrument")
         Condition.not_none(quantity, "quantity")
         Condition.not_none(price, "price")
@@ -143,10 +145,12 @@ cdef class StandardMarginModel(MarginModel):
         PositionSide side,
         Quantity quantity,
         Price price,
-        object leverage,
+        leverage: Decimal,
         bint use_quote_for_inverse=False,
     ):
-        """Calculate maintenance margin using fixed percentage of notional value."""
+        """
+        Calculate maintenance margin using fixed percentage of notional value.
+        """
         Condition.not_none(instrument, "instrument")
         Condition.not_none(quantity, "quantity")
 
@@ -182,13 +186,16 @@ cdef class LeveragedMarginModel(MarginModel):
         Instrument instrument,
         Quantity quantity,
         Price price,
-        object leverage,
+        leverage: Decimal,
         bint use_quote_for_inverse=False,
     ):
-        """Calculate initial margin with leverage division."""
+        """
+        Calculate initial margin with leverage division.
+        """
         Condition.not_none(instrument, "instrument")
         Condition.not_none(quantity, "quantity")
         Condition.not_none(price, "price")
+        Condition.positive(leverage, "leverage")
 
         notional = instrument.notional_value(
             quantity=quantity,
@@ -211,12 +218,15 @@ cdef class LeveragedMarginModel(MarginModel):
         PositionSide side,
         Quantity quantity,
         Price price,
-        object leverage,
+        leverage: Decimal,
         bint use_quote_for_inverse=False,
     ):
-        """Calculate maintenance margin with leverage division."""
+        """
+        Calculate maintenance margin with leverage division.
+        """
         Condition.not_none(instrument, "instrument")
         Condition.not_none(quantity, "quantity")
+        Condition.positive(leverage, "leverage")
 
         notional = instrument.notional_value(
             quantity=quantity,

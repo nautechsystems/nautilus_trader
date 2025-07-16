@@ -21,7 +21,6 @@ from typing import Any
 import msgspec
 import pandas as pd
 
-from nautilus_trader.accounting.margin_config import MarginModelConfig
 from nautilus_trader.common import Environment
 from nautilus_trader.common.config import ActorConfig
 from nautilus_trader.common.config import ImportableActorConfig
@@ -125,8 +124,7 @@ class BacktestVenueConfig(NautilusConfig, frozen=True):
     leverages : dict[str, float], optional
         The instrument specific leverage configuration (for margin accounts).
     margin_model : MarginModelConfig, optional
-        The margin calculation model configuration.
-        Default is MarginModelConfig(model_type='leveraged') for backward compatibility.
+        The margin calculation model configuration. Default 'leveraged'.
     book_type : str
         The default order book type.
     routing : bool, default False
@@ -175,7 +173,7 @@ class BacktestVenueConfig(NautilusConfig, frozen=True):
     base_currency: str | None = None
     default_leverage: float = 1.0
     leverages: dict[str, float] | None = None
-    margin_model: MarginModelConfig = MarginModelConfig()
+    margin_model: MarginModelConfig | None = None
     book_type: str = "L1_MBP"
     routing: bool = False
     frozen_account: bool = False
@@ -730,3 +728,73 @@ class FXRolloverInterestConfig(SimulationModuleConfig, frozen=True):
     """
 
     rate_data: pd.DataFrame  # TODO: This could probably just become JSON data
+
+
+class MarginModelConfig(NautilusConfig, frozen=True):
+    """
+    Configuration for margin calculation models.
+
+    Parameters
+    ----------
+    model_type : str, default 'leveraged'
+        The type of margin model to use. Options:
+        - "standard": Fixed percentages without leverage division (traditional brokers)
+        - "leveraged": Margin requirements reduced by leverage (current Nautilus behavior)
+        - Custom class path for custom models
+    config : dict, optional
+        Additional configuration parameters for custom models.
+
+    """
+
+    model_type: str = "leveraged"
+    config: dict = {}
+
+
+class MarginModelFactory:
+    """
+    Provides margin model creation from configurations.
+    """
+
+    @staticmethod
+    def create(config: MarginModelConfig):
+        """
+        Create a margin model from the given configuration.
+
+        Parameters
+        ----------
+        config : MarginModelConfig
+            The configuration for the margin model.
+
+        Returns
+        -------
+        MarginModel
+            The created margin model instance.
+
+        Raises
+        ------
+        ValueError
+            If the model type is unknown or invalid.
+
+        """
+        from nautilus_trader.accounting.margin_models import LeveragedMarginModel
+        from nautilus_trader.accounting.margin_models import StandardMarginModel
+
+        model_type = config.model_type.lower()
+
+        if model_type == "standard":
+            return StandardMarginModel()
+        elif model_type == "leveraged":
+            return LeveragedMarginModel()
+        else:
+            # Try to import custom model
+            try:
+                from nautilus_trader.common.config import resolve_path
+
+                model_cls = resolve_path(config.model_type)
+                return model_cls(config)
+            except Exception as e:
+                raise ValueError(
+                    f"Unknown `MarginModel` type '{config.model_type}'. "
+                    f"Supported types: 'standard', 'leveraged', "
+                    f"or a fully qualified class path. Error: {e}",
+                ) from e

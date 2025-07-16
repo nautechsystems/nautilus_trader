@@ -22,10 +22,10 @@
 # %%
 import pandas as pd
 
-from nautilus_trader.accounting.margin_config import MarginModelConfig
 from nautilus_trader.adapters.databento.data_utils import data_path
 from nautilus_trader.adapters.databento.data_utils import databento_data
 from nautilus_trader.adapters.databento.data_utils import load_catalog
+from nautilus_trader.backtest.config import MarginModelConfig
 from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import BacktestDataConfig

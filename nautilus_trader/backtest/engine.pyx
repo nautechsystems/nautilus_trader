@@ -39,6 +39,8 @@ from cpython.object cimport PyObject
 from libc.stdint cimport UINT64_MAX
 from libc.stdint cimport uint64_t
 
+from nautilus_trader.accounting.margin_models cimport LeveragedMarginModel
+from nautilus_trader.accounting.margin_models cimport MarginModel
 from nautilus_trader.backtest.data_client cimport BacktestDataClient
 from nautilus_trader.backtest.data_client cimport BacktestMarketDataClient
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
@@ -407,7 +409,7 @@ cdef class BacktestEngine:
         base_currency: Currency | None = None,
         default_leverage: Decimal | None = None,
         leverages: dict[InstrumentId, Decimal] | None = None,
-        margin_model = None,
+        margin_model: MarginModel = None,
         modules: list[SimulationModule] | None = None,
         fill_model: FillModel | None = None,
         fee_model: FeeModel | None = None,
@@ -498,6 +500,9 @@ cdef class BacktestEngine:
         """
         if modules is None:
             modules = []
+
+        if margin_model is None:
+            margin_model = LeveragedMarginModel()
 
         if fill_model is None:
             fill_model = FillModel()
