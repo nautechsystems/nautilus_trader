@@ -809,12 +809,14 @@ cdef class BacktestEngine:
         self._data_iterator.init_data(subscription_name, self._subscription_generator(subscription_name), append_data)
 
     def _subscription_generator(self, str subscription_name):
-        # Create a generator for subscription data
         iteration_index = 0
         durations_seconds = self._data_requests[subscription_name].params.get("durations_seconds", [None])
         durations_ns = [duration_seconds * 1e9 if duration_seconds else None for duration_seconds in durations_seconds]
 
         while True:
+            # Clear response data from previous iteration
+            self._response_data = []
+
             # Possibility to use durations of various lengths to take into account weekends or market breaks
             for duration_ns in durations_ns:
                 self._update_subscription_data(subscription_name, duration_ns)
@@ -826,6 +828,8 @@ cdef class BacktestEngine:
                 # First iteration for [a, a + duration], then ]a + duration, a + 2 * duration]
                 durations_ns = [duration_ns - 1 if duration_ns else None
                                 for duration_ns in durations_ns]
+
+            iteration_index += 1
 
             if self._response_data:
                 yield self._response_data
@@ -1731,20 +1735,53 @@ cdef class BacktestEngine:
 
 cdef class BacktestDataIterator:
     """
-    Time-ordered multiplexer for historical ``Data`` streams.
+    Time-ordered multiplexer for historical ``Data`` streams in backtesting.
 
-    The iterator holds any number of *pre-sorted* lists of ``Data`` objects –
-    each object must expose a ``ts_init`` nanosecond timestamp.  It yields those
-    objects back in strict chronological order:
+    The iterator efficiently manages multiple data streams and yields ``Data`` objects
+    in strict chronological order based on their ``ts_init`` timestamps. It supports
+    both static data lists and dynamic data generators for streaming large datasets.
 
-    - If exactly one stream is loaded, a fast array walk is used.
-    - With two or more streams, a binary min-heap performs a k-way merge.
+    **Architecture:**
+
+    - **Single-stream optimization**: When exactly one stream is loaded, uses a fast
+      array walk for optimal performance.
+    - **Multi-stream merging**: With two or more streams, employs a binary min-heap
+      to perform efficient k-way merge sorting.
+    - **Dynamic streaming**: Supports Python generators that yield data chunks on-demand,
+      enabling processing of datasets larger than available memory.
+
+    **Stream Priority:**
+
+    Streams can be assigned different priorities using the ``append_data`` parameter:
+
+    - ``append_data=True`` (default): Lower priority, processed after existing streams
+    - ``append_data=False``: Higher priority, processed before existing streams
+
+    When multiple data points have identical timestamps, higher priority streams
+    are yielded first.
+
+    **Performance Characteristics:**
+
+    - **Memory efficient**: Dynamic generators load data incrementally
+    - **Time complexity**: O(log n) per item for n streams (heap operations)
+    - **Space complexity**: O(k) where k is the total number of active data points
+      across all streams at any given time
 
     Parameters
     ----------
     empty_data_callback : Callable[[str, int], None], optional
-        Called once per stream when it is exhausted.  Arguments are the stream
-        name and the final ``ts_init`` observed.
+        Called once per stream when it is exhausted. Arguments are the stream
+        name and the final ``ts_init`` timestamp observed.
+
+    Notes
+    -----
+    All data within each stream must be pre-sorted by ``ts_init`` in ascending order.
+    The iterator assumes this invariant and does not perform additional sorting.
+
+    See Also
+    --------
+    BacktestEngine.add_data : Add static data to the backtest engine
+    BacktestEngine.add_data_iterator : Add streaming data generators
 
     """
     def __init__(self) -> None:
@@ -1773,7 +1810,10 @@ cdef class BacktestDataIterator:
 
     def add_data(self, data_name, list data, bint append_data=True):
         """
-        Add (or replace) a named, pre-sorted `data_list`.
+        Add (or replace) a named, pre-sorted data list for static data loading.
+
+        If a stream with the same ``data_name`` already exists, it will be replaced
+        with the new data.
 
         Parameters
         ----------
@@ -1782,6 +1822,7 @@ cdef class BacktestDataIterator:
         data : list[Data]
             Data instances sorted ascending by `ts_init`.
         append_data : bool, default ``True``
+            Controls stream priority for timestamp ties:
             ``True`` – lower priority (appended).
             ``False`` – higher priority (prepended).
 
@@ -1791,6 +1832,8 @@ cdef class BacktestDataIterator:
             If `data_name` is not a valid string.
 
         """
+        Condition.valid_string(data_name, "data_name")
+
         if not data:
             return
 
@@ -1802,7 +1845,16 @@ cdef class BacktestDataIterator:
 
     def init_data(self, data_name, data_generator, bint append_data=True):
         """
-        Add (or replace) a named data generator.
+        Add (or replace) a named data generator for streaming large datasets.
+
+        This method enables memory-efficient processing of large datasets by using
+        Python generators that yield data chunks on-demand. The generator is called
+        incrementally as data is consumed, allowing datasets larger than available
+        memory to be processed.
+
+        The generator should yield lists of ``Data`` objects, where each list represents
+        a chunk of data. When a chunk is exhausted, the iterator automatically calls
+        ``next()`` on the generator to fetch the next chunk.
 
         Parameters
         ----------
@@ -1811,6 +1863,7 @@ cdef class BacktestDataIterator:
         data_generator : Generator[list[Data], None, None]
             A Python generator that yields lists of ``Data`` instances sorted ascending by `ts_init`.
         append_data : bool, default ``True``
+            Controls stream priority for timestamp ties:
             ``True`` – lower priority (appended).
             ``False`` – higher priority (prepended).
 
@@ -1820,6 +1873,8 @@ cdef class BacktestDataIterator:
             If `data_name` is not a valid string.
 
         """
+        Condition.valid_string(data_name, "data_name")
+
         try:
             data_list = next(data_generator)
 
@@ -1864,7 +1919,19 @@ cdef class BacktestDataIterator:
 
     cpdef void remove_data(self, str data_name, bint complete_remove=False):
         """
-        Remove the stream identified by `data_name` (silently ignored if absent).
+        Remove the data stream identified by ``data_name``. The operation is silently
+        ignored if the specified stream does not exist.
+
+        Parameters
+        ----------
+        data_name : str
+            The unique identifier of the data stream to remove.
+        complete_remove : bool, default False
+            Controls the level of cleanup performed:
+            - ``False``: Remove stream data but preserve generator function for potential
+              re-initialization (useful for temporary stream removal)
+            - ``True``: Complete removal including any associated generator function
+              (recommended for permanent stream removal)
 
         Raises
         ------
@@ -1922,7 +1989,32 @@ cdef class BacktestDataIterator:
 
     cpdef Data next(self):
         """
-        Return the next ``Data`` object, or ``None`` when all streams are exhausted.
+        Return the next ``Data`` object in chronological order.
+
+        This method implements the core iteration logic, yielding data points from
+        all streams in strict chronological order based on ``ts_init`` timestamps.
+        When multiple data points have identical timestamps, stream priority
+        determines the order.
+
+        The method automatically handles:
+        - Single-stream optimization for performance
+        - Multi-stream heap-based merging
+        - Dynamic data loading from generators
+        - Stream exhaustion and cleanup
+
+        Returns
+        -------
+        Data or None
+            The next ``Data`` object in chronological order, or ``None`` when
+            all streams are exhausted.
+
+        Notes
+        -----
+        - Returns ``None`` when all streams are exhausted
+        - Automatically triggers generator calls for streaming data
+        - Performance is optimized for single-stream scenarios
+        - Thread-safe only when called from a single thread
+
         """
         cdef:
             uint64_t ts_init
