@@ -99,7 +99,7 @@ async fn echo_server() -> Result<(), Box<dyn std::error::Error>> {
 
     loop {
         if let Ok((mut stream, _)) = listener.accept().await {
-            tokio::spawn(async move {
+            nautilus_common::logging::spawn_task_with_logging(async move {
                 let mut buffer = vec![0; 1024];
 
                 while let Ok(n) = stream.read(&mut buffer).await {

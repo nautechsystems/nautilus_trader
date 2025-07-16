@@ -36,7 +36,7 @@ pub async fn start_positive_stream_http_server()
         .unwrap();
     let addr = listener.local_addr().unwrap();
 
-    tokio::spawn(async move {
+    nautilus_common::logging::spawn_task_with_logging(async move {
         serve(listener, create_positive_stream_router())
             .await
             .unwrap();

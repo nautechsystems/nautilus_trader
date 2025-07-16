@@ -4987,6 +4987,7 @@ dependencies = [
  "flate2",
  "futures-util",
  "heck",
+ "nautilus-common",
  "nautilus-core",
  "nautilus-model",
  "nautilus-serialization",

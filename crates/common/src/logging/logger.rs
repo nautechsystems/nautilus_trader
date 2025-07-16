@@ -47,6 +47,168 @@ const LOGGING: &str = "logging";
 /// Global log sender which allows multiple log guards per process.
 static LOGGER_TX: OnceLock<std::sync::mpsc::Sender<LogEvent>> = OnceLock::new();
 
+/// Returns a cloned sender for the global logger if it has been initialized.
+///
+/// This function allows parallel threads to send log events to the main logger
+/// by cloning the sender end of the MPSC channel. The sender is thread-safe
+/// and can be shared across multiple threads.
+///
+/// # Returns
+///
+/// `Some(Sender<LogEvent>)` if the logger has been initialized, `None` otherwise.
+///
+/// # Examples
+///
+/// ```rust
+/// use std::thread;
+/// use nautilus_common::logging::logger::get_logger_sender;
+/// use nautilus_common::logging::{log_info, LogEvent};
+///
+/// // In a parallel thread
+/// if let Some(sender) = get_logger_sender() {
+///     thread::spawn(move || {
+///         // Use standard log macros - they will automatically use the global logger
+///         log::info!("Message from parallel thread");
+///
+///         // Or send events directly if needed
+///         // let _ = sender.send(LogEvent::Log(log_line));
+///     });
+/// }
+/// ```
+#[must_use]
+pub fn get_logger_sender() -> Option<std::sync::mpsc::Sender<LogEvent>> {
+    LOGGER_TX.get().cloned()
+}
+
+/// Initializes logging for a parallel thread by ensuring the global logger is available.
+///
+/// This function checks if the global logger has been initialized and returns whether
+/// logging is available for the current thread. Since the Rust `log` crate uses a
+/// global logger, threads automatically inherit the logging configuration.
+///
+/// # Returns
+///
+/// `true` if logging is available, `false` otherwise.
+///
+/// # Examples
+///
+/// ```rust
+/// use std::thread;
+/// use nautilus_common::logging::logger::init_thread_logging;
+///
+/// thread::spawn(|| {
+///     if init_thread_logging() {
+///         log::info!("Logging is available in this thread");
+///     } else {
+///         eprintln!("Logging not initialized");
+///     }
+/// });
+/// ```
+#[must_use]
+pub fn init_thread_logging() -> bool {
+    LOGGER_TX.get().is_some()
+}
+
+/// Spawns a thread with logging automatically initialized.
+///
+/// This is a convenience wrapper around `std::thread::spawn` that ensures
+/// the spawned thread can use the global logger. If logging hasn't been
+/// initialized, the thread will still spawn but logging calls will be no-ops.
+///
+/// # Examples
+///
+/// ```rust
+/// use nautilus_common::logging::logger::spawn_with_logging;
+///
+/// let handle = spawn_with_logging(|| {
+///     log::info!("This message will be logged from the spawned thread");
+///     42
+/// });
+///
+/// let result = handle.join().unwrap();
+/// assert_eq!(result, 42);
+/// ```
+pub fn spawn_with_logging<F, T>(f: F) -> std::thread::JoinHandle<T>
+where
+    F: FnOnce() -> T + Send + 'static,
+    T: Send + 'static,
+{
+    std::thread::spawn(move || {
+        // Check if logging is available and log a debug message if so
+        if init_thread_logging() {
+            log::debug!("Thread spawned with logging enabled");
+        }
+        f()
+    })
+}
+
+/// Spawns a tokio task with logging automatically initialized.
+///
+/// This is a convenience wrapper around `tokio::spawn` that ensures
+/// the spawned task can use the global logger. Since tokio tasks run
+/// on the same process, they automatically inherit the global logger.
+///
+/// # Examples
+///
+/// ```rust
+/// use nautilus_common::logging::logger::spawn_task_with_logging;
+///
+/// let handle = spawn_task_with_logging(async {
+///     log::info!("This message will be logged from the spawned task");
+///     42
+/// });
+///
+/// let result = handle.await.unwrap();
+/// assert_eq!(result, 42);
+/// ```
+pub fn spawn_task_with_logging<F>(future: F) -> tokio::task::JoinHandle<F::Output>
+where
+    F: std::future::Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    tokio::spawn(async move {
+        // Check if logging is available and log a debug message if so
+        if init_thread_logging() {
+            log::debug!("Tokio task spawned with logging enabled");
+        }
+        future.await
+    })
+}
+
+/// Spawns a tokio task on the global Nautilus runtime with logging automatically initialized.
+///
+/// This is a convenience wrapper around `get_runtime().spawn` that ensures
+/// the spawned task runs on the specific Nautilus runtime and can use the global logger.
+/// Use this when you need to ensure the task runs on the configured Nautilus runtime
+/// rather than the current runtime context.
+///
+/// # Examples
+///
+/// ```rust
+/// use nautilus_common::logging::logger::spawn_task_on_runtime_with_logging;
+///
+/// let handle = spawn_task_on_runtime_with_logging(async {
+///     log::info!("This message will be logged from the spawned task on Nautilus runtime");
+///     42
+/// });
+///
+/// let result = handle.await.unwrap();
+/// assert_eq!(result, 42);
+/// ```
+pub fn spawn_task_on_runtime_with_logging<F>(future: F) -> tokio::task::JoinHandle<F::Output>
+where
+    F: std::future::Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    crate::runtime::get_runtime().spawn(async move {
+        // Check if logging is available and log a debug message if so
+        if init_thread_logging() {
+            log::debug!("Tokio task spawned on Nautilus runtime with logging enabled");
+        }
+        future.await
+    })
+}
+
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
@@ -648,6 +810,66 @@ mod tests {
                 print_config: true,
             }
         );
+    }
+
+    #[rstest]
+    fn test_spawn_with_logging() {
+        let config = LoggerConfig::default();
+        let file_config = FileWriterConfig::default();
+
+        let _log_guard = Logger::init_with_config(
+            TraderId::from("TRADER-001"),
+            UUID4::new(),
+            config,
+            file_config,
+        );
+
+        // Test that spawn_with_logging works
+        let handle = super::spawn_with_logging(|| {
+            log::info!("Message from spawned thread");
+            42
+        });
+
+        let result = handle.join().unwrap();
+        assert_eq!(result, 42);
+    }
+
+    #[rstest]
+    fn test_get_logger_sender() {
+        // Before initialization, sender should be None
+        assert!(super::get_logger_sender().is_none());
+
+        let config = LoggerConfig::default();
+        let file_config = FileWriterConfig::default();
+
+        let _log_guard = Logger::init_with_config(
+            TraderId::from("TRADER-001"),
+            UUID4::new(),
+            config,
+            file_config,
+        );
+
+        // After initialization, sender should be available
+        assert!(super::get_logger_sender().is_some());
+    }
+
+    #[rstest]
+    fn test_init_thread_logging() {
+        // Before initialization, should return false
+        assert!(!super::init_thread_logging());
+
+        let config = LoggerConfig::default();
+        let file_config = FileWriterConfig::default();
+
+        let _log_guard = Logger::init_with_config(
+            TraderId::from("TRADER-001"),
+            UUID4::new(),
+            config,
+            file_config,
+        );
+
+        // After initialization, should return true
+        assert!(super::init_thread_logging());
     }
 
     #[rstest]

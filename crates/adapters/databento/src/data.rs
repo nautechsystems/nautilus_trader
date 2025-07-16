@@ -235,7 +235,7 @@ impl DatabentoDataClient {
         let cancellation_token = self.cancellation_token.clone();
 
         // Spawn the feed handler task with cancellation support
-        let feed_handle = tokio::spawn(async move {
+        let feed_handle = nautilus_common::logging::spawn_task_with_logging(async move {
             tokio::select! {
                 result = feed_handler.run() => {
                     if let Err(e) = result {
@@ -252,7 +252,7 @@ impl DatabentoDataClient {
         let data_sender = self.data_sender.clone();
 
         // Spawn message processing task with cancellation support
-        let msg_handle = tokio::spawn(async move {
+        let msg_handle = nautilus_common::logging::spawn_task_with_logging(async move {
             let mut msg_rx = msg_rx;
             loop {
                 tokio::select! {
@@ -611,7 +611,7 @@ impl DataClient for DatabentoDataClient {
         let historical_client = self.historical.clone();
         let request = request.clone();
 
-        tokio::spawn(async move {
+        nautilus_common::logging::spawn_task_with_logging(async move {
             // Convert request to historical query parameters
             // For now, use a default symbol set or derive from venue
             let symbols = vec!["ALL_SYMBOLS".to_string()]; // TODO: Improve symbol handling
@@ -651,7 +651,7 @@ impl DataClient for DatabentoDataClient {
         let historical_client = self.historical.clone();
         let request = request.clone();
 
-        tokio::spawn(async move {
+        nautilus_common::logging::spawn_task_with_logging(async move {
             let symbols = vec![instrument_id_to_symbol_string(
                 request.instrument_id,
                 &mut AHashMap::new(), // TODO: Use proper symbol map
@@ -692,7 +692,7 @@ impl DataClient for DatabentoDataClient {
         let historical_client = self.historical.clone();
         let request = request.clone();
 
-        tokio::spawn(async move {
+        nautilus_common::logging::spawn_task_with_logging(async move {
             let symbols = vec![instrument_id_to_symbol_string(
                 request.instrument_id,
                 &mut AHashMap::new(), // TODO: Use proper symbol map
@@ -733,7 +733,7 @@ impl DataClient for DatabentoDataClient {
         let historical_client = self.historical.clone();
         let request = request.clone();
 
-        tokio::spawn(async move {
+        nautilus_common::logging::spawn_task_with_logging(async move {
             let symbols = vec![instrument_id_to_symbol_string(
                 request.bar_type.instrument_id(),
                 &mut AHashMap::new(), // TODO: Use proper symbol map

@@ -192,7 +192,7 @@ impl BlockchainDataClient {
         let mut rpc_client = self.rpc_client.take();
         let data_sender = self.data_sender.clone();
 
-        let handle = tokio::spawn(async move {
+        let handle = nautilus_common::logging::spawn_task_with_logging(async move {
             tracing::debug!("Started task 'process'");
 
             let mut command_rx = command_rx;

@@ -214,7 +214,7 @@ impl HyperSyncClient {
         let client = self.client.clone();
         let tx = self.tx.clone();
 
-        let task = tokio::spawn(async move {
+        let task = nautilus_common::logging::spawn_task_with_logging(async move {
             tracing::debug!("Starting task 'blocks_feed");
 
             let current_block_height = client.get_height().await.unwrap();

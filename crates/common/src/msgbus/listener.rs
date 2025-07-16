@@ -130,7 +130,7 @@ mod tests {
         let (notify_tx, mut notify_rx) = mpsc::channel::<()>(1);
 
         // Spawn a task to process messages
-        let handle = tokio::spawn(async move {
+        let handle = crate::logging::spawn_task_with_logging(async move {
             let stream = MessageBusListener::stream(rx);
             futures::pin_mut!(stream);
             let msg = stream.next().await.expect("No message received");
@@ -169,7 +169,7 @@ mod tests {
         let payloads_clone = payloads.clone();
 
         // Spawn a task to collect messages
-        let handle = tokio::spawn(async move {
+        let handle = crate::logging::spawn_task_with_logging(async move {
             let stream = MessageBusListener::stream(rx);
             futures::pin_mut!(stream);
 

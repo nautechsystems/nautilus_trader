@@ -356,7 +356,7 @@ impl WebSocketClientInner {
 
         let check_interval = Duration::from_millis(10);
 
-        tokio::task::spawn(async move {
+        nautilus_common::logging::spawn_task_with_logging(async move {
             loop {
                 if !ConnectionMode::from_atomic(&connection_state).is_active() {
                     break;
@@ -397,7 +397,7 @@ impl WebSocketClientInner {
         // Interval between checking the connection mode
         let check_interval = Duration::from_millis(10);
 
-        tokio::task::spawn(async move {
+        nautilus_common::logging::spawn_task_with_logging(async move {
             loop {
                 if !ConnectionMode::from_atomic(&connection_state).is_active() {
                     break;
@@ -472,7 +472,7 @@ impl WebSocketClientInner {
         // Interval between checking the connection mode
         let check_interval = Duration::from_millis(10);
 
-        tokio::task::spawn(async move {
+        nautilus_common::logging::spawn_task_with_logging(async move {
             let mut active_writer = writer;
 
             loop {
@@ -552,7 +552,7 @@ impl WebSocketClientInner {
     ) -> tokio::task::JoinHandle<()> {
         log_task_started("heartbeat");
 
-        tokio::task::spawn(async move {
+        nautilus_common::logging::spawn_task_with_logging(async move {
             let interval = Duration::from_secs(heartbeat_secs);
 
             loop {
@@ -878,7 +878,7 @@ impl WebSocketClient {
         #[cfg(feature = "python")] py_post_reconnection: Option<PyObject>, // TODO: Deprecated
         #[cfg(feature = "python")] py_post_disconnection: Option<PyObject>, // TODO: Deprecated
     ) -> tokio::task::JoinHandle<()> {
-        tokio::task::spawn(async move {
+        nautilus_common::logging::spawn_task_with_logging(async move {
             log_task_started("controller");
 
             let check_interval = Duration::from_millis(10);
@@ -1000,10 +1000,7 @@ mod tests {
     use std::{num::NonZeroU32, sync::Arc};
 
     use futures_util::{SinkExt, StreamExt};
-    use tokio::{
-        net::TcpListener,
-        task::{self, JoinHandle},
-    };
+    use tokio::{net::TcpListener, task::JoinHandle};
     use tokio_tungstenite::{
         accept_hdr_async,
         tungstenite::{
@@ -1059,7 +1056,7 @@ mod tests {
                 value: HeaderValue::from_str(&header_value).unwrap(),
             };
 
-            let task = task::spawn(async move {
+            let task = nautilus_common::logging::spawn_task_with_logging(async move {
                 // Keep accepting connections
                 loop {
                     let (conn, _) = server.accept().await.unwrap();
@@ -1067,7 +1064,7 @@ mod tests {
                         .await
                         .unwrap();
 
-                    task::spawn(async move {
+                    nautilus_common::logging::spawn_task_with_logging(async move {
                         while let Some(Ok(msg)) = websocket.next().await {
                             match msg {
                                 tokio_tungstenite::tungstenite::protocol::Message::Text(txt)
@@ -1244,9 +1241,11 @@ mod tests {
         let mut handles = vec![];
         for i in 0..10 {
             let client = client.clone();
-            handles.push(task::spawn(async move {
-                client.send_text(format!("test{i}"), None).await.unwrap();
-            }));
+            handles.push(nautilus_common::logging::spawn_task_with_logging(
+                async move {
+                    client.send_text(format!("test{i}"), None).await.unwrap();
+                },
+            ));
         }
 
         for handle in handles {
@@ -1263,7 +1262,6 @@ mod tests {
 mod rust_tests {
     use tokio::{
         net::TcpListener,
-        task,
         time::{Duration, sleep},
     };
     use tokio_tungstenite::accept_async;
@@ -1277,7 +1275,7 @@ mod rust_tests {
         let port = listener.local_addr().unwrap().port();
 
         // Server task: accept one ws connection then close it
-        let server = task::spawn(async move {
+        let server = nautilus_common::logging::spawn_task_with_logging(async move {
             let (stream, _) = listener.accept().await.unwrap();
             let ws = accept_async(stream).await.unwrap();
             drop(ws);

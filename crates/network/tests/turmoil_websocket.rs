@@ -92,7 +92,7 @@ async fn ws_echo_server() -> Result<(), Box<dyn std::error::Error>> {
     loop {
         let (stream, _) = listener.accept().await?;
 
-        tokio::spawn(async move {
+        nautilus_common::logging::spawn_task_with_logging(async move {
             if let Ok(ws_stream) = accept_async(stream).await {
                 let (mut ws_sender, mut ws_receiver) = ws_stream.split();
 

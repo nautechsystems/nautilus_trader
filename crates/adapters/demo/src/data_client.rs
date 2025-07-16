@@ -110,7 +110,7 @@ impl MockDataClient {
         let http_client = self.http_client.clone();
         let http_tx = self.http_tx.clone();
         let http_address = self.http_address;
-        runtime::get_runtime().spawn(async move {
+        nautilus_common::logging::spawn_task_on_runtime_with_logging(async move {
             let response = http_client
                 .request(
                     Method::GET,
@@ -149,7 +149,7 @@ impl MockDataClient {
         let http_client = self.http_client.clone();
         let http_tx = self.http_tx.clone();
         let http_address = self.http_address;
-        runtime::get_runtime().spawn(async move {
+        nautilus_common::logging::spawn_task_on_runtime_with_logging(async move {
             let response = http_client
                 .request(
                     Method::GET,
@@ -205,7 +205,7 @@ impl DataClient for MockDataClient {
     fn subscribe(&mut self, _cmd: &SubscribeCustomData) -> anyhow::Result<()> {
         println!("Received subscribe command");
         let websocket_client = self.websocket_client.clone();
-        runtime::get_runtime().spawn(async move {
+        nautilus_common::logging::spawn_task_on_runtime_with_logging(async move {
             if let Err(err) = websocket_client.send_text("SKIP".to_string(), None).await {
                 tracing::error!("Error sending SKIP message: {err:?}");
             }
@@ -216,7 +216,7 @@ impl DataClient for MockDataClient {
     fn unsubscribe(&mut self, _cmd: &UnsubscribeCustomData) -> anyhow::Result<()> {
         println!("Received unsubscribe command");
         let websocket_client = self.websocket_client.clone();
-        runtime::get_runtime().spawn(async move {
+        nautilus_common::logging::spawn_task_on_runtime_with_logging(async move {
             if let Err(err) = websocket_client.send_text("STOP".to_string(), None).await {
                 tracing::error!("Error sending STOP message: {err:?}");
             }

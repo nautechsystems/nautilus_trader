@@ -490,6 +490,10 @@ impl LiveTimer {
 
         let rt = get_runtime();
         let handle = rt.spawn(async move {
+            // Initialize logging for this task
+            if crate::logging::init_thread_logging() {
+                log::debug!("Timer task started with logging enabled");
+            }
             let clock = get_atomic_clock_realtime();
 
             // 1-millisecond delay to account for the overhead of initializing a tokio timer

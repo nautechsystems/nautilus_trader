@@ -24,7 +24,7 @@ use std::{
 
 use chrono::Utc;
 use futures_util::{Stream, StreamExt};
-use nautilus_common::{logging::log_task_stopped, runtime::get_runtime};
+use nautilus_common::logging::log_task_stopped;
 use nautilus_core::{
     consts::NAUTILUS_USER_AGENT, env::get_env_var, time::get_atomic_clock_realtime,
 };
@@ -161,7 +161,9 @@ impl CoinbaseIntxWebSocketClient {
         let client = self.clone();
         let post_reconnect = Arc::new(move || {
             let client = client.clone();
-            tokio::spawn(async move { client.resubscribe_all().await });
+            nautilus_common::logging::spawn_task_on_runtime_with_logging(async move {
+                client.resubscribe_all().await
+            });
         });
 
         let config = WebSocketConfig {
@@ -198,11 +200,12 @@ impl CoinbaseIntxWebSocketClient {
         self.rx = Some(Arc::new(rx));
         let signal = self.signal.clone();
 
-        let stream_handle = get_runtime().spawn(async move {
-            CoinbaseIntxWsMessageHandler::new(instruments_map, reader, signal, tx)
-                .run()
-                .await;
-        });
+        let stream_handle =
+            nautilus_common::logging::spawn_task_on_runtime_with_logging(async move {
+                CoinbaseIntxWsMessageHandler::new(instruments_map, reader, signal, tx)
+                    .run()
+                    .await;
+            });
 
         self.task_handle = Some(Arc::new(stream_handle));
 

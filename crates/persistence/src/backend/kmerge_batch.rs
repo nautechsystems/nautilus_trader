@@ -38,7 +38,7 @@ impl<T> EagerStream<T> {
     {
         let _guard = runtime.enter();
         let (tx, rx) = mpsc::channel(1);
-        let task = tokio::spawn(async move {
+        let task = nautilus_common::logging::spawn_task_with_logging(async move {
             stream
                 .for_each(|item| async {
                     let _ = tx.send(item).await;

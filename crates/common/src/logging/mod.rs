@@ -28,6 +28,10 @@ use std::{
 };
 
 use log::LevelFilter;
+pub use logger::{
+    LoggerConfig, get_logger_sender, init_thread_logging, spawn_task_on_runtime_with_logging,
+    spawn_task_with_logging, spawn_with_logging,
+};
 // Re-exports
 pub use macros::{log_debug, log_error, log_info, log_trace, log_warn};
 use nautilus_core::{UUID4, time::get_atomic_clock_static};
@@ -36,7 +40,7 @@ use tracing_subscriber::EnvFilter;
 use ustr::Ustr;
 
 use self::{
-    logger::{LogGuard, Logger, LoggerConfig},
+    logger::{LogGuard, Logger},
     writer::FileWriterConfig,
 };
 use crate::enums::LogLevel;

@@ -292,7 +292,7 @@ mod tests {
     use pyo3::{prelude::*, prepare_freethreaded_python};
     use tokio::{
         net::TcpListener,
-        task::{self, JoinHandle},
+        task::JoinHandle,
         time::{Duration, sleep},
     };
     use tokio_tungstenite::{
@@ -346,7 +346,7 @@ mod tests {
             };
 
             // Set up test server
-            let task = task::spawn(async move {
+            let task = nautilus_common::logging::spawn_task_with_logging(async move {
                 // Keep accepting connections
                 loop {
                     let (conn, _) = server.accept().await.unwrap();
@@ -354,7 +354,7 @@ mod tests {
                         .await
                         .unwrap();
 
-                    task::spawn(async move {
+                    nautilus_common::logging::spawn_task_with_logging(async move {
                         while let Some(Ok(msg)) = websocket.next().await {
                             match msg {
                                 tokio_tungstenite::tungstenite::protocol::Message::Text(txt)

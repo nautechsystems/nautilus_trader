@@ -141,6 +141,29 @@ pub fn py_logger_flush() {
     log::logger().flush()
 }
 
+/// Returns whether the global logger sender is available for parallel threads.
+///
+/// This function allows Python code to check if logging has been initialized
+/// and is available for use in parallel threads or processes.
+#[pyfunction()]
+#[pyo3(name = "logger_is_available")]
+pub fn py_logger_is_available() -> bool {
+    logging::get_logger_sender().is_some()
+}
+
+/// Initializes logging for the current thread.
+///
+/// This function ensures that the current thread can use the global logger.
+/// Since the Rust `log` crate uses a global logger, threads automatically
+/// inherit the logging configuration once the main logger is initialized.
+///
+/// Returns `True` if logging is available, `False` otherwise.
+#[pyfunction()]
+#[pyo3(name = "init_thread_logging")]
+pub fn py_init_thread_logging() -> bool {
+    logging::init_thread_logging()
+}
+
 fn parse_component_levels(
     original_map: Option<HashMap<String, String>>,
 ) -> HashMap<Ustr, LevelFilter> {

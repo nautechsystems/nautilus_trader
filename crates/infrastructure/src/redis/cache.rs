@@ -181,7 +181,7 @@ impl RedisCacheDatabase {
         let trader_key = get_trader_key(trader_id, instance_id, &config);
         let trader_key_clone = trader_key.clone();
         let encoding = config.encoding;
-        let handle = get_runtime().spawn(async move {
+        let handle = nautilus_common::logging::spawn_task_on_runtime_with_logging(async move {
             if let Err(e) = process_commands(rx, trader_key_clone, config.clone()).await {
                 log::error!("Error in task '{CACHE_PROCESS}': {e}");
             }

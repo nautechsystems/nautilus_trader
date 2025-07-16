@@ -335,67 +335,76 @@ impl CoinbaseIntxFixClient {
         let heartbeat_secs = self.heartbeat_secs;
         let client_clone = self.clone();
 
-        self.processing_task = Some(Arc::new(tokio::spawn(async move {
-            log_task_started("maintain-fix-connection");
+        self.processing_task = Some(Arc::new(nautilus_common::logging::spawn_task_with_logging(
+            async move {
+                log_task_started("maintain-fix-connection");
 
-            let mut last_logon_attempt = std::time::Instant::now()
-                .checked_sub(Duration::from_secs(10))
-                .unwrap();
+                let mut last_logon_attempt = std::time::Instant::now()
+                    .checked_sub(Duration::from_secs(10))
+                    .unwrap();
 
-            loop {
-                tokio::time::sleep(Duration::from_millis(100)).await;
+                loop {
+                    tokio::time::sleep(Duration::from_millis(100)).await;
 
-                // Check if connected but not logged on
-                if connected_clone.load(Ordering::SeqCst) && !logged_on_clone.load(Ordering::SeqCst)
-                {
-                    // Rate limit logon attempts
-                    if last_logon_attempt.elapsed() > Duration::from_secs(10) {
-                        tracing::info!("Connected without logon");
-                        last_logon_attempt = std::time::Instant::now();
+                    // Check if connected but not logged on
+                    if connected_clone.load(Ordering::SeqCst)
+                        && !logged_on_clone.load(Ordering::SeqCst)
+                    {
+                        // Rate limit logon attempts
+                        if last_logon_attempt.elapsed() > Duration::from_secs(10) {
+                            tracing::info!("Connected without logon");
+                            last_logon_attempt = std::time::Instant::now();
 
-                        if let Err(e) = client_clone.send_logon().await {
-                            tracing::error!("Failed to send logon: {e}");
+                            if let Err(e) = client_clone.send_logon().await {
+                                tracing::error!("Failed to send logon: {e}");
+                            }
                         }
                     }
                 }
-            }
-        })));
+            },
+        )));
 
         let logged_on_clone = self.logged_on.clone();
         let sender_comp_id = self.sender_comp_id.clone();
         let target_comp_id = self.target_comp_id.clone();
 
-        self.heartbeat_task = Some(Arc::new(tokio::spawn(async move {
-            log_task_started("heartbeat");
-            tracing::debug!("Heartbeat at {heartbeat_secs}s intervals");
+        self.heartbeat_task = Some(Arc::new(nautilus_common::logging::spawn_task_with_logging(
+            async move {
+                log_task_started("heartbeat");
+                tracing::debug!("Heartbeat at {heartbeat_secs}s intervals");
 
-            let interval = Duration::from_secs(heartbeat_secs);
+                let interval = Duration::from_secs(heartbeat_secs);
 
-            loop {
-                if logged_on_clone.load(Ordering::SeqCst) {
-                    // Create new heartbeat message
-                    let seq = seq_num.fetch_add(1, Ordering::SeqCst) + 1;
-                    let now = chrono::Utc::now();
-                    let msg =
-                        FixMessage::create_heartbeat(seq, &sender_comp_id, &target_comp_id, &now);
+                loop {
+                    if logged_on_clone.load(Ordering::SeqCst) {
+                        // Create new heartbeat message
+                        let seq = seq_num.fetch_add(1, Ordering::SeqCst) + 1;
+                        let now = chrono::Utc::now();
+                        let msg = FixMessage::create_heartbeat(
+                            seq,
+                            &sender_comp_id,
+                            &target_comp_id,
+                            &now,
+                        );
 
-                    if let Err(e) = writer_tx.send(WriterCommand::Send(msg.to_bytes().into())) {
-                        tracing::error!("Failed to send heartbeat: {e}");
+                        if let Err(e) = writer_tx.send(WriterCommand::Send(msg.to_bytes().into())) {
+                            tracing::error!("Failed to send heartbeat: {e}");
+                            break;
+                        }
+
+                        tracing::trace!("Sent heartbeat");
+                    } else {
+                        // No longer logged on
+                        tracing::debug!("No longer logged on, stopping heartbeat task");
                         break;
                     }
 
-                    tracing::trace!("Sent heartbeat");
-                } else {
-                    // No longer logged on
-                    tracing::debug!("No longer logged on, stopping heartbeat task");
-                    break;
+                    tokio::time::sleep(interval).await;
                 }
 
-                tokio::time::sleep(interval).await;
-            }
-
-            log_task_stopped("heartbeat");
-        })));
+                log_task_stopped("heartbeat");
+            },
+        )));
 
         Ok(())
     }

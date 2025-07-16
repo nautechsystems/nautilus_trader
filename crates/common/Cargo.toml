@@ -100,3 +100,7 @@ harness = false
 name = "cache_query_sets"
 path = "benches/cache/query_sets.rs"
 harness = false
+
+[[example]]
+name = "parallel_logging_example"
+path = "../../examples/rust/parallel_logging_example.rs"

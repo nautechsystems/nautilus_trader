@@ -35,7 +35,7 @@ impl NegativeStreamServer {
         let port = server.local_addr().unwrap().port();
         let address = server.local_addr().unwrap();
 
-        let task = task::spawn(async move {
+        let task = nautilus_common::logging::spawn_task_with_logging(async move {
             let (conn, _) = server.accept().await.unwrap();
             let websocket = tokio_tungstenite::accept_async(conn).await.unwrap();
             let (mut sender, mut receiver) = websocket.split();
@@ -46,7 +46,7 @@ impl NegativeStreamServer {
             let counter_clone_2 = counter;
 
             // Task to send negative numbers every second
-            let sender_task = task::spawn(async move {
+            let sender_task = nautilus_common::logging::spawn_task_with_logging(async move {
                 loop {
                     let value = counter_clone.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                     let message = tokio_tungstenite::tungstenite::protocol::Message::Text(
@@ -63,7 +63,7 @@ impl NegativeStreamServer {
             });
 
             // Task to handle incoming messages
-            task::spawn(async move {
+            nautilus_common::logging::spawn_task_with_logging(async move {
                 while let Some(Ok(msg)) = receiver.next().await {
                     if let tokio_tungstenite::tungstenite::protocol::Message::Text(txt) = msg {
                         if txt == "SKIP" {

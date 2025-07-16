@@ -130,7 +130,7 @@ async fn stream_from_websocket(
 
     Ok(stream! {
         let (writer, mut reader) = ws_stream.split();
-        tokio::spawn(heartbeat(writer));
+        nautilus_common::logging::spawn_task_with_logging(heartbeat(writer));
 
         // Timeout awaiting the next record before checking signal
         let timeout = Duration::from_millis(10);

@@ -176,7 +176,6 @@ mod tests {
     use tempfile::TempDir;
     use tokio::{
         net::TcpListener,
-        task,
         time::{Duration, sleep},
     };
 
@@ -206,7 +205,7 @@ mod tests {
         let addr = listener.local_addr().unwrap();
         let server = serve(listener, app);
 
-        task::spawn(async move {
+        nautilus_common::logging::spawn_task_with_logging(async move {
             if let Err(e) = server.await {
                 eprintln!("server error: {e}");
             }

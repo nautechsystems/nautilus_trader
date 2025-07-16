@@ -109,11 +109,14 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
         let (pub_tx, pub_rx) = tokio::sync::mpsc::unbounded_channel::<BusMessage>();
 
         // Create publish task (start the runtime here for now)
-        let pub_handle = Some(get_runtime().spawn(async move {
-            if let Err(e) = publish_messages(pub_rx, trader_id, instance_id, config_clone).await {
-                log_task_error(MSGBUS_PUBLISH, &e);
-            }
-        }));
+        let pub_handle = Some(
+            nautilus_common::logging::spawn_task_on_runtime_with_logging(async move {
+                if let Err(e) = publish_messages(pub_rx, trader_id, instance_id, config_clone).await
+                {
+                    log_task_error(MSGBUS_PUBLISH, &e);
+                }
+            }),
+        );
 
         // Conditionally create stream task and channel if external streams configured
         let external_streams = config.external_streams.clone().unwrap_or_default();
@@ -125,14 +128,20 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
             let (stream_tx, stream_rx) = tokio::sync::mpsc::channel::<BusMessage>(100_000);
             (
                 Some(stream_rx),
-                Some(get_runtime().spawn(async move {
-                    if let Err(e) =
-                        stream_messages(stream_tx, db_config, external_streams, stream_signal_clone)
-                            .await
-                    {
-                        log_task_error(MSGBUS_STREAM, &e);
-                    }
-                })),
+                Some(
+                    nautilus_common::logging::spawn_task_on_runtime_with_logging(async move {
+                        if let Err(e) = stream_messages(
+                            stream_tx,
+                            db_config,
+                            external_streams,
+                            stream_signal_clone,
+                        )
+                        .await
+                        {
+                            log_task_error(MSGBUS_STREAM, &e);
+                        }
+                    }),
+                ),
             )
         };
 
@@ -143,9 +152,11 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
             let signal = heartbeat_signal.clone();
             let pub_tx_clone = pub_tx.clone();
 
-            Some(get_runtime().spawn(async move {
-                run_heartbeat(heartbeat_interval_secs, signal, pub_tx_clone).await;
-            }))
+            Some(
+                nautilus_common::logging::spawn_task_on_runtime_with_logging(async move {
+                    run_heartbeat(heartbeat_interval_secs, signal, pub_tx_clone).await;
+                }),
+            )
         } else {
             None
         };
@@ -690,7 +701,7 @@ mod serial_tests {
         let stream_signal_clone = stream_signal.clone();
 
         // Start the message streaming task
-        let handle = tokio::spawn(async move {
+        let handle = nautilus_common::logging::spawn_task_on_runtime_with_logging(async move {
             stream_messages(
                 tx,
                 DatabaseConfig::default(),
@@ -749,7 +760,7 @@ mod serial_tests {
         rx.close();
 
         // Start the message streaming task
-        let handle = tokio::spawn(async move {
+        let handle = nautilus_common::logging::spawn_task_on_runtime_with_logging(async move {
             stream_messages(
                 tx,
                 DatabaseConfig::default(),
@@ -799,7 +810,7 @@ mod serial_tests {
             .unwrap();
 
         // Start the message streaming task
-        let handle = tokio::spawn(async move {
+        let handle = nautilus_common::logging::spawn_task_on_runtime_with_logging(async move {
             stream_messages(
                 tx,
                 DatabaseConfig::default(),
@@ -838,7 +849,7 @@ mod serial_tests {
         let stream_key = get_stream_key(trader_id, instance_id, &config);
 
         // Start the publish_messages task
-        let handle = tokio::spawn(async move {
+        let handle = nautilus_common::logging::spawn_task_on_runtime_with_logging(async move {
             publish_messages(rx, trader_id, instance_id, config)
                 .await
                 .unwrap();
@@ -904,7 +915,11 @@ mod serial_tests {
         let signal = Arc::new(AtomicBool::new(false));
 
         // Start the heartbeat task with a short interval
-        let handle = tokio::spawn(run_heartbeat(1, signal.clone(), tx));
+        let handle = nautilus_common::logging::spawn_task_on_runtime_with_logging(run_heartbeat(
+            1,
+            signal.clone(),
+            tx,
+        ));
 
         // Wait for a couple of heartbeats
         tokio::time::sleep(Duration::from_secs(2)).await;

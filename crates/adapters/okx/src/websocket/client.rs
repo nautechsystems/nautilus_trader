@@ -33,7 +33,6 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use dashmap::DashMap;
 use futures_util::{Stream, StreamExt};
-use nautilus_common::runtime::get_runtime;
 use nautilus_core::{
     UUID4, consts::NAUTILUS_USER_AGENT, env::get_env_var, time::get_atomic_clock_realtime,
 };
@@ -273,7 +272,9 @@ impl OKXWebSocketClient {
         let client = self.clone();
         let post_reconnect = Arc::new(move || {
             let client = client.clone();
-            tokio::spawn(async move { client.resubscribe_all().await });
+            nautilus_common::logging::spawn_task_on_runtime_with_logging(async move {
+                client.resubscribe_all().await
+            });
         });
 
         let config = WebSocketConfig {
@@ -334,20 +335,21 @@ impl OKXWebSocketClient {
         let pending_cancel_requests = self.pending_cancel_requests.clone();
         let pending_amend_requests = self.pending_amend_requests.clone();
 
-        let stream_handle = get_runtime().spawn(async move {
-            OKXWsMessageHandler::new(
-                account_id,
-                instruments_map,
-                reader,
-                signal,
-                tx,
-                pending_place_requests,
-                pending_cancel_requests,
-                pending_amend_requests,
-            )
-            .run()
-            .await;
-        });
+        let stream_handle =
+            nautilus_common::logging::spawn_task_on_runtime_with_logging(async move {
+                OKXWsMessageHandler::new(
+                    account_id,
+                    instruments_map,
+                    reader,
+                    signal,
+                    tx,
+                    pending_place_requests,
+                    pending_cancel_requests,
+                    pending_amend_requests,
+                )
+                .run()
+                .await;
+            });
 
         self.task_handle = Some(Arc::new(stream_handle));
 
@@ -2293,7 +2295,7 @@ mod tests {
 
         for i in 0..10 {
             let client_clone = Arc::clone(&client);
-            let handle = tokio::spawn(async move {
+            let handle = nautilus_common::logging::spawn_task_on_runtime_with_logging(async move {
                 let client_order_id = ClientOrderId::from(format!("order-{i}").as_str());
                 let trader_id = TraderId::from("trader-001");
                 let strategy_id = StrategyId::from("strategy-001");

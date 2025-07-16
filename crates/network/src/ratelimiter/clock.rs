@@ -173,7 +173,7 @@ impl Clock for MonotonicClock {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod test {
-    use std::{sync::Arc, thread, time::Duration};
+    use std::{sync::Arc, time::Duration};
 
     use rstest::rstest;
 
@@ -185,7 +185,7 @@ mod test {
         let threads = std::iter::repeat_n((), 10)
             .map(move |()| {
                 let clock = Arc::clone(&clock);
-                thread::spawn(move || {
+                nautilus_common::logging::spawn_with_logging(move || {
                     for _ in 0..1_000_000 {
                         let now = clock.now();
                         clock.advance(Duration::from_nanos(1));

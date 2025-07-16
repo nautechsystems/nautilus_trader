@@ -65,6 +65,8 @@ pub fn common(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(logging::py_init_logging, m)?)?;
     m.add_function(wrap_pyfunction!(logging::py_logger_flush, m)?)?;
     m.add_function(wrap_pyfunction!(logging::py_logger_log, m)?)?;
+    m.add_function(wrap_pyfunction!(logging::py_logger_is_available, m)?)?;
+    m.add_function(wrap_pyfunction!(logging::py_init_thread_logging, m)?)?;
     m.add_function(wrap_pyfunction!(logging::py_log_header, m)?)?;
     m.add_function(wrap_pyfunction!(logging::py_log_sysinfo, m)?)?;
     m.add_function(wrap_pyfunction!(logging::py_logging_clock_set_static_mode, m)?)?;

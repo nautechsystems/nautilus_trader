@@ -44,7 +44,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Setup graceful shutdown with signal handling in a different task
     let notify = Arc::new(Notify::new());
     let notifier = notify.clone();
-    tokio::spawn(async move {
+    nautilus_common::logging::spawn_task_with_logging(async move {
         let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
             .expect("Failed to create SIGTERM listener");
         let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
