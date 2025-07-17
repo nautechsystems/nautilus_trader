@@ -118,11 +118,10 @@ Failing to do so will result in data aggregation: L2 data will be reduced to a s
 
 ## Execution
 
-### Prevention of look-ahead bias by construction
+### Data and message sequencing
 
 In the main backtesting loop, new market data is first processed for the execution of existing orders before being processed
-by the data engine that will then send data to strategies. So if a strategy creates an order at the same time as the market data it receives,
-the order will have to be executed with future data, by construction.
+by the data engine that will then send data to strategies.
 
 ### Bar based execution
 
@@ -133,16 +132,22 @@ Bar data provides a summary of market activity with four key prices for each tim
 - **Low**: lowest price traded
 - **Close**: closing price (last trade)
 
-While this gives us an overview of price movement, we lose some important details that we'd have with more granular data:
+While this gives us an overview of price movement, we lose some important information that we'd have with more granular data:
 
 - We don't know in what order the market hit the high and low prices.
 - We can't see exactly when prices changed within the time period.
 - We don't know the actual sequence of trades that occurred.
 
-This is why Nautilus processes bar data through a sophisticated system that attempts to maintain
+This is why Nautilus processes bar data through a system that attempts to maintain
 the most realistic yet conservative market behavior possible, despite these limitations.
 At its core, the platform always maintains an order book simulation - even when you provide less
 granular data such as quotes, trades, or bars (although the simulation will only have a top level book).
+
+:::warning
+When using bars for execution simulation (enabled by default with `bar_execution=True` in venue configurations),
+Nautilus strictly expects the timestamp (`ts_init`) of each bar to represent its **closing time**.
+This ensures accurate chronological processing, prevents look-ahead bias, and aligns market updates (Open → High → Low → Close) with the moment the bar is complete.
+:::
 
 #### Bar timestamp convention
 
