@@ -23,6 +23,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.messages cimport BatchCancelOrders
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
+from nautilus_trader.execution.messages cimport GenerateExecutionMassStatus
 from nautilus_trader.execution.messages cimport GenerateFillReports
 from nautilus_trader.execution.messages cimport GenerateOrderStatusReport
 from nautilus_trader.execution.messages cimport GenerateOrderStatusReports
@@ -85,6 +86,7 @@ _OBJECT_TO_DICT_MAP: dict[str, Callable[[None], dict]] = {
     GenerateOrderStatusReport.__name__: GenerateOrderStatusReport.to_dict_c,
     GenerateOrderStatusReports.__name__: GenerateOrderStatusReports.to_dict_c,
     GeneratePositionStatusReports.__name__: GeneratePositionStatusReports.to_dict_c,
+    GenerateExecutionMassStatus.__name__: GenerateExecutionMassStatus.to_dict_c,
     SubmitOrder.__name__: SubmitOrder.to_dict_c,
     SubmitOrderList.__name__: SubmitOrderList.to_dict_c,
     ModifyOrder.__name__: ModifyOrder.to_dict_c,
@@ -147,6 +149,7 @@ _OBJECT_FROM_DICT_MAP: dict[str, Callable[[dict], Any]] = {
     GenerateOrderStatusReport.__name__: GenerateOrderStatusReport.from_dict_c,
     GenerateOrderStatusReports.__name__: GenerateOrderStatusReports.from_dict_c,
     GeneratePositionStatusReports.__name__: GeneratePositionStatusReports.from_dict_c,
+    GenerateExecutionMassStatus.__name__: GenerateExecutionMassStatus.from_dict_c,
     SubmitOrder.__name__: SubmitOrder.from_dict_c,
     SubmitOrderList.__name__: SubmitOrderList.from_dict_c,
     ModifyOrder.__name__: ModifyOrder.from_dict_c,
@@ -215,6 +218,7 @@ _EXTERNAL_PUBLISHABLE_TYPES = {
     GenerateOrderStatusReport,
     GenerateOrderStatusReports,
     GeneratePositionStatusReports,
+    GenerateExecutionMassStatus,
     QueryAccount,
     QueryOrder,
     ShutdownSystem,
