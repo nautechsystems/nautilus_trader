@@ -116,7 +116,7 @@ class OKXDataClient(LiveMarketDataClient):
         self._http_client = client
         self._log.info(f"REST API key {self._http_client.api_key}", LogColor.BLUE)
 
-        # WebSocket API (using public endpoint for market data - no account_id or auth needed)
+        # WebSocket API (using public endpoint for market data - no auth needed)
         self._ws_client = nautilus_pyo3.OKXWebSocketClient(
             url=config.base_url_ws or nautilus_pyo3.get_okx_ws_url_public(config.is_demo),
             api_key=None,  # Public endpoints don't need authentication
@@ -128,7 +128,7 @@ class OKXDataClient(LiveMarketDataClient):
         # WebSocket API for business data (bars/candlesticks)
         self._ws_business_client = nautilus_pyo3.OKXWebSocketClient(
             url=nautilus_pyo3.get_okx_ws_url_business(config.is_demo),
-            api_key=config.api_key,  # TODO: Try without auth
+            api_key=config.api_key,  # Business endpoint requires authentication
             api_secret=config.api_secret,
             api_passphrase=config.api_passphrase,
         )
@@ -208,7 +208,7 @@ class OKXDataClient(LiveMarketDataClient):
 
     def _cache_instruments(self) -> None:
         # Ensures instrument definitions are available for correct
-        # price and size precisions when parsing responses.
+        # price and size precisions when parsing responses
         instruments_pyo3 = self.okx_instrument_provider.instruments_pyo3()
         for inst in instruments_pyo3:
             self._http_client.add_instrument(inst)
@@ -240,8 +240,9 @@ class OKXDataClient(LiveMarketDataClient):
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.subscribe_order_book(pyo3_instrument_id)
 
-    # Copy subscribe method for book deltas to book snapshots (same logic)
-    _subscribe_order_book_snapshots = _subscribe_order_book_deltas
+    async def _subscribe_order_book_snapshots(self, command: SubscribeOrderBook) -> None:
+        # Same logic as deltas
+        await self._subscribe_order_book_deltas(command)
 
     async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
@@ -267,8 +268,9 @@ class OKXDataClient(LiveMarketDataClient):
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.unsubscribe_order_book(pyo3_instrument_id)
 
-    # Copy unsubscribe method for book deltas to book snapshots (same logic)
-    # _unsubscribe_order_book_snapshots = _unsubscribe_order_book_deltas
+    async def _unsubscribe_order_book_snapshots(self, command: UnsubscribeOrderBook) -> None:
+        # Same logic as deltas
+        await self._unsubscribe_order_book_deltas(command)
 
     async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
@@ -375,37 +377,31 @@ class OKXDataClient(LiveMarketDataClient):
         self._handle_trade_ticks(trades, request.id, request.params)
 
     async def _request_bars(self, request: RequestBars) -> None:
-        start = request.start
-        end = request.end
-
-        self._log.warning(
-            f"Bar requests time range not implemented: start={start}, end={end}, using no time range",
+        self._log.debug(
+            f"Requesting bars: bar_type={request.bar_type}, start={request.start}, "
+            f"end={request.end}, limit={request.limit}",
         )
-        # TODO: Implement correct time range requests
-        start = None
-        end = None
-
-        # Validate and clamp limit parameter
-        limit = request.limit
-        if limit is not None and limit > 0:
-            if limit > 300:
-                self._log.warning(
-                    f"Requested limit {limit} exceeds OKX maximum of 300, "
-                    f"clamping to 300 for {request.bar_type}",
-                )
-            limit = min(limit, 300)
-        else:
-            limit = 100  # Default limit
 
         pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(request.bar_type))
 
+        # Forward exact parameters to Rust layer (PY-2)
         pyo3_bars = await self._http_client.request_bars(
             bar_type=pyo3_bar_type,
-            start=ensure_pydatetime_utc(start),
-            end=ensure_pydatetime_utc(end),
-            limit=limit,
+            start=ensure_pydatetime_utc(request.start),
+            end=ensure_pydatetime_utc(request.end),
+            limit=request.limit,
         )
         bars = Bar.from_pyo3_list(pyo3_bars)
+
+        # Log summary (PY-4)
+        now = self._clock.utc_now()
+        chosen_endpoint = (
+            "history" if request.start and (now - request.start).days > 100 else "regular"
+        )
+        self._log.debug(
+            f"Bars request completed: bar_type={request.bar_type}, start={request.start}, "
+            f"end={request.end}, limit={request.limit}, endpoint={chosen_endpoint}, rows={len(bars)}",
+        )
 
         self._handle_bars(
             request.bar_type,
@@ -427,7 +423,7 @@ class OKXDataClient(LiveMarketDataClient):
             if nautilus_pyo3.is_pycapsule(msg):
                 # The capsule will fall out of scope at the end of this method,
                 # and eventually be garbage collected. The contained pointer
-                # to `Data` is still owned and managed by Rust.
+                # to `Data` is still owned and managed by Rust
                 data = capsule_to_data(msg)
                 self._handle_data(data)
             else:

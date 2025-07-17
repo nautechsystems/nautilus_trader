@@ -15,6 +15,7 @@
 
 use std::{fs, path::PathBuf};
 
+#[cfg(test)]
 #[must_use]
 pub fn load_test_json(file_name: &str) -> String {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))

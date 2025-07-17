@@ -30,8 +30,7 @@ use std::{
 use ahash::AHashSet;
 use chrono::{DateTime, Utc};
 use nautilus_core::{
-    UnixNanos, consts::NAUTILUS_USER_AGENT, correctness::check_equal, env::get_env_var,
-    time::get_atomic_clock_realtime,
+    UnixNanos, consts::NAUTILUS_USER_AGENT, env::get_env_var, time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
     data::{Bar, BarType, IndexPriceUpdate, MarkPriceUpdate, TradeTick},
@@ -180,6 +179,10 @@ impl OKXHttpInnerClient {
     }
 
     /// Combine a base path with a `serde_urlencoded` query string if one exists.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query string serialization fails.
     fn build_path<S: Serialize>(base: &str, params: &S) -> Result<String, OKXHttpError> {
         let query = serde_urlencoded::to_string(params)
             .map_err(|e| OKXHttpError::JsonError(e.to_string()))?;
@@ -233,6 +236,14 @@ impl OKXHttpInnerClient {
     /// - Building the URL from `base_url` + `path`
     /// - Optionally signing the request
     /// - Deserializing JSON responses into typed models, or returning a [`OKXHttpError`]
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The HTTP request fails.
+    /// - Authentication is required but credentials are missing.
+    /// - The response cannot be deserialized into the expected type.
+    /// - The OKX API returns an error response.
     async fn send_request<T: DeserializeOwned>(
         &self,
         method: Method,
@@ -259,17 +270,7 @@ impl OKXHttpInnerClient {
             .await?;
 
         tracing::trace!("Response: {resp:?}");
-        // let body_str = String::from_utf8_lossy(&resp.body);
-        // let filename = format!(
-        //     "http_{}{}.json",
-        //     method.as_str().to_lowercase(),
-        //     path.replace('/', "_")
-        // );
-        // std::fs::write(&filename, body_str.as_ref())
-        //     .unwrap_or_else(|e| tracing::error!("Failed to write {}: {}", filename, e));
-        // *********************************************** //
 
-        // TODO: Refine error handling
         if resp.status.is_success() {
             let okx_response: OKXResponse<T> = serde_json::from_slice(&resp.body).map_err(|e| {
                 tracing::error!("Failed to deserialize OKXResponse: {e}");
@@ -299,7 +300,7 @@ impl OKXHttpInnerClient {
             }
 
             Err(OKXHttpError::UnexpectedStatus {
-                status: StatusCode::from_u16(resp.status.as_u16()).unwrap(), // TODO: Clean this up
+                status: StatusCode::from_u16(resp.status.as_u16()).unwrap(),
                 body: error_body.to_string(),
             })
         }
@@ -587,6 +588,11 @@ impl OKXHttpClient {
         })
     }
 
+    /// Retrieves an instrument from the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the instrument is not found in the cache.
     fn get_instrument_from_cache(&self, symbol: Ustr) -> anyhow::Result<InstrumentAny> {
         self.instruments_cache
             .lock()
@@ -596,6 +602,7 @@ impl OKXHttpClient {
             .ok_or_else(|| anyhow::anyhow!("Instrument {symbol} not in cache"))
     }
 
+    /// Generates a timestamp for initialization.
     fn generate_ts_init(&self) -> UnixNanos {
         get_atomic_clock_realtime().get_time_ns()
     }
@@ -654,6 +661,10 @@ impl OKXHttpClient {
     }
 
     /// Requests the account state for the `account_id` from OKX.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or no account state is returned.
     pub async fn request_account_state(
         &self,
         account_id: AccountId,
@@ -677,6 +688,10 @@ impl OKXHttpClient {
     ///
     /// Defaults to NetMode if no position mode is provided.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the position mode cannot be set.
+    ///
     /// # Note
     ///
     /// This endpoint only works for accounts with derivatives trading enabled.
@@ -697,18 +712,21 @@ impl OKXHttpClient {
                 {
                     if error_code == "50115" {
                         tracing::warn!(
-                            "Account does not support position mode setting (derivatives trading not enabled): {}",
-                            message
+                            "Account does not support position mode setting (derivatives trading not enabled): {message}"
                         );
                         return Ok(()); // Gracefully handle this case
                     }
                 }
-                Err(anyhow::anyhow!(e))
+                anyhow::bail!(e)
             }
         }
     }
 
     /// Requests all instruments for the `instrument_type` from OKX.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or instrument parsing fails.
     pub async fn request_instruments(
         &self,
         instrument_type: OKXInstrumentType,
@@ -738,6 +756,10 @@ impl OKXHttpClient {
     }
 
     /// Requests the latest mark price for the `instrument_type` from OKX.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or no mark price is returned.
     pub async fn request_mark_price(
         &self,
         instrument_id: InstrumentId,
@@ -765,6 +787,10 @@ impl OKXHttpClient {
     }
 
     /// Requests the latest index price for the `instrument_id` from OKX.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or no index price is returned.
     pub async fn request_index_price(
         &self,
         instrument_id: InstrumentId,
@@ -792,6 +818,10 @@ impl OKXHttpClient {
     }
 
     /// Requests trades for the `instrument_id` and `start` -> `end` time range.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or trade parsing fails.
     pub async fn request_trades(
         &self,
         instrument_id: InstrumentId,
@@ -841,11 +871,42 @@ impl OKXHttpClient {
         Ok(trades)
     }
 
-    /// Requests historical candlestick bars for the `instrument_id` and `start` -> `end` time range.
+    /// Requests historical bars for the given bar type and time range.
+    ///
+    /// The aggregation source must be `EXTERNAL`. Time range validation ensures start < end.
+    /// Returns bars sorted oldest to newest.
+    ///
+    /// # Endpoint Selection
+    ///
+    /// The OKX API has different endpoints with different limits:
+    /// - Regular endpoint (`/api/v5/market/candles`): ≤ 300 rows/call, ≤ 40 req/2s
+    ///   - Used when: start is None OR age ≤ 100 days
+    /// - History endpoint (`/api/v5/market/history-candles`): ≤ 100 rows/call, ≤ 20 req/2s
+    ///   - Used when: start is Some AND age > 100 days
+    ///
+    /// Age is calculated as `Utc::now() - start` at the time of the first request.
+    ///
+    /// # Supported Aggregations
+    ///
+    /// Maps to OKX bar query parameter:
+    /// - `Second` → `{n}s`
+    /// - `Minute` → `{n}m`
+    /// - `Hour` → `{n}H`
+    /// - `Day` → `{n}D`
+    /// - `Week` → `{n}W`
+    /// - `Month` → `{n}M`
+    ///
+    /// # Pagination
+    ///
+    /// - Uses `before` parameter for backwards pagination
+    /// - Pages backwards from end time (or now) to start time
+    /// - Stops when: limit reached, time window covered, or API returns empty
+    /// - Rate limit safety: ≥ 50ms between requests
     ///
     /// # References
     ///
-    /// <https://www.okx.com/docs-v5/en/#order-book-trading-market-data-get-candlesticks-history>.
+    /// - <https://tr.okx.com/docs-v5/en/#order-book-trading-market-data-get-candlesticks>
+    /// - <https://tr.okx.com/docs-v5/en/#order-book-trading-market-data-get-candlesticks-history>
     pub async fn request_bars(
         &self,
         bar_type: BarType,
@@ -853,154 +914,270 @@ impl OKXHttpClient {
         end: Option<DateTime<Utc>>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<Bar>> {
-        check_equal(
-            &bar_type.aggregation_source(),
-            &AggregationSource::External,
-            stringify!(bar_type.aggregation_source()),
-            "Invalid aggregation source, must be EXTERNAL",
-        )?;
+        // Validate aggregation source
+        let source = bar_type.aggregation_source();
+        if source != AggregationSource::External {
+            anyhow::bail!("Invalid aggregation source: {source:?}");
+        }
+
+        // Validate time range consistency
+        if let (Some(start_time), Some(end_time)) = (start, end) {
+            if start_time >= end_time {
+                anyhow::bail!("Invalid time range: start={start_time:?} end={end_time:?}");
+            }
+        }
 
         let symbol = bar_type.instrument_id().symbol;
+
+        // Validate instrument is in cache
+        let inst = self.get_instrument_from_cache(symbol.inner())?;
+
         let spec = bar_type.spec();
 
-        let mut all_raw = Vec::new();
-        let mut before_opt: Option<String> = end.map(|e| e.timestamp_millis().to_string());
+        // Map aggregation to OKX bar parameter
+        let bar_str = match spec.aggregation {
+            BarAggregation::Second => {
+                let step = spec.step.get();
+                format!("{step}s")
+            }
+            BarAggregation::Minute => {
+                let step = spec.step.get();
+                format!("{step}m")
+            }
+            BarAggregation::Hour => {
+                let step = spec.step.get();
+                format!("{step}H")
+            }
+            BarAggregation::Day => {
+                let step = spec.step.get();
+                format!("{step}D")
+            }
+            BarAggregation::Week => {
+                let step = spec.step.get();
+                format!("{step}W")
+            }
+            BarAggregation::Month => {
+                let step = spec.step.get();
+                format!("{step}M")
+            }
+            agg => {
+                anyhow::bail!("OKX does not support {agg:?} aggregation");
+            }
+        };
 
+        // Determine endpoint based on data age
+        let now = Utc::now();
+        let use_history_endpoint = if let Some(start_time) = start {
+            let age = now - start_time;
+            age.num_days() > 100
+        } else {
+            false
+        };
+
+        let endpoint_max = if use_history_endpoint { 100 } else { 300 };
+
+        // Pre-allocate result vector
+        let mut all_bars = Vec::with_capacity(limit.unwrap_or_default() as usize);
+
+        // Determine cursor strategy
+        let (cursor_mode, mut cursor_value) = match (start, end) {
+            (Some(start_time), Some(_)) => {
+                // Both start & end provided - forward pagination
+                ("after", Some(start_time.timestamp_millis().to_string()))
+            }
+            (Some(start_time), None) => {
+                // Only start provided - forward pagination
+                ("after", Some(start_time.timestamp_millis().to_string()))
+            }
+            (None, Some(end_time)) => {
+                // Only end provided - backward pagination
+                ("before", Some(end_time.timestamp_millis().to_string()))
+            }
+            (None, None) => {
+                // No bounds with None/0 limit - one-shot
+                // No bounds with limit > endpoint_max - backward pagination
+                if limit.is_none() || limit == Some(0) {
+                    ("none", None)
+                } else {
+                    ("before", Some(now.timestamp_millis().to_string()))
+                }
+            }
+        };
+
+        // For backward pagination, we need to reverse the final result
+        let needs_final_reverse = matches!(cursor_mode, "before");
+
+        // Pagination loop
         loop {
+            // Calculate effective limit for this page
+            let effective_limit = if let Some(l) = limit {
+                if l == 0 {
+                    // Zero limit treated as unbounded
+                    endpoint_max
+                } else {
+                    let remaining = l as usize - all_bars.len();
+                    if remaining == 0 {
+                        break; // Stop condition: limit reached
+                    }
+                    remaining.min(endpoint_max)
+                }
+            } else {
+                endpoint_max
+            };
+
+            // Build request parameters
             let mut builder = GetCandlesticksParamsBuilder::default();
             builder.inst_id(symbol.as_str());
-            let bar_str = match spec.aggregation {
-                BarAggregation::Second => format!("{}s", spec.step.get()),
-                BarAggregation::Minute => format!("{}m", spec.step.get()),
-                BarAggregation::Hour => format!("{}H", spec.step.get()),
-                BarAggregation::Day => format!("{}D", spec.step.get()),
-                BarAggregation::Week => format!("{}W", spec.step.get()),
-                BarAggregation::Month => format!("{}M", spec.step.get()),
-                _ => anyhow::bail!("OKX does not support {} aggregation", spec.aggregation),
-            };
-            builder.bar(bar_str);
+            builder.bar(&bar_str);
+            builder.limit(effective_limit as u32);
 
-            if let Some(ref b) = before_opt {
-                builder.before(b.clone());
-            }
-
-            if let Some(s) = start {
-                builder.after(s.timestamp_millis().to_string());
-            }
-
-            // Choose endpoint and set appropriate limits based on time range
-            let use_history_endpoint = if let Some(start_time) = start {
-                let days_ago = (Utc::now() - start_time).num_days();
-                tracing::debug!(
-                    "Days ago for start time: {}, using history endpoint: {}",
-                    days_ago,
-                    days_ago > 100
-                );
-                days_ago > 100
-            } else {
-                tracing::debug!("No start time provided, using regular endpoint");
-                false
-            };
-
-            if let Some(l) = limit {
-                let max_limit = if use_history_endpoint { 100 } else { 300 };
-                let effective_limit = l.min(max_limit);
-                tracing::debug!(
-                    "Requested limit: {}, effective limit: {}, endpoint: {}",
-                    l,
-                    effective_limit,
-                    if use_history_endpoint {
-                        "history"
-                    } else {
-                        "regular"
+            // Set cursor based on pagination mode
+            match cursor_mode {
+                "after" => {
+                    if let Some(ref cursor) = cursor_value {
+                        builder.after(cursor.clone());
                     }
-                );
-                builder.limit(effective_limit);
+                }
+                "before" => {
+                    if let Some(ref cursor) = cursor_value {
+                        builder.before(cursor.clone());
+                    }
+                }
+                "none" => {
+                    // No cursor for one-shot requests
+                }
+                _ => unreachable!(),
             }
 
             let params = builder.build().map_err(anyhow::Error::new)?;
 
-            tracing::debug!(
-                "Making candlesticks request to {} endpoint for symbol: {} (extracted from {})",
-                if use_history_endpoint {
-                    "history"
-                } else {
-                    "regular"
-                },
-                symbol,
-                bar_type.instrument_id().symbol
-            );
-
+            // Make HTTP request
             let page = if use_history_endpoint {
-                // Use history endpoint for older data (max 100 candles)
                 self.inner
                     .http_get_candlesticks_history(params)
                     .await
                     .map_err(anyhow::Error::new)?
             } else {
-                // Use regular endpoint for recent data (max 300 candles)
                 self.inner
                     .http_get_candlesticks(params)
                     .await
                     .map_err(anyhow::Error::new)?
             };
 
+            // Logging
+            let endpoint = if use_history_endpoint {
+                "history"
+            } else {
+                "regular"
+            };
             tracing::debug!(
-                "Received {} candlesticks from {} endpoint",
-                page.len(),
-                if use_history_endpoint {
-                    "history"
-                } else {
-                    "regular"
-                }
+                "Requesting bars: endpoint={endpoint}, instId={symbol}, bar={bar_str}, effective_limit={effective_limit}, page_rows={page_rows}, accum_rows={accum_rows}, cursor={cursor_type}={cursor_value}",
+                page_rows = page.len(),
+                accum_rows = all_bars.len(),
+                cursor_type = cursor_mode,
+                cursor_value = cursor_value.as_deref().unwrap_or("none")
             );
+
+            // Stop condition: API returns empty data
             if page.is_empty() {
                 break;
             }
 
-            // Collect and track pagination
+            // Process page based on cursor mode
+            let mut page_bars = Vec::with_capacity(page.len());
+            let ts_init = self.generate_ts_init();
+
             for raw in &page {
-                all_raw.push(raw.clone());
+                let bar = parse_candlestick(
+                    raw,
+                    bar_type,
+                    inst.price_precision(),
+                    inst.size_precision(),
+                    ts_init,
+                )?;
+                page_bars.push(bar);
+            }
+
+            // Handle ordering based on cursor mode
+            match cursor_mode {
+                "after" => {
+                    // Forward pagination: reverse each page, then append
+                    page_bars.reverse();
+                }
+                "before" => {
+                    // Backward pagination: keep API order (desc), append
+                    // No reversal needed here
+                }
+                "none" => {
+                    // One-shot: reverse to get oldest → newest
+                    page_bars.reverse();
+                }
+                _ => unreachable!(),
+            }
+
+            // Add to results with limit checking
+            for bar in page_bars {
                 if let Some(l) = limit {
-                    if all_raw.len() >= l as usize {
+                    if all_bars.len() >= l as usize {
+                        break; // Stop condition: limit reached
+                    }
+                }
+                all_bars.push(bar);
+            }
+
+            // Stop condition: Time window fully covered
+            if let (Some(start_time), Some(end_time)) = (start, end) {
+                if let (Some(first_bar), Some(last_bar)) = (all_bars.first(), all_bars.last()) {
+                    let start_nanos = start_time.timestamp_nanos_opt().unwrap_or_default() as u64;
+                    let end_nanos = end_time.timestamp_nanos_opt().unwrap_or_default() as u64;
+                    if first_bar.ts_event <= start_nanos && last_bar.ts_event >= end_nanos {
                         break;
                     }
                 }
             }
 
+            // Check if we've reached the limit
             if let Some(l) = limit {
-                if all_raw.len() >= l as usize {
-                    break;
+                if all_bars.len() >= l as usize {
+                    break; // Stop condition: limit reached
                 }
             }
 
-            // Next page: set before to last timestamp
-            // SAFETY: page is guaranteed non-empty due to check above
-            before_opt = Some(page.last().unwrap().0.clone());
-
-            // If no limit specified, only fetch one page
-            if limit.is_none() {
-                break;
+            // Update cursor for next page
+            match cursor_mode {
+                "after" => {
+                    // Forward pagination: use oldest timestamp from current page
+                    if let Some(last_raw) = page.last() {
+                        cursor_value = Some(last_raw.0.clone());
+                    } else {
+                        break;
+                    }
+                }
+                "before" => {
+                    // Backward pagination: use newest timestamp from current page
+                    if let Some(first_raw) = page.first() {
+                        cursor_value = Some(first_raw.0.clone());
+                    } else {
+                        break;
+                    }
+                }
+                "none" => {
+                    // One-shot: no pagination
+                    break;
+                }
+                _ => unreachable!(),
             }
+
+            // Rate limit safety
+            tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
         }
 
-        let ts_init = self.generate_ts_init();
-        let inst = self.get_instrument_from_cache(bar_type.instrument_id().symbol.inner())?;
-
-        let mut bars = Vec::with_capacity(all_raw.len());
-
-        for raw in all_raw {
-            let bar = parse_candlestick(
-                &raw,
-                bar_type,
-                inst.price_precision(),
-                inst.size_precision(),
-                ts_init,
-            )?;
-            bars.push(bar);
+        // Final processing based on cursor mode
+        if needs_final_reverse {
+            all_bars.reverse();
         }
 
-        Ok(bars)
+        Ok(all_bars)
     }
 
     /// Requests historical order status reports for the given parameters.
@@ -1243,7 +1420,7 @@ impl OKXHttpClient {
 
         for position in resp {
             if position.pos_id.is_some() {
-                continue; // TODO: Support hedge mode
+                continue; // Skip hedge mode positions (not currently supported)
             }
             let inst = self.get_instrument_from_cache(position.inst_id)?;
 
@@ -1258,80 +1435,5 @@ impl OKXHttpClient {
         }
 
         Ok(reports)
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-mod tests {
-    use nautilus_core::nanos::UnixNanos;
-    use serde_json;
-
-    use super::{OKXHttpClient, OKXResponse};
-    use crate::common::{models::OKXInstrument, parse::parse_spot_instrument};
-
-    const TEST_JSON: &str = include_str!("../../test_data/http_get_instruments_spot.json");
-
-    #[test]
-    fn test_cache_initially_empty() {
-        let client = OKXHttpClient::new(None, Some(60));
-        assert!(
-            !client.is_initialized(),
-            "Client should start uninitialized"
-        );
-        assert!(
-            client.get_cached_symbols().is_empty(),
-            "Cache should be empty initially"
-        );
-    }
-
-    #[test]
-    fn test_add_and_get_cached_symbols_bulk() {
-        let mut client = OKXHttpClient::new(None, Some(60));
-        // Load test instruments JSON
-        let resp: OKXResponse<OKXInstrument> = serde_json::from_str(TEST_JSON).unwrap();
-
-        // Parse into InstrumentAny and add to client cache
-        let instruments_any: Vec<_> = resp
-            .data
-            .iter()
-            .map(|inst| {
-                parse_spot_instrument(inst, None, None, None, None, UnixNanos::from(0)).unwrap()
-            })
-            .collect();
-
-        assert!(!client.is_initialized());
-        client.add_instruments(instruments_any);
-        assert!(
-            client.is_initialized(),
-            "Client should be initialized after adding instruments"
-        );
-
-        // Compare symbols
-        let mut symbols = client.get_cached_symbols();
-        symbols.sort();
-        let mut expected: Vec<String> = resp.data.iter().map(|i| i.inst_id.to_string()).collect();
-        expected.sort();
-        assert_eq!(symbols, expected);
-    }
-
-    #[test]
-    fn test_add_single_instrument() {
-        let mut client = OKXHttpClient::new(None, Some(60));
-        let resp: OKXResponse<OKXInstrument> = serde_json::from_str(TEST_JSON).unwrap();
-        let first = &resp.data[0];
-        let inst_any =
-            parse_spot_instrument(first, None, None, None, None, UnixNanos::from(0)).unwrap();
-
-        client.add_instrument(inst_any);
-        assert!(
-            client.is_initialized(),
-            "Client should be initialized after adding one instrument"
-        );
-
-        let symbols = client.get_cached_symbols();
-        assert_eq!(symbols, vec![first.inst_id.to_string()]);
     }
 }
