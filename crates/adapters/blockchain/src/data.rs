@@ -43,7 +43,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use crate::{
     cache::BlockchainCache,
     config::BlockchainDataClientConfig,
-    contracts::erc20::Erc20Contract,
+    contracts::erc20::{Erc20Contract, TokenInfoError},
     decode::u256_to_quantity,
     events::pool_created::PoolCreatedEvent,
     exchanges::{dex_extended_map, extended::DexExtended},
@@ -774,7 +774,7 @@ impl BlockchainDataClient {
                 && self.cache.get_token(&pool.token1).is_some()
             {
                 self.process_pool(&dex.dex, &pool).await?;
-                blocks_processed += (block_number - last_block_saved);
+                blocks_processed += block_number - last_block_saved;
                 last_block_saved = block_number;
                 continue;
             }
@@ -789,28 +789,12 @@ impl BlockchainDataClient {
             pool_buffer.push(pool);
 
             if token_buffer.len() >= TOKEN_BATCH_SIZE {
-                let batch_addresses: Vec<Address> = token_buffer.drain().collect();
-                let token_infos = self.tokens.batch_fetch_token_info(&batch_addresses).await?;
-                for (token_address, token_info) in token_infos {
-                    let token = Token::new(
-                        self.chain.clone(),
-                        token_address,
-                        token_info.name,
-                        token_info.symbol,
-                        token_info.decimals,
-                    );
-                    self.cache.add_token(token).await?;
-                }
-
-                for pool in &pool_buffer {
-                    if let Err(e) = self.process_pool(&dex.dex, pool).await {
-                        tracing::error!("Failed to process {} with error {}", pool.pool_address, e)
-                    }
-                }
-
-                pool_buffer.clear();
+                self.flush_tokens_and_process_pools(&mut token_buffer, &mut pool_buffer, &dex.dex)
+                    .await?;
+                blocks_processed += block_number - last_block_saved;
                 metrics.update(blocks_processed as usize);
                 blocks_processed = 0;
+                last_block_saved = block_number;
 
                 // Log progress if needed
                 if metrics.should_log_progress(block_number, to_block) {
@@ -822,32 +806,75 @@ impl BlockchainDataClient {
             last_block_saved = block_number;
         }
 
-        if !token_buffer.is_empty() {
-            let batch_addresses: Vec<Address> = token_buffer.drain().collect();
-            let token_infos = self.tokens.batch_fetch_token_info(&batch_addresses).await?;
-            for (token_address, token_info) in token_infos {
-                let token = Token::new(
-                    self.chain.clone(),
-                    token_address,
-                    token_info.name,
-                    token_info.symbol,
-                    token_info.decimals,
-                );
-                self.cache.add_token(token).await?;
-            }
-
-            for pool in &pool_buffer {
-                if let Err(e) = self.process_pool(&dex.dex, pool).await {
-                    tracing::error!("Failed to process {} with error {}", pool.pool_address, e)
-                }
-            }
-
-            pool_buffer.clear();
+        if !token_buffer.is_empty() || !pool_buffer.is_empty() {
+            self.flush_tokens_and_process_pools(&mut token_buffer, &mut pool_buffer, &dex.dex)
+                .await?;
+            blocks_processed += (to_block) - last_block_saved;
             metrics.update(blocks_processed as usize);
-            blocks_processed = 0;
         }
 
         metrics.log_final_stats();
+        Ok(())
+    }
+
+    /// Helper method to flush token buffer and process pools.
+    async fn flush_tokens_and_process_pools(
+        &mut self,
+        token_buffer: &mut HashSet<Address>,
+        pool_buffer: &mut Vec<PoolCreatedEvent>,
+        dex: &Dex,
+    ) -> anyhow::Result<()> {
+        if token_buffer.is_empty() {
+            return Ok(());
+        }
+
+        let batch_addresses: Vec<Address> = token_buffer.drain().collect();
+        let token_infos = self.tokens.batch_fetch_token_info(&batch_addresses).await?;
+
+        let mut empty_tokens = HashSet::new();
+        for (token_address, token_info) in token_infos {
+            match token_info {
+                Ok(token) => {
+                    let token = Token::new(
+                        self.chain.clone(),
+                        token_address,
+                        token.name,
+                        token.symbol,
+                        token.decimals,
+                    );
+                    self.cache.add_token(token).await?;
+                }
+                Err(token_info_error) => match token_info_error {
+                    TokenInfoError::EmptyTokenField { .. } => {
+                        // Empty token name/symbol indicates non-standard implementations:
+                        // - Non-conforming ERC20 tokens (name/symbol are optional in the standard)
+                        // - Minimal proxy contracts without proper metadata forwarding
+                        // - Malicious or deprecated tokens
+                        // We skip these pools as they're not suitable for trading.
+                        empty_tokens.insert(token_address);
+                    }
+                    _ => {
+                        tracing::error!(
+                            "Error fetching token info: {}",
+                            token_info_error.to_string()
+                        )
+                    }
+                },
+            }
+        }
+
+        for pool in &mut *pool_buffer {
+            // We skip the pool that contains one of the tokens that is flagged as empty
+            if empty_tokens.contains(&pool.token0) || empty_tokens.contains(&pool.token1) {
+                continue;
+            }
+
+            if let Err(e) = self.process_pool(dex, pool).await {
+                tracing::error!("Failed to process {} with error {}", pool.pool_address, e);
+            }
+        }
+        pool_buffer.clear();
+
         Ok(())
     }
 
