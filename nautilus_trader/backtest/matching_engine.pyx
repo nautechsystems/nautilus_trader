@@ -563,18 +563,22 @@ cdef class OrderMatchingEngine:
 
         if self._trade_execution:
             aggressor_side = tick.aggressor_side
+
             if aggressor_side == AggressorSide.BUYER:
                 self._core.set_ask_raw(price_raw)
+
                 if price_raw < self._core.bid_raw:
                     self._core.set_bid_raw(price_raw)
             elif aggressor_side == AggressorSide.SELLER:
                 self._core.set_bid_raw(price_raw)
+
                 if price_raw > self._core.ask_raw:
                     self._core.set_ask_raw(price_raw)
             elif aggressor_side == AggressorSide.NO_AGGRESSOR:
                 # Update both bid and ask when no specific aggressor
                 if price_raw <= self._core.bid_raw:
                     self._core.set_bid_raw(price_raw)
+
                 if price_raw >= self._core.ask_raw:
                     self._core.set_ask_raw(price_raw)
             else:
@@ -651,9 +655,11 @@ cdef class OrderMatchingEngine:
 
         if execution_bar_type != bar_type:
             bar_type_timedelta = self._execution_bar_deltas.get(bar_type)
+
             if bar_type_timedelta is None:
                 bar_type_timedelta = bar_type.spec.timedelta
                 self._execution_bar_deltas[bar_type] = bar_type_timedelta
+
             if self._execution_bar_deltas[execution_bar_type] >= bar_type_timedelta:
                 self._execution_bar_types[instrument_id] = bar_type
             else:
@@ -769,14 +775,15 @@ cdef class OrderMatchingEngine:
             not self._bar_adaptive_high_low_ordering
             or abs(bar._mem.high.raw - bar._mem.open.raw) < abs(bar._mem.low.raw - bar._mem.open.raw)
         )
-
         self._process_trade_bar_open(bar, tick)
+
         if process_high_first:
             self._process_trade_bar_high(bar, tick)
             self._process_trade_bar_low(bar, tick)
         else:
             self._process_trade_bar_low(bar, tick)
             self._process_trade_bar_high(bar, tick)
+
         self._process_trade_bar_close(bar, tick)
 
     cdef TradeTick _create_base_trade_tick(self, Bar bar, Quantity size):
@@ -794,6 +801,7 @@ cdef class OrderMatchingEngine:
         if not self._core.is_last_initialized or bar._mem.open.raw != self._core.last_raw:
             if is_logging_initialized():
                 self._log.debug(f"Updating with open {bar.open}")
+
             self._book.update_trade_tick(tick)
             self.iterate(tick.ts_init)
             self._core.set_last_raw(bar._mem.open.raw)
@@ -802,6 +810,7 @@ cdef class OrderMatchingEngine:
         if bar._mem.high.raw > self._core.last_raw:
             if is_logging_initialized():
                 self._log.debug(f"Updating with high {bar.high}")
+
             tick._mem.price = bar._mem.high
             tick._mem.aggressor_side = AggressorSide.BUYER
             tick._mem.trade_id = trade_id_new(pystr_to_cstr(self._generate_trade_id_str()))
@@ -813,6 +822,7 @@ cdef class OrderMatchingEngine:
         if bar._mem.low.raw < self._core.last_raw:
             if is_logging_initialized():
                 self._log.debug(f"Updating with low {bar.low}")
+
             tick._mem.price = bar._mem.low
             tick._mem.aggressor_side = AggressorSide.SELLER
             tick._mem.trade_id = trade_id_new(pystr_to_cstr(self._generate_trade_id_str()))
@@ -824,6 +834,7 @@ cdef class OrderMatchingEngine:
         if bar._mem.close.raw != self._core.last_raw:
             if is_logging_initialized():
                 self._log.debug(f"Updating with close {bar.close}")
+
             tick._mem.price = bar._mem.close
             tick._mem.aggressor_side = AggressorSide.BUYER if bar._mem.close.raw > self._core.last_raw else AggressorSide.SELLER
             tick._mem.trade_id = trade_id_new(pystr_to_cstr(self._generate_trade_id_str()))
@@ -852,14 +863,15 @@ cdef class OrderMatchingEngine:
             not self._bar_adaptive_high_low_ordering
             or abs(self._last_bid_bar._mem.high.raw - self._last_bid_bar._mem.open.raw) < abs(self._last_bid_bar._mem.low.raw - self._last_bid_bar._mem.open.raw)
         )
-
         self._process_quote_bar_open(tick)
+
         if process_high_first:
             self._process_quote_bar_high(tick)
             self._process_quote_bar_low(tick)
         else:
             self._process_quote_bar_low(tick)
             self._process_quote_bar_high(tick)
+
         self._process_quote_bar_close(tick)
 
         self._last_bid_bar = None
@@ -910,6 +922,7 @@ cdef class OrderMatchingEngine:
         cdef uint64_t now_ns
         if self._instrument_has_expiration:
             now_ns = self._clock.timestamp_ns()
+
             if now_ns < self.instrument.activation_ns:
                 self._generate_order_rejected(
                     order,
@@ -932,6 +945,7 @@ cdef class OrderMatchingEngine:
         if self._support_contingent_orders and order.parent_order_id is not None:
             parent = self.cache.order(order.parent_order_id)
             assert parent is not None and parent.contingency_type == ContingencyType.OTO, "OTO parent not found"
+
             if parent.status_c() == OrderStatus.REJECTED and order.is_open_c():
                 self._generate_order_rejected(order, f"REJECT OTO from {parent.client_order_id}")
                 return  # Order rejected
@@ -943,8 +957,10 @@ cdef class OrderMatchingEngine:
                 # Check contingent orders are still open
                 for client_order_id in order.linked_order_ids or []:
                     contingent_order = self.cache.order(client_order_id)
+
                     if contingent_order is None:
                         raise RuntimeError(f"Cannot find contingent order for {client_order_id!r}")  # pragma: no cover
+
                     if order.contingency_type == ContingencyType.OCO or order.contingency_type == ContingencyType.OUO:
                         if not order.is_closed_c() and contingent_order.is_closed_c():
                             self._generate_order_rejected(order, f"Contingent order {client_order_id} already closed")
@@ -964,6 +980,7 @@ cdef class OrderMatchingEngine:
         if order.has_price_c():
             # Check order price precision
             price = order.price
+
             if price._mem.precision != self.instrument.price_precision:
                 self._generate_order_rejected(
                     order,
@@ -977,6 +994,7 @@ cdef class OrderMatchingEngine:
         if order.has_trigger_price_c():
             # Check order trigger price precision
             trigger_price = order.trigger_price
+
             if trigger_price._mem.precision != self.instrument.price_precision:
                 self._generate_order_rejected(
                     order,
@@ -990,6 +1008,7 @@ cdef class OrderMatchingEngine:
         if order.has_activation_price_c():
             # Check order activation price precision
             activation_price = order.activation_price
+
             if activation_price._mem.precision != self.instrument.price_precision:
                 self._generate_order_rejected(
                     order,
@@ -1105,6 +1124,7 @@ cdef class OrderMatchingEngine:
         for order in self.cache.orders_open(venue=None, instrument_id=command.instrument_id):
             if command.order_side != OrderSide.NO_ORDER_SIDE and command.order_side != order.side:
                 continue
+
             if order.is_inflight_c() or order.is_open_c():
                 self.cancel_order(order)
 
@@ -1169,6 +1189,7 @@ cdef class OrderMatchingEngine:
             # Filling as liquidity taker
             if order.liquidity_side == LiquiditySide.NO_LIQUIDITY_SIDE:
                 order.liquidity_side = LiquiditySide.TAKER
+
             self.fill_limit_order(order)
         elif order.time_in_force == TimeInForce.FOK or order.time_in_force == TimeInForce.IOC:
             self.cancel_order(order)
@@ -1184,6 +1205,7 @@ cdef class OrderMatchingEngine:
                     f"ask={self._core.ask}",
                 )
                 return  # Invalid price
+
             self.fill_market_order(order)
             return
 
@@ -1201,6 +1223,7 @@ cdef class OrderMatchingEngine:
                     f"ask={self._core.ask}",
                 )
                 return  # Invalid price
+
             self.accept_order(order)
             self._generate_order_triggered(order)
 
@@ -1208,6 +1231,7 @@ cdef class OrderMatchingEngine:
             if self._core.is_limit_matched(order.side, order.price):
                 order.liquidity_side = LiquiditySide.TAKER
                 self.fill_limit_order(order)
+
             return
 
         # Order is valid and accepted
@@ -1224,6 +1248,7 @@ cdef class OrderMatchingEngine:
                     f"ask={self._core.ask}",
                 )
                 return  # Invalid price
+
             self.fill_market_order(order)
             return
 
@@ -1241,6 +1266,7 @@ cdef class OrderMatchingEngine:
                     f"ask={self._core.ask}",
                 )
                 return  # Invalid price
+
             self.accept_order(order)
             self._generate_order_triggered(order)
 
@@ -1248,6 +1274,7 @@ cdef class OrderMatchingEngine:
             if self._core.is_limit_matched(order.side, order.price):
                 order.liquidity_side = LiquiditySide.TAKER
                 self.fill_limit_order(order)
+
             return
 
         # Order is valid and accepted
@@ -1262,6 +1289,7 @@ cdef class OrderMatchingEngine:
             # If activation price is not given,
             # set the activation price to the last price, and activate order
             market_price = self._core.ask if order.side == OrderSide.BUY else self._core.bid
+
             if market_price is None:
                 # If there is no market price, we cannot process the order
                 raise RuntimeError(  # pragma: no cover (design-time error)
@@ -1269,6 +1297,7 @@ cdef class OrderMatchingEngine:
                     f"no BID or ASK price for {order.instrument_id} "
                     f"(add quotes or use bars)",
                 )
+
             order.set_activated_c(market_price)
         else:
             # If activation price is given,
@@ -1284,6 +1313,7 @@ cdef class OrderMatchingEngine:
                         f"ask={self._core.ask}",
                     )
                     return  # Invalid price
+
                 # if we cannot reject the order, we activate it
                 order.set_activated_c(None)
 
@@ -1513,6 +1543,7 @@ cdef class OrderMatchingEngine:
             # await next market update to calculate it
             if trigger_price is None:
                 return
+
             self._update_stop_market_order(order, qty, trigger_price)
         elif qty or trigger_price:
             self._generate_order_updated(order, qty, None, trigger_price)
@@ -1529,6 +1560,7 @@ cdef class OrderMatchingEngine:
             # await next market update to calculate it
             if trigger_price is None:
                 return
+
             self._update_stop_limit_order(order, qty, price, trigger_price)
         elif qty or trigger_price:
             self._generate_order_updated(order, qty, price, trigger_price)
@@ -1542,6 +1574,7 @@ cdef class OrderMatchingEngine:
                 # The activation price should have been set in OrderMatchingEngine._process_trailing_stop_order()
                 # However, the implementation of the emulator bypass this step, and directly call this method through match_order().
                 market_price = self.ask if order.side == OrderSide.BUY else self.bid
+
                 if market_price is None:
                     # If there is no market price, we cannot process the order
                     raise RuntimeError(  # pragma: no cover (design-time error)
@@ -1549,6 +1582,7 @@ cdef class OrderMatchingEngine:
                         f"no BID or ASK price for {order.instrument_id} "
                         f"(add quotes or use bars)",
                     )
+
                 order.set_activated_c(market_price)
             elif self._core.is_touch_triggered(order.side, order.activation_price):
                 order.set_activated_c(None)
@@ -1598,6 +1632,7 @@ cdef class OrderMatchingEngine:
         if orderbook_has_bid(&self._book._mem) and aggressor_side == AggressorSide.NO_AGGRESSOR:
             bid = orderbook_best_bid_price(&self._book._mem)
             self._core.set_bid_raw(bid.raw)
+
         if orderbook_has_ask(&self._book._mem) and aggressor_side == AggressorSide.NO_AGGRESSOR:
             ask = orderbook_best_ask_price(&self._book._mem)
             self._core.set_ask_raw(ask.raw)
@@ -1661,107 +1696,82 @@ cdef class OrderMatchingEngine:
                 self.cache.add_order(order, position_id=position.id)
                 self.fill_market_order(order)
 
-    cpdef list determine_limit_price_and_volume(self, Order order):
+    cpdef void fill_market_order(self, Order order):
         """
-        Return the projected fills for the given *limit* order filling passively
-        from its limit price.
-
-        The list may be empty if no fills.
+        Fill the given *marketable* order.
 
         Parameters
         ----------
         order : Order
-            The order to determine fills for.
-
-        Returns
-        -------
-        list[tuple[Price, Quantity]]
-
-        Raises
-        ------
-        ValueError
-            If the `order` does not have a LIMIT `price`.
+            The order to fill.
 
         """
-        Condition.is_true(order.has_price_c(), "order has no limit `price`")
+        cdef Quantity cached_filled_qty = self._cached_filled_qty.get(order.client_order_id)
+        if cached_filled_qty is not None and cached_filled_qty._mem.raw >= order.quantity._mem.raw:
+            self._log.debug(
+                f"Ignoring fill as already filled pending application of events: "
+                f"{cached_filled_qty=}, {order.quantity=}, {order.filled_qty=}, {order.leaves_qty=}",
+            )
+            return
 
-        cdef list fills = self._book.simulate_fills(
-            order,
-            price_prec=self.instrument.price_precision,
-            size_prec=self.instrument.size_precision,
-            is_aggressive=False,
+        cdef PositionId venue_position_id = self._get_position_id(order)
+        cdef Position position = None
+        if venue_position_id is not None:
+            position = self.cache.position(venue_position_id)
+
+        if self._use_reduce_only and order.is_reduce_only and position is None:
+            self._log.warning(
+                f"Canceling REDUCE_ONLY {order.type_string_c()} "
+                f"as would increase position",
+            )
+            self.cancel_order(order)
+            return  # Order canceled
+
+        order.liquidity_side = LiquiditySide.TAKER
+        cdef list fills = self.determine_market_fills_with_simulation(order)
+
+        self.apply_fills(
+            order=order,
+            fills=fills,
+            liquidity_side=order.liquidity_side,
+            venue_position_id=venue_position_id,
+            position=position,
         )
 
-        cdef Price triggered_price = order.get_triggered_price_c()
-        cdef Price price = order.price
+    cdef list determine_market_fills_with_simulation(self, Order order):
+        """
+        Determine market order fills using FillModel simulation if available.
 
-        if (
-            fills
-            and triggered_price is not None
-            and order.liquidity_side == LiquiditySide.TAKER
-        ):
-            ########################################################################
-            # Filling as TAKER from a trigger
-            ########################################################################
-            if order.side == OrderSide.BUY and price._mem.raw > triggered_price._mem.raw:
-                fills[0] = (triggered_price, fills[0][1])
-                self._has_targets = True
-                self._target_bid = self._core.bid_raw
-                self._target_ask = self._core.ask_raw
-                self._target_last = self._core.last_raw
-                self._core.set_ask_raw(price._mem.raw)
-                self._core.set_last_raw(price._mem.raw)
-            elif order.side == OrderSide.SELL and price._mem.raw < triggered_price._mem.raw:
-                fills[0] = (triggered_price, fills[0][1])
-                self._has_targets = True
-                self._target_bid = self._core.bid_raw
-                self._target_ask = self._core.ask_raw
-                self._target_last = self._core.last_raw
-                self._core.set_bid_raw(price._mem.raw)
-                self._core.set_last_raw(price._mem.raw)
+        This method first checks if the FillModel provides a simulated OrderBook
+        for fill simulation. If so, it uses that for fill determination. Otherwise,
+        it falls back to the standard market fill logic.
+        """
+        if self._fill_model is None:
+            return self.determine_market_price_and_volume(order)
 
-        cdef tuple[Price, Quantity] fill
-        cdef Price last_px
-        if (
-            fills
-            and order.liquidity_side == LiquiditySide.MAKER
-        ):
-            ########################################################################
-            # Filling as MAKER
-            ########################################################################
-            price = order.price
-            if order.side == OrderSide.BUY:
-                if triggered_price and price > triggered_price:
-                    price = triggered_price
-                for fill in fills:
-                    last_px = fill[0]
-                    if last_px._mem.raw < price._mem.raw:
-                        # Marketable BUY would have filled at limit
-                        self._has_targets = True
-                        self._target_bid = self._core.bid_raw
-                        self._target_ask = self._core.ask_raw
-                        self._target_last = self._core.last_raw
-                        self._core.set_ask_raw(price._mem.raw)
-                        self._core.set_last_raw(price._mem.raw)
-                        last_px._mem.raw = price._mem.raw
-            elif order.side == OrderSide.SELL:
-                if triggered_price and price < triggered_price:
-                    price = triggered_price
-                for fill in fills:
-                    last_px = fill[0]
-                    if last_px._mem.raw > price._mem.raw:
-                        # Marketable SELL would have filled at limit
-                        self._has_targets = True
-                        self._target_bid = self._core.bid_raw
-                        self._target_ask = self._core.ask_raw
-                        self._target_last = self._core.last_raw
-                        self._core.set_bid_raw(price._mem.raw)
-                        self._core.set_last_raw(price._mem.raw)
-                        last_px._mem.raw = price._mem.raw
-            else:
-                raise RuntimeError(f"invalid `OrderSide`, was {order.side}")  # pragma: no cover (design-time error)
+        # Get current best bid/ask for simulation
+        cdef Price best_bid = self._core.bid
+        cdef Price best_ask = self._core.ask
 
-        return fills
+        if best_bid is None or best_ask is None:
+            return []  # No market available
+
+        # Try to get simulated OrderBook from FillModel
+        cdef OrderBook simulated_book = self._fill_model.get_orderbook_for_fill_simulation(
+            self.instrument, order, best_bid, best_ask
+        )
+
+        if simulated_book is not None:
+            # Use simulated OrderBook for fill determination
+            return simulated_book.simulate_fills(
+                order,
+                price_prec=self.instrument.price_precision,
+                size_prec=self.instrument.size_precision,
+                is_aggressive=True,
+            )
+        else:
+            # Fall back to standard logic
+            return self.determine_market_price_and_volume(order)
 
     cpdef list determine_market_price_and_volume(self, Order order):
         """
@@ -1791,14 +1801,17 @@ cdef class OrderMatchingEngine:
         cdef Price triggered_price
         if self._book.book_type == BookType.L1_MBP and fills:
             triggered_price = order.get_triggered_price_c()
+
             if order.order_type == OrderType.MARKET or order.order_type == OrderType.MARKET_TO_LIMIT or order.order_type == OrderType.MARKET_IF_TOUCHED:
                 if order.side == OrderSide.BUY:
                     if self._core.is_ask_initialized:
                         price = self._core.ask
                     else:
                         price = self.best_ask_price()
+
                     if triggered_price:
                         price = triggered_price
+
                     if price is not None:
                         self._core.set_last_raw(price._mem.raw)
                         fills[0] = (price, fills[0][1])
@@ -1811,8 +1824,10 @@ cdef class OrderMatchingEngine:
                         price = self._core.bid
                     else:
                         price = self.best_bid_price()
+
                     if triggered_price:
                         price = triggered_price
+
                     if price is not None:
                         self._core.set_last_raw(price._mem.raw)
                         fills[0] = (price, fills[0][1])
@@ -1822,59 +1837,21 @@ cdef class OrderMatchingEngine:
                         )
             else:
                 price = order.price if (order.order_type == OrderType.LIMIT or order.order_type == OrderType.LIMIT_IF_TOUCHED) else order.trigger_price
+
                 if triggered_price:
                     price = triggered_price
+
                 if order.side == OrderSide.BUY:
                     self._core.set_ask_raw(price._mem.raw)
                 elif order.side == OrderSide.SELL:
                     self._core.set_bid_raw(price._mem.raw)
                 else:
                     raise RuntimeError(f"invalid `OrderSide`, was {order.side}")  # pragma: no cover (design-time error)
+
                 self._core.set_last_raw(price._mem.raw)
                 fills[0] = (price, fills[0][1])
 
         return fills
-
-    cpdef void fill_market_order(self, Order order):
-        """
-        Fill the given *marketable* order.
-
-        Parameters
-        ----------
-        order : Order
-            The order to fill.
-
-        """
-        cdef Quantity cached_filled_qty = self._cached_filled_qty.get(order.client_order_id)
-        if cached_filled_qty is not None and cached_filled_qty._mem.raw >= order.quantity._mem.raw:
-            self._log.debug(
-                f"Ignoring fill as already filled pending application of events: "
-                f"{cached_filled_qty=}, {order.quantity=}, {order.filled_qty=}, {order.leaves_qty=}",
-            )
-            return
-
-        cdef PositionId venue_position_id = self._get_position_id(order)
-        cdef Position position = None
-        if venue_position_id is not None:
-            position = self.cache.position(venue_position_id)
-        if self._use_reduce_only and order.is_reduce_only and position is None:
-            self._log.warning(
-                f"Canceling REDUCE_ONLY {order.type_string_c()} "
-                f"as would increase position",
-            )
-            self.cancel_order(order)
-            return  # Order canceled
-
-        order.liquidity_side = LiquiditySide.TAKER
-        cdef list fills = self.determine_market_price_and_volume(order)
-
-        self.apply_fills(
-            order=order,
-            fills=fills,
-            liquidity_side=order.liquidity_side,
-            venue_position_id=venue_position_id,
-            position=position,
-        )
 
     cpdef void fill_limit_order(self, Order order):
         """
@@ -1912,6 +1889,7 @@ cdef class OrderMatchingEngine:
         cdef Position position = None
         if venue_position_id is not None:
             position = self.cache.position(venue_position_id)
+
         if self._use_reduce_only and order.is_reduce_only and position is None:
             self._log.warning(
                 f"Canceling REDUCE_ONLY {order.type_string_c()} "
@@ -1920,7 +1898,7 @@ cdef class OrderMatchingEngine:
             self.cancel_order(order)
             return  # Order canceled
 
-        cdef list fills = self.determine_limit_price_and_volume(order)
+        cdef list fills = self.determine_limit_fills_with_simulation(order)
 
         self.apply_fills(
             order=order,
@@ -1929,6 +1907,147 @@ cdef class OrderMatchingEngine:
             venue_position_id=venue_position_id,
             position=position,
         )
+
+    cdef list determine_limit_fills_with_simulation(self, Order order):
+        """
+        Determine limit order fills using FillModel simulation if available.
+
+        This method first checks if the FillModel provides a simulated OrderBook
+        for fill simulation. If so, it uses that for fill determination. Otherwise,
+        it falls back to the standard limit fill logic.
+        """
+        if self._fill_model is None:
+            return self.determine_limit_price_and_volume(order)
+
+        # Get current best bid/ask for simulation
+        cdef Price best_bid = self._core.bid
+        cdef Price best_ask = self._core.ask
+
+        if best_bid is None or best_ask is None:
+            return []  # No market available
+
+        # Try to get simulated OrderBook from FillModel
+        cdef OrderBook simulated_book = self._fill_model.get_orderbook_for_fill_simulation(
+            self.instrument, order, best_bid, best_ask
+        )
+
+        if simulated_book is not None:
+            # Use simulated OrderBook for fill determination
+            return simulated_book.simulate_fills(
+                order,
+                price_prec=self.instrument.price_precision,
+                size_prec=self.instrument.size_precision,
+                is_aggressive=False,
+            )
+        else:
+            # Fall back to standard logic
+            return self.determine_limit_price_and_volume(order)
+
+    cpdef list determine_limit_price_and_volume(self, Order order):
+        """
+        Return the projected fills for the given *limit* order filling passively
+        from its limit price.
+
+        The list may be empty if no fills.
+
+        Parameters
+        ----------
+        order : Order
+            The order to determine fills for.
+
+        Returns
+        -------
+        list[tuple[Price, Quantity]]
+
+        Raises
+        ------
+        ValueError
+            If the `order` does not have a LIMIT `price`.
+
+        """
+        Condition.is_true(order.has_price_c(), "order has no limit `price`")
+
+        cdef list fills = self._book.simulate_fills(
+            order,
+            price_prec=self.instrument.price_precision,
+            size_prec=self.instrument.size_precision,
+            is_aggressive=False,
+        )
+
+        cdef Price triggered_price = order.get_triggered_price_c()
+        cdef Price price = order.price
+
+        if (
+                fills
+                and triggered_price is not None
+                and order.liquidity_side == LiquiditySide.TAKER
+        ):
+            ########################################################################
+            # Filling as TAKER from a trigger
+            ########################################################################
+            if order.side == OrderSide.BUY and price._mem.raw > triggered_price._mem.raw:
+                fills[0] = (triggered_price, fills[0][1])
+                self._has_targets = True
+                self._target_bid = self._core.bid_raw
+                self._target_ask = self._core.ask_raw
+                self._target_last = self._core.last_raw
+                self._core.set_ask_raw(price._mem.raw)
+                self._core.set_last_raw(price._mem.raw)
+            elif order.side == OrderSide.SELL and price._mem.raw < triggered_price._mem.raw:
+                fills[0] = (triggered_price, fills[0][1])
+                self._has_targets = True
+                self._target_bid = self._core.bid_raw
+                self._target_ask = self._core.ask_raw
+                self._target_last = self._core.last_raw
+                self._core.set_bid_raw(price._mem.raw)
+                self._core.set_last_raw(price._mem.raw)
+
+        cdef tuple[Price, Quantity] fill
+        cdef Price last_px
+        if (
+                fills
+                and order.liquidity_side == LiquiditySide.MAKER
+        ):
+            ########################################################################
+            # Filling as MAKER
+            ########################################################################
+            price = order.price
+
+            if order.side == OrderSide.BUY:
+                if triggered_price and price > triggered_price:
+                    price = triggered_price
+
+                for fill in fills:
+                    last_px = fill[0]
+
+                    if last_px._mem.raw < price._mem.raw:
+                        # Marketable BUY would have filled at limit
+                        self._has_targets = True
+                        self._target_bid = self._core.bid_raw
+                        self._target_ask = self._core.ask_raw
+                        self._target_last = self._core.last_raw
+                        self._core.set_ask_raw(price._mem.raw)
+                        self._core.set_last_raw(price._mem.raw)
+                        last_px._mem.raw = price._mem.raw
+            elif order.side == OrderSide.SELL:
+                if triggered_price and price < triggered_price:
+                    price = triggered_price
+                for fill in fills:
+                    last_px = fill[0]
+
+                    if last_px._mem.raw > price._mem.raw:
+                        # Marketable SELL would have filled at limit
+                        self._has_targets = True
+                        self._target_bid = self._core.bid_raw
+                        self._target_ask = self._core.ask_raw
+                        self._target_last = self._core.last_raw
+                        self._core.set_bid_raw(price._mem.raw)
+                        self._core.set_last_raw(price._mem.raw)
+                        last_px._mem.raw = price._mem.raw
+            else:
+                raise RuntimeError(f"invalid `OrderSide`, was {order.side}")  # pragma: no cover (design-time error)
+
+        return fills
 
     cpdef void apply_fills(
         self,
@@ -2025,6 +2144,7 @@ cdef class OrderMatchingEngine:
                     f"when instrument price precision is {self.instrument.price_precision}. "
                     f"Check that the data price precision matches the {self.instrument.id} instrument"
                 )
+
             # Validate size precision
             if fill_qty._mem.precision != self.instrument.size_precision:
                 raise RuntimeError(
@@ -2071,6 +2191,7 @@ cdef class OrderMatchingEngine:
             if fill_qty._mem.raw == 0:
                 if len(fills) == 1 and order.status_c() == OrderStatus.SUBMITTED:
                     self._generate_order_rejected(order, f"no market for {order.instrument_id}")
+
                 return  # Done
 
             self.fill_order(
@@ -2251,10 +2372,13 @@ cdef class OrderMatchingEngine:
             for client_order_id in order.linked_order_ids or []:
                 child_order = self.cache.order(client_order_id)
                 assert child_order is not None, "OTO child order not found"
+
                 if child_order.is_closed_c():
                     continue
+
                 if child_order.is_active_local_c():
                     continue  # Order is not on the exchange yet
+
                 if child_order.position_id is None and order.position_id is not None:
                     self.cache.add_position_id(
                         position_id=order.position_id,
@@ -2275,17 +2399,22 @@ cdef class OrderMatchingEngine:
             for client_order_id in order.linked_order_ids or []:
                 oco_order = self.cache.order(client_order_id)
                 assert oco_order is not None, "OCO order not found"
+
                 if oco_order.is_closed_c():
                     continue
+
                 if oco_order.is_active_local_c():
                     continue  # Order is not on the exchange yet
+
                 self.cancel_order(oco_order)
         elif order.contingency_type == ContingencyType.OUO:
             for client_order_id in order.linked_order_ids or []:
                 ouo_order = self.cache.order(client_order_id)
                 assert ouo_order is not None, "OUO order not found"
+
                 if ouo_order.is_active_local_c():
                     continue  # Order is not on the exchange yet
+
                 if order.is_closed_c() and ouo_order.is_open_c():
                     self.cancel_order(ouo_order)
                 elif order.leaves_qty._mem.raw != 0 and order.leaves_qty._mem.raw != ouo_order.leaves_qty._mem.raw:
@@ -2340,11 +2469,14 @@ cdef class OrderMatchingEngine:
         cdef PositionId position_id
         if self.oms_type == OmsType.HEDGING:
             position_id = self.cache.position_id(order.client_order_id)
+
             if position_id is not None:
                 return position_id
+
             if generate:
                 # Generate a venue position ID
                 return self._generate_venue_position_id()
+
         ####################################################################
         # NETTING OMS (position ID will be `{instrument_id}-{strategy_id}`)
         ####################################################################
@@ -2362,6 +2494,7 @@ cdef class OrderMatchingEngine:
             return None
 
         self._position_count += 1
+
         if self._use_random_ids:
             return PositionId(str(uuid.uuid4()))
         else:
@@ -2369,6 +2502,7 @@ cdef class OrderMatchingEngine:
 
     cdef VenueOrderId _generate_venue_order_id(self):
         self._order_count += 1
+
         if self._use_random_ids:
             return VenueOrderId(str(uuid.uuid4()))
         else:
@@ -2438,36 +2572,46 @@ cdef class OrderMatchingEngine:
         if order.order_type == OrderType.LIMIT or order.order_type == OrderType.MARKET_TO_LIMIT:
             if price is None:
                 price = order.price
+
             self._update_limit_order(order, qty, price)
         elif order.order_type == OrderType.STOP_MARKET:
             if trigger_price is None:
                 trigger_price = order.trigger_price
+
             self._update_stop_market_order(order, qty, trigger_price)
         elif order.order_type == OrderType.STOP_LIMIT:
             if price is None:
                 price = order.price
+
             if trigger_price is None:
                 trigger_price = order.trigger_price
+
             self._update_stop_limit_order(order, qty, price, trigger_price)
         elif order.order_type == OrderType.MARKET_IF_TOUCHED:
             if trigger_price is None:
                 trigger_price = order.trigger_price
+
             self._update_market_if_touched_order(order, qty, trigger_price)
         elif order.order_type == OrderType.LIMIT_IF_TOUCHED:
             if price is None:
                 price = order.price
+
             if trigger_price is None:
                 trigger_price = order.trigger_price
+
             self._update_limit_if_touched_order(order, qty, price, trigger_price)
         elif order.order_type == OrderType.TRAILING_STOP_MARKET:
             if trigger_price is None:
                 trigger_price = order.trigger_price
+
             self._update_trailing_stop_market_order(order, qty, trigger_price)
         elif order.order_type == OrderType.TRAILING_STOP_LIMIT:
             if price is None:
                 price = order.price
+
             if trigger_price is None:
                 trigger_price = order.trigger_price
+
             self._update_trailing_stop_limit_order(order, qty, price, trigger_price)
         else:
             raise ValueError(
@@ -2512,6 +2656,7 @@ cdef class OrderMatchingEngine:
                     f"ask={self._core.ask}",
                 )
                 return
+
             order.liquidity_side = LiquiditySide.TAKER
             self.fill_limit_order(order)
 
@@ -2522,10 +2667,13 @@ cdef class OrderMatchingEngine:
         for client_order_id in order.linked_order_ids or []:
             ouo_order = self.cache.order(client_order_id)
             assert ouo_order is not None, "OUO order not found"
+
             if ouo_order.is_active_local_c():
                 continue  # Order is not on the exchange yet
+
             if ouo_order.order_type == OrderType.MARKET or ouo_order.is_closed_c():
                 continue
+
             if order.leaves_qty._mem.raw == 0:
                 self.cancel_order(ouo_order)
             elif ouo_order.leaves_qty._mem.raw != order.leaves_qty._mem.raw:
@@ -2544,8 +2692,10 @@ cdef class OrderMatchingEngine:
         for client_order_id in order.linked_order_ids or []:
             contingent_order = self.cache.order(client_order_id)
             assert contingent_order is not None, "Contingency order not found"
+
             if contingent_order.is_active_local_c():
                 continue  # Order is not on the exchange yet
+
             if not contingent_order.is_closed_c():
                 self.cancel_order(contingent_order, cancel_contingencies=False)
 

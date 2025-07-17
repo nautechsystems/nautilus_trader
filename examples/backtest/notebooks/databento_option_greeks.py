@@ -33,6 +33,7 @@ from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.config import ImportableActorConfig
+from nautilus_trader.config import ImportableFillModelConfig
 from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import StrategyConfig
@@ -204,7 +205,7 @@ class OptionStrategy(Strategy):
             instrument_id=instrument_id,
             order_side=(OrderSide.BUY if quantity > 0 else OrderSide.SELL),
             quantity=Quantity.from_int(abs(quantity)),
-            price=Price(price),
+            price=Price.from_str(f"{price:.2f}"),
         )
 
         self.submit_order(order)
@@ -319,6 +320,10 @@ if load_greeks:
         *data,
     ]
 
+# Configure venue with enhanced SizeAwareFillModel for realistic option execution
+# This fill model provides different execution behavior based on order size:
+# - Small orders (<=10 contracts): Good liquidity at best prices
+# - Large orders: Experience price impact with partial fills at worse prices
 venues = [
     BacktestVenueConfig(
         name="XCME",
@@ -329,6 +334,11 @@ venues = [
         margin_model=MarginModelConfig(
             model_type="standard",
         ),  # Use standard margin model for options trading
+        fill_model=ImportableFillModelConfig(
+            fill_model_path="nautilus_trader.backtest.fill_models:SizeAwareFillModel",
+            config_path="nautilus_trader.backtest.config:FillModelConfig",
+            config={},
+        ),
     ),
 ]
 
