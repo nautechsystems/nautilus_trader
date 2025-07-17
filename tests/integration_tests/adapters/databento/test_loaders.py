@@ -619,8 +619,8 @@ def test_loader_ohlcv_1s() -> None:
 @pytest.mark.parametrize(
     ("bars_timestamp_on_close", "expected_ts_event", "expected_ts_init"),
     [
-        (True, 1715248860000000000, 1715248860000000000),  # Close time (default)
-        (False, 1715248800000000000, 1715248800000000000),  # Open time
+        (True, 1715248860000000000, 1715248860000000000),  # Both close time
+        (False, 1715248800000000000, 1715248860000000000),  # ts_event=open, ts_init=close
     ],
 )
 def test_loader_with_ohlcv_1m(
@@ -659,7 +659,7 @@ def test_loader_with_ohlcv_1m(
     ("bars_timestamp_on_close", "expected_ts_event", "expected_ts_init"),
     [
         (True, 1715248860000000000, 1715248860000000000),  # Close time (default)
-        (False, 1715248800000000000, 1715248800000000000),  # Open time
+        (False, 1715248800000000000, 1715248860000000000),  # ts_event=open, ts_init=close
     ],
 )
 def test_loader_with_ohlcv_1m_and_xcme(
