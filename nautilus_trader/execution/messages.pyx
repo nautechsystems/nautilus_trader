@@ -19,19 +19,27 @@ from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.rust.common cimport LogLevel
+from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport TriggerType
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.functions cimport order_side_from_str
 from nautilus_trader.model.functions cimport order_side_to_str
+from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport ClientId
+from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
+from nautilus_trader.model.orders.list cimport OrderList
 from nautilus_trader.model.orders.unpacker cimport OrderUnpacker
 
 
@@ -118,6 +126,73 @@ cdef class GenerateOrderStatusReport(ExecutionReportCommand):
         self.client_order_id = client_order_id
         self.venue_order_id = venue_order_id
 
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"client_order_id={self.client_order_id}, "
+            f"venue_order_id={self.venue_order_id}, "
+            f"command_id={self.id.to_str()}, "
+            f"ts_init={self.ts_init})"
+        )
+
+    @staticmethod
+    cdef GenerateOrderStatusReport from_dict_c(dict values):
+        Condition.not_none(values, "values")
+        cdef str i = values["instrument_id"]
+        cdef str c = values["client_order_id"]
+        cdef str v = values["venue_order_id"]
+        return GenerateOrderStatusReport(
+            instrument_id=InstrumentId.from_str_c(i) if i is not None else None,
+            client_order_id=ClientOrderId(c) if c is not None else None,
+            venue_order_id=VenueOrderId(v) if v is not None else None,
+            command_id=UUID4.from_str_c(values["command_id"]),
+            ts_init=values["ts_init"],
+            params=values.get("params"),
+        )
+
+    @staticmethod
+    cdef dict to_dict_c(GenerateOrderStatusReport obj):
+        Condition.not_none(obj, "obj")
+        return {
+            "type": "GenerateOrderStatusReport",
+            "instrument_id": obj.instrument_id.to_str() if obj.instrument_id is not None else None,
+            "client_order_id": obj.client_order_id.to_str() if obj.client_order_id is not None else None,
+            "venue_order_id": obj.venue_order_id.to_str() if obj.venue_order_id is not None else None,
+            "command_id": obj.id.to_str(),
+            "ts_init": obj.ts_init,
+            "params": obj.params,
+        }
+
+    @staticmethod
+    def from_dict(dict values) -> GenerateOrderStatusReport:
+        """
+        Return a generate order status report command from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        GenerateOrderStatusReport
+
+        """
+        return GenerateOrderStatusReport.from_dict_c(values)
+
+    @staticmethod
+    def to_dict(GenerateOrderStatusReport obj):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return GenerateOrderStatusReport.to_dict_c(obj)
+
 
 cdef class GenerateOrderStatusReports(ExecutionReportCommand):
     """
@@ -167,6 +242,74 @@ cdef class GenerateOrderStatusReports(ExecutionReportCommand):
         self.open_only = open_only
         self.log_receipt_level = log_receipt_level
 
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"start={self.start}, "
+            f"end={self.end}, "
+            f"open_only={self.open_only}, "
+            f"command_id={self.id.to_str()}, "
+            f"ts_init={self.ts_init})"
+        )
+
+    @staticmethod
+    cdef GenerateOrderStatusReports from_dict_c(dict values):
+        Condition.not_none(values, "values")
+        cdef str i = values["instrument_id"]
+        return GenerateOrderStatusReports(
+            instrument_id=InstrumentId.from_str_c(i) if i is not None else None,
+            start=values["start"],
+            end=values["end"],
+            open_only=values["open_only"],
+            command_id=UUID4.from_str_c(values["command_id"]),
+            ts_init=values["ts_init"],
+            params=values.get("params"),
+        )
+
+    @staticmethod
+    cdef dict to_dict_c(GenerateOrderStatusReports obj):
+        Condition.not_none(obj, "obj")
+        return {
+            "type": "GenerateOrderStatusReports",
+            "instrument_id": obj.instrument_id.to_str() if obj.instrument_id is not None else None,
+            "start": obj.start,
+            "end": obj.end,
+            "open_only": obj.open_only,
+            "command_id": obj.id.to_str(),
+            "ts_init": obj.ts_init,
+            "params": obj.params,
+        }
+
+    @staticmethod
+    def from_dict(dict values) -> GenerateOrderStatusReports:
+        """
+        Return a generate order status reports command from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        GenerateOrderStatusReports
+
+        """
+        return GenerateOrderStatusReports.from_dict_c(values)
+
+    @staticmethod
+    def to_dict(GenerateOrderStatusReports obj):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return GenerateOrderStatusReports.to_dict_c(obj)
+
 
 cdef class GenerateFillReports(ExecutionReportCommand):
     """
@@ -212,6 +355,75 @@ cdef class GenerateFillReports(ExecutionReportCommand):
 
         self.venue_order_id = venue_order_id
 
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"venue_order_id={self.venue_order_id}, "
+            f"start={self.start}, "
+            f"end={self.end}, "
+            f"command_id={self.id.to_str()}, "
+            f"ts_init={self.ts_init})"
+        )
+
+    @staticmethod
+    cdef GenerateFillReports from_dict_c(dict values):
+        Condition.not_none(values, "values")
+        cdef str i = values["instrument_id"]
+        cdef str v = values["venue_order_id"]
+        return GenerateFillReports(
+            instrument_id=InstrumentId.from_str_c(i) if i is not None else None,
+            venue_order_id=VenueOrderId(v) if v is not None else None,
+            start=values["start"],
+            end=values["end"],
+            command_id=UUID4.from_str_c(values["command_id"]),
+            ts_init=values["ts_init"],
+            params=values.get("params"),
+        )
+
+    @staticmethod
+    cdef dict to_dict_c(GenerateFillReports obj):
+        Condition.not_none(obj, "obj")
+        return {
+            "type": "GenerateFillReports",
+            "instrument_id": obj.instrument_id.to_str() if obj.instrument_id is not None else None,
+            "venue_order_id": obj.venue_order_id.to_str() if obj.venue_order_id is not None else None,
+            "start": obj.start,
+            "end": obj.end,
+            "command_id": obj.id.to_str(),
+            "ts_init": obj.ts_init,
+            "params": obj.params,
+        }
+
+    @staticmethod
+    def from_dict(dict values) -> GenerateFillReports:
+        """
+        Return a generate fill reports command from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        GenerateFillReports
+
+        """
+        return GenerateFillReports.from_dict_c(values)
+
+    @staticmethod
+    def to_dict(GenerateFillReports obj):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return GenerateFillReports.to_dict_c(obj)
+
 
 cdef class GeneratePositionStatusReports(ExecutionReportCommand):
     """
@@ -251,6 +463,71 @@ cdef class GeneratePositionStatusReports(ExecutionReportCommand):
             ts_init,
             params,
         )
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"start={self.start}, "
+            f"end={self.end}, "
+            f"command_id={self.id.to_str()}, "
+            f"ts_init={self.ts_init})"
+        )
+
+    @staticmethod
+    cdef GeneratePositionStatusReports from_dict_c(dict values):
+        Condition.not_none(values, "values")
+        cdef str i = values["instrument_id"]
+        return GeneratePositionStatusReports(
+            instrument_id=InstrumentId.from_str_c(i) if i is not None else None,
+            start=values["start"],
+            end=values["end"],
+            command_id=UUID4.from_str_c(values["command_id"]),
+            ts_init=values["ts_init"],
+            params=values.get("params"),
+        )
+
+    @staticmethod
+    cdef dict to_dict_c(GeneratePositionStatusReports obj):
+        Condition.not_none(obj, "obj")
+        return {
+            "type": "GeneratePositionStatusReports",
+            "instrument_id": obj.instrument_id.to_str() if obj.instrument_id is not None else None,
+            "start": obj.start,
+            "end": obj.end,
+            "command_id": obj.id.to_str(),
+            "ts_init": obj.ts_init,
+            "params": obj.params,
+        }
+
+    @staticmethod
+    def from_dict(dict values) -> GeneratePositionStatusReports:
+        """
+        Return a generate position status reports command from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        GeneratePositionStatusReports
+
+        """
+        return GeneratePositionStatusReports.from_dict_c(values)
+
+    @staticmethod
+    def to_dict(GeneratePositionStatusReports obj):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return GeneratePositionStatusReports.to_dict_c(obj)
 
 
 cdef class TradingCommand(Command):

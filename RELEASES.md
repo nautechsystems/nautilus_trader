@@ -21,6 +21,7 @@ Released on TBD (UTC).
 - Refactored OKX adapter to Rust API clients
 - Refactored `BacktestDataIterator` (#2791) to consolidate data generator usage, thanks @faysou
 - Added stream iterators support `BacktestDataIterator`
+- Added serialization support for execution report commands
 - Added `DataTester` standardized data testing actor for integration adapters
 - Added `start` and `stop` to response data (#2748), thanks @stastnypremysl
 - Added integration test service management targets (#2765), thanks @stastnypremysl

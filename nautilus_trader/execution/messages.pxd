@@ -50,6 +50,12 @@ cdef class GenerateOrderStatusReport(ExecutionReportCommand):
     cdef readonly VenueOrderId venue_order_id
     """The venue order ID associated with the command.\n\n:returns: `VenueOrderId` or ``None``"""
 
+    @staticmethod
+    cdef GenerateOrderStatusReport from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(GenerateOrderStatusReport obj)
+
 
 cdef class GenerateOrderStatusReports(ExecutionReportCommand):
     cdef readonly bint open_only
@@ -57,14 +63,30 @@ cdef class GenerateOrderStatusReports(ExecutionReportCommand):
     cdef readonly LogLevel log_receipt_level
     """The log level for logging received reports.\n\n:returns: `LogLevel`"""
 
+    @staticmethod
+    cdef GenerateOrderStatusReports from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(GenerateOrderStatusReports obj)
+
 
 cdef class GenerateFillReports(ExecutionReportCommand):
     cdef readonly VenueOrderId venue_order_id
     """The venue order ID associated with the command.\n\n:returns: `VenueOrderId` or ``None``"""
 
+    @staticmethod
+    cdef GenerateFillReports from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(GenerateFillReports obj)
+
 
 cdef class GeneratePositionStatusReports(ExecutionReportCommand):
-    pass
+    @staticmethod
+    cdef GeneratePositionStatusReports from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(GeneratePositionStatusReports obj)
 
 
 cdef class TradingCommand(Command):
