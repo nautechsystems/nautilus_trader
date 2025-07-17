@@ -13,12 +13,18 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from datetime import datetime
+
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import BatchCancelOrders
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
+from nautilus_trader.execution.messages import GenerateFillReports
+from nautilus_trader.execution.messages import GenerateOrderStatusReport
+from nautilus_trader.execution.messages import GenerateOrderStatusReports
+from nautilus_trader.execution.messages import GeneratePositionStatusReports
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import QueryAccount
 from nautilus_trader.execution.messages import QueryOrder
@@ -446,4 +452,196 @@ class TestCommands:
         assert (
             repr(command)
             == f"QueryAccount(client_id=BROKER, trader_id=TRADER-001, account_id=ACCOUNT-001, command_id={uuid}, ts_init=0)"
+        )
+
+    def test_generate_order_status_report_command_to_from_dict_and_str_repr(self):
+        # Arrange
+        uuid = UUID4()
+
+        command = GenerateOrderStatusReport(
+            instrument_id=AUDUSD_SIM.id,
+            client_order_id=ClientOrderId("O-123456"),
+            venue_order_id=VenueOrderId("001"),
+            command_id=uuid,
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act, Assert
+        assert (
+            GenerateOrderStatusReport.from_dict(GenerateOrderStatusReport.to_dict(command))
+            == command
+        )
+        assert (
+            repr(command)
+            == f"GenerateOrderStatusReport(instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=001, command_id={uuid}, ts_init=0)"
+        )
+
+    def test_generate_order_status_report_command_with_none_venue_order_id_to_from_dict_and_str_repr(
+        self,
+    ):
+        # Arrange
+        uuid = UUID4()
+
+        command = GenerateOrderStatusReport(
+            instrument_id=AUDUSD_SIM.id,
+            client_order_id=ClientOrderId("O-123456"),
+            venue_order_id=None,
+            command_id=uuid,
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act, Assert
+        assert (
+            GenerateOrderStatusReport.from_dict(GenerateOrderStatusReport.to_dict(command))
+            == command
+        )
+        assert (
+            repr(command)
+            == f"GenerateOrderStatusReport(instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=None, command_id={uuid}, ts_init=0)"
+        )
+
+    def test_generate_order_status_reports_command_to_from_dict_and_str_repr(self):
+        # Arrange
+        uuid = UUID4()
+        start_time = datetime(2023, 1, 1, 12, 0, 0)
+        end_time = datetime(2023, 1, 1, 18, 0, 0)
+
+        command = GenerateOrderStatusReports(
+            instrument_id=AUDUSD_SIM.id,
+            start=start_time,
+            end=end_time,
+            open_only=True,
+            command_id=uuid,
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act, Assert
+        assert (
+            GenerateOrderStatusReports.from_dict(GenerateOrderStatusReports.to_dict(command))
+            == command
+        )
+        assert (
+            repr(command)
+            == f"GenerateOrderStatusReports(instrument_id=AUD/USD.SIM, start={start_time}, end={end_time}, open_only=True, command_id={uuid}, ts_init=0)"  # noqa
+        )
+
+    def test_generate_order_status_reports_command_with_none_instrument_id_to_from_dict_and_str_repr(
+        self,
+    ):
+        # Arrange
+        uuid = UUID4()
+        start_time = datetime(2023, 1, 1, 12, 0, 0)
+        end_time = datetime(2023, 1, 1, 18, 0, 0)
+
+        command = GenerateOrderStatusReports(
+            instrument_id=None,
+            start=start_time,
+            end=end_time,
+            open_only=False,
+            command_id=uuid,
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act, Assert
+        assert (
+            GenerateOrderStatusReports.from_dict(GenerateOrderStatusReports.to_dict(command))
+            == command
+        )
+        assert (
+            repr(command)
+            == f"GenerateOrderStatusReports(instrument_id=None, start={start_time}, end={end_time}, open_only=False, command_id={uuid}, ts_init=0)"
+        )
+
+    def test_generate_fill_reports_command_to_from_dict_and_str_repr(self):
+        # Arrange
+        uuid = UUID4()
+        start_time = datetime(2023, 1, 1, 12, 0, 0)
+        end_time = datetime(2023, 1, 1, 18, 0, 0)
+
+        command = GenerateFillReports(
+            instrument_id=AUDUSD_SIM.id,
+            venue_order_id=VenueOrderId("001"),
+            start=start_time,
+            end=end_time,
+            command_id=uuid,
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act, Assert
+        assert GenerateFillReports.from_dict(GenerateFillReports.to_dict(command)) == command
+        assert (
+            repr(command)
+            == f"GenerateFillReports(instrument_id=AUD/USD.SIM, venue_order_id=001, start={start_time}, end={end_time}, command_id={uuid}, ts_init=0)"
+        )
+
+    def test_generate_fill_reports_command_with_none_venue_order_id_to_from_dict_and_str_repr(self):
+        # Arrange
+        uuid = UUID4()
+        start_time = datetime(2023, 1, 1, 12, 0, 0)
+        end_time = datetime(2023, 1, 1, 18, 0, 0)
+
+        command = GenerateFillReports(
+            instrument_id=AUDUSD_SIM.id,
+            venue_order_id=None,
+            start=start_time,
+            end=end_time,
+            command_id=uuid,
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act, Assert
+        assert GenerateFillReports.from_dict(GenerateFillReports.to_dict(command)) == command
+        assert (
+            repr(command)
+            == f"GenerateFillReports(instrument_id=AUD/USD.SIM, venue_order_id=None, start={start_time}, end={end_time}, command_id={uuid}, ts_init=0)"  # noqa
+        )
+
+    def test_generate_position_status_reports_command_to_from_dict_and_str_repr(self):
+        # Arrange
+        uuid = UUID4()
+        start_time = datetime(2023, 1, 1, 12, 0, 0)
+        end_time = datetime(2023, 1, 1, 18, 0, 0)
+
+        command = GeneratePositionStatusReports(
+            instrument_id=AUDUSD_SIM.id,
+            start=start_time,
+            end=end_time,
+            command_id=uuid,
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act, Assert
+        assert (
+            GeneratePositionStatusReports.from_dict(GeneratePositionStatusReports.to_dict(command))
+            == command
+        )
+        assert (
+            repr(command)
+            == f"GeneratePositionStatusReports(instrument_id=AUD/USD.SIM, start={start_time}, end={end_time}, command_id={uuid}, ts_init=0)"
+        )
+
+    def test_generate_position_status_reports_command_with_none_instrument_id_to_from_dict_and_str_repr(
+        self,
+    ):
+        # Arrange
+        uuid = UUID4()
+        start_time = datetime(2023, 1, 1, 12, 0, 0)
+        end_time = datetime(2023, 1, 1, 18, 0, 0)
+
+        command = GeneratePositionStatusReports(
+            instrument_id=None,
+            start=start_time,
+            end=end_time,
+            command_id=uuid,
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act, Assert
+        assert (
+            GeneratePositionStatusReports.from_dict(GeneratePositionStatusReports.to_dict(command))
+            == command
+        )
+        assert (
+            repr(command)
+            == f"GeneratePositionStatusReports(instrument_id=None, start={start_time}, end={end_time}, command_id={uuid}, ts_init=0)"
         )

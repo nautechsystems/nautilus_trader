@@ -23,6 +23,10 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.messages cimport BatchCancelOrders
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
+from nautilus_trader.execution.messages cimport GenerateFillReports
+from nautilus_trader.execution.messages cimport GenerateOrderStatusReport
+from nautilus_trader.execution.messages cimport GenerateOrderStatusReports
+from nautilus_trader.execution.messages cimport GeneratePositionStatusReports
 from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport QueryAccount
 from nautilus_trader.execution.messages cimport QueryOrder
@@ -77,6 +81,10 @@ _OBJECT_TO_DICT_MAP: dict[str, Callable[[None], dict]] = {
     CancelOrder.__name__: CancelOrder.to_dict_c,
     CancelAllOrders.__name__: CancelAllOrders.to_dict_c,
     BatchCancelOrders.__name__: BatchCancelOrders.to_dict_c,
+    GenerateFillReports.__name__: GenerateFillReports.to_dict_c,
+    GenerateOrderStatusReport.__name__: GenerateOrderStatusReport.to_dict_c,
+    GenerateOrderStatusReports.__name__: GenerateOrderStatusReports.to_dict_c,
+    GeneratePositionStatusReports.__name__: GeneratePositionStatusReports.to_dict_c,
     SubmitOrder.__name__: SubmitOrder.to_dict_c,
     SubmitOrderList.__name__: SubmitOrderList.to_dict_c,
     ModifyOrder.__name__: ModifyOrder.to_dict_c,
@@ -135,6 +143,10 @@ _OBJECT_FROM_DICT_MAP: dict[str, Callable[[dict], Any]] = {
     CancelOrder.__name__: CancelOrder.from_dict_c,
     CancelAllOrders.__name__: CancelAllOrders.from_dict_c,
     BatchCancelOrders.__name__: BatchCancelOrders.from_dict_c,
+    GenerateFillReports.__name__: GenerateFillReports.from_dict_c,
+    GenerateOrderStatusReport.__name__: GenerateOrderStatusReport.from_dict_c,
+    GenerateOrderStatusReports.__name__: GenerateOrderStatusReports.from_dict_c,
+    GeneratePositionStatusReports.__name__: GeneratePositionStatusReports.from_dict_c,
     SubmitOrder.__name__: SubmitOrder.from_dict_c,
     SubmitOrderList.__name__: SubmitOrderList.from_dict_c,
     ModifyOrder.__name__: ModifyOrder.from_dict_c,
@@ -199,6 +211,10 @@ _EXTERNAL_PUBLISHABLE_TYPES = {
     CancelOrder,
     CancelAllOrders,
     BatchCancelOrders,
+    GenerateFillReports,
+    GenerateOrderStatusReport,
+    GenerateOrderStatusReports,
+    GeneratePositionStatusReports,
     QueryAccount,
     QueryOrder,
     ShutdownSystem,
