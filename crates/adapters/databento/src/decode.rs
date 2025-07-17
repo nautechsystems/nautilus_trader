@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{cmp, ffi::c_char, num::NonZeroUsize};
+use std::{ffi::c_char, num::NonZeroUsize};
 
 use databento::dbn::{self};
 use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_SECOND};
@@ -616,15 +616,13 @@ pub fn decode_ohlcv_msg(
     let ts_event_adjustment = decode_ts_event_adjustment(msg)?;
 
     let ts_event_raw = msg.hd.ts_event.into();
-    let ts_init_raw = ts_init.unwrap_or(ts_event_raw);
+    let ts_close = ts_event_raw + ts_event_adjustment;
+    let ts_init = ts_init.unwrap_or(ts_close); // received time or close time
 
-    let (ts_event, ts_init) = if timestamp_on_close {
-        // Both ts_event and ts_init are set to close time
-        let ts_close = cmp::max(ts_init_raw, ts_event_raw) + ts_event_adjustment;
-        (ts_close, ts_close)
+    let ts_event = if timestamp_on_close {
+        ts_close
     } else {
-        // Both ts_event and ts_init are set to open time
-        (ts_event_raw, ts_event_raw)
+        ts_event_raw
     };
 
     let bar = Bar::new(
@@ -730,12 +728,13 @@ pub fn decode_record(
         let depth = decode_mbp10_msg(msg, instrument_id, price_precision, Some(ts_init))?;
         (Some(Data::from(depth)), None)
     } else if let Some(msg) = record.get::<dbn::OhlcvMsg>() {
-        let ts_init = determine_timestamp(ts_init, msg.hd.ts_event.into());
+        // if ts_init is None (like with historical data) we don't want it to be equal to ts_event
+        // it will be set correctly in decode_ohlcv_msg instead
         let bar = decode_ohlcv_msg(
             msg,
             instrument_id,
             price_precision,
-            Some(ts_init),
+            ts_init,
             bars_timestamp_on_close,
         )?;
         (Some(Data::Bar(bar)), None)
