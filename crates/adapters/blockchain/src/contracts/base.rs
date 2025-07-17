@@ -85,7 +85,7 @@ impl BaseContract {
 
     /// Gets a reference to the RPC client.
     #[must_use]
-    pub fn client(&self) -> &Arc<BlockchainHttpRpcClient> {
+    pub const fn client(&self) -> &Arc<BlockchainHttpRpcClient> {
         &self.client
     }
 
