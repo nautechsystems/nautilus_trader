@@ -35,6 +35,7 @@ from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -528,6 +529,113 @@ cdef class GeneratePositionStatusReports(ExecutionReportCommand):
 
         """
         return GeneratePositionStatusReports.to_dict_c(obj)
+
+
+cdef class GenerateExecutionMassStatus(ExecutionReportCommand):
+    """
+    Command to generate an execution mass status report.
+
+    Parameters
+    ----------
+    client_id : ClientId
+        The client ID for the command.
+    account_id : AccountId
+        The account ID for the command.
+    venue : Venue
+        The venue for the command.
+    command_id : UUID4
+        The command ID.
+    ts_init : uint64_t
+        UNIX timestamp (nanoseconds) when the object was initialized.
+    params : dict[str, object], optional
+        Additional parameters for the command.
+    """
+
+    def __init__(
+        self,
+        ClientId client_id not None,
+        AccountId account_id not None,
+        Venue venue not None,
+        UUID4 command_id not None,
+        uint64_t ts_init,
+        dict[str, object] params: dict | None = None,
+    ) -> None:
+        super().__init__(
+            instrument_id=None,
+            start=None,
+            end=None,
+            command_id=command_id,
+            ts_init=ts_init,
+            params=params,
+        )
+
+        self.client_id = client_id
+        self.account_id = account_id
+        self.venue = venue
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"client_id={self.client_id}, "
+            f"account_id={self.account_id}, "
+            f"venue={self.venue}, "
+            f"command_id={self.id.to_str()}, "
+            f"ts_init={self.ts_init})"
+        )
+
+    @staticmethod
+    cdef GenerateExecutionMassStatus from_dict_c(dict values):
+        Condition.not_none(values, "values")
+        return GenerateExecutionMassStatus(
+            client_id=ClientId(values["client_id"]),
+            account_id=AccountId(values["account_id"]),
+            venue=Venue(values["venue"]),
+            command_id=UUID4.from_str_c(values["command_id"]),
+            ts_init=values["ts_init"],
+            params=values.get("params"),
+        )
+
+    @staticmethod
+    cdef dict to_dict_c(GenerateExecutionMassStatus obj):
+        Condition.not_none(obj, "obj")
+        return {
+            "type": "GenerateExecutionMassStatus",
+            "client_id": obj.client_id.to_str(),
+            "account_id": obj.account_id.to_str(),
+            "venue": obj.venue.to_str(),
+            "command_id": obj.id.to_str(),
+            "ts_init": obj.ts_init,
+            "params": obj.params,
+        }
+
+    @staticmethod
+    def from_dict(dict values) -> GenerateExecutionMassStatus:
+        """
+        Return a generate execution mass status command from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        GenerateExecutionMassStatus
+
+        """
+        return GenerateExecutionMassStatus.from_dict_c(values)
+
+    @staticmethod
+    def to_dict(GenerateExecutionMassStatus obj):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return GenerateExecutionMassStatus.to_dict_c(obj)
 
 
 cdef class TradingCommand(Command):

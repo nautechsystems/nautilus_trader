@@ -26,6 +26,7 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -87,6 +88,21 @@ cdef class GeneratePositionStatusReports(ExecutionReportCommand):
 
     @staticmethod
     cdef dict to_dict_c(GeneratePositionStatusReports obj)
+
+
+cdef class GenerateExecutionMassStatus(ExecutionReportCommand):
+    cdef readonly ClientId client_id
+    """The client ID associated with the command.\n\n:returns: `ClientId`"""
+    cdef readonly AccountId account_id
+    """The account ID associated with the command.\n\n:returns: `AccountId`"""
+    cdef readonly Venue venue
+    """The venue associated with the command.\n\n:returns: `Venue`"""
+
+    @staticmethod
+    cdef GenerateExecutionMassStatus from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(GenerateExecutionMassStatus obj)
 
 
 cdef class TradingCommand(Command):

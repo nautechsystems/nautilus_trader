@@ -21,6 +21,7 @@ from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import BatchCancelOrders
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
+from nautilus_trader.execution.messages import GenerateExecutionMassStatus
 from nautilus_trader.execution.messages import GenerateFillReports
 from nautilus_trader.execution.messages import GenerateOrderStatusReport
 from nautilus_trader.execution.messages import GenerateOrderStatusReports
@@ -38,6 +39,7 @@ from nautilus_trader.model.identifiers import ExecAlgorithmId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -645,3 +647,50 @@ class TestCommands:
             repr(command)
             == f"GeneratePositionStatusReports(instrument_id=None, start={start_time}, end={end_time}, command_id={uuid}, ts_init=0)"
         )
+
+    def test_generate_execution_mass_status_command_to_from_dict_and_str_repr(self):
+        # Arrange
+        uuid = UUID4()
+
+        command = GenerateExecutionMassStatus(
+            client_id=ClientId("BROKER-001"),
+            account_id=AccountId("ACCOUNT-001"),
+            venue=Venue("SIM"),
+            command_id=uuid,
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act, Assert
+        assert (
+            GenerateExecutionMassStatus.from_dict(GenerateExecutionMassStatus.to_dict(command))
+            == command
+        )
+        assert (
+            repr(command)
+            == f"GenerateExecutionMassStatus(client_id=BROKER-001, account_id=ACCOUNT-001, venue=SIM, command_id={uuid}, ts_init=0)"
+        )
+
+    def test_generate_execution_mass_status_command_with_params_to_from_dict_and_str_repr(self):
+        # Arrange
+        uuid = UUID4()
+        params = {"custom_param": "value"}
+
+        command = GenerateExecutionMassStatus(
+            client_id=ClientId("BROKER-002"),
+            account_id=AccountId("ACCOUNT-002"),
+            venue=Venue("BINANCE"),
+            command_id=uuid,
+            ts_init=self.clock.timestamp_ns(),
+            params=params,
+        )
+
+        # Act, Assert
+        assert (
+            GenerateExecutionMassStatus.from_dict(GenerateExecutionMassStatus.to_dict(command))
+            == command
+        )
+        assert (
+            repr(command)
+            == f"GenerateExecutionMassStatus(client_id=BROKER-002, account_id=ACCOUNT-002, venue=BINANCE, command_id={uuid}, ts_init=0)"
+        )
+        assert command.params == params
