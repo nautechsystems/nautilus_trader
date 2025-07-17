@@ -308,6 +308,9 @@ impl RiskEngine {
                 self.handle_submit_order_list(submit_order_list);
             }
             TradingCommand::ModifyOrder(modify_order) => self.handle_modify_order(modify_order),
+            TradingCommand::QueryAccount(query_account) => {
+                self.send_to_execution(TradingCommand::QueryAccount(query_account));
+            }
             _ => {
                 log::error!("Cannot handle command: {command}");
             }
@@ -350,7 +353,7 @@ impl RiskEngine {
 
         let instrument_exists = {
             let cache = self.cache.borrow();
-            cache.instrument(&order.instrument_id()).cloned()
+            cache.instrument(&command.instrument_id).cloned()
         };
 
         let instrument = if let Some(instrument) = instrument_exists {
@@ -457,7 +460,6 @@ impl RiskEngine {
             return;
         }
 
-        // Get instrument for orders
         let maybe_instrument = {
             let cache = self.cache.borrow();
             cache.instrument(&command.instrument_id).cloned()
@@ -468,7 +470,7 @@ impl RiskEngine {
         } else {
             self.reject_modify_order(
                 order,
-                &format!("no instrument found for {}", command.instrument_id),
+                &format!("no instrument found for {:?}", command.instrument_id),
             );
             return; // Denied
         };
@@ -912,11 +914,11 @@ impl RiskEngine {
 
     fn deny_command(&self, command: TradingCommand, reason: &str) {
         match command {
-            TradingCommand::SubmitOrder(submit_order) => {
-                self.deny_order(submit_order.order, reason);
+            TradingCommand::SubmitOrder(command) => {
+                self.deny_order(command.order, reason);
             }
-            TradingCommand::SubmitOrderList(submit_order_list) => {
-                self.deny_order_list(submit_order_list.order_list, reason);
+            TradingCommand::SubmitOrderList(command) => {
+                self.deny_order_list(command.order_list, reason);
             }
             _ => {
                 panic!("Cannot deny command {command}");
