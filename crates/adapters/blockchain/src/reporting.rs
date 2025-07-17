@@ -90,18 +90,13 @@ impl BlockchainSyncReporter {
         let progress_pct =
             (self.blocks_processed as f64 / self.total_blocks as f64 * 100.0).min(100.0);
 
-        // Estimate remaining time
-        let blocks_remaining = self.total_blocks.saturating_sub(self.blocks_processed);
-        let eta_display = calculate_eta(blocks_remaining, avg_rate);
-
         tracing::info!(
-            "Syncing {} progress: {:.1}% | Block: {} | Rate: {:.0} blocks/s | Avg: {:.0} blocks/s | ETA: {}",
+            "Syncing {} progress: {:.1}% | Block: {} | Rate: {:.0} blocks/s | Avg: {:.0} blocks/s",
             self.item,
             progress_pct,
             block_number,
             current_rate,
             avg_rate,
-            eta_display
         );
 
         self.next_progress_threshold = block_number + self.progress_update_interval;
@@ -119,32 +114,5 @@ impl BlockchainSyncReporter {
             total_elapsed.as_secs_f64(),
             avg_rate,
         );
-    }
-}
-
-/// Formats duration into human-readable time (e.g., "3.2h", "45m", "2.5d")
-fn format_duration(seconds: f64) -> String {
-    if seconds < 60.0 {
-        format!("{seconds:.0}s")
-    } else if seconds < 3600.0 {
-        format!("{:.0} minutes", seconds / 60.0)
-    } else if seconds < 86400.0 {
-        format!("{:.1} hours", seconds / 3600.0)
-    } else {
-        format!("{:.1} days", seconds / 86400.0)
-    }
-}
-
-/// Calculates and formats ETA based on rate and remaining work
-fn calculate_eta(blocks_remaining: u64, avg_rate: f64) -> String {
-    let eta_seconds = blocks_remaining as f64 / avg_rate;
-    if eta_seconds < 60.0 {
-        format!("{eta_seconds:.0}s")
-    } else if eta_seconds < 3600.0 {
-        format!("{:.0}m", eta_seconds / 60.0)
-    } else if eta_seconds < 86400.0 {
-        format!("{:.1}h", eta_seconds / 3600.0)
-    } else {
-        format!("{:.1}d", eta_seconds / 86400.0)
     }
 }
