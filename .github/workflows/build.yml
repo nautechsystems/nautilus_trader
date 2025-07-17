@@ -223,10 +223,6 @@ jobs:
         shell: bash
     name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    # Pause job on develop branch for now (takes ~1-1.5 hrs)
-    if: >
-      !( (github.event_name == 'push' && github.ref_name == 'develop')
-      || (github.event_name == 'pull_request' && github.base_ref == 'develop') )
     needs:
       - pre-commit
     env:
@@ -336,8 +332,8 @@ jobs:
       contents: read
     needs:
       - build-linux-x86
+      - build-macos
       # - build-linux-arm # Reinstate this when/if linux-arm runs on every build
-      # - build-macos # Reinstate this when/if macos runs on every build
       # - build-windows # Reinstate this when/if windows runs on every build
     if: >
       github.event_name == 'push' && github.ref == 'refs/heads/develop'
