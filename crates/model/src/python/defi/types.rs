@@ -181,7 +181,7 @@ impl Pool {
         let address = address.parse().map_err(to_pyvalue_err)?;
         Ok(Self::new(
             Arc::new(chain),
-            dex,
+            Arc::new(dex),
             address,
             creation_block,
             token0,

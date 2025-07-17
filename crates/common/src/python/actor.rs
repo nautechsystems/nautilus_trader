@@ -1639,7 +1639,7 @@ mod tests {
         );
         let pool = Arc::new(Pool::new(
             chain.clone(),
-            dex.as_ref().clone(),
+            dex.clone(),
             "0x8ad599c3A0ff1De082011EFDDc58f1908eb6e6D8"
                 .parse()
                 .unwrap(),

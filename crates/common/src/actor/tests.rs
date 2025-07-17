@@ -1482,7 +1482,7 @@ fn test_subscribe_and_receive_pools(
     );
     let pool = Pool::new(
         chain.clone(),
-        dex,
+        Arc::new(dex),
         Address::from([0x12; 20]),
         1000000,
         token0,

@@ -48,6 +48,47 @@ impl<'r> FromRow<'r, PgRow> for TokenRow {
     }
 }
 
+#[derive(Debug)]
+pub struct PoolRow {
+    pub address: Address,
+    pub dex_name: String,
+    pub creation_block: i64,
+    pub token0_chain: i32,
+    pub token0_address: Address,
+    pub token1_chain: i32,
+    pub token1_address: Address,
+    pub fee: i32,
+    pub tick_spacing: i32,
+}
+
+impl<'r> FromRow<'r, PgRow> for PoolRow {
+    fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
+        let address = validate_address(row.try_get::<String, _>("address")?.as_str()).unwrap();
+        let dex_name = row.try_get::<String, _>("dex_name")?;
+        let creation_block = row.try_get::<i64, _>("creation_block")?;
+        let token0_chain = row.try_get::<i32, _>("token0_chain")?;
+        let token0_address =
+            validate_address(row.try_get::<String, _>("token0_address")?.as_str()).unwrap();
+        let token1_chain = row.try_get::<i32, _>("token1_chain")?;
+        let token1_address =
+            validate_address(row.try_get::<String, _>("token1_address")?.as_str()).unwrap();
+        let fee = row.try_get::<i32, _>("fee")?;
+        let tick_spacing = row.try_get::<i32, _>("tick_spacing")?;
+
+        Ok(Self {
+            address,
+            dex_name,
+            creation_block,
+            token0_chain,
+            token0_address,
+            token1_chain,
+            token1_address,
+            fee,
+            tick_spacing,
+        })
+    }
+}
+
 /// A data transfer object that maps database rows to block timestamp data.
 #[derive(Debug)]
 pub struct BlockTimestampRow {
