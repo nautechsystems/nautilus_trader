@@ -229,7 +229,7 @@ mod tests {
 
         let pool = Pool::new(
             chain.clone(),
-            dex,
+            Arc::new(dex),
             pool_address,
             12345678,
             token0,
@@ -294,7 +294,7 @@ mod tests {
 
         let pool = Pool::new(
             chain.clone(),
-            dex,
+            Arc::new(dex),
             "0x11b815efB8f581194ae79006d24E0d814B7697F6"
                 .parse()
                 .unwrap(),

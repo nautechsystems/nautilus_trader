@@ -1628,7 +1628,7 @@ fn test_process_pool_swap(data_engine: Rc<RefCell<DataEngine>>, data_client: Dat
 
     // Create a pool swap
     let chain = Arc::new(chains::ETHEREUM.clone());
-    let dex = Dex::new(
+    let dex = Arc::new(Dex::new(
         chains::ETHEREUM.clone(),
         "Uniswap V3",
         "0x1F98431c8aD98523631AE4a59f267346ea31F984",
@@ -1638,7 +1638,7 @@ fn test_process_pool_swap(data_engine: Rc<RefCell<DataEngine>>, data_client: Dat
         "Swap",
         "Mint",
         "Burn",
-    );
+    ));
     let token0 = Token::new(
         chain.clone(),
         Address::from([0x11; 20]),
@@ -1669,7 +1669,7 @@ fn test_process_pool_swap(data_engine: Rc<RefCell<DataEngine>>, data_client: Dat
 
     let swap = PoolSwap::new(
         chain,
-        Arc::new(dex),
+        dex.clone(),
         pool.instrument_id,
         pool.address,
         1000u64,
