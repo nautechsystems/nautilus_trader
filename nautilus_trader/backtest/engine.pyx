@@ -17,6 +17,7 @@ import heapq
 import pickle
 from decimal import Decimal
 
+import cython
 import pandas as pd
 
 from nautilus_trader.accounting.error import AccountError
@@ -762,11 +763,11 @@ cdef class BacktestEngine:
     def add_data_iterator(
         self,
         str data_name,
-        generator,
+        generator: Generator[list[Data], None, None],
         ClientId client_id = None,
     ) -> None:
         """
-        Add a single stream generator that yields ``Data`` objects for the low-level streaming backtest API.
+        Add a single stream generator that yields ``list[Data]`` objects for the low-level streaming backtest API.
 
         Parameters
         ----------
@@ -780,7 +781,7 @@ cdef class BacktestEngine:
         Notes
         -----
         This method enables streaming large datasets by loading data in chunks.
-        The generator should yield Data objects sorted by `ts_init` timestamp.
+        The generator should yield ``list[Data]`` objects sorted by `ts_init` timestamp.
 
         """
         self._data_iterator.init_data(
@@ -1057,6 +1058,13 @@ cdef class BacktestEngine:
         self._backtest_end = None
 
         self._log.info("Reset")
+
+    def sort_data(self) -> None:
+        """
+        Sort the engines internal data stream.
+
+        """
+        self._data.sort()
 
     def clear_data(self) -> None:
         """
@@ -1477,6 +1485,8 @@ cdef class BacktestEngine:
         # Return all remaining events to be handled (at `ts_now`)
         return raw_handlers
 
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
     cdef void _process_raw_time_event_handlers(
         self,
         CVec raw_handler_vec,
@@ -1847,7 +1857,7 @@ cdef class BacktestDataIterator:
 
         self.init_data(data_name, data_generator(), append_data)
 
-    def init_data(self, data_name, data_generator, bint append_data=True):
+    def init_data(self, str data_name, data_generator, bint append_data=True):
         """
         Add (or replace) a named data generator for streaming large datasets.
 
@@ -1879,12 +1889,14 @@ cdef class BacktestDataIterator:
         """
         Condition.valid_string(data_name, "data_name")
 
-        try:
-            data_list = next(data_generator)
+        cdef list[Data] data
 
-            if data_list:
+        try:
+            data = next(data_generator)
+
+            if data:
                 self._data_update_function[data_name] = data_generator
-                self._add_data(data_name, data_list, append_data)
+                self._add_data(data_name, data, append_data)
         except StopIteration:
             # Generator is already exhausted, nothing to add
             pass
@@ -1991,6 +2003,8 @@ cdef class BacktestDataIterator:
 
         self._reset_single_data()
 
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
     cpdef Data next(self):
         """
         Return the next ``Data`` object in chronological order.
@@ -2049,6 +2063,8 @@ cdef class BacktestDataIterator:
 
         return object_to_return
 
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
     cpdef void _push_data(self, int data_priority, int data_index):
         cdef uint64_t ts_init
 
@@ -2063,6 +2079,8 @@ cdef class BacktestDataIterator:
 
         if data_name not in self._data_update_function:
             return
+
+        cdef list[Data] data
 
         try:
             data = next(self._data_update_function[data_name])
@@ -2121,9 +2139,13 @@ cdef class BacktestDataIterator:
         # we assume dicts are ordered by order of insertion
         return {data_name:self._data[data_priority] for data_priority, data_name in self._data_name.items()}
 
-    cpdef list data(self, str data_name):
+    cpdef list[Data] data(self, str data_name):
         """
-        Return the underlying list for `data_name`.
+        Return the underlying data list for `data_name`.
+
+        Returns
+        -------
+        list[Data]
 
         Raises
         ------
