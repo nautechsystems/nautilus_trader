@@ -19,7 +19,7 @@ use nautilus_model::defi::{
 };
 use sqlx::{PgPool, postgres::PgConnectOptions};
 
-use crate::cache::rows::{BlockTimestampRow, TokenRow};
+use crate::cache::rows::{BlockTimestampRow, PoolRow, TokenRow};
 
 /// Database interface for persisting and retrieving blockchain entities and domain objects.
 #[derive(Debug)]
@@ -438,5 +438,34 @@ impl BlockchainCacheDatabase {
                     .collect::<Vec<_>>()
             })
             .map_err(|e| anyhow::anyhow!("Failed to load tokens: {e}"))
+    }
+
+    pub async fn load_pools(
+        &self,
+        chain: SharedChain,
+        dex_id: &str,
+    ) -> anyhow::Result<Vec<PoolRow>> {
+        sqlx::query_as::<_, PoolRow>(
+            r#"
+            SELECT
+                address,
+                dex_name,
+                creation_block,
+                token0_chain,
+                token0_address,
+                token1_chain,
+                token1_address,
+                fee,
+                tick_spacing
+            FROM pool
+            WHERE chain_id = $1 AND dex_name = $2
+            ORDER BY creation_block ASC
+        "#,
+        )
+        .bind(chain.chain_id as i32)
+        .bind(dex_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to load pools: {e}"))
     }
 }

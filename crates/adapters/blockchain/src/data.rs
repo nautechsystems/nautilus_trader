@@ -33,8 +33,8 @@ use nautilus_data::client::DataClient;
 use nautilus_infrastructure::sql::pg::PostgresConnectOptions;
 use nautilus_model::{
     defi::{
-        Block, Blockchain, DefiData, Dex, Pool, PoolLiquidityUpdate, PoolLiquidityUpdateType,
-        PoolSwap, SharedChain, SharedPool, Token,
+        Block, Blockchain, DefiData, Pool, PoolLiquidityUpdate, PoolLiquidityUpdateType, PoolSwap,
+        SharedChain, SharedDex, SharedPool, Token,
     },
     identifiers::{ClientId, Venue},
 };
@@ -60,6 +60,8 @@ use crate::{
     },
     validation::validate_address,
 };
+
+const BLOCKS_PROCESS_IN_SYNC_REPORT: u64 = 50000;
 
 /// A comprehensive client for interacting with blockchain data from multiple sources.
 ///
@@ -440,8 +442,12 @@ impl BlockchainDataClient {
 
         tokio::pin!(blocks_stream);
 
-        let mut metrics =
-            BlockchainSyncReporter::new(BlockchainItem::Blocks, from_block, total_blocks, 50000);
+        let mut metrics = BlockchainSyncReporter::new(
+            BlockchainItem::Blocks,
+            from_block,
+            total_blocks,
+            BLOCKS_PROCESS_IN_SYNC_REPORT,
+        );
 
         // Batch configuration
         const BATCH_SIZE: usize = 1000;
@@ -449,6 +455,9 @@ impl BlockchainDataClient {
 
         while let Some(block) = blocks_stream.next().await {
             let block_number = block.number;
+            if self.cache.get_block_timestamp(block_number).is_some() {
+                continue;
+            }
             batch.push(block);
 
             // Process batch when full or last block
@@ -740,7 +749,7 @@ impl BlockchainDataClient {
             BlockchainItem::PoolCreatedEvents,
             from_block,
             total_blocks,
-            500,
+            BLOCKS_PROCESS_IN_SYNC_REPORT,
         );
 
         let dex = self.get_dex(dex_id)?.clone();
@@ -767,15 +776,20 @@ impl BlockchainDataClient {
 
         while let Some(log) = pools_stream.next().await {
             let block_number = extract_block_number(&log)?;
+            blocks_processed += block_number - last_block_saved;
+            last_block_saved = block_number;
+
             let pool = dex.parse_pool_created_event(log)?;
+            if self.cache.get_pool(&pool.pool_address).is_some() {
+                // Pool is already initialized and cached.
+                continue;
+            }
 
             // If we have both tokens cached, we can process the pool immediately.
             if self.cache.get_token(&pool.token0).is_some()
                 && self.cache.get_token(&pool.token1).is_some()
             {
-                self.process_pool(&dex.dex, &pool).await?;
-                blocks_processed += block_number - last_block_saved;
-                last_block_saved = block_number;
+                self.process_pool(dex.dex.clone(), &pool).await?;
                 continue;
             }
 
@@ -789,26 +803,29 @@ impl BlockchainDataClient {
             pool_buffer.push(pool);
 
             if token_buffer.len() >= TOKEN_BATCH_SIZE {
-                self.flush_tokens_and_process_pools(&mut token_buffer, &mut pool_buffer, &dex.dex)
-                    .await?;
-                blocks_processed += block_number - last_block_saved;
+                self.flush_tokens_and_process_pools(
+                    &mut token_buffer,
+                    &mut pool_buffer,
+                    dex.dex.clone(),
+                )
+                .await?;
                 metrics.update(blocks_processed as usize);
                 blocks_processed = 0;
-                last_block_saved = block_number;
 
                 // Log progress if needed
                 if metrics.should_log_progress(block_number, to_block) {
                     metrics.log_progress(block_number);
                 }
             }
-
-            blocks_processed += block_number - last_block_saved;
-            last_block_saved = block_number;
         }
 
         if !token_buffer.is_empty() || !pool_buffer.is_empty() {
-            self.flush_tokens_and_process_pools(&mut token_buffer, &mut pool_buffer, &dex.dex)
-                .await?;
+            self.flush_tokens_and_process_pools(
+                &mut token_buffer,
+                &mut pool_buffer,
+                dex.dex.clone(),
+            )
+            .await?;
             blocks_processed += (to_block) - last_block_saved;
             metrics.update(blocks_processed as usize);
         }
@@ -822,7 +839,7 @@ impl BlockchainDataClient {
         &mut self,
         token_buffer: &mut HashSet<Address>,
         pool_buffer: &mut Vec<PoolCreatedEvent>,
-        dex: &Dex,
+        dex: SharedDex,
     ) -> anyhow::Result<()> {
         if token_buffer.is_empty() {
             return Ok(());
@@ -869,7 +886,7 @@ impl BlockchainDataClient {
                 continue;
             }
 
-            if let Err(e) = self.process_pool(dex, pool).await {
+            if let Err(e) = self.process_pool(dex.clone(), pool).await {
                 tracing::error!("Failed to process {} with error {}", pool.pool_address, e);
             }
         }
@@ -879,7 +896,11 @@ impl BlockchainDataClient {
     }
 
     /// Processes a pool creation event by creating and caching a `Pool` entity.
-    async fn process_pool(&mut self, dex: &Dex, event: &PoolCreatedEvent) -> anyhow::Result<()> {
+    async fn process_pool(
+        &mut self,
+        dex: SharedDex,
+        event: &PoolCreatedEvent,
+    ) -> anyhow::Result<()> {
         let token0 = match self.cache.get_token(&event.token0) {
             Some(token) => token.clone(),
             None => {
@@ -895,7 +916,7 @@ impl BlockchainDataClient {
 
         let pool = Pool::new(
             self.chain.clone(),
-            dex.clone(),
+            dex,
             event.pool_address,
             event.block_number,
             token0,
@@ -916,6 +937,7 @@ impl BlockchainDataClient {
             self.cache
                 .add_dex(dex_id.to_string(), dex.to_owned().clone())
                 .await?;
+            self.cache.load_pools(dex_id).await?;
             Ok(())
         } else {
             anyhow::bail!("Unknown DEX ID: {dex_id}")
@@ -1138,8 +1160,9 @@ impl DataClient for BlockchainDataClient {
         self.cache.initialize_chain().await;
         // Import the cached blockchain data.
         self.cache.connect(from_block).await?;
+        // TODO disable block syncing for now as we don't have timestamps yet configured
         // Sync the remaining blocks which are missing.
-        self.sync_blocks(Some(from_block), None).await?;
+        // self.sync_blocks(Some(from_block), None).await?;
         for dex_id in self.config.dex_ids.clone() {
             self.register_dex_exchange(&dex_id).await?;
             self.sync_exchange_pools(&dex_id, Some(from_block), None)
