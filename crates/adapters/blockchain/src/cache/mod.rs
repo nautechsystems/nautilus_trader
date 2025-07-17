@@ -155,32 +155,30 @@ impl BlockchainCache {
             );
 
             for pool_row in pool_rows {
-                let token0 = match self.tokens.get(&pool_row.token0_address) {
-                    Some(token) => token,
-                    None => {
-                        tracing::error!(
-                            "Failed to load pool {} for DEX {}: Token0 with address {} not found in cache. \
-                                 This may indicate the token was not properly loaded from the database or the pool references an unknown token.",
-                            pool_row.address,
-                            dex_id,
-                            pool_row.token0_address
-                        );
-                        continue;
-                    }
+                let token0 = if let Some(token) = self.tokens.get(&pool_row.token0_address) {
+                    token
+                } else {
+                    tracing::error!(
+                        "Failed to load pool {} for DEX {}: Token0 with address {} not found in cache. \
+                             This may indicate the token was not properly loaded from the database or the pool references an unknown token.",
+                        pool_row.address,
+                        dex_id,
+                        pool_row.token0_address
+                    );
+                    continue;
                 };
 
-                let token1 = match self.tokens.get(&pool_row.token1_address) {
-                    Some(token) => token,
-                    None => {
-                        tracing::error!(
-                            "Failed to load pool {} for DEX {}: Token1 with address {} not found in cache. \
-                                 This may indicate the token was not properly loaded from the database or the pool references an unknown token.",
-                            pool_row.address,
-                            dex_id,
-                            pool_row.token1_address
-                        );
-                        continue;
-                    }
+                let token1 = if let Some(token) = self.tokens.get(&pool_row.token1_address) {
+                    token
+                } else {
+                    tracing::error!(
+                        "Failed to load pool {} for DEX {}: Token1 with address {} not found in cache. \
+                             This may indicate the token was not properly loaded from the database or the pool references an unknown token.",
+                        pool_row.address,
+                        dex_id,
+                        pool_row.token1_address
+                    );
+                    continue;
                 };
 
                 // Construct pool from row data and cached tokens
