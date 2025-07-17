@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 
 import pandas as pd
 
@@ -312,6 +313,107 @@ class OrderStatusReport(ExecutionReport):
             f"ts_init={self.ts_init})"
         )
 
+    def to_dict(self) -> dict[str, Any]:
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, Any]
+
+        """
+        return {
+            "type": type(self).__name__,
+            "account_id": self.account_id.value,
+            "instrument_id": self.instrument_id.value,
+            "venue_order_id": self.venue_order_id.value,
+            "order_side": self.order_side.value,
+            "order_type": self.order_type.value,
+            "time_in_force": self.time_in_force.value,
+            "order_status": self.order_status.value,
+            "quantity": str(self.quantity),
+            "filled_qty": str(self.filled_qty),
+            "report_id": self.id.value,
+            "ts_accepted": self.ts_accepted,
+            "ts_last": self.ts_last,
+            "ts_init": self.ts_init,
+            "client_order_id": self.client_order_id.value if self.client_order_id else None,
+            "order_list_id": self.order_list_id.value if self.order_list_id else None,
+            "venue_position_id": self.venue_position_id.value if self.venue_position_id else None,
+            "contingency_type": self.contingency_type.value,
+            "expire_time": self.expire_time.isoformat() if self.expire_time else None,
+            "price": str(self.price) if self.price else None,
+            "trigger_price": str(self.trigger_price) if self.trigger_price else None,
+            "trigger_type": self.trigger_type.value,
+            "limit_offset": str(self.limit_offset) if self.limit_offset else None,
+            "trailing_offset": str(self.trailing_offset) if self.trailing_offset else None,
+            "trailing_offset_type": self.trailing_offset_type.value,
+            "avg_px": str(self.avg_px) if self.avg_px else None,
+            "display_qty": str(self.display_qty) if self.display_qty else None,
+            "post_only": self.post_only,
+            "reduce_only": self.reduce_only,
+            "cancel_reason": self.cancel_reason,
+            "ts_triggered": self.ts_triggered,
+        }
+
+    @classmethod
+    def from_dict(cls, values: dict[str, Any]) -> OrderStatusReport:
+        """
+        Return an order status report from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, Any]
+            The values for initialization.
+
+        Returns
+        -------
+        OrderStatusReport
+
+        """
+        return cls(
+            account_id=AccountId(values["account_id"]),
+            instrument_id=InstrumentId.from_str(values["instrument_id"]),
+            venue_order_id=VenueOrderId(values["venue_order_id"]),
+            order_side=OrderSide(values["order_side"]),
+            order_type=OrderType(values["order_type"]),
+            time_in_force=TimeInForce(values["time_in_force"]),
+            order_status=OrderStatus(values["order_status"]),
+            quantity=Quantity.from_str(values["quantity"]),
+            filled_qty=Quantity.from_str(values["filled_qty"]),
+            report_id=UUID4.from_str(values["report_id"]),
+            ts_accepted=values["ts_accepted"],
+            ts_last=values["ts_last"],
+            ts_init=values["ts_init"],
+            client_order_id=(
+                ClientOrderId(values["client_order_id"]) if values["client_order_id"] else None
+            ),
+            order_list_id=OrderListId(values["order_list_id"]) if values["order_list_id"] else None,
+            venue_position_id=(
+                PositionId(values["venue_position_id"]) if values["venue_position_id"] else None
+            ),
+            contingency_type=ContingencyType(values["contingency_type"]),
+            expire_time=(
+                datetime.fromisoformat(values["expire_time"]) if values["expire_time"] else None
+            ),
+            price=Price.from_str(values["price"]) if values["price"] else None,
+            trigger_price=(
+                Price.from_str(values["trigger_price"]) if values["trigger_price"] else None
+            ),
+            trigger_type=TriggerType(values["trigger_type"]),
+            limit_offset=Decimal(values["limit_offset"]) if values["limit_offset"] else None,
+            trailing_offset=(
+                Decimal(values["trailing_offset"]) if values["trailing_offset"] else None
+            ),
+            trailing_offset_type=TrailingOffsetType(values["trailing_offset_type"]),
+            avg_px=Decimal(values["avg_px"]) if values["avg_px"] else None,
+            display_qty=Quantity.from_str(values["display_qty"]) if values["display_qty"] else None,
+            post_only=values["post_only"],
+            reduce_only=values["reduce_only"],
+            cancel_reason=values["cancel_reason"],
+            ts_triggered=values["ts_triggered"],
+        )
+
     @staticmethod
     def from_pyo3(pyo3_report: nautilus_pyo3.OrderStatusReport) -> OrderStatusReport:
         return OrderStatusReport(
@@ -472,6 +574,69 @@ class FillReport(ExecutionReport):
             f"ts_init={self.ts_init})"
         )
 
+    def to_dict(self) -> dict[str, Any]:
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, Any]
+
+        """
+        return {
+            "type": type(self).__name__,
+            "account_id": self.account_id.value,
+            "instrument_id": self.instrument_id.value,
+            "venue_order_id": self.venue_order_id.value,
+            "trade_id": self.trade_id.value,
+            "order_side": self.order_side.value,
+            "last_qty": str(self.last_qty),
+            "last_px": str(self.last_px),
+            "commission": str(self.commission),
+            "liquidity_side": self.liquidity_side.value,
+            "report_id": self.id.value,
+            "ts_event": self.ts_event,
+            "ts_init": self.ts_init,
+            "client_order_id": self.client_order_id.value if self.client_order_id else None,
+            "venue_position_id": self.venue_position_id.value if self.venue_position_id else None,
+        }
+
+    @classmethod
+    def from_dict(cls, values: dict[str, Any]) -> FillReport:
+        """
+        Return a fill report from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, Any]
+            The values for initialization.
+
+        Returns
+        -------
+        FillReport
+
+        """
+        return cls(
+            account_id=AccountId(values["account_id"]),
+            instrument_id=InstrumentId.from_str(values["instrument_id"]),
+            venue_order_id=VenueOrderId(values["venue_order_id"]),
+            trade_id=TradeId(values["trade_id"]),
+            order_side=OrderSide(values["order_side"]),
+            last_qty=Quantity.from_str(values["last_qty"]),
+            last_px=Price.from_str(values["last_px"]),
+            commission=Money.from_str(values["commission"]),
+            liquidity_side=LiquiditySide(values["liquidity_side"]),
+            report_id=UUID4.from_str(values["report_id"]),
+            ts_event=values["ts_event"],
+            ts_init=values["ts_init"],
+            client_order_id=(
+                ClientOrderId(values["client_order_id"]) if values["client_order_id"] else None
+            ),
+            venue_position_id=(
+                PositionId(values["venue_position_id"]) if values["venue_position_id"] else None
+            ),
+        )
+
     @staticmethod
     def from_pyo3(pyo3_report: nautilus_pyo3.FillReport) -> FillReport:
         return FillReport(
@@ -565,6 +730,55 @@ class PositionStatusReport(ExecutionReport):
             f"report_id={self.id}, "
             f"ts_last={self.ts_last}, "
             f"ts_init={self.ts_init})"
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, Any]
+
+        """
+        return {
+            "type": type(self).__name__,
+            "account_id": self.account_id.value,
+            "instrument_id": self.instrument_id.value,
+            "position_side": self.position_side.value,
+            "quantity": str(self.quantity),
+            "report_id": self.id.value,
+            "ts_last": self.ts_last,
+            "ts_init": self.ts_init,
+            "venue_position_id": self.venue_position_id.value if self.venue_position_id else None,
+        }
+
+    @classmethod
+    def from_dict(cls, values: dict[str, Any]) -> PositionStatusReport:
+        """
+        Return a position status report from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, Any]
+            The values for initialization.
+
+        Returns
+        -------
+        PositionStatusReport
+
+        """
+        return cls(
+            account_id=AccountId(values["account_id"]),
+            instrument_id=InstrumentId.from_str(values["instrument_id"]),
+            position_side=PositionSide(values["position_side"]),
+            quantity=Quantity.from_str(values["quantity"]),
+            report_id=UUID4.from_str(values["report_id"]),
+            ts_last=values["ts_last"],
+            ts_init=values["ts_init"],
+            venue_position_id=(
+                PositionId(values["venue_position_id"]) if values["venue_position_id"] else None
+            ),
         )
 
     @staticmethod
@@ -686,7 +900,7 @@ class ExecutionMassStatus(Document):
         Raises
         ------
         TypeError
-            If `reports` contains a type other than `FillReport`.
+            If `reports` contains a type other than `OrderStatusReport`.
 
         """
         PyCondition.not_none(reports, "reports")
@@ -734,3 +948,76 @@ class ExecutionMassStatus(Document):
             if report.instrument_id not in self._position_reports:
                 self._position_reports[report.instrument_id] = []
             self._position_reports[report.instrument_id].append(report)
+
+    def to_dict(self) -> dict[str, Any]:
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, Any]
+
+        """
+        return {
+            "type": type(self).__name__,
+            "client_id": self.client_id.value,
+            "account_id": self.account_id.value,
+            "venue": self.venue.value,
+            "report_id": self.id.value,
+            "ts_init": self.ts_init,
+            "order_reports": {
+                venue_order_id.value: report.to_dict()
+                for venue_order_id, report in self._order_reports.items()
+            },
+            "fill_reports": {
+                venue_order_id.value: [report.to_dict() for report in reports]
+                for venue_order_id, reports in self._fill_reports.items()
+            },
+            "position_reports": {
+                instrument_id.value: [report.to_dict() for report in reports]
+                for instrument_id, reports in self._position_reports.items()
+            },
+        }
+
+    @classmethod
+    def from_dict(cls, values: dict[str, Any]) -> ExecutionMassStatus:
+        """
+        Return an execution mass status from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, Any]
+            The values for initialization.
+
+        Returns
+        -------
+        ExecutionMassStatus
+
+        """
+        mass_status = cls(
+            client_id=ClientId(values["client_id"]),
+            account_id=AccountId(values["account_id"]),
+            venue=Venue(values["venue"]),
+            report_id=UUID4.from_str(values["report_id"]),
+            ts_init=values["ts_init"],
+        )
+
+        # Restore order reports
+        for venue_order_id_str, report_dict in values["order_reports"].items():
+            venue_order_id = VenueOrderId(venue_order_id_str)
+            report = OrderStatusReport.from_dict(report_dict)
+            mass_status._order_reports[venue_order_id] = report
+
+        # Restore fill reports
+        for venue_order_id_str, report_dicts in values["fill_reports"].items():
+            venue_order_id = VenueOrderId(venue_order_id_str)
+            reports = [FillReport.from_dict(report_dict) for report_dict in report_dicts]
+            mass_status._fill_reports[venue_order_id] = reports
+
+        # Restore position reports
+        for instrument_id_str, report_dicts in values["position_reports"].items():
+            instrument_id = InstrumentId.from_str(instrument_id_str)
+            reports = [PositionStatusReport.from_dict(report_dict) for report_dict in report_dicts]
+            mass_status._position_reports[instrument_id] = reports
+
+        return mass_status

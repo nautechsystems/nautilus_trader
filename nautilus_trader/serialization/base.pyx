@@ -76,6 +76,11 @@ from nautilus_trader.model.instruments.option_contract cimport OptionContract
 from nautilus_trader.model.instruments.option_spread cimport OptionSpread
 from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
 
+from nautilus_trader.execution.reports import ExecutionMassStatus
+from nautilus_trader.execution.reports import FillReport
+from nautilus_trader.execution.reports import OrderStatusReport
+from nautilus_trader.execution.reports import PositionStatusReport
+
 
 # Default mappings for Nautilus objects
 _OBJECT_TO_DICT_MAP: dict[str, Callable[[None], dict]] = {
@@ -137,6 +142,10 @@ _OBJECT_TO_DICT_MAP: dict[str, Callable[[None], dict]] = {
     Bar.__name__: Bar.to_dict_c,
     InstrumentStatus.__name__: InstrumentStatus.to_dict_c,
     InstrumentClose.__name__: InstrumentClose.to_dict_c,
+    OrderStatusReport.__name__: OrderStatusReport.to_dict,
+    FillReport.__name__: FillReport.to_dict,
+    PositionStatusReport.__name__: PositionStatusReport.to_dict,
+    ExecutionMassStatus.__name__: ExecutionMassStatus.to_dict,
 }
 
 
@@ -200,6 +209,10 @@ _OBJECT_FROM_DICT_MAP: dict[str, Callable[[dict], Any]] = {
     Bar.__name__: Bar.from_dict_c,
     InstrumentStatus.__name__: InstrumentStatus.from_dict_c,
     InstrumentClose.__name__: InstrumentClose.from_dict_c,
+    OrderStatusReport.__name__: OrderStatusReport.from_dict,
+    FillReport.__name__: FillReport.from_dict,
+    PositionStatusReport.__name__: PositionStatusReport.from_dict,
+    ExecutionMassStatus.__name__: ExecutionMassStatus.from_dict,
 }
 
 
@@ -266,6 +279,10 @@ _EXTERNAL_PUBLISHABLE_TYPES = {
     Bar,
     InstrumentStatus,
     InstrumentClose,
+    OrderStatusReport,
+    FillReport,
+    PositionStatusReport,
+    ExecutionMassStatus,
 }
 
 
