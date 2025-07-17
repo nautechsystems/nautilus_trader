@@ -33,10 +33,12 @@ extension-module = [
   "nautilus-serialization/extension-module",
   "nautilus-testkit/extension-module",
   "nautilus-trading/extension-module",
+  "nautilus-live/extension-module",
   "nautilus-coinbase-intx/extension-module",
   "nautilus-databento/extension-module",
   "nautilus-okx/extension-module",
   "nautilus-tardis/extension-module",
+  "nautilus-blockchain/extension-module",
 ]
 ffi = [
   "nautilus-common/ffi",
@@ -48,6 +50,10 @@ high-precision = [
   "nautilus-model/high-precision",
   "nautilus-serialization/high-precision",
 ]
+defi = [
+  "nautilus-blockchain/defi",
+]
+python = []
 
 [package.metadata.docs.rs]
 all-features = true
@@ -60,6 +66,7 @@ nautilus-cryptography = { workspace = true, features = ["python"] }
 nautilus-execution = { workspace = true, features = ["python"] }
 nautilus-indicators = { workspace = true, features = ["python"] }
 nautilus-infrastructure = { workspace = true, features = ["python"] }
+nautilus-live = { workspace = true, features = ["python"] }
 nautilus-model = { workspace = true, features = ["python"] }
 nautilus-network = { workspace = true, features = ["python"] }
 nautilus-persistence = { workspace = true, features = ["python"] }
@@ -73,5 +80,6 @@ nautilus-databento = { workspace = true, features = ["python"] }
 nautilus-hyperliquid = { workspace = true, features = ["python"] }
 nautilus-okx = { workspace = true, features = ["python"] }
 nautilus-tardis = { workspace = true, features = ["python"] }
+nautilus-blockchain = { workspace = true, features = ["python"] }
 
 pyo3 = { workspace = true }
