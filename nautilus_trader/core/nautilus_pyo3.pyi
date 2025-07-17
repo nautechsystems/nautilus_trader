@@ -5536,6 +5536,7 @@ def load_tardis_depth10_from_snapshot5(filepath: str, price_precision: int | Non
 def load_tardis_depth10_from_snapshot25(filepath: str, price_precision: int | None = None, size_precision: int | None = None, instrument_id: InstrumentId | None = None, limit: int | None = None) -> list[OrderBookDepth10]: ...  # noqa
 
 def stream_tardis_deltas(filepath: str, chunk_size: int = 100_000, price_precision: int | None = None, size_precision: int | None = None, instrument_id: InstrumentId | None = None) -> Iterator[list[OrderBookDelta]]: ...  # noqa
+def stream_tardis_batched_deltas(filepath: str, chunk_size: int = 100_000, price_precision: int | None = None, size_precision: int | None = None, instrument_id: InstrumentId | None = None) -> Iterator[list[object]]: ...  # noqa
 def stream_tardis_quotes(filepath: str, chunk_size: int = 100_000, price_precision: int | None = None, size_precision: int | None = None, instrument_id: InstrumentId | None = None) -> Iterator[list[QuoteTick]]: ...  # noqa
 def stream_tardis_trades(filepath: str, chunk_size: int = 100_000, price_precision: int | None = None, size_precision: int | None = None, instrument_id: InstrumentId | None = None) -> Iterator[list[TradeTick]]: ...  # noqa
 def stream_tardis_depth10_from_snapshot5(filepath: str, chunk_size: int = 100_000, price_precision: int | None = None, size_precision: int | None = None, instrument_id: InstrumentId | None = None) -> Iterator[list[OrderBookDepth10]]: ...  # noqa

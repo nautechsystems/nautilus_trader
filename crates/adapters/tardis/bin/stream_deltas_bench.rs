@@ -32,7 +32,7 @@ fn main() {
     println!();
 
     // Benchmark 1: Small chunks
-    println!("1. Small chunks (100 records per chunk)");
+    println!("Small chunks (100 records per chunk)");
     let start = Instant::now();
     let stream = stream_deltas(
         test_data_path,
@@ -44,7 +44,7 @@ fn main() {
     .unwrap();
     let count: usize = stream.map(|chunk| chunk.unwrap().len()).sum();
     let duration = start.elapsed();
-    println!("  Processed {count} records in {duration:?}");
+    println!("Processed {count} records in {duration:?}");
     println!(
         "  Rate: {:.0} records/second",
         count as f64 / duration.as_secs_f64()
@@ -52,7 +52,7 @@ fn main() {
     println!();
 
     // Benchmark 2: Large chunks
-    println!("2. Large chunks (100,000 records per chunk)");
+    println!("Large chunks (100,000 records per chunk)");
     let start = Instant::now();
     let stream = stream_deltas(
         test_data_path,
@@ -64,7 +64,7 @@ fn main() {
     .unwrap();
     let count: usize = stream.map(|chunk| chunk.unwrap().len()).sum();
     let duration = start.elapsed();
-    println!("  Processed {count} records in {duration:?}");
+    println!("Processed {count} records in {duration:?}");
     println!(
         "  Rate: {:.0} records/second",
         count as f64 / duration.as_secs_f64()
@@ -72,7 +72,7 @@ fn main() {
     println!();
 
     // Benchmark 3: With fixed precision
-    println!("3. With fixed precision (1,000 records per chunk)");
+    println!("With fixed precision (1,000 records per chunk)");
     let start = Instant::now();
     let stream = stream_deltas(
         test_data_path,
@@ -84,7 +84,7 @@ fn main() {
     .unwrap();
     let count: usize = stream.map(|chunk| chunk.unwrap().len()).sum();
     let duration = start.elapsed();
-    println!("  Processed {count} records in {duration:?}");
+    println!("Processed {count} records in {duration:?}");
     println!(
         "  Rate: {:.0} records/second",
         count as f64 / duration.as_secs_f64()
