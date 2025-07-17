@@ -118,6 +118,12 @@ Failing to do so will result in data aggregation: L2 data will be reduced to a s
 
 ## Execution
 
+### Prevention of look-ahead bias by construction
+
+In the main backtesting loop, new market data is first processed for the execution of existing orders before being processed
+by the data engine that will then send data to strategies. So if a strategy creates an order at the same time as the market data it receives,
+the order will have to be executed with future data, by construction.
+
 ### Bar based execution
 
 Bar data provides a summary of market activity with four key prices for each time period (assuming bars are aggregated by trades):
@@ -137,11 +143,6 @@ This is why Nautilus processes bar data through a sophisticated system that atte
 the most realistic yet conservative market behavior possible, despite these limitations.
 At its core, the platform always maintains an order book simulation - even when you provide less
 granular data such as quotes, trades, or bars (although the simulation will only have a top level book).
-
-:::warning
-When using bars for execution simulation (enabled by default with `bar_execution=True` in venue configurations), Nautilus strictly expects the timestamp (`ts_event`) of each bar to represent its **closing time**.
-This ensures accurate chronological processing, prevents look-ahead bias, and aligns market updates (Open → High → Low → Close) with the moment the bar is complete.
-:::
 
 #### Bar timestamp convention
 

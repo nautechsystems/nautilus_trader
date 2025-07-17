@@ -254,7 +254,7 @@ impl OrderMatchingEngine {
             self.book.apply_delta(delta);
         }
 
-        self.iterate(delta.ts_event);
+        self.iterate(delta.ts_init);
     }
 
     pub fn process_order_book_deltas(&mut self, deltas: &OrderBookDeltas) {
@@ -264,7 +264,7 @@ impl OrderMatchingEngine {
             self.book.apply_deltas(deltas);
         }
 
-        self.iterate(deltas.ts_event);
+        self.iterate(deltas.ts_init);
     }
 
     /// # Panics
@@ -277,7 +277,7 @@ impl OrderMatchingEngine {
             self.book.update_quote_tick(quote).unwrap();
         }
 
-        self.iterate(quote.ts_event);
+        self.iterate(quote.ts_init);
     }
 
     /// # Panics
@@ -361,8 +361,8 @@ impl OrderMatchingEngine {
             size,
             aggressor_side,
             self.ids_generator.generate_trade_id(),
-            bar.ts_event,
-            bar.ts_event,
+            bar.ts_init,
+            bar.ts_init,
         );
 
         // Open
@@ -424,7 +424,7 @@ impl OrderMatchingEngine {
         // Wait for next bar
         if self.last_bar_bid.is_none()
             || self.last_bar_ask.is_none()
-            || self.last_bar_bid.unwrap().ts_event != self.last_bar_ask.unwrap().ts_event
+            || self.last_bar_bid.unwrap().ts_init != self.last_bar_ask.unwrap().ts_init
         {
             return;
         }
@@ -482,7 +482,7 @@ impl OrderMatchingEngine {
         }
         self.core.set_last_raw(trade.price);
 
-        self.iterate(trade.ts_event);
+        self.iterate(trade.ts_init);
     }
 
     pub fn process_status(&mut self, action: MarketStatusAction) {
