@@ -16,6 +16,8 @@
 use std::{collections::HashMap, sync::Arc};
 
 use alloy::{primitives::Address, sol, sol_types::SolCall};
+use strum::Display;
+use thiserror::Error;
 
 use super::base::{BaseContract, ContractCall, Multicall3};
 use crate::rpc::{error::BlockchainRpcClientError, http::BlockchainHttpRpcClient};
@@ -29,6 +31,13 @@ sol! {
     }
 }
 
+#[derive(Debug, Display)]
+pub enum Erc20Field {
+    Name,
+    Symbol,
+    Decimals,
+}
+
 /// Represents the essential metadata information for an ERC20 token.
 #[derive(Debug, Clone)]
 pub struct TokenInfo {
@@ -38,6 +47,23 @@ pub struct TokenInfo {
     pub symbol: String,
     /// The number of decimal places the token uses for representing fractional amounts.
     pub decimals: u8,
+}
+
+/// Represents errors that can occur when interacting with a blockchain RPC client.
+#[derive(Debug, Error)]
+pub enum TokenInfoError {
+    #[error("RPC error: {0}")]
+    RpcError(#[from] BlockchainRpcClientError),
+    #[error("Token {field} is empty for address {address}")]
+    EmptyTokenField { field: Erc20Field, address: Address },
+    #[error("Multicall returned unexpected number of results: expected {expected}, got {actual}")]
+    UnexpectedResultCount { expected: usize, actual: usize },
+    #[error("Failed to decode {field} for address {address}: {reason}")]
+    DecodingError {
+        field: String,
+        address: Address,
+        reason: String,
+    },
 }
 
 /// Interface for interacting with ERC20 token contracts on a blockchain.
@@ -69,7 +95,7 @@ impl Erc20Contract {
     pub async fn fetch_token_info(
         &self,
         token_address: &Address,
-    ) -> Result<TokenInfo, BlockchainRpcClientError> {
+    ) -> Result<TokenInfo, TokenInfoError> {
         let calls = vec![
             ContractCall {
                 target: *token_address,
@@ -91,14 +117,30 @@ impl Erc20Contract {
         let results = self.base.execute_multicall(calls).await?;
 
         if results.len() != 3 {
-            return Err(BlockchainRpcClientError::AbiDecodingError(
-                "Unexpected number of results from multicall".to_string(),
-            ));
+            return Err(TokenInfoError::UnexpectedResultCount {
+                expected: 3,
+                actual: results.len(),
+            });
         }
 
-        let name = parse_erc20_string_result(&results[0], "name")?;
-        let symbol = parse_erc20_string_result(&results[1], "symbol")?;
-        let decimals = parse_erc20_decimals_result(&results[2])?;
+        let name = parse_erc20_string_result(&results[0], Erc20Field::Name, token_address)?;
+        let symbol = parse_erc20_string_result(&results[1], Erc20Field::Symbol, token_address)?;
+        let decimals = parse_erc20_decimals_result(&results[2], token_address)?;
+
+        // Validate that name and symbol are not empty strings.
+        if name.is_empty() {
+            return Err(TokenInfoError::EmptyTokenField {
+                field: Erc20Field::Name,
+                address: *token_address,
+            });
+        }
+
+        if symbol.is_empty() {
+            return Err(TokenInfoError::EmptyTokenField {
+                field: Erc20Field::Symbol,
+                address: *token_address,
+            });
+        }
 
         Ok(TokenInfo {
             name,
@@ -116,11 +158,7 @@ impl Erc20Contract {
     pub async fn batch_fetch_token_info(
         &self,
         token_addresses: &[Address],
-    ) -> Result<HashMap<Address, TokenInfo>, BlockchainRpcClientError> {
-        if token_addresses.is_empty() {
-            return Ok(HashMap::new());
-        }
-
+    ) -> Result<HashMap<Address, Result<TokenInfo, TokenInfoError>>, BlockchainRpcClientError> {
         // Build calls for all tokens (3 calls per token)
         let mut calls = Vec::with_capacity(token_addresses.len() * 3);
 
@@ -153,19 +191,19 @@ impl Erc20Contract {
             // Check if we have all 3 results for this token.
             if base_idx + 2 >= results.len() {
                 tracing::error!("Incomplete results from multicall for token {token_address}");
+                token_infos.insert(
+                    *token_address,
+                    Err(TokenInfoError::UnexpectedResultCount {
+                        expected: 3,
+                        actual: results.len().saturating_sub(base_idx),
+                    }),
+                );
                 continue;
             }
 
-            match parse_batch_token_results(&results[base_idx..base_idx + 3]) {
-                Ok(token_info) => {
-                    token_infos.insert(*token_address, token_info);
-                }
-                Err(e) => {
-                    tracing::error!(
-                        "Failed to parse token info for token {token_address} with error: {e}"
-                    );
-                }
-            }
+            let token_info =
+                parse_batch_token_results(&results[base_idx..base_idx + 3], token_address);
+            token_infos.insert(*token_address, token_info);
         }
 
         Ok(token_infos)
@@ -175,55 +213,64 @@ impl Erc20Contract {
 /// Generic parser for ERC20 string results (name, symbol)
 fn parse_erc20_string_result(
     result: &Multicall3::Result,
-    field_name: &str,
-) -> Result<String, BlockchainRpcClientError> {
+    field_name: Erc20Field,
+    token_address: &Address,
+) -> Result<String, TokenInfoError> {
     // Common validation
     if !result.success {
-        return Err(BlockchainRpcClientError::AbiDecodingError(format!(
-            "Multicall failed for {field_name}"
-        )));
+        return Err(TokenInfoError::DecodingError {
+            field: field_name.to_string(),
+            address: *token_address,
+            reason: "Multicall failed".to_string(),
+        });
     }
 
     if result.returnData.is_empty() {
-        return Err(BlockchainRpcClientError::AbiDecodingError(format!(
-            "Empty response for {field_name}"
-        )));
+        return Err(TokenInfoError::EmptyTokenField {
+            field: field_name,
+            address: *token_address,
+        });
     }
 
-    // Decode based on field
     match field_name {
-        "name" => ERC20::nameCall::abi_decode_returns(&result.returnData),
-        "symbol" => ERC20::symbolCall::abi_decode_returns(&result.returnData),
-        _ => {
-            return Err(BlockchainRpcClientError::AbiDecodingError(format!(
-                "Unknown field: {field_name}"
-            )));
-        }
+        Erc20Field::Name => ERC20::nameCall::abi_decode_returns(&result.returnData),
+        Erc20Field::Symbol => ERC20::symbolCall::abi_decode_returns(&result.returnData),
+        _ => panic!("Expected Name or Symbol for for parse_erc20_string_result function argument"),
     }
-    .map_err(|e| {
-        BlockchainRpcClientError::AbiDecodingError(format!("Failed to decode {field_name}: {e}"))
+    .map_err(|e| TokenInfoError::DecodingError {
+        field: field_name.to_string(),
+        address: *token_address,
+        reason: e.to_string(),
     })
 }
 
 /// Generic parser for ERC20 decimals result
 fn parse_erc20_decimals_result(
     result: &Multicall3::Result,
-) -> Result<u8, BlockchainRpcClientError> {
+    token_address: &Address,
+) -> Result<u8, TokenInfoError> {
     // Common validation
     if !result.success {
-        return Err(BlockchainRpcClientError::AbiDecodingError(
-            "Multicall failed for decimals".to_string(),
-        ));
+        return Err(TokenInfoError::DecodingError {
+            field: "decimals".to_string(),
+            address: *token_address,
+            reason: "Multicall failed".to_string(),
+        });
     }
 
     if result.returnData.is_empty() {
-        return Err(BlockchainRpcClientError::AbiDecodingError(
-            "Empty response for decimals".to_string(),
-        ));
+        return Err(TokenInfoError::EmptyTokenField {
+            field: Erc20Field::Decimals,
+            address: *token_address,
+        });
     }
 
     ERC20::decimalsCall::abi_decode_returns(&result.returnData).map_err(|e| {
-        BlockchainRpcClientError::AbiDecodingError(format!("Failed to decode decimals: {e}"))
+        TokenInfoError::DecodingError {
+            field: "decimals".to_string(),
+            address: *token_address,
+            reason: e.to_string(),
+        }
     })
 }
 
@@ -234,16 +281,18 @@ fn parse_erc20_decimals_result(
 /// descriptive error message if any call failed.
 fn parse_batch_token_results(
     results: &[Multicall3::Result],
-) -> Result<TokenInfo, BlockchainRpcClientError> {
+    token_address: &Address,
+) -> Result<TokenInfo, TokenInfoError> {
     if results.len() != 3 {
-        return Err(BlockchainRpcClientError::AbiDecodingError(
-            "Expected exactly 3 results per token".to_string(),
-        ));
+        return Err(TokenInfoError::UnexpectedResultCount {
+            expected: 3,
+            actual: results.len(),
+        });
     }
 
-    let name = parse_erc20_string_result(&results[0], "name")?;
-    let symbol = parse_erc20_string_result(&results[1], "symbol")?;
-    let decimals = parse_erc20_decimals_result(&results[2])?;
+    let name = parse_erc20_string_result(&results[0], Erc20Field::Name, token_address)?;
+    let symbol = parse_erc20_string_result(&results[1], Erc20Field::Symbol, token_address)?;
+    let decimals = parse_erc20_decimals_result(&results[2], token_address)?;
 
     Ok(TokenInfo {
         name,
