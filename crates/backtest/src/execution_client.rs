@@ -25,8 +25,8 @@ use nautilus_common::{
     cache::Cache,
     clock::Clock,
     messages::execution::{
-        BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryOrder, SubmitOrder,
-        SubmitOrderList, TradingCommand,
+        BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryAccount, QueryOrder,
+        SubmitOrder, SubmitOrderList, TradingCommand,
     },
 };
 use nautilus_core::UnixNanos;
@@ -216,6 +216,13 @@ impl ExecutionClient for BacktestExecutionClient {
         self.exchange
             .borrow_mut()
             .send(TradingCommand::QueryOrder(cmd.clone()));
+        Ok(())
+    }
+
+    fn query_account(&self, cmd: &QueryAccount) -> anyhow::Result<()> {
+        self.exchange
+            .borrow_mut()
+            .send(TradingCommand::QueryAccount(cmd.clone()));
         Ok(())
     }
 }

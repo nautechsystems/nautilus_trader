@@ -778,10 +778,11 @@ impl OrderMatchingEngine {
     }
 
     pub fn process_cancel_all(&mut self, command: &CancelAllOrders, account_id: AccountId) {
+        let instrument_id = command.instrument_id;
         let open_orders = self
             .cache
             .borrow()
-            .orders_open(None, Some(&command.instrument_id), None, None)
+            .orders_open(None, Some(&instrument_id), None, None)
             .into_iter()
             .cloned()
             .collect::<Vec<OrderAny>>();

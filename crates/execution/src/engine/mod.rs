@@ -37,8 +37,8 @@ use nautilus_common::{
     generators::position_id::PositionIdGenerator,
     logging::{CMD, EVT, RECV},
     messages::execution::{
-        BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryOrder, SubmitOrder,
-        SubmitOrderList, TradingCommand,
+        BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryAccount, QueryOrder,
+        SubmitOrder, SubmitOrderList, TradingCommand,
     },
     msgbus::{
         self, get_message_bus,
@@ -324,6 +324,7 @@ impl ExecutionEngine {
             TradingCommand::CancelAllOrders(cmd) => self.handle_cancel_all_orders(client, cmd),
             TradingCommand::BatchCancelOrders(cmd) => self.handle_batch_cancel_orders(client, cmd),
             TradingCommand::QueryOrder(cmd) => self.handle_query_order(client, cmd),
+            TradingCommand::QueryAccount(cmd) => self.handle_query_account(client, cmd),
         }
     }
 
@@ -507,6 +508,12 @@ impl ExecutionEngine {
     fn handle_query_order(&self, client: Rc<dyn ExecutionClient>, cmd: &QueryOrder) {
         if let Err(e) = client.query_order(cmd) {
             log::error!("Error querying order: {e}");
+        }
+    }
+
+    fn handle_query_account(&self, client: Rc<dyn ExecutionClient>, cmd: &QueryAccount) {
+        if let Err(e) = client.query_account(cmd) {
+            log::error!("Error querying account: {e}");
         }
     }
 
