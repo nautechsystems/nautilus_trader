@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     data::HasTsInit,
-    defi::{Blockchain, chain::SharedChain, dex::Dex, token::Token},
+    defi::{Blockchain, SharedDex, chain::SharedChain, dex::Dex, token::Token},
     identifiers::InstrumentId,
 };
 
@@ -47,7 +47,7 @@ pub struct Pool {
     /// The blockchain network where this pool exists.
     pub chain: SharedChain,
     /// The decentralized exchange protocol that created and manages this pool.
-    pub dex: Dex,
+    pub dex: SharedDex,
     /// The blockchain address of the pool smart contract.
     pub address: Address,
     /// The instrument ID for the pool.
@@ -81,7 +81,7 @@ impl Pool {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         chain: SharedChain,
-        dex: Dex,
+        dex: SharedDex,
         address: Address,
         creation_block: u64,
         token0: Token,
