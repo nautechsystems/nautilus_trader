@@ -4895,6 +4895,7 @@ dependencies = [
 name = "nautilus-pyo3"
 version = "0.50.0"
 dependencies = [
+ "nautilus-blockchain",
  "nautilus-coinbase-intx",
  "nautilus-common",
  "nautilus-core",
@@ -4904,6 +4905,7 @@ dependencies = [
  "nautilus-hyperliquid",
  "nautilus-indicators",
  "nautilus-infrastructure",
+ "nautilus-live",
  "nautilus-model",
  "nautilus-network",
  "nautilus-okx",
