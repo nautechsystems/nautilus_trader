@@ -135,4 +135,4 @@ cdef class BacktestDataIterator:
     cpdef void set_index(self, str data_name, int index)
     cpdef bint is_done(self)
     cpdef dict all_data(self)
-    cpdef list data(self, str data_name)
+    cpdef list[Data] data(self, str data_name)
