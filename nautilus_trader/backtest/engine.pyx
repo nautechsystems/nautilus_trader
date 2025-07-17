@@ -1897,6 +1897,7 @@ cdef class BacktestDataIterator:
             if data:
                 self._data_update_function[data_name] = data_generator
                 self._add_data(data_name, data, append_data)
+                self._log.debug(f"Added {len(data):_} data elements from iterator '{data_name}'")
         except StopIteration:
             # Generator is already exhausted, nothing to add
             pass
@@ -2088,6 +2089,7 @@ cdef class BacktestDataIterator:
             if data:
                 # No need for append_data bool as it's an update
                 self._add_data(data_name, data)
+                self._log.debug(f"Adding {len(data):_} data elements from iterator '{data_name}'")
             else:
                 self.remove_data(data_name, complete_remove=True)
         except StopIteration:

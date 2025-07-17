@@ -18,10 +18,20 @@ use std::{io::Read, path::Path};
 use csv::{Reader, StringRecord};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    data::{DEPTH10_LEN, NULL_ORDER, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick},
+    data::{
+        DEPTH10_LEN, NULL_ORDER, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick,
+        TradeTick,
+    },
     enums::{BookAction, OrderSide, RecordFlag},
     identifiers::InstrumentId,
 };
+#[cfg(feature = "python")]
+use nautilus_model::{
+    data::{Data, OrderBookDeltas_API},
+    python::data::data_to_pycapsule,
+};
+#[cfg(feature = "python")]
+use pyo3::{PyObject, Python};
 
 use crate::{
     csv::{
@@ -133,7 +143,6 @@ impl Iterator for DeltaStreamIterator {
                 Ok(true) => {
                     match self.record.deserialize::<TardisBookUpdateRecord>(None) {
                         Ok(data) => {
-                            // Precision is already determined from pre-scan, no need to update dynamically
                             let delta = parse_delta_record(
                                 &data,
                                 self.price_precision,
@@ -210,6 +219,202 @@ pub fn stream_deltas<P: AsRef<Path>>(
     instrument_id: Option<InstrumentId>,
 ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<Vec<OrderBookDelta>>>> {
     DeltaStreamIterator::new(
+        filepath,
+        chunk_size,
+        price_precision,
+        size_precision,
+        instrument_id,
+    )
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Vec<PyObject> (OrderBookDeltas as PyCapsule) Streaming
+////////////////////////////////////////////////////////////////////////////////
+
+#[cfg(feature = "python")]
+/// Streaming iterator over CSV records that yields chunks of parsed data.
+struct BatchedDeltasStreamIterator {
+    reader: Reader<Box<dyn std::io::Read>>,
+    record: StringRecord,
+    buffer: Vec<PyObject>,
+    current_batch: Vec<OrderBookDelta>,
+    pending_batches: Vec<Vec<OrderBookDelta>>,
+    chunk_size: usize,
+    instrument_id: InstrumentId,
+    price_precision: u8,
+    size_precision: u8,
+    last_ts_event: UnixNanos,
+}
+
+#[cfg(feature = "python")]
+impl BatchedDeltasStreamIterator {
+    /// Creates a new [`DeltaStreamIterator`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file cannot be opened or read.
+    fn new<P: AsRef<Path>>(
+        filepath: P,
+        chunk_size: usize,
+        price_precision: Option<u8>,
+        size_precision: Option<u8>,
+        instrument_id: Option<InstrumentId>,
+    ) -> anyhow::Result<Self> {
+        let mut reader = create_csv_reader(&filepath)?;
+        let mut record = StringRecord::new();
+
+        // Read the first record to get instrument_id
+        let first_record = if reader.read_record(&mut record)? {
+            record.deserialize::<TardisBookUpdateRecord>(None)?
+        } else {
+            return Err(anyhow::anyhow!("CSV file is empty"));
+        };
+
+        let final_instrument_id = instrument_id
+            .unwrap_or_else(|| parse_instrument_id(&first_record.exchange, first_record.symbol));
+
+        let (final_price_precision, final_size_precision) =
+            if let (Some(price_prec), Some(size_prec)) = (price_precision, size_precision) {
+                // Both precisions provided, use them directly
+                (price_prec, size_prec)
+            } else {
+                // One or both precisions missing, detect from sample including first record
+                let (detected_price, detected_size) =
+                    Self::detect_precision_from_sample(&mut reader, &mut record, 10_000)?;
+                (
+                    price_precision.unwrap_or(detected_price),
+                    size_precision.unwrap_or(detected_size),
+                )
+            };
+
+        let reader = create_csv_reader(filepath)?;
+
+        Ok(Self {
+            reader,
+            record: StringRecord::new(),
+            buffer: Vec::with_capacity(chunk_size),
+            current_batch: Vec::new(),
+            pending_batches: Vec::with_capacity(chunk_size),
+            chunk_size,
+            instrument_id: final_instrument_id,
+            price_precision: final_price_precision,
+            size_precision: final_size_precision,
+            last_ts_event: UnixNanos::default(),
+        })
+    }
+
+    fn detect_precision_from_sample(
+        reader: &mut Reader<Box<dyn std::io::Read>>,
+        record: &mut StringRecord,
+        sample_size: usize,
+    ) -> anyhow::Result<(u8, u8)> {
+        let mut max_price_precision = 0u8;
+        let mut max_size_precision = 0u8;
+        let mut records_scanned = 0;
+
+        while records_scanned < sample_size {
+            match reader.read_record(record) {
+                Ok(true) => {
+                    if let Ok(data) = record.deserialize::<TardisBookUpdateRecord>(None) {
+                        max_price_precision = max_price_precision.max(infer_precision(data.price));
+                        max_size_precision = max_size_precision.max(infer_precision(data.amount));
+                        records_scanned += 1;
+                    }
+                }
+                Ok(false) => break,             // End of file
+                Err(_) => records_scanned += 1, // Skip malformed records
+            }
+        }
+
+        Ok((max_price_precision, max_size_precision))
+    }
+}
+
+#[cfg(feature = "python")]
+impl Iterator for BatchedDeltasStreamIterator {
+    type Item = anyhow::Result<Vec<PyObject>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.buffer.clear();
+        let mut batches_created = 0;
+
+        while batches_created < self.chunk_size {
+            match self.reader.read_record(&mut self.record) {
+                Ok(true) => {
+                    let delta = match self.record.deserialize::<TardisBookUpdateRecord>(None) {
+                        Ok(data) => parse_delta_record(
+                            &data,
+                            self.price_precision,
+                            self.size_precision,
+                            Some(self.instrument_id),
+                        ),
+                        Err(e) => {
+                            return Some(Err(anyhow::anyhow!("Failed to deserialize record: {e}")));
+                        }
+                    };
+
+                    if self.last_ts_event != delta.ts_event && !self.current_batch.is_empty() {
+                        // Set F_LAST on the last delta of the completed batch
+                        if let Some(last_delta) = self.current_batch.last_mut() {
+                            last_delta.flags = RecordFlag::F_LAST.value();
+                        }
+                        self.pending_batches
+                            .push(std::mem::take(&mut self.current_batch));
+                        batches_created += 1;
+                    }
+
+                    self.last_ts_event = delta.ts_event;
+                    self.current_batch.push(delta);
+                }
+                Ok(false) => {
+                    // End of file
+                    break;
+                }
+                Err(e) => return Some(Err(anyhow::anyhow!("Failed to read record: {e}"))),
+            }
+        }
+
+        if !self.current_batch.is_empty() && batches_created < self.chunk_size {
+            // Ensure the last delta of the last batch has F_LAST set
+            if let Some(last_delta) = self.current_batch.last_mut() {
+                last_delta.flags = RecordFlag::F_LAST.value();
+            }
+            self.pending_batches
+                .push(std::mem::take(&mut self.current_batch));
+        }
+
+        if self.pending_batches.is_empty() {
+            None
+        } else {
+            // Create all capsules in a single GIL acquisition
+            Python::with_gil(|py| {
+                for batch in self.pending_batches.drain(..) {
+                    let deltas = OrderBookDeltas::new(self.instrument_id, batch);
+                    let deltas = OrderBookDeltas_API::new(deltas);
+                    let capsule = data_to_pycapsule(py, Data::Deltas(deltas));
+                    self.buffer.push(capsule);
+                }
+            });
+            Some(Ok(std::mem::take(&mut self.buffer)))
+        }
+    }
+}
+
+#[cfg(feature = "python")]
+/// Streams [`Vec<PyObject>`]s (`PyCapsule`) from a Tardis format CSV at the given `filepath`,
+/// yielding chunks of the specified size.
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be opened, read, or parsed as CSV.
+pub fn stream_batched_deltas<P: AsRef<Path>>(
+    filepath: P,
+    chunk_size: usize,
+    price_precision: Option<u8>,
+    size_precision: Option<u8>,
+    instrument_id: Option<InstrumentId>,
+) -> anyhow::Result<impl Iterator<Item = anyhow::Result<Vec<PyObject>>>> {
+    BatchedDeltasStreamIterator::new(
         filepath,
         chunk_size,
         price_precision,
@@ -327,7 +532,6 @@ impl Iterator for QuoteStreamIterator {
             match self.reader.read_record(&mut self.record) {
                 Ok(true) => match self.record.deserialize::<TardisQuoteRecord>(None) {
                     Ok(data) => {
-                        // Precision is already determined from pre-scan, no need to update dynamically
                         let quote = parse_quote_record(
                             &data,
                             self.price_precision,
