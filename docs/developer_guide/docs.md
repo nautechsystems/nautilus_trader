@@ -1,4 +1,4 @@
-# Documentation Style Guide
+# Docs Style Guide
 
 This guide outlines the style conventions and best practices for writing documentation for NautilusTrader.
 
