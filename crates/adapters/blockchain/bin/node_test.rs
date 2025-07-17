@@ -57,8 +57,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let wss_rpc_url = get_env_var("RPC_WSS_URL")?;
     let http_rpc_url = get_env_var("RPC_HTTP_URL")?;
     // let from_block = Some(22_735_000_u64); // Ethereum
-    let from_block = Some(348_860_000_u64); // Arbitrum
-    // let from_block = None; // No sync
+    // let from_block = Some(348_860_000_u64); // Arbitrum
+    let from_block = None; // No sync
 
     let client_factory = BlockchainDataClientFactory::new();
     let client_config = BlockchainDataClientConfig::new(
