@@ -30,14 +30,16 @@ use pyo3::prelude::*;
 /// refer: <https://github.com/PyO3/pyo3/issues/2644>
 #[pymodule] // The name of the function must match `lib.name` in `Cargo.toml`
 #[cfg_attr(feature = "cython-compat", pyo3(name = "nautilus_pyo3"))]
-fn _lib(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn _libnautilus(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     let sys = PyModule::import(py, "sys")?;
     let modules = sys.getattr("modules")?;
     let sys_modules: &Bound<'_, PyAny> = modules.downcast()?;
+
     #[cfg(feature = "cython-compat")]
     let module_name = "nautilus_trader.core.nautilus_pyo3";
+
     #[cfg(not(feature = "cython-compat"))]
-    let module_name = "nautilus_trader._lib";
+    let module_name = "nautilus_trader._libnautilus";
 
     // Set pyo3_nautilus to be recognized as a subpackage
     sys_modules.set_item(module_name, m)?;

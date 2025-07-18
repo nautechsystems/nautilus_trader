@@ -86,4 +86,4 @@ nautilus-hyperliquid = { workspace = true, features = ["python"] }
 nautilus-okx = { workspace = true, features = ["python"] }
 nautilus-tardis = { workspace = true, features = ["python"] }
 
-pyo3 = { workspace = true }
+pyo3 = { workspace = true, features = ["experimental-inspect"] }
