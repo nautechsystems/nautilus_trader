@@ -47,13 +47,13 @@ build-backend = "maturin"
 [tool.maturin]
 # Use the existing pyo3 crate as the main module
 manifest-path = "../crates/pyo3/Cargo.toml"
-module-name = "nautilus_trader._lib"
+module-name = "nautilus_trader._libnautilus"
 features = ["python", "extension-module", "high-precision", "defi", "redis", "postgres", "hypersync"]
 strip = false
 
 # Include type stubs in the wheel
 include = [
-    "stubs/**/*.pyi",
+    "**/*.pyi",
 ]
 
 [dependency-groups]
