@@ -72,14 +72,14 @@ impl LiveNode {
     /// Returns the node's instance ID.
     #[getter]
     #[pyo3(name = "instance_id")]
-    fn py_instance_id(&self) -> UUID4 {
+    const fn py_instance_id(&self) -> UUID4 {
         self.instance_id()
     }
 
     /// Returns whether the node is running.
     #[getter]
     #[pyo3(name = "is_running")]
-    fn py_is_running(&self) -> bool {
+    const fn py_is_running(&self) -> bool {
         self.is_running()
     }
 

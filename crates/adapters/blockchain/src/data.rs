@@ -874,7 +874,7 @@ impl BlockchainDataClient {
                         tracing::error!(
                             "Error fetching token info: {}",
                             token_info_error.to_string()
-                        )
+                        );
                     }
                 },
             }

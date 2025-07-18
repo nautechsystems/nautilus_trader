@@ -1669,7 +1669,7 @@ fn test_process_pool_swap(data_engine: Rc<RefCell<DataEngine>>, data_client: Dat
 
     let swap = PoolSwap::new(
         chain,
-        dex.clone(),
+        dex,
         pool.instrument_id,
         pool.address,
         1000u64,

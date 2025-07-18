@@ -3,7 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
-- Added `MarginModel` concept, base models, config, and factory for backtesting (#2794), thanks @faysou
+- Added `MarginModel` concept, base models, config, and factory for backtesting (#2794), thanks @faysou and @stefansimik
 - Added `query_account` method for `Strategy`
 - Added `QueryAccount` execution message
 - Added streaming methods for `TardisCSVDataLoader`
@@ -27,13 +27,16 @@ Released on TBD (UTC).
 - Added `start` and `stop` to response data (#2748), thanks @stastnypremysl
 - Added integration test service management targets (#2765), thanks @stastnypremysl
 - Added integration tests for dYdX bar-partitioning and large-history handling (#2773), thanks @nicolad
+- Completed bar request implementation for OKX (#2789), thanks @nicolad
 - Improved reconciliation handling of internally generated orders to align positions (now uses the `INTERNAL-DIFF` strategy ID)
 - Improved data client for blockchain adapter (#2787), thanks @filipmacek
+- Improved DEX pool sync process in the blockchain adapter (#2796), thanks @filipmacek
 - Improved efficiency of message bus external streams buffer flushing
 - Improved `databento_test_request_bars` example (#2762), thanks @faysou
 - Optimized account event purging for Redis where large lists could consume excessive memory and cause Redis to freeze
 - Refined Rust catalog path handling (#2743), thanks @faysou
 - Refined Rust `GreeksCalculator` (#2760), thanks @faysou
+- Refined Databento bars timestamp decoding and backtest execution usage (#2800), thanks @faysou
 - Upgraded `databento` crate to v0.29.0
 - Upgraded `datafusion` crate to v48.0.1
 - Upgraded `redis` crate to v0.32.4

@@ -446,7 +446,7 @@ impl BlockchainCacheDatabase {
         dex_id: &str,
     ) -> anyhow::Result<Vec<PoolRow>> {
         sqlx::query_as::<_, PoolRow>(
-            r#"
+            r"
             SELECT
                 address,
                 dex_name,
@@ -460,7 +460,7 @@ impl BlockchainCacheDatabase {
             FROM pool
             WHERE chain_id = $1 AND dex_name = $2
             ORDER BY creation_block ASC
-        "#,
+        ",
         )
         .bind(chain.chain_id as i32)
         .bind(dex_id)

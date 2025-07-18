@@ -786,8 +786,8 @@ cdef class OrderMatchingEngine:
             size,
             AggressorSide.BUYER if not self._core.is_last_initialized or bar._mem.open.raw > self._core.last_raw else AggressorSide.SELLER,
             self._generate_trade_id(),
-            bar.ts_event,
-            bar.ts_event,
+            bar.ts_init,
+            bar.ts_init,
         )
 
     cdef void _process_trade_bar_open(self, Bar bar, TradeTick tick):
@@ -835,7 +835,7 @@ cdef class OrderMatchingEngine:
         if self._last_bid_bar is None or self._last_ask_bar is None:
             return  # Wait for next bar
 
-        if self._last_bid_bar.ts_event != self._last_ask_bar.ts_event:
+        if self._last_bid_bar.ts_init != self._last_ask_bar.ts_init:
             return  # Wait for next bar
 
         cdef double size_increment_f64 = self.instrument.size_increment.as_double()
@@ -872,7 +872,7 @@ cdef class OrderMatchingEngine:
             self._last_ask_bar.open,
             bid_size,
             ask_size,
-            self._last_bid_bar.ts_event,
+            self._last_bid_bar.ts_init,
             self._last_ask_bar.ts_init,
         )
 
