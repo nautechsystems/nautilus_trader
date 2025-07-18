@@ -113,6 +113,8 @@ impl BlockchainCache {
     ///
     /// Returns an error if database seeding, token loading, or block loading fails.
     pub async fn connect(&mut self, from_block: u64) -> anyhow::Result<()> {
+        tracing::debug!("Connecting and loading from_block {from_block}");
+
         if let Err(e) = self.load_tokens().await {
             tracing::error!("Error loading tokens from the database: {e}");
         }
@@ -203,6 +205,7 @@ impl BlockchainCache {
 
     /// Loads block timestamps from the database starting `from_block` number
     /// into the in-memory cache.
+    #[allow(dead_code)] // TODO: Under development
     async fn load_blocks(&mut self, from_block: u64) -> anyhow::Result<()> {
         if let Some(database) = &self.database {
             let block_timestamps = database
