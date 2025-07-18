@@ -123,7 +123,7 @@ RUST_LIBS: list[str] = [str(path) for path in RUST_LIB_PATHS]
 
 
 def _set_feature_flags() -> list[str]:
-    features = "ffi,python,extension-module,postgres"
+    features = "cython-compat,ffi,python,extension-module,postgres"
     flags = ["--no-default-features", "--features"]
 
     if HIGH_PRECISION:

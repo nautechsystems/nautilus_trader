@@ -149,6 +149,7 @@ repos:
     rev: v1.17.0
     hooks:
       - id: mypy
+        exclude: ^python/nautilus_trader/.*__init__\.py$
         args: [
           "--config", "pyproject.toml",
           "--allow-incomplete-defs",
