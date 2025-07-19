@@ -212,12 +212,12 @@ class TestLiveExecutionEngine:
             handler=self.exec_engine.process,
         )
         self.msgbus.deregister(
-            endpoint="ExecEngine.reconcile_report",
-            handler=self.exec_engine.reconcile_report,
+            endpoint="ExecEngine.reconcile_execution_report",
+            handler=self.exec_engine.reconcile_execution_report,
         )
         self.msgbus.deregister(
-            endpoint="ExecEngine.reconcile_mass_status",
-            handler=self.exec_engine.reconcile_mass_status,
+            endpoint="ExecEngine.reconcile_execution_mass_status",
+            handler=self.exec_engine.reconcile_execution_mass_status,
         )
 
         self.exec_engine = LiveExecutionEngine(
@@ -276,12 +276,12 @@ class TestLiveExecutionEngine:
             handler=self.exec_engine.process,
         )
         self.msgbus.deregister(
-            endpoint="ExecEngine.reconcile_report",
-            handler=self.exec_engine.reconcile_report,
+            endpoint="ExecEngine.reconcile_execution_report",
+            handler=self.exec_engine.reconcile_execution_report,
         )
         self.msgbus.deregister(
-            endpoint="ExecEngine.reconcile_mass_status",
-            handler=self.exec_engine.reconcile_mass_status,
+            endpoint="ExecEngine.reconcile_execution_mass_status",
+            handler=self.exec_engine.reconcile_execution_mass_status,
         )
 
         self.exec_engine = LiveExecutionEngine(
@@ -433,7 +433,7 @@ class TestLiveExecutionEngine:
         )
 
         # Act
-        self.exec_engine.reconcile_report(order_report)
+        self.exec_engine.reconcile_execution_report(order_report)
 
         # Assert
         assert self.exec_engine.report_count == 1
@@ -459,7 +459,7 @@ class TestLiveExecutionEngine:
         )
 
         # Act
-        self.exec_engine.reconcile_report(fill_report)
+        self.exec_engine.reconcile_execution_report(fill_report)
 
         # Assert
         assert self.exec_engine.report_count == 1
@@ -479,7 +479,7 @@ class TestLiveExecutionEngine:
         )
 
         # Act
-        self.exec_engine.reconcile_report(position_report)
+        self.exec_engine.reconcile_execution_report(position_report)
 
         # Assert
         assert self.exec_engine.report_count == 1
@@ -496,7 +496,7 @@ class TestLiveExecutionEngine:
         )
 
         # Act
-        self.exec_engine.reconcile_mass_status(mass_status)
+        self.exec_engine.reconcile_execution_mass_status(mass_status)
 
         # Assert
         assert self.exec_engine.report_count == 1

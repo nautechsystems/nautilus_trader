@@ -129,6 +129,11 @@ class LiveDataEngine(DataEngine):
         """
         if self._clients:
             self._log.info("Connecting all clients...")
+        elif self._external_clients:
+            self._log.info(
+                f"Configured for external clients: {self._external_clients}",
+                LogColor.BLUE,
+            )
         else:
             self._log.warning("No clients to connect")
             return

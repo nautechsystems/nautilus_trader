@@ -537,27 +537,27 @@ cdef class GenerateExecutionMassStatus(ExecutionReportCommand):
 
     Parameters
     ----------
+    trader_id : TraderId
+        The trader ID for the command.
     client_id : ClientId
         The client ID for the command.
-    account_id : AccountId
-        The account ID for the command.
-    venue : Venue
-        The venue for the command.
     command_id : UUID4
         The command ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
+    venue : Venue, optional
+        The venue for the command.
     params : dict[str, object], optional
         Additional parameters for the command.
     """
 
     def __init__(
         self,
+        TraderId trader_id not None,
         ClientId client_id not None,
-        AccountId account_id not None,
-        Venue venue not None,
         UUID4 command_id not None,
         uint64_t ts_init,
+        Venue venue: Venue | None = None,
         dict[str, object] params: dict | None = None,
     ) -> None:
         super().__init__(
@@ -569,15 +569,15 @@ cdef class GenerateExecutionMassStatus(ExecutionReportCommand):
             params=params,
         )
 
+        self.trader_id = trader_id
         self.client_id = client_id
-        self.account_id = account_id
         self.venue = venue
 
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
+            f"trader_id={self.trader_id}, "
             f"client_id={self.client_id}, "
-            f"account_id={self.account_id}, "
             f"venue={self.venue}, "
             f"command_id={self.id.to_str()}, "
             f"ts_init={self.ts_init})"
@@ -586,12 +586,13 @@ cdef class GenerateExecutionMassStatus(ExecutionReportCommand):
     @staticmethod
     cdef GenerateExecutionMassStatus from_dict_c(dict values):
         Condition.not_none(values, "values")
+        cdef str venue = values["venue"]
         return GenerateExecutionMassStatus(
+            trader_id=TraderId(values["trader_id"]),
             client_id=ClientId(values["client_id"]),
-            account_id=AccountId(values["account_id"]),
-            venue=Venue(values["venue"]),
             command_id=UUID4.from_str_c(values["command_id"]),
             ts_init=values["ts_init"],
+            venue=Venue(venue) if venue else None,
             params=values.get("params"),
         )
 
@@ -600,9 +601,9 @@ cdef class GenerateExecutionMassStatus(ExecutionReportCommand):
         Condition.not_none(obj, "obj")
         return {
             "type": "GenerateExecutionMassStatus",
+            "trader_id": obj.trader_id.to_str(),
             "client_id": obj.client_id.to_str(),
-            "account_id": obj.account_id.to_str(),
-            "venue": obj.venue.to_str(),
+            "venue": obj.venue.to_str() if obj.venue is not None else None,
             "command_id": obj.id.to_str(),
             "ts_init": obj.ts_init,
             "params": obj.params,

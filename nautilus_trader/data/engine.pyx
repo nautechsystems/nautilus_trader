@@ -291,6 +291,17 @@ cdef class DataEngine(Component):
 
         return True
 
+    cpdef set[ClientId] get_external_client_ids(self):
+        """
+        Returns the configured external client order IDs.
+
+        Returns
+        -------
+        set[ClientId]
+
+        """
+        return self._external_clients.copy()
+
 # --REGISTRATION ----------------------------------------------------------------------------------
 
     def register_catalog(self, catalog: ParquetDataCatalog, name: str = "catalog_0") -> None:
