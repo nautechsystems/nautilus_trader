@@ -20,6 +20,7 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.core cimport NANOSECONDS_IN_MILLISECOND
 from nautilus_trader.core.rust.model cimport LiquiditySide
+from nautilus_trader.model.book cimport OrderBook
 from nautilus_trader.model.functions cimport liquidity_side_to_str
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
@@ -114,6 +115,36 @@ cdef class FillModel:
 
         """
         return self._event_success(self.prob_slippage)
+
+    cpdef OrderBook get_orderbook_for_fill_simulation(self, Instrument instrument, Order order, Price best_bid, Price best_ask):
+        """
+        Return a simulated OrderBook for fill simulation.
+
+        This method allows custom fill models to provide their own liquidity
+        simulation by returning a custom OrderBook that represents the expected
+        market liquidity. The matching engine will use this simulated OrderBook
+        to determine fills.
+
+        The default implementation returns None, which means the matching engine
+        will use its standard fill logic (maintaining backward compatibility).
+
+        Parameters
+        ----------
+        instrument : Instrument
+            The instrument being traded.
+        order : Order
+            The order to simulate fills for.
+        best_bid : Price
+            The current best bid price.
+        best_ask : Price
+            The current best ask price.
+
+        Returns
+        -------
+        OrderBook or None
+            The simulated OrderBook for fill simulation, or None to use default logic.
+        """
+        return None  # Default implementation - use existing fill logic
 
     cdef bint _event_success(self, double probability):
         # Return a result indicating whether an event occurred based on the

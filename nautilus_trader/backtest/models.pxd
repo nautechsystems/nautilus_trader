@@ -15,6 +15,7 @@
 
 from libc.stdint cimport uint64_t
 
+from nautilus_trader.model.book cimport OrderBook
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -33,6 +34,7 @@ cdef class FillModel:
     cpdef bint is_limit_filled(self)
     cpdef bint is_stop_filled(self)
     cpdef bint is_slipped(self)
+    cpdef OrderBook get_orderbook_for_fill_simulation(self, Instrument instrument, Order order, Price best_bid, Price best_ask)
 
     cdef bint _event_success(self, double probability)
 
