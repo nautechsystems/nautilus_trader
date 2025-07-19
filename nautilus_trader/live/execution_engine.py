@@ -35,6 +35,7 @@ from nautilus_trader.core.fsm import InvalidStateTrigger
 from nautilus_trader.core.message import Command
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.execution.messages import GenerateExecutionMassStatus
 from nautilus_trader.execution.messages import GenerateOrderStatusReports
 from nautilus_trader.execution.messages import GeneratePositionStatusReports
 from nautilus_trader.execution.messages import QueryOrder
@@ -201,10 +202,13 @@ class LiveExecutionEngine(ExecutionEngine):
         self._shutdown_initiated: bool = False
 
         # Register endpoints
-        self._msgbus.register(endpoint="ExecEngine.reconcile_report", handler=self.reconcile_report)
         self._msgbus.register(
-            endpoint="ExecEngine.reconcile_mass_status",
-            handler=self.reconcile_mass_status,
+            endpoint="ExecEngine.reconcile_execution_report",
+            handler=self.reconcile_execution_report,
+        )
+        self._msgbus.register(
+            endpoint="ExecEngine.reconcile_execution_mass_status",
+            handler=self.reconcile_execution_mass_status,
         )
 
     @property
@@ -225,6 +229,11 @@ class LiveExecutionEngine(ExecutionEngine):
         """
         if self._clients:
             self._log.info("Connecting all clients...")
+        elif self._external_clients:
+            self._log.info(
+                f"Configured for external clients: {self._external_clients}",
+                LogColor.BLUE,
+            )
         else:
             self._log.warning("No clients to connect")
             return
@@ -759,10 +768,17 @@ class LiveExecutionEngine(ExecutionEngine):
         else:
             self._log.warning(f"Reconciliation for {value} failed")
 
-    async def reconcile_state(self, timeout_secs: float = 10.0) -> bool:  # noqa: C901 (too complex)
+    def generate_execution_mass_status(self, command: GenerateExecutionMassStatus) -> None:
+        self._log.info(f"Received {command!r}", LogColor.BLUE)
+        self._loop.create_task(self.reconcile_execution_state())
+
+    async def reconcile_execution_state(  # noqa: C901 (too complex)
+        self,
+        timeout_secs: float = 10.0,
+    ) -> bool:
         """
-        Reconcile the internal execution state with all execution clients (external
-        state).
+        Reconcile the systems internal execution state with all execution clients
+        (external state).
 
         Parameters
         ----------
@@ -782,8 +798,25 @@ class LiveExecutionEngine(ExecutionEngine):
         """
         PyCondition.positive(timeout_secs, "timeout_secs")
 
-        if not self.reconciliation:
-            self._log.warning("Reconciliation deactivated")
+        for client_id in self._external_clients:
+            command = GenerateExecutionMassStatus(
+                trader_id=self.trader_id,
+                client_id=client_id,
+                command_id=UUID4(),
+                venue=None,
+                ts_init=self._clock.timestamp_ns(),
+            )
+            self._log.info(
+                f"Requesting execution mass status from {client_id}",
+                LogColor.BLUE,
+            )
+            self._msgbus.publish(
+                topic=f"commands.trading.{client_id}",
+                msg=command,
+            )
+
+        if not self._clients:
+            self._log.debug("No execution clients for reconciliation")
             return True
 
         results: list[bool] = []
@@ -814,7 +847,7 @@ class LiveExecutionEngine(ExecutionEngine):
             mass_status = cast("ExecutionMassStatus", mass_status_or_exception)
             client_id = mass_status.client_id
             venue = mass_status.venue
-            result = self._reconcile_mass_status(mass_status)
+            result = self._reconcile_execution_mass_status(mass_status)
 
             if not result and self.filter_position_reports:
                 self._log_reconciliation_result(client_id, result)
@@ -876,9 +909,14 @@ class LiveExecutionEngine(ExecutionEngine):
             self._log_reconciliation_result(client_id, result)
             results.append(result)
 
+            self._msgbus.publish(
+                topic=f"reports.execution.{mass_status.venue}",
+                msg=mass_status,
+            )
+
         return all(results)
 
-    def reconcile_report(self, report: ExecutionReport) -> bool:
+    def reconcile_execution_report(self, report: ExecutionReport) -> bool:
         """
         Reconcile the given execution report.
 
@@ -919,7 +957,7 @@ class LiveExecutionEngine(ExecutionEngine):
 
         return result
 
-    def reconcile_mass_status(self, report: ExecutionMassStatus) -> None:
+    def reconcile_execution_mass_status(self, report: ExecutionMassStatus) -> None:
         """
         Reconcile the given execution mass status report.
 
@@ -929,9 +967,9 @@ class LiveExecutionEngine(ExecutionEngine):
             The execution mass status report to reconcile.
 
         """
-        self._reconcile_mass_status(report)
+        self._reconcile_execution_mass_status(report)
 
-    def _reconcile_mass_status(  # noqa: C901 (too complex)
+    def _reconcile_execution_mass_status(  # noqa: C901 (too complex)
         self,
         mass_status: ExecutionMassStatus,
     ) -> bool:

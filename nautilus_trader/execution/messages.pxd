@@ -91,12 +91,12 @@ cdef class GeneratePositionStatusReports(ExecutionReportCommand):
 
 
 cdef class GenerateExecutionMassStatus(ExecutionReportCommand):
+    cdef readonly TraderId trader_id
+    """The trader ID associated with the command.\n\n:returns: `TraderId`"""
     cdef readonly ClientId client_id
     """The client ID associated with the command.\n\n:returns: `ClientId`"""
-    cdef readonly AccountId account_id
-    """The account ID associated with the command.\n\n:returns: `AccountId`"""
     cdef readonly Venue venue
-    """The venue associated with the command.\n\n:returns: `Venue`"""
+    """The venue associated with the command.\n\n:returns: `Venue` or ``None``"""
 
     @staticmethod
     cdef GenerateExecutionMassStatus from_dict_c(dict values)

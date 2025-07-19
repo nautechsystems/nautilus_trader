@@ -175,7 +175,7 @@ class TestLiveExecutionReconciliation:
         self.client.add_order_status_report(report)
 
         # Act
-        result = await self.exec_engine.reconcile_state()
+        result = await self.exec_engine.reconcile_execution_state()
 
         # Assert
         assert result
@@ -207,7 +207,7 @@ class TestLiveExecutionReconciliation:
         self.client.add_order_status_report(report)
 
         # Act
-        result = await self.exec_engine.reconcile_state()
+        result = await self.exec_engine.reconcile_execution_state()
 
         # Assert
         assert result
@@ -241,7 +241,7 @@ class TestLiveExecutionReconciliation:
         self.client.add_order_status_report(report)
 
         # Act
-        result = await self.exec_engine.reconcile_state()
+        result = await self.exec_engine.reconcile_execution_state()
 
         # Assert
         assert result
@@ -277,7 +277,7 @@ class TestLiveExecutionReconciliation:
         self.client.add_order_status_report(report)
 
         # Act
-        result = await self.exec_engine.reconcile_state()
+        result = await self.exec_engine.reconcile_execution_state()
 
         # Assert
         assert result
@@ -313,7 +313,7 @@ class TestLiveExecutionReconciliation:
         self.client.add_order_status_report(report)
 
         # Act
-        result = await self.exec_engine.reconcile_state()
+        result = await self.exec_engine.reconcile_execution_state()
 
         # Assert
         assert result
@@ -348,7 +348,7 @@ class TestLiveExecutionReconciliation:
         self.client.add_order_status_report(report)
 
         # Act
-        result = await self.exec_engine.reconcile_state()
+        result = await self.exec_engine.reconcile_execution_state()
 
         # Assert
         assert result
@@ -401,7 +401,7 @@ class TestLiveExecutionReconciliation:
         self.client.add_fill_reports(venue_order_id, [fill_report])
 
         # Act
-        result = await self.exec_engine.reconcile_state()
+        result = await self.exec_engine.reconcile_execution_state()
 
         # Assert
         assert result
@@ -454,7 +454,7 @@ class TestLiveExecutionReconciliation:
         self.client.add_fill_reports(venue_order_id, [fill_report])
 
         # Act
-        result = await self.exec_engine.reconcile_state()
+        result = await self.exec_engine.reconcile_execution_state()
 
         # Assert
         assert result
@@ -489,7 +489,7 @@ class TestLiveExecutionReconciliation:
         self.client.add_order_status_report(order_report)
 
         # Act
-        result = await self.exec_engine.reconcile_state()
+        result = await self.exec_engine.reconcile_execution_state()
 
         # Assert
         assert result
@@ -542,7 +542,7 @@ class TestLiveExecutionReconciliation:
         self.client.add_fill_reports(venue_order_id, [fill_report])
 
         # Act
-        result = await self.exec_engine.reconcile_state()
+        result = await self.exec_engine.reconcile_execution_state()
 
         # Assert
         assert result
@@ -636,7 +636,7 @@ class TestLiveExecutionReconciliation:
         self.client.add_fill_reports(venue_order_id, [fill_report])
 
         # Act
-        result = await self.exec_engine.reconcile_state()
+        result = await self.exec_engine.reconcile_execution_state()
 
         # Assert: Reconciliation should succeed despite different fill data
         assert result
@@ -754,7 +754,7 @@ class TestReconciliationEdgeCases:
         mass_status.add_order_reports([report1, report2])
 
         # Act
-        result = live_exec_engine._reconcile_mass_status(mass_status)
+        result = live_exec_engine._reconcile_execution_mass_status(mass_status)
 
         # Assert
         assert result is False
