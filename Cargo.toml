@@ -258,6 +258,11 @@ panic = "unwind"
 incremental = true
 codegen-units = 256
 
+[profile.debug-pyo3]
+inherits = "dev"
+debug = true  # Enable debug symbols for debugging
+strip = false  # Keep debug symbols for debugging
+
 [profile.test]
 opt-level = 0
 debug = true
