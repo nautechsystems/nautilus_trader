@@ -212,6 +212,8 @@ class TestExecutionEngine:
         # Act / Assert: no error even though no client registered for EXT_EXEC
         engine.execute(cmd)
 
+        assert engine.get_external_client_ids() == {ext_client_id}
+
     def test_register_venue_routing(self) -> None:
         # Arrange
         exec_client = MockExecutionClient(

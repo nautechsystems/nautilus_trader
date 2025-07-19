@@ -297,6 +297,17 @@ cdef class ExecutionEngine(Component):
         """
         return self._cache.check_residuals()
 
+    cpdef set[ClientId] get_external_client_ids(self):
+        """
+        Returns the configured external client order IDs.
+
+        Returns
+        -------
+        set[ClientId]
+
+        """
+        return self._external_clients.copy()
+
     cpdef StrategyId get_external_order_claim(self, InstrumentId instrument_id):
         """
         Get any external order claim for the given instrument ID.
@@ -564,7 +575,7 @@ cdef class ExecutionEngine(Component):
 
     # -- RECONCILIATION -------------------------------------------------------------------------------
 
-    async def reconcile_state(self, timeout_secs: float = 10.0) -> bool:
+    async def reconcile_execution_state(self, timeout_secs: float = 10.0) -> bool:
         """
         Reconcile the internal execution state with all execution clients (external state).
 
@@ -586,7 +597,7 @@ cdef class ExecutionEngine(Component):
         """
         return True  # Should be overridden for live execution engines
 
-    def reconcile_report(self, report: ExecutionReport) -> bool:
+    def reconcile_execution_report(self, report: ExecutionReport) -> bool:
         """
         Check the given execution report.
 
@@ -603,7 +614,7 @@ cdef class ExecutionEngine(Component):
         """
         return True  # Should be overridden for live execution engines
 
-    def reconcile_mass_status(self, report: ExecutionMassStatus) -> None:
+    def reconcile_execution_mass_status(self, report: ExecutionMassStatus) -> None:
         """
         Reconcile the given execution mass status report.
 
