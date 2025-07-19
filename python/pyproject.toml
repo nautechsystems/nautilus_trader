@@ -44,14 +44,15 @@ requires = [
 ]
 build-backend = "maturin"
 
+[tool.maturin.scripts]
+pre-build = "python generate_stubs.py"
+
 [tool.maturin]
-# Use the existing pyo3 crate as the main module
 manifest-path = "../crates/pyo3/Cargo.toml"
 module-name = "nautilus_trader._libnautilus"
 features = ["python", "extension-module", "high-precision", "defi", "redis", "postgres", "hypersync"]
 strip = false
 
-# Include type stubs in the wheel
 include = [
     "**/*.pyi",
 ]
@@ -83,7 +84,6 @@ exclude = [
 ]
 
 [tool.ruff.lint]
-# Same linting rules as v1
 select = [
     "C4", "E", "F", "W", "C90", "D", "UP", "S", "T10", "ICN",
     "PIE", "PYI", "Q", "I", "RSE", "TID", "PD", "NPY", "RUF",

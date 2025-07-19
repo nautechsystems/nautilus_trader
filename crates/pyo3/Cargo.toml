@@ -16,7 +16,7 @@ homepage.workspace = true
 
 [lib]
 name = "nautilus_pyo3"
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [features]
 default = []
@@ -86,4 +86,10 @@ nautilus-hyperliquid = { workspace = true, features = ["python"] }
 nautilus-okx = { workspace = true, features = ["python"] }
 nautilus-tardis = { workspace = true, features = ["python"] }
 
-pyo3 = { workspace = true, features = ["experimental-inspect"] }
+pyo3 = { workspace = true }
+pyo3-stub-gen = { workspace = true }
+
+# Run with `cargo run --bin python-stub-gen`
+[[bin]]
+name = "python-stub-gen"
+path = "bin/stub_gen.rs"

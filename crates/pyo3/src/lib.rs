@@ -22,6 +22,7 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 
 use pyo3::prelude::*;
+use pyo3_stub_gen::define_stub_info_gatherer;
 
 /// We modify sys modules so that submodule can be loaded directly as
 /// import supermodule.submodule
@@ -190,3 +191,6 @@ fn re_export_module_attributes(
 
     Ok(())
 }
+
+// Define stub info gatherer for the main module
+define_stub_info_gatherer!(stub_info);
