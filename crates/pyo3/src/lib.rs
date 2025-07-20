@@ -22,7 +22,7 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 
 use pyo3::prelude::*;
-use pyo3_stub_gen::define_stub_info_gatherer;
+use std::path::Path;
 
 /// We modify sys modules so that submodule can be loaded directly as
 /// import supermodule.submodule
@@ -192,5 +192,30 @@ fn re_export_module_attributes(
     Ok(())
 }
 
-// Define stub info gatherer for the main module
-define_stub_info_gatherer!(stub_info);
+/// Generate Python type stub info for PyO3 bindings.
+///
+/// Assumes the pyproject.toml is located in the python/ directory relative to the workspace root.
+///
+/// # Panics
+///
+/// Panics if the path locating the pyproject.toml is incorrect.
+///
+/// # Errors
+///
+/// Returns an error if stub information generation fails.
+///
+/// # Reference
+///
+/// - <https://pyo3.rs/latest/python-typing-hints>
+/// - <https://crates.io/crates/pyo3-stub-gen>
+/// - <https://github.com/Jij-Inc/pyo3-stub-gen>
+pub fn stub_info() -> pyo3_stub_gen::Result<pyo3_stub_gen::StubInfo> {
+    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap();
+    let pyproject_path = workspace_root.join("python").join("pyproject.toml");
+
+    pyo3_stub_gen::StubInfo::from_pyproject_toml(&pyproject_path)
+}
