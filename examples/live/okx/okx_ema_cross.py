@@ -31,7 +31,6 @@ from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.data import BarType
-from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 
@@ -70,8 +69,6 @@ config_node = TradingNodeConfig(
     logging=LoggingConfig(log_level="INFO", use_pyo3=True),
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,
-        filtered_instrument_ids=[InstrumentId.from_str("BTC-USDT-SWAP.OKX")],  # For demonstration
-        filtered_client_order_ids=[ClientOrderId("O20250711001")],  # For demonstration
         # snapshot_orders=True,
         # snapshot_positions=True,
         # snapshot_positions_interval_secs=5.0,

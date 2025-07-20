@@ -1500,3 +1500,235 @@ class TestReconciliationEdgeCases:
         assert result is True
         orders_after = self.cache.orders()
         assert len(orders_after) == orders_before  # No new orders added due to filtering
+
+
+class TestReconciliationFiltering:
+    """
+    Tests for filtering logic during live execution reconciliation.
+    """
+
+    def _get_exec_engine(self, config: LiveExecEngineConfig):
+        loop = asyncio.get_event_loop()
+        clock = LiveClock()
+        trader_id = TestIdStubs.trader_id()
+        msgbus = MessageBus(trader_id=trader_id, clock=clock)
+        cache = TestComponentStubs.cache()
+        cache.add_instrument(AUDUSD_SIM)
+        cache.add_instrument(GBPUSD_SIM)
+
+        client = MockLiveExecutionClient(
+            loop=loop,
+            client_id=ClientId("SIM"),
+            venue=Venue("SIM"),
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            instrument_provider=InstrumentProvider(),
+            msgbus=msgbus,
+            cache=cache,
+            clock=clock,
+        )
+
+        exec_engine = LiveExecutionEngine(
+            loop=loop,
+            msgbus=msgbus,
+            cache=cache,
+            clock=clock,
+            config=config,
+        )
+
+        exec_engine.register_client(client)
+        return exec_engine, cache
+
+    @pytest.mark.asyncio()
+    async def test_reconciliation_instrument_ids_empty_processes_all(self):
+        """
+        Test that if `reconciliation_instrument_ids` is empty, all reports are
+        processed.
+        """
+        # Arrange
+        config = LiveExecEngineConfig(
+            reconciliation=True,
+            reconciliation_instrument_ids=[],  # Empty list
+        )
+        exec_engine, cache = self._get_exec_engine(config)
+
+        report1 = OrderStatusReport(
+            instrument_id=AUDUSD_SIM.id,
+            account_id=TestIdStubs.account_id(),
+            client_order_id=ClientOrderId("order-1"),
+            venue_order_id=VenueOrderId("V-1"),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            time_in_force=TimeInForce.DAY,
+            order_status=OrderStatus.ACCEPTED,
+            quantity=Quantity.from_int(100),
+            filled_qty=Quantity.from_int(0),
+            report_id=UUID4(),
+            ts_accepted=0,
+            ts_last=0,
+            ts_init=0,
+        )
+
+        report2 = OrderStatusReport(
+            instrument_id=GBPUSD_SIM.id,
+            account_id=TestIdStubs.account_id(),
+            client_order_id=ClientOrderId("order-2"),
+            venue_order_id=VenueOrderId("V-2"),
+            order_side=OrderSide.SELL,
+            order_type=OrderType.MARKET,
+            time_in_force=TimeInForce.DAY,
+            order_status=OrderStatus.ACCEPTED,
+            quantity=Quantity.from_int(50),
+            filled_qty=Quantity.from_int(0),
+            report_id=UUID4(),
+            ts_accepted=0,
+            ts_last=0,
+            ts_init=0,
+        )
+
+        mass_status = ExecutionMassStatus(
+            client_id=ClientId("TEST"),
+            venue=Venue("TEST"),
+            account_id=TestIdStubs.account_id(),
+            report_id=UUID4(),
+            ts_init=0,
+        )
+        mass_status.add_order_reports([report1, report2])
+
+        # Act
+        result = exec_engine._reconcile_execution_mass_status(mass_status)
+
+        # Assert
+        assert result is True
+        assert len(cache.orders()) == 2
+        assert cache.order(ClientOrderId("order-1")) is not None
+        assert cache.order(ClientOrderId("order-2")) is not None
+
+    @pytest.mark.asyncio()
+    async def test_reconciliation_instrument_ids_filters_reports(self):
+        """
+        Test that reports are filtered based on `reconciliation_instrument_ids`.
+        """
+        # Arrange
+        config = LiveExecEngineConfig(
+            reconciliation=True,
+            reconciliation_instrument_ids=[AUDUSD_SIM.id],
+        )
+        exec_engine, cache = self._get_exec_engine(config)
+
+        report_included = OrderStatusReport(
+            instrument_id=AUDUSD_SIM.id,
+            account_id=TestIdStubs.account_id(),
+            client_order_id=ClientOrderId("included-order"),
+            venue_order_id=VenueOrderId("V-1"),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            time_in_force=TimeInForce.DAY,
+            order_status=OrderStatus.ACCEPTED,
+            quantity=Quantity.from_int(100),
+            filled_qty=Quantity.from_int(0),
+            report_id=UUID4(),
+            ts_accepted=0,
+            ts_last=0,
+            ts_init=0,
+        )
+
+        report_filtered = OrderStatusReport(
+            instrument_id=GBPUSD_SIM.id,  # This instrument is not in the include list
+            account_id=TestIdStubs.account_id(),
+            client_order_id=ClientOrderId("filtered-order"),
+            venue_order_id=VenueOrderId("V-2"),
+            order_side=OrderSide.SELL,
+            order_type=OrderType.MARKET,
+            time_in_force=TimeInForce.DAY,
+            order_status=OrderStatus.ACCEPTED,
+            quantity=Quantity.from_int(50),
+            filled_qty=Quantity.from_int(0),
+            report_id=UUID4(),
+            ts_accepted=0,
+            ts_last=0,
+            ts_init=0,
+        )
+
+        mass_status = ExecutionMassStatus(
+            client_id=ClientId("TEST"),
+            venue=Venue("TEST"),
+            account_id=TestIdStubs.account_id(),
+            report_id=UUID4(),
+            ts_init=0,
+        )
+        mass_status.add_order_reports([report_included, report_filtered])
+
+        # Act
+        result = exec_engine._reconcile_execution_mass_status(mass_status)
+
+        # Assert
+        assert result is True
+        assert len(cache.orders()) == 1
+        assert cache.order(ClientOrderId("included-order")) is not None
+        assert cache.order(ClientOrderId("filtered-order")) is None
+
+    @pytest.mark.asyncio()
+    async def test_filtered_client_order_ids_filters_reports(self):
+        """
+        Test that reports are filtered based on `filtered_client_order_ids`.
+        """
+        # Arrange
+        filtered_coid = ClientOrderId("filter-this-id")
+        config = LiveExecEngineConfig(
+            reconciliation=True,
+            filtered_client_order_ids=[filtered_coid],
+        )
+        exec_engine, cache = self._get_exec_engine(config)
+
+        report_included = OrderStatusReport(
+            instrument_id=AUDUSD_SIM.id,
+            account_id=TestIdStubs.account_id(),
+            client_order_id=ClientOrderId("included-order"),
+            venue_order_id=VenueOrderId("V-1"),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            time_in_force=TimeInForce.DAY,
+            order_status=OrderStatus.ACCEPTED,
+            quantity=Quantity.from_int(100),
+            filled_qty=Quantity.from_int(0),
+            report_id=UUID4(),
+            ts_accepted=0,
+            ts_last=0,
+            ts_init=0,
+        )
+
+        report_filtered = OrderStatusReport(
+            instrument_id=AUDUSD_SIM.id,
+            account_id=TestIdStubs.account_id(),
+            client_order_id=filtered_coid,  # This ID is in the filter list
+            venue_order_id=VenueOrderId("V-2"),
+            order_side=OrderSide.SELL,
+            order_type=OrderType.MARKET,
+            time_in_force=TimeInForce.DAY,
+            order_status=OrderStatus.ACCEPTED,
+            quantity=Quantity.from_int(50),
+            filled_qty=Quantity.from_int(0),
+            report_id=UUID4(),
+            ts_accepted=0,
+            ts_last=0,
+            ts_init=0,
+        )
+
+        mass_status = ExecutionMassStatus(
+            client_id=ClientId("TEST"),
+            venue=Venue("TEST"),
+            account_id=TestIdStubs.account_id(),
+            report_id=UUID4(),
+            ts_init=0,
+        )
+        mass_status.add_order_reports([report_included, report_filtered])
+
+        # Act
+        result = exec_engine._reconcile_execution_mass_status(mass_status)
+
+        # Assert
+        assert result is True
+        assert len(cache.orders()) == 1
+        assert cache.order(ClientOrderId("included-order")) is not None
+        assert cache.order(filtered_coid) is None
