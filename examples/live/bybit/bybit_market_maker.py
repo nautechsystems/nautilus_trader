@@ -42,6 +42,7 @@ from nautilus_trader.model.identifiers import TraderId
 # SPOT/LINEAR
 product_type = BybitProductType.LINEAR
 symbol = f"ETHUSDT-{product_type.value.upper()}"
+instrument_id = InstrumentId.from_str(f"{symbol}.BYBIT")
 trade_size = Decimal("0.010")
 
 # INVERSE
@@ -60,6 +61,7 @@ config_node = TradingNodeConfig(
     ),
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,
+        reconciliation_instrument_ids=[instrument_id],  # Only reconcile this instrument
         open_check_interval_secs=5.0,
         open_check_open_only=True,
         # own_books_audit_interval_secs=2.0,
@@ -135,8 +137,8 @@ node = TradingNode(config=config_node)
 
 # Configure your strategy
 strat_config = VolatilityMarketMakerConfig(
-    instrument_id=InstrumentId.from_str(f"{symbol}.BYBIT"),
-    external_order_claims=[InstrumentId.from_str(f"{symbol}.BYBIT")],
+    instrument_id=instrument_id,
+    external_order_claims=[instrument_id],
     bar_type=BarType.from_str(f"{symbol}.BYBIT-1-MINUTE-LAST-EXTERNAL"),
     atr_period=20,
     atr_multiple=3.0,
