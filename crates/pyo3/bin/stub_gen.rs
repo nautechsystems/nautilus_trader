@@ -16,10 +16,14 @@
 use pyo3_stub_gen::Result;
 
 fn main() -> Result<()> {
-    println!("Starting stub generation...");
-    let stub = nautilus_pyo3::stub_info()?;
-    println!("Generated stub info, now generating files...");
-    stub.generate()?;
-    println!("Stub generation completed");
+    pyo3::prepare_freethreaded_python();
+
+    println!("Starting Python type stub generation...");
+
+    let stub_info = nautilus_pyo3::stub_info()?;
+    stub_info.generate()?;
+
+    println!("Python type stub generation completed");
+
     Ok(())
 }
