@@ -776,8 +776,8 @@ class MarginModelFactory:
             If the model type is unknown or invalid.
 
         """
-        from nautilus_trader.accounting.margin_models import LeveragedMarginModel
-        from nautilus_trader.accounting.margin_models import StandardMarginModel
+        from nautilus_trader.backtest.models import LeveragedMarginModel
+        from nautilus_trader.backtest.models import StandardMarginModel
 
         model_type = config.model_type.lower()
 
