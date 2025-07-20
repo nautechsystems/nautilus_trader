@@ -5,6 +5,7 @@ Released on TBD (UTC).
 ### Enhancements
 - Added `MarginModel` concept, base models, config, and factory for backtesting (#2794), thanks @faysou and @stefansimik
 - Added additional built-in backtest fill models (#2795), thanks @faysou and @stefansimik
+- Added `OrderBookDepth10DataWrangler` (#2801), thanks @trylovetom
 - Added `persist_account_events` config option for `CacheConfig` (default `True` to retain current behavior)
 - Added `query_account` method for `Strategy`
 - Added `QueryAccount` execution message
