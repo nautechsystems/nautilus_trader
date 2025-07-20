@@ -239,9 +239,26 @@ impl RedisCacheDatabase {
     ///
     /// Returns an error if the underlying Redis scan operation fails.
     pub async fn keys(&mut self, pattern: &str) -> anyhow::Result<Vec<String>> {
+        let start_time = Instant::now();
         let pattern = format!("{}{REDIS_DELIMITER}{pattern}", self.trader_key);
-        log::debug!("Querying keys: {pattern}");
-        DatabaseQueries::scan_keys(&mut self.con, pattern).await
+        log::debug!("RedisCacheDatabase.keys: Starting query for pattern: {pattern}");
+
+        let result = DatabaseQueries::scan_keys(&mut self.con, pattern).await;
+        let total_time = start_time.elapsed();
+
+        match &result {
+            Ok(keys) => log::debug!(
+                "RedisCacheDatabase.keys: Query completed in {}ms, found {} keys",
+                total_time.as_millis(),
+                keys.len()
+            ),
+            Err(e) => log::error!(
+                "RedisCacheDatabase.keys: Query failed after {}ms: {e}",
+                total_time.as_millis(),
+            ),
+        }
+
+        result
     }
 
     /// Reads the value(s) associated with `key` for this trader from Redis.

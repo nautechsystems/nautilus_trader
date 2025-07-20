@@ -36,7 +36,7 @@ Released on TBD (UTC).
 - Improved DEX pool sync process in the blockchain adapter (#2796), thanks @filipmacek
 - Improved efficiency of message bus external streams buffer flushing
 - Improved `databento_test_request_bars` example (#2762), thanks @faysou
-- Optimized account event purging for Redis where large lists could consume excessive memory and cause Redis to freeze
+- Optimized Redis key scans to improve efficiency over a network
 - Refined Rust catalog path handling (#2743), thanks @faysou
 - Refined Rust `GreeksCalculator` (#2760), thanks @faysou
 - Refined Databento bars timestamp decoding and backtest execution usage (#2800), thanks @faysou
