@@ -117,6 +117,55 @@ pub fn unix_nanos_to_iso8601(unix_nanos: UnixNanos) -> String {
     datetime.to_rfc3339_opts(SecondsFormat::Nanos, true)
 }
 
+/// Converts an ISO 8601 (RFC 3339) format string to UNIX nanoseconds timestamp.
+///
+/// This function accepts various ISO 8601 formats including:
+/// - Full RFC 3339 with nanosecond precision: "2024-02-10T14:58:43.456789Z"
+/// - RFC 3339 without fractional seconds: "2024-02-10T14:58:43Z"
+/// - Simple date format: "2024-02-10" (interpreted as midnight UTC)
+///
+/// # Parameters
+///
+/// - `date_string`: The ISO 8601 formatted date string to parse
+///
+/// # Returns
+///
+/// Returns `Ok(UnixNanos)` if the string is successfully parsed, or an error if the format
+/// is invalid or the timestamp is out of range.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The string format is not a valid ISO 8601 format
+/// - The timestamp is out of range for `UnixNanos`
+/// - The date/time values are invalid
+///
+/// # Examples
+///
+/// ```rust
+/// use nautilus_core::datetime::iso8601_to_unix_nanos;
+/// use nautilus_core::UnixNanos;
+///
+/// // Full RFC 3339 format
+/// let nanos = iso8601_to_unix_nanos("2024-02-10T14:58:43.456789Z".to_string())?;
+/// assert_eq!(nanos, UnixNanos::from(1_707_577_123_456_789_000));
+///
+/// // Without fractional seconds
+/// let nanos = iso8601_to_unix_nanos("2024-02-10T14:58:43Z".to_string())?;
+/// assert_eq!(nanos, UnixNanos::from(1_707_577_123_000_000_000));
+///
+/// // Simple date format (midnight UTC)
+/// let nanos = iso8601_to_unix_nanos("2024-02-10".to_string())?;
+/// assert_eq!(nanos, UnixNanos::from(1_707_523_200_000_000_000));
+/// # Ok::<(), anyhow::Error>(())
+/// ```
+#[inline]
+pub fn iso8601_to_unix_nanos(date_string: String) -> anyhow::Result<UnixNanos> {
+    date_string
+        .parse::<UnixNanos>()
+        .map_err(|e| anyhow::anyhow!("Failed to parse ISO 8601 string '{}': {}", date_string, e))
+}
+
 /// Converts a UNIX nanoseconds timestamp to an ISO 8601 (RFC 3339) format string
 /// with millisecond precision.
 #[inline]
@@ -240,6 +289,68 @@ pub fn add_n_months_nanos(unix_nanos: UnixNanos, n: u32) -> anyhow::Result<UnixN
     let timestamp = match result.timestamp_nanos_opt() {
         Some(ts) => ts,
         None => anyhow::bail!("Timestamp out of range after adding {n} months"),
+    };
+
+    if timestamp < 0 {
+        anyhow::bail!("Negative timestamp not allowed");
+    }
+
+    Ok(UnixNanos::from(timestamp as u64))
+}
+
+/// Add `n` years to a chrono `DateTime<Utc>`.
+///
+/// # Errors
+///
+/// Returns an error if the resulting date would be invalid or out of range.
+pub fn add_n_years(datetime: DateTime<Utc>, n: u32) -> anyhow::Result<DateTime<Utc>> {
+    // Use checked_add_months with n * 12 months
+    match datetime.checked_add_months(chrono::Months::new(n * 12)) {
+        Some(result) => Ok(result),
+        None => anyhow::bail!("Failed to add {n} years to {datetime}"),
+    }
+}
+
+/// Subtract `n` years from a chrono `DateTime<Utc>`.
+///
+/// # Errors
+///
+/// Returns an error if the resulting date would be invalid or out of range.
+pub fn subtract_n_years(datetime: DateTime<Utc>, n: u32) -> anyhow::Result<DateTime<Utc>> {
+    // Use checked_sub_months with n * 12 months
+    match datetime.checked_sub_months(chrono::Months::new(n * 12)) {
+        Some(result) => Ok(result),
+        None => anyhow::bail!("Failed to subtract {n} years from {datetime}"),
+    }
+}
+
+/// Add `n` years to a given UNIX nanoseconds timestamp.
+///
+/// # Errors
+///
+/// Returns an error if the resulting timestamp is out of range or invalid.
+pub fn add_n_years_nanos(unix_nanos: UnixNanos, n: u32) -> anyhow::Result<UnixNanos> {
+    let datetime = unix_nanos.to_datetime_utc();
+    let result = add_n_years(datetime, n)?;
+    let timestamp = match result.timestamp_nanos_opt() {
+        Some(ts) => ts,
+        None => anyhow::bail!("Timestamp out of range after adding {n} years"),
+    };
+
+    Ok(UnixNanos::from(timestamp as u64))
+}
+
+/// Subtract `n` years from a given UNIX nanoseconds timestamp.
+///
+/// # Errors
+///
+/// Returns an error if the resulting timestamp is out of range or invalid.
+pub fn subtract_n_years_nanos(unix_nanos: UnixNanos, n: u32) -> anyhow::Result<UnixNanos> {
+    let datetime = unix_nanos.to_datetime_utc();
+    let result = subtract_n_years(datetime, n)?;
+    let timestamp = match result.timestamp_nanos_opt() {
+        Some(ts) => ts,
+        None => anyhow::bail!("Timestamp out of range after subtracting {n} years"),
     };
 
     if timestamp < 0 {
@@ -491,5 +602,37 @@ mod tests {
     fn test_is_leap_year(#[case] year: i32, #[case] expected: bool) {
         let result = is_leap_year(year);
         assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case("1970-01-01T00:00:00.000000000Z", 0)] // Unix epoch
+    #[case("1970-01-01T00:00:00.000000001Z", 1)] // 1 nanosecond
+    #[case("1970-01-01T00:00:00.001000000Z", 1_000_000)] // 1 millisecond
+    #[case("1970-01-01T00:00:01.000000000Z", 1_000_000_000)] // 1 second
+    #[case("2023-12-18T00:00:00.000000000Z", 1_702_857_600_000_000_000)] // Specific date
+    #[case("2024-02-10T14:58:43.456789Z", 1_707_577_123_456_789_000)] // RFC3339 with fractions
+    #[case("2024-02-10T14:58:43Z", 1_707_577_123_000_000_000)] // RFC3339 without fractions
+    #[case("2024-02-10", 1_707_523_200_000_000_000)] // Simple date format
+    fn test_iso8601_to_unix_nanos(#[case] input: &str, #[case] expected: u64) {
+        let result = iso8601_to_unix_nanos(input.to_string()).unwrap();
+        assert_eq!(result.as_u64(), expected);
+    }
+
+    #[rstest]
+    #[case("invalid-date")] // Invalid format
+    #[case("2024-02-30")] // Invalid date
+    #[case("2024-13-01")] // Invalid month
+    #[case("not a timestamp")] // Random string
+    fn test_iso8601_to_unix_nanos_invalid(#[case] input: &str) {
+        let result = iso8601_to_unix_nanos(input.to_string());
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_iso8601_roundtrip() {
+        let original_nanos = UnixNanos::from(1_707_577_123_456_789_000);
+        let iso8601_string = unix_nanos_to_iso8601(original_nanos);
+        let parsed_nanos = iso8601_to_unix_nanos(iso8601_string).unwrap();
+        assert_eq!(parsed_nanos, original_nanos);
     }
 }

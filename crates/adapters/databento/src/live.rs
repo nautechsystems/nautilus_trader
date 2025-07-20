@@ -21,7 +21,10 @@ use databento::{
     live::Subscription,
 };
 use indexmap::IndexMap;
-use nautilus_core::{UnixNanos, python::to_pyruntime_err, time::get_atomic_clock_realtime};
+use nautilus_core::{
+    UnixNanos, consts::NAUTILUS_USER_AGENT, python::to_pyruntime_err,
+    time::get_atomic_clock_realtime,
+};
 use nautilus_model::{
     data::{Data, InstrumentStatus, OrderBookDelta, OrderBookDeltas, OrderBookDeltas_API},
     enums::RecordFlag,
@@ -127,11 +130,13 @@ impl DatabentoFeedHandler {
         let result = tokio::time::timeout(
             timeout,
             databento::LiveClient::builder()
+                .user_agent_extension(NAUTILUS_USER_AGENT.into())
                 .key(self.key.clone())?
                 .dataset(self.dataset.clone())
                 .build(),
         )
         .await?;
+
         tracing::info!("Connected");
 
         let mut client = if let Ok(client) = result {
@@ -224,18 +229,19 @@ impl DatabentoFeedHandler {
             } else if let Some(msg) = record.get::<dbn::SymbolMappingMsg>() {
                 // Remove instrument ID index as the raw symbol may have changed
                 instrument_id_map.remove(&msg.hd.instrument_id);
-
-                handle_symbol_mapping_msg(msg, &mut symbol_map, &mut instrument_id_map)
-                    .map_err(|e| anyhow::anyhow!("Error updating symbol map: {e}"))?;
+                handle_symbol_mapping_msg(msg, &mut symbol_map, &mut instrument_id_map)?;
             } else if let Some(msg) = record.get::<dbn::InstrumentDefMsg>() {
                 if self.use_exchange_as_venue {
-                    update_instrument_id_map_with_exchange(
-                        &symbol_map,
-                        &self.symbol_venue_map,
-                        &mut instrument_id_map,
-                        msg.hd.instrument_id,
-                        msg.exchange()?,
-                    )?;
+                    let exchange = msg.exchange()?;
+                    if !exchange.is_empty() {
+                        update_instrument_id_map_with_exchange(
+                            &symbol_map,
+                            &self.symbol_venue_map,
+                            &mut instrument_id_map,
+                            msg.hd.instrument_id,
+                            exchange,
+                        )?;
+                    }
                 }
                 let data = {
                     let sym_map = self

@@ -46,6 +46,18 @@ use crate::{
     execution_client::BacktestExecutionClient, modules::SimulationModule,
 };
 
+/// Core backtesting engine for running event-driven strategy backtests on historical data.
+///
+/// The `BacktestEngine` provides a high-fidelity simulation environment that processes
+/// historical market data chronologically through an event-driven architecture. It maintains
+/// simulated exchanges with realistic order matching and execution, allowing strategies
+/// to be tested exactly as they would run in live trading:
+///
+/// - Event-driven data replay with configurable latency models.
+/// - Multi-venue and multi-asset support.
+/// - Realistic order matching and execution simulation.
+/// - Strategy and portfolio performance analysis.
+/// - Seamless transition from backtesting to live trading.
 pub struct BacktestEngine {
     instance_id: UUID4,
     config: BacktestEngineConfig,
@@ -420,8 +432,6 @@ mod tests {
 
     #[rstest]
     fn test_engine_venue_and_instrument_initialization(crypto_perpetual_ethusdt: CryptoPerpetual) {
-        pyo3::prepare_freethreaded_python();
-
         let venue = Venue::from("BINANCE");
         let client_id = ClientId::from(venue.as_str());
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
@@ -431,7 +441,7 @@ mod tests {
 
         // Check the venue and exec client has been added
         assert_eq!(engine.venues.len(), 1);
-        assert!(engine.venues.get(&venue).is_some());
+        assert!(engine.venues.contains_key(&venue));
         assert!(engine.kernel.exec_engine.get_client(&client_id).is_some());
 
         // Check the instrument has been added

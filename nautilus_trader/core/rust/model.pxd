@@ -23,6 +23,14 @@ cdef extern from "../includes/model.h":
         const uint8_t FIXED_PRECISION # = 9
 
     IF HIGH_PRECISION:
+        # The width in bytes for fixed-point value types in high-precision mode (128-bit).
+        const int32_t PRECISION_BYTES # = 16
+
+    IF not HIGH_PRECISION:
+        # The width in bytes for fixed-point value types in standard-precision mode (64-bit).
+        const int32_t PRECISION_BYTES # = 8
+
+    IF HIGH_PRECISION:
         # The scalar value corresponding to the maximum precision (10^16).
         const double FIXED_SCALAR # = 10000000000000000.0
 
@@ -30,45 +38,65 @@ cdef extern from "../includes/model.h":
         # The scalar value corresponding to the maximum precision (10^9).
         const double FIXED_SCALAR # = 1000000000.0
 
-    # The scalar representing the difference between high-precision and standard-precision modes.
-    const double PRECISION_DIFF_SCALAR # = 10000000.0
+    IF HIGH_PRECISION:
+        # The scalar representing the difference between high-precision and standard-precision modes.
+        const double PRECISION_DIFF_SCALAR # = 10000000.0
+
+    IF not HIGH_PRECISION:
+        # The scalar representing the difference between high-precision and standard-precision modes.
+        const double PRECISION_DIFF_SCALAR # = 1.0
+
+    # The maximum precision that can be safely used with f64-based constructors.
+    #
+    # This is a hard limit imposed by IEEE 754 double-precision floating-point representation,
+    # which has approximately 15-17 significant decimal digits. Beyond 16 decimal places,
+    # floating-point arithmetic becomes unreliable due to rounding errors.
+    #
+    # For higher precision values (such as 18-decimal WEI values in DeFi), specialized
+    # constructors that work with integer representations should be used instead.
+    const uint8_t MAX_FLOAT_PRECISION # = 16
 
     IF HIGH_PRECISION:
-        # The maximum valid money amount which can be represented.
+        # The maximum valid money amount that can be represented.
         const double MONEY_MAX # = 17014118346046.0
 
     IF not HIGH_PRECISION:
+        # The maximum valid money amount that can be represented.
         const double MONEY_MAX # = 9223372036.0
 
     IF HIGH_PRECISION:
-        # The minimum valid money amount which can be represented.
+        # The minimum valid money amount that can be represented.
         const double MONEY_MIN # = -17014118346046.0
 
     IF not HIGH_PRECISION:
+        # The minimum valid money amount that can be represented.
         const double MONEY_MIN # = -9223372036.0
 
     IF HIGH_PRECISION:
-        # The maximum valid price value which can be represented.
+        # The maximum valid price value that can be represented.
         const double PRICE_MAX # = 17014118346046.0
 
     IF not HIGH_PRECISION:
+        # The maximum valid price value that can be represented.
         const double PRICE_MAX # = 9223372036.0
 
     IF HIGH_PRECISION:
-        # The minimum valid price value which can be represented.
+        # The minimum valid price value that can be represented.
         const double PRICE_MIN # = -17014118346046.0
 
     IF not HIGH_PRECISION:
+        # The minimum valid price value that can be represented.
         const double PRICE_MIN # = -9223372036.0
 
     IF HIGH_PRECISION:
-        # The maximum valid quantity value which can be represented.
+        # The maximum valid quantity value that can be represented.
         const double QUANTITY_MAX # = 34028236692093.0
 
     IF not HIGH_PRECISION:
+        # The maximum valid quantity value that can be represented.
         const double QUANTITY_MAX # = 18446744073.0
 
-    # The minimum valid quantity value which can be represented.
+    # The minimum valid quantity value that can be represented.
     const double QUANTITY_MIN # = 0.0
 
     # An account type provided by a trading venue or broker.
@@ -502,7 +530,7 @@ cdef extern from "../includes/model.h":
     IF not HIGH_PRECISION:
         ctypedef int64_t PriceRaw;
 
-    # Represents a price in a market.
+    # Represents a price in a market with a specified precision.
     #
     # The number of decimal places may vary. For certain asset classes, prices may
     # have negative values. For example, prices for options instruments can be
@@ -510,8 +538,8 @@ cdef extern from "../includes/model.h":
     #
     # Handles up to [`FIXED_PRECISION`] decimals of precision.
     #
-    # - [`PRICE_MAX`] - Maximum representable price value
-    # - [`PRICE_MIN`] - Minimum representable price value
+    # - [`PRICE_MAX`] - Maximum representable price value.
+    # - [`PRICE_MIN`] - Minimum representable price value.
     cdef struct Price_t:
         # Represents the raw fixed-point value, with `precision` defining the number of decimal places.
         PriceRaw raw;
@@ -524,7 +552,7 @@ cdef extern from "../includes/model.h":
     IF not HIGH_PRECISION:
         ctypedef uint64_t QuantityRaw;
 
-    # Represents a quantity with a non-negative value.
+    # Represents a quantity with a non-negative value and specified precision.
     #
     # Capable of storing either a whole number (no decimal places) of 'contracts'
     # or 'shares' (instruments denominated in whole units) or a decimal value
@@ -532,8 +560,8 @@ cdef extern from "../includes/model.h":
     #
     # Handles up to [`FIXED_PRECISION`] decimals of precision.
     #
-    # - [`QUANTITY_MAX`] - Maximum representable quantity value
-    # - [`QUANTITY_MIN`] - 0 (non-negative values only)
+    # - [`QUANTITY_MAX`] - Maximum representable quantity value.
+    # - [`QUANTITY_MIN`] - 0 (non-negative values only).
     cdef struct Quantity_t:
         # Represents the raw fixed-point value, with `precision` defining the number of decimal places.
         QuantityRaw raw;
@@ -565,7 +593,7 @@ cdef extern from "../includes/model.h":
         uint64_t sequence;
         # UNIX timestamp (nanoseconds) when the book event occurred.
         uint64_t ts_event;
-        # UNIX timestamp (nanoseconds) when the struct was initialized.
+        # UNIX timestamp (nanoseconds) when the instance was created.
         uint64_t ts_init;
 
     # C compatible Foreign Function Interface (FFI) for an underlying [`OrderBookDeltas`].
@@ -605,7 +633,7 @@ cdef extern from "../includes/model.h":
         uint64_t sequence;
         # UNIX timestamp (nanoseconds) when the book event occurred.
         uint64_t ts_event;
-        # UNIX timestamp (nanoseconds) when the struct was initialized.
+        # UNIX timestamp (nanoseconds) when the instance was created.
         uint64_t ts_init;
 
     # Represents a quote tick in a market.
@@ -622,7 +650,7 @@ cdef extern from "../includes/model.h":
         Quantity_t ask_size;
         # UNIX timestamp (nanoseconds) when the quote event occurred.
         uint64_t ts_event;
-        # UNIX timestamp (nanoseconds) when the struct was initialized.
+        # UNIX timestamp (nanoseconds) when the instance was created.
         uint64_t ts_init;
 
     # Represents a valid trade match ID (assigned by a trading venue).
@@ -651,7 +679,7 @@ cdef extern from "../includes/model.h":
         TradeId_t trade_id;
         # UNIX timestamp (nanoseconds) when the trade event occurred.
         uint64_t ts_event;
-        # UNIX timestamp (nanoseconds) when the struct was initialized.
+        # UNIX timestamp (nanoseconds) when the instance was created.
         uint64_t ts_init;
 
     # Represents a bar aggregation specification including a step, aggregation
@@ -713,7 +741,7 @@ cdef extern from "../includes/model.h":
         Quantity_t volume;
         # UNIX timestamp (nanoseconds) when the data event occurred.
         uint64_t ts_event;
-        # UNIX timestamp (nanoseconds) when the struct was initialized.
+        # UNIX timestamp (nanoseconds) when the instance was created.
         uint64_t ts_init;
 
     # Represents a mark price update.
@@ -724,7 +752,7 @@ cdef extern from "../includes/model.h":
         Price_t value;
         # UNIX timestamp (nanoseconds) when the price event occurred.
         uint64_t ts_event;
-        # UNIX timestamp (nanoseconds) when the struct was initialized.
+        # UNIX timestamp (nanoseconds) when the instance was created.
         uint64_t ts_init;
 
     # Represents an index price update.
@@ -735,7 +763,7 @@ cdef extern from "../includes/model.h":
         Price_t value;
         # UNIX timestamp (nanoseconds) when the price event occurred.
         uint64_t ts_event;
-        # UNIX timestamp (nanoseconds) when the struct was initialized.
+        # UNIX timestamp (nanoseconds) when the instance was created.
         uint64_t ts_init;
 
     # Represents an instrument close at a venue.
@@ -748,7 +776,7 @@ cdef extern from "../includes/model.h":
         InstrumentCloseType close_type;
         # UNIX timestamp (nanoseconds) when the close price event occurred.
         uint64_t ts_event;
-        # UNIX timestamp (nanoseconds) when the struct was initialized.
+        # UNIX timestamp (nanoseconds) when the instance was created.
         uint64_t ts_init;
 
     # A built-in Nautilus data type.
@@ -1020,7 +1048,7 @@ cdef extern from "../includes/model.h":
 
 
 
-    # Indicates if high_precision mode is enabled.
+    # Indicates if high-precision mode is enabled.
     #
     # # Safety
     #
@@ -1028,14 +1056,6 @@ cdef extern from "../includes/model.h":
     # making it safe to read from multiple threads without synchronization.
     # The value is determined by the "high-precision" feature flag.
     extern const uint8_t HIGH_PRECISION_MODE;
-
-    IF HIGH_PRECISION:
-        # The width in bytes for fixed-point value types in high-precision mode (128-bit).
-        extern const int32_t PRECISION_BYTES;
-
-    IF not HIGH_PRECISION:
-        # The width in bytes for fixed-point value types in standard-precision mode (64-bit).
-        extern const int32_t PRECISION_BYTES;
 
     # The maximum raw price integer value.
     #
@@ -1262,6 +1282,17 @@ cdef extern from "../includes/model.h":
     uint64_t mark_price_update_hash(const MarkPriceUpdate_t *value);
 
     const char *mark_price_update_to_cstr(const MarkPriceUpdate_t *value);
+
+    IndexPriceUpdate_t index_price_update_new(InstrumentId_t instrument_id,
+                                              Price_t value,
+                                              uint64_t ts_event,
+                                              uint64_t ts_init);
+
+    uint8_t index_price_update_eq(const IndexPriceUpdate_t *lhs, const IndexPriceUpdate_t *rhs);
+
+    uint64_t index_price_update_hash(const IndexPriceUpdate_t *value);
+
+    const char *index_price_update_to_cstr(const IndexPriceUpdate_t *value);
 
     QuoteTick_t quote_tick_new(InstrumentId_t instrument_id,
                                Price_t bid_price,

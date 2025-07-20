@@ -49,7 +49,6 @@ cdef class Portfolio(PortfolioFacade):
     cdef str _log_price
     cdef str _log_xrate
 
-    cdef Venue _venue
     cdef dict[InstrumentId, Money] _unrealized_pnls
     cdef dict[InstrumentId, Money] _realized_pnls
     cdef dict[InstrumentId, Decimal] _net_positions
@@ -60,9 +59,9 @@ cdef class Portfolio(PortfolioFacade):
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
+    cpdef void set_specific_venue(self, Venue venue)
     cpdef void set_use_mark_prices(self, bint value)
     cpdef void set_use_mark_xrates(self, bint value)
-    cpdef void set_specific_venue(self, Venue venue)
     cpdef void initialize_orders(self)
     cpdef void initialize_positions(self)
     cpdef void update_quote_tick(self, QuoteTick tick)
@@ -76,9 +75,10 @@ cdef class Portfolio(PortfolioFacade):
 
 # -- INTERNAL -------------------------------------------------------------------------------------
 
-    cdef object _net_position(self, InstrumentId instrument_id)
+    cdef void _update_account(self, AccountState event)
     cdef void _update_instrument_id(self, InstrumentId instrument_id)
     cdef void _update_net_position(self, InstrumentId instrument_id, list positions_open)
+    cdef object _net_position(self, InstrumentId instrument_id)
     cdef Money _calculate_realized_pnl(self, InstrumentId instrument_id)
     cdef Money _calculate_unrealized_pnl(self, InstrumentId instrument_id, Price price=*)
     cdef Price _get_price(self, Position position)

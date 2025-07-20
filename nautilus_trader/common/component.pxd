@@ -73,6 +73,7 @@ cdef class Clock:
         datetime stop_time=*,
         callback: Callable[[TimeEvent], None]=*,
         bint allow_past=*,
+        bint fire_immediately=*,
     )
     cpdef void set_timer_ns(
         self,
@@ -82,6 +83,7 @@ cdef class Clock:
         uint64_t stop_time_ns,
         callback: Callable[[TimeEvent], None]=*,
         bint allow_past=*,
+        bint fire_immediately=*,
     )
     cpdef void cancel_timer(self, str name)
     cpdef void cancel_timers(self)
@@ -293,6 +295,7 @@ cdef class MessageBus:
     cpdef list endpoints(self)
     cpdef list topics(self)
     cpdef list subscriptions(self, str pattern=*)
+    cpdef set streaming_types(self)
     cpdef bint has_subscribers(self, str pattern=*)
     cpdef bint is_subscribed(self, str topic, handler)
     cpdef bint is_pending_request(self, UUID4 request_id)

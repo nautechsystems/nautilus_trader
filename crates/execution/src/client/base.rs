@@ -39,6 +39,12 @@ use nautilus_model::{
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 
+/// Base implementation for execution clients providing common functionality.
+///
+/// This struct provides the foundation for all execution clients, handling
+/// account state generation, order event creation, and message routing.
+/// Execution clients can inherit this base functionality and extend it
+/// with venue-specific implementations.
 pub struct BaseExecutionClient {
     pub trader_id: TraderId,
     pub client_id: ClientId,
@@ -61,6 +67,7 @@ impl Debug for BaseExecutionClient {
 }
 
 impl BaseExecutionClient {
+    /// Creates a new [`BaseExecutionClient`] instance.
     #[allow(clippy::too_many_arguments)]
     pub const fn new(
         trader_id: TraderId,
@@ -87,15 +94,18 @@ impl BaseExecutionClient {
         }
     }
 
+    /// Sets the connection status of the execution client.
     pub const fn set_connected(&mut self, is_connected: bool) {
         self.is_connected = is_connected;
     }
 
+    /// Sets the account identifier for the execution client.
     pub const fn set_account_id(&mut self, account_id: AccountId) {
         self.account_id = account_id;
     }
 
     #[must_use]
+    /// Returns the account associated with this execution client.
     pub fn get_account(&self) -> Option<AccountAny> {
         self.cache.borrow().account(&self.account_id).cloned()
     }
@@ -260,12 +270,12 @@ impl BaseExecutionClient {
         if !venue_order_id_modified {
             let cache = self.cache.as_ref().borrow();
             let existing_order_result = cache.venue_order_id(&client_order_id);
-            if let Some(existing_order) = existing_order_result {
-                if *existing_order != venue_order_id {
-                    log::error!(
-                        "Existing venue order id {existing_order} does not match provided venue order id {venue_order_id}"
-                    );
-                }
+            if let Some(existing_order) = existing_order_result
+                && *existing_order != venue_order_id
+            {
+                log::error!(
+                    "Existing venue order id {existing_order} does not match provided venue order id {venue_order_id}"
+                );
             }
         }
 
@@ -405,31 +415,31 @@ impl BaseExecutionClient {
 
     fn send_account_state(&self, account_state: AccountState) {
         let endpoint = "Portfolio.update_account".into();
-        msgbus::send(endpoint, &account_state as &dyn Any);
+        msgbus::send_any(endpoint, &account_state as &dyn Any);
     }
 
     fn send_order_event(&self, event: OrderEventAny) {
         let endpoint = "ExecEngine.process".into();
-        msgbus::send(endpoint, &event as &dyn Any);
+        msgbus::send_any(endpoint, &event as &dyn Any);
     }
 
     fn send_mass_status_report(&self, report: ExecutionMassStatus) {
-        let endpoint = "ExecEngine.reconcile_mass_status".into();
-        msgbus::send(endpoint, &report as &dyn Any);
+        let endpoint = "ExecEngine.reconcile_execution_mass_status".into();
+        msgbus::send_any(endpoint, &report as &dyn Any);
     }
 
     fn send_order_status_report(&self, report: OrderStatusReport) {
-        let endpoint = "ExecEngine.reconcile_report".into();
-        msgbus::send(endpoint, &report as &dyn Any);
+        let endpoint = "ExecEngine.reconcile_execution_report".into();
+        msgbus::send_any(endpoint, &report as &dyn Any);
     }
 
     fn send_fill_report(&self, report: FillReport) {
-        let endpoint = "ExecEngine.reconcile_report".into();
-        msgbus::send(endpoint, &report as &dyn Any);
+        let endpoint = "ExecEngine.reconcile_execution_report".into();
+        msgbus::send_any(endpoint, &report as &dyn Any);
     }
 
     fn send_position_report(&self, report: PositionStatusReport) {
-        let endpoint = "ExecEngine.reconcile_report".into();
-        msgbus::send(endpoint, &report as &dyn Any);
+        let endpoint = "ExecEngine.reconcile_execution_report".into();
+        msgbus::send_any(endpoint, &report as &dyn Any);
     }
 }

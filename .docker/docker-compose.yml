@@ -5,7 +5,7 @@ services:
     container_name: nautilus-database
     image: postgres
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_USER: ${POSTGRES_USER:-nautilus}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pass}
       POSTGRES_DATABASE: nautilus
       PGDATA: /data/postgres
@@ -25,6 +25,8 @@ services:
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-admin}
     volumes:
       - pgadmin:/root/.pgadmin
+    security_opt:
+      - no-new-privileges:true
     ports:
       - "${PGADMIN_PORT:-5051}:80"
     networks:

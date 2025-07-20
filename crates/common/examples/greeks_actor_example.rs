@@ -22,19 +22,16 @@ use std::{
 };
 
 use nautilus_common::{
-    actor::{
-        Actor,
-        data_actor::{DataActor, DataActorConfig, DataActorCore},
-    },
+    actor::data_actor::{DataActor, DataActorConfig, DataActorCore},
     cache::Cache,
     clock::LiveClock,
-    enums::ComponentState,
+    component::Component,
     greeks::GreeksCalculator,
 };
 use nautilus_model::{
     data::greeks::GreeksData,
     enums::PositionSide,
-    identifiers::{ActorId, InstrumentId, TraderId},
+    identifiers::{InstrumentId, TraderId},
 };
 
 /// A custom actor that uses the `GreeksCalculator`.
@@ -76,7 +73,7 @@ impl GreeksActor {
         let use_cached_greeks = false;
         let cache_greeks = true;
         let publish_greeks = true;
-        let ts_event = self.core.generate_timestamp_ns();
+        let ts_event = self.core.timestamp_ns();
         let position = None;
         let percent_greeks = false;
         let index_instrument_id = None;
@@ -122,6 +119,7 @@ impl GreeksActor {
         let percent_greeks = false;
         let index_instrument_id = None;
         let beta_weights = None;
+        let greeks_filter = None;
 
         // Calculate portfolio greeks
         self.greeks_calculator.portfolio_greeks(
@@ -141,6 +139,7 @@ impl GreeksActor {
             Some(percent_greeks),
             index_instrument_id,
             beta_weights,
+            greeks_filter,
         )
     }
 
@@ -152,23 +151,6 @@ impl GreeksActor {
     }
 }
 
-impl Actor for GreeksActor {
-    fn id(&self) -> ustr::Ustr {
-        self.core.actor_id.inner()
-    }
-
-    fn handle(&mut self, msg: &dyn std::any::Any) {
-        // Let the core handle message routing
-        self.core.handle(msg);
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-}
-
-// We need to explicitly implement `Deref` for actors to improve API ergonomics.
-// In the future we can probably create a macro to do this.
 impl Deref for GreeksActor {
     type Target = DataActorCore;
 
@@ -177,8 +159,6 @@ impl Deref for GreeksActor {
     }
 }
 
-// We need to explicitly implement `DerefMut` for actors to improve API ergonomics.
-// In the future we can probably create a macro to do this.
 impl DerefMut for GreeksActor {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.core
@@ -186,14 +166,6 @@ impl DerefMut for GreeksActor {
 }
 
 impl DataActor for GreeksActor {
-    fn actor_id(&self) -> ActorId {
-        self.core.actor_id()
-    }
-
-    fn state(&self) -> ComponentState {
-        self.core.state()
-    }
-
     fn on_start(&mut self) -> anyhow::Result<()> {
         // Subscribe to greeks data for SPY
         self.subscribe_to_greeks("SPY");

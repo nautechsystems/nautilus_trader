@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Provides a generic `ExecutionEngine` for all environments.
+//! Risk management engine implementation.
 
 pub mod config;
 
@@ -48,6 +48,12 @@ use ustr::Ustr;
 type SubmitOrderFn = Box<dyn Fn(SubmitOrder)>;
 type ModifyOrderFn = Box<dyn Fn(ModifyOrder)>;
 
+/// Central risk management engine that validates and controls trading operations.
+///
+/// The `RiskEngine` provides comprehensive pre-trade risk checks including order validation,
+/// balance verification, position sizing limits, and trading state management. It acts as
+/// a gateway between strategy orders and execution, ensuring all trades comply with
+/// defined risk parameters and regulatory constraints.
 #[allow(dead_code)]
 pub struct RiskEngine {
     clock: Rc<RefCell<dyn Clock>>,
@@ -67,6 +73,7 @@ impl Debug for RiskEngine {
 }
 
 impl RiskEngine {
+    /// Creates a new [`RiskEngine`] instance.
     pub fn new(
         config: RiskEngineConfig,
         portfolio: Portfolio,
@@ -98,7 +105,7 @@ impl RiskEngine {
     ) -> Throttler<SubmitOrder, SubmitOrderFn> {
         let success_handler = {
             Box::new(move |submit_order: SubmitOrder| {
-                msgbus::send(
+                msgbus::send_any(
                     "ExecEngine.execute".into(),
                     &TradingCommand::SubmitOrder(submit_order),
                 );
@@ -120,7 +127,7 @@ impl RiskEngine {
 
                 let denied = Self::create_order_denied(&submit_order, reason, &clock);
 
-                msgbus::send("ExecEngine.process".into(), &denied);
+                msgbus::send_any("ExecEngine.process".into(), &denied);
             }) as Box<dyn Fn(SubmitOrder)>
         };
 
@@ -142,7 +149,7 @@ impl RiskEngine {
     ) -> Throttler<ModifyOrder, ModifyOrderFn> {
         let success_handler = {
             Box::new(move |order: ModifyOrder| {
-                msgbus::send(
+                msgbus::send_any(
                     "ExecEngine.execute".into(),
                     &TradingCommand::ModifyOrder(order),
                 );
@@ -167,7 +174,7 @@ impl RiskEngine {
 
                 let rejected = Self::create_modify_rejected(&order, reason, &clock);
 
-                msgbus::send("ExecEngine.process".into(), &rejected);
+                msgbus::send_any("ExecEngine.process".into(), &rejected);
             }) as Box<dyn Fn(ModifyOrder)>
         };
 
@@ -248,16 +255,19 @@ impl RiskEngine {
 
     // -- COMMANDS --------------------------------------------------------------------------------
 
+    /// Executes a trading command through the risk management pipeline.
     pub fn execute(&mut self, command: TradingCommand) {
         // This will extend to other commands such as `RiskCommand`
         self.handle_command(command);
     }
 
+    /// Processes an order event for risk monitoring and state updates.
     pub fn process(&mut self, event: OrderEventAny) {
         // This will extend to other events such as `RiskEvent`
         self.handle_event(event);
     }
 
+    /// Sets the trading state for risk control enforcement.
     pub fn set_trading_state(&mut self, state: TradingState) {
         if state == self.trading_state {
             log::warn!("No change to trading state: already set to {state:?}");
@@ -276,6 +286,7 @@ impl RiskEngine {
         log::info!("Trading state set to {state:?}");
     }
 
+    /// Sets the maximum notional value per order for the specified instrument.
     pub fn set_max_notional_per_order(&mut self, instrument_id: InstrumentId, new_value: Decimal) {
         self.max_notional_per_order.insert(instrument_id, new_value);
 
@@ -297,6 +308,9 @@ impl RiskEngine {
                 self.handle_submit_order_list(submit_order_list);
             }
             TradingCommand::ModifyOrder(modify_order) => self.handle_modify_order(modify_order),
+            TradingCommand::QueryAccount(query_account) => {
+                self.send_to_execution(TradingCommand::QueryAccount(query_account));
+            }
             _ => {
                 log::error!("Cannot handle command: {command}");
             }
@@ -310,36 +324,36 @@ impl RiskEngine {
         }
 
         let order = &command.order;
-        if let Some(position_id) = command.position_id {
-            if order.is_reduce_only() {
-                let position_exists = {
-                    let cache = self.cache.borrow();
-                    cache
-                        .position(&position_id)
-                        .map(|pos| (pos.side, pos.quantity))
-                };
+        if let Some(position_id) = command.position_id
+            && order.is_reduce_only()
+        {
+            let position_exists = {
+                let cache = self.cache.borrow();
+                cache
+                    .position(&position_id)
+                    .map(|pos| (pos.side, pos.quantity))
+            };
 
-                if let Some((pos_side, pos_quantity)) = position_exists {
-                    if !order.would_reduce_only(pos_side, pos_quantity) {
-                        self.deny_command(
-                            TradingCommand::SubmitOrder(command),
-                            &format!("Reduce only order would increase position {position_id}"),
-                        );
-                        return; // Denied
-                    }
-                } else {
+            if let Some((pos_side, pos_quantity)) = position_exists {
+                if !order.would_reduce_only(pos_side, pos_quantity) {
                     self.deny_command(
                         TradingCommand::SubmitOrder(command),
-                        &format!("Position {position_id} not found for reduce-only order"),
+                        &format!("Reduce only order would increase position {position_id}"),
                     );
-                    return;
+                    return; // Denied
                 }
+            } else {
+                self.deny_command(
+                    TradingCommand::SubmitOrder(command),
+                    &format!("Position {position_id} not found for reduce-only order"),
+                );
+                return;
             }
         }
 
         let instrument_exists = {
             let cache = self.cache.borrow();
-            cache.instrument(&order.instrument_id()).cloned()
+            cache.instrument(&command.instrument_id).cloned()
         };
 
         let instrument = if let Some(instrument) = instrument_exists {
@@ -446,7 +460,6 @@ impl RiskEngine {
             return;
         }
 
-        // Get instrument for orders
         let maybe_instrument = {
             let cache = self.cache.borrow();
             cache.instrument(&command.instrument_id).cloned()
@@ -457,7 +470,7 @@ impl RiskEngine {
         } else {
             self.reject_modify_order(
                 order,
-                &format!("no instrument found for {}", command.instrument_id),
+                &format!("no instrument found for {:?}", command.instrument_id),
             );
             return; // Denied
         };
@@ -489,19 +502,18 @@ impl RiskEngine {
                 self.reject_modify_order(order, "TradingState is HALTED: Cannot modify order");
             }
             TradingState::Reducing => {
-                if let Some(quantity) = command.quantity {
-                    if quantity > order.quantity()
-                        && ((order.is_buy() && self.portfolio.is_net_long(&instrument.id()))
-                            || (order.is_sell() && self.portfolio.is_net_short(&instrument.id())))
-                    {
-                        self.reject_modify_order(
-                            order,
-                            &format!(
-                                "TradingState is REDUCING and update will increase exposure {}",
-                                instrument.id()
-                            ),
-                        );
-                    }
+                if let Some(quantity) = command.quantity
+                    && quantity > order.quantity()
+                    && ((order.is_buy() && self.portfolio.is_net_long(&instrument.id()))
+                        || (order.is_sell() && self.portfolio.is_net_short(&instrument.id())))
+                {
+                    self.reject_modify_order(
+                        order,
+                        &format!(
+                            "TradingState is REDUCING and update will increase exposure {}",
+                            instrument.id()
+                        ),
+                    );
                 }
             }
             _ => {}
@@ -676,42 +688,44 @@ impl RiskEngine {
             }
 
             // Check MAX notional per order limit
-            if let Some(max_notional_value) = max_notional {
-                if notional > max_notional_value {
-                    self.deny_order(
+            if let Some(max_notional_value) = max_notional
+                && notional > max_notional_value
+            {
+                self.deny_order(
                         order.clone(),
                         &format!(
                             "NOTIONAL_EXCEEDS_MAX_PER_ORDER: max_notional={max_notional_value:?}, notional={notional:?}"
                         ),
                     );
-                    return false; // Denied
-                }
+                return false; // Denied
             }
 
             // Check MIN notional instrument limit
-            if let Some(min_notional) = instrument.min_notional() {
-                if notional.currency == min_notional.currency && notional < min_notional {
-                    self.deny_order(
+            if let Some(min_notional) = instrument.min_notional()
+                && notional.currency == min_notional.currency
+                && notional < min_notional
+            {
+                self.deny_order(
                         order.clone(),
                         &format!(
                             "NOTIONAL_LESS_THAN_MIN_FOR_INSTRUMENT: min_notional={min_notional:?}, notional={notional:?}"
                         ),
                     );
-                    return false; // Denied
-                }
+                return false; // Denied
             }
 
             // // Check MAX notional instrument limit
-            if let Some(max_notional) = instrument.max_notional() {
-                if notional.currency == max_notional.currency && notional > max_notional {
-                    self.deny_order(
+            if let Some(max_notional) = instrument.max_notional()
+                && notional.currency == max_notional.currency
+                && notional > max_notional
+            {
+                self.deny_order(
                         order.clone(),
                         &format!(
                             "NOTIONAL_GREATER_THAN_MAX_FOR_INSTRUMENT: max_notional={max_notional:?}, notional={notional:?}"
                         ),
                     );
-                    return false; // Denied
-                }
+                return false; // Denied
             }
 
             // Calculate OrderBalanceImpact (valid for CashAccount only)
@@ -728,16 +742,16 @@ impl RiskEngine {
                 log::debug!("Balance impact: {order_balance_impact}");
             }
 
-            if let Some(free_val) = free {
-                if (free_val.as_decimal() + order_balance_impact.as_decimal()) < Decimal::ZERO {
-                    self.deny_order(
-                        order.clone(),
-                        &format!(
-                            "NOTIONAL_EXCEEDS_FREE_BALANCE: free={free_val:?}, notional={notional:?}"
-                        ),
-                    );
-                    return false;
-                }
+            if let Some(free_val) = free
+                && (free_val.as_decimal() + order_balance_impact.as_decimal()) < Decimal::ZERO
+            {
+                self.deny_order(
+                    order.clone(),
+                    &format!(
+                        "NOTIONAL_EXCEEDS_FREE_BALANCE: free={free_val:?}, notional={notional:?}"
+                    ),
+                );
+                return false;
             }
 
             if base_currency.is_none() {
@@ -760,11 +774,11 @@ impl RiskEngine {
                     log::debug!("Cumulative notional BUY: {cum_notional_buy:?}");
                 }
 
-                if let (Some(free), Some(cum_notional_buy)) = (free, cum_notional_buy) {
-                    if cum_notional_buy > free {
-                        self.deny_order(order.clone(), &format!("CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free}, cum_notional={cum_notional_buy}"));
-                        return false; // Denied
-                    }
+                if let (Some(free), Some(cum_notional_buy)) = (free, cum_notional_buy)
+                    && cum_notional_buy > free
+                {
+                    self.deny_order(order.clone(), &format!("CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free}, cum_notional={cum_notional_buy}"));
+                    return false; // Denied
                 }
             } else if order.is_sell() {
                 if cash_account.base_currency.is_some() {
@@ -783,11 +797,11 @@ impl RiskEngine {
                         log::debug!("Cumulative notional SELL: {cum_notional_sell:?}");
                     }
 
-                    if let (Some(free), Some(cum_notional_sell)) = (free, cum_notional_sell) {
-                        if cum_notional_sell > free {
-                            self.deny_order(order.clone(), &format!("CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free}, cum_notional={cum_notional_sell}"));
-                            return false; // Denied
-                        }
+                    if let (Some(free), Some(cum_notional_sell)) = (free, cum_notional_sell)
+                        && cum_notional_sell > free
+                    {
+                        self.deny_order(order.clone(), &format!("CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free}, cum_notional={cum_notional_sell}"));
+                        return false; // Denied
                     }
                 }
                 // Account is already of type Cash, so no check
@@ -825,11 +839,11 @@ impl RiskEngine {
                     if self.config.debug {
                         log::debug!("Cumulative notional SELL: {cum_notional_sell:?}");
                     }
-                    if let (Some(free), Some(cum_notional_sell)) = (free, cum_notional_sell) {
-                        if cum_notional_sell.raw > free.raw {
-                            self.deny_order(order.clone(), &format!("CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free}, cum_notional={cum_notional_sell}"));
-                            return false; // Denied
-                        }
+                    if let (Some(free), Some(cum_notional_sell)) = (free, cum_notional_sell)
+                        && cum_notional_sell.raw > free.raw
+                    {
+                        self.deny_order(order.clone(), &format!("CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free}, cum_notional={cum_notional_sell}"));
+                        return false; // Denied
                     }
                 }
             }
@@ -876,21 +890,21 @@ impl RiskEngine {
         }
 
         // Check maximum quantity
-        if let Some(max_quantity) = instrument.max_quantity() {
-            if quantity_val > max_quantity {
-                return Some(format!(
-                    "quantity {quantity_val} invalid (> maximum trade size of {max_quantity})"
-                ));
-            }
+        if let Some(max_quantity) = instrument.max_quantity()
+            && quantity_val > max_quantity
+        {
+            return Some(format!(
+                "quantity {quantity_val} invalid (> maximum trade size of {max_quantity})"
+            ));
         }
 
         // // Check minimum quantity
-        if let Some(min_quantity) = instrument.min_quantity() {
-            if quantity_val < min_quantity {
-                return Some(format!(
-                    "quantity {quantity_val} invalid (< minimum trade size of {min_quantity})"
-                ));
-            }
+        if let Some(min_quantity) = instrument.min_quantity()
+            && quantity_val < min_quantity
+        {
+            return Some(format!(
+                "quantity {quantity_val} invalid (< minimum trade size of {min_quantity})"
+            ));
         }
 
         None
@@ -900,11 +914,11 @@ impl RiskEngine {
 
     fn deny_command(&self, command: TradingCommand, reason: &str) {
         match command {
-            TradingCommand::SubmitOrder(submit_order) => {
-                self.deny_order(submit_order.order, reason);
+            TradingCommand::SubmitOrder(command) => {
+                self.deny_order(command.order, reason);
             }
-            TradingCommand::SubmitOrderList(submit_order_list) => {
-                self.deny_order_list(submit_order_list.order_list, reason);
+            TradingCommand::SubmitOrderList(command) => {
+                self.deny_order_list(command.order_list, reason);
             }
             _ => {
                 panic!("Cannot deny command {command}");
@@ -944,7 +958,7 @@ impl RiskEngine {
             self.clock.borrow().timestamp_ns(),
         ));
 
-        msgbus::send("ExecEngine.process".into(), &denied);
+        msgbus::send_any("ExecEngine.process".into(), &denied);
     }
 
     fn deny_order_list(&self, order_list: OrderList, reason: &str) {
@@ -971,7 +985,7 @@ impl RiskEngine {
             order.account_id(),
         ));
 
-        msgbus::send("ExecEngine.process".into(), &denied);
+        msgbus::send_any("ExecEngine.process".into(), &denied);
     }
 
     // -- EGRESS ----------------------------------------------------------------------------------
@@ -1048,7 +1062,7 @@ impl RiskEngine {
     }
 
     fn send_to_execution(&self, command: TradingCommand) {
-        msgbus::send("ExecEngine.execute".into(), &command);
+        msgbus::send_any("ExecEngine.execute".into(), &command);
     }
 
     fn handle_event(&mut self, event: OrderEventAny) {

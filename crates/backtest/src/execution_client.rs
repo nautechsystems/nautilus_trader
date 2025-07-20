@@ -25,8 +25,8 @@ use nautilus_common::{
     cache::Cache,
     clock::Clock,
     messages::execution::{
-        BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryOrder, SubmitOrder,
-        SubmitOrderList, TradingCommand,
+        BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryAccount, QueryOrder,
+        SubmitOrder, SubmitOrderList, TradingCommand,
     },
 };
 use nautilus_core::UnixNanos;
@@ -41,6 +41,12 @@ use nautilus_model::{
 
 use crate::exchange::SimulatedExchange;
 
+/// Execution client implementation for backtesting trading operations.
+///
+/// The `BacktestExecutionClient` provides an execution client interface for
+/// backtesting environments, handling order management and trade execution
+/// through simulated exchanges. It processes trading commands and coordinates
+/// with the simulation infrastructure to provide realistic execution behavior.
 pub struct BacktestExecutionClient {
     base: BaseExecutionClient,
     exchange: Rc<RefCell<SimulatedExchange>>,
@@ -210,6 +216,13 @@ impl ExecutionClient for BacktestExecutionClient {
         self.exchange
             .borrow_mut()
             .send(TradingCommand::QueryOrder(cmd.clone()));
+        Ok(())
+    }
+
+    fn query_account(&self, cmd: &QueryAccount) -> anyhow::Result<()> {
+        self.exchange
+            .borrow_mut()
+            .send(TradingCommand::QueryAccount(cmd.clone()));
         Ok(())
     }
 }

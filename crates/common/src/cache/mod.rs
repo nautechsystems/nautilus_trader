@@ -26,11 +26,12 @@ mod index;
 mod tests;
 
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    collections::VecDeque,
     fmt::Debug,
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use ahash::{AHashMap, AHashSet};
 use bytes::Bytes;
 pub use config::CacheConfig; // Re-export
 use database::{CacheDatabaseAdapter, CacheMap};
@@ -42,6 +43,8 @@ use nautilus_core::{
     },
     datetime::secs_to_nanos,
 };
+#[cfg(feature = "defi")]
+use nautilus_model::defi::Pool;
 use nautilus_model::{
     accounts::{Account, AccountAny},
     data::{
@@ -64,29 +67,35 @@ use ustr::Ustr;
 use crate::xrate::get_exchange_rate;
 
 /// A common in-memory `Cache` for market and execution related data.
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common", unsendable)
+)]
 pub struct Cache {
     config: CacheConfig,
     index: CacheIndex,
     database: Option<Box<dyn CacheDatabaseAdapter>>,
-    general: HashMap<String, Bytes>,
-    currencies: HashMap<Ustr, Currency>,
-    instruments: HashMap<InstrumentId, InstrumentAny>,
-    synthetics: HashMap<InstrumentId, SyntheticInstrument>,
-    books: HashMap<InstrumentId, OrderBook>,
-    own_books: HashMap<InstrumentId, OwnOrderBook>,
-    quotes: HashMap<InstrumentId, VecDeque<QuoteTick>>,
-    trades: HashMap<InstrumentId, VecDeque<TradeTick>>,
-    mark_xrates: HashMap<(Currency, Currency), f64>,
-    mark_prices: HashMap<InstrumentId, VecDeque<MarkPriceUpdate>>,
-    index_prices: HashMap<InstrumentId, VecDeque<IndexPriceUpdate>>,
-    bars: HashMap<BarType, VecDeque<Bar>>,
-    greeks: HashMap<InstrumentId, GreeksData>,
-    yield_curves: HashMap<String, YieldCurveData>,
-    accounts: HashMap<AccountId, AccountAny>,
-    orders: HashMap<ClientOrderId, OrderAny>,
-    order_lists: HashMap<OrderListId, OrderList>,
-    positions: HashMap<PositionId, Position>,
-    position_snapshots: HashMap<PositionId, Bytes>,
+    general: AHashMap<String, Bytes>,
+    currencies: AHashMap<Ustr, Currency>,
+    instruments: AHashMap<InstrumentId, InstrumentAny>,
+    synthetics: AHashMap<InstrumentId, SyntheticInstrument>,
+    books: AHashMap<InstrumentId, OrderBook>,
+    own_books: AHashMap<InstrumentId, OwnOrderBook>,
+    quotes: AHashMap<InstrumentId, VecDeque<QuoteTick>>,
+    trades: AHashMap<InstrumentId, VecDeque<TradeTick>>,
+    mark_xrates: AHashMap<(Currency, Currency), f64>,
+    mark_prices: AHashMap<InstrumentId, VecDeque<MarkPriceUpdate>>,
+    index_prices: AHashMap<InstrumentId, VecDeque<IndexPriceUpdate>>,
+    bars: AHashMap<BarType, VecDeque<Bar>>,
+    greeks: AHashMap<InstrumentId, GreeksData>,
+    yield_curves: AHashMap<String, YieldCurveData>,
+    accounts: AHashMap<AccountId, AccountAny>,
+    orders: AHashMap<ClientOrderId, OrderAny>,
+    order_lists: AHashMap<OrderListId, OrderList>,
+    positions: AHashMap<PositionId, Position>,
+    position_snapshots: AHashMap<PositionId, Bytes>,
+    #[cfg(feature = "defi")]
+    pools: AHashMap<InstrumentId, Pool>,
 }
 
 impl Debug for Cache {
@@ -138,25 +147,27 @@ impl Cache {
             config: config.unwrap_or_default(),
             index: CacheIndex::default(),
             database,
-            general: HashMap::new(),
-            currencies: HashMap::new(),
-            instruments: HashMap::new(),
-            synthetics: HashMap::new(),
-            books: HashMap::new(),
-            own_books: HashMap::new(),
-            quotes: HashMap::new(),
-            trades: HashMap::new(),
-            mark_xrates: HashMap::new(),
-            mark_prices: HashMap::new(),
-            index_prices: HashMap::new(),
-            bars: HashMap::new(),
-            greeks: HashMap::new(),
-            yield_curves: HashMap::new(),
-            accounts: HashMap::new(),
-            orders: HashMap::new(),
-            order_lists: HashMap::new(),
-            positions: HashMap::new(),
-            position_snapshots: HashMap::new(),
+            general: AHashMap::new(),
+            currencies: AHashMap::new(),
+            instruments: AHashMap::new(),
+            synthetics: AHashMap::new(),
+            books: AHashMap::new(),
+            own_books: AHashMap::new(),
+            quotes: AHashMap::new(),
+            trades: AHashMap::new(),
+            mark_xrates: AHashMap::new(),
+            mark_prices: AHashMap::new(),
+            index_prices: AHashMap::new(),
+            bars: AHashMap::new(),
+            greeks: AHashMap::new(),
+            yield_curves: AHashMap::new(),
+            accounts: AHashMap::new(),
+            orders: AHashMap::new(),
+            order_lists: AHashMap::new(),
+            positions: AHashMap::new(),
+            position_snapshots: AHashMap::new(),
+            #[cfg(feature = "defi")]
+            pools: AHashMap::new(),
         }
     }
 
@@ -176,7 +187,7 @@ impl Cache {
     pub fn cache_general(&mut self) -> anyhow::Result<()> {
         self.general = match &mut self.database {
             Some(db) => db.load()?,
-            None => HashMap::new(),
+            None => AHashMap::new(),
         };
 
         log::info!(
@@ -214,7 +225,7 @@ impl Cache {
     pub async fn cache_currencies(&mut self) -> anyhow::Result<()> {
         self.currencies = match &mut self.database {
             Some(db) => db.load_currencies().await?,
-            None => HashMap::new(),
+            None => AHashMap::new(),
         };
 
         log::info!("Cached {} currencies from database", self.general.len());
@@ -229,7 +240,7 @@ impl Cache {
     pub async fn cache_instruments(&mut self) -> anyhow::Result<()> {
         self.instruments = match &mut self.database {
             Some(db) => db.load_instruments().await?,
-            None => HashMap::new(),
+            None => AHashMap::new(),
         };
 
         log::info!("Cached {} instruments from database", self.general.len());
@@ -244,7 +255,7 @@ impl Cache {
     pub async fn cache_synthetics(&mut self) -> anyhow::Result<()> {
         self.synthetics = match &mut self.database {
             Some(db) => db.load_synthetics().await?,
-            None => HashMap::new(),
+            None => AHashMap::new(),
         };
 
         log::info!(
@@ -262,7 +273,7 @@ impl Cache {
     pub async fn cache_accounts(&mut self) -> anyhow::Result<()> {
         self.accounts = match &mut self.database {
             Some(db) => db.load_accounts().await?,
-            None => HashMap::new(),
+            None => AHashMap::new(),
         };
 
         log::info!(
@@ -280,7 +291,7 @@ impl Cache {
     pub async fn cache_orders(&mut self) -> anyhow::Result<()> {
         self.orders = match &mut self.database {
             Some(db) => db.load_orders().await?,
-            None => HashMap::new(),
+            None => AHashMap::new(),
         };
 
         log::info!("Cached {} orders from database", self.general.len());
@@ -295,7 +306,7 @@ impl Cache {
     pub async fn cache_positions(&mut self) -> anyhow::Result<()> {
         self.positions = match &mut self.database {
             Some(db) => db.load_positions().await?,
-            None => HashMap::new(),
+            None => AHashMap::new(),
         };
 
         log::info!("Cached {} positions from database", self.general.len());
@@ -474,7 +485,7 @@ impl Cache {
         self.config.database.is_some()
     }
 
-    // Calculate the unrealized profit and loss (PnL) for a given position.
+    // Calculate the unrealized profit and loss (PnL) for `position`.
     #[must_use]
     pub fn calculate_unrealized_pnl(&self, position: &Position) -> Option<Money> {
         let quote = if let Some(quote) = self.quote(&position.instrument_id) {
@@ -863,7 +874,7 @@ impl Cache {
         residuals
     }
 
-    /// Purges all closed orders from the cache that are older than the given buffer time.
+    /// Purges all closed orders from the cache that are older than `buffer_secs`.
     ///
     ///
     /// Only orders that have been closed for at least this amount of time will be purged.
@@ -891,7 +902,7 @@ impl Cache {
         }
     }
 
-    /// Purges all closed positions from the cache that are older than the given buffer time.
+    /// Purges all closed positions from the cache that are older than `buffer_secs`.
     pub fn purge_closed_positions(&mut self, ts_now: UnixNanos, buffer_secs: u64) {
         log::debug!(
             "Purging closed positions{}",
@@ -915,7 +926,7 @@ impl Cache {
         }
     }
 
-    /// Purges the order with the given client order ID from the cache (if found).
+    /// Purges the order with the `client_order_id` from the cache (if found).
     ///
     /// All `OrderFilled` events for the order will also be purged from any associated position.
     pub fn purge_order(&mut self, client_order_id: ClientOrderId) {
@@ -982,7 +993,7 @@ impl Cache {
         self.index.orders_pending_cancel.remove(&client_order_id);
     }
 
-    /// Purges the position with the given position ID from the cache (if found).
+    /// Purges the position with the `position_id` from the cache (if found).
     pub fn purge_position(&mut self, position_id: PositionId) {
         if let Some(position) = self.positions.remove(&position_id) {
             // Remove from venue positions index
@@ -1088,6 +1099,9 @@ impl Cache {
         self.greeks.clear();
         self.yield_curves.clear();
 
+        #[cfg(feature = "defi")]
+        self.pools.clear();
+
         self.clear_index();
 
         log::info!("Reset cache");
@@ -1115,7 +1129,7 @@ impl Cache {
         }
     }
 
-    /// Adds a raw bytes entry to the cache under the given key.
+    /// Adds a raw bytes `value` to the cache under the `key`.
     ///
     /// The cache stores only raw bytes; interpretation is the caller's responsibility.
     ///
@@ -1165,7 +1179,20 @@ impl Cache {
         Ok(())
     }
 
-    /// Adds the given `mark_price` update for the given `instrument_id` to the cache.
+    /// Adds a `Pool` to the cache.
+    ///
+    /// # Errors
+    ///
+    /// This function currently does not return errors but follows the same pattern as other add methods for consistency.
+    #[cfg(feature = "defi")]
+    pub fn add_pool(&mut self, pool: Pool) -> anyhow::Result<()> {
+        log::debug!("Adding `Pool` {}", pool.instrument_id);
+
+        self.pools.insert(pool.instrument_id, pool);
+        Ok(())
+    }
+
+    /// Adds the `mark_price` update to the cache.
     ///
     /// # Errors
     ///
@@ -1185,7 +1212,7 @@ impl Cache {
         Ok(())
     }
 
-    /// Adds the given `index_price` update for the given `instrument_id` to the cache.
+    /// Adds the `index_price` update to the cache.
     ///
     /// # Errors
     ///
@@ -1208,7 +1235,7 @@ impl Cache {
         Ok(())
     }
 
-    /// Adds the given `quote` tick to the cache.
+    /// Adds the `quote` tick to the cache.
     ///
     /// # Errors
     ///
@@ -1230,7 +1257,7 @@ impl Cache {
         Ok(())
     }
 
-    /// Adds the given `quotes` to the cache.
+    /// Adds the `quotes` to the cache.
     ///
     /// # Errors
     ///
@@ -1260,7 +1287,7 @@ impl Cache {
         Ok(())
     }
 
-    /// Adds the given `trade` tick to the cache.
+    /// Adds the `trade` tick to the cache.
     ///
     /// # Errors
     ///
@@ -1312,7 +1339,7 @@ impl Cache {
         Ok(())
     }
 
-    /// Adds the given `bar` to the cache.
+    /// Adds the `bar` to the cache.
     ///
     /// # Errors
     ///
@@ -1334,7 +1361,7 @@ impl Cache {
         Ok(())
     }
 
-    /// Adds the given `bars` to the cache.
+    /// Adds the `bars` to the cache.
     ///
     /// # Errors
     ///
@@ -1364,7 +1391,7 @@ impl Cache {
         Ok(())
     }
 
-    /// Adds the given `greeks` data to the cache.
+    /// Adds the `greeks` data to the cache.
     ///
     /// # Errors
     ///
@@ -1382,12 +1409,12 @@ impl Cache {
         Ok(())
     }
 
-    /// Gets the greeks data for the given instrument ID.
+    /// Gets the greeks data for the `instrument_id`.
     pub fn greeks(&self, instrument_id: &InstrumentId) -> Option<GreeksData> {
         self.greeks.get(instrument_id).cloned()
     }
 
-    /// Adds the given `yield_curve` data to the cache.
+    /// Adds the `yield_curve` data to the cache.
     ///
     /// # Errors
     ///
@@ -1406,7 +1433,7 @@ impl Cache {
         Ok(())
     }
 
-    /// Gets the yield curve for the given key.
+    /// Gets the yield curve for the `key`.
     pub fn yield_curve(&self, key: &str) -> Option<Box<dyn Fn(f64) -> f64>> {
         self.yield_curves.get(key).map(|curve| {
             let curve_clone = curve.clone();
@@ -1415,7 +1442,7 @@ impl Cache {
         })
     }
 
-    /// Adds the given `currency` to the cache.
+    /// Adds the `currency` to the cache.
     ///
     /// # Errors
     ///
@@ -1431,7 +1458,7 @@ impl Cache {
         Ok(())
     }
 
-    /// Adds the given `instrument` to the cache.
+    /// Adds the `instrument` to the cache.
     ///
     /// # Errors
     ///
@@ -1447,7 +1474,7 @@ impl Cache {
         Ok(())
     }
 
-    /// Adds the given `synthetic` instrument to the cache.
+    /// Adds the `synthetic` instrument to the cache.
     ///
     /// # Errors
     ///
@@ -1463,7 +1490,7 @@ impl Cache {
         Ok(())
     }
 
-    /// Adds the given `account` to the cache.
+    /// Adds the `account` to the cache.
     ///
     /// # Errors
     ///
@@ -1483,7 +1510,7 @@ impl Cache {
         Ok(())
     }
 
-    /// Indexes the given `client_order_id` with the given `venue_order_id`.
+    /// Indexes the `client_order_id` with the `venue_order_id`.
     ///
     /// The `overwrite` parameter determines whether to overwrite any existing cached identifier.
     ///
@@ -1517,7 +1544,7 @@ impl Cache {
         Ok(())
     }
 
-    /// Adds the given `order` to the cache indexed with any given identifiers.
+    /// Adds the `order` to the cache indexed with any given identifiers.
     ///
     /// # Parameters
     ///
@@ -1637,7 +1664,7 @@ impl Cache {
         Ok(())
     }
 
-    /// Indexes the given `position_id` with the other given IDs.
+    /// Indexes the `position_id` with the other given IDs.
     ///
     /// # Errors
     ///
@@ -1687,7 +1714,7 @@ impl Cache {
         Ok(())
     }
 
-    /// Adds the given `position` to the cache.
+    /// Adds the `position` to the cache.
     ///
     /// # Errors
     ///
@@ -1710,7 +1737,7 @@ impl Cache {
         let venue_positions = self.index.venue_positions.entry(venue).or_default();
         venue_positions.insert(position.id);
 
-        // Index: InstrumentId -> HashSet
+        // Index: InstrumentId -> AHashSet
         let instrument_id = position.instrument_id;
         let instrument_positions = self
             .index
@@ -1734,7 +1761,7 @@ impl Cache {
         Ok(())
     }
 
-    /// Updates the given `account` in the cache.
+    /// Updates the `account` in the cache.
     ///
     /// # Errors
     ///
@@ -1746,7 +1773,7 @@ impl Cache {
         Ok(())
     }
 
-    /// Updates the given `order` in the cache.
+    /// Updates the `order` in the cache.
     ///
     /// # Errors
     ///
@@ -1803,14 +1830,14 @@ impl Cache {
         Ok(())
     }
 
-    /// Updates the given `order` as pending cancel locally.
+    /// Updates the `order` as pending cancel locally.
     pub fn update_order_pending_cancel_local(&mut self, order: &OrderAny) {
         self.index
             .orders_pending_cancel
             .insert(order.client_order_id());
     }
 
-    /// Updates the given `position` in the cache.
+    /// Updates the `position` in the cache.
     ///
     /// # Errors
     ///
@@ -1835,7 +1862,7 @@ impl Cache {
         Ok(())
     }
 
-    /// Creates a snapshot of the given position by cloning it, assigning a new ID,
+    /// Creates a snapshot of the `position` by cloning it, assigning a new ID,
     /// serializing it, and storing it in the position snapshots.
     ///
     /// # Errors
@@ -1862,11 +1889,11 @@ impl Cache {
         };
         self.position_snapshots.insert(position_id, new_snapshots);
 
-        log::debug!("Snapshot {}", copied_position);
+        log::debug!("Snapshot {copied_position}");
         Ok(())
     }
 
-    /// Creates a snapshot of the given position state in the database.
+    /// Creates a snapshot of the `position` state in the database.
     ///
     /// # Errors
     ///
@@ -1903,7 +1930,7 @@ impl Cache {
         todo!()
     }
 
-    /// Snapshots the given order state in the database.
+    /// Snapshots the `order` state in the database.
     ///
     /// # Errors
     ///
@@ -1929,8 +1956,8 @@ impl Cache {
         venue: Option<&Venue>,
         instrument_id: Option<&InstrumentId>,
         strategy_id: Option<&StrategyId>,
-    ) -> Option<HashSet<ClientOrderId>> {
-        let mut query: Option<HashSet<ClientOrderId>> = None;
+    ) -> Option<AHashSet<ClientOrderId>> {
+        let mut query: Option<AHashSet<ClientOrderId>> = None;
 
         if let Some(venue) = venue {
             query = Some(
@@ -1986,8 +2013,8 @@ impl Cache {
         venue: Option<&Venue>,
         instrument_id: Option<&InstrumentId>,
         strategy_id: Option<&StrategyId>,
-    ) -> Option<HashSet<PositionId>> {
-        let mut query: Option<HashSet<PositionId>> = None;
+    ) -> Option<AHashSet<PositionId>> {
+        let mut query: Option<AHashSet<PositionId>> = None;
 
         if let Some(venue) = venue {
             query = Some(
@@ -2042,14 +2069,14 @@ impl Cache {
         query
     }
 
-    /// Retrieves orders corresponding to the given `client_order_ids`, optionally filtering by side.
+    /// Retrieves orders corresponding to the `client_order_ids`, optionally filtering by `side`.
     ///
     /// # Panics
     ///
     /// Panics if any `client_order_id` in the set is not found in the cache.
     fn get_orders_for_ids(
         &self,
-        client_order_ids: &HashSet<ClientOrderId>,
+        client_order_ids: &AHashSet<ClientOrderId>,
         side: Option<OrderSide>,
     ) -> Vec<&OrderAny> {
         let side = side.unwrap_or(OrderSide::NoOrderSide);
@@ -2068,14 +2095,14 @@ impl Cache {
         orders
     }
 
-    /// Retrieves positions corresponding to the given `position_ids`, optionally filtering by side.
+    /// Retrieves positions corresponding to the `position_ids`, optionally filtering by `side`.
     ///
     /// # Panics
     ///
     /// Panics if any `position_id` in the set is not found in the cache.
     fn get_positions_for_ids(
         &self,
-        position_ids: &HashSet<PositionId>,
+        position_ids: &AHashSet<PositionId>,
         side: Option<PositionSide>,
     ) -> Vec<&Position> {
         let side = side.unwrap_or(PositionSide::NoPositionSide);
@@ -2101,7 +2128,7 @@ impl Cache {
         venue: Option<&Venue>,
         instrument_id: Option<&InstrumentId>,
         strategy_id: Option<&StrategyId>,
-    ) -> HashSet<ClientOrderId> {
+    ) -> AHashSet<ClientOrderId> {
         let query = self.build_order_query_filter_set(venue, instrument_id, strategy_id);
         match query {
             Some(query) => self.index.orders.intersection(&query).copied().collect(),
@@ -2116,7 +2143,7 @@ impl Cache {
         venue: Option<&Venue>,
         instrument_id: Option<&InstrumentId>,
         strategy_id: Option<&StrategyId>,
-    ) -> HashSet<ClientOrderId> {
+    ) -> AHashSet<ClientOrderId> {
         let query = self.build_order_query_filter_set(venue, instrument_id, strategy_id);
         match query {
             Some(query) => self
@@ -2136,7 +2163,7 @@ impl Cache {
         venue: Option<&Venue>,
         instrument_id: Option<&InstrumentId>,
         strategy_id: Option<&StrategyId>,
-    ) -> HashSet<ClientOrderId> {
+    ) -> AHashSet<ClientOrderId> {
         let query = self.build_order_query_filter_set(venue, instrument_id, strategy_id);
         match query {
             Some(query) => self
@@ -2156,7 +2183,7 @@ impl Cache {
         venue: Option<&Venue>,
         instrument_id: Option<&InstrumentId>,
         strategy_id: Option<&StrategyId>,
-    ) -> HashSet<ClientOrderId> {
+    ) -> AHashSet<ClientOrderId> {
         let query = self.build_order_query_filter_set(venue, instrument_id, strategy_id);
         match query {
             Some(query) => self
@@ -2176,7 +2203,7 @@ impl Cache {
         venue: Option<&Venue>,
         instrument_id: Option<&InstrumentId>,
         strategy_id: Option<&StrategyId>,
-    ) -> HashSet<ClientOrderId> {
+    ) -> AHashSet<ClientOrderId> {
         let query = self.build_order_query_filter_set(venue, instrument_id, strategy_id);
         match query {
             Some(query) => self
@@ -2196,7 +2223,7 @@ impl Cache {
         venue: Option<&Venue>,
         instrument_id: Option<&InstrumentId>,
         strategy_id: Option<&StrategyId>,
-    ) -> HashSet<PositionId> {
+    ) -> AHashSet<PositionId> {
         let query = self.build_position_query_filter_set(venue, instrument_id, strategy_id);
         match query {
             Some(query) => self.index.positions.intersection(&query).copied().collect(),
@@ -2211,7 +2238,7 @@ impl Cache {
         venue: Option<&Venue>,
         instrument_id: Option<&InstrumentId>,
         strategy_id: Option<&StrategyId>,
-    ) -> HashSet<PositionId> {
+    ) -> AHashSet<PositionId> {
         let query = self.build_position_query_filter_set(venue, instrument_id, strategy_id);
         match query {
             Some(query) => self
@@ -2231,7 +2258,7 @@ impl Cache {
         venue: Option<&Venue>,
         instrument_id: Option<&InstrumentId>,
         strategy_id: Option<&StrategyId>,
-    ) -> HashSet<PositionId> {
+    ) -> AHashSet<PositionId> {
         let query = self.build_position_query_filter_set(venue, instrument_id, strategy_id);
         match query {
             Some(query) => self
@@ -2246,55 +2273,55 @@ impl Cache {
 
     /// Returns the `ComponentId`s of all actors.
     #[must_use]
-    pub fn actor_ids(&self) -> HashSet<ComponentId> {
+    pub fn actor_ids(&self) -> AHashSet<ComponentId> {
         self.index.actors.clone()
     }
 
     /// Returns the `StrategyId`s of all strategies.
     #[must_use]
-    pub fn strategy_ids(&self) -> HashSet<StrategyId> {
+    pub fn strategy_ids(&self) -> AHashSet<StrategyId> {
         self.index.strategies.clone()
     }
 
     /// Returns the `ExecAlgorithmId`s of all execution algorithms.
     #[must_use]
-    pub fn exec_algorithm_ids(&self) -> HashSet<ExecAlgorithmId> {
+    pub fn exec_algorithm_ids(&self) -> AHashSet<ExecAlgorithmId> {
         self.index.exec_algorithms.clone()
     }
 
     // -- ORDER QUERIES ---------------------------------------------------------------------------
 
-    /// Gets a reference to the order with the given `client_order_id` (if found).
+    /// Gets a reference to the order with the `client_order_id` (if found).
     #[must_use]
     pub fn order(&self, client_order_id: &ClientOrderId) -> Option<&OrderAny> {
         self.orders.get(client_order_id)
     }
 
-    /// Gets a reference to the order with the given `client_order_id` (if found).
+    /// Gets a reference to the order with the `client_order_id` (if found).
     #[must_use]
     pub fn mut_order(&mut self, client_order_id: &ClientOrderId) -> Option<&mut OrderAny> {
         self.orders.get_mut(client_order_id)
     }
 
-    /// Gets a reference to the client order ID for given `venue_order_id` (if found).
+    /// Gets a reference to the client order ID for the `venue_order_id` (if found).
     #[must_use]
     pub fn client_order_id(&self, venue_order_id: &VenueOrderId) -> Option<&ClientOrderId> {
         self.index.venue_order_ids.get(venue_order_id)
     }
 
-    /// Gets a reference to the venue order ID for given `client_order_id` (if found).
+    /// Gets a reference to the venue order ID for the `client_order_id` (if found).
     #[must_use]
     pub fn venue_order_id(&self, client_order_id: &ClientOrderId) -> Option<&VenueOrderId> {
         self.index.client_order_ids.get(client_order_id)
     }
 
-    /// Gets a reference to the client ID indexed for given `client_order_id` (if found).
+    /// Gets a reference to the client ID indexed for then `client_order_id` (if found).
     #[must_use]
     pub fn client_id(&self, client_order_id: &ClientOrderId) -> Option<&ClientId> {
         self.index.order_client.get(client_order_id)
     }
 
-    /// Returns references to all orders matching the given optional filter parameters.
+    /// Returns references to all orders matching the optional filter parameters.
     #[must_use]
     pub fn orders(
         &self,
@@ -2307,7 +2334,7 @@ impl Cache {
         self.get_orders_for_ids(&client_order_ids, side)
     }
 
-    /// Returns references to all open orders matching the given optional filter parameters.
+    /// Returns references to all open orders matching the optional filter parameters.
     #[must_use]
     pub fn orders_open(
         &self,
@@ -2320,7 +2347,7 @@ impl Cache {
         self.get_orders_for_ids(&client_order_ids, side)
     }
 
-    /// Returns references to all closed orders matching the given optional filter parameters.
+    /// Returns references to all closed orders matching the optional filter parameters.
     #[must_use]
     pub fn orders_closed(
         &self,
@@ -2333,7 +2360,7 @@ impl Cache {
         self.get_orders_for_ids(&client_order_ids, side)
     }
 
-    /// Returns references to all emulated orders matching the given optional filter parameters.
+    /// Returns references to all emulated orders matching the optional filter parameters.
     #[must_use]
     pub fn orders_emulated(
         &self,
@@ -2346,7 +2373,7 @@ impl Cache {
         self.get_orders_for_ids(&client_order_ids, side)
     }
 
-    /// Returns references to all in-flight orders matching the given optional filter parameters.
+    /// Returns references to all in-flight orders matching the optional filter parameters.
     #[must_use]
     pub fn orders_inflight(
         &self,
@@ -2359,7 +2386,7 @@ impl Cache {
         self.get_orders_for_ids(&client_order_ids, side)
     }
 
-    /// Returns references to all orders for the given `position_id`.
+    /// Returns references to all orders for the `position_id`.
     #[must_use]
     pub fn orders_for_position(&self, position_id: &PositionId) -> Vec<&OrderAny> {
         let client_order_ids = self.index.position_orders.get(position_id);
@@ -2371,37 +2398,37 @@ impl Cache {
         }
     }
 
-    /// Returns whether an order with the given `client_order_id` exists.
+    /// Returns whether an order with the `client_order_id` exists.
     #[must_use]
     pub fn order_exists(&self, client_order_id: &ClientOrderId) -> bool {
         self.index.orders.contains(client_order_id)
     }
 
-    /// Returns whether an order with the given `client_order_id` is open.
+    /// Returns whether an order with the `client_order_id` is open.
     #[must_use]
     pub fn is_order_open(&self, client_order_id: &ClientOrderId) -> bool {
         self.index.orders_open.contains(client_order_id)
     }
 
-    /// Returns whether an order with the given `client_order_id` is closed.
+    /// Returns whether an order with the `client_order_id` is closed.
     #[must_use]
     pub fn is_order_closed(&self, client_order_id: &ClientOrderId) -> bool {
         self.index.orders_closed.contains(client_order_id)
     }
 
-    /// Returns whether an order with the given `client_order_id` is emulated.
+    /// Returns whether an order with the `client_order_id` is emulated.
     #[must_use]
     pub fn is_order_emulated(&self, client_order_id: &ClientOrderId) -> bool {
         self.index.orders_emulated.contains(client_order_id)
     }
 
-    /// Returns whether an order with the given `client_order_id` is in-flight.
+    /// Returns whether an order with the `client_order_id` is in-flight.
     #[must_use]
     pub fn is_order_inflight(&self, client_order_id: &ClientOrderId) -> bool {
         self.index.orders_inflight.contains(client_order_id)
     }
 
-    /// Returns whether an order with the given `client_order_id` is `PENDING_CANCEL` locally.
+    /// Returns whether an order with the `client_order_id` is `PENDING_CANCEL` locally.
     #[must_use]
     pub fn is_order_pending_cancel_local(&self, client_order_id: &ClientOrderId) -> bool {
         self.index.orders_pending_cancel.contains(client_order_id)
@@ -2471,13 +2498,13 @@ impl Cache {
         self.orders(venue, instrument_id, strategy_id, side).len()
     }
 
-    /// Returns the order list for the given `order_list_id`.
+    /// Returns the order list for the `order_list_id`.
     #[must_use]
     pub fn order_list(&self, order_list_id: &OrderListId) -> Option<&OrderList> {
         self.order_lists.get(order_list_id)
     }
 
-    /// Returns all order lists matching the given optional filter parameters.
+    /// Returns all order lists matching the optional filter parameters.
     #[must_use]
     pub fn order_lists(
         &self,
@@ -2502,7 +2529,7 @@ impl Cache {
         order_lists
     }
 
-    /// Returns whether an order list with the given `order_list_id` exists.
+    /// Returns whether an order list with the `order_list_id` exists.
     #[must_use]
     pub fn order_list_exists(&self, order_list_id: &OrderListId) -> bool {
         self.order_lists.contains_key(order_list_id)
@@ -2510,7 +2537,7 @@ impl Cache {
 
     // -- EXEC ALGORITHM QUERIES ------------------------------------------------------------------
 
-    /// Returns references to all orders associated with the given `exec_algorithm_id` matching the given
+    /// Returns references to all orders associated with the `exec_algorithm_id` matching the
     /// optional filter parameters.
     #[must_use]
     pub fn orders_for_exec_algorithm(
@@ -2537,19 +2564,19 @@ impl Cache {
         }
     }
 
-    /// Returns references to all orders with the given `exec_spawn_id`.
+    /// Returns references to all orders with the `exec_spawn_id`.
     #[must_use]
     pub fn orders_for_exec_spawn(&self, exec_spawn_id: &ClientOrderId) -> Vec<&OrderAny> {
         self.get_orders_for_ids(
             self.index
                 .exec_spawn_orders
                 .get(exec_spawn_id)
-                .unwrap_or(&HashSet::new()),
+                .unwrap_or(&AHashSet::new()),
             None,
         )
     }
 
-    /// Returns the total order quantity for the given `exec_spawn_id`.
+    /// Returns the total order quantity for the `exec_spawn_id`.
     #[must_use]
     pub fn exec_spawn_total_quantity(
         &self,
@@ -2573,7 +2600,7 @@ impl Cache {
         total_quantity
     }
 
-    /// Returns the total filled quantity for all orders with the given `exec_spawn_id`.
+    /// Returns the total filled quantity for all orders with the `exec_spawn_id`.
     #[must_use]
     pub fn exec_spawn_total_filled_qty(
         &self,
@@ -2597,7 +2624,7 @@ impl Cache {
         total_quantity
     }
 
-    /// Returns the total leaves quantity for all orders with the given `exec_spawn_id`.
+    /// Returns the total leaves quantity for all orders with the `exec_spawn_id`.
     #[must_use]
     pub fn exec_spawn_total_leaves_qty(
         &self,
@@ -2623,13 +2650,13 @@ impl Cache {
 
     // -- POSITION QUERIES ------------------------------------------------------------------------
 
-    /// Returns a reference to the position with the given `position_id` (if found).
+    /// Returns a reference to the position with the `position_id` (if found).
     #[must_use]
     pub fn position(&self, position_id: &PositionId) -> Option<&Position> {
         self.positions.get(position_id)
     }
 
-    /// Returns a reference to the position for the given `client_order_id` (if found).
+    /// Returns a reference to the position for the `client_order_id` (if found).
     #[must_use]
     pub fn position_for_order(&self, client_order_id: &ClientOrderId) -> Option<&Position> {
         self.index
@@ -2638,13 +2665,13 @@ impl Cache {
             .and_then(|position_id| self.positions.get(position_id))
     }
 
-    /// Returns a reference to the position ID for the given `client_order_id` (if found).
+    /// Returns a reference to the position ID for the `client_order_id` (if found).
     #[must_use]
     pub fn position_id(&self, client_order_id: &ClientOrderId) -> Option<&PositionId> {
         self.index.order_position.get(client_order_id)
     }
 
-    /// Returns a reference to all positions matching the given optional filter parameters.
+    /// Returns a reference to all positions matching the optional filter parameters.
     #[must_use]
     pub fn positions(
         &self,
@@ -2657,7 +2684,7 @@ impl Cache {
         self.get_positions_for_ids(&position_ids, side)
     }
 
-    /// Returns a reference to all open positions matching the given optional filter parameters.
+    /// Returns a reference to all open positions matching the optional filter parameters.
     #[must_use]
     pub fn positions_open(
         &self,
@@ -2670,7 +2697,7 @@ impl Cache {
         self.get_positions_for_ids(&position_ids, side)
     }
 
-    /// Returns a reference to all closed positions matching the given optional filter parameters.
+    /// Returns a reference to all closed positions matching the optional filter parameters.
     #[must_use]
     pub fn positions_closed(
         &self,
@@ -2683,19 +2710,19 @@ impl Cache {
         self.get_positions_for_ids(&position_ids, side)
     }
 
-    /// Returns whether a position with the given `position_id` exists.
+    /// Returns whether a position with the `position_id` exists.
     #[must_use]
     pub fn position_exists(&self, position_id: &PositionId) -> bool {
         self.index.positions.contains(position_id)
     }
 
-    /// Returns whether a position with the given `position_id` is open.
+    /// Returns whether a position with the `position_id` is open.
     #[must_use]
     pub fn is_position_open(&self, position_id: &PositionId) -> bool {
         self.index.positions_open.contains(position_id)
     }
 
-    /// Returns whether a position with the given `position_id` is closed.
+    /// Returns whether a position with the `position_id` is closed.
     #[must_use]
     pub fn is_position_closed(&self, position_id: &PositionId) -> bool {
         self.index.positions_closed.contains(position_id)
@@ -2742,13 +2769,13 @@ impl Cache {
 
     // -- STRATEGY QUERIES ------------------------------------------------------------------------
 
-    /// Gets a reference to the strategy ID for the given `client_order_id` (if found).
+    /// Gets a reference to the strategy ID for the `client_order_id` (if found).
     #[must_use]
     pub fn strategy_id_for_order(&self, client_order_id: &ClientOrderId) -> Option<&StrategyId> {
         self.index.order_strategy.get(client_order_id)
     }
 
-    /// Gets a reference to the strategy ID for the given `position_id` (if found).
+    /// Gets a reference to the strategy ID for the `position_id` (if found).
     #[must_use]
     pub fn strategy_id_for_position(&self, position_id: &PositionId) -> Option<&StrategyId> {
         self.index.position_strategy.get(position_id)
@@ -2756,7 +2783,7 @@ impl Cache {
 
     // -- GENERAL ---------------------------------------------------------------------------------
 
-    /// Gets a reference to the general object value for the given `key` (if found).
+    /// Gets a reference to the general value for the `key` (if found).
     ///
     /// # Errors
     ///
@@ -2769,7 +2796,7 @@ impl Cache {
 
     // -- DATA QUERIES ----------------------------------------------------------------------------
 
-    /// Returns the price for the given `instrument_id` and `price_type` (if found).
+    /// Returns the price for the `instrument_id` and `price_type` (if found).
     #[must_use]
     pub fn price(&self, instrument_id: &InstrumentId, price_type: PriceType) -> Option<Price> {
         match price_type {
@@ -2800,7 +2827,7 @@ impl Cache {
         }
     }
 
-    /// Gets all quotes for the given `instrument_id`.
+    /// Gets all quotes for the `instrument_id`.
     #[must_use]
     pub fn quotes(&self, instrument_id: &InstrumentId) -> Option<Vec<QuoteTick>> {
         self.quotes
@@ -2808,7 +2835,7 @@ impl Cache {
             .map(|quotes| quotes.iter().copied().collect())
     }
 
-    /// Gets all trades for the given `instrument_id`.
+    /// Gets all trades for the `instrument_id`.
     #[must_use]
     pub fn trades(&self, instrument_id: &InstrumentId) -> Option<Vec<TradeTick>> {
         self.trades
@@ -2816,7 +2843,7 @@ impl Cache {
             .map(|trades| trades.iter().copied().collect())
     }
 
-    /// Gets all mark price updates for the given `instrument_id`.
+    /// Gets all mark price updates for the `instrument_id`.
     #[must_use]
     pub fn mark_prices(&self, instrument_id: &InstrumentId) -> Option<Vec<MarkPriceUpdate>> {
         self.mark_prices
@@ -2824,7 +2851,7 @@ impl Cache {
             .map(|mark_prices| mark_prices.iter().copied().collect())
     }
 
-    /// Gets all index price updates for the given `instrument_id`.
+    /// Gets all index price updates for the `instrument_id`.
     #[must_use]
     pub fn index_prices(&self, instrument_id: &InstrumentId) -> Option<Vec<IndexPriceUpdate>> {
         self.index_prices
@@ -2832,7 +2859,7 @@ impl Cache {
             .map(|index_prices| index_prices.iter().copied().collect())
     }
 
-    /// Gets all bars for the given `bar_type`.
+    /// Gets all bars for the `bar_type`.
     #[must_use]
     pub fn bars(&self, bar_type: &BarType) -> Option<Vec<Bar>> {
         self.bars
@@ -2840,25 +2867,25 @@ impl Cache {
             .map(|bars| bars.iter().copied().collect())
     }
 
-    /// Gets a reference to the order book for the given `instrument_id`.
+    /// Gets a reference to the order book for the `instrument_id`.
     #[must_use]
     pub fn order_book(&self, instrument_id: &InstrumentId) -> Option<&OrderBook> {
         self.books.get(instrument_id)
     }
 
-    /// Gets a reference to the order book for the given `instrument_id`.
+    /// Gets a reference to the order book for the `instrument_id`.
     #[must_use]
     pub fn order_book_mut(&mut self, instrument_id: &InstrumentId) -> Option<&mut OrderBook> {
         self.books.get_mut(instrument_id)
     }
 
-    /// Gets a reference to the own order book for the given `instrument_id`.
+    /// Gets a reference to the own order book for the `instrument_id`.
     #[must_use]
     pub fn own_order_book(&self, instrument_id: &InstrumentId) -> Option<&OwnOrderBook> {
         self.own_books.get(instrument_id)
     }
 
-    /// Gets a reference to the own order book for the given `instrument_id`.
+    /// Gets a reference to the own order book for the `instrument_id`.
     #[must_use]
     pub fn own_order_book_mut(
         &mut self,
@@ -2867,7 +2894,21 @@ impl Cache {
         self.own_books.get_mut(instrument_id)
     }
 
-    /// Gets a reference to the latest quote tick for the given `instrument_id`.
+    /// Gets a reference to the pool for the `instrument_id`.
+    #[cfg(feature = "defi")]
+    #[must_use]
+    pub fn pool(&self, instrument_id: &InstrumentId) -> Option<&Pool> {
+        self.pools.get(instrument_id)
+    }
+
+    /// Gets a mutable reference to the pool for the `instrument_id`.
+    #[cfg(feature = "defi")]
+    #[must_use]
+    pub fn pool_mut(&mut self, instrument_id: &InstrumentId) -> Option<&mut Pool> {
+        self.pools.get_mut(instrument_id)
+    }
+
+    /// Gets a reference to the latest quote for the `instrument_id`.
     #[must_use]
     pub fn quote(&self, instrument_id: &InstrumentId) -> Option<&QuoteTick> {
         self.quotes
@@ -2875,7 +2916,7 @@ impl Cache {
             .and_then(|quotes| quotes.front())
     }
 
-    /// Gets a reference to the latest trade tick for the given `instrument_id`.
+    /// Gets a reference to the latest trade for the `instrument_id`.
     #[must_use]
     pub fn trade(&self, instrument_id: &InstrumentId) -> Option<&TradeTick> {
         self.trades
@@ -2883,7 +2924,7 @@ impl Cache {
             .and_then(|trades| trades.front())
     }
 
-    /// Gets a referenece to the latest mark price update for the given `instrument_id`.
+    /// Gets a referenece to the latest mark price update for the `instrument_id`.
     #[must_use]
     pub fn mark_price(&self, instrument_id: &InstrumentId) -> Option<&MarkPriceUpdate> {
         self.mark_prices
@@ -2891,7 +2932,7 @@ impl Cache {
             .and_then(|mark_prices| mark_prices.front())
     }
 
-    /// Gets a referenece to the latest index price update for the given `instrument_id`.
+    /// Gets a referenece to the latest index price update for the `instrument_id`.
     #[must_use]
     pub fn index_price(&self, instrument_id: &InstrumentId) -> Option<&IndexPriceUpdate> {
         self.index_prices
@@ -2899,13 +2940,13 @@ impl Cache {
             .and_then(|index_prices| index_prices.front())
     }
 
-    /// Gets a reference to the latest bar for the given `bar_type`.
+    /// Gets a reference to the latest bar for the `bar_type`.
     #[must_use]
     pub fn bar(&self, bar_type: &BarType) -> Option<&Bar> {
         self.bars.get(bar_type).and_then(|bars| bars.front())
     }
 
-    /// Gets the order book update count for the given `instrument_id`.
+    /// Gets the order book update count for the `instrument_id`.
     #[must_use]
     pub fn book_update_count(&self, instrument_id: &InstrumentId) -> usize {
         self.books
@@ -2913,7 +2954,7 @@ impl Cache {
             .map_or(0, |book| book.update_count) as usize
     }
 
-    /// Gets the quote tick count for the given `instrument_id`.
+    /// Gets the quote tick count for the `instrument_id`.
     #[must_use]
     pub fn quote_count(&self, instrument_id: &InstrumentId) -> usize {
         self.quotes
@@ -2921,7 +2962,7 @@ impl Cache {
             .map_or(0, std::collections::VecDeque::len)
     }
 
-    /// Gets the trade tick count for the given `instrument_id`.
+    /// Gets the trade tick count for the `instrument_id`.
     #[must_use]
     pub fn trade_count(&self, instrument_id: &InstrumentId) -> usize {
         self.trades
@@ -2929,7 +2970,7 @@ impl Cache {
             .map_or(0, std::collections::VecDeque::len)
     }
 
-    /// Gets the bar count for the given `instrument_id`.
+    /// Gets the bar count for the `instrument_id`.
     #[must_use]
     pub fn bar_count(&self, bar_type: &BarType) -> usize {
         self.bars
@@ -2937,25 +2978,25 @@ impl Cache {
             .map_or(0, std::collections::VecDeque::len)
     }
 
-    /// Returns whether the cache contains an order book for the given `instrument_id`.
+    /// Returns whether the cache contains an order book for the `instrument_id`.
     #[must_use]
     pub fn has_order_book(&self, instrument_id: &InstrumentId) -> bool {
         self.books.contains_key(instrument_id)
     }
 
-    /// Returns whether the cache contains quotes for the given `instrument_id`.
+    /// Returns whether the cache contains quotes for the `instrument_id`.
     #[must_use]
     pub fn has_quote_ticks(&self, instrument_id: &InstrumentId) -> bool {
         self.quote_count(instrument_id) > 0
     }
 
-    /// Returns whether the cache contains trades for the given `instrument_id`.
+    /// Returns whether the cache contains trades for the `instrument_id`.
     #[must_use]
     pub fn has_trade_ticks(&self, instrument_id: &InstrumentId) -> bool {
         self.trade_count(instrument_id) > 0
     }
 
-    /// Returns whether the cache contains bars for the given `bar_type`.
+    /// Returns whether the cache contains bars for the `bar_type`.
     #[must_use]
     pub fn has_bars(&self, bar_type: &BarType) -> bool {
         self.bar_count(bar_type) > 0
@@ -2992,9 +3033,9 @@ impl Cache {
         }
     }
 
-    fn build_quote_table(&self, venue: &Venue) -> (HashMap<String, f64>, HashMap<String, f64>) {
-        let mut bid_quotes = HashMap::new();
-        let mut ask_quotes = HashMap::new();
+    fn build_quote_table(&self, venue: &Venue) -> (AHashMap<String, f64>, AHashMap<String, f64>) {
+        let mut bid_quotes = AHashMap::new();
+        let mut ask_quotes = AHashMap::new();
 
         for instrument_id in self.instruments.keys() {
             if instrument_id.venue != *venue {
@@ -3074,13 +3115,13 @@ impl Cache {
 
     // -- INSTRUMENT QUERIES ----------------------------------------------------------------------
 
-    /// Returns a reference to the instrument for the given `instrument_id` (if found).
+    /// Returns a reference to the instrument for the `instrument_id` (if found).
     #[must_use]
     pub fn instrument(&self, instrument_id: &InstrumentId) -> Option<&InstrumentAny> {
         self.instruments.get(instrument_id)
     }
 
-    /// Returns references to all instrument IDs for the given `venue`.
+    /// Returns references to all instrument IDs for the `venue`.
     #[must_use]
     pub fn instrument_ids(&self, venue: Option<&Venue>) -> Vec<&InstrumentId> {
         match venue {
@@ -3089,7 +3130,7 @@ impl Cache {
         }
     }
 
-    /// Returns references to all instruments for the given `venue`.
+    /// Returns references to all instruments for the `venue`.
     #[must_use]
     pub fn instruments(&self, venue: &Venue, underlying: Option<&Ustr>) -> Vec<&InstrumentAny> {
         self.instruments
@@ -3126,7 +3167,7 @@ impl Cache {
 
     // -- SYNTHETIC QUERIES -----------------------------------------------------------------------
 
-    /// Returns a reference to the synthetic instrument for the given `instrument_id` (if found).
+    /// Returns a reference to the synthetic instrument for the `instrument_id` (if found).
     #[must_use]
     pub fn synthetic(&self, instrument_id: &InstrumentId) -> Option<&SyntheticInstrument> {
         self.synthetics.get(instrument_id)
@@ -3146,13 +3187,13 @@ impl Cache {
 
     // -- ACCOUNT QUERIES -----------------------------------------------------------------------
 
-    /// Returns a reference to the account for the given `account_id` (if found).
+    /// Returns a reference to the account for the `account_id` (if found).
     #[must_use]
     pub fn account(&self, account_id: &AccountId) -> Option<&AccountAny> {
         self.accounts.get(account_id)
     }
 
-    /// Returns a reference to the account for the given `venue` (if found).
+    /// Returns a reference to the account for the `venue` (if found).
     #[must_use]
     pub fn account_for_venue(&self, venue: &Venue) -> Option<&AccountAny> {
         self.index
@@ -3161,13 +3202,13 @@ impl Cache {
             .and_then(|account_id| self.accounts.get(account_id))
     }
 
-    /// Returns a reference to the account ID for the given `venue` (if found).
+    /// Returns a reference to the account ID for the `venue` (if found).
     #[must_use]
     pub fn account_id(&self, venue: &Venue) -> Option<&AccountId> {
         self.index.venue_account.get(venue)
     }
 
-    /// Returns references to all accounts for the given `account_id`.
+    /// Returns references to all accounts for the `account_id`.
     #[must_use]
     pub fn accounts(&self, account_id: &AccountId) -> Vec<&AccountAny> {
         self.accounts

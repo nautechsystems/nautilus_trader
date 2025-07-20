@@ -4,14 +4,17 @@ allow-unwrap-in-tests = true
 doc-valid-idents = [
   "BaseSwap",
   "BaseX",
+  "DataFusion",
   "DeFi",
   "HyperSync",
+  "MessagePack",
   "NautilusTrader",
   "PancakeSwap",
   "PascalCase",
   "PnL",
   "PnLs",
   "PostgreSQL",
+  "PyO3",
   "SushiSwap",
   "..",
 ]

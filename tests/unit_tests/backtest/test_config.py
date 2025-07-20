@@ -18,9 +18,14 @@ import sys
 
 import msgspec
 import pandas as pd
+
+# Third-party
+import pyarrow.dataset as ds
 import pytest
 from click.testing import CliRunner
 
+# Our code
+from nautilus_trader.backtest.config import parse_filters_expr
 from nautilus_trader.backtest.modules import FXRolloverInterestConfig
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.backtest.node import BacktestNode
@@ -86,7 +91,7 @@ class TestBacktestConfig:
         # Assert
         assert result == {
             "data_cls": QuoteTick,
-            "instrument_ids": [InstrumentId.from_str("AUD/USD.SIM")],
+            "identifiers": [InstrumentId.from_str("AUD/USD.SIM")],
             "filter_expr": None,
             "start": 1580398089820000000,
             "end": 1580504394501000000,
@@ -213,7 +218,7 @@ class TestBacktestConfigParsing:
         )
         json = msgspec.json.encode(run_config)
         result = len(msgspec.json.encode(json))
-        assert result == 1302  # UNIX
+        assert result == 1358  # UNIX
 
     @pytest.mark.skipif(sys.platform == "win32", reason="redundant to also test Windows")
     def test_run_config_parse_obj(self) -> None:
@@ -234,7 +239,7 @@ class TestBacktestConfigParsing:
         assert isinstance(config, BacktestRunConfig)
         node = BacktestNode(configs=[config])
         assert isinstance(node, BacktestNode)
-        assert len(raw) == 975  # UNIX
+        assert len(raw) == 1015  # UNIX
 
     @pytest.mark.skipif(sys.platform == "win32", reason="redundant to also test Windows")
     def test_backtest_data_config_to_dict(self) -> None:
@@ -255,7 +260,7 @@ class TestBacktestConfigParsing:
         )
         json = msgspec.json.encode(run_config)
         result = len(msgspec.json.encode(json))
-        assert result == 2154
+        assert result == 2210
 
     @pytest.mark.skipif(sys.platform == "win32", reason="redundant to also test Windows")
     def test_backtest_run_config_id(self) -> None:
@@ -263,7 +268,7 @@ class TestBacktestConfigParsing:
         print("token:", token)
         value: bytes = self.backtest_config.json()
         print("token_value:", value.decode())
-        assert token == "4f32604ec447b05be0c7a38746a01295b96a29f647638c385d4f668d01dacecc"
+        assert token == "4301bdb81ad6ef2e6683565187995fa32f2ce361383f54533cdef4c8469c8281"
 
     @pytest.mark.skipif(sys.platform == "win32", reason="redundant to also test Windows")
     @pytest.mark.parametrize(
@@ -273,7 +278,7 @@ class TestBacktestConfigParsing:
                 TestConfigStubs.venue_config,
                 (),
                 {},
-                ("03972e1b8abc649b22a211df779ce47b5a5791adaedcae3f4345fb0ae0e3c88a",),
+                ("981a3c21ef4c0af5e36377536728d5cf85e95d6843889021be965bae4ebecd5e",),
             ),
             (
                 TestConfigStubs.backtest_data_config,
@@ -285,7 +290,7 @@ class TestBacktestConfigParsing:
                 TestConfigStubs.backtest_engine_config,
                 ("catalog",),
                 {"persist": True},
-                ("41dc7b01800af4913e41ff0d81bd3084390156c283adf0d4dd9bccff5c3dda3a",),
+                ("c2b1fb5320292c3a89d93cd4ad4051f6716b5db015084b358e6c2e33845d17ad",),
             ),
             (
                 TestConfigStubs.risk_engine_config,
@@ -297,7 +302,7 @@ class TestBacktestConfigParsing:
                 TestConfigStubs.exec_engine_config,
                 (),
                 {},
-                ("e713550a47dd10a2ae8dfbdc8a38926f1d5f62d587f996159e47d389db6daa33",),
+                ("fb92939cdb495cb8b2ef2077a6509f080fd7c2b33001e021c304bdb78ecc0cd5",),
             ),
             (
                 TestConfigStubs.portfolio_config,
@@ -374,12 +379,171 @@ class TestBacktestConfigParsing:
         node = BacktestNode([run_config])
 
         # Act
-        engine = node._create_engine(
-            run_config_id=run_config.id,
-            config=run_config.engine,
-            venue_configs=run_config.venues or [],
-            data_configs=run_config.data or [],
-        )
+        engine = node._create_engine(run_config.id)
 
         # Assert
         assert engine
+
+
+class TestParseFiltersExpr:
+    """
+    Test security and functionality of parse_filters_expr function.
+    """
+
+    def test_parse_filters_expr_none_input(self):
+        """
+        Test that None input returns None.
+        """
+        result = parse_filters_expr(None)
+        assert result is None
+
+    def test_parse_filters_expr_empty_string(self):
+        """
+        Test that empty string returns None.
+        """
+        result = parse_filters_expr("")
+        assert result is None
+
+    @pytest.mark.parametrize(
+        "expr",
+        [
+            'field("Currency") == "CHF"',
+            'field("Symbol") != "USD"',
+            '(field("Currency") == "CHF") | (field("Symbol") == "USD")',
+            # Mixed whitespace
+            '  field("Currency") == "CHF"  ',
+        ],
+    )
+    def test_parse_filters_expr_valid_expression(self, expr):
+        """
+        Expression should parse and return a PyArrow Expression.
+        """
+        result = parse_filters_expr(expr)
+        assert isinstance(result, ds.Expression)
+
+    @pytest.mark.parametrize(
+        "expr",
+        [
+            'print("hello")',
+            '__import__("os").system("echo hacked")',
+            'eval("1+1")',
+            'exec("print(1)")',
+            'open("/etc/passwd")',
+            "globals()",
+            "locals()",
+            "vars()",
+            "dir()",
+            'getattr(field, "__class__")',
+            "field.__class__.__bases__[0].__subclasses__()[104]",
+            "breakpoint()",
+            "exit()",
+            "quit()",
+        ],
+    )
+    def test_parse_filters_expr_security_blocks_malicious_code(self, expr):
+        """
+        Malicious code must be refused.
+        """
+        with pytest.raises(ValueError, match="is not allowed|not permitted"):
+            parse_filters_expr(expr)
+
+    @pytest.mark.parametrize(
+        "expr",
+        [
+            'len("test")',
+            "str(123)",
+            'int("123")',
+            "list()",
+            "dict()",
+            "set()",
+            "tuple()",
+            "range(10)",
+            "enumerate([])",
+            "zip([], [])",
+            "map(str, [1, 2, 3])",
+            "filter(None, [1, 2, 3])",
+            "sum([1, 2, 3])",
+            "max([1, 2, 3])",
+            "min([1, 2, 3])",
+        ],
+    )
+    def test_parse_filters_expr_security_blocks_arbitrary_functions(self, expr):
+        """
+        Non-field function calls must be refused.
+        """
+        with pytest.raises(ValueError, match="is not allowed|not permitted"):
+            parse_filters_expr(expr)
+
+    @pytest.mark.parametrize(
+        "expr",
+        [
+            'field("test").__class__',
+            'field("test").__dict__',
+            'field("test").__module__',
+            "field.__doc__",
+            "field.__name__",
+        ],
+    )
+    def test_parse_filters_expr_security_blocks_attribute_access(self, expr):
+        """
+        Attribute access on field objects is forbidden.
+        """
+        with pytest.raises(ValueError, match="is not allowed|not permitted"):
+            parse_filters_expr(expr)
+
+    @pytest.mark.parametrize(
+        "expr",
+        [
+            '__import__("sys")',
+            '__import__("os")',
+            '__import__("subprocess")',
+            '__import__("socket")',
+            '__import__("urllib")',
+        ],
+    )
+    def test_parse_filters_expr_security_blocks_imports(self, expr):
+        """
+        Import attempts must be refused.
+        """
+        with pytest.raises(ValueError, match="is not allowed|not permitted"):
+            parse_filters_expr(expr)
+
+    @pytest.mark.parametrize(
+        "expr, is_valid",
+        [
+            ('  field("Currency") == "CHF"  ', True),
+            ('  print("hello")  ', False),
+        ],
+    )
+    def test_parse_filters_expr_whitespace_handling(self, expr, is_valid):
+        """
+        Whitespace should not affect validation semantics.
+        """
+        if is_valid:
+            assert isinstance(parse_filters_expr(expr), ds.Expression)
+        else:
+            with pytest.raises(ValueError):
+                parse_filters_expr(expr)
+
+    def test_parse_filters_expr_complex_valid_expressions(self):
+        """
+        Logical OR between multiple comparisons should be accepted.
+        """
+        expr = parse_filters_expr('(field("Currency") == "CHF") | (field("Symbol") == "USD")')
+        assert isinstance(expr, ds.Expression)
+
+    @pytest.mark.parametrize(
+        "expr",
+        [
+            'field("Currency") ==',  # Incomplete expression
+            'field("Currency" == "CHF"',  # Missing closing paren
+            'field(Currency) == "CHF"',  # Missing quotes around field name
+            '== "CHF"',  # Missing field() call
+        ],
+    )
+    def test_parse_filters_expr_invalid_syntax(self, expr):
+        """
+        Broken grammar should raise ValueError.
+        """
+        with pytest.raises(ValueError):
+            parse_filters_expr(expr)

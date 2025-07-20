@@ -13,10 +13,31 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Portfolio management and risk analysis for [NautilusTrader](http://nautilustrader.io).
+//!
+//! The *portfolio* crate provides comprehensive portfolio management capabilities including
+//! real-time position tracking, performance calculations, and risk management. This includes
+//! sophisticated portfolio analytics and multi-currency support:
+//!
+//! - **Portfolio tracking**: Real-time portfolio state management with position and balance monitoring.
+//! - **Account management**: Support for cash and margin accounts across multiple venues.
+//! - **Performance calculations**: Real-time unrealized PnL, realized PnL, and mark-to-market valuations.
+//! - **Risk management**: Initial margin calculations, maintenance margin tracking, and exposure monitoring.
+//! - **Multi-currency support**: Currency conversion and cross-currency risk exposure analysis.
+//! - **Configuration options**: Flexible settings for price types, currency conversion, and portfolio behavior.
+//!
+//! The crate handles complex portfolio scenarios including multi-venue trading, currency conversions,
+//! and sophisticated margin calculations for both live trading and backtesting environments.
+//!
+//! # Platform
+//!
 //! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
 //! algorithmic trading platform, providing quantitative traders with the ability to backtest
 //! portfolios of automated trading strategies on historical data with an event-driven engine,
 //! and also deploy those same strategies live, with no code changes.
+//!
+//! NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
+//! highest level, with the aim of supporting mission-critical, trading system backtesting and live deployment workloads.
 //!
 //! # Feature flags
 //!

@@ -15,14 +15,19 @@
 
 //! Tests module for `Cache`.
 
+#[cfg(feature = "defi")]
+use std::sync::Arc;
+
 use bytes::Bytes;
 use nautilus_core::UnixNanos;
+#[cfg(feature = "defi")]
+use nautilus_model::defi::{AmmType, Dex, Pool, Token, chain::chains};
 use nautilus_model::{
     accounts::AccountAny,
     data::{Bar, MarkPriceUpdate, QuoteTick, TradeTick},
-    enums::{BookType, OmsType, OrderSide, OrderStatus, OrderType, PriceType},
+    enums::{BookType, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, PriceType},
     events::{OrderAccepted, OrderEventAny, OrderRejected, OrderSubmitted},
-    identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, Venue},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, Symbol, Venue},
     instruments::{CurrencyPair, Instrument, InstrumentAny, SyntheticInstrument, stubs::*},
     orderbook::OrderBook,
     orders::{
@@ -264,6 +269,174 @@ fn test_order_when_accepted(mut cache: Cache, audusd_sim: CurrencyPair) {
     assert_eq!(
         cache.venue_order_id(&order.client_order_id()),
         Some(&order.venue_order_id().unwrap())
+    );
+}
+
+#[rstest]
+fn test_client_order_ids_filtering(mut cache: Cache) {
+    // Build a small deterministic universe: 2 venues × 3 instruments × 2 orders
+    let venue_a = Venue::from("VENUE-A");
+    let _venue_b = Venue::from("VENUE-B");
+
+    let mut generator = TestOrdersGenerator::new(OrderType::Limit);
+    generator.add_venue_and_total_instruments(venue_a, 3);
+    generator.add_venue_and_total_instruments(_venue_b, 3);
+    generator.set_orders_per_instrument(2);
+
+    let orders = generator.build();
+
+    let _instrument_a0 = InstrumentId::from("SYMBOL-0.VENUE-A");
+
+    // Sanity-check the generated volume: 2 × 3 × 2 = 12
+    assert_eq!(orders.len(), 12);
+
+    // Load into cache so indices are built on the fly
+    for order in &orders {
+        cache.add_order(order.clone(), None, None, false).unwrap();
+    }
+
+    // No filters – expect all orders
+    assert_eq!(cache.client_order_ids(None, None, None).len(), orders.len());
+
+    // Venue only
+    let expected_venue_a = orders
+        .iter()
+        .filter(|o| o.instrument_id().venue == venue_a)
+        .count();
+    assert_eq!(
+        cache.client_order_ids(Some(&venue_a), None, None).len(),
+        expected_venue_a
+    );
+
+    // Venue + instrument
+    let instrument_a0 = InstrumentId::from("SYMBOL-0.VENUE-A");
+    assert_eq!(
+        cache
+            .client_order_ids(Some(&venue_a), Some(&instrument_a0), None)
+            .len(),
+        orders
+            .iter()
+            .filter(|o| o.instrument_id() == instrument_a0)
+            .count()
+    );
+}
+
+#[rstest]
+fn test_position_ids_filtering(mut cache: Cache) {
+    let venue_a = Venue::from("VENUE-A");
+    let _venue_b = Venue::from("VENUE-B");
+
+    fn make_pair(id_str: &str) -> CurrencyPair {
+        CurrencyPair::new(
+            InstrumentId::from(id_str),
+            Symbol::from(id_str),
+            Currency::USD(),
+            Currency::EUR(),
+            2,
+            4,
+            Price::from("0.01"),
+            Quantity::from("0.0001"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+    }
+
+    // Build two open positions and one closed position across venues
+    let instr_a0 = make_pair("PAIR-0.VENUE-A");
+    let instr_b0 = make_pair("PAIR-0.VENUE-B");
+
+    let base_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instr_a0.id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1"))
+        .build();
+
+    let fill_a_event = TestOrderEventStubs::filled(
+        &base_order,
+        &InstrumentAny::CurrencyPair(instr_a0),
+        None,
+        Some(PositionId::new("POS-A")),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let fill_a = match fill_a_event {
+        OrderEventAny::Filled(f) => f,
+        _ => unreachable!(),
+    };
+    let pos_a = Position::new(&InstrumentAny::CurrencyPair(instr_a0), fill_a);
+
+    // Second open position on venue B
+    let order_b = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instr_b0.id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1"))
+        .build();
+
+    let fill_b_event = TestOrderEventStubs::filled(
+        &order_b,
+        &InstrumentAny::CurrencyPair(instr_b0),
+        None,
+        Some(PositionId::new("POS-B")),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let fill_b = match fill_b_event {
+        OrderEventAny::Filled(f) => f,
+        _ => unreachable!(),
+    };
+    let pos_b = Position::new(&InstrumentAny::CurrencyPair(instr_b0), fill_b);
+
+    // Closed position on venue A (side Flat + ts_closed)
+    let mut pos_closed = pos_a.clone();
+    pos_closed.id = PositionId::new("POS-C");
+    pos_closed.side = PositionSide::Flat;
+    pos_closed.ts_closed = Some(UnixNanos::from(1));
+
+    // Insert into cache
+    cache.add_position(pos_a.clone(), OmsType::Netting).unwrap();
+    cache.add_position(pos_b.clone(), OmsType::Netting).unwrap();
+    cache
+        .add_position(pos_closed.clone(), OmsType::Netting)
+        .unwrap();
+
+    // Assertions
+    assert_eq!(cache.position_ids(None, None, None).len(), 3);
+
+    // Venue filter
+    assert_eq!(cache.position_ids(Some(&venue_a), None, None).len(), 2);
+
+    // Venue + instrument filter
+    assert_eq!(
+        cache
+            .position_ids(Some(&venue_a), Some(&instr_a0.id), None)
+            .len(),
+        2 // open + closed on venue A instrument
+    );
+
+    // Open / closed separation
+    assert!(
+        cache
+            .position_open_ids(None, None, None)
+            .contains(&pos_a.id)
     );
 }
 
@@ -560,6 +733,107 @@ fn test_order_book_mut_when_some(mut cache: Cache, audusd_sim: CurrencyPair) {
     cache.add_order_book(book.clone()).unwrap();
     let result = cache.order_book_mut(&audusd_sim.id);
     assert_eq!(result, Some(&mut book));
+}
+
+#[cfg(feature = "defi")]
+#[fixture]
+fn test_pool() -> Pool {
+    let chain = Arc::new(chains::ETHEREUM.clone());
+    let dex = Dex::new(
+        chains::ETHEREUM.clone(),
+        "UniswapV3",
+        "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+        0,
+        AmmType::CLAMM,
+        "PoolCreated(address,address,uint24,int24,address)",
+        "Swap(address,address,int256,int256,uint160,uint128,int24)",
+        "Mint(address,address,int24,int24,uint128,uint256,uint256)",
+        "Burn(address,int24,int24,uint128,uint256,uint256)",
+    );
+
+    let token0 = Token::new(
+        chain.clone(),
+        "0xA0b86a33E6441b936662bb6B5d1F8Fb0E2b57A5D"
+            .parse()
+            .unwrap(),
+        "Wrapped Ether".to_string(),
+        "WETH".to_string(),
+        18,
+    );
+
+    let token1 = Token::new(
+        chain.clone(),
+        "0xdAC17F958D2ee523a2206206994597C13D831ec7"
+            .parse()
+            .unwrap(),
+        "Tether USD".to_string(),
+        "USDT".to_string(),
+        6,
+    );
+
+    Pool::new(
+        chain,
+        Arc::new(dex),
+        "0x11b815efB8f581194ae79006d24E0d814B7697F6"
+            .parse()
+            .unwrap(),
+        12345678,
+        token0,
+        token1,
+        3000,
+        60,
+        UnixNanos::from(1_234_567_890_000_000_000u64),
+    )
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_pool_when_empty(cache: Cache, test_pool: Pool) {
+    let instrument_id = test_pool.instrument_id;
+    let result = cache.pool(&instrument_id);
+    assert!(result.is_none());
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_pool_when_some(mut cache: Cache, test_pool: Pool) {
+    let instrument_id = test_pool.instrument_id;
+    cache.add_pool(test_pool.clone()).unwrap();
+    let result = cache.pool(&instrument_id);
+    assert_eq!(result, Some(&test_pool));
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_pool_mut_when_empty(mut cache: Cache, test_pool: Pool) {
+    let instrument_id = test_pool.instrument_id;
+    let result = cache.pool_mut(&instrument_id);
+    assert!(result.is_none());
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_pool_mut_when_some(mut cache: Cache, test_pool: Pool) {
+    let instrument_id = test_pool.instrument_id;
+    cache.add_pool(test_pool.clone()).unwrap();
+    let result = cache.pool_mut(&instrument_id);
+
+    assert!(result.is_some());
+    if let Some(pool_ref) = result {
+        assert_eq!(pool_ref.fee, 3000);
+    }
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_add_pool(mut cache: Cache, test_pool: Pool) {
+    let instrument_id = test_pool.instrument_id;
+
+    cache.add_pool(test_pool.clone()).unwrap();
+
+    let cached_pool = cache.pool(&instrument_id);
+    assert!(cached_pool.is_some());
+    assert_eq!(cached_pool.unwrap(), &test_pool);
 }
 
 #[rstest]

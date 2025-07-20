@@ -15,14 +15,17 @@
 
 use std::{collections::BTreeSet, sync::Arc};
 
-use alloy::primitives::keccak256;
+use ahash::AHashMap;
+use alloy::primitives::{Address, keccak256};
 use futures_util::Stream;
 use hypersync_client::{
-    Client, ClientConfig,
     net_types::{BlockSelection, FieldSelection, Query},
     simple_types::Log,
 };
-use nautilus_model::defi::{block::Block, chain::SharedChain};
+use nautilus_model::{
+    defi::{Block, SharedChain},
+    identifiers::InstrumentId,
+};
 use reqwest::Url;
 
 use crate::{hypersync::transform::transform_hypersync_block, rpc::types::BlockchainMessage};
@@ -37,11 +40,17 @@ pub struct HyperSyncClient {
     /// The target blockchain identifier (e.g. Ethereum, Arbitrum).
     chain: SharedChain,
     /// The underlying HyperSync Rust client for making API requests.
-    client: Arc<Client>,
+    client: Arc<hypersync_client::Client>,
     /// Background task handle for the block subscription task.
-    blocks_subscription_task: Option<tokio::task::JoinHandle<()>>,
+    blocks_task: Option<tokio::task::JoinHandle<()>>,
+    /// Background task handles for swap subscription tasks (keyed by pool address).
+    swaps_tasks: AHashMap<Address, tokio::task::JoinHandle<()>>,
+    /// Background task handles for liquidity update subscription tasks (keyed by pool address).
+    liquidity_tasks: AHashMap<Address, tokio::task::JoinHandle<()>>,
     /// Channel for sending blockchain messages to the adapter data client.
     tx: tokio::sync::mpsc::UnboundedSender<BlockchainMessage>,
+    /// Index of pool addressed keyed by instrument ID.
+    pool_addresses: AHashMap<InstrumentId, Address>,
 }
 
 impl HyperSyncClient {
@@ -55,17 +64,26 @@ impl HyperSyncClient {
         chain: SharedChain,
         tx: tokio::sync::mpsc::UnboundedSender<BlockchainMessage>,
     ) -> Self {
-        let mut config = ClientConfig::default();
+        let mut config = hypersync_client::ClientConfig::default();
         let hypersync_url =
             Url::parse(chain.hypersync_url.as_str()).expect("Invalid HyperSync URL");
         config.url = Some(hypersync_url);
-        let client = Client::new(config).unwrap();
+        let client = hypersync_client::Client::new(config).unwrap();
+
         Self {
             chain,
             client: Arc::new(client),
-            blocks_subscription_task: None,
+            blocks_task: None,
+            swaps_tasks: AHashMap::new(),
+            liquidity_tasks: AHashMap::new(),
             tx,
+            pool_addresses: AHashMap::new(),
         }
+    }
+
+    #[must_use]
+    pub fn get_pool_address(&self, instrument_id: InstrumentId) -> Option<&Address> {
+        self.pool_addresses.get(&instrument_id)
     }
 
     /// Creates a stream of contract event logs matching the specified criteria.
@@ -78,7 +96,7 @@ impl HyperSyncClient {
         additional_topics: Vec<String>,
     ) -> impl Stream<Item = Log> + use<> {
         let event_hash = keccak256(event_signature.as_bytes());
-        let topic0 = format!("0x{}", hex::encode(event_hash));
+        let topic0 = format!("0x{encoded_hash}", encoded_hash = hex::encode(event_hash));
 
         let mut topics_array = Vec::new();
         topics_array.push(vec![topic0]);
@@ -97,6 +115,9 @@ impl HyperSyncClient {
             "field_selection": {
                 "log": [
                     "block_number",
+                    "transaction_hash",
+                    "transaction_index",
+                    "log_index",
                     "data",
                     "topic0",
                     "topic1",
@@ -106,10 +127,10 @@ impl HyperSyncClient {
             }
         });
 
-        if let Some(to_block) = to_block {
-            if let Some(obj) = query_value.as_object_mut() {
-                obj.insert("to_block".to_string(), serde_json::json!(to_block));
-            }
+        if let Some(to_block) = to_block
+            && let Some(obj) = query_value.as_object_mut()
+        {
+            obj.insert("to_block".to_string(), serde_json::json!(to_block));
         }
 
         let query = serde_json::from_value(query_value).unwrap();
@@ -137,14 +158,24 @@ impl HyperSyncClient {
     /// Disconnects from the HyperSync service and stops all background tasks.
     pub fn disconnect(&mut self) {
         self.unsubscribe_blocks();
+        self.unsubscribe_all_swaps();
+        self.unsubscribe_all_liquidity_updates();
     }
 
     /// Returns the current block
+    ///
+    /// # Panics
+    ///
+    /// Panics if the client height request fails.
     pub async fn current_block(&self) -> u64 {
         self.client.get_height().await.unwrap()
     }
 
     /// Creates a stream that yields blockchain blocks within the specified range.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the stream creation or block transformation fails.
     pub async fn request_blocks_stream(
         &self,
         from_block: u64,
@@ -157,12 +188,15 @@ impl HyperSyncClient {
             .stream(query, Default::default())
             .await
             .unwrap();
+
+        let chain = self.chain.name;
+
         async_stream::stream! {
             while let Some(response) = rx.recv().await {
                 let response = response.unwrap();
                 for batch in response.data.blocks {
                         for received_block in batch {
-                            let block = transform_hypersync_block(received_block).unwrap();
+                            let block = transform_hypersync_block(chain, received_block).unwrap();
                             yield block
                         }
                     }
@@ -171,11 +205,18 @@ impl HyperSyncClient {
     }
 
     /// Starts a background task that continuously polls for new blockchain blocks.
+    ///
+    /// # Panics
+    ///
+    /// Panics if client height requests or block transformations fail.
     pub fn subscribe_blocks(&mut self) {
+        let chain = self.chain.name;
         let client = self.client.clone();
         let tx = self.tx.clone();
-        let chain = self.chain.clone();
+
         let task = tokio::spawn(async move {
+            tracing::debug!("Starting task 'blocks_feed");
+
             let current_block_height = client.get_height().await.unwrap();
             let mut query = Self::construct_block_query(current_block_height, None);
 
@@ -183,8 +224,7 @@ impl HyperSyncClient {
                 let response = client.get(&query).await.unwrap();
                 for batch in response.data.blocks {
                     for received_block in batch {
-                        let mut block = transform_hypersync_block(received_block).unwrap();
-                        block.set_chain(chain.as_ref().clone());
+                        let block = transform_hypersync_block(chain, received_block).unwrap();
                         let msg = BlockchainMessage::Block(block);
                         if let Err(e) = tx.send(msg) {
                             log::error!("Error sending message: {e}");
@@ -192,21 +232,22 @@ impl HyperSyncClient {
                     }
                 }
 
-                if let Some(archive_block_height) = response.archive_height {
-                    if archive_block_height < response.next_block {
-                        while client.get_height().await.unwrap() < response.next_block {
-                            tokio::time::sleep(std::time::Duration::from_millis(
-                                BLOCK_POLLING_INTERVAL_MS,
-                            ))
-                            .await;
-                        }
+                if let Some(archive_block_height) = response.archive_height
+                    && archive_block_height < response.next_block
+                {
+                    while client.get_height().await.unwrap() < response.next_block {
+                        tokio::time::sleep(std::time::Duration::from_millis(
+                            BLOCK_POLLING_INTERVAL_MS,
+                        ))
+                        .await;
                     }
                 }
 
                 query.from_block = response.next_block;
             }
         });
-        self.blocks_subscription_task = Some(task);
+
+        self.blocks_task = Some(task);
     }
 
     /// Constructs a HyperSync query for fetching blocks with all available fields within the specified range.
@@ -229,10 +270,49 @@ impl HyperSyncClient {
         }
     }
 
-    /// Unsubscribes to the new blocks by stopping the background watch task.
-    pub fn unsubscribe_blocks(&mut self) {
-        if let Some(task) = self.blocks_subscription_task.take() {
+    /// Unsubscribes from swap events for a specific pool address.
+    pub fn unsubscribe_pool_swaps(&mut self, pool_address: Address) {
+        if let Some(task) = self.swaps_tasks.remove(&pool_address) {
             task.abort();
+            tracing::debug!("Unsubscribed from swaps for pool: {pool_address}");
+        }
+    }
+
+    /// Unsubscribes from all swap events by stopping all swap background tasks.
+    pub fn unsubscribe_all_swaps(&mut self) {
+        for (pool_address, task) in self.swaps_tasks.drain() {
+            task.abort();
+            tracing::debug!("Unsubscribed from swaps for pool: {pool_address}");
+        }
+    }
+
+    /// Unsubscribes from liquidity update events for a specific pool address.
+    pub fn unsubscribe_pool_liquidity_updates(&mut self, pool_address: Address) {
+        if let Some(task) = self.liquidity_tasks.remove(&pool_address) {
+            task.abort();
+            tracing::debug!(
+                "Unsubscribed from liquidity updates for pool: {}",
+                pool_address
+            );
+        }
+    }
+
+    /// Unsubscribes from all liquidity update events by stopping all liquidity update background tasks.
+    pub fn unsubscribe_all_liquidity_updates(&mut self) {
+        for (pool_address, task) in self.liquidity_tasks.drain() {
+            task.abort();
+            tracing::debug!(
+                "Unsubscribed from liquidity updates for pool: {}",
+                pool_address
+            );
+        }
+    }
+
+    /// Unsubscribes from new blocks by stopping the background watch task.
+    pub fn unsubscribe_blocks(&mut self) {
+        if let Some(task) = self.blocks_task.take() {
+            task.abort();
+            tracing::debug!("Unsubscribed from blocks");
         }
     }
 }

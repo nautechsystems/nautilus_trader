@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::LazyLock};
 
 use crate::exchanges::extended::DexExtended;
 
@@ -21,6 +21,15 @@ pub mod arbitrum;
 pub mod base;
 pub mod ethereum;
 pub mod extended;
+
+/// Static cache for the DEX extended map (by ID)
+static DEX_EXTENDED_MAP: LazyLock<HashMap<String, &'static DexExtended>> = LazyLock::new(|| {
+    let mut map = HashMap::new();
+    map.extend(arbitrum::dex_map());
+    map.extend(base::dex_map());
+    map.extend(ethereum::dex_map());
+    map
+});
 
 /// Returns a vector of all Dexes instances across all chains
 #[must_use]
@@ -34,10 +43,6 @@ pub fn all_dex() -> Vec<&'static DexExtended> {
 
 /// Returns a map of all DEX names to Dex instances across all chains
 #[must_use]
-pub fn dex_extended_map() -> HashMap<&'static str, &'static DexExtended> {
-    let mut map = HashMap::new();
-    map.extend(arbitrum::dex_map());
-    map.extend(base::dex_map());
-    map.extend(ethereum::dex_map());
-    map
+pub fn dex_extended_map() -> &'static HashMap<String, &'static DexExtended> {
+    &DEX_EXTENDED_MAP
 }

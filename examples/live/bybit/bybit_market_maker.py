@@ -22,6 +22,8 @@ from nautilus_trader.adapters.bybit import BybitExecClientConfig
 from nautilus_trader.adapters.bybit import BybitLiveDataClientFactory
 from nautilus_trader.adapters.bybit import BybitLiveExecClientFactory
 from nautilus_trader.adapters.bybit import BybitProductType
+from nautilus_trader.cache.config import CacheConfig
+from nautilus_trader.common.config import DatabaseConfig
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
@@ -40,6 +42,7 @@ from nautilus_trader.model.identifiers import TraderId
 # SPOT/LINEAR
 product_type = BybitProductType.LINEAR
 symbol = f"ETHUSDT-{product_type.value.upper()}"
+instrument_id = InstrumentId.from_str(f"{symbol}.BYBIT")
 trade_size = Decimal("0.010")
 
 # INVERSE
@@ -58,6 +61,7 @@ config_node = TradingNodeConfig(
     ),
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,
+        reconciliation_instrument_ids=[instrument_id],  # Only reconcile this instrument
         open_check_interval_secs=5.0,
         open_check_open_only=True,
         # own_books_audit_interval_secs=2.0,
@@ -65,18 +69,21 @@ config_node = TradingNodeConfig(
         # snapshot_orders=True,
         # snapshot_positions=True,
         # snapshot_positions_interval_secs=5.0,
-        purge_closed_orders_interval_mins=15,  # Example of purging closed orders for HFT
-        purge_closed_orders_buffer_mins=60,  # Purged orders closed for at least an hour
-        purge_closed_positions_interval_mins=15,  # Example of purging closed positions for HFT
-        purge_closed_positions_buffer_mins=60,  # Purge positions closed for at least an hour
-        purge_account_events_interval_mins=15,  # Example of purging account events for HFT
-        purge_account_events_lookback_mins=60,  # Purge account events occurring more than an hour ago
+        purge_closed_orders_interval_mins=1,  # Example of purging closed orders for HFT
+        purge_closed_orders_buffer_mins=0,  # Purged orders closed for at least an hour
+        purge_closed_positions_interval_mins=1,  # Example of purging closed positions for HFT
+        purge_closed_positions_buffer_mins=0,  # Purge positions closed for at least an hour
+        purge_account_events_interval_mins=1,  # Example of purging account events for HFT
+        purge_account_events_lookback_mins=0,  # Purge account events occurring more than an hour ago
+        purge_from_database=True,  # Set True with caution
+        graceful_shutdown_on_exception=True,
     ),
-    # cache=CacheConfig(
-    #     # database=DatabaseConfig(),
-    #     timestamps_as_iso8601=True,
-    #     buffer_interval_ms=100,
-    # ),
+    cache=CacheConfig(
+        database=DatabaseConfig(),
+        timestamps_as_iso8601=True,
+        persist_account_events=False,  # Useful for HFT ops where this can quickly accumulate
+        buffer_interval_ms=100,
+    ),
     # message_bus=MessageBusConfig(
     #     database=DatabaseConfig(),
     #     timestamps_as_iso8601=True,
@@ -131,8 +138,8 @@ node = TradingNode(config=config_node)
 
 # Configure your strategy
 strat_config = VolatilityMarketMakerConfig(
-    instrument_id=InstrumentId.from_str(f"{symbol}.BYBIT"),
-    external_order_claims=[InstrumentId.from_str(f"{symbol}.BYBIT")],
+    instrument_id=instrument_id,
+    external_order_claims=[instrument_id],
     bar_type=BarType.from_str(f"{symbol}.BYBIT-1-MINUTE-LAST-EXTERNAL"),
     atr_period=20,
     atr_multiple=3.0,

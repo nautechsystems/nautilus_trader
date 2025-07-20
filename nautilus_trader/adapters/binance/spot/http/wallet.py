@@ -50,7 +50,6 @@ class BinanceSpotTradeFeeHttp(BinanceHttpEndpoint):
             methods,
             base_endpoint + "tradeFee",
         )
-        self._get_obj_resp_decoder = msgspec.json.Decoder(BinanceSpotTradeFee)
         self._get_arr_resp_decoder = msgspec.json.Decoder(list[BinanceSpotTradeFee])
 
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
@@ -75,10 +74,7 @@ class BinanceSpotTradeFeeHttp(BinanceHttpEndpoint):
     async def get(self, params: GetParameters) -> list[BinanceSpotTradeFee]:
         method_type = HttpMethod.GET
         raw = await self._method(method_type, params)
-        if params.symbol is not None:
-            return [self._get_obj_resp_decoder.decode(raw)]
-        else:
-            return self._get_arr_resp_decoder.decode(raw)
+        return self._get_arr_resp_decoder.decode(raw)
 
 
 class BinanceSpotWalletHttpAPI:

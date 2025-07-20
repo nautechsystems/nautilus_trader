@@ -31,6 +31,8 @@
 pub mod book;
 pub mod config;
 mod handlers;
+#[cfg(feature = "defi")]
+pub mod pool;
 
 use std::{
     any::Any,
@@ -46,6 +48,8 @@ use book::{BookSnapshotInfo, BookSnapshotter, BookUpdater};
 use config::DataEngineConfig;
 use handlers::{BarBarHandler, BarQuoteHandler, BarTradeHandler};
 use indexmap::IndexMap;
+#[cfg(feature = "defi")]
+use nautilus_common::messages::defi::{DefiSubscribeCommand, DefiUnsubscribeCommand};
 use nautilus_common::{
     cache::Cache,
     clock::Clock,
@@ -65,6 +69,10 @@ use nautilus_core::{
     },
     datetime::millis_to_nanos,
 };
+#[cfg(feature = "defi")]
+use nautilus_model::defi::Blockchain;
+#[cfg(feature = "defi")]
+use nautilus_model::defi::DefiData;
 use nautilus_model::{
     data::{
         Bar, BarType, Data, DataType, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick,
@@ -80,6 +88,8 @@ use nautilus_model::{
 use nautilus_persistence::backend::catalog::ParquetDataCatalog;
 use ustr::Ustr;
 
+#[cfg(feature = "defi")]
+use crate::engine::pool::PoolUpdater;
 use crate::{
     aggregation::{
         BarAggregator, TickBarAggregator, TimeBarAggregator, ValueBarAggregator,
@@ -108,6 +118,8 @@ pub struct DataEngine {
     buffered_deltas_map: AHashMap<InstrumentId, OrderBookDeltas>,
     msgbus_priority: u8,
     config: DataEngineConfig,
+    #[cfg(feature = "defi")]
+    pool_updaters: AHashMap<InstrumentId, Rc<crate::engine::pool::PoolUpdater>>,
 }
 
 impl DataEngine {
@@ -145,6 +157,8 @@ impl DataEngine {
             buffered_deltas_map: AHashMap::new(),
             msgbus_priority: 10, // High-priority for built-in component
             config,
+            #[cfg(feature = "defi")]
+            pool_updaters: AHashMap::new(),
         }
     }
 
@@ -244,8 +258,8 @@ impl DataEngine {
     }
 
     /// Starts all registered data clients.
-    pub fn start(&self) {
-        for client in self.get_clients() {
+    pub fn start(&mut self) {
+        for client in self.get_clients_mut() {
             if let Err(e) = client.start() {
                 log::error!("{e}");
             }
@@ -253,8 +267,8 @@ impl DataEngine {
     }
 
     /// Stops all registered data clients.
-    pub fn stop(&self) {
-        for client in self.get_clients() {
+    pub fn stop(&mut self) {
+        for client in self.get_clients_mut() {
             if let Err(e) = client.stop() {
                 log::error!("{e}");
             }
@@ -262,8 +276,8 @@ impl DataEngine {
     }
 
     /// Resets all registered data clients to their initial state.
-    pub fn reset(&self) {
-        for client in self.get_clients() {
+    pub fn reset(&mut self) {
+        for client in self.get_clients_mut() {
             if let Err(e) = client.reset() {
                 log::error!("{e}");
             }
@@ -271,8 +285,8 @@ impl DataEngine {
     }
 
     /// Disposes the engine, stopping all clients and cancelling any timers.
-    pub fn dispose(&self) {
-        for client in self.get_clients() {
+    pub fn dispose(&mut self) {
+        for client in self.get_clients_mut() {
             if let Err(e) = client.dispose() {
                 log::error!("{e}");
             }
@@ -356,10 +370,10 @@ impl DataEngine {
             }
 
             // Then check if it matches the default client
-            if let Some(default) = self.default_client.as_mut() {
-                if default.client_id() == *client_id {
-                    return Some(default);
-                }
+            if let Some(default) = self.default_client.as_mut()
+                && default.client_id() == *client_id
+            {
+                return Some(default);
             }
 
             // Unknown explicit client
@@ -447,6 +461,34 @@ impl DataEngine {
         self.collect_subscriptions(|client| &client.subscriptions_instrument_close)
     }
 
+    #[cfg(feature = "defi")]
+    /// Returns all blockchains for which blocks subscriptions exist.
+    #[must_use]
+    pub fn subscribed_blocks(&self) -> Vec<Blockchain> {
+        self.collect_subscriptions(|client| &client.subscriptions_blocks)
+    }
+
+    #[cfg(feature = "defi")]
+    /// Returns all instrument IDs for which pool subscriptions exist.
+    #[must_use]
+    pub fn subscribed_pools(&self) -> Vec<InstrumentId> {
+        self.collect_subscriptions(|client| &client.subscriptions_pools)
+    }
+
+    #[cfg(feature = "defi")]
+    /// Returns all instrument IDs for which swap subscriptions exist.
+    #[must_use]
+    pub fn subscribed_pool_swaps(&self) -> Vec<InstrumentId> {
+        self.collect_subscriptions(|client| &client.subscriptions_pool_swaps)
+    }
+
+    #[cfg(feature = "defi")]
+    /// Returns all instrument IDs for which liquidity update subscriptions exist.
+    #[must_use]
+    pub fn subscribed_pool_liquidity_updates(&self) -> Vec<InstrumentId> {
+        self.collect_subscriptions(|client| &client.subscriptions_pool_liquidity_updates)
+    }
+
     // -- COMMANDS --------------------------------------------------------------------------------
 
     /// Executes a `DataCommand` by delegating to subscribe, unsubscribe, or request handlers.
@@ -457,6 +499,14 @@ impl DataEngine {
             DataCommand::Subscribe(c) => self.execute_subscribe(c),
             DataCommand::Unsubscribe(c) => self.execute_unsubscribe(c),
             DataCommand::Request(c) => self.execute_request(c),
+            #[cfg(feature = "defi")]
+            DataCommand::DefiSubscribe(c) => self.execute_defi_subscribe(c),
+            #[cfg(feature = "defi")]
+            DataCommand::DefiUnsubscribe(c) => self.execute_defi_unsubscribe(c),
+            _ => {
+                log::warn!("Unhandled DataCommand variant: {cmd:?}");
+                Ok(())
+            }
         } {
             log::error!("{e}");
         }
@@ -478,16 +528,57 @@ impl DataEngine {
             _ => {} // Do nothing else
         }
 
-        // Check if client declared as external
-        if let Some(client_id) = cmd.client_id() {
-            if self.external_clients.contains(client_id) {
-                return Ok(());
+        if let Some(client_id) = cmd.client_id()
+            && self.external_clients.contains(client_id)
+        {
+            if self.config.debug {
+                log::debug!("Skipping subscribe command for external client {client_id}: {cmd:?}",);
             }
+            return Ok(());
+        }
+
+        if let Some(client) = self.get_client(cmd.client_id(), cmd.venue()) {
+            client.execute_subscribe(cmd);
+        } else {
+            log::error!(
+                "Cannot handle command: no client found for client_id={:?}, venue={:?}",
+                cmd.client_id(),
+                cmd.venue(),
+            );
+        }
+
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    /// Handles a subscribe command, updating internal state and forwarding to the client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription is invalid (e.g., synthetic instrument for book data),
+    /// or if the underlying client operation fails.
+    pub fn execute_defi_subscribe(&mut self, cmd: &DefiSubscribeCommand) -> anyhow::Result<()> {
+        if let Some(client_id) = cmd.client_id()
+            && self.external_clients.contains(client_id)
+        {
+            if self.config.debug {
+                log::debug!("Skipping defi subscribe for external client {client_id}: {cmd:?}",);
+            }
+            return Ok(());
+        }
+
+        match cmd {
+            DefiSubscribeCommand::Pool(cmd) => self.setup_pool_updater(&cmd.instrument_id),
+            DefiSubscribeCommand::PoolSwaps(cmd) => self.setup_pool_updater(&cmd.instrument_id),
+            DefiSubscribeCommand::PoolLiquidityUpdates(cmd) => {
+                self.setup_pool_updater(&cmd.instrument_id);
+            }
+            _ => {}
         }
 
         // Forward command to client
         if let Some(client) = self.get_client(cmd.client_id(), cmd.venue()) {
-            client.execute_subscribe(cmd);
+            client.execute_defi_subscribe(cmd);
         } else {
             log::error!(
                 "Cannot handle command: no client found for client_id={:?}, venue={:?}",
@@ -513,16 +604,48 @@ impl DataEngine {
             _ => {} // Do nothing else
         }
 
-        // Check if client declared as external
-        if let Some(client_id) = cmd.client_id() {
-            if self.external_clients.contains(client_id) {
-                return Ok(());
+        if let Some(client_id) = cmd.client_id()
+            && self.external_clients.contains(client_id)
+        {
+            if self.config.debug {
+                log::debug!(
+                    "Skipping unsubscribe command for external client {client_id}: {cmd:?}",
+                );
             }
+            return Ok(());
         }
 
-        // Forward command to the client
         if let Some(client) = self.get_client(cmd.client_id(), cmd.venue()) {
             client.execute_unsubscribe(cmd);
+        } else {
+            log::error!(
+                "Cannot handle command: no client found for client_id={:?}, venue={:?}",
+                cmd.client_id(),
+                cmd.venue(),
+            );
+        }
+
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    /// Handles an unsubscribe command, updating internal state and forwarding to the client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying client operation fails.
+    pub fn execute_defi_unsubscribe(&mut self, cmd: &DefiUnsubscribeCommand) -> anyhow::Result<()> {
+        if let Some(client_id) = cmd.client_id()
+            && self.external_clients.contains(client_id)
+        {
+            if self.config.debug {
+                log::debug!("Skipping defi unsubscribe for external client {client_id}: {cmd:?}",);
+            }
+            return Ok(());
+        }
+
+        if let Some(client) = self.get_client(cmd.client_id(), cmd.venue()) {
+            client.execute_defi_unsubscribe(cmd);
         } else {
             log::error!(
                 "Cannot handle command: no client found for client_id={:?}, venue={:?}",
@@ -542,10 +665,13 @@ impl DataEngine {
     /// or if the client fails to process the request.
     pub fn execute_request(&mut self, req: &RequestCommand) -> anyhow::Result<()> {
         // Skip requests for external clients
-        if let Some(cid) = req.client_id() {
-            if self.external_clients.contains(cid) {
-                return Ok(());
+        if let Some(cid) = req.client_id()
+            && self.external_clients.contains(cid)
+        {
+            if self.config.debug {
+                log::debug!("Skipping data request for external client {cid}: {req:?}");
             }
+            return Ok(());
         }
         if let Some(client) = self.get_client(req.client_id(), req.venue()) {
             match req {
@@ -571,6 +697,17 @@ impl DataEngine {
     /// Currently supports `InstrumentAny`; unrecognized types are logged as errors.
     pub fn process(&mut self, data: &dyn Any) {
         // TODO: Eventually these could be added to the `Data` enum? process here for now
+        if let Some(data) = data.downcast_ref::<Data>() {
+            self.process_data(data.clone()); // TODO: Optimize (not necessary if we change handler)
+            return;
+        }
+
+        #[cfg(feature = "defi")]
+        if let Some(data) = data.downcast_ref::<DefiData>() {
+            self.process_defi_data(data.clone()); // TODO: Optimize (not necessary if we change handler)
+            return;
+        }
+
         if let Some(instrument) = data.downcast_ref::<InstrumentAny>() {
             self.handle_instrument(instrument.clone());
         } else {
@@ -590,6 +727,33 @@ impl DataEngine {
             Data::MarkPriceUpdate(mark_price) => self.handle_mark_price(mark_price),
             Data::IndexPriceUpdate(index_price) => self.handle_index_price(index_price),
             Data::InstrumentClose(close) => self.handle_instrument_close(close),
+        }
+    }
+
+    /// Processes DeFi-specific data events.
+    #[cfg(feature = "defi")]
+    pub fn process_defi_data(&mut self, data: DefiData) {
+        match data {
+            DefiData::Block(block) => {
+                let topic = switchboard::get_defi_blocks_topic(block.chain());
+                msgbus::publish(topic, &block as &dyn Any);
+            }
+            DefiData::Pool(pool) => {
+                if let Err(err) = self.cache.borrow_mut().add_pool(pool.clone()) {
+                    log::error!("Failed to add Pool to cache: {err}");
+                }
+
+                let topic = switchboard::get_defi_pool_topic(pool.instrument_id);
+                msgbus::publish(topic, &pool as &dyn Any);
+            }
+            DefiData::PoolSwap(swap) => {
+                let topic = switchboard::get_defi_pool_swaps_topic(swap.instrument_id);
+                msgbus::publish(topic, &swap as &dyn Any);
+            }
+            DefiData::PoolLiquidityUpdate(update) => {
+                let topic = switchboard::get_defi_liquidity_topic(update.instrument_id);
+                msgbus::publish(topic, &update as &dyn Any);
+            }
         }
     }
 
@@ -716,24 +880,24 @@ impl DataEngine {
 
     fn handle_bar(&mut self, bar: Bar) {
         // TODO: Handle additional bar logic
-        if self.config.validate_data_sequence {
-            if let Some(last_bar) = self.cache.as_ref().borrow().bar(&bar.bar_type) {
-                if bar.ts_event < last_bar.ts_event {
-                    log::warn!(
-                        "Bar {bar} was prior to last bar `ts_event` {}",
-                        last_bar.ts_event
-                    );
-                    return; // Bar is out of sequence
-                }
-                if bar.ts_init < last_bar.ts_init {
-                    log::warn!(
-                        "Bar {bar} was prior to last bar `ts_init` {}",
-                        last_bar.ts_init
-                    );
-                    return; // Bar is out of sequence
-                }
-                // TODO: Implement `bar.is_revision` logic
+        if self.config.validate_data_sequence
+            && let Some(last_bar) = self.cache.as_ref().borrow().bar(&bar.bar_type)
+        {
+            if bar.ts_event < last_bar.ts_event {
+                log::warn!(
+                    "Bar {bar} was prior to last bar `ts_event` {}",
+                    last_bar.ts_event
+                );
+                return; // Bar is out of sequence
             }
+            if bar.ts_init < last_bar.ts_init {
+                log::warn!(
+                    "Bar {bar} was prior to last bar `ts_init` {}",
+                    last_bar.ts_init
+                );
+                return; // Bar is out of sequence
+            }
+            // TODO: Implement `bar.is_revision` logic
         }
 
         if let Err(e) = self.cache.as_ref().borrow_mut().add_bar(bar) {
@@ -848,9 +1012,10 @@ impl DataEngine {
                 .set_timer_ns(
                     &timer_name,
                     interval_ns,
-                    start_time_ns.into(),
+                    Some(start_time_ns.into()),
                     None,
                     Some(callback),
+                    None,
                     None,
                 )
                 .expect(FAILED);
@@ -1073,6 +1238,34 @@ impl DataEngine {
         }
 
         Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn setup_pool_updater(&mut self, instrument_id: &InstrumentId) {
+        if self.pool_updaters.contains_key(instrument_id) {
+            return;
+        }
+
+        let updater = Rc::new(PoolUpdater::new(instrument_id, self.cache.clone()));
+        let handler = ShareableMessageHandler(updater.clone());
+
+        // Subscribe to pool swaps and liquidity updates
+        let swap_topic = switchboard::get_defi_pool_swaps_topic(*instrument_id);
+        if !msgbus::is_subscribed(swap_topic.as_str(), handler.clone()) {
+            msgbus::subscribe(
+                swap_topic.into(),
+                handler.clone(),
+                Some(self.msgbus_priority),
+            );
+        }
+
+        let liquidity_topic = switchboard::get_defi_liquidity_topic(*instrument_id);
+        if !msgbus::is_subscribed(liquidity_topic.as_str(), handler.clone()) {
+            msgbus::subscribe(liquidity_topic.into(), handler, Some(self.msgbus_priority));
+        }
+
+        self.pool_updaters.insert(*instrument_id, updater);
+        log::debug!("Created PoolUpdater for instrument ID {instrument_id}");
     }
 
     fn create_bar_aggregator(

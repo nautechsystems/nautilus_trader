@@ -17,9 +17,6 @@ from decimal import Decimal
 
 from libc.stdint cimport uint64_t
 
-from nautilus_trader.accounting.error import AccountBalanceNegative
-from nautilus_trader.accounting.error import AccountMarginExceeded
-
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.accounting.accounts.cash cimport CashAccount
 from nautilus_trader.accounting.accounts.margin cimport MarginAccount
@@ -28,7 +25,9 @@ from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport Logger
 from nautilus_trader.common.component cimport is_logging_initialized
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.rust.model cimport InstrumentClass
 from nautilus_trader.core.rust.model cimport OrderSide
+from nautilus_trader.core.rust.model cimport OrderType
 from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.identifiers cimport PositionId
@@ -113,7 +112,7 @@ cdef class AccountsManager:
         Raises
         ------
         AccountBalanceNegative
-            If a new free balance would become negative.
+            If account type is ``CASH`` and a balance becomes negative.
 
         """
         Condition.not_none(account, "account")
@@ -469,7 +468,6 @@ cdef class AccountsManager:
             self._log.error(f"Cannot complete transaction: no balance for {pnl.currency}")
             return False
 
-        # Calculate new balance
         cdef AccountBalance new_balance = AccountBalance(
             total=balance.total.add(pnl),
             locked=balance.locked,
@@ -525,27 +523,41 @@ cdef class AccountsManager:
                     free=pnl,
                 )
             else:
-                new_total = balance.total.as_decimal() + pnl.as_decimal()
-                new_free = balance.free.as_decimal() + pnl.as_decimal()
-                total = Money(new_total, pnl.currency)
-                free = Money(new_free, pnl.currency)
-                if new_total < 0:
-                    raise AccountBalanceNegative(
-                        balance=total.as_decimal(),
-                        currency=pnl.currency,
-                    )
-                if new_free < 0:
-                    raise AccountMarginExceeded(
-                        balance=total.as_decimal(),
-                        margin=balance.locked.as_decimal(),
-                        currency=pnl.currency,
-                    )
+                new_total = balance.total
+                new_free = balance.free
+                new_locked = balance.locked
 
-                # Calculate new balance
+                new_total = new_total.add(pnl)
+                instrument = self._cache.instrument(fill._instrument_id)
+                if (
+                    pnl.is_positive()
+                    or fill.order_type == OrderType.MARKET
+                    or instrument.instrument_class in [InstrumentClass.SPORTS_BETTING]
+                ):
+                    new_free = new_free.add(pnl)
+                else:
+                    new_locked = new_locked.add(pnl)
+
+                if apply_commission and pnl.currency == commission.currency:
+                    new_total = new_total.sub(commission)
+                    new_free = new_free.sub(commission)
+                    # Ensure we only apply commission once
+                    apply_commission = False
+
+                # TODO: Until the platform can accurately track account equity and
+                # cross-margin requirements this condition check is inaccurate and
+                # causes issues in live trading with more complex margin requirements.
+                # if new_free < 0:
+                #     raise AccountMarginExceeded(
+                #         balance=total.as_decimal(),
+                #         margin=balance.locked.as_decimal(),
+                #         currency=pnl.currency,
+                #     )
+
                 new_balance = AccountBalance(
-                    total=total,
-                    locked=balance.locked,
-                    free=free,
+                    total=new_total,
+                    locked=new_locked,
+                    free=new_free,
                 )
 
             balances.append(new_balance)

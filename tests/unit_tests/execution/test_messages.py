@@ -13,22 +13,33 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from datetime import datetime
+
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import BatchCancelOrders
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
+from nautilus_trader.execution.messages import GenerateExecutionMassStatus
+from nautilus_trader.execution.messages import GenerateFillReports
+from nautilus_trader.execution.messages import GenerateOrderStatusReport
+from nautilus_trader.execution.messages import GenerateOrderStatusReports
+from nautilus_trader.execution.messages import GeneratePositionStatusReports
 from nautilus_trader.execution.messages import ModifyOrder
+from nautilus_trader.execution.messages import QueryAccount
 from nautilus_trader.execution.messages import QueryOrder
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecAlgorithmId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -421,3 +432,265 @@ class TestCommands:
             repr(command)
             == f"QueryOrder(client_id=SIM, trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=None, command_id={uuid}, ts_init=0)"  # noqa
         )
+
+    def test_query_account_command_to_from_dict_and_str_repr(self):
+        # Arrange
+        uuid = UUID4()
+
+        command = QueryAccount(
+            trader_id=TraderId("TRADER-001"),
+            account_id=AccountId("ACCOUNT-001"),
+            command_id=uuid,
+            client_id=ClientId("BROKER"),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act, Assert
+        assert QueryAccount.from_dict(QueryAccount.to_dict(command)) == command
+        assert (
+            str(command)
+            == f"QueryAccount(client_id=BROKER, trader_id=TRADER-001, account_id=ACCOUNT-001, command_id={uuid}, ts_init=0)"
+        )
+        assert (
+            repr(command)
+            == f"QueryAccount(client_id=BROKER, trader_id=TRADER-001, account_id=ACCOUNT-001, command_id={uuid}, ts_init=0)"
+        )
+
+    def test_generate_order_status_report_command_to_from_dict_and_str_repr(self):
+        # Arrange
+        uuid = UUID4()
+
+        command = GenerateOrderStatusReport(
+            instrument_id=AUDUSD_SIM.id,
+            client_order_id=ClientOrderId("O-123456"),
+            venue_order_id=VenueOrderId("001"),
+            command_id=uuid,
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act, Assert
+        assert (
+            GenerateOrderStatusReport.from_dict(GenerateOrderStatusReport.to_dict(command))
+            == command
+        )
+        assert (
+            repr(command)
+            == f"GenerateOrderStatusReport(instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=001, command_id={uuid}, ts_init=0)"
+        )
+
+    def test_generate_order_status_report_command_with_none_venue_order_id_to_from_dict_and_str_repr(
+        self,
+    ):
+        # Arrange
+        uuid = UUID4()
+
+        command = GenerateOrderStatusReport(
+            instrument_id=AUDUSD_SIM.id,
+            client_order_id=ClientOrderId("O-123456"),
+            venue_order_id=None,
+            command_id=uuid,
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act, Assert
+        assert (
+            GenerateOrderStatusReport.from_dict(GenerateOrderStatusReport.to_dict(command))
+            == command
+        )
+        assert (
+            repr(command)
+            == f"GenerateOrderStatusReport(instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=None, command_id={uuid}, ts_init=0)"
+        )
+
+    def test_generate_order_status_reports_command_to_from_dict_and_str_repr(self):
+        # Arrange
+        uuid = UUID4()
+        start_time = datetime(2023, 1, 1, 12, 0, 0)
+        end_time = datetime(2023, 1, 1, 18, 0, 0)
+
+        command = GenerateOrderStatusReports(
+            instrument_id=AUDUSD_SIM.id,
+            start=start_time,
+            end=end_time,
+            open_only=True,
+            command_id=uuid,
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act, Assert
+        assert (
+            GenerateOrderStatusReports.from_dict(GenerateOrderStatusReports.to_dict(command))
+            == command
+        )
+        assert (
+            repr(command)
+            == f"GenerateOrderStatusReports(instrument_id=AUD/USD.SIM, start={start_time}, end={end_time}, open_only=True, command_id={uuid}, ts_init=0)"  # noqa
+        )
+
+    def test_generate_order_status_reports_command_with_none_instrument_id_to_from_dict_and_str_repr(
+        self,
+    ):
+        # Arrange
+        uuid = UUID4()
+        start_time = datetime(2023, 1, 1, 12, 0, 0)
+        end_time = datetime(2023, 1, 1, 18, 0, 0)
+
+        command = GenerateOrderStatusReports(
+            instrument_id=None,
+            start=start_time,
+            end=end_time,
+            open_only=False,
+            command_id=uuid,
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act, Assert
+        assert (
+            GenerateOrderStatusReports.from_dict(GenerateOrderStatusReports.to_dict(command))
+            == command
+        )
+        assert (
+            repr(command)
+            == f"GenerateOrderStatusReports(instrument_id=None, start={start_time}, end={end_time}, open_only=False, command_id={uuid}, ts_init=0)"
+        )
+
+    def test_generate_fill_reports_command_to_from_dict_and_str_repr(self):
+        # Arrange
+        uuid = UUID4()
+        start_time = datetime(2023, 1, 1, 12, 0, 0)
+        end_time = datetime(2023, 1, 1, 18, 0, 0)
+
+        command = GenerateFillReports(
+            instrument_id=AUDUSD_SIM.id,
+            venue_order_id=VenueOrderId("001"),
+            start=start_time,
+            end=end_time,
+            command_id=uuid,
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act, Assert
+        assert GenerateFillReports.from_dict(GenerateFillReports.to_dict(command)) == command
+        assert (
+            repr(command)
+            == f"GenerateFillReports(instrument_id=AUD/USD.SIM, venue_order_id=001, start={start_time}, end={end_time}, command_id={uuid}, ts_init=0)"
+        )
+
+    def test_generate_fill_reports_command_with_none_venue_order_id_to_from_dict_and_str_repr(self):
+        # Arrange
+        uuid = UUID4()
+        start_time = datetime(2023, 1, 1, 12, 0, 0)
+        end_time = datetime(2023, 1, 1, 18, 0, 0)
+
+        command = GenerateFillReports(
+            instrument_id=AUDUSD_SIM.id,
+            venue_order_id=None,
+            start=start_time,
+            end=end_time,
+            command_id=uuid,
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act, Assert
+        assert GenerateFillReports.from_dict(GenerateFillReports.to_dict(command)) == command
+        assert (
+            repr(command)
+            == f"GenerateFillReports(instrument_id=AUD/USD.SIM, venue_order_id=None, start={start_time}, end={end_time}, command_id={uuid}, ts_init=0)"  # noqa
+        )
+
+    def test_generate_position_status_reports_command_to_from_dict_and_str_repr(self):
+        # Arrange
+        uuid = UUID4()
+        start_time = datetime(2023, 1, 1, 12, 0, 0)
+        end_time = datetime(2023, 1, 1, 18, 0, 0)
+
+        command = GeneratePositionStatusReports(
+            instrument_id=AUDUSD_SIM.id,
+            start=start_time,
+            end=end_time,
+            command_id=uuid,
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act, Assert
+        assert (
+            GeneratePositionStatusReports.from_dict(GeneratePositionStatusReports.to_dict(command))
+            == command
+        )
+        assert (
+            repr(command)
+            == f"GeneratePositionStatusReports(instrument_id=AUD/USD.SIM, start={start_time}, end={end_time}, command_id={uuid}, ts_init=0)"
+        )
+
+    def test_generate_position_status_reports_command_with_none_instrument_id_to_from_dict_and_str_repr(
+        self,
+    ):
+        # Arrange
+        uuid = UUID4()
+        start_time = datetime(2023, 1, 1, 12, 0, 0)
+        end_time = datetime(2023, 1, 1, 18, 0, 0)
+
+        command = GeneratePositionStatusReports(
+            instrument_id=None,
+            start=start_time,
+            end=end_time,
+            command_id=uuid,
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act, Assert
+        assert (
+            GeneratePositionStatusReports.from_dict(GeneratePositionStatusReports.to_dict(command))
+            == command
+        )
+        assert (
+            repr(command)
+            == f"GeneratePositionStatusReports(instrument_id=None, start={start_time}, end={end_time}, command_id={uuid}, ts_init=0)"
+        )
+
+    def test_generate_execution_mass_status_command_to_from_dict_and_str_repr(self):
+        # Arrange
+        uuid = UUID4()
+
+        command = GenerateExecutionMassStatus(
+            trader_id=TraderId("TRADER-001"),
+            client_id=ClientId("BROKER-001"),
+            venue=None,
+            command_id=uuid,
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act, Assert
+        assert (
+            GenerateExecutionMassStatus.from_dict(GenerateExecutionMassStatus.to_dict(command))
+            == command
+        )
+        assert (
+            repr(command)
+            == f"GenerateExecutionMassStatus(trader_id=TRADER-001, client_id=BROKER-001, venue=None, command_id={uuid}, ts_init=0)"
+        )
+
+    def test_generate_execution_mass_status_command_with_params_to_from_dict_and_str_repr(self):
+        # Arrange
+        uuid = UUID4()
+        params = {"custom_param": "value"}
+
+        command = GenerateExecutionMassStatus(
+            trader_id=TraderId("TRADER-001"),
+            client_id=ClientId("BROKER-002"),
+            venue=Venue("NYMEX"),
+            command_id=uuid,
+            ts_init=self.clock.timestamp_ns(),
+            params=params,
+        )
+
+        # Act, Assert
+        assert (
+            GenerateExecutionMassStatus.from_dict(GenerateExecutionMassStatus.to_dict(command))
+            == command
+        )
+        assert (
+            repr(command)
+            == f"GenerateExecutionMassStatus(trader_id=TRADER-001, client_id=BROKER-002, venue=NYMEX, command_id={uuid}, ts_init=0)"
+        )
+        assert command.params == params

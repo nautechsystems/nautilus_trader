@@ -14,7 +14,6 @@
 // -------------------------------------------------------------------------------------------------
 
 mod common;
-
 use std::{cell::RefCell, num::NonZeroUsize, rc::Rc};
 
 use common::mocks::MockDataClient;
@@ -69,10 +68,18 @@ use nautilus_data::client::DataClientAdapter;
 use nautilus_model::{
     data::{BarType, DataType},
     enums::BookType,
-    identifiers::{ClientId, Venue},
+    identifiers::{ClientId, InstrumentId, Venue},
     instruments::stubs::audusd_sim,
 };
 use rstest::{fixture, rstest};
+#[cfg(feature = "defi")]
+use {
+    nautilus_common::messages::defi::{
+        DefiSubscribeCommand, DefiUnsubscribeCommand, SubscribeBlocks, SubscribePoolSwaps,
+        UnsubscribeBlocks, UnsubscribePoolSwaps,
+    },
+    nautilus_model::defi::Blockchain,
+};
 
 #[fixture]
 fn clock() -> Rc<RefCell<TestClock>> {
@@ -1614,4 +1621,208 @@ fn test_request_bars(
     let rec = recorder.borrow();
     assert_eq!(rec.len(), 1);
     assert_eq!(rec[0], DataCommand::Request(RequestCommand::Bars(req)));
+}
+
+// ------------------------------------------------------------------------------------------------
+// DeFi subscription tests
+// ------------------------------------------------------------------------------------------------
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_defi_blocks_subscription(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
+    let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+
+    let blockchain = Blockchain::Ethereum;
+
+    let sub = DefiSubscribeCommand::Blocks(SubscribeBlocks {
+        chain: blockchain,
+        client_id: Some(client_id),
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        params: None,
+    });
+    adapter.execute_defi_subscribe(&sub);
+    assert!(adapter.subscriptions_blocks.contains(&blockchain));
+
+    // Idempotency check
+    adapter.execute_defi_subscribe(&sub);
+    assert_eq!(adapter.subscriptions_blocks.len(), 1);
+
+    let unsub = DefiUnsubscribeCommand::Blocks(UnsubscribeBlocks {
+        chain: blockchain,
+        client_id: Some(client_id),
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        params: None,
+    });
+    adapter.execute_defi_unsubscribe(&unsub);
+    assert!(!adapter.subscriptions_blocks.contains(&blockchain));
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_defi_pool_swaps_subscription(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
+    let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+
+    let instrument_id = InstrumentId::from("WETH/USDT-3000.UniswapV3:Arbitrum");
+
+    let sub = DefiSubscribeCommand::PoolSwaps(SubscribePoolSwaps {
+        instrument_id,
+        client_id: Some(client_id),
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        params: None,
+    });
+    adapter.execute_defi_subscribe(&sub);
+    assert!(adapter.subscriptions_pool_swaps.contains(&instrument_id));
+
+    // Idempotency check
+    adapter.execute_defi_subscribe(&sub);
+    assert_eq!(adapter.subscriptions_pool_swaps.len(), 1);
+
+    let unsub = DefiUnsubscribeCommand::PoolSwaps(UnsubscribePoolSwaps {
+        instrument_id,
+        client_id: Some(client_id),
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        params: None,
+    });
+    adapter.execute_defi_unsubscribe(&unsub);
+    assert!(!adapter.subscriptions_pool_swaps.contains(&instrument_id));
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_defi_blocks_unsubscribe_noop(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
+    let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+
+    // Unsubscribe without prior subscribe should be no-op
+    let blockchain = Blockchain::Ethereum;
+    let unsub = DefiUnsubscribeCommand::Blocks(UnsubscribeBlocks {
+        chain: blockchain,
+        client_id: Some(client_id),
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        params: None,
+    });
+    adapter.execute_defi_unsubscribe(&unsub);
+    assert!(!adapter.subscriptions_blocks.contains(&blockchain));
+    assert!(adapter.subscriptions_blocks.is_empty());
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_defi_blocks_unsubscribe_idempotent(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
+    let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+
+    // Subscribe then unsubscribe twice
+    let blockchain = Blockchain::Ethereum;
+    let sub = DefiSubscribeCommand::Blocks(SubscribeBlocks {
+        chain: blockchain,
+        client_id: Some(client_id),
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        params: None,
+    });
+    adapter.execute_defi_subscribe(&sub);
+
+    let unsub = DefiUnsubscribeCommand::Blocks(UnsubscribeBlocks {
+        chain: blockchain,
+        client_id: Some(client_id),
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        params: None,
+    });
+    adapter.execute_defi_unsubscribe(&unsub);
+    adapter.execute_defi_unsubscribe(&unsub);
+
+    // Expect adapter state cleared and no panic on second unsubscribe
+    assert!(!adapter.subscriptions_blocks.contains(&blockchain));
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_defi_pool_swaps_unsubscribe_noop(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
+    let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+
+    let instrument_id = InstrumentId::from("WETH/USDT-3000.UniswapV3:Arbitrum");
+
+    // Unsubscribe without prior subscribe should be no-op
+    let unsub = DefiUnsubscribeCommand::PoolSwaps(UnsubscribePoolSwaps {
+        instrument_id,
+        client_id: Some(client_id),
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        params: None,
+    });
+    adapter.execute_defi_unsubscribe(&unsub);
+    assert!(!adapter.subscriptions_pool_swaps.contains(&instrument_id));
+    assert!(adapter.subscriptions_pool_swaps.is_empty());
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_defi_pool_swaps_unsubscribe_idempotent(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
+    let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+
+    let instrument_id = InstrumentId::from("WETH/USDT-3000.UniswapV3:Arbitrum");
+
+    // Subscribe then unsubscribe twice
+    let sub = DefiSubscribeCommand::PoolSwaps(SubscribePoolSwaps {
+        instrument_id,
+        client_id: Some(client_id),
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        params: None,
+    });
+    adapter.execute_defi_subscribe(&sub);
+
+    let unsub = DefiUnsubscribeCommand::PoolSwaps(UnsubscribePoolSwaps {
+        instrument_id,
+        client_id: Some(client_id),
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        params: None,
+    });
+    adapter.execute_defi_unsubscribe(&unsub);
+    adapter.execute_defi_unsubscribe(&unsub);
+
+    // Expect adapter state cleared and no panic on second unsubscribe
+    assert!(!adapter.subscriptions_pool_swaps.contains(&instrument_id));
 }

@@ -146,10 +146,12 @@ See also the `LiveExecEngineConfig` [API Reference](../api_reference/config#clas
 
 **Purpose**: Ensures that the system state remains consistent with the trading venue by recovering any missed events, such as order and position status updates.
 
-| Setting                        | Default | Description                                                                                       |
-|--------------------------------|---------|---------------------------------------------------------------------------------------------------|
-| `reconciliation`               | True    | Activates reconciliation at startup, aligning the system's internal state with the venue's state. |
-| `reconciliation_lookback_mins` | None    | Specifies how far back (in minutes) the system requests past events to reconcile uncached state.  |
+| Setting                         | Default | Description                                                                                        |
+|---------------------------------|---------|----------------------------------------------------------------------------------------------------|
+| `reconciliation`                | True    | Activates reconciliation at startup, aligning the system's internal state with the venue's state.  |
+| `reconciliation_lookback_mins`  | None    | Specifies how far back (in minutes) the system requests past events to reconcile uncached state.   |
+| `reconciliation_instrument_ids` | None    | An include list of specific instrument IDs to consider for reconciliation.                         |
+| `filtered_client_order_ids`     | None    | A list of client order IDs to filter from reconciliation (useful when the venue holds duplicates). |
 
 :::info
 See also [Execution reconciliation](../concepts/execution#execution-reconciliation) for further details.
@@ -180,7 +182,7 @@ The following additional options provide further control over execution behavior
 
 | Setting                            | Default | Description                                                                                                |
 |------------------------------------|---------|------------------------------------------------------------------------------------------------------------|
-| `generate_missing_orders`          | True    | If `MARKET` order events will be generated during reconciliation to align position discrepancies.          |
+| `generate_missing_orders`          | True    | If `MARKET` order events will be generated during reconciliation to align position discrepancies. These orders use the strategy ID `INTERNAL-DIFF`.          |
 | `snapshot_orders`                  | False   | If order snapshots should be taken on order events.                                                        |
 | `snapshot_positions`               | False   | If position snapshots should be taken on position events.                                                  |
 | `snapshot_positions_interval_secs` | None    | The interval (seconds) between position snapshots when enabled.                                            |
@@ -217,12 +219,13 @@ This ensures the trading node maintains a consistent execution state even under 
 
 | Setting                                | Default | Description                                                                                                                             |
 |----------------------------------------|---------|-----------------------------------------------------------------------------------------------------------------------------------------|
-| `purge_closed_orders_interval_mins`    | None    | Sets how frequently (in minutes) closed orders are purged from memory. Recommended: 10-15 minutes. Does not affect database records. |
-| `purge_closed_orders_buffer_mins`      | None    | Specifies how long (in minutes) an order must have been closed before purging. Recommended: 60 minutes to ensure processes complete. |
+| `purge_closed_orders_interval_mins`    | None    | Sets how frequently (in minutes) closed orders are purged from memory. Recommended: 10-15 minutes. Does not affect database records.    |
+| `purge_closed_orders_buffer_mins`      | None    | Specifies how long (in minutes) an order must have been closed before purging. Recommended: 60 minutes to ensure processes complete.    |
 | `purge_closed_positions_interval_mins` | None    | Sets how frequently (in minutes) closed positions are purged from memory. Recommended: 10-15 minutes. Does not affect database records. |
-| `purge_closed_positions_buffer_mins`   | None    | Specifies how long (in minutes) a position must have been closed before purging. Recommended: 60 minutes to ensure processes complete. |
-| `purge_account_events_interval_mins`   | None    | Sets how frequently (in minutes) account events are purged from memory. Recommended: 10-15 minutes. Does not affect database records. |
-| `purge_account_events_lookback_mins`   | None    | Specifies how long (in minutes) an account event must have occurred before purging. Recommended: 60 minutes. |
+| `purge_closed_positions_buffer_mins`   | None    | Specifies how long (in minutes) a position must have been closed before purging. Recommended: 60 minutes to ensure processes complete.  |
+| `purge_account_events_interval_mins`   | None    | Sets how frequently (in minutes) account events are purged from memory. Recommended: 10-15 minutes. Does not affect database records.   |
+| `purge_account_events_lookback_mins`   | None    | Specifies how long (in minutes) an account event must have occurred before purging. Recommended: 60 minutes.                            |
+| `purge_from_database`                  | False   | If enabled, purge operations will also delete data from the backing database (Redis/PostgreSQL), not just memory. **Use with caution**. |
 
 By configuring these memory management settings appropriately, you can prevent memory usage from growing
 indefinitely during long-running / HFT sessions while ensuring that recently closed orders, closed positions, and account events
@@ -295,13 +298,8 @@ This process is primarily applicable to live trading, which is why only the `Liv
 
 There are two main scenarios for reconciliation:
 
-- **Previous cached execution state**: Where cached execution state exists, information from reports is used to generate missing events to align the state
-- **No previous cached execution state**: Where there is no cached state, all orders and positions that exist externally are generated from scratch
-
-### Common reconciliation issues
-
-- **Missing trade reports**: Some venues filter out older trades, causing incomplete reconciliation. Increase `reconciliation_lookback_mins` or ensure all events are cached locally.
-- **Position mismatches**: If external orders predate the lookback window, positions may not align. Flatten the account before restarting the system to reset state.
+- **Previous cached execution state**: Where cached execution state exists, information from reports is used to generate missing events to align the state.
+- **No previous cached execution state**: Where there is no cached state, all orders and positions that exist externally are generated from scratch.
 
 :::tip
 **Best practice**: Persist all execution events to the cache database to minimize reliance on venue history, ensuring full recovery even with short lookback windows.
@@ -331,6 +329,11 @@ reconciliation using the `external_order_claims` configuration parameter.
 This is useful in situations where, at system start, there is no cached state or it is desirable for
 a strategy to resume its operations and continue managing existing open orders at the venue for an instrument.
 
+:::note
+Orders generated with strategy ID `INTERNAL-DIFF` during position reconciliation cannot be claimed by strategies
+via `external_order_claims`. These orders are generated internally to align position discrepancies and should not be managed by user strategies.
+:::
+
 :::info
 See the `LiveExecEngineConfig` [API Reference](../api_reference/config#class-liveexecengineconfig) for further details.
 :::
@@ -347,21 +350,32 @@ methods to produce an execution mass status:
 The system state is then reconciled with the reports, which represent external "reality":
 
 - **Duplicate Check**:
-  - Check for duplicate order IDs and trade IDs.
+  - Check for duplicate client order IDs and trade IDs.
+  - Duplicate client order IDs cause reconciliation failure to prevent state corruption.
 - **Order Reconciliation**:
   - Generate and apply events necessary to update orders from any cached state to the current state.
   - If any trade reports are missing, inferred `OrderFilled` events are generated.
   - If any client order ID is not recognized or an order report lacks a client order ID, external order events are generated.
+  - Fill report data consistency is verified using tolerance-based comparisons for price and commission differences.
 - **Position Reconciliation**:
-  - Ensure the net position per instrument matches the position reports returned from the venue.
+  - Ensure the net position per instrument matches the position reports returned from the venue using instrument precision handling.
   - If the position state resulting from order reconciliation does not match the external state, external order events will be generated to resolve discrepancies.
+  - When `generate_missing_orders` is enabled (default: True), `MARKET` orders are generated with strategy ID `INTERNAL-DIFF` to align position discrepancies discovered during reconciliation.
+  - Zero quantity differences after precision rounding are handled gracefully.
+- **Exception Handling**:
+  - Individual adapter failures do not abort the entire reconciliation process.
+  - Missing order status reports are handled gracefully when fill reports arrive first.
 
 If reconciliation fails, the system will not continue to start, and an error will be logged.
 
-:::tip
-The current reconciliation procedure can experience state mismatches if the lookback window is
-misconfigured or if the venue omits certain order or trade reports due to filter conditions.
+### Common reconciliation issues
 
-If you encounter reconciliation issues, drop any cached state or ensure the account is flat at
-system shutdown and startup.
+- **Missing trade reports**: Some venues filter out older trades, causing incomplete reconciliation. Increase `reconciliation_lookback_mins` or ensure all events are cached locally.
+- **Position mismatches**: If external orders predate the lookback window, positions may not align. Flatten the account before restarting the system to reset state.
+- **Duplicate order IDs**: Duplicate client order IDs in mass status reports will cause reconciliation failure. Ensure venue data integrity or contact support.
+- **Precision differences**: Small decimal differences in position quantities are handled automatically using instrument precision, but large discrepancies may indicate missing orders.
+- **Out-of-order reports**: Fill reports arriving before order status reports are deferred until order state is available.
+
+:::tip
+For persistent reconciliation issues, consider dropping cached state or flattening accounts before system restart.
 :::

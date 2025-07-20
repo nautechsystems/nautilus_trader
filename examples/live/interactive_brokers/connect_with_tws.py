@@ -52,8 +52,8 @@ instrument_provider = InteractiveBrokersInstrumentProviderConfig(
             "SPY.ARCA",
             "AAPL.NASDAQ",
             "V.NYSE",
-            "CLZ28.NYMEX",
-            "ESZ28.CME",
+            "CLZ8.NYMEX",
+            "ESZ8.CME",
         ],
     ),
 )

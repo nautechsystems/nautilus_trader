@@ -18,10 +18,7 @@ use nautilus_model::identifiers::TraderId;
 use sysinfo::System;
 use ustr::Ustr;
 
-use crate::{
-    enums::{LogColor, LogLevel},
-    logging::logger::log,
-};
+use crate::{enums::LogColor, logging::log_info};
 
 #[rustfmt::skip]
 pub fn log_header(trader_id: TraderId, machine_id: &str, instance_id: UUID4, component: Ustr) {
@@ -91,22 +88,28 @@ fn log_rust_versioning(c: Ustr) {
 #[cfg(feature = "python")]
 #[rustfmt::skip]
 fn log_python_versioning(c: Ustr) {
+    if !python_available() {
+        return;
+    }
+
     let package = "nautilus_trader";
     header_line(c, &format!("{package}: {}", python_package_version(package)));
     header_line(c, &format!("python: {}", python_version()));
-    let package = "numpy";
-    header_line(c, &format!("{package}: {}", python_package_version(package)));
-    let package = "pandas";
-    header_line(c, &format!("{package}: {}", python_package_version(package)));
-    let package = "msgspec";
-    header_line(c, &format!("{package}: {}", python_package_version(package)));
-    let package = "pyarrow";
-    header_line(c, &format!("{package}: {}", python_package_version(package)));
-    let package = "pytz";
-    header_line(c, &format!("{package}: {}", python_package_version(package)));
-    let package = "uvloop";
-    header_line(c, &format!("{package}: {}", python_package_version(package)));
+
+    for package in ["numpy", "pandas", "msgspec", "pyarrow", "pytz", "uvloop"] {
+        header_line(c, &format!("{package}: {}", python_package_version(package)));
+    }
+
     header_sepr(c, "=================================================================");
+}
+
+#[cfg(feature = "python")]
+#[inline]
+#[allow(unsafe_code)]
+fn python_available() -> bool {
+    // SAFETY: `Py_IsInitialized` reads a flag and is safe to call at any
+    // time, even before the interpreter has been started.
+    unsafe { pyo3::ffi::Py_IsInitialized() != 0 }
 }
 
 #[rustfmt::skip]
@@ -140,11 +143,11 @@ pub fn log_sysinfo(component: Ustr) {
 }
 
 fn header_sepr(c: Ustr, s: &str) {
-    log(LogLevel::Info, LogColor::Cyan, c, s);
+    log_info!("{}", s, color = LogColor::Cyan, component = c.as_str());
 }
 
 fn header_line(c: Ustr, s: &str) {
-    log(LogLevel::Info, LogColor::Normal, c, s);
+    log_info!("{}", s, component = c.as_str());
 }
 
 fn bytes_to_gib(b: u64) -> f64 {

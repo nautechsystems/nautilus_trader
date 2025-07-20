@@ -17,6 +17,7 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.common.component cimport Clock
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
@@ -73,6 +74,10 @@ cdef class ClientOrderIdGenerator(IdentifierGenerator):
         The clock for the generator.
     initial_count : int
         The initial count for the generator.
+    use_uuids : bool, default False
+        If UUID4's should be used for client order ID values.
+    use_hyphens : bool, default True
+        If hyphens should be used in generated client order ID values.
 
     Raises
     ------
@@ -86,12 +91,16 @@ cdef class ClientOrderIdGenerator(IdentifierGenerator):
         StrategyId strategy_id not None,
         Clock clock not None,
         int initial_count=0,
+        bint use_uuids=False,
+        bint use_hyphens=True,
     ):
         Condition.not_negative_int(initial_count, "initial_count")
         super().__init__(trader_id, clock)
 
         self._id_tag_strategy = strategy_id.get_tag()
         self.count = initial_count
+        self.use_uuids = use_uuids
+        self.use_hyphens = use_hyphens
 
     cpdef void set_count(self, int count):
         """
@@ -114,15 +123,34 @@ cdef class ClientOrderIdGenerator(IdentifierGenerator):
         ClientOrderId
 
         """
-        self.count += 1
+        cdef str client_order_id_value
+        cdef str datetime_tag
 
-        return ClientOrderId(
-            f"O-"
-            f"{self._get_datetime_tag()}-"
-            f"{self._id_tag_trader}-"
-            f"{self._id_tag_strategy}-"
-            f"{self.count}",
-        )
+        if self.use_uuids:
+            client_order_id_value = UUID4().value
+            if not self.use_hyphens:
+                client_order_id_value = client_order_id_value.replace("-", "")
+        else:
+            self.count += 1
+            if not self.use_hyphens:
+                datetime_tag = self._get_datetime_tag().replace("-", "")
+                client_order_id_value = (
+                    f"O"
+                    f"{datetime_tag}"
+                    f"{self._id_tag_trader}"
+                    f"{self._id_tag_strategy}"
+                    f"{self.count}"
+                )
+            else:
+                client_order_id_value = (
+                    f"O-"
+                    f"{self._get_datetime_tag()}-"
+                    f"{self._id_tag_trader}-"
+                    f"{self._id_tag_strategy}-"
+                    f"{self.count}"
+                )
+
+        return ClientOrderId(client_order_id_value)
 
     cpdef void reset(self):
         """

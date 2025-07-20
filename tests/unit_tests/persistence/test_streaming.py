@@ -78,7 +78,7 @@ class TestPersistenceStreaming:
 
         # TODO: Backtest needs to be reconfigured to use either deltas or trades
         expected = {
-            "AccountState": 386,
+            "AccountState": 387,
             "BettingInstrument": 1,
             "ComponentStateChanged": 27,
             "OrderAccepted": 192,
@@ -432,7 +432,7 @@ class TestPersistenceStreaming:
 
         # Assert
         expected = {
-            "AccountState": 386,
+            "AccountState": 387,
             "BettingInstrument": 1,
             "ComponentStateChanged": 27,
             "OrderAccepted": 192,

@@ -128,7 +128,17 @@ impl BookLevel {
     pub fn exposure_raw(&self) -> QuantityRaw {
         self.orders
             .values()
-            .map(|o| ((o.price.as_f64() * o.size.as_f64()) * FIXED_SCALAR) as QuantityRaw)
+            .map(|o| {
+                let exposure_f64 = o.price.as_f64() * o.size.as_f64();
+                debug_assert!(
+                    exposure_f64.is_finite(),
+                    "Exposure calculation resulted in non-finite value for order {}: price={}, size={}",
+                    o.order_id,
+                    o.price,
+                    o.size
+                );
+                (exposure_f64 * FIXED_SCALAR) as QuantityRaw
+            })
             .sum()
     }
 
@@ -142,6 +152,11 @@ impl BookLevel {
     /// Adds an order to this price level. Order must match the level's price.
     pub fn add(&mut self, order: BookOrder) {
         debug_assert_eq!(order.price, self.price.value);
+        debug_assert!(
+            order.size.is_positive(),
+            "Order size must be positive: {}",
+            order.size
+        );
 
         self.orders.insert(order.order_id, order);
     }
@@ -152,8 +167,14 @@ impl BookLevel {
         debug_assert_eq!(order.price, self.price.value);
 
         if order.size.raw == 0 {
+            // Updating non-existent order to zero size is a no-op, which is valid
             self.orders.shift_remove(&order.order_id);
         } else {
+            debug_assert!(
+                order.size.is_positive(),
+                "Order size must be positive: {}",
+                order.size
+            );
             self.orders.insert(order.order_id, order);
         }
     }

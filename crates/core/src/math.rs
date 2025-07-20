@@ -13,6 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Mathematical functions and interpolation utilities.
+//!
+//! This module provides essential mathematical operations for quantitative trading,
+//! including linear and quadratic interpolation functions commonly used in financial
+//! data processing and analysis.
+
 /// Calculates the interpolation weight between `x1` and `x2` for a value `x`.
 ///
 /// The returned weight `w` satisfies `y = (1 - w) * y1 + w * y2` when
@@ -31,12 +37,20 @@ pub fn linear_weight(x1: f64, x2: f64, x: f64) -> f64 {
     (x - x1) / (x2 - x1)
 }
 
+/// Performs linear interpolation using a weight factor.
+///
+/// Given ordinates `y1` and `y2` and a weight `x1_diff`, computes the
+/// interpolated value using the formula: `y1 + x1_diff * (y2 - y1)`.
 #[inline]
 #[must_use]
 pub fn linear_weighting(y1: f64, y2: f64, x1_diff: f64) -> f64 {
     x1_diff.mul_add(y2 - y1, y1)
 }
 
+/// Finds the position for interpolation in a sorted array.
+///
+/// Returns the index of the largest element in `xs` that is less than `x`,
+/// clamped to the valid range `[0, xs.len() - 1]`.
 #[inline]
 #[must_use]
 pub fn pos_search(x: f64, xs: &[f64]) -> usize {
@@ -150,14 +164,145 @@ mod tests {
     use super::*;
 
     #[rstest]
+    #[case(0.0, 10.0, 5.0, 0.5)]
+    #[case(1.0, 3.0, 2.0, 0.5)]
+    #[case(0.0, 1.0, 0.25, 0.25)]
+    #[case(0.0, 1.0, 0.75, 0.75)]
+    fn test_linear_weight_valid_cases(
+        #[case] x1: f64,
+        #[case] x2: f64,
+        #[case] x: f64,
+        #[case] expected: f64,
+    ) {
+        let result = linear_weight(x1, x2, x);
+        assert!(
+            (result - expected).abs() < 1e-10,
+            "Expected {expected}, got {result}"
+        );
+    }
+
+    #[rstest]
     #[should_panic(expected = "must differ to compute a linear weight")]
     fn test_linear_weight_zero_divisor() {
         let _ = linear_weight(1.0, 1.0, 0.5);
     }
 
     #[rstest]
+    #[case(1.0, 3.0, 0.5, 2.0)]
+    #[case(10.0, 20.0, 0.25, 12.5)]
+    #[case(0.0, 10.0, 0.0, 0.0)]
+    #[case(0.0, 10.0, 1.0, 10.0)]
+    fn test_linear_weighting(
+        #[case] y1: f64,
+        #[case] y2: f64,
+        #[case] weight: f64,
+        #[case] expected: f64,
+    ) {
+        let result = linear_weighting(y1, y2, weight);
+        assert!(
+            (result - expected).abs() < 1e-10,
+            "Expected {expected}, got {result}"
+        );
+    }
+
+    #[rstest]
+    #[case(5.0, &[1.0, 2.0, 3.0, 4.0, 6.0, 7.0], 3)]
+    #[case(1.5, &[1.0, 2.0, 3.0, 4.0], 0)]
+    #[case(0.5, &[1.0, 2.0, 3.0, 4.0], 0)]
+    #[case(4.5, &[1.0, 2.0, 3.0, 4.0], 3)]
+    #[case(2.0, &[1.0, 2.0, 3.0, 4.0], 0)]
+    fn test_pos_search(#[case] x: f64, #[case] xs: &[f64], #[case] expected: usize) {
+        let result = pos_search(x, xs);
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    fn test_pos_search_edge_cases() {
+        // Single element array
+        let result = pos_search(5.0, &[10.0]);
+        assert_eq!(result, 0);
+
+        // Value at exact boundary
+        let result = pos_search(3.0, &[1.0, 2.0, 3.0, 4.0]);
+        assert_eq!(result, 1); // Index of largest element < 3.0 is index 1 (value 2.0)
+
+        // Two element array
+        let result = pos_search(1.5, &[1.0, 2.0]);
+        assert_eq!(result, 0);
+    }
+
+    #[rstest]
+    fn test_quad_polynomial_linear_case() {
+        // Test with three collinear points - should behave like linear interpolation
+        let result = quad_polynomial(1.5, 1.0, 2.0, 3.0, 1.0, 2.0, 3.0);
+        assert!((result - 1.5).abs() < 1e-10);
+    }
+
+    #[rstest]
+    fn test_quad_polynomial_parabola() {
+        // Test with a simple parabola y = x^2
+        // Points: (0,0), (1,1), (2,4)
+        let result = quad_polynomial(1.5, 0.0, 1.0, 2.0, 0.0, 1.0, 4.0);
+        let expected = 1.5 * 1.5; // Should be 2.25
+        assert!((result - expected).abs() < 1e-10);
+    }
+
+    #[rstest]
     #[should_panic(expected = "Abscissas must be distinct")]
     fn test_quad_polynomial_duplicate_x() {
         let _ = quad_polynomial(0.5, 1.0, 1.0, 2.0, 0.0, 1.0, 4.0);
+    }
+
+    #[rstest]
+    fn test_quadratic_interpolation_boundary_conditions() {
+        let xs = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let ys = vec![1.0, 4.0, 9.0, 16.0, 25.0]; // y = x^2
+
+        // Test below minimum
+        let result = quadratic_interpolation(0.5, &xs, &ys);
+        assert_eq!(result, ys[0]);
+
+        // Test above maximum
+        let result = quadratic_interpolation(6.0, &xs, &ys);
+        assert_eq!(result, ys[4]);
+    }
+
+    #[rstest]
+    fn test_quadratic_interpolation_exact_points() {
+        let xs = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let ys = vec![1.0, 4.0, 9.0, 16.0, 25.0];
+
+        // Test exact points
+        for (i, &x) in xs.iter().enumerate() {
+            let result = quadratic_interpolation(x, &xs, &ys);
+            assert!((result - ys[i]).abs() < 1e-6);
+        }
+    }
+
+    #[rstest]
+    fn test_quadratic_interpolation_intermediate_values() {
+        let xs = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let ys = vec![1.0, 4.0, 9.0, 16.0, 25.0]; // y = x^2
+
+        // Test interpolation between points
+        let result = quadratic_interpolation(2.5, &xs, &ys);
+        let expected = 2.5 * 2.5; // Should be close to 6.25
+        assert!((result - expected).abs() < 0.1); // Allow some interpolation error
+    }
+
+    #[rstest]
+    #[should_panic(expected = "Need at least 3 points")]
+    fn test_quadratic_interpolation_insufficient_points() {
+        let xs = vec![1.0, 2.0];
+        let ys = vec![1.0, 4.0];
+        let _ = quadratic_interpolation(1.5, &xs, &ys);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "xs and ys must have the same length")]
+    fn test_quadratic_interpolation_mismatched_lengths() {
+        let xs = vec![1.0, 2.0, 3.0];
+        let ys = vec![1.0, 4.0];
+        let _ = quadratic_interpolation(1.5, &xs, &ys);
     }
 }

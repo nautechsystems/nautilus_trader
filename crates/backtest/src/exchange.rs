@@ -89,6 +89,21 @@ impl PartialOrd for InflightCommand {
     }
 }
 
+/// Simulated exchange venue for realistic trading execution during backtesting.
+///
+/// The `SimulatedExchange` provides a comprehensive simulation of a trading venue,
+/// including order matching engines, account management, and realistic execution
+/// models. It maintains order books, processes market data, and executes trades
+/// with configurable latency and fill models to accurately simulate real market
+/// conditions during backtesting.
+///
+/// Key features:
+/// - Multi-instrument order matching with realistic execution
+/// - Configurable fee, fill, and latency models
+/// - Support for various order types and execution options
+/// - Account balance and position management
+/// - Market data processing and order book maintenance
+/// - Simulation modules for custom venue behaviors
 pub struct SimulatedExchange {
     pub id: Venue,
     pub oms_type: OmsType,
@@ -460,7 +475,7 @@ impl SimulatedExchange {
                 | TradingCommand::BatchCancelOrders(_) => {
                     command.ts_init() + latency_model.delete_latency_nanos
                 }
-                _ => panic!("Invalid command was {command}"),
+                _ => panic!("Cannot handle command: {command:?}"),
             };
 
             let counter = self
@@ -731,7 +746,10 @@ impl SimulatedExchange {
                 _ => {}
             }
         } else {
-            panic!("Matching engine should be initialized");
+            panic!(
+                "Matching engine not found for instrument {}",
+                command.instrument_id()
+            );
         }
     }
 
@@ -899,7 +917,7 @@ mod tests {
 
     #[rstest]
     #[should_panic(
-        expected = r#"Condition failed: 'Venue of instrument id' value of BINANCE was not equal to 'Venue of simulated exchange' value of SIM"#
+        expected = "Condition failed: 'Venue of instrument id' value of BINANCE was not equal to 'Venue of simulated exchange' value of SIM"
     )]
     fn test_venue_mismatch_between_exchange_and_instrument(
         crypto_perpetual_ethusdt: CryptoPerpetual,

@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 1eb7079d9790703b929362265dbfe8a018d36178602dc953e98794ac37586603 # shrinks to amount = 979.6522699506736, currency = Currency(code='JPY', precision=0, iso4217=392, name='Japanese yen', currency_type=FIAT)
+cc 9d07b03fc9524d0c15813e1368dfe83ab34b2c0656a420b53ae92fba956505d7 # shrinks to money1 = Money(9223372036.00000000, USDT), money2 = Money(9223372036.00000000, USDT)

@@ -15,6 +15,7 @@
 
 use std::collections::HashMap;
 
+use ahash::AHashMap;
 use nautilus_common::{custom::CustomData, signal::Signal};
 use nautilus_model::{
     accounts::{Account, AccountAny},
@@ -430,7 +431,7 @@ impl DatabaseQueries {
             .bind(snapshot.liquidity_side.map(|x| x.to_string()))
             .bind(snapshot.avg_px)
             .bind(snapshot.slippage)
-            .bind(snapshot.commissions.iter().map(std::string::ToString::to_string).collect::<Vec<String>>())
+            .bind(snapshot.commissions.iter().map(ToString::to_string).collect::<Vec<String>>())
             .bind(snapshot.status.to_string())
             .bind(snapshot.is_post_only)
             .bind(snapshot.is_reduce_only)
@@ -440,12 +441,12 @@ impl DatabaseQueries {
             .bind(snapshot.trigger_instrument_id.map(|x| x.to_string()))
             .bind(snapshot.contingency_type.map(|x| x.to_string()))
             .bind(snapshot.order_list_id.map(|x| x.to_string()))
-            .bind(snapshot.linked_order_ids.map(|x| x.iter().map(std::string::ToString::to_string).collect::<Vec<String>>()))
+            .bind(snapshot.linked_order_ids.map(|x| x.iter().map(ToString::to_string).collect::<Vec<String>>()))
             .bind(snapshot.parent_order_id.map(|x| x.to_string()))
             .bind(snapshot.exec_algorithm_id.map(|x| x.to_string()))
             .bind(snapshot.exec_algorithm_params.map(|x| serde_json::to_value(x).unwrap()))
             .bind(snapshot.exec_spawn_id.map(|x| x.to_string()))
-            .bind(snapshot.tags.map(|x| x.iter().map(std::string::ToString::to_string).collect::<Vec<String>>()))
+            .bind(snapshot.tags.map(|x| x.iter().map(ToString::to_string).collect::<Vec<String>>()))
             .bind(snapshot.init_id.to_string())
             .bind(snapshot.ts_init.to_string())
             .bind(snapshot.ts_last.to_string())
@@ -539,7 +540,7 @@ impl DatabaseQueries {
             .bind(snapshot.realized_return)
             .bind(snapshot.realized_pnl.map(|x| x.to_string()))
             .bind(snapshot.unrealized_pnl.map(|x| x.to_string()))
-            .bind(snapshot.commissions.iter().map(std::string::ToString::to_string).collect::<Vec<String>>())
+            .bind(snapshot.commissions.iter().map(ToString::to_string).collect::<Vec<String>>())
             .bind(snapshot.duration_ns.map(|x| x.to_string()))
             .bind(snapshot.ts_opened.to_string())
             .bind(snapshot.ts_closed.map(|x| x.to_string()))
@@ -707,7 +708,7 @@ impl DatabaseQueries {
             .bind(order_event.trigger_instrument_id().map(|x| x.to_string()))
             .bind(order_event.contingency_type().map(|x| x.to_string()))
             .bind(order_event.order_list_id().map(|x| x.to_string()))
-            .bind(order_event.linked_order_ids().map(|x| x.iter().map(std::string::ToString::to_string).collect::<Vec<String>>()))
+            .bind(order_event.linked_order_ids().map(|x| x.iter().map(ToString::to_string).collect::<Vec<String>>()))
             .bind(order_event.parent_order_id().map(|x| x.to_string()))
             .bind(order_event.exec_algorithm_id().map(|x| x.to_string()))
             .bind(order_event.exec_spawn_id().map(|x| x.to_string()))
@@ -1127,8 +1128,8 @@ impl DatabaseQueries {
     /// Returns an error if the SQL SELECT or iteration fails.
     pub async fn load_distinct_order_event_client_ids(
         pool: &PgPool,
-    ) -> anyhow::Result<HashMap<ClientOrderId, ClientId>> {
-        let mut map: HashMap<ClientOrderId, ClientId> = HashMap::new();
+    ) -> anyhow::Result<AHashMap<ClientOrderId, ClientId>> {
+        let mut map: AHashMap<ClientOrderId, ClientId> = AHashMap::new();
         let result = sqlx::query_as::<_, OrderEventOrderClientIdCombination>(
             r#"
             SELECT DISTINCT

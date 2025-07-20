@@ -20,7 +20,7 @@ use std::{
 };
 
 use anyhow::Context;
-use arrow::array::RecordBatch;
+use arrow::record_batch::RecordBatch;
 use chrono::{DateTime, Duration, NaiveDate};
 use futures_util::{StreamExt, future::join_all, pin_mut};
 use heck::ToSnakeCase;
@@ -32,14 +32,12 @@ use nautilus_model::{
     },
     identifiers::InstrumentId,
 };
-use nautilus_serialization::{
-    arrow::{
-        bars_to_arrow_record_batch_bytes, book_deltas_to_arrow_record_batch_bytes,
-        book_depth10_to_arrow_record_batch_bytes, quotes_to_arrow_record_batch_bytes,
-        trades_to_arrow_record_batch_bytes,
-    },
-    parquet::write_batch_to_parquet,
+use nautilus_serialization::arrow::{
+    bars_to_arrow_record_batch_bytes, book_deltas_to_arrow_record_batch_bytes,
+    book_depth10_to_arrow_record_batch_bytes, quotes_to_arrow_record_batch_bytes,
+    trades_to_arrow_record_batch_bytes,
 };
+use parquet::{arrow::ArrowWriter, basic::Compression, file::properties::WriterProperties};
 use thousands::Separable;
 use ustr::Ustr;
 
@@ -431,9 +429,10 @@ fn batch_and_write_bars(bars: Vec<Bar>, bar_type: &BarType, date: NaiveDate, pat
     };
 
     let filepath = path.join(parquet_filepath_bars(bar_type, date));
-    match write_batch_to_parquet(batch, &filepath, None, None, None) {
-        Ok(()) => tracing::info!("File written: {filepath:?}"),
-        Err(e) => tracing::error!("Error writing {filepath:?}: {e:?}"),
+    if let Err(e) = write_parquet_local(batch, &filepath) {
+        tracing::error!("Error writing {filepath:?}: {e:?}");
+    } else {
+        tracing::info!("File written: {filepath:?}");
     }
 }
 
@@ -464,10 +463,27 @@ fn write_batch(
     path: &Path,
 ) {
     let filepath = path.join(parquet_filepath(typename, instrument_id, date));
-    match write_batch_to_parquet(batch, &filepath, None, None, None) {
-        Ok(()) => tracing::info!("File written: {filepath:?}"),
-        Err(e) => tracing::error!("Error writing {filepath:?}: {e:?}"),
+    if let Err(e) = write_parquet_local(batch, &filepath) {
+        tracing::error!("Error writing {filepath:?}: {e:?}");
+    } else {
+        tracing::info!("File written: {filepath:?}");
     }
+}
+
+fn write_parquet_local(batch: RecordBatch, file_path: &Path) -> anyhow::Result<()> {
+    if let Some(parent) = file_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    let file = std::fs::File::create(file_path)?;
+    let props = WriterProperties::builder()
+        .set_compression(Compression::SNAPPY)
+        .build();
+
+    let mut writer = ArrowWriter::try_new(file, batch.schema(), Some(props))?;
+    writer.write(&batch)?;
+    writer.close()?;
+    Ok(())
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

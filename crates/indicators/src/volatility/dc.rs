@@ -13,14 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    collections::VecDeque,
-    fmt::{Debug, Display},
-};
+use std::fmt::Display;
 
+use arraydeque::{ArrayDeque, Wrapping};
 use nautilus_model::data::Bar;
 
 use crate::indicator::Indicator;
+
+const MAX_PERIOD: usize = 1_024;
 
 #[repr(C)]
 #[derive(Debug)]
@@ -35,8 +35,8 @@ pub struct DonchianChannel {
     pub lower: f64,
     pub initialized: bool,
     has_inputs: bool,
-    upper_prices: VecDeque<f64>,
-    lower_prices: VecDeque<f64>,
+    upper_prices: ArrayDeque<f64, MAX_PERIOD, Wrapping>,
+    lower_prices: ArrayDeque<f64, MAX_PERIOD, Wrapping>,
 }
 
 impl Display for DonchianChannel {
@@ -75,25 +75,34 @@ impl Indicator for DonchianChannel {
 
 impl DonchianChannel {
     /// Creates a new [`DonchianChannel`] instance.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if:
+    /// - `period` is not in the range of 1 to `MAX_PERIOD` (inclusive).
     #[must_use]
     pub fn new(period: usize) -> Self {
+        assert!(
+            period > 0 && period <= MAX_PERIOD,
+            "DonchianChannel: period {period} exceeds MAX_PERIOD ({MAX_PERIOD})"
+        );
+
         Self {
             period,
             upper: 0.0,
             middle: 0.0,
             lower: 0.0,
-            upper_prices: VecDeque::with_capacity(period),
-            lower_prices: VecDeque::with_capacity(period),
+            upper_prices: ArrayDeque::new(),
+            lower_prices: ArrayDeque::new(),
             has_inputs: false,
             initialized: false,
         }
     }
 
     pub fn update_raw(&mut self, high: f64, low: f64) {
-        self.upper_prices.push_back(high);
-        self.lower_prices.push_back(low);
+        let _ = self.upper_prices.push_back(high);
+        let _ = self.lower_prices.push_back(low);
 
-        // Initialization logic
         if !self.initialized {
             self.has_inputs = true;
             if self.upper_prices.len() >= self.period && self.lower_prices.len() >= self.period {
@@ -101,7 +110,6 @@ impl DonchianChannel {
             }
         }
 
-        // Set values
         self.upper = self
             .upper_prices
             .iter()
@@ -112,7 +120,7 @@ impl DonchianChannel {
             .iter()
             .copied()
             .fold(f64::INFINITY, f64::min);
-        self.middle = f64::midpoint(self.upper, self.lower);
+        self.middle = 0.5 * (self.upper + self.lower);
     }
 }
 

@@ -64,6 +64,7 @@ _build/
 build/
 dist/
 env/
+*tmp/
 *temp/
 
 # System and editor specific
@@ -72,6 +73,7 @@ env/
 .null-ls*
 CLAUDE.md
 CODEX.md
+GEMINI.md
 PERF.JSON
 output.json
 

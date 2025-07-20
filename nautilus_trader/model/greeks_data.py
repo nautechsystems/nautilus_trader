@@ -54,7 +54,7 @@ class GreeksData(Data):
         return (
             f"GreeksData(instrument_id={self.instrument_id}, "
             f"expiry={self.expiry}, itm_prob={self.itm_prob * 100:.2f}%, "
-            f"vol={self.vol * 100:.2f}%, pnl={self.pnl:,.2f}, , price={self.price:,.2f}, delta={self.delta:,.2f}, "
+            f"vol={self.vol * 100:.2f}%, pnl={self.pnl:,.2f}, price={self.price:,.2f}, delta={self.delta:,.2f}, "
             f"gamma={self.gamma:,.2f}, vega={self.vega:,.2f}, theta={self.theta:,.2f}, "
             f"quantity={self.quantity}, ts_init={unix_nanos_to_iso8601(self.ts_init)})"
         )

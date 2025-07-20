@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import warnings
-
 import msgspec
 
 from nautilus_trader.cache.config import CacheConfig
@@ -263,9 +261,17 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         dict[str, bytes]
 
         """
+        import time
+        cdef double ts_start = time.time()
+        cdef double ts_end
         cdef dict general = {}
 
+        # Time the keys() operation
+        ts_start = time.time()
         cdef list general_keys = self._backing.keys(f"{_GENERAL}:*")
+        ts_end = time.time()
+        self._log.debug(f"database.load: backing.keys() took {(ts_end - ts_start) * 1000:.2f}ms, found {len(general_keys)} keys")
+
         if not general_keys:
             return general
 
@@ -273,13 +279,36 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
             str key
             list result
             bytes value_bytes
+            double ts_read_start
+            double ts_read_end
+            double total_read_time = 0.0
+            double ts_split_start
+            double ts_split_end
+            double total_split_time = 0.0
+            int read_count = 0
+
         for key in general_keys:
+            # Time the split operation
+            ts_split_start = time.time()
             key = key.split(':', maxsplit=1)[1]
+            ts_split_end = time.time()
+            total_split_time += (ts_split_end - ts_split_start)
+
+            # Time the read operation
+            ts_read_start = time.time()
             result = self._backing.read(key)
+            ts_read_end = time.time()
+            total_read_time += (ts_read_end - ts_read_start)
+            read_count += 1
+
             value_bytes = result[0]
             if value_bytes is not None:
                 key = key.split(':', maxsplit=1)[1]
                 general[key] = value_bytes
+
+        self._log.debug(f"database.load: {read_count} read operations took {total_read_time * 1000:.2f}ms total")
+        self._log.debug(f"database.load: split operations took {total_split_time * 1000:.2f}ms total")
+        self._log.debug(f"database.load: average read time: {(total_read_time / read_count) * 1000:.2f}ms per read")
 
         return general
 
@@ -786,6 +815,60 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         self._backing.delete(key)
 
         self._log.info(f"Deleted {repr(strategy_id)}")
+
+    cpdef void delete_order(self, ClientOrderId client_order_id):
+        """
+        Delete the given order from the database.
+
+        Parameters
+        ----------
+        client_order_id : ClientOrderId
+            The client order ID to delete.
+
+        """
+        Condition.not_none(client_order_id, "client_order_id")
+
+        self._backing.delete_order(client_order_id.to_str())
+
+        self._log.info(f"Deleted order {repr(client_order_id)}")
+
+    cpdef void delete_position(self, PositionId position_id):
+        """
+        Delete the given position from the database.
+
+        Parameters
+        ----------
+        position_id : PositionId
+            The position ID to delete.
+
+        """
+        Condition.not_none(position_id, "position_id")
+
+        self._backing.delete_position(position_id.to_str())
+
+        self._log.info(f"Deleted position {repr(position_id)}")
+
+    cpdef void delete_account_event(self, AccountId account_id, str event_id):
+        """
+        Delete the given account event from the database.
+
+        Parameters
+        ----------
+        account_id : AccountId
+            The account ID to delete events for.
+        event_id : str
+            The event ID to delete.
+
+        """
+        Condition.not_none(account_id, "account_id")
+        Condition.not_none(event_id, "event_id")
+
+        self._log.warning(f"Deleting account events currently a no-op (pending redesign) {repr(account_id)}:{event_id}")
+
+        # TODO: No-op pending reimplementation to improve efficiency
+        # self._backing.delete_account_event(account_id.to_str(), event_id)
+        #
+        # self._log.info(f"Deleted account event {repr(account_id)}:{event_id}")
 
     cpdef void add(self, str key, bytes value):
         """

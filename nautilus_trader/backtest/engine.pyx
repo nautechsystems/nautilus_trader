@@ -17,6 +17,7 @@ import heapq
 import pickle
 from decimal import Decimal
 
+import cython
 import pandas as pd
 
 from nautilus_trader.accounting.error import AccountError
@@ -36,8 +37,11 @@ from nautilus_trader.system.kernel import NautilusKernel
 from nautilus_trader.trading.trader import Trader
 
 from cpython.object cimport PyObject
+from libc.stdint cimport UINT64_MAX
 from libc.stdint cimport uint64_t
 
+from nautilus_trader.accounting.margin_models cimport LeveragedMarginModel
+from nautilus_trader.accounting.margin_models cimport MarginModel
 from nautilus_trader.backtest.data_client cimport BacktestDataClient
 from nautilus_trader.backtest.data_client cimport BacktestMarketDataClient
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
@@ -88,7 +92,9 @@ from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.messages cimport DataCommand
 from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.data.messages cimport SubscribeData
+from nautilus_trader.data.messages cimport SubscribeInstruments
 from nautilus_trader.data.messages cimport UnsubscribeData
+from nautilus_trader.data.messages cimport UnsubscribeInstruments
 from nautilus_trader.execution.algorithm cimport ExecAlgorithm
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport CustomData
@@ -167,8 +173,10 @@ cdef class BacktestEngine:
 
         # Set up data iterator
         self._data_requests: dict[str, RequestData] = {}
+        self._last_subscription_ts: dict[str, uint64_t] = {}
         self._backtest_subscription_names = set()
-        self._data_iterator = BacktestDataIterator(empty_data_callback=self._handle_empty_data)
+        self._response_data = []
+        self._data_iterator = BacktestDataIterator()
         self._kernel.msgbus.register(endpoint="BacktestEngine.execute", handler=self._handle_data_command)
 
     def __del__(self) -> None:
@@ -371,9 +379,9 @@ cdef class BacktestEngine:
 
     def get_log_guard(self) -> nautilus_pyo3.LogGuard | LogGuard | None:
         """
-        Return the global logging systems log guard.
+        Return the global logging subsystems log guard.
 
-        May return ``None`` if the logging system was already initialized.
+        May return ``None`` if the logging subsystem was already initialized.
 
         Returns
         -------
@@ -402,6 +410,7 @@ cdef class BacktestEngine:
         base_currency: Currency | None = None,
         default_leverage: Decimal | None = None,
         leverages: dict[InstrumentId, Decimal] | None = None,
+        margin_model: MarginModel = None,
         modules: list[SimulationModule] | None = None,
         fill_model: FillModel | None = None,
         fee_model: FeeModel | None = None,
@@ -493,6 +502,9 @@ cdef class BacktestEngine:
         if modules is None:
             modules = []
 
+        if margin_model is None:
+            margin_model = LeveragedMarginModel()
+
         if fill_model is None:
             fill_model = FillModel()
 
@@ -521,6 +533,7 @@ cdef class BacktestEngine:
             base_currency=base_currency,
             default_leverage=default_leverage,
             leverages=leverages or {},
+            margin_model=margin_model,
             modules=modules,
             portfolio=self._kernel.portfolio,
             msgbus=self._kernel.msgbus,
@@ -740,13 +753,48 @@ cdef class BacktestEngine:
                 self._backtest_subscription_names.add(f"{data_point.bar_type}")
             elif data_type in (QuoteTick, TradeTick):
                 self._backtest_subscription_names.add(f"{data_type.__name__}.{data_point.instrument_id}")
+            elif data_type is CustomData:
+                self._backtest_subscription_names.add(f"{type(data_point.data).__name__}.{getattr(data_point.data, 'instrument_id', None)}")
 
         self._log.info(
             f"Added {len(data):_} {data_added_str} element{'' if len(data) == 1 else 's'}",
         )
 
+    def add_data_iterator(
+        self,
+        str data_name,
+        generator: Generator[list[Data], None, None],
+        ClientId client_id = None,
+    ) -> None:
+        """
+        Add a single stream generator that yields ``list[Data]`` objects for the low-level streaming backtest API.
+
+        Parameters
+        ----------
+        data_name : str
+            The name identifier for the data stream.
+        generator : Generator[list[Data], None, None]
+            A Python generator that yields lists of ``Data`` objects.
+        client_id : ClientId, optional
+            The client ID to associate with the data.
+
+        Notes
+        -----
+        This method enables streaming large datasets by loading data in chunks.
+        The generator should yield ``list[Data]`` objects sorted by `ts_init` timestamp.
+
+        """
+        self._data_iterator.init_data(
+            data_name,
+            generator,
+            append_data=True
+        )
+
+        self._log.info(f"Added {data_name} stream generator")
+
     cpdef void _handle_data_command(self, DataCommand command):
-        if command.data_type.type not in [Bar, QuoteTick, TradeTick]:
+        if not(command.data_type.type in [Bar, QuoteTick, TradeTick]
+               or type(command) not in [SubscribeData, UnsubscribeData, SubscribeInstruments, UnsubscribeInstruments]):
             return
 
         if isinstance(command, SubscribeData):
@@ -754,25 +802,64 @@ cdef class BacktestEngine:
         elif isinstance(command, UnsubscribeData):
             self._handle_unsubscribe(<UnsubscribeData>command)
 
-    cpdef void _handle_subscribe(self, SubscribeData command):
-        cdef object duration_seconds = command.params.get("duration_seconds")
-
-        if duration_seconds:
-            assert duration_seconds > 0
-
-        cdef uint64_t start_time = self._last_ns
-        cdef uint64_t end_time = min(start_time + duration_seconds * 1e9, self._end_ns) if duration_seconds else self._end_ns
-
-        cdef RequestData request = command.to_request(unix_nanos_to_dt(start_time), unix_nanos_to_dt(end_time), self._handle_data_response)
+    cdef void _handle_subscribe(self, SubscribeData command):
+        cdef RequestData request = command.to_request(None, None, self._handle_data_response)
         cdef str subscription_name = request.params["subscription_name"]
 
         if subscription_name in self._data_requests or subscription_name in self._backtest_subscription_names:
             return
 
-        self._log.debug(f"_handle_subscribe {duration_seconds=}")
-        self._log.debug(f"Subscribing to {subscription_name} from {unix_nanos_to_dt(start_time)} to {unix_nanos_to_dt(end_time)}")
+        self._log.debug(f"Subscribing to {subscription_name}, {command.params.get('durations_seconds')=}")
+
         self._data_requests[subscription_name] = request
-        self._kernel._msgbus.request(endpoint="DataEngine.request", request=request)
+        self._last_subscription_ts[subscription_name] = self._last_ns - 1
+        cdef bint append_data = request.params.get("append_data", True)
+        self._data_iterator.init_data(subscription_name, self._subscription_generator(subscription_name), append_data)
+
+    def _subscription_generator(self, str subscription_name):
+        iteration_index = 0
+        durations_seconds = self._data_requests[subscription_name].params.get("durations_seconds", [None])
+        durations_ns = [duration_seconds * 1e9 if duration_seconds else None for duration_seconds in durations_seconds]
+
+        while True:
+            # Clear response data from previous iteration
+            self._response_data = []
+
+            # Possibility to use durations of various lengths to take into account weekends or market breaks
+            for duration_ns in durations_ns:
+                self._update_subscription_data(subscription_name, duration_ns)
+
+                if self._response_data:
+                    break
+
+            if iteration_index == 0:
+                # First iteration for [a, a + duration], then ]a + duration, a + 2 * duration]
+                durations_ns = [duration_ns - 1 if duration_ns else None
+                                for duration_ns in durations_ns]
+
+            iteration_index += 1
+
+            if self._response_data:
+                yield self._response_data
+            else:
+                break  # No more data, end generator
+
+    cpdef void _update_subscription_data(self, str subscription_name, object duration_ns):
+        if subscription_name == "backtest_data" or subscription_name not in self._data_requests:
+            return
+
+        cdef uint64_t start_time = self._last_subscription_ts[subscription_name] + 1 # to avoid duplicate data
+
+        if start_time > self._end_ns:
+            return
+
+        cdef uint64_t end_time = min(start_time + duration_ns, self._end_ns) if duration_ns else self._end_ns
+        self._last_subscription_ts[subscription_name] = end_time
+
+        cdef RequestData request = self._data_requests[subscription_name]
+        self._log.debug(f"Renewing {request.data_type.type.__name__} data from {unix_nanos_to_dt(start_time)} to {unix_nanos_to_dt(end_time)}, {duration_ns=}")
+        cdef RequestData new_request = request.with_dates(unix_nanos_to_dt(start_time), unix_nanos_to_dt(end_time), self._last_ns)
+        self._kernel._msgbus.request(endpoint="DataEngine.request", request=new_request)
 
     cpdef void _handle_data_response(self, DataResponse response):
         cdef list data = response.data
@@ -780,36 +867,24 @@ cdef class BacktestEngine:
 
         if not data:
             self._log.debug(f"Removing backtest data for {subscription_name}")
-            self._data_iterator.remove_data(subscription_name)
-            return
+        else:
+            self._log.debug(f"Received subscribe {subscription_name} data from {unix_nanos_to_dt(data[0].ts_init)} to {unix_nanos_to_dt(data[-1].ts_init)}")
 
-        self._log.debug(f"Received subscribe {subscription_name} data from {unix_nanos_to_dt(data[0].ts_init)} to {unix_nanos_to_dt(data[-1].ts_init)}")
-
-        cdef bint append_data = response.params.get("append_data", True)
-        self._data_iterator.add_data(subscription_name, data, append_data)
+        self._response_data = data
 
     cpdef void _handle_unsubscribe(self, UnsubscribeData command):
-        cdef str subscription_name = f"{command.data_type.type.__name__}.{command.instrument_id}" if command.data_type.type != Bar else f"{command.bar_type}"
+        cdef str subscription_name = ""
+
+        if command.data_type.type is Bar:
+            subscription_name = f"{command.bar_type}"
+        elif type(command) is UnsubscribeInstruments:
+            subscription_name = "subscribe_instruments"
+        else:
+            subscription_name = f"{command.data_type.type.__name__}.{command.instrument_id}"
+
         self._log.debug(f"Unsubscribing {subscription_name}")
-        self._data_iterator.remove_data(subscription_name)
+        self._data_iterator.remove_data(subscription_name, complete_remove=True)
         self._data_requests.pop(subscription_name, None)
-
-    cpdef void _handle_empty_data(self, str subscription_name, uint64_t last_ts_init):
-        if subscription_name == "backtest_data":
-            return
-
-        cdef RequestData request = self._data_requests[subscription_name]
-        cdef uint64_t start_time = last_ts_init + 1 # to avoid duplicate data
-
-        if start_time > self._end_ns:
-            return
-
-        cdef object duration_seconds = request.params.get("duration_seconds")
-        cdef uint64_t end_time = min(start_time + duration_seconds * 1e9, self._end_ns) if duration_seconds else self._end_ns
-
-        self._log.debug(f"Renewing {request.data_type.type.__name__} data from {unix_nanos_to_dt(start_time)} to {unix_nanos_to_dt(end_time)}")
-        cdef RequestData new_request = request.with_dates(unix_nanos_to_dt(start_time), unix_nanos_to_dt(end_time))
-        self._kernel._msgbus.request(endpoint="DataEngine.request", request=new_request)
 
     def dump_pickled_data(self) -> bytes:
         """
@@ -975,18 +1050,21 @@ cdef class BacktestEngine:
 
         # Reset timing
         self._iteration = 0
-
-        for data_name in self._data_iterator.all_data():
-            if data_name != "backtest_data":
-                self._data_iterator.remove_data(data_name)
-
-        self._data_iterator.reset()
+        self._data_iterator = BacktestDataIterator()
+        self._data_iterator.add_data("backtest_data", self._data)
         self._run_started = None
         self._run_finished = None
         self._backtest_start = None
         self._backtest_end = None
 
         self._log.info("Reset")
+
+    def sort_data(self) -> None:
+        """
+        Sort the engines internal data stream.
+
+        """
+        self._data.sort()
 
     def clear_data(self) -> None:
         """
@@ -999,7 +1077,7 @@ cdef class BacktestEngine:
         self._has_book_data.clear()
         self._data.clear()
         self._data_len = 0
-        self._data_iterator = BacktestDataIterator(empty_data_callback=self._handle_empty_data)
+        self._data_iterator = BacktestDataIterator()
 
     def clear_actors(self) -> None:
         """
@@ -1200,8 +1278,7 @@ cdef class BacktestEngine:
         # Time range check and set
         if start is None:
             # Set `start` to start of data
-            Condition.not_empty(self._data, "data")
-            start_ns = self._data[0].ts_init
+            start_ns = self._data[0].ts_init if self._data else 0
             start = unix_nanos_to_dt(start_ns)
         else:
             start = pd.to_datetime(start, utc=True)
@@ -1209,8 +1286,7 @@ cdef class BacktestEngine:
 
         if end is None:
             # Set `end` to end of data
-            Condition.not_empty(self._data, "data")
-            end_ns = self._data[-1].ts_init
+            end_ns = self._data[-1].ts_init if self._data else 4102444800000000000  # Year 2100-01-01 00:00:00 UTC
             end = unix_nanos_to_dt(end_ns)
         else:
             end = pd.to_datetime(end, utc=True)
@@ -1221,8 +1297,8 @@ cdef class BacktestEngine:
 
         # Set clocks
         self._last_ns = start_ns
-        cdef TestClock clock
 
+        cdef TestClock clock
         for clock in get_component_clocks(self._instance_id):
             clock.set_time(start_ns)
 
@@ -1409,6 +1485,8 @@ cdef class BacktestEngine:
         # Return all remaining events to be handled (at `ts_now`)
         return raw_handlers
 
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
     cdef void _process_raw_time_event_handlers(
         self,
         CVec raw_handler_vec,
@@ -1658,10 +1736,69 @@ cdef class BacktestEngine:
             )
             self._kernel.data_engine.register_client(client)
 
+    def set_default_market_data_client(self) -> None:
+        cdef ClientId client_id = ClientId("backtest_default_client")
+        client = BacktestMarketDataClient(
+            client_id=client_id,
+            msgbus=self._kernel.msgbus,
+            cache=self._kernel.cache,
+            clock=self._kernel.clock,
+        )
+        self._kernel.data_engine.register_client(client)
+
 
 cdef class BacktestDataIterator:
-    def __init__(self, empty_data_callback: Callable[[str, uint64_t], None] | None = None) -> None:
-        self._empty_data_callback = empty_data_callback
+    """
+    Time-ordered multiplexer for historical ``Data`` streams in backtesting.
+
+    The iterator efficiently manages multiple data streams and yields ``Data`` objects
+    in strict chronological order based on their ``ts_init`` timestamps. It supports
+    both static data lists and dynamic data generators for streaming large datasets.
+
+    **Architecture:**
+
+    - **Single-stream optimization**: When exactly one stream is loaded, uses a fast
+      array walk for optimal performance.
+    - **Multi-stream merging**: With two or more streams, employs a binary min-heap
+      to perform efficient k-way merge sorting.
+    - **Dynamic streaming**: Supports Python generators that yield data chunks on-demand,
+      enabling processing of datasets larger than available memory.
+
+    **Stream Priority:**
+
+    Streams can be assigned different priorities using the ``append_data`` parameter:
+
+    - ``append_data=True`` (default): Lower priority, processed after existing streams
+    - ``append_data=False``: Higher priority, processed before existing streams
+
+    When multiple data points have identical timestamps, higher priority streams
+    are yielded first.
+
+    **Performance Characteristics:**
+
+    - **Memory efficient**: Dynamic generators load data incrementally
+    - **Time complexity**: O(log n) per item for n streams (heap operations)
+    - **Space complexity**: O(k) where k is the total number of active data points
+      across all streams at any given time
+
+    Parameters
+    ----------
+    empty_data_callback : Callable[[str, int], None], optional
+        Called once per stream when it is exhausted. Arguments are the stream
+        name and the final ``ts_init`` timestamp observed.
+
+    Notes
+    -----
+    All data within each stream must be pre-sorted by ``ts_init`` in ascending order.
+    The iterator assumes this invariant and does not perform additional sorting.
+
+    See Also
+    --------
+    BacktestEngine.add_data : Add static data to the backtest engine
+    BacktestEngine.add_data_iterator : Add streaming data generators
+
+    """
+    def __init__(self) -> None:
         self._log = Logger(type(self).__name__)
 
         self._data = {} # key=data_priority, value=data_list
@@ -1669,8 +1806,11 @@ cdef class BacktestDataIterator:
         self._data_priority = {} # key=data_name, value=data_priority
         self._data_len = {} # key=data_priority, value=len(data_list)
         self._data_index = {} # key=data_priority, value=current index of data_list
+        self._data_update_function = {} # key=data_priority, value=data_update_function, Callable[[], list] | None
 
         self._heap = []
+        # Counter for assigning priorities to data streams.
+        # Incremented before use so that a priority of zero is never assigned.
         self._next_data_priority = 0
         self._reset_single_data()
 
@@ -1682,9 +1822,85 @@ cdef class BacktestDataIterator:
         self._single_data_index = 0
         self._is_single_data = False
 
-    cpdef void add_data(self, str data_name, list data_list, bint append_data=True):
-        # closures inside cpdef functions not yet supported
-        self._add_data(data_name, data_list, append_data)
+    def add_data(self, data_name, list data, bint append_data=True):
+        """
+        Add (or replace) a named, pre-sorted data list for static data loading.
+
+        If a stream with the same ``data_name`` already exists, it will be replaced
+        with the new data.
+
+        Parameters
+        ----------
+        data_name : str
+            Unique identifier for the data stream.
+        data : list[Data]
+            Data instances sorted ascending by `ts_init`.
+        append_data : bool, default ``True``
+            Controls stream priority for timestamp ties:
+            ``True`` – lower priority (appended).
+            ``False`` – higher priority (prepended).
+
+        Raises
+        ------
+        ValueError
+            If `data_name` is not a valid string.
+
+        """
+        Condition.valid_string(data_name, "data_name")
+
+        if not data:
+            return
+
+        def data_generator():
+            yield data
+            # Generator ends after yielding once
+
+        self.init_data(data_name, data_generator(), append_data)
+
+    def init_data(self, str data_name, data_generator, bint append_data=True):
+        """
+        Add (or replace) a named data generator for streaming large datasets.
+
+        This method enables memory-efficient processing of large datasets by using
+        Python generators that yield data chunks on-demand. The generator is called
+        incrementally as data is consumed, allowing datasets larger than available
+        memory to be processed.
+
+        The generator should yield lists of ``Data`` objects, where each list represents
+        a chunk of data. When a chunk is exhausted, the iterator automatically calls
+        ``next()`` on the generator to fetch the next chunk.
+
+        Parameters
+        ----------
+        data_name : str
+            Unique identifier for the data stream.
+        data_generator : Generator[list[Data], None, None]
+            A Python generator that yields lists of ``Data`` instances sorted ascending by `ts_init`.
+        append_data : bool, default ``True``
+            Controls stream priority for timestamp ties:
+            ``True`` – lower priority (appended).
+            ``False`` – higher priority (prepended).
+
+        Raises
+        ------
+        ValueError
+            If `data_name` is not a valid string.
+
+        """
+        Condition.valid_string(data_name, "data_name")
+
+        cdef list[Data] data
+
+        try:
+            data = next(data_generator)
+
+            if data:
+                self._data_update_function[data_name] = data_generator
+                self._add_data(data_name, data, append_data)
+                self._log.debug(f"Added {len(data):_} data elements from iterator '{data_name}'")
+        except StopIteration:
+            # Generator is already exhausted, nothing to add
+            pass
 
     cdef void _add_data(self, str data_name, list data_list, bint append_data=True):
         if len(data_list) == 0:
@@ -1696,9 +1912,12 @@ cdef class BacktestDataIterator:
             data_priority = self._data_priority[data_name]
             self.remove_data(data_name)
         else:
-            # heapq is a min priority queue so lower number means higher priority
-            data_priority = (1 if append_data else -1) * self._next_data_priority
+            # heapq is a min priority queue so smaller values are popped first.
+            # Increment the counter *before* applying the sign so that priority
+            # zero is never produced (zero would undermine prepend/append
+            # semantics when ordering streams).
             self._next_data_priority += 1
+            data_priority = (1 if append_data else -1) * self._next_data_priority
 
         if self._is_single_data:
             self._deactivate_single_data()
@@ -1715,7 +1934,30 @@ cdef class BacktestDataIterator:
 
         self._push_data(data_priority, 0)
 
-    cpdef void remove_data(self, str data_name):
+    cpdef void remove_data(self, str data_name, bint complete_remove=False):
+        """
+        Remove the data stream identified by ``data_name``. The operation is silently
+        ignored if the specified stream does not exist.
+
+        Parameters
+        ----------
+        data_name : str
+            The unique identifier of the data stream to remove.
+        complete_remove : bool, default False
+            Controls the level of cleanup performed:
+            - ``False``: Remove stream data but preserve generator function for potential
+              re-initialization (useful for temporary stream removal)
+            - ``True``: Complete removal including any associated generator function
+              (recommended for permanent stream removal)
+
+        Raises
+        ------
+        ValueError
+            If `data_name` is not a valid string.
+
+        """
+        Condition.valid_string(data_name, "data_name")
+
         if data_name not in self._data_priority:
             return
 
@@ -1725,6 +1967,9 @@ cdef class BacktestDataIterator:
         del self._data_priority[data_name]
         del self._data_len[data_priority]
         del self._data_index[data_priority]
+
+        if complete_remove:
+            del self._data_update_function[data_name]
 
         if len(self._data) == 1:
             self._activate_single_data()
@@ -1759,11 +2004,42 @@ cdef class BacktestDataIterator:
 
         self._reset_single_data()
 
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
     cpdef Data next(self):
-        cdef uint64_t ts_init
-        cdef int data_priority
-        cdef int cursor
-        cdef Data object_to_return
+        """
+        Return the next ``Data`` object in chronological order.
+
+        This method implements the core iteration logic, yielding data points from
+        all streams in strict chronological order based on ``ts_init`` timestamps.
+        When multiple data points have identical timestamps, stream priority
+        determines the order.
+
+        The method automatically handles:
+        - Single-stream optimization for performance
+        - Multi-stream heap-based merging
+        - Dynamic data loading from generators
+        - Stream exhaustion and cleanup
+
+        Returns
+        -------
+        Data or None
+            The next ``Data`` object in chronological order, or ``None`` when
+            all streams are exhausted.
+
+        Notes
+        -----
+        - Returns ``None`` when all streams are exhausted
+        - Automatically triggers generator calls for streaming data
+        - Performance is optimized for single-stream scenarios
+        - Thread-safe only when called from a single thread
+
+        """
+        cdef:
+            uint64_t ts_init
+            int data_priority
+            int cursor
+            Data object_to_return
 
         if not self._is_single_data:
             if not self._heap:
@@ -1784,11 +2060,12 @@ cdef class BacktestDataIterator:
         self._single_data_index += 1
 
         if self._single_data_index >= self._single_data_len:
-            if self._empty_data_callback is not None:
-                self._empty_data_callback(self._single_data_name, self._single_data[-1].ts_init)
+            self._update_data(self._single_data_priority)
 
         return object_to_return
 
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
     cpdef void _push_data(self, int data_priority, int data_index):
         cdef uint64_t ts_init
 
@@ -1796,18 +2073,47 @@ cdef class BacktestDataIterator:
             ts_init = self._data[data_priority][data_index].ts_init
             heapq.heappush(self._heap, (ts_init, data_priority, data_index))
         else:
-            if self._empty_data_callback is not None:
-                self._empty_data_callback(self._data_name[data_priority], self._data[data_priority][-1].ts_init)
+            self._update_data(data_priority)
 
-    cpdef void reset(self):
-        for data_priority in self._data_index:
-            self._data_index[data_priority] = 0
+    cpdef void _update_data(self, int data_priority):
+        cdef str data_name = self._data_name[data_priority]
 
-        self._reset_heap()
-
-        if len(self._data) == 1:
-            self._activate_single_data()
+        if data_name not in self._data_update_function:
             return
+
+        cdef list[Data] data
+
+        try:
+            data = next(self._data_update_function[data_name])
+
+            if data:
+                # No need for append_data bool as it's an update
+                self._add_data(data_name, data)
+                self._log.debug(f"Adding {len(data):_} data elements from iterator '{data_name}'")
+            else:
+                self.remove_data(data_name, complete_remove=True)
+        except StopIteration:
+            # Generator is exhausted, remove the stream
+            self.remove_data(data_name, complete_remove=True)
+
+    cpdef void set_index(self, str data_name, int index):
+        """
+        Move the cursor of `data_name` to `index` and rebuild ordering.
+
+        Raises
+        ------
+        ValueError
+            If `data_name` is not a valid string.
+
+        """
+        Condition.valid_string(data_name, "data_name")
+
+        if data_name not in self._data_priority:
+            return
+
+        cdef int data_priority = self._data_priority[data_name]
+        self._data_index[data_priority] = index
+        self._reset_heap()
 
     cpdef void _reset_heap(self):
         if len(self._data) == 1:
@@ -1819,25 +2125,40 @@ cdef class BacktestDataIterator:
         for data_priority, index in self._data_index.items():
             self._push_data(data_priority, index)
 
-    cpdef void set_index(self, str data_name, int index):
-        if data_name not in self._data_priority:
-            return
-
-        cdef int data_priority = self._data_priority[data_name]
-        self._data_index[data_priority] = index
-        self._reset_heap()
-
     cpdef bint is_done(self):
+        """
+        Return ``True`` when every stream has been fully consumed.
+        """
         if self._is_single_data:
             return self._single_data_index >= self._single_data_len
         else:
             return not self._heap
 
     cpdef dict all_data(self):
+        """
+        Return a *shallow* mapping of ``{stream_name: list[Data]}``.
+        """
         # we assume dicts are ordered by order of insertion
         return {data_name:self._data[data_priority] for data_priority, data_name in self._data_name.items()}
 
-    cpdef list data(self, str data_name):
+    cpdef list[Data] data(self, str data_name):
+        """
+        Return the underlying data list for `data_name`.
+
+        Returns
+        -------
+        list[Data]
+
+        Raises
+        ------
+        ValueError
+            If `data_name` is not a valid string.
+        KeyError
+            If the stream is unknown.
+
+        """
+        Condition.valid_string(data_name, "data_name")
+
         return self._data[self._data_priority[data_name]]
 
     def __iter__(self):

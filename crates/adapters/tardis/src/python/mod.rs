@@ -81,6 +81,18 @@ pub fn tardis(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     )?)?;
     m.add_function(wrap_pyfunction!(csv::py_load_tardis_quotes, m)?)?;
     m.add_function(wrap_pyfunction!(csv::py_load_tardis_trades, m)?)?;
+    m.add_function(wrap_pyfunction!(csv::py_stream_tardis_deltas, m)?)?;
+    m.add_function(wrap_pyfunction!(csv::py_stream_tardis_batched_deltas, m)?)?;
+    m.add_function(wrap_pyfunction!(csv::py_stream_tardis_quotes, m)?)?;
+    m.add_function(wrap_pyfunction!(csv::py_stream_tardis_trades, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        csv::py_stream_tardis_depth10_from_snapshot5,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        csv::py_stream_tardis_depth10_from_snapshot25,
+        m
+    )?)?;
     m.add_function(wrap_pyfunction!(py_tardis_normalize_symbol_str, m)?)?;
 
     Ok(())

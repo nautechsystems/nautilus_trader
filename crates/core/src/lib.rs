@@ -13,10 +13,29 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Core foundational types and utilities for [NautilusTrader](http://nautilustrader.io).
+//!
+//! The *core* crate is designed to be lightweight, efficient, and to provide zero-cost abstractions
+//! wherever possible. It supplies the essential building blocks used across the NautilusTrader
+//! ecosystem, including:
+//!
+//! - Time handling and atomic clock functionality.
+//! - UUID generation and management.
+//! - Mathematical functions and interpolation utilities.
+//! - Correctness validation functions.
+//! - Serialization traits and helpers.
+//! - Cross-platform environment utilities.
+//! - Abstractions over common collections.
+//!
+//! # Platform
+//!
 //! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
 //! algorithmic trading platform, providing quantitative traders with the ability to backtest
 //! portfolios of automated trading strategies on historical data with an event-driven engine,
 //! and also deploy those same strategies live, with no code changes.
+//!
+//! NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
+//! highest level, with the aim of supporting mission-critical, trading system backtesting and live deployment workloads.
 //!
 //! # Feature flags
 //!
@@ -32,8 +51,7 @@
 #![deny(unsafe_code)]
 #![deny(nonstandard_style)]
 #![deny(missing_debug_implementations)]
-#![deny(clippy::missing_errors_doc)]
-#![deny(clippy::missing_panics_doc)]
+#![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 
 pub mod collections;

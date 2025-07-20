@@ -1,17 +1,21 @@
 name: build
 
+permissions: # Principle of least privilege
+  contents: read
+  actions: read
+
 on:
   push:
     branches: [master, nightly, develop]
   pull_request:
-    branches: [develop]
+    branches: ['*']
 
 jobs:
   pre-commit:
     runs-on: ubuntu-22.04 # (glibc 2.35) wider runtime range than 24.04/glibc 2.39
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
         with:
           egress-policy: audit
 
@@ -71,7 +75,7 @@ jobs:
         options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
         with:
           egress-policy: audit
 
@@ -160,7 +164,7 @@ jobs:
         options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
         with:
           egress-policy: audit
 
@@ -219,10 +223,9 @@ jobs:
         shell: bash
     name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    # Pause job on develop branch for now (takes ~1-1.5 hrs)
+    # Pause job on develop branch for pull requests for now
     if: >
-      !( (github.event_name == 'push' && github.ref_name == 'develop')
-      || (github.event_name == 'pull_request' && github.base_ref == 'develop') )
+      !(github.event_name == 'pull_request' && github.base_ref == 'develop')
     needs:
       - pre-commit
     env:
@@ -230,7 +233,7 @@ jobs:
       RUST_BACKTRACE: 1
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
         with:
           egress-policy: audit
 
@@ -271,19 +274,17 @@ jobs:
         python-version:
           - "3.11"
           - "3.12"
-          - "3.13"
+          - "3.13.2" # pinned to 3.13.2, see https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/getting_started/installation.md
     defaults:
       run:
         shell: bash
     name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     # Pause job on develop branch for now (takes ~1 hr)
-    # if: >
-    #   !( (github.event_name == 'push' && github.ref_name == 'develop')
-    #   || (github.event_name == 'pull_request' && github.base_ref == 'develop') )
-    # TODO: Pause windows build until fixed
+    # TODO: Pause on nightly branch to investigate new build failures
     if: >
-      github.event_name == 'push' && github.ref == 'refs/heads/master'
+      !( (github.event_name == 'push' && (github.ref_name == 'develop' || github.ref_name == 'nightly'))
+      || (github.event_name == 'pull_request' && github.base_ref == 'develop') )
     needs:
       - pre-commit
     env:
@@ -293,7 +294,7 @@ jobs:
       RUST_BACKTRACE: 1
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
         with:
           egress-policy: audit
 
@@ -316,9 +317,12 @@ jobs:
       - name: Cached test data
         uses: ./.github/actions/common-test-data
 
+      - name: Install test dependencies
+        run: make install-just-deps
+
       - name: Run tests
         run: |
-          uv run --no-sync pytest --ignore=tests/performance_tests
+          uv run --no-sync python -m pytest --ignore=tests/performance_tests
 
       - name: Upload wheel artifact
         uses: ./.github/actions/upload-artifact-wheel
@@ -326,10 +330,13 @@ jobs:
   publish-wheels-develop:
     name: publish-wheels-develop
     runs-on: ubuntu-latest
+    permissions:
+      actions: write # Required for deleting artifacts
+      contents: read
     needs:
       - build-linux-x86
+      - build-macos
       # - build-linux-arm # Reinstate this when/if linux-arm runs on every build
-      # - build-macos # Reinstate this when/if macos runs on every build
       # - build-windows # Reinstate this when/if windows runs on every build
     if: >
       github.event_name == 'push' && github.ref == 'refs/heads/develop'
@@ -342,7 +349,7 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
         with:
           egress-policy: audit
 
@@ -352,8 +359,6 @@ jobs:
 
       - name: Publish wheels to Cloudflare R2
         uses: ./.github/actions/publish-wheels
-        with:
-          cleanup-local-dist: "true"
 
       - name: Fetch and delete artifacts for current run
         shell: bash
@@ -362,6 +367,9 @@ jobs:
 
   publish-wheels-nightly:
     runs-on: ubuntu-latest
+    permissions:
+      actions: write # Required for deleting artifacts
+      contents: read
     needs:
       - build-linux-x86
       - build-linux-arm
@@ -378,7 +386,7 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
         with:
           egress-policy: audit
 
@@ -388,8 +396,6 @@ jobs:
 
       - name: Publish wheels to Cloudflare R2
         uses: ./.github/actions/publish-wheels
-        with:
-          cleanup-local-dist: "true"
 
       - name: Fetch and delete artifacts for current run
         shell: bash
@@ -398,6 +404,9 @@ jobs:
 
   publish-wheels-master:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # Required for uploading release assets
+      actions: write  # Required for deleting artifacts
     needs:
       - build-linux-x86
       - build-linux-arm
@@ -415,7 +424,7 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
         with:
           egress-policy: audit
 
@@ -429,27 +438,18 @@ jobs:
           echo "UV_VERSION=$(cat uv-version)" >> $GITHUB_ENV
 
       - name: Install uv
-        uses: astral-sh/setup-uv@0c5e2b8115b80b4c7c5ddf6ffdd634974642d182
+        uses: astral-sh/setup-uv@bd01e18f51369d5a26f1651c3cb451d3417e3bba # v6.3.1
         with:
           version: ${{ env.UV_VERSION }}
 
       - name: Publish wheels to Cloudflare R2
         uses: ./.github/actions/publish-wheels
+
+      - name: Download built wheels
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          cleanup-local-dist: "false"
-
-      - name: List local wheels
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          # Safely list wheel files; only regular files, no directories
-          if [[ -d dist ]]; then
-            echo "Found dist directory, listing wheel files:"
-            find dist -type f -name '*.whl'
-          else
-            echo "No dist directory found"
-          fi
+          path: dist/
+          pattern: "*.whl"
 
       - name: Upload wheels to GitHub release
         run: |
@@ -463,19 +463,27 @@ jobs:
               "${{ needs.tag-release.outputs.upload_url }}?name=$asset_name"
           done
 
-      - name: Publish to PyPI
-        env:
-          UV_PUBLISH_USERNAME: ${{ secrets.PYPI_USERNAME }}
-          UV_PUBLISH_PASSWORD: ${{ secrets.PYPI_TOKEN }}
-        run: uv publish
-
-      - name: Clean up local dist directory
+      - name: Consolidate wheels for PyPI
         shell: bash
         run: |
           set -euo pipefail
-          ls -lh dist/ || echo "No dist directory found"
-          rm -rf dist/* 2>/dev/null || true
-          echo "Cleanup completed"
+
+          # Create dist/all directory for consolidated wheels
+          mkdir -p dist/all
+
+          # Move all .whl files from subdirectories to dist/all (exclude dist/all itself)
+          find dist/ -path dist/all -prune -o -name "*.whl" -type f -exec mv {} dist/all/ \;
+
+          echo "Consolidated wheels in dist/all:"
+          ls -la dist/all/
+
+      - name: Publish to PyPI
+        if: success()
+        env:
+          UV_PUBLISH_USERNAME: ${{ secrets.PYPI_USERNAME }}
+          UV_PUBLISH_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+        run: |
+          uv publish dist/all
 
       - name: Fetch and delete artifacts for current run
         shell: bash
@@ -488,6 +496,9 @@ jobs:
       - build-linux-arm
       - build-macos
       - build-windows
+    permissions:
+      contents: write # Required for pushing tags and upload release assets
+      actions: write  # Required for creating releases
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     outputs:
@@ -495,7 +506,7 @@ jobs:
       tag_name: ${{ env.TAG_NAME }}
     steps:
       # Security hardening
-      - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481
+      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
         with:
           egress-policy: audit
 
@@ -544,11 +555,13 @@ jobs:
     needs: [tag-release]
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # Required for uploading release assets
     env:
       COPY_TO_SOURCE: false # Do not copy built *.so files back into source tree
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
         with:
           egress-policy: audit
 
@@ -561,15 +574,6 @@ jobs:
         with:
           python-version: "3.13"
           free-disk-space: "true"
-
-      - name: Clean existing dist directory
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          echo "Cleaning existing dist/ directory"
-          rm -rf dist
-          mkdir -p dist
 
       - name: Build sdist
         run: |
@@ -606,7 +610,9 @@ jobs:
           asset_content_type: application/gzip
 
       - name: Publish to PyPI
+        if: success()
         env:
           UV_PUBLISH_USERNAME: ${{ secrets.PYPI_USERNAME }}
           UV_PUBLISH_PASSWORD: ${{ secrets.PYPI_TOKEN }}
-        run: uv publish
+        run: |
+          uv publish dist

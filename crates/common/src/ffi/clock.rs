@@ -187,14 +187,13 @@ pub unsafe extern "C" fn test_clock_set_timer(
     stop_time_ns: UnixNanos,
     callback_ptr: *mut ffi::PyObject,
     allow_past: u8,
+    fire_immediately: u8,
 ) {
     assert!(!callback_ptr.is_null());
 
     let name = unsafe { cstr_as_str(name_ptr) };
-    let stop_time_ns = match stop_time_ns.into() {
-        0 => None,
-        _ => Some(stop_time_ns),
-    };
+    let start_time_ns = (start_time_ns != 0).then_some(start_time_ns);
+    let stop_time_ns = (stop_time_ns != 0).then_some(stop_time_ns);
     let callback = if callback_ptr == unsafe { ffi::Py_None() } {
         None
     } else {
@@ -211,6 +210,7 @@ pub unsafe extern "C" fn test_clock_set_timer(
             stop_time_ns,
             callback,
             Some(allow_past != 0),
+            Some(fire_immediately != 0),
         )
         .expect(FAILED);
 }
@@ -303,7 +303,8 @@ impl DerefMut for LiveClock_API {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn live_clock_new() -> LiveClock_API {
-    LiveClock_API(Box::default())
+    // Initialize a live clock without a time event sender
+    LiveClock_API(Box::new(LiveClock::new(None)))
 }
 
 #[unsafe(no_mangle)]
@@ -422,15 +423,13 @@ pub unsafe extern "C" fn live_clock_set_timer(
     stop_time_ns: UnixNanos,
     callback_ptr: *mut ffi::PyObject,
     allow_past: u8,
+    fire_immediately: u8,
 ) {
     assert!(!callback_ptr.is_null());
 
     let name = unsafe { cstr_as_str(name_ptr) };
-    let stop_time_ns = match stop_time_ns.into() {
-        0 => None,
-        _ => Some(stop_time_ns),
-    };
-
+    let start_time_ns = (start_time_ns != 0).then_some(start_time_ns);
+    let stop_time_ns = (stop_time_ns != 0).then_some(stop_time_ns);
     let callback = if callback_ptr == unsafe { ffi::Py_None() } {
         None
     } else {
@@ -447,6 +446,7 @@ pub unsafe extern "C" fn live_clock_set_timer(
             stop_time_ns,
             callback,
             Some(allow_past != 0),
+            Some(fire_immediately != 0),
         )
         .expect(FAILED);
 }

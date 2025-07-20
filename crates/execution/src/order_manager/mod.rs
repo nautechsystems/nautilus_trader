@@ -13,4 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Order management component.
+
 pub mod manager;

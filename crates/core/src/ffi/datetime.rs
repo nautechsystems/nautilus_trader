@@ -13,6 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Thin FFI wrappers around the date/time conversion utilities in `nautilus-core`.
+//!
+//! The Rust implementation already lives in `crate::datetime`; this module simply exposes the
+//! conversions to C (and, by extension, to Python via Cython) while keeping the behaviour and the
+//! documentation in one place.  Each exported function forwards directly to its Rust counterpart
+//! and therefore inherits the same semantics and safety guarantees.
+
 use std::ffi::c_char;
 
 use crate::{

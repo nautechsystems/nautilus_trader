@@ -14,12 +14,14 @@
 | `nightly` | [![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fnightly%2Fversion.json)](https://packages.nautechsystems.io/simple/nautilus-trader/index.html) | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=nightly)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml) |
 | `develop` | [![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fdevelop%2Fversion.json)](https://packages.nautechsystems.io/simple/nautilus-trader/index.html) | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=develop)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml) |
 
-| Platform           | Rust    | Python     |
-| :----------------- | :------ | :--------- |
-| `Linux (x86_64)`   | 1.87.0+ | 3.11-3.13  |
-| `Linux (ARM64)`    | 1.87.0+ | 3.11-3.13  |
-| `macOS (ARM64)`    | 1.87.0+ | 3.11-3.13  |
-| `Windows (x86_64)` | 1.87.0+ | 3.11-3.13  |
+| Platform           | Rust   | Python     |
+| :----------------- | :----- | :--------- |
+| `Linux (x86_64)`   | 1.88.0 | 3.11-3.13  |
+| `Linux (ARM64)`    | 1.88.0 | 3.11-3.13  |
+| `macOS (ARM64)`    | 1.88.0 | 3.11-3.13  |
+| `Windows (x86_64)` | 1.88.0 | 3.11-3.13* |
+
+\* Windows builds are currently pinned to CPython 3.13.2, see [installation guide](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/getting_started/installation.md).
 
 - **Docs**: <https://nautilustrader.io/docs/>
 - **Website**: <https://nautilustrader.io>
@@ -131,6 +133,7 @@ The following integrations are currently supported; see [docs/integrations/](htt
 | [Coinbase International](https://www.coinbase.com/en/international-exchange) | `COINBASE_INTX`       | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/coinbase_intx.md) |
 | [Databento](https://databento.com)                                           | `DATABENTO`           | Data Provider           | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/databento.md)     |
 | [dYdX](https://dydx.exchange/)                                               | `DYDX`                | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/dydx.md)          |
+| [Hyperliquid](https://hyperliquid.xyz)                                       | `HYPERLIQUID`         | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/building-orange) | [Guide](docs/integrations/hyperliquid.md)   |
 | [Interactive Brokers](https://www.interactivebrokers.com)                    | `INTERACTIVE_BROKERS` | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/ib.md)            |
 | [OKX](https://okx.com)                                                       | `OKX`                 | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/building-orange) | [Guide](docs/integrations/okx.md)           |
 | [Polymarket](https://polymarket.com)                                         | `POLYMARKET`          | Prediction Market (DEX) | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/polymarket.md)    |
@@ -217,7 +220,7 @@ pip install -U nautilus_trader
 
 ### From the Nautech Systems package index
 
-The Nautech Systems package index (`packages.nautechsystems.io`) is [PEP-503](https://peps.python.org/pep-0503/) compliant and hosts both stable and development binary wheels for `nautilus_trader`.
+The Nautech Systems package index (`packages.nautechsystems.io`) complies with [PEP-503](https://peps.python.org/pep-0503/) and hosts both stable and development binary wheels for `nautilus_trader`.
 This enables users to install either the latest stable release or pre-release versions for testing.
 
 #### Stable wheels
@@ -253,11 +256,11 @@ while adhering to [PEP-440](https://peps.python.org/pep-0440/) versioning standa
 
 > [!WARNING]
 >
-> We don't recommend using development wheels in production environments, such as live trading controlling real capital.
+> We do not recommend using development wheels in production environments, such as live trading controlling real capital.
 
 #### Installation commands
 
-By default, pip installs the latest stable release. Adding the `--pre` flag ensures that pre-release versions, including development wheels, are considered.
+By default, pip will install the latest stable release. Adding the `--pre` flag ensures that pre-release versions, including development wheels, are considered.
 
 To install the latest available pre-release (including development wheels):
 
@@ -283,13 +286,13 @@ curl -s https://packages.nautechsystems.io/simple/nautilus-trader/index.html | g
 
 #### Branch updates
 
-- `develop` branch wheels (`.dev`): Are built and published continuously with every merged commit.
-- `nightly` branch wheels (`a`): Are built and published daily when `develop` branch is automatically merged at **14:00 UTC** (if there are changes).
+- `develop` branch wheels (`.dev`): Build and publish continuously with every merged commit.
+- `nightly` branch wheels (`a`): Build and publish daily when we automatically merge the `develop` branch at **14:00 UTC** (if there are changes).
 
 #### Retention policies
 
-- `develop` branch wheels (`.dev`): Only the most recent wheel build is retained.
-- `nightly` branch wheels (`a`): Only the 10 most recent wheel builds are retained.
+- `develop` branch wheels (`.dev`): We retain only the most recent wheel build.
+- `nightly` branch wheels (`a`): We retain only the 10 most recent wheel builds.
 
 ### From Source
 
@@ -355,6 +358,21 @@ It's possible to install from source using pip if you first install the build de
 >
 > The `--depth 1` flag fetches just the latest commit for a faster, lightweight clone.
 
+6. Set environment variables for PyO3 compilation (Linux and macOS only):
+
+    ```bash
+    # Set the library path for the Python interpreter (in this case Python 3.13.4)
+    export LD_LIBRARY_PATH="$HOME/.local/share/uv/python/cpython-3.13.4-linux-x86_64-gnu/lib:$LD_LIBRARY_PATH"
+
+    # Set the Python executable path for PyO3
+    export PYO3_PYTHON=$(pwd)/.venv/bin/python
+    ```
+
+> [!NOTE]
+>
+> Adjust the Python version and architecture in the `LD_LIBRARY_PATH` to match your system.
+> Use `uv python list` to find the exact path for your Python installation.
+
 See the [Installation Guide](https://nautilustrader.io/docs/latest/getting_started/installation) for other options and further details.
 
 ## Redis
@@ -365,7 +383,7 @@ See the **Redis** section of the [Installation Guide](https://nautilustrader.io/
 
 ## Makefile
 
-A `Makefile` is provided to automate most installation and build tasks for development. It provides the following targets:
+A `Makefile` is provided to automate most installation and build tasks for development. Some of the targets include:
 
 - `make install`: Installs in `release` build mode with all dependency groups and extras.
 - `make install-debug`: Same as `make install` but with `debug` build mode.
@@ -374,6 +392,7 @@ A `Makefile` is provided to automate most installation and build tasks for devel
 - `make build-debug`: Runs the build script in `debug` build mode.
 - `make build-wheel`: Runs uv build with a wheel format in `release` mode.
 - `make build-wheel-debug`: Runs uv build with a wheel format in `debug` mode.
+- `make cargo-test`: Runs all Rust crate tests using `cargo-nextest`.
 - `make clean`: Deletes all build results, such as `.so` or `.dll` files.
 - `make distclean`: **CAUTION** Removes all artifacts not in the git index from the repository. This includes source files which have not been `git add`ed.
 - `make docs`: Builds the documentation HTML using Sphinx.
@@ -384,7 +403,11 @@ A `Makefile` is provided to automate most installation and build tasks for devel
 
 > [!TIP]
 >
-> Run `make build-debug` to compile after changes to Rust or Cython code for the most efficient development workflow.
+> Run `make help` for documentation on all available make targets.
+
+> [!TIP]
+>
+> See the [crates/infrastructure/TESTS.md](https://github.com/nautechsystems/nautilus_trader/blob/develop/crates/infrastructure/TESTS.md) file for running the infrastructure integration tests.
 
 ## Examples
 
@@ -429,8 +452,8 @@ http://127.0.0.1:8888/lab
 > [!WARNING]
 >
 > NautilusTrader currently exceeds the rate limit for Jupyter notebook logging (stdout output).
-> As a result, the `log_level` in the examples is set to `ERROR`. Lowering this level to see more
-> logging will cause the notebook to hang during cell execution. We are investigating a fix, which
+> Therefore, we set the `log_level` to `ERROR` in the examples. Lowering this level to see more
+> logging will cause the notebook to hang during cell execution. We are investigating a fix that
 > may involve either raising the configured rate limits for Jupyter or throttling the log flushing
 > from Nautilus.
 >
@@ -441,6 +464,10 @@ http://127.0.0.1:8888/lab
 
 We aim to provide the most pleasant developer experience possible for this hybrid codebase of Python, Cython and Rust.
 See the [Developer Guide](https://nautilustrader.io/docs/latest/developer_guide/index.html) for helpful information.
+
+> [!TIP]
+>
+> Run `make build-debug` to compile after changes to Rust or Cython code for the most efficient development workflow.
 
 ### Testing with Rust
 
@@ -464,6 +491,8 @@ Thank you for considering contributing to NautilusTrader! We welcome any and all
 the project. If you have an idea for an enhancement or a bug fix, the first step is to open an [issue](https://github.com/nautechsystems/nautilus_trader/issues)
 on GitHub to discuss it with the team. This helps to ensure that your contribution will be
 well-aligned with the goals of the project and avoids duplication of effort.
+
+Before getting started, be sure to review the [open-source scope](/ROADMAP.md#open-source-scope) outlined in the project’s roadmap to understand what’s in and out of scope.
 
 Once you're ready to start working on your contribution, make sure to follow the guidelines
 outlined in the [CONTRIBUTING.md](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md) file. This includes signing a Contributor License Agreement (CLA)

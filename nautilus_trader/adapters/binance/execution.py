@@ -14,11 +14,11 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import os
 from decimal import Decimal
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_MAX_CALLBACK_RATE
 from nautilus_trader.adapters.binance.common.constants import BINANCE_MIN_CALLBACK_RATE
-from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceEnumParser
 from nautilus_trader.adapters.binance.common.enums import BinanceFuturesPositionSide
@@ -53,6 +53,7 @@ from nautilus_trader.execution.messages import GenerateOrderStatusReport
 from nautilus_trader.execution.messages import GenerateOrderStatusReports
 from nautilus_trader.execution.messages import GeneratePositionStatusReports
 from nautilus_trader.execution.messages import ModifyOrder
+from nautilus_trader.execution.messages import QueryAccount
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.execution.reports import FillReport
@@ -65,7 +66,6 @@ from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import PositionSide
-from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.enums import trailing_offset_type_to_str
@@ -148,8 +148,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
     ) -> None:
         super().__init__(
             loop=loop,
-            client_id=ClientId(name or BINANCE_VENUE.value),
-            venue=BINANCE_VENUE,
+            client_id=ClientId(name or config.venue.value),
+            venue=config.venue,
             oms_type=OmsType.HEDGING if account_type.is_futures else OmsType.NETTING,
             instrument_provider=instrument_provider,
             account_type=AccountType.CASH if account_type.is_spot else AccountType.MARGIN,
@@ -177,10 +177,11 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._log.info(f"{config.max_retries=}", LogColor.BLUE)
         self._log.info(f"{config.retry_delay_initial_ms=}", LogColor.BLUE)
         self._log.info(f"{config.retry_delay_max_ms=}", LogColor.BLUE)
+        self._log.info(f"{config.listen_key_ping_max_failures=}", LogColor.BLUE)
 
         self._is_dual_side_position: bool | None = None  # Initialized on connection
         self._set_account_id(
-            AccountId(f"{name or BINANCE_VENUE.value}-{self._binance_account_type.value}-master"),
+            AccountId(f"{name or config.venue.value}-{self._binance_account_type.value}-master"),
         )
 
         # Enum parser
@@ -196,6 +197,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._ping_listen_keys_interval: int = 60 * 5  # Once every 5 mins (hard-coded)
         self._ping_listen_keys_task: asyncio.Task | None = None
         self._listen_key: str | None = None
+        self._ping_consecutive_failures: int = 0
+        self._ping_max_failures: int = config.listen_key_ping_max_failures
+        self._last_successful_ping_ns: int = 0
 
         # WebSocket API
         self._ws_client = BinanceWebSocketClient(
@@ -284,6 +288,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
         # Set up WebSocket listen key
         self._listen_key = response.listenKey
+        self._last_successful_ping_ns = self._clock.timestamp_ns()  # Initialize on connection
         self._log.info(f"Listen key {self._listen_key}")
         self._ping_listen_keys_task = self.create_task(self._ping_listen_keys())
 
@@ -306,15 +311,86 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                     f"{self._ping_listen_keys_interval}s",
                 )
                 await asyncio.sleep(self._ping_listen_keys_interval)
-                if self._listen_key:
-                    self._log.debug(f"Pinging WebSocket listen key {self._listen_key}")
-                    try:
-                        await self._http_user.keepalive_listen_key(listen_key=self._listen_key)
-                    except BinanceClientError as e:
-                        # We may see this if an old listen key was used for the ping
-                        self._log.error(f"Error pinging listen key: {e}")
+
+                if not self._listen_key:
+                    self._log.warning("No listen key available for ping")
+                    continue
+
+                self._log.debug(f"Pinging WebSocket listen key {self._listen_key}")
+
+                try:
+                    await self._http_user.keepalive_listen_key(listen_key=self._listen_key)
+
+                    # Reset failure tracking on success
+                    self._ping_consecutive_failures = 0
+                    self._last_successful_ping_ns = self._clock.timestamp_ns()
+                    self._log.debug(f"Listen key ping successful: {self._listen_key}")
+
+                except (BinanceClientError, BinanceError) as e:
+                    self._ping_consecutive_failures += 1
+                    time_since_success_secs = (
+                        (self._clock.timestamp_ns() - self._last_successful_ping_ns) / 1_000_000_000
+                        if self._last_successful_ping_ns > 0
+                        else 0
+                    )
+
+                    self._log.error(
+                        f"Listen key ping failed (attempt {self._ping_consecutive_failures}/"
+                        f"{self._ping_max_failures}): {e}, "
+                        f"time since last success: {time_since_success_secs:.1f}s",
+                    )
+
+                    if self._ping_consecutive_failures >= self._ping_max_failures:
+                        self._log.error(
+                            f"Listen key ping failed {self._ping_max_failures} consecutive times; "
+                            "initiating WebSocket reconnection to prevent data loss",
+                        )
+                        await self._handle_listen_key_failure()
+                        self._ping_consecutive_failures = 0  # Reset after handling
+
         except asyncio.CancelledError:
             self._log.debug("Canceled task 'ping_listen_keys'")
+
+    async def _handle_listen_key_failure(self) -> None:
+        # Handle listen key authentication failure with full recovery.
+        #
+        # This method attempts to recover from listen key failures by:
+        # 1. Disconnecting the current WebSocket
+        # 2. Creating a new listen key
+        # 3. Reconnecting the WebSocket with the new key
+
+        try:
+            self._log.warning("Starting listen key recovery process")
+
+            # Disconnect current WebSocket
+            await self._ws_client.disconnect()
+            self._log.debug("Disconnected WebSocket for listen key recovery")
+
+            # Create new listen key
+            response: BinanceListenKey = await self._http_user.create_listen_key()
+            self._listen_key = response.listenKey
+            self._last_successful_ping_ns = self._clock.timestamp_ns()
+            self._log.info(f"Created new listen key for recovery: {self._listen_key}")
+
+            # Reconnect WebSocket with new key
+            await self._ws_client.subscribe_listen_key(self._listen_key)
+            self._log.info("WebSocket reconnected successfully with new listen key")
+
+        except Exception as e:
+            self._log.error(f"Failed to recover from listen key failure: {e}")
+
+            # Check if graceful shutdown is configured
+            if hasattr(self, "graceful_shutdown_on_exception"):
+                execution_engine = getattr(self, "_execution_engine", None)
+                if execution_engine and hasattr(execution_engine, "graceful_shutdown_on_exception"):
+                    if execution_engine.graceful_shutdown_on_exception:
+                        execution_engine.shutdown_system(f"Listen key recovery failed: {e}")
+                        return
+
+            self._log.error(
+                "Terminating process to prevent operation with invalid authentication",
+            )
+            os._exit(1)
 
     async def _disconnect(self) -> None:
         # Cancel tasks
@@ -622,9 +698,19 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         raise NotImplementedError
 
     def _determine_time_in_force(self, order: Order) -> BinanceTimeInForce:
-        time_in_force = self._enum_parser.parse_internal_time_in_force(order.time_in_force)
-        if time_in_force == TimeInForce.GTD and not self._use_gtd:
-            time_in_force = TimeInForce.GTC
+        # Convert the internal TimeInForce enum to the Binance equivalent
+        time_in_force: BinanceTimeInForce = self._enum_parser.parse_internal_time_in_force(
+            order.time_in_force,
+        )
+
+        # When the client is configured *not* to make use of the native GTD
+        # (Good-Till-Date) support on Binance we transparently downgrade GTD to
+        # GTC. Comparison must be performed against the *Binance* enum; the
+        # previous implementation compared against the internal Nautilus enum
+        # which would always evaluate to ``False`` and therefore never apply
+        # the downgrade.
+        if time_in_force == BinanceTimeInForce.GTD and not self._use_gtd:
+            time_in_force = BinanceTimeInForce.GTC
             self._log.info(
                 f"Converted GTD `time_in_force` to GTC for {order.client_order_id}",
                 LogColor.BLUE,
@@ -683,6 +769,10 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             "HedgeModePositionSides",
         )
         return position_side
+
+    async def _query_account(self, _command: QueryAccount) -> None:
+        # Specific account ID (sub account) not yet supported
+        await self._update_account_state()
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         position_side = self._get_position_side_from_position_id(
@@ -845,7 +935,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         else:
             self._log.error(
                 f"Cannot submit order: invalid `order.trigger_type`, was "
-                f"{trigger_type_to_str(order.trigger_price)}, {order}",
+                f"{trigger_type_to_str(order.trigger_type)}, {order}",
             )
             return
 
@@ -877,7 +967,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         else:
             self._log.error(
                 f"Cannot submit order: invalid `order.trigger_type`, was "
-                f"{trigger_type_to_str(order.trigger_price)}, {order}",
+                f"{trigger_type_to_str(order.trigger_type)}, {order}",
             )
             return
 

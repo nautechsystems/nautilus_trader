@@ -16,7 +16,6 @@
 Define the schemas for the GetPerpetualPositions endpoint.
 """
 
-# ruff: noqa: N815
 
 import msgspec
 

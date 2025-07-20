@@ -110,14 +110,18 @@ cdef class Cache(CacheFacade):
     cdef set _index_strategies
     cdef set _index_exec_algorithms
     cdef bint _drop_instruments_on_reset
+    cdef Venue _specific_venue
 
     cdef readonly bint has_backing
     """If the cache has a database backing.\n\n:returns: `bool`"""
+    cdef readonly bint persist_account_events
+    """If account state events are written to the backing database.\n\n:returns: `bool`"""
     cdef readonly int tick_capacity
     """The caches tick capacity.\n\n:returns: `int`"""
     cdef readonly int bar_capacity
     """The caches bar capacity.\n\n:returns: `int`"""
 
+    cpdef void set_specific_venue(self, Venue venue)
     cpdef void cache_all(self)
     cpdef void cache_general(self)
     cpdef void cache_currencies(self)
@@ -130,11 +134,11 @@ cdef class Cache(CacheFacade):
     cpdef void build_index(self)
     cpdef bint check_integrity(self)
     cpdef bint check_residuals(self)
-    cpdef void purge_closed_orders(self, uint64_t ts_now, uint64_t buffer_secs=*)
-    cpdef void purge_closed_positions(self, uint64_t ts_now, uint64_t buffer_secs=*)
-    cpdef void purge_order(self, ClientOrderId client_order_id)
-    cpdef void purge_position(self, PositionId position_id)
-    cpdef void purge_account_events(self, uint64_t ts_now, uint64_t lookback_secs=*)
+    cpdef void purge_closed_orders(self, uint64_t ts_now, uint64_t buffer_secs=*, bint purge_from_database=*)
+    cpdef void purge_closed_positions(self, uint64_t ts_now, uint64_t buffer_secs=*, bint purge_from_database=*)
+    cpdef void purge_order(self, ClientOrderId client_order_id, bint purge_from_database=*)
+    cpdef void purge_position(self, PositionId position_id, bint purge_from_database=*)
+    cpdef void purge_account_events(self, uint64_t ts_now, uint64_t lookback_secs=*, bint purge_from_database=*)
     cpdef void clear_index(self)
     cpdef void reset(self)
     cpdef void dispose(self)

@@ -1,29 +1,186 @@
-# NautilusTrader 1.219.0 Beta
+# NautilusTrader 1.220.0 Beta
 
 Released on TBD (UTC).
 
 ### Enhancements
-- Added `time_bars_build_delay` config option for `DataEngineConfig` (#2676), thanks @faysou
-- Added support for DEX swaps for blockchain adapter (#2683), thanks @filipmacek
+- Added `MarginModel` concept, base models, config, and factory for backtesting (#2794), thanks @faysou and @stefansimik
+- Added additional built-in backtest fill models (#2795), thanks @faysou and @stefansimik
+- Added `persist_account_events` config option for `CacheConfig` (default `True` to retain current behavior)
+- Added `query_account` method for `Strategy`
+- Added `QueryAccount` execution message
+- Added streaming methods for `TardisCSVDataLoader`
+- Added stream iterators support for `BacktestEngine` low-level streaming API
+- Added `YEAR` aggregation and improved bar specification validation (#2771), thanks @stastnypremysl
+- Added support for requesting any number of historical bars for dYdX (#2766, #2777), thanks @DeirhX
+- Added `use_hyphens_in_client_order_ids` config option for `StrategyConfig`
+- Added `greeks_filter` function to `portfolio_greeks` (#2756), thanks @faysou
+- Added `VERBOSE` option to common make targets (#2759), thanks @faysou
 
 ### Breaking Changes
-- Removed support for Databento DBN v1 schemas (migrate to DBN v2 or v3, see [DBN Changelog](https://github.com/databento/dbn/blob/main/CHANGELOG.md#0350---2025-05-28))
-- Changed Databento DBN upgrade policy to default v3
+- Changed `start` parameter to required for `Actor` data request methods
+- Reverted implementation of `delete_account_event` from cache database that was too inefficient and is now a no-op pending redesign
 
 ### Internal Improvements
-- Upgraded `databento` crate to v0.26.2
-- Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.25.0
+- Refactored OKX adapter to Rust API clients
+- Refactored `BacktestDataIterator` (#2791) to consolidate data generator usage, thanks @faysou
+- Added stream iterators support `BacktestDataIterator`
+- Added serialization support for execution reports
+- Added serialization support for execution report commands
+- Added `DataTester` standardized data testing actor for integration adapters
+- Added `start` and `stop` to response data (#2748), thanks @stastnypremysl
+- Added integration test service management targets (#2765), thanks @stastnypremysl
+- Added integration tests for dYdX bar-partitioning and large-history handling (#2773), thanks @nicolad
+- Added make build-debug-pyo3 (#2802), thanks @faysou
+- Completed bar request implementation for OKX (#2789), thanks @nicolad
+- Improved reconciliation handling of internally generated orders to align positions (now uses the `INTERNAL-DIFF` strategy ID)
+- Improved data client for blockchain adapter (#2787), thanks @filipmacek
+- Improved DEX pool sync process in the blockchain adapter (#2796), thanks @filipmacek
+- Improved efficiency of message bus external streams buffer flushing
+- Improved `databento_test_request_bars` example (#2762), thanks @faysou
+- Optimized Redis key scans to improve efficiency over a network
+- Refined Rust catalog path handling (#2743), thanks @faysou
+- Refined Rust `GreeksCalculator` (#2760), thanks @faysou
+- Refined Databento bars timestamp decoding and backtest execution usage (#2800), thanks @faysou
+- Refined `FillModel` (#2795), thanks @faysou and @stefansimik
+- Upgraded `databento` crate to v0.29.0
+- Upgraded `datafusion` crate to v48.0.1
+- Upgraded `redis` crate to v0.32.4
 
 ### Fixes
-- Fixed `generate_order_modify_rejected` typo in Binance execution client (#2682), thanks for reporting @etiennepar
-- Fixed order status report generation for Polymarket where `venue_order_id` was unbounded
-- Fixed Arrow schema registration for `BinanceBar`
+- Fixed decoding zero-sized trades for Databento MBO data
+- Fixed Tardis Machine replay processing and Parquet file writing
+- Fixed Polymarket reconciliation for signature type 2 trades where wallet address differs from funder address
+- Fixed catalog query of multiple instruments of same type (#2772), thanks @faysou
+- Fixed modification of contingent orders in backtest (#2761), thanks faysou
+- Fixed balance calculations on order fill to allow operating at near account balance capacity (#2752), thanks @petioptrv
+- Fixed time range end in some databento request functions (#2755), thanks @faysou
+- Fixed EOD bar for Interactive Brokers (#2764), thanks @faysou
+- Fixed dYdX Take Profit order type mapping error (#2758), thanks @nicolad
+- Fixed typo in logging for dYdX adapter (#2790), thanks @DeirhX
 
 ### Documentation Updates
-None
+- Improved dYdX integration guide (#2751), thanks @nicolad
 
 ### Deprecations
 None
+
+---
+
+# NautilusTrader 1.219.0 Beta
+
+Released on 5th July 2025 (UTC).
+
+### Enhancements
+- Added `graceful_shutdown_on_exception` config option for live engines (default `False` to retain intended hard crash on unexpected system exceptions)
+- Added `purge_from_database` config option for `LiveExecEngineConfig` to support cache backing database management
+- Added support for data download during backtest (#2652), thanks @faysou
+- Added delete data range to catalog (#2744), thanks @faysou
+- Added consolidate catalog by period (#2727), thanks @faysou
+- Added `fire_immediately` flag parameter for timers where a time event will be fired at the `start` instant and then every interval thereafter (default `False` to retain current behavior) (#2600), thanks for the idea @stastnypremysl
+- Added `time_bars_build_delay` config option for `DataEngineConfig` (#2676), thanks @faysou
+- Added immediate firing capability for time alerts and corresponding test (#2745), thanks @stastnypremysl
+- Added missing serialization mappings for some instruments (#2702), thanks @faysou
+- Added support for DEX swaps for blockchain adapter (#2683), thanks @filipmacek
+- Added support for Pool liquidity updates for blockchain adapter (#2692), thanks @filipmacek
+- Added fill report reconciliation warning when discrepancy with existing fill (#2706), thanks @faysou
+- Added optional metadata function for custom data query (#2724), thanks @faysou
+- Added support for order-list submission in the sandbox execution client (#2714), thanks @petioptrv
+- Added hidden order support for IBKR (#2739), thanks @sunlei
+- Added `subscribe_order_book_deltas` support for IBKR (#2749), thanks @sunlei
+- Added `bid_levels` and `ask_levels` for `OrderBook.pprint`
+- Added `accepted_buffer_ns` filter param for `Cache.own_bid_orders(...)` and `Cache.own_ask_orders(...)`
+- Added trailing stop orders `activation_price` support in Rust (#2750), thanks @nicolad
+
+### Breaking Changes
+- Changed timer `allow_past=False` behavior: now validates the `next_event_time` instead of the `start_time`. This allows timers with past start times as long as their next scheduled event is still in the future
+- Changed behavior of timers `allow_past=False` to permit start times in the past if the next event time is still in the future
+- Changed Databento DBN upgrade policy to default v3
+- Removed problematic negative balance check for margin accounts (cash account negative balance check remains unchanged)
+- Removed support for Databento DBN v1 schemas (migrate to DBN v2 or v3, see [DBN Changelog](https://github.com/databento/dbn/blob/main/CHANGELOG.md#0350---2025-05-28))
+
+### Internal Improvements
+- Added logging macros for custom component and color in Rust
+- Added Cython-level parameter validation for timer operations to prevent Rust panics and provide clearer Python error messages
+- Added property-based testing for `Price`, `Quantity`, `Money` value types in Rust
+- Added property-based testing for `UnixNanos` in Rust
+- Added property-based testing for `OrderBook` in Rust
+- Added property-based testing for `TestTimer` in Rust
+- Added property-based testing for `network` crate in Rust
+- Added chaos testing with `turmoil` for socket clients in Rust
+- Added `check_positive_decimal` correctness function and use for instrument validations (#2736), thanks @nicolad
+- Added `check_positive_money` correctness function and use for instrument validations (#2738), thanks @nicolad
+- Ported data catalog refactor to Rust (#2681, #2720), thanks @faysou
+- Optimized `TardisCSVDataLoader` performance (~90% memory usage reduction, ~60-70% faster)
+- Consolidated the clocks and timers v2 feature from @twitu
+- Consolidated on pure Rust cryptography crates with no dependencies on native certs or openssl
+- Consolidated on `aws-lc-rs` cryptography for FIPS compliance
+- Confirmed parity between Cython and Rust indicators (#2700, #2710, #2713), thanks @nicolad
+- Implemented `From<Pool>` -> `CurrencyPair` & `InstrumentAny` (#2693), thanks @nicolad
+- Updated `Makefile` to use new docker compose syntax (#2746), thanks @stastnypremysl
+- Updated Tardis exchange mappings
+- Improved live engine message processing to ensure unexpected exceptions result in an immediate hard crash rather than continuing without the queue processing messages
+- Improved live reconciliation robustness and testing
+- Improved listen key error handling and recovery for Binance
+- Improved handling of negative balances in backtests (#2730), thanks @ms32035
+- Improved robustness of cash and margin account locked balance calculations to avoid negative free balance
+- Improved robustness of fill price parsing for Betfair
+- Improved implementation, validations and testing for Rust instruments (#2723, #2733), thanks @nicolad
+- Improved `Currency` equality to use `strcmp` to avoid C pointer comparison issues with `ustr` string interning
+- Improved unsubscribe cleanup(s) for Bybit adapter
+- Improved `Makefile` to be self-documenting (#2741), thanks @sunlei
+- Refactored IB adapter (#2647), thanks @faysou
+- Refactored data catalog (#2652, #2740), thanks @faysou
+- Refined Rust data catalog (#2734), thanks @faysou
+- Refined logging subsystem lifecycle management and introduce global log sender
+- Refined signal serialization and tests (#2705), thanks @faysou
+- Refined CI/CD and build system (#2707), thanks @stastnypremysl
+- Upgraded Rust (MSRV) to 1.88.0
+- Upgraded Cython to v3.1.2
+- Upgraded `databento` crate to v0.28.0
+- Upgraded `datafusion` crate to v48.0.0
+- Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.25.1
+- Upgraded `redis` crate to v0.32.3
+- Upgraded `tokio` crate to v1.46.1
+- Upgraded `tokio-tungstenite` crate to v0.27.0
+
+### Fixes
+- Fixed `AccountBalance` mutation in `AccountState` events (#2701), thanks for reporting @DeirhX
+- Fixed order book cache consistency in update and remove operations (found through property-based testing)
+- Fixed order status report generation for Polymarket where `venue_order_id` was unbounded
+- Fixed data request identifier attribute access for `LiveDataClient`
+- Fixed `generate_order_modify_rejected` typo in Binance execution client (#2682), thanks for reporting @etiennepar
+- Fixed order book depth handling in subscriptions for Binance
+- Fixed potential `IndexError` with empty bars requests for Binance
+- Fixed GTD-GTC time in force conversion for Binance
+- Fixed incorrect logging of trigger type for Binance
+- Fixed trade ticks unsubscribe for Binance which was not differentiating aggregated trades
+- Fixed pending update hot cache cleanup for Betfair execution client
+- Fixed invalid session information on account update for Betfair execution client
+- Fixed order book snapshots unsubscribe for Tardis data client
+- Fixed Arrow schema registration for `BinanceBar`
+- Fixed gRPC server shutdown warning when running dYdX integration tests
+- Fixed registration of encoder and decoder for `BinanceBar`, thanks for reporting @miller-moore
+- Fixed spot and futures sandbox for Binance (#2687), thanks @petioptrv
+- Fixed `clean` and `distclean` make targets entering `.venv` and corrupting the Python virtual env, thanks @faysou
+- Fixed catalog identifier matching to exact match (#2732), thanks @faysou
+- Fixed last value updating for RSI indicator (#2703), thanks @bartlaw
+- Fixed gateway/TWS reconnect process for IBKR (#2710), thanks @bartlaw
+- Fixed Interactive Brokers options chain issue (#2711), thanks @FGU1
+- Fixed Partially filled bracket order and SL triggered for IBKR (#2704, #2717), thanks @bartlaw
+- Fixed instrument message decoding when no `exchange` value for Databento US equities
+- Fixed fetching single-instrument trading fees for `Binance`, thanks @petioptrv
+- Fixed IB-TWS connection issue with international languages (#2726), thanks @DracheShiki
+- Fixed bar requests for Bybit where pagination was incorrect which limited bars being returned
+- Fixed Bybit Unknown Error (#2742), thanks @DeevsDeevs
+- Fixed margin balance parsing for Bybit
+- Restored task error logs for IBKR (#2716), thanks @bartlaw
+
+### Documentation Updates
+- Updated IB adapter documentation (#2729), thanks @faysou
+- Improved reconciliation docs in live concept guide
+
+### Deprecations
+- Deprecated `Portfolio.set_specific_venue(...)`, to be removed in a future release; use `Cache.set_specific_venue(...)` instead
 
 ---
 
@@ -1644,7 +1801,7 @@ Released on 25th February 2024 (UTC).
 - Fixed IOC time in force behavior (allows fills beyond the top level, will cancel any remaining after all fills are applied)
 - Fixed `LiveClock` timer behavior for small intervals causing next time to be less than now (timer then would not run)
 - Fixed log level filtering for `log_level_file` (bug introduced in v1.187.0), thanks @twitu
-- Fixed logging `print_config` config option (was not being passed through to the logging system)
+- Fixed logging `print_config` config option (was not being passed through to the logging subsystem)
 - Fixed logging timestamps for backtesting (static clock was not being incrementally set to individual `TimeEvent` timestamps)
 - Fixed account balance updates (fills from zero quantity `NETTING` positions will generate account balance updates)
 - Fixed `MessageBus` publishable types collection type (needed to be `tuple` not `set`)
@@ -1665,7 +1822,7 @@ Released on 25th February 2024 (UTC).
 Released on 9th February 2024 (UTC).
 
 ### Enhancements
-- Refined logging system module and writers in Rust, thanks @ayush-sb and @twitu
+- Refined logging subsystem module and writers in Rust, thanks @ayush-sb and @twitu
 - Improved Interactive Brokers adapter symbology and parsing with a `strict_symbology` config option, thanks @rsmb7z and @fhill2
 
 ### Breaking Changes
@@ -1723,7 +1880,7 @@ Released on 22nd January 2024 (UTC).
 
 ### Enhancements
 - Added `LogLevel.OFF` (matches the Rust `tracing` log levels)
-- Added `init_logging` function with sensible defaults to initialize the Rust implemented logging system
+- Added `init_logging` function with sensible defaults to initialize the Rust implemented logging subsystem
 - Updated Binance Futures enum members for `BinanceFuturesContractType` and `BinanceFuturesPositionUpdateReason`
 - Improved log header using the `sysinfo` crate (adds swap space metrics and a PID identifier)
 - Removed Python dependency on `psutil`

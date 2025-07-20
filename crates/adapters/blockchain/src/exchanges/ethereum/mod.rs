@@ -41,30 +41,30 @@ pub use uniswap_v4::UNISWAP_V4;
 #[must_use]
 pub fn all() -> Vec<&'static DexExtended> {
     vec![
-        &UNISWAP_V2,
-        &UNISWAP_V3,
-        &UNISWAP_V4,
-        &CURVE_FINANCE,
-        &FLUID_DEX,
-        &MAVERICK_V2,
-        &BALANCER_V2,
-        &BALANCER_V3,
-        &PANCAKESWAP_V3,
+        &*UNISWAP_V2,
+        &*UNISWAP_V3,
+        &*UNISWAP_V4,
+        &*CURVE_FINANCE,
+        &*FLUID_DEX,
+        &*MAVERICK_V2,
+        &*BALANCER_V2,
+        &*BALANCER_V3,
+        &*PANCAKESWAP_V3,
     ]
 }
 
 /// Returns a map of Ethereum DEX name to Dex reference for easy lookup
 #[must_use]
-pub fn dex_map() -> HashMap<&'static str, &'static DexExtended> {
+pub fn dex_map() -> HashMap<String, &'static DexExtended> {
     let mut map = HashMap::new();
-    map.insert("uniswap_v2", &*UNISWAP_V2);
-    map.insert("uniswap_v3", &*UNISWAP_V3);
-    map.insert("uniswap_v4", &*UNISWAP_V4);
-    map.insert("curve_finance", &*CURVE_FINANCE);
-    map.insert("fluid_dex", &FLUID_DEX);
-    map.insert("maverick_v2", &*MAVERICK_V2);
-    map.insert("balancer_v2", &*BALANCER_V2);
-    map.insert("balancer_v3", &*BALANCER_V3);
-    map.insert("pancakeswap_v3", &*PANCAKESWAP_V3);
+    map.insert(UNISWAP_V2.id(), &*UNISWAP_V2);
+    map.insert(UNISWAP_V3.id(), &*UNISWAP_V3);
+    map.insert(UNISWAP_V4.id(), &*UNISWAP_V4);
+    map.insert(CURVE_FINANCE.id(), &*CURVE_FINANCE);
+    map.insert(FLUID_DEX.id(), &*FLUID_DEX);
+    map.insert(MAVERICK_V2.id(), &*MAVERICK_V2);
+    map.insert(BALANCER_V2.id(), &*BALANCER_V2);
+    map.insert(BALANCER_V3.id(), &*BALANCER_V3);
+    map.insert(PANCAKESWAP_V3.id(), &*PANCAKESWAP_V3);
     map
 }

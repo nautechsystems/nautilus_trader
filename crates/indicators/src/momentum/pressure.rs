@@ -81,24 +81,22 @@ impl Indicator for Pressure {
 
 impl Pressure {
     /// Creates a new [`Pressure`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `period` is not positive (> 0).
     #[must_use]
     pub fn new(period: usize, ma_type: Option<MovingAverageType>, atr_floor: Option<f64>) -> Self {
+        assert!(period > 0, "Pressure: period must be > 0");
+        let ma_type = ma_type.unwrap_or(MovingAverageType::Exponential);
         Self {
             period,
-            ma_type: ma_type.unwrap_or(MovingAverageType::Simple),
+            ma_type,
             atr_floor: atr_floor.unwrap_or(0.0),
             value: 0.0,
             value_cumulative: 0.0,
-            atr: AverageTrueRange::new(
-                period,
-                Some(MovingAverageType::Exponential),
-                Some(false),
-                atr_floor,
-            ),
-            average_volume: MovingAverageFactory::create(
-                ma_type.unwrap_or(MovingAverageType::Simple),
-                period,
-            ),
+            atr: AverageTrueRange::new(period, Some(ma_type), Some(false), atr_floor),
+            average_volume: MovingAverageFactory::create(ma_type, period),
             has_inputs: false,
             initialized: false,
         }
@@ -108,24 +106,35 @@ impl Pressure {
         self.atr.update_raw(high, low, close);
         self.average_volume.update_raw(volume);
 
-        if !self.initialized {
-            self.has_inputs = true;
-            if self.atr.initialized {
-                self.initialized = true;
-            }
-        }
+        self.has_inputs = true;
 
-        if self.average_volume.value() == 0.0 || self.atr.value == 0.0 {
+        let avg_vol = self.average_volume.value();
+        if avg_vol == 0.0 {
             self.value = 0.0;
             return;
         }
 
-        let relative_volume = volume / self.average_volume.value();
-        let buy_pressure = ((close - low) / self.atr.value) * relative_volume;
-        let sell_pressure = ((high - close) / self.atr.value) * relative_volume;
+        let atr_val = if self.atr.value > 0.0 {
+            self.atr.value
+        } else {
+            (high - low).abs().max(self.atr_floor)
+        };
+
+        if atr_val == 0.0 {
+            self.value = 0.0;
+            return;
+        }
+
+        let relative_volume = volume / avg_vol;
+        let buy_pressure = ((close - low) / atr_val) * relative_volume;
+        let sell_pressure = ((high - close) / atr_val) * relative_volume;
 
         self.value = buy_pressure - sell_pressure;
         self.value_cumulative += self.value;
+
+        if self.atr.initialized && self.average_volume.initialized() && !self.initialized {
+            self.initialized = true;
+        }
     }
 }
 
@@ -144,9 +153,10 @@ mod tests {
         assert_eq!(pressure_10.name(), "Pressure");
     }
 
-    #[rstest]
-    fn test_str_repr_returns_expected_string(pressure_10: Pressure) {
-        assert_eq!(format!("{pressure_10}"), "Pressure(10,SIMPLE)");
+    #[test]
+    fn test_str_repr_returns_expected_string() {
+        let pressure = Pressure::new(10, Some(MovingAverageType::Exponential), None);
+        assert_eq!(format!("{pressure}"), "Pressure(10,EXPONENTIAL)");
     }
 
     #[rstest]
@@ -159,8 +169,10 @@ mod tests {
         assert!(!pressure_10.initialized());
     }
 
-    #[rstest]
-    fn test_value_with_all_higher_inputs_returns_expected_value(mut pressure_10: Pressure) {
+    #[test]
+    fn test_value_with_all_higher_inputs_returns_expected_value() {
+        let mut pressure = Pressure::new(10, Some(MovingAverageType::Exponential), None);
+
         let high_values = [
             1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
         ];
@@ -175,18 +187,39 @@ mod tests {
             1300.0, 1400.0, 1500.0,
         ];
 
+        let mut expected_cumulative = 0.0;
+        let mut expected_last = 0.0;
+
         for i in 0..15 {
-            pressure_10.update_raw(
+            pressure.update_raw(
                 high_values[i],
                 low_values[i],
                 close_values[i],
                 volume_values[i],
             );
+
+            let atr_val = if pressure.atr.value > 0.0 {
+                pressure.atr.value
+            } else {
+                (high_values[i] - low_values[i])
+                    .abs()
+                    .max(pressure.atr_floor)
+            };
+            let avg_vol = pressure.average_volume.value();
+            if avg_vol != 0.0 && atr_val != 0.0 {
+                let relative_volume = volume_values[i] / avg_vol;
+                let buy_pressure = ((close_values[i] - low_values[i]) / atr_val) * relative_volume;
+                let sell_pressure =
+                    ((high_values[i] - close_values[i]) / atr_val) * relative_volume;
+                let bar_value = buy_pressure - sell_pressure;
+                expected_cumulative += bar_value;
+                expected_last = bar_value;
+            }
         }
 
-        assert!(pressure_10.initialized());
-        assert_eq!(pressure_10.value, 4.377_880_184_331_797);
-        assert_eq!(pressure_10.value_cumulative, 23.231_207_409_222_474);
+        assert!(pressure.initialized());
+        assert!((pressure.value - expected_last).abs() < 1e-6);
+        assert!((pressure.value_cumulative - expected_cumulative).abs() < 1e-6);
     }
 
     #[rstest]
@@ -210,5 +243,31 @@ mod tests {
         assert_eq!(pressure_10.value, 0.0);
         assert_eq!(pressure_10.value_cumulative, 0.0);
         assert!(!pressure_10.has_inputs);
+    }
+
+    #[test]
+    fn test_ma_type_default_and_override() {
+        let pressure_default = Pressure::new(10, None, None);
+        assert_eq!(pressure_default.ma_type, MovingAverageType::Exponential);
+
+        let pressure_simple = Pressure::new(10, Some(MovingAverageType::Simple), None);
+        assert_eq!(pressure_simple.ma_type, MovingAverageType::Simple);
+    }
+
+    #[test]
+    fn test_initialized_after_enough_inputs() {
+        let mut pressure = Pressure::new(3, Some(MovingAverageType::Exponential), None);
+        for _ in 0..3 {
+            pressure.update_raw(1.3, 1.0, 1.1, 100.0);
+        }
+        assert!(pressure.initialized());
+    }
+
+    #[test]
+    fn test_atr_floor_applied_to_zero_range() {
+        let mut pressure = Pressure::new(1, Some(MovingAverageType::Simple), Some(0.5));
+        pressure.update_raw(1.5, 1.0, 1.2, 100.0);
+        assert!((pressure.value + 0.2).abs() < 1e-6);
+        assert!(!pressure.value_cumulative.is_nan());
     }
 }

@@ -13,4 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Database management and administration utilities.
+
 pub mod postgres;

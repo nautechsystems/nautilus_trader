@@ -93,7 +93,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         Request to cancel all open orders through the EClient.
         """
         self._log.warning(
-            "Canceling all open orders, regardless of how they were originally placed.",
+            "Canceling all open orders, regardless of how they were originally placed",
         )
         self._eclient.reqGlobalCancel()
 
@@ -163,7 +163,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         self._next_valid_order_id = max(self._next_valid_order_id, order_id, 101)
 
         if self.accounts() and not self._is_ib_connected.is_set():
-            self._log.debug("`_is_ib_connected` set by `nextValidId`.", LogColor.BLUE)
+            self._log.debug("`_is_ib_connected` set by `nextValidId`", LogColor.BLUE)
             self._is_ib_connected.set()
 
     async def process_open_order(

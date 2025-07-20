@@ -13,11 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, str::FromStr};
+use std::{collections::HashMap, str::FromStr, time::Instant};
 
+use ahash::AHashMap;
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
-use futures::{StreamExt, future::join_all};
+use futures::future::join_all;
 use nautilus_common::{cache::database::CacheMap, enums::SerializationEncoding};
 use nautilus_model::{
     accounts::AccountAny,
@@ -113,11 +114,65 @@ impl DatabaseQueries {
         con: &mut ConnectionManager,
         pattern: String,
     ) -> anyhow::Result<Vec<String>> {
-        Ok(con
-            .scan_match::<String, String>(pattern)
-            .await?
-            .collect()
-            .await)
+        let start_time = Instant::now();
+        log::debug!("Redis scan_keys: Starting scan for pattern: {pattern}");
+
+        let scan_start = Instant::now();
+        log::debug!("Redis scan_keys: About to call SCAN with COUNT=5000...");
+
+        let mut result = Vec::new();
+        let mut cursor = 0u64;
+        let mut iteration = 0;
+
+        loop {
+            iteration += 1;
+            let iter_start = Instant::now();
+
+            log::debug!("Redis scan_keys: SCAN iteration {iteration} with cursor {cursor}");
+
+            let scan_result: (u64, Vec<String>) = redis::cmd("SCAN")
+                .arg(cursor)
+                .arg("MATCH")
+                .arg(&pattern)
+                .arg("COUNT")
+                .arg(5000)
+                .query_async(con)
+                .await?;
+
+            let iter_time = iter_start.elapsed();
+
+            let (new_cursor, keys) = scan_result;
+            let keys_found = keys.len();
+            result.extend(keys);
+
+            log::debug!(
+                "Redis scan_keys: Iteration {iteration} found {keys_found} keys in {}ms, new cursor: {new_cursor}",
+                iter_time.as_millis(),
+            );
+
+            // If cursor is 0, we've completed the full scan
+            if new_cursor == 0 {
+                log::debug!("Redis scan_keys: SCAN completed - cursor returned to 0");
+                break;
+            }
+
+            cursor = new_cursor;
+        }
+
+        let scan_setup_time = scan_start.elapsed();
+        log::debug!(
+            "Redis scan_keys: SCAN completed in {}ms with {iteration} iterations",
+            scan_setup_time.as_millis(),
+        );
+
+        let total_time = start_time.elapsed();
+        log::debug!(
+            "Redis scan_keys: COMPLETE - Total time: {}ms, found {} keys",
+            total_time.as_millis(),
+            result.len()
+        );
+
+        Ok(result)
     }
 
     /// Reads raw byte payloads for `key` under `trader_key` from Redis.
@@ -171,8 +226,8 @@ impl DatabaseQueries {
 
         // For now, we don't load greeks and yield curves from the database
         // This will be implemented in the future
-        let greeks = HashMap::new();
-        let yield_curves = HashMap::new();
+        let greeks = AHashMap::new();
+        let yield_curves = AHashMap::new();
 
         Ok(CacheMap {
             currencies,
@@ -195,8 +250,8 @@ impl DatabaseQueries {
         con: &ConnectionManager,
         trader_key: &str,
         encoding: SerializationEncoding,
-    ) -> anyhow::Result<HashMap<Ustr, Currency>> {
-        let mut currencies = HashMap::new();
+    ) -> anyhow::Result<AHashMap<Ustr, Currency>> {
+        let mut currencies = AHashMap::new();
         let pattern = format!("{trader_key}{REDIS_DELIMITER}{CURRENCIES}*");
         tracing::debug!("Loading {pattern}");
 
@@ -251,8 +306,8 @@ impl DatabaseQueries {
         con: &ConnectionManager,
         trader_key: &str,
         encoding: SerializationEncoding,
-    ) -> anyhow::Result<HashMap<InstrumentId, InstrumentAny>> {
-        let mut instruments = HashMap::new();
+    ) -> anyhow::Result<AHashMap<InstrumentId, InstrumentAny>> {
+        let mut instruments = AHashMap::new();
         let pattern = format!("{trader_key}{REDIS_DELIMITER}{INSTRUMENTS}*");
         tracing::debug!("Loading {pattern}");
 
@@ -320,8 +375,8 @@ impl DatabaseQueries {
         con: &ConnectionManager,
         trader_key: &str,
         encoding: SerializationEncoding,
-    ) -> anyhow::Result<HashMap<InstrumentId, SyntheticInstrument>> {
-        let mut synthetics = HashMap::new();
+    ) -> anyhow::Result<AHashMap<InstrumentId, SyntheticInstrument>> {
+        let mut synthetics = AHashMap::new();
         let pattern = format!("{trader_key}{REDIS_DELIMITER}{SYNTHETICS}*");
         tracing::debug!("Loading {pattern}");
 
@@ -389,8 +444,8 @@ impl DatabaseQueries {
         con: &ConnectionManager,
         trader_key: &str,
         encoding: SerializationEncoding,
-    ) -> anyhow::Result<HashMap<AccountId, AccountAny>> {
-        let mut accounts = HashMap::new();
+    ) -> anyhow::Result<AHashMap<AccountId, AccountAny>> {
+        let mut accounts = AHashMap::new();
         let pattern = format!("{trader_key}{REDIS_DELIMITER}{ACCOUNTS}*");
         tracing::debug!("Loading {pattern}");
 
@@ -445,8 +500,8 @@ impl DatabaseQueries {
         con: &ConnectionManager,
         trader_key: &str,
         encoding: SerializationEncoding,
-    ) -> anyhow::Result<HashMap<ClientOrderId, OrderAny>> {
-        let mut orders = HashMap::new();
+    ) -> anyhow::Result<AHashMap<ClientOrderId, OrderAny>> {
+        let mut orders = AHashMap::new();
         let pattern = format!("{trader_key}{REDIS_DELIMITER}{ORDERS}*");
         tracing::debug!("Loading {pattern}");
 
@@ -501,8 +556,8 @@ impl DatabaseQueries {
         con: &ConnectionManager,
         trader_key: &str,
         encoding: SerializationEncoding,
-    ) -> anyhow::Result<HashMap<PositionId, Position>> {
-        let mut positions = HashMap::new();
+    ) -> anyhow::Result<AHashMap<PositionId, Position>> {
+        let mut positions = AHashMap::new();
         let pattern = format!("{trader_key}{REDIS_DELIMITER}{POSITIONS}*");
         tracing::debug!("Loading {pattern}");
 
@@ -741,15 +796,12 @@ fn convert_timestamps(value: &mut Value) {
     match value {
         Value::Object(map) => {
             for (key, v) in map {
-                if is_timestamp_field(key) {
-                    if let Value::Number(n) = v {
-                        if let Some(n) = n.as_u64() {
-                            let dt = DateTime::<Utc>::from_timestamp_nanos(n as i64);
-                            *v = Value::String(
-                                dt.to_rfc3339_opts(chrono::SecondsFormat::Nanos, true),
-                            );
-                        }
-                    }
+                if is_timestamp_field(key)
+                    && let Value::Number(n) = v
+                    && let Some(n) = n.as_u64()
+                {
+                    let dt = DateTime::<Utc>::from_timestamp_nanos(n as i64);
+                    *v = Value::String(dt.to_rfc3339_opts(chrono::SecondsFormat::Nanos, true));
                 }
                 convert_timestamps(v);
             }
@@ -767,18 +819,16 @@ fn convert_timestamp_strings(value: &mut Value) {
     match value {
         Value::Object(map) => {
             for (key, v) in map {
-                if is_timestamp_field(key) {
-                    if let Value::String(s) = v {
-                        if let Ok(dt) = DateTime::parse_from_rfc3339(s) {
-                            *v = Value::Number(
-                                (dt.with_timezone(&Utc)
-                                    .timestamp_nanos_opt()
-                                    .expect("Invalid DateTime")
-                                    as u64)
-                                    .into(),
-                            );
-                        }
-                    }
+                if is_timestamp_field(key)
+                    && let Value::String(s) = v
+                    && let Ok(dt) = DateTime::parse_from_rfc3339(s)
+                {
+                    *v = Value::Number(
+                        (dt.with_timezone(&Utc)
+                            .timestamp_nanos_opt()
+                            .expect("Invalid DateTime") as u64)
+                            .into(),
+                    );
                 }
                 convert_timestamp_strings(v);
             }

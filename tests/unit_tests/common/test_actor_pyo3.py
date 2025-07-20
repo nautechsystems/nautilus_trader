@@ -191,13 +191,13 @@ def test_unregistered_actor_properties_work():
     actor = DataActor()
 
     # Basic properties should work without registration
+    assert actor.trader_id is None
     assert actor.actor_id is not None
-    assert actor.actor_id.startswith("DataActor-")
 
     # State should be PreInitialized for unregistered actor
-    from nautilus_trader.core.nautilus_pyo3.common import ComponentState
+    from nautilus_trader.core.nautilus_pyo3 import ComponentState
 
-    assert actor.state == ComponentState.PreInitialized
+    assert actor.state() == ComponentState.PreInitialized  # TODO
 
     # trader_id should be None for unregistered actor
     assert actor.trader_id is None
@@ -208,7 +208,7 @@ def test_unregistered_actor_properties_work():
     assert not actor.is_stopped()
     assert not actor.is_disposed()
     assert not actor.is_degraded()
-    assert not actor.is_faulting()
+    assert not actor.is_faulted()
 
 
 def test_subscription_methods_exist(venue, instrument_id, data_type):

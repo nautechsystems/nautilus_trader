@@ -2,13 +2,13 @@
 
 The [Rust](https://www.rust-lang.org/learn) programming language is an ideal fit for implementing the mission-critical core of the platform and systems. Its strong type system, ownership model, and compile-time checks eliminate memory errors and data races by construction, while zero-cost abstractions and the absence of a garbage collector deliver C-like performance—critical for high-frequency trading workloads.
 
-## Python Bindings
+## Python bindings
 
 Python bindings are provided via Cython and [PyO3](https://pyo3.rs), allowing users to import NautilusTrader crates directly in Python without a Rust toolchain.
 
-## Code Style and Conventions
+## Code style and conventions
 
-### File Header Requirements
+### File header requirements
 
 All Rust files must include the standardized copyright header:
 
@@ -29,12 +29,49 @@ All Rust files must include the standardized copyright header:
 // -------------------------------------------------------------------------------------------------
 ```
 
-### Code Formatting
+### Code formatting
 
 Import formatting is automatically handled by rustfmt when running `make format`.
 The tool organizes imports into groups (standard library, external crates, local imports) and sorts them alphabetically within each group.
 
-### Error Handling
+#### Function spacing
+
+- Leave **one blank line between functions** (including tests) – this improves readability and
+mirrors the default behavior of `rustfmt`.
+- Leave **one blank line above every doc comment** (`///` or `//!`) so that the comment is clearly
+  detached from the previous code block.
+
+#### String formatting
+
+Prefer inline format strings over positional arguments:
+
+```rust
+// Preferred - inline format with variable names
+anyhow::bail!("Failed to subtract {n} months from {datetime}");
+
+// Instead of - positional arguments
+anyhow::bail!("Failed to subtract {} months from {}", n, datetime);
+```
+
+This makes messages more readable and self-documenting, especially when there are multiple variables.
+
+#### PyO3 naming conventions
+
+When exposing Rust functions to Python **via PyO3**:
+
+1. The Rust symbol **must** be prefixed with `py_*` to make its purpose explicit inside the Rust
+   codebase.
+2. Use the `#[pyo3(name = "…")]` attribute to publish the *Python* name **without** the `py_`
+   prefix so the Python API remains clean.
+
+```rust
+#[pyo3(name = "do_something")]
+pub fn py_do_something() -> PyResult<()> {
+    // …
+}
+```
+
+### Error handling
 
 Use structured error handling patterns consistently:
 
@@ -79,19 +116,7 @@ Use structured error handling patterns consistently:
 
    **Note**: Use `anyhow::bail!` for early returns, but `anyhow::anyhow!` in closure contexts like `ok_or_else()` where early returns aren't possible.
 
-5. **Error Message Formatting**: Prefer inline format strings over positional arguments:
-
-   ```rust
-   // Preferred - inline format with variable names
-   anyhow::bail!("Failed to subtract {n} months from {datetime}");
-
-   // Instead of - positional arguments
-   anyhow::bail!("Failed to subtract {} months from {}", n, datetime);
-   ```
-
-   This makes error messages more readable and self-documenting, especially when there are multiple variables.
-
-### Attribute Patterns
+### Attribute patterns
 
 Consistent attribute usage and ordering:
 
@@ -138,7 +163,7 @@ pub enum AccountType {
 }
 ```
 
-### Constructor Patterns
+### Constructor patterns
 
 Use the `new()` vs `new_checked()` convention consistently:
 
@@ -172,7 +197,7 @@ Always use the `FAILED` constant for `.expect()` messages related to correctness
 use nautilus_core::correctness::FAILED;
 ```
 
-### Constants and Naming Conventions
+### Constants and naming conventions
 
 Use SCREAMING_SNAKE_CASE for constants with descriptive names:
 
@@ -188,7 +213,7 @@ pub const BAR_SPEC_1_MINUTE_LAST: BarSpecification = BarSpecification {
 };
 ```
 
-### Re-export Patterns
+### Re-export patterns
 
 Organize re-exports alphabetically and place at the end of lib.rs files:
 
@@ -208,7 +233,7 @@ pub use crate::identifiers::{
 };
 ```
 
-### Documentation Standards
+### Documentation standards
 
 #### Module-Level Documentation
 
@@ -348,7 +373,11 @@ impl Send for MessageBus {
 }
 ```
 
-### Testing Conventions
+### Testing conventions
+
+- Use `mod tests` as the standard test module name unless you need to specifically compartmentalize.
+- Use `#[rstest]` attributes consistently, this standardization reduces cognitive overhead.
+- Do *not* use Arrange, Act, Assert separator comments in Rust tests.
 
 #### Test Organization
 
@@ -409,11 +438,11 @@ the contract between the interface and caller, shifting some responsibility for 
 from the Rust compiler, and onto us. The goal is to realize the advantages of the `unsafe` facility, whilst avoiding *any* undefined behavior.
 The definition for what the Rust language designers consider undefined behavior can be found in the [language reference](https://doc.rust-lang.org/stable/reference/behavior-considered-undefined.html).
 
-### Safety Policy
+### Safety policy
 
 To maintain correctness, any use of `unsafe` Rust must follow our policy:
 
-- If a function is `unsafe` to call, there *must* be a `Safety` section in the documentation explaining why the function is `unsafe`
+- If a function is `unsafe` to call, there *must* be a `Safety` section in the documentation explaining why the function is `unsafe`.
 and covering the invariants which the function expects the callers to uphold, and how to meet their obligations in that contract.
 - Document why each function is `unsafe` in its doc comment's Safety section, and cover all `unsafe` blocks with unit tests.
 - Always include a `SAFETY:` comment explaining why the unsafe operation is valid:
@@ -424,17 +453,17 @@ and covering the invariants which the function expects the callers to uphold, an
 unsafe impl Send for MessageBus {}
 ```
 
-## Tooling Configuration
+## Tooling configuration
 
 The project uses several tools for code quality:
 
-- **rustfmt**: Automatic code formatting (see `rustfmt.toml`)
-- **clippy**: Linting and best practices (see `clippy.toml`)
-- **cbindgen**: C header generation for FFI
+- **rustfmt**: Automatic code formatting (see `rustfmt.toml`).
+- **clippy**: Linting and best practices (see `clippy.toml`).
+- **cbindgen**: C header generation for FFI.
 
 ## Resources
 
-- [The Rustonomicon](https://doc.rust-lang.org/nomicon/) - The Dark Arts of Unsafe Rust
-- [The Rust Reference - Unsafety](https://doc.rust-lang.org/stable/reference/unsafety.html)
-- [Safe Bindings in Rust - Russell Johnston](https://www.abubalay.com/blog/2020/08/22/safe-bindings-in-rust)
-- [Google - Rust and C interoperability](https://www.chromium.org/Home/chromium-security/memory-safety/rust-and-c-interoperability/)
+- [The Rustonomicon](https://doc.rust-lang.org/nomicon/) – The Dark Arts of Unsafe Rust.
+- [The Rust Reference – Unsafety](https://doc.rust-lang.org/stable/reference/unsafety.html).
+- [Safe Bindings in Rust – Russell Johnston](https://www.abubalay.com/blog/2020/08/22/safe-bindings-in-rust).
+- [Google – Rust and C interoperability](https://www.chromium.org/Home/chromium-security/memory-safety/rust-and-c-interoperability/).

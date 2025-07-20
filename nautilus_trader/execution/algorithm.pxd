@@ -21,6 +21,7 @@ from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport MessageBus
+from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport TimeInForce
 from nautilus_trader.core.rust.model cimport TriggerType
@@ -188,4 +189,4 @@ cdef class ExecAlgorithm(Actor):
 
     cdef void _send_emulator_command(self, TradingCommand command)
     cdef void _send_risk_command(self, TradingCommand command)
-    cdef void _send_exec_command(self, TradingCommand command)
+    cdef void _send_exec_command(self, Command command)

@@ -20,7 +20,6 @@ from decimal import Decimal
 import msgspec
 import pandas as pd
 
-from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceEnumParser
 from nautilus_trader.adapters.binance.common.enums import BinanceErrorCode
@@ -46,6 +45,7 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.datetime import secs_to_millis
 from nautilus_trader.data.aggregation import BarAggregator
 from nautilus_trader.data.aggregation import TickBarAggregator
@@ -148,8 +148,8 @@ class BinanceCommonDataClient(LiveMarketDataClient):
     ) -> None:
         super().__init__(
             loop=loop,
-            client_id=ClientId(name or BINANCE_VENUE.value),
-            venue=BINANCE_VENUE,
+            client_id=ClientId(name or config.venue.value),
+            venue=config.venue,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
@@ -388,9 +388,11 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             )
             return
 
-        if not command.depth:
-            # Reasonable default for full book, which works for Spot and Futures
-            depth = 1000
+        # Use the depth requested on the command, otherwise fall back to the
+        # Binance maximum (1000). Note that a depth of ``0`` means *full book*
+        # in NautilusTrader semantics, which we translate to 1000; the maximum
+        # value accepted by the Binance partial book snapshot endpoint.
+        depth: int = command.depth if command.depth else 1000
 
         if 0 < depth <= 20:
             if depth not in (5, 10, 20):
@@ -401,7 +403,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                 )
                 return
             await self._ws_client.subscribe_partial_book_depth(
-                symbol=command.vinstrument_id.symbol.value,
+                symbol=command.instrument_id.symbol.value,
                 depth=depth,
                 speed=update_speed,
             )
@@ -505,7 +507,10 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         await self._ws_client.unsubscribe_book_ticker(command.instrument_id.symbol.value)
 
     async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
-        await self._ws_client.unsubscribe_trades(command.instrument_id.symbol.value)
+        if self._use_agg_trade_ticks:
+            await self._ws_client.unsubscribe_agg_trades(command.instrument_id.symbol.value)
+        else:
+            await self._ws_client.unsubscribe_trades(command.instrument_id.symbol.value)
 
     async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
         if not command.bar_type.spec.is_time_aggregated():
@@ -538,12 +543,18 @@ class BinanceCommonDataClient(LiveMarketDataClient):
     # -- REQUESTS ---------------------------------------------------------------------------------
 
     async def _request_instrument(self, request: RequestInstrument) -> None:
-        if request.start is not None:
+        # Check if start/end times are too far from current time
+        now = self._clock.utc_now()
+        now_ns = dt_to_unix_nanos(now)
+        start_ns = dt_to_unix_nanos(request.start)
+        end_ns = dt_to_unix_nanos(request.end)
+
+        if abs(start_ns - now_ns) > 10_000_000:  # More than 10ms difference
             self._log.warning(
                 f"Requesting instrument {request.instrument_id} with specified `start` which has no effect",
             )
 
-        if request.end is not None:
+        if abs(end_ns - now_ns) > 10_000_000:  # More than 10ms difference
             self._log.warning(
                 f"Requesting instrument {request.instrument_id} with specified `end` which has no effect",
             )
@@ -553,7 +564,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             self._log.error(f"Cannot find instrument for {request.instrument_id}")
             return
 
-        self._handle_instrument(instrument, request.id, request.params)
+        self._handle_instrument(instrument, request.id, request.start, request.end, request.params)
 
     async def _request_quote_ticks(self, request: RequestQuoteTicks) -> None:
         self._log.error(
@@ -566,12 +577,11 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             limit = 1000
 
         if not self._use_agg_trade_ticks:
-            if request.start is not None or request.end is not None:
-                self._log.warning(
-                    "Trades have been requested with a from/to time range, "
-                    f"however the request will be for the most recent {limit}: "
-                    "consider using aggregated trades (`use_agg_trade_ticks`)",
-                )
+            self._log.warning(
+                "Trades have been requested with a from/to time range, "
+                f"however the request will be for the most recent {limit}: "
+                "consider using aggregated trades (`use_agg_trade_ticks`)",
+            )
             ticks = await self._http_market.request_trade_ticks(
                 instrument_id=request.instrument_id,
                 limit=limit,
@@ -579,12 +589,8 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             )
         else:
             # Convert from timestamps to milliseconds
-            start_time_ms = None
-            end_time_ms = None
-            if request.start:
-                start_time_ms = int(request.start.timestamp() * 1000)
-            if request.end:
-                end_time_ms = int(request.end.timestamp() * 1000)
+            start_time_ms = secs_to_millis(request.start.timestamp())
+            end_time_ms = secs_to_millis(request.end.timestamp())
             ticks = await self._http_market.request_agg_trade_ticks(
                 instrument_id=request.instrument_id,
                 limit=limit,
@@ -593,7 +599,14 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                 ts_init=self._clock.timestamp_ns(),
             )
 
-        self._handle_trade_ticks(request.instrument_id, ticks, request.id, request.params)
+        self._handle_trade_ticks(
+            request.instrument_id,
+            ticks,
+            request.id,
+            request.start,
+            request.end,
+            request.params,
+        )
 
     async def _request_bars(self, request: RequestBars) -> None:
         if request.bar_type.spec.price_type != PriceType.LAST:
@@ -603,13 +616,8 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             )
             return
 
-        start_time_ms = None
-        if request.start is not None:
-            start_time_ms = secs_to_millis(request.start.timestamp())
-
-        end_time_ms = None
-        if request.end is not None:
-            end_time_ms = secs_to_millis(request.end.timestamp())
+        start_time_ms = secs_to_millis(request.start.timestamp())
+        end_time_ms = secs_to_millis(request.end.timestamp())
 
         if (
             request.bar_type.is_externally_aggregated()
@@ -667,8 +675,27 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                 limit=request.limit if request.limit > 0 else None,
             )
 
+        # Binance always returns the *last* bar as an unfinished / partial bar
+        # which we publish separately from the historical series.  When the
+        # query returned no data we avoid raising ``IndexError`` by checking
+        # for an empty collection first.
+        if not bars:
+            self._log.warning(
+                f"No bars returned for {request.bar_type} between "
+                f"{request.start} and {request.end}",
+            )
+            return
+
         partial: Bar = bars.pop()
-        self._handle_bars(request.bar_type, bars, partial, request.id, request.params)
+        self._handle_bars(
+            request.bar_type,
+            bars,
+            partial,
+            request.id,
+            request.start,
+            request.end,
+            request.params,
+        )
 
     async def _request_order_book_snapshot(self, request: RequestOrderBookSnapshot) -> None:
         if request.limit not in [5, 10, 20, 50, 100, 500, 1000]:

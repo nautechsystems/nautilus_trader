@@ -1,5 +1,10 @@
 name: codeql-analysis
 
+permissions: # Principle of least privilege
+  contents: read
+  actions: read
+  security-events: write # Required for CodeQL to upload SARIF
+
 on:
   pull_request:
     branches: [master]
@@ -16,7 +21,7 @@ jobs:
         language: ['python']
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
         with:
           egress-policy: audit
 
@@ -28,7 +33,7 @@ jobs:
 
       - name: Initialize CodeQL
         # https://github.com/github/codeql-action
-        uses: github/codeql-action/init@70df9def86d22bf0ea4e7f8b956e7b92e7c1ea22 # v2.20.7
+        uses: github/codeql-action/init@9b02dc2f60288b463e7a66e39c78829b62780db7 # codeql-bundle-v2.22.1
         with:
           languages: ${{ matrix.language }}
           # If you wish to specify custom queries, you can do so here or in a config file.
@@ -38,4 +43,4 @@ jobs:
 
       - name: Perform CodeQL Analysis
         # https://github.com/github/codeql-action
-        uses: github/codeql-action/analyze@70df9def86d22bf0ea4e7f8b956e7b92e7c1ea22 # v2.20.7
+        uses: github/codeql-action/analyze@9b02dc2f60288b463e7a66e39c78829b62780db7 # codeql-bundle-v2.22.1

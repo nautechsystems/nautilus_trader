@@ -42,8 +42,11 @@
 
 pub mod config;
 pub mod contracts;
+pub mod decode;
 pub mod events;
+pub mod math;
 pub mod rpc;
+pub mod validation;
 
 #[cfg(feature = "hypersync")]
 pub mod cache;
@@ -59,4 +62,9 @@ pub mod factories;
 
 #[cfg(feature = "hypersync")]
 pub mod hypersync;
-pub mod validation;
+
+#[cfg(feature = "hypersync")]
+pub mod reporting;
+
+#[cfg(feature = "python")]
+pub mod python;

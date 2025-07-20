@@ -145,7 +145,40 @@ impl BookLadder {
             if let Some(level) = self.levels.get_mut(&price) {
                 if order.price == level.price.value {
                     // Update at current price level
+                    let level_len_before = level.len();
                     level.update(order);
+
+                    // If level.update removed the order due to zero size, remove from cache too
+                    if order.size.raw == 0 {
+                        self.cache.remove(&order.order_id);
+                        debug_assert_eq!(
+                            level.len(),
+                            level_len_before - 1,
+                            "Level should have one less order after zero-size update"
+                        );
+                    } else {
+                        debug_assert!(
+                            self.cache.contains_key(&order.order_id),
+                            "Cache should still contain order {0} after update",
+                            order.order_id
+                        );
+                    }
+
+                    // Remove empty price level
+                    if level.is_empty() {
+                        self.levels.remove(&price);
+                        debug_assert!(
+                            !self.cache.values().any(|p| *p == price),
+                            "Cache should not contain removed price level {price:?}"
+                        );
+                    }
+
+                    // Validate cache consistency after same-price update
+                    debug_assert_eq!(
+                        self.cache.len(),
+                        self.levels.values().map(|level| level.len()).sum::<usize>(),
+                        "Cache size should equal total orders across all levels"
+                    );
                     return;
                 }
 
@@ -154,11 +187,25 @@ impl BookLadder {
                 level.delete(&order);
                 if level.is_empty() {
                     self.levels.remove(&price);
+                    debug_assert!(
+                        !self.cache.values().any(|p| *p == price),
+                        "Cache should not contain removed price level {price:?}"
+                    );
                 }
             }
         }
 
-        self.add(order);
+        // Only add if the order has positive size
+        if order.size.is_positive() {
+            self.add(order);
+        }
+
+        // Validate cache consistency after update
+        debug_assert_eq!(
+            self.cache.len(),
+            self.levels.values().map(|level| level.len()).sum::<usize>(),
+            "Cache size should equal total orders across all levels"
+        );
     }
 
     /// Deletes an order from the ladder.
@@ -168,14 +215,39 @@ impl BookLadder {
 
     /// Removes an order by its ID from the ladder.
     pub fn remove(&mut self, order_id: OrderId, sequence: u64, ts_event: UnixNanos) {
-        if let Some(price) = self.cache.remove(&order_id) {
+        if let Some(price) = self.cache.get(&order_id).copied() {
             if let Some(level) = self.levels.get_mut(&price) {
-                level.remove_by_id(order_id, sequence, ts_event);
-                if level.is_empty() {
-                    self.levels.remove(&price);
+                // Check if order exists in level before modifying cache
+                if level.orders.contains_key(&order_id) {
+                    let level_len_before = level.len();
+
+                    // Now safe to remove from cache since we know order exists in level
+                    self.cache.remove(&order_id);
+                    level.remove_by_id(order_id, sequence, ts_event);
+
+                    debug_assert_eq!(
+                        level.len(),
+                        level_len_before - 1,
+                        "Level should have exactly one less order after removal"
+                    );
+
+                    if level.is_empty() {
+                        self.levels.remove(&price);
+                        debug_assert!(
+                            !self.cache.values().any(|p| *p == price),
+                            "Cache should not contain removed price level {price:?}"
+                        );
+                    }
                 }
             }
         }
+
+        // Validate cache consistency after removal
+        debug_assert_eq!(
+            self.cache.len(),
+            self.levels.values().map(|level| level.len()).sum::<usize>(),
+            "Cache size should equal total orders across all levels"
+        );
     }
 
     /// Returns the total size of all orders in the ladder.
@@ -318,7 +390,7 @@ mod tests {
             BookPrice::new(Price::from("3.0"), OrderSideSpecified::Buy),
         ];
         bid_prices.sort();
-        assert_eq!(bid_prices[0].value.as_f64(), 4.0);
+        assert_eq!(bid_prices[0].value, Price::from("4.0"));
     }
 
     #[rstest]
@@ -331,7 +403,7 @@ mod tests {
         ];
 
         ask_prices.sort();
-        assert_eq!(ask_prices[0].value.as_f64(), 1.0);
+        assert_eq!(ask_prices[0].value, Price::from("1.0"));
     }
 
     #[rstest]
@@ -343,7 +415,7 @@ mod tests {
         assert_eq!(ladder.len(), 1);
         assert_eq!(ladder.sizes(), 20.0);
         assert_eq!(ladder.exposures(), 200.0);
-        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 10.0);
+        assert_eq!(ladder.top().unwrap().price.value, Price::from("10.0"));
     }
 
     #[rstest]
@@ -358,7 +430,7 @@ mod tests {
         assert_eq!(ladder.len(), 3);
         assert_eq!(ladder.sizes(), 300.0);
         assert_eq!(ladder.exposures(), 2520.0);
-        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 10.0);
+        assert_eq!(ladder.top().unwrap().price.value, Price::from("10.0"));
     }
 
     #[rstest]
@@ -378,7 +450,7 @@ mod tests {
         assert_eq!(ladder.len(), 3);
         assert_eq!(ladder.sizes(), 300.0);
         assert_eq!(ladder.exposures(), 3780.0);
-        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.0);
+        assert_eq!(ladder.top().unwrap().price.value, Price::from("11.0"));
     }
 
     #[rstest]
@@ -431,7 +503,7 @@ mod tests {
         assert_eq!(ladder.len(), 1);
         assert_eq!(ladder.sizes(), 20.0);
         assert_eq!(ladder.exposures(), 222.0);
-        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.1);
+        assert_eq!(ladder.top().unwrap().price.value, Price::from("11.1"));
     }
 
     #[rstest]
@@ -447,7 +519,7 @@ mod tests {
         assert_eq!(ladder.len(), 1);
         assert_eq!(ladder.sizes(), 20.0);
         assert_eq!(ladder.exposures(), 222.0);
-        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.1);
+        assert_eq!(ladder.top().unwrap().price.value, Price::from("11.1"));
     }
 
     #[rstest]
@@ -463,7 +535,7 @@ mod tests {
         assert_eq!(ladder.len(), 1);
         assert_eq!(ladder.sizes(), 10.0);
         assert_eq!(ladder.exposures(), 110.0);
-        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.0);
+        assert_eq!(ladder.top().unwrap().price.value, Price::from("11.0"));
     }
 
     #[rstest]
@@ -479,7 +551,7 @@ mod tests {
         assert_eq!(ladder.len(), 1);
         assert_eq!(ladder.sizes(), 10.0);
         assert_eq!(ladder.exposures(), 110.0);
-        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.0);
+        assert_eq!(ladder.top().unwrap().price.value, Price::from("11.0"));
     }
 
     #[rstest]

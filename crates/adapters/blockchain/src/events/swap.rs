@@ -23,6 +23,12 @@ use alloy::primitives::{Address, I256, U160};
 pub struct SwapEvent {
     /// The block number in which this swap transaction was included.
     pub block_number: u64,
+    /// The unique hash identifier of the transaction containing this event.
+    pub transaction_hash: String,
+    /// The position of this transaction within the block.
+    pub transaction_index: u32,
+    /// The position of this event log within the transaction.
+    pub log_index: u32,
     /// The address that initiated the swap transaction.
     pub sender: Address,
     /// The address that received the swapped tokens.
@@ -41,8 +47,12 @@ pub struct SwapEvent {
 impl SwapEvent {
     /// Creates a new [`SwapEvent`] instance with the specified parameters.
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub const fn new(
         block_number: u64,
+        transaction_hash: String,
+        transaction_index: u32,
+        log_index: u32,
         sender: Address,
         receiver: Address,
         amount0: I256,
@@ -51,6 +61,9 @@ impl SwapEvent {
     ) -> Self {
         Self {
             block_number,
+            transaction_hash,
+            transaction_index,
+            log_index,
             sender,
             receiver,
             amount0,

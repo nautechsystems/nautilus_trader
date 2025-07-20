@@ -277,16 +277,16 @@ impl BarBuilder {
             self.close = self.last_close;
         }
 
-        if let (Some(close), Some(low)) = (self.close, self.low) {
-            if close < low {
-                self.low = Some(close);
-            }
+        if let (Some(close), Some(low)) = (self.close, self.low)
+            && close < low
+        {
+            self.low = Some(close);
         }
 
-        if let (Some(close), Some(high)) = (self.close, self.high) {
-            if close > high {
-                self.high = Some(close);
-            }
+        if let (Some(close), Some(high)) = (self.close, self.high)
+            && close > high
+        {
+            self.high = Some(close);
         }
 
         // SAFETY: The open was checked, so we can assume all prices are Some
@@ -883,6 +883,12 @@ impl<H: FnMut(Bar)> Debug for TimeBarAggregator<H> {
 }
 
 #[derive(Clone, Debug)]
+/// Callback wrapper for time-based bar aggregation events.
+///
+/// This struct provides a bridge between timer events and time bar aggregation,
+/// allowing bars to be automatically built and emitted at regular time intervals.
+/// It holds a reference to a `TimeBarAggregator` and triggers bar creation when
+/// timer events occur.
 pub struct NewBarCallback<H: FnMut(Bar)> {
     aggregator: Rc<RefCell<TimeBarAggregator<H>>>,
 }
@@ -999,9 +1005,10 @@ where
                 .set_timer_ns(
                     &self.timer_name,
                     self.interval_ns.as_u64(),
-                    start_time_ns,
+                    Some(start_time_ns),
                     None,
                     Some(callback.into()),
+                    None,
                     None,
                 )
                 .expect(FAILED);

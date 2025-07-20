@@ -416,3 +416,20 @@ def min_date(date1: pd.Timestamp | str | int | None = None, date2: str | int | N
         return time_object_to_dt(date1)
 
     return min(time_object_to_dt(date1), time_object_to_dt(date2))
+
+
+def ensure_pydatetime_utc(timestamp: pd.Timestamp) -> dt.datetime | None:
+    """
+    Return the optional pandas `timestamp` converted to a pydatetime with UTC timezone info.
+
+    Parameters
+    ----------
+    timestamp : pd.Timestamp, optional
+        The timestamp to convert (if not ``None``).
+
+    Returns
+    -------
+    dt.datetime or ``None``
+
+    """
+    return timestamp.tz_convert("UTC").to_pydatetime() if timestamp else None

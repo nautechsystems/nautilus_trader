@@ -76,8 +76,8 @@ if IS_LINUX:
     os.environ["LDSHARED"] = "clang -shared"
 
 if IS_MACOS and IS_ARM64:
-    os.environ["CFLAGS"] = "-arch arm64"
-    os.environ["LDFLAGS"] = "-arch arm64 -w"
+    os.environ["CFLAGS"] = f"{os.environ.get('CFLAGS', '')} -arch arm64"
+    os.environ["LDFLAGS"] = f"{os.environ.get('LDFLAGS', '')} -arch arm64 -w"
 
 if IS_LINUX and IS_ARM64:
     os.environ["CFLAGS"] = f"{os.environ.get('CFLAGS', '')} -fPIC"
@@ -108,7 +108,16 @@ else:  # Linux
 
 CARGO_TARGET_DIR = os.environ.get("CARGO_TARGET_DIR", Path.cwd() / "target")
 CARGO_BUILD_TARGET = os.environ.get("CARGO_BUILD_TARGET", "")
-CARGO_TARGET_DIR = Path(CARGO_TARGET_DIR) / CARGO_BUILD_TARGET / BUILD_MODE
+
+# Determine the profile directory name
+if BUILD_MODE == "release":
+    profile_dir = "release"
+elif BUILD_MODE == "debug-pyo3":
+    profile_dir = "debug-pyo3"
+else:
+    profile_dir = "debug"
+
+CARGO_TARGET_DIR = Path(CARGO_TARGET_DIR) / CARGO_BUILD_TARGET / profile_dir
 
 # Directories with headers to include
 RUST_INCLUDES = ["nautilus_trader/core/includes"]
@@ -123,10 +132,15 @@ RUST_LIBS: list[str] = [str(path) for path in RUST_LIB_PATHS]
 
 
 def _set_feature_flags() -> list[str]:
+    features = "cython-compat,ffi,python,extension-module,postgres"
+    flags = ["--no-default-features", "--features"]
+
     if HIGH_PRECISION:
-        return ["--features", "high-precision,ffi,python,extension-module"]
-    else:
-        return ["--features", "ffi,python,extension-module"]
+        features += ",high-precision"
+
+    flags.append(features)
+
+    return flags
 
 
 def _build_rust_libs() -> None:
@@ -137,7 +151,22 @@ def _build_rust_libs() -> None:
         if RUSTUP_TOOLCHAIN not in ("stable", "nightly"):
             raise ValueError(f"Invalid `RUSTUP_TOOLCHAIN` '{RUSTUP_TOOLCHAIN}'")
 
-        build_options = " --release" if BUILD_MODE == "release" else ""
+        needed_crates = [
+            "nautilus-backtest",
+            "nautilus-common",
+            "nautilus-core",
+            "nautilus-infrastructure",
+            "nautilus-model",
+            "nautilus-persistence",
+            "nautilus-pyo3",
+        ]
+
+        if BUILD_MODE == "release":
+            build_options = ["--release"]
+        elif BUILD_MODE == "debug-pyo3":
+            build_options = ["--profile", "debug-pyo3"]
+        else:
+            build_options = []
 
         features = _set_feature_flags()
 
@@ -145,7 +174,8 @@ def _build_rust_libs() -> None:
             "cargo",
             "build",
             "--lib",
-            *build_options.split(),
+            *itertools.chain.from_iterable(("-p", p) for p in needed_crates),
+            *build_options,
             *features,
         ]
 
@@ -186,7 +216,7 @@ CYTHON_COMPILER_DIRECTIVES = {
 }
 
 # TODO: Temporarily separate Cython configuration while we require v3.0.11 for coverage
-if cython_compiler_version == "3.1.0":
+if cython_compiler_version == "3.1.2":
     Options.warning_errors = True  # Treat compiler warnings as errors
     Options.extra_warnings = True
     CYTHON_COMPILER_DIRECTIVES["warn.deprecated.IF"] = False
@@ -215,28 +245,31 @@ def _build_extensions() -> list[Extension]:
             extra_compile_args.append("-pipe")
 
     if IS_WINDOWS:
+        # Standard Windows system libraries required when linking Cython extensions.
+        # Keep this list lowercase and alphabetically sorted for easy maintenance
+        # and to avoid duplicates sneaking in.
         extra_link_args += [
-            "AdvAPI32.Lib",
+            "advapi32.lib",
             "bcrypt.lib",
-            "Crypt32.lib",
-            "Iphlpapi.lib",
-            "Kernel32.lib",
+            "crypt32.lib",
+            "iphlpapi.lib",
+            "kernel32.lib",
             "ncrypt.lib",
-            "Netapi32.lib",
+            "netapi32.lib",
             "ntdll.lib",
-            "Ole32.lib",
-            "OleAut32.lib",
-            "Pdh.lib",
-            "PowrProf.lib",
-            "Propsys.lib",
-            "Psapi.lib",
+            "ole32.lib",
+            "oleaut32.lib",
+            "pdh.lib",
+            "powrprof.lib",
+            "propsys.lib",
+            "psapi.lib",
             "runtimeobject.lib",
             "schannel.lib",
             "secur32.lib",
-            "Shell32.lib",
-            "User32.Lib",
-            "UserEnv.Lib",
-            "WS2_32.Lib",
+            "shell32.lib",
+            "user32.lib",
+            "userenv.lib",
+            "ws2_32.lib",
         ]
 
     print("Creating C extension modules...")
@@ -359,6 +392,54 @@ def _get_rustc_version() -> str:
         ) from e
 
 
+def _ensure_windows_python_import_lib() -> None:
+    """
+    Ensure that the *t* suffixed Python import library exists on Windows.
+
+    On some official CPython Windows builds the import library is named
+    ``pythonXY.lib`` (for example ``python313.lib``). However, when building
+    C-extensions ``distutils``/``setuptools`` may ask the MSVC linker for the
+    file ``pythonXYt.lib`` - note the additional *t* suffix. The *t* variant
+    historically referred to a *thread-safe* build but is no longer shipped.
+
+    When the file is missing the linker exits with
+    ``LINK : fatal error LNK1104: cannot open file 'pythonXYt.lib'`` which
+    breaks the CI build on Windows. To work around this we simply create a
+    copy of the existing import library with the expected name **before** the
+    extension build starts.
+
+    """
+    if not IS_WINDOWS:
+        return
+
+    try:
+        # The virtual environment as well as the base installation may both
+        # participate in the link search path.  Attempt the fix in both
+        # locations to maximise the chance of success.
+        candidate_roots = {Path(sys.base_prefix), Path(sys.prefix)}
+
+        # Example: for Python 3.13 -> '313'
+        major, minor, *_ = platform.python_version_tuple()
+        version_compact = f"{major}{minor}"
+
+        for root in candidate_roots:
+            libs_dir = root / "libs"
+            if not libs_dir.exists():
+                continue
+
+            src = libs_dir / f"python{version_compact}.lib"
+            dst = libs_dir / f"python{version_compact}t.lib"
+
+            if src.exists() and not dst.exists():
+                print(
+                    "Creating missing Windows import lib " f"{dst} (copying from {src})",
+                )
+                shutil.copyfile(src, dst)
+    except Exception as exc:  # pragma: no cover - defensive
+        # Never fail the build because of this helper, just show the warning
+        print(f"Warning: failed to create *t* suffixed Python import library: {exc}")
+
+
 def _strip_unneeded_symbols() -> None:
     try:
         print("Stripping unneeded symbols from binaries...")
@@ -414,6 +495,7 @@ def build() -> None:
     """
     Construct the extensions and distribution.
     """
+    _ensure_windows_python_import_lib()
     _build_rust_libs()
     _copy_rust_dylibs_to_project()
 
@@ -472,6 +554,8 @@ if __name__ == "__main__":
     print_env_var_if_exists("CFLAGS")
     print_env_var_if_exists("LDFLAGS")
     print_env_var_if_exists("LD_LIBRARY_PATH")
+    print_env_var_if_exists("PYO3_PYTHON")
+    print_env_var_if_exists("PYTHONHOME")
     print_env_var_if_exists("RUSTFLAGS")
     print_env_var_if_exists("DRY_RUN")
 

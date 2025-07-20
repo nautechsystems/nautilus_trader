@@ -220,7 +220,12 @@ class DYDXAccountGRPCAPI:
         """
         self._channel_url = channel_url
 
-        grpc_service_config = msgspec.json.encode(
+        # Generate the gRPC service config once and reuse it when a channel is
+        # created. The channel itself is created lazily: this prevents
+        # spawning background gRPC threads during object construction, which in
+        # turn avoids noisy shutdown warnings if a client instance is created
+        # but never used.
+        self._grpc_service_config: str = msgspec.json.encode(
             {
                 "methodConfig": [
                     {
@@ -237,24 +242,40 @@ class DYDXAccountGRPCAPI:
             },
         ).decode()
 
-        self._channel: grpc.aio.Channel = grpc.aio.secure_channel(
-            target=self._channel_url,
-            credentials=grpc.ssl_channel_credentials(),
-            options=[("grpc.service_config", grpc_service_config)],
-        )
+        # The underlying gRPC channel. It is initialised on first use via
+        # _get_channel() so that simply instantiating the client does not open
+        # any network resources.
+        self._channel: grpc.aio.Channel | None = None
+
         self._transaction_builder = transaction_builder
         self._lock = asyncio.Lock()
+
+    def _get_channel(self) -> grpc.aio.Channel:
+        if self._channel is None:
+            self._channel = grpc.aio.secure_channel(
+                target=self._channel_url,
+                credentials=grpc.ssl_channel_credentials(),
+                options=[("grpc.service_config", self._grpc_service_config)],
+            )
+
+        return self._channel
 
     async def connect(self) -> None:
         """
         Connect to the GRPC server.
         """
+        # Lazily create the channel. Awaiting ``channel_ready`` ensures that a
+        # TCP connection is established before the coroutine returns.
+        channel = self._get_channel()
+        await channel.channel_ready()
 
     async def disconnect(self) -> None:
         """
         Disconnect from the GRPC server.
         """
-        await self._channel.close()
+        if self._channel is not None:
+            await self._channel.close()
+            self._channel = None
 
     async def get_account(self, address: str) -> BaseAccount:
         """
@@ -272,7 +293,8 @@ class DYDXAccountGRPCAPI:
 
         """
         account = BaseAccount()
-        response = await auth.QueryStub(self._channel).Account(QueryAccountRequest(address=address))
+        channel = self._get_channel()
+        response = await auth.QueryStub(channel).Account(QueryAccountRequest(address=address))
 
         if not response.account.Unpack(account):
             message = "Failed to unpack account"
@@ -295,7 +317,7 @@ class DYDXAccountGRPCAPI:
             The response containing all account balances.
 
         """
-        stub = bank_query_grpc.QueryStub(self._channel)
+        stub = bank_query_grpc.QueryStub(self._get_channel())
         return await stub.AllBalances(bank_query.QueryAllBalancesRequest(address=address))
 
     async def latest_block(self) -> tendermint_query.GetLatestBlockResponse:
@@ -308,7 +330,7 @@ class DYDXAccountGRPCAPI:
             The response containing the latest block information.
 
         """
-        return await tendermint_query_grpc.ServiceStub(self._channel).GetLatestBlock(
+        return await tendermint_query_grpc.ServiceStub(self._get_channel()).GetLatestBlock(
             tendermint_query.GetLatestBlockRequest(),
         )
 
@@ -335,7 +357,7 @@ class DYDXAccountGRPCAPI:
             The response containing the perpetual fee parameters.
 
         """
-        stub = fee_tier_query_grpc.QueryStub(self._channel)
+        stub = fee_tier_query_grpc.QueryStub(self._get_channel())
         return await stub.PerpetualFeeParams(fee_tier_query.QueryPerpetualFeeParamsRequest())
 
     async def get_user_fee_tier(self, address: str) -> fee_tier_query.QueryUserFeeTierResponse:
@@ -353,7 +375,7 @@ class DYDXAccountGRPCAPI:
             The response containing the user fee tier.
 
         """
-        stub = fee_tier_query_grpc.QueryStub(self._channel)
+        stub = fee_tier_query_grpc.QueryStub(self._get_channel())
         return await stub.UserFeeTier(fee_tier_query.QueryUserFeeTierRequest(user=address))
 
     async def place_order(self, wallet: Wallet, order: Order) -> BroadcastTxResponse:
@@ -531,4 +553,4 @@ class DYDXAccountGRPCAPI:
         """
         request = BroadcastTxRequest(tx_bytes=transaction.SerializeToString(), mode=mode)
 
-        return await service_pb2_grpc.ServiceStub(self._channel).BroadcastTx(request)
+        return await service_pb2_grpc.ServiceStub(self._get_channel()).BroadcastTx(request)

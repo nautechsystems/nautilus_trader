@@ -13,10 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
-//! algorithmic trading platform, providing quantitative traders with the ability to backtest
-//! portfolios of automated trading strategies on historical data with an event-driven engine,
-//! and also deploy those same strategies live, with no code changes.
+//! Trading strategy machinery and orchestration [NautilusTrader](http://nautilustrader.io).
+//!
+//! The *trading* crate provides core trading capabilities including:
+//!
+//! - **Forex sessions**: Market session time calculations and timezone handling.
 //!
 //! # Feature flags
 //!
@@ -36,7 +37,6 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 
 pub mod sessions;
-pub mod trader;
 
 #[cfg(feature = "python")]
 pub mod python;

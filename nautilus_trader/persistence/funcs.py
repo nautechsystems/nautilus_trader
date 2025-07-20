@@ -15,7 +15,16 @@
 
 from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.core.nautilus_pyo3 import convert_to_snake_case
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import MarkPriceUpdate
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import OrderBookDepth10
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.serialization.arrow.serializer import _ARROW_ENCODERS
 
 
 CUSTOM_DATA_PREFIX = "custom_"
@@ -34,14 +43,35 @@ def class_to_filename(cls: type) -> str:
     return name
 
 
-def urisafe_instrument_id(instrument_id: InstrumentId | str) -> str:
+def filename_to_class(filename: str) -> type | None:
+    """
+    Convert the given filename back to a class.
+    """
+    builtin_filename_to_class = {
+        "quote_tick": QuoteTick,
+        "trade_tick": TradeTick,
+        "bar": Bar,
+        "order_book_delta": OrderBookDelta,
+        "order_book_deltas": OrderBookDeltas,
+        "order_book_depth10": OrderBookDepth10,
+        "mark_price_update": MarkPriceUpdate,
+    }
+
+    if filename in builtin_filename_to_class:
+        return builtin_filename_to_class[filename]
+
+    for data_cls in _ARROW_ENCODERS.keys():
+        if class_to_filename(data_cls) == filename:
+            return data_cls
+
+    return None
+
+
+def urisafe_identifier(identifier: InstrumentId | BarType | str) -> str:
     """
     Convert an instrument_id into a valid URI for writing to a file path.
     """
-    if isinstance(instrument_id, InstrumentId):
-        instrument_id = instrument_id.value
-
-    return instrument_id.replace("/", "")
+    return str(identifier).replace("/", "")
 
 
 def combine_filters(*filters):

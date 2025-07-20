@@ -54,6 +54,7 @@ class BybitCoinBalance(msgspec.Struct):
         total = Decimal(self.walletBalance)
         locked = Decimal(self.locked)  # TODO: Locked only valid for Spot
         free = total - locked
+
         return AccountBalance(
             total=Money(total, currency),
             locked=Money(locked, currency),
@@ -61,7 +62,10 @@ class BybitCoinBalance(msgspec.Struct):
         )
 
     def parse_to_margin_balance(self) -> MarginBalance:
+        self.totalPositionIM = self.totalPositionIM if self.totalPositionIM != "" else "0"
+        self.totalPositionMM = self.totalPositionMM if self.totalPositionMM != "" else "0"
         currency: Currency = Currency.from_str(self.coin)
+
         return MarginBalance(
             initial=Money(Decimal(self.totalPositionIM), currency),
             maintenance=Money(Decimal(self.totalPositionMM), currency),

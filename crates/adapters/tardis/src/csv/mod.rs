@@ -13,10 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+pub mod load;
 mod record;
+pub mod stream;
 
 use std::{
-    error::Error,
     ffi::OsStr,
     fs::File,
     io::{BufReader, Read, Seek, SeekFrom},
@@ -24,23 +25,25 @@ use std::{
     time::Duration,
 };
 
-use csv::{Reader, ReaderBuilder, StringRecord};
+use csv::{Reader, ReaderBuilder};
 use flate2::read::GzDecoder;
-use nautilus_core::UnixNanos;
+pub use load::{
+    load_deltas, load_depth10_from_snapshot5, load_depth10_from_snapshot25, load_quotes,
+    load_trades,
+};
 use nautilus_model::{
-    data::{
-        BookOrder, DEPTH10_LEN, NULL_ORDER, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick,
-    },
-    enums::{BookAction, OrderSide, RecordFlag},
+    data::{BookOrder, NULL_ORDER, OrderBookDelta, QuoteTick, TradeTick},
+    enums::{BookAction, OrderSide},
     identifiers::{InstrumentId, TradeId},
-    types::{Quantity, fixed::FIXED_PRECISION},
+    types::Quantity,
+};
+pub use stream::{
+    stream_deltas, stream_depth10_from_snapshot5, stream_depth10_from_snapshot25, stream_quotes,
+    stream_trades,
 };
 
 use super::{
-    csv::record::{
-        TardisBookUpdateRecord, TardisOrderBookSnapshot5Record, TardisOrderBookSnapshot25Record,
-        TardisQuoteRecord, TardisTradeRecord,
-    },
+    csv::record::{TardisBookUpdateRecord, TardisQuoteRecord, TardisTradeRecord},
     parse::{
         parse_aggressor_side, parse_book_action, parse_instrument_id, parse_order_side,
         parse_timestamp,
@@ -49,10 +52,12 @@ use super::{
 use crate::parse::parse_price;
 
 fn infer_precision(value: f64) -> u8 {
-    let str_value = value.to_string(); // Single allocation
-    match str_value.find('.') {
-        Some(decimal_idx) => (str_value.len() - decimal_idx - 1) as u8,
-        None => 0,
+    let mut buf = ryu::Buffer::new(); // Stack allocation
+    let s = buf.format(value);
+
+    match s.rsplit_once('.') {
+        Some((_, frac)) if frac != "0" => frac.len() as u8,
+        _ => 0,
     }
 }
 
@@ -62,6 +67,7 @@ fn create_csv_reader<P: AsRef<Path>>(
     let filepath_ref = filepath.as_ref();
     const MAX_RETRIES: u8 = 3;
     const DELAY_MS: u64 = 100;
+    const BUFFER_SIZE: usize = 8 * 1024 * 1024; // 8MB buffer for large files
 
     fn open_file_with_retry<P: AsRef<Path>>(
         path: P,
@@ -96,9 +102,10 @@ fn create_csv_reader<P: AsRef<Path>>(
         .is_some_and(|ext| ext.eq_ignore_ascii_case("gz"));
 
     if !is_gzipped {
-        let buf_reader = BufReader::new(file);
+        let buf_reader = BufReader::with_capacity(BUFFER_SIZE, file);
         return Ok(ReaderBuilder::new()
             .has_headers(true)
+            .buffer_capacity(1024 * 1024) // 1MB CSV buffer
             .from_reader(Box::new(buf_reader)));
     }
 
@@ -146,138 +153,13 @@ fn create_csv_reader<P: AsRef<Path>>(
         }
     }
 
-    let buf_reader = BufReader::new(file);
+    let buf_reader = BufReader::with_capacity(BUFFER_SIZE, file);
     let decoder = GzDecoder::new(buf_reader);
 
     Ok(ReaderBuilder::new()
         .has_headers(true)
+        .buffer_capacity(1024 * 1024) // 1MB CSV buffer
         .from_reader(Box::new(decoder)))
-}
-
-/// Loads [`OrderBookDelta`]s from a Tardis format CSV at the given `filepath`,
-/// automatically applying `GZip` decompression for files ending in ".gz".
-/// Load order book delta records from a CSV or gzipped CSV file.
-///
-/// # Errors
-///
-/// Returns an error if the file cannot be opened, read, or parsed as CSV.
-/// # Panics
-///
-/// Panics if a CSV record has a zero size for a non-delete action or if data conversion fails.
-pub fn load_deltas<P: AsRef<Path>>(
-    filepath: P,
-    price_precision: Option<u8>,
-    size_precision: Option<u8>,
-    instrument_id: Option<InstrumentId>,
-    limit: Option<usize>,
-) -> Result<Vec<OrderBookDelta>, Box<dyn Error>> {
-    // Infer precisions if not provided
-    let (price_precision, size_precision) = match (price_precision, size_precision) {
-        (Some(p), Some(s)) => (p, s),
-        (price_precision, size_precision) => {
-            let mut reader = create_csv_reader(&filepath)?;
-            let mut record = StringRecord::new();
-
-            let mut max_price_precision = 0u8;
-            let mut max_size_precision = 0u8;
-            let mut count = 0;
-
-            while reader.read_record(&mut record)? {
-                let parsed: TardisBookUpdateRecord = record.deserialize(None)?;
-
-                if price_precision.is_none() {
-                    max_price_precision = infer_precision(parsed.price).max(max_price_precision);
-                }
-
-                if size_precision.is_none() {
-                    max_size_precision = infer_precision(parsed.amount).max(max_size_precision);
-                }
-
-                if let Some(limit) = limit {
-                    if count >= limit {
-                        break;
-                    }
-                    count += 1;
-                }
-            }
-
-            drop(reader);
-
-            max_price_precision = max_price_precision.min(FIXED_PRECISION);
-            max_size_precision = max_size_precision.min(FIXED_PRECISION);
-
-            (
-                price_precision.unwrap_or(max_price_precision),
-                size_precision.unwrap_or(max_size_precision),
-            )
-        }
-    };
-
-    let mut deltas: Vec<OrderBookDelta> = Vec::new();
-    let mut last_ts_event = UnixNanos::default();
-
-    let mut reader = create_csv_reader(filepath)?;
-    let mut record = StringRecord::new();
-
-    while reader.read_record(&mut record)? {
-        let record: TardisBookUpdateRecord = record.deserialize(None)?;
-
-        let instrument_id = match &instrument_id {
-            Some(id) => *id,
-            None => parse_instrument_id(&record.exchange, record.symbol),
-        };
-        let side = parse_order_side(&record.side);
-        let price = parse_price(record.price, price_precision);
-        let size = Quantity::new(record.amount, size_precision);
-        let order_id = 0; // Not applicable for L2 data
-        let order = BookOrder::new(side, price, size, order_id);
-
-        let action = parse_book_action(record.is_snapshot, size.as_f64());
-        let flags = 0; // Flags always zero until timestamp changes
-        let sequence = 0; // Sequence not available
-        let ts_event = parse_timestamp(record.timestamp);
-        let ts_init = parse_timestamp(record.local_timestamp);
-
-        // Check if timestamp is different from last timestamp
-        if last_ts_event != ts_event {
-            if let Some(last_delta) = deltas.last_mut() {
-                // Set previous delta flags as F_LAST
-                last_delta.flags = RecordFlag::F_LAST.value();
-            }
-        }
-
-        assert!(
-            !(action != BookAction::Delete && size.is_zero()),
-            "Invalid delta: action {action} when size zero, check size_precision ({size_precision}) vs data; {record:?}"
-        );
-
-        last_ts_event = ts_event;
-
-        let delta = OrderBookDelta::new(
-            instrument_id,
-            action,
-            order,
-            flags,
-            sequence,
-            ts_event,
-            ts_init,
-        );
-
-        deltas.push(delta);
-
-        if let Some(limit) = limit {
-            if deltas.len() >= limit {
-                break;
-            }
-        }
-    }
-
-    // Set F_LAST flag for final delta
-    if let Some(last_delta) = deltas.last_mut() {
-        last_delta.flags = RecordFlag::F_LAST.value();
-    }
-
-    Ok(deltas)
 }
 
 fn create_book_order(
@@ -301,749 +183,99 @@ fn create_book_order(
     }
 }
 
-/// Loads [`OrderBookDepth10`]s from a Tardis format CSV at the given `filepath`,
-/// automatically applying `GZip` decompression for files ending in ".gz".
-/// Load order book depth-10 snapshots (5-level) from a CSV or gzipped CSV file.
-///
-/// # Errors
-///
-/// Returns an error if the file cannot be opened, read, or parsed as CSV.
-/// # Panics
-///
-/// Panics if a record level cannot be parsed to depth-10.
-pub fn load_depth10_from_snapshot5<P: AsRef<Path>>(
-    filepath: P,
-    price_precision: Option<u8>,
-    size_precision: Option<u8>,
+fn parse_delta_record(
+    data: &TardisBookUpdateRecord,
+    current_price_precision: u8,
+    current_size_precision: u8,
     instrument_id: Option<InstrumentId>,
-    limit: Option<usize>,
-) -> Result<Vec<OrderBookDepth10>, Box<dyn Error>> {
-    // Infer precisions if not provided
-    let (price_precision, size_precision) = match (price_precision, size_precision) {
-        (Some(p), Some(s)) => (p, s),
-        (price_precision, size_precision) => {
-            let mut reader = create_csv_reader(&filepath)?;
-            let mut record = StringRecord::new();
-
-            let mut max_price_precision = 0u8;
-            let mut max_size_precision = 0u8;
-            let mut count = 0;
-
-            while reader.read_record(&mut record)? {
-                let parsed: TardisOrderBookSnapshot5Record = record.deserialize(None)?;
-
-                if price_precision.is_none() {
-                    if let Some(bid_price) = parsed.bids_0_price {
-                        max_price_precision = infer_precision(bid_price).max(max_price_precision);
-                    }
-                }
-
-                if size_precision.is_none() {
-                    if let Some(bid_amount) = parsed.bids_0_amount {
-                        max_size_precision = infer_precision(bid_amount).max(max_size_precision);
-                    }
-                }
-
-                if let Some(limit) = limit {
-                    if count >= limit {
-                        break;
-                    }
-                    count += 1;
-                }
-            }
-
-            drop(reader);
-
-            max_price_precision = max_price_precision.min(FIXED_PRECISION);
-            max_size_precision = max_size_precision.min(FIXED_PRECISION);
-
-            (
-                price_precision.unwrap_or(max_price_precision),
-                size_precision.unwrap_or(max_size_precision),
-            )
-        }
+) -> OrderBookDelta {
+    let instrument_id = match instrument_id {
+        Some(id) => id,
+        None => parse_instrument_id(&data.exchange, data.symbol),
     };
 
-    let mut depths: Vec<OrderBookDepth10> = Vec::new();
+    let side = parse_order_side(&data.side);
+    let price = parse_price(data.price, current_price_precision);
+    let size = Quantity::new(data.amount, current_size_precision);
+    let order_id = 0; // Not applicable for L2 data
+    let order = BookOrder::new(side, price, size, order_id);
 
-    let mut reader = create_csv_reader(filepath)?;
-    let mut record = StringRecord::new();
-    while reader.read_record(&mut record)? {
-        let record: TardisOrderBookSnapshot5Record = record.deserialize(None)?;
-        let instrument_id = match &instrument_id {
-            Some(id) => *id,
-            None => parse_instrument_id(&record.exchange, record.symbol),
-        };
-        let flags = RecordFlag::F_LAST.value();
-        let sequence = 0; // Sequence not available
-        let ts_event = parse_timestamp(record.timestamp);
-        let ts_init = parse_timestamp(record.local_timestamp);
+    let action = parse_book_action(data.is_snapshot, size.as_f64());
+    let flags = 0; // Will be set later if needed
+    let sequence = 0; // Sequence not available
+    let ts_event = parse_timestamp(data.timestamp);
+    let ts_init = parse_timestamp(data.local_timestamp);
 
-        // Initialize empty arrays
-        let mut bids = [NULL_ORDER; DEPTH10_LEN];
-        let mut asks = [NULL_ORDER; DEPTH10_LEN];
-        let mut bid_counts = [0u32; DEPTH10_LEN];
-        let mut ask_counts = [0u32; DEPTH10_LEN];
+    assert!(
+        !(action != BookAction::Delete && size.is_zero()),
+        "Invalid delta: action {action} when size zero, check size_precision ({current_size_precision}) vs data; {data:?}"
+    );
 
-        for i in 0..=4 {
-            // Create bids
-            let (bid_order, bid_count) = create_book_order(
-                OrderSide::Buy,
-                match i {
-                    0 => record.bids_0_price,
-                    1 => record.bids_1_price,
-                    2 => record.bids_2_price,
-                    3 => record.bids_3_price,
-                    4 => record.bids_4_price,
-                    _ => panic!("Invalid level for snapshot5 -> depth10 parsing"),
-                },
-                match i {
-                    0 => record.bids_0_amount,
-                    1 => record.bids_1_amount,
-                    2 => record.bids_2_amount,
-                    3 => record.bids_3_amount,
-                    4 => record.bids_4_amount,
-                    _ => panic!("Invalid level for snapshot5 -> depth10 parsing"),
-                },
-                price_precision,
-                size_precision,
-            );
-            bids[i] = bid_order;
-            bid_counts[i] = bid_count;
-
-            // Create asks
-            let (ask_order, ask_count) = create_book_order(
-                OrderSide::Sell,
-                match i {
-                    0 => record.asks_0_price,
-                    1 => record.asks_1_price,
-                    2 => record.asks_2_price,
-                    3 => record.asks_3_price,
-                    4 => record.asks_4_price,
-                    _ => None, // Unreachable, but for safety
-                },
-                match i {
-                    0 => record.asks_0_amount,
-                    1 => record.asks_1_amount,
-                    2 => record.asks_2_amount,
-                    3 => record.asks_3_amount,
-                    4 => record.asks_4_amount,
-                    _ => None, // Unreachable, but for safety
-                },
-                price_precision,
-                size_precision,
-            );
-            asks[i] = ask_order;
-            ask_counts[i] = ask_count;
-        }
-
-        let depth = OrderBookDepth10::new(
-            instrument_id,
-            bids,
-            asks,
-            bid_counts,
-            ask_counts,
-            flags,
-            sequence,
-            ts_event,
-            ts_init,
-        );
-
-        depths.push(depth);
-
-        if let Some(limit) = limit {
-            if depths.len() >= limit {
-                break;
-            }
-        }
-    }
-
-    Ok(depths)
+    OrderBookDelta::new(
+        instrument_id,
+        action,
+        order,
+        flags,
+        sequence,
+        ts_event,
+        ts_init,
+    )
 }
 
-/// Loads [`OrderBookDepth10`]s from a Tardis format CSV at the given `filepath`,
-/// automatically applying `GZip` decompression for files ending in ".gz".
-/// Load order book depth-10 snapshots (25-level) from a CSV or gzipped CSV file.
-///
-/// # Errors
-///
-/// Returns an error if the file cannot be opened, read, or parsed as CSV.
-/// # Panics
-///
-/// Panics if a record level cannot be parsed to depth-10.
-pub fn load_depth10_from_snapshot25<P: AsRef<Path>>(
-    filepath: P,
-    price_precision: Option<u8>,
-    size_precision: Option<u8>,
+fn parse_quote_record(
+    data: &TardisQuoteRecord,
+    current_price_precision: u8,
+    current_size_precision: u8,
     instrument_id: Option<InstrumentId>,
-    limit: Option<usize>,
-) -> Result<Vec<OrderBookDepth10>, Box<dyn Error>> {
-    // Infer precisions if not provided
-    let (price_precision, size_precision) = match (price_precision, size_precision) {
-        (Some(p), Some(s)) => (p, s),
-        (price_precision, size_precision) => {
-            let mut reader = create_csv_reader(&filepath)?;
-            let mut record = StringRecord::new();
-
-            let mut max_price_precision = 0u8;
-            let mut max_size_precision = 0u8;
-            let mut count = 0;
-
-            while reader.read_record(&mut record)? {
-                let parsed: TardisOrderBookSnapshot25Record = record.deserialize(None)?;
-
-                if price_precision.is_none() {
-                    if let Some(bid_price) = parsed.bids_0_price {
-                        max_price_precision = infer_precision(bid_price).max(max_price_precision);
-                    }
-                }
-
-                if size_precision.is_none() {
-                    if let Some(bid_amount) = parsed.bids_0_amount {
-                        max_size_precision = infer_precision(bid_amount).max(max_size_precision);
-                    }
-                }
-
-                if let Some(limit) = limit {
-                    if count >= limit {
-                        break;
-                    }
-                    count += 1;
-                }
-            }
-
-            drop(reader);
-
-            max_price_precision = max_price_precision.min(FIXED_PRECISION);
-            max_size_precision = max_size_precision.min(FIXED_PRECISION);
-
-            (
-                price_precision.unwrap_or(max_price_precision),
-                size_precision.unwrap_or(max_size_precision),
-            )
-        }
+) -> QuoteTick {
+    let instrument_id = match instrument_id {
+        Some(id) => id,
+        None => parse_instrument_id(&data.exchange, data.symbol),
     };
 
-    let mut depths: Vec<OrderBookDepth10> = Vec::new();
-    let mut reader = create_csv_reader(filepath)?;
-    let mut record = StringRecord::new();
+    let bid_price = parse_price(data.bid_price.unwrap_or(0.0), current_price_precision);
+    let ask_price = parse_price(data.ask_price.unwrap_or(0.0), current_price_precision);
+    let bid_size = Quantity::new(data.bid_amount.unwrap_or(0.0), current_size_precision);
+    let ask_size = Quantity::new(data.ask_amount.unwrap_or(0.0), current_size_precision);
+    let ts_event = parse_timestamp(data.timestamp);
+    let ts_init = parse_timestamp(data.local_timestamp);
 
-    while reader.read_record(&mut record)? {
-        let record: TardisOrderBookSnapshot25Record = record.deserialize(None)?;
-
-        let instrument_id = match &instrument_id {
-            Some(id) => *id,
-            None => parse_instrument_id(&record.exchange, record.symbol),
-        };
-        let flags = RecordFlag::F_LAST.value();
-        let sequence = 0; // Sequence not available
-        let ts_event = parse_timestamp(record.timestamp);
-        let ts_init = parse_timestamp(record.local_timestamp);
-
-        // Initialize empty arrays for the first 10 levels only
-        let mut bids = [NULL_ORDER; DEPTH10_LEN];
-        let mut asks = [NULL_ORDER; DEPTH10_LEN];
-        let mut bid_counts = [0u32; DEPTH10_LEN];
-        let mut ask_counts = [0u32; DEPTH10_LEN];
-
-        // Fill only the first 10 levels from the 25-level record
-        for i in 0..DEPTH10_LEN {
-            // Create bids
-            let (bid_order, bid_count) = create_book_order(
-                OrderSide::Buy,
-                match i {
-                    0 => record.bids_0_price,
-                    1 => record.bids_1_price,
-                    2 => record.bids_2_price,
-                    3 => record.bids_3_price,
-                    4 => record.bids_4_price,
-                    5 => record.bids_5_price,
-                    6 => record.bids_6_price,
-                    7 => record.bids_7_price,
-                    8 => record.bids_8_price,
-                    9 => record.bids_9_price,
-                    _ => panic!("Invalid level for snapshot25 -> depth10 parsing"),
-                },
-                match i {
-                    0 => record.bids_0_amount,
-                    1 => record.bids_1_amount,
-                    2 => record.bids_2_amount,
-                    3 => record.bids_3_amount,
-                    4 => record.bids_4_amount,
-                    5 => record.bids_5_amount,
-                    6 => record.bids_6_amount,
-                    7 => record.bids_7_amount,
-                    8 => record.bids_8_amount,
-                    9 => record.bids_9_amount,
-                    _ => panic!("Invalid level for snapshot25 -> depth10 parsing"),
-                },
-                price_precision,
-                size_precision,
-            );
-            bids[i] = bid_order;
-            bid_counts[i] = bid_count;
-
-            // Create asks
-            let (ask_order, ask_count) = create_book_order(
-                OrderSide::Sell,
-                match i {
-                    0 => record.asks_0_price,
-                    1 => record.asks_1_price,
-                    2 => record.asks_2_price,
-                    3 => record.asks_3_price,
-                    4 => record.asks_4_price,
-                    5 => record.asks_5_price,
-                    6 => record.asks_6_price,
-                    7 => record.asks_7_price,
-                    8 => record.asks_8_price,
-                    9 => record.asks_9_price,
-                    _ => panic!("Invalid level for snapshot25 -> depth10 parsing"),
-                },
-                match i {
-                    0 => record.asks_0_amount,
-                    1 => record.asks_1_amount,
-                    2 => record.asks_2_amount,
-                    3 => record.asks_3_amount,
-                    4 => record.asks_4_amount,
-                    5 => record.asks_5_amount,
-                    6 => record.asks_6_amount,
-                    7 => record.asks_7_amount,
-                    8 => record.asks_8_amount,
-                    9 => record.asks_9_amount,
-                    _ => panic!("Invalid level for snapshot25 -> depth10 parsing"),
-                },
-                price_precision,
-                size_precision,
-            );
-            asks[i] = ask_order;
-            ask_counts[i] = ask_count;
-        }
-
-        let depth = OrderBookDepth10::new(
-            instrument_id,
-            bids,
-            asks,
-            bid_counts,
-            ask_counts,
-            flags,
-            sequence,
-            ts_event,
-            ts_init,
-        );
-
-        depths.push(depth);
-
-        if let Some(limit) = limit {
-            if depths.len() >= limit {
-                break;
-            }
-        }
-    }
-
-    Ok(depths)
+    QuoteTick::new(
+        instrument_id,
+        bid_price,
+        ask_price,
+        bid_size,
+        ask_size,
+        ts_event,
+        ts_init,
+    )
 }
 
-/// Loads [`QuoteTick`]s from a Tardis format CSV at the given `filepath`,
-/// automatically applying `GZip` decompression for files ending in ".gz".
-/// Load quote ticks from a CSV or gzipped CSV file.
-///
-/// # Errors
-///
-/// Returns an error if the file cannot be opened, read, or parsed as CSV.
-/// # Panics
-///
-/// Panics if a record has invalid data or CSV parsing errors.
-pub fn load_quote_ticks<P: AsRef<Path>>(
-    filepath: P,
-    price_precision: Option<u8>,
-    size_precision: Option<u8>,
+fn parse_trade_record(
+    data: &TardisTradeRecord,
+    current_price_precision: u8,
+    current_size_precision: u8,
     instrument_id: Option<InstrumentId>,
-    limit: Option<usize>,
-) -> Result<Vec<QuoteTick>, Box<dyn Error>> {
-    // Infer precisions if not provided
-    let (price_precision, size_precision) = match (price_precision, size_precision) {
-        (Some(p), Some(s)) => (p, s),
-        (price_precision, size_precision) => {
-            let mut reader = create_csv_reader(&filepath)?;
-            let mut record = StringRecord::new();
-
-            let mut max_price_precision = 0u8;
-            let mut max_size_precision = 0u8;
-            let mut count = 0;
-
-            while reader.read_record(&mut record)? {
-                let parsed: TardisQuoteRecord = record.deserialize(None)?;
-
-                if price_precision.is_none() {
-                    if let Some(bid_price) = parsed.bid_price {
-                        max_price_precision = infer_precision(bid_price).max(max_price_precision);
-                    }
-                }
-
-                if size_precision.is_none() {
-                    if let Some(bid_amount) = parsed.bid_amount {
-                        max_size_precision = infer_precision(bid_amount).max(max_size_precision);
-                    }
-                }
-
-                if let Some(limit) = limit {
-                    if count >= limit {
-                        break;
-                    }
-                    count += 1;
-                }
-            }
-
-            drop(reader);
-
-            max_price_precision = max_price_precision.min(FIXED_PRECISION);
-            max_size_precision = max_size_precision.min(FIXED_PRECISION);
-
-            (
-                price_precision.unwrap_or(max_price_precision),
-                size_precision.unwrap_or(max_size_precision),
-            )
-        }
+) -> TradeTick {
+    let instrument_id = match instrument_id {
+        Some(id) => id,
+        None => parse_instrument_id(&data.exchange, data.symbol),
     };
 
-    let mut quotes = Vec::new();
-    let mut reader = create_csv_reader(filepath)?;
-    let mut record = StringRecord::new();
+    let price = parse_price(data.price, current_price_precision);
+    let size = Quantity::new(data.amount, current_size_precision);
+    let aggressor_side = parse_aggressor_side(&data.side);
+    let trade_id = TradeId::new(&data.id);
+    let ts_event = parse_timestamp(data.timestamp);
+    let ts_init = parse_timestamp(data.local_timestamp);
 
-    while reader.read_record(&mut record)? {
-        let record: TardisQuoteRecord = record.deserialize(None)?;
-
-        let instrument_id = match &instrument_id {
-            Some(id) => *id,
-            None => parse_instrument_id(&record.exchange, record.symbol),
-        };
-        let bid_price = parse_price(record.bid_price.unwrap_or(0.0), price_precision);
-        let bid_size = Quantity::new(record.bid_amount.unwrap_or(0.0), size_precision);
-        let ask_price = parse_price(record.ask_price.unwrap_or(0.0), price_precision);
-        let ask_size = Quantity::new(record.ask_amount.unwrap_or(0.0), size_precision);
-        let ts_event = parse_timestamp(record.timestamp);
-        let ts_init = parse_timestamp(record.local_timestamp);
-
-        let quote = QuoteTick::new(
-            instrument_id,
-            bid_price,
-            ask_price,
-            bid_size,
-            ask_size,
-            ts_event,
-            ts_init,
-        );
-
-        quotes.push(quote);
-
-        if let Some(limit) = limit {
-            if quotes.len() >= limit {
-                break;
-            }
-        }
-    }
-
-    Ok(quotes)
-}
-
-/// Loads [`TradeTick`]s from a Tardis format CSV at the given `filepath`,
-/// automatically applying `GZip` decompression for files ending in ".gz".
-/// Load trade ticks from a CSV or gzipped CSV file.
-///
-/// # Errors
-///
-/// Returns an error if the file cannot be opened, read, or parsed as CSV.
-/// # Panics
-///
-/// Panics if a record has invalid trade size or CSV parsing errors.
-pub fn load_trade_ticks<P: AsRef<Path>>(
-    filepath: P,
-    price_precision: Option<u8>,
-    size_precision: Option<u8>,
-    instrument_id: Option<InstrumentId>,
-    limit: Option<usize>,
-) -> Result<Vec<TradeTick>, Box<dyn Error>> {
-    // Infer precisions if not provided
-    let (price_precision, size_precision) = match (price_precision, size_precision) {
-        (Some(p), Some(s)) => (p, s),
-        (price_precision, size_precision) => {
-            let mut reader = create_csv_reader(&filepath)?;
-            let mut record = StringRecord::new();
-
-            let mut max_price_precision = 0u8;
-            let mut max_size_precision = 0u8;
-            let mut count = 0;
-
-            while reader.read_record(&mut record)? {
-                let parsed: TardisTradeRecord = record.deserialize(None)?;
-
-                if price_precision.is_none() {
-                    max_price_precision = infer_precision(parsed.price).max(max_price_precision);
-                }
-
-                if size_precision.is_none() {
-                    max_size_precision = infer_precision(parsed.amount).max(max_size_precision);
-                }
-
-                if let Some(limit) = limit {
-                    if count >= limit {
-                        break;
-                    }
-                    count += 1;
-                }
-            }
-
-            drop(reader);
-
-            max_price_precision = max_price_precision.min(FIXED_PRECISION);
-            max_size_precision = max_size_precision.min(FIXED_PRECISION);
-
-            (
-                price_precision.unwrap_or(max_price_precision),
-                size_precision.unwrap_or(max_size_precision),
-            )
-        }
-    };
-
-    let mut trades = Vec::new();
-    let mut reader = create_csv_reader(filepath)?;
-    let mut record = StringRecord::new();
-
-    while reader.read_record(&mut record)? {
-        let record: TardisTradeRecord = record.deserialize(None)?;
-
-        let instrument_id = match &instrument_id {
-            Some(id) => *id,
-            None => parse_instrument_id(&record.exchange, record.symbol),
-        };
-        let price = parse_price(record.price, price_precision);
-        let size = Quantity::non_zero_checked(record.amount, size_precision)
-            .unwrap_or_else(|e| panic!("Invalid {record:?}: size {e}"));
-        let aggressor_side = parse_aggressor_side(&record.side);
-        let trade_id = TradeId::new(&record.id);
-        let ts_event = parse_timestamp(record.timestamp);
-        let ts_init = parse_timestamp(record.local_timestamp);
-
-        let trade = TradeTick::new(
-            instrument_id,
-            price,
-            size,
-            aggressor_side,
-            trade_id,
-            ts_event,
-            ts_init,
-        );
-
-        trades.push(trade);
-
-        if let Some(limit) = limit {
-            if trades.len() >= limit {
-                break;
-            }
-        }
-    }
-
-    Ok(trades)
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-mod tests {
-    use nautilus_model::{
-        enums::{AggressorSide, BookAction},
-        identifiers::InstrumentId,
-        types::Price,
-    };
-    use nautilus_testkit::common::{
-        ensure_data_exists_tardis_binance_snapshot5, ensure_data_exists_tardis_binance_snapshot25,
-        ensure_data_exists_tardis_bitmex_trades, ensure_data_exists_tardis_deribit_book_l2,
-        ensure_data_exists_tardis_huobi_quotes,
-    };
-    use rstest::*;
-
-    use super::*;
-
-    // TODO: Flakey in CI, potentially to do with syncing large test data files from cache
-    #[ignore = "Flakey test: called `Result::unwrap()` on an `Err` value: Error(Io(Kind(UnexpectedEof)))"]
-    #[rstest]
-    #[case(Some(1), Some(0))] // Explicit precisions
-    #[case(None, None)] // Inferred precisions
-    pub fn test_read_deltas(
-        #[case] price_precision: Option<u8>,
-        #[case] size_precision: Option<u8>,
-    ) {
-        let filepath = ensure_data_exists_tardis_deribit_book_l2();
-        let deltas = load_deltas(
-            filepath,
-            price_precision,
-            size_precision,
-            None,
-            Some(10_000),
-        )
-        .unwrap();
-
-        assert_eq!(deltas.len(), 10_000);
-        assert_eq!(
-            deltas[0].instrument_id,
-            InstrumentId::from("BTC-PERPETUAL.DERIBIT")
-        );
-        assert_eq!(deltas[0].action, BookAction::Add);
-        assert_eq!(deltas[0].order.side, OrderSide::Sell);
-        assert_eq!(deltas[0].order.price, Price::from("6421.5"));
-        assert_eq!(deltas[0].order.size, Quantity::from("18640"));
-        assert_eq!(deltas[0].flags, 0);
-        assert_eq!(deltas[0].sequence, 0);
-        assert_eq!(deltas[0].ts_event, 1585699200245000000);
-        assert_eq!(deltas[0].ts_init, 1585699200355684000);
-    }
-
-    // TODO: Flakey in CI, potentially to do with syncing large test data files from cache
-    #[ignore = "Flakey test: called `Result::unwrap()` on an `Err` value: Error(Io(Kind(UnexpectedEof)))"]
-    #[rstest]
-    #[case(Some(2), Some(3))] // Explicit precisions
-    #[case(None, None)] // Inferred precisions
-    pub fn test_read_depth10s_from_snapshot5(
-        #[case] price_precision: Option<u8>,
-        #[case] size_precision: Option<u8>,
-    ) {
-        let filepath = ensure_data_exists_tardis_binance_snapshot5();
-        let depths = load_depth10_from_snapshot5(
-            filepath,
-            price_precision,
-            size_precision,
-            None,
-            Some(10_000),
-        )
-        .unwrap();
-
-        assert_eq!(depths.len(), 10_000);
-        assert_eq!(
-            depths[0].instrument_id,
-            InstrumentId::from("BTCUSDT.BINANCE")
-        );
-        assert_eq!(depths[0].bids.len(), 10);
-        assert_eq!(depths[0].bids[0].price, Price::from("11657.07"));
-        assert_eq!(depths[0].bids[0].size, Quantity::from("10.896"));
-        assert_eq!(depths[0].bids[0].side, OrderSide::Buy);
-        assert_eq!(depths[0].bids[0].order_id, 0);
-        assert_eq!(depths[0].asks.len(), 10);
-        assert_eq!(depths[0].asks[0].price, Price::from("11657.08"));
-        assert_eq!(depths[0].asks[0].size, Quantity::from("1.714"));
-        assert_eq!(depths[0].asks[0].side, OrderSide::Sell);
-        assert_eq!(depths[0].asks[0].order_id, 0);
-        assert_eq!(depths[0].bid_counts[0], 1);
-        assert_eq!(depths[0].ask_counts[0], 1);
-        assert_eq!(depths[0].flags, 128);
-        assert_eq!(depths[0].ts_event, 1598918403696000000);
-        assert_eq!(depths[0].ts_init, 1598918403810979000);
-        assert_eq!(depths[0].sequence, 0);
-    }
-
-    // TODO: Flakey in CI, potentially to do with syncing large test data files from cache
-    #[ignore = "Flakey test: called `Result::unwrap()` on an `Err` value: Error(Io(Kind(UnexpectedEof)))"]
-    #[rstest]
-    #[case(Some(2), Some(3))] // Explicit precisions
-    #[case(None, None)] // Inferred precisions
-    pub fn test_read_depth10s_from_snapshot25(
-        #[case] price_precision: Option<u8>,
-        #[case] size_precision: Option<u8>,
-    ) {
-        let filepath = ensure_data_exists_tardis_binance_snapshot25();
-        let depths = load_depth10_from_snapshot25(
-            filepath,
-            price_precision,
-            size_precision,
-            None,
-            Some(10_000),
-        )
-        .unwrap();
-
-        assert_eq!(depths.len(), 10_000);
-        assert_eq!(
-            depths[0].instrument_id,
-            InstrumentId::from("BTCUSDT.BINANCE")
-        );
-        assert_eq!(depths[0].bids.len(), 10);
-        assert_eq!(depths[0].bids[0].price, Price::from("11657.07"));
-        assert_eq!(depths[0].bids[0].size, Quantity::from("10.896"));
-        assert_eq!(depths[0].bids[0].side, OrderSide::Buy);
-        assert_eq!(depths[0].bids[0].order_id, 0);
-        assert_eq!(depths[0].asks.len(), 10);
-        assert_eq!(depths[0].asks[0].price, Price::from("11657.08"));
-        assert_eq!(depths[0].asks[0].size, Quantity::from("1.714"));
-        assert_eq!(depths[0].asks[0].side, OrderSide::Sell);
-        assert_eq!(depths[0].asks[0].order_id, 0);
-        assert_eq!(depths[0].bid_counts[0], 1);
-        assert_eq!(depths[0].ask_counts[0], 1);
-        assert_eq!(depths[0].flags, 128);
-        assert_eq!(depths[0].ts_event, 1598918403696000000);
-        assert_eq!(depths[0].ts_init, 1598918403810979000);
-        assert_eq!(depths[0].sequence, 0);
-    }
-
-    // TODO: Flakey in CI, potentially to do with syncing large test data files from cache
-    #[ignore = "Flakey test: called `Result::unwrap()` on an `Err` value: Error(Io(Kind(UnexpectedEof)))"]
-    #[rstest]
-    #[case(Some(1), Some(0))] // Explicit precisions
-    #[case(None, None)] // Inferred precisions
-    pub fn test_read_quotes(
-        #[case] price_precision: Option<u8>,
-        #[case] size_precision: Option<u8>,
-    ) {
-        let filepath = ensure_data_exists_tardis_huobi_quotes();
-        let quotes = load_quote_ticks(
-            filepath,
-            price_precision,
-            size_precision,
-            None,
-            Some(10_000),
-        )
-        .unwrap();
-
-        assert_eq!(quotes.len(), 10_000);
-        assert_eq!(
-            quotes[0].instrument_id,
-            InstrumentId::from("BTC-USD.HUOBI_DELIVERY")
-        );
-        assert_eq!(quotes[0].bid_price, Price::from("8629.2"));
-        assert_eq!(quotes[0].bid_size, Quantity::from("806"));
-        assert_eq!(quotes[0].ask_price, Price::from("8629.3"));
-        assert_eq!(quotes[0].ask_size, Quantity::from("5494"));
-        assert_eq!(quotes[0].ts_event, 1588291201099000000);
-        assert_eq!(quotes[0].ts_init, 1588291201234268000);
-    }
-
-    // TODO: Flakey in CI, potentially to do with syncing large test data files from cache
-    #[ignore = "Flakey test: called `Result::unwrap()` on an `Err` value: Error(Io(Kind(UnexpectedEof)))"]
-    #[rstest]
-    #[case(Some(1), Some(0))] // Explicit precisions
-    #[case(None, None)] // Inferred precisions
-    pub fn test_read_trades(
-        #[case] price_precision: Option<u8>,
-        #[case] size_precision: Option<u8>,
-    ) {
-        let filepath = ensure_data_exists_tardis_bitmex_trades();
-        let trades = load_trade_ticks(
-            filepath,
-            price_precision,
-            size_precision,
-            None,
-            Some(10_000),
-        )
-        .unwrap();
-
-        assert_eq!(trades.len(), 10_000);
-        assert_eq!(trades[0].instrument_id, InstrumentId::from("XBTUSD.BITMEX"));
-        assert_eq!(trades[0].price, Price::from("8531.5"));
-        assert_eq!(trades[0].size, Quantity::from("2152"));
-        assert_eq!(trades[0].aggressor_side, AggressorSide::Seller);
-        assert_eq!(
-            trades[0].trade_id,
-            TradeId::new("ccc3c1fa-212c-e8b0-1706-9b9c4f3d5ecf")
-        );
-        assert_eq!(trades[0].ts_event, 1583020803145000000);
-        assert_eq!(trades[0].ts_init, 1583020803307160000);
-    }
+    TradeTick::new(
+        instrument_id,
+        price,
+        size,
+        aggressor_side,
+        trade_id,
+        ts_event,
+        ts_init,
+    )
 }

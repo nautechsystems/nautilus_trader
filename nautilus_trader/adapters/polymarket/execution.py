@@ -71,6 +71,7 @@ from nautilus_trader.execution.messages import GenerateFillReports
 from nautilus_trader.execution.messages import GenerateOrderStatusReport
 from nautilus_trader.execution.messages import GenerateOrderStatusReports
 from nautilus_trader.execution.messages import GeneratePositionStatusReports
+from nautilus_trader.execution.messages import QueryAccount
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
@@ -644,6 +645,10 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
     # -- COMMAND HANDLERS -------------------------------------------------------------------------
 
+    async def _query_account(self, _command: QueryAccount) -> None:
+        # Specific account ID (sub account) not yet supported
+        await self._update_account_state()
+
     async def _cancel_order(self, command: CancelOrder) -> None:
         # https://docs.polymarket.com/#cancel-an-order
         await self._maintain_active_market(command.instrument_id)
@@ -825,6 +830,9 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
         order = command.order
 
+        # --------------------------------------------------------------------------------------
+        # MARKET ORDER CHANGE
+        # --------------------------------------------------------------------------------------
         # if order.quantity.precision > POLYMARKET_MAX_PRECISION_TAKER:
         #     self._log.error(
         #         f"Market order quantity max precision {POLYMARKET_MAX_PRECISION_TAKER} on Polymarket, "
@@ -832,7 +840,9 @@ class PolymarketExecutionClient(LiveExecutionClient):
         #     )
         #     return  # TODO: Change to deny after next release
 
-        # Create signed Polymarket market order
+        # amount = round(order.quantity, POLYMARKET_MAX_PRECISION_TAKER)
+
+        # # Create signed Polymarket market order
         # market_order_args = MarketOrderArgs(
         #     token_id=get_polymarket_token_id(order.instrument_id),
         #     amount=amount,
@@ -849,8 +859,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
         # )
         # interval = self._clock.timestamp() - signing_start
         # self._log.info(f"Signed Polymarket market order in {interval:.3f}s", LogColor.BLUE)
-
-        # amount = round(order.quantity, POLYMARKET_MAX_PRECISION_TAKER)
+        # --------------------------------------------------------------------------------------
 
         price = POLYMARKET_MAX_PRICE if order.side == OrderSide.BUY else POLYMARKET_MIN_PRICE
 
@@ -944,7 +953,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
     def _handle_ws_message(self, raw: bytes) -> None:
         try:
             if self._config.log_raw_ws_messages:
-                self._log.debug(
+                self._log.info(
                     str(json.dumps(msgspec.json.decode(raw), indent=4)),
                     color=LogColor.MAGENTA,
                 )

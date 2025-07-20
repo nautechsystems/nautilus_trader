@@ -47,6 +47,7 @@ from nautilus_trader.model.events.position cimport PositionChanged
 from nautilus_trader.model.events.position cimport PositionClosed
 from nautilus_trader.model.events.position cimport PositionEvent
 from nautilus_trader.model.events.position cimport PositionOpened
+from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -70,6 +71,8 @@ cdef class Strategy(Actor):
     """The order ID tag for the strategy.\n\n:returns: `str`"""
     cdef readonly bint use_uuid_client_order_ids
     """If UUID4's should be used for client order ID values.\n\n:returns: `bool`"""
+    cdef readonly bint use_hyphens_in_client_order_ids
+    """If hyphens should be used in generated client order ID values.\n\n:returns: `bool`"""
     cdef readonly OmsType oms_type
     """The order management system for the strategy.\n\n:returns: `OmsType`"""
     cdef readonly list external_order_claims
@@ -143,6 +146,7 @@ cdef class Strategy(Actor):
     cpdef void cancel_all_orders(self, InstrumentId instrument_id, OrderSide order_side=*, ClientId client_id=*, dict[str, object] params=*)
     cpdef void close_position(self, Position position, ClientId client_id=*, list[str] tags=*, TimeInForce time_in_force=*, bint reduce_only=*, dict[str, object] params=*)
     cpdef void close_all_positions(self, InstrumentId instrument_id, PositionSide position_side=*, ClientId client_id=*, list[str] tags=*, TimeInForce time_in_force=*, bint reduce_only=*, dict[str, object] params=*)
+    cpdef void query_account(self, AccountId account_id, ClientId client_id=*, dict[str, object] params=*)
     cpdef void query_order(self, Order order, ClientId client_id=*, dict[str, object] params=*)
     cdef ModifyOrder _create_modify_order(
         self,

@@ -14,6 +14,11 @@
 // -------------------------------------------------------------------------------------------------
 
 #[cfg(test)]
+/// Load the data from `file_name`.
+///
+/// # Panics
+///
+/// Panics if the test JSON file cannot be read.
 #[must_use]
 pub fn load_test_json(file_name: &str) -> String {
     use std::{fs, path::PathBuf};

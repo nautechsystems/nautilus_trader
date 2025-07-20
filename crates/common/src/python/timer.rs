@@ -175,18 +175,7 @@ impl TimeEvent {
 
 #[cfg(test)]
 mod tests {
-    #[rustfmt::skip]
-    #[cfg(feature = "clock_v2")]
-    use std::collections::BinaryHeap;
-
-    use std::num::NonZeroU64;
-    #[rustfmt::skip]
-    #[cfg(feature = "clock_v2")]
-    use std::sync::Arc;
-
-    #[rustfmt::skip]
-    #[cfg(feature = "clock_v2")]
-    use tokio::sync::Mutex;
+    use std::{num::NonZeroU64, sync::Arc};
 
     use nautilus_core::{
         UnixNanos, datetime::NANOSECONDS_IN_MILLISECOND, python::IntoPyObjectNautilusExt,
@@ -194,9 +183,9 @@ mod tests {
     };
     use pyo3::prelude::*;
     use tokio::time::Duration;
-    use ustr::Ustr; // Import required (due feature gating)
 
     use crate::{
+        runner::{TimeEventSender, set_time_event_sender},
         testing::wait_until,
         timer::{LiveTimer, TimeEvent, TimeEventCallback},
     };
@@ -207,9 +196,20 @@ mod tests {
         Ok(())
     }
 
+    #[derive(Debug)]
+    struct TestTimeEventSender;
+
+    impl TimeEventSender for TestTimeEventSender {
+        fn send(&self, _handler: crate::timer::TimeEventHandlerV2) {
+            // Test implementation - just ignore the events
+        }
+    }
+
     #[tokio::test]
     async fn test_live_timer_starts_and_stops() {
         pyo3::prepare_freethreaded_python();
+
+        set_time_event_sender(Arc::new(TestTimeEventSender));
 
         let callback = Python::with_gil(|py| {
             let callable = wrap_pyfunction!(receive_event, py).unwrap();
@@ -222,30 +222,17 @@ mod tests {
         let start_time = clock.get_time_ns();
         let interval_ns = NonZeroU64::new(100 * NANOSECONDS_IN_MILLISECOND).unwrap();
 
-        #[cfg(not(feature = "clock_v2"))]
+        let test_sender = Arc::new(TestTimeEventSender);
         let mut timer = LiveTimer::new(
-            Ustr::from("TEST_TIMER"),
+            "TEST_TIMER".into(),
             interval_ns,
             start_time,
             None,
             callback,
+            false,
+            Some(test_sender),
         );
 
-        #[cfg(feature = "clock_v2")]
-        let (_heap, mut timer) = {
-            let heap = Arc::new(Mutex::new(BinaryHeap::new()));
-            (
-                heap.clone(),
-                LiveTimer::new(
-                    "TEST_TIMER".into(),
-                    interval_ns,
-                    start_time,
-                    None,
-                    callback,
-                    heap,
-                ),
-            )
-        };
         let next_time_ns = timer.next_time_ns();
         timer.start();
 
@@ -261,6 +248,8 @@ mod tests {
     async fn test_live_timer_with_stop_time() {
         pyo3::prepare_freethreaded_python();
 
+        set_time_event_sender(Arc::new(TestTimeEventSender));
+
         let callback = Python::with_gil(|py| {
             let callable = wrap_pyfunction!(receive_event, py).unwrap();
             let callable = callable.into_py_any_unwrap(py);
@@ -273,30 +262,16 @@ mod tests {
         let interval_ns = NonZeroU64::new(100 * NANOSECONDS_IN_MILLISECOND).unwrap();
         let stop_time = start_time + 500 * NANOSECONDS_IN_MILLISECOND;
 
-        #[cfg(not(feature = "clock_v2"))]
+        let test_sender = Arc::new(TestTimeEventSender);
         let mut timer = LiveTimer::new(
-            Ustr::from("TEST_TIMER"),
+            "TEST_TIMER".into(),
             interval_ns,
             start_time,
             Some(stop_time),
             callback,
+            false,
+            Some(test_sender),
         );
-
-        #[cfg(feature = "clock_v2")]
-        let (_heap, mut timer) = {
-            let heap = Arc::new(Mutex::new(BinaryHeap::new()));
-            (
-                heap.clone(),
-                LiveTimer::new(
-                    "TEST_TIMER".into(),
-                    interval_ns,
-                    start_time,
-                    Some(stop_time),
-                    callback,
-                    heap,
-                ),
-            )
-        };
 
         let next_time_ns = timer.next_time_ns();
         timer.start();
@@ -312,6 +287,8 @@ mod tests {
     async fn test_live_timer_with_zero_interval_and_immediate_stop_time() {
         pyo3::prepare_freethreaded_python();
 
+        set_time_event_sender(Arc::new(TestTimeEventSender));
+
         let callback = Python::with_gil(|py| {
             let callable = wrap_pyfunction!(receive_event, py).unwrap();
             let callable = callable.into_py_any_unwrap(py);
@@ -324,30 +301,16 @@ mod tests {
         let interval_ns = NonZeroU64::new(1).unwrap();
         let stop_time = clock.get_time_ns();
 
-        #[cfg(not(feature = "clock_v2"))]
+        let test_sender = Arc::new(TestTimeEventSender);
         let mut timer = LiveTimer::new(
-            Ustr::from("TEST_TIMER"),
+            "TEST_TIMER".into(),
             interval_ns,
             start_time,
             Some(stop_time),
             callback,
+            false,
+            Some(test_sender),
         );
-
-        #[cfg(feature = "clock_v2")]
-        let (_heap, mut timer) = {
-            let heap = Arc::new(Mutex::new(BinaryHeap::new()));
-            (
-                heap.clone(),
-                LiveTimer::new(
-                    "TEST_TIMER".into(),
-                    interval_ns,
-                    start_time,
-                    Some(stop_time),
-                    callback,
-                    heap,
-                ),
-            )
-        };
 
         timer.start();
 

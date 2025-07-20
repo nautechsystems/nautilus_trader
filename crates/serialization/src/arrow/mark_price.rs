@@ -163,8 +163,9 @@ mod tests {
     use std::sync::Arc;
 
     use arrow::{array::Array, record_batch::RecordBatch};
-    use nautilus_model::types::{fixed::FIXED_SCALAR, price::PriceRaw};
+    use nautilus_model::types::price::PriceRaw;
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use super::*;
     use crate::arrow::get_raw_price;
@@ -237,11 +238,11 @@ mod tests {
         assert_eq!(value_values.len(), 2);
         assert_eq!(
             get_raw_price(value_values.value(0)),
-            (50200.00 * FIXED_SCALAR) as PriceRaw
+            Price::from(dec!(50200.00).to_string()).raw
         );
         assert_eq!(
             get_raw_price(value_values.value(1)),
-            (50300.00 * FIXED_SCALAR) as PriceRaw
+            Price::from(dec!(50300.00).to_string()).raw
         );
         assert_eq!(ts_event_values.len(), 2);
         assert_eq!(ts_event_values.value(0), 1);

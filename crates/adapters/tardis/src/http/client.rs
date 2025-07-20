@@ -119,10 +119,10 @@ impl TardisHttpClient {
         if let Some(symbol) = symbol {
             url.push_str(&format!("/{symbol}"));
         }
-        if let Some(filter) = filter {
-            if let Ok(filter_json) = serde_json::to_string(filter) {
-                url.push_str(&format!("?filter={}", urlencoding::encode(&filter_json)));
-            }
+        if let Some(filter) = filter
+            && let Ok(filter_json) = serde_json::to_string(filter)
+        {
+            url.push_str(&format!("?filter={}", urlencoding::encode(&filter_json)));
         }
         tracing::debug!("Requesting: {url}");
 
