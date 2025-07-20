@@ -68,7 +68,7 @@ impl OrderBookDepth10DataWrangler {
             Err(e) => return Err(to_pyvalue_err(e)),
         };
 
-        let mut ticks = Vec::new();
+        let mut depths = Vec::new();
 
         // Read the record batches
         for maybe_batch in reader {
@@ -77,11 +77,11 @@ impl OrderBookDepth10DataWrangler {
                 Err(e) => return Err(to_pyvalue_err(e)),
             };
 
-            let batch_deltas = OrderBookDepth10::decode_batch(&self.metadata, record_batch)
+            let batch_depths = OrderBookDepth10::decode_batch(&self.metadata, record_batch)
                 .map_err(to_pyvalue_err)?;
-            ticks.extend(batch_deltas);
+            depths.extend(batch_depths);
         }
 
-        Ok(ticks)
+        Ok(depths)
     }
 }
