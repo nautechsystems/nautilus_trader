@@ -146,12 +146,12 @@ See also the `LiveExecEngineConfig` [API Reference](../api_reference/config#clas
 
 **Purpose**: Ensures that the system state remains consistent with the trading venue by recovering any missed events, such as order and position status updates.
 
-| Setting                        | Default | Description                                                                                       |
-|--------------------------------|---------|---------------------------------------------------------------------------------------------------|
-| `reconciliation`               | True    | Activates reconciliation at startup, aligning the system's internal state with the venue's state. |
-| `reconciliation_lookback_mins` | None    | Specifies how far back (in minutes) the system requests past events to reconcile uncached state.  |
-| `filtered_instrument_ids`      | None    | A list of instrument IDs to filter from reconciliation.                                          |
-| `filtered_client_order_ids`    | None    | A list of client order IDs to filter from reconciliation.                                        |
+| Setting                         | Default | Description                                                                                        |
+|---------------------------------|---------|----------------------------------------------------------------------------------------------------|
+| `reconciliation`                | True    | Activates reconciliation at startup, aligning the system's internal state with the venue's state.  |
+| `reconciliation_lookback_mins`  | None    | Specifies how far back (in minutes) the system requests past events to reconcile uncached state.   |
+| `reconciliation_instrument_ids` | None    | An include list of specific instrument IDs to consider for reconciliation.                         |
+| `filtered_client_order_ids`     | None    | A list of client order IDs to filter from reconciliation (useful when the venue holds duplicates). |
 
 :::info
 See also [Execution reconciliation](../concepts/execution#execution-reconciliation) for further details.
