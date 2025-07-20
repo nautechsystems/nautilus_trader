@@ -261,9 +261,17 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         dict[str, bytes]
 
         """
+        import time
+        cdef double ts_start = time.time()
+        cdef double ts_end
         cdef dict general = {}
 
+        # Time the keys() operation
+        ts_start = time.time()
         cdef list general_keys = self._backing.keys(f"{_GENERAL}:*")
+        ts_end = time.time()
+        self._log.debug(f"database.load: backing.keys() took {(ts_end - ts_start) * 1000:.2f}ms, found {len(general_keys)} keys")
+
         if not general_keys:
             return general
 
@@ -271,13 +279,36 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
             str key
             list result
             bytes value_bytes
+            double ts_read_start
+            double ts_read_end
+            double total_read_time = 0.0
+            double ts_split_start
+            double ts_split_end
+            double total_split_time = 0.0
+            int read_count = 0
+
         for key in general_keys:
+            # Time the split operation
+            ts_split_start = time.time()
             key = key.split(':', maxsplit=1)[1]
+            ts_split_end = time.time()
+            total_split_time += (ts_split_end - ts_split_start)
+
+            # Time the read operation
+            ts_read_start = time.time()
             result = self._backing.read(key)
+            ts_read_end = time.time()
+            total_read_time += (ts_read_end - ts_read_start)
+            read_count += 1
+
             value_bytes = result[0]
             if value_bytes is not None:
                 key = key.split(':', maxsplit=1)[1]
                 general[key] = value_bytes
+
+        self._log.debug(f"database.load: {read_count} read operations took {total_read_time * 1000:.2f}ms total")
+        self._log.debug(f"database.load: split operations took {total_split_time * 1000:.2f}ms total")
+        self._log.debug(f"database.load: average read time: {(total_read_time / read_count) * 1000:.2f}ms per read")
 
         return general
 
