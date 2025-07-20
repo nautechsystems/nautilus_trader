@@ -81,6 +81,7 @@ config_node = TradingNodeConfig(
     cache=CacheConfig(
         database=DatabaseConfig(),
         timestamps_as_iso8601=True,
+        persist_account_events=False,  # Useful for HFT ops where this can quickly accumulate
         buffer_interval_ms=100,
     ),
     # message_bus=MessageBusConfig(

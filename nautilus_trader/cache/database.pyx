@@ -832,9 +832,12 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         Condition.not_none(account_id, "account_id")
         Condition.not_none(event_id, "event_id")
 
-        self._backing.delete_account_event(account_id.to_str(), event_id)
+        self._log.warning(f"Deleting account events currently a no-op (pending redesign) {repr(account_id)}:{event_id}")
 
-        self._log.info(f"Deleted account event {repr(account_id)}:{event_id}")
+        # TODO: No-op pending reimplementation to improve efficiency
+        # self._backing.delete_account_event(account_id.to_str(), event_id)
+        #
+        # self._log.info(f"Deleted account event {repr(account_id)}:{event_id}")
 
     cpdef void add(self, str key, bytes value):
         """
