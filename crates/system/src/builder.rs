@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::time::Duration;
+
 use nautilus_common::{cache::CacheConfig, enums::Environment, logging::logger::LoggerConfig};
 use nautilus_core::UUID4;
 use nautilus_data::engine::config::DataEngineConfig;
@@ -36,12 +38,12 @@ pub struct NautilusKernelBuilder {
     load_state: bool,
     save_state: bool,
     logging: Option<LoggerConfig>,
-    timeout_connection: u32,
-    timeout_reconciliation: u32,
-    timeout_portfolio: u32,
-    timeout_disconnection: u32,
-    timeout_post_stop: u32,
-    timeout_shutdown: u32,
+    timeout_connection: Duration,
+    timeout_reconciliation: Duration,
+    timeout_portfolio: Duration,
+    timeout_disconnection: Duration,
+    delay_post_stop: Duration,
+    timeout_shutdown: Duration,
     cache: Option<CacheConfig>,
     data_engine: Option<DataEngineConfig>,
     risk_engine: Option<RiskEngineConfig>,
@@ -61,12 +63,12 @@ impl NautilusKernelBuilder {
             load_state: true,
             save_state: true,
             logging: None,
-            timeout_connection: 60,
-            timeout_reconciliation: 30,
-            timeout_portfolio: 10,
-            timeout_disconnection: 10,
-            timeout_post_stop: 10,
-            timeout_shutdown: 5,
+            timeout_connection: Duration::from_secs(60),
+            timeout_reconciliation: Duration::from_secs(30),
+            timeout_portfolio: Duration::from_secs(10),
+            timeout_disconnection: Duration::from_secs(10),
+            delay_post_stop: Duration::from_secs(10),
+            timeout_shutdown: Duration::from_secs(5),
             cache: None,
             data_engine: None,
             risk_engine: None,
@@ -105,43 +107,43 @@ impl NautilusKernelBuilder {
 
     /// Set the connection timeout in seconds.
     #[must_use]
-    pub const fn with_timeout_connection(mut self, timeout: u32) -> Self {
-        self.timeout_connection = timeout;
+    pub const fn with_timeout_connection(mut self, timeout_secs: u64) -> Self {
+        self.timeout_connection = Duration::from_secs(timeout_secs);
         self
     }
 
     /// Set the reconciliation timeout in seconds.
     #[must_use]
-    pub const fn with_timeout_reconciliation(mut self, timeout: u32) -> Self {
-        self.timeout_reconciliation = timeout;
+    pub const fn with_timeout_reconciliation(mut self, timeout_secs: u64) -> Self {
+        self.timeout_reconciliation = Duration::from_secs(timeout_secs);
         self
     }
 
     /// Set the portfolio initialization timeout in seconds.
     #[must_use]
-    pub const fn with_timeout_portfolio(mut self, timeout: u32) -> Self {
-        self.timeout_portfolio = timeout;
+    pub const fn with_timeout_portfolio(mut self, timeout_secs: u64) -> Self {
+        self.timeout_portfolio = Duration::from_secs(timeout_secs);
         self
     }
 
     /// Set the disconnection timeout in seconds.
     #[must_use]
-    pub const fn with_timeout_disconnection(mut self, timeout: u32) -> Self {
-        self.timeout_disconnection = timeout;
+    pub const fn with_timeout_disconnection(mut self, timeout_secs: u64) -> Self {
+        self.timeout_disconnection = Duration::from_secs(timeout_secs);
         self
     }
 
-    /// Set the post-stop timeout in seconds.
+    /// Set the post-stop delay in seconds.
     #[must_use]
-    pub const fn with_timeout_post_stop(mut self, timeout: u32) -> Self {
-        self.timeout_post_stop = timeout;
+    pub const fn with_delay_post_stop(mut self, delay_secs: u64) -> Self {
+        self.delay_post_stop = Duration::from_secs(delay_secs);
         self
     }
 
     /// Set the shutdown timeout in seconds.
     #[must_use]
-    pub const fn with_timeout_shutdown(mut self, timeout: u32) -> Self {
-        self.timeout_shutdown = timeout;
+    pub const fn with_timeout_shutdown(mut self, timeout_secs: u64) -> Self {
+        self.timeout_shutdown = Duration::from_secs(timeout_secs);
         self
     }
 
@@ -197,7 +199,7 @@ impl NautilusKernelBuilder {
             timeout_reconciliation: self.timeout_reconciliation,
             timeout_portfolio: self.timeout_portfolio,
             timeout_disconnection: self.timeout_disconnection,
-            timeout_post_stop: self.timeout_post_stop,
+            delay_post_stop: self.delay_post_stop,
             timeout_shutdown: self.timeout_shutdown,
             cache: self.cache,
             msgbus: None, // msgbus config - not exposed in builder yet
@@ -261,7 +263,7 @@ mod tests {
         assert_eq!(builder.instance_id, Some(instance_id));
         assert!(!builder.load_state);
         assert!(!builder.save_state);
-        assert_eq!(builder.timeout_connection, 30);
+        assert_eq!(builder.timeout_connection, Duration::from_secs(30));
     }
 
     #[rstest]
