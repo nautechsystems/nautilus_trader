@@ -114,6 +114,8 @@ cdef class Cache(CacheFacade):
 
     cdef readonly bint has_backing
     """If the cache has a database backing.\n\n:returns: `bool`"""
+    cdef readonly bint persist_account_events
+    """If account state events are written to the backing database.\n\n:returns: `bool`"""
     cdef readonly int tick_capacity
     """The caches tick capacity.\n\n:returns: `int`"""
     cdef readonly int bar_capacity

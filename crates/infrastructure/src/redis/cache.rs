@@ -96,7 +96,6 @@ pub enum DatabaseOperation {
     Insert,
     Update,
     Delete,
-    DeleteFromList,
     Close,
 }
 
@@ -395,46 +394,11 @@ impl RedisCacheDatabase {
     /// Returns an error if the command cannot be sent to the background task channel.
     pub fn delete_account_event(
         &self,
-        account_id: &AccountId,
-        event_id: &str,
+        _account_id: &AccountId,
+        _event_id: &str,
     ) -> anyhow::Result<()> {
-        self.delete_account_events_batch(account_id, &[event_id])
-    }
-
-    /// Delete multiple account events from the database in a single batch operation.
-    ///
-    /// This is more efficient than calling `delete_account_event` multiple times
-    /// as it reduces the number of Redis operations and network round trips.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the command cannot be sent to the background task channel.
-    pub fn delete_account_events_batch(
-        &self,
-        account_id: &AccountId,
-        event_ids: &[impl AsRef<str>],
-    ) -> anyhow::Result<()> {
-        if event_ids.is_empty() {
-            return Ok(());
-        }
-
-        log::debug!(
-            "Deleting {} account events for account: {account_id}",
-            event_ids.len()
-        );
-        if log::log_enabled!(log::Level::Trace) {
-            log::trace!("Trader key: {}", self.trader_key);
-        }
-
-        let key = format!("{ACCOUNTS}{REDIS_DELIMITER}{account_id}");
-        let payload: Vec<Bytes> = event_ids
-            .iter()
-            .map(|id| Bytes::copy_from_slice(id.as_ref().as_bytes()))
-            .collect();
-        let op = DatabaseCommand::new(DatabaseOperation::DeleteFromList, key, Some(payload));
-        self.tx
-            .send(op)
-            .map_err(|e| anyhow::anyhow!("Failed to send delete account events command: {e}"))
+        tracing::warn!("Deleting account events currently a no-op (pending redesign)");
+        Ok(())
     }
 }
 
@@ -539,17 +503,6 @@ async fn drain_buffer(
                 // `payload` can be `None` for a delete operation
                 if let Err(e) = delete(&mut pipe, collection, &key, msg.payload) {
                     tracing::error!("{e}");
-                }
-            }
-            DatabaseOperation::DeleteFromList => {
-                log::debug!("Processing DELETE_FROM_LIST for collection: {collection}, key: {key}");
-                // For deleting specific items from Redis lists (TBD if this remains)
-                if let Some(payload) = &msg.payload {
-                    if let Err(e) = delete_from_list(&mut pipe, collection, &key, payload) {
-                        tracing::error!("{e}");
-                    }
-                } else {
-                    tracing::error!("Null `payload` for `delete_from_list`");
                 }
             }
             DatabaseOperation::Close => panic!("Close command should not be drained"),
@@ -821,128 +774,6 @@ fn remove_from_hash(pipe: &mut Pipeline, key: &str, field: &[u8]) {
 
 fn delete_string(pipe: &mut Pipeline, key: &str) {
     pipe.del(key);
-}
-
-fn delete_from_list(
-    pipe: &mut Pipeline,
-    collection: &str,
-    key: &str,
-    payload: &[Bytes],
-) -> anyhow::Result<()> {
-    match collection {
-        ACCOUNTS => {
-            // payload contains one or more event_ids as strings
-            if payload.is_empty() {
-                return Ok(());
-            }
-
-            // Convert payload to vector of event_ids (avoid intermediate allocation)
-            let event_ids: Result<Vec<&str>, _> = payload
-                .iter()
-                .map(|bytes| std::str::from_utf8(bytes))
-                .collect();
-            let event_ids = event_ids?;
-
-            // The Python layer has already determined these events are safe to delete
-            // (they're not the last events). We can safely remove them from the Redis list.
-            // Since account events are stored as serialized objects, we need to find
-            // and remove items that contain the event_id(s) within their serialized data.
-            //
-            // Note: This implementation depends on exact JSON field matching pattern '"event_id":"<value>"'.
-            // If payload format changes (extra whitespace, different field ordering), consider:
-            // - Using RedisJSON for structured queries
-            // - Storing event_id as separate Redis field
-            // - Using more robust JSON parsing in LUA
-            let lua_script = r#"
-                local key = KEYS[1]
-                local total_removed = 0
-
-                -- Check if the key exists first
-                if redis.call('EXISTS', key) == 0 then
-                    return 0
-                end
-
-                local list_length = redis.call('LLEN', key)
-                if list_length == 0 then
-                    return 0
-                end
-
-                -- Capture TTL before modification for preservation
-                local original_ttl = redis.call('PTTL', key)
-
-                -- Create event_id set for fast lookup
-                local event_id_set = {}
-                for i = 1, #ARGV do
-                    event_id_set[ARGV[i]] = true
-                end
-
-                -- Memory-efficient batch processing: scan list in chunks without loading everything
-                local BATCH_SIZE = 100  -- Process in batches to limit memory usage
-                local temp_key = key .. ":purge_tmp"
-                local processed = 0
-
-                -- Ensure temp key doesn't exist
-                redis.call('DEL', temp_key)
-
-                while processed < list_length do
-                    local batch_end = math.min(processed + BATCH_SIZE - 1, list_length - 1)
-
-                    -- Get batch of items to check
-                    local batch_items = redis.call('LRANGE', key, processed, batch_end)
-
-                    -- Stream items individually to temp key (true constant memory)
-                    for _, item in ipairs(batch_items) do
-                        local should_keep = true
-
-                        -- Check if this item contains any event_id to delete
-                        for event_id, _ in pairs(event_id_set) do
-                            local pattern = '"event_id":"' .. event_id .. '"'
-                            if string.find(item, pattern, 1, true) then
-                                should_keep = false
-                                total_removed = total_removed + 1
-                                break
-                            end
-                        end
-
-                        -- Stream each kept item immediately (no accumulation)
-                        if should_keep then
-                            redis.call('RPUSH', temp_key, item)
-                        end
-                    end
-
-                    processed = processed + BATCH_SIZE
-                end
-
-                -- Atomically replace original key with filtered results
-                redis.call('DEL', key)
-                if redis.call('EXISTS', temp_key) == 1 then
-                    redis.call('RENAME', temp_key, key)
-
-                    -- Restore original TTL if it was set
-                    if original_ttl > 0 then
-                        redis.call('PEXPIRE', key, original_ttl)
-                    end
-                else
-                    -- No items kept, key remains deleted
-                end
-
-                return total_removed
-            "#;
-
-            // Add the script and arguments to the pipeline
-            pipe.cmd("EVAL").arg(lua_script).arg(1).arg(key);
-
-            // Add all event_ids as arguments
-            for event_id in event_ids {
-                pipe.arg(event_id);
-            }
-
-            Ok(())
-        }
-        _ => {
-            anyhow::bail!("Unsupported operation: `delete_from_list` for collection '{collection}'")
-        }
-    }
 }
 
 fn get_trader_key(trader_id: TraderId, instance_id: UUID4, config: &CacheConfig) -> String {
@@ -1262,13 +1093,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     }
 
     fn delete_account_event(&self, account_id: &AccountId, event_id: &str) -> anyhow::Result<()> {
-        let key = format!("{ACCOUNTS}{REDIS_DELIMITER}{account_id}");
-        let payload = vec![Bytes::from(event_id.to_string())];
-        let op = DatabaseCommand::new(DatabaseOperation::DeleteFromList, key, Some(payload));
-        self.database
-            .tx
-            .send(op)
-            .map_err(|e| anyhow::anyhow!("Failed to send delete account event command: {e}"))
+        todo!()
     }
 
     fn add(&self, key: String, value: Bytes) -> anyhow::Result<()> {
