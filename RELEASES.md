@@ -5,6 +5,7 @@ Released on TBD (UTC).
 ### Enhancements
 - Added `MarginModel` concept, base models, config, and factory for backtesting (#2794), thanks @faysou and @stefansimik
 - Added additional built-in backtest fill models (#2795), thanks @faysou and @stefansimik
+- Added `persist_account_events` config option for `CacheConfig` (default `True` to retain current behavior)
 - Added `query_account` method for `Strategy`
 - Added `QueryAccount` execution message
 - Added streaming methods for `TardisCSVDataLoader`
@@ -17,6 +18,7 @@ Released on TBD (UTC).
 
 ### Breaking Changes
 - Changed `start` parameter to required for `Actor` data request methods
+- Reverted implementation of `delete_account_event` from cache database that was too inefficient and is now a no-op pending redesign
 
 ### Internal Improvements
 - Refactored OKX adapter to Rust API clients

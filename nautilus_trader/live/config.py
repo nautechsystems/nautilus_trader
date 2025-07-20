@@ -154,6 +154,7 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
         A recommended setting is 60 minutes for HFT.
     purge_from_database : bool, default False
         If purging operations will also delete from the backing database, in addition to the in-memory cache.
+        **Note:** Currently account events are not purged from the database - pending reimplementation.
     qsize : PositiveInt, default 100_000
         The queue size for the engines internal queue buffers.
     graceful_shutdown_on_exception : bool, default False
