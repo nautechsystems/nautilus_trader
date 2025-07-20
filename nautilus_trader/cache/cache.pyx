@@ -267,10 +267,19 @@ cdef class Cache(CacheFacade):
         Clear the current general cache and load the general objects from the
         cache database.
         """
+        cdef double ts_start = time.time()
+        cdef double ts_end
+
         self._log.debug(f"Loading general cache from database")
 
         if self._database is not None:
+            ts_end = time.time()
+            self._log.debug(f"cache_general: Before database.load() took {(ts_end - ts_start) * 1000:.2f}ms")
+
+            ts_start = time.time()
             self._general = self._database.load()
+            ts_end = time.time()
+            self._log.debug(f"cache_general: database.load() took {(ts_end - ts_start) * 1000:.2f}ms")
         else:
             self._general = {}
 

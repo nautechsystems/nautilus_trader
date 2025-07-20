@@ -697,29 +697,87 @@ cdef class ExecutionEngine(Component):
         """
         # Manually measuring timestamps in case the engine is using a test clock
         cdef uint64_t ts = int(time.time() * 1000)
+        cdef uint64_t ts_func_start
+        cdef uint64_t ts_func_end
 
+        # Clear index
+        ts_func_start = int(time.time() * 1000)
         self._cache.clear_index()
+        ts_func_end = int(time.time() * 1000)
+        self._log.debug(f"clear_index took {ts_func_end - ts_func_start}ms")
 
+        # Cache general
+        ts_func_start = int(time.time() * 1000)
         self._cache.cache_general()
+        ts_func_end = int(time.time() * 1000)
+        self._log.debug(f"cache_general took {ts_func_end - ts_func_start}ms")
+
+        # Cache currencies
+        ts_func_start = int(time.time() * 1000)
         self._cache.cache_currencies()
+        ts_func_end = int(time.time() * 1000)
+        self._log.debug(f"cache_currencies took {ts_func_end - ts_func_start}ms")
+
+        # Cache instruments
+        ts_func_start = int(time.time() * 1000)
         self._cache.cache_instruments()
+        ts_func_end = int(time.time() * 1000)
+        self._log.debug(f"cache_instruments took {ts_func_end - ts_func_start}ms")
+
+        # Cache accounts
+        ts_func_start = int(time.time() * 1000)
         self._cache.cache_accounts()
+        ts_func_end = int(time.time() * 1000)
+        self._log.debug(f"cache_accounts took {ts_func_end - ts_func_start}ms")
+
+        # Cache orders
+        ts_func_start = int(time.time() * 1000)
         self._cache.cache_orders()
+        ts_func_end = int(time.time() * 1000)
+        self._log.debug(f"cache_orders took {ts_func_end - ts_func_start}ms")
+
+        # Cache order lists
+        ts_func_start = int(time.time() * 1000)
         self._cache.cache_order_lists()
+        ts_func_end = int(time.time() * 1000)
+        self._log.debug(f"cache_order_lists took {ts_func_end - ts_func_start}ms")
+
+        # Cache positions
+        ts_func_start = int(time.time() * 1000)
         self._cache.cache_positions()
+        ts_func_end = int(time.time() * 1000)
+        self._log.debug(f"cache_positions took {ts_func_end - ts_func_start}ms")
 
         # TODO: Uncomment and replace above individual caching methods once implemented
         # self._cache.cache_all()
+
+        # Build index
+        ts_func_start = int(time.time() * 1000)
         self._cache.build_index()
+        ts_func_end = int(time.time() * 1000)
+        self._log.debug(f"build_index took {ts_func_end - ts_func_start}ms")
+
+        # Check integrity
+        ts_func_start = int(time.time() * 1000)
         self._cache.check_integrity()
+        ts_func_end = int(time.time() * 1000)
+        self._log.debug(f"check_integrity took {ts_func_end - ts_func_start}ms")
+
+        # Set position ID counts
+        ts_func_start = int(time.time() * 1000)
         self._set_position_id_counts()
+        ts_func_end = int(time.time() * 1000)
+        self._log.debug(f"_set_position_id_counts took {ts_func_end - ts_func_start}ms")
 
         cdef Order order
         if self.manage_own_order_books:
+            ts_func_start = int(time.time() * 1000)
             for order in self._cache.orders():
                 if order.is_closed_c() or not should_handle_own_book_order(order):
                     continue
                 self._add_own_book_order(order)
+            ts_func_end = int(time.time() * 1000)
+            self._log.debug(f"manage_own_order_books processing took {ts_func_end - ts_func_start}ms")
 
         self._log.info(f"Loaded cache in {(int(time.time() * 1000) - ts)}ms")
 
