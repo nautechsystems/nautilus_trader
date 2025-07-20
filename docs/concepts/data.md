@@ -436,6 +436,7 @@ Data wranglers are implemented per specific Nautilus data type, and can be found
 Currently there exists:
 
 - `OrderBookDeltaDataWrangler`
+- `OrderBookDepth10DataWrangler`
 - `QuoteTickDataWrangler`
 - `TradeTickDataWrangler`
 - `BarDataWrangler`
