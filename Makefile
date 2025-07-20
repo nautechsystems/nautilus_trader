@@ -58,6 +58,16 @@ else
 	BUILD_MODE=debug uv run --active --no-sync build.py 2>&1 | grep -E "(Error|error|ERROR|Failed|failed|FAILED|Warning|warning|WARNING|Build completed|Build time:|Traceback)" || true
 endif
 
+.PHONY: build-debug-pyo3
+build-debug-pyo3:  #-- Build the package with PyO3 debug symbols (for debugging Rust code)
+ifeq ($(VERBOSE),true)
+	$(info $(M) Building in debug mode with PyO3 debug symbols...)
+	BUILD_MODE=debug-pyo3 uv run --active --no-sync build.py
+else
+	$(info $(M) Building in debug mode with PyO3 debug symbols (errors will still be shown)...)
+	BUILD_MODE=debug-pyo3 uv run --active --no-sync build.py 2>&1 | grep -E "(Error|error|ERROR|Failed|failed|FAILED|Warning|warning|WARNING|Build completed|Build time:|Traceback)" || true
+endif
+
 .PHONY: build-wheel
 build-wheel:  #-- Build wheel distribution in release mode
 	BUILD_MODE=release uv build --wheel
