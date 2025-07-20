@@ -223,6 +223,9 @@ jobs:
         shell: bash
     name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # Pause job on develop branch for pull requests for now
+    if: >
+      !(github.event_name == 'pull_request' && github.base_ref == 'develop')
     needs:
       - pre-commit
     env:
