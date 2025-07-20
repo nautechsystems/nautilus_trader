@@ -4,6 +4,7 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added `MarginModel` concept, base models, config, and factory for backtesting (#2794), thanks @faysou and @stefansimik
+- Added additional built-in backtest fill models (#2795), thanks @faysou and @stefansimik
 - Added `query_account` method for `Strategy`
 - Added `QueryAccount` execution message
 - Added streaming methods for `TardisCSVDataLoader`
@@ -37,6 +38,7 @@ Released on TBD (UTC).
 - Refined Rust catalog path handling (#2743), thanks @faysou
 - Refined Rust `GreeksCalculator` (#2760), thanks @faysou
 - Refined Databento bars timestamp decoding and backtest execution usage (#2800), thanks @faysou
+- Refined `FillModel` (#2795), thanks @faysou and @stefansimik
 - Upgraded `databento` crate to v0.29.0
 - Upgraded `datafusion` crate to v48.0.1
 - Upgraded `redis` crate to v0.32.4

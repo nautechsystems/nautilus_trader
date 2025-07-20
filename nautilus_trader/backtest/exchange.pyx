@@ -22,6 +22,7 @@ from nautilus_trader.common.config import InvalidConfiguration
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.accounting.accounts.base cimport Account
+from nautilus_trader.accounting.margin_models cimport LeveragedMarginModel
 from nautilus_trader.accounting.margin_models cimport MarginModel
 from nautilus_trader.backtest.execution_client cimport BacktestExecClient
 from nautilus_trader.backtest.matching_engine cimport OrderMatchingEngine

@@ -335,7 +335,7 @@ venues = [
             model_type="standard",
         ),  # Use standard margin model for options trading
         fill_model=ImportableFillModelConfig(
-            fill_model_path="nautilus_trader.backtest.fill_models:SizeAwareFillModel",
+            fill_model_path="nautilus_trader.backtest.models:SizeAwareFillModel",
             config_path="nautilus_trader.backtest.config:FillModelConfig",
             config={},
         ),

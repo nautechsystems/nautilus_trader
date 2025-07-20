@@ -12,27 +12,157 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-"""
-Example FillModel implementations demonstrating advanced order fill simulation
-capabilities.
-
-These examples show how to use the new get_orderbook_for_fill_simulation method to
-create sophisticated fill models that can simulate various market conditions and
-behaviors.
-
-"""
 
 import random
 
-from nautilus_trader.backtest.models import FillModel
-from nautilus_trader.core.rust.model import BookType
-from nautilus_trader.model.book import OrderBook
-from nautilus_trader.model.data import BookOrder
-from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.instruments.base import Instrument
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orders.base import Order
+from libc.stdint cimport uint64_t
+
+from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.rust.model cimport BookType
+from nautilus_trader.core.rust.model cimport OrderSide
+from nautilus_trader.model.book cimport BookOrder
+from nautilus_trader.model.book cimport OrderBook
+from nautilus_trader.model.functions cimport liquidity_side_to_str
+from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.orders.base cimport Order
+
+
+cdef class FillModel:
+    """
+    Provides probabilistic modeling for order fill dynamics including probability
+    of fills and slippage by order type.
+
+    Parameters
+    ----------
+    prob_fill_on_limit : double
+        The probability of limit order filling if the market rests on its price.
+    prob_fill_on_stop : double
+        The probability of stop orders filling if the market rests on its price.
+    prob_slippage : double
+        The probability of order fill prices slipping by one tick.
+    random_seed : int, optional
+        The random seed (if None then no random seed).
+    config : FillModelConfig, optional
+        The configuration for the model.
+
+    Raises
+    ------
+    ValueError
+        If any probability argument is not within range [0, 1].
+    TypeError
+        If `random_seed` is not None and not of type `int`.
+    """
+
+    def __init__(
+        self,
+        double prob_fill_on_limit = 1.0,
+        double prob_fill_on_stop = 1.0,
+        double prob_slippage = 0.0,
+        random_seed: int | None = None,
+        config = None,
+    ) -> None:
+        if config is not None:
+            # Initialize from config
+            prob_fill_on_limit = config.prob_fill_on_limit
+            prob_fill_on_stop = config.prob_fill_on_stop
+            prob_slippage = config.prob_slippage
+            random_seed = config.random_seed
+
+        Condition.in_range(prob_fill_on_limit, 0.0, 1.0, "prob_fill_on_limit")
+        Condition.in_range(prob_fill_on_stop, 0.0, 1.0, "prob_fill_on_stop")
+        Condition.in_range(prob_slippage, 0.0, 1.0, "prob_slippage")
+        if random_seed is not None:
+            Condition.type(random_seed, int, "random_seed")
+            random.seed(random_seed)
+        else:
+            random.seed()
+
+        self.prob_fill_on_limit = prob_fill_on_limit
+        self.prob_fill_on_stop = prob_fill_on_stop
+        self.prob_slippage = prob_slippage
+
+    cpdef bint is_limit_filled(self):
+        """
+        Return a value indicating whether a ``LIMIT`` order filled.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._event_success(self.prob_fill_on_limit)
+
+    cpdef bint is_stop_filled(self):
+        """
+        Return a value indicating whether a ``STOP-MARKET`` order filled.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._event_success(self.prob_fill_on_stop)
+
+    cpdef bint is_slipped(self):
+        """
+        Return a value indicating whether an order fill slipped.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._event_success(self.prob_slippage)
+
+    cpdef OrderBook get_orderbook_for_fill_simulation(
+        self,
+        Instrument instrument,
+        Order order,
+        Price best_bid,
+        Price best_ask,
+    ):
+        """
+        Return a simulated OrderBook for fill simulation.
+
+        This method allows custom fill models to provide their own liquidity
+        simulation by returning a custom OrderBook that represents the expected
+        market liquidity. The matching engine will use this simulated OrderBook
+        to determine fills.
+
+        The default implementation returns None, which means the matching engine
+        will use its standard fill logic (maintaining backward compatibility).
+
+        Parameters
+        ----------
+        instrument : Instrument
+            The instrument being traded.
+        order : Order
+            The order to simulate fills for.
+        best_bid : Price
+            The current best bid price.
+        best_ask : Price
+            The current best ask price.
+
+        Returns
+        -------
+        OrderBook or None
+            The simulated OrderBook for fill simulation, or None to use default logic.
+
+        """
+        return None  # Default implementation - use existing fill logic
+
+    cdef bint _event_success(self, double probability):
+        # Return a result indicating whether an event occurred based on the
+        # given probability of the event occurring [0, 1].
+        if probability == 0:
+            return False
+        elif probability == 1:
+            return True
+        else:
+            return probability >= random.random()
 
 
 class BestPriceFillModel(FillModel):
