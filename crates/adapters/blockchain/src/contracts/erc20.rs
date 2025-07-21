@@ -154,7 +154,7 @@ impl Erc20Contract {
     /// # Errors
     ///
     /// Returns an error if the multicall itself fails. Individual token failures
-    /// are captured in the Result values of the returned HashMap.
+    /// are captured in the Result values of the returned `HashMap`.
     pub async fn batch_fetch_token_info(
         &self,
         token_addresses: &[Address],

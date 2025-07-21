@@ -1,0 +1,106 @@
+[project]
+name = "nautilus-trader"
+version = "2.0.0-dev"
+description = "A high-performance algorithmic trading platform and event-driven backtester"
+authors = [
+    {name = "Nautech Systems", email = "info@nautechsystems.io"},
+]
+classifiers = [
+    "License :: OSI Approved :: GNU Lesser General Public License Version 3.0 (LGPLv3+)",
+    "Operating System :: OS Independent",
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Rust",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Office/Business :: Financial",
+    "Topic :: Office/Business :: Financial :: Investment",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Intended Audience :: Science/Research",
+]
+license = {text = "LGPL-3.0-or-later"}
+readme = "../README.md"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "numpy>=1.26.4",
+    "pandas>=2.2.3,<3.0.0",
+    "pyarrow>=20.0.0",
+    "pytz>=2025.1.0",
+]
+
+[project.urls]
+homepage = "https://nautilustrader.io"
+repository = "https://github.com/nautechsystems/nautilus_trader"
+docs = "https://nautilustrader.io/docs"
+
+[build-system]
+requires = [
+    "maturin>=1.9.1",
+    "patchelf",
+]
+build-backend = "maturin"
+
+[tool.maturin.scripts]
+pre-build = "python generate_stubs.py"
+
+[tool.maturin]
+manifest-path = "../crates/pyo3/Cargo.toml"
+module-name = "nautilus_trader._libnautilus"
+features = ["python", "extension-module", "high-precision", "defi", "redis", "postgres", "hypersync"]
+strip = false
+
+include = [
+    "**/*.pyi",
+]
+
+[dependency-groups]
+dev = [
+    "maturin>=1.9.1",
+    "ruff>=0.12.4,<1.0.0",
+    "mypy>=1.17.0,<2.0.0",
+    "pre-commit>=4.2.0,<5.0.0",
+]
+test = [
+    "pytest>=7.4.4,<8.0.0",
+    "pytest-asyncio==0.21.1",
+    "pytest-benchmark>=4.0.0,<5.0.0",
+    "pytest-cov>=4.1.0,<5.0.0",
+    "pytest-mock>=3.14.1,<4.0.0",
+    "pytest-xdist[psutil]>=3.8.0,<4.0.0",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+exclude = [
+    "stubs/**",
+    "../build",
+    "../dist",
+    "../target",
+]
+
+[tool.ruff.lint]
+select = [
+    "C4", "E", "F", "W", "C90", "D", "UP", "S", "T10", "ICN",
+    "PIE", "PYI", "Q", "I", "RSE", "TID", "PD", "NPY", "RUF",
+]
+ignore = [
+    "D100", "D101", "D102", "D103", "D104", "D107", "D105",
+    "D200", "D203", "D205", "D212", "D400", "D413", "D415", "D416",
+    "E741", "PD901", "RUF012", "S101", "S105", "S106", "S113", "S603",
+]
+
+[tool.mypy]
+python_version = "3.11"
+disallow_incomplete_defs = true
+explicit_package_bases = true
+ignore_missing_imports = true
+namespace_packages = true
+warn_no_return = true
+warn_unused_configs = true
+warn_unused_ignores = true
+exclude = "^python/nautilus_trader/.*__init__\\.py$"

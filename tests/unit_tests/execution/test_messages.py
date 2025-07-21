@@ -653,9 +653,9 @@ class TestCommands:
         uuid = UUID4()
 
         command = GenerateExecutionMassStatus(
+            trader_id=TraderId("TRADER-001"),
             client_id=ClientId("BROKER-001"),
-            account_id=AccountId("ACCOUNT-001"),
-            venue=Venue("SIM"),
+            venue=None,
             command_id=uuid,
             ts_init=self.clock.timestamp_ns(),
         )
@@ -667,7 +667,7 @@ class TestCommands:
         )
         assert (
             repr(command)
-            == f"GenerateExecutionMassStatus(client_id=BROKER-001, account_id=ACCOUNT-001, venue=SIM, command_id={uuid}, ts_init=0)"
+            == f"GenerateExecutionMassStatus(trader_id=TRADER-001, client_id=BROKER-001, venue=None, command_id={uuid}, ts_init=0)"
         )
 
     def test_generate_execution_mass_status_command_with_params_to_from_dict_and_str_repr(self):
@@ -676,9 +676,9 @@ class TestCommands:
         params = {"custom_param": "value"}
 
         command = GenerateExecutionMassStatus(
+            trader_id=TraderId("TRADER-001"),
             client_id=ClientId("BROKER-002"),
-            account_id=AccountId("ACCOUNT-002"),
-            venue=Venue("BINANCE"),
+            venue=Venue("NYMEX"),
             command_id=uuid,
             ts_init=self.clock.timestamp_ns(),
             params=params,
@@ -691,6 +691,6 @@ class TestCommands:
         )
         assert (
             repr(command)
-            == f"GenerateExecutionMassStatus(client_id=BROKER-002, account_id=ACCOUNT-002, venue=BINANCE, command_id={uuid}, ts_init=0)"
+            == f"GenerateExecutionMassStatus(trader_id=TRADER-001, client_id=BROKER-002, venue=NYMEX, command_id={uuid}, ts_init=0)"
         )
         assert command.params == params

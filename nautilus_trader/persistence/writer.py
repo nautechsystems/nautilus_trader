@@ -33,6 +33,7 @@ from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.persistence.funcs import class_to_filename
@@ -126,6 +127,7 @@ class StreamingFeatherWriter:
         self._instrument_writers: dict[tuple[str, str], RecordBatchStreamWriter] = {}
         self._per_instrument_writers = {
             "order_book_delta",
+            "order_book_depth10",
             "quote_tick",
             "trade_tick",
         }
@@ -309,13 +311,14 @@ class StreamingFeatherWriter:
 
     def _extract_obj_metadata(
         self,
-        obj: TradeTick | QuoteTick | Bar | OrderBookDelta,
+        obj: TradeTick | QuoteTick | Bar | OrderBookDelta | OrderBookDepth10,
     ) -> dict[bytes, bytes]:
         instrument = self.cache.instrument(obj.instrument_id)
         metadata = {b"instrument_id": obj.instrument_id.value.encode()}
         if (
             isinstance(obj, OrderBookDelta)
             or isinstance(obj, OrderBookDeltas)
+            or isinstance(obj, OrderBookDepth10)
             or isinstance(obj, QuoteTick | TradeTick)
         ):
             metadata.update(

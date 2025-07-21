@@ -113,6 +113,8 @@ impl BlockchainCache {
     ///
     /// Returns an error if database seeding, token loading, or block loading fails.
     pub async fn connect(&mut self, from_block: u64) -> anyhow::Result<()> {
+        tracing::debug!("Connecting and loading from_block {from_block}");
+
         if let Err(e) = self.load_tokens().await {
             tracing::error!("Error loading tokens from the database: {e}");
         }
@@ -155,32 +157,30 @@ impl BlockchainCache {
             );
 
             for pool_row in pool_rows {
-                let token0 = match self.tokens.get(&pool_row.token0_address) {
-                    Some(token) => token,
-                    None => {
-                        tracing::error!(
-                            "Failed to load pool {} for DEX {}: Token0 with address {} not found in cache. \
-                                 This may indicate the token was not properly loaded from the database or the pool references an unknown token.",
-                            pool_row.address,
-                            dex_id,
-                            pool_row.token0_address
-                        );
-                        continue;
-                    }
+                let token0 = if let Some(token) = self.tokens.get(&pool_row.token0_address) {
+                    token
+                } else {
+                    tracing::error!(
+                        "Failed to load pool {} for DEX {}: Token0 with address {} not found in cache. \
+                             This may indicate the token was not properly loaded from the database or the pool references an unknown token.",
+                        pool_row.address,
+                        dex_id,
+                        pool_row.token0_address
+                    );
+                    continue;
                 };
 
-                let token1 = match self.tokens.get(&pool_row.token1_address) {
-                    Some(token) => token,
-                    None => {
-                        tracing::error!(
-                            "Failed to load pool {} for DEX {}: Token1 with address {} not found in cache. \
-                                 This may indicate the token was not properly loaded from the database or the pool references an unknown token.",
-                            pool_row.address,
-                            dex_id,
-                            pool_row.token1_address
-                        );
-                        continue;
-                    }
+                let token1 = if let Some(token) = self.tokens.get(&pool_row.token1_address) {
+                    token
+                } else {
+                    tracing::error!(
+                        "Failed to load pool {} for DEX {}: Token1 with address {} not found in cache. \
+                             This may indicate the token was not properly loaded from the database or the pool references an unknown token.",
+                        pool_row.address,
+                        dex_id,
+                        pool_row.token1_address
+                    );
+                    continue;
                 };
 
                 // Construct pool from row data and cached tokens
@@ -205,6 +205,7 @@ impl BlockchainCache {
 
     /// Loads block timestamps from the database starting `from_block` number
     /// into the in-memory cache.
+    #[allow(dead_code)] // TODO: Under development
     async fn load_blocks(&mut self, from_block: u64) -> anyhow::Result<()> {
         if let Some(database) = &self.database {
             let block_timestamps = database

@@ -108,7 +108,7 @@ dev = [
     "pandas-stubs>=2.3.0,<3.0.0",
     "pre-commit>=4.2.0,<5.0.0",
     "requests>=2.32.4,<3.0.0",
-    "ruff>=0.12.3,<1.0.0",
+    "ruff>=0.12.4,<1.0.0",
     "types-pytz>=2024.2,<2025.0",
     "types-requests>=2.32,<3.0",
     "types-toml>=0.10.2,<1.0.0",
@@ -223,6 +223,7 @@ ignore = [
     "D416",  # Section name should end with a colon ('Warnings:', not 'Warnings') (incorrect?)
     "E741",  # Ambiguous variable name (single char)
     "PD901", # `df` is a bad variable name. Be kinder to your future self
+    "PYI021", # Docstrings should not be included in stubs (OK as this is the natural place for them)
     "RUF012",  # Mutable class attributes should be annotated with `typing.ClassVar`
     "S101",  # Use of assert detected (OK in test suite)
     "S105",  # Use of hard-coded password (spurious)
