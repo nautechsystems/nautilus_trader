@@ -119,6 +119,7 @@ cdef class DataEngine(Component):
 
     cpdef bint check_connected(self)
     cpdef bint check_disconnected(self)
+    cpdef set[ClientId] get_external_client_ids(self)
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
 

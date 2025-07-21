@@ -35,6 +35,7 @@ from nautilus_trader.core.fsm import InvalidStateTrigger
 from nautilus_trader.core.message import Command
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.execution.messages import GenerateExecutionMassStatus
 from nautilus_trader.execution.messages import GenerateOrderStatusReports
 from nautilus_trader.execution.messages import GeneratePositionStatusReports
 from nautilus_trader.execution.messages import QueryOrder
@@ -156,10 +157,12 @@ class LiveExecutionEngine(ExecutionEngine):
         # Configuration
         self._reconciliation: bool = config.reconciliation
         self.reconciliation_lookback_mins: int = config.reconciliation_lookback_mins or 0
+        self.reconciliation_instrument_ids: list[InstrumentId] = (
+            config.reconciliation_instrument_ids or []
+        )
         self.filter_unclaimed_external_orders: bool = config.filter_unclaimed_external_orders
         self.filter_position_reports: bool = config.filter_position_reports
-        self.filter_instrument_ids: list[InstrumentId] = config.filtered_instrument_ids or []
-        self.filter_client_order_ids: list[ClientOrderId] = config.filtered_client_order_ids or []
+        self.filtered_client_order_ids: list[ClientOrderId] = config.filtered_client_order_ids or []
         self.generate_missing_orders: bool = config.generate_missing_orders
         self.inflight_check_interval_ms: int = config.inflight_check_interval_ms
         self.inflight_check_threshold_ms: int = config.inflight_check_threshold_ms
@@ -178,9 +181,9 @@ class LiveExecutionEngine(ExecutionEngine):
 
         self._log.info(f"{config.reconciliation=}", LogColor.BLUE)
         self._log.info(f"{config.reconciliation_lookback_mins=}", LogColor.BLUE)
+        self._log.info(f"{config.reconciliation_instrument_ids=}", LogColor.BLUE)
         self._log.info(f"{config.filter_unclaimed_external_orders=}", LogColor.BLUE)
         self._log.info(f"{config.filter_position_reports=}", LogColor.BLUE)
-        self._log.info(f"{config.filtered_instrument_ids=}", LogColor.BLUE)
         self._log.info(f"{config.filtered_client_order_ids=}", LogColor.BLUE)
         self._log.info(f"{config.inflight_check_interval_ms=}", LogColor.BLUE)
         self._log.info(f"{config.inflight_check_threshold_ms=}", LogColor.BLUE)
@@ -201,10 +204,13 @@ class LiveExecutionEngine(ExecutionEngine):
         self._shutdown_initiated: bool = False
 
         # Register endpoints
-        self._msgbus.register(endpoint="ExecEngine.reconcile_report", handler=self.reconcile_report)
         self._msgbus.register(
-            endpoint="ExecEngine.reconcile_mass_status",
-            handler=self.reconcile_mass_status,
+            endpoint="ExecEngine.reconcile_execution_report",
+            handler=self.reconcile_execution_report,
+        )
+        self._msgbus.register(
+            endpoint="ExecEngine.reconcile_execution_mass_status",
+            handler=self.reconcile_execution_mass_status,
         )
 
     @property
@@ -225,6 +231,11 @@ class LiveExecutionEngine(ExecutionEngine):
         """
         if self._clients:
             self._log.info("Connecting all clients...")
+        elif self._external_clients:
+            self._log.info(
+                f"Configured for external clients: {self._external_clients}",
+                LogColor.BLUE,
+            )
         else:
             self._log.warning("No clients to connect")
             return
@@ -759,10 +770,37 @@ class LiveExecutionEngine(ExecutionEngine):
         else:
             self._log.warning(f"Reconciliation for {value} failed")
 
-    async def reconcile_state(self, timeout_secs: float = 10.0) -> bool:  # noqa: C901 (too complex)
+    def _consider_for_reconciliation(self, instrument_id: InstrumentId) -> bool:
+        if self.reconciliation_instrument_ids:
+            return instrument_id in self.reconciliation_instrument_ids
+
+        return True
+
+    def _log_skipping_reconciliation_on_instrument_id(self, report: ExecutionReport) -> None:
+        self._log.debug(
+            f"Skipping {type(report).__name__} reconciliation for {report.instrument_id}: "
+            f"not in `reconciliation_instrument_ids` include list",
+            LogColor.MAGENTA,
+        )
+
+    def _log_skipping_reconciliation_on_client_order_id(self, report: ExecutionReport) -> None:
+        self._log.debug(
+            f"Skipping {type(report).__name__} reconciliation for {report.client_order_id!r}: "
+            f"in `filtered_client_order_ids` list",
+            LogColor.MAGENTA,
+        )
+
+    def generate_execution_mass_status(self, command: GenerateExecutionMassStatus) -> None:
+        self._log.info(f"Received {command!r}", LogColor.BLUE)
+        self._loop.create_task(self.reconcile_execution_state())
+
+    async def reconcile_execution_state(  # noqa: C901 (too complex)
+        self,
+        timeout_secs: float = 10.0,
+    ) -> bool:
         """
-        Reconcile the internal execution state with all execution clients (external
-        state).
+        Reconcile the systems internal execution state with all execution clients
+        (external state).
 
         Parameters
         ----------
@@ -782,8 +820,25 @@ class LiveExecutionEngine(ExecutionEngine):
         """
         PyCondition.positive(timeout_secs, "timeout_secs")
 
-        if not self.reconciliation:
-            self._log.warning("Reconciliation deactivated")
+        for client_id in self._external_clients:
+            command = GenerateExecutionMassStatus(
+                trader_id=self.trader_id,
+                client_id=client_id,
+                command_id=UUID4(),
+                venue=None,
+                ts_init=self._clock.timestamp_ns(),
+            )
+            self._log.info(
+                f"Requesting execution mass status from {client_id}",
+                LogColor.BLUE,
+            )
+            self._msgbus.publish(
+                topic=f"commands.trading.{client_id}",
+                msg=command,
+            )
+
+        if not self._clients:
+            self._log.debug("No execution clients for reconciliation")
             return True
 
         results: list[bool] = []
@@ -814,7 +869,7 @@ class LiveExecutionEngine(ExecutionEngine):
             mass_status = cast("ExecutionMassStatus", mass_status_or_exception)
             client_id = mass_status.client_id
             venue = mass_status.venue
-            result = self._reconcile_mass_status(mass_status)
+            result = self._reconcile_execution_mass_status(mass_status)
 
             if not result and self.filter_position_reports:
                 self._log_reconciliation_result(client_id, result)
@@ -876,9 +931,14 @@ class LiveExecutionEngine(ExecutionEngine):
             self._log_reconciliation_result(client_id, result)
             results.append(result)
 
+            self._msgbus.publish(
+                topic=f"reports.execution.{mass_status.venue}",
+                msg=mass_status,
+            )
+
         return all(results)
 
-    def reconcile_report(self, report: ExecutionReport) -> bool:
+    def reconcile_execution_report(self, report: ExecutionReport) -> bool:
         """
         Reconcile the given execution report.
 
@@ -895,6 +955,10 @@ class LiveExecutionEngine(ExecutionEngine):
         """
         self._log.debug(f"<--[RPT] {report}")
         self.report_count += 1
+
+        if not self._consider_for_reconciliation(report.instrument_id):
+            self._log_skipping_reconciliation_on_instrument_id(report)
+            return True  # Filtered
 
         self._log.info(f"Reconciling {report}", color=LogColor.BLUE)
 
@@ -919,7 +983,7 @@ class LiveExecutionEngine(ExecutionEngine):
 
         return result
 
-    def reconcile_mass_status(self, report: ExecutionMassStatus) -> None:
+    def reconcile_execution_mass_status(self, report: ExecutionMassStatus) -> None:
         """
         Reconcile the given execution mass status report.
 
@@ -929,9 +993,9 @@ class LiveExecutionEngine(ExecutionEngine):
             The execution mass status report to reconcile.
 
         """
-        self._reconcile_mass_status(report)
+        self._reconcile_execution_mass_status(report)
 
-    def _reconcile_mass_status(  # noqa: C901 (too complex)
+    def _reconcile_execution_mass_status(  # noqa: C901 (too complex)
         self,
         mass_status: ExecutionMassStatus,
     ) -> bool:
@@ -951,22 +1015,16 @@ class LiveExecutionEngine(ExecutionEngine):
         for venue_order_id, order_report in mass_status.order_reports.items():
             trades = mass_status.fill_reports.get(venue_order_id, [])
 
-            if order_report.instrument_id in self.filter_instrument_ids:
-                self._log.debug(
-                    f"Filtering order report for {order_report.instrument_id!r}",
-                    LogColor.MAGENTA,
-                )
+            if not self._consider_for_reconciliation(order_report.instrument_id):
+                self._log_skipping_reconciliation_on_instrument_id(order_report)
                 continue
 
             # Check and handle duplicate client order IDs
             client_order_id = order_report.client_order_id
 
             if client_order_id is not None:
-                if client_order_id in self.filter_client_order_ids:
-                    self._log.debug(
-                        f"Filtering order report for {client_order_id!r}",
-                        LogColor.MAGENTA,
-                    )
+                if client_order_id in self.filtered_client_order_ids:
+                    self._log_skipping_reconciliation_on_client_order_id(order_report)
                     continue
 
                 if client_order_id in reconciled_orders:
@@ -998,6 +1056,10 @@ class LiveExecutionEngine(ExecutionEngine):
             # Reconcile all reported positions
             for position_reports in mass_status.position_reports.values():
                 for report in position_reports:
+                    if not self._consider_for_reconciliation(report.instrument_id):
+                        self._log_skipping_reconciliation_on_instrument_id(report)
+                        continue
+
                     result = self._reconcile_position_report(report)
                     results.append(result)
 
@@ -1015,6 +1077,7 @@ class LiveExecutionEngine(ExecutionEngine):
         trades: list[FillReport],
         is_external: bool = True,
     ) -> bool:
+
         client_order_id: ClientOrderId = report.client_order_id
 
         if client_order_id is None:
@@ -1138,11 +1201,8 @@ class LiveExecutionEngine(ExecutionEngine):
         return True  # Reconciled
 
     def _reconcile_fill_report_single(self, report: FillReport) -> bool:
-        if report.instrument_id in self.filter_instrument_ids:
-            self._log.debug(
-                f"Filtering fill report for {report.instrument_id!r}",
-                LogColor.MAGENTA,
-            )
+        if not self._consider_for_reconciliation(report.instrument_id):
+            self._log_skipping_reconciliation_on_instrument_id(report)
             return True  # Filtered
 
         client_order_id: ClientOrderId | None = self._cache.client_order_id(
@@ -1253,11 +1313,8 @@ class LiveExecutionEngine(ExecutionEngine):
         )
 
     def _reconcile_position_report(self, report: PositionStatusReport) -> bool:
-        if report.instrument_id in self.filter_instrument_ids:
-            self._log.debug(
-                f"Filtering position report for {report.instrument_id!r}",
-                LogColor.MAGENTA,
-            )
+        if not self._consider_for_reconciliation(report.instrument_id):
+            self._log_skipping_reconciliation_on_instrument_id(report)
             return True  # Filtered
 
         if report.venue_position_id is not None:
@@ -1469,7 +1526,7 @@ class LiveExecutionEngine(ExecutionEngine):
         if self.filter_unclaimed_external_orders and strategy_id.value == "EXTERNAL":
             # Experimental: will call this out with a warning log for now
             self._log.warning(
-                f"Filtering report for unclaimed EXTERNAL order, {report}",
+                f"Skipping order status report reconciliation for unclaimed EXTERNAL order: {report}",
             )
             return None  # No further reconciliation
 

@@ -17,7 +17,7 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 
 use nautilus_common::{
     cache::CacheConfig, enums::Environment, logging::logger::LoggerConfig,
@@ -53,18 +53,18 @@ pub struct BacktestEngineConfig {
     pub logging: LoggerConfig,
     /// The unique instance identifier for the kernel.
     pub instance_id: Option<UUID4>,
-    /// The timeout (seconds) for all clients to connect and initialize.
-    pub timeout_connection: u32,
-    /// The timeout (seconds) for execution state to reconcile.
-    pub timeout_reconciliation: u32,
-    /// The timeout (seconds) for portfolio to initialize margins and unrealized pnls.
-    pub timeout_portfolio: u32,
-    /// The timeout (seconds) for all engine clients to disconnect.
-    pub timeout_disconnection: u32,
-    /// The timeout (seconds) after stopping the node to await residual events before final shutdown.
-    pub timeout_post_stop: u32,
-    /// The timeout (seconds) to await pending tasks cancellation during shutdown.
-    pub timeout_shutdown: u32,
+    /// The timeout for all clients to connect and initialize.
+    pub timeout_connection: Duration,
+    /// The timeout for execution state to reconcile.
+    pub timeout_reconciliation: Duration,
+    /// The timeout for portfolio to initialize margins and unrealized pnls.
+    pub timeout_portfolio: Duration,
+    /// The timeout for all engine clients to disconnect.
+    pub timeout_disconnection: Duration,
+    /// The delay after stopping the node to await residual events before final shutdown.
+    pub delay_post_stop: Duration,
+    /// The timeout to await pending tasks cancellation during shutdown.
+    pub timeout_shutdown: Duration,
     /// The cache configuration.
     pub cache: Option<CacheConfig>,
     /// The message bus configuration.
@@ -95,12 +95,12 @@ impl BacktestEngineConfig {
         save_state: Option<bool>,
         bypass_logging: Option<bool>,
         run_analysis: Option<bool>,
-        timeout_connection: Option<u32>,
-        timeout_reconciliation: Option<u32>,
-        timeout_portfolio: Option<u32>,
-        timeout_disconnection: Option<u32>,
-        timeout_post_stop: Option<u32>,
-        timeout_shutdown: Option<u32>,
+        timeout_connection: Option<u64>,
+        timeout_reconciliation: Option<u64>,
+        timeout_portfolio: Option<u64>,
+        timeout_disconnection: Option<u64>,
+        delay_post_stop: Option<u64>,
+        timeout_shutdown: Option<u64>,
         logging: Option<LoggerConfig>,
         instance_id: Option<UUID4>,
         cache: Option<CacheConfig>,
@@ -118,12 +118,12 @@ impl BacktestEngineConfig {
             save_state: save_state.unwrap_or(false),
             logging: logging.unwrap_or_default(),
             instance_id,
-            timeout_connection: timeout_connection.unwrap_or(60),
-            timeout_reconciliation: timeout_reconciliation.unwrap_or(30),
-            timeout_portfolio: timeout_portfolio.unwrap_or(10),
-            timeout_disconnection: timeout_disconnection.unwrap_or(10),
-            timeout_post_stop: timeout_post_stop.unwrap_or(10),
-            timeout_shutdown: timeout_shutdown.unwrap_or(5),
+            timeout_connection: Duration::from_secs(timeout_connection.unwrap_or(60)),
+            timeout_reconciliation: Duration::from_secs(timeout_reconciliation.unwrap_or(30)),
+            timeout_portfolio: Duration::from_secs(timeout_portfolio.unwrap_or(10)),
+            timeout_disconnection: Duration::from_secs(timeout_disconnection.unwrap_or(10)),
+            delay_post_stop: Duration::from_secs(delay_post_stop.unwrap_or(10)),
+            timeout_shutdown: Duration::from_secs(timeout_shutdown.unwrap_or(5)),
             cache,
             msgbus,
             data_engine,
@@ -162,27 +162,27 @@ impl NautilusKernelConfig for BacktestEngineConfig {
         self.instance_id
     }
 
-    fn timeout_connection(&self) -> u32 {
+    fn timeout_connection(&self) -> Duration {
         self.timeout_connection
     }
 
-    fn timeout_reconciliation(&self) -> u32 {
+    fn timeout_reconciliation(&self) -> Duration {
         self.timeout_reconciliation
     }
 
-    fn timeout_portfolio(&self) -> u32 {
+    fn timeout_portfolio(&self) -> Duration {
         self.timeout_portfolio
     }
 
-    fn timeout_disconnection(&self) -> u32 {
+    fn timeout_disconnection(&self) -> Duration {
         self.timeout_disconnection
     }
 
-    fn timeout_post_stop(&self) -> u32 {
-        self.timeout_post_stop
+    fn delay_post_stop(&self) -> Duration {
+        self.delay_post_stop
     }
 
-    fn timeout_shutdown(&self) -> u32 {
+    fn timeout_shutdown(&self) -> Duration {
         self.timeout_shutdown
     }
 
@@ -224,12 +224,12 @@ impl Default for BacktestEngineConfig {
             save_state: false,
             logging: LoggerConfig::default(),
             instance_id: None,
-            timeout_connection: 60,
-            timeout_reconciliation: 30,
-            timeout_portfolio: 10,
-            timeout_disconnection: 10,
-            timeout_post_stop: 10,
-            timeout_shutdown: 5,
+            timeout_connection: Duration::from_secs(60),
+            timeout_reconciliation: Duration::from_secs(30),
+            timeout_portfolio: Duration::from_secs(10),
+            timeout_disconnection: Duration::from_secs(10),
+            delay_post_stop: Duration::from_secs(10),
+            timeout_shutdown: Duration::from_secs(5),
             cache: None,
             msgbus: None,
             data_engine: None,

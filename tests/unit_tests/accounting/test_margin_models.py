@@ -15,8 +15,8 @@
 
 from decimal import Decimal
 
-from nautilus_trader.accounting.margin_models import LeveragedMarginModel
-from nautilus_trader.accounting.margin_models import StandardMarginModel
+from nautilus_trader.backtest.models import LeveragedMarginModel
+from nautilus_trader.backtest.models import StandardMarginModel
 from nautilus_trader.core.rust.model import PositionSide
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -181,9 +181,9 @@ class TestMarginAccountWithModels:
 class TestCustomMarginModelConfig:
     def test_custom_model_receives_config(self):
         # Arrange
-        from nautilus_trader.accounting.margin_models import MarginModel
         from nautilus_trader.backtest.config import MarginModelConfig
         from nautilus_trader.backtest.config import MarginModelFactory
+        from nautilus_trader.backtest.models import MarginModel
 
         class TestCustomMarginModel(MarginModel):
             def __init__(self, config):

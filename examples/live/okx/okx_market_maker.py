@@ -76,7 +76,6 @@ config_node = TradingNodeConfig(
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,
         # reconciliation_lookback_mins=60,
-        filtered_instrument_ids=[InstrumentId.from_str("BTC-USDT-SWAP.OKX")],  # For demonstration
         filtered_client_order_ids=[ClientOrderId("O20250711001")],  # For demonstration
         open_check_interval_secs=5.0,
         open_check_open_only=True,

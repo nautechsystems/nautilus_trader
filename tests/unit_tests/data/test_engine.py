@@ -3520,6 +3520,8 @@ class TestDataBufferEngine:
         # Act / Assert: should not raise even though no client registered
         engine.execute(cmd)
 
+        assert engine.get_external_client_ids() == {ext_client_id}
+
     def test_process_order_book_deltas_then_sends_to_registered_handler(self):
         # Arrange
         self.data_engine.register_client(self.binance_client)

@@ -310,13 +310,21 @@ class TradingNode:
         """
         try:
             msg = self.kernel.msgbus_serializer.deserialize(bus_msg.payload)
+        except Exception as e:
+            self.kernel.logger.error(f"Failed to deserialize bus message: {e}")
+            return
 
+        try:
             for processor in self._stream_processors:
                 processor(msg)
 
             if not self.kernel.msgbus.is_streaming_type(type(msg)):
                 return  # Type has not been registered for message streaming
+        except Exception as e:
+            self.kernel.logger.error(f"Failed to process bus message: {e}")
+            return
 
+        try:
             self.kernel.msgbus.publish(bus_msg.topic, msg, external_pub=False)
         except Exception as e:
             self.kernel.logger.error(f"Failed to publish bus message: {e}")

@@ -109,6 +109,7 @@ cdef class Cache(CacheFacade):
         # Configuration
         self._drop_instruments_on_reset = config.drop_instruments_on_reset
         self.has_backing = database is not None
+        self.persist_account_events = config.persist_account_events
         self.tick_capacity = config.tick_capacity
         self.bar_capacity = config.bar_capacity
         self._specific_venue = None
@@ -266,10 +267,19 @@ cdef class Cache(CacheFacade):
         Clear the current general cache and load the general objects from the
         cache database.
         """
+        cdef double ts_start = time.time()
+        cdef double ts_end
+
         self._log.debug(f"Loading general cache from database")
 
         if self._database is not None:
+            ts_end = time.time()
+            self._log.debug(f"cache_general: Before database.load() took {(ts_end - ts_start) * 1000:.2f}ms")
+
+            ts_start = time.time()
             self._general = self._database.load()
+            ts_end = time.time()
+            self._log.debug(f"cache_general: database.load() took {(ts_end - ts_start) * 1000:.2f}ms")
         else:
             self._general = {}
 
@@ -1797,7 +1807,7 @@ cdef class Cache(CacheFacade):
         self._log.debug(f"Indexed {repr(account.id)}")
 
         # Update database
-        if self._database is not None:
+        if self._database is not None and self.persist_account_events:
             self._database.add_account(account)
 
     cpdef void add_venue_order_id(
@@ -2266,7 +2276,7 @@ cdef class Cache(CacheFacade):
         Condition.not_none(account, "account")
 
         # Update database
-        if self._database is not None:
+        if self._database is not None and self.persist_account_events:
             self._database.update_account(account)
 
     cpdef void update_order(self, Order order):

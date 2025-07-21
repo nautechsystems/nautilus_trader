@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-# ruff: noqa: UP007, PYI021
+# ruff: noqa: UP007
 # fmt: off
 
 import datetime as dt
@@ -4280,6 +4280,21 @@ class OrderBookDeltaDataWrangler:
     @property
     def size_precision(self) -> int: ...
     def process_record_batch_bytes(self, data: bytes) -> list[OrderBookDelta]: ...
+
+class OrderBookDepth10DataWrangler:
+    def __init__(
+        self,
+        instrument_id: str,
+        price_precision: int,
+        size_precision: int,
+    ) -> None: ...
+    @property
+    def instrument_id(self) -> str: ...
+    @property
+    def price_precision(self) -> int: ...
+    @property
+    def size_precision(self) -> int: ...
+    def process_record_batch_bytes(self, data: bytes) -> list[OrderBookDepth10]: ...
 
 class QuoteTickDataWrangler:
     def __init__(

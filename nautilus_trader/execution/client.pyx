@@ -823,18 +823,18 @@ cdef class ExecutionClient(Component):
 
     cpdef void _send_mass_status_report(self, report: ExecutionMassStatus):
         self._msgbus.send(
-            endpoint="ExecEngine.reconcile_mass_status",
+            endpoint="ExecEngine.reconcile_execution_mass_status",
             msg=report,
         )
 
     cpdef void _send_order_status_report(self, report: OrderStatusReport):
         self._msgbus.send(
-            endpoint="ExecEngine.reconcile_report",
+            endpoint="ExecEngine.reconcile_execution_report",
             msg=report,
         )
 
     cpdef void _send_fill_report(self, report: FillReport):
         self._msgbus.send(
-            endpoint="ExecEngine.reconcile_report",
+            endpoint="ExecEngine.reconcile_execution_report",
             msg=report,
         )

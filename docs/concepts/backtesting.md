@@ -503,8 +503,8 @@ margin = adjusted_notional * instrument.margin_init
 #### Programmatic configuration
 
 ```python
-from nautilus_trader.accounting.margin_models import LeveragedMarginModel
-from nautilus_trader.accounting.margin_models import StandardMarginModel
+from nautilus_trader.backtest.models import LeveragedMarginModel
+from nautilus_trader.backtest.models import StandardMarginModel
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 
 # Create account
@@ -613,7 +613,7 @@ margin = account.calculate_margin_init(instrument, quantity, price)
 You can create custom margin models by inheriting from `MarginModel`. Custom models receive configuration through the `MarginModelConfig`:
 
 ```python
-from nautilus_trader.accounting.margin_models import MarginModel
+from nautilus_trader.backtest.models import MarginModel
 from nautilus_trader.backtest.config import MarginModelConfig
 
 class RiskAdjustedMarginModel(MarginModel):

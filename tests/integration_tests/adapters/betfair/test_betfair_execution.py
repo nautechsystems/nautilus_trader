@@ -1081,7 +1081,7 @@ async def test_generate_fill_reports(exec_client):
 
 @pytest.mark.asyncio
 @pytest.mark.live_components
-async def test_reconcile_mass_status(exec_client, exec_engine):
+async def test_reconcile_execution_mass_status(exec_client, exec_engine):
     # Arrange
     mock_betfair_request(
         exec_client._client,
@@ -1090,7 +1090,7 @@ async def test_reconcile_mass_status(exec_client, exec_engine):
 
     # Act, Assert
     mass_status = await exec_client.generate_mass_status()
-    exec_engine._reconcile_mass_status(mass_status)
+    exec_engine._reconcile_execution_mass_status(mass_status)
 
 
 # A price far below the allowed minimum (~ -1.7e13)
