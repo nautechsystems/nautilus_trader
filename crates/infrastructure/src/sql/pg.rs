@@ -66,7 +66,7 @@ impl PostgresConnectOptions {
         Self::new(
             String::from("localhost"),
             5432,
-            String::from("postgres"),
+            String::from("nautilus"),
             String::from("pass"),
             String::from("nautilus"),
         )
