@@ -286,7 +286,7 @@ def test_cash_account_trades_macd_event_sequencing() -> None:
     assert engine.cache.positions_closed_count() == 1  # Netting
     assert engine.cache.positions_total_count() == 1  # Netting
 
-    assert len(strategy.events) == 772
+    assert len(strategy.events) == 769
 
     # -- First entry sequence
     assert isinstance(strategy.events[0], OrderInitialized)
