@@ -16,6 +16,7 @@ Released on TBD (UTC).
 - Added `use_hyphens_in_client_order_ids` config option for `StrategyConfig`
 - Added `greeks_filter` function to `portfolio_greeks` (#2756), thanks @faysou
 - Added `VERBOSE` option to common make targets (#2759), thanks @faysou
+- Added bulk key loading capability for Redis cache database adapter
 
 ### Breaking Changes
 - Changed `start` parameter to required for `Actor` data request methods

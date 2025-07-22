@@ -21,8 +21,9 @@
 #![deny(clippy::missing_panics_doc)]
 #![deny(rustdoc::broken_intra_doc_links)]
 
-use pyo3::prelude::*;
 use std::path::Path;
+
+use pyo3::prelude::*;
 
 /// We modify sys modules so that submodule can be loaded directly as
 /// import supermodule.submodule
