@@ -53,6 +53,7 @@ logs/
 .mypy_cache/
 .profile/
 .pytest_cache/
+.python-version
 .ruff_cache/
 *dask-worker-space*
 requirements*
