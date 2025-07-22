@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import time
+
 import msgspec
 
 from nautilus_trader.cache.config import CacheConfig
@@ -261,7 +263,6 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         dict[str, bytes]
 
         """
-        import time
         cdef double ts_start = time.time()
         cdef double ts_end
         cdef dict general = {}
@@ -314,29 +315,85 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
     cpdef dict load_currencies(self):
         """
-        Load all currencies from the database.
+        Load all currencies from the database using bulk loading for efficiency.
 
         Returns
         -------
         dict[str, Currency]
 
         """
+        cdef double ts_start = time.time()
+        cdef double ts_end
         cdef dict currencies = {}
 
+        # Time the keys() operation
+        ts_start = time.time()
         cdef list currency_keys = self._backing.keys(f"{_CURRENCIES}*")
+        ts_end = time.time()
+        self._log.debug(f"load_currencies: backing.keys() took {(ts_end - ts_start) * 1000:.2f}ms, found {len(currency_keys)} keys")
+
         if not currency_keys:
             return currencies
 
-        cdef:
-            str key
-            str currency_code
-            Currency currency
+        cdef double bulk_start = time.time()
+        self._log.debug(f"load_currencies: Starting bulk read of {len(currency_keys)} currency keys")
+
+        cdef list currency_codes = []
+        cdef str key
+        cdef str currency_code
+
         for key in currency_keys:
             currency_code = key.rsplit(':', maxsplit=1)[1]
-            currency = self.load_currency(currency_code)
+            currency_codes.append(currency_code)
 
-            if currency is not None:
-                currencies[currency.code] = currency
+        self._log.debug(f"load_currencies: About to call read_bulk with {len(currency_keys)} keys")
+        if currency_keys:
+            self._log.debug(f"load_currencies: Sample keys: {currency_keys[:3]}")
+        cdef list bulk_results = self._backing.read_bulk(currency_keys)
+        cdef double bulk_end = time.time()
+        self._log.debug(f"load_currencies: Bulk read completed in {(bulk_end - bulk_start) * 1000:.2f}ms for {len(currency_codes)} keys")
+        self._log.debug(f"load_currencies: Got {len(bulk_results)} bulk results back")
+
+        cdef double process_start = time.time()
+        cdef int successful_loads = 0
+        cdef int failed_loads = 0
+        cdef bytes value_bytes
+        cdef Currency currency
+        cdef int idx
+        cdef dict c_map
+
+        for idx in range(len(currency_codes)):
+            currency_code = currency_codes[idx]
+
+            if idx < len(bulk_results) and bulk_results[idx] is not None:
+                value_bytes = bulk_results[idx]
+                try:
+                    c_map = self._serializer.deserialize(value_bytes)
+                    currency = Currency(
+                        code=currency_code,
+                        precision=int(c_map["precision"]),
+                        iso4217=int(c_map["iso4217"]),
+                        name=c_map["name"],
+                        currency_type=currency_type_from_str(c_map["currency_type"]),
+                    )
+                    currencies[currency.code] = currency
+                    successful_loads += 1
+
+                    if idx % 100 == 0 or idx == len(currency_codes) - 1:
+                        self._log.debug(f"load_currencies: Processed {idx + 1} of {len(currency_codes)} currencies ({currency_code})")
+
+                except Exception as e:
+                    self._log.error(f"Failed to deserialize currency {currency_code}: {e}")
+                    failed_loads += 1
+            else:
+                self._log.error(f"Currency not found in bulk results: {currency_code}")
+                failed_loads += 1
+
+        cdef double process_end = time.time()
+        cdef double total_time = process_end - ts_start
+
+        self._log.debug(f"load_currencies: COMPLETE - Total: {total_time * 1000:.2f}ms, Bulk: {(bulk_end - bulk_start) * 1000:.2f}ms, Process: {(process_end - process_start) * 1000:.2f}ms")
+        self._log.debug(f"load_currencies: Loaded {successful_loads} currencies successfully, {failed_loads} failed")
 
         return currencies
 

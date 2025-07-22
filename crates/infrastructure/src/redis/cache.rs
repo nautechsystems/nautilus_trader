@@ -270,6 +270,15 @@ impl RedisCacheDatabase {
         DatabaseQueries::read(&self.con, &self.trader_key, key).await
     }
 
+    /// Reads multiple values using bulk operations for efficiency.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying Redis read operation fails.
+    pub async fn read_bulk(&mut self, keys: &[String]) -> anyhow::Result<Vec<Option<Bytes>>> {
+        DatabaseQueries::read_bulk(&self.con, keys).await
+    }
+
     /// Sends an insert command for `key` with optional `payload` to Redis via the background task.
     ///
     /// # Errors
