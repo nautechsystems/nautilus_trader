@@ -43,6 +43,7 @@ Released on TBD (UTC).
 - Refined Rust `GreeksCalculator` (#2760), thanks @faysou
 - Refined Databento bars timestamp decoding and backtest execution usage (#2800), thanks @faysou
 - Refined `FillModel` (#2795), thanks @faysou and @stefansimik
+- Updated PostgreSQL connection parameters to use 'nautilus' user (#2805), thanks @stastnypremysl
 - Upgraded `databento` crate to v0.29.0
 - Upgraded `datafusion` crate to v48.0.1
 - Upgraded `redis` crate to v0.32.4
@@ -60,6 +61,7 @@ Released on TBD (UTC).
 - Fixed typo in logging for dYdX adapter (#2790), thanks @DeirhX
 
 ### Documentation Updates
+- Added mixed debugging instructions and example (#2806), thanks @faysou
 - Improved dYdX integration guide (#2751), thanks @nicolad
 
 ### Deprecations
