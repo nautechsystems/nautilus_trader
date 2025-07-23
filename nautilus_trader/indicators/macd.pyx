@@ -131,13 +131,14 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
         """
         self._fast_ma.update_raw(close)
         self._slow_ma.update_raw(close)
-        self.value = self._fast_ma.value - self._slow_ma.value
 
         # Initialization logic
         if not self.initialized:
             self._set_has_inputs(True)
             if self._fast_ma.initialized and self._slow_ma.initialized:
                 self._set_initialized(True)
+
+        self.value = self._fast_ma.value - self._slow_ma.value
 
     cpdef void _reset(self):
         self._fast_ma.reset()
