@@ -61,6 +61,7 @@ from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.instruments.currency_pair import CurrencyPair
 
 
@@ -325,7 +326,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             )
 
         force_instrument_update = request.params.get("force_instrument_update", False)
-        await self.instrument_provider.load_async(
+        await self.instrument_provider.load_with_return_async(
             request.instrument_id,
             force_instrument_update=force_instrument_update,
         )
@@ -339,13 +340,55 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         self._handle_instrument(instrument, request.id, request.start, request.end, request.params)
 
     async def _request_instruments(self, request: RequestInstruments) -> None:
+        force_instrument_update = request.params.get("force_instrument_update", False)
+        loaded_instrument_ids: list[InstrumentId] = []
+
+        if "ib_contracts" in request.params:
+            # We allow to pass IBContract parameters to build futures or option chains
+            ib_contracts = [IBContract(**d) for d in request.params["ib_contracts"]]
+            loaded_instrument_ids = await self.instrument_provider.load_ids_with_return_async(
+                ib_contracts,
+                force_instrument_update=force_instrument_update,
+            )
+            loaded_instruments: list[Instrument] = []
+
+            if loaded_instrument_ids:
+                for instrument_id in loaded_instrument_ids:
+                    instrument = self._cache.instrument(instrument_id)
+
+                    if instrument:
+                        loaded_instruments.append(instrument)
+                    else:
+                        self._log.warning(
+                            f"Instrument {instrument_id} not found in cache after loading",
+                        )
+            else:
+                self._log.warning("No instrument IDs were returned from load_ids_async")
+
+            self._handle_instruments(
+                venue=request.venue,
+                instruments=loaded_instruments,
+                correlation_id=request.id,
+                start=request.start,
+                end=request.end,
+                params=request.params,
+            )
+            return
+
         # We ensure existing instruments in the cache have their IB representations loaded as well in the adapter
         instruments = self._cache.instruments()
         instrument_ids = [instrument.id for instrument in instruments]
-        force_instrument_update = request.params.get("force_instrument_update", False)
-        await self.instrument_provider.load_ids_async(
+        loaded_instrument_ids = await self.instrument_provider.load_ids_with_return_async(
             instrument_ids,
             force_instrument_update=force_instrument_update,
+        )
+        self._handle_instruments(
+            venue=request.venue,
+            instruments=[],
+            correlation_id=request.id,
+            start=request.start,
+            end=request.end,
+            params=request.params,
         )
 
     async def _request_quote_ticks(self, request: RequestQuoteTicks) -> None:

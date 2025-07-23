@@ -17,6 +17,8 @@
 # fmt: off
 import os
 
+import pandas as pd
+
 from nautilus_trader.adapters.interactive_brokers.common import IB
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
@@ -68,13 +70,36 @@ class DemoStrategy(Strategy):
         self.request_instrument(self.config.instrument_id)
         self.instrument = self.cache.instrument(self.config.instrument_id)
 
-        self.request_bars(BarType.from_str(f"{self.config.instrument_id}-1-MINUTE-LAST-EXTERNAL"))
+        self.request_instruments(
+            venue=IB_VENUE,
+            params={
+                "ib_contracts": (
+                    {
+                        "secType": "CONTFUT",
+                        "exchange": "CME",
+                        "symbol": "ES",
+                        "build_futures_chain": True,
+                        "build_options_chain": True,
+                        "min_expiry_days": 0,
+                        "max_expiry_days": 1,
+                    },
+                ),
+            },
+        )
 
-        # Subscribe to market data
+        utc_now = self._clock.utc_now()
+        start = utc_now - pd.Timedelta(
+            minutes=30,
+        )
+        self.request_bars(
+            BarType.from_str(f"{self.config.instrument_id}-1-MINUTE-LAST-EXTERNAL"),
+            start,
+        )
+
         self.subscribe_bars(self.config.bar_type)
 
-        # Show initial portfolio state
-        self.show_portfolio_info("Portfolio state (Before trade)")
+    def on_instrument(self, instrument):
+        self.log.info(f"Instrument ID: {instrument.id}")
 
     def on_bar(self, bar: Bar):
         """
@@ -176,11 +201,15 @@ class DemoStrategy(Strategy):
 
 # %%
 # Tested instrument id
-instrument_id = "ES.XCME"  # "^SPX.XCBO", "ES.XCME", "AAPL.XNAS", "YMM5.XCBT"
+instrument_id = "YMU5.XCBT"  # "^SPX.XCBO", "ES.XCME", "AAPL.XNAS", "YMU5.XCBT"
 
 instrument_provider = InteractiveBrokersInstrumentProviderConfig(
     symbology_method=SymbologyMethod.IB_SIMPLIFIED,
     convert_exchange_to_mic_venue=True,
+    build_futures_chain=False,
+    build_options_chain=False,
+    min_expiry_days=0,
+    max_expiry_days=5,
     load_ids=frozenset(
         [
             instrument_id,
