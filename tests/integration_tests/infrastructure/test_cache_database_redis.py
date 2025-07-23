@@ -79,6 +79,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+@pytest.mark.xdist_group(name="redis_integration")
 class TestCacheDatabaseAdapter:
     def setup(self) -> None:
         # Fixture Setup
@@ -1055,6 +1056,7 @@ class TestCacheDatabaseAdapter:
         assert result == {}
 
 
+@pytest.mark.xdist_group(name="redis_integration")
 class TestRedisCacheDatabaseIntegrity:
     def setup(self):
         # Fixture Setup

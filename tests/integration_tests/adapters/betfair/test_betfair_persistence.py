@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pytest
+
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
@@ -28,8 +30,9 @@ from tests.integration_tests.adapters.betfair.test_kit import load_betfair_data
 
 
 class TestBetfairPersistence:
-    def setup(self):
-        self.catalog = setup_catalog(protocol="memory", path="/catalog")
+    @pytest.fixture(autouse=True)
+    def setup_method(self, tmp_path):
+        self.catalog = setup_catalog(protocol="memory", path=tmp_path / "catalog")
         self.fs = self.catalog.fs
         self.instrument = betting_instrument()
 

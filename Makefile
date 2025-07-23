@@ -366,10 +366,10 @@ init-db:  #-- Initialize PostgreSQL database schema
 pytest:  #-- Run Python tests with pytest
 ifeq ($(VERBOSE),true)
 	$(info $(M) Running Python tests with verbose output...)
-	uv run --active --no-sync pytest --new-first --failed-first -v
+	uv run --active --no-sync pytest --new-first --failed-first -v -n logical --dist=loadgroup
 else
 	$(info $(M) Running Python tests (showing failures and summary only)...)
-	uv run --active --no-sync pytest --new-first --failed-first --tb=short
+	uv run --active --no-sync pytest --new-first --failed-first --tb=short -n logical --dist=loadgroup
 endif
 
 .PHONY: test-performance
