@@ -689,14 +689,19 @@ impl Iterator for TradeStreamIterator {
             match self.reader.read_record(&mut self.record) {
                 Ok(true) => match self.record.deserialize::<TardisTradeRecord>(None) {
                     Ok(data) => {
-                        let trade = parse_trade_record(
-                            &data,
-                            self.price_precision,
-                            self.size_precision,
-                            self.instrument_id,
-                        );
+                        if data.amount > 0.0 {
+                            let trade = parse_trade_record(
+                                &data,
+                                self.price_precision,
+                                self.size_precision,
+                                self.instrument_id,
+                            );
 
-                        self.buffer.push(trade);
+                            self.buffer.push(trade);
+                        } else {
+                            log::warn!("Skipping zero-sized trade: {data:?}");
+                        }
+
                         records_read += 1;
                     }
                     Err(e) => {

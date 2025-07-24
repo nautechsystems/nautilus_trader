@@ -40,6 +40,7 @@ Released on TBD (UTC).
 - Improved DEX pool sync process in the blockchain adapter (#2796), thanks @filipmacek
 - Improved efficiency of message bus external streams buffer flushing
 - Improved `databento_test_request_bars` example (#2762), thanks @faysou
+- Improved zero-sized trades handling for Tardis CSV loader (will log a warning)
 - Optimized Redis key scans to improve efficiency over a network
 - Refined Rust catalog path handling (#2743), thanks @faysou
 - Refined Rust `GreeksCalculator` (#2760), thanks @faysou
@@ -416,7 +417,7 @@ and introduces support for Linux on ARM64 architecture.
 - Changed external bar requests `ts_event` timestamping from on open to on close for Bybit
 
 ### Internal Improvements
-- Added handling and warning for Betfair zero sized fills
+- Added handling and warning for Betfair zero-sized fills
 - Improved WebSocket error handling for dYdX (#2499), thanks @davidsblom
 - Ported `GreeksCalculator` to Rust (#2493, #2496), thanks @faysou
 - Upgraded Cython to v3.1.0b1
@@ -3467,7 +3468,7 @@ Released on 10th October 2021.
 - Fixed `OrderUpdated` leaves quantity calculation
 - Fixed contingency order logic at the exchange
 - Fixed indexing of orders for a position in the cache
-- Fixed flip logic for zero sized positions (not a flip)
+- Fixed flip logic for zero-sized positions (not a flip)
 
 ---
 

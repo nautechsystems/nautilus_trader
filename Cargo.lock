@@ -5018,6 +5018,7 @@ dependencies = [
  "flate2",
  "futures-util",
  "heck",
+ "log",
  "nautilus-core",
  "nautilus-model",
  "nautilus-serialization",
