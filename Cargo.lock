@@ -2091,9 +2091,9 @@ checksum = "2a2330da5de22e8a3cb63252ce2abb30116bf5265e89c0e01bc17015ce30a476"
 
 [[package]]
 name = "databento"
-version = "0.29.0"
+version = "0.30.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8c3d31471341afdb503fc27cba2bdf95104f2ce7ebcc51914a6dfec56b4738d6"
+checksum = "1a2e3a94d7a171e13668b6e5e24a67ee23ed44dc01df43a9955e0998f7bdb336"
 dependencies = [
  "async-compression",
  "dbn",
@@ -2670,9 +2670,9 @@ dependencies = [
 
 [[package]]
 name = "dbn"
-version = "0.37.1"
+version = "0.38.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8806dd5710513448dc30eadf5c63c5840dee134eb9c082373ba851aaa29e53b9"
+checksum = "d75b73cb84174641ccee484bff52e7c37a8df07e7110442faa5fd601535d1a30"
 dependencies = [
  "async-compression",
  "csv",
@@ -2691,9 +2691,9 @@ dependencies = [
 
 [[package]]
 name = "dbn-macros"
-version = "0.37.1"
+version = "0.38.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b10fcf371f3f3e5a4a9adc12fe7fd6734dba6f36f334aed1d3966c1208dd597"
+checksum = "eb85f28f3645ccbb40f9d720ccbbb6bbe899c504a8d12363b5c3ff6867747e39"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -5875,9 +5875,9 @@ dependencies = [
 
 [[package]]
 name = "prettyplease"
-version = "0.2.35"
+version = "0.2.36"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "061c1221631e079b26479d25bbf2275bfe5917ae8419cd7e34f13bfc2aa7539a"
+checksum = "ff24dfcda44452b9816fff4cd4227e1bb73ff5a2f1bc1105aa92fb8565ce44d2"
 dependencies = [
  "proc-macro2",
  "syn 2.0.104",
@@ -6102,9 +6102,9 @@ dependencies = [
 
 [[package]]
 name = "pyo3-stub-gen"
-version = "0.10.0"
+version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "99fb898babb226d1c79818c8359ee2be08624804016b34c84794a759ed620cee"
+checksum = "63d3dbc1200102b11f207e8c33570bb8ec7e89a5df95265cada480c649875a17"
 dependencies = [
  "anyhow",
  "chrono",
@@ -6124,9 +6124,9 @@ dependencies = [
 
 [[package]]
 name = "pyo3-stub-gen-derive"
-version = "0.10.0"
+version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c676d00fb0665744635c41dec5c414ec7a7e09b715855de4df2b9d741782fece"
+checksum = "069ca053f5d702f2f48031ee5f2b5cf0b9e665a6213a74e119986905250cb6a9"
 dependencies = [
  "heck",
  "proc-macro2",
