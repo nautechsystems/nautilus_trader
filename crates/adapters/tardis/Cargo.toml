@@ -52,6 +52,7 @@ derive_builder = { workspace = true }
 flate2 = { workspace = true }
 futures-util = { workspace = true }
 heck = { workspace = true }
+log = { workspace = true }
 parquet = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }

@@ -672,14 +672,18 @@ pub fn load_trades<P: AsRef<Path>>(
             );
         }
 
-        let trade = parse_trade_record(
-            &data,
-            current_price_precision,
-            current_size_precision,
-            instrument_id,
-        );
+        if data.amount > 0.0 {
+            let trade = parse_trade_record(
+                &data,
+                current_price_precision,
+                current_size_precision,
+                instrument_id,
+            );
 
-        trades.push(trade);
+            trades.push(trade);
+        } else {
+            log::warn!("Skipping zero-sized trade: {data:?}");
+        }
 
         if let Some(limit) = limit
             && trades.len() >= limit
