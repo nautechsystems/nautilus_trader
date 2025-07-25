@@ -28,8 +28,8 @@ from nautilus_trader.test_kit.mocks.data import setup_catalog
 
 @pytest.mark.skip
 @pytest.mark.benchmark(min_rounds=1)
-def test_write_quote_ticks(benchmark) -> None:
-    catalog = setup_catalog("file")
+def test_write_quote_ticks(benchmark, tmp_path) -> None:
+    catalog = setup_catalog("file", path=tmp_path / "catalog")
 
     def run():
         load_catalog_with_stub_quote_ticks_audusd(catalog)
@@ -41,8 +41,8 @@ def test_write_quote_ticks(benchmark) -> None:
 
 @pytest.mark.skip
 @pytest.mark.benchmark(min_rounds=1)
-def test_load_quote_ticks(benchmark) -> None:
-    catalog = setup_catalog("file")
+def test_load_quote_ticks(benchmark, tmp_path) -> None:
+    catalog = setup_catalog("file", path=tmp_path / "catalog")
     load_catalog_with_stub_quote_ticks_audusd(catalog)
 
     def run():
@@ -54,8 +54,8 @@ def test_load_quote_ticks(benchmark) -> None:
 
 @pytest.mark.skip
 @pytest.mark.benchmark(min_rounds=1)
-def test_write_trade_ticks(benchmark) -> None:
-    catalog = setup_catalog("file")
+def test_write_trade_ticks(benchmark, tmp_path) -> None:
+    catalog = setup_catalog("file", path=tmp_path / "catalog")
 
     def run():
         load_catalog_with_stub_trade_ticks_ethusdt(catalog)
@@ -67,8 +67,8 @@ def test_write_trade_ticks(benchmark) -> None:
 
 @pytest.mark.skip
 @pytest.mark.benchmark(min_rounds=1)
-def test_load_trade_ticks(benchmark) -> None:
-    catalog = setup_catalog("file")
+def test_load_trade_ticks(benchmark, tmp_path) -> None:
+    catalog = setup_catalog("file", path=tmp_path / "catalog")
     load_catalog_with_stub_trade_ticks_ethusdt(catalog)
 
     def run():

@@ -73,6 +73,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+@pytest.mark.xdist_group(name="postgres_integration")
 class TestCachePostgresAdapter:
     def setup(self) -> None:
         # set envs

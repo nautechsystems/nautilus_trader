@@ -180,8 +180,8 @@ def exec_client(
 
 
 @pytest.fixture()
-def data_catalog() -> ParquetDataCatalog:
-    catalog: ParquetDataCatalog = setup_catalog(protocol="memory", path="/")
+def data_catalog(tmp_path) -> ParquetDataCatalog:
+    catalog: ParquetDataCatalog = setup_catalog(protocol="memory", path=tmp_path / "catalog")
     load_betfair_data(catalog)
     return catalog
 
