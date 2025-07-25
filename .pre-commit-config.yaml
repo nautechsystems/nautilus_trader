@@ -117,7 +117,7 @@ repos:
         args: ["--config", "pyproject.toml"]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.12.4
+    rev: v0.12.5
     hooks:
       - id: ruff
         args: ["--fix"]
@@ -164,7 +164,7 @@ repos:
         ]
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.8.1  # uv version
+    rev: 0.8.3  # uv version
     hooks:
       - id: uv-lock
 
