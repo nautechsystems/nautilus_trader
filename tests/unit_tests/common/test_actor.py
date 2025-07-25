@@ -87,8 +87,9 @@ def _create_composite_bar_type() -> BarType:
 
 
 class TestActor:
-    def setup(self) -> None:
-        # Fixture Setup
+    @pytest.fixture(autouse=True)
+    def setup_method(self, tmp_path) -> None:
+        self.tmp_path = tmp_path
         self.clock = TestClock()
 
         self.trader_id = TestIdStubs.trader_id()
@@ -1971,7 +1972,7 @@ class TestActor:
         )
 
         self.clock.set_time(1704067205000000000)
-        catalog = setup_catalog(protocol="memory", path="/catalog")
+        catalog = setup_catalog(protocol="memory", path=self.tmp_path / "catalog")
 
         writer = StreamingFeatherWriter(
             path=catalog.path,

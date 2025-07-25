@@ -143,23 +143,18 @@ class NewsEventData(NewsEvent):
 
 def setup_catalog(
     protocol: Literal["memory", "file"],
-    path: Path | str | None = None,
+    path: Path | str,
 ) -> ParquetDataCatalog:
     if protocol not in ("memory", "file"):
         raise ValueError("`protocol` should only be one of `memory` or `file` for testing")
 
     if isinstance(path, str):
         path = Path(path)
+    path = path.resolve()
 
     clear_singleton_instances(ParquetDataCatalog)
 
-    path = Path.cwd() / "catalog" if path is None else path.resolve()
-
     catalog = ParquetDataCatalog(path=path.as_posix(), fs_protocol=protocol)
-
-    if catalog.fs.exists(catalog.path):
-        catalog.fs.rm(catalog.path, recursive=True)
-
     catalog.fs.mkdir(catalog.path, create_parents=True)
 
     assert catalog.fs.isdir(catalog.path)

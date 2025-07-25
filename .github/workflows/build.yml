@@ -114,7 +114,7 @@ jobs:
 
       - name: Run tests
         run: |
-          uv run --no-sync pytest --ignore=tests/performance_tests
+          uv run --no-sync pytest --ignore=tests/performance_tests -n logical --dist=loadgroup
 
       - name: Upload wheel artifact
         uses: ./.github/actions/upload-artifact-wheel

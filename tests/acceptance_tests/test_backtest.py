@@ -16,6 +16,7 @@
 from decimal import Decimal
 
 import pandas as pd
+import pytest
 from fsspec.implementations.local import LocalFileSystem
 
 from nautilus_trader import TEST_DATA_DIR
@@ -752,9 +753,9 @@ class TestBacktestAcceptanceTestsETHUSDT:
 
 
 class TestBacktestAcceptanceTestsOrderBookImbalance:
-    def setup(self):
-        # Fixture Setup
-        setup_catalog(protocol="memory")
+    @pytest.fixture(autouse=True)
+    def setup_method(self, tmp_path):
+        setup_catalog(protocol="memory", path=tmp_path / "catalog")
 
         config = BacktestEngineConfig(
             logging=LoggingConfig(bypass_logging=True),
@@ -813,9 +814,10 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
 
 
 class TestBacktestAcceptanceTestsMarketMaking:
-    def setup(self):
+    @pytest.fixture(autouse=True)
+    def setup_method(self, tmp_path):
         # Fixture Setup
-        setup_catalog(protocol="memory")
+        setup_catalog(protocol="memory", path=tmp_path / "catalog")
 
         config = BacktestEngineConfig(
             logging=LoggingConfig(bypass_logging=True),

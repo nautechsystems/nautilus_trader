@@ -100,8 +100,9 @@ ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
 class TestDataEngine:
-    def setup(self):
-        # Fixture Setup
+    @pytest.fixture(autouse=True)
+    def setup_method(self, tmp_path):
+        self.tmp_path = tmp_path
         self.clock = TestClock()
         self.trader_id = TestIdStubs.trader_id()
 
@@ -2212,7 +2213,7 @@ class TestDataEngine:
     @pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
     def test_request_instrument_when_catalog_registered(self):
         # Arrange
-        catalog = setup_catalog(protocol="file")
+        catalog = setup_catalog(protocol="file", path=self.tmp_path / "catalog")
 
         idealpro = Venue("IDEALPRO")
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=idealpro)
@@ -2245,7 +2246,7 @@ class TestDataEngine:
     @pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
     def test_request_instruments_for_venue_when_catalog_registered(self):
         # Arrange
-        catalog = setup_catalog(protocol="file")
+        catalog = setup_catalog(protocol="file", path=self.tmp_path / "catalog")
 
         idealpro = Venue("IDEALPRO")
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=idealpro)
@@ -2384,7 +2385,7 @@ class TestDataEngine:
 
     def test_request_bars_when_catalog_registered(self):
         # Arrange
-        catalog = setup_catalog(protocol="file")
+        catalog = setup_catalog(protocol="file", path=self.tmp_path / "catalog")
         bar_spec = BarSpecification(1000, BarAggregation.TICK, PriceType.MID)
         bar_type = BarType(ETHUSDT_BINANCE.id, bar_spec)
         bar = Bar(
@@ -2424,7 +2425,7 @@ class TestDataEngine:
 
     def test_request_bars_when_catalog_and_client_registered(self):
         # Arrange
-        catalog = setup_catalog(protocol="file")
+        catalog = setup_catalog(protocol="file", path=self.tmp_path / "catalog")
         bar_spec = BarSpecification(1000, BarAggregation.TICK, PriceType.MID)
         bar_type = BarType(ETHUSDT_BINANCE.id, bar_spec)
         bar = Bar(
@@ -2575,7 +2576,7 @@ class TestDataEngine:
 
     def test_request_quote_ticks_when_catalog_registered(self):
         # Arrange
-        catalog = setup_catalog(protocol="file")
+        catalog = setup_catalog(protocol="file", path=self.tmp_path / "catalog")
         quote_tick = QuoteTick(
             ETHUSDT_BINANCE.id,
             Price.from_str("1051.00000"),
@@ -2612,7 +2613,7 @@ class TestDataEngine:
 
     def test_request_quote_ticks_when_catalog_and_client_registered(self):
         # Arrange
-        catalog = setup_catalog(protocol="file")
+        catalog = setup_catalog(protocol="file", path=self.tmp_path / "catalog")
         quote_tick = QuoteTick(
             ETHUSDT_BINANCE.id,
             Price.from_str("1051.00000"),
@@ -2705,7 +2706,7 @@ class TestDataEngine:
 
     def test_request_trade_ticks_when_catalog_registered(self):
         # Arrange
-        catalog = setup_catalog(protocol="file")
+        catalog = setup_catalog(protocol="file", path=self.tmp_path / "catalog")
         trade_tick = TradeTick(
             instrument_id=ETHUSDT_BINANCE.id,
             price=Price.from_str("1051.00000"),
@@ -2744,7 +2745,7 @@ class TestDataEngine:
 
     def test_request_trade_ticks_when_catalog_and_client_registered(self):
         # Arrange
-        catalog = setup_catalog(protocol="file")
+        catalog = setup_catalog(protocol="file", path=self.tmp_path / "catalog")
         trade_tick = TradeTick(
             instrument_id=ETHUSDT_BINANCE.id,
             price=Price.from_str("1051.00000"),
@@ -2821,7 +2822,7 @@ class TestDataEngine:
         )
         definition = loader.from_dbn_file(definition_path, as_legacy_cython=True)
 
-        catalog = setup_catalog(protocol="file")
+        catalog = setup_catalog(protocol="file", path=self.tmp_path / "catalog")
         catalog.write_data(data)
         catalog.write_data(definition)
 
@@ -2944,7 +2945,7 @@ class TestDataEngine:
         )
         definition = loader.from_dbn_file(definition_path, as_legacy_cython=True)
 
-        catalog = setup_catalog(protocol="file")
+        catalog = setup_catalog(protocol="file", path=self.tmp_path / "catalog")
         catalog.write_data(data)
         catalog.write_data(definition)
 
@@ -3039,7 +3040,7 @@ class TestDataEngine:
         )
         definition = loader.from_dbn_file(definition_path, as_legacy_cython=True)
 
-        catalog = setup_catalog(protocol="file")
+        catalog = setup_catalog(protocol="file", path=self.tmp_path / "catalog")
         catalog.write_data(data)
         catalog.write_data(definition)
 
@@ -3359,8 +3360,8 @@ class TestDataEngine:
 
 
 class TestDataBufferEngine:
-    def setup(self):
-        # Fixture Setup
+    @pytest.fixture(autouse=True)
+    def setup_method(self, tmp_path):
         self.clock = TestClock()
         self.trader_id = TestIdStubs.trader_id()
 
