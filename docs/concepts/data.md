@@ -94,6 +94,7 @@ The platform implements various aggregation methods:
 | `DAY`              | Aggregation of time intervals with day granularity.                        | Time         |
 | `WEEK`             | Aggregation of time intervals with week granularity.                       | Time         |
 | `MONTH`            | Aggregation of time intervals with month granularity.                      | Time         |
+| `YEAR`             | Aggregation of time intervals with year granularity.                       | Time         |
 
 ### Types of aggregation
 

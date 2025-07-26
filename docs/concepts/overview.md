@@ -174,6 +174,7 @@ The following `BarAggregation` methods are available:
 - `DAY`
 - `WEEK`
 - `MONTH`
+- `YEAR`
 - `TICK`
 - `VOLUME`
 - `VALUE` (a.k.a Dollar bars)
