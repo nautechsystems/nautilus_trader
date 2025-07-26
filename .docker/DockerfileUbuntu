@@ -40,9 +40,6 @@ RUN apt-get update && apt-get install -y \
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
 ENV PATH="/root/.cargo/bin:${PATH}"
 
-# Install mold linker
-RUN curl -L https://github.com/rui314/mold/releases/download/v2.35.1/mold-2.35.1-x86_64-linux.tar.gz | tar -xz -C /usr/local --strip-components=1
-
 # Install uv
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 ENV PATH="/root/.cargo/bin:/root/.local/bin:${PATH}"
