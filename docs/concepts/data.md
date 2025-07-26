@@ -316,10 +316,10 @@ If historical aggregated bars are needed, you can use specialized request `reque
 
 ```python
 # Request bars that are aggregated from historical trade ticks
-self.request_aggregated_bars(BarType.from_str("6EH4.XCME-100-VOLUME-LAST-INTERNAL"))
+self.request_aggregated_bars([BarType.from_str("6EH4.XCME-100-VOLUME-LAST-INTERNAL")])
 
 # Request bars that are aggregated from other bars
-self.request_aggregated_bars(BarType.from_str("6EH4.XCME-5-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL"))
+self.request_aggregated_bars([BarType.from_str("6EH4.XCME-5-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL")])
 ```
 
 ### Common Pitfalls
