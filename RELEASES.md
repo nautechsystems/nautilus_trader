@@ -3,10 +3,11 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added support for option combos for Interactive Brokers (#2812), thanks @faysou
+- Added loading of options chain from `request_instruments` for Interactive Brokers (#2809), thanks @faysou
 - Added `MarginModel` concept, base models, config, and factory for backtesting (#2794), thanks @faysou and @stefansimik
 - Added additional built-in backtest fill models (#2795), thanks @faysou and @stefansimik
 - Added `OrderBookDepth10DataWrangler` (#2801), thanks @trylovetom
-- Added loading of options chain from `request_instruments` for Interactive Brokers (#2809), thanks @faysou
 - Added `persist_account_events` config option for `CacheConfig` (default `True` to retain current behavior)
 - Added `query_account` method for `Strategy`
 - Added `QueryAccount` execution message
@@ -50,9 +51,11 @@ Released on TBD (UTC).
 - Refined Databento bars timestamp decoding and backtest execution usage (#2800), thanks @faysou
 - Refined `FillModel` (#2795), thanks @faysou and @stefansimik
 - Updated PostgreSQL connection parameters to use 'nautilus' user (#2805), thanks @stastnypremysl
+- Upgraded `web3` for Polymarket allowances script (#2814), thanks @DeirhX
 - Upgraded `databento` crate to v0.30.0
 - Upgraded `datafusion` crate to v48.0.1
 - Upgraded `redis` crate to v0.32.4
+- Upgraded `tokio` crate to v1.47.0
 
 ### Fixes
 - Fixed decoding zero-sized trades for Databento MBO data
