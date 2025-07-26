@@ -891,10 +891,22 @@ impl Cache {
 
         let buffer_ns = secs_to_nanos(buffer_secs as f64);
 
-        for client_order_id in self.index.orders_closed.clone() {
+        'outer: for client_order_id in self.index.orders_closed.clone() {
             if let Some(order) = self.orders.get(&client_order_id) {
                 if let Some(ts_closed) = order.ts_closed() {
                     if ts_closed + buffer_ns <= ts_now {
+                        // Check any linked orders (contingency orders)
+                        if let Some(linked_order_ids) = order.linked_order_ids() {
+                            for linked_order_id in linked_order_ids {
+                                if let Some(linked_order) = self.orders.get(linked_order_id) {
+                                    if linked_order.is_open() {
+                                        // Do not purge if linked order still open
+                                        continue 'outer;
+                                    }
+                                }
+                            }
+                        }
+
                         self.purge_order(client_order_id);
                     }
                 }
