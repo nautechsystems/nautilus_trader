@@ -45,6 +45,7 @@ pub fn create_currency_pair(
     raw_symbol: Symbol,
     price_increment: Price,
     size_increment: Quantity,
+    multiplier: Option<Quantity>,
     margin_init: Decimal,
     margin_maint: Decimal,
     maker_fee: Decimal,
@@ -61,7 +62,8 @@ pub fn create_currency_pair(
         size_increment.precision,
         price_increment,
         size_increment,
-        None, // lot_size TBD
+        multiplier,
+        None,
         None,
         Some(Quantity::from(info.min_trade_amount.to_string().as_str())),
         None,

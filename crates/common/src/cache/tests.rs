@@ -347,6 +347,7 @@ fn test_position_ids_filtering(mut cache: Cache) {
             None,
             None,
             None,
+            None,
             UnixNanos::default(),
             UnixNanos::default(),
         )
