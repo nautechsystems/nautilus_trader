@@ -100,37 +100,60 @@ Criterion writes HTML reports to `target/criterion/`; open `target/criterion/rep
 
 ### Generating a flamegraph
 
-`cargo-flamegraph` (a thin wrapper around Linux `perf`) lets you see a sampled
-call-stack profile of a single benchmark.
+`cargo-flamegraph` lets you see a sampled call-stack profile of a single
+benchmark. On Linux it uses `perf`, and on macOS it uses `DTrace`.
 
-1. Install once per machine (the crate is called `flamegraph`; it installs a
-   `cargo flamegraph` subcommand automatically). Linux requires `perf` to be
-   available (`sudo apt install linux-tools-common linux-tools-$(uname -r)` on
-   Debian/Ubuntu):
+1. Install `cargo-flamegraph` once per machine (it installs a `cargo flamegraph`
+   subcommand automatically).
 
    ```bash
    cargo install flamegraph
    ```
 
-2. Run a specific bench with the symbol-rich `bench` profile:
+2. Run a specific bench with the symbol-rich `bench` profile.
 
    ```bash
    # example: the matching benchmark in nautilus-common
    cargo flamegraph --bench matching -p nautilus-common --profile bench
    ```
 
-3. Open the generated `flamegraph.svg` (or `.png`) in your browser and zoom
-   into hot paths.
+3. Open the generated `flamegraph.svg` in your browser and zoom into hot paths.
 
-   If you see an error mentioning `perf_event_paranoid` you need to relax the
-   kernel’s perf restrictions for the current session (root required):
+#### Linux
 
-   ```bash
-   sudo sh -c 'echo 1 > /proc/sys/kernel/perf_event_paranoid'
-   ```
+On Linux, `perf` must be available. On Debian/Ubuntu, you can install it with:
 
-   A value of `1` is typically enough; set it back to `2` (default) or make
-   the change permanent via `/etc/sysctl.conf` if desired.
+```bash
+sudo apt install linux-tools-common linux-tools-$(uname -r)
+```
+
+If you see an error mentioning `perf_event_paranoid` you need to relax the
+kernel’s perf restrictions for the current session (root required):
+
+```bash
+sudo sh -c 'echo 1 > /proc/sys/kernel/perf_event_paranoid'
+```
+
+A value of `1` is typically enough; set it back to `2` (default) or make
+the change permanent via `/etc/sysctl.conf` if desired.
+
+#### macOS
+
+On macOS, `DTrace` requires root permissions, so you must run `cargo flamegraph`
+with `sudo`:
+
+```bash
+# Note the use of sudo
+sudo cargo flamegraph --bench matching -p nautilus-common --profile bench
+```
+
+> **Warning**
+> Running with `sudo` will create files in your `target/` directory that are
+> owned by the `root` user. This can cause permission errors with subsequent
+> `cargo` commands.
+>
+> To fix this, you may need to remove the root-owned files manually, or simply
+> run `sudo cargo clean` to remove the entire `target/` directory.
 
 Because `[profile.bench]` keeps full debug symbols the SVG will show readable
 function names without bloating production binaries (which still use
