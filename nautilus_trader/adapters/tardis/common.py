@@ -88,11 +88,6 @@ def infer_tardis_exchange_str(instrument: Instrument) -> str:  # noqa: C901 (too
                 return "huobi-dm-options"
         case "HUOBI_DELIVERY":
             return "huobi-dm-swap"
-        case "KRAKEN":
-            if isinstance(instrument, CurrencyPair):
-                return "kraken"
-            else:
-                return "kraken-futures"
         case "OKEX":
             if isinstance(instrument, CurrencyPair):
                 return "okex"
