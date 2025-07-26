@@ -37,7 +37,7 @@ proptest! {
         let rate_nonzero = NonZeroU32::new(rate).unwrap();
         let quota = Quota::per_second(rate_nonzero);
         let rate_limiter = RateLimiter::new_with_quota(
-            Some(quota),
+            None,
             vec![(key.clone(), quota)]
         );
 
