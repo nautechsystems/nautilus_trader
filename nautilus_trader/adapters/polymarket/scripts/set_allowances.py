@@ -16,8 +16,29 @@ pub_key_raw = os.environ["POLYGON_PUBLIC_KEY"]
 
 chain_id = 137
 
-erc20_approve_abi = [{"constant": False,"inputs": [{"name": "_spender","type": "address" },{ "name": "_value", "type": "uint256" }],"name": "approve","outputs": [{ "name": "", "type": "bool" }],"payable": False,"stateMutability": "nonpayable","type": "function"}]
-erc1155_set_approval_abi = [{"inputs": [{ "internalType": "address", "name": "operator", "type": "address" },{ "internalType": "bool", "name": "approved", "type": "bool" }],"name": "setApprovalForAll","outputs": [],"stateMutability": "nonpayable","type": "function"}]
+erc20_approve_abi = [
+    {
+        "constant": False,
+        "inputs": [{"name": "_spender", "type": "address"}, {"name": "_value", "type": "uint256"}],
+        "name": "approve",
+        "outputs": [{"name": "", "type": "bool"}],
+        "payable": False,
+        "stateMutability": "nonpayable",
+        "type": "function",
+    }
+]
+erc1155_set_approval_abi = [
+    {
+        "inputs": [
+            {"internalType": "address", "name": "operator", "type": "address"},
+            {"internalType": "bool", "name": "approved", "type": "bool"},
+        ],
+        "name": "setApprovalForAll",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function",
+    }
+]
 
 web3 = Web3(Web3.HTTPProvider(rpc_url))
 web3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
