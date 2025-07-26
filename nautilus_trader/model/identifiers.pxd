@@ -62,6 +62,7 @@ cdef class InstrumentId(Identifier):
     cdef InstrumentId from_str_c(str value)
     cpdef bint is_synthetic(self)
     cpdef object to_pyo3(self)
+    cpdef bint is_spread(self)
 
 
 cdef class ComponentId(Identifier):

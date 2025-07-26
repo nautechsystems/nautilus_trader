@@ -74,6 +74,9 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
     _order_book_depth: ClassVar[dict[int, int]] = {}  # reqId -> depth
     _order_books_initialized: ClassVar[dict[int, bool]] = {}  # reqId -> initialized
 
+    # Instance variables that will be available when mixed into InteractiveBrokersClient
+    _subscription_tick_data: dict[int, dict[int, Any]]
+
     _order_books: ClassVar[dict[int, dict[str, dict[int, IBKRBookLevel]]]] = {}
     """
     Example:
@@ -198,8 +201,10 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
 
         """
         if subscription := self._subscriptions.get(name=name):
-            self._subscriptions.remove(subscription.req_id)
-            cancellation_method(subscription.req_id, *args, **kwargs)
+            req_id = subscription.req_id
+            self._subscriptions.remove(req_id)
+            self._subscription_tick_data.pop(req_id, None)
+            cancellation_method(req_id, *args, **kwargs)
             self._log.debug(f"Unsubscribed from {subscription}")
         else:
             self._log.debug(f"Subscription doesn't exist for {name}")
@@ -252,6 +257,52 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         """
         name = (str(instrument_id), tick_type)
         await self._unsubscribe(name, self._eclient.cancelTickByTickData)
+
+    async def subscribe_market_data(
+        self,
+        instrument_id: InstrumentId,
+        contract: IBContract,
+        generic_tick_list: str = "",
+    ) -> None:
+        """
+        Subscribe to market data for a specified instrument using reqMktData. This
+        method is used for BAG (spread) contracts that don't support reqTickByTickData.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The identifier of the instrument for which to subscribe.
+        contract : IBContract
+            The contract details for the instrument.
+        generic_tick_list : str
+            A comma-separated list of generic tick types to request.
+            Empty string for basic bid/ask data.
+
+        """
+        name = (str(instrument_id), "market_data")
+        await self._subscribe(
+            name,
+            self._eclient.reqMktData,
+            self._eclient.cancelMktData,
+            contract,
+            generic_tick_list,
+            False,  # snapshot
+            False,  # regulatory_snapshot
+            [],  # mktDataOptions
+        )
+
+    async def unsubscribe_market_data(self, instrument_id: InstrumentId) -> None:
+        """
+        Unsubscribes from market data for a specified instrument.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The identifier of the instrument for which to unsubscribe.
+
+        """
+        name = (str(instrument_id), "market_data")
+        await self._unsubscribe(name, self._eclient.cancelMktData)
 
     async def subscribe_order_book(
         self,
@@ -450,8 +501,8 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             The Interactive Brokers contract details for the instrument.
         use_rth : bool
             Whether to use regular trading hours (RTH) only for the data.
-        end_date_time : str
-            The end time for the historical data request, formatted "%Y%m%d-%H:%M:%S".
+        end_date_time : pd.Timestamp
+            The end time for the historical data request as a pandas Timestamp.
         duration : str
             The duration for which historical data is requested, formatted as a string.
         timeout : int, optional
@@ -468,11 +519,11 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         else:
             end_date_time = end_date_time.astimezone(ZoneInfo("UTC"))
 
-        end_date_time = (
+        end_date_time_str = (
             end_date_time.strftime("%Y%m%d %H:%M:%S %Z") if contract.secType != "CONTFUT" else ""
         )
 
-        name = (bar_type, end_date_time)
+        name = (bar_type, end_date_time_str)
 
         if not (request := self._requests.get(name=name)):
             req_id = self._next_req_id()
@@ -484,7 +535,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
                     self._eclient.reqHistoricalData,
                     reqId=req_id,
                     contract=contract,
-                    endDateTime=end_date_time,
+                    endDateTime=end_date_time_str,
                     durationStr=duration,
                     barSizeSetting=bar_size_setting,
                     whatToShow=what_to_show(bar_type),
@@ -680,6 +731,97 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         )
 
         await self._handle_data(trade_tick)
+
+    async def process_tick_price(
+        self,
+        *,
+        req_id: int,
+        tick_type: int,
+        price: float,
+        attrib: Any,
+    ) -> None:
+        """
+        Process tick price data from reqMktData for spread instruments.
+        """
+        if not (subscription := self._subscriptions.get(req_id=req_id)):
+            return
+
+        # Store the price data for this subscription
+        if req_id not in self._subscription_tick_data:
+            self._subscription_tick_data[req_id] = {}
+
+        # IB tick types: 0=BID_SIZE, 1=BID_PRICE, 2=ASK_PRICE, 3=ASK_SIZE
+        self._subscription_tick_data[req_id][tick_type] = price
+
+        # Check if we have both bid and ask prices to create a quote tick
+        await self._try_create_quote_tick_from_market_data(subscription, req_id)
+
+    async def process_tick_size(
+        self,
+        *,
+        req_id: int,
+        tick_type: int,
+        size: Decimal,
+    ) -> None:
+        """
+        Process tick size data from reqMktData for spread instruments.
+        """
+        if not (subscription := self._subscriptions.get(req_id=req_id)):
+            return
+
+        # Store the size data for this subscription
+        if req_id not in self._subscription_tick_data:
+            self._subscription_tick_data[req_id] = {}
+
+        # IB tick types: 0=BID_SIZE, 1=BID_PRICE, 2=ASK_PRICE, 3=ASK_SIZE
+        self._subscription_tick_data[req_id][tick_type] = int(size)
+
+        # Check if we have both bid and ask data to create a quote tick
+        await self._try_create_quote_tick_from_market_data(subscription, req_id)
+
+    async def _try_create_quote_tick_from_market_data(
+        self,
+        subscription: Subscription,
+        req_id: int,
+    ) -> None:
+        """
+        Try to create a QuoteTick from accumulated market data.
+        """
+        if req_id not in self._subscription_tick_data:
+            return
+
+        tick_data = self._subscription_tick_data[req_id]
+
+        # IB tick types: 0=BID_SIZE, 1=BID_PRICE, 2=ASK_PRICE, 3=ASK_SIZE
+        bid_size = tick_data.get(0, 1)
+        bid_price = tick_data.get(1)
+        ask_price = tick_data.get(2)
+        ask_size = tick_data.get(3, 1)
+
+        if bid_price is not None and ask_price is not None:
+            # Create quote tick
+            instrument_id = InstrumentId.from_str(subscription.name[0])
+            instrument = self._cache.instrument(instrument_id)
+            ts_event = self._clock.timestamp_ns()
+            price_magnifier = (
+                self._instrument_provider.get_price_magnifier(instrument_id)
+                if self._instrument_provider
+                else 1
+            )
+            converted_bid_price = ib_price_to_nautilus_price(bid_price, price_magnifier)
+            converted_ask_price = ib_price_to_nautilus_price(ask_price, price_magnifier)
+
+            quote_tick = QuoteTick(
+                instrument_id=instrument_id,
+                bid_price=instrument.make_price(converted_bid_price),
+                ask_price=instrument.make_price(converted_ask_price),
+                bid_size=instrument.make_qty(bid_size),
+                ask_size=instrument.make_qty(ask_size),
+                ts_event=ts_event,
+                ts_init=ts_event,
+            )
+
+            await self._handle_data(quote_tick)
 
     async def process_realtime_bar(
         self,

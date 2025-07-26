@@ -121,6 +121,7 @@ class IBContract(NautilusConfig, frozen=True, repr_omit_defaults=True):
         "CFD",
         "CMDTY",
         "IND",
+        "BAG",
         "",
     ] = ""
     conId: int = 0

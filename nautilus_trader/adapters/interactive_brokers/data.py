@@ -200,18 +200,30 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         )
 
     async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
-        if not (instrument := self._cache.instrument(command.instrument_id)):
+        contract = self.instrument_provider.contract.get(command.instrument_id)
+
+        if not contract:
             self._log.error(
                 f"Cannot subscribe to quotes for {command.instrument_id}: instrument not found",
             )
             return
 
-        await self._client.subscribe_ticks(
-            instrument_id=command.instrument_id,
-            contract=IBContract(**instrument.info["contract"]),
-            tick_type="BidAsk",
-            ignore_size=self._ignore_quote_tick_size_updates,
-        )
+        batch_quotes = command.params.get("batch_quotes", False)
+
+        if contract.secType == "BAG" or batch_quotes:
+            # For OptionSpread (BAG) instruments, use reqMktData instead of reqTickByTickData
+            # because reqTickByTickData doesn't support BAG contracts
+            await self._client.subscribe_market_data(
+                instrument_id=command.instrument_id,
+                contract=contract,
+                generic_tick_list="",  # Empty for basic bid/ask data
+            )
+        else:
+            await self._client.subscribe_market_data(
+                instrument_id=command.instrument_id,
+                contract=contract,
+                generic_tick_list="",  # Empty for basic bid/ask data
+            )
 
     async def _subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
         if not (instrument := self._cache.instrument(command.instrument_id)):
@@ -234,20 +246,24 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         )
 
     async def _subscribe_bars(self, command: SubscribeBars) -> None:
-        if not (instrument := self._cache.instrument(command.bar_type.instrument_id)):
-            self._log.error(f"Cannot subscribe to {command.bar_type} bars: instrument not found")
+        contract = self.instrument_provider.contract.get(command.bar_type.instrument_id)
+
+        if not contract:
+            self._log.error(
+                f"Cannot subscribe to bars for {command.bar_type.instrument_id}: instrument not found",
+            )
             return
 
         if command.bar_type.spec.timedelta.total_seconds() == 5:
             await self._client.subscribe_realtime_bars(
                 bar_type=command.bar_type,
-                contract=IBContract(**instrument.info["contract"]),
+                contract=contract,
                 use_rth=self._use_regular_trading_hours,
             )
         else:
             await self._client.subscribe_historical_bars(
                 bar_type=command.bar_type,
-                contract=IBContract(**instrument.info["contract"]),
+                contract=contract,
                 use_rth=self._use_regular_trading_hours,
                 handle_revised_bars=self._handle_revised_bars,
             )
@@ -494,7 +510,9 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         return ticks
 
     async def _request_bars(self, request: RequestBars) -> None:
-        if not (instrument := self._cache.instrument(request.bar_type.instrument_id)):
+        contract = self.instrument_provider.contract.get(request.bar_type.instrument_id)
+
+        if not contract:
             self._log.error(f"Cannot request {request.bar_type} bars: instrument not found")
             return
 
@@ -507,9 +525,11 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         duration = request.end - request.start
         duration_str = timedelta_to_duration_str(duration)
 
-        bars: list[Bar] = await self._client.get_historical_bars(
+        bars: list[Bar] = []
+
+        bars = await self._client.get_historical_bars(
             bar_type=request.bar_type,
-            contract=IBContract(**instrument.info["contract"]),
+            contract=contract,
             use_rth=self._use_regular_trading_hours,
             end_date_time=request.end,
             duration=duration_str,
