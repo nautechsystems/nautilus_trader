@@ -23,6 +23,7 @@ from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import instruments_from_pyo3
 
@@ -68,19 +69,18 @@ class TardisInstrumentProvider(InstrumentProvider):
         active = filters.get("active")
         start = filters.get("start")
         end = filters.get("end")
-        available_offset = filters.get("available_offset")
         effective = filters.get("effective")
+        available_offset = filters.get("available_offset")
         ts_init = time.time_ns()
+
+        start_ns = maybe_dt_to_unix_nanos(start)
+        end_ns = maybe_dt_to_unix_nanos(end)
+        effective_ns = maybe_dt_to_unix_nanos(effective)
 
         if isinstance(available_offset, pd.Timedelta):
             available_offset_ns = available_offset.value
         else:
             available_offset_ns = available_offset
-
-        if isinstance(effective, pd.Timestamp):
-            effective_ns = effective.value
-        else:
-            effective_ns = effective
 
         for venue in venues:
             venue = venue.upper().replace("-", "_")
@@ -93,8 +93,8 @@ class TardisInstrumentProvider(InstrumentProvider):
                     instrument_type=list(instrument_type) if instrument_type else None,
                     contract_type=list(contract_type) if contract_type else None,
                     active=active,
-                    start=start,
-                    end=end,
+                    start=start_ns,
+                    end=end_ns,
                     available_offset=available_offset_ns,
                     effective=effective_ns,
                     ts_init=ts_init,
@@ -132,19 +132,18 @@ class TardisInstrumentProvider(InstrumentProvider):
         active = filters.get("active")
         start = filters.get("start")
         end = filters.get("end")
-        available_offset = filters.get("available_offset")
         effective = filters.get("effective")
+        available_offset = filters.get("available_offset")
         ts_init = time.time_ns()
+
+        start_ns = maybe_dt_to_unix_nanos(start)
+        end_ns = maybe_dt_to_unix_nanos(end)
+        effective_ns = maybe_dt_to_unix_nanos(effective)
 
         if isinstance(available_offset, pd.Timedelta):
             available_offset_ns = available_offset.value
         else:
             available_offset_ns = available_offset
-
-        if isinstance(effective, pd.Timestamp):
-            effective_ns = effective.value
-        else:
-            effective_ns = effective
 
         for exchange, symbols in venue_instruments.items():
             self._log.info(f"Requesting instruments for {exchange=}")
@@ -155,8 +154,8 @@ class TardisInstrumentProvider(InstrumentProvider):
                 instrument_type=list(instrument_type) if instrument_type else None,
                 contract_type=list(contract_type) if contract_type else None,
                 active=active,
-                start=start,
-                end=end,
+                start=start_ns,
+                end=end_ns,
                 available_offset=available_offset_ns,
                 effective=effective_ns,
                 ts_init=ts_init,
