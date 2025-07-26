@@ -20,6 +20,7 @@ from ibapi.contract import ContractDetails
 
 # fmt: off
 from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
+from nautilus_trader.adapters.interactive_brokers.common import ComboLeg
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.common import IBContractDetails
 from nautilus_trader.adapters.interactive_brokers.common import dict_to_contract_details
@@ -27,6 +28,8 @@ from nautilus_trader.adapters.interactive_brokers.config import InteractiveBroke
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import VENUE_MEMBERS
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import instrument_id_to_ib_contract
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_instrument
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_spread_instrument_id
+from nautilus_trader.common.component import Clock
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import resolve_path
 from nautilus_trader.model.identifiers import InstrumentId
@@ -44,6 +47,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
     def __init__(
         self,
         client: InteractiveBrokersClient,
+        clock: Clock,
         config: InteractiveBrokersInstrumentProviderConfig,
     ) -> None:
         """
@@ -53,6 +57,8 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         ----------
         client : InteractiveBrokersClient
             The Interactive Brokers client.
+        clock : Clock
+            The clock for the provider.
         config : InteractiveBrokersInstrumentProviderConfig
             The instrument provider config
 
@@ -73,6 +79,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         # TODO: If cache_validity_days > 0 and Catalog is provided
 
         self._client = client
+        self._clock = clock
         self.config = config
         self.contract_details: dict[InstrumentId, IBContractDetails] = {}
         self.contract_id_to_instrument_id: dict[int, InstrumentId] = {}
@@ -89,16 +96,88 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             self._loading = False
             self._loaded = True
 
-    async def get_instrument(self, contract_id: int) -> Instrument:
+    async def get_instrument(self, contract: IBContract) -> Instrument:
+        contract_id = contract.conId
         instrument_id = self.contract_id_to_instrument_id.get(contract_id)
 
-        if not instrument_id:
-            await self.load_async(IBContract(conId=contract_id))
-            instrument_id = self.contract_id_to_instrument_id.get(contract_id)
+        # Check if we already have this instrument
+        if instrument_id:
+            instrument = self.find(instrument_id)
+
+            if instrument is not None:
+                return instrument
+
+        # Special handling for BAG contracts
+        if contract.secType == "BAG":
+            return await self._load_bag_contract(contract)
+
+        # For non-BAG contracts, use regular loading
+        await self.load_with_return_async(contract)
+        instrument_id = self.contract_id_to_instrument_id.get(contract_id)
+
+        if instrument_id is None:
+            self._log.error(f"Failed to load instrument for contract {contract}")
+            raise ValueError(f"Instrument not found for contract {contract}")
 
         instrument = self.find(instrument_id)
 
+        # If instrument is still None, it means loading failed
+        if instrument is None:
+            self._log.error(f"Failed to load instrument for contract {contract}")
+            raise ValueError(f"Instrument not found for contract {contract}")
+
         return instrument
+
+    async def _load_bag_contract(self, bag_contract: IBContract) -> Instrument:
+        """
+        Load a BAG contract instrument from order information.
+        """
+        if bag_contract.secType != "BAG" or not bag_contract.comboLegs:
+            raise ValueError(f"Invalid BAG contract: {bag_contract}")
+
+        try:
+            self._log.info(f"Loading BAG contract: {bag_contract}")
+
+            # First, load all individual leg instruments and collect their details
+            leg_contract_details = []
+            leg_tuples = []
+
+            for combo_leg in bag_contract.comboLegs:
+                # Create a more complete leg contract using information from the combo leg
+                leg_contract = IBContract(
+                    conId=combo_leg.conId,
+                    exchange=combo_leg.exchange,
+                    # Use the underlying symbol and currency from the BAG contract
+                    symbol=bag_contract.symbol,
+                    currency=bag_contract.currency,
+                )
+                leg_instrument = await self.get_instrument(leg_contract)
+                leg_instrument_id = leg_instrument.id
+
+                # Get the contract details for this leg
+                if leg_instrument_id not in self.contract_details:
+                    raise ValueError(f"Contract details not found for leg {leg_instrument_id}")
+
+                leg_details = self.contract_details[leg_instrument_id]
+
+                # Determine ratio (positive for BUY, negative for SELL)
+                ratio = combo_leg.ratio if combo_leg.action == "BUY" else -combo_leg.ratio
+                leg_contract_details.append((leg_details, ratio))
+                leg_tuples.append((leg_instrument_id, ratio))
+
+            # Create instrument ID directly from the loaded leg instrument IDs
+            instrument_id = InstrumentId.new_spread(leg_tuples)
+
+            # Use the common spread creation logic
+            return self._create_spread_instrument(
+                instrument_id,
+                leg_contract_details,
+                bag_contract,
+            )
+
+        except Exception as e:
+            self._log.error(f"Failed to load BAG contract: {e}")
+            raise ValueError(f"Failed to load BAG contract: {e}") from e
 
     async def instrument_id_to_ib_contract(
         self,
@@ -112,6 +191,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
                 instrument_id,
                 possible_exchanges[0],
                 self.config.symbology_method,
+                self.contract_details,
             )
         elif await self.fetch_instrument_id(instrument_id):
             return self.contract[instrument_id]
@@ -128,20 +208,6 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         return None
 
     def get_price_magnifier(self, instrument_id: InstrumentId) -> int:
-        """
-        Get the price magnifier for an instrument from its contract details.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument identifier.
-
-        Returns
-        -------
-        int
-            The price magnifier, defaults to 1 if not found.
-
-        """
         contract_details = self.contract_details.get(instrument_id)
 
         if contract_details:
@@ -160,6 +226,20 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
 
         await self.load_ids_with_return_async(start_instrument_ids + start_ib_contracts)
 
+    async def load_ids_async(
+        self,
+        instrument_ids: list[InstrumentId],
+        filters: dict | None = None,
+    ) -> None:
+        """
+        Load instruments for the given IDs (base class interface).
+        """
+        await self.load_ids_with_return_async(
+            instrument_ids,
+            filters,
+            force_instrument_update=False,
+        )
+
     async def load_ids_with_return_async(
         self,
         instrument_ids: list[InstrumentId],
@@ -169,9 +249,6 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         """
         Load instruments for the given IDs and return the instrument IDs of successfully
         loaded instruments.
-
-        This is the original implementation.
-
         """
         loaded_instrument_ids = []
 
@@ -187,20 +264,16 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
 
         return loaded_instrument_ids
 
-    async def load_ids_async(
+    async def load_async(
         self,
-        instrument_ids: list[InstrumentId],
+        instrument_id: InstrumentId,
         filters: dict | None = None,
     ) -> None:
         """
-        Load instruments for the given IDs (base class interface).
+        Load the instrument for the given instrument ID (base class interface).
         """
         # Call the auxiliary function that maintains your working logic
-        await self.load_ids_with_return_async(
-            instrument_ids,
-            filters,
-            force_instrument_update=False,
-        )
+        await self.load_with_return_async(instrument_id, filters, force_instrument_update=False)
 
     async def load_with_return_async(
         self,
@@ -244,17 +317,6 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             )
             return None
 
-    async def load_async(
-        self,
-        instrument_id: InstrumentId,
-        filters: dict | None = None,
-    ) -> None:
-        """
-        Load the instrument for the given instrument ID (base class interface).
-        """
-        # Call the auxiliary function that maintains your working logic
-        await self.load_with_return_async(instrument_id, filters, force_instrument_update=False)
-
     async def fetch_instrument_id(
         self,
         instrument_id: InstrumentId,
@@ -262,6 +324,10 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
     ) -> bool:
         if instrument_id in self.contract:
             return True
+
+        # Handle spread instruments specially
+        if instrument_id.is_spread():
+            return await self._fetch_spread_instrument(instrument_id, force_instrument_update)
 
         venue = instrument_id.venue.value
 
@@ -284,6 +350,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
                     instrument_id=instrument_id,
                     exchange=exchange,
                     symbology_method=self.config.symbology_method,
+                    contract_details_map=self.contract_details,
                 )
 
                 self._log.info(f"Attempting to find instrument for {contract=}")
@@ -301,6 +368,115 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             self._log.error(str(e))
 
         return False
+
+    async def _fetch_spread_instrument(
+        self,
+        spread_instrument_id: InstrumentId,
+        force_instrument_update: bool = False,
+    ) -> bool:
+        """
+        Fetch a spread instrument by first loading its individual legs and then creating
+        a BAG contract.
+        """
+        try:
+            # Parse the spread ID to get individual legs
+            leg_tuples = spread_instrument_id.to_list()
+
+            if not leg_tuples:
+                self._log.error(f"Spread instrument {spread_instrument_id} has no legs")
+                return False
+
+            self._log.info(
+                f"Loading spread instrument {spread_instrument_id} with {len(leg_tuples)} legs",
+            )
+
+            # First, load all individual leg instruments to get their contract details
+            leg_contract_details = []
+
+            for leg_instrument_id, ratio in leg_tuples:
+                self._log.info(f"Loading leg instrument: {leg_instrument_id} (ratio: {ratio})")
+
+                # Load the individual leg instrument
+                leg_loaded = await self.fetch_instrument_id(
+                    leg_instrument_id,
+                    force_instrument_update,
+                )
+
+                if not leg_loaded:
+                    self._log.error(f"Failed to load leg instrument: {leg_instrument_id}")
+                    return False
+
+                # Get the contract details for this leg
+                if leg_instrument_id not in self.contract_details:
+                    self._log.error(
+                        f"Leg instrument {leg_instrument_id} not found in contract details",
+                    )
+                    return False
+
+                leg_details = self.contract_details[leg_instrument_id]
+                leg_contract_details.append((leg_details, ratio))
+
+            # Use the common spread creation logic
+            self._create_spread_instrument(spread_instrument_id, leg_contract_details)
+            return True
+        except Exception as e:
+            self._log.error(f"Failed to fetch spread instrument {spread_instrument_id}: {e}")
+            return False
+
+    def _create_spread_instrument(
+        self,
+        instrument_id: InstrumentId,
+        leg_contract_details: list[tuple[IBContractDetails, int]],
+        bag_contract: IBContract | None = None,
+    ) -> Instrument:
+        # Create the spread instrument
+        spread_instrument = parse_spread_instrument_id(
+            instrument_id,
+            leg_contract_details,
+            self._clock.timestamp_ns(),
+        )
+
+        # Add to provider
+        self.add(spread_instrument)
+
+        # Add to client cache as well
+        if not self._client._cache.instrument(spread_instrument.id):
+            self._client._cache.add_instrument(spread_instrument)
+
+        # Create or use the provided BAG contract
+        if bag_contract is None:
+            # Create BAG contract from leg details
+            combo_legs = []
+            for leg_details, ratio in leg_contract_details:
+                action = "BUY" if ratio > 0 else "SELL"
+                abs_ratio = abs(ratio)
+                combo_leg = ComboLeg(
+                    conId=leg_details.contract.conId,
+                    ratio=abs_ratio,
+                    action=action,
+                    exchange=leg_details.contract.exchange,
+                )
+                combo_legs.append(combo_leg)
+
+            # Use the underlying symbol from the first leg
+            first_contract = leg_contract_details[0][0].contract
+            underlying_symbol = getattr(first_contract, "symbol", "ES")
+
+            bag_contract = IBContract(
+                secType="BAG",
+                symbol=underlying_symbol,
+                exchange="SMART",
+                currency=first_contract.currency,
+                comboLegs=combo_legs,
+                comboLegsDescrip=f"Spread: {instrument_id.symbol.value}",
+            )
+
+        # Store the contract mapping
+        self.contract[instrument_id] = bag_contract
+        self.contract_id_to_instrument_id[bag_contract.conId] = instrument_id
+
+        self._log.info(f"Successfully created spread instrument: {spread_instrument}")
+        return spread_instrument
 
     async def get_contract_details(
         self,
@@ -324,10 +500,10 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             self._log.debug(f"No contract details found for the given kwargs {contract}, {e}")
             return []
 
-        utc_now = pd.Timestamp.utcnow()
         min_expiry_days = contract.min_expiry_days or self._min_expiry_days or 0
         max_expiry_days = contract.max_expiry_days or self._max_expiry_days or 90
 
+        utc_now = self._clock.utc_now()
         min_expiry = utc_now + pd.Timedelta(days=min_expiry_days)
         max_expiry = utc_now + pd.Timedelta(days=max_expiry_days)
 

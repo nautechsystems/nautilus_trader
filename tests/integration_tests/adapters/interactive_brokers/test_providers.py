@@ -167,7 +167,7 @@ async def test_load_instrument_using_contract_id(mocker, instrument_provider):
     )
 
     # Act
-    fx = await instrument_provider.get_instrument(12087792)
+    fx = await instrument_provider.get_instrument(IBContract(conId=12087792))
     instrument_provider._client.stop()
 
     # Assert
@@ -225,3 +225,55 @@ async def test_instrument_filter_callable_option_filter(mocker, instrument_provi
 
     # Assert
     assert len(option_instruments) == 0
+
+
+@pytest.mark.asyncio()
+async def test_bag_contract_loading_invalid_no_combo_legs(instrument_provider):
+    """
+    Test that loading BAG contract without combo legs raises error.
+    """
+    # Arrange
+    bag_contract = IBContract(
+        conId=12345,
+        secType="BAG",
+        symbol="ES",
+        exchange="SMART",
+        currency="USD",
+    )
+
+    # Act & Assert
+    with pytest.raises(ValueError, match="Invalid BAG contract"):
+        await instrument_provider._load_bag_contract(bag_contract)
+
+
+@pytest.mark.asyncio()
+async def test_bag_contract_venue_determination(instrument_provider):
+    """
+    Test venue determination for BAG contracts.
+    """
+    # Test with SMART exchange (should use primaryExchange)
+    bag_contract_smart = IBContract(
+        conId=12345,
+        secType="BAG",
+        symbol="ES",
+        exchange="SMART",
+        primaryExchange="CME",
+        currency="USD",
+    )
+
+    # Test with direct exchange
+    bag_contract_direct = IBContract(
+        conId=12346,
+        secType="BAG",
+        symbol="SPY",
+        exchange="ARCA",
+        currency="USD",
+    )
+
+    # Act
+    venue_smart = instrument_provider.determine_venue_from_contract(bag_contract_smart)
+    venue_direct = instrument_provider.determine_venue_from_contract(bag_contract_direct)
+
+    # Assert
+    assert venue_smart == "CME"  # Should use primaryExchange when exchange is SMART
+    assert venue_direct == "ARCA"  # Should use exchange directly

@@ -92,6 +92,7 @@ from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
+from nautilus_trader.model.position cimport Position
 from nautilus_trader.trading.strategy cimport Strategy
 
 
@@ -1113,6 +1114,16 @@ cdef class ExecutionEngine(Component):
             # Search cache for ClientOrderId matching the VenueOrderId
             client_order_id = self._cache.client_order_id(event.venue_order_id)
             if client_order_id is None:
+                # Check if this is a leg fill (individual instrument from spread order)
+                if isinstance(event, OrderFilled) and self._is_leg_fill(event):
+                    self._log.info(
+                        f"Processing leg fill without corresponding order: {event.client_order_id!r} "
+                        f"for instrument {event.instrument_id}"
+                    )
+                    # Handle leg fill directly without order
+                    self._handle_leg_fill_without_order(event)
+                    return
+
                 self._log.error(
                     f"Cannot apply event to any order: "
                     f"{event.client_order_id!r} and {event.venue_order_id!r} "
@@ -1123,6 +1134,16 @@ cdef class ExecutionEngine(Component):
             # Search cache for Order matching the found ClientOrderId
             order = self._cache.order(client_order_id)
             if order is None:
+                # Check if this is a leg fill (individual instrument from spread order)
+                if isinstance(event, OrderFilled) and self._is_leg_fill(event):
+                    self._log.info(
+                        f"Processing leg fill without corresponding order: {event.client_order_id!r} "
+                        f"for instrument {event.instrument_id}"
+                    )
+                    # Handle leg fill directly without order
+                    self._handle_leg_fill_without_order(event)
+                    return
+
                 self._log.error(
                     f"Cannot apply event to any order: "
                     f"{event.client_order_id!r} and {event.venue_order_id!r} "
@@ -1164,6 +1185,69 @@ cdef class ExecutionEngine(Component):
                 topic=f"events.position.{pos_event.strategy_id}",
                 msg=pos_event,
             )
+
+    cdef bint _is_leg_fill(self, OrderFilled fill):
+        """
+        Check if an OrderFilled event is a leg fill from a spread order.
+        """
+        cdef str client_order_id_str = fill.client_order_id.value
+        cdef str venue_order_id_str = fill.venue_order_id.value if fill.venue_order_id else ""
+
+        return (
+            "-LEG-" in client_order_id_str or
+            "-LEG-" in venue_order_id_str
+        ) and not fill.instrument_id.is_spread()
+
+    cpdef void _handle_leg_fill_without_order(self, OrderFilled fill):
+        """
+        Handle leg fills that don't have corresponding orders in the cache.
+
+        This occurs when a spread order is executed and generates individual leg fills.
+        The leg fills need to create positions for portfolio tracking, even though
+        there's no direct order for the individual leg instruments.
+        """
+        cdef Instrument instrument = self._cache.load_instrument(fill.instrument_id)
+        if instrument is None:
+            self._log.error(
+                f"Cannot handle leg fill: "
+                f"no instrument found for {fill.instrument_id}, {fill}"
+            )
+            return
+
+        cdef Account account = self._cache.account(fill.account_id)
+        if account is None:
+            self._log.error(
+                f"Cannot handle leg fill: "
+                f"no account found for {fill.instrument_id.venue}, {fill}"
+            )
+            return
+
+        # Determine OMS type for leg fill
+        cdef OmsType oms_type = self._determine_oms_type(fill)
+
+        # Determine position ID for leg fill without requiring an order in cache
+        cdef PositionId position_id
+
+        if oms_type == OmsType.HEDGING:
+            position_id = self._determine_hedging_position_id(fill)
+        elif oms_type == OmsType.NETTING:
+            # Assign netted position ID
+            position_id = self._determine_netting_position_id(fill)
+        else:
+            raise ValueError(  # pragma: no cover (design-time error)
+                f"invalid `OmsType`, was {oms_type}",  # pragma: no cover (design-time error)
+            )
+
+        fill.position_id = position_id
+
+        # Handle position update
+        self._handle_position_update(instrument, fill, oms_type)
+
+        # Publish the fill event for portfolio updates
+        self._msgbus.publish_c(
+            topic=f"events.order.{fill.strategy_id}",
+            msg=fill,
+        )
 
     cpdef OmsType _determine_oms_type(self, OrderFilled fill):
         cdef ExecutionClient client
@@ -1310,28 +1394,47 @@ cdef class ExecutionEngine(Component):
             )
             return
 
+        # Skip portfolio position updates for combo fills (spread instruments)
+        # Combo fills are only used for order management, not portfolio updates
+        cdef:
+            Position position = None
+            ClientOrderId client_order_id
+            Order contingent_order
+
+        if not fill.instrument_id.is_spread():
+            self._handle_position_update(instrument, fill, oms_type)
+            position = self._cache.position(fill.position_id)
+
+        # Handle contingent orders for both spread and non-spread instruments
+        # For spread instruments, contingent orders work without position linkage
+        if order.contingency_type == ContingencyType.OTO:
+            # For non-spread instruments, link to position if available
+            if not fill.instrument_id.is_spread() and position is not None and position.is_open_c():
+                for client_order_id in order.linked_order_ids or []:
+                    contingent_order = self._cache.order(client_order_id)
+                    if contingent_order is not None and contingent_order.position_id is None:
+                        contingent_order.position_id = position.id
+                        self._cache.add_position_id(
+                            position.id,
+                            contingent_order.instrument_id.venue,
+                            contingent_order.client_order_id,
+                            contingent_order.strategy_id,
+                        )
+            # For spread instruments, contingent orders can still be triggered
+            # but without position linkage (since no position is created for spreads)
+
+    cdef void _handle_position_update(self, Instrument instrument, OrderFilled fill, OmsType oms_type):
+        """
+        Handle position creation or update for a fill.
+        """
         cdef Position position = self._cache.position(fill.position_id)
+
         if position is None or position.is_closed_c():
             position = self._open_position(instrument, position, fill, oms_type)
         elif self._will_flip_position(position, fill):
             self._flip_position(instrument, position, fill, oms_type)
         else:
             self._update_position(instrument, position, fill, oms_type)
-
-        cdef:
-            ClientOrderId client_order_id
-            Order contingent_order
-        if order.contingency_type == ContingencyType.OTO and position is not None and position.is_open_c():
-            for client_order_id in order.linked_order_ids or []:
-                contingent_order = self._cache.order(client_order_id)
-                if contingent_order is not None and contingent_order.position_id is None:
-                    contingent_order.position_id = position.id
-                    self._cache.add_position_id(
-                        position.id,
-                        contingent_order.instrument_id.venue,
-                        contingent_order.client_order_id,
-                        contingent_order.strategy_id,
-                    )
 
     cpdef Position _open_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type):
         if position is None:

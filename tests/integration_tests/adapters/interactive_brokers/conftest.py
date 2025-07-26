@@ -126,8 +126,11 @@ def ib_client_running(ib_client):
 
 @pytest.fixture()
 def instrument_provider(ib_client):
+    from nautilus_trader.common.component import LiveClock
+
     return InteractiveBrokersInstrumentProvider(
         client=ib_client,
+        clock=LiveClock(),
         config=InteractiveBrokersInstrumentProviderConfig(),
     )
 

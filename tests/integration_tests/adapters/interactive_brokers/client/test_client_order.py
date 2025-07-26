@@ -213,7 +213,15 @@ async def test_orderStatus(ib_client):
 async def test_execDetails(ib_client):
     # Arrange
     req_id = 1
-    contract = Mock()
+    # Create a proper contract object instead of Mock
+    from ibapi.contract import Contract
+
+    contract = Contract()
+    contract.symbol = "AAPL"
+    contract.secType = "STK"
+    contract.exchange = "SMART"
+    contract.currency = "USD"
+
     execution = IBTestExecStubs.execution(
         order_id=1,
         account_id="DU123456",
@@ -241,10 +249,15 @@ async def test_execDetails(ib_client):
     )
 
     # Assert
+    # The contract should be converted to IBContract
+    from nautilus_trader.adapters.interactive_brokers.parsing.instruments import IBContract
+
+    expected_contract = IBContract(**contract.__dict__)
     handler_func.assert_called_with(
         order_ref="O-20220104-1432-001-000-1",
         execution=execution,
         commission_report=commission_report_mock,
+        contract=expected_contract,
     )
 
 
@@ -257,11 +270,22 @@ async def test_commissionReport(ib_client):
     )
     commission_report = IBTestExecStubs.commission()
 
+    # Create a contract for the test
+    from nautilus_trader.adapters.interactive_brokers.parsing.instruments import IBContract
+
+    contract = IBContract(
+        symbol="AAPL",
+        secType="STK",
+        exchange="SMART",
+        currency="USD",
+    )
+
     ib_client._exec_id_details = {
         commission_report.execId: {
             "execution": execution,
             "order_ref": execution.orderRef.rsplit(":", 1)[0],
             "commission_report": commission_report,
+            "contract": contract,
         },
     }
 
@@ -277,4 +301,5 @@ async def test_commissionReport(ib_client):
         order_ref="O-20220104-1432-001-000-1",
         execution=execution,
         commission_report=commission_report,
+        contract=contract,
     )

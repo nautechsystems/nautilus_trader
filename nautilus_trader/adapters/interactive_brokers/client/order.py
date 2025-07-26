@@ -265,6 +265,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
             cache = self._exec_id_details[execution.execId]
 
         cache["execution"] = execution
+        cache["contract"] = IBContract(**contract.__dict__)
         cache["order_ref"] = execution.orderRef.rsplit(":", 1)[0]
         name = f"execDetails-{execution.acctNumber}"
 
@@ -275,6 +276,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
                 order_ref=cache["order_ref"],
                 execution=cache["execution"],
                 commission_report=cache["commission_report"],
+                contract=cache["contract"],
             )
             cache.pop(execution.execId, None)
 
@@ -300,5 +302,6 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
                     order_ref=cache["order_ref"],
                     execution=cache["execution"],
                     commission_report=cache["commission_report"],
+                    contract=cache.get("contract"),
                 )
                 cache.pop(commission_report.execId, None)

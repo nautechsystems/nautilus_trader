@@ -144,6 +144,7 @@ class InteractiveBrokersClient(
         self._bar_timeout_tasks: dict[str, asyncio.Task] = (
             {}
         )  # Track timeout tasks for each bar type
+        self._subscription_tick_data: dict[int, dict] = {}  # Store tick data by req_id
 
         # OrderMixin
         self._exec_id_details: dict[
