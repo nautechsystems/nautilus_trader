@@ -18,8 +18,10 @@ Released on TBD (UTC).
 - Added `greeks_filter` function to `portfolio_greeks` (#2756), thanks @faysou
 - Added `VERBOSE` option to common make targets (#2759), thanks @faysou
 - Added bulk key loading capability for Redis cache database adapter
+- Added `multiplier` field for `CurrencyPair` instrument (required for some crypto pairs)
 
 ### Breaking Changes
+- Added `multiplier` field for `CurrencyPair` Arrow schema
 - Changed `start` parameter to required for `Actor` data request methods
 - Reverted implementation of `delete_account_event` from cache database that was too inefficient and is now a no-op pending redesign
 

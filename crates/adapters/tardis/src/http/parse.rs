@@ -76,6 +76,7 @@ fn parse_spot_instrument(
     let mut price_increment = parse_price_increment(info.price_increment);
     let base_currency = get_currency(info.base_currency.to_uppercase().as_str());
     let mut size_increment = parse_spot_size_increment(info.amount_increment, base_currency);
+    let mut multiplier = parse_multiplier(info.contract_multiplier);
     let mut maker_fee = parse_fee_rate(info.maker_fee);
     let mut taker_fee = parse_fee_rate(info.taker_fee);
     let mut ts_event = info
@@ -91,6 +92,7 @@ fn parse_spot_instrument(
         raw_symbol,
         price_increment,
         size_increment,
+        multiplier,
         margin_init,
         margin_maint,
         maker_fee,
@@ -128,6 +130,10 @@ fn parse_spot_instrument(
                 size_increment = change.amount_increment.map_or(size_increment, |value| {
                     parse_spot_size_increment(value, base_currency)
                 });
+                multiplier = match change.contract_multiplier {
+                    Some(value) => Some(Quantity::from(value.to_string())),
+                    None => multiplier,
+                };
                 maker_fee = change.maker_fee.map_or(maker_fee, parse_fee_rate);
                 taker_fee = change.taker_fee.map_or(taker_fee, parse_fee_rate);
             }
@@ -139,6 +145,7 @@ fn parse_spot_instrument(
                 raw_symbol,
                 price_increment,
                 size_increment,
+                multiplier,
                 margin_init,
                 margin_maint,
                 maker_fee,
@@ -162,6 +169,10 @@ fn parse_spot_instrument(
                 size_increment = change.amount_increment.map_or(size_increment, |value| {
                     parse_spot_size_increment(value, base_currency)
                 });
+                multiplier = match change.contract_multiplier {
+                    Some(value) => Some(Quantity::from(value.to_string())),
+                    None => multiplier,
+                };
                 maker_fee = change.maker_fee.map_or(maker_fee, parse_fee_rate);
                 taker_fee = change.taker_fee.map_or(taker_fee, parse_fee_rate);
 
@@ -178,6 +189,7 @@ fn parse_spot_instrument(
                     raw_symbol,
                     price_increment,
                     size_increment,
+                    multiplier,
                     margin_init,
                     margin_maint,
                     maker_fee,

@@ -765,6 +765,7 @@ impl InstrumentParser for SpotInstrumentParser {
             common.size_increment.precision,
             common.price_increment,
             common.size_increment,
+            None,
             common.lot_size,
             common.max_quantity,
             common.min_quantity,

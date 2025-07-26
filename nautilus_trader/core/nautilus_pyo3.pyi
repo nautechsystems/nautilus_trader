@@ -2585,6 +2585,7 @@ class CurrencyPair:
         size_increment: Quantity,
         ts_event: int,
         ts_init: int,
+        multiplier: Quantity | None = None,
         lot_size: Quantity | None = None,
         max_quantity: Quantity | None = None,
         min_quantity: Quantity | None = None,

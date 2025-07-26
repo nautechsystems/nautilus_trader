@@ -161,6 +161,7 @@ impl From<Pool> for CurrencyPair {
             None,
             None,
             None,
+            None,
             0.into(),
             0.into(),
         )
