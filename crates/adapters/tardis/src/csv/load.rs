@@ -681,14 +681,14 @@ pub fn load_trades<P: AsRef<Path>>(
             );
 
             trades.push(trade);
+
+            if let Some(limit) = limit
+                && trades.len() >= limit
+            {
+                break;
+            }
         } else {
             log::warn!("Skipping zero-sized trade: {data:?}");
-        }
-
-        if let Some(limit) = limit
-            && trades.len() >= limit
-        {
-            break;
         }
     }
 
@@ -962,5 +962,42 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
         );
         assert_eq!(trades[0].ts_event, 1583020803145000000);
         assert_eq!(trades[0].ts_init, 1583020803307160000);
+    }
+
+    #[rstest]
+    pub fn test_load_trades_with_zero_sized_trade() {
+        // Create test CSV data with one zero-sized trade that should be skipped
+        let csv_data = "exchange,symbol,timestamp,local_timestamp,id,side,price,amount
+binance,BTCUSDT,1640995200000000,1640995200100000,trade1,buy,50000.0,1.0
+binance,BTCUSDT,1640995201000000,1640995201100000,trade2,sell,49999.5,0.0
+binance,BTCUSDT,1640995202000000,1640995202100000,trade3,buy,50000.12,1.5
+binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
+
+        let temp_file = std::env::temp_dir().join("test_load_trades_zero_size.csv");
+        std::fs::write(&temp_file, csv_data).unwrap();
+
+        let trades = load_trades(
+            &temp_file,
+            Some(4),
+            Some(1),
+            None,
+            None, // No limit, load all
+        )
+        .unwrap();
+
+        // Should have 3 trades (zero-sized trade skipped)
+        assert_eq!(trades.len(), 3);
+
+        // Verify the correct trades were loaded (not the zero-sized one)
+        assert_eq!(trades[0].size, Quantity::from("1.0"));
+        assert_eq!(trades[1].size, Quantity::from("1.5"));
+        assert_eq!(trades[2].size, Quantity::from("3.0"));
+
+        // Verify trade IDs to confirm correct trades were loaded
+        assert_eq!(trades[0].trade_id, TradeId::new("trade1"));
+        assert_eq!(trades[1].trade_id, TradeId::new("trade3"));
+        assert_eq!(trades[2].trade_id, TradeId::new("trade4"));
+
+        std::fs::remove_file(&temp_file).ok();
     }
 }

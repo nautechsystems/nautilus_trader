@@ -698,11 +698,10 @@ impl Iterator for TradeStreamIterator {
                             );
 
                             self.buffer.push(trade);
+                            records_read += 1;
                         } else {
                             log::warn!("Skipping zero-sized trade: {data:?}");
                         }
-
-                        records_read += 1;
                     }
                     Err(e) => {
                         return Some(Err(anyhow::anyhow!("Failed to deserialize record: {e}")));
@@ -1151,6 +1150,8 @@ pub fn stream_depth10_from_snapshot25<P: AsRef<Path>>(
 #[cfg(test)]
 mod tests {
     use nautilus_model::enums::AggressorSide;
+    use nautilus_model::identifiers::TradeId;
+    use nautilus_model::types::Quantity;
     use rstest::*;
 
     use super::*;
@@ -1276,6 +1277,40 @@ binance,BTCUSDT,1640995204000000,1640995204100000,trade5,buy,50000.1234,0.5";
 
         let total_trades: usize = chunks.iter().map(|c| c.as_ref().unwrap().len()).sum();
         assert_eq!(total_trades, 5);
+
+        std::fs::remove_file(&temp_file).ok();
+    }
+
+    #[rstest]
+    pub fn test_stream_trades_with_zero_sized_trade() {
+        // Test CSV data with one zero-sized trade that should be skipped
+        let csv_data = "exchange,symbol,timestamp,local_timestamp,id,side,price,amount
+binance,BTCUSDT,1640995200000000,1640995200100000,trade1,buy,50000.0,1.0
+binance,BTCUSDT,1640995201000000,1640995201100000,trade2,sell,49999.5,0.0
+binance,BTCUSDT,1640995202000000,1640995202100000,trade3,buy,50000.12,1.5
+binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
+
+        let temp_file = std::env::temp_dir().join("test_stream_trades_zero_size.csv");
+        std::fs::write(&temp_file, csv_data).unwrap();
+
+        let stream = stream_trades(&temp_file, 3, Some(4), Some(1), None).unwrap();
+        let chunks: Vec<_> = stream.collect();
+
+        // Should have 1 chunk with 3 valid trades (zero-sized trade skipped)
+        assert_eq!(chunks.len(), 1);
+
+        let chunk1 = chunks[0].as_ref().unwrap();
+        assert_eq!(chunk1.len(), 3);
+
+        // Verify the trades are the correct ones (not the zero-sized one)
+        assert_eq!(chunk1[0].size, Quantity::from("1.0"));
+        assert_eq!(chunk1[1].size, Quantity::from("1.5"));
+        assert_eq!(chunk1[2].size, Quantity::from("3.0"));
+
+        // Verify trade IDs to confirm correct trades were loaded
+        assert_eq!(chunk1[0].trade_id, TradeId::new("trade1"));
+        assert_eq!(chunk1[1].trade_id, TradeId::new("trade3"));
+        assert_eq!(chunk1[2].trade_id, TradeId::new("trade4"));
 
         std::fs::remove_file(&temp_file).ok();
     }
