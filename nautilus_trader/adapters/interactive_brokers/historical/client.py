@@ -63,14 +63,14 @@ class HistoricInteractiveBrokersClient:
     ) -> None:
         loop = asyncio.get_event_loop()
         loop.set_debug(True)
-        clock = LiveClock()
+        self._clock = LiveClock()
 
         self._log_guard = init_logging(level_stdout=log_level_from_str(log_level))
 
         self.log = Logger(name="HistoricInteractiveBrokersClient")
         msgbus = MessageBus(
             TraderId("historic_interactive_brokers_client-001"),
-            clock,
+            self._clock,
         )
         cache = Cache()
         self.market_data_type = market_data_type
@@ -78,7 +78,7 @@ class HistoricInteractiveBrokersClient:
             loop=loop,
             msgbus=msgbus,
             cache=cache,
-            clock=clock,
+            clock=self._clock,
             host=host,
             port=port,
             client_id=client_id,
@@ -122,6 +122,7 @@ class HistoricInteractiveBrokersClient:
 
         instrument_provider = InteractiveBrokersInstrumentProvider(
             self._client,
+            self._clock,
             instrument_provider_config,
         )
         await instrument_provider.load_ids_async((instrument_ids or []) + (contracts or []))
@@ -209,6 +210,7 @@ class HistoricInteractiveBrokersClient:
 
         instrument_provider = InteractiveBrokersInstrumentProvider(
             self._client,
+            self._clock,
             instrument_provider_config,
         )
 
@@ -339,6 +341,7 @@ class HistoricInteractiveBrokersClient:
 
         instrument_provider = InteractiveBrokersInstrumentProvider(
             self._client,
+            self._clock,
             instrument_provider_config,
         )
 
@@ -468,6 +471,7 @@ class HistoricInteractiveBrokersClient:
         # Create instrument provider to use its venue determination logic
         instrument_provider = InteractiveBrokersInstrumentProvider(
             self._client,
+            self._clock,
             instrument_provider_config,
         )
 

@@ -159,6 +159,14 @@ class InteractiveBrokersEWrapper(EWrapper):
 
         """
         self.logAnswer(current_fn_name(), vars())
+        task = partial(
+            self._client.process_tick_price,
+            req_id=reqId,
+            tick_type=tickType,
+            price=price,
+            attrib=attrib,
+        )
+        self._client.submit_to_msg_handler_queue(task)
 
     def tickSize(self, reqId: TickerId, tickType: TickType, size: Decimal) -> None:
         """
@@ -178,6 +186,13 @@ class InteractiveBrokersEWrapper(EWrapper):
 
         """
         self.logAnswer(current_fn_name(), vars())
+        task = partial(
+            self._client.process_tick_size,
+            req_id=reqId,
+            tick_type=tickType,
+            size=size,
+        )
+        self._client.submit_to_msg_handler_queue(task)
 
     def tickSnapshotEnd(self, reqId: int) -> None:
         """

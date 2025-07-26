@@ -470,23 +470,19 @@ The project uses several tools for code quality:
 
 ## Python + Rust mixed Debugging Guide
 
-Debug Python and Rust code called from a Jupyter notebook inside VSCode.
+This approach allows to debug both Python and Rust code simultaneously from a Jupyter notebook inside VS Code.
 
 ### Setup
 
-1. **Install VS Code extensions:** Rust Analyzer, CodeLLDB, Python, Jupyter
+Install VS Code extensions: Rust Analyzer, CodeLLDB, Python, Jupyter
 
-### Jupyter Mixed Debugging
-
-This approach allows you to debug both Python and Rust code simultaneously from Jupyter notebooks inside VSCode.
-
-#### Step 0: Compile nautilus_trader with debug symbols
+### Step 0: Compile nautilus_trader with debug symbols
 
    ```bash
    cd nautilus_trader && make build-debug-pyo3
    ```
 
-#### Step 1: Setup Debugging Configuration
+### Step 1: Setup Debugging Configuration
 
 ```python
 from nautilus_trader.test_kit.debug_helpers import setup_debugging
@@ -498,21 +494,22 @@ This creates the necessary VS Code debugging configurations and
 starts a debugpy server the Python debugger can connect to.
 
 Note: by default the .vscode folder containing the debugging configurations
-is assumed to be one folder above the nautilus_trader_root directory.
+is assumed to be one folder above the `nautilus_trader` root directory.
 You can adjust this if needed.
 
-#### Step 2: Set Breakpoints
+### Step 2: Set Breakpoints
 
 - **Python breakpoints:** Set in VS Code in the Python source files
 - **Rust breakpoints:** Set in VS Code in the Rust source files
 
-#### Step 3: Start Mixed Debugging
+### Step 3: Start Mixed Debugging
 
 1. In VS Code: Select **"Debug Jupyter + Rust (Mixed)"** configuration
 2. Start debugging (F5) or press the right arrow green button
 3. Both Python and Rust debuggers will attach to your Jupyter session
 
-#### Step 4: Execute Code
+### Step 4: Execute Code
+
 Run your Jupyter notebook cells that call rust functions. The debugger will stop at breakpoints in both Python and Rust code.
 
 ### Available Configurations

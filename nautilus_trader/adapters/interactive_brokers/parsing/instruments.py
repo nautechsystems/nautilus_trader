@@ -22,6 +22,7 @@ import pandas as pd
 from ibapi.contract import ContractDetails
 
 # fmt: off
+from nautilus_trader.adapters.interactive_brokers.common import ComboLeg
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.common import IBContractDetails
 from nautilus_trader.adapters.interactive_brokers.config import SymbologyMethod
@@ -41,6 +42,7 @@ from nautilus_trader.model.instruments import FuturesContract
 from nautilus_trader.model.instruments import IndexInstrument
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.instruments import OptionContract
+from nautilus_trader.model.instruments.option_spread import OptionSpread
 from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -259,7 +261,16 @@ def sec_type_to_asset_class(sec_type: str) -> AssetClass:
         "FUT": "INDEX",
     }
 
-    return asset_class_from_str(mapping.get(sec_type, sec_type))
+    # Handle empty or None sec_type
+    if not sec_type:
+        return AssetClass.EQUITY  # Default to EQUITY
+
+    mapped_value = mapping.get(sec_type, sec_type)
+    # If the mapped value is still not a valid AssetClass, default to EQUITY
+    try:
+        return asset_class_from_str(mapped_value)
+    except Exception:
+        return AssetClass.EQUITY
 
 
 def contract_details_to_ib_contract_details(details: ContractDetails) -> IBContractDetails:
@@ -273,12 +284,14 @@ def parse_instrument(
     contract_details: IBContractDetails,
     venue: str,
     symbology_method: SymbologyMethod = SymbologyMethod.IB_SIMPLIFIED,
+    contract_details_map: dict[int, IBContractDetails] | None = None,
 ) -> Instrument:
     security_type = contract_details.contract.secType
     instrument_id = ib_contract_to_instrument_id(
         contract_details.contract,
         venue,
         symbology_method,
+        contract_details_map,
     )
 
     if security_type == "STK":
@@ -297,6 +310,8 @@ def parse_instrument(
         return parse_cfd_contract(details=contract_details, instrument_id=instrument_id)
     elif security_type == "CMDTY":
         return parse_commodity_contract(details=contract_details, instrument_id=instrument_id)
+    elif security_type == "BAG":
+        return parse_option_spread(details=contract_details, instrument_id=instrument_id)
     else:
         raise ValueError(f"Unknown {security_type=}")
 
@@ -399,6 +414,9 @@ def parse_option_contract(
     expiration = expiry_timestring_to_datetime(details.contract.lastTradeDateOrContractMonth)
     activation = expiration - pd.Timedelta(days=90)  # TODO: Make this more accurate
 
+    # For options, the multiplier represents the lot size (e.g., 100 shares per contract)
+    multiplier = Quantity.from_str(details.contract.multiplier)
+
     return OptionContract(
         instrument_id=instrument_id,
         raw_symbol=Symbol(details.contract.localSymbol),
@@ -406,8 +424,8 @@ def parse_option_contract(
         currency=Currency.from_str(details.contract.currency),
         price_precision=price_precision,
         price_increment=Price(details.minTick, price_precision),
-        multiplier=Quantity.from_str(details.contract.multiplier),
-        lot_size=Quantity.from_int(1),
+        multiplier=multiplier,
+        lot_size=multiplier,  # For options, lot size equals multiplier
         underlying=details.underSymbol,
         strike_price=Price(details.contract.strike, price_precision),
         activation_ns=activation.value,
@@ -596,6 +614,148 @@ def parse_commodity_contract(
     )
 
 
+def parse_option_spread(
+    details: IBContractDetails,
+    instrument_id: InstrumentId,
+) -> OptionSpread:
+    """
+    Parse an option spread from BAG contract details.
+
+    Uses only information available from the contract details. For asset class and other
+    properties, uses the same information as would be used for individual option legs.
+
+    """
+    price_precision: int = _tick_size_to_precision(details.minTick)
+    timestamp = time.time_ns()
+
+    # Extract underlying symbol from contract details
+    underlying = details.underSymbol or details.contract.symbol or "UNKNOWN"
+
+    # Determine asset class from underlying security type
+    asset_class = (
+        sec_type_to_asset_class(details.underSecType) if details.underSecType else AssetClass.EQUITY
+    )
+
+    # For options, the multiplier represents the lot size (e.g., 100 shares per contract)
+    multiplier = Quantity.from_str(details.contract.multiplier or "100")
+
+    return OptionSpread(
+        instrument_id=instrument_id,
+        raw_symbol=Symbol(details.contract.localSymbol or details.contract.symbol),
+        asset_class=asset_class,
+        currency=Currency.from_str(details.contract.currency),
+        price_precision=price_precision,
+        price_increment=Price(details.minTick, price_precision),
+        multiplier=multiplier,
+        lot_size=multiplier,  # For options, lot size equals multiplier
+        underlying=underlying,
+        strategy_type="SPREAD",
+        activation_ns=0,  # BAG contracts don't have single expiration dates
+        expiration_ns=0,  # BAG contracts don't have single expiration dates
+        ts_event=timestamp,
+        ts_init=timestamp,
+        info=contract_details_to_dict(details),
+    )
+
+
+def parse_spread_instrument_id(
+    instrument_id: InstrumentId,
+    leg_contract_details: list[tuple[IBContractDetails, int]],
+    clock_timestamp_ns: int | None = None,
+) -> OptionSpread:
+    """
+    Parse a spread instrument ID into an OptionSpread instrument.
+
+    Uses contract details from the first leg to determine spread properties.
+    This ensures consistency with how individual option contracts are handled.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The spread instrument ID to parse.
+    leg_contract_details : list[tuple[IBContractDetails, int]]
+        List of (contract_details, ratio) tuples for the spread legs.
+        Contract details will be used for instrument properties.
+    clock_timestamp_ns : int | None, optional
+        Clock timestamp in nanoseconds. If not provided, current time is used.
+
+    Returns
+    -------
+    OptionSpread
+        The parsed option spread instrument.
+
+    Raises
+    ------
+    ValueError
+        If the instrument ID cannot be parsed as a spread or no leg contract details provided.
+
+    """
+    try:
+        if not leg_contract_details:
+            raise ValueError("leg_contract_details must be provided")
+
+        # Use contract details from first leg
+        first_details, _ = leg_contract_details[0]
+        first_contract = first_details.contract
+
+        # Extract all properties from the first leg contract details
+        currency = Currency.from_str(first_contract.currency)
+        underlying = first_details.underSymbol or first_contract.symbol
+
+        # Use contract multiplier
+        multiplier = Quantity.from_str(str(first_contract.multiplier))
+
+        # Determine asset class based on security type
+        if first_contract.secType == "FOP":
+            asset_class = AssetClass.INDEX  # Futures options
+        else:  # OPT
+            asset_class = AssetClass.EQUITY  # Equity options
+
+        # Read price increment from contract details
+        price_increment = Price(
+            first_details.minTick,
+            _tick_size_to_precision(first_details.minTick),
+        )
+        price_precision = _tick_size_to_precision(first_details.minTick)
+
+        # Use provided timestamp or current time
+        timestamp = clock_timestamp_ns if clock_timestamp_ns is not None else time.time_ns()
+
+        # For options spreads, lot size equals multiplier (same as individual option contracts)
+        lot_size = multiplier
+
+        # Create info dict with contract details for the first leg
+        # This is needed for the data client to create subscription contracts
+        info = {
+            "contract": {
+                "secType": first_contract.secType,
+                "symbol": first_contract.symbol,
+                "currency": first_contract.currency,
+                "multiplier": first_contract.multiplier,
+            },
+        }
+
+        return OptionSpread(
+            instrument_id=instrument_id,
+            raw_symbol=Symbol(instrument_id.symbol.value),
+            asset_class=asset_class,
+            currency=currency,
+            price_precision=price_precision,
+            price_increment=price_increment,
+            multiplier=multiplier,
+            lot_size=lot_size,
+            underlying=underlying,
+            strategy_type="SPREAD",
+            activation_ns=0,  # Spreads don't have single activation dates
+            expiration_ns=0,  # Spreads don't have single expiration dates
+            ts_event=timestamp,
+            ts_init=timestamp,
+            info=info,
+        )
+    except Exception as e:
+        raise ValueError(f"Failed to parse spread instrument ID {instrument_id}: {e}") from e
+
+
 def contract_details_to_dict(details: IBContractDetails) -> dict:
     dict_details = details.dict().copy()
     dict_details["contract"] = details.contract.dict().copy()
@@ -627,11 +787,16 @@ def ib_contract_to_instrument_id(
     contract: IBContract,
     venue: str,
     symbology_method: SymbologyMethod = SymbologyMethod.IB_SIMPLIFIED,
+    contract_details_map: dict[int, IBContractDetails] | None = None,
 ) -> InstrumentId:
     PyCondition.type(contract, IBContract, "IBContract")
 
     if symbology_method == SymbologyMethod.IB_SIMPLIFIED:
-        return ib_contract_to_instrument_id_simplified_symbology(contract, venue)
+        return ib_contract_to_instrument_id_simplified_symbology(
+            contract,
+            venue,
+            contract_details_map,
+        )
     elif symbology_method == SymbologyMethod.IB_RAW:
         return ib_contract_to_instrument_id_raw_symbology(contract, venue)
     else:
@@ -641,10 +806,13 @@ def ib_contract_to_instrument_id(
 def ib_contract_to_instrument_id_simplified_symbology(  # noqa: C901 (too complex)
     contract: IBContract,
     venue: str,
+    contract_details_map: dict[int, IBContractDetails] | None = None,
 ) -> InstrumentId:
     security_type = contract.secType
 
-    if security_type == "STK":
+    if security_type == "BAG":
+        return bag_contract_to_instrument_id(contract, venue, contract_details_map)
+    elif security_type == "STK":
         symbol = (contract.localSymbol or contract.symbol).replace(" ", "-")
     elif security_type == "IND":
         symbol = f"^{(contract.localSymbol or contract.symbol)}"
@@ -683,6 +851,68 @@ def ib_contract_to_instrument_id_simplified_symbology(  # noqa: C901 (too comple
     raise ValueError(f"Unknown {contract=}")
 
 
+def bag_contract_to_instrument_id(
+    contract: IBContract,
+    venue: str,
+    contract_details_map: dict[int, IBContractDetails] | None = None,
+) -> InstrumentId:
+    """
+    Create a spread instrument ID from a BAG contract.
+
+    This is the reverse operation of _create_bag_contract_from_spread.
+    It converts an IB BAG contract back to a Nautilus option spread instrument ID.
+
+    Parameters
+    ----------
+    contract : IBContract
+        The BAG contract with comboLegs representing the spread
+    venue : str
+        The venue for the instrument ID
+    contract_details_map : dict[int, IBContractDetails] | None
+        Map of contract IDs (conIds) to their contract details for leg resolution
+
+    Returns
+    -------
+    InstrumentId
+        A spread instrument ID created with InstrumentId.new_spread()
+
+    """
+    try:
+        if not contract.comboLegs:
+            raise ValueError("BAG contract has no combo legs")
+
+        # Convert combo legs to instrument ID tuples
+        leg_tuples = []
+
+        for combo_leg in contract.comboLegs:
+            # Get the contract details for this leg using conId
+            if contract_details_map and combo_leg.conId in contract_details_map:
+                leg_contract_details = contract_details_map[combo_leg.conId]
+                leg_contract = leg_contract_details.contract
+
+                # Create instrument ID from the leg contract
+                leg_instrument_id = ib_contract_to_instrument_id_simplified_symbology(
+                    leg_contract,
+                    venue,
+                )
+            else:
+                raise ValueError(
+                    f"Cannot resolve leg instrument ID for conId {combo_leg.conId}. "
+                    f"Contract details map not provided or incomplete.",
+                )
+
+            # Determine ratio (positive for BUY, negative for SELL)
+            ratio = combo_leg.ratio if combo_leg.action == "BUY" else -combo_leg.ratio
+
+            leg_tuples.append((leg_instrument_id, ratio))
+
+        # Create the spread instrument ID
+        return InstrumentId.new_spread(leg_tuples)
+
+    except Exception as e:
+        raise ValueError(f"Failed to create spread instrument ID from BAG contract {contract}: {e}")
+
+
 def ib_contract_to_instrument_id_raw_symbology(
     contract: IBContract,
     venue: str,
@@ -701,11 +931,16 @@ def instrument_id_to_ib_contract(
     instrument_id: InstrumentId,
     exchange: str,
     symbology_method: SymbologyMethod = SymbologyMethod.IB_SIMPLIFIED,
+    contract_details_map: dict[InstrumentId, IBContractDetails] | None = None,
 ) -> IBContract:
     PyCondition.type(instrument_id, InstrumentId, "InstrumentId")
 
     if symbology_method == SymbologyMethod.IB_SIMPLIFIED:
-        return instrument_id_to_ib_contract_simplified_symbology(instrument_id, exchange)
+        return instrument_id_to_ib_contract_simplified_symbology(
+            instrument_id,
+            exchange,
+            contract_details_map,
+        )
     elif symbology_method == SymbologyMethod.IB_RAW:
         return instrument_id_to_ib_contract_raw_symbology(instrument_id)
     else:
@@ -715,8 +950,11 @@ def instrument_id_to_ib_contract(
 def instrument_id_to_ib_contract_simplified_symbology(  # noqa: C901 (too complex)
     instrument_id: InstrumentId,
     exchange: str,
+    contract_details_map: dict[InstrumentId, IBContractDetails] | None = None,
 ) -> IBContract:
-    if exchange in VENUES_CASH and (m := RE_CASH.match(instrument_id.symbol.value)):
+    if instrument_id.is_spread():
+        return instrument_id_to_bag_contract(instrument_id, exchange, contract_details_map)
+    elif exchange in VENUES_CASH and (m := RE_CASH.match(instrument_id.symbol.value)):
         return IBContract(
             secType="CASH",
             exchange=exchange,
@@ -789,6 +1027,59 @@ def instrument_id_to_ib_contract_simplified_symbology(  # noqa: C901 (too comple
         primaryExchange=exchange,
         localSymbol=f"{instrument_id.symbol.value}".replace("-", " "),
     )
+
+
+def instrument_id_to_bag_contract(
+    instrument_id: InstrumentId,
+    exchange: str,
+    contract_details_map: dict[InstrumentId, IBContractDetails] | None = None,
+) -> IBContract:
+    try:
+        # Parse the spread ID back to individual legs
+        leg_tuples = instrument_id.to_list()
+
+        if not leg_tuples:
+            raise ValueError("Spread instrument ID has no legs")
+
+        # Create combo legs for the BAG contract
+        combo_legs = []
+
+        for leg_instrument_id, ratio in leg_tuples:
+            # Get the contract details for this leg to extract conId
+            if contract_details_map and leg_instrument_id in contract_details_map:
+                contract_details = contract_details_map[leg_instrument_id]
+                con_id = contract_details.contract.conId
+                currency = contract_details.contract.currency
+            else:
+                # If we don't have contract details, we can't create a valid BAG contract
+                raise ValueError(
+                    f"Contract details not found for leg {leg_instrument_id}. "
+                    f"Ensure all legs are loaded in the instrument provider before creating spread.",
+                )
+
+            # Determine action based on ratio (positive = BUY, negative = SELL)
+            action = "BUY" if ratio > 0 else "SELL"
+            abs_ratio = abs(ratio)
+
+            # Create a combo leg with the actual conId
+            combo_leg = ComboLeg(
+                conId=con_id,
+                ratio=abs_ratio,
+                action=action,
+                exchange=exchange,
+            )
+            combo_legs.append(combo_leg)
+
+        # Create the BAG contract
+        return IBContract(
+            secType="BAG",
+            exchange=exchange,
+            currency=currency,
+            comboLegs=combo_legs,
+            comboLegsDescrip=f"Spread: {instrument_id.symbol.value}",
+        )
+    except Exception as e:
+        raise ValueError(f"Failed to create BAG contract from spread {instrument_id}: {e}")
 
 
 def instrument_id_to_ib_contract_raw_symbology(instrument_id: InstrumentId) -> IBContract:

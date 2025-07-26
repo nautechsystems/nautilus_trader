@@ -125,6 +125,7 @@ def get_cached_ib_client(
 @lru_cache(1)
 def get_cached_interactive_brokers_instrument_provider(
     client: InteractiveBrokersClient,
+    clock: LiveClock,
     config: InteractiveBrokersInstrumentProviderConfig,
 ) -> InteractiveBrokersInstrumentProvider:
     """
@@ -136,6 +137,8 @@ def get_cached_interactive_brokers_instrument_provider(
     ----------
     client : InteractiveBrokersClient
         The client for the instrument provider.
+    clock : LiveClock
+        The clock for the provider.
     config: InteractiveBrokersInstrumentProviderConfig
         The instrument provider config
 
@@ -144,7 +147,7 @@ def get_cached_interactive_brokers_instrument_provider(
     InteractiveBrokersInstrumentProvider
 
     """
-    return InteractiveBrokersInstrumentProvider(client=client, config=config)
+    return InteractiveBrokersInstrumentProvider(client=client, clock=clock, config=config)
 
 
 class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
@@ -198,6 +201,7 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
         # Get instrument provider singleton
         provider = get_cached_interactive_brokers_instrument_provider(
             client=client,
+            clock=clock,
             config=config.instrument_provider,
         )
 
@@ -270,6 +274,7 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
         # Get instrument provider singleton
         provider = get_cached_interactive_brokers_instrument_provider(
             client=client,
+            clock=clock,
             config=config.instrument_provider,
         )
 
