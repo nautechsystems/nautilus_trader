@@ -1149,9 +1149,7 @@ pub fn stream_depth10_from_snapshot25<P: AsRef<Path>>(
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use nautilus_model::enums::AggressorSide;
-    use nautilus_model::identifiers::TradeId;
-    use nautilus_model::types::Quantity;
+    use nautilus_model::{enums::AggressorSide, identifiers::TradeId, types::Quantity};
     use rstest::*;
 
     use super::*;

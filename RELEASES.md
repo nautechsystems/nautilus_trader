@@ -58,6 +58,7 @@ Released on TBD (UTC).
 - Fixed decoding zero-sized trades for Databento MBO data
 - Fixed purging of contingent orders where open linked orders would still be purged
 - Fixed Tardis Machine replay processing and Parquet file writing
+- Fixed Tardis exchange-venue mapping for Kraken Futures (should map to `cryptofacilities`)
 - Fixed Polymarket reconciliation for signature type 2 trades where wallet address differs from funder address
 - Fixed catalog query of multiple instruments of same type (#2772), thanks @faysou
 - Fixed modification of contingent orders in backtest (#2761), thanks faysou
