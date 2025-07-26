@@ -25,7 +25,7 @@ erc20_approve_abi = [
         "payable": False,
         "stateMutability": "nonpayable",
         "type": "function",
-    }
+    },
 ]
 erc1155_set_approval_abi = [
     {
@@ -37,7 +37,7 @@ erc1155_set_approval_abi = [
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function",
-    }
+    },
 ]
 
 web3 = Web3(Web3.HTTPProvider(rpc_url))
