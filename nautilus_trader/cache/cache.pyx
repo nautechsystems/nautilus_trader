@@ -817,12 +817,23 @@ cdef class Cache(CacheFacade):
 
         cdef:
             ClientOrderId client_order_id
+            ClientOrderId linked_order_id
             Order order
+            Order linked_order
         for client_order_id in self._index_orders_closed.copy():
             order = self._orders.get(client_order_id)
 
             if order is not None and order.ts_closed + buffer_ns <= ts_now:
-                self.purge_order(client_order_id, purge_from_database)
+                # Check any linked orders (contingency orders)
+                if order.linked_order_ids is not None:
+                    for linked_order_id in order.linked_order_ids:
+                        linked_order = self._orders.get(linked_order_id)
+                        if linked_order is not None and linked_order.is_open_c():
+                            break  # Do not purge if linked order still open
+                    else:
+                        self.purge_order(client_order_id, purge_from_database)
+                else:
+                    self.purge_order(client_order_id, purge_from_database)
 
     cpdef void purge_closed_positions(
         self,

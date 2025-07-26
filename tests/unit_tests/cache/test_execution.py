@@ -1381,6 +1381,120 @@ class TestCache:
         assert self.cache.orders_closed_count() == 0
         assert len(position.events) == 0  # <-- Events for order were purged
 
+    def test_purge_closed_orders_with_linked_orders_does_not_purge_parent_when_child_open(self):
+        # Arrange - Create bracket order which has linked orders
+        bracket_order = self.strategy.order_factory.bracket(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            entry_price=Price.from_str("1.00000"),
+            sl_trigger_price=Price.from_str("0.99000"),
+            tp_price=Price.from_str("1.01000"),
+        )
+
+        # Extract the entry order (parent) and stop loss order (child)
+        parent_order = bracket_order.orders[0]  # Entry order
+        child_order = bracket_order.orders[1]  # Stop loss order
+
+        position_id = PositionId("P-1")
+        self.cache.add_order(parent_order, position_id)
+        self.cache.add_order(child_order, position_id)
+
+        # Submit and accept parent order
+        parent_order.apply(TestEventStubs.order_submitted(parent_order))
+        self.cache.update_order(parent_order)
+        parent_order.apply(TestEventStubs.order_accepted(parent_order))
+        self.cache.update_order(parent_order)
+
+        # Fill and close parent order
+        fill = TestEventStubs.order_filled(
+            parent_order,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("1.00000"),
+        )
+        parent_order.apply(fill)
+        self.cache.update_order(parent_order)
+
+        # Submit and accept child order (but keep it open)
+        child_order.apply(TestEventStubs.order_submitted(child_order))
+        self.cache.update_order(child_order)
+        child_order.apply(TestEventStubs.order_accepted(child_order))
+        self.cache.update_order(child_order)
+
+        # Verify initial state
+        assert parent_order.is_closed
+        assert not child_order.is_closed
+        assert self.cache.orders_closed_count() == 1
+        assert self.cache.orders_open_count() == 1
+
+        # Act
+        self.cache.purge_closed_orders(ts_now=0)
+
+        # Assert - parent order should NOT be purged because child is still open
+        assert self.cache.order_exists(parent_order.client_order_id)
+        assert self.cache.order(parent_order.client_order_id) is not None
+        assert self.cache.orders_closed_count() == 1
+        assert self.cache.orders_open_count() == 1
+
+    def test_purge_closed_orders_with_linked_orders_purges_parent_when_all_children_closed(self):
+        # Arrange - Create bracket order which has linked orders
+        bracket_orders = self.strategy.order_factory.bracket(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            entry_price=Price.from_str("1.00000"),
+            sl_trigger_price=Price.from_str("0.99000"),
+            tp_price=Price.from_str("1.01000"),
+        )
+
+        # Extract the entry order (parent) and stop loss order (child)
+        parent_order = bracket_orders.orders[0]  # Entry order
+        child_order = bracket_orders.orders[1]  # Stop loss order
+
+        position_id = PositionId("P-1")
+        self.cache.add_order(parent_order, position_id)
+        self.cache.add_order(child_order, position_id)
+
+        # Submit and accept parent order
+        parent_order.apply(TestEventStubs.order_submitted(parent_order))
+        self.cache.update_order(parent_order)
+        parent_order.apply(TestEventStubs.order_accepted(parent_order))
+        self.cache.update_order(parent_order)
+
+        # Fill and close parent order
+        fill = TestEventStubs.order_filled(
+            parent_order,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("1.00000"),
+        )
+        parent_order.apply(fill)
+        self.cache.update_order(parent_order)
+
+        # Submit, accept and cancel child order (close it)
+        child_order.apply(TestEventStubs.order_submitted(child_order))
+        self.cache.update_order(child_order)
+        child_order.apply(TestEventStubs.order_accepted(child_order))
+        self.cache.update_order(child_order)
+        child_order.apply(TestEventStubs.order_canceled(child_order))
+        self.cache.update_order(child_order)
+
+        # Verify initial state
+        assert parent_order.is_closed
+        assert child_order.is_closed
+        assert self.cache.orders_closed_count() == 2
+        assert self.cache.orders_open_count() == 0
+
+        # Act
+        self.cache.purge_closed_orders(ts_now=0)
+
+        # Assert - both orders should be purged since all children are closed
+        assert not self.cache.order_exists(parent_order.client_order_id)
+        assert not self.cache.order_exists(child_order.client_order_id)
+        assert self.cache.orders_closed_count() == 0
+        assert self.cache.orders_open_count() == 0
+
     def test_purge_closed_positions(self):
         # Arrange
         order1 = self.strategy.order_factory.market(
