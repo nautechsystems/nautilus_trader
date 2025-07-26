@@ -846,9 +846,10 @@ class DYDXDataClient(LiveMarketDataClient):
 
         # Check if the websocket client is already subscribed.
         self._orderbook_subscriptions.add(dydx_symbol.raw_symbol)
-
-        if command.instrument_id not in self._books:
-            self._books[command.instrument_id] = OrderBook(command.instrument_id, command.book_type)
+        
+        cached_instrument_id = self._get_cached_instrument_id(command.instrument_id.symbol.value)
+        if cached_instrument_id not in self._books:
+            self._books[cached_instrument_id] = OrderBook(cached_instrument_id, command.book_type)
 
         if not self._ws_client.has_subscription(
             channel=DYDXChannel.ORDERBOOK,
