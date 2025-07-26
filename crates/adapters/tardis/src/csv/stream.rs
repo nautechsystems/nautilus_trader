@@ -24,6 +24,7 @@ use nautilus_model::{
     },
     enums::{BookAction, OrderSide, RecordFlag},
     identifiers::InstrumentId,
+    types::Quantity,
 };
 #[cfg(feature = "python")]
 use nautilus_model::{
@@ -689,11 +690,13 @@ impl Iterator for TradeStreamIterator {
             match self.reader.read_record(&mut self.record) {
                 Ok(true) => match self.record.deserialize::<TardisTradeRecord>(None) {
                     Ok(data) => {
-                        if data.amount > 0.0 {
+                        let size = Quantity::new(data.amount, self.size_precision);
+
+                        if size.is_positive() {
                             let trade = parse_trade_record(
                                 &data,
+                                size,
                                 self.price_precision,
-                                self.size_precision,
                                 self.instrument_id,
                             );
 

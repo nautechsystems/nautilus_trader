@@ -185,8 +185,8 @@ fn create_book_order(
 
 fn parse_delta_record(
     data: &TardisBookUpdateRecord,
-    current_price_precision: u8,
-    current_size_precision: u8,
+    price_precision: u8,
+    size_precision: u8,
     instrument_id: Option<InstrumentId>,
 ) -> OrderBookDelta {
     let instrument_id = match instrument_id {
@@ -195,8 +195,8 @@ fn parse_delta_record(
     };
 
     let side = parse_order_side(&data.side);
-    let price = parse_price(data.price, current_price_precision);
-    let size = Quantity::new(data.amount, current_size_precision);
+    let price = parse_price(data.price, price_precision);
+    let size = Quantity::new(data.amount, size_precision);
     let order_id = 0; // Not applicable for L2 data
     let order = BookOrder::new(side, price, size, order_id);
 
@@ -208,7 +208,7 @@ fn parse_delta_record(
 
     assert!(
         !(action != BookAction::Delete && size.is_zero()),
-        "Invalid delta: action {action} when size zero, check size_precision ({current_size_precision}) vs data; {data:?}"
+        "Invalid delta: action {action} when size zero, check size_precision ({size_precision}) vs data; {data:?}"
     );
 
     OrderBookDelta::new(
@@ -224,8 +224,8 @@ fn parse_delta_record(
 
 fn parse_quote_record(
     data: &TardisQuoteRecord,
-    current_price_precision: u8,
-    current_size_precision: u8,
+    price_precision: u8,
+    size_precision: u8,
     instrument_id: Option<InstrumentId>,
 ) -> QuoteTick {
     let instrument_id = match instrument_id {
@@ -233,10 +233,10 @@ fn parse_quote_record(
         None => parse_instrument_id(&data.exchange, data.symbol),
     };
 
-    let bid_price = parse_price(data.bid_price.unwrap_or(0.0), current_price_precision);
-    let ask_price = parse_price(data.ask_price.unwrap_or(0.0), current_price_precision);
-    let bid_size = Quantity::new(data.bid_amount.unwrap_or(0.0), current_size_precision);
-    let ask_size = Quantity::new(data.ask_amount.unwrap_or(0.0), current_size_precision);
+    let bid_price = parse_price(data.bid_price.unwrap_or(0.0), price_precision);
+    let ask_price = parse_price(data.ask_price.unwrap_or(0.0), price_precision);
+    let bid_size = Quantity::new(data.bid_amount.unwrap_or(0.0), size_precision);
+    let ask_size = Quantity::new(data.ask_amount.unwrap_or(0.0), size_precision);
     let ts_event = parse_timestamp(data.timestamp);
     let ts_init = parse_timestamp(data.local_timestamp);
 
@@ -253,8 +253,8 @@ fn parse_quote_record(
 
 fn parse_trade_record(
     data: &TardisTradeRecord,
-    current_price_precision: u8,
-    current_size_precision: u8,
+    size: Quantity,
+    price_precision: u8,
     instrument_id: Option<InstrumentId>,
 ) -> TradeTick {
     let instrument_id = match instrument_id {
@@ -262,8 +262,7 @@ fn parse_trade_record(
         None => parse_instrument_id(&data.exchange, data.symbol),
     };
 
-    let price = parse_price(data.price, current_price_precision);
-    let size = Quantity::new(data.amount, current_size_precision);
+    let price = parse_price(data.price, price_precision);
     let aggressor_side = parse_aggressor_side(&data.side);
     let trade_id = TradeId::new(&data.id);
     let ts_event = parse_timestamp(data.timestamp);

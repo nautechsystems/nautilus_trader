@@ -21,7 +21,7 @@ use nautilus_model::{
     data::{DEPTH10_LEN, NULL_ORDER, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick},
     enums::{OrderSide, RecordFlag},
     identifiers::InstrumentId,
-    types::fixed::FIXED_PRECISION,
+    types::{Quantity, fixed::FIXED_PRECISION},
 };
 
 use crate::{
@@ -672,13 +672,10 @@ pub fn load_trades<P: AsRef<Path>>(
             );
         }
 
-        if data.amount > 0.0 {
-            let trade = parse_trade_record(
-                &data,
-                current_price_precision,
-                current_size_precision,
-                instrument_id,
-            );
+        let size = Quantity::new_checked(data.amount, current_size_precision)?;
+
+        if size.is_positive() {
+            let trade = parse_trade_record(&data, size, current_price_precision, instrument_id);
 
             trades.push(trade);
 
