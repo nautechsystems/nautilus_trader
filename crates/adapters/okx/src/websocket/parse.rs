@@ -44,7 +44,7 @@ use crate::{
         enums::{OKXBookAction, OKXCandleConfirm, OKXOrderStatus, OKXOrderType},
         models::OKXInstrument,
         parse::{
-            okx_channel_to_bar_spec, parse_client_order_id, parse_instrument_any,
+            okx_channel_to_bar_spec, parse_client_order_id, parse_fee, parse_instrument_any,
             parse_message_vec, parse_millisecond_timestamp, parse_order_side, parse_price,
             parse_quantity,
         },
@@ -484,6 +484,7 @@ pub fn parse_order_msg_vec(
     data: Vec<OKXOrderMsg>,
     account_id: AccountId,
     instruments: &AHashMap<Ustr, InstrumentAny>,
+    fee_cache: &AHashMap<Ustr, Money>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Vec<ExecutionReport>> {
     let mut order_reports = Vec::with_capacity(data.len());
@@ -493,9 +494,12 @@ pub fn parse_order_msg_vec(
             .get(&msg.inst_id)
             .ok_or_else(|| anyhow::anyhow!("No instrument found for inst_id: {}", msg.inst_id))?;
 
+        let previous_fee = fee_cache.get(&msg.ord_id).copied();
+
         let result = match &msg.state {
             OKXOrderStatus::Filled | OKXOrderStatus::PartiallyFilled => {
-                parse_fill_report(&msg, inst, account_id, ts_init).map(ExecutionReport::Fill)
+                parse_fill_report(&msg, inst, account_id, previous_fee, ts_init)
+                    .map(ExecutionReport::Fill)
             }
             _ => parse_order_status_report(&msg, inst, account_id, ts_init)
                 .map(ExecutionReport::Order),
@@ -573,6 +577,7 @@ pub fn parse_fill_report(
     msg: &OKXOrderMsg,
     instrument: &InstrumentAny,
     account_id: AccountId,
+    previous_fee: Option<Money>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<FillReport> {
     let client_order_id = parse_client_order_id(&msg.cl_ord_id);
@@ -584,10 +589,16 @@ pub fn parse_fill_report(
     let size_precision = instrument.size_precision();
     let last_px = parse_price(&msg.fill_px, price_precision)?;
     let last_qty = parse_quantity(&msg.fill_sz, size_precision)?;
-    let fee_f64 = msg.fee.as_deref().unwrap_or("0").parse::<f64>()?;
-    let commission = Money::new(-fee_f64, Currency::from(&msg.fee_ccy));
-    let liquidity_side: LiquiditySide = LiquiditySide::from(msg.exec_type.clone());
 
+    let fee_currency = Currency::from(&msg.fee_ccy);
+    let total_fee = parse_fee(msg.fee.as_deref(), fee_currency)?;
+    let commission = if let Some(previous_fee) = previous_fee {
+        total_fee - previous_fee
+    } else {
+        total_fee
+    };
+
+    let liquidity_side: LiquiditySide = LiquiditySide::from(msg.exec_type.clone());
     let ts_event = parse_millisecond_timestamp(msg.fill_time);
 
     let report = FillReport::new(
@@ -713,13 +724,17 @@ pub fn parse_ws_message_data(
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use ahash::AHashMap;
+    use nautilus_core::nanos::UnixNanos;
     use nautilus_model::{
         data::bar::BAR_SPEC_1_DAY_LAST,
         enums::AggressorSide,
-        identifiers::{ClientOrderId, InstrumentId},
-        types::{Price, Quantity},
+        identifiers::{ClientOrderId, InstrumentId, Symbol},
+        instruments::CryptoPerpetual,
+        types::{Currency, Price, Quantity},
     };
     use rstest::rstest;
+    use ustr::Ustr;
 
     use super::*;
     use crate::{common::testing::load_test_json, websocket::messages::OKXWebSocketEvent};
@@ -1057,15 +1072,6 @@ mod tests {
 
     #[rstest]
     fn test_parse_order_msg() {
-        use ahash::AHashMap;
-        use nautilus_core::nanos::UnixNanos;
-        use nautilus_model::{
-            identifiers::Symbol,
-            instruments::CryptoPerpetual,
-            types::{Currency, Price, Quantity},
-        };
-        use ustr::Ustr;
-
         let json_data = load_test_json("ws_orders.json");
         let ws_msg: serde_json::Value = serde_json::from_str(&json_data).unwrap();
 
@@ -1109,8 +1115,9 @@ mod tests {
         );
 
         let ts_init = UnixNanos::default();
+        let fee_cache = AHashMap::new();
 
-        let result = parse_order_msg_vec(data, account_id, &instruments, ts_init);
+        let result = parse_order_msg_vec(data, account_id, &instruments, &fee_cache, ts_init);
 
         assert!(result.is_ok());
         let order_reports = result.unwrap();
@@ -1261,6 +1268,7 @@ mod tests {
             order_msg,
             &InstrumentAny::CryptoPerpetual(instrument),
             account_id,
+            None,
             ts_init,
         );
 
@@ -1356,6 +1364,144 @@ mod tests {
         } else {
             panic!("Expected Depth10");
         }
+    }
+
+    #[rstest]
+    fn test_parse_fill_report_with_fee_cache() {
+        use nautilus_core::nanos::UnixNanos;
+        use nautilus_model::{
+            identifiers::Symbol,
+            instruments::CryptoPerpetual,
+            types::{Currency, Money, Price, Quantity},
+        };
+
+        // Create a mock instrument for testing
+        let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
+        let instrument = CryptoPerpetual::new(
+            instrument_id,
+            Symbol::from("BTC-USDT-SWAP"),
+            Currency::BTC(),
+            Currency::USDT(),
+            Currency::USDT(),
+            false, // is_inverse
+            2,     // price_precision
+            8,     // size_precision
+            Price::from("0.01"),
+            Quantity::from("0.00000001"),
+            None, // multiplier
+            None, // lot_size
+            None, // max_quantity
+            None, // min_quantity
+            None, // max_notional
+            None, // min_notional
+            None, // max_price
+            None, // min_price
+            None, // margin_init
+            None, // margin_maint
+            None, // maker_fee
+            None, // taker_fee
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        let account_id = AccountId::new("OKX-001");
+        let ts_init = UnixNanos::default();
+
+        // First fill: 0.01 BTC out of 0.03 BTC total (1/3)
+        let order_msg_1 = OKXOrderMsg {
+            acc_fill_sz: Some("0.01".to_string()),
+            algo_cl_ord_id: None,
+            algo_id: None,
+            avg_px: "50000.0".to_string(),
+            c_time: 1746947317401,
+            cancel_source: None,
+            cancel_source_reason: None,
+            category: "normal".to_string(),
+            ccy: "USDT".to_string(),
+            cl_ord_id: "test_order_1".to_string(),
+            fee: Some("-1.0".to_string()), // Total fee so far
+            fee_ccy: "USDT".to_string(),
+            fill_px: "50000.0".to_string(),
+            fill_sz: "0.01".to_string(),
+            fill_time: 1746947317402,
+            inst_id: Ustr::from("BTC-USDT-SWAP"),
+            inst_type: crate::common::enums::OKXInstrumentType::Swap,
+            lever: "2.0".to_string(),
+            ord_id: Ustr::from("1234567890"),
+            ord_type: "market".to_string(),
+            pnl: "0".to_string(),
+            pos_side: "long".to_string(),
+            px: "".to_string(),
+            reduce_only: "false".to_string(),
+            side: crate::common::enums::OKXSide::Buy,
+            state: crate::common::enums::OKXOrderStatus::PartiallyFilled,
+            exec_type: crate::common::enums::OKXExecType::Maker,
+            sz: "0.03".to_string(), // Total order size
+            td_mode: "isolated".to_string(),
+            trade_id: "trade_1".to_string(),
+            u_time: 1746947317402,
+        };
+
+        let fill_report_1 = parse_fill_report(
+            &order_msg_1,
+            &InstrumentAny::CryptoPerpetual(instrument),
+            account_id,
+            None,
+            ts_init,
+        )
+        .unwrap();
+
+        // First fill should get the full fee since there's no previous fee
+        assert_eq!(fill_report_1.commission, Money::new(1.0, Currency::USDT()));
+
+        // Second fill: 0.02 BTC more, now 0.03 BTC total (completely filled)
+        let order_msg_2 = OKXOrderMsg {
+            acc_fill_sz: Some("0.03".to_string()),
+            algo_cl_ord_id: None,
+            algo_id: None,
+            avg_px: "50000.0".to_string(),
+            c_time: 1746947317401,
+            cancel_source: None,
+            cancel_source_reason: None,
+            category: "normal".to_string(),
+            ccy: "USDT".to_string(),
+            cl_ord_id: "test_order_1".to_string(),
+            fee: Some("-3.0".to_string()), // Same total fee
+            fee_ccy: "USDT".to_string(),
+            fill_px: "50000.0".to_string(),
+            fill_sz: "0.02".to_string(),
+            fill_time: 1746947317403,
+            inst_id: Ustr::from("BTC-USDT-SWAP"),
+            inst_type: crate::common::enums::OKXInstrumentType::Swap,
+            lever: "2.0".to_string(),
+            ord_id: Ustr::from("1234567890"),
+            ord_type: "market".to_string(),
+            pnl: "0".to_string(),
+            pos_side: "long".to_string(),
+            px: "".to_string(),
+            reduce_only: "false".to_string(),
+            side: crate::common::enums::OKXSide::Buy,
+            state: crate::common::enums::OKXOrderStatus::Filled,
+            exec_type: crate::common::enums::OKXExecType::Maker,
+            sz: "0.03".to_string(), // Same total order size
+            td_mode: "isolated".to_string(),
+            trade_id: "trade_2".to_string(),
+            u_time: 1746947317403,
+        };
+
+        let fill_report_2 = parse_fill_report(
+            &order_msg_2,
+            &InstrumentAny::CryptoPerpetual(instrument),
+            account_id,
+            Some(fill_report_1.commission),
+            ts_init,
+        )
+        .unwrap();
+
+        // Second fill should get total_fee - previous_fee = 3.0 - 1.0 = 2.0
+        assert_eq!(fill_report_2.commission, Money::new(2.0, Currency::USDT()));
+
+        // Test passed - fee was correctly split proportionally
     }
 
     #[rstest]

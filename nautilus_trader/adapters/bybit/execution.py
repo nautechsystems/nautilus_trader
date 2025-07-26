@@ -99,6 +99,7 @@ if TYPE_CHECKING:
     from nautilus_trader.execution.messages import GenerateOrderStatusReports
     from nautilus_trader.execution.messages import GeneratePositionStatusReports
     from nautilus_trader.execution.messages import ModifyOrder
+    from nautilus_trader.execution.messages import QueryAccount
     from nautilus_trader.execution.messages import SubmitOrder
     from nautilus_trader.execution.messages import SubmitOrderList
     from nautilus_trader.execution.reports import FillReport
@@ -672,6 +673,10 @@ class BybitExecutionClient(LiveExecutionClient):
             raise e
 
     # -- COMMAND HANDLERS -------------------------------------------------------------------------
+
+    async def _query_account(self, _command: QueryAccount) -> None:
+        # Specific account ID (sub account) not yet supported
+        await self._update_account_state()
 
     async def _cancel_order(self, command: CancelOrder) -> None:
         order: Order | None = self._cache.order(command.client_order_id)

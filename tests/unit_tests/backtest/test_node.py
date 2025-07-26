@@ -31,8 +31,9 @@ from nautilus_trader.test_kit.mocks.data import setup_catalog
 
 
 class TestBacktestNode:
-    def setup(self):
-        self.catalog = setup_catalog(protocol="file", path="./catalog")
+    @pytest.fixture(autouse=True)
+    def setup_method(self, tmp_path):
+        self.catalog = setup_catalog(protocol="file", path=tmp_path / "catalog")
         self.venue_config = BacktestVenueConfig(
             name="SIM",
             oms_type="HEDGING",

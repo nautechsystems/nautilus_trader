@@ -55,6 +55,7 @@ pub fn common(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::python::handler::PythonMessageHandler>()?;
     m.add_class::<crate::enums::ComponentState>()?;
     m.add_class::<crate::enums::ComponentTrigger>()?;
+    m.add_class::<crate::enums::Environment>()?;
     m.add_class::<crate::enums::LogColor>()?;
     m.add_class::<crate::enums::LogLevel>()?;
     m.add_class::<crate::enums::LogFormat>()?;

@@ -175,7 +175,7 @@ class TestLiveExecutionReconciliation:
         self.client.add_order_status_report(report)
 
         # Act
-        result = await self.exec_engine.reconcile_state()
+        result = await self.exec_engine.reconcile_execution_state()
 
         # Assert
         assert result
@@ -207,7 +207,7 @@ class TestLiveExecutionReconciliation:
         self.client.add_order_status_report(report)
 
         # Act
-        result = await self.exec_engine.reconcile_state()
+        result = await self.exec_engine.reconcile_execution_state()
 
         # Assert
         assert result
@@ -241,7 +241,7 @@ class TestLiveExecutionReconciliation:
         self.client.add_order_status_report(report)
 
         # Act
-        result = await self.exec_engine.reconcile_state()
+        result = await self.exec_engine.reconcile_execution_state()
 
         # Assert
         assert result
@@ -277,7 +277,7 @@ class TestLiveExecutionReconciliation:
         self.client.add_order_status_report(report)
 
         # Act
-        result = await self.exec_engine.reconcile_state()
+        result = await self.exec_engine.reconcile_execution_state()
 
         # Assert
         assert result
@@ -313,7 +313,7 @@ class TestLiveExecutionReconciliation:
         self.client.add_order_status_report(report)
 
         # Act
-        result = await self.exec_engine.reconcile_state()
+        result = await self.exec_engine.reconcile_execution_state()
 
         # Assert
         assert result
@@ -348,7 +348,7 @@ class TestLiveExecutionReconciliation:
         self.client.add_order_status_report(report)
 
         # Act
-        result = await self.exec_engine.reconcile_state()
+        result = await self.exec_engine.reconcile_execution_state()
 
         # Assert
         assert result
@@ -401,7 +401,7 @@ class TestLiveExecutionReconciliation:
         self.client.add_fill_reports(venue_order_id, [fill_report])
 
         # Act
-        result = await self.exec_engine.reconcile_state()
+        result = await self.exec_engine.reconcile_execution_state()
 
         # Assert
         assert result
@@ -454,7 +454,7 @@ class TestLiveExecutionReconciliation:
         self.client.add_fill_reports(venue_order_id, [fill_report])
 
         # Act
-        result = await self.exec_engine.reconcile_state()
+        result = await self.exec_engine.reconcile_execution_state()
 
         # Assert
         assert result
@@ -489,7 +489,7 @@ class TestLiveExecutionReconciliation:
         self.client.add_order_status_report(order_report)
 
         # Act
-        result = await self.exec_engine.reconcile_state()
+        result = await self.exec_engine.reconcile_execution_state()
 
         # Assert
         assert result
@@ -542,7 +542,7 @@ class TestLiveExecutionReconciliation:
         self.client.add_fill_reports(venue_order_id, [fill_report])
 
         # Act
-        result = await self.exec_engine.reconcile_state()
+        result = await self.exec_engine.reconcile_execution_state()
 
         # Assert
         assert result
@@ -636,7 +636,7 @@ class TestLiveExecutionReconciliation:
         self.client.add_fill_reports(venue_order_id, [fill_report])
 
         # Act
-        result = await self.exec_engine.reconcile_state()
+        result = await self.exec_engine.reconcile_execution_state()
 
         # Assert: Reconciliation should succeed despite different fill data
         assert result
@@ -754,7 +754,7 @@ class TestReconciliationEdgeCases:
         mass_status.add_order_reports([report1, report2])
 
         # Act
-        result = live_exec_engine._reconcile_mass_status(mass_status)
+        result = live_exec_engine._reconcile_execution_mass_status(mass_status)
 
         # Assert
         assert result is False
@@ -913,9 +913,9 @@ class TestReconciliationEdgeCases:
         reconcile_calls = []
         original_reconcile = live_exec_engine._reconcile_order_report
 
-        def spy_reconcile(order_report, trades):
+        def spy_reconcile(order_report, trades, is_external=True):
             reconcile_calls.append((order_report, trades))
-            return original_reconcile(order_report, trades)
+            return original_reconcile(order_report, trades, is_external)
 
         live_exec_engine._reconcile_order_report = spy_reconcile
 
@@ -971,9 +971,9 @@ class TestReconciliationEdgeCases:
         reconcile_calls = []
         original_reconcile = live_exec_engine._reconcile_order_report
 
-        def spy_reconcile(order_report, trades):
+        def spy_reconcile(order_report, trades, is_external=True):
             reconcile_calls.append((order_report, trades))
-            return original_reconcile(order_report, trades)
+            return original_reconcile(order_report, trades, is_external)
 
         live_exec_engine._reconcile_order_report = spy_reconcile
 
@@ -1029,9 +1029,9 @@ class TestReconciliationEdgeCases:
         reconcile_calls = []
         original_reconcile = live_exec_engine._reconcile_order_report
 
-        def spy_reconcile(order_report, trades):
+        def spy_reconcile(order_report, trades, is_external=True):
             reconcile_calls.append((order_report, trades))
-            return original_reconcile(order_report, trades)
+            return original_reconcile(order_report, trades, is_external)
 
         live_exec_engine._reconcile_order_report = spy_reconcile
 
@@ -1087,9 +1087,9 @@ class TestReconciliationEdgeCases:
         reconcile_calls = []
         original_reconcile = live_exec_engine._reconcile_order_report
 
-        def spy_reconcile(order_report, trades):
+        def spy_reconcile(order_report, trades, is_external=True):
             reconcile_calls.append((order_report, trades))
-            return original_reconcile(order_report, trades)
+            return original_reconcile(order_report, trades, is_external)
 
         live_exec_engine._reconcile_order_report = spy_reconcile
 
@@ -1146,9 +1146,9 @@ class TestReconciliationEdgeCases:
         reconcile_calls = []
         original_reconcile = live_exec_engine._reconcile_order_report
 
-        def spy_reconcile(order_report, trades):
+        def spy_reconcile(order_report, trades, is_external=True):
             reconcile_calls.append((order_report, trades))
-            return original_reconcile(order_report, trades)
+            return original_reconcile(order_report, trades, is_external)
 
         live_exec_engine._reconcile_order_report = spy_reconcile
 
@@ -1204,9 +1204,9 @@ class TestReconciliationEdgeCases:
         reconcile_calls = []
         original_reconcile = live_exec_engine._reconcile_order_report
 
-        def spy_reconcile(order_report, trades):
+        def spy_reconcile(order_report, trades, is_external=True):
             reconcile_calls.append((order_report, trades))
-            return original_reconcile(order_report, trades)
+            return original_reconcile(order_report, trades, is_external)
 
         live_exec_engine._reconcile_order_report = spy_reconcile
 
@@ -1261,9 +1261,9 @@ class TestReconciliationEdgeCases:
         reconcile_calls = []
         original_reconcile = live_exec_engine._reconcile_order_report
 
-        def spy_reconcile(order_report, trades):
+        def spy_reconcile(order_report, trades, is_external=True):
             reconcile_calls.append((order_report, trades))
-            return original_reconcile(order_report, trades)
+            return original_reconcile(order_report, trades, is_external)
 
         live_exec_engine._reconcile_order_report = spy_reconcile
 
@@ -1379,3 +1379,356 @@ class TestReconciliationEdgeCases:
         # Assert
         assert result is False  # Reconciliation should fail
         assert order.filled_qty == Quantity.from_int(100)  # No inferred fill
+
+    @pytest.mark.asyncio()
+    async def test_internal_diff_order_not_filtered_when_filter_unclaimed_external_orders_enabled(
+        self,
+        live_exec_engine,
+    ):
+        """
+        Test that INTERNAL-DIFF orders are not filtered out when
+        filter_unclaimed_external_orders is enabled.
+
+        This ensures that position reconciliation orders are generated even when
+        external order filtering is active.
+
+        """
+        # Arrange
+        instrument = AUDUSD_SIM
+        self.cache.add_instrument(instrument)
+
+        # Enable external order filtering and missing order generation
+        live_exec_engine.filter_unclaimed_external_orders = True
+        live_exec_engine.generate_missing_orders = True
+
+        # Create internal long position (100 units)
+        order = TestExecStubs.limit_order(instrument=instrument, order_side=OrderSide.BUY)
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=instrument,
+            position_id=PositionId("P-1"),
+            last_qty=Quantity.from_int(100),
+            last_px=Price.from_str("1.0"),
+        )
+        internal_position = Position(instrument=instrument, fill=fill)
+        self.cache.add_position(internal_position, OmsType.NETTING)
+
+        # External report shows 150 units (need to generate 50 BUY order)
+        external_report = PositionStatusReport(
+            account_id=TestIdStubs.account_id(),
+            instrument_id=instrument.id,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_int(150),
+            report_id=UUID4(),
+            ts_last=0,
+            ts_init=0,
+        )
+
+        # Count orders before reconciliation
+        orders_before = len(self.cache.orders())
+
+        # Act
+        result = live_exec_engine._reconcile_position_report(external_report)
+
+        # Assert
+        assert result is True
+
+        # Verify that a new order was generated (not filtered out)
+        orders_after = self.cache.orders()
+        assert len(orders_after) == orders_before + 1
+
+        # Find the newly generated order
+        new_orders = [o for o in orders_after if o.strategy_id.value == "INTERNAL-DIFF"]
+        assert len(new_orders) == 1
+
+        generated_order = new_orders[0]
+        assert generated_order.strategy_id.value == "INTERNAL-DIFF"
+        assert generated_order.side == OrderSide.BUY
+        assert generated_order.quantity == Quantity.from_int(50)
+        assert generated_order.status == OrderStatus.FILLED
+
+    @pytest.mark.asyncio()
+    async def test_external_order_filtered_when_filter_unclaimed_external_orders_enabled(
+        self,
+        live_exec_engine,
+    ):
+        """
+        Test that regular EXTERNAL orders are filtered out when
+        filter_unclaimed_external_orders is enabled.
+
+        This ensures that the filtering mechanism works correctly for regular external
+        orders.
+
+        """
+        # Arrange
+        instrument = AUDUSD_SIM
+        self.cache.add_instrument(instrument)
+
+        # Enable external order filtering
+        live_exec_engine.filter_unclaimed_external_orders = True
+
+        # Create external order report (not claimed by any strategy)
+        external_report = OrderStatusReport(
+            account_id=TestIdStubs.account_id(),
+            instrument_id=instrument.id,
+            client_order_id=ClientOrderId("EXTERNAL-ORDER-123"),
+            venue_order_id=VenueOrderId("V-123"),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.LIMIT,
+            time_in_force=TimeInForce.GTC,
+            order_status=OrderStatus.FILLED,
+            price=Price.from_str("1.0"),
+            quantity=Quantity.from_int(100),
+            filled_qty=Quantity.from_int(100),
+            report_id=UUID4(),
+            ts_accepted=0,
+            ts_last=0,
+            ts_init=0,
+        )
+
+        # Count orders before reconciliation
+        orders_before = len(self.cache.orders())
+
+        # Act
+        result = live_exec_engine._reconcile_order_report(
+            external_report,
+            trades=[],
+            is_external=True,
+        )
+
+        # Assert - reconciliation should succeed but no order should be added (filtered out)
+        assert result is True
+        orders_after = self.cache.orders()
+        assert len(orders_after) == orders_before  # No new orders added due to filtering
+
+
+class TestReconciliationFiltering:
+    """
+    Tests for filtering logic during live execution reconciliation.
+    """
+
+    def _get_exec_engine(self, config: LiveExecEngineConfig):
+        loop = asyncio.get_event_loop()
+        clock = LiveClock()
+        trader_id = TestIdStubs.trader_id()
+        msgbus = MessageBus(trader_id=trader_id, clock=clock)
+        cache = TestComponentStubs.cache()
+        cache.add_instrument(AUDUSD_SIM)
+        cache.add_instrument(GBPUSD_SIM)
+
+        client = MockLiveExecutionClient(
+            loop=loop,
+            client_id=ClientId("SIM"),
+            venue=Venue("SIM"),
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            instrument_provider=InstrumentProvider(),
+            msgbus=msgbus,
+            cache=cache,
+            clock=clock,
+        )
+
+        exec_engine = LiveExecutionEngine(
+            loop=loop,
+            msgbus=msgbus,
+            cache=cache,
+            clock=clock,
+            config=config,
+        )
+
+        exec_engine.register_client(client)
+        return exec_engine, cache
+
+    @pytest.mark.asyncio()
+    async def test_reconciliation_instrument_ids_empty_processes_all(self):
+        """
+        Test that if `reconciliation_instrument_ids` is empty, all reports are
+        processed.
+        """
+        # Arrange
+        config = LiveExecEngineConfig(
+            reconciliation=True,
+            reconciliation_instrument_ids=[],  # Empty list
+        )
+        exec_engine, cache = self._get_exec_engine(config)
+
+        report1 = OrderStatusReport(
+            instrument_id=AUDUSD_SIM.id,
+            account_id=TestIdStubs.account_id(),
+            client_order_id=ClientOrderId("order-1"),
+            venue_order_id=VenueOrderId("V-1"),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            time_in_force=TimeInForce.DAY,
+            order_status=OrderStatus.ACCEPTED,
+            quantity=Quantity.from_int(100),
+            filled_qty=Quantity.from_int(0),
+            report_id=UUID4(),
+            ts_accepted=0,
+            ts_last=0,
+            ts_init=0,
+        )
+
+        report2 = OrderStatusReport(
+            instrument_id=GBPUSD_SIM.id,
+            account_id=TestIdStubs.account_id(),
+            client_order_id=ClientOrderId("order-2"),
+            venue_order_id=VenueOrderId("V-2"),
+            order_side=OrderSide.SELL,
+            order_type=OrderType.MARKET,
+            time_in_force=TimeInForce.DAY,
+            order_status=OrderStatus.ACCEPTED,
+            quantity=Quantity.from_int(50),
+            filled_qty=Quantity.from_int(0),
+            report_id=UUID4(),
+            ts_accepted=0,
+            ts_last=0,
+            ts_init=0,
+        )
+
+        mass_status = ExecutionMassStatus(
+            client_id=ClientId("TEST"),
+            venue=Venue("TEST"),
+            account_id=TestIdStubs.account_id(),
+            report_id=UUID4(),
+            ts_init=0,
+        )
+        mass_status.add_order_reports([report1, report2])
+
+        # Act
+        result = exec_engine._reconcile_execution_mass_status(mass_status)
+
+        # Assert
+        assert result is True
+        assert len(cache.orders()) == 2
+        assert cache.order(ClientOrderId("order-1")) is not None
+        assert cache.order(ClientOrderId("order-2")) is not None
+
+    @pytest.mark.asyncio()
+    async def test_reconciliation_instrument_ids_filters_reports(self):
+        """
+        Test that reports are filtered based on `reconciliation_instrument_ids`.
+        """
+        # Arrange
+        config = LiveExecEngineConfig(
+            reconciliation=True,
+            reconciliation_instrument_ids=[AUDUSD_SIM.id],
+        )
+        exec_engine, cache = self._get_exec_engine(config)
+
+        report_included = OrderStatusReport(
+            instrument_id=AUDUSD_SIM.id,
+            account_id=TestIdStubs.account_id(),
+            client_order_id=ClientOrderId("included-order"),
+            venue_order_id=VenueOrderId("V-1"),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            time_in_force=TimeInForce.DAY,
+            order_status=OrderStatus.ACCEPTED,
+            quantity=Quantity.from_int(100),
+            filled_qty=Quantity.from_int(0),
+            report_id=UUID4(),
+            ts_accepted=0,
+            ts_last=0,
+            ts_init=0,
+        )
+
+        report_filtered = OrderStatusReport(
+            instrument_id=GBPUSD_SIM.id,  # This instrument is not in the include list
+            account_id=TestIdStubs.account_id(),
+            client_order_id=ClientOrderId("filtered-order"),
+            venue_order_id=VenueOrderId("V-2"),
+            order_side=OrderSide.SELL,
+            order_type=OrderType.MARKET,
+            time_in_force=TimeInForce.DAY,
+            order_status=OrderStatus.ACCEPTED,
+            quantity=Quantity.from_int(50),
+            filled_qty=Quantity.from_int(0),
+            report_id=UUID4(),
+            ts_accepted=0,
+            ts_last=0,
+            ts_init=0,
+        )
+
+        mass_status = ExecutionMassStatus(
+            client_id=ClientId("TEST"),
+            venue=Venue("TEST"),
+            account_id=TestIdStubs.account_id(),
+            report_id=UUID4(),
+            ts_init=0,
+        )
+        mass_status.add_order_reports([report_included, report_filtered])
+
+        # Act
+        result = exec_engine._reconcile_execution_mass_status(mass_status)
+
+        # Assert
+        assert result is True
+        assert len(cache.orders()) == 1
+        assert cache.order(ClientOrderId("included-order")) is not None
+        assert cache.order(ClientOrderId("filtered-order")) is None
+
+    @pytest.mark.asyncio()
+    async def test_filtered_client_order_ids_filters_reports(self):
+        """
+        Test that reports are filtered based on `filtered_client_order_ids`.
+        """
+        # Arrange
+        filtered_coid = ClientOrderId("filter-this-id")
+        config = LiveExecEngineConfig(
+            reconciliation=True,
+            filtered_client_order_ids=[filtered_coid],
+        )
+        exec_engine, cache = self._get_exec_engine(config)
+
+        report_included = OrderStatusReport(
+            instrument_id=AUDUSD_SIM.id,
+            account_id=TestIdStubs.account_id(),
+            client_order_id=ClientOrderId("included-order"),
+            venue_order_id=VenueOrderId("V-1"),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            time_in_force=TimeInForce.DAY,
+            order_status=OrderStatus.ACCEPTED,
+            quantity=Quantity.from_int(100),
+            filled_qty=Quantity.from_int(0),
+            report_id=UUID4(),
+            ts_accepted=0,
+            ts_last=0,
+            ts_init=0,
+        )
+
+        report_filtered = OrderStatusReport(
+            instrument_id=AUDUSD_SIM.id,
+            account_id=TestIdStubs.account_id(),
+            client_order_id=filtered_coid,  # This ID is in the filter list
+            venue_order_id=VenueOrderId("V-2"),
+            order_side=OrderSide.SELL,
+            order_type=OrderType.MARKET,
+            time_in_force=TimeInForce.DAY,
+            order_status=OrderStatus.ACCEPTED,
+            quantity=Quantity.from_int(50),
+            filled_qty=Quantity.from_int(0),
+            report_id=UUID4(),
+            ts_accepted=0,
+            ts_last=0,
+            ts_init=0,
+        )
+
+        mass_status = ExecutionMassStatus(
+            client_id=ClientId("TEST"),
+            venue=Venue("TEST"),
+            account_id=TestIdStubs.account_id(),
+            report_id=UUID4(),
+            ts_init=0,
+        )
+        mass_status.add_order_reports([report_included, report_filtered])
+
+        # Act
+        result = exec_engine._reconcile_execution_mass_status(mass_status)
+
+        # Assert
+        assert result is True
+        assert len(cache.orders()) == 1
+        assert cache.order(ClientOrderId("included-order")) is not None
+        assert cache.order(filtered_coid) is None

@@ -475,7 +475,7 @@ impl SimulatedExchange {
                 | TradingCommand::BatchCancelOrders(_) => {
                     command.ts_init() + latency_model.delete_latency_nanos
                 }
-                _ => panic!("Invalid command was {command}"),
+                _ => panic!("Cannot handle command: {command:?}"),
             };
 
             let counter = self
@@ -746,7 +746,10 @@ impl SimulatedExchange {
                 _ => {}
             }
         } else {
-            panic!("Matching engine should be initialized");
+            panic!(
+                "Matching engine not found for instrument {}",
+                command.instrument_id()
+            );
         }
     }
 
@@ -914,7 +917,7 @@ mod tests {
 
     #[rstest]
     #[should_panic(
-        expected = r#"Condition failed: 'Venue of instrument id' value of BINANCE was not equal to 'Venue of simulated exchange' value of SIM"#
+        expected = "Condition failed: 'Venue of instrument id' value of BINANCE was not equal to 'Venue of simulated exchange' value of SIM"
     )]
     fn test_venue_mismatch_between_exchange_and_instrument(
         crypto_perpetual_ethusdt: CryptoPerpetual,

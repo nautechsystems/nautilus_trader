@@ -17,7 +17,7 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc, time::Duration};
 
 use nautilus_common::{
     actor::{Actor, DataActor},
@@ -308,43 +308,43 @@ impl LiveNodeBuilder {
 
     /// Set the connection timeout in seconds.
     #[must_use]
-    pub const fn with_timeout_connection(mut self, timeout: u32) -> Self {
-        self.config.timeout_connection = timeout;
+    pub const fn with_timeout_connection(mut self, timeout_secs: u64) -> Self {
+        self.config.timeout_connection = Duration::from_secs(timeout_secs);
         self
     }
 
     /// Set the reconciliation timeout in seconds.
     #[must_use]
-    pub const fn with_timeout_reconciliation(mut self, timeout: u32) -> Self {
-        self.config.timeout_reconciliation = timeout;
+    pub const fn with_timeout_reconciliation(mut self, timeout_secs: u64) -> Self {
+        self.config.timeout_reconciliation = Duration::from_secs(timeout_secs);
         self
     }
 
     /// Set the portfolio initialization timeout in seconds.
     #[must_use]
-    pub const fn with_timeout_portfolio(mut self, timeout: u32) -> Self {
-        self.config.timeout_portfolio = timeout;
+    pub const fn with_timeout_portfolio(mut self, timeout_secs: u64) -> Self {
+        self.config.timeout_portfolio = Duration::from_secs(timeout_secs);
         self
     }
 
     /// Set the disconnection timeout in seconds.
     #[must_use]
-    pub const fn with_timeout_disconnection(mut self, timeout: u32) -> Self {
-        self.config.timeout_disconnection = timeout;
+    pub const fn with_timeout_disconnection_secs(mut self, timeout_secs: u64) -> Self {
+        self.config.timeout_disconnection = Duration::from_secs(timeout_secs);
         self
     }
 
-    /// Set the post-stop timeout in seconds.
+    /// Set the post-stop delay in seconds.
     #[must_use]
-    pub const fn with_timeout_post_stop(mut self, timeout: u32) -> Self {
-        self.config.timeout_post_stop = timeout;
+    pub const fn with_delay_post_stop_secs(mut self, delay_secs: u64) -> Self {
+        self.config.delay_post_stop = Duration::from_secs(delay_secs);
         self
     }
 
     /// Set the shutdown timeout in seconds.
     #[must_use]
-    pub const fn with_timeout_shutdown(mut self, timeout: u32) -> Self {
-        self.config.timeout_shutdown = timeout;
+    pub const fn with_delay_shutdown_secs(mut self, delay_secs: u64) -> Self {
+        self.config.timeout_shutdown = Duration::from_secs(delay_secs);
         self
     }
 

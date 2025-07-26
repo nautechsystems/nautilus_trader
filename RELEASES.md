@@ -3,6 +3,13 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added `MarginModel` concept, base models, config, and factory for backtesting (#2794), thanks @faysou and @stefansimik
+- Added additional built-in backtest fill models (#2795), thanks @faysou and @stefansimik
+- Added `OrderBookDepth10DataWrangler` (#2801), thanks @trylovetom
+- Added loading of options chain from `request_instruments` for Interactive Brokers (#2809), thanks @faysou
+- Added `persist_account_events` config option for `CacheConfig` (default `True` to retain current behavior)
+- Added `query_account` method for `Strategy`
+- Added `QueryAccount` execution message
 - Added streaming methods for `TardisCSVDataLoader`
 - Added stream iterators support for `BacktestEngine` low-level streaming API
 - Added `YEAR` aggregation and improved bar specification validation (#2771), thanks @stastnypremysl
@@ -10,35 +17,59 @@ Released on TBD (UTC).
 - Added `use_hyphens_in_client_order_ids` config option for `StrategyConfig`
 - Added `greeks_filter` function to `portfolio_greeks` (#2756), thanks @faysou
 - Added `VERBOSE` option to common make targets (#2759), thanks @faysou
+- Added bulk key loading capability for Redis cache database adapter
+- Added `multiplier` field for `CurrencyPair` instrument (required for some crypto pairs)
 
 ### Breaking Changes
+- Added `multiplier` field for `CurrencyPair` Arrow schema
 - Changed `start` parameter to required for `Actor` data request methods
+- Reverted implementation of `delete_account_event` from cache database that was too inefficient and is now a no-op pending redesign
 
 ### Internal Improvements
 - Refactored OKX adapter to Rust API clients
+- Refactored `BacktestDataIterator` (#2791) to consolidate data generator usage, thanks @faysou
 - Added stream iterators support `BacktestDataIterator`
+- Added serialization support for execution reports
+- Added serialization support for execution report commands
+- Added `DataTester` standardized data testing actor for integration adapters
 - Added `start` and `stop` to response data (#2748), thanks @stastnypremysl
 - Added integration test service management targets (#2765), thanks @stastnypremysl
 - Added integration tests for dYdX bar-partitioning and large-history handling (#2773), thanks @nicolad
+- Added make build-debug-pyo3 (#2802), thanks @faysou
+- Completed bar request implementation for OKX (#2789), thanks @nicolad
+- Enabled parallel pytest tests with `pytest-xdist` (#2808), thanks @stastnypremysl
+- Improved reconciliation handling of internally generated orders to align positions (now uses the `INTERNAL-DIFF` strategy ID)
 - Improved data client for blockchain adapter (#2787), thanks @filipmacek
+- Improved DEX pool sync process in the blockchain adapter (#2796), thanks @filipmacek
 - Improved efficiency of message bus external streams buffer flushing
 - Improved `databento_test_request_bars` example (#2762), thanks @faysou
-- Optimized account event purging for Redis where large lists could consume excessive memory and cause Redis to freeze
+- Improved zero-sized trades handling for Tardis CSV loader (will log a warning)
+- Optimized Redis key scans to improve efficiency over a network
 - Refined Rust catalog path handling (#2743), thanks @faysou
 - Refined Rust `GreeksCalculator` (#2760), thanks @faysou
+- Refined Databento bars timestamp decoding and backtest execution usage (#2800), thanks @faysou
+- Refined `FillModel` (#2795), thanks @faysou and @stefansimik
+- Updated PostgreSQL connection parameters to use 'nautilus' user (#2805), thanks @stastnypremysl
+- Upgraded `databento` crate to v0.30.0
 - Upgraded `datafusion` crate to v48.0.1
 - Upgraded `redis` crate to v0.32.4
 
 ### Fixes
+- Fixed decoding zero-sized trades for Databento MBO data
+- Fixed purging of contingent orders where open linked orders would still be purged
 - Fixed Tardis Machine replay processing and Parquet file writing
+- Fixed Tardis exchange-venue mapping for Kraken Futures (should map to `cryptofacilities`)
+- Fixed Polymarket reconciliation for signature type 2 trades where wallet address differs from funder address
 - Fixed catalog query of multiple instruments of same type (#2772), thanks @faysou
 - Fixed modification of contingent orders in backtest (#2761), thanks faysou
 - Fixed balance calculations on order fill to allow operating at near account balance capacity (#2752), thanks @petioptrv
 - Fixed time range end in some databento request functions (#2755), thanks @faysou
 - Fixed EOD bar for Interactive Brokers (#2764), thanks @faysou
 - Fixed dYdX Take Profit order type mapping error (#2758), thanks @nicolad
+- Fixed typo in logging for dYdX adapter (#2790), thanks @DeirhX
 
 ### Documentation Updates
+- Added mixed debugging instructions and example (#2806), thanks @faysou
 - Improved dYdX integration guide (#2751), thanks @nicolad
 
 ### Deprecations
@@ -391,7 +422,7 @@ and introduces support for Linux on ARM64 architecture.
 - Changed external bar requests `ts_event` timestamping from on open to on close for Bybit
 
 ### Internal Improvements
-- Added handling and warning for Betfair zero sized fills
+- Added handling and warning for Betfair zero-sized fills
 - Improved WebSocket error handling for dYdX (#2499), thanks @davidsblom
 - Ported `GreeksCalculator` to Rust (#2493, #2496), thanks @faysou
 - Upgraded Cython to v3.1.0b1
@@ -3442,7 +3473,7 @@ Released on 10th October 2021.
 - Fixed `OrderUpdated` leaves quantity calculation
 - Fixed contingency order logic at the exchange
 - Fixed indexing of orders for a position in the cache
-- Fixed flip logic for zero sized positions (not a flip)
+- Fixed flip logic for zero-sized positions (not a flip)
 
 ---
 

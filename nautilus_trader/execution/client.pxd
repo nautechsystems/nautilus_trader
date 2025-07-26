@@ -27,6 +27,7 @@ from nautilus_trader.execution.messages cimport BatchCancelOrders
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
+from nautilus_trader.execution.messages cimport QueryAccount
 from nautilus_trader.execution.messages cimport QueryOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
@@ -75,6 +76,7 @@ cdef class ExecutionClient(Component):
     cpdef void cancel_order(self, CancelOrder command)
     cpdef void cancel_all_orders(self, CancelAllOrders command)
     cpdef void batch_cancel_orders(self, BatchCancelOrders command)
+    cpdef void query_account(self, QueryAccount command)
     cpdef void query_order(self, QueryOrder command)
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------

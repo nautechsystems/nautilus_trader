@@ -25,6 +25,7 @@ import pandas as pd
 from nautilus_trader.adapters.databento.data_utils import data_path
 from nautilus_trader.adapters.databento.data_utils import databento_data
 from nautilus_trader.adapters.databento.data_utils import load_catalog
+from nautilus_trader.backtest.config import MarginModelConfig
 from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import BacktestDataConfig
@@ -32,6 +33,7 @@ from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.config import ImportableActorConfig
+from nautilus_trader.config import ImportableFillModelConfig
 from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import StrategyConfig
@@ -132,7 +134,7 @@ class OptionStrategy(Strategy):
 
         self.subscribe_quote_ticks(
             self.config.option_id,
-            params={"duration_seconds": pd.Timedelta(minutes=2).seconds},
+            params={"durations_seconds": (pd.Timedelta(minutes=2).seconds,)},
         )
         self.subscribe_quote_ticks(self.config.option_id2)
         self.subscribe_bars(self.bar_type)
@@ -203,7 +205,7 @@ class OptionStrategy(Strategy):
             instrument_id=instrument_id,
             order_side=(OrderSide.BUY if quantity > 0 else OrderSide.SELL),
             quantity=Quantity.from_int(abs(quantity)),
-            price=Price(price),
+            price=Price.from_str(f"{price:.2f}"),
         )
 
         self.submit_order(order)
@@ -318,6 +320,10 @@ if load_greeks:
         *data,
     ]
 
+# Configure venue with enhanced SizeAwareFillModel for realistic option execution
+# This fill model provides different execution behavior based on order size:
+# - Small orders (<=10 contracts): Good liquidity at best prices
+# - Large orders: Experience price impact with partial fills at worse prices
 venues = [
     BacktestVenueConfig(
         name="XCME",
@@ -325,6 +331,14 @@ venues = [
         account_type="MARGIN",
         base_currency="USD",
         starting_balances=["1_000_000 USD"],
+        margin_model=MarginModelConfig(
+            model_type="standard",
+        ),  # Use standard margin model for options trading
+        fill_model=ImportableFillModelConfig(
+            fill_model_path="nautilus_trader.backtest.models:SizeAwareFillModel",
+            config_path="nautilus_trader.backtest.config:FillModelConfig",
+            config={},
+        ),
     ),
 ]
 

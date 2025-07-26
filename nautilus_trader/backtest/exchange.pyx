@@ -22,6 +22,8 @@ from nautilus_trader.common.config import InvalidConfiguration
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.accounting.accounts.base cimport Account
+from nautilus_trader.accounting.margin_models cimport LeveragedMarginModel
+from nautilus_trader.accounting.margin_models cimport MarginModel
 from nautilus_trader.backtest.execution_client cimport BacktestExecClient
 from nautilus_trader.backtest.matching_engine cimport OrderMatchingEngine
 from nautilus_trader.backtest.models cimport FeeModel
@@ -170,6 +172,7 @@ cdef class SimulatedExchange:
         FillModel fill_model not None,
         FeeModel fee_model not None,
         LatencyModel latency_model = None,
+        MarginModel margin_model = None,
         BookType book_type = BookType.L1_MBP,
         bint frozen_account = False,
         bint reject_stop_orders = True,
@@ -209,6 +212,7 @@ cdef class SimulatedExchange:
         self.starting_balances = starting_balances
         self.default_leverage = default_leverage
         self.leverages = leverages
+        self.margin_model = margin_model
         self.is_frozen_account = frozen_account
 
         # Execution config
@@ -1094,10 +1098,15 @@ cdef class SimulatedExchange:
             ts_event=self._clock.timestamp_ns(),
         )
 
-        # Set leverages
+        # Set leverages and margin model
         cdef Account account = self.get_account()
         if account.is_margin_account:
             account.set_default_leverage(self.default_leverage)
+
             # Set instrument specific leverages
             for instrument_id, leverage in self.leverages.items():
                 account.set_leverage(instrument_id, leverage)
+
+            # Set margin model if provided
+            if self.margin_model is not None:
+                account.set_margin_model(self.margin_model)

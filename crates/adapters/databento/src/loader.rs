@@ -807,14 +807,12 @@ mod tests {
 
         assert_eq!(bars.len(), 2);
 
-        // When bars_timestamp_on_close is true, both ts_event and ts_init should be equal (close time)
+        // When bars_timestamp_on_close is true, both ts_event and ts_init should be close time
         for bar in &bars {
             assert_eq!(
                 bar.ts_event, bar.ts_init,
-                "ts_event and ts_init should be equal when bars_timestamp_on_close=true"
+                "ts_event and ts_init should both be close time when bars_timestamp_on_close=true"
             );
-            // For 1-second bars, ts_event should be 1 second after the open time
-            // This confirms the bar is timestamped at close
         }
     }
 
@@ -828,12 +826,14 @@ mod tests {
 
         assert_eq!(bars.len(), 2);
 
-        // When bars_timestamp_on_close is false, both ts_event and ts_init should be equal (open time)
+        // When bars_timestamp_on_close is false, ts_event is open time and ts_init is close time
         for bar in &bars {
-            assert_eq!(
+            assert_ne!(
                 bar.ts_event, bar.ts_init,
-                "ts_event and ts_init should be equal when bars_timestamp_on_close=false"
+                "ts_event should be open time and ts_init should be close time when bars_timestamp_on_close=false"
             );
+            // For 1-second bars, ts_init (close) should be 1 second after ts_event (open)
+            assert_eq!(bar.ts_init.as_u64(), bar.ts_event.as_u64() + 1_000_000_000);
         }
     }
 

@@ -39,18 +39,18 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::BarType,
-    enums::{OrderSide, OrderType, PositionSide},
-    events::{AccountState, OrderRejected},
-    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId},
+    enums::{OrderSide, OrderStatus, OrderType, PositionSide},
+    events::{AccountState, OrderCancelRejected, OrderModifyRejected, OrderRejected},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
-    types::{Price, Quantity},
+    types::{Money, Price, Quantity},
 };
 use nautilus_network::{
     ratelimiter::quota::Quota,
     websocket::{Consumer, MessageReader, WebSocketClient, WebSocketConfig},
 };
 use reqwest::header::USER_AGENT;
-use serde_json::{self, Value};
+use serde_json::Value;
 use tokio::sync::Mutex;
 use tokio_tungstenite::tungstenite::{Error, Message};
 use ustr::Ustr;
@@ -59,11 +59,12 @@ use super::{
     enums::{OKXWsChannel, OKXWsOperation},
     error::OKXWsError,
     messages::{
-        NautilusWsMessage, OKXSubscription, OKXSubscriptionArg, OKXWebSocketError,
+        ExecutionReport, NautilusWsMessage, OKXSubscription, OKXSubscriptionArg, OKXWebSocketError,
         OKXWebSocketEvent, OKXWsRequest, WsAmendOrderParams, WsAmendOrderParamsBuilder,
-        WsCancelOrderParams, WsCancelOrderParamsBuilder, WsPostOrderParamsBuilder,
+        WsCancelOrderParams, WsCancelOrderParamsBuilder, WsPostOrderParams,
+        WsPostOrderParamsBuilder,
     },
-    parse::{self, parse_book_msg_vec, parse_ws_message_data},
+    parse::{parse_book_msg_vec, parse_ws_message_data},
 };
 use crate::{
     common::{
@@ -73,8 +74,24 @@ use crate::{
         parse::{bar_spec_as_okx_channel, okx_instrument_type, parse_account_state},
     },
     http::models::OKXAccount,
-    websocket::messages::OKXOrderMsg,
+    websocket::{messages::OKXOrderMsg, parse::parse_order_msg_vec},
 };
+
+type PlaceRequestData = (ClientOrderId, TraderId, StrategyId, InstrumentId);
+type CancelRequestData = (
+    ClientOrderId,
+    TraderId,
+    StrategyId,
+    InstrumentId,
+    Option<VenueOrderId>,
+);
+type AmendRequestData = (
+    ClientOrderId,
+    TraderId,
+    StrategyId,
+    InstrumentId,
+    Option<VenueOrderId>,
+);
 
 /// Default OKX WebSocket rate limit: 3 requests per second.
 ///
@@ -112,7 +129,9 @@ pub struct OKXWebSocketClient {
     subscriptions_inst_family: Arc<Mutex<AHashMap<OKXWsChannel, AHashSet<Ustr>>>>,
     subscriptions_inst_id: Arc<Mutex<AHashMap<OKXWsChannel, AHashSet<Ustr>>>>,
     request_id_counter: Arc<AtomicU64>,
-    pending_requests: Arc<DashMap<String, (ClientOrderId, TraderId, StrategyId, InstrumentId)>>,
+    pending_place_requests: Arc<DashMap<String, PlaceRequestData>>,
+    pending_cancel_requests: Arc<DashMap<String, CancelRequestData>>,
+    pending_amend_requests: Arc<DashMap<String, AmendRequestData>>,
     instruments_cache: Arc<AHashMap<Ustr, InstrumentAny>>,
 }
 
@@ -176,7 +195,9 @@ impl OKXWebSocketClient {
             subscriptions_inst_family,
             subscriptions_inst_id,
             request_id_counter: Arc::new(AtomicU64::new(1)),
-            pending_requests: Arc::new(DashMap::new()),
+            pending_place_requests: Arc::new(DashMap::new()),
+            pending_cancel_requests: Arc::new(DashMap::new()),
+            pending_amend_requests: Arc::new(DashMap::new()),
             instruments_cache: Arc::new(AHashMap::new()),
         })
     }
@@ -309,7 +330,9 @@ impl OKXWebSocketClient {
 
         self.rx = Some(Arc::new(rx));
         let signal = self.signal.clone();
-        let pending_requests = self.pending_requests.clone();
+        let pending_place_requests = self.pending_place_requests.clone();
+        let pending_cancel_requests = self.pending_cancel_requests.clone();
+        let pending_amend_requests = self.pending_amend_requests.clone();
 
         let stream_handle = get_runtime().spawn(async move {
             OKXWsMessageHandler::new(
@@ -318,7 +341,9 @@ impl OKXWebSocketClient {
                 reader,
                 signal,
                 tx,
-                pending_requests,
+                pending_place_requests,
+                pending_cancel_requests,
+                pending_amend_requests,
             )
             .run()
             .await;
@@ -435,6 +460,12 @@ impl OKXWebSocketClient {
         log::debug!("Close process completed");
 
         Ok(())
+    }
+
+    fn generate_unique_request_id(&self) -> String {
+        self.request_id_counter
+            .fetch_add(1, Ordering::SeqCst)
+            .to_string()
     }
 
     async fn subscribe(&self, args: Vec<OKXSubscriptionArg>) -> Result<(), OKXWsError> {
@@ -953,12 +984,12 @@ impl OKXWebSocketClient {
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-websocket-cancel-order>
-    async fn ws_cancel_order(&self, params: WsCancelOrderParams) -> Result<(), OKXWsError> {
-        // Generate unique request ID for WebSocket message
-        let request_id = self
-            .request_id_counter
-            .fetch_add(1, Ordering::SeqCst)
-            .to_string();
+    async fn ws_cancel_order(
+        &self,
+        params: WsCancelOrderParams,
+        request_id: Option<String>,
+    ) -> Result<(), OKXWsError> {
+        let request_id = request_id.unwrap_or(self.generate_unique_request_id());
 
         let req = OKXWsRequest {
             id: Some(request_id),
@@ -1014,12 +1045,12 @@ impl OKXWebSocketClient {
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-websocket-amend-order>
-    async fn ws_amend_order(&self, params: WsAmendOrderParams) -> Result<(), OKXWsError> {
-        // Generate unique request ID for WebSocket message
-        let request_id = self
-            .request_id_counter
-            .fetch_add(1, Ordering::SeqCst)
-            .to_string();
+    async fn ws_amend_order(
+        &self,
+        params: WsAmendOrderParams,
+        request_id: Option<String>,
+    ) -> Result<(), OKXWsError> {
+        let request_id = request_id.unwrap_or(self.generate_unique_request_id());
 
         let req = OKXWsRequest {
             id: Some(request_id),
@@ -1045,11 +1076,7 @@ impl OKXWebSocketClient {
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-websocket-batch-orders>
     async fn ws_batch_place_orders(&self, args: Vec<Value>) -> Result<(), OKXWsError> {
-        // Generate unique request ID for WebSocket message
-        let request_id = self
-            .request_id_counter
-            .fetch_add(1, Ordering::SeqCst)
-            .to_string();
+        let request_id = self.generate_unique_request_id();
 
         let req = OKXWsRequest {
             id: Some(request_id),
@@ -1075,11 +1102,7 @@ impl OKXWebSocketClient {
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-websocket-batch-cancel-orders>
     async fn ws_batch_cancel_orders(&self, args: Vec<Value>) -> Result<(), OKXWsError> {
-        // Generate unique request ID for WebSocket message
-        let request_id = self
-            .request_id_counter
-            .fetch_add(1, Ordering::SeqCst)
-            .to_string();
+        let request_id = self.generate_unique_request_id();
 
         let req = OKXWsRequest {
             id: Some(request_id),
@@ -1105,11 +1128,7 @@ impl OKXWebSocketClient {
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-websocket-batch-amend-orders>
     async fn ws_batch_amend_orders(&self, args: Vec<Value>) -> Result<(), OKXWsError> {
-        // Generate unique request ID for WebSocket message
-        let request_id = self
-            .request_id_counter
-            .fetch_add(1, Ordering::SeqCst)
-            .to_string();
+        let request_id = self.generate_unique_request_id();
 
         let req = OKXWsRequest {
             id: Some(request_id),
@@ -1226,15 +1245,71 @@ impl OKXWebSocketClient {
             .build()
             .map_err(|e| OKXWsError::ClientError(format!("Build order params error: {e}")))?;
 
-        let request_id = self
-            .request_id_counter
-            .fetch_add(1, Ordering::SeqCst)
-            .to_string();
+        let request_id = self.generate_unique_request_id();
 
-        self.pending_requests.insert(
+        self.pending_place_requests.insert(
             request_id.clone(),
             (client_order_id, trader_id, strategy_id, instrument_id),
         );
+
+        self.ws_place_order(params, Some(request_id)).await
+    }
+
+    /// Cancels an existing order via WebSocket using Nautilus domain types.
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-cancel-order>.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn cancel_order(
+        &self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        venue_order_id: Option<VenueOrderId>,
+        position_side: Option<PositionSide>,
+    ) -> Result<(), OKXWsError> {
+        let mut builder = WsCancelOrderParamsBuilder::default();
+        // Note: instType should NOT be included in cancel order requests
+        // For WebSocket orders, use the full symbol (including SWAP/FUTURES suffix if present)
+        builder.inst_id(instrument_id.symbol.as_str());
+        builder.cl_ord_id(client_order_id.as_str());
+        if let Some(ps) = position_side {
+            builder.pos_side(OKXPositionSide::from(ps));
+        }
+
+        let params = builder
+            .build()
+            .map_err(|e| OKXWsError::ClientError(format!("Build cancel params error: {e}")))?;
+
+        let request_id = self.generate_unique_request_id();
+
+        self.pending_cancel_requests.insert(
+            request_id.clone(),
+            (
+                client_order_id,
+                trader_id,
+                strategy_id,
+                instrument_id,
+                venue_order_id,
+            ),
+        );
+
+        self.ws_cancel_order(params, Some(request_id)).await
+    }
+
+    /// Place a new order via WebSocket.
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/en/#order-book-trading-websocket-place-order>
+    async fn ws_place_order(
+        &self,
+        params: WsPostOrderParams,
+        request_id: Option<String>,
+    ) -> Result<(), OKXWsError> {
+        let request_id = request_id.unwrap_or(self.generate_unique_request_id());
 
         let req = OKXWsRequest {
             id: Some(request_id),
@@ -1254,34 +1329,6 @@ impl OKXWebSocketClient {
         }
     }
 
-    /// Cancels an existing order via WebSocket using Nautilus domain types.
-    ///
-    /// # References
-    ///
-    /// <https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-cancel-order>.
-    #[allow(clippy::too_many_arguments)]
-    pub async fn cancel_order(
-        &self,
-        instrument_id: InstrumentId,
-        client_order_id: ClientOrderId,
-        position_side: Option<PositionSide>,
-    ) -> Result<(), OKXWsError> {
-        let mut builder = WsCancelOrderParamsBuilder::default();
-        // Note: instType should NOT be included in cancel order requests
-        // For WebSocket orders, use the full symbol (including SWAP/FUTURES suffix if present)
-        builder.inst_id(instrument_id.symbol.as_str());
-        builder.cl_ord_id(client_order_id.as_str());
-        if let Some(ps) = position_side {
-            builder.pos_side(OKXPositionSide::from(ps));
-        }
-
-        let params = builder
-            .build()
-            .map_err(|e| OKXWsError::ClientError(format!("Build cancel params error: {e}")))?;
-
-        self.ws_cancel_order(params).await
-    }
-
     /// Modifies an existing order via WebSocket using Nautilus domain types.
     ///
     /// # References
@@ -1290,11 +1337,14 @@ impl OKXWebSocketClient {
     #[allow(clippy::too_many_arguments)]
     pub async fn modify_order(
         &self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
         instrument_id: InstrumentId,
         client_order_id: ClientOrderId,
         new_client_order_id: ClientOrderId,
         price: Option<Price>,
         quantity: Option<Quantity>,
+        venue_order_id: Option<VenueOrderId>,
         position_side: Option<PositionSide>,
     ) -> Result<(), OKXWsError> {
         let mut builder = WsAmendOrderParamsBuilder::default();
@@ -1316,7 +1366,24 @@ impl OKXWebSocketClient {
             .build()
             .map_err(|e| OKXWsError::ClientError(format!("Build amend params error: {e}")))?;
 
-        self.ws_amend_order(params).await
+        // Generate unique request ID for WebSocket message
+        let request_id = self
+            .request_id_counter
+            .fetch_add(1, Ordering::SeqCst)
+            .to_string();
+
+        self.pending_amend_requests.insert(
+            request_id.clone(),
+            (
+                client_order_id,
+                trader_id,
+                strategy_id,
+                instrument_id,
+                venue_order_id,
+            ),
+        );
+
+        self.ws_amend_order(params, Some(request_id)).await
     }
 
     /// Submits multiple orders via WebSocket using Nautilus domain types.
@@ -1631,31 +1698,39 @@ impl OKXFeedHandler {
 
 struct OKXWsMessageHandler {
     account_id: AccountId,
-    instruments: AHashMap<Ustr, InstrumentAny>,
     handler: OKXFeedHandler,
     tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
+    pending_place_requests: Arc<DashMap<String, PlaceRequestData>>,
+    pending_cancel_requests: Arc<DashMap<String, CancelRequestData>>,
+    pending_amend_requests: Arc<DashMap<String, AmendRequestData>>,
+    instruments: AHashMap<Ustr, InstrumentAny>,
     last_account_state: Option<AccountState>,
-    pending_requests: Arc<DashMap<String, (ClientOrderId, TraderId, StrategyId, InstrumentId)>>,
+    fee_cache: AHashMap<Ustr, Money>, // Key is order ID
 }
 
 impl OKXWsMessageHandler {
     /// Creates a new [`OKXFeedHandler`] instance.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         account_id: AccountId,
         instruments: AHashMap<Ustr, InstrumentAny>,
         reader: MessageReader,
         signal: Arc<AtomicBool>,
         tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
-        pending_requests: Arc<DashMap<String, (ClientOrderId, TraderId, StrategyId, InstrumentId)>>,
+        pending_place_requests: Arc<DashMap<String, PlaceRequestData>>,
+        pending_cancel_requests: Arc<DashMap<String, CancelRequestData>>,
+        pending_amend_requests: Arc<DashMap<String, AmendRequestData>>,
     ) -> Self {
-        let handler = OKXFeedHandler::new(reader, signal);
         Self {
-            instruments,
-            handler,
-            tx,
             account_id,
+            handler: OKXFeedHandler::new(reader, signal),
+            tx,
+            pending_place_requests,
+            pending_cancel_requests,
+            pending_amend_requests,
+            instruments,
             last_account_state: None,
-            pending_requests,
+            fee_cache: AHashMap::new(),
         }
     }
 
@@ -1750,26 +1825,95 @@ impl OKXWsMessageHandler {
                         id
                     );
 
-                    // Fetch pending request mapping for rejection
+                    // Fetch pending request mapping for rejection based on operation type
                     if let Some(id) = &id {
-                        if let Some((_, (client_order_id, trader_id, strategy_id, instrument_id))) =
-                            self.pending_requests.remove(id)
-                        {
-                            let ts_event = clock.get_time_ns();
-                            let rejected = OrderRejected::new(
-                                trader_id,
-                                strategy_id,
-                                instrument_id,
-                                client_order_id,
-                                self.account_id,
-                                Ustr::from(error_msg), // Rejection reason from OKX
-                                UUID4::new(),
-                                ts_event,
-                                ts_event,
-                                false, // Not from reconciliation
-                            );
+                        match op {
+                            OKXWsOperation::Order => {
+                                if let Some((
+                                    _,
+                                    (client_order_id, trader_id, strategy_id, instrument_id),
+                                )) = self.pending_place_requests.remove(id)
+                                {
+                                    let ts_event = clock.get_time_ns();
+                                    let rejected = OrderRejected::new(
+                                        trader_id,
+                                        strategy_id,
+                                        instrument_id,
+                                        client_order_id,
+                                        self.account_id,
+                                        Ustr::from(error_msg), // Rejection reason from OKX
+                                        UUID4::new(),
+                                        ts_event,
+                                        ts_init,
+                                        false, // Not from reconciliation
+                                    );
 
-                            return Some(NautilusWsMessage::OrderRejected(rejected));
+                                    return Some(NautilusWsMessage::OrderRejected(rejected));
+                                }
+                            }
+                            OKXWsOperation::CancelOrder => {
+                                if let Some((
+                                    _,
+                                    (
+                                        client_order_id,
+                                        trader_id,
+                                        strategy_id,
+                                        instrument_id,
+                                        venue_order_id,
+                                    ),
+                                )) = self.pending_cancel_requests.remove(id)
+                                {
+                                    let ts_event = clock.get_time_ns();
+                                    let rejected = OrderCancelRejected::new(
+                                        trader_id,
+                                        strategy_id,
+                                        instrument_id,
+                                        client_order_id,
+                                        Ustr::from(error_msg), // Rejection reason from OKX
+                                        UUID4::new(),
+                                        ts_event,
+                                        ts_init,
+                                        false, // Not from reconciliation
+                                        venue_order_id,
+                                        Some(self.account_id),
+                                    );
+
+                                    return Some(NautilusWsMessage::OrderCancelRejected(rejected));
+                                }
+                            }
+                            OKXWsOperation::AmendOrder => {
+                                if let Some((
+                                    _,
+                                    (
+                                        client_order_id,
+                                        trader_id,
+                                        strategy_id,
+                                        instrument_id,
+                                        venue_order_id,
+                                    ),
+                                )) = self.pending_amend_requests.remove(id)
+                                {
+                                    let ts_event = clock.get_time_ns();
+                                    let rejected = OrderModifyRejected::new(
+                                        trader_id,
+                                        strategy_id,
+                                        instrument_id,
+                                        client_order_id,
+                                        Ustr::from(error_msg), // Rejection reason from OKX
+                                        UUID4::new(),
+                                        ts_event,
+                                        ts_init,
+                                        false, // Not from reconciliation
+                                        venue_order_id,
+                                        Some(self.account_id),
+                                    );
+
+                                    return Some(NautilusWsMessage::OrderModifyRejected(rejected));
+                                }
+                            }
+                            _ => {
+                                tracing::warn!("Unhandled operation type for rejection: {op}");
+                            }
                         }
                     }
 
@@ -1827,24 +1971,54 @@ impl OKXWsMessageHandler {
 
                     let data: Vec<OKXOrderMsg> = serde_json::from_value(data.clone()).unwrap();
 
-                    match parse::parse_order_msg_vec(
-                        data,
-                        self.account_id,
-                        &self.instruments,
-                        ts_init,
-                    ) {
-                        Ok(exec_reports) => {
-                            if exec_reports.is_empty() {
-                                tracing::warn!("Order reports was empty");
+                    let mut exec_reports = Vec::with_capacity(data.len());
+
+                    for msg in data {
+                        match parse_order_msg_vec(
+                            vec![msg],
+                            self.account_id,
+                            &self.instruments,
+                            &self.fee_cache,
+                            ts_init,
+                        ) {
+                            Ok(mut reports) => {
+                                // Update fee cache based on the new reports
+                                for report in &reports {
+                                    match report {
+                                        ExecutionReport::Fill(fill_report) => {
+                                            let order_id = fill_report.venue_order_id.inner();
+                                            let current_fee = self
+                                                .fee_cache
+                                                .get(&order_id)
+                                                .copied()
+                                                .unwrap_or_else(|| {
+                                                    Money::new(0.0, fill_report.commission.currency)
+                                                });
+                                            let total_fee = current_fee + fill_report.commission;
+                                            self.fee_cache.insert(order_id, total_fee);
+                                        }
+                                        ExecutionReport::Order(status_report) => {
+                                            if matches!(
+                                                status_report.order_status,
+                                                OrderStatus::Filled,
+                                            ) {
+                                                self.fee_cache
+                                                    .remove(&status_report.venue_order_id.inner());
+                                            }
+                                        }
+                                    }
+                                }
+                                exec_reports.append(&mut reports);
+                            }
+                            Err(e) => {
+                                tracing::error!("Failed to parse order message: {e}");
                                 continue;
                             }
+                        }
+                    }
 
-                            return Some(NautilusWsMessage::ExecutionReports(exec_reports));
-                        }
-                        Err(e) => {
-                            tracing::error!("Failed to parse order message: {e}");
-                            continue;
-                        }
+                    if !exec_reports.is_empty() {
+                        return Some(NautilusWsMessage::ExecutionReports(exec_reports));
                     }
                 }
 
@@ -1913,47 +2087,38 @@ impl OKXWsMessageHandler {
     }
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use futures_util;
+    use rstest::rstest;
+
     use super::*;
 
-    #[test]
+    #[rstest]
     fn test_timestamp_format_for_websocket_auth() {
-        // Generate timestamp like in authenticate method
         let timestamp = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .expect("System time should be after UNIX epoch")
             .as_secs()
             .to_string();
 
-        // Should be numeric string representing Unix seconds
-        assert!(
-            timestamp.parse::<u64>().is_ok(),
-            "Timestamp should be numeric"
-        );
-        assert!(
-            timestamp.len() == 10,
-            "Unix timestamp should be 10 digits for current era"
-        );
-
-        // Should not contain any non-numeric characters
-        assert!(
-            timestamp.chars().all(|c| c.is_ascii_digit()),
-            "Timestamp should only contain digits"
-        );
+        assert!(timestamp.parse::<u64>().is_ok());
+        assert_eq!(timestamp.len(), 10);
+        assert!(timestamp.chars().all(|c| c.is_ascii_digit()));
     }
 
-    #[test]
+    #[rstest]
     fn test_new_without_credentials() {
-        // Should create client without credentials (for public endpoints)
         let client = OKXWebSocketClient::default();
         assert!(client.credential.is_none());
         assert_eq!(client.api_key(), None);
     }
 
-    #[test]
+    #[rstest]
     fn test_new_with_credentials() {
-        // Should create client with credentials
         let client = OKXWebSocketClient::new(
             None,
             Some("test_key".to_string()),
@@ -1967,17 +2132,245 @@ mod tests {
         assert_eq!(client.api_key(), Some("test_key"));
     }
 
-    #[test]
+    #[rstest]
     fn test_new_partial_credentials_fails() {
-        // Should fail when only some credentials are provided
         let result = OKXWebSocketClient::new(
             None,
             Some("test_key".to_string()),
-            None, // Missing secret
+            None,
             Some("test_passphrase".to_string()),
             None,
             None,
         );
         assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_request_id_generation() {
+        let client = OKXWebSocketClient::default();
+
+        let initial_counter = client.request_id_counter.load(Ordering::SeqCst);
+
+        let id1 = client.request_id_counter.fetch_add(1, Ordering::SeqCst);
+        let id2 = client.request_id_counter.fetch_add(1, Ordering::SeqCst);
+
+        assert_eq!(id1, initial_counter);
+        assert_eq!(id2, initial_counter + 1);
+        assert_eq!(
+            client.request_id_counter.load(Ordering::SeqCst),
+            initial_counter + 2
+        );
+    }
+
+    #[rstest]
+    fn test_client_state_management() {
+        let client = OKXWebSocketClient::default();
+
+        assert!(client.is_closed());
+        assert!(!client.is_active());
+
+        let client_with_heartbeat =
+            OKXWebSocketClient::new(None, None, None, None, None, Some(30)).unwrap();
+
+        assert!(client_with_heartbeat.heartbeat.is_some());
+        assert_eq!(client_with_heartbeat.heartbeat.unwrap(), 30);
+    }
+
+    #[rstest]
+    fn test_request_cache_operations() {
+        let client = OKXWebSocketClient::default();
+
+        assert_eq!(client.pending_place_requests.len(), 0);
+        assert_eq!(client.pending_cancel_requests.len(), 0);
+        assert_eq!(client.pending_amend_requests.len(), 0);
+
+        let client_order_id = ClientOrderId::from("test-order-123");
+        let trader_id = TraderId::from("test-trader-001");
+        let strategy_id = StrategyId::from("test-strategy-001");
+        let instrument_id = InstrumentId::from("BTC-USDT.OKX");
+
+        client.pending_place_requests.insert(
+            "place-123".to_string(),
+            (client_order_id, trader_id, strategy_id, instrument_id),
+        );
+
+        assert_eq!(client.pending_place_requests.len(), 1);
+        assert!(client.pending_place_requests.contains_key("place-123"));
+
+        let removed = client.pending_place_requests.remove("place-123");
+        assert!(removed.is_some());
+        assert_eq!(client.pending_place_requests.len(), 0);
+    }
+
+    #[rstest]
+    fn test_websocket_error_handling() {
+        let clock = get_atomic_clock_realtime();
+        let ts = clock.get_time_ns().as_u64();
+
+        let error = OKXWebSocketError {
+            code: "60012".to_string(),
+            message: "Invalid request".to_string(),
+            conn_id: None,
+            timestamp: ts,
+        };
+
+        assert_eq!(error.code, "60012");
+        assert_eq!(error.message, "Invalid request");
+        assert_eq!(error.timestamp, ts);
+
+        let nautilus_msg = NautilusWsMessage::Error(error);
+        match nautilus_msg {
+            NautilusWsMessage::Error(err) => {
+                assert_eq!(err.code, "60012");
+                assert_eq!(err.message, "Invalid request");
+            }
+            _ => panic!("Expected Error variant"),
+        }
+    }
+
+    #[rstest]
+    fn test_request_id_generation_sequence() {
+        let client = OKXWebSocketClient::default();
+
+        let initial_counter = client
+            .request_id_counter
+            .load(std::sync::atomic::Ordering::SeqCst);
+        let mut ids = Vec::new();
+        for _ in 0..10 {
+            let id = client
+                .request_id_counter
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            ids.push(id);
+        }
+
+        for (i, &id) in ids.iter().enumerate() {
+            assert_eq!(id, initial_counter + i as u64);
+        }
+
+        assert_eq!(
+            client
+                .request_id_counter
+                .load(std::sync::atomic::Ordering::SeqCst),
+            initial_counter + 10
+        );
+    }
+
+    #[rstest]
+    fn test_client_state_transitions() {
+        let client = OKXWebSocketClient::default();
+
+        assert!(client.is_closed());
+        assert!(!client.is_active());
+
+        let client_with_heartbeat = OKXWebSocketClient::new(
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(30), // 30 second heartbeat
+        )
+        .unwrap();
+
+        assert!(client_with_heartbeat.heartbeat.is_some());
+        assert_eq!(client_with_heartbeat.heartbeat.unwrap(), 30);
+
+        let account_id = AccountId::from("test-account-123");
+        let client_with_account =
+            OKXWebSocketClient::new(None, None, None, None, Some(account_id), None).unwrap();
+
+        assert_eq!(client_with_account.account_id, account_id);
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_request_handling() {
+        let client = Arc::new(OKXWebSocketClient::default());
+
+        let initial_counter = client
+            .request_id_counter
+            .load(std::sync::atomic::Ordering::SeqCst);
+        let mut handles = Vec::new();
+
+        for i in 0..10 {
+            let client_clone = Arc::clone(&client);
+            let handle = tokio::spawn(async move {
+                let client_order_id = ClientOrderId::from(format!("order-{i}").as_str());
+                let trader_id = TraderId::from("trader-001");
+                let strategy_id = StrategyId::from("strategy-001");
+                let instrument_id = InstrumentId::from("BTC-USDT.OKX");
+
+                let request_id = client_clone
+                    .request_id_counter
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let request_id_str = request_id.to_string();
+
+                client_clone.pending_place_requests.insert(
+                    request_id_str.clone(),
+                    (client_order_id, trader_id, strategy_id, instrument_id),
+                );
+
+                // Simulate processing delay
+                tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
+
+                // Remove from cache (simulating response processing)
+                let removed = client_clone.pending_place_requests.remove(&request_id_str);
+                assert!(removed.is_some());
+
+                request_id
+            });
+            handles.push(handle);
+        }
+
+        // Wait for all operations to complete
+        let results: Vec<_> = futures_util::future::join_all(handles).await;
+
+        assert_eq!(results.len(), 10);
+        for result in results {
+            assert!(result.is_ok());
+        }
+
+        assert_eq!(client.pending_place_requests.len(), 0);
+
+        let final_counter = client
+            .request_id_counter
+            .load(std::sync::atomic::Ordering::SeqCst);
+        assert_eq!(final_counter, initial_counter + 10);
+    }
+
+    #[rstest]
+    fn test_websocket_error_scenarios() {
+        let clock = get_atomic_clock_realtime();
+        let ts = clock.get_time_ns().as_u64();
+
+        let error_scenarios = vec![
+            ("60012", "Invalid request", None),
+            ("60009", "Invalid API key", Some("conn-123".to_string())),
+            ("60014", "Too many requests", None),
+            ("50001", "Order not found", None),
+        ];
+
+        for (code, message, conn_id) in error_scenarios {
+            let error = OKXWebSocketError {
+                code: code.to_string(),
+                message: message.to_string(),
+                conn_id: conn_id.clone(),
+                timestamp: ts,
+            };
+
+            assert_eq!(error.code, code);
+            assert_eq!(error.message, message);
+            assert_eq!(error.conn_id, conn_id);
+            assert_eq!(error.timestamp, ts);
+
+            let nautilus_msg = NautilusWsMessage::Error(error);
+            match nautilus_msg {
+                NautilusWsMessage::Error(err) => {
+                    assert_eq!(err.code, code);
+                    assert_eq!(err.message, message);
+                    assert_eq!(err.conn_id, conn_id);
+                }
+                _ => panic!("Expected Error variant"),
+            }
+        }
     }
 }

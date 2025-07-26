@@ -135,7 +135,7 @@ The table below outlines the mappings between Nautilus venues and corresponding 
 | `HUOBI`                 | `huobi`, `huobi-dm`, `huobi-dm-linear-swap`, `huobi-dm-options` |
 | `HUOBI_DELIVERY`        | `huobi-dm-swap`                                       |
 | `HYPERLIQUID`           | `hyperliquid`                                         |
-| `KRAKEN`                | `kraken`, `kraken-futures`                            |
+| `KRAKEN`                | `kraken`                                              |
 | `KUCOIN`                | `kucoin`, `kucoin-futures`                            |
 | `MANGO`                 | `mango`                                               |
 | `OKCOIN`                | `okcoin`                                              |
@@ -143,7 +143,7 @@ The table below outlines the mappings between Nautilus venues and corresponding 
 | `PHEMEX`                | `phemex`                                              |
 | `POLONIEX`              | `poloniex`                                            |
 | `SERUM`                 | `serum` (*historical research*)                       |
-| `STARATLAS`             | `staratlas`                                           |
+| `STAR_ATLAS`            | `star-atlas`                                          |
 | `UPBIT`                 | `upbit`                                               |
 | `WOO_X`                 | `woo-x`                                               |
 

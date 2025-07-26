@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-# ruff: noqa: UP007, PYI021
+# ruff: noqa: UP007
 # fmt: off
 
 import datetime as dt
@@ -2585,6 +2585,7 @@ class CurrencyPair:
         size_increment: Quantity,
         ts_event: int,
         ts_init: int,
+        multiplier: Quantity | None = None,
         lot_size: Quantity | None = None,
         max_quantity: Quantity | None = None,
         min_quantity: Quantity | None = None,
@@ -4281,6 +4282,21 @@ class OrderBookDeltaDataWrangler:
     def size_precision(self) -> int: ...
     def process_record_batch_bytes(self, data: bytes) -> list[OrderBookDelta]: ...
 
+class OrderBookDepth10DataWrangler:
+    def __init__(
+        self,
+        instrument_id: str,
+        price_precision: int,
+        size_precision: int,
+    ) -> None: ...
+    @property
+    def instrument_id(self) -> str: ...
+    @property
+    def price_precision(self) -> int: ...
+    @property
+    def size_precision(self) -> int: ...
+    def process_record_batch_bytes(self, data: bytes) -> list[OrderBookDepth10]: ...
+
 class QuoteTickDataWrangler:
     def __init__(
         self,
@@ -5536,6 +5552,7 @@ def load_tardis_depth10_from_snapshot5(filepath: str, price_precision: int | Non
 def load_tardis_depth10_from_snapshot25(filepath: str, price_precision: int | None = None, size_precision: int | None = None, instrument_id: InstrumentId | None = None, limit: int | None = None) -> list[OrderBookDepth10]: ...  # noqa
 
 def stream_tardis_deltas(filepath: str, chunk_size: int = 100_000, price_precision: int | None = None, size_precision: int | None = None, instrument_id: InstrumentId | None = None) -> Iterator[list[OrderBookDelta]]: ...  # noqa
+def stream_tardis_batched_deltas(filepath: str, chunk_size: int = 100_000, price_precision: int | None = None, size_precision: int | None = None, instrument_id: InstrumentId | None = None) -> Iterator[list[object]]: ...  # noqa
 def stream_tardis_quotes(filepath: str, chunk_size: int = 100_000, price_precision: int | None = None, size_precision: int | None = None, instrument_id: InstrumentId | None = None) -> Iterator[list[QuoteTick]]: ...  # noqa
 def stream_tardis_trades(filepath: str, chunk_size: int = 100_000, price_precision: int | None = None, size_precision: int | None = None, instrument_id: InstrumentId | None = None) -> Iterator[list[TradeTick]]: ...  # noqa
 def stream_tardis_depth10_from_snapshot5(filepath: str, chunk_size: int = 100_000, price_precision: int | None = None, size_precision: int | None = None, instrument_id: InstrumentId | None = None) -> Iterator[list[OrderBookDepth10]]: ...  # noqa
@@ -5893,17 +5910,23 @@ class OKXWebSocketClient:
     ) -> None: ...
     async def cancel_order(
         self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
         instrument_id: InstrumentId,
         client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId | None = None,
         position_side: PositionSide | None = None,
     ) -> None: ...
     async def modify_order(
         self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
         instrument_id: InstrumentId,
         client_order_id: ClientOrderId,
         new_client_order_id: ClientOrderId,
         price: Price | None = None,
         quantity: Quantity | None = None,
+        venue_order_id: VenueOrderId | None = None,
         position_side: PositionSide | None = None,
     ) -> None: ...
     async def batch_submit_orders(

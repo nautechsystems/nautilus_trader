@@ -18,9 +18,54 @@ use std::fmt::Display;
 use derive_builder::Builder;
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::identifiers::{
-    ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId,
+    AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId,
 };
 use serde::{Deserialize, Serialize};
+
+#[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[builder(default)]
+#[serde(tag = "type")]
+pub struct QueryAccount {
+    pub trader_id: TraderId,
+    pub client_id: ClientId,
+    pub account_id: AccountId,
+    pub command_id: UUID4,
+    pub ts_init: UnixNanos,
+}
+
+impl QueryAccount {
+    /// Creates a new [`QueryAccount`] instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if parameters are invalid.
+    #[allow(clippy::too_many_arguments)]
+    pub const fn new(
+        trader_id: TraderId,
+        client_id: ClientId,
+        account_id: AccountId,
+        command_id: UUID4,
+        ts_init: UnixNanos,
+    ) -> anyhow::Result<Self> {
+        Ok(Self {
+            trader_id,
+            client_id,
+            account_id,
+            command_id,
+            ts_init,
+        })
+    }
+}
+
+impl Display for QueryAccount {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "QueryAccount(client_id={}, account_id={})",
+            self.client_id, self.account_id,
+        )
+    }
+}
 
 #[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
 #[builder(default)]

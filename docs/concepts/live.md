@@ -146,12 +146,12 @@ See also the `LiveExecEngineConfig` [API Reference](../api_reference/config#clas
 
 **Purpose**: Ensures that the system state remains consistent with the trading venue by recovering any missed events, such as order and position status updates.
 
-| Setting                        | Default | Description                                                                                       |
-|--------------------------------|---------|---------------------------------------------------------------------------------------------------|
-| `reconciliation`               | True    | Activates reconciliation at startup, aligning the system's internal state with the venue's state. |
-| `reconciliation_lookback_mins` | None    | Specifies how far back (in minutes) the system requests past events to reconcile uncached state.  |
-| `filtered_instrument_ids`      | None    | A list of instrument IDs to filter from reconciliation.                                          |
-| `filtered_client_order_ids`    | None    | A list of client order IDs to filter from reconciliation.                                        |
+| Setting                         | Default | Description                                                                                        |
+|---------------------------------|---------|----------------------------------------------------------------------------------------------------|
+| `reconciliation`                | True    | Activates reconciliation at startup, aligning the system's internal state with the venue's state.  |
+| `reconciliation_lookback_mins`  | None    | Specifies how far back (in minutes) the system requests past events to reconcile uncached state.   |
+| `reconciliation_instrument_ids` | None    | An include list of specific instrument IDs to consider for reconciliation.                         |
+| `filtered_client_order_ids`     | None    | A list of client order IDs to filter from reconciliation (useful when the venue holds duplicates). |
 
 :::info
 See also [Execution reconciliation](../concepts/execution#execution-reconciliation) for further details.
@@ -182,7 +182,7 @@ The following additional options provide further control over execution behavior
 
 | Setting                            | Default | Description                                                                                                |
 |------------------------------------|---------|------------------------------------------------------------------------------------------------------------|
-| `generate_missing_orders`          | True    | If `MARKET` order events will be generated during reconciliation to align position discrepancies.          |
+| `generate_missing_orders`          | True    | If `MARKET` order events will be generated during reconciliation to align position discrepancies. These orders use the strategy ID `INTERNAL-DIFF`.          |
 | `snapshot_orders`                  | False   | If order snapshots should be taken on order events.                                                        |
 | `snapshot_positions`               | False   | If position snapshots should be taken on position events.                                                  |
 | `snapshot_positions_interval_secs` | None    | The interval (seconds) between position snapshots when enabled.                                            |
@@ -329,6 +329,11 @@ reconciliation using the `external_order_claims` configuration parameter.
 This is useful in situations where, at system start, there is no cached state or it is desirable for
 a strategy to resume its operations and continue managing existing open orders at the venue for an instrument.
 
+:::note
+Orders generated with strategy ID `INTERNAL-DIFF` during position reconciliation cannot be claimed by strategies
+via `external_order_claims`. These orders are generated internally to align position discrepancies and should not be managed by user strategies.
+:::
+
 :::info
 See the `LiveExecEngineConfig` [API Reference](../api_reference/config#class-liveexecengineconfig) for further details.
 :::
@@ -355,6 +360,7 @@ The system state is then reconciled with the reports, which represent external "
 - **Position Reconciliation**:
   - Ensure the net position per instrument matches the position reports returned from the venue using instrument precision handling.
   - If the position state resulting from order reconciliation does not match the external state, external order events will be generated to resolve discrepancies.
+  - When `generate_missing_orders` is enabled (default: True), `MARKET` orders are generated with strategy ID `INTERNAL-DIFF` to align position discrepancies discovered during reconciliation.
   - Zero quantity differences after precision rounding are handled gracefully.
 - **Exception Handling**:
   - Individual adapter failures do not abort the entire reconciliation process.

@@ -333,9 +333,9 @@ def test_binance_mark_price_pickling():
     }
 
 
-@pytest.fixture(name="catalog")
-def fixture_catalog() -> ParquetDataCatalog:
-    return setup_catalog(protocol="memory")
+@pytest.fixture
+def catalog(tmp_path) -> ParquetDataCatalog:
+    return setup_catalog(protocol="memory", path=tmp_path / "catalog")
 
 
 def test_binance_bar_data_catalog_serialization(catalog: ParquetDataCatalog):

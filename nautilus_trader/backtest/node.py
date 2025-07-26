@@ -24,6 +24,7 @@ from nautilus_trader.backtest.config import BacktestVenueConfig
 from nautilus_trader.backtest.config import FeeModelFactory
 from nautilus_trader.backtest.config import FillModelFactory
 from nautilus_trader.backtest.config import LatencyModelFactory
+from nautilus_trader.backtest.config import MarginModelFactory
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FeeModel
@@ -383,6 +384,7 @@ class BacktestNode:
                 starting_balances=get_starting_balances(venue_config),
                 default_leverage=Decimal(venue_config.default_leverage),
                 leverages=get_leverages(venue_config),
+                margin_model=get_margin_model(venue_config),
                 book_type=book_type_from_str(venue_config.book_type),
                 routing=venue_config.routing,
                 modules=[ActorFactory.create(module) for module in (venue_config.modules or [])],
@@ -778,3 +780,13 @@ def get_fee_model(config: BacktestVenueConfig) -> FeeModel | None:
         return None
 
     return FeeModelFactory.create(config.fee_model)
+
+
+def get_margin_model(config: BacktestVenueConfig):
+    """
+    Create a MarginModel from the venue configuration.
+    """
+    if config.margin_model is None:
+        return None
+
+    return MarginModelFactory.create(config.margin_model)

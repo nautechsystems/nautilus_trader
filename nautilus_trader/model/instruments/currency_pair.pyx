@@ -58,6 +58,8 @@ cdef class CurrencyPair(Instrument):
         UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the data object was initialized.
+    multiplier : Quantity, default 1
+        The contract multiplier.
     lot_size : Quantity, optional
         The rounded lot unit size.
     max_quantity : Quantity, optional
@@ -134,6 +136,7 @@ cdef class CurrencyPair(Instrument):
         Quantity size_increment not None,
         uint64_t ts_event,
         uint64_t ts_init,
+        multiplier=Quantity.from_int_c(1),
         Quantity lot_size: Quantity | None = None,
         Quantity max_quantity: Quantity | None = None,
         Quantity min_quantity: Quantity | None = None,
@@ -167,7 +170,7 @@ cdef class CurrencyPair(Instrument):
             size_precision=size_precision,
             price_increment=price_increment,
             size_increment=size_increment,
-            multiplier=Quantity.from_int_c(1),
+            multiplier=multiplier,
             lot_size=lot_size,
             max_quantity=max_quantity,
             min_quantity=min_quantity,
@@ -217,6 +220,7 @@ cdef class CurrencyPair(Instrument):
             size_precision=values["size_precision"],
             price_increment=Price.from_str_c(values["price_increment"]),
             size_increment=Quantity.from_str_c(values["size_increment"]),
+            multiplier=Quantity.from_str_c(values["multiplier"]),
             lot_size=Quantity.from_str_c(lot_s) if lot_s is not None else None,
             max_quantity=Quantity.from_str_c(max_q) if max_q is not None else None,
             min_quantity=Quantity.from_str_c(min_q) if min_q is not None else None,
@@ -246,6 +250,7 @@ cdef class CurrencyPair(Instrument):
             "price_increment": str(obj.price_increment),
             "size_precision": obj.size_precision,
             "size_increment": str(obj.size_increment),
+            "multiplier": str(obj.multiplier),
             "lot_size": str(obj.lot_size) if obj.lot_size is not None else None,
             "max_quantity": str(obj.max_quantity) if obj.max_quantity is not None else None,
             "min_quantity": str(obj.min_quantity) if obj.min_quantity is not None else None,
@@ -302,7 +307,8 @@ cdef class CurrencyPair(Instrument):
             size_precision=pyo3_instrument.size_precision,
             price_increment=Price.from_raw_c(pyo3_instrument.price_increment.raw, pyo3_instrument.price_precision),
             size_increment=Quantity.from_raw_c(pyo3_instrument.size_increment.raw, pyo3_instrument.size_precision),
-            lot_size=Quantity.from_raw_c(pyo3_instrument.lot_size.raw,pyo3_instrument.lot_size.precision) if pyo3_instrument.lot_size is not None else None,
+            multiplier=Quantity.from_raw_c(pyo3_instrument.multiplier.raw, pyo3_instrument.multiplier.precision),
+            lot_size=Quantity.from_raw_c(pyo3_instrument.lot_size.raw, pyo3_instrument.lot_size.precision) if pyo3_instrument.lot_size is not None else None,
             max_quantity=Quantity.from_raw_c(pyo3_instrument.max_quantity.raw, pyo3_instrument.max_quantity.precision) if pyo3_instrument.max_quantity is not None else None,
             min_quantity=Quantity.from_raw_c(pyo3_instrument.min_quantity.raw, pyo3_instrument.min_quantity.precision) if pyo3_instrument.min_quantity is not None else None,
             max_notional=Money.from_str_c(str(pyo3_instrument.max_notional)) if pyo3_instrument.max_notional is not None else None,

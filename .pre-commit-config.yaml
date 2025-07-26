@@ -117,7 +117,7 @@ repos:
         args: ["--config", "pyproject.toml"]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.12.3
+    rev: v0.12.5
     hooks:
       - id: ruff
         args: ["--fix"]
@@ -146,9 +146,10 @@ repos:
         ]
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.16.1
+    rev: v1.17.0
     hooks:
       - id: mypy
+        exclude: ^python/nautilus_trader/.*__init__\.py$
         args: [
           "--config", "pyproject.toml",
           "--allow-incomplete-defs",
@@ -163,7 +164,7 @@ repos:
         ]
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.7.21  # uv version
+    rev: 0.8.3  # uv version
     hooks:
       - id: uv-lock
 
@@ -173,7 +174,7 @@ repos:
       - id: nbstripout
 
   - repo: https://github.com/DavidAnson/markdownlint-cli2
-    rev: v0.17.2  # Pin v0.17.2 to depend on default node version for GitHub actions runners
+    rev: v0.18.1
     hooks:
       - id: markdownlint-cli2
         name: markdownlint

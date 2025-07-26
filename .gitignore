@@ -53,6 +53,7 @@ logs/
 .mypy_cache/
 .profile/
 .pytest_cache/
+.python-version
 .ruff_cache/
 *dask-worker-space*
 requirements*
@@ -73,6 +74,7 @@ env/
 .null-ls*
 CLAUDE.md
 CODEX.md
+GEMINI.md
 PERF.JSON
 output.json
 

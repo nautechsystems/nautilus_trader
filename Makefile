@@ -58,6 +58,16 @@ else
 	BUILD_MODE=debug uv run --active --no-sync build.py 2>&1 | grep -E "(Error|error|ERROR|Failed|failed|FAILED|Warning|warning|WARNING|Build completed|Build time:|Traceback)" || true
 endif
 
+.PHONY: build-debug-pyo3
+build-debug-pyo3:  #-- Build the package with PyO3 debug symbols (for debugging Rust code)
+ifeq ($(VERBOSE),true)
+	$(info $(M) Building in debug mode with PyO3 debug symbols...)
+	BUILD_MODE=debug-pyo3 uv run --active --no-sync build.py
+else
+	$(info $(M) Building in debug mode with PyO3 debug symbols (errors will still be shown)...)
+	BUILD_MODE=debug-pyo3 uv run --active --no-sync build.py 2>&1 | grep -E "(Error|error|ERROR|Failed|failed|FAILED|Warning|warning|WARNING|Build completed|Build time:|Traceback)" || true
+endif
+
 .PHONY: build-wheel
 build-wheel:  #-- Build wheel distribution in release mode
 	BUILD_MODE=release uv build --wheel
@@ -356,10 +366,10 @@ init-db:  #-- Initialize PostgreSQL database schema
 pytest:  #-- Run Python tests with pytest
 ifeq ($(VERBOSE),true)
 	$(info $(M) Running Python tests with verbose output...)
-	uv run --active --no-sync pytest --new-first --failed-first -v
+	uv run --active --no-sync pytest --new-first --failed-first -v -n logical --dist=loadgroup
 else
 	$(info $(M) Running Python tests (showing failures and summary only)...)
-	uv run --active --no-sync pytest --new-first --failed-first --tb=short
+	uv run --active --no-sync pytest --new-first --failed-first --tb=short -n logical --dist=loadgroup
 endif
 
 .PHONY: test-performance

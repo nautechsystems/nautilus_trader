@@ -84,18 +84,20 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
     Parameters
     ----------
     reconciliation : bool, default True
-        If reconciliation is active at start-up.
+        If execution reconciliation is active at start-up.
     reconciliation_lookback_mins : NonNegativeInt, optional
-        The maximum lookback minutes to reconcile state for.
+        The maximum lookback minutes to reconcile execution state for.
         If ``None`` or 0 then will use the maximum lookback available from the venues.
+    reconciliation_instrument_ids : list[InstrumentId], optional
+        An include list of instrument IDs for execution reconciliation.
+        If provided, only these instruments are reconciled.
+        If ``None`` or empty then all instruments are reconciled.
     filter_unclaimed_external_orders : bool, default False
         If unclaimed order events with an EXTERNAL strategy ID should be filtered/dropped.
     filter_position_reports : bool, default False
         If position status reports are filtered from reconciliation.
         This may be applicable when other nodes are trading the same instrument(s), on the same
         account - which could cause conflicts in position status.
-    filtered_instrument_ids : list[InstrumentId], optional
-        A list of instrument IDs to filter from reconciliation.
     filtered_client_order_ids : list[ClientOrderId], optional
         A list of client order IDs to filter from reconciliation.
     generate_missing_orders : bool, default True
@@ -152,6 +154,7 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
         A recommended setting is 60 minutes for HFT.
     purge_from_database : bool, default False
         If purging operations will also delete from the backing database, in addition to the in-memory cache.
+        **Note:** Currently account events are not purged from the database - pending reimplementation.
     qsize : PositiveInt, default 100_000
         The queue size for the engines internal queue buffers.
     graceful_shutdown_on_exception : bool, default False
@@ -162,9 +165,9 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
 
     reconciliation: bool = True
     reconciliation_lookback_mins: NonNegativeInt | None = None
+    reconciliation_instrument_ids: list[InstrumentId] | None = None
     filter_unclaimed_external_orders: bool = False
     filter_position_reports: bool = False
-    filtered_instrument_ids: list[InstrumentId] | None = None
     filtered_client_order_ids: list[ClientOrderId] | None = None
     generate_missing_orders: bool = True
     inflight_check_interval_ms: NonNegativeInt = 2_000

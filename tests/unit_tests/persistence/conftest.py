@@ -25,13 +25,13 @@ from nautilus_trader.test_kit.mocks.data import setup_catalog
 
 
 @pytest.fixture(name="catalog_memory")
-def fixture_catalog_memory() -> ParquetDataCatalog:
-    return setup_catalog(protocol="memory")
+def fixture_catalog_memory(tmp_path) -> ParquetDataCatalog:
+    return setup_catalog(protocol="memory", path=tmp_path / "catalog_memory")
 
 
 @pytest.fixture(name="catalog")
-def fixture_catalog() -> ParquetDataCatalog:
-    return setup_catalog(protocol="file")
+def fixture_catalog(tmp_path) -> ParquetDataCatalog:
+    return setup_catalog(protocol="file", path=tmp_path / "catalog_file")
 
 
 @pytest.fixture(name="catalog_betfair")

@@ -57,24 +57,28 @@ impl LiveNode {
 
     /// Returns the node's environment.
     #[getter]
+    #[pyo3(name = "environment")]
     fn py_environment(&self) -> Environment {
         self.environment()
     }
 
     /// Returns the node's trader ID.
     #[getter]
+    #[pyo3(name = "trader_id")]
     fn py_trader_id(&self) -> TraderId {
         self.trader_id()
     }
 
     /// Returns the node's instance ID.
     #[getter]
+    #[pyo3(name = "instance_id")]
     const fn py_instance_id(&self) -> UUID4 {
         self.instance_id()
     }
 
     /// Returns whether the node is running.
     #[getter]
+    #[pyo3(name = "is_running")]
     const fn py_is_running(&self) -> bool {
         self.is_running()
     }

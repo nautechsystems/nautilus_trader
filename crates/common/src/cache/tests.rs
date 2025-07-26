@@ -347,6 +347,7 @@ fn test_position_ids_filtering(mut cache: Cache) {
             None,
             None,
             None,
+            None,
             UnixNanos::default(),
             UnixNanos::default(),
         )
@@ -773,7 +774,7 @@ fn test_pool() -> Pool {
 
     Pool::new(
         chain,
-        dex,
+        Arc::new(dex),
         "0x11b815efB8f581194ae79006d24E0d814B7697F6"
             .parse()
             .unwrap(),

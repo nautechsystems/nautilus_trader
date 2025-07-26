@@ -28,8 +28,9 @@ use strum::Display;
 // Re-exports
 pub use self::{
     cancel::BatchCancelOrders, cancel::CancelAllOrders, cancel::CancelOrder, modify::ModifyOrder,
-    query::QueryOrder, report::GenerateFillReports, report::GenerateOrderStatusReport,
-    report::GeneratePositionReports, submit::SubmitOrder, submit::SubmitOrderList,
+    query::QueryAccount, query::QueryOrder, report::GenerateFillReports,
+    report::GenerateOrderStatusReport, report::GeneratePositionReports, submit::SubmitOrder,
+    submit::SubmitOrderList,
 };
 
 // TODO
@@ -43,6 +44,7 @@ pub enum TradingCommand {
     CancelAllOrders(CancelAllOrders),
     BatchCancelOrders(BatchCancelOrders),
     QueryOrder(QueryOrder),
+    QueryAccount(QueryAccount),
 }
 
 impl TradingCommand {
@@ -56,6 +58,7 @@ impl TradingCommand {
             Self::CancelAllOrders(command) => command.client_id,
             Self::BatchCancelOrders(command) => command.client_id,
             Self::QueryOrder(command) => command.client_id,
+            Self::QueryAccount(command) => command.client_id,
         }
     }
 
@@ -69,6 +72,7 @@ impl TradingCommand {
             Self::CancelAllOrders(command) => command.instrument_id,
             Self::BatchCancelOrders(command) => command.instrument_id,
             Self::QueryOrder(command) => command.instrument_id,
+            Self::QueryAccount(_) => panic!("No instrument ID for command"),
         }
     }
 
@@ -82,6 +86,7 @@ impl TradingCommand {
             Self::CancelAllOrders(command) => command.ts_init,
             Self::BatchCancelOrders(command) => command.ts_init,
             Self::QueryOrder(command) => command.ts_init,
+            Self::QueryAccount(command) => command.ts_init,
         }
     }
 }

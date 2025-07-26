@@ -23,7 +23,13 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.messages cimport BatchCancelOrders
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
+from nautilus_trader.execution.messages cimport GenerateExecutionMassStatus
+from nautilus_trader.execution.messages cimport GenerateFillReports
+from nautilus_trader.execution.messages cimport GenerateOrderStatusReport
+from nautilus_trader.execution.messages cimport GenerateOrderStatusReports
+from nautilus_trader.execution.messages cimport GeneratePositionStatusReports
 from nautilus_trader.execution.messages cimport ModifyOrder
+from nautilus_trader.execution.messages cimport QueryAccount
 from nautilus_trader.execution.messages cimport QueryOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
@@ -70,15 +76,26 @@ from nautilus_trader.model.instruments.option_contract cimport OptionContract
 from nautilus_trader.model.instruments.option_spread cimport OptionSpread
 from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
 
+from nautilus_trader.execution.reports import ExecutionMassStatus
+from nautilus_trader.execution.reports import FillReport
+from nautilus_trader.execution.reports import OrderStatusReport
+from nautilus_trader.execution.reports import PositionStatusReport
+
 
 # Default mappings for Nautilus objects
 _OBJECT_TO_DICT_MAP: dict[str, Callable[[None], dict]] = {
     CancelOrder.__name__: CancelOrder.to_dict_c,
     CancelAllOrders.__name__: CancelAllOrders.to_dict_c,
     BatchCancelOrders.__name__: BatchCancelOrders.to_dict_c,
+    GenerateFillReports.__name__: GenerateFillReports.to_dict_c,
+    GenerateOrderStatusReport.__name__: GenerateOrderStatusReport.to_dict_c,
+    GenerateOrderStatusReports.__name__: GenerateOrderStatusReports.to_dict_c,
+    GeneratePositionStatusReports.__name__: GeneratePositionStatusReports.to_dict_c,
+    GenerateExecutionMassStatus.__name__: GenerateExecutionMassStatus.to_dict_c,
     SubmitOrder.__name__: SubmitOrder.to_dict_c,
     SubmitOrderList.__name__: SubmitOrderList.to_dict_c,
     ModifyOrder.__name__: ModifyOrder.to_dict_c,
+    QueryAccount.__name__: QueryAccount.to_dict_c,
     QueryOrder.__name__: QueryOrder.to_dict_c,
     ShutdownSystem.__name__: ShutdownSystem.to_dict_c,
     ComponentStateChanged.__name__: ComponentStateChanged.to_dict_c,
@@ -125,6 +142,10 @@ _OBJECT_TO_DICT_MAP: dict[str, Callable[[None], dict]] = {
     Bar.__name__: Bar.to_dict_c,
     InstrumentStatus.__name__: InstrumentStatus.to_dict_c,
     InstrumentClose.__name__: InstrumentClose.to_dict_c,
+    OrderStatusReport.__name__: OrderStatusReport.to_dict,
+    FillReport.__name__: FillReport.to_dict,
+    PositionStatusReport.__name__: PositionStatusReport.to_dict,
+    ExecutionMassStatus.__name__: ExecutionMassStatus.to_dict,
 }
 
 
@@ -133,9 +154,15 @@ _OBJECT_FROM_DICT_MAP: dict[str, Callable[[dict], Any]] = {
     CancelOrder.__name__: CancelOrder.from_dict_c,
     CancelAllOrders.__name__: CancelAllOrders.from_dict_c,
     BatchCancelOrders.__name__: BatchCancelOrders.from_dict_c,
+    GenerateFillReports.__name__: GenerateFillReports.from_dict_c,
+    GenerateOrderStatusReport.__name__: GenerateOrderStatusReport.from_dict_c,
+    GenerateOrderStatusReports.__name__: GenerateOrderStatusReports.from_dict_c,
+    GeneratePositionStatusReports.__name__: GeneratePositionStatusReports.from_dict_c,
+    GenerateExecutionMassStatus.__name__: GenerateExecutionMassStatus.from_dict_c,
     SubmitOrder.__name__: SubmitOrder.from_dict_c,
     SubmitOrderList.__name__: SubmitOrderList.from_dict_c,
     ModifyOrder.__name__: ModifyOrder.from_dict_c,
+    QueryAccount.__name__: QueryAccount.from_dict_c,
     QueryOrder.__name__: QueryOrder.from_dict_c,
     ShutdownSystem.__name__: ShutdownSystem.from_dict_c,
     ComponentStateChanged.__name__: ComponentStateChanged.from_dict_c,
@@ -182,6 +209,10 @@ _OBJECT_FROM_DICT_MAP: dict[str, Callable[[dict], Any]] = {
     Bar.__name__: Bar.from_dict_c,
     InstrumentStatus.__name__: InstrumentStatus.from_dict_c,
     InstrumentClose.__name__: InstrumentClose.from_dict_c,
+    OrderStatusReport.__name__: OrderStatusReport.from_dict,
+    FillReport.__name__: FillReport.from_dict,
+    PositionStatusReport.__name__: PositionStatusReport.from_dict,
+    ExecutionMassStatus.__name__: ExecutionMassStatus.from_dict,
 }
 
 
@@ -196,6 +227,12 @@ _EXTERNAL_PUBLISHABLE_TYPES = {
     CancelOrder,
     CancelAllOrders,
     BatchCancelOrders,
+    GenerateFillReports,
+    GenerateOrderStatusReport,
+    GenerateOrderStatusReports,
+    GeneratePositionStatusReports,
+    GenerateExecutionMassStatus,
+    QueryAccount,
     QueryOrder,
     ShutdownSystem,
     ComponentStateChanged,
@@ -242,6 +279,10 @@ _EXTERNAL_PUBLISHABLE_TYPES = {
     Bar,
     InstrumentStatus,
     InstrumentClose,
+    OrderStatusReport,
+    FillReport,
+    PositionStatusReport,
+    ExecutionMassStatus,
 }
 
 

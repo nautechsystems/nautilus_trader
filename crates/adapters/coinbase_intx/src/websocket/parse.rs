@@ -58,8 +58,9 @@ pub fn parse_spot_instrument(
 
     let price_increment = Price::from(&definition.quote_increment);
     let size_increment = Quantity::from(&definition.base_increment);
-
+    let multiplier = Some(Quantity::from(&definition.base_asset_multiplier));
     let lot_size = None;
+
     let max_quantity = None;
     let min_quantity = None;
     let max_notional = None;
@@ -76,6 +77,7 @@ pub fn parse_spot_instrument(
         size_increment.precision,
         price_increment,
         size_increment,
+        multiplier,
         lot_size,
         max_quantity,
         min_quantity,
@@ -114,21 +116,19 @@ pub fn parse_perp_instrument(
     let base_currency = get_currency(&definition.base_asset_name);
     let quote_currency = get_currency(&definition.quote_asset_name);
     let settlement_currency = quote_currency;
+    let is_inverse = false;
 
     let price_increment = Price::from(&definition.quote_increment);
     let size_increment = Quantity::from(&definition.base_increment);
-
     let multiplier = Some(Quantity::from(&definition.base_asset_multiplier));
-
     let lot_size = None;
+
     let max_quantity = None;
     let min_quantity = None;
     let max_notional = None;
     let min_notional = None;
     let max_price = None;
     let min_price = None;
-
-    let is_inverse = false;
 
     let instrument = CryptoPerpetual::new(
         instrument_id,

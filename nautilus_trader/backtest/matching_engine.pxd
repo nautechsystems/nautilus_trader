@@ -199,6 +199,8 @@ cdef class OrderMatchingEngine:
     cpdef void iterate(self, uint64_t timestamp_ns, AggressorSide aggressor_side=*)
     cpdef list determine_limit_price_and_volume(self, Order order)
     cpdef list determine_market_price_and_volume(self, Order order)
+    cdef list determine_market_fills_with_simulation(self, Order order)
+    cdef list determine_limit_fills_with_simulation(self, Order order)
     cpdef void fill_market_order(self, Order order)
     cpdef void fill_limit_order(self, Order order)
     cdef void _trail_stop_order(self, Order order)

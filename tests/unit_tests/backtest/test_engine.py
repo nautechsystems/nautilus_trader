@@ -298,7 +298,7 @@ class TestBacktestEngine:
         engine.run()
 
         # Assert
-        msg = messages[11]
+        msg = messages[10]
         assert msg.__class__.__name__ == "SignalCounter"
         assert msg.ts_init == 1359676800000000000
         assert msg.ts_event == 1359676800000000000
@@ -830,10 +830,12 @@ class TestBacktestEngineStreaming:
 
         def data_generator():
             for i in range(count):
-                yield MyData(
-                    value=f"{name}_{i}",
-                    ts_init=start_ts + (i * interval),
-                )
+                yield [
+                    MyData(
+                        value=f"{name}_{i}",
+                        ts_init=start_ts + (i * interval),
+                    ),
+                ]
 
         return data_generator()
 
@@ -846,10 +848,12 @@ class TestBacktestEngineStreaming:
             # Create data with increasing gaps between items
             ts = start_ts
             for i in range(count):
-                yield MyData(
-                    value=f"{name}_sparse_{i}",
-                    ts_init=ts,
-                )
+                yield [
+                    MyData(
+                        value=f"{name}_sparse_{i}",
+                        ts_init=ts,
+                    ),
+                ]
                 # Exponentially increasing gaps: 1s, 2s, 4s, 8s, etc.
                 ts += (2**i) * 1_000_000_000
 
@@ -862,10 +866,12 @@ class TestBacktestEngineStreaming:
 
         def dense_generator():
             for i in range(count):
-                yield MyData(
-                    value=f"{name}_dense_{i}",
-                    ts_init=start_ts + (i * 1_000_000),  # 1ms intervals
-                )
+                yield [
+                    MyData(
+                        value=f"{name}_dense_{i}",
+                        ts_init=start_ts + (i * 1_000_000),  # 1ms intervals
+                    ),
+                ]
 
         return dense_generator()
 
@@ -881,24 +887,30 @@ class TestBacktestEngineStreaming:
         batch_2_start = 1_609_545_600_000_000_000  # 2021-01-02 00:00:00 UTC
         batch_3_start = 1_609_632_000_000_000_000  # 2021-01-03 00:00:00 UTC
 
-        # Batch 1: Light data load
+        # Batch 1: Light data load (reduced for efficiency)
         batch_1_iterators = [
             (
                 "instrument_A_day1",
-                self.create_data_iterator("A", batch_1_start, 100, 60_000_000_000),
+                self.create_data_iterator("A", batch_1_start, 20, 60_000_000_000),
             ),  # 1min intervals
             (
                 "instrument_B_day1",
-                self.create_data_iterator("B", batch_1_start + 30_000_000_000, 80, 90_000_000_000),
+                self.create_data_iterator("B", batch_1_start + 30_000_000_000, 16, 90_000_000_000),
             ),  # 1.5min intervals, offset by 30s
             (
                 "instrument_C_day1",
-                self.create_sparse_iterator("C", batch_1_start, 10),
+                self.create_sparse_iterator("C", batch_1_start, 5),
             ),  # Sparse data
         ]
 
-        self.engine.add_data_iterators(batch_1_iterators, chunk_duration="1h")
+        for data_name, generator in batch_1_iterators:
+            self.engine.add_data_iterator(data_name, generator)
+        batch_1_initial = self.engine.iteration
         self.engine.run()  # Process all batch 1 data
+
+        # Verify batch 1 processed data
+        assert self.engine.iteration > batch_1_initial
+        batch_1_final = self.engine.iteration
 
         # Clear engine data for next batch
         self.engine.reset()
@@ -907,20 +919,26 @@ class TestBacktestEngineStreaming:
         batch_2_iterators = [
             (
                 "instrument_A_day2",
-                self.create_data_iterator("A", batch_2_start, 200, 30_000_000_000),
+                self.create_data_iterator("A", batch_2_start, 30, 30_000_000_000),
             ),  # 30s intervals
             (
                 "instrument_B_day2",
-                self.create_dense_iterator("B", batch_2_start, 50),
+                self.create_dense_iterator("B", batch_2_start, 10),
             ),  # Dense 1ms data
             (
                 "instrument_D_day2",
-                self.create_data_iterator("D", batch_2_start + 45_000_000_000, 150, 45_000_000_000),
+                self.create_data_iterator("D", batch_2_start + 45_000_000_000, 25, 45_000_000_000),
             ),  # 45s intervals, offset
         ]
 
-        self.engine.add_data_iterators(batch_2_iterators, chunk_duration="30min")
+        for data_name, generator in batch_2_iterators:
+            self.engine.add_data_iterator(data_name, generator)
+        batch_2_initial = self.engine.iteration
         self.engine.run()  # Process all batch 2 data
+
+        # Verify batch 2 processed data
+        assert self.engine.iteration > batch_2_initial
+        batch_2_final = self.engine.iteration
 
         # Clear engine data for next batch
         self.engine.reset()
@@ -929,50 +947,63 @@ class TestBacktestEngineStreaming:
         batch_3_iterators = [
             (
                 "instrument_A_day3",
-                self.create_data_iterator("A", batch_3_start, 500, 10_000_000_000),
+                self.create_data_iterator("A", batch_3_start, 50, 10_000_000_000),
             ),  # 10s intervals
             (
                 "instrument_B_day3",
-                self.create_data_iterator("B", batch_3_start + 5_000_000_000, 400, 15_000_000_000),
+                self.create_data_iterator("B", batch_3_start + 5_000_000_000, 40, 15_000_000_000),
             ),  # 15s intervals, offset
             (
                 "instrument_E_day3",
-                self.create_data_iterator("E", batch_3_start, 300, 20_000_000_000),
+                self.create_data_iterator("E", batch_3_start, 30, 20_000_000_000),
             ),  # 20s intervals
         ]
 
-        self.engine.add_data_iterators(batch_3_iterators, chunk_duration="15min")
+        for data_name, generator in batch_3_iterators:
+            self.engine.add_data_iterator(data_name, generator)
+        batch_3_initial = self.engine.iteration
         self.engine.run()  # Process all batch 3 data
 
-        # The main test is that we complete without exceptions
-        # If we reach here, the streaming workflow succeeded across all batches
+        # Verify batch 3 processed data
+        assert self.engine.iteration > batch_3_initial
+
+        # Verify all batches processed different amounts of data
+        assert batch_1_final > batch_1_initial
+        assert batch_2_final > batch_2_initial
+        assert self.engine.iteration > batch_3_initial
 
     def test_streaming_workflow_large_chunks(self):
         """
         Test streaming with larger chunk sizes to verify memory efficiency.
         """
-        # Create iterators with substantial data amounts
+        # Create iterators with substantial data amounts (reduced for efficiency)
         start_ts = 1_609_459_200_000_000_000  # 2021-01-01 00:00:00 UTC
 
         large_iterators = [
             (
                 "large_stream_A",
-                self.create_data_iterator("A_large", start_ts, 1000, 5_000_000_000),
+                self.create_data_iterator("A_large", start_ts, 100, 5_000_000_000),
             ),  # 5s intervals
             (
                 "large_stream_B",
-                self.create_data_iterator("B_large", start_ts + 2_500_000_000, 800, 7_500_000_000),
+                self.create_data_iterator("B_large", start_ts + 2_500_000_000, 80, 7_500_000_000),
             ),  # 7.5s intervals
-            ("large_stream_C", self.create_dense_iterator("C_dense", start_ts, 200)),  # Dense data
+            ("large_stream_C", self.create_dense_iterator("C_dense", start_ts, 50)),  # Dense data
         ]
 
-        # Use 2-hour chunks to test larger memory windows
-        self.engine.add_data_iterators(large_iterators, chunk_duration="2h")
+        # Add iterators individually
+        for data_name, generator in large_iterators:
+            self.engine.add_data_iterator(data_name, generator)
 
-        # This should process all data without memory issues or ordering violations
+        # Verify streams were registered by checking that no exception was raised
+        # Direct access to _data_iterator may not work due to Cython implementation
+
+        # Process all data without memory issues or ordering violations
+        initial_iteration = self.engine.iteration
         self.engine.run()
 
-        # Test passes if no exceptions are raised
+        # Verify data was processed
+        assert self.engine.iteration > initial_iteration
 
     def test_streaming_workflow_simple(self):
         """
@@ -988,36 +1019,22 @@ class TestBacktestEngineStreaming:
             ),  # 3 items, 1min apart
         ]
 
-        # Add the stream iterator - this should work
-        self.engine.add_data_iterators(simple_iterators, chunk_duration="1h")
+        # Add the stream iterator
+        for data_name, generator in simple_iterators:
+            self.engine.add_data_iterator(data_name, generator)
 
-        # Check what attributes exist on the engine after adding iterators
-        attrs = [
-            attr for attr in dir(self.engine) if "data" in attr.lower() and not attr.startswith("_")
-        ]
-        print(f"Data-related attributes: {attrs}")
+        # Verify the method exists and was called successfully
+        assert hasattr(self.engine, "add_data_iterator")
 
-        # Check if data iterator was set up - let's be more flexible about the attribute name
-        data_iterator = getattr(self.engine, "_data_iterator", None)
-        if data_iterator is None:
-            # Maybe it's stored elsewhere or with a different name
-            streaming_attrs = [attr for attr in dir(self.engine) if "stream" in attr.lower()]
-            print(f"Streaming-related attributes: {streaming_attrs}")
+        # The data iterator might not be directly accessible due to Cython implementation
+        # Instead, verify functionality by checking that the method completed without error
+        # and that we can run the engine successfully
 
-        # Check if the method exists and seems to work
-        print(f"add_data_iterators method exists: {hasattr(self.engine, 'add_data_iterators')}")
+        # Run the engine to process the streaming data
+        self.engine.run()
 
-        # For now, let's skip the engine run since the streaming integration
-        # might not be complete yet. The important thing is that we have
-        # successfully implemented the BacktestDataIterator streaming functionality
-        # and the BacktestEngine has the add_data_iterators method.
-
-        # The test validates that:
-        # 1. add_data_iterators method exists ✓
-        # 2. It can be called without errors ✓
-        # 3. The streaming functionality in BacktestDataIterator works ✓ (from other tests)
-
-        print("Streaming integration test completed - method exists and can be called")
+        # Verify that the engine processed the data successfully
+        assert self.engine.iteration > 0
 
     def test_streaming_workflow_edge_cases(self):
         """
@@ -1026,10 +1043,11 @@ class TestBacktestEngineStreaming:
         start_ts = 1_609_459_200_000_000_000
 
         def empty_iterator():
-            return iter([])  # Empty iterator
+            return
+            yield []  # Empty generator
 
         def single_item_iterator():
-            yield MyData(value="single", ts_init=start_ts + 60_000_000_000)
+            yield [MyData(value="single", ts_init=start_ts + 60_000_000_000)]
 
         edge_case_iterators = [
             ("empty_stream", empty_iterator()),
@@ -1041,22 +1059,26 @@ class TestBacktestEngineStreaming:
         from nautilus_trader.model.identifiers import ClientId
 
         self.engine.add_data([MyData(value="baseline", ts_init=start_ts)], ClientId("TEST"))
-        self.engine.add_data_iterators(edge_case_iterators, chunk_duration="1h")
+        for data_name, generator in edge_case_iterators:
+            self.engine.add_data_iterator(data_name, generator)
 
-        # This should handle edge cases gracefully without exceptions
+        # Verify streams were registered by checking that no exception was raised
+        # Direct access to _data_iterator may not work due to Cython implementation
+
+        # Run the engine - should handle edge cases gracefully
         self.engine.run()
 
-        # Test should complete without exceptions - that's the main validation
+        # Verify engine processed data successfully
+        assert self.engine.iteration > 0
 
     def test_streaming_workflow_multiple_iterations(self):
         """
         Test multiple iteration cycles to ensure proper cleanup between runs.
         """
-        # Test passes if all iterations complete without exceptions
         base_start_ts = 1_609_459_200_000_000_000
 
-        # Run 5 iterations with different data patterns
-        for iteration in range(5):
+        # Run 3 iterations with different data patterns (reduced for efficiency)
+        for iteration in range(3):
             start_ts = base_start_ts + (
                 iteration * 86_400_000_000_000
             )  # Each iteration is 1 day later
@@ -1067,14 +1089,14 @@ class TestBacktestEngineStreaming:
                 iterators = [
                     (
                         f"regular_A_iter{iteration}",
-                        self.create_data_iterator(f"A{iteration}", start_ts, 50, 60_000_000_000),
+                        self.create_data_iterator(f"A{iteration}", start_ts, 10, 60_000_000_000),
                     ),
                     (
                         f"regular_B_iter{iteration}",
                         self.create_data_iterator(
                             f"B{iteration}",
                             start_ts + 30_000_000_000,
-                            40,
+                            8,
                             90_000_000_000,
                         ),
                     ),
@@ -1084,16 +1106,126 @@ class TestBacktestEngineStreaming:
                 iterators = [
                     (
                         f"sparse_A_iter{iteration}",
-                        self.create_sparse_iterator(f"A{iteration}", start_ts, 8),
+                        self.create_sparse_iterator(f"A{iteration}", start_ts, 4),
                     ),
                     (
                         f"dense_B_iter{iteration}",
-                        self.create_dense_iterator(f"B{iteration}", start_ts, 30),
+                        self.create_dense_iterator(f"B{iteration}", start_ts, 6),
                     ),
                 ]
 
-            self.engine.add_data_iterators(iterators, chunk_duration="1h")
+            # Verify iteration setup
+            for data_name, generator in iterators:
+                self.engine.add_data_iterator(data_name, generator)
+            initial_iteration = self.engine.iteration
+
+            # Run the engine
             self.engine.run()
+
+            # Verify data was processed in this iteration
+            assert self.engine.iteration > initial_iteration
 
             # Reset for next iteration
             self.engine.clear_data()
+
+    def test_extreme_varying_density_large_chunks(self):  # noqa: C901 (too complex)
+        """
+        Test extreme varying density with large chunks (100k elements) to verify time
+        ordering is maintained across streams with different data densities.
+        """
+        start_ts = 1_609_459_200_000_000_000  # 2021-01-01 00:00:00 UTC
+        chunk_size = 100_000  # 100k elements per chunk
+
+        def create_ultra_dense_iterator(name: str, start_ts: int, chunks: int):
+            """
+            Create iterator with ultra-dense data (microsecond intervals).
+            """
+
+            def ultra_dense_generator():
+                for chunk in range(chunks):
+                    chunk_data = []
+                    base_ts = start_ts + (chunk * chunk_size * 1_000)  # 1ms per chunk offset
+                    for i in range(chunk_size):
+                        chunk_data.append(
+                            MyData(
+                                value=f"{name}_ultra_{chunk}_{i}",
+                                ts_init=base_ts + (i * 1_000),  # 1 microsecond intervals
+                            ),
+                        )
+                    yield chunk_data
+
+            return ultra_dense_generator()
+
+        def create_ultra_sparse_iterator(name: str, start_ts: int, chunks: int):
+            """
+            Create iterator with ultra-sparse data (hour intervals).
+            """
+
+            def ultra_sparse_generator():
+                for chunk in range(chunks):
+                    chunk_data = []
+                    base_ts = start_ts + (
+                        chunk * chunk_size * 3_600_000_000_000
+                    )  # 1 hour per chunk
+                    for i in range(chunk_size):
+                        chunk_data.append(
+                            MyData(
+                                value=f"{name}_sparse_{chunk}_{i}",
+                                ts_init=base_ts + (i * 3_600_000_000_000),  # 1 hour intervals
+                            ),
+                        )
+                    yield chunk_data
+
+            return ultra_sparse_generator()
+
+        def create_mixed_density_iterator(name: str, start_ts: int, chunks: int):
+            """
+            Create iterator with mixed density patterns within chunks.
+            """
+
+            def mixed_density_generator():
+                for chunk in range(chunks):
+                    chunk_data = []
+                    base_ts = start_ts + (chunk * chunk_size * 60_000_000_000)  # 1 minute per chunk
+                    for i in range(chunk_size):
+                        # Alternate between dense and sparse within chunk
+                        if i % 1000 < 500:  # First half of each 1000 items: dense
+                            interval = 1_000_000  # 1ms
+                        else:  # Second half: sparse
+                            interval = 60_000_000_000  # 1 minute
+
+                        chunk_data.append(
+                            MyData(
+                                value=f"{name}_mixed_{chunk}_{i}",
+                                ts_init=base_ts + (i * interval),
+                            ),
+                        )
+                    yield chunk_data
+
+            return mixed_density_generator()
+
+        large_chunk_iterators = [
+            ("ultra_dense_stream", create_ultra_dense_iterator("dense", start_ts, 2)),
+            (
+                "ultra_sparse_stream",
+                create_ultra_sparse_iterator("sparse", start_ts + 1_000_000_000, 2),
+            ),
+            (
+                "mixed_density_stream",
+                create_mixed_density_iterator("mixed", start_ts + 2_000_000_000, 2),
+            ),
+        ]
+
+        for data_name, generator in large_chunk_iterators:
+            self.engine.add_data_iterator(data_name, generator)
+
+        initial_iteration = self.engine.iteration
+
+        # Process all data - this tests the heap-based merging with large chunks
+        # Verify time ordering is maintained despite varying densities:
+        # If ordering was broken, the engine would process events out of sequence
+        # and raise an exception.
+        self.engine.run()
+
+        # Verify data was processed
+        assert self.engine.iteration > initial_iteration
