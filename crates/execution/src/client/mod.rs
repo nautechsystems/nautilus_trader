@@ -108,19 +108,19 @@ pub trait ExecutionClient {
     /// Returns an error if batch cancellation fails.
     fn batch_cancel_orders(&self, cmd: &BatchCancelOrders) -> anyhow::Result<()>;
 
-    /// Queries the status of an order.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the query fails.
-    fn query_order(&self, cmd: &QueryOrder) -> anyhow::Result<()>;
-
     /// Queries the status of an account.
     ///
     /// # Errors
     ///
     /// Returns an error if the query fails.
     fn query_account(&self, cmd: &QueryAccount) -> anyhow::Result<()>;
+
+    /// Queries the status of an order.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query fails.
+    fn query_order(&self, cmd: &QueryOrder) -> anyhow::Result<()>;
 }
 
 pub trait LiveExecutionClient: ExecutionClient {

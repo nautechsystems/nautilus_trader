@@ -505,15 +505,15 @@ impl ExecutionEngine {
         }
     }
 
-    fn handle_query_order(&self, client: Rc<dyn ExecutionClient>, cmd: &QueryOrder) {
-        if let Err(e) = client.query_order(cmd) {
-            log::error!("Error querying order: {e}");
-        }
-    }
-
     fn handle_query_account(&self, client: Rc<dyn ExecutionClient>, cmd: &QueryAccount) {
         if let Err(e) = client.query_account(cmd) {
             log::error!("Error querying account: {e}");
+        }
+    }
+
+    fn handle_query_order(&self, client: Rc<dyn ExecutionClient>, cmd: &QueryOrder) {
+        if let Err(e) = client.query_order(cmd) {
+            log::error!("Error querying order: {e}");
         }
     }
 

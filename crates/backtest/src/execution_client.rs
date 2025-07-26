@@ -212,17 +212,17 @@ impl ExecutionClient for BacktestExecutionClient {
         Ok(())
     }
 
-    fn query_order(&self, cmd: &QueryOrder) -> anyhow::Result<()> {
-        self.exchange
-            .borrow_mut()
-            .send(TradingCommand::QueryOrder(cmd.clone()));
-        Ok(())
-    }
-
     fn query_account(&self, cmd: &QueryAccount) -> anyhow::Result<()> {
         self.exchange
             .borrow_mut()
             .send(TradingCommand::QueryAccount(cmd.clone()));
+        Ok(())
+    }
+
+    fn query_order(&self, cmd: &QueryOrder) -> anyhow::Result<()> {
+        self.exchange
+            .borrow_mut()
+            .send(TradingCommand::QueryOrder(cmd.clone()));
         Ok(())
     }
 }
