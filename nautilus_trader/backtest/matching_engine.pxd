@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
 from libc.stdint cimport uint32_t
 from libc.stdint cimport uint64_t
 
@@ -31,6 +30,7 @@ from nautilus_trader.core.rust.model cimport LiquiditySide
 from nautilus_trader.core.rust.model cimport MarketStatus
 from nautilus_trader.core.rust.model cimport MarketStatusAction
 from nautilus_trader.core.rust.model cimport OmsType
+from nautilus_trader.core.rust.model cimport PriceRaw
 from nautilus_trader.core.rust.model cimport TimeInForce
 from nautilus_trader.execution.matching_core cimport MatchingCore
 from nautilus_trader.execution.messages cimport BatchCancelOrders
@@ -120,9 +120,9 @@ cdef class OrderMatchingEngine:
 
     cdef MatchingCore _core
     cdef bint _has_targets
-    cdef int64_t _target_bid
-    cdef int64_t _target_ask
-    cdef int64_t _target_last
+    cdef PriceRaw _target_bid
+    cdef PriceRaw _target_ask
+    cdef PriceRaw _target_last
     cdef Bar _last_bid_bar
     cdef Bar _last_ask_bar
 
