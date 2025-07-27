@@ -18,15 +18,17 @@ with the Rust core, and a more streamlined development experience.
 - This directory will remain when we transition completely away from v1 (the top level `nautilus_trader/` will be removed).
 - Nothing outside of this directory should refer to anything within this directory for now.
 
-## Project Structure
+## Project structure
 
 The v2 package is structured to provide a clean separation between the public Python API and the internal compiled core.
 This enables first-class IDE/editor support through type stubs and allows for a mix of pure Python and high-performance Rust modules.
 
 ```
 python/
-├── pyproject.toml              # Maturin-based build configuration for the v2 package
 ├── README.md                   # This file
+├── generate_stubs.py           # Automatic generation of Python type stubs
+├── pyproject.toml              # Maturin-based build configuration for the v2 package
+├── uv.lock                     # UV lock file for the v2 package
 └── nautilus_trader/
     ├── __init__.py             # Main package entry point, re-exports from _libnautilus
     ├── _libnautilus.so         # The *single* compiled Rust extension (created by the build)
@@ -39,14 +41,14 @@ python/
     └── ...                     # Other submodules follow the same pattern
 ```
 
-## Development Setup
+## Development setup
 
 All commands should be run from within this `python/` directory.
 
 ### Prerequisites
 
 - A virtual environment activated at the project root (e.g., `.venv`).
-- Python 3.11+
+- Python 3.11-3.13
 - The Rust toolchain (via `rustup`).
 
 ### Installation
@@ -54,7 +56,7 @@ All commands should be run from within this `python/` directory.
 To set up your development environment, run the following command. It will compile the Rust extension, install it in "editable" mode, and install all necessary development and test dependencies.
 
 ```bash
-maturin develop --extras dev,test
+uv run --active maturin develop --extras dev,test
 ```
 
 This is the only command you need to get started. If you make changes to the Rust code, simply run it again to recompile.
@@ -63,10 +65,10 @@ This is the only command you need to get started. If you make changes to the Rus
 
 The `nautilus_trader` Python package acts as a "facade" over the compiled Rust core.
 
-1.  **The Build**: `maturin develop` compiles all the Rust code into a single native library, `nautilus_trader/_libnautilus.so`.
-2.  **The Facade**: The `nautilus_trader/__init__.py` file imports all the functionality from the `_libnautilus.so` file.
-3.  **The Submodules**: Each subdirectory (e.g., `nautilus_trader/model/`) uses its `__init__.py` to re-export the relevant components from `_libnautilus`, creating a clean, organized public API.
-4.  **Type Hinting**: The `.pyi` stub files provide full type information to your IDE and tools like `mypy`, giving you autocompletion and static analysis, even for the compiled Rust code.
+1.  **The build**: `maturin develop` compiles all the Rust code into a single native library, `nautilus_trader/_libnautilus.so`.
+2.  **The facade**: The `nautilus_trader/__init__.py` file imports all the functionality from the `_libnautilus.so` file.
+3.  **The submodules**: Each subdirectory (e.g., `nautilus_trader/model/`) uses its `__init__.py` to re-export the relevant components from `_libnautilus`, creating a clean, organized public API.
+4.  **Type hints**: The `.pyi` stub files provide full type information to your IDE and tools like `mypy`, giving you autocompletion and static analysis, even for the compiled Rust code.
 
 ## Usage
 
