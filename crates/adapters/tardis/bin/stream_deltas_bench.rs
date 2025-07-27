@@ -40,6 +40,7 @@ fn main() {
         None, // Auto-detect price precision
         None, // Auto-detect size precision
         None, // No instrument filter
+        None, // No limit
     )
     .unwrap();
     let count: usize = stream.map(|chunk| chunk.unwrap().len()).sum();
@@ -60,6 +61,7 @@ fn main() {
         None,    // Auto-detect price precision
         None,    // Auto-detect size precision
         None,    // No instrument filter
+        None,    // No limit
     )
     .unwrap();
     let count: usize = stream.map(|chunk| chunk.unwrap().len()).sum();
@@ -80,6 +82,7 @@ fn main() {
         Some(2), // Fixed price precision
         Some(4), // Fixed size precision
         None,    // No instrument filter
+        None,    // No limit
     )
     .unwrap();
     let count: usize = stream.map(|chunk| chunk.unwrap().len()).sum();
