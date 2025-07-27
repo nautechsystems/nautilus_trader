@@ -710,7 +710,7 @@ mod tests {
     use rstest::*;
 
     use super::*;
-    use crate::parse::parse_price;
+    use crate::{parse::parse_price, tests::get_test_data_path};
 
     #[rstest]
     #[case(0.0, 0)]
@@ -996,5 +996,23 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
         assert_eq!(trades[2].trade_id, TradeId::new("trade4"));
 
         std::fs::remove_file(&temp_file).ok();
+    }
+
+    #[rstest]
+    pub fn test_load_trades_from_local_file() {
+        let filepath = get_test_data_path("csv/trades_1.csv");
+        let trades = load_trades(filepath, Some(1), Some(0), None, None).unwrap();
+        assert_eq!(trades.len(), 2);
+        assert_eq!(trades[0].price, Price::from("8531.5"));
+        assert_eq!(trades[1].size, Quantity::from("1000"));
+    }
+
+    #[rstest]
+    pub fn test_load_deltas_from_local_file() {
+        let filepath = get_test_data_path("csv/deltas_1.csv");
+        let deltas = load_deltas(filepath, Some(1), Some(0), None, None).unwrap();
+        assert_eq!(deltas.len(), 2);
+        assert_eq!(deltas[0].order.price, Price::from("6421.5"));
+        assert_eq!(deltas[1].order.size, Quantity::from("10000"));
     }
 }

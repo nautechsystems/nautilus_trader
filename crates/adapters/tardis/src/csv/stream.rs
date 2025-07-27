@@ -18,17 +18,14 @@ use std::{io::Read, path::Path};
 use csv::{Reader, StringRecord};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    data::{
-        DEPTH10_LEN, NULL_ORDER, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick,
-        TradeTick,
-    },
+    data::{DEPTH10_LEN, NULL_ORDER, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick},
     enums::{BookAction, OrderSide, RecordFlag},
     identifiers::InstrumentId,
     types::Quantity,
 };
 #[cfg(feature = "python")]
 use nautilus_model::{
-    data::{Data, OrderBookDeltas_API},
+    data::{Data, OrderBookDeltas, OrderBookDeltas_API},
     python::data::data_to_pycapsule,
 };
 #[cfg(feature = "python")]
@@ -1152,11 +1149,15 @@ pub fn stream_depth10_from_snapshot25<P: AsRef<Path>>(
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use nautilus_model::{enums::AggressorSide, identifiers::TradeId, types::Quantity};
+    use nautilus_model::{
+        enums::AggressorSide,
+        identifiers::TradeId,
+        types::{Price, Quantity},
+    };
     use rstest::*;
 
     use super::*;
-    use crate::{csv::load::load_deltas, parse::parse_price};
+    use crate::{csv::load::load_deltas, parse::parse_price, tests::get_test_data_path};
 
     #[rstest]
     #[case(0.0, 0)]
@@ -1523,5 +1524,37 @@ binance-futures,BTCUSDT,1640995203000000,1640995203100000,false,bid,49999.123,3.
 
         // Clean up
         std::fs::remove_file(&temp_file).ok();
+    }
+
+    #[rstest]
+    pub fn test_stream_trades_from_local_file() {
+        let filepath = get_test_data_path("csv/trades_1.csv");
+        let mut stream = stream_trades(filepath, 1, Some(1), Some(0), None).unwrap();
+
+        let chunk1 = stream.next().unwrap().unwrap();
+        assert_eq!(chunk1.len(), 1);
+        assert_eq!(chunk1[0].price, Price::from("8531.5"));
+
+        let chunk2 = stream.next().unwrap().unwrap();
+        assert_eq!(chunk2.len(), 1);
+        assert_eq!(chunk2[0].size, Quantity::from("1000"));
+
+        assert!(stream.next().is_none());
+    }
+
+    #[rstest]
+    pub fn test_stream_deltas_from_local_file() {
+        let filepath = get_test_data_path("csv/deltas_1.csv");
+        let mut stream = stream_deltas(filepath, 1, Some(1), Some(0), None).unwrap();
+
+        let chunk1 = stream.next().unwrap().unwrap();
+        assert_eq!(chunk1.len(), 1);
+        assert_eq!(chunk1[0].order.price, Price::from("6421.5"));
+
+        let chunk2 = stream.next().unwrap().unwrap();
+        assert_eq!(chunk2.len(), 1);
+        assert_eq!(chunk2[0].order.size, Quantity::from("10000"));
+
+        assert!(stream.next().is_none());
     }
 }

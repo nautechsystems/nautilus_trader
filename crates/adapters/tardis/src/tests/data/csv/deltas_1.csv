@@ -1,0 +1,3 @@
+exchange,symbol,timestamp,local_timestamp,is_snapshot,side,price,amount
+deribit,BTC-PERPETUAL,1585699200245000000,1585699200355684000,true,ask,6421.5,18640
+deribit,BTC-PERPETUAL,1585699200245000000,1585699200355684000,true,bid,6421.0,10000
