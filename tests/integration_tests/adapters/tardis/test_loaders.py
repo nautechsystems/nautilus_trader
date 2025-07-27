@@ -863,9 +863,6 @@ def _test_memory_efficiency_for_type(data_type, csv_generator):
 
 
 def test_tardis_stream_memory_efficiency_all_types():
-    """
-    Test that streaming is memory efficient for all data types.
-    """
     test_cases = [
         ("deltas", _generate_deltas_csv),
         ("quotes", _generate_quotes_csv),
@@ -878,7 +875,7 @@ def test_tardis_stream_memory_efficiency_all_types():
         _test_memory_efficiency_for_type(data_type, csv_generator)
 
 
-def test_tardis_load_trades_local():
+def test_tardis_load_trades_from_stub_data():
     # Arrange
     filepath = get_test_data_path("trades_1.csv")
     loader = TardisCSVDataLoader(price_precision=1, size_precision=0)
@@ -889,10 +886,10 @@ def test_tardis_load_trades_local():
     # Assert
     assert len(trades) == 2
     assert trades[0].price == Price.from_str("8531.5")
-    assert trades[1].size == Quantity.from_str("1000")
+    assert trades[1].size == Quantity.from_int(1000)
 
 
-def test_tardis_load_deltas_local():
+def test_tardis_load_deltas_from_stub_data():
     # Arrange
     filepath = get_test_data_path("deltas_1.csv")
     loader = TardisCSVDataLoader(price_precision=1, size_precision=0)
@@ -903,10 +900,10 @@ def test_tardis_load_deltas_local():
     # Assert
     assert len(deltas) == 2
     assert deltas[0].order.price == Price.from_str("6421.5")
-    assert deltas[1].order.size == Quantity.from_str("10000")
+    assert deltas[1].order.size == Quantity.from_int(10000)
 
 
-def test_tardis_stream_trades_local():
+def test_tardis_stream_trades_from_stub_data():
     # Arrange
     filepath = get_test_data_path("trades_1.csv")
     loader = TardisCSVDataLoader(price_precision=1, size_precision=0)
@@ -920,10 +917,10 @@ def test_tardis_stream_trades_local():
     assert len(chunks[0]) == 1
     assert chunks[0][0].price == Price.from_str("8531.5")
     assert len(chunks[1]) == 1
-    assert chunks[1][0].size == Quantity.from_str("1000")
+    assert chunks[1][0].size == Quantity.from_int(1000)
 
 
-def test_tardis_stream_deltas_local():
+def test_tardis_stream_deltas_from_stub_data():
     # Arrange
     filepath = get_test_data_path("deltas_1.csv")
     loader = TardisCSVDataLoader(price_precision=1, size_precision=0)
@@ -937,81 +934,11 @@ def test_tardis_stream_deltas_local():
     assert len(chunks[0]) == 1
     assert chunks[0][0].order.price == Price.from_str("6421.5")
     assert len(chunks[1]) == 1
-    assert chunks[1][0].order.size == Quantity.from_str("10000")
-
-
-def test_load_trades_from_stub_data():
-    """
-    Test loading trades from existing stub data.
-    """
-    filepath = get_test_data_path("trades_1.csv")
-    loader = TardisCSVDataLoader(price_precision=1, size_precision=0)
-
-    trades = loader.load_trades(filepath)
-
-    assert len(trades) == 2
-    assert trades[0].instrument_id == InstrumentId.from_str("XBTUSD.BITMEX")
-    assert all(hasattr(trade, "price") for trade in trades)
-    assert all(hasattr(trade, "size") for trade in trades)
-    assert all(hasattr(trade, "trade_id") for trade in trades)
-
-
-def test_load_deltas_from_stub_data():
-    """
-    Test loading deltas from existing stub data.
-    """
-    filepath = get_test_data_path("deltas_1.csv")
-    loader = TardisCSVDataLoader(price_precision=1, size_precision=0)
-
-    deltas = loader.load_deltas(filepath)
-
-    assert len(deltas) == 2
-    assert deltas[0].instrument_id == InstrumentId.from_str("BTC-PERPETUAL.DERIBIT")
-    assert all(hasattr(delta, "order") for delta in deltas)
-    assert all(hasattr(delta.order, "price") for delta in deltas)
-    assert all(hasattr(delta.order, "size") for delta in deltas)
-
-
-def test_stream_trades_from_stub_data():
-    """
-    Test streaming trades from existing stub data.
-    """
-    filepath = get_test_data_path("trades_1.csv")
-    loader = TardisCSVDataLoader(price_precision=1, size_precision=0)
-
-    chunks = list(loader.stream_trades(filepath, chunk_size=1))
-
-    assert len(chunks) == 2
-    assert all(len(chunk) == 1 for chunk in chunks)
-
-    # Flatten and verify
-    all_trades = [trade for chunk in chunks for trade in chunk]
-    assert len(all_trades) == 2
-    assert all(hasattr(trade, "price") for trade in all_trades)
-
-
-def test_stream_deltas_from_stub_data():
-    """
-    Test streaming deltas from existing stub data.
-    """
-    filepath = get_test_data_path("deltas_1.csv")
-    loader = TardisCSVDataLoader(price_precision=1, size_precision=0)
-
-    chunks = list(loader.stream_deltas(filepath, chunk_size=1))
-
-    assert len(chunks) == 2
-    assert all(len(chunk) == 1 for chunk in chunks)
-
-    # Flatten and verify
-    all_deltas = [delta for chunk in chunks for delta in chunk]
-    assert len(all_deltas) == 2
-    assert all(hasattr(delta, "order") for delta in all_deltas)
+    assert chunks[1][0].order.size == Quantity.from_int(10000)
 
 
 def test_precision_inference_with_minimal_data():
-    """
-    Test precision inference with minimal synthetic data.
-    """
+    # Arrange
     csv_data = """exchange,symbol,timestamp,local_timestamp,is_snapshot,side,price,amount
 binance,BTCUSDT,1640995200000000,1640995200100000,true,ask,50000.0,1.0
 binance,BTCUSDT,1640995201000000,1640995201100000,false,bid,49999.12,2.00"""
@@ -1026,67 +953,72 @@ binance,BTCUSDT,1640995201000000,1640995201100000,false,bid,49999.12,2.00"""
             size_precision=2,
         )
 
+        # Act
         deltas = loader.load_deltas(temp_file)
 
+        # Assert
         assert len(deltas) == 2
-        # Should infer precision from the most precise values
-        for delta in deltas:
-            assert delta.order.price.precision == 2  # From 49999.12
-            assert delta.order.size.precision == 2  # From 2.00
 
+        for delta in deltas:
+            assert delta.order.price.precision == 2
+            assert delta.order.size.precision == 2
     finally:
         os.unlink(temp_file)
 
 
 def test_price_and_size_precision_from_stub_data():
-    """
-    Test that price and size precision are handled correctly with stub data.
-    """
+    # Arrange
     filepath = get_test_data_path("trades_1.csv")
     loader = TardisCSVDataLoader(price_precision=1, size_precision=0)
 
+    # Act
     trades = loader.load_trades(filepath)
 
-    # Verify precision is applied correctly
+    # Assert
     for trade in trades:
         assert trade.price.precision == 1
         assert trade.size.precision == 0
 
-    # Test that we can also infer precision
-    loader_infer = TardisCSVDataLoader(price_precision=None, size_precision=None)
-    trades_infer = loader_infer.load_trades(filepath)
 
-    # Should have inferred precision
-    for trade in trades_infer:
-        assert trade.price.precision >= 0
-        assert trade.size.precision >= 0
+def test_inferred_price_and_size_precision_from_stub_data():
+    # Arrange
+    filepath = get_test_data_path("trades_1.csv")
+    loader = TardisCSVDataLoader(price_precision=None, size_precision=None)
+
+    # Act
+    trades = loader.load_trades(filepath)
+
+    # Assert
+    for trade in trades:
+        assert trade.price.precision == 1
+        assert trade.size.precision == 0
 
 
-def test_specific_price_size_values_from_stub_data():
-    """
-    Test specific price and size values match expected from stub data.
-    """
-    # Test trades
-    trades_path = get_test_data_path("trades_1.csv")
-    loader = TardisCSVDataLoader(price_precision=1, size_precision=0)
-    trades = loader.load_trades(trades_path)
-
-    # From the CSV: price=8531.5, amount=2152 (first row)
-    assert trades[0].price == Price.from_str("8531.5")
-    assert trades[0].size == Quantity.from_str("2152")
-
-    # From the CSV: price=8531.0, amount=1000 (second row)
-    assert trades[1].price == Price.from_str("8531.0")
-    assert trades[1].size == Quantity.from_str("1000")
-
-    # Test deltas
+def test_deltas_specific_price_size_values_from_stub_data():
+    # Arrange
     deltas_path = get_test_data_path("deltas_1.csv")
+    loader = TardisCSVDataLoader(price_precision=1, size_precision=0)
+
+    # Act
     deltas = loader.load_deltas(deltas_path)
 
-    # From the CSV: price=6421.5, amount=18640 (first row)
+    # Assert
     assert deltas[0].order.price == Price.from_str("6421.5")
     assert deltas[0].order.size == Quantity.from_str("18640")
-
-    # From the CSV: price=6421.0, amount=10000 (second row)
     assert deltas[1].order.price == Price.from_str("6421.0")
     assert deltas[1].order.size == Quantity.from_str("10000")
+
+
+def test_trades_specific_price_size_values_from_stub_data():
+    # Arrange
+    trades_path = get_test_data_path("trades_1.csv")
+    loader = TardisCSVDataLoader(price_precision=1, size_precision=0)
+
+    # Act
+    trades = loader.load_trades(trades_path)
+
+    # Assert
+    assert trades[0].price == Price.from_str("8531.5")
+    assert trades[0].size == Quantity.from_str("2152")
+    assert trades[1].price == Price.from_str("8531.0")
+    assert trades[1].size == Quantity.from_str("1000")
