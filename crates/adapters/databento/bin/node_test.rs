@@ -78,7 +78,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut node = LiveNode::builder(node_name, trader_id, environment)?
         .with_load_state(false)
         .with_save_state(false)
-        .add_data_client(None, client_factory, databento_config)?
+        .add_data_client(None, Box::new(client_factory), Box::new(databento_config))?
         .build()?;
 
     let actor_config = DatabentoSubscriberActorConfig::new(client_id, instrument_ids);

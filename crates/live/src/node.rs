@@ -348,57 +348,47 @@ impl LiveNodeBuilder {
         self
     }
 
-    /// Adds a data client with both factory and configuration.
+    /// Adds a data client with factory and configuration.
     ///
     /// # Errors
     ///
     /// Returns an error if a client with the same name is already registered.
-    pub fn add_data_client<F, C>(
+    pub fn add_data_client(
         mut self,
         name: Option<String>,
-        factory: F,
-        config: C,
-    ) -> anyhow::Result<Self>
-    where
-        F: DataClientFactory + 'static,
-        C: ClientConfig + 'static,
-    {
+        factory: Box<dyn DataClientFactory>,
+        config: Box<dyn ClientConfig>,
+    ) -> anyhow::Result<Self> {
         let name = name.unwrap_or_else(|| factory.name().to_string());
 
         if self.data_client_factories.contains_key(&name) {
             anyhow::bail!("Data client '{name}' is already registered");
         }
 
-        self.data_client_factories
-            .insert(name.clone(), Box::new(factory));
-        self.data_client_configs.insert(name, Box::new(config));
+        self.data_client_factories.insert(name.clone(), factory);
+        self.data_client_configs.insert(name, config);
         Ok(self)
     }
 
-    /// Adds an execution client with both factory and configuration.
+    /// Adds an execution client with factory and configuration.
     ///
     /// # Errors
     ///
     /// Returns an error if a client with the same name is already registered.
-    pub fn add_exec_client<F, C>(
+    pub fn add_exec_client(
         mut self,
         name: Option<String>,
-        factory: F,
-        config: C,
-    ) -> anyhow::Result<Self>
-    where
-        F: ExecutionClientFactory + 'static,
-        C: ClientConfig + 'static,
-    {
+        factory: Box<dyn ExecutionClientFactory>,
+        config: Box<dyn ClientConfig>,
+    ) -> anyhow::Result<Self> {
         let name = name.unwrap_or_else(|| factory.name().to_string());
 
         if self.exec_client_factories.contains_key(&name) {
             anyhow::bail!("Execution client '{name}' is already registered");
         }
 
-        self.exec_client_factories
-            .insert(name.clone(), Box::new(factory));
-        self.exec_client_configs.insert(name, Box::new(config));
+        self.exec_client_factories.insert(name.clone(), factory);
+        self.exec_client_configs.insert(name, config);
         Ok(self)
     }
 

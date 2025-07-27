@@ -148,11 +148,18 @@ impl LiveNodeBuilderPy {
         _factory: PyObject,
         _config: PyObject,
     ) -> PyResult<Self> {
-        // For now, this is a simplified implementation
-        // In practice, we'd need to convert PyObject to the appropriate factory and config types
-        Err(PyErr::new::<pyo3::exceptions::PyNotImplementedError, _>(
-            "add_data_client not yet implemented for Python",
-        ))
+        let mut inner_ref = self.inner.borrow_mut();
+        if let Some(_builder) = inner_ref.take() {
+            // TODO: Implement generic PyObject to trait object extraction
+            // This requires a registry pattern to avoid naming specific implementations
+            Err(PyErr::new::<pyo3::exceptions::PyNotImplementedError, _>(
+                "add_data_client not yet implemented - needs generic trait object extraction registry",
+            ))
+        } else {
+            Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                "Builder already consumed",
+            ))
+        }
     }
 
     /// Builds the node.
