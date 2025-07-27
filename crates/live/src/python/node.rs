@@ -20,6 +20,7 @@ use std::{cell::RefCell, rc::Rc};
 use nautilus_common::enums::Environment;
 use nautilus_core::UUID4;
 use nautilus_model::identifiers::TraderId;
+use nautilus_system::get_global_pyo3_registry;
 use pyo3::prelude::*;
 
 use crate::node::LiveNode;
@@ -144,17 +145,39 @@ impl LiveNodeBuilderPy {
     /// Adds a data client with factory and configuration.
     fn add_data_client(
         &self,
-        _name: Option<String>,
-        _factory: PyObject,
-        _config: PyObject,
+        name: Option<String>,
+        factory: PyObject,
+        config: PyObject,
     ) -> PyResult<Self> {
         let mut inner_ref = self.inner.borrow_mut();
-        if let Some(_builder) = inner_ref.take() {
-            // TODO: Implement generic PyObject to trait object extraction
-            // This requires a registry pattern to avoid naming specific implementations
-            Err(PyErr::new::<pyo3::exceptions::PyNotImplementedError, _>(
-                "add_data_client not yet implemented - needs generic trait object extraction registry",
-            ))
+        if let Some(builder) = inner_ref.take() {
+            Python::with_gil(|py| -> PyResult<Self> {
+                // Use the global registry to extract PyObjects to trait objects
+                let registry = get_global_pyo3_registry();
+
+                let boxed_factory = registry.extract_factory(py, factory.clone_ref(py))?;
+                let boxed_config = registry.extract_config(py, config.clone_ref(py))?;
+
+                // Use the factory name from the original factory for the client name
+                let factory_name = factory
+                    .getattr(py, "name")?
+                    .call0(py)?
+                    .extract::<String>(py)?;
+                let client_name = name.unwrap_or(factory_name);
+
+                // Add the data client to the builder using boxed trait objects
+                match builder.add_data_client(Some(client_name), boxed_factory, boxed_config) {
+                    Ok(updated_builder) => {
+                        *inner_ref = Some(updated_builder);
+                        Ok(Self {
+                            inner: self.inner.clone(),
+                        })
+                    }
+                    Err(e) => Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                        "Failed to add data client: {e}"
+                    ))),
+                }
+            })
         } else {
             Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
                 "Builder already consumed",

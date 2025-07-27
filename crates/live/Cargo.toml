@@ -43,6 +43,7 @@ python = [
   "nautilus-model/python",
   "nautilus-portfolio/python",
   "nautilus-risk/python",
+  "nautilus-system/python",
 ]
 defi = ["nautilus-common/defi"]
 
