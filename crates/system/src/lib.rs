@@ -56,8 +56,13 @@ pub mod factories;
 pub mod kernel;
 pub mod trader;
 
+#[cfg(feature = "python")]
+pub mod python;
+
 // Re-exports
 pub use builder::NautilusKernelBuilder;
 pub use config::NautilusKernelConfig;
 pub use factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
 pub use kernel::NautilusKernel;
+#[cfg(feature = "python")]
+pub use python::{FactoryRegistry, get_global_pyo3_registry};

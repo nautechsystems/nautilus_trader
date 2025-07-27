@@ -330,10 +330,10 @@ impl Exchange {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
     use strum::IntoEnumIterator;
 
     use super::*;
-    use rstest::rstest;
 
     #[rstest]
     fn test_exchange_to_venue_mapping() {
