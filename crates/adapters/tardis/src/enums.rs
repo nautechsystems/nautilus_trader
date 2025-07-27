@@ -327,3 +327,64 @@ impl Exchange {
         Venue::from_ustr_unchecked(Ustr::from(self.as_venue_str()))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use strum::IntoEnumIterator;
+
+    use super::*;
+    use rstest::rstest;
+
+    #[rstest]
+    fn test_exchange_to_venue_mapping() {
+        for exchange in Exchange::iter() {
+            let venue_str = exchange.as_venue_str();
+            assert!(
+                Venue::new_checked(venue_str).is_ok(),
+                "Tardis exchange '{exchange:?}' maps to invalid Nautilus venue '{venue_str}'",
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_venue_to_exchange_mapping_bidirectional() {
+        let test_venues = [
+            "BINANCE",
+            "BITMEX",
+            "DERIBIT",
+            "KRAKEN",
+            "COINBASE",
+            "BYBIT",
+            "OKEX",
+            "HUOBI",
+            "GATE_IO",
+            "KUCOIN",
+            "BITFINEX",
+            "GEMINI",
+            "BITSTAMP",
+            "ASCENDEX",
+            "PHEMEX",
+            "POLONIEX",
+            "UPBIT",
+            "WOO_X",
+            "HYPERLIQUID",
+            "CRYPTO_COM",
+            "DYDX",
+            "HITBTC",
+        ];
+
+        for venue_str in test_venues {
+            let venue = Venue::new(venue_str);
+            let exchanges = Exchange::from_venue_str(venue.as_str());
+
+            for exchange in exchanges {
+                assert_eq!(
+                    exchange.as_venue_str(),
+                    venue_str,
+                    "Bidirectional mapping failed: Nautilus venue '{venue_str}' -> Tardis exchange '{exchange:?}' -> Nautilus venue '{}'",
+                    exchange.as_venue_str()
+                );
+            }
+        }
+    }
+}
