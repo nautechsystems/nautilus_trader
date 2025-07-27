@@ -284,6 +284,7 @@ class TardisCSVDataLoader:
         filepath: PathLike[str] | str,
         chunk_size: int = 100_000,
         as_legacy_cython: bool = True,
+        limit: int | None = None,
     ) -> Generator[list[OrderBookDelta] | list[nautilus_pyo3.OrderBookDelta], None, None]:
         """
         Stream order book deltas data from the given `filepath` in chunks.
@@ -298,6 +299,8 @@ class TardisCSVDataLoader:
             The number of records to read per chunk.
         as_legacy_cython : bool, True
             If data should be converted to 'legacy Cython' objects.
+        limit : int | None, default None
+            The maximum number of records to process. If None, all records are processed.
 
         Yields
         ------
@@ -318,6 +321,7 @@ class TardisCSVDataLoader:
             price_precision=self._price_precision,
             size_precision=self._size_precision,
             instrument_id=self._instrument_id,
+            limit=limit,
         )
 
         for chunk in stream_iter:
@@ -330,6 +334,7 @@ class TardisCSVDataLoader:
         self,
         filepath: PathLike[str] | str,
         chunk_size: int = 100_000,
+        limit: int | None = None,
     ) -> Generator[list[OrderBookDeltas], None, None]:
         """
         Stream batched order book deltas data from the given `filepath` in chunks.
@@ -344,6 +349,8 @@ class TardisCSVDataLoader:
             The path for the CSV data file (must be Tardis deltas format).
         chunk_size : int, default 100_000
             The number of records to read per chunk.
+        limit : int | None, default None
+            The maximum number of records to process. If None, all records are processed.
 
         Yields
         ------
@@ -364,6 +371,7 @@ class TardisCSVDataLoader:
             price_precision=self._price_precision,
             size_precision=self._size_precision,
             instrument_id=self._instrument_id,
+            limit=limit,
         )
 
         for chunk in stream_iter:
@@ -380,6 +388,7 @@ class TardisCSVDataLoader:
         filepath: PathLike[str] | str,
         chunk_size: int = 100_000,
         as_legacy_cython: bool = True,
+        limit: int | None = None,
     ) -> Generator[list[QuoteTick] | list[nautilus_pyo3.QuoteTick], None, None]:
         """
         Stream quote tick data from the given `filepath` in chunks.
@@ -394,6 +403,8 @@ class TardisCSVDataLoader:
             The number of records to read per chunk.
         as_legacy_cython : bool, True
             If data should be converted to 'legacy Cython' objects.
+        limit : int | None, default None
+            The maximum number of records to process. If None, all records are processed.
 
         Yields
         ------
@@ -414,6 +425,7 @@ class TardisCSVDataLoader:
             price_precision=self._price_precision,
             size_precision=self._size_precision,
             instrument_id=self._instrument_id,
+            limit=limit,
         )
 
         for chunk in stream_iter:
@@ -427,6 +439,7 @@ class TardisCSVDataLoader:
         filepath: PathLike[str] | str,
         chunk_size: int = 100_000,
         as_legacy_cython: bool = True,
+        limit: int | None = None,
     ) -> Generator[list[TradeTick] | list[nautilus_pyo3.TradeTick], None, None]:
         """
         Stream trade tick data from the given `filepath` in chunks.
@@ -441,6 +454,8 @@ class TardisCSVDataLoader:
             The number of records to read per chunk.
         as_legacy_cython : bool, True
             If data should be converted to 'legacy Cython' objects.
+        limit : int | None, default None
+            The maximum number of records to process. If None, all records are processed.
 
         Yields
         ------
@@ -461,6 +476,7 @@ class TardisCSVDataLoader:
             price_precision=self._price_precision,
             size_precision=self._size_precision,
             instrument_id=self._instrument_id,
+            limit=limit,
         )
 
         for chunk in stream_iter:
@@ -475,6 +491,7 @@ class TardisCSVDataLoader:
         levels: int,
         chunk_size: int = 100_000,
         as_legacy_cython: bool = True,
+        limit: int | None = None,
     ) -> Generator[list[OrderBookDepth10] | list[nautilus_pyo3.OrderBookDepth10], None, None]:
         """
         Stream order book depth snapshots from the given `filepath` in chunks.
@@ -494,6 +511,8 @@ class TardisCSVDataLoader:
             The number of records to read per chunk.
         as_legacy_cython : bool, True
             If data should be converted to 'legacy Cython' objects.
+        limit : int | None, default None
+            The maximum number of records to process. If None, all records are processed.
 
         Yields
         ------
@@ -522,6 +541,7 @@ class TardisCSVDataLoader:
                     price_precision=self._price_precision,
                     size_precision=self._size_precision,
                     instrument_id=self._instrument_id,
+                    limit=limit,
                 )
 
                 for chunk in stream_iter:
@@ -536,6 +556,7 @@ class TardisCSVDataLoader:
                     price_precision=self._price_precision,
                     size_precision=self._size_precision,
                     instrument_id=self._instrument_id,
+                    limit=limit,
                 )
 
                 for chunk in stream_iter:

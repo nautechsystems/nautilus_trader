@@ -57,6 +57,8 @@ struct DeltaStreamIterator {
     price_precision: u8,
     size_precision: u8,
     last_ts_event: UnixNanos,
+    limit: Option<usize>,
+    records_processed: usize,
 }
 
 impl DeltaStreamIterator {
@@ -71,6 +73,7 @@ impl DeltaStreamIterator {
         price_precision: Option<u8>,
         size_precision: Option<u8>,
         instrument_id: Option<InstrumentId>,
+        limit: Option<usize>,
     ) -> anyhow::Result<Self> {
         let (final_price_precision, final_size_precision) =
             if let (Some(price_prec), Some(size_prec)) = (price_precision, size_precision) {
@@ -99,6 +102,8 @@ impl DeltaStreamIterator {
             price_precision: final_price_precision,
             size_precision: final_size_precision,
             last_ts_event: UnixNanos::default(),
+            limit,
+            records_processed: 0,
         })
     }
 
@@ -133,6 +138,12 @@ impl Iterator for DeltaStreamIterator {
     type Item = anyhow::Result<Vec<OrderBookDelta>>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        if let Some(limit) = self.limit {
+            if self.records_processed >= limit {
+                return None;
+            }
+        }
+
         self.buffer.clear();
         let mut records_read = 0;
 
@@ -166,6 +177,13 @@ impl Iterator for DeltaStreamIterator {
 
                             self.buffer.push(delta);
                             records_read += 1;
+                            self.records_processed += 1;
+
+                            if let Some(limit) = self.limit {
+                                if self.records_processed >= limit {
+                                    break;
+                                }
+                            }
                         }
                         Err(e) => {
                             return Some(Err(anyhow::anyhow!("Failed to deserialize record: {e}")));
@@ -215,6 +233,7 @@ pub fn stream_deltas<P: AsRef<Path>>(
     price_precision: Option<u8>,
     size_precision: Option<u8>,
     instrument_id: Option<InstrumentId>,
+    limit: Option<usize>,
 ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<Vec<OrderBookDelta>>>> {
     DeltaStreamIterator::new(
         filepath,
@@ -222,6 +241,7 @@ pub fn stream_deltas<P: AsRef<Path>>(
         price_precision,
         size_precision,
         instrument_id,
+        limit,
     )
 }
 
@@ -242,6 +262,8 @@ struct BatchedDeltasStreamIterator {
     price_precision: u8,
     size_precision: u8,
     last_ts_event: UnixNanos,
+    limit: Option<usize>,
+    records_processed: usize,
 }
 
 #[cfg(feature = "python")]
@@ -257,6 +279,7 @@ impl BatchedDeltasStreamIterator {
         price_precision: Option<u8>,
         size_precision: Option<u8>,
         instrument_id: Option<InstrumentId>,
+        limit: Option<usize>,
     ) -> anyhow::Result<Self> {
         let mut reader = create_csv_reader(&filepath)?;
         let mut record = StringRecord::new();
@@ -298,6 +321,8 @@ impl BatchedDeltasStreamIterator {
             price_precision: final_price_precision,
             size_precision: final_size_precision,
             last_ts_event: UnixNanos::default(),
+            limit,
+            records_processed: 0,
         })
     }
 
@@ -333,6 +358,12 @@ impl Iterator for BatchedDeltasStreamIterator {
     type Item = anyhow::Result<Vec<PyObject>>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        if let Some(limit) = self.limit {
+            if self.records_processed >= limit {
+                return None;
+            }
+        }
+
         self.buffer.clear();
         let mut batches_created = 0;
 
@@ -363,6 +394,13 @@ impl Iterator for BatchedDeltasStreamIterator {
 
                     self.last_ts_event = delta.ts_event;
                     self.current_batch.push(delta);
+                    self.records_processed += 1;
+
+                    if let Some(limit) = self.limit {
+                        if self.records_processed >= limit {
+                            break;
+                        }
+                    }
                 }
                 Ok(false) => {
                     // End of file
@@ -411,6 +449,7 @@ pub fn stream_batched_deltas<P: AsRef<Path>>(
     price_precision: Option<u8>,
     size_precision: Option<u8>,
     instrument_id: Option<InstrumentId>,
+    limit: Option<usize>,
 ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<Vec<PyObject>>>> {
     BatchedDeltasStreamIterator::new(
         filepath,
@@ -418,6 +457,7 @@ pub fn stream_batched_deltas<P: AsRef<Path>>(
         price_precision,
         size_precision,
         instrument_id,
+        limit,
     )
 }
 
@@ -434,6 +474,8 @@ struct QuoteStreamIterator {
     instrument_id: Option<InstrumentId>,
     price_precision: u8,
     size_precision: u8,
+    limit: Option<usize>,
+    records_processed: usize,
 }
 
 impl QuoteStreamIterator {
@@ -448,6 +490,7 @@ impl QuoteStreamIterator {
         price_precision: Option<u8>,
         size_precision: Option<u8>,
         instrument_id: Option<InstrumentId>,
+        limit: Option<usize>,
     ) -> anyhow::Result<Self> {
         let (final_price_precision, final_size_precision) =
             if let (Some(price_prec), Some(size_prec)) = (price_precision, size_precision) {
@@ -475,6 +518,8 @@ impl QuoteStreamIterator {
             instrument_id,
             price_precision: final_price_precision,
             size_precision: final_size_precision,
+            limit,
+            records_processed: 0,
         })
     }
 
@@ -523,6 +568,12 @@ impl Iterator for QuoteStreamIterator {
     type Item = anyhow::Result<Vec<QuoteTick>>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        if let Some(limit) = self.limit {
+            if self.records_processed >= limit {
+                return None;
+            }
+        }
+
         self.buffer.clear();
         let mut records_read = 0;
 
@@ -539,6 +590,13 @@ impl Iterator for QuoteStreamIterator {
 
                         self.buffer.push(quote);
                         records_read += 1;
+                        self.records_processed += 1;
+
+                        if let Some(limit) = self.limit {
+                            if self.records_processed >= limit {
+                                break;
+                            }
+                        }
                     }
                     Err(e) => {
                         return Some(Err(anyhow::anyhow!("Failed to deserialize record: {e}")));
@@ -582,6 +640,7 @@ pub fn stream_quotes<P: AsRef<Path>>(
     price_precision: Option<u8>,
     size_precision: Option<u8>,
     instrument_id: Option<InstrumentId>,
+    limit: Option<usize>,
 ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<Vec<QuoteTick>>>> {
     QuoteStreamIterator::new(
         filepath,
@@ -589,6 +648,7 @@ pub fn stream_quotes<P: AsRef<Path>>(
         price_precision,
         size_precision,
         instrument_id,
+        limit,
     )
 }
 
@@ -605,6 +665,8 @@ struct TradeStreamIterator {
     instrument_id: Option<InstrumentId>,
     price_precision: u8,
     size_precision: u8,
+    limit: Option<usize>,
+    records_processed: usize,
 }
 
 impl TradeStreamIterator {
@@ -619,6 +681,7 @@ impl TradeStreamIterator {
         price_precision: Option<u8>,
         size_precision: Option<u8>,
         instrument_id: Option<InstrumentId>,
+        limit: Option<usize>,
     ) -> anyhow::Result<Self> {
         let (final_price_precision, final_size_precision) =
             if let (Some(price_prec), Some(size_prec)) = (price_precision, size_precision) {
@@ -646,6 +709,8 @@ impl TradeStreamIterator {
             instrument_id,
             price_precision: final_price_precision,
             size_precision: final_size_precision,
+            limit,
+            records_processed: 0,
         })
     }
 
@@ -680,6 +745,12 @@ impl Iterator for TradeStreamIterator {
     type Item = anyhow::Result<Vec<TradeTick>>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        if let Some(limit) = self.limit {
+            if self.records_processed >= limit {
+                return None;
+            }
+        }
+
         self.buffer.clear();
         let mut records_read = 0;
 
@@ -699,6 +770,13 @@ impl Iterator for TradeStreamIterator {
 
                             self.buffer.push(trade);
                             records_read += 1;
+                            self.records_processed += 1;
+
+                            if let Some(limit) = self.limit {
+                                if self.records_processed >= limit {
+                                    break;
+                                }
+                            }
                         } else {
                             log::warn!("Skipping zero-sized trade: {data:?}");
                         }
@@ -745,6 +823,7 @@ pub fn stream_trades<P: AsRef<Path>>(
     price_precision: Option<u8>,
     size_precision: Option<u8>,
     instrument_id: Option<InstrumentId>,
+    limit: Option<usize>,
 ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<Vec<TradeTick>>>> {
     TradeStreamIterator::new(
         filepath,
@@ -752,6 +831,7 @@ pub fn stream_trades<P: AsRef<Path>>(
         price_precision,
         size_precision,
         instrument_id,
+        limit,
     )
 }
 
@@ -769,6 +849,8 @@ struct Depth10StreamIterator {
     instrument_id: Option<InstrumentId>,
     price_precision: u8,
     size_precision: u8,
+    limit: Option<usize>,
+    records_processed: usize,
 }
 
 impl Depth10StreamIterator {
@@ -784,6 +866,7 @@ impl Depth10StreamIterator {
         price_precision: Option<u8>,
         size_precision: Option<u8>,
         instrument_id: Option<InstrumentId>,
+        limit: Option<usize>,
     ) -> anyhow::Result<Self> {
         let (final_price_precision, final_size_precision) =
             if let (Some(price_prec), Some(size_prec)) = (price_precision, size_precision) {
@@ -812,6 +895,8 @@ impl Depth10StreamIterator {
             instrument_id,
             price_precision: final_price_precision,
             size_precision: final_size_precision,
+            limit,
+            records_processed: 0,
         })
     }
 
@@ -1029,6 +1114,12 @@ impl Iterator for Depth10StreamIterator {
     type Item = anyhow::Result<Vec<OrderBookDepth10>>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        if let Some(limit) = self.limit {
+            if self.records_processed >= limit {
+                return None;
+            }
+        }
+
         if !self.buffer.is_empty() {
             let chunk = self.buffer.split_off(0);
             return Some(Ok(chunk));
@@ -1056,6 +1147,13 @@ impl Iterator for Depth10StreamIterator {
                         Ok(depth) => {
                             self.buffer.push(depth);
                             records_read += 1;
+                            self.records_processed += 1;
+
+                            if let Some(limit) = self.limit {
+                                if self.records_processed >= limit {
+                                    break;
+                                }
+                            }
                         }
                         Err(e) => {
                             return Some(Err(anyhow::anyhow!("Failed to deserialize record: {e}")));
@@ -1102,6 +1200,7 @@ pub fn stream_depth10_from_snapshot5<P: AsRef<Path>>(
     price_precision: Option<u8>,
     size_precision: Option<u8>,
     instrument_id: Option<InstrumentId>,
+    limit: Option<usize>,
 ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<Vec<OrderBookDepth10>>>> {
     Depth10StreamIterator::new(
         filepath,
@@ -1110,6 +1209,7 @@ pub fn stream_depth10_from_snapshot5<P: AsRef<Path>>(
         price_precision,
         size_precision,
         instrument_id,
+        limit,
     )
 }
 
@@ -1133,6 +1233,7 @@ pub fn stream_depth10_from_snapshot25<P: AsRef<Path>>(
     price_precision: Option<u8>,
     size_precision: Option<u8>,
     instrument_id: Option<InstrumentId>,
+    limit: Option<usize>,
 ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<Vec<OrderBookDepth10>>>> {
     Depth10StreamIterator::new(
         filepath,
@@ -1141,6 +1242,7 @@ pub fn stream_depth10_from_snapshot25<P: AsRef<Path>>(
         price_precision,
         size_precision,
         instrument_id,
+        limit,
     )
 }
 
@@ -1183,7 +1285,7 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
         let temp_file = std::env::temp_dir().join("test_stream_deltas.csv");
         std::fs::write(&temp_file, csv_data).unwrap();
 
-        let stream = stream_deltas(&temp_file, 2, Some(4), Some(1), None).unwrap();
+        let stream = stream_deltas(&temp_file, 2, Some(4), Some(1), None, None).unwrap();
         let chunks: Vec<_> = stream.collect();
 
         assert_eq!(chunks.len(), 3);
@@ -1221,7 +1323,7 @@ binance,BTCUSDT,1640995204000000,1640995204100000,0.5,50000.1234,49999.1234,0.8"
         let temp_file = std::env::temp_dir().join("test_stream_quotes.csv");
         std::fs::write(&temp_file, csv_data).unwrap();
 
-        let stream = stream_quotes(&temp_file, 2, Some(4), Some(1), None).unwrap();
+        let stream = stream_quotes(&temp_file, 2, Some(4), Some(1), None, None).unwrap();
         let chunks: Vec<_> = stream.collect();
 
         assert_eq!(chunks.len(), 3);
@@ -1258,7 +1360,7 @@ binance,BTCUSDT,1640995204000000,1640995204100000,trade5,buy,50000.1234,0.5";
         let temp_file = std::env::temp_dir().join("test_stream_trades.csv");
         std::fs::write(&temp_file, csv_data).unwrap();
 
-        let stream = stream_trades(&temp_file, 3, Some(4), Some(1), None).unwrap();
+        let stream = stream_trades(&temp_file, 3, Some(4), Some(1), None, None).unwrap();
         let chunks: Vec<_> = stream.collect();
 
         assert_eq!(chunks.len(), 2);
@@ -1295,7 +1397,7 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
         let temp_file = std::env::temp_dir().join("test_stream_trades_zero_size.csv");
         std::fs::write(&temp_file, csv_data).unwrap();
 
-        let stream = stream_trades(&temp_file, 3, Some(4), Some(1), None).unwrap();
+        let stream = stream_trades(&temp_file, 3, Some(4), Some(1), None, None).unwrap();
         let chunks: Vec<_> = stream.collect();
 
         // Should have 1 chunk with 3 valid trades (zero-sized trade skipped)
@@ -1329,7 +1431,7 @@ binance,BTCUSDT,1640995202000000,1640995202100000,50001.12,1.12,49999.12,1.62,50
         std::fs::write(&temp_file, csv_data).unwrap();
 
         // Stream with chunk size of 2
-        let stream = stream_depth10_from_snapshot5(&temp_file, 2, None, None, None).unwrap();
+        let stream = stream_depth10_from_snapshot5(&temp_file, 2, None, None, None, None).unwrap();
         let chunks: Vec<_> = stream.collect();
 
         // Should have 2 chunks: [2 items, 1 item]
@@ -1427,7 +1529,7 @@ binance,BTCUSDT,1640995202000000,1640995202100000,50001.12,1.12,49999.12,1.62,50
         std::fs::write(&temp_file, &csv_data).unwrap();
 
         // Stream with chunk size of 1
-        let stream = stream_depth10_from_snapshot25(&temp_file, 1, None, None, None).unwrap();
+        let stream = stream_depth10_from_snapshot25(&temp_file, 1, None, None, None, None).unwrap();
         let chunks: Vec<_> = stream.collect();
 
         // Should have 1 chunk with 1 item
@@ -1456,19 +1558,19 @@ binance,BTCUSDT,1640995202000000,1640995202100000,50001.12,1.12,49999.12,1.62,50
         // Test with non-existent file
         let non_existent = std::path::Path::new("does_not_exist.csv");
 
-        let result = stream_deltas(non_existent, 10, None, None, None);
+        let result = stream_deltas(non_existent, 10, None, None, None, None);
         assert!(result.is_err());
 
-        let result = stream_quotes(non_existent, 10, None, None, None);
+        let result = stream_quotes(non_existent, 10, None, None, None, None);
         assert!(result.is_err());
 
-        let result = stream_trades(non_existent, 10, None, None, None);
+        let result = stream_trades(non_existent, 10, None, None, None, None);
         assert!(result.is_err());
 
-        let result = stream_depth10_from_snapshot5(non_existent, 10, None, None, None);
+        let result = stream_depth10_from_snapshot5(non_existent, 10, None, None, None, None);
         assert!(result.is_err());
 
-        let result = stream_depth10_from_snapshot25(non_existent, 10, None, None, None);
+        let result = stream_depth10_from_snapshot25(non_existent, 10, None, None, None, None);
         assert!(result.is_err());
     }
 
@@ -1478,7 +1580,7 @@ binance,BTCUSDT,1640995202000000,1640995202100000,50001.12,1.12,49999.12,1.62,50
         let temp_file = std::env::temp_dir().join("test_empty.csv");
         std::fs::write(&temp_file, "").unwrap();
 
-        let stream = stream_deltas(&temp_file, 10, None, None, None).unwrap();
+        let stream = stream_deltas(&temp_file, 10, None, None, None, None).unwrap();
         let chunks: Vec<_> = stream.collect();
         assert_eq!(chunks.len(), 0);
 
@@ -1502,7 +1604,7 @@ binance-futures,BTCUSDT,1640995203000000,1640995203100000,false,bid,49999.123,3.
         let bulk_deltas = load_deltas(&temp_file, None, None, None, None).unwrap();
 
         // Stream in chunks and collect
-        let stream = stream_deltas(&temp_file, 2, None, None, None).unwrap();
+        let stream = stream_deltas(&temp_file, 2, None, None, None, None).unwrap();
         let chunks: Vec<_> = stream.collect();
         let streamed_deltas: Vec<_> = chunks
             .into_iter()
@@ -1529,7 +1631,7 @@ binance-futures,BTCUSDT,1640995203000000,1640995203100000,false,bid,49999.123,3.
     #[rstest]
     pub fn test_stream_trades_from_local_file() {
         let filepath = get_test_data_path("csv/trades_1.csv");
-        let mut stream = stream_trades(filepath, 1, Some(1), Some(0), None).unwrap();
+        let mut stream = stream_trades(filepath, 1, Some(1), Some(0), None, None).unwrap();
 
         let chunk1 = stream.next().unwrap().unwrap();
         assert_eq!(chunk1.len(), 1);
@@ -1545,7 +1647,7 @@ binance-futures,BTCUSDT,1640995203000000,1640995203100000,false,bid,49999.123,3.
     #[rstest]
     pub fn test_stream_deltas_from_local_file() {
         let filepath = get_test_data_path("csv/deltas_1.csv");
-        let mut stream = stream_deltas(filepath, 1, Some(1), Some(0), None).unwrap();
+        let mut stream = stream_deltas(filepath, 1, Some(1), Some(0), None, None).unwrap();
 
         let chunk1 = stream.next().unwrap().unwrap();
         assert_eq!(chunk1.len(), 1);
@@ -1556,5 +1658,93 @@ binance-futures,BTCUSDT,1640995203000000,1640995203100000,false,bid,49999.123,3.
         assert_eq!(chunk2[0].order.size, Quantity::from("10000"));
 
         assert!(stream.next().is_none());
+    }
+
+    #[rstest]
+    pub fn test_stream_deltas_with_limit() {
+        let csv_data = "exchange,symbol,timestamp,local_timestamp,is_snapshot,side,price,amount
+binance,BTCUSDT,1640995200000000,1640995200100000,false,bid,50000.0,1.0
+binance,BTCUSDT,1640995201000000,1640995201100000,false,ask,50001.0,2.0
+binance,BTCUSDT,1640995202000000,1640995202100000,false,bid,49999.0,1.5
+binance,BTCUSDT,1640995203000000,1640995203100000,false,ask,50002.0,3.0
+binance,BTCUSDT,1640995204000000,1640995204100000,false,bid,49998.0,0.5";
+
+        let temp_file = std::env::temp_dir().join("test_stream_deltas_limit.csv");
+        std::fs::write(&temp_file, csv_data).unwrap();
+
+        // Test with limit of 3 records
+        let stream = stream_deltas(&temp_file, 2, Some(4), Some(1), None, Some(3)).unwrap();
+        let chunks: Vec<_> = stream.collect();
+
+        // Should have 2 chunks: [2 items, 1 item] = 3 total (limited)
+        assert_eq!(chunks.len(), 2);
+        let chunk1 = chunks[0].as_ref().unwrap();
+        assert_eq!(chunk1.len(), 2);
+        let chunk2 = chunks[1].as_ref().unwrap();
+        assert_eq!(chunk2.len(), 1);
+
+        // Total should be exactly 3 records due to limit
+        let total_deltas: usize = chunks.iter().map(|c| c.as_ref().unwrap().len()).sum();
+        assert_eq!(total_deltas, 3);
+
+        std::fs::remove_file(&temp_file).ok();
+    }
+
+    #[rstest]
+    pub fn test_stream_quotes_with_limit() {
+        let csv_data =
+            "exchange,symbol,timestamp,local_timestamp,ask_price,ask_amount,bid_price,bid_amount
+binance,BTCUSDT,1640995200000000,1640995200100000,50001.0,1.0,50000.0,1.5
+binance,BTCUSDT,1640995201000000,1640995201100000,50002.0,2.0,49999.0,2.5
+binance,BTCUSDT,1640995202000000,1640995202100000,50003.0,1.5,49998.0,3.0
+binance,BTCUSDT,1640995203000000,1640995203100000,50004.0,3.0,49997.0,3.5";
+
+        let temp_file = std::env::temp_dir().join("test_stream_quotes_limit.csv");
+        std::fs::write(&temp_file, csv_data).unwrap();
+
+        // Test with limit of 2 records
+        let stream = stream_quotes(&temp_file, 2, Some(4), Some(1), None, Some(2)).unwrap();
+        let chunks: Vec<_> = stream.collect();
+
+        // Should have 1 chunk with 2 items (limited)
+        assert_eq!(chunks.len(), 1);
+        let chunk1 = chunks[0].as_ref().unwrap();
+        assert_eq!(chunk1.len(), 2);
+
+        // Verify we get exactly 2 records
+        let total_quotes: usize = chunks.iter().map(|c| c.as_ref().unwrap().len()).sum();
+        assert_eq!(total_quotes, 2);
+
+        std::fs::remove_file(&temp_file).ok();
+    }
+
+    #[rstest]
+    pub fn test_stream_trades_with_limit() {
+        let csv_data = "exchange,symbol,timestamp,local_timestamp,id,side,price,amount
+binance,BTCUSDT,1640995200000000,1640995200100000,trade1,buy,50000.0,1.0
+binance,BTCUSDT,1640995201000000,1640995201100000,trade2,sell,49999.5,2.0
+binance,BTCUSDT,1640995202000000,1640995202100000,trade3,buy,50000.12,1.5
+binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0
+binance,BTCUSDT,1640995204000000,1640995204100000,trade5,buy,50000.1234,0.5";
+
+        let temp_file = std::env::temp_dir().join("test_stream_trades_limit.csv");
+        std::fs::write(&temp_file, csv_data).unwrap();
+
+        // Test with limit of 3 records
+        let stream = stream_trades(&temp_file, 2, Some(4), Some(1), None, Some(3)).unwrap();
+        let chunks: Vec<_> = stream.collect();
+
+        // Should have 2 chunks: [2 items, 1 item] = 3 total (limited)
+        assert_eq!(chunks.len(), 2);
+        let chunk1 = chunks[0].as_ref().unwrap();
+        assert_eq!(chunk1.len(), 2);
+        let chunk2 = chunks[1].as_ref().unwrap();
+        assert_eq!(chunk2.len(), 1);
+
+        // Verify we get exactly 3 records
+        let total_trades: usize = chunks.iter().map(|c| c.as_ref().unwrap().len()).sum();
+        assert_eq!(total_trades, 3);
+
+        std::fs::remove_file(&temp_file).ok();
     }
 }

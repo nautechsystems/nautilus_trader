@@ -185,13 +185,14 @@ impl_tardis_stream_iterator!(
 ///
 /// Returns a Python error if loading or parsing the CSV file fails.
 #[pyfunction(name = "stream_tardis_deltas")]
-#[pyo3(signature = (filepath, chunk_size=100_000, price_precision=None, size_precision=None, instrument_id=None))]
+#[pyo3(signature = (filepath, chunk_size=100_000, price_precision=None, size_precision=None, instrument_id=None, limit=None))]
 pub fn py_stream_tardis_deltas(
     filepath: PathBuf,
     chunk_size: usize,
     price_precision: Option<u8>,
     size_precision: Option<u8>,
     instrument_id: Option<InstrumentId>,
+    limit: Option<usize>,
 ) -> PyResult<TardisDeltaStreamIterator> {
     let stream = stream_deltas(
         filepath,
@@ -199,6 +200,7 @@ pub fn py_stream_tardis_deltas(
         price_precision,
         size_precision,
         instrument_id,
+        limit,
     )
     .map_err(to_pyvalue_err)?;
 
@@ -239,13 +241,14 @@ impl TardisBatchedDeltasStreamIterator {
 ///
 /// Returns a Python error if loading or parsing the CSV file fails.
 #[pyfunction(name = "stream_tardis_batched_deltas")]
-#[pyo3(signature = (filepath, chunk_size=100_000, price_precision=None, size_precision=None, instrument_id=None))]
+#[pyo3(signature = (filepath, chunk_size=100_000, price_precision=None, size_precision=None, instrument_id=None, limit=None))]
 pub fn py_stream_tardis_batched_deltas(
     filepath: PathBuf,
     chunk_size: usize,
     price_precision: Option<u8>,
     size_precision: Option<u8>,
     instrument_id: Option<InstrumentId>,
+    limit: Option<usize>,
 ) -> PyResult<TardisBatchedDeltasStreamIterator> {
     let stream = stream_batched_deltas(
         filepath,
@@ -253,6 +256,7 @@ pub fn py_stream_tardis_batched_deltas(
         price_precision,
         size_precision,
         instrument_id,
+        limit,
     )
     .map_err(to_pyvalue_err)?;
 
@@ -273,13 +277,14 @@ impl_tardis_stream_iterator!(
 ///
 /// Returns a Python error if loading or parsing the CSV file fails.
 #[pyfunction(name = "stream_tardis_quotes")]
-#[pyo3(signature = (filepath, chunk_size=100_000, price_precision=None, size_precision=None, instrument_id=None))]
+#[pyo3(signature = (filepath, chunk_size=100_000, price_precision=None, size_precision=None, instrument_id=None, limit=None))]
 pub fn py_stream_tardis_quotes(
     filepath: PathBuf,
     chunk_size: usize,
     price_precision: Option<u8>,
     size_precision: Option<u8>,
     instrument_id: Option<InstrumentId>,
+    limit: Option<usize>,
 ) -> PyResult<TardisQuoteStreamIterator> {
     let stream = stream_quotes(
         filepath,
@@ -287,6 +292,7 @@ pub fn py_stream_tardis_quotes(
         price_precision,
         size_precision,
         instrument_id,
+        limit,
     )
     .map_err(to_pyvalue_err)?;
 
@@ -307,13 +313,14 @@ impl_tardis_stream_iterator!(
 ///
 /// Returns a Python error if loading or parsing the CSV file fails.
 #[pyfunction(name = "stream_tardis_trades")]
-#[pyo3(signature = (filepath, chunk_size=100_000, price_precision=None, size_precision=None, instrument_id=None))]
+#[pyo3(signature = (filepath, chunk_size=100_000, price_precision=None, size_precision=None, instrument_id=None, limit=None))]
 pub fn py_stream_tardis_trades(
     filepath: PathBuf,
     chunk_size: usize,
     price_precision: Option<u8>,
     size_precision: Option<u8>,
     instrument_id: Option<InstrumentId>,
+    limit: Option<usize>,
 ) -> PyResult<TardisTradeStreamIterator> {
     let stream = stream_trades(
         filepath,
@@ -321,6 +328,7 @@ pub fn py_stream_tardis_trades(
         price_precision,
         size_precision,
         instrument_id,
+        limit,
     )
     .map_err(to_pyvalue_err)?;
 
@@ -341,13 +349,14 @@ impl_tardis_stream_iterator!(
 ///
 /// Returns a Python error if loading or parsing the CSV file fails.
 #[pyfunction(name = "stream_tardis_depth10_from_snapshot5")]
-#[pyo3(signature = (filepath, chunk_size=100_000, price_precision=None, size_precision=None, instrument_id=None))]
+#[pyo3(signature = (filepath, chunk_size=100_000, price_precision=None, size_precision=None, instrument_id=None, limit=None))]
 pub fn py_stream_tardis_depth10_from_snapshot5(
     filepath: PathBuf,
     chunk_size: usize,
     price_precision: Option<u8>,
     size_precision: Option<u8>,
     instrument_id: Option<InstrumentId>,
+    limit: Option<usize>,
 ) -> PyResult<TardisDepth10StreamIterator> {
     let stream = stream_depth10_from_snapshot5(
         filepath,
@@ -355,6 +364,7 @@ pub fn py_stream_tardis_depth10_from_snapshot5(
         price_precision,
         size_precision,
         instrument_id,
+        limit,
     )
     .map_err(to_pyvalue_err)?;
 
@@ -369,13 +379,14 @@ pub fn py_stream_tardis_depth10_from_snapshot5(
 ///
 /// Returns a Python error if loading or parsing the CSV file fails.
 #[pyfunction(name = "stream_tardis_depth10_from_snapshot25")]
-#[pyo3(signature = (filepath, chunk_size=100_000, price_precision=None, size_precision=None, instrument_id=None))]
+#[pyo3(signature = (filepath, chunk_size=100_000, price_precision=None, size_precision=None, instrument_id=None, limit=None))]
 pub fn py_stream_tardis_depth10_from_snapshot25(
     filepath: PathBuf,
     chunk_size: usize,
     price_precision: Option<u8>,
     size_precision: Option<u8>,
     instrument_id: Option<InstrumentId>,
+    limit: Option<usize>,
 ) -> PyResult<TardisDepth10StreamIterator> {
     let stream = stream_depth10_from_snapshot25(
         filepath,
@@ -383,6 +394,7 @@ pub fn py_stream_tardis_depth10_from_snapshot25(
         price_precision,
         size_precision,
         instrument_id,
+        limit,
     )
     .map_err(to_pyvalue_err)?;
 

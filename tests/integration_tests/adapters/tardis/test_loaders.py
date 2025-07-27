@@ -1022,3 +1022,337 @@ def test_trades_specific_price_size_values_from_stub_data():
     assert trades[0].size == Quantity.from_str("2152")
     assert trades[1].price == Price.from_str("8531.0")
     assert trades[1].size == Quantity.from_str("1000")
+
+
+def test_tardis_load_deltas_with_limit():
+    """
+    Test load_deltas with limit parameter.
+    """
+    # Create synthetic CSV data with 10 records
+    csv_data = """exchange,symbol,timestamp,local_timestamp,is_snapshot,side,price,amount
+binance,BTCUSDT,1640995200000000,1640995200100000,false,bid,50000.0,1.0
+binance,BTCUSDT,1640995201000000,1640995201100000,false,ask,50001.0,2.0
+binance,BTCUSDT,1640995202000000,1640995202100000,false,bid,49999.0,1.5
+binance,BTCUSDT,1640995203000000,1640995203100000,false,ask,50002.0,3.0
+binance,BTCUSDT,1640995204000000,1640995204100000,false,bid,49998.0,0.5
+binance,BTCUSDT,1640995205000000,1640995205100000,false,ask,50003.0,2.5
+binance,BTCUSDT,1640995206000000,1640995206100000,false,bid,49997.0,1.2
+binance,BTCUSDT,1640995207000000,1640995207100000,false,ask,50004.0,3.5
+binance,BTCUSDT,1640995208000000,1640995208100000,false,bid,49996.0,0.8
+binance,BTCUSDT,1640995209000000,1640995209100000,false,ask,50005.0,2.8"""
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
+        f.write(csv_data)
+        temp_file = f.name
+
+    try:
+        loader = TardisCSVDataLoader()
+
+        # Test limit of 5 records
+        deltas = loader.load_deltas(temp_file, limit=5)
+        assert len(deltas) == 5
+
+        # Verify we get the first 5 records in order
+        assert deltas[0].order.price == Price.from_str("50000.0")
+        assert deltas[1].order.price == Price.from_str("50001.0")
+        assert deltas[2].order.price == Price.from_str("49999.0")
+        assert deltas[3].order.price == Price.from_str("50002.0")
+        assert deltas[4].order.price == Price.from_str("49998.0")
+
+        # Test limit larger than available records
+        deltas_all = loader.load_deltas(temp_file, limit=20)
+        assert len(deltas_all) == 10  # Should return all 10 records
+
+        # Test limit of 1
+        deltas_one = loader.load_deltas(temp_file, limit=1)
+        assert len(deltas_one) == 1
+        assert deltas_one[0].order.price == Price.from_str("50000.0")
+
+    finally:
+        os.unlink(temp_file)
+
+
+def test_tardis_load_quotes_with_limit():
+    """
+    Test load_quotes with limit parameter.
+    """
+    # Create synthetic CSV data with 8 records
+    csv_data = """exchange,symbol,timestamp,local_timestamp,ask_amount,ask_price,bid_price,bid_amount
+huobi,BTC-USD,1588291201099000,1588291201234268,5000,8629.3,8629.1,800
+huobi,BTC-USD,1588291202099000,1588291202234268,5494,8629.4,8629.2,806
+huobi,BTC-USD,1588291203099000,1588291203234268,5200,8629.35,8629.15,850
+huobi,BTC-USD,1588291204099000,1588291204234268,5800,8629.45,8629.25,900
+huobi,BTC-USD,1588291205099000,1588291205234268,5100,8629.5,8629.3,820
+huobi,BTC-USD,1588291206099000,1588291206234268,5600,8629.55,8629.35,880
+huobi,BTC-USD,1588291207099000,1588291207234268,5300,8629.6,8629.4,840
+huobi,BTC-USD,1588291208099000,1588291208234268,5700,8629.65,8629.45,860"""
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
+        f.write(csv_data)
+        temp_file = f.name
+
+    try:
+        loader = TardisCSVDataLoader()
+
+        # Test limit of 3 records
+        quotes = loader.load_quotes(temp_file, limit=3)
+        assert len(quotes) == 3
+
+        # Verify we get the first 3 records in order
+        assert quotes[0].bid_price == Price.from_str("8629.1")
+        assert quotes[0].ask_price == Price.from_str("8629.3")
+        assert quotes[1].bid_price == Price.from_str("8629.2")
+        assert quotes[1].ask_price == Price.from_str("8629.4")
+        assert quotes[2].bid_price == Price.from_str("8629.15")
+        assert quotes[2].ask_price == Price.from_str("8629.35")
+
+    finally:
+        os.unlink(temp_file)
+
+
+def test_tardis_load_trades_with_limit():
+    """
+    Test load_trades with limit parameter.
+    """
+    # Create synthetic CSV data with 6 records
+    csv_data = """exchange,symbol,timestamp,local_timestamp,id,side,price,amount
+bitmex,XBTUSD,1583020803145000,1583020803307160,trade1,sell,8531.5,2152
+bitmex,XBTUSD,1583020804145000,1583020804307160,trade2,buy,8532.0,1500
+bitmex,XBTUSD,1583020805145000,1583020805307160,trade3,sell,8531.8,3000
+bitmex,XBTUSD,1583020806145000,1583020806307160,trade4,buy,8532.2,1800
+bitmex,XBTUSD,1583020807145000,1583020807307160,trade5,sell,8531.9,2500
+bitmex,XBTUSD,1583020808145000,1583020808307160,trade6,buy,8532.1,1900"""
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
+        f.write(csv_data)
+        temp_file = f.name
+
+    try:
+        loader = TardisCSVDataLoader()
+
+        # Test limit of 4 records
+        trades = loader.load_trades(temp_file, limit=4)
+        assert len(trades) == 4
+
+        # Verify we get the first 4 records in order
+        assert trades[0].price == Price.from_str("8531.5")
+        assert trades[0].trade_id == TradeId("trade1")
+        assert trades[1].price == Price.from_str("8532.0")
+        assert trades[1].trade_id == TradeId("trade2")
+        assert trades[2].price == Price.from_str("8531.8")
+        assert trades[2].trade_id == TradeId("trade3")
+        assert trades[3].price == Price.from_str("8532.2")
+        assert trades[3].trade_id == TradeId("trade4")
+
+    finally:
+        os.unlink(temp_file)
+
+
+def test_tardis_load_depth10_with_limit():
+    """
+    Test load_depth10 with limit parameter for both snapshot5 and snapshot25.
+    """
+    # Create synthetic CSV data for snapshot5 with 4 records
+    snapshot5_header = (
+        "exchange,symbol,timestamp,local_timestamp,"
+        "bids[0].price,bids[0].amount,bids[1].price,bids[1].amount,"
+        "bids[2].price,bids[2].amount,bids[3].price,bids[3].amount,"
+        "bids[4].price,bids[4].amount,asks[0].price,asks[0].amount,"
+        "asks[1].price,asks[1].amount,asks[2].price,asks[2].amount,"
+        "asks[3].price,asks[3].amount,asks[4].price,asks[4].amount"
+    )
+    snapshot5_rows = [
+        "binance,BTCUSDT,1598918403696000,1598918403810979,11657.07,10.896,11657.06,5.432,11657.05,8.123,11657.04,12.567,11657.03,15.234,11657.08,1.714,11657.09,3.456,11657.10,7.890,11657.11,9.123,11657.12,11.567",
+        "binance,BTCUSDT,1598918404696000,1598918404810979,11658.07,11.000,11658.06,5.500,11658.05,8.200,11658.04,12.600,11658.03,15.300,11658.08,1.800,11658.09,3.500,11658.10,8.000,11658.11,9.200,11658.12,11.600",
+        "binance,BTCUSDT,1598918405696000,1598918405810979,11659.07,10.500,11659.06,5.100,11659.05,8.300,11659.04,12.200,11659.03,15.100,11659.08,1.900,11659.09,3.200,11659.10,8.100,11659.11,9.300,11659.12,11.200",
+        "binance,BTCUSDT,1598918406696000,1598918406810979,11660.07,10.200,11660.06,5.800,11660.05,8.400,11660.04,12.100,11660.03,15.500,11660.08,1.600,11660.09,3.800,11660.10,8.200,11660.11,9.400,11660.12,11.800",
+    ]
+    snapshot5_csv = f"{snapshot5_header}\n" + "\n".join(snapshot5_rows)
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
+        f.write(snapshot5_csv)
+        temp_file = f.name
+
+    try:
+        loader = TardisCSVDataLoader()
+
+        # Test limit of 2 records for snapshot5
+        depths = loader.load_depth10(temp_file, levels=5, limit=2)
+        assert len(depths) == 2
+
+        # Verify we get the first 2 records
+        assert depths[0].bids[0].price == Price.from_str("11657.06")
+        assert depths[0].asks[0].price == Price.from_str("11657.07")
+        assert depths[1].bids[0].price == Price.from_str("11658.06")
+        assert depths[1].asks[0].price == Price.from_str("11658.07")
+
+        # Each depth should have 10 bid and ask levels
+        for depth in depths:
+            assert len(depth.bids) == 10
+            assert len(depth.asks) == 10
+
+    finally:
+        os.unlink(temp_file)
+
+
+def test_tardis_stream_deltas_with_limit():
+    """
+    Test stream_deltas with limit parameter.
+    """
+    # Create synthetic CSV data with 12 records
+    csv_data = """exchange,symbol,timestamp,local_timestamp,is_snapshot,side,price,amount
+binance,BTCUSDT,1640995200000000,1640995200100000,false,bid,50000.0,1.0
+binance,BTCUSDT,1640995201000000,1640995201100000,false,ask,50001.0,2.0
+binance,BTCUSDT,1640995202000000,1640995202100000,false,bid,49999.0,1.5
+binance,BTCUSDT,1640995203000000,1640995203100000,false,ask,50002.0,3.0
+binance,BTCUSDT,1640995204000000,1640995204100000,false,bid,49998.0,0.5
+binance,BTCUSDT,1640995205000000,1640995205100000,false,ask,50003.0,2.5
+binance,BTCUSDT,1640995206000000,1640995206100000,false,bid,49997.0,1.2
+binance,BTCUSDT,1640995207000000,1640995207100000,false,ask,50004.0,3.5
+binance,BTCUSDT,1640995208000000,1640995208100000,false,bid,49996.0,0.8
+binance,BTCUSDT,1640995209000000,1640995209100000,false,ask,50005.0,2.8
+binance,BTCUSDT,1640995210000000,1640995210100000,false,bid,49995.0,1.8
+binance,BTCUSDT,1640995211000000,1640995211100000,false,ask,50006.0,3.8"""
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
+        f.write(csv_data)
+        temp_file = f.name
+
+    try:
+        loader = TardisCSVDataLoader()
+
+        # Test streaming with limit of 7 records, chunk size of 3
+        limited_chunks = list(loader.stream_deltas(temp_file, chunk_size=3, limit=7))
+        total_limited = sum(len(chunk) for chunk in limited_chunks)
+
+        # Should only process 7 records due to limit
+        assert total_limited == 7
+
+        # Should have 3 chunks: [3, 3, 1] = 7 records total (limited)
+        assert len(limited_chunks) == 3
+        assert len(limited_chunks[0]) == 3
+        assert len(limited_chunks[1]) == 3
+        assert len(limited_chunks[2]) == 1
+
+        # Test without limit should process all 12 records
+        all_chunks = list(loader.stream_deltas(temp_file, chunk_size=3))
+        total_from_streaming = sum(len(chunk) for chunk in all_chunks)
+
+        # Should be 4 chunks: [3, 3, 3, 3] = 12 records total
+        assert len(all_chunks) == 4
+        assert total_from_streaming == 12
+
+        # Verify the limited data contains the first 7 records
+        all_limited_deltas = []
+        for chunk in limited_chunks:
+            all_limited_deltas.extend(chunk)
+
+        assert len(all_limited_deltas) == 7
+        assert all_limited_deltas[0].order.price == Price.from_str("50000.0")
+        assert all_limited_deltas[1].order.price == Price.from_str("50001.0")
+        assert all_limited_deltas[6].order.price == Price.from_str("49997.0")  # 7th record
+
+    finally:
+        os.unlink(temp_file)
+
+
+def test_tardis_stream_trades_with_limit():
+    """
+    Test stream_trades with limit parameter.
+    """
+    # Create synthetic CSV data with 10 records
+    csv_data = """exchange,symbol,timestamp,local_timestamp,id,side,price,amount
+bitmex,XBTUSD,1583020803145000,1583020803307160,trade1,sell,8531.5,2152
+bitmex,XBTUSD,1583020804145000,1583020804307160,trade2,buy,8532.0,1500
+bitmex,XBTUSD,1583020805145000,1583020805307160,trade3,sell,8531.8,3000
+bitmex,XBTUSD,1583020806145000,1583020806307160,trade4,buy,8532.2,1800
+bitmex,XBTUSD,1583020807145000,1583020807307160,trade5,sell,8531.9,2500
+bitmex,XBTUSD,1583020808145000,1583020808307160,trade6,buy,8532.1,1900
+bitmex,XBTUSD,1583020809145000,1583020809307160,trade7,sell,8531.7,2200
+bitmex,XBTUSD,1583020810145000,1583020810307160,trade8,buy,8532.3,1700
+bitmex,XBTUSD,1583020811145000,1583020811307160,trade9,sell,8531.6,2800
+bitmex,XBTUSD,1583020812145000,1583020812307160,trade10,buy,8532.4,1600"""
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
+        f.write(csv_data)
+        temp_file = f.name
+
+    try:
+        loader = TardisCSVDataLoader()
+
+        # Test streaming with limit of 6 records, chunk size 4
+        limited_chunks = list(loader.stream_trades(temp_file, chunk_size=4, limit=6))
+        total_limited = sum(len(chunk) for chunk in limited_chunks)
+
+        # Should only process 6 records due to limit
+        assert total_limited == 6
+
+        # Should have 2 chunks: [4, 2] = 6 records total (limited)
+        assert len(limited_chunks) == 2
+        assert len(limited_chunks[0]) == 4
+        assert len(limited_chunks[1]) == 2
+
+        # Test without limit should get all 10 records
+        all_chunks = list(loader.stream_trades(temp_file, chunk_size=4))
+        total_from_streaming = sum(len(chunk) for chunk in all_chunks)
+
+        assert len(all_chunks) == 3
+        assert len(all_chunks[0]) == 4
+        assert len(all_chunks[1]) == 4
+        assert len(all_chunks[2]) == 2
+        assert total_from_streaming == 10
+
+        # Verify the limited data contains the first 6 records
+        all_limited_trades = []
+        for chunk in limited_chunks:
+            all_limited_trades.extend(chunk)
+
+        assert len(all_limited_trades) == 6
+        assert all_limited_trades[0].trade_id == TradeId("trade1")
+        assert all_limited_trades[1].trade_id == TradeId("trade2")
+        assert all_limited_trades[5].trade_id == TradeId("trade6")  # 6th record
+
+    finally:
+        os.unlink(temp_file)
+
+
+def test_tardis_stream_batched_deltas_with_limit():
+    """
+    Test stream_batched_deltas with limit parameter.
+    """
+    # Create synthetic CSV data with 8 records
+    csv_data = """exchange,symbol,timestamp,local_timestamp,is_snapshot,side,price,amount
+binance,BTCUSDT,1640995200000000,1640995200100000,false,bid,50000.0,1.0
+binance,BTCUSDT,1640995201000000,1640995201100000,false,ask,50001.0,2.0
+binance,BTCUSDT,1640995202000000,1640995202100000,false,bid,49999.0,1.5
+binance,BTCUSDT,1640995203000000,1640995203100000,false,ask,50002.0,3.0
+binance,BTCUSDT,1640995204000000,1640995204100000,false,bid,49998.0,0.5
+binance,BTCUSDT,1640995205000000,1640995205100000,false,ask,50003.0,2.5
+binance,BTCUSDT,1640995206000000,1640995206100000,false,bid,49997.0,1.2
+binance,BTCUSDT,1640995207000000,1640995207100000,false,ask,50004.0,3.5"""
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
+        f.write(csv_data)
+        temp_file = f.name
+
+    try:
+        loader = TardisCSVDataLoader()
+
+        # Test streaming batched deltas with chunk size 3 and limit 5
+        all_chunks = list(loader.stream_batched_deltas(temp_file, chunk_size=3, limit=5))
+
+        # Should get chunks based on the limit in the Rust implementation
+        # This test verifies the parameter is accepted and passed through
+        assert len(all_chunks) >= 1  # Should get at least one chunk
+
+        # Test without limit
+        all_chunks_no_limit = list(loader.stream_batched_deltas(temp_file, chunk_size=3))
+        total_no_limit = sum(len(chunk) for chunk in all_chunks_no_limit)
+
+        # Should process all 8 records when no limit
+        # Chunks: [3, 3, 2] = 8 total
+        assert len(all_chunks_no_limit) == 3
+        assert total_no_limit == 8
+
+    finally:
+        os.unlink(temp_file)
