@@ -45,6 +45,7 @@ from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport OrderStatus
 from nautilus_trader.core.rust.model cimport OrderType
 from nautilus_trader.core.rust.model cimport Price_t
+from nautilus_trader.core.rust.model cimport PriceRaw
 from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.core.rust.model cimport QuantityRaw
 from nautilus_trader.core.rust.model cimport TimeInForce
@@ -557,7 +558,7 @@ cdef class OrderMatchingEngine:
             self._book.update_trade_tick(tick)
 
         cdef AggressorSide aggressor_side = AggressorSide.NO_AGGRESSOR
-        cdef int64_t price_raw = tick._mem.price.raw
+        cdef PriceRaw price_raw = tick._mem.price.raw
 
         self._core.set_last_raw(price_raw)
 
