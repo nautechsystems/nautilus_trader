@@ -6132,19 +6132,23 @@ class GreeksData(Data):
     is_call: bool
     strike: float
     expiry: int
-    forward: float
+    expiry_in_days: int
     expiry_in_years: float
     multiplier: float
     quantity: float
+
     underlying_price: float
     interest_rate: float
     cost_of_carry: float
+
     vol: float
+    pnl: float
     price: float
     delta: float
     gamma: float
     vega: float
     theta: float
+
     itm_prob: float
 
     def __init__(
@@ -6155,6 +6159,7 @@ class GreeksData(Data):
         is_call: bool = True,
         strike: float = 0.0,
         expiry: int = 0,
+        expiry_in_days: int = 0,
         expiry_in_years: float = 0.0,
         multiplier: float = 0.0,
         quantity: float = 0.0,
@@ -6162,6 +6167,7 @@ class GreeksData(Data):
         interest_rate: float = 0.0,
         cost_of_carry: float = 0.0,
         vol: float = 0.0,
+        pnl: float = 0.0,
         price: float = 0.0,
         delta: float = 0.0,
         gamma: float = 0.0,
@@ -6175,6 +6181,7 @@ class GreeksData(Data):
 
 
 class PortfolioGreeks(Data):
+    pnl: float
     price: float
     delta: float
     gamma: float
@@ -6185,6 +6192,7 @@ class PortfolioGreeks(Data):
         self,
         ts_event: int = 0,
         ts_init: int = 0,
+        pnl: float = 0.0,
         price: float = 0.0,
         delta: float = 0.0,
         gamma: float = 0.0,

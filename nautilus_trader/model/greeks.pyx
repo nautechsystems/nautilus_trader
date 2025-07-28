@@ -97,6 +97,7 @@ cdef class GreeksCalculator:
         percent_greeks: bool = False,
         index_instrument_id: InstrumentId | None = None,
         beta_weights: dict[InstrumentId, float] | None = None,
+        vega_time_weight_base: int | None = None,
     ) -> GreeksData:
         """
         Calculate option or underlying greeks for a given instrument and a quantity of 1.
@@ -140,6 +141,9 @@ cdef class GreeksCalculator:
             The reference instrument id beta is computed with respect to.
         beta_weights : dict[InstrumentId, float], optional
             Dictionary of beta weights used to compute portfolio delta and gamma.
+        vega_time_weight_base : int, optional
+            Base value in days for time-weighting vega. When provided, vega is multiplied by sqrt(vega_time_weight_base / expiry_in_days).
+            Also enables percent vega calculation where vega is multiplied by vol / 100.
 
         Returns
         -------
@@ -155,8 +159,8 @@ cdef class GreeksCalculator:
             underlying_instrument_id = instrument.id
             underlying_price = float(self._cache.price(underlying_instrument_id, PriceType.LAST))
 
-            delta = self.modify_greeks(multiplier, 0., underlying_instrument_id, underlying_price + spot_shock, underlying_price,
-                                       percent_greeks, index_instrument_id, beta_weights)[0]
+            delta, _, _ = self.modify_greeks(multiplier, 0., underlying_instrument_id, underlying_price + spot_shock, underlying_price,
+                                             percent_greeks, index_instrument_id, beta_weights, 0.0, 0.0, 0, None)
             greeks_data = GreeksData.from_delta(instrument_id, delta, multiplier, ts_event)
 
             if position is not None:
@@ -177,7 +181,8 @@ cdef class GreeksCalculator:
 
             expiry_utc = instrument.expiration_utc
             expiry_int = int(expiry_utc.strftime("%Y%m%d"))
-            expiry_in_years = min((expiry_utc - utc_now).days, 1) / 365.25
+            expiry_in_days = min((expiry_utc - utc_now).days, 1)
+            expiry_in_years = expiry_in_days / 365.25
 
             currency = instrument.quote_currency.code
 
@@ -203,12 +208,14 @@ cdef class GreeksCalculator:
             option_mid_price = float(self._cache.price(instrument_id, PriceType.MID))
             underlying_price = float(self._cache.price(underlying_instrument_id, PriceType.LAST))
 
-            greeks = imply_vol_and_greeks(underlying_price, interest_rate, cost_of_carry, is_call, strike, expiry_in_years, option_mid_price, multiplier)
-            delta, gamma =  self.modify_greeks(greeks.delta, greeks.gamma, underlying_instrument_id, underlying_price, underlying_price,
-                                               percent_greeks, index_instrument_id, beta_weights)
+            greeks = imply_vol_and_greeks(underlying_price, interest_rate, cost_of_carry, is_call, strike,
+                                          expiry_in_years, option_mid_price, multiplier)
+            delta, gamma, vega = self.modify_greeks(greeks.delta, greeks.gamma, underlying_instrument_id, underlying_price,
+                                                     underlying_price, percent_greeks, index_instrument_id, beta_weights,
+                                                     greeks.vega, greeks.vol, expiry_in_days, vega_time_weight_base)
 
-            greeks_data = GreeksData(utc_now_ns, utc_now_ns, instrument_id, is_call, strike, expiry_int, expiry_in_years, multiplier, 1.0,
-                                     underlying_price, interest_rate, cost_of_carry, greeks.vol, 0., greeks.price, delta, gamma, greeks.vega, greeks.theta,
+            greeks_data = GreeksData(utc_now_ns, utc_now_ns, instrument_id, is_call, strike, expiry_int, expiry_in_days, expiry_in_years, multiplier, 1.0,
+                                     underlying_price, interest_rate, cost_of_carry, greeks.vol, 0., greeks.price, delta, gamma, vega, greeks.theta,
                                      abs(greeks.delta / multiplier))
 
             # adding greeks to cache
@@ -228,13 +235,14 @@ cdef class GreeksCalculator:
 
             greeks = black_scholes_greeks(shocked_underlying_price, greeks_data.interest_rate, greeks_data.cost_of_carry,
                                           shocked_vol, greeks_data.is_call, greeks_data.strike, shocked_time_to_expiry, greeks_data.multiplier)
-            delta, gamma = self.modify_greeks(greeks.delta, greeks.gamma, underlying_instrument_id, shocked_underlying_price, underlying_price,
-                                              percent_greeks, index_instrument_id, beta_weights)
+            delta, gamma, vega = self.modify_greeks(greeks.delta, greeks.gamma, underlying_instrument_id, shocked_underlying_price, underlying_price,
+                                                     percent_greeks, index_instrument_id, beta_weights,
+                                                     greeks.vega, shocked_vol, int(shocked_time_to_expiry * 365.25), vega_time_weight_base)
 
             greeks_data = GreeksData(greeks_data.ts_event, greeks_data.ts_event,
                                      greeks_data.instrument_id, greeks_data.is_call, greeks_data.strike, greeks_data.expiry,
-                                     shocked_time_to_expiry, greeks_data.multiplier, greeks_data.quantity, shocked_underlying_price,
-                                     greeks_data.interest_rate, greeks_data.cost_of_carry, shocked_vol, 0., greeks.price, delta, gamma, greeks.vega,
+                                     int(shocked_time_to_expiry * 365.25), shocked_time_to_expiry, greeks_data.multiplier, greeks_data.quantity, shocked_underlying_price,
+                                     greeks_data.interest_rate, greeks_data.cost_of_carry, shocked_vol, 0., greeks.price, delta, gamma, vega,
                                      greeks.theta, abs(greeks.delta / greeks_data.multiplier))
 
         if position is not None:
@@ -252,7 +260,11 @@ cdef class GreeksCalculator:
         percent_greeks: bool,
         index_instrument_id: InstrumentId | None,
         beta_weights: dict[InstrumentId, float] | None,
-    ) -> tuple[float, float]:
+        vega_input: float = 0.0,
+        vol: float = 0.0,
+        expiry_in_days: int = 0,
+        vega_time_weight_base: int | None = None,
+    ) -> tuple[float, float, float]:
         """
         Modify delta and gamma based on beta weighting and percentage calculations.
 
@@ -274,11 +286,19 @@ cdef class GreeksCalculator:
             The reference instrument id beta is computed with respect to.
         beta_weights : dict[InstrumentId, float], optional
             Dictionary of beta weights used to compute portfolio delta and gamma.
+        vega_input : float, default 0.0
+            The original vega value.
+        vol : float, default 0.0
+            The implied volatility.
+        expiry_in_days : int, default 0
+            Days to expiry.
+        vega_time_weight_base : int, optional
+            Base value in days for time-weighting vega.
 
         Returns
         -------
-        tuple[float, float]
-            Modified delta and gamma values.
+        tuple[float, float, float]
+            Modified delta, gamma, and vega values.
 
         Notes
         -----
@@ -301,6 +321,7 @@ cdef class GreeksCalculator:
         """
         delta = delta_input
         gamma = gamma_input
+        vega = vega_input
 
         index_price = None
         delta_multiplier = 1.0
@@ -327,7 +348,14 @@ cdef class GreeksCalculator:
                 delta *= index_price / 100.
                 gamma *= (index_price / 100.) ** 2
 
-        return delta, gamma
+            vega = vega * vol / 100.0
+
+        # Apply time weighting to vega if vega_time_weight_base is provided
+        if vega_time_weight_base is not None and expiry_in_days > 0:
+            time_weight = (vega_time_weight_base / expiry_in_days) ** 0.5
+            vega *= time_weight
+
+        return delta, gamma, vega
 
     def portfolio_greeks(
         self,
@@ -348,6 +376,7 @@ cdef class GreeksCalculator:
         index_instrument_id: InstrumentId | None = None,
         beta_weights: dict[InstrumentId, float] | None = None,
         greeks_filter: callable | None = None,
+        vega_time_weight_base: int | None = None,
     ) -> PortfolioGreeks:
         """
         Calculate the portfolio Greeks for a given set of positions.
@@ -402,6 +431,9 @@ cdef class GreeksCalculator:
             Dictionary of beta weights used to compute portfolio delta and gamma.
         greeks_filter : callable, optional
             Filter function to select which greeks to add to the portfolio_greeks.
+        vega_time_weight_base : int, optional
+            Base value in days for time-weighting vega. When provided, vega is multiplied by sqrt(vega_time_weight_base / expiry_in_days).
+            Also enables percent vega calculation where vega is multiplied by vol / 100.
 
         Returns
         -------
@@ -450,6 +482,7 @@ cdef class GreeksCalculator:
                 percent_greeks,
                 index_instrument_id,
                 beta_weights,
+                vega_time_weight_base,
             )
             position_greeks = quantity * instrument_greeks
 
