@@ -37,6 +37,8 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Money
+from nautilus_trader.test_kit.strategies.tester_data import DataTester
+from nautilus_trader.test_kit.strategies.tester_data import DataTesterConfig
 
 
 def fetch_instruments(
@@ -126,6 +128,17 @@ def bench_data_streaming_iterators():
     )
 
     engine = BacktestEngine(config=config)
+
+    config_actor = DataTesterConfig(
+        instrument_ids=instrument_ids,
+        subscribe_book_deltas=True,
+        manage_book=True,
+        # use_pyo3_book=True,
+        log_data=False,
+    )
+    actor = DataTester(config=config_actor)
+
+    engine.trader.add_actor(actor)
 
     for inst in venues:
         engine.add_venue(
