@@ -15,7 +15,6 @@
 
 import asyncio
 import concurrent.futures
-import os
 import platform
 import signal
 import socket
@@ -189,9 +188,6 @@ class NautilusKernel:
                 file_path.open("w").close()
 
         if not is_logging_initialized():
-            if "RUST_LOG" not in os.environ:
-                os.environ["RUST_LOG"] = "off"
-
             if not logging.bypass_logging:
                 if logging.use_pyo3:
                     set_logging_pyo3(True)
