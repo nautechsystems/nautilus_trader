@@ -115,6 +115,7 @@ Released on 5th July 2025 (UTC).
 - Changed timer `allow_past=False` behavior: now validates the `next_event_time` instead of the `start_time`. This allows timers with past start times as long as their next scheduled event is still in the future
 - Changed behavior of timers `allow_past=False` to permit start times in the past if the next event time is still in the future
 - Changed Databento DBN upgrade policy to default v3
+- Removed `basename_template` from `ParquetDataCatalog.write_data(...)`, run `catalog.reset_catalog_file_names()` to update file names to the new convention
 - Removed problematic negative balance check for margin accounts (cash account negative balance check remains unchanged)
 - Removed support for Databento DBN v1 schemas (migrate to DBN v2 or v3, see [DBN Changelog](https://github.com/databento/dbn/blob/main/CHANGELOG.md#0350---2025-05-28))
 
