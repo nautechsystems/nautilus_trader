@@ -37,6 +37,8 @@ Released on TBD (UTC).
 - Added integration test service management targets (#2765), thanks @stastnypremysl
 - Added integration tests for dYdX bar-partitioning and large-history handling (#2773), thanks @nicolad
 - Added make build-debug-pyo3 (#2802), thanks @faysou
+- Optimized identifiers hashing to avoid frequent recomputations using C strings
+- Optimized Redis key scans to improve efficiency over a network
 - Completed bar request implementation for OKX (#2789), thanks @nicolad
 - Enabled parallel pytest tests with `pytest-xdist` (#2808), thanks @stastnypremysl
 - Improved reconciliation handling of internally generated orders to align positions (now uses the `INTERNAL-DIFF` strategy ID)
@@ -46,7 +48,6 @@ Released on TBD (UTC).
 - Improved `databento_test_request_bars` example (#2762), thanks @faysou
 - Improved zero-sized trades handling for Tardis CSV loader (will log a warning)
 - Improved ergonomics of `TardisInstrumentProvider` datetime filter params (can be either `pd.Timestamp` or Unix nanos `int`)
-- Optimized Redis key scans to improve efficiency over a network
 - Refined Rust catalog path handling (#2743), thanks @faysou
 - Refined Rust `GreeksCalculator` (#2760), thanks @faysou
 - Refined Databento bars timestamp decoding and backtest execution usage (#2800), thanks @faysou
