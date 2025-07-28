@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import time
+
 import pandas as pd
 
 from nautilus_trader.adapters.tardis.common import infer_tardis_exchange_str
@@ -22,9 +24,7 @@ from nautilus_trader.adapters.tardis.factories import get_tardis_instrument_prov
 from nautilus_trader.adapters.tardis.loaders import TardisCSVDataLoader
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
-from nautilus_trader.common.component import init_logging
-from nautilus_trader.common.enums import LogLevel
-from nautilus_trader.config import DataEngineConfig
+from nautilus_trader.common.config import LoggingConfig
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.model import Currency
@@ -101,8 +101,8 @@ def fetch_instruments(
 
 
 def bench_data_streaming_iterators():
-    nautilus_pyo3.init_tracing()
-    _guard = init_logging(level_stdout=LogLevel.INFO)
+
+    start_time = time.perf_counter()
 
     date = pd.Timestamp("2025-02-28", tz="UTC")
     # instrument_ids = [
@@ -121,10 +121,10 @@ def bench_data_streaming_iterators():
     venues = {i.venue for i in instruments}
     config = BacktestEngineConfig(
         trader_id=TraderId("BACKTEST-001"),
-        data_engine=DataEngineConfig(buffer_deltas=True),
+        # data_engine=DataEngineConfig(buffer_deltas=True),  # Buffer individual deltas (.stream_deltas)
+        logging=LoggingConfig(bypass_logging=True),
     )
 
-    print("Initializing backtest engine")
     engine = BacktestEngine(config=config)
 
     for inst in venues:
@@ -159,12 +159,22 @@ def bench_data_streaming_iterators():
 
     print(f"Starting backtest for {instruments}")
 
+    backtest_start = time.perf_counter()
     engine.run(
         streaming=True,
         start=date.value,
         end=(date + pd.Timedelta(24 * 60 + 1, unit="m")).value,
     )
+    backtest_time = time.perf_counter() - backtest_start
     engine.end()
+
+    total_time = time.perf_counter() - start_time
+    print(f"\n{'='*60}")
+    print("PERFORMANCE RESULTS")
+    print(f"{'='*60}")
+    print(f"Total time (including setup): {total_time:.2f}s")
+    print(f"Backtest execution time:      {backtest_time:.2f}s")
+    print(f"Setup overhead:               {total_time - backtest_time:.2f}s")
 
 
 if __name__ == "__main__":
