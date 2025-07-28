@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 import os
 from pathlib import Path
 
@@ -69,7 +68,7 @@ def download_tardis_csv(api_key: str, data_dir: Path):
     return file_path
 
 
-async def run():
+def run():
     """
     Download Tardis data, loads it, and runs a backtest.
     """
@@ -111,8 +110,8 @@ async def run():
 
     print("Running backtest...")
     engine.run()
-    print("Backtest finished.")
+    print("Backtest finished")
 
 
 if __name__ == "__main__":
-    asyncio.run(run())
+    run()
