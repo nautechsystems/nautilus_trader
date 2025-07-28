@@ -95,6 +95,7 @@ impl GreeksActor {
             Some(percent_greeks),
             index_instrument_id,
             beta_weights,
+            None, // vega_time_weight_base
         )
     }
 
@@ -140,6 +141,7 @@ impl GreeksActor {
             index_instrument_id,
             beta_weights,
             greeks_filter,
+            None, // vega_time_weight_base
         )
     }
 
