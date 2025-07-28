@@ -372,6 +372,11 @@ else
 	uv run --active --no-sync pytest --new-first --failed-first --tb=short -n logical --dist=loadgroup
 endif
 
+.PHONY: pytest-memory-tracking
+pytest-memory-tracking:  #-- Run Python tests with memory tracking enabled
+	$(info $(M) Running Python tests with memory tracking enabled...)
+	MEMORY_TRACKING_ENABLED_PY=true uv run --active --no-sync pytest --new-first --failed-first -v -n logical --dist=loadgroup
+
 .PHONY: test-performance
 test-performance:  #-- Run performance tests with codspeed benchmarking
 	uv run --active --no-sync pytest tests/performance_tests --benchmark-disable-gc --codspeed
