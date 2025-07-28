@@ -30,14 +30,46 @@ from nautilus_trader.test_kit.providers import TestDataProvider
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
+def _env_flag(name: str, *, default: bool = False) -> bool:
+    """
+    Return *name* environment variable interpreted as a boolean.
+
+    Truthy values (case-insensitive):
+    - "1", "true", "yes", "y", "on"
+
+    Falsy values (case-insensitive):
+    - "0", "false", "no", "n", "off", "" (empty string)
+
+    Any other value raises :class:`ValueError` so mis-spelled variables
+    fail fast instead of being silently treated as *default*.
+
+    """
+    value = os.getenv(name)
+    if value is None:
+        return default
+
+    value_normalized = value.strip().lower()
+
+    if value_normalized in {"1", "true", "yes", "y", "on"}:
+        return True
+    if value_normalized in {"0", "false", "no", "n", "off", ""}:
+        return False
+
+    raise ValueError(
+        f"Unsupported boolean environment value for {name}: {value!r}. "
+        "Expected one of '1', '0', 'true', 'false', etc.",
+    )
+
+
+# -------------------------------------------------------------------------------------------------
 # Global memory tracking configuration
-# Read from environment variables, with defaults
-MEMORY_TRACKING_ENABLED = bool(
-    os.environ.get("MEMORY_TRACKING_ENABLED_PY", "False").lower() in ("true", "1", "yes", "on"),
-)
+# -------------------------------------------------------------------------------------------------
+
+MEMORY_TRACKING_ENABLED = _env_flag("MEMORY_TRACKING_ENABLED_PY", default=False)
+
 MEMORY_LEAK_THRESHOLD_BYTES = int(
-    os.environ.get("MEMORY_LEAK_THRESHOLD_BYTES_PY", 1024 * 1024 * 10),
-)  # Default 10 MB
+    os.getenv("MEMORY_LEAK_THRESHOLD_BYTES_PY", str(10 * 1024 * 1024)),  # 10 MB default
+)
 
 
 @pytest.fixture(autouse=True)
@@ -72,16 +104,21 @@ def memory_tracker(request):
     process = psutil.Process()
     final_memory_bytes = process.memory_info().rss
     memory_increase_bytes = final_memory_bytes - initial_memory_bytes
+    tracemalloc_increase_bytes = final_tracemalloc - initial_tracemalloc
 
     try:
-        # Only report and fail if memory increase is significant
-        if memory_increase_bytes > MEMORY_LEAK_THRESHOLD_BYTES:
+        # Only report and fail if memory increase is significant either in RSS or Python allocations
+        if (
+            memory_increase_bytes > MEMORY_LEAK_THRESHOLD_BYTES
+            or tracemalloc_increase_bytes > MEMORY_LEAK_THRESHOLD_BYTES
+        ):
             test_name = request.node.nodeid
             initial_mb = initial_memory_bytes / 1024 / 1024
             final_mb = final_memory_bytes / 1024 / 1024
             increase_mb = memory_increase_bytes / 1024 / 1024
             initial_tracemalloc_mb = initial_tracemalloc / 1024 / 1024
             final_tracemalloc_mb = final_tracemalloc / 1024 / 1024
+            tracemalloc_increase_mb = tracemalloc_increase_bytes / 1024 / 1024
             peak_tracemalloc_mb = peak / 1024 / 1024
             threshold_mb = MEMORY_LEAK_THRESHOLD_BYTES / 1024 / 1024
 
@@ -91,6 +128,7 @@ def memory_tracker(request):
             print(f"  Memory Growth: {increase_mb:.2f} MB")
             print(f"  Initial Tracemalloc: {initial_tracemalloc_mb:.2f} MB")
             print(f"  Final Tracemalloc: {final_tracemalloc_mb:.2f} MB")
+            print(f"  Tracemalloc Growth: {tracemalloc_increase_mb:.2f} MB")
             print(f"  Peak Tracemalloc: {peak_tracemalloc_mb:.2f} MB")
             print(f"  Threshold: {threshold_mb:.2f} MB")
             print("")
@@ -107,7 +145,7 @@ def memory_tracker(request):
                 print(f"  {index:2d}. {traceback:<60} {size_mb:>8.2f} MB ({stat.count:,} blocks)")
             print("  " + "-" * 80)
 
-            raise MemoryError("Memory leak detected during test execution.")
+            raise MemoryError("Memory leak detected during test execution")
     finally:
         # Stop tracemalloc
         tracemalloc.stop()
