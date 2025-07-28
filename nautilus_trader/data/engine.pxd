@@ -62,6 +62,7 @@ from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarAggregation
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport CustomData
+from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.data cimport IndexPriceUpdate
 from nautilus_trader.model.data cimport InstrumentClose
 from nautilus_trader.model.data cimport InstrumentStatus
@@ -96,6 +97,20 @@ cdef class DataEngine(Component):
     cdef readonly dict[str, SnapshotInfo] _snapshot_info
     cdef readonly dict[UUID4, int] _query_group_n_responses
     cdef readonly dict[UUID4, list] _query_group_responses
+
+    cdef readonly dict[InstrumentId, str] _topic_cache_deltas
+    cdef readonly dict[InstrumentId, str] _topic_cache_quotes
+    cdef readonly dict[InstrumentId, str] _topic_cache_trades
+    cdef readonly dict[InstrumentId, str] _topic_cache_depth
+    cdef readonly dict[InstrumentId, str] _topic_cache_status
+    cdef readonly dict[BarType, str] _topic_cache_bars
+    cdef readonly dict[InstrumentId, str] _topic_cache_mark_prices
+    cdef readonly dict[InstrumentId, str] _topic_cache_index_prices
+    cdef readonly dict[InstrumentId, str] _topic_cache_close_prices
+    cdef readonly dict[tuple, str] _topic_cache_snapshots
+    cdef readonly dict[tuple, str] _topic_cache_custom
+    cdef readonly dict[DataType, str] _topic_cache_custom_simple
+    cdef readonly dict[InstrumentId, str] _topic_cache_instruments
 
     cdef readonly str _time_bars_interval_type
     cdef readonly bint _time_bars_timestamp_on_close
@@ -238,6 +253,19 @@ cdef class DataEngine(Component):
     cdef dict _handle_aggregated_bars_aux(self, DataResponse response)
 
 # -- INTERNAL -------------------------------------------------------------------------------------
+
+    cdef str _get_instruments_topic(self, InstrumentId instrument_id)
+    cdef str _get_deltas_topic(self, InstrumentId instrument_id)
+    cdef str _get_depth_topic(self, InstrumentId instrument_id)
+    cdef str _get_quotes_topic(self, InstrumentId instrument_id)
+    cdef str _get_trades_topic(self, InstrumentId instrument_id)
+    cdef str _get_status_topic(self, InstrumentId instrument_id)
+    cdef str _get_mark_prices_topic(self, InstrumentId instrument_id)
+    cdef str _get_index_prices_topic(self, InstrumentId instrument_id)
+    cdef str _get_close_prices_topic(self, InstrumentId instrument_id)
+    cdef str _get_snapshots_topic(self, InstrumentId instrument_id, int interval_ms)
+    cdef str _get_custom_data_topic(self, DataType data_type, InstrumentId instrument_id = *)
+    cdef str _get_bars_topic(self, BarType bar_type)
 
     cpdef void _internal_update_instruments(self, list instruments)
     cpdef void _update_order_book(self, Data data)
