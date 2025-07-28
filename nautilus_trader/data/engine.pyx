@@ -179,6 +179,21 @@ cdef class DataEngine(Component):
         self._query_group_n_responses: dict[UUID4, int] = {}
         self._query_group_responses: dict[UUID4, list] = {}
 
+        self._topic_cache_instruments: dict[InstrumentId, str] = {}
+        self._topic_cache_deltas: dict[InstrumentId, str] = {}
+        self._topic_cache_depth: dict[InstrumentId, str] = {}
+        self._topic_cache_quotes: dict[InstrumentId, str] = {}
+        self._topic_cache_trades: dict[InstrumentId, str] = {}
+        self._topic_cache_status: dict[InstrumentId, str] = {}
+        self._topic_cache_mark_prices: dict[InstrumentId, str] = {}
+        self._topic_cache_index_prices: dict[InstrumentId, str] = {}
+        self._topic_cache_close_prices: dict[InstrumentId, str] = {}
+        self._topic_cache_snapshots: dict[tuple[InstrumentId, int], str] = {}
+        self._topic_cache_custom: dict[tuple[DataType, InstrumentId], str] = {}
+        self._topic_cache_custom_simple: dict[DataType, str] = {}
+        self._topic_cache_instruments: dict[InstrumentId, str] = {}
+        self._topic_cache_bars: dict[BarType, str] = {}
+
         # Configuration
         self.debug = config.debug
         self._time_bars_interval_type = config.time_bars_interval_type
@@ -888,11 +903,14 @@ cdef class DataEngine(Component):
             self._log.error("Cannot subscribe for synthetic instrument `OrderBook` data")
             return
 
+        cdef tuple[InstrumentId, int] key = (command.instrument_id, command.interval_ms)
+
         cdef:
+            str topic
             uint64_t interval_ns
             uint64_t timestamp_ns
             SnapshotInfo snap_info
-        key = (command.instrument_id, command.interval_ms)
+
         if key not in self._order_book_intervals:
             self._order_book_intervals[key] = []
 
@@ -901,7 +919,7 @@ cdef class DataEngine(Component):
             timestamp_ns = self._clock.timestamp_ns()
             start_time_ns = timestamp_ns - (timestamp_ns % interval_ns)
 
-            topic = f"data.book.snapshots.{command.instrument_id.venue}.{command.instrument_id.symbol}.{command.interval_ms}"
+            topic = self._get_snapshots_topic(command.instrument_id, command.interval_ms)
 
             # Cache snapshot event info
             snap_info = SnapshotInfo.__new__(SnapshotInfo)
@@ -1253,9 +1271,7 @@ cdef class DataEngine(Component):
         Condition.not_none(client, "client")
 
         if not self._msgbus.has_subscribers(
-            f"data.quotes"
-            f".{command.instrument_id.venue}"
-            f".{command.instrument_id.symbol}",
+            self._get_quotes_topic(command.instrument_id),
         ):
             if command.instrument_id in client.subscribed_quote_ticks():
                 client.unsubscribe_quote_ticks(command)
@@ -1264,9 +1280,7 @@ cdef class DataEngine(Component):
         Condition.not_none(client, "client")
 
         if not self._msgbus.has_subscribers(
-            f"data.trades"
-            f".{command.instrument_id.venue}"
-            f".{command.instrument_id.symbol}",
+            self._get_trades_topic(command.instrument_id),
         ):
             if command.instrument_id in client.subscribed_trade_ticks():
                 client.unsubscribe_trade_ticks(command)
@@ -1275,9 +1289,7 @@ cdef class DataEngine(Component):
         Condition.not_none(client, "client")
 
         if not self._msgbus.has_subscribers(
-            f"data.mark_prices"
-            f".{command.instrument_id.venue}"
-            f".{command.instrument_id.symbol}",
+            self._get_mark_prices_topic(command.instrument_id),
         ):
             if command.instrument_id in client.subscribed_mark_prices():
                 client.unsubscribe_mark_prices(command)
@@ -1286,9 +1298,7 @@ cdef class DataEngine(Component):
         Condition.not_none(client, "client")
 
         if not self._msgbus.has_subscribers(
-            f"data.index_prices"
-            f".{command.instrument_id.venue}"
-            f".{command.instrument_id.symbol}",
+            self._get_index_prices_topic(command.instrument_id),
         ):
             if command.instrument_id in client.subscribed_index_prices():
                 client.unsubscribe_index_prices(command)
@@ -1296,7 +1306,7 @@ cdef class DataEngine(Component):
     cpdef void _handle_unsubscribe_bars(self, MarketDataClient client, UnsubscribeBars command):
         Condition.not_none(client, "client")
 
-        if self._msgbus.has_subscribers(f"data.bars.{command.bar_type.standard()}"):
+        if self._msgbus.has_subscribers(self._get_bars_topic(command.bar_type.standard())):
             return
 
         if command.bar_type.is_internally_aggregated():
@@ -1727,9 +1737,7 @@ cdef class DataEngine(Component):
             )
 
         self._msgbus.publish_c(
-            topic=f"data.instrument"
-                  f".{instrument.id.venue}"
-                  f".{instrument.id.symbol}",
+            topic=self._get_instruments_topic(instrument.id),
             msg=instrument,
         )
 
@@ -1737,38 +1745,35 @@ cdef class DataEngine(Component):
         cdef OrderBookDeltas deltas = None
         cdef list[OrderBookDelta] buffer_deltas = None
         cdef bint is_last_delta = False
+        cdef InstrumentId instrument_id = delta.instrument_id
 
         if self._buffer_deltas:
-            buffer_deltas = self._buffered_deltas_map.get(delta.instrument_id)
+            buffer_deltas = self._buffered_deltas_map.get(instrument_id)
 
             if buffer_deltas is None:
                 buffer_deltas = []
-                self._buffered_deltas_map[delta.instrument_id] = buffer_deltas
+                self._buffered_deltas_map[instrument_id] = buffer_deltas
 
             buffer_deltas.append(delta)
             is_last_delta = delta.flags == RecordFlag.F_LAST
 
             if is_last_delta:
                 deltas = OrderBookDeltas(
-                    instrument_id=delta.instrument_id,
+                    instrument_id=instrument_id,
                     deltas=buffer_deltas
                 )
                 self._msgbus.publish_c(
-                    topic=f"data.book.deltas"
-                        f".{deltas.instrument_id.venue}"
-                        f".{deltas.instrument_id.symbol}",
+                    topic=self._get_deltas_topic(instrument_id),
                     msg=deltas,
                 )
                 buffer_deltas.clear()
         else:
             deltas = OrderBookDeltas(
-                instrument_id=delta.instrument_id,
+                instrument_id=instrument_id,
                 deltas=[delta]
             )
             self._msgbus.publish_c(
-                 topic=f"data.book.deltas"
-                    f".{deltas.instrument_id.venue}"
-                    f".{deltas.instrument_id.symbol}",
+                topic=self._get_deltas_topic(instrument_id),
                 msg=deltas,
             )
 
@@ -1776,13 +1781,14 @@ cdef class DataEngine(Component):
         cdef OrderBookDeltas deltas_to_publish = None
         cdef list[OrderBookDelta] buffer_deltas = None
         cdef bint is_last_delta = False
+        cdef InstrumentId instrument_id = deltas.instrument_id
 
         if self._buffer_deltas:
-            buffer_deltas = self._buffered_deltas_map.get(deltas.instrument_id)
+            buffer_deltas = self._buffered_deltas_map.get(instrument_id)
 
             if buffer_deltas is None:
                 buffer_deltas = []
-                self._buffered_deltas_map[deltas.instrument_id] = buffer_deltas
+                self._buffered_deltas_map[instrument_id] = buffer_deltas
 
             for delta in deltas.deltas:
                 buffer_deltas.append(delta)
@@ -1790,61 +1796,55 @@ cdef class DataEngine(Component):
 
                 if is_last_delta:
                     deltas_to_publish = OrderBookDeltas(
-                        instrument_id=deltas.instrument_id,
+                        instrument_id=instrument_id,
                         deltas=buffer_deltas,
                     )
                     self._msgbus.publish_c(
-                        topic=f"data.book.deltas"
-                            f".{deltas.instrument_id.venue}"
-                            f".{deltas.instrument_id.symbol}",
+                        topic=self._get_deltas_topic(instrument_id),
                         msg=deltas_to_publish,
                     )
                     buffer_deltas.clear()
         else:
             self._msgbus.publish_c(
-                topic=f"data.book.deltas"
-                    f".{deltas.instrument_id.venue}"
-                    f".{deltas.instrument_id.symbol}",
+                topic=self._get_deltas_topic(instrument_id),
                 msg=deltas,
             )
 
     cpdef void _handle_order_book_depth(self, OrderBookDepth10 depth):
         self._msgbus.publish_c(
-            topic=f"data.book.depth"
-                  f".{depth.instrument_id.venue}"
-                  f".{depth.instrument_id.symbol}",
+            topic=self._get_depth_topic(depth.instrument_id),
             msg=depth,
         )
 
     cpdef void _handle_quote_tick(self, QuoteTick tick):
         self._cache.add_quote_tick(tick)
 
+        cdef InstrumentId instrument_id = tick.instrument_id
+
         # Handle synthetics update
-        cdef list synthetics = self._synthetic_quote_feeds.get(tick.instrument_id)
+        cdef list synthetics = self._synthetic_quote_feeds.get(instrument_id)
 
         if synthetics is not None:
             self._update_synthetics_with_quote(synthetics, tick)
 
         self._msgbus.publish_c(
-            topic=f"data.quotes"
-                  f".{tick.instrument_id.venue}"
-                  f".{tick.instrument_id.symbol}",
+            topic=self._get_quotes_topic(instrument_id),
             msg=tick,
         )
 
     cpdef void _handle_trade_tick(self, TradeTick tick):
         self._cache.add_trade_tick(tick)
 
+        cdef InstrumentId instrument_id = tick.instrument_id
+
         # Handle synthetics update
-        cdef list synthetics = self._synthetic_trade_feeds.get(tick.instrument_id)
+        cdef list synthetics = self._synthetic_trade_feeds.get(instrument_id)
 
         if synthetics is not None:
             self._update_synthetics_with_trade(synthetics, tick)
 
         self._msgbus.publish_c(
-            topic=f"data.trades"
-                  f".{tick.instrument_id.venue}"
-                  f".{tick.instrument_id.symbol}",
+            topic=self._get_trades_topic(instrument_id),
             msg=tick,
         )
 
@@ -1852,9 +1852,7 @@ cdef class DataEngine(Component):
         self._cache.add_mark_price(mark_price)
 
         self._msgbus.publish_c(
-            topic=f"data.mark_prices"
-                  f".{mark_price.instrument_id.venue}"
-                  f".{mark_price.instrument_id.symbol}",
+            topic=self._get_mark_prices_topic(mark_price.instrument_id),
             msg=mark_price,
         )
 
@@ -1862,14 +1860,13 @@ cdef class DataEngine(Component):
         self._cache.add_index_price(index_price)
 
         self._msgbus.publish_c(
-            topic=f"data.index_prices"
-                  f".{index_price.instrument_id.venue}"
-                  f".{index_price.instrument_id.symbol}",
+            topic=self._get_index_prices_topic(index_price.instrument_id),
             msg=index_price,
         )
 
     cpdef void _handle_bar(self, Bar bar):
         cdef BarType bar_type = bar.bar_type
+
         cdef:
             Bar cached_bar
             Bar last_bar
@@ -1907,21 +1904,17 @@ cdef class DataEngine(Component):
         if not bar.is_revision:
             self._cache.add_bar(bar)
 
-        self._msgbus.publish_c(topic=f"data.bars.{bar_type}", msg=bar)
+        self._msgbus.publish_c(topic=self._get_bars_topic(bar_type), msg=bar)
 
     cpdef void _handle_instrument_status(self, InstrumentStatus data):
-        self._msgbus.publish_c(topic=f"data.status.{data.instrument_id.venue}.{data.instrument_id.symbol}", msg=data)
+        self._msgbus.publish_c(topic=self._get_status_topic(data.instrument_id), msg=data)
 
     cpdef void _handle_close_price(self, InstrumentClose data):
-        self._msgbus.publish_c(topic=f"data.venue.close_price.{data.instrument_id}", msg=data)
+        self._msgbus.publish_c(topic=self._get_close_prices_topic(data.instrument_id), msg=data)
 
     cpdef void _handle_custom_data(self, CustomData data):
-        topic = f"data.{data.data_type.topic}"
-        instrument_id = getattr(data.data, "instrument_id", None)
-
-        if instrument_id and not data.data_type.metadata:
-            topic = f"data.{data.data_type.type.__name__}.{instrument_id.venue}.{instrument_id.symbol.topic()}"
-
+        cdef InstrumentId instrument_id = getattr(data.data, "instrument_id", None)
+        cdef str topic = self._get_custom_data_topic(data.data_type, instrument_id)
         self._msgbus.publish_c(topic=topic, msg=data.data)
 
 # -- RESPONSE HANDLERS ----------------------------------------------------------------------------
@@ -2223,6 +2216,106 @@ cdef class DataEngine(Component):
 
 # -- INTERNAL -------------------------------------------------------------------------------------
 
+    cdef str _get_instruments_topic(self, InstrumentId instrument_id):
+        cdef str topic = self._topic_cache_instruments.get(instrument_id)
+        if topic is None:
+            topic = f"data.instrument.{instrument_id.venue}.{instrument_id.symbol}"
+            self._topic_cache_instruments[instrument_id] = topic
+        return topic
+
+    cdef str _get_deltas_topic(self, InstrumentId instrument_id):
+        cdef str topic = self._topic_cache_deltas.get(instrument_id)
+        if topic is None:
+            topic = f"data.book.deltas.{instrument_id.venue}.{instrument_id.symbol}"
+            self._topic_cache_deltas[instrument_id] = topic
+        return topic
+
+    cdef str _get_depth_topic(self, InstrumentId instrument_id):
+        cdef str topic = self._topic_cache_depth.get(instrument_id)
+        if topic is None:
+            topic = f"data.book.depth.{instrument_id.venue}.{instrument_id.symbol}"
+            self._topic_cache_depth[instrument_id] = topic
+        return topic
+
+    cdef str _get_quotes_topic(self, InstrumentId instrument_id):
+        cdef str topic = self._topic_cache_quotes.get(instrument_id)
+        if topic is None:
+            topic = f"data.quotes.{instrument_id.venue}.{instrument_id.symbol}"
+            self._topic_cache_quotes[instrument_id] = topic
+        return topic
+
+    cdef str _get_trades_topic(self, InstrumentId instrument_id):
+        cdef str topic = self._topic_cache_trades.get(instrument_id)
+        if topic is None:
+            topic = f"data.trades.{instrument_id.venue}.{instrument_id.symbol}"
+            self._topic_cache_trades[instrument_id] = topic
+        return topic
+
+    cdef str _get_status_topic(self, InstrumentId instrument_id):
+        cdef str topic = self._topic_cache_status.get(instrument_id)
+        if topic is None:
+            topic = f"data.status.{instrument_id.venue}.{instrument_id.symbol}"
+            self._topic_cache_status[instrument_id] = topic
+        return topic
+
+    cdef str _get_mark_prices_topic(self, InstrumentId instrument_id):
+        cdef str topic = self._topic_cache_mark_prices.get(instrument_id)
+        if topic is None:
+            topic = f"data.mark_prices.{instrument_id.venue}.{instrument_id.symbol}"
+            self._topic_cache_mark_prices[instrument_id] = topic
+        return topic
+
+    cdef str _get_index_prices_topic(self, InstrumentId instrument_id):
+        cdef str topic = self._topic_cache_index_prices.get(instrument_id)
+        if topic is None:
+            topic = f"data.index_prices.{instrument_id.venue}.{instrument_id.symbol}"
+            self._topic_cache_index_prices[instrument_id] = topic
+        return topic
+
+    cdef str _get_close_prices_topic(self, InstrumentId instrument_id):
+        cdef str topic = self._topic_cache_close_prices.get(instrument_id)
+        if topic is None:
+            topic = f"data.venue.close_price.{instrument_id}"
+            self._topic_cache_close_prices[instrument_id] = topic
+        return topic
+
+    cdef str _get_snapshots_topic(self, InstrumentId instrument_id, int interval_ms):
+        cdef tuple key = (instrument_id, interval_ms)
+        cdef str topic = self._topic_cache_snapshots.get(key)
+        if topic is None:
+            topic = f"data.book.snapshots.{instrument_id.venue}.{instrument_id.symbol}.{interval_ms}"
+            self._topic_cache_snapshots[key] = topic
+        return topic
+
+    cdef str _get_custom_data_topic(self, DataType data_type, InstrumentId instrument_id = None):
+        cdef:
+            tuple[DataType, InstrumentId] key
+            str topic
+
+        # Handle both cases: with and without instrument_id
+        if instrument_id is not None and not data_type.metadata:
+            # Case 1: with instrument_id and no metadata - venue/symbol format
+            key = (data_type, instrument_id)
+            topic = self._topic_cache_custom.get(key)
+            if topic is None:
+                topic = f"data.{data_type.type.__name__}.{instrument_id.venue}.{instrument_id.symbol.topic()}"
+                self._topic_cache_custom[key] = topic
+            return topic
+        else:
+            # Case 2: without instrument_id or with metadata - use data_type.topic
+            topic = self._topic_cache_custom_simple.get(data_type)
+            if topic is None:
+                topic = f"data.{data_type.topic}"
+                self._topic_cache_custom_simple[data_type] = topic
+            return topic
+
+    cdef str _get_bars_topic(self, BarType bar_type):
+        cdef str topic = self._topic_cache_bars.get(bar_type)
+        if topic is None:
+            topic = f"data.bars.{bar_type}"
+            self._topic_cache_bars[bar_type] = topic
+        return topic
+
     # Python wrapper to enable callbacks
     cpdef void _internal_update_instruments(self, list instruments: [Instrument]):
         # Handle all instruments individually
@@ -2354,7 +2447,7 @@ cdef class DataEngine(Component):
             composite_bar_type = command.bar_type.composite()
 
             self._msgbus.subscribe(
-                topic=f"data.bars.{composite_bar_type}",
+                topic=self._get_bars_topic(composite_bar_type),
                 handler=aggregator.handle_bar,
             )
             subscribe = SubscribeBars(
@@ -2369,9 +2462,7 @@ cdef class DataEngine(Component):
             self._handle_subscribe_bars(client, subscribe)
         elif command.bar_type.spec.price_type == PriceType.LAST:
             self._msgbus.subscribe(
-                topic=f"data.trades"
-                      f".{command.bar_type.instrument_id.venue}"
-                      f".{command.bar_type.instrument_id.symbol}",
+                topic=self._get_trades_topic(command.bar_type.instrument_id),
                 handler=aggregator.handle_trade_tick,
                 priority=5,
             )
@@ -2386,9 +2477,7 @@ cdef class DataEngine(Component):
             self._handle_subscribe_trade_ticks(client, subscribe)
         else:
             self._msgbus.subscribe(
-                topic=f"data.quotes"
-                      f".{command.bar_type.instrument_id.venue}"
-                      f".{command.bar_type.instrument_id.symbol}",
+                topic=self._get_quotes_topic(command.bar_type.instrument_id),
                 handler=aggregator.handle_quote_tick,
                 priority=5,
             )
@@ -2421,7 +2510,7 @@ cdef class DataEngine(Component):
         if command.bar_type.is_composite():
             composite_bar_type = command.bar_type.composite()
             self._msgbus.unsubscribe(
-                topic=f"data.bars.{composite_bar_type}",
+                topic=self._get_bars_topic(composite_bar_type),
                 handler=aggregator.handle_bar,
             )
             unsubscribe = UnsubscribeBars(
@@ -2435,9 +2524,7 @@ cdef class DataEngine(Component):
             self._handle_unsubscribe_bars(client, unsubscribe)
         elif command.bar_type.spec.price_type == PriceType.LAST:
             self._msgbus.unsubscribe(
-                topic=f"data.trades"
-                      f".{command.bar_type.instrument_id.venue}"
-                      f".{command.bar_type.instrument_id.symbol}",
+                topic=self._get_trades_topic(command.bar_type.instrument_id),
                 handler=aggregator.handle_trade_tick,
             )
             unsubscribe = UnsubscribeTradeTicks(
@@ -2451,9 +2538,7 @@ cdef class DataEngine(Component):
             self._handle_unsubscribe_trade_ticks(client, unsubscribe)
         else:
             self._msgbus.unsubscribe(
-                topic=f"data.quotes"
-                      f".{command.bar_type.instrument_id.venue}"
-                      f".{command.bar_type.instrument_id.symbol}",
+                topic=self._get_quotes_topic(command.bar_type.instrument_id),
                 handler=aggregator.handle_quote_tick,
             )
             unsubscribe = UnsubscribeQuoteTicks(
@@ -2521,9 +2606,7 @@ cdef class DataEngine(Component):
         )
 
         self._msgbus.publish_c(
-            topic=f"data.quotes"
-                  f".{synthetic_instrument_id.venue}"
-                  f".{synthetic_instrument_id.symbol}",
+            topic=self._get_quotes_topic(synthetic_instrument_id),
             msg=synthetic_quote,
         )
 
@@ -2573,8 +2656,6 @@ cdef class DataEngine(Component):
         )
 
         self._msgbus.publish_c(
-            topic=f"data.trades"
-                  f".{synthetic_instrument_id.venue}"
-                  f".{synthetic_instrument_id.symbol}",
+            topic=self._get_trades_topic(synthetic_instrument_id),
             msg=synthetic_trade,
         )

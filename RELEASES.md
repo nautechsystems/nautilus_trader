@@ -38,6 +38,7 @@ Released on TBD (UTC).
 - Added integration tests for dYdX bar-partitioning and large-history handling (#2773), thanks @nicolad
 - Added make build-debug-pyo3 (#2802), thanks @faysou
 - Optimized identifiers hashing to avoid frequent recomputations using C strings
+- Optimized data engine topic string caching for message bus publishing to avoid frequent f-string constructions
 - Optimized Redis key scans to improve efficiency over a network
 - Completed bar request implementation for OKX (#2789), thanks @nicolad
 - Enabled parallel pytest tests with `pytest-xdist` (#2808), thanks @stastnypremysl
