@@ -73,6 +73,7 @@ env/
 .cursorignore
 .DS_Store
 .null-ls*
+AGENTS.md
 CLAUDE.md
 CODEX.md
 GEMINI.md
