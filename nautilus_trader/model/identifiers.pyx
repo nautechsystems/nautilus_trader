@@ -17,45 +17,31 @@ from libc.string cimport strcmp
 
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.rust.model cimport account_id_hash
 from nautilus_trader.core.rust.model cimport account_id_new
-from nautilus_trader.core.rust.model cimport client_id_hash
 from nautilus_trader.core.rust.model cimport client_id_new
-from nautilus_trader.core.rust.model cimport client_order_id_hash
 from nautilus_trader.core.rust.model cimport client_order_id_new
-from nautilus_trader.core.rust.model cimport component_id_hash
 from nautilus_trader.core.rust.model cimport component_id_new
-from nautilus_trader.core.rust.model cimport exec_algorithm_id_hash
 from nautilus_trader.core.rust.model cimport exec_algorithm_id_new
 from nautilus_trader.core.rust.model cimport instrument_id_check_parsing
 from nautilus_trader.core.rust.model cimport instrument_id_from_cstr
-from nautilus_trader.core.rust.model cimport instrument_id_hash
 from nautilus_trader.core.rust.model cimport instrument_id_is_synthetic
 from nautilus_trader.core.rust.model cimport instrument_id_new
 from nautilus_trader.core.rust.model cimport instrument_id_to_cstr
 from nautilus_trader.core.rust.model cimport interned_string_stats
-from nautilus_trader.core.rust.model cimport order_list_id_hash
 from nautilus_trader.core.rust.model cimport order_list_id_new
-from nautilus_trader.core.rust.model cimport position_id_hash
 from nautilus_trader.core.rust.model cimport position_id_new
-from nautilus_trader.core.rust.model cimport strategy_id_hash
 from nautilus_trader.core.rust.model cimport strategy_id_new
-from nautilus_trader.core.rust.model cimport symbol_hash
 from nautilus_trader.core.rust.model cimport symbol_is_composite
 from nautilus_trader.core.rust.model cimport symbol_new
 from nautilus_trader.core.rust.model cimport symbol_root
 from nautilus_trader.core.rust.model cimport symbol_topic
-from nautilus_trader.core.rust.model cimport trade_id_hash
 from nautilus_trader.core.rust.model cimport trade_id_new
 from nautilus_trader.core.rust.model cimport trade_id_to_cstr
-from nautilus_trader.core.rust.model cimport trader_id_hash
 from nautilus_trader.core.rust.model cimport trader_id_new
 from nautilus_trader.core.rust.model cimport venue_code_exists
 from nautilus_trader.core.rust.model cimport venue_from_cstr_code
-from nautilus_trader.core.rust.model cimport venue_hash
 from nautilus_trader.core.rust.model cimport venue_is_synthetic
 from nautilus_trader.core.rust.model cimport venue_new
-from nautilus_trader.core.rust.model cimport venue_order_id_hash
 from nautilus_trader.core.rust.model cimport venue_order_id_new
 from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.core.string cimport pystr_to_cstr
@@ -142,11 +128,14 @@ cdef class Symbol(Identifier):
 
     def __eq__(self, Symbol other) -> bool:
         if other is None:
-            raise RuntimeError("other was None in __eq__")
+            raise TypeError("other was None in __eq__")
         return strcmp(self._mem._0, other._mem._0) == 0
 
     def __hash__(self) -> int:
-        return hash(self.to_str())
+        # A rare zero hash will cause frequent recomputations
+        if self._hash == 0:
+            self._hash = hash(self.to_str())
+        return self._hash
 
     @staticmethod
     cdef Symbol from_mem_c(Symbol_t mem):
@@ -226,11 +215,14 @@ cdef class Venue(Identifier):
 
     def __eq__(self, Venue other) -> bool:
         if other is None:
-            raise RuntimeError("other was None in __eq__")
+            raise TypeError("other was None in __eq__")
         return strcmp(self._mem._0, other._mem._0) == 0
 
     def __hash__(self) -> int:
-        return hash(self.to_str())
+        # A rare zero hash will cause frequent recomputations
+        if self._hash == 0:
+            self._hash = hash(self.to_str())
+        return self._hash
 
     cdef str to_str(self):
         return ustr_to_pystr(self._mem._0)
@@ -283,7 +275,6 @@ cdef class Venue(Identifier):
         return Venue.from_code_c(code)
 
 
-
 cdef class InstrumentId(Identifier):
     """
     Represents a valid instrument ID.
@@ -332,17 +323,18 @@ cdef class InstrumentId(Identifier):
         return self.to_str()
 
     def __setstate__(self, state):
-        self._mem = instrument_id_from_cstr(
-            pystr_to_cstr(state),
-        )
+        self._mem = instrument_id_from_cstr(pystr_to_cstr(state))
 
     def __eq__(self, InstrumentId other) -> bool:
         if other is None:
-            raise RuntimeError("other was None in __eq__")
+            raise TypeError("other was None in __eq__")
         return strcmp(self._mem.symbol._0, other._mem.symbol._0) == 0 and strcmp(self._mem.venue._0, other._mem.venue._0) == 0
 
     def __hash__(self) -> int:
-        return hash(self.to_str())
+        # A rare zero hash will cause frequent recomputations
+        if self._hash == 0:
+            self._hash = hash(self.to_str())
+        return self._hash
 
     @staticmethod
     cdef InstrumentId from_mem_c(InstrumentId_t mem):
@@ -599,11 +591,14 @@ cdef class ComponentId(Identifier):
 
     def __eq__(self, ComponentId other) -> bool:
         if other is None:
-            raise RuntimeError("other was None in __eq__")
+            raise TypeError("other was None in __eq__")
         return strcmp(self._mem._0, other._mem._0) == 0
 
     def __hash__(self) -> int:
-        return hash(self.to_str())
+        # A rare zero hash will cause frequent recomputations
+        if self._hash == 0:
+            self._hash = hash(self.to_str())
+        return self._hash
 
     @staticmethod
     cdef ComponentId from_mem_c(ComponentId_t mem):
@@ -646,11 +641,14 @@ cdef class ClientId(Identifier):
 
     def __eq__(self, ClientId other) -> bool:
         if other is None:
-            raise RuntimeError("other was None in __eq__")
+            raise TypeError("other was None in __eq__")
         return strcmp(self._mem._0, other._mem._0) == 0
 
     def __hash__(self) -> int:
-        return hash(self.to_str())
+        # A rare zero hash will cause frequent recomputations
+        if self._hash == 0:
+            self._hash = hash(self.to_str())
+        return self._hash
 
     @staticmethod
     cdef ClientId from_mem_c(ClientId_t mem):
@@ -702,11 +700,14 @@ cdef class TraderId(Identifier):
 
     def __eq__(self, TraderId other) -> bool:
         if other is None:
-            raise RuntimeError("other was None in __eq__")
+            raise TypeError("other was None in __eq__")
         return strcmp(self._mem._0, other._mem._0) == 0
 
     def __hash__(self) -> int:
-        return hash(self.to_str())
+        # A rare zero hash will cause frequent recomputations
+        if self._hash == 0:
+            self._hash = hash(self.to_str())
+        return self._hash
 
     @staticmethod
     cdef TraderId from_mem_c(TraderId_t mem):
@@ -775,11 +776,14 @@ cdef class StrategyId(Identifier):
 
     def __eq__(self, StrategyId other) -> bool:
         if other is None:
-            raise RuntimeError("other was None in __eq__")
+            raise TypeError("other was None in __eq__")
         return strcmp(self._mem._0, other._mem._0) == 0
 
     def __hash__(self) -> int:
-        return hash(self.to_str())
+        # A rare zero hash will cause frequent recomputations
+        if self._hash == 0:
+            self._hash = hash(self.to_str())
+        return self._hash
 
     @staticmethod
     cdef StrategyId from_mem_c(StrategyId_t mem):
@@ -846,11 +850,14 @@ cdef class ExecAlgorithmId(Identifier):
 
     def __eq__(self, ExecAlgorithmId other) -> bool:
         if other is None:
-            raise RuntimeError("other was None in __eq__")
+            raise TypeError("other was None in __eq__")
         return strcmp(self._mem._0, other._mem._0) == 0
 
     def __hash__(self) -> int:
-        return hash(self.to_str())
+        # A rare zero hash will cause frequent recomputations
+        if self._hash == 0:
+            self._hash = hash(self.to_str())
+        return self._hash
 
     @staticmethod
     cdef ExecAlgorithmId from_mem_c(ExecAlgorithmId_t mem):
@@ -901,11 +908,14 @@ cdef class AccountId(Identifier):
 
     def __eq__(self, AccountId other) -> bool:
         if other is None:
-            raise RuntimeError("other was None in __eq__")
+            raise TypeError("other was None in __eq__")
         return strcmp(self._mem._0, other._mem._0) == 0
 
     def __hash__(self) -> int:
-        return hash(self.to_str())
+        # A rare zero hash will cause frequent recomputations
+        if self._hash == 0:
+            self._hash = hash(self.to_str())
+        return self._hash
 
     @staticmethod
     cdef AccountId from_mem_c(AccountId_t mem):
@@ -970,11 +980,14 @@ cdef class ClientOrderId(Identifier):
 
     def __eq__(self, ClientOrderId other) -> bool:
         if other is None:
-            raise RuntimeError("other was None in __eq__")
+            raise TypeError("other was None in __eq__")
         return strcmp(self._mem._0, other._mem._0) == 0
 
     def __hash__(self) -> int:
-        return hash(self.to_str())
+        # A rare zero hash will cause frequent recomputations
+        if self._hash == 0:
+            self._hash = hash(self.to_str())
+        return self._hash
 
     @staticmethod
     cdef ClientOrderId from_mem_c(ClientOrderId_t mem):
@@ -1013,11 +1026,14 @@ cdef class VenueOrderId(Identifier):
 
     def __eq__(self, VenueOrderId other) -> bool:
         if other is None:
-            raise RuntimeError("other was None in __eq__")
+            raise TypeError("other was None in __eq__")
         return strcmp(self._mem._0, other._mem._0) == 0
 
     def __hash__(self) -> int:
-        return hash(self.to_str())
+        # A rare zero hash will cause frequent recomputations
+        if self._hash == 0:
+            self._hash = hash(self.to_str())
+        return self._hash
 
     @staticmethod
     cdef VenueOrderId from_mem_c(VenueOrderId_t mem):
@@ -1056,11 +1072,14 @@ cdef class OrderListId(Identifier):
 
     def __eq__(self, OrderListId other) -> bool:
         if other is None:
-            raise RuntimeError("other was None in __eq__")
+            raise TypeError("other was None in __eq__")
         return strcmp(self._mem._0, other._mem._0) == 0
 
     def __hash__(self) -> int:
-        return hash(self.to_str())
+        # A rare zero hash will cause frequent recomputations
+        if self._hash == 0:
+            self._hash = hash(self.to_str())
+        return self._hash
 
     @staticmethod
     cdef OrderListId from_mem_c(OrderListId_t mem):
@@ -1099,11 +1118,14 @@ cdef class PositionId(Identifier):
 
     def __eq__(self, PositionId other) -> bool:
         if other is None:
-            raise RuntimeError("other was None in __eq__")
+            raise TypeError("other was None in __eq__")
         return strcmp(self._mem._0, other._mem._0) == 0
 
     def __hash__(self) -> int:
-        return hash(self.to_str())
+        # A rare zero hash will cause frequent recomputations
+        if self._hash == 0:
+            self._hash = hash(self.to_str())
+        return self._hash
 
     @staticmethod
     cdef PositionId from_mem_c(PositionId_t mem):
@@ -1160,11 +1182,14 @@ cdef class TradeId(Identifier):
 
     def __eq__(self, TradeId other) -> bool:
         if other is None:
-            raise RuntimeError("other was None in __eq__")
+            raise TypeError("other was None in __eq__")
         return strcmp(trade_id_to_cstr(&self._mem), trade_id_to_cstr(&other._mem)) == 0
 
     def __hash__(self) -> int:
-        return hash(self.to_str())
+        # A rare zero hash will cause frequent recomputations
+        if self._hash == 0:
+            self._hash = hash(self.to_str())
+        return self._hash
 
     @staticmethod
     cdef TradeId from_mem_c(TradeId_t mem):
