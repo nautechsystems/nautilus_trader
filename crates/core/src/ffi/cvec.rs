@@ -118,12 +118,17 @@ impl Display for CVec {
 #[cfg(feature = "ffi")]
 #[unsafe(no_mangle)]
 pub extern "C" fn cvec_drop(cvec: CVec) {
+    if cvec.ptr.is_null() {
+        return;
+    }
     let CVec { ptr, len, cap } = cvec;
 
-    // SAFETY: CVec currently only supports u8 data through FFI.
-    // The generic From<Vec<T>> implementation should only be used internally
-    // where the caller ensures proper type-matched deallocation.
-    // For FFI boundaries, we standardize on u8 to avoid type confusion.
+    // SAFETY: This generic drop function is only safe for CVecs that were
+    // created from Vec<u8>. For type-specific CVecs (e.g., Vec<BookOrder>),
+    // use the corresponding type-specific drop function (e.g., vec_drop_book_orders).
+    //
+    // WARNING: Using this function on non-u8 CVecs will cause memory corruption
+    // and undefined behavior due to incorrect size calculations during deallocation.
     let data: Vec<u8> = unsafe { Vec::from_raw_parts(ptr.cast::<u8>(), len, cap) };
     drop(data); // Memory freed here
 }
