@@ -288,7 +288,7 @@ impl BatchedDeltasStreamIterator {
         let first_record = if reader.read_record(&mut record)? {
             record.deserialize::<TardisBookUpdateRecord>(None)?
         } else {
-            return Err(anyhow::anyhow!("CSV file is empty"));
+            anyhow::bail!("CSV file is empty");
         };
 
         let final_instrument_id = instrument_id
