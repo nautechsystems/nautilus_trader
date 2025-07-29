@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Python bindings for DataActor with complete event handler forwarding.
+//! Python bindings for DataActor with complete command and event handler forwarding.
 
 use std::{
     any::Any,
@@ -27,7 +27,7 @@ use nautilus_core::{
     python::{to_pyruntime_err, to_pyvalue_err},
 };
 #[cfg(feature = "defi")]
-use nautilus_model::defi::{Block, Pool, PoolLiquidityUpdate, PoolSwap};
+use nautilus_model::defi::{Block, Blockchain, Pool, PoolLiquidityUpdate, PoolSwap};
 use nautilus_model::{
     data::{
         Bar, BarType, DataType, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate,
@@ -59,7 +59,7 @@ use crate::{
     unsendable,
     subclass
 )]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PyDataActor {
     core: DataActorCore,
 }
@@ -79,6 +79,42 @@ impl DerefMut for PyDataActor {
 }
 
 impl DataActor for PyDataActor {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        log::info!("PyDataActor::on_start called, calling py_on_start");
+        self.py_on_start()
+            .map_err(|e| anyhow::anyhow!("Python on_start failed: {e}"))
+    }
+
+    fn on_stop(&mut self) -> anyhow::Result<()> {
+        self.py_on_stop()
+            .map_err(|e| anyhow::anyhow!("Python on_stop failed: {e}"))
+    }
+
+    fn on_resume(&mut self) -> anyhow::Result<()> {
+        self.py_on_resume()
+            .map_err(|e| anyhow::anyhow!("Python on_resume failed: {e}"))
+    }
+
+    fn on_reset(&mut self) -> anyhow::Result<()> {
+        self.py_on_reset()
+            .map_err(|e| anyhow::anyhow!("Python on_reset failed: {e}"))
+    }
+
+    fn on_dispose(&mut self) -> anyhow::Result<()> {
+        self.py_on_dispose()
+            .map_err(|e| anyhow::anyhow!("Python on_dispose failed: {e}"))
+    }
+
+    fn on_degrade(&mut self) -> anyhow::Result<()> {
+        self.py_on_degrade()
+            .map_err(|e| anyhow::anyhow!("Python on_degrade failed: {e}"))
+    }
+
+    fn on_fault(&mut self) -> anyhow::Result<()> {
+        self.py_on_fault()
+            .map_err(|e| anyhow::anyhow!("Python on_fault failed: {e}"))
+    }
+
     fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
         self.py_on_time_event(event.clone())
             .map_err(|e| anyhow::anyhow!("Python on_time_event failed: {e}"))
@@ -156,41 +192,72 @@ impl DataActor for PyDataActor {
     }
 
     #[cfg(feature = "defi")]
-    fn on_block(&mut self, _block: &Block) -> anyhow::Result<()> {
-        // TODO: Pass actual block data when DeFi types have PyClass implementations
-        self.py_on_block()
+    fn on_block(&mut self, block: &Block) -> anyhow::Result<()> {
+        self.py_on_block(block.clone())
             .map_err(|e| anyhow::anyhow!("Python on_block failed: {e}"))
     }
 
     #[cfg(feature = "defi")]
-    fn on_pool(&mut self, _pool: &Pool) -> anyhow::Result<()> {
-        // TODO: Pass actual pool data when DeFi types have PyClass implementations
-        self.py_on_pool()
+    fn on_pool(&mut self, pool: &Pool) -> anyhow::Result<()> {
+        self.py_on_pool(pool.clone())
             .map_err(|e| anyhow::anyhow!("Python on_pool failed: {e}"))
     }
 
     #[cfg(feature = "defi")]
-    fn on_pool_swap(&mut self, _swap: &PoolSwap) -> anyhow::Result<()> {
-        // TODO: Pass actual swap data when DeFi types have PyClass implementations
-        self.py_on_pool_swap()
+    fn on_pool_swap(&mut self, swap: &PoolSwap) -> anyhow::Result<()> {
+        self.py_on_pool_swap(swap.clone())
             .map_err(|e| anyhow::anyhow!("Python on_pool_swap failed: {e}"))
     }
 
     #[cfg(feature = "defi")]
-    fn on_pool_liquidity_update(&mut self, _update: &PoolLiquidityUpdate) -> anyhow::Result<()> {
-        // TODO: Pass actual update data when DeFi types have PyClass implementations
-        self.py_on_pool_liquidity_update()
+    fn on_pool_liquidity_update(&mut self, update: &PoolLiquidityUpdate) -> anyhow::Result<()> {
+        self.py_on_pool_liquidity_update(update.clone())
             .map_err(|e| anyhow::anyhow!("Python on_pool_liquidity_update failed: {e}"))
+    }
+
+    fn on_historical_data(&mut self, _data: &dyn Any) -> anyhow::Result<()> {
+        Python::with_gil(|py| {
+            let py_data = py.None();
+            self.py_on_historical_data(py_data)
+                .map_err(|e| anyhow::anyhow!("Python on_historical_data failed: {e}"))
+        })
+    }
+
+    fn on_historical_quotes(&mut self, quotes: &[QuoteTick]) -> anyhow::Result<()> {
+        self.py_on_historical_quotes(quotes.to_vec())
+            .map_err(|e| anyhow::anyhow!("Python on_historical_quotes failed: {e}"))
+    }
+
+    fn on_historical_trades(&mut self, trades: &[TradeTick]) -> anyhow::Result<()> {
+        self.py_on_historical_trades(trades.to_vec())
+            .map_err(|e| anyhow::anyhow!("Python on_historical_trades failed: {e}"))
+    }
+
+    fn on_historical_bars(&mut self, bars: &[Bar]) -> anyhow::Result<()> {
+        self.py_on_historical_bars(bars.to_vec())
+            .map_err(|e| anyhow::anyhow!("Python on_historical_bars failed: {e}"))
+    }
+
+    fn on_historical_mark_prices(&mut self, mark_prices: &[MarkPriceUpdate]) -> anyhow::Result<()> {
+        self.py_on_historical_mark_prices(mark_prices.to_vec())
+            .map_err(|e| anyhow::anyhow!("Python on_historical_mark_prices failed: {e}"))
+    }
+
+    fn on_historical_index_prices(
+        &mut self,
+        index_prices: &[IndexPriceUpdate],
+    ) -> anyhow::Result<()> {
+        self.py_on_historical_index_prices(index_prices.to_vec())
+            .map_err(|e| anyhow::anyhow!("Python on_historical_index_prices failed: {e}"))
     }
 }
 
 #[pymethods]
 impl PyDataActor {
     #[new]
-    #[pyo3(signature = (_config=None))]
-    fn py_new(_config: Option<PyObject>) -> PyResult<Self> {
-        // TODO: Parse config from Python if provided
-        let config = DataActorConfig::default();
+    #[pyo3(signature = (config=None))]
+    fn py_new(config: Option<DataActorConfig>) -> PyResult<Self> {
+        let config = config.unwrap_or_default();
 
         Ok(Self {
             core: DataActorCore::new(config),
@@ -283,6 +350,52 @@ impl PyDataActor {
     #[pyo3(signature = (reason=None))]
     fn py_shutdown_system(&self, reason: Option<String>) -> PyResult<()> {
         self.core.shutdown_system(reason);
+        Ok(())
+    }
+
+    #[pyo3(name = "on_start")]
+    fn py_on_start(&mut self) -> PyResult<()> {
+        // Default implementation - this will be overridden by Python subclasses
+        // For now, we'll just log that the default was called
+        log::info!(
+            "py_on_start default implementation called - Python override should be called instead"
+        );
+        Ok(())
+    }
+
+    #[pyo3(name = "on_stop")]
+    fn py_on_stop(&mut self) -> PyResult<()> {
+        // Default implementation - can be overridden in Python subclasses
+        Ok(())
+    }
+
+    #[pyo3(name = "on_resume")]
+    fn py_on_resume(&mut self) -> PyResult<()> {
+        // Default implementation - can be overridden in Python subclasses
+        Ok(())
+    }
+
+    #[pyo3(name = "on_reset")]
+    fn py_on_reset(&mut self) -> PyResult<()> {
+        // Default implementation - can be overridden in Python subclasses
+        Ok(())
+    }
+
+    #[pyo3(name = "on_dispose")]
+    fn py_on_dispose(&mut self) -> PyResult<()> {
+        // Default implementation - can be overridden in Python subclasses
+        Ok(())
+    }
+
+    #[pyo3(name = "on_degrade")]
+    fn py_on_degrade(&mut self) -> PyResult<()> {
+        // Default implementation - can be overridden in Python subclasses
+        Ok(())
+    }
+
+    #[pyo3(name = "on_fault")]
+    fn py_on_fault(&mut self) -> PyResult<()> {
+        // Default implementation - can be overridden in Python subclasses
         Ok(())
     }
 
@@ -380,36 +493,32 @@ impl PyDataActor {
     #[cfg(feature = "defi")]
     #[allow(unused_variables)]
     #[pyo3(name = "on_block")]
-    fn py_on_block(&mut self) -> PyResult<()> {
+    fn py_on_block(&mut self, block: Block) -> PyResult<()> {
         // Default implementation - can be overridden in Python subclasses
-        // TODO: Pass actual Block object when PyClass is implemented
         Ok(())
     }
 
     #[cfg(feature = "defi")]
     #[allow(unused_variables)]
     #[pyo3(name = "on_pool")]
-    fn py_on_pool(&mut self) -> PyResult<()> {
+    fn py_on_pool(&mut self, pool: Pool) -> PyResult<()> {
         // Default implementation - can be overridden in Python subclasses
-        // TODO: Pass actual Pool object when PyClass is implemented
         Ok(())
     }
 
     #[cfg(feature = "defi")]
     #[allow(unused_variables)]
     #[pyo3(name = "on_pool_swap")]
-    fn py_on_pool_swap(&mut self) -> PyResult<()> {
+    fn py_on_pool_swap(&mut self, swap: PoolSwap) -> PyResult<()> {
         // Default implementation - can be overridden in Python subclasses
-        // TODO: Pass actual PoolSwap object when PyClass is implemented
         Ok(())
     }
 
     #[cfg(feature = "defi")]
     #[allow(unused_variables)]
     #[pyo3(name = "on_pool_liquidity_update")]
-    fn py_on_pool_liquidity_update(&mut self) -> PyResult<()> {
+    fn py_on_pool_liquidity_update(&mut self, update: PoolLiquidityUpdate) -> PyResult<()> {
         // Default implementation - can be overridden in Python subclasses
-        // TODO: Pass actual PoolLiquidityUpdate object when PyClass is implemented
         Ok(())
     }
 
@@ -576,7 +685,58 @@ impl PyDataActor {
         Ok(())
     }
 
-    // Request methods
+    #[cfg(feature = "defi")]
+    #[pyo3(name = "subscribe_blocks")]
+    #[pyo3(signature = (chain, client_id=None, params=None))]
+    fn py_subscribe_blocks(
+        &mut self,
+        chain: Blockchain,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) -> PyResult<()> {
+        self.subscribe_blocks(chain, client_id, params);
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    #[pyo3(name = "subscribe_pool")]
+    #[pyo3(signature = (instrument_id, client_id=None, params=None))]
+    fn py_subscribe_pool(
+        &mut self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) -> PyResult<()> {
+        self.subscribe_pool(instrument_id, client_id, params);
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    #[pyo3(name = "subscribe_pool_swaps")]
+    #[pyo3(signature = (instrument_id, client_id=None, params=None))]
+    fn py_subscribe_pool_swaps(
+        &mut self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) -> PyResult<()> {
+        self.subscribe_pool_swaps(instrument_id, client_id, params);
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    #[pyo3(name = "subscribe_pool_liquidity_updates")]
+    #[pyo3(signature = (instrument_id, client_id=None, params=None))]
+    fn py_subscribe_pool_liquidity_updates(
+        &mut self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) -> PyResult<()> {
+        self.subscribe_pool_liquidity_updates(instrument_id, client_id, params);
+        Ok(())
+    }
+
     #[pyo3(name = "request_data")]
     #[pyo3(signature = (data_type, client_id, start=None, end=None, limit=None, params=None))]
     fn py_request_data(
@@ -716,7 +876,6 @@ impl PyDataActor {
         Ok(request_id.to_string())
     }
 
-    // Unsubscribe methods
     #[pyo3(name = "unsubscribe_data")]
     #[pyo3(signature = (data_type, client_id=None, params=None))]
     fn py_unsubscribe_data(
@@ -862,6 +1021,103 @@ impl PyDataActor {
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
         self.unsubscribe_instrument_close(instrument_id, client_id, params);
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    #[pyo3(name = "unsubscribe_blocks")]
+    #[pyo3(signature = (chain, client_id=None, params=None))]
+    fn py_unsubscribe_blocks(
+        &mut self,
+        chain: Blockchain,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) -> PyResult<()> {
+        self.unsubscribe_blocks(chain, client_id, params);
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    #[pyo3(name = "unsubscribe_pool")]
+    #[pyo3(signature = (instrument_id, client_id=None, params=None))]
+    fn py_unsubscribe_pool(
+        &mut self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) -> PyResult<()> {
+        self.unsubscribe_pool(instrument_id, client_id, params);
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    #[pyo3(name = "unsubscribe_pool_swaps")]
+    #[pyo3(signature = (instrument_id, client_id=None, params=None))]
+    fn py_unsubscribe_pool_swaps(
+        &mut self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) -> PyResult<()> {
+        self.unsubscribe_pool_swaps(instrument_id, client_id, params);
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    #[pyo3(name = "unsubscribe_pool_liquidity_updates")]
+    #[pyo3(signature = (instrument_id, client_id=None, params=None))]
+    fn py_unsubscribe_pool_liquidity_updates(
+        &mut self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) -> PyResult<()> {
+        self.unsubscribe_pool_liquidity_updates(instrument_id, client_id, params);
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
+    #[pyo3(name = "on_historical_data")]
+    fn py_on_historical_data(&mut self, data: PyObject) -> PyResult<()> {
+        // Default implementation - can be overridden in Python subclasses
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
+    #[pyo3(name = "on_historical_quotes")]
+    fn py_on_historical_quotes(&mut self, quotes: Vec<QuoteTick>) -> PyResult<()> {
+        // Default implementation - can be overridden in Python subclasses
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
+    #[pyo3(name = "on_historical_trades")]
+    fn py_on_historical_trades(&mut self, trades: Vec<TradeTick>) -> PyResult<()> {
+        // Default implementation - can be overridden in Python subclasses
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
+    #[pyo3(name = "on_historical_bars")]
+    fn py_on_historical_bars(&mut self, bars: Vec<Bar>) -> PyResult<()> {
+        // Default implementation - can be overridden in Python subclasses
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
+    #[pyo3(name = "on_historical_mark_prices")]
+    fn py_on_historical_mark_prices(&mut self, mark_prices: Vec<MarkPriceUpdate>) -> PyResult<()> {
+        // Default implementation - can be overridden in Python subclasses
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
+    #[pyo3(name = "on_historical_index_prices")]
+    fn py_on_historical_index_prices(
+        &mut self,
+        index_prices: Vec<IndexPriceUpdate>,
+    ) -> PyResult<()> {
+        // Default implementation - can be overridden in Python subclasses
         Ok(())
     }
 }

@@ -24,7 +24,7 @@ use nautilus_indicators::indicator::Indicator;
 use nautilus_model::{data::BarType, identifiers::InstrumentId};
 
 /// Contains all indicator-related references.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(crate) struct Indicators {
     pub indicators: Vec<Arc<dyn Indicator>>,
     pub indicators_for_quotes: HashMap<InstrumentId, Vec<Arc<dyn Indicator>>>,

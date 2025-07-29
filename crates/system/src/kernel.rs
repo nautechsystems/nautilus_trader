@@ -392,12 +392,12 @@ impl NautilusKernel {
         log::info!("Trader started");
 
         self.ts_started = Some(self.clock.borrow().timestamp_ns());
-        log::info!("Nautilus system kernel started");
+        log::info!("Started");
     }
 
     /// Stops the Nautilus system kernel.
     pub async fn stop_async(&mut self) {
-        log::info!("Stopping Nautilus system kernel");
+        log::info!("Stopping...");
 
         // Stop the trader (it will stop all registered components)
         if let Err(e) = self.trader.stop() {
@@ -413,7 +413,7 @@ impl NautilusKernel {
         self.cancel_timers();
 
         self.ts_shutdown = Some(self.clock.borrow().timestamp_ns());
-        log::info!("Nautilus system kernel stopped");
+        log::info!("Stopped");
     }
 
     /// Resets the Nautilus system kernel to its initial state.
@@ -429,7 +429,7 @@ impl NautilusKernel {
         self.ts_started = None;
         self.ts_shutdown = None;
 
-        log::info!("Nautilus system kernel reset");
+        log::info!("Reset");
     }
 
     /// Disposes of the Nautilus system kernel, releasing resources.
@@ -443,7 +443,7 @@ impl NautilusKernel {
         self.data_engine.borrow_mut().dispose();
         // TODO: Implement dispose methods for other engines
 
-        log::info!("Nautilus system kernel disposed");
+        log::info!("Disposed");
     }
 
     /// Cancels all tasks currently running under the kernel.
