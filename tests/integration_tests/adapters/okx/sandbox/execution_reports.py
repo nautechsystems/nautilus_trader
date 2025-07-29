@@ -63,17 +63,17 @@ async def main():
     )
     logger.info(f"Received {len(order_reports)} order reports")
 
-    order_reports = await http_client.request_fill_reports(
+    fill_reports = await http_client.request_fill_reports(
         account_id=okx_account_id,
         instrument_type=okx_instrument_type,
     )
-    logger.info(f"Received {len(order_reports)} fill reports")
+    logger.info(f"Received {len(fill_reports)} fill reports")
 
-    order_reports = await http_client.request_position_status_reports(
+    position_reports = await http_client.request_position_status_reports(
         account_id=okx_account_id,
         instrument_type=okx_instrument_type,
     )
-    logger.info(f"Received {len(order_reports)} position reports")
+    logger.info(f"Received {len(position_reports)} position reports")
 
 
 if __name__ == "__main__":
