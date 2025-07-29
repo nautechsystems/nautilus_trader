@@ -17,7 +17,16 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use std::{cell::RefCell, collections::HashMap, rc::Rc, time::Duration};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    rc::Rc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
+};
 
 use nautilus_common::{
     actor::{Actor, DataActor},
@@ -36,6 +45,57 @@ use nautilus_system::{
 
 use crate::{config::LiveNodeConfig, runner::AsyncRunner};
 
+/// A thread-safe handle to control a LiveNode from other threads.
+/// This allows starting, stopping, and querying the node's state
+/// without requiring the node itself to be Send + Sync.
+#[derive(Clone, Debug)]
+pub struct LiveNodeHandle {
+    /// Atomic flag indicating if the node should stop.
+    pub(crate) stop_flag: Arc<AtomicBool>,
+    /// Atomic flag indicating if the node is currently running.
+    pub(crate) running_flag: Arc<AtomicBool>,
+}
+
+impl Default for LiveNodeHandle {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl LiveNodeHandle {
+    /// Creates a new handle with default (stopped) state.
+    pub fn new() -> Self {
+        Self {
+            stop_flag: Arc::new(AtomicBool::new(false)),
+            running_flag: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    /// Returns whether the node should stop.
+    pub fn should_stop(&self) -> bool {
+        self.stop_flag.load(Ordering::Relaxed)
+    }
+
+    /// Returns whether the node is currently running.
+    pub fn is_running(&self) -> bool {
+        self.running_flag.load(Ordering::Relaxed)
+    }
+
+    /// Signals the node to stop.
+    pub fn stop(&self) {
+        self.stop_flag.store(true, Ordering::Relaxed);
+    }
+
+    /// Marks the node as running (internal use).
+    pub(crate) fn set_running(&self, running: bool) {
+        self.running_flag.store(running, Ordering::Relaxed);
+        if running {
+            // Clear stop flag when starting
+            self.stop_flag.store(false, Ordering::Relaxed);
+        }
+    }
+}
+
 /// High-level abstraction for a live Nautilus system node.
 ///
 /// Provides a simplified interface for running live systems
@@ -51,9 +111,15 @@ pub struct LiveNode {
     runner: AsyncRunner,
     config: LiveNodeConfig,
     is_running: bool,
+    /// Handle for thread-safe control of this node.
+    handle: LiveNodeHandle,
 }
 
 impl LiveNode {
+    /// Returns a thread-safe handle to control this node.
+    pub fn handle(&self) -> LiveNodeHandle {
+        self.handle.clone()
+    }
     /// Creates a new [`LiveNodeBuilder`] for fluent configuration.
     ///
     /// # Errors
@@ -100,6 +166,7 @@ impl LiveNode {
             runner,
             config,
             is_running: false,
+            handle: LiveNodeHandle::new(),
         })
     }
 
@@ -110,15 +177,16 @@ impl LiveNode {
     /// Returns an error if startup fails.
     pub async fn start(&mut self) -> anyhow::Result<()> {
         if self.is_running {
-            anyhow::bail!("LiveNode is already running");
+            anyhow::bail!("Already running");
         }
 
-        log::info!("Starting LiveNode");
+        log::info!("Starting...");
 
         self.kernel.start_async().await;
         self.is_running = true;
+        self.handle.set_running(true);
 
-        log::info!("LiveNode started successfully");
+        log::info!("Started");
         Ok(())
     }
 
@@ -129,15 +197,16 @@ impl LiveNode {
     /// Returns an error if shutdown fails.
     pub async fn stop(&mut self) -> anyhow::Result<()> {
         if !self.is_running {
-            anyhow::bail!("LiveNode is not running");
+            anyhow::bail!("Not running");
         }
 
-        log::info!("Stopping LiveNode");
+        log::info!("Stopping...");
 
         self.kernel.stop_async().await;
         self.is_running = false;
+        self.handle.set_running(false);
 
-        log::info!("LiveNode stopped successfully");
+        log::info!("Stopped");
         Ok(())
     }
 
@@ -157,7 +226,18 @@ impl LiveNode {
             () = self.runner.run() => {
                 log::info!("AsyncRunner finished");
             }
-            // Handle SIGINT signal
+            // Handle stop signal from handle (for Python integration)
+            () = async {
+                while !self.handle.should_stop() {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                }
+                log::info!("Received stop signal from handle");
+            } => {
+                self.runner.stop();
+                // Give the AsyncRunner a moment to process the shutdown signal
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            }
+            // Handle SIGINT signal (fallback for direct Rust usage)
             result = tokio::signal::ctrl_c() => {
                 match result {
                     Ok(()) => {
@@ -173,7 +253,7 @@ impl LiveNode {
             }
         }
 
-        log::debug!("AsyncRunner and signal handling finished"); // TODO: Temp logging
+        log::debug!("AsyncRunner and signal handling finished");
 
         self.stop().await?;
         Ok(())
@@ -458,7 +538,7 @@ impl LiveNodeBuilder {
             }
         }
 
-        log::info!("LiveNode built successfully");
+        log::info!("Built successfully");
 
         Ok(LiveNode {
             clock,
@@ -466,6 +546,7 @@ impl LiveNodeBuilder {
             runner,
             config: self.config,
             is_running: false,
+            handle: LiveNodeHandle::new(),
         })
     }
 }

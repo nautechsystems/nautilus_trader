@@ -20,7 +20,6 @@ crate-type = ["rlib", "cdylib"]
 [features]
 default = []
 extension-module = [
-  "pyo3/extension-module",
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
   "nautilus-data/extension-module",
@@ -28,6 +27,7 @@ extension-module = [
   "nautilus-model/extension-module",
   "nautilus-portfolio/extension-module",
   "nautilus-risk/extension-module",
+  "pyo3/extension-module",
 ]
 ffi = [
   "nautilus-common/ffi",
@@ -35,7 +35,6 @@ ffi = [
   "nautilus-model/ffi",
 ]
 python = [
-  "pyo3",
   "nautilus-common/python",
   "nautilus-core/python",
   "nautilus-data/python",
@@ -44,6 +43,8 @@ python = [
   "nautilus-portfolio/python",
   "nautilus-risk/python",
   "nautilus-system/python",
+  "pyo3",
+  "pyo3-async-runtimes",
 ]
 defi = ["nautilus-common/defi"]
 
@@ -67,6 +68,7 @@ async-trait = { workspace = true }
 futures = { workspace = true }
 log = { workspace = true }
 pyo3 = { workspace = true, optional = true }
+pyo3-async-runtimes = { workspace = true, optional = true }
 serde = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }

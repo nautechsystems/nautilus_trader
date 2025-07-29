@@ -4769,6 +4769,7 @@ dependencies = [
  "nautilus-risk",
  "nautilus-system",
  "pyo3",
+ "pyo3-async-runtimes",
  "rstest",
  "serde",
  "tokio",

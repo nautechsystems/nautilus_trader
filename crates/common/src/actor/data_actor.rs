@@ -97,6 +97,10 @@ use crate::{
 
 /// Common configuration for [`DataActor`] based components.
 #[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common", subclass)
+)]
 pub struct DataActorConfig {
     /// The custom identifier for the Actor.
     pub actor_id: Option<ActorId>,
@@ -112,6 +116,20 @@ impl Default for DataActorConfig {
             actor_id: None,
             log_events: true,
             log_commands: true,
+        }
+    }
+}
+
+#[cfg(feature = "python")]
+#[pyo3::pymethods]
+impl DataActorConfig {
+    #[new]
+    #[pyo3(signature = (actor_id=None, log_events=true, log_commands=true))]
+    fn py_new(actor_id: Option<ActorId>, log_events: bool, log_commands: bool) -> Self {
+        Self {
+            actor_id,
+            log_events,
+            log_commands,
         }
     }
 }
@@ -1698,6 +1716,26 @@ impl Debug for DataActorCore {
             .field("state", &self.state)
             .field("trader_id", &self.trader_id)
             .finish()
+    }
+}
+
+// TODO: Actors aren't meant to be cloned, this satisfies Python trait bounds for now
+impl Clone for DataActorCore {
+    fn clone(&self) -> Self {
+        Self {
+            actor_id: self.actor_id,
+            config: self.config.clone(),
+            trader_id: self.trader_id,
+            clock: self.clock.clone(),
+            cache: self.cache.clone(),
+            state: self.state,
+            warning_events: self.warning_events.clone(),
+            pending_requests: AHashMap::new(), // Reset pending requests for cloned actor
+            signal_classes: self.signal_classes.clone(),
+            #[cfg(feature = "indicators")]
+            indicators: self.indicators.clone(),
+            topic_handlers: self.topic_handlers.clone(),
+        }
     }
 }
 
