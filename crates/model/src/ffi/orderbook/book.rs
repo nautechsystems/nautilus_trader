@@ -304,11 +304,12 @@ pub extern "C" fn orderbook_check_integrity(book: &OrderBook_API) -> u8 {
     u8::from(book_check_integrity(book).is_ok())
 }
 
-// TODO: This struct implementation potentially leaks memory
-// TODO: Skip clippy check for now since it requires large modification
-#[allow(clippy::drop_non_drop)]
 #[unsafe(no_mangle)]
-pub extern "C" fn vec_fills_drop(v: CVec) {
+pub extern "C" fn vec_drop_fills(v: CVec) {
+    if v.ptr.is_null() {
+        return;
+    }
+
     let CVec { ptr, len, cap } = v;
     let data: Vec<(Price, Quantity)> =
         unsafe { Vec::from_raw_parts(ptr.cast::<(Price, Quantity)>(), len, cap) };

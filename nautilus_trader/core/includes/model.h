@@ -3071,7 +3071,7 @@ CVec orderbook_simulate_fills(const struct OrderBook_API *book, struct BookOrder
 
 uint8_t orderbook_check_integrity(const struct OrderBook_API *book);
 
-void vec_fills_drop(CVec v);
+void vec_drop_fills(CVec v);
 
 /**
  * Returns a pretty printed `OrderBook` number of levels per side, as a C string pointer.
@@ -3094,9 +3094,9 @@ double level_size(const struct BookLevel_API *level);
 
 double level_exposure(const struct BookLevel_API *level);
 
-void vec_levels_drop(CVec v);
+void vec_drop_book_levels(CVec v);
 
-void vec_orders_drop(CVec v);
+void vec_drop_book_orders(CVec v);
 
 /**
  * Returns a [`Currency`] from pointers and primitives.
