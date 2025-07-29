@@ -11,22 +11,22 @@ execution on OKX.
 ## Overview
 
 This adapter is implemented in Rust, with optional Python bindings for ease of use in Python-based workflows.
-It does not require any external OKX client library dependencies.
+**It does not require any external OKX client library dependencies**.
 
 :::info
 There is **no** need for additional installation steps for `okx`.
-The core components of the adapter are compiled as static libraries and automatically linked during the build process.
+The core components of the adapter are compiled as a static library and automatically linked during the build process.
 :::
 
 ## Examples
 
 You can find live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/okx/).
 
-### Product Support Matrix
+### Product support
 
 | Product Type      | Supported | Notes                                          |
 |-------------------|-----------|------------------------------------------------|
-| Spot Markets      | ✓         | Use for index prices.                          |
+| Spot              | ✓         | Use for index prices.                          |
 | Perpetual Swaps   | ✓         | Linear and inverse contracts.                  |
 | Futures           | ✓         | Specific expiration dates.                     |
 | Margin            | -         | *Not yet supported*.                           |
@@ -50,14 +50,14 @@ and won’t need to work directly with these lower-level components.
 ## Symbology
 
 OKX uses native symbols such as `BTC-USDT-SWAP` for linear perpetual swap contracts.
-Instruments are identified using the OKX venue-standard format.
+Instruments are identified using the OKX native format.
 
-## Capability Matrix
+## Order capability
 
 Below are the order types, execution instructions, and time-in-force options supported
 for linear perpetual swap products on OKX.
 
-### Order Types
+### Order types
 
 | Order Type          | Linear Perpetual Swap | Notes                |
 |---------------------|-----------------------|----------------------|
@@ -69,16 +69,16 @@ for linear perpetual swap products on OKX.
 | `LIMIT_IF_TOUCHED`  | ✓                     |                      |
 | `TRAILING_STOP`     | -                     | *Not yet supported*. |
 
-### Execution Instructions
+### Execution instructions
 
 | Instruction    | Linear Perpetual Swap | Notes                  |
 |----------------|-----------------------|------------------------|
 | `post_only`    | ✓                     | Only for LIMIT orders. |
 | `reduce_only`  | ✓                     | Only for derivatives.  |
 
-### Time-in-Force Options
+### Time in force
 
-| Time-in-Force | Linear Perpetual Swap | Notes                |
+| Time in force | Linear Perpetual Swap | Notes                |
 |---------------|-----------------------|----------------------|
 | `GTC`         | ✓                     | Good Till Canceled.  |
 | `FOK`         | ✓                     | Fill or Kill.        |
@@ -106,7 +106,7 @@ Or pass them directly in the configuration (not recommended for production).
 
 The OKX adapter implements automatic rate limiting for both HTTP and WebSocket connections to respect OKX's API limits and prevent rate limit errors.
 
-### HTTP Rate Limiting
+### HTTP rate limiting
 
 The HTTP client implements a conservative rate limit of **250 requests per second**. This limit is based on OKX's documented rate limits:
 
@@ -114,7 +114,7 @@ The HTTP client implements a conservative rate limit of **250 requests per secon
 - Account balance: 10 requests per 2 seconds.
 - Account instruments: 20 requests per 2 seconds.
 
-### WebSocket Rate Limiting
+### WebSocket rate limiting
 
 The WebSocket client implements keyed rate limiting with different quotas for different operation types:
 
@@ -123,7 +123,7 @@ The WebSocket client implements keyed rate limiting with different quotas for di
 
 This approach ensures that subscription management doesn't interfere with order execution performance while respecting OKX's connection rate limits.
 
-### OKX API Rate Limits
+### OKX API rate limits
 
 OKX enforces various rate limits on their API endpoints:
 
@@ -183,9 +183,9 @@ node.build()
 Common issues when using the OKX adapter:
 
 - **Authentication errors**: Verify your API credentials and ensure they have the required permissions.
+- **Insufficient permissions**: Verify your API key has trading permissions if executing orders.
 - **Rate limit exceeded**: Reduce request frequency or implement delays between requests.
 - **Invalid symbols**: Ensure you're using valid OKX instrument identifiers.
-- **Insufficient permissions**: Verify your API key has trading permissions if executing orders.
 
 For detailed error information, check the NautilusTrader logs.
 
