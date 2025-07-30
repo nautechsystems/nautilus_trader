@@ -17,8 +17,11 @@
 
 use std::{cell::RefCell, rc::Rc};
 
-use nautilus_common::{enums::Environment, python::actor::PyDataActor};
-use nautilus_core::{UUID4, python::to_pyruntime_err};
+use nautilus_common::{
+    actor::data_actor::ImportableActorConfig, enums::Environment, python::actor::PyDataActor,
+};
+use nautilus_core::UUID4;
+use nautilus_model::identifiers::ActorId;
 use nautilus_model::identifiers::TraderId;
 use nautilus_system::get_global_pyo3_registry;
 use pyo3::prelude::*;
@@ -159,9 +162,81 @@ impl LiveNode {
         Ok(())
     }
 
-    #[pyo3(name = "add_actor")]
-    fn py_add_actor(&mut self, actor: PyDataActor) -> PyResult<()> {
-        self.add_actor(actor).map_err(to_pyruntime_err)
+    #[pyo3(name = "add_actor_from_config")]
+    fn py_add_actor_from_config(
+        &mut self,
+        _py: Python,
+        config: ImportableActorConfig,
+    ) -> PyResult<()> {
+        log::info!("Starting add_actor_from_config with: {config:?}");
+
+        // Extract module and class name from actor_path
+        let parts: Vec<&str> = config.actor_path.split(':').collect();
+        if parts.len() != 2 {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "actor_path must be in format 'module.path:ClassName'",
+            ));
+        }
+        let (module_name, class_name) = (parts[0], parts[1]);
+
+        log::info!("Importing actor from module: {module_name} class: {class_name}");
+
+        // Import the Python class to verify it exists and get it for method dispatch
+        let _python_class = Python::with_gil(|py| -> PyResult<PyObject> {
+            let actor_module = py.import(module_name)?;
+            let actor_class = actor_module.getattr(class_name)?;
+            Ok(actor_class.unbind())
+        })
+        .map_err(|e| {
+            pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to import Python class: {e}"))
+        })?;
+
+        // TODO: Convert config HashMap to DataActorConfig directly for now
+        let mut actor_id = None;
+        let mut log_events = true;
+        let mut log_commands = true;
+
+        for (key, value) in &config.config {
+            match key.as_str() {
+                "actor_id" => {
+                    actor_id = Some(ActorId::from(value.as_str()));
+                }
+                "log_events" => {
+                    log_events = value.parse::<bool>().unwrap_or(true);
+                }
+                "log_commands" => {
+                    log_commands = value.parse::<bool>().unwrap_or(true);
+                }
+                _ => {
+                    log::warn!("Unknown config key '{key}' ignored");
+                }
+            }
+        }
+
+        // Create DataActorConfig directly in Rust
+        let data_actor_config = nautilus_common::actor::data_actor::DataActorConfig {
+            actor_id,
+            log_events,
+            log_commands,
+        };
+
+        log::info!("Created Rust DataActorConfig: {data_actor_config:?}");
+
+        // Create a factory closure that will be called by the registration system
+        let actor_factory = move || -> anyhow::Result<PyDataActor> {
+            // For now, create a basic PyDataActor directly to get the registration working
+            // TODO: Add Python method dispatch integration in a separate step
+            let actor = PyDataActor::new(Some(data_actor_config));
+            log::info!("Created PyDataActor directly in factory (method dispatch TODO)");
+            Ok(actor)
+        };
+
+        // Use the factory-based registration approach
+        self.add_actor_from_factory(actor_factory)
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+        log::info!("Registered actor from factory");
+        Ok(())
     }
 
     /// Returns a string representation of the node.

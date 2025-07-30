@@ -51,6 +51,7 @@ pub fn common(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::python::clock::LiveClock_Py>()?;
     m.add_class::<crate::python::actor::PyDataActor>()?;
     m.add_class::<crate::actor::data_actor::DataActorConfig>()?;
+    m.add_class::<crate::actor::data_actor::ImportableActorConfig>()?;
     m.add_class::<crate::msgbus::BusMessage>()?;
     m.add_class::<crate::msgbus::listener::MessageBusListener>()?;
     m.add_class::<crate::python::handler::PythonMessageHandler>()?;

@@ -25,9 +25,9 @@ mirroring the capabilities shown in crates/adapters/blockchain/bin/node_test.rs
 
 import os
 
-from examples.blockchain.actors import BlockchainActor
 from nautilus_trader.adapters.blockchain import BlockchainDataClientConfig
 from nautilus_trader.adapters.blockchain import BlockchainDataClientFactory
+from nautilus_trader.common import ImportableActorConfig  # type: ignore[attr-defined]
 from nautilus_trader.common import Environment
 from nautilus_trader.live import LiveNode  # type: ignore[attr-defined]
 from nautilus_trader.model import Chain  # type: ignore[attr-defined]
@@ -58,7 +58,7 @@ def main() -> None:
 
     print(f"HTTP RPC URL: {http_rpc_url}")
     print(f"WSS RPC URL: {wss_rpc_url}")
-    print(f"From block: {from_block}")
+    print(f"From block: {from_block:_}")
 
     # Client factory and configuration
     client_factory = BlockchainDataClientFactory()
@@ -71,17 +71,27 @@ def main() -> None:
         from_block=from_block,
     )
 
-    # Pool instrument IDs to monitor (TODO: Add to config)
-    pools = [
-        InstrumentId.from_str("WETH/USDC-3000.UniswapV3:Arbitrum"),  # Arbitrum WETH/USDC 0.30% pool
-    ]
-    actor = BlockchainActor()
-
     builder = LiveNode.builder(node_name, trader_id, environment)
     builder.add_data_client(None, client_factory, client_config)
     node = builder.build()
 
-    node.add_actor(actor)
+    # Pool instrument IDs to monitor (TODO: Add to config)
+    pools = [
+        InstrumentId.from_str("WETH/USDC-3000.UniswapV3:Arbitrum"),  # Arbitrum WETH/USDC 0.30% pool
+    ]
+
+    actor_config = ImportableActorConfig(
+        actor_path="actors:BlockchainActor",  # Import from local actors.py
+        config_path="nautilus_trader.common:DataActorConfig",  # Not used yet, but required field
+        config={
+            "actor_id": "BLOCKCHAIN-001",
+            "log_events": "true",
+            "log_commands": "true",
+        },
+    )
+
+    # Add actor using factory approach
+    node.add_actor_from_config(actor_config)
 
     node.run()
 

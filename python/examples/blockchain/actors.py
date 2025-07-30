@@ -29,11 +29,9 @@ class BlockchainActorConfig(DataActorConfig):
 class BlockchainActor(DataActor):
 
     def __init__(self, config: BlockchainActorConfig | None = None) -> None:
-        if config is None:
-            super().__init__()
-        else:
-            super().__init__(config)
+        super().__init__(config)
 
+        # TODO: Implement proper configuration
         self.chain = Chain.ARBITRUM()
         self.client_id = ClientId(f"BLOCKCHAIN-{self.chain.name}")
         self.pools = [InstrumentId.from_str("WETH/USDC-3000.UniswapV3:Arbitrum")]
@@ -42,8 +40,7 @@ class BlockchainActor(DataActor):
         """
         Actions to be performed on actor start.
         """
-        print("CALLED ON START")
-        self.subscribe_blocks(self.chain)
+        self.subscribe_blocks(self.chain.name)
 
         for instrument_id in self.pools:
             self.subscribe_pool(instrument_id, self.client_id)
@@ -54,8 +51,7 @@ class BlockchainActor(DataActor):
         """
         Actions to be performed on actor stop.
         """
-        print("CALLED ON START")
-        self.unsubscribe_blocks(self.chain)
+        self.unsubscribe_blocks(self.chain.name)
 
         for instrument_id in self.pools:
             self.unsubscribe_pool(instrument_id, self.client_id)

@@ -235,8 +235,55 @@ impl Trader {
         let mut actor_mut = actor;
         actor_mut.register(self.trader_id, clock, self.cache.clone())?;
 
+        self.add_registered_actor(actor_mut)
+    }
+
+    /// Adds an actor to the trader using a factory function.
+    ///
+    /// The factory function is called at registration time to create the actor,
+    /// avoiding cloning issues with non-cloneable actor types.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The trader is not in a valid state for adding components.
+    /// - The factory function fails to create the actor.
+    /// - An actor with the same ID is already registered.
+    pub fn add_actor_from_factory<F, T>(&mut self, factory: F) -> anyhow::Result<()>
+    where
+        F: FnOnce() -> anyhow::Result<T>,
+        T: DataActor + Component + Debug + 'static,
+    {
+        self.validate_component_registration()?;
+
+        // Create the actor using the factory
+        let actor = factory()?;
+
+        let actor_id = actor.actor_id();
+
+        // Check for duplicate registration
+        if self.actor_ids.contains(&actor_id) {
+            anyhow::bail!("Actor '{actor_id}' is already registered");
+        }
+
+        let clock = self.create_component_clock();
+        let component_id = ComponentId::new(actor_id.inner().as_str());
+        self.clocks.insert(component_id, clock.clone());
+
+        let mut actor_mut = actor;
+        actor_mut.register(self.trader_id, clock, self.cache.clone())?;
+
+        self.add_registered_actor(actor_mut)
+    }
+
+    fn add_registered_actor<T>(&mut self, actor: T) -> anyhow::Result<()>
+    where
+        T: DataActor + Component + Debug + 'static,
+    {
+        let actor_id = actor.actor_id();
+
         // Register in both component and actor registries (this consumes the actor)
-        register_component_actor(actor_mut);
+        register_component_actor(actor);
 
         // Store actor ID for lifecycle management
         self.actor_ids.push(actor_id);

@@ -59,9 +59,11 @@ use crate::{
     unsendable,
     subclass
 )]
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct PyDataActor {
     core: DataActorCore,
+    // Store reference to Python self for method calls
+    py_self: Option<Py<PyAny>>,
 }
 
 impl Deref for PyDataActor {
@@ -78,9 +80,19 @@ impl DerefMut for PyDataActor {
     }
 }
 
+impl PyDataActor {
+    // Rust constructor for tests and direct Rust usage
+    pub fn new(config: Option<DataActorConfig>) -> Self {
+        let config = config.unwrap_or_default();
+        Self {
+            core: DataActorCore::new(config),
+            py_self: None,
+        }
+    }
+}
+
 impl DataActor for PyDataActor {
     fn on_start(&mut self) -> anyhow::Result<()> {
-        log::info!("PyDataActor::on_start called, calling py_on_start");
         self.py_on_start()
             .map_err(|e| anyhow::anyhow!("Python on_start failed: {e}"))
     }
@@ -261,7 +273,16 @@ impl PyDataActor {
 
         Ok(Self {
             core: DataActorCore::new(config),
+            py_self: None,
         })
+    }
+
+    // Method to set the Python self reference for method dispatch
+    #[pyo3(name = "_set_py_self")]
+    fn py_set_py_self(slf: Py<Self>, py: Python) -> PyResult<()> {
+        let mut borrowed = slf.borrow_mut(py);
+        borrowed.py_self = Some(slf.clone_ref(py).into());
+        Ok(())
     }
 
     #[getter]
@@ -349,17 +370,13 @@ impl PyDataActor {
     #[pyo3(name = "shutdown_system")]
     #[pyo3(signature = (reason=None))]
     fn py_shutdown_system(&self, reason: Option<String>) -> PyResult<()> {
-        self.core.shutdown_system(reason);
+        self.shutdown_system(reason);
         Ok(())
     }
 
     #[pyo3(name = "on_start")]
-    fn py_on_start(&mut self) -> PyResult<()> {
-        // Default implementation - this will be overridden by Python subclasses
-        // For now, we'll just log that the default was called
-        log::info!(
-            "py_on_start default implementation called - Python override should be called instead"
-        );
+    fn py_on_start(&self) -> PyResult<()> {
+        // Default implementation - can be overridden in Python subclasses
         Ok(())
     }
 
@@ -1204,7 +1221,7 @@ mod tests {
     }
 
     fn create_unregistered_actor() -> PyDataActor {
-        PyDataActor::py_new(None).unwrap()
+        PyDataActor::new(None)
     }
 
     fn create_registered_actor(
@@ -1216,14 +1233,14 @@ mod tests {
         let sender = SyncDataCommandSender;
         set_data_cmd_sender(Arc::new(sender));
 
-        let mut actor = PyDataActor::py_new(None).unwrap();
+        let mut actor = PyDataActor::new(None);
         actor.register(trader_id, clock, cache).unwrap();
         actor
     }
 
     #[rstest]
     fn test_new_actor_creation() {
-        let actor = PyDataActor::py_new(None).unwrap();
+        let actor = PyDataActor::new(None);
         assert!(actor.trader_id().is_none());
     }
 
@@ -1383,7 +1400,7 @@ mod tests {
     impl TestDataActor {
         fn new() -> Self {
             Self {
-                inner: PyDataActor::py_new(None).unwrap(),
+                inner: PyDataActor::new(None),
             }
         }
 
@@ -1584,7 +1601,7 @@ mod tests {
     ) {
         pyo3::prepare_freethreaded_python();
 
-        let mut rust_actor = PyDataActor::py_new(None).unwrap();
+        let mut rust_actor = PyDataActor::new(None);
         rust_actor
             .register(trader_id, clock.clone(), cache.clone())
             .unwrap();
@@ -1603,7 +1620,7 @@ mod tests {
     ) {
         pyo3::prepare_freethreaded_python();
 
-        let mut rust_actor = PyDataActor::py_new(None).unwrap();
+        let mut rust_actor = PyDataActor::new(None);
         rust_actor
             .register(trader_id, clock.clone(), cache.clone())
             .unwrap();
@@ -1630,7 +1647,7 @@ mod tests {
     ) {
         pyo3::prepare_freethreaded_python();
 
-        let mut rust_actor = PyDataActor::py_new(None).unwrap();
+        let mut rust_actor = PyDataActor::new(None);
         rust_actor
             .register(trader_id, clock.clone(), cache.clone())
             .unwrap();
@@ -1657,7 +1674,7 @@ mod tests {
     ) {
         pyo3::prepare_freethreaded_python();
 
-        let mut rust_actor = PyDataActor::py_new(None).unwrap();
+        let mut rust_actor = PyDataActor::new(None);
         rust_actor
             .register(trader_id, clock.clone(), cache.clone())
             .unwrap();
@@ -1687,7 +1704,7 @@ mod tests {
     ) {
         pyo3::prepare_freethreaded_python();
 
-        let mut rust_actor = PyDataActor::py_new(None).unwrap();
+        let mut rust_actor = PyDataActor::new(None);
         rust_actor
             .register(trader_id, clock.clone(), cache.clone())
             .unwrap();
@@ -1705,7 +1722,7 @@ mod tests {
     ) {
         pyo3::prepare_freethreaded_python();
 
-        let mut rust_actor = PyDataActor::py_new(None).unwrap();
+        let mut rust_actor = PyDataActor::new(None);
         rust_actor
             .register(trader_id, clock.clone(), cache.clone())
             .unwrap();
@@ -1726,7 +1743,7 @@ mod tests {
     ) {
         pyo3::prepare_freethreaded_python();
 
-        let mut rust_actor = PyDataActor::py_new(None).unwrap();
+        let mut rust_actor = PyDataActor::new(None);
         rust_actor
             .register(trader_id, clock.clone(), cache.clone())
             .unwrap();
@@ -1750,7 +1767,7 @@ mod tests {
     ) {
         pyo3::prepare_freethreaded_python();
 
-        let mut rust_actor = PyDataActor::py_new(None).unwrap();
+        let mut rust_actor = PyDataActor::new(None);
         rust_actor
             .register(trader_id, clock.clone(), cache.clone())
             .unwrap();
@@ -1774,7 +1791,7 @@ mod tests {
     ) {
         pyo3::prepare_freethreaded_python();
 
-        let mut rust_actor = PyDataActor::py_new(None).unwrap();
+        let mut rust_actor = PyDataActor::new(None);
         rust_actor
             .register(trader_id, clock.clone(), cache.clone())
             .unwrap();
@@ -1803,7 +1820,7 @@ mod tests {
     ) {
         pyo3::prepare_freethreaded_python();
 
-        let mut rust_actor = PyDataActor::py_new(None).unwrap();
+        let mut rust_actor = PyDataActor::new(None);
         rust_actor
             .register(trader_id, clock.clone(), cache.clone())
             .unwrap();
@@ -1858,7 +1875,7 @@ mod tests {
     ) {
         pyo3::prepare_freethreaded_python();
 
-        let mut rust_actor = PyDataActor::py_new(None).unwrap();
+        let mut rust_actor = PyDataActor::new(None);
         rust_actor
             .register(trader_id, clock.clone(), cache.clone())
             .unwrap();
@@ -1937,7 +1954,7 @@ mod tests {
     ) {
         pyo3::prepare_freethreaded_python();
 
-        let mut rust_actor = PyDataActor::py_new(None).unwrap();
+        let mut rust_actor = PyDataActor::new(None);
         rust_actor
             .register(trader_id, clock.clone(), cache.clone())
             .unwrap();

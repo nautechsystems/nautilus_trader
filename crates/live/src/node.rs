@@ -313,6 +313,31 @@ impl LiveNode {
 
         self.kernel.trader.add_actor(actor)
     }
+
+    /// Adds an actor to the live node using a factory function.
+    ///
+    /// The factory function is called at registration time to create the actor,
+    /// avoiding cloning issues with non-cloneable actor types.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The node is currently running.
+    /// - The factory function fails to create the actor.
+    /// - The underlying trader registration fails.
+    pub fn add_actor_from_factory<F, T>(&mut self, factory: F) -> anyhow::Result<()>
+    where
+        F: FnOnce() -> anyhow::Result<T>,
+        T: DataActor + Component + Actor + 'static,
+    {
+        if self.is_running {
+            anyhow::bail!(
+                "Cannot add actor while node is running. Add actors before calling start()."
+            );
+        }
+
+        self.kernel.trader.add_actor_from_factory(factory)
+    }
 }
 
 /// Builder for constructing a [`LiveNode`] with a fluent API.
