@@ -53,7 +53,7 @@ pub fn create_valid_interval(interval_ns: u64) -> NonZeroU64 {
 }
 
 #[repr(C)]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
@@ -62,7 +62,6 @@ pub fn create_valid_interval(interval_ns: u64) -> NonZeroU64 {
 ///
 /// A `TimeEvent` carries metadata such as the event's name, a unique event ID,
 /// and timestamps indicating when the event was scheduled to occur and when it was initialized.
-#[derive(Eq)]
 pub struct TimeEvent {
     /// The event name, identifying the nature or purpose of the event.
     pub name: Ustr,
