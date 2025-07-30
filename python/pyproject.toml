@@ -39,7 +39,7 @@ docs = "https://nautilustrader.io/docs"
 
 [build-system]
 requires = [
-    "maturin>=1.9.1",
+    "maturin>=1.9.2",
     "patchelf",
 ]
 build-backend = "maturin"
@@ -59,8 +59,8 @@ include = [
 
 [dependency-groups]
 dev = [
-    "maturin>=1.9.1",
-    "ruff>=0.12.4,<1.0.0",
+    "maturin>=1.9.2",
+    "ruff>=0.12.7,<1.0.0",
     "mypy>=1.17.0,<2.0.0",
     "pre-commit>=4.2.0,<5.0.0",
 ]

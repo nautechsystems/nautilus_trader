@@ -1211,9 +1211,9 @@ dependencies = [
 
 [[package]]
 name = "backon"
-version = "1.5.1"
+version = "1.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "302eaff5357a264a2c42f127ecb8bac761cf99749fc3dc95677e2743991f99e7"
+checksum = "592277618714fbcecda9a02ba7a8781f319d26532a88553bbacc77ba5d2b3a8d"
 dependencies = [
  "fastrand",
 ]
@@ -1673,9 +1673,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.5.41"
+version = "4.5.42"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be92d32e80243a54711e5d7ce823c35c41c9d929dc4ab58e1276f625841aadf9"
+checksum = "ed87a9d530bb41a67537289bafcac159cb3ee28460e0a4571123d2a778a6a882"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -1683,9 +1683,9 @@ dependencies = [
 
 [[package]]
 name = "clap_builder"
-version = "4.5.41"
+version = "4.5.42"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "707eab41e9622f9139419d573eca0900137718000c517d47da73045f54331c3d"
+checksum = "64f4f3f3c77c94aff3c7e9aac9a2ca1974a5adf392a8bb751e827d6d127ab966"
 dependencies = [
  "anstream",
  "anstyle",
@@ -2092,9 +2092,9 @@ checksum = "2a2330da5de22e8a3cb63252ce2abb30116bf5265e89c0e01bc17015ce30a476"
 
 [[package]]
 name = "databento"
-version = "0.30.0"
+version = "0.31.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a2e3a94d7a171e13668b6e5e24a67ee23ed44dc01df43a9955e0998f7bdb336"
+checksum = "6c015e145b5e652a6478fa5029e22766e1aeb4fdba0c1f02805f9ea60954d71b"
 dependencies = [
  "async-compression",
  "dbn",
@@ -2694,9 +2694,9 @@ dependencies = [
 
 [[package]]
 name = "dbn"
-version = "0.38.0"
+version = "0.39.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d75b73cb84174641ccee484bff52e7c37a8df07e7110442faa5fd601535d1a30"
+checksum = "00d29b6cf0aa80651330e9973eb0f1cf4eee79a4769d878480eb0f7aa0eb0bc0"
 dependencies = [
  "async-compression",
  "csv",
@@ -2715,9 +2715,9 @@ dependencies = [
 
 [[package]]
 name = "dbn-macros"
-version = "0.38.0"
+version = "0.39.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb85f28f3645ccbb40f9d720ccbbb6bbe899c504a8d12363b5c3ff6867747e39"
+checksum = "b8287d694025961e29a62df41f2ab566bd5e73ecce94cc645adc0a63230f5ce5"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -3855,9 +3855,9 @@ dependencies = [
 
 [[package]]
 name = "implied-vol"
-version = "1.1.0"
+version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd26a83371e8ce572636dee966b948d3429185cb4f252624b68e09071ed44473"
+checksum = "a60bf2b803276e1e88e32c1771faac6e483b0cb15a9400c62b7bf809c9e0d20d"
 
 [[package]]
 name = "indexmap"
@@ -4560,7 +4560,7 @@ dependencies = [
  "serde",
  "serde_json",
  "strum",
- "toml 0.9.2",
+ "toml 0.9.4",
  "ustr",
  "uuid",
 ]
@@ -6794,9 +6794,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.29"
+version = "0.23.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2491382039b29b9b11ff08b76ff6c97cf287671dbb74f0be44bda389fffe9bd1"
+checksum = "c0ebcbd2f03de0fc1122ad9bb24b127a5a6cd51d72604a3f3c50ac459762b6cc"
 dependencies = [
  "aws-lc-rs",
  "log",
@@ -8004,9 +8004,9 @@ dependencies = [
 
 [[package]]
 name = "toml"
-version = "0.9.2"
+version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ed0aee96c12fa71097902e0bb061a5e1ebd766a6636bb605ba401c45c1650eac"
+checksum = "41ae868b5a0f67631c14589f7e250c1ea2c574ee5ba21c6c8dd4b1485705a5a1"
 dependencies = [
  "serde",
  "serde_spanned 1.0.0",
