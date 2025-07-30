@@ -1,4 +1,6 @@
+from nautilus_trader.core.nautilus_pyo3 import AccountBalance
 from nautilus_trader.core.nautilus_pyo3 import AccountId
+from nautilus_trader.core.nautilus_pyo3 import AccountState
 from nautilus_trader.core.nautilus_pyo3 import AccountType
 from nautilus_trader.core.nautilus_pyo3 import Currency
 from nautilus_trader.core.nautilus_pyo3 import Instrument
@@ -10,9 +12,6 @@ from nautilus_trader.core.nautilus_pyo3 import OrderSide
 from nautilus_trader.core.nautilus_pyo3 import Position
 from nautilus_trader.core.nautilus_pyo3 import Price
 from nautilus_trader.core.nautilus_pyo3 import Quantity
-from nautilus_trader.core.nautilus_pyo3 import AccountBalance
-from nautilus_trader.core.nautilus_pyo3 import AccountState
-
 
 class Account:
     """
@@ -25,6 +24,10 @@ class Account:
     is_cash_account: bool
     is_margin_account: bool
     calculate_account_state: bool
+    _events: list[AccountState]
+    _commissions: dict[Currency, Money]
+    _balances: dict[Currency, AccountBalance]
+    _balances_starting: dict[Currency, Money]
 
     def __init__(self, event: AccountState, calculate_account_state: bool) -> None: ...
     def __eq__(self, other: Account) -> bool: ...
@@ -83,7 +86,7 @@ class Account:
 
         """
         ...
-    def balances(self) -> dict[Currency, Money]:
+    def balances(self) -> dict[Currency, AccountBalance]:
         """
         Return the account balances totals.
 
@@ -349,24 +352,6 @@ class Account:
 
         """
         ...
-    def calculate_commission(
-        self,
-        instrument: Instrument,
-        last_qty: Quantity,
-        last_px: Price,
-        liquidity_side: LiquiditySide,
-        use_quote_for_inverse: bool = False,
-    ) -> Money: ...
-    def calculate_pnls(
-        self,
-        instrument: Instrument,
-        fill: OrderFilled,
-        position: Position | None = None,
-    ) -> list: ...
-    def balance_impact(
-        self,
-        instrument: Instrument,
-        quantity: Quantity,
-        price: Price,
-        order_side: OrderSide,
-    ) -> Money: ...
+    def calculate_commission(self, instrument: Instrument, last_qty: Quantity, last_px: Price, liquidity_side: LiquiditySide, use_quote_for_inverse: bool = False) -> Money: ...
+    def calculate_pnls(self, instrument: Instrument, fill: OrderFilled, position: Position | None = None) -> list: ...
+    def balance_impact(self, instrument: Instrument, quantity: Quantity, price: Price, order_side: OrderSide) -> Money: ...

@@ -1,0 +1,3 @@
+import numpy as np
+
+def quadratic_interpolation(x: float, xs: np.ndarray, ys: np.ndarray) -> float: ...

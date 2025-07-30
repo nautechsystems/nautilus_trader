@@ -67,7 +67,7 @@ cdef class AccountState(Event):
         Currency base_currency,
         bint reported,
         list balances not None,
-        list margins not None,  # Can be empty
+        list margins not None,
         dict info not None,
         UUID4 event_id not None,
         uint64_t ts_event,

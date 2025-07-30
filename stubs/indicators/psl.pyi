@@ -1,0 +1,45 @@
+from nautilus_trader.indicators.average.ma_factory import MovingAverageType
+from nautilus_trader.core.nautilus_pyo3 import Bar
+from nautilus_trader.core.nautilus_pyo3 import PsychologicalLine as Indicator
+
+class PsychologicalLine(Indicator):
+    """
+    The Psychological Line is an oscillator-type indicator that compares the
+    number of the rising periods to the total number of periods. In other
+    words, it is the percentage of bars that close above the previous
+    bar over a given period.
+
+    Parameters
+    ----------
+    period : int
+        The rolling window period for the indicator (> 0).
+    ma_type : MovingAverageType
+        The moving average type for the indicator (cannot be None).
+    """
+    def __init__(
+        self,
+        period: int,
+        ma_type: MovingAverageType = MovingAverageType.SIMPLE,
+    ) -> None: ...
+    def handle_bar(self, bar: Bar) -> None:
+        """
+        Update the indicator with the given bar.
+
+        Parameters
+        ----------
+        bar : Bar
+            The update bar.
+
+        """
+        ...
+    def update_raw(self, close: float) -> None:
+        """
+        Update the indicator with the given raw value.
+
+        Parameters
+        ----------
+        close : double
+            The close price.
+
+        """
+        ...

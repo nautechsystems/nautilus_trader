@@ -153,7 +153,7 @@ cdef class Cache(CacheFacade):
         self._index_strategy_orders: dict[StrategyId, set[ClientOrderId]] = {}
         self._index_strategy_positions: dict[StrategyId, set[PositionId]] = {}
         self._index_exec_algorithm_orders: dict[ExecAlgorithmId, set[ClientOrderId]] = {}
-        self._index_exec_spawn_orders: dict[ClientOrderId: set[ClientOrderId]] = {}
+        self._index_exec_spawn_orders: dict[ClientOrderId, set[ClientOrderId]] = {}
         self._index_orders: set[ClientOrderId] = set()
         self._index_orders_open: set[ClientOrderId] = set()
         self._index_orders_open_pyo3: set[nautilus_pyo3.ClientOrderId] = set()

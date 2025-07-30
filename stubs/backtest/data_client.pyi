@@ -1,0 +1,125 @@
+from nautilus_trader.common.config import NautilusConfig
+from nautilus_trader.core.nautilus_pyo3 import BarType
+from nautilus_trader.core.nautilus_pyo3 import BookType
+from nautilus_trader.core.nautilus_pyo3 import Cache
+from nautilus_trader.core.nautilus_pyo3 import ClientId
+from nautilus_trader.core.nautilus_pyo3 import Clock
+from nautilus_trader.core.nautilus_pyo3 import DataClient
+from nautilus_trader.core.nautilus_pyo3 import Instrument
+from nautilus_trader.core.nautilus_pyo3 import InstrumentId
+from nautilus_trader.core.nautilus_pyo3 import MarketDataClient
+from nautilus_trader.core.nautilus_pyo3 import MessageBus
+from nautilus_trader.core.nautilus_pyo3 import RequestBars
+from nautilus_trader.core.nautilus_pyo3 import RequestData
+from nautilus_trader.core.nautilus_pyo3 import RequestInstrument
+from nautilus_trader.core.nautilus_pyo3 import RequestInstruments
+from nautilus_trader.core.nautilus_pyo3 import RequestOrderBookSnapshot
+from nautilus_trader.core.nautilus_pyo3 import RequestQuoteTicks
+from nautilus_trader.core.nautilus_pyo3 import RequestTradeTicks
+from nautilus_trader.core.nautilus_pyo3 import SubscribeBars
+from nautilus_trader.core.nautilus_pyo3 import SubscribeData
+from nautilus_trader.core.nautilus_pyo3 import SubscribeIndexPrices
+from nautilus_trader.core.nautilus_pyo3 import SubscribeInstrument
+from nautilus_trader.core.nautilus_pyo3 import SubscribeInstrumentClose
+from nautilus_trader.core.nautilus_pyo3 import SubscribeInstruments
+from nautilus_trader.core.nautilus_pyo3 import SubscribeInstrumentStatus
+from nautilus_trader.core.nautilus_pyo3 import SubscribeMarkPrices
+from nautilus_trader.core.nautilus_pyo3 import SubscribeOrderBook
+from nautilus_trader.core.nautilus_pyo3 import SubscribeQuoteTicks
+from nautilus_trader.core.nautilus_pyo3 import SubscribeTradeTicks
+from nautilus_trader.core.nautilus_pyo3 import UnsubscribeBars
+from nautilus_trader.core.nautilus_pyo3 import UnsubscribeData
+from nautilus_trader.core.nautilus_pyo3 import UnsubscribeIndexPrices
+from nautilus_trader.core.nautilus_pyo3 import UnsubscribeInstrument
+from nautilus_trader.core.nautilus_pyo3 import UnsubscribeInstrumentClose
+from nautilus_trader.core.nautilus_pyo3 import UnsubscribeInstruments
+from nautilus_trader.core.nautilus_pyo3 import UnsubscribeInstrumentStatus
+from nautilus_trader.core.nautilus_pyo3 import UnsubscribeMarkPrices
+from nautilus_trader.core.nautilus_pyo3 import UnsubscribeOrderBook
+from nautilus_trader.core.nautilus_pyo3 import UnsubscribeQuoteTicks
+from nautilus_trader.core.nautilus_pyo3 import UnsubscribeTradeTicks
+from nautilus_trader.core.nautilus_pyo3 import Venue
+
+class BacktestDataClient(DataClient):
+    """
+    Provides an implementation of `DataClient` for backtesting.
+
+    Parameters
+    ----------
+    client_id : ClientId
+        The data client ID.
+    msgbus : MessageBus
+        The message bus for the client.
+    cache : Cache
+        The cache for the client.
+    clock : Clock
+        The clock for the client.
+    config : NautilusConfig, optional
+        The configuration for the instance.
+    """
+
+    def __init__(
+        self,
+        client_id: ClientId,
+        msgbus: MessageBus,
+        cache: Cache,
+        clock: Clock,
+        config: NautilusConfig | None = None,
+    ) -> None: ...
+    def subscribe(self, command: SubscribeData) -> None: ...
+    def unsubscribe(self, command: UnsubscribeData) -> None: ...
+    def request(self, request: RequestData) -> None: ...
+
+class BacktestMarketDataClient(MarketDataClient):
+    """
+    Provides an implementation of `MarketDataClient` for backtesting.
+
+    Parameters
+    ----------
+    client_id : ClientId
+        The data client ID.
+    msgbus : MessageBus
+        The message bus for the client.
+    cache : Cache
+        The cache for the client.
+    clock : Clock
+        The clock for the client.
+    """
+
+    def __init__(
+        self,
+        client_id: ClientId,
+        msgbus: MessageBus,
+        cache: Cache,
+        clock: Clock,
+    ): ...
+    def subscribe(self, command: SubscribeData) -> None: ...
+    def unsubscribe(self, command: UnsubscribeData) -> None: ...
+    def subscribe_instruments(self, command: SubscribeInstruments) -> None: ...
+    def subscribe_instrument(self, command: SubscribeInstrument) -> None: ...
+    def subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None: ...
+    def subscribe_order_book_snapshots(self, command: SubscribeOrderBook) -> None: ...
+    def subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None: ...
+    def subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None: ...
+    def subscribe_mark_prices(self, command: SubscribeMarkPrices) -> None: ...
+    def subscribe_index_prices(self, command: SubscribeIndexPrices) -> None: ...
+    def subscribe_bars(self, command: SubscribeBars) -> None: ...
+    def subscribe_instrument_status(self, command: SubscribeInstrumentStatus) -> None: ...
+    def subscribe_instrument_close(self, command: SubscribeInstrumentClose) -> None: ...
+    def unsubscribe_instruments(self, command: UnsubscribeInstruments) -> None: ...
+    def unsubscribe_instrument(self, command: UnsubscribeInstrument) -> None: ...
+    def unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None: ...
+    def unsubscribe_order_book_snapshots(self, command: UnsubscribeOrderBook) -> None: ...
+    def unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None: ...
+    def unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None: ...
+    def unsubscribe_mark_prices(self, command: UnsubscribeMarkPrices) -> None: ...
+    def unsubscribe_index_prices(self, command: UnsubscribeIndexPrices) -> None: ...
+    def unsubscribe_bars(self, command: UnsubscribeBars) -> None: ...
+    def unsubscribe_instrument_status(self, command: UnsubscribeInstrumentStatus) -> None: ...
+    def unsubscribe_instrument_close(self, command: UnsubscribeInstrumentClose) -> None: ...
+    def request_instrument(self, request: RequestInstrument) -> None: ...
+    def request_instruments(self, request: RequestInstruments) -> None: ...
+    def request_order_book_snapshot(self, request: RequestOrderBookSnapshot) -> None: ...
+    def request_quote_ticks(self, request: RequestQuoteTicks) -> None: ...
+    def request_trade_ticks(self, request: RequestTradeTicks) -> None: ...
+    def request_bars(self, request: RequestBars) -> None: ...
