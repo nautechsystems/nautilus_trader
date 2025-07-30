@@ -42,3 +42,4 @@ types and how these map to their corresponding `PyObject` types.
 - [Adapters](adapters.md)
 - [Benchmarking](benchmarking.md)
 - [Packaged Data](packaged_data.md)
+- [FFI Memory Contract](ffi.md)

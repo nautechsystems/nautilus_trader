@@ -26,6 +26,7 @@ Released on TBD (UTC).
 - Added `multiplier` field for `CurrencyPair` Arrow schema
 - Changed `start` parameter to required for `Actor` data request methods
 - Reverted implementation of `delete_account_event` from cache database that was too inefficient and is now a no-op pending redesign
+- Removed the generic `cvec_drop` FFI function, as it was unused and prone to misuse, potentially causing memory leaks
 
 ### Internal Improvements
 - Refactored OKX adapter to Rust API clients
@@ -78,6 +79,7 @@ Released on TBD (UTC).
 - Fixed typo in logging for dYdX adapter (#2790), thanks @DeirhX
 
 ### Documentation Updates
+- Added FFI Memory Contract developer guide
 - Added mixed debugging instructions and example (#2806), thanks @faysou
 - Improved dYdX integration guide (#2751), thanks @nicolad
 

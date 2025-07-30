@@ -62,17 +62,6 @@ typedef struct UUID4_t {
 } UUID4_t;
 
 /**
- * Free the heap allocation represented by `cvec`.
- *
- * # Safety
- *
- * The pointer **must** either originate from the Rust side through the `From<Vec<T>>`
- * implementation or be the return value of one of the exported functions in this module.  It is
- * undefined behaviour to pass an arbitrary or already-freed pointer.
- */
-void cvec_drop(struct CVec cvec);
-
-/**
  * Construct a new *empty* [`CVec`] value for use as initialiser/sentinel in foreign code.
  */
 struct CVec cvec_new(void);

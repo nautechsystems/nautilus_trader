@@ -450,8 +450,17 @@ and covering the invariants which the function expects the callers to uphold, an
 ```rust
 // SAFETY: Message bus is not meant to be passed between threads
 #[allow(unsafe_code)]
+
 unsafe impl Send for MessageBus {}
 ```
+
+- **Crate-level lint** – every crate that exposes FFI symbols enables
+  `#![deny(unsafe_op_in_unsafe_fn)]`. Even inside an `unsafe fn`, each pointer dereference or
+  other dangerous operation must be wrapped in its own `unsafe { … }` block.
+
+- **CVec contract** – for raw vectors that cross the FFI boundary read the
+  [FFI Memory Contract](ffi.md). Foreign code becomes the owner of the allocation and **must**
+  call the matching `vec_drop_*` function exactly once.
 
 ## Tooling configuration
 
