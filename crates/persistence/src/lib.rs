@@ -36,6 +36,7 @@
 
 #![warn(rustc::all)]
 #![deny(nonstandard_style)]
+#![deny(unsafe_op_in_unsafe_fn)]
 #![deny(rustdoc::broken_intra_doc_links)]
 // #![deny(clippy::missing_errors_doc)]
 

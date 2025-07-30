@@ -21,8 +21,7 @@ use nautilus_common::{
     actor::data_actor::ImportableActorConfig, enums::Environment, python::actor::PyDataActor,
 };
 use nautilus_core::UUID4;
-use nautilus_model::identifiers::ActorId;
-use nautilus_model::identifiers::TraderId;
+use nautilus_model::identifiers::{ActorId, TraderId};
 use nautilus_system::get_global_pyo3_registry;
 use pyo3::prelude::*;
 

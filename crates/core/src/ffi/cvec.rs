@@ -23,12 +23,16 @@
 //!
 //! Only a very small API surface is exposed to C:
 //!
-//! * `cvec_new` – create an empty vector representation.
-//! * `cvec_drop` – free a vector that was obtained from Rust.
+//! * `cvec_new` – create an empty `CVec` sentinel that can be returned to foreign code.
+//!
+//! De-allocation is intentionally **not** provided via a generic helper. Instead each FFI module
+//! must expose its own *type-specific* `vec_*_drop` function which reconstructs the original
+//! `Vec<T>` with [`Vec::from_raw_parts`] and allows it to drop. This avoids the size-mismatch risk
+//! that a one-size-fits-all `cvec_drop` had in the past.
 //!
 //! All other manipulation happens on the Rust side before relinquishing ownership.  This keeps the
 //! rules for memory safety straightforward: foreign callers must treat the memory region pointed
-//! to by `ptr` as *opaque* and interact with it solely through the functions provided here.
+//! to by `ptr` as **opaque** and interact with it solely through the functions provided here.
 
 use std::{ffi::c_void, fmt::Display, ptr::null};
 
@@ -108,30 +112,6 @@ impl Display for CVec {
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
-/// Free the heap allocation represented by `cvec`.
-///
-/// # Safety
-///
-/// The pointer **must** either originate from the Rust side through the `From<Vec<T>>`
-/// implementation or be the return value of one of the exported functions in this module.  It is
-/// undefined behaviour to pass an arbitrary or already-freed pointer.
-#[cfg(feature = "ffi")]
-#[unsafe(no_mangle)]
-pub extern "C" fn cvec_drop(cvec: CVec) {
-    if cvec.ptr.is_null() {
-        return;
-    }
-    let CVec { ptr, len, cap } = cvec;
-
-    // SAFETY: This generic drop function is only safe for CVecs that were
-    // created from Vec<u8>. For type-specific CVecs (e.g., Vec<BookOrder>),
-    // use the corresponding type-specific drop function (e.g., vec_drop_book_orders).
-    //
-    // WARNING: Using this function on non-u8 CVecs will cause memory corruption
-    // and undefined behavior due to incorrect size calculations during deallocation.
-    let data: Vec<u8> = unsafe { Vec::from_raw_parts(ptr.cast::<u8>(), len, cap) };
-    drop(data); // Memory freed here
-}
 
 /// Construct a new *empty* [`CVec`] value for use as initialiser/sentinel in foreign code.
 #[cfg(feature = "ffi")]
