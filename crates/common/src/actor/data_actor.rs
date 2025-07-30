@@ -22,7 +22,7 @@
 use std::{
     any::{Any, TypeId},
     cell::{Ref, RefCell, RefMut, UnsafeCell},
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fmt::Debug,
     num::NonZeroUsize,
     ops::{Deref, DerefMut},
@@ -131,6 +131,49 @@ impl DataActorConfig {
             log_events,
             log_commands,
         }
+    }
+}
+
+/// Configuration for creating actors from importable paths.
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
+)]
+pub struct ImportableActorConfig {
+    /// The fully qualified name of the Actor class.
+    pub actor_path: String,
+    /// The fully qualified name of the Actor config class.
+    pub config_path: String,
+    /// The actor configuration as a dictionary.
+    pub config: HashMap<String, String>,
+}
+
+#[cfg(feature = "python")]
+#[pyo3::pymethods]
+impl ImportableActorConfig {
+    #[new]
+    fn py_new(actor_path: String, config_path: String, config: HashMap<String, String>) -> Self {
+        Self {
+            actor_path,
+            config_path,
+            config,
+        }
+    }
+
+    #[getter]
+    fn actor_path(&self) -> &String {
+        &self.actor_path
+    }
+
+    #[getter]
+    fn config_path(&self) -> &String {
+        &self.config_path
+    }
+
+    #[getter]
+    fn config(&self) -> &std::collections::HashMap<String, String> {
+        &self.config
     }
 }
 
@@ -1719,26 +1762,6 @@ impl Debug for DataActorCore {
     }
 }
 
-// TODO: Actors aren't meant to be cloned, this satisfies Python trait bounds for now
-impl Clone for DataActorCore {
-    fn clone(&self) -> Self {
-        Self {
-            actor_id: self.actor_id,
-            config: self.config.clone(),
-            trader_id: self.trader_id,
-            clock: self.clock.clone(),
-            cache: self.cache.clone(),
-            state: self.state,
-            warning_events: self.warning_events.clone(),
-            pending_requests: AHashMap::new(), // Reset pending requests for cloned actor
-            signal_classes: self.signal_classes.clone(),
-            #[cfg(feature = "indicators")]
-            indicators: self.indicators.clone(),
-            topic_handlers: self.topic_handlers.clone(),
-        }
-    }
-}
-
 impl DataActorCore {
     /// Creates a new [`DataActorCore`] instance.
     pub fn new(config: DataActorConfig) -> Self {
@@ -1760,6 +1783,10 @@ impl DataActorCore {
             indicators: Indicators::default(),
             topic_handlers: AHashMap::new(),
         }
+    }
+
+    pub fn state(&self) -> ComponentState {
+        self.state
     }
 
     /// Returns the trader ID this actor is registered to.
