@@ -13,17 +13,23 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::ffi::c_char;
+use std::{
+    collections::HashMap,
+    ffi::c_char,
+    sync::{Arc, Mutex, OnceLock},
+};
 
 use nautilus_core::{
     UUID4,
     ffi::string::{cstr_to_ustr, str_to_cstr},
 };
+#[cfg(feature = "python")]
+use pyo3::prelude::*;
 
 use crate::timer::{TimeEvent, TimeEventCallback, TimeEventHandlerV2};
 
 #[repr(C)]
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 /// Legacy time event handler for Cython/FFI inter-operatbility
 ///
 /// TODO: Remove once Cython is deprecated
@@ -37,6 +43,70 @@ pub struct TimeEventHandler {
     pub callback_ptr: *mut c_char,
 }
 
+// -----------------------------------------------------------------------------
+// Internal registry that owns the Python callback objects
+// -----------------------------------------------------------------------------
+//
+// The legacy `TimeEventHandler` handed to Cython stores only a borrowed
+// `PyObject*` (`callback_ptr`).  To make sure the pointed-to Python object
+// stays alive while *any* handler referencing it exists we keep a single
+// `Arc<Py<PyAny>>` per raw pointer in this registry together with a manual
+// reference counter.
+//
+// Why a registry instead of extra fields:
+//   • The C ABI must remain `struct { TimeEvent, char * }` – adding bytes to
+//     the struct would break all generated headers.
+//   • `Arc<Py<..>>` guarantees GIL-safe INC/DEC but cannot be represented in
+//     C.  Storing it externally preserves layout while retaining safety.
+//
+// Drop strategy:
+//   1. Cloning a handler increments the per-pointer counter.
+//   2. Dropping a handler decrements it; if the count hits zero we remove the
+//      entry *then* release the `Arc` under `Python::with_gil`.
+//      The drop happens *outside* the mutex guard to avoid dead-locking when
+//      Python finalisers re-enter the registry.
+//
+// This design removes all manual INCREF/DECREF on `callback_ptr`, eliminates
+// leaks, and is safe on any thread.
+
+#[cfg(feature = "python")]
+type CallbackEntry = (Arc<Py<PyAny>>, usize); // (object, ref_count)
+
+#[cfg(feature = "python")]
+fn registry() -> &'static Mutex<HashMap<usize, CallbackEntry>> {
+    static REG: OnceLock<Mutex<HashMap<usize, CallbackEntry>>> = OnceLock::new();
+    REG.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+// Helper to obtain the registry lock, tolerant to poisoning so Drop cannot panic
+#[cfg(feature = "python")]
+fn registry_lock() -> std::sync::MutexGuard<'static, HashMap<usize, CallbackEntry>> {
+    match registry().lock() {
+        Ok(g) => g,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
+#[cfg(feature = "python")]
+pub fn registry_size() -> usize {
+    registry_lock().len()
+}
+
+#[cfg(feature = "python")]
+pub fn cleanup_callback_registry() {
+    // Drain entries while locked, then drop callbacks with the GIL outside
+    let callbacks: Vec<Arc<Py<PyAny>>> = {
+        let mut map = registry_lock();
+        map.drain().map(|(_, (arc, _))| arc).collect()
+    };
+
+    Python::with_gil(|_| {
+        for cb in callbacks {
+            drop(cb);
+        }
+    });
+}
+
 // Legacy conversion from TimeEventHandlerV2 to pure-C TimeEventHandler
 // Only supports Python callbacks; available when `python` feature is enabled
 #[cfg(feature = "python")]
@@ -46,16 +116,116 @@ impl From<TimeEventHandlerV2> for TimeEventHandler {
     /// Panics if the provided `TimeEventHandlerV2` contains a Rust callback,
     /// since only Python callbacks are supported by the legacy `TimeEventHandler`.
     fn from(value: TimeEventHandlerV2) -> Self {
-        Self {
-            event: value.event,
-            callback_ptr: match value.callback {
-                #[cfg(feature = "python")]
-                TimeEventCallback::Python(callback) => callback.as_ptr().cast::<c_char>(),
-                TimeEventCallback::Rust(_) => {
-                    panic!("Legacy time event handler is not supported for Rust callback")
+        match value.callback {
+            TimeEventCallback::Python(callback_arc) => {
+                let raw_ptr = callback_arc.as_ptr().cast::<c_char>();
+
+                // Keep an explicit ref-count per raw pointer in the registry.
+                let key = raw_ptr as usize;
+                let mut map = registry_lock();
+                match map.entry(key) {
+                    std::collections::hash_map::Entry::Occupied(mut e) => {
+                        e.get_mut().1 += 1;
+                    }
+                    std::collections::hash_map::Entry::Vacant(e) => {
+                        e.insert((callback_arc.clone(), 1));
+                    }
                 }
-            },
+
+                TimeEventHandler {
+                    event: value.event,
+                    callback_ptr: raw_ptr,
+                }
+            }
+            TimeEventCallback::Rust(_) => {
+                panic!("Legacy time event handler is not supported for Rust callback")
+            }
         }
+    }
+}
+
+// Remove the callback from the registry when the last handler using the raw
+// pointer is about to disappear.  We only drop the Arc if its strong count is
+// 1 (i.e. this handler owns the final reference).  Dropping happens while
+// holding the GIL so it is always safe.
+
+#[cfg(feature = "python")]
+impl Drop for TimeEventHandler {
+    fn drop(&mut self) {
+        if self.callback_ptr.is_null() {
+            return;
+        }
+
+        let key = self.callback_ptr as usize;
+        let mut map = registry().lock().unwrap();
+        if let Some(entry) = map.get_mut(&key) {
+            if entry.1 > 1 {
+                entry.1 -= 1;
+                return;
+            }
+            // This was the final handler – remove entry and drop Arc under GIL
+            let (arc, _) = map.remove(&key).unwrap();
+            Python::with_gil(|_| drop(arc));
+        }
+    }
+}
+
+impl Clone for TimeEventHandler {
+    fn clone(&self) -> Self {
+        #[cfg(feature = "python")]
+        {
+            if !self.callback_ptr.is_null() {
+                let key = self.callback_ptr as usize;
+                let mut map = registry_lock();
+                if let Some(entry) = map.get_mut(&key) {
+                    entry.1 += 1;
+                }
+            }
+        }
+
+        Self {
+            event: self.event.clone(),
+            callback_ptr: self.callback_ptr,
+        }
+    }
+}
+
+#[cfg(not(feature = "python"))]
+impl Drop for TimeEventHandler {
+    fn drop(&mut self) {}
+}
+
+#[cfg(all(test, feature = "python"))]
+mod tests {
+    use nautilus_core::UUID4;
+    use pyo3::{Py, Python, types::PyList};
+    use ustr::Ustr;
+
+    use super::*;
+    use crate::timer::{TimeEvent, TimeEventCallback};
+
+    #[test]
+    fn registry_clears_after_handler_drop() {
+        pyo3::prepare_freethreaded_python();
+
+        Python::with_gil(|py| {
+            let py_list = PyList::empty(py);
+            let callback = TimeEventCallback::from(Py::from(py_list.getattr("append").unwrap()));
+
+            let handler_v2 = TimeEventHandlerV2::new(
+                TimeEvent::new(Ustr::from("TEST"), UUID4::new(), 1.into(), 1.into()),
+                callback,
+            );
+
+            // Wrap in block so handler drops before we assert size
+            {
+                let _legacy: TimeEventHandler = handler_v2.into();
+                assert_eq!(registry_size(), 1);
+            }
+
+            // After drop registry should be empty
+            assert_eq!(registry_size(), 0);
+        });
     }
 }
 
