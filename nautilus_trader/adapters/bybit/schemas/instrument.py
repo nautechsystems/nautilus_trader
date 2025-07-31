@@ -353,7 +353,7 @@ class BybitInstrumentOption(msgspec.Struct):
             multiplier=Quantity.from_str("1.0"),
             lot_size=Quantity.from_str(self.lotSizeFilter.qtyStep),
             underlying=self.baseCoin,
-            kind=option_kind,
+            option_kind=option_kind,
             activation_ns=activation_ns,
             expiration_ns=expiration_ns,
             strike_price=Price.from_int(strike_price),

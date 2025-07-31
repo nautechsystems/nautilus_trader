@@ -215,10 +215,6 @@ class BybitInstrumentProvider(InstrumentProvider):
         instrument: BybitInstrument,
         fee_rate: BybitFeeRate,
     ) -> None:
-        if isinstance(instrument, BybitInstrumentOption):
-            self._log.warning("Parsing of instrument Options is currently not supported")
-            return
-
         try:
             base_currency = self.currency(instrument.baseCoin)
             quote_currency = self.currency(instrument.quoteCoin)
@@ -261,7 +257,18 @@ class BybitInstrumentProvider(InstrumentProvider):
 
     def _parse_option_instrument(
         self,
-        instrument: BybitInstrumentOption,
+        data: BybitInstrumentOption,
         fee_rate: BybitFeeRate,
     ) -> None:
-        self._log.warning("Parsing of instrument Options is currently not supported")
+        try:
+            quote_currency = self.currency(data.quoteCoin)
+            instrument = data.parse_to_instrument(
+                quote_currency=quote_currency,
+            )
+            self.add(instrument=instrument)
+        except ValueError as e:
+            if self._log_warnings:
+                self._log.warning(
+                    f"Unable to parse {data.__class__.__name__} instrument {data.symbol}: {e}",
+                )
+
