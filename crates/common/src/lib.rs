@@ -40,6 +40,8 @@
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 //! - `stubs`: Enables type stubs for use in testing scenarios.
 //! - `defi`: Enables DeFi (Decentralized Finance) support.
+//! - `indicators`: Includes the `nautilus-indicators` crate and indicator utilities.
+//! - `extension-module`: Builds the crate as a Python extension module.
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]

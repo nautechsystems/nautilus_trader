@@ -13,6 +13,28 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Python bindings aggregator crate for [NautilusTrader](http://nautilustrader.io).
+//!
+//! The *pyo3* crate collects the Python bindings generated across the NautilusTrader workspace
+//! and re-exports them through a single shared library that can be distributed on PyPI. It glues
+//! the individual `*_python` sub-modules together and exposes them as a unified Python package.
+//!
+//! # Feature flags
+//!
+//! This crate is primarily intended to be built for Python via
+//! [maturin](https://github.com/PyO3/maturin) and therefore provides a broad set of feature flags
+//! to toggle bindings and optional dependencies:
+//!
+//! - `python`: Enables the base PyO3 binding support.
+//! - `extension-module`: Builds the crate as a Python extension module (automatically enabled by
+//!   maturin).
+//! - `ffi`: Enables the C foreign function interface (FFI) support in dependent crates.
+//! - `high-precision`: Uses 128-bit value types throughout the workspace.
+//! - `cython-compat`: Adjusts the module name so it can be imported from Cython generated code.
+//! - `postgres`: Enables PostgreSQL (sqlx) back-ends in dependent crates.
+//! - `redis`: Enables Redis based infrastructure in dependent crates.
+//! - `hypersync`: Enables hypersync support (fast parallel hash maps) where available.
+
 #![warn(rustc::all)]
 #![deny(unsafe_code)]
 #![deny(nonstandard_style)]
