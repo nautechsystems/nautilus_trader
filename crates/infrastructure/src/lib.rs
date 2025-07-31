@@ -47,7 +47,8 @@
 //!
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 //! - `redis`: Enables the Redis cache database and message bus backing implementations.
-//! - `sql`: Enables the SQL models and cache database.
+//! - `postgres`: Enables the PostgreSQL SQLx models and cache database backend.
+//! - `extension-module`: Builds the crate as a Python extension module.
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]
