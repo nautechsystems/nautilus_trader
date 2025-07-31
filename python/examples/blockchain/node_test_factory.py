@@ -17,6 +17,7 @@
 from nautilus_trader.common import Environment
 from nautilus_trader.common import ImportableActorConfig  # type: ignore[attr-defined]
 from nautilus_trader.live import LiveNode  # type: ignore[attr-defined]
+from nautilus_trader.model import ActorId  # type: ignore[attr-defined]
 from nautilus_trader.model import TraderId
 
 
@@ -24,18 +25,18 @@ def test_factory_approach():
     """
     Test creating and adding actors using factory approach.
     """
-    # Create LiveNode
     trader_id = TraderId("TESTER-001")
     node = LiveNode.builder("test_factory", trader_id, Environment.SANDBOX).build()
 
-    # Create ImportableActorConfig for BlockchainActor
+    actor_id = ActorId("BLOCKCHAIN-001")
+
     actor_config = ImportableActorConfig(
-        actor_path="actors:BlockchainActor",  # Import from local actors.py
-        config_path="nautilus_trader.common:DataActorConfig",  # Not used yet, but required field
+        actor_path="actors:BlockchainActor",
+        config_path="actors:BlockchainActorConfig",
         config={
-            "actor_id": "BLOCKCHAIN-001",
-            "log_events": "true",
-            "log_commands": "true",
+            "actor_id": str(actor_id),
+            "log_events": "True",
+            "log_commands": "True",
         },
     )
 

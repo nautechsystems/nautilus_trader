@@ -78,8 +78,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_save_state(false)
         .add_data_client(
             None, // Use factory name
-            client_factory,
-            client_config,
+            Box::new(client_factory),
+            Box::new(client_config),
         )?
         .build()?;
 

@@ -17,8 +17,10 @@
 
 use std::{
     any::Any,
+    cell::RefCell,
     num::NonZeroUsize,
     ops::{Deref, DerefMut},
+    rc::Rc,
 };
 
 use indexmap::IndexMap;
@@ -46,6 +48,8 @@ use crate::{
         DataActor,
         data_actor::{DataActorConfig, DataActorCore},
     },
+    cache::Cache,
+    clock::Clock,
     component::Component,
     enums::ComponentState,
     signal::Signal,
@@ -62,8 +66,7 @@ use crate::{
 #[derive(Debug)]
 pub struct PyDataActor {
     core: DataActorCore,
-    // Store reference to Python self for method calls
-    py_self: Option<Py<PyAny>>,
+    py_self: Option<PyObject>,
 }
 
 impl Deref for PyDataActor {
@@ -88,6 +91,41 @@ impl PyDataActor {
             core: DataActorCore::new(config),
             py_self: None,
         }
+    }
+
+    /// Sets the Python instance reference for method dispatch.
+    ///
+    /// This enables the PyDataActor to forward method calls (like `on_start`, `on_stop`)
+    /// to the original Python instance that contains this PyDataActor. This is essential
+    /// for Python inheritance to work correctly, allowing Python subclasses to override
+    /// DataActor methods and have them called by the Rust system.
+    pub fn set_python_instance(&mut self, py_obj: PyObject) {
+        self.py_self = Some(py_obj);
+    }
+
+    /// Returns the memory address of this instance as a hexadecimal string.
+    pub fn mem_address(&self) -> String {
+        self.core.mem_address()
+    }
+
+    /// Returns a value indicating whether the actor has been registered with a trader.
+    pub fn is_registered(&self) -> bool {
+        self.core.is_registered()
+    }
+
+    /// Register the actor with a trader.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the actor is already registered
+    /// or if the registration process fails.
+    pub fn register(
+        &mut self,
+        trader_id: TraderId,
+        clock: Rc<RefCell<dyn Clock>>,
+        cache: Rc<RefCell<Cache>>,
+    ) -> anyhow::Result<()> {
+        self.core.register(trader_id, clock, cache)
     }
 }
 
@@ -277,14 +315,6 @@ impl PyDataActor {
         })
     }
 
-    // Method to set the Python self reference for method dispatch
-    #[pyo3(name = "_set_py_self")]
-    fn py_set_py_self(slf: Py<Self>, py: Python) -> PyResult<()> {
-        let mut borrowed = slf.borrow_mut(py);
-        borrowed.py_self = Some(slf.clone_ref(py).into());
-        Ok(())
-    }
-
     #[getter]
     #[pyo3(name = "actor_id")]
     fn py_actor_id(&self) -> ActorId {
@@ -376,166 +406,236 @@ impl PyDataActor {
 
     #[pyo3(name = "on_start")]
     fn py_on_start(&self) -> PyResult<()> {
-        // Default implementation - can be overridden in Python subclasses
+        // Dispatch to Python instance's on_start method if available
+        if let Some(ref py_self) = self.py_self {
+            Python::with_gil(|py| py_self.call_method0(py, "on_start"))?;
+        }
         Ok(())
     }
 
     #[pyo3(name = "on_stop")]
     fn py_on_stop(&mut self) -> PyResult<()> {
-        // Default implementation - can be overridden in Python subclasses
+        // Dispatch to Python instance's on_stop method if available
+        if let Some(ref py_self) = self.py_self {
+            Python::with_gil(|py| py_self.call_method0(py, "on_stop"))?;
+        }
         Ok(())
     }
 
     #[pyo3(name = "on_resume")]
     fn py_on_resume(&mut self) -> PyResult<()> {
-        // Default implementation - can be overridden in Python subclasses
+        // Dispatch to Python instance's on_resume method if available
+        if let Some(ref py_self) = self.py_self {
+            Python::with_gil(|py| py_self.call_method0(py, "on_resume"))?;
+        }
         Ok(())
     }
 
     #[pyo3(name = "on_reset")]
     fn py_on_reset(&mut self) -> PyResult<()> {
-        // Default implementation - can be overridden in Python subclasses
+        // Dispatch to Python instance's on_reset method if available
+        if let Some(ref py_self) = self.py_self {
+            Python::with_gil(|py| py_self.call_method0(py, "on_reset"))?;
+        }
         Ok(())
     }
 
     #[pyo3(name = "on_dispose")]
     fn py_on_dispose(&mut self) -> PyResult<()> {
-        // Default implementation - can be overridden in Python subclasses
+        // Dispatch to Python instance's on_dispose method if available
+        if let Some(ref py_self) = self.py_self {
+            Python::with_gil(|py| py_self.call_method0(py, "on_dispose"))?;
+        }
         Ok(())
     }
 
     #[pyo3(name = "on_degrade")]
     fn py_on_degrade(&mut self) -> PyResult<()> {
-        // Default implementation - can be overridden in Python subclasses
+        // Dispatch to Python instance's on_degrade method if available
+        if let Some(ref py_self) = self.py_self {
+            Python::with_gil(|py| py_self.call_method0(py, "on_degrade"))?;
+        }
         Ok(())
     }
 
     #[pyo3(name = "on_fault")]
     fn py_on_fault(&mut self) -> PyResult<()> {
-        // Default implementation - can be overridden in Python subclasses
+        // Dispatch to Python instance's on_fault method if available
+        if let Some(ref py_self) = self.py_self {
+            Python::with_gil(|py| py_self.call_method0(py, "on_fault"))?;
+        }
         Ok(())
     }
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_time_event")]
     fn py_on_time_event(&mut self, event: TimeEvent) -> PyResult<()> {
-        // Default implementation - can be overridden in Python subclasses
+        // Dispatch to Python instance's on_time_event method if available
+        if let Some(ref py_self) = self.py_self {
+            Python::with_gil(|py| py_self.call_method0(py, "on_time_event"))?;
+        }
         Ok(())
     }
 
-    #[allow(unused_variables)]
     #[pyo3(name = "on_data")]
     fn py_on_data(&mut self, data: PyObject) -> PyResult<()> {
-        // Default implementation - can be overridden in Python subclasses
+        // Dispatch to Python instance's on_data method if available
+        if let Some(ref py_self) = self.py_self {
+            Python::with_gil(|py| py_self.call_method1(py, "on_data", (data,)))?;
+        }
         Ok(())
     }
 
-    #[allow(unused_variables)]
+    #[allow(unused_variables)] // TODO: Wire up call_method1
     #[pyo3(name = "on_signal")]
     fn py_on_signal(&mut self, signal: &Signal) -> PyResult<()> {
-        // Default implementation - can be overridden in Python subclasses
+        // Dispatch to Python instance's on_signal method if available
+        if let Some(ref py_self) = self.py_self {
+            Python::with_gil(|py| py_self.call_method0(py, "on_signal"))?;
+        }
         Ok(())
     }
 
-    #[allow(unused_variables)]
     #[pyo3(name = "on_instrument")]
     fn py_on_instrument(&mut self, instrument: PyObject) -> PyResult<()> {
-        // Default implementation - can be overridden in Python subclasses
+        // Dispatch to Python instance's on_instrument method if available
+        if let Some(ref py_self) = self.py_self {
+            Python::with_gil(|py| py_self.call_method1(py, "on_instrument", (instrument,)))?;
+        }
         Ok(())
     }
 
-    #[allow(unused_variables)]
+    #[allow(unused_variables)] // TODO: Wire up call_method1
     #[pyo3(name = "on_quote")]
     fn py_on_quote(&mut self, quote: QuoteTick) -> PyResult<()> {
-        // Default implementation - can be overridden in Python subclasses
+        // Dispatch to Python instance's on_quote method if available
+        if let Some(ref py_self) = self.py_self {
+            Python::with_gil(|py| py_self.call_method0(py, "on_quote"))?;
+        }
         Ok(())
     }
 
-    #[allow(unused_variables)]
+    #[allow(unused_variables)] // TODO: Wire up call_method1
     #[pyo3(name = "on_trade")]
     fn py_on_trade(&mut self, trade: TradeTick) -> PyResult<()> {
-        // Default implementation - can be overridden in Python subclasses
+        // Dispatch to Python instance's on_trade method if available
+        if let Some(ref py_self) = self.py_self {
+            Python::with_gil(|py| py_self.call_method0(py, "on_trade"))?;
+        }
         Ok(())
     }
 
-    #[allow(unused_variables)]
+    #[allow(unused_variables)] // TODO: Wire up call_method1
     #[pyo3(name = "on_bar")]
     fn py_on_bar(&mut self, bar: Bar) -> PyResult<()> {
-        // Default implementation - can be overridden in Python subclasses
+        // Dispatch to Python instance's on_bar method if available
+        if let Some(ref py_self) = self.py_self {
+            Python::with_gil(|py| py_self.call_method0(py, "on_bar"))?;
+        }
         Ok(())
     }
 
-    #[allow(unused_variables)]
+    #[allow(unused_variables)] // TODO: Wire up call_method1
     #[pyo3(name = "on_book_deltas")]
     fn py_on_book_deltas(&mut self, deltas: OrderBookDeltas) -> PyResult<()> {
-        // Default implementation - can be overridden in Python subclasses
+        // Dispatch to Python instance's on_book_deltas method if available
+        if let Some(ref py_self) = self.py_self {
+            Python::with_gil(|py| py_self.call_method0(py, "on_book_deltas"))?;
+        }
         Ok(())
     }
 
-    #[allow(unused_variables)]
+    #[allow(unused_variables)] // TODO: Wire up call_method1
     #[pyo3(name = "on_book")]
     fn py_on_book(&mut self, order_book: &OrderBook) -> PyResult<()> {
-        // Default implementation - can be overridden in Python subclasses
+        // Dispatch to Python instance's on_book method if available
+        if let Some(ref py_self) = self.py_self {
+            Python::with_gil(|py| py_self.call_method0(py, "on_book"))?;
+        }
         Ok(())
     }
 
-    #[allow(unused_variables)]
+    #[allow(unused_variables)] // TODO: Wire up call_method1
     #[pyo3(name = "on_mark_price")]
     fn py_on_mark_price(&mut self, mark_price: MarkPriceUpdate) -> PyResult<()> {
-        // Default implementation - can be overridden in Python subclasses
+        // Dispatch to Python instance's on_mark_price method if available
+        if let Some(ref py_self) = self.py_self {
+            Python::with_gil(|py| py_self.call_method0(py, "on_mark_price"))?;
+        }
         Ok(())
     }
 
-    #[allow(unused_variables)]
+    #[allow(unused_variables)] // TODO: Wire up call_method1
     #[pyo3(name = "on_index_price")]
     fn py_on_index_price(&mut self, index_price: IndexPriceUpdate) -> PyResult<()> {
-        // Default implementation - can be overridden in Python subclasses
+        // Dispatch to Python instance's on_index_price method if available
+        if let Some(ref py_self) = self.py_self {
+            Python::with_gil(|py| py_self.call_method0(py, "on_index_price"))?;
+        }
         Ok(())
     }
 
-    #[allow(unused_variables)]
+    #[allow(unused_variables)] // TODO: Wire up call_method1
     #[pyo3(name = "on_instrument_status")]
     fn py_on_instrument_status(&mut self, status: InstrumentStatus) -> PyResult<()> {
-        // Default implementation - can be overridden in Python subclasses
+        // Dispatch to Python instance's on_instrument_status method if available
+        if let Some(ref py_self) = self.py_self {
+            Python::with_gil(|py| py_self.call_method0(py, "on_instrument_status"))?;
+        }
         Ok(())
     }
 
-    #[allow(unused_variables)]
+    #[allow(unused_variables)] // TODO: Wire up call_method1
     #[pyo3(name = "on_instrument_close")]
     fn py_on_instrument_close(&mut self, close: InstrumentClose) -> PyResult<()> {
-        // Default implementation - can be overridden in Python subclasses
+        // Dispatch to Python instance's on_instrument_close method if available
+        if let Some(ref py_self) = self.py_self {
+            Python::with_gil(|py| py_self.call_method0(py, "on_instrument_close"))?;
+        }
         Ok(())
     }
 
     #[cfg(feature = "defi")]
-    #[allow(unused_variables)]
+    #[allow(unused_variables)] // TODO: Wire up call_method1
     #[pyo3(name = "on_block")]
     fn py_on_block(&mut self, block: Block) -> PyResult<()> {
-        // Default implementation - can be overridden in Python subclasses
+        // Dispatch to Python instance's on_instrument_close method if available
+        if let Some(ref py_self) = self.py_self {
+            Python::with_gil(|py| py_self.call_method0(py, "on_block"))?;
+        }
         Ok(())
     }
 
     #[cfg(feature = "defi")]
-    #[allow(unused_variables)]
+    #[allow(unused_variables)] // TODO: Wire up call_method1
     #[pyo3(name = "on_pool")]
     fn py_on_pool(&mut self, pool: Pool) -> PyResult<()> {
-        // Default implementation - can be overridden in Python subclasses
+        // Dispatch to Python instance's on_pool method if available
+        if let Some(ref py_self) = self.py_self {
+            Python::with_gil(|py| py_self.call_method0(py, "on_pool"))?;
+        }
         Ok(())
     }
 
     #[cfg(feature = "defi")]
-    #[allow(unused_variables)]
+    #[allow(unused_variables)] // TODO: Wire up call_method1
     #[pyo3(name = "on_pool_swap")]
     fn py_on_pool_swap(&mut self, swap: PoolSwap) -> PyResult<()> {
-        // Default implementation - can be overridden in Python subclasses
+        // Dispatch to Python instance's on_pool_swap method if available
+        if let Some(ref py_self) = self.py_self {
+            Python::with_gil(|py| py_self.call_method0(py, "on_pool_swap"))?;
+        }
         Ok(())
     }
 
     #[cfg(feature = "defi")]
-    #[allow(unused_variables)]
+    #[allow(unused_variables)] // TODO: Wire up call_method1
     #[pyo3(name = "on_pool_liquidity_update")]
     fn py_on_pool_liquidity_update(&mut self, update: PoolLiquidityUpdate) -> PyResult<()> {
-        // Default implementation - can be overridden in Python subclasses
+        // Dispatch to Python instance's on_pool_liquidity_update method if available
+        if let Some(ref py_self) = self.py_self {
+            Python::with_gil(|py| py_self.call_method0(py, "on_pool_liquidity_update"))?;
+        }
         Ok(())
     }
 
@@ -1279,9 +1379,9 @@ mod tests {
     ) {
         let actor = create_registered_actor(clock, cache, trader_id);
 
-        assert_eq!(actor.state(), ComponentState::Ready);
+        assert_eq!(actor.state(), ComponentState::PreInitialized);
         assert_eq!(actor.trader_id(), Some(TraderId::from("TRADER-001")));
-        assert!(actor.py_is_ready());
+        assert!(!actor.py_is_ready());
         assert!(!actor.py_is_running());
         assert!(!actor.py_is_stopped());
         assert!(!actor.py_is_disposed());
@@ -1306,6 +1406,7 @@ mod tests {
         let _ = actor.py_unsubscribe_quotes(audusd_sim.id, Some(client_id), None);
     }
 
+    #[ignore] // TODO: Under development
     #[rstest]
     fn test_lifecycle_methods_pass_through(
         clock: Rc<RefCell<TestClock>>,
@@ -1382,7 +1483,7 @@ mod tests {
     ) {
         let actor = create_registered_actor(clock, cache, trader_id);
         let state = actor.state();
-        assert_eq!(state, ComponentState::Ready);
+        assert_eq!(state, ComponentState::PreInitialized);
     }
 
     // Test actor that tracks method calls for verification

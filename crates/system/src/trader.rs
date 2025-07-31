@@ -246,48 +246,68 @@ impl Trader {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The trader is not in a valid state for adding components.
     /// - The factory function fails to create the actor.
+    /// - The trader is not in a valid state for adding components.
     /// - An actor with the same ID is already registered.
     pub fn add_actor_from_factory<F, T>(&mut self, factory: F) -> anyhow::Result<()>
     where
         F: FnOnce() -> anyhow::Result<T>,
         T: DataActor + Component + Debug + 'static,
     {
-        self.validate_component_registration()?;
-
-        // Create the actor using the factory
         let actor = factory()?;
 
-        let actor_id = actor.actor_id();
-
-        // Check for duplicate registration
-        if self.actor_ids.contains(&actor_id) {
-            anyhow::bail!("Actor '{actor_id}' is already registered");
-        }
-
-        let clock = self.create_component_clock();
-        let component_id = ComponentId::new(actor_id.inner().as_str());
-        self.clocks.insert(component_id, clock.clone());
-
-        let mut actor_mut = actor;
-        actor_mut.register(self.trader_id, clock, self.cache.clone())?;
-
-        self.add_registered_actor(actor_mut)
+        self.add_actor(actor)
     }
 
-    fn add_registered_actor<T>(&mut self, actor: T) -> anyhow::Result<()>
+    /// Adds an already registered actor to the trader's component registry.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the actor cannot be registered
+    /// in the component registry.
+    pub fn add_registered_actor<T>(&mut self, actor: T) -> anyhow::Result<()>
     where
         T: DataActor + Component + Debug + 'static,
     {
         let actor_id = actor.actor_id();
+        let mem_addr = actor.mem_address();
 
         // Register in both component and actor registries (this consumes the actor)
         register_component_actor(actor);
 
         // Store actor ID for lifecycle management
         self.actor_ids.push(actor_id);
-        log::info!("Registered '{actor_id}' with trader {}", self.trader_id);
+
+        log::info!(
+            "Registered '{actor_id}' at mem_addr {mem_addr} with trader {}",
+            self.trader_id
+        );
+
+        Ok(())
+    }
+
+    /// Adds an actor ID to the trader's lifecycle management without consuming the actor.
+    ///
+    /// This is useful when the actor is already registered in the global component registry
+    /// but the trader needs to track it for lifecycle management. The caller is responsible
+    /// for ensuring the actor is properly registered in the global registries.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the actor ID is already tracked by this trader.
+    pub fn add_actor_id_for_lifecycle(&mut self, actor_id: ActorId) -> anyhow::Result<()> {
+        // Check for duplicate registration
+        if self.actor_ids.contains(&actor_id) {
+            anyhow::bail!("Actor '{actor_id}' is already tracked by trader");
+        }
+
+        // Store actor ID for lifecycle management
+        self.actor_ids.push(actor_id);
+
+        log::info!(
+            "Added actor ID '{actor_id}' to trader {} for lifecycle management",
+            self.trader_id
+        );
 
         Ok(())
     }

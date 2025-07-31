@@ -289,10 +289,10 @@ impl MessageBus {
         }
     }
 
-    /// Returns the message bus instances memory address.
+    /// Returns the memory address of this instance as a hexadecimal string.
     #[must_use]
-    pub fn memory_address(&self) -> String {
-        format!("{:?}", std::ptr::from_ref(self))
+    pub fn mem_address(&self) -> String {
+        format!("{self:p}")
     }
 
     /// Returns the registered endpoint addresses.
