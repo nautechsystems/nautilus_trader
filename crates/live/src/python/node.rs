@@ -244,15 +244,6 @@ impl LiveNode {
                 py_data_actor_ref.state()
             );
 
-            py_data_actor_ref
-                .initialize()
-                .map_err(|e| anyhow::anyhow!("Failed to initialize PyDataActor: {e}"))?;
-
-            log::debug!(
-                "Internal PyDataActor initialized, state: {:?}",
-                py_data_actor_ref.state()
-            );
-
             Ok(python_actor.unbind())
         })
         .map_err(to_pyruntime_err)?;

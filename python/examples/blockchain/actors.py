@@ -21,6 +21,7 @@ from nautilus_trader.common import DataActor  # type: ignore[attr-defined]
 from nautilus_trader.common import DataActorConfig  # type: ignore[attr-defined]
 from nautilus_trader.model import Chain  # type: ignore[attr-defined]
 from nautilus_trader.model import ActorId  # type: ignore[attr-defined]
+from nautilus_trader.model import Block  # type: ignore[attr-defined]
 from nautilus_trader.model import ClientId
 from nautilus_trader.model import InstrumentId
 
@@ -70,3 +71,9 @@ class BlockchainActor(DataActor):
             self.unsubscribe_pool(instrument_id, self.client_id)
             self.unsubscribe_pool_swaps(instrument_id, self.client_id)
             self.unsubscribe_pool_liquidity_updates(instrument_id, self.client_id)
+
+    def on_block(self, block: Block) -> None:
+        """
+        Actions to be performed on receiving a block.
+        """
+        print(block)

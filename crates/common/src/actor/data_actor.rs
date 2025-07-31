@@ -13,21 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-// Under development
-#![allow(dead_code)]
-#![allow(unused_variables)]
-#![allow(unused_imports)]
-#![allow(clippy::too_many_arguments)]
-
 use std::{
-    any::{Any, TypeId},
-    cell::{Ref, RefCell, RefMut, UnsafeCell},
-    collections::{HashMap, HashSet},
+    any::Any,
+    cell::{Ref, RefCell, RefMut},
+    collections::HashMap,
     fmt::Debug,
     num::NonZeroUsize,
     ops::{Deref, DerefMut},
     rc::Rc,
-    sync::Arc,
 };
 
 use ahash::{AHashMap, AHashSet};
@@ -43,17 +36,16 @@ use nautilus_model::{
     },
     enums::BookType,
     identifiers::{ActorId, ClientId, ComponentId, InstrumentId, TraderId, Venue},
-    instruments::{Instrument, InstrumentAny},
+    instruments::InstrumentAny,
     orderbook::OrderBook,
 };
 use ustr::Ustr;
-use uuid::Uuid;
 
 #[cfg(feature = "indicators")]
 use super::indicators::Indicators;
 use super::{
     Actor,
-    registry::{get_actor, get_actor_unchecked, try_get_actor_unchecked},
+    registry::{get_actor_unchecked, try_get_actor_unchecked},
 };
 #[cfg(feature = "defi")]
 use crate::msgbus::switchboard::{
@@ -82,13 +74,13 @@ use crate::{
         system::ShutdownSystem,
     },
     msgbus::{
-        self, MStr, Pattern, Topic, get_message_bus,
-        handler::{MessageHandler, ShareableMessageHandler, TypedMessageHandler},
+        self, MStr, Topic, get_message_bus,
+        handler::{ShareableMessageHandler, TypedMessageHandler},
         switchboard::{
-            self, MessagingSwitchboard, get_bars_topic, get_book_deltas_topic,
-            get_book_snapshots_topic, get_custom_topic, get_index_price_topic,
-            get_instrument_close_topic, get_instrument_status_topic, get_instrument_topic,
-            get_instruments_topic, get_mark_price_topic, get_quotes_topic, get_trades_topic,
+            MessagingSwitchboard, get_bars_topic, get_book_deltas_topic, get_book_snapshots_topic,
+            get_custom_topic, get_index_price_topic, get_instrument_close_topic,
+            get_instrument_status_topic, get_instrument_topic, get_instruments_topic,
+            get_mark_price_topic, get_quotes_topic, get_trades_topic,
         },
     },
     signal::Signal,
@@ -120,20 +112,6 @@ impl Default for DataActorConfig {
     }
 }
 
-#[cfg(feature = "python")]
-#[pyo3::pymethods]
-impl DataActorConfig {
-    #[new]
-    #[pyo3(signature = (actor_id=None, log_events=true, log_commands=true))]
-    fn py_new(actor_id: Option<ActorId>, log_events: bool, log_commands: bool) -> Self {
-        Self {
-            actor_id,
-            log_events,
-            log_commands,
-        }
-    }
-}
-
 /// Configuration for creating actors from importable paths.
 #[derive(Debug, Clone)]
 #[cfg_attr(
@@ -147,34 +125,6 @@ pub struct ImportableActorConfig {
     pub config_path: String,
     /// The actor configuration as a dictionary.
     pub config: HashMap<String, String>,
-}
-
-#[cfg(feature = "python")]
-#[pyo3::pymethods]
-impl ImportableActorConfig {
-    #[new]
-    fn py_new(actor_path: String, config_path: String, config: HashMap<String, String>) -> Self {
-        Self {
-            actor_path,
-            config_path,
-            config,
-        }
-    }
-
-    #[getter]
-    fn actor_path(&self) -> &String {
-        &self.actor_path
-    }
-
-    #[getter]
-    fn config_path(&self) -> &String {
-        &self.config_path
-    }
-
-    #[getter]
-    fn config(&self) -> &std::collections::HashMap<String, String> {
-        &self.config
-    }
 }
 
 type RequestCallback = Box<dyn Fn(UUID4) + Send + Sync>; // TODO: TBD
@@ -196,6 +146,7 @@ pub trait DataActor:
     /// # Errors
     ///
     /// Returns an error if loading the actor state fails.
+    #[allow(unused_variables)]
     fn on_load(&mut self, state: IndexMap<String, Vec<u8>>) -> anyhow::Result<()> {
         Ok(())
     }
@@ -288,6 +239,7 @@ pub trait DataActor:
     /// # Errors
     ///
     /// Returns an error if handling the time event fails.
+    #[allow(unused_variables)]
     fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
         Ok(())
     }
@@ -297,6 +249,7 @@ pub trait DataActor:
     /// # Errors
     ///
     /// Returns an error if handling the data fails.
+    #[allow(unused_variables)]
     fn on_data(&mut self, data: &dyn Any) -> anyhow::Result<()> {
         Ok(())
     }
@@ -306,6 +259,7 @@ pub trait DataActor:
     /// # Errors
     ///
     /// Returns an error if handling the signal fails.
+    #[allow(unused_variables)]
     fn on_signal(&mut self, signal: &Signal) -> anyhow::Result<()> {
         Ok(())
     }
@@ -315,6 +269,7 @@ pub trait DataActor:
     /// # Errors
     ///
     /// Returns an error if handling the instrument fails.
+    #[allow(unused_variables)]
     fn on_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()> {
         Ok(())
     }
@@ -324,6 +279,7 @@ pub trait DataActor:
     /// # Errors
     ///
     /// Returns an error if handling the book deltas fails.
+    #[allow(unused_variables)]
     fn on_book_deltas(&mut self, deltas: &OrderBookDeltas) -> anyhow::Result<()> {
         Ok(())
     }
@@ -333,6 +289,7 @@ pub trait DataActor:
     /// # Errors
     ///
     /// Returns an error if handling the book fails.
+    #[allow(unused_variables)]
     fn on_book(&mut self, order_book: &OrderBook) -> anyhow::Result<()> {
         Ok(())
     }
@@ -342,6 +299,7 @@ pub trait DataActor:
     /// # Errors
     ///
     /// Returns an error if handling the quote fails.
+    #[allow(unused_variables)]
     fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
         Ok(())
     }
@@ -351,6 +309,7 @@ pub trait DataActor:
     /// # Errors
     ///
     /// Returns an error if handling the trade fails.
+    #[allow(unused_variables)]
     fn on_trade(&mut self, tick: &TradeTick) -> anyhow::Result<()> {
         Ok(())
     }
@@ -360,6 +319,7 @@ pub trait DataActor:
     /// # Errors
     ///
     /// Returns an error if handling the bar fails.
+    #[allow(unused_variables)]
     fn on_bar(&mut self, bar: &Bar) -> anyhow::Result<()> {
         Ok(())
     }
@@ -369,6 +329,7 @@ pub trait DataActor:
     /// # Errors
     ///
     /// Returns an error if handling the mark price update fails.
+    #[allow(unused_variables)]
     fn on_mark_price(&mut self, mark_price: &MarkPriceUpdate) -> anyhow::Result<()> {
         Ok(())
     }
@@ -378,6 +339,7 @@ pub trait DataActor:
     /// # Errors
     ///
     /// Returns an error if handling the index price update fails.
+    #[allow(unused_variables)]
     fn on_index_price(&mut self, index_price: &IndexPriceUpdate) -> anyhow::Result<()> {
         Ok(())
     }
@@ -387,6 +349,7 @@ pub trait DataActor:
     /// # Errors
     ///
     /// Returns an error if handling the instrument status update fails.
+    #[allow(unused_variables)]
     fn on_instrument_status(&mut self, data: &InstrumentStatus) -> anyhow::Result<()> {
         Ok(())
     }
@@ -396,6 +359,7 @@ pub trait DataActor:
     /// # Errors
     ///
     /// Returns an error if handling the instrument close update fails.
+    #[allow(unused_variables)]
     fn on_instrument_close(&mut self, update: &InstrumentClose) -> anyhow::Result<()> {
         Ok(())
     }
@@ -406,6 +370,7 @@ pub trait DataActor:
     /// # Errors
     ///
     /// Returns an error if handling the block fails.
+    #[allow(unused_variables)]
     fn on_block(&mut self, block: &Block) -> anyhow::Result<()> {
         Ok(())
     }
@@ -416,6 +381,7 @@ pub trait DataActor:
     /// # Errors
     ///
     /// Returns an error if handling the pool fails.
+    #[allow(unused_variables)]
     fn on_pool(&mut self, pool: &Pool) -> anyhow::Result<()> {
         Ok(())
     }
@@ -426,6 +392,7 @@ pub trait DataActor:
     /// # Errors
     ///
     /// Returns an error if handling the pool swap fails.
+    #[allow(unused_variables)]
     fn on_pool_swap(&mut self, swap: &PoolSwap) -> anyhow::Result<()> {
         Ok(())
     }
@@ -436,6 +403,7 @@ pub trait DataActor:
     /// # Errors
     ///
     /// Returns an error if handling the pool liquidity update fails.
+    #[allow(unused_variables)]
     fn on_pool_liquidity_update(&mut self, update: &PoolLiquidityUpdate) -> anyhow::Result<()> {
         Ok(())
     }
@@ -445,6 +413,7 @@ pub trait DataActor:
     /// # Errors
     ///
     /// Returns an error if handling the historical data fails.
+    #[allow(unused_variables)]
     fn on_historical_data(&mut self, data: &dyn Any) -> anyhow::Result<()> {
         Ok(())
     }
@@ -454,6 +423,7 @@ pub trait DataActor:
     /// # Errors
     ///
     /// Returns an error if handling the historical quotes fails.
+    #[allow(unused_variables)]
     fn on_historical_quotes(&mut self, quotes: &[QuoteTick]) -> anyhow::Result<()> {
         Ok(())
     }
@@ -463,6 +433,7 @@ pub trait DataActor:
     /// # Errors
     ///
     /// Returns an error if handling the historical trades fails.
+    #[allow(unused_variables)]
     fn on_historical_trades(&mut self, trades: &[TradeTick]) -> anyhow::Result<()> {
         Ok(())
     }
@@ -472,6 +443,7 @@ pub trait DataActor:
     /// # Errors
     ///
     /// Returns an error if handling the historical bars fails.
+    #[allow(unused_variables)]
     fn on_historical_bars(&mut self, bars: &[Bar]) -> anyhow::Result<()> {
         Ok(())
     }
@@ -481,6 +453,7 @@ pub trait DataActor:
     /// # Errors
     ///
     /// Returns an error if handling the historical mark prices fails.
+    #[allow(unused_variables)]
     fn on_historical_mark_prices(&mut self, mark_prices: &[MarkPriceUpdate]) -> anyhow::Result<()> {
         Ok(())
     }
@@ -490,6 +463,7 @@ pub trait DataActor:
     /// # Errors
     ///
     /// Returns an error if handling the historical index prices fails.
+    #[allow(unused_variables)]
     fn on_historical_index_prices(
         &mut self,
         index_prices: &[IndexPriceUpdate],
@@ -949,7 +923,7 @@ pub trait DataActor:
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.actor_id().inner();
-        let topic = get_book_snapshots_topic(instrument_id);
+        let topic = get_book_snapshots_topic(instrument_id, interval_ms);
 
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
             move |book: &OrderBook| {
@@ -1653,6 +1627,7 @@ where
         self.actor_id.inner()
     }
 
+    #[allow(unused_variables)]
     fn handle(&mut self, msg: &dyn Any) {
         // Default empty implementation - concrete actors can override if needed
     }
@@ -1734,6 +1709,7 @@ where
 }
 
 /// Core functionality for all actors.
+#[allow(dead_code)] // TODO: Under development (pending_requests, signal_classes)
 pub struct DataActorCore {
     /// The actor identifier.
     pub actor_id: ActorId,
@@ -1929,6 +1905,7 @@ impl DataActorCore {
         msgbus::send_any(endpoint, command.as_any())
     }
 
+    #[allow(dead_code)] // TODO: Under development
     fn send_data_req(&self, request: RequestCommand) {
         if self.config.log_commands {
             log::info!("{REQ}{SEND} {request:?}");
@@ -1962,27 +1939,6 @@ impl DataActorCore {
     }
 
     // -- SUBSCRIPTIONS ---------------------------------------------------------------------------
-
-    fn get_or_create_handler_for_topic<F>(
-        &mut self,
-        topic: MStr<Topic>,
-        create_handler: F,
-    ) -> ShareableMessageHandler
-    where
-        F: FnOnce() -> ShareableMessageHandler,
-    {
-        if let Some(existing_handler) = self.topic_handlers.get(&topic) {
-            existing_handler.clone()
-        } else {
-            let new_handler = create_handler();
-            self.topic_handlers.insert(topic, new_handler.clone());
-            new_handler
-        }
-    }
-
-    fn get_handler_for_topic(&self, topic: MStr<Topic>) -> Option<ShareableMessageHandler> {
-        self.topic_handlers.get(&topic).cloned()
-    }
 
     /// Helper method for registering data subscriptions from the trait.
     ///
@@ -2138,6 +2094,7 @@ impl DataActorCore {
     }
 
     /// Helper method for registering book snapshots subscriptions from the trait.
+    #[allow(clippy::too_many_arguments)]
     pub fn subscribe_book_at_interval(
         &mut self,
         topic: MStr<Topic>,
@@ -2556,7 +2513,7 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        let topic = get_book_snapshots_topic(instrument_id);
+        let topic = get_book_snapshots_topic(instrument_id, interval_ms);
         if let Some(handler) = self.topic_handlers.get(&topic) {
             msgbus::unsubscribe_topic(topic, handler.clone());
         };
@@ -2873,6 +2830,7 @@ impl DataActorCore {
     /// # Errors
     ///
     /// Returns an error if input parameters are invalid.
+    #[allow(clippy::too_many_arguments)]
     pub fn request_data(
         &self,
         data_type: DataType,
@@ -2892,14 +2850,17 @@ impl DataActorCore {
         let command = RequestCommand::Data(RequestCustomData {
             client_id,
             data_type,
+            start,
+            end,
+            limit,
             request_id,
             ts_init: self.timestamp_ns(),
             params,
         });
 
-        let msgbus = get_message_bus()
+        get_message_bus()
             .borrow_mut()
-            .register_response_handler(command.request_id(), handler);
+            .register_response_handler(command.request_id(), handler)?;
 
         self.send_data_cmd(DataCommand::Request(command));
 
@@ -2936,9 +2897,9 @@ impl DataActorCore {
             params,
         });
 
-        let msgbus = get_message_bus()
+        get_message_bus()
             .borrow_mut()
-            .register_response_handler(command.request_id(), handler);
+            .register_response_handler(command.request_id(), handler)?;
 
         self.send_data_cmd(DataCommand::Request(command));
 
@@ -2975,9 +2936,9 @@ impl DataActorCore {
             params,
         });
 
-        let msgbus = get_message_bus()
+        get_message_bus()
             .borrow_mut()
-            .register_response_handler(command.request_id(), handler);
+            .register_response_handler(command.request_id(), handler)?;
 
         self.send_data_cmd(DataCommand::Request(command));
 
@@ -3009,9 +2970,9 @@ impl DataActorCore {
             params,
         });
 
-        let msgbus = get_message_bus()
+        get_message_bus()
             .borrow_mut()
-            .register_response_handler(command.request_id(), handler);
+            .register_response_handler(command.request_id(), handler)?;
 
         self.send_data_cmd(DataCommand::Request(command));
 
@@ -3023,6 +2984,7 @@ impl DataActorCore {
     /// # Errors
     ///
     /// Returns an error if input parameters are invalid.
+    #[allow(clippy::too_many_arguments)]
     pub fn request_quotes(
         &self,
         instrument_id: InstrumentId,
@@ -3050,9 +3012,9 @@ impl DataActorCore {
             params,
         });
 
-        let msgbus = get_message_bus()
+        get_message_bus()
             .borrow_mut()
-            .register_response_handler(command.request_id(), handler);
+            .register_response_handler(command.request_id(), handler)?;
 
         self.send_data_cmd(DataCommand::Request(command));
 
@@ -3064,6 +3026,7 @@ impl DataActorCore {
     /// # Errors
     ///
     /// Returns an error if input parameters are invalid.
+    #[allow(clippy::too_many_arguments)]
     pub fn request_trades(
         &self,
         instrument_id: InstrumentId,
@@ -3091,9 +3054,9 @@ impl DataActorCore {
             params,
         });
 
-        let msgbus = get_message_bus()
+        get_message_bus()
             .borrow_mut()
-            .register_response_handler(command.request_id(), handler);
+            .register_response_handler(command.request_id(), handler)?;
 
         self.send_data_cmd(DataCommand::Request(command));
 
@@ -3105,6 +3068,7 @@ impl DataActorCore {
     /// # Errors
     ///
     /// Returns an error if input parameters are invalid.
+    #[allow(clippy::too_many_arguments)]
     pub fn request_bars(
         &self,
         bar_type: BarType,
@@ -3132,9 +3096,9 @@ impl DataActorCore {
             params,
         });
 
-        let msgbus = get_message_bus()
+        get_message_bus()
             .borrow_mut()
-            .register_response_handler(command.request_id(), handler);
+            .register_response_handler(command.request_id(), handler)?;
 
         self.send_data_cmd(DataCommand::Request(command));
 

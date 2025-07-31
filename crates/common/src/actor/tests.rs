@@ -539,7 +539,7 @@ fn test_subscribe_and_receive_book_at_interval(
 
     actor.subscribe_book_at_interval(audusd_sim.id, book_type, None, interval_ms, None, None);
 
-    let topic = get_book_snapshots_topic(audusd_sim.id);
+    let topic = get_book_snapshots_topic(audusd_sim.id, interval_ms);
     let book = OrderBook::new(audusd_sim.id, book_type);
 
     msgbus::publish(topic, &book);
@@ -563,7 +563,7 @@ fn test_unsubscribe_book_at_interval(
 
     actor.subscribe_book_at_interval(audusd_sim.id, book_type, None, interval_ms, None, None);
 
-    let topic = get_book_snapshots_topic(audusd_sim.id);
+    let topic = get_book_snapshots_topic(audusd_sim.id, interval_ms);
     let book = OrderBook::new(audusd_sim.id, book_type);
 
     msgbus::publish(topic, &book);

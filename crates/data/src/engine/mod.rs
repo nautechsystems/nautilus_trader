@@ -984,7 +984,7 @@ impl DataEngine {
         if first_for_interval {
             // Initialize snapshotter and schedule its timer
             let interval_ns = millis_to_nanos(cmd.interval_ms.get() as f64);
-            let topic = switchboard::get_book_snapshots_topic(cmd.instrument_id);
+            let topic = switchboard::get_book_snapshots_topic(cmd.instrument_id, cmd.interval_ms);
 
             let snap_info = BookSnapshotInfo {
                 instrument_id: cmd.instrument_id,
@@ -1054,7 +1054,7 @@ impl DataEngine {
         let topics = vec![
             switchboard::get_book_deltas_topic(cmd.instrument_id),
             switchboard::get_book_depth10_topic(cmd.instrument_id),
-            switchboard::get_book_snapshots_topic(cmd.instrument_id),
+            // TODO: Unsubscribe from snapshots?
         ];
 
         self.maintain_book_updater(&cmd.instrument_id, &topics);
@@ -1072,7 +1072,7 @@ impl DataEngine {
         let topics = vec![
             switchboard::get_book_deltas_topic(cmd.instrument_id),
             switchboard::get_book_depth10_topic(cmd.instrument_id),
-            switchboard::get_book_snapshots_topic(cmd.instrument_id),
+            // TODO: Unsubscribe from snapshots?
         ];
 
         self.maintain_book_updater(&cmd.instrument_id, &topics);
@@ -1102,7 +1102,7 @@ impl DataEngine {
         let topics = vec![
             switchboard::get_book_deltas_topic(cmd.instrument_id),
             switchboard::get_book_depth10_topic(cmd.instrument_id),
-            switchboard::get_book_snapshots_topic(cmd.instrument_id),
+            // TODO: Unsubscribe from snapshots (add interval_ms to message?)
         ];
 
         self.maintain_book_updater(&cmd.instrument_id, &topics);
@@ -1152,7 +1152,10 @@ impl DataEngine {
 
     fn maintain_book_snapshotter(&mut self, instrument_id: &InstrumentId) {
         if let Some(snapshotter) = self.book_snapshotters.get(instrument_id) {
-            let topic = switchboard::get_book_snapshots_topic(*instrument_id);
+            let topic = switchboard::get_book_snapshots_topic(
+                *instrument_id,
+                snapshotter.snap_info.interval_ms,
+            );
 
             // Check remaining snapshot subscriptions, if none then remove snapshotter
             if msgbus::subscriptions_count(topic.as_str()) == 0 {

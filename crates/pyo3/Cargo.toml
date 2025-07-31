@@ -51,9 +51,6 @@ high-precision = [
   "nautilus-model/high-precision",
   "nautilus-serialization/high-precision",
 ]
-defi = [
-  "nautilus-blockchain/defi",
-]
 redis = ["nautilus-infrastructure/redis"]
 postgres = ["nautilus-infrastructure/postgres"]
 hypersync = ["nautilus-blockchain/hypersync"]

@@ -866,6 +866,9 @@ fn test_execute_request_data(
     let req = RequestCustomData {
         client_id,
         data_type: DataType::new("X", None),
+        start: None,
+        end: None,
+        limit: None,
         request_id: UUID4::new(),
         ts_init: UnixNanos::default(),
         params: None,
