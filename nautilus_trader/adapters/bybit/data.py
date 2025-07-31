@@ -39,6 +39,7 @@ from nautilus_trader.adapters.bybit.schemas.common import BYBIT_PONG
 from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickerData
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsMessageGeneral
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTickerLinearMsg
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTickerOptionMsg
 from nautilus_trader.adapters.bybit.schemas.ws import decoder_ws_kline
 from nautilus_trader.adapters.bybit.schemas.ws import decoder_ws_orderbook
 from nautilus_trader.adapters.bybit.schemas.ws import decoder_ws_trade
@@ -706,10 +707,12 @@ class BybitDataClient(LiveMarketDataClient):
 
     def _handle_ticker(self, product_type: BybitProductType, raw: bytes) -> None:
         # Currently we use the ticker stream to parse quotes, and this
-        # is only handled of LINEAR / INVERSE. Other product types should
+        # is only handled of LINEAR / INVERSE / OPTION. Other product types should
         # subscribe to an orderbook stream.
         if product_type in (BybitProductType.LINEAR, BybitProductType.INVERSE):
             decoder = msgspec.json.Decoder(BybitWsTickerLinearMsg)
+        elif product_type == BybitProductType.OPTION:
+            decoder = msgspec.json.Decoder(BybitWsTickerOptionMsg)
         else:
             raise ValueError(f"Invalid product type for ticker: {product_type}")
 
@@ -737,17 +740,25 @@ class BybitDataClient(LiveMarketDataClient):
                 bid_size = Quantity(last_quote.bid_size.as_double(), instrument.size_precision)
                 ask_size = Quantity(last_quote.ask_size.as_double(), instrument.size_precision)
 
-            if msg.data.bid1Price is not None:
-                bid_price = Price(float(msg.data.bid1Price), instrument.price_precision)
-
-            if msg.data.ask1Price is not None:
-                ask_price = Price(float(msg.data.ask1Price), instrument.price_precision)
-
-            if msg.data.bid1Size is not None:
-                bid_size = Quantity(float(msg.data.bid1Size), instrument.size_precision)
-
-            if msg.data.ask1Size is not None:
-                ask_size = Quantity(float(msg.data.ask1Size), instrument.size_precision)
+            # Handle different ticker types
+            if product_type in (BybitProductType.LINEAR, BybitProductType.INVERSE):
+                if msg.data.bid1Price is not None:
+                    bid_price = Price(float(msg.data.bid1Price), instrument.price_precision)
+                if msg.data.ask1Price is not None:
+                    ask_price = Price(float(msg.data.ask1Price), instrument.price_precision)
+                if msg.data.bid1Size is not None:
+                    bid_size = Quantity(float(msg.data.bid1Size), instrument.size_precision)
+                if msg.data.ask1Size is not None:
+                    ask_size = Quantity(float(msg.data.ask1Size), instrument.size_precision)
+            elif product_type == BybitProductType.OPTION:
+                if msg.data.bidPrice is not None:
+                    bid_price = Price(float(msg.data.bidPrice), instrument.price_precision)
+                if msg.data.askPrice is not None:
+                    ask_price = Price(float(msg.data.askPrice), instrument.price_precision)
+                if msg.data.bidSize is not None:
+                    bid_size = Quantity(float(msg.data.bidSize), instrument.size_precision)
+                if msg.data.askSize is not None:
+                    ask_size = Quantity(float(msg.data.askSize), instrument.size_precision)
 
             quote = QuoteTick(
                 instrument_id=instrument_id,
