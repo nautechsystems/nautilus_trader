@@ -19,7 +19,7 @@ name = "nautilus_blockchain"
 crate-type = ["rlib", "cdylib"]
 
 [features]
-default = ["defi"]
+default = []
 extension-module = [
   "pyo3/extension-module",
   "nautilus-common/extension-module",
@@ -30,15 +30,9 @@ extension-module = [
 ]
 hypersync = ["hypersync-client", "hypersync-schema"]
 python = ["pyo3", "nautilus-network/python"]
-defi = [
-  "nautilus-common/defi",
-  "nautilus-data/defi",
-  "nautilus-live/defi",
-  "nautilus-model/defi",
-]
 
 [package.metadata.docs.rs]
-features = ["defi", "python"]
+features = ["python"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
@@ -46,7 +40,7 @@ nautilus-common = { workspace = true, features = ["defi"] }
 nautilus-core = { workspace = true }
 nautilus-data = { workspace = true, features = ["defi"] }
 nautilus-infrastructure = { workspace = true, features = ["postgres"] }
-nautilus-live = { workspace = true }
+nautilus-live = { workspace = true, features = ["defi"] }
 nautilus-model = { workspace = true, features = ["defi"] }
 nautilus-network = { workspace = true }
 nautilus-system = { workspace = true }
@@ -82,24 +76,24 @@ rstest = { workspace = true }
 [[bin]]
 name = "live_blocks_rpc"
 path = "bin/watch_rpc_live_blocks.rs"
-required-features = ["defi", "hypersync"]
+required-features = ["hypersync"]
 
 [[bin]]
 name = "live_blocks_hypersync"
 path = "bin/watch_hypersync_live_blocks.rs"
-required-features = ["defi", "hypersync"]
+required-features = ["hypersync"]
 
 [[bin]]
 name = "sync_tokens_pools"
 path = "bin/sync_tokens_pools.rs"
-required-features = ["defi", "hypersync"]
+required-features = ["hypersync"]
 
 [[bin]]
 name = "sync_pool_events"
 path = "bin/sync_pool_events.rs"
-required-features = ["defi", "hypersync"]
+required-features = ["hypersync"]
 
 [[bin]]
 name = "node_test"
 path = "bin/node_test.rs"
-required-features = ["defi", "hypersync"]
+required-features = ["hypersync"]

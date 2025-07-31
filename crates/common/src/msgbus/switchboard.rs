@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::num::NonZeroUsize;
+
 use ahash::AHashMap;
 #[cfg(feature = "defi")]
 use nautilus_model::defi::Blockchain;
@@ -67,11 +69,14 @@ pub fn get_book_depth10_topic(instrument_id: InstrumentId) -> MStr<Topic> {
 }
 
 #[must_use]
-pub fn get_book_snapshots_topic(instrument_id: InstrumentId) -> MStr<Topic> {
+pub fn get_book_snapshots_topic(
+    instrument_id: InstrumentId,
+    interval_ms: NonZeroUsize,
+) -> MStr<Topic> {
     get_message_bus()
         .borrow_mut()
         .switchboard
-        .get_book_snapshots_topic(instrument_id)
+        .get_book_snapshots_topic(instrument_id, interval_ms)
 }
 
 #[must_use]
@@ -351,14 +356,18 @@ impl MessagingSwitchboard {
     }
 
     #[must_use]
-    pub fn get_book_snapshots_topic(&mut self, instrument_id: InstrumentId) -> MStr<Topic> {
+    pub fn get_book_snapshots_topic(
+        &mut self,
+        instrument_id: InstrumentId,
+        interval_ms: NonZeroUsize,
+    ) -> MStr<Topic> {
         *self
             .book_snapshots_topics
             .entry(instrument_id)
             .or_insert_with(|| {
                 format!(
-                    "data.book.snapshots.{}.{}",
-                    instrument_id.venue, instrument_id.symbol
+                    "data.book.snapshots.{}.{}.{}",
+                    instrument_id.venue, instrument_id.symbol, interval_ms
                 )
                 .into()
             })
@@ -589,8 +598,9 @@ mod tests {
         mut switchboard: MessagingSwitchboard,
         instrument_id: InstrumentId,
     ) {
-        let expected_topic = "data.book.snapshots.XCME.ESZ24".into();
-        let result = switchboard.get_book_snapshots_topic(instrument_id);
+        let expected_topic = "data.book.snapshots.XCME.ESZ24.1000".into();
+        let interval_ms = NonZeroUsize::new(1000).unwrap();
+        let result = switchboard.get_book_snapshots_topic(instrument_id, interval_ms);
         assert_eq!(result, expected_topic);
         assert!(
             switchboard

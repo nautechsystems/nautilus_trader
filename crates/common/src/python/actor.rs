@@ -18,6 +18,7 @@
 use std::{
     any::Any,
     cell::RefCell,
+    collections::HashMap,
     num::NonZeroUsize,
     ops::{Deref, DerefMut},
     rc::Rc,
@@ -26,7 +27,7 @@ use std::{
 use indexmap::IndexMap;
 use nautilus_core::{
     nanos::UnixNanos,
-    python::{to_pyruntime_err, to_pyvalue_err},
+    python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err},
 };
 #[cfg(feature = "defi")]
 use nautilus_model::defi::{Block, Blockchain, Pool, PoolLiquidityUpdate, PoolSwap};
@@ -43,6 +44,8 @@ use nautilus_model::{
 };
 use pyo3::{exceptions::PyValueError, prelude::*};
 
+#[cfg(feature = "python")]
+use crate::actor::data_actor::ImportableActorConfig;
 use crate::{
     actor::{
         DataActor,
@@ -55,6 +58,47 @@ use crate::{
     signal::Signal,
     timer::TimeEvent,
 };
+
+#[pyo3::pymethods]
+impl DataActorConfig {
+    #[new]
+    #[pyo3(signature = (actor_id=None, log_events=true, log_commands=true))]
+    fn py_new(actor_id: Option<ActorId>, log_events: bool, log_commands: bool) -> Self {
+        Self {
+            actor_id,
+            log_events,
+            log_commands,
+        }
+    }
+}
+
+#[cfg(feature = "python")]
+#[pyo3::pymethods]
+impl ImportableActorConfig {
+    #[new]
+    fn py_new(actor_path: String, config_path: String, config: HashMap<String, String>) -> Self {
+        Self {
+            actor_path,
+            config_path,
+            config,
+        }
+    }
+
+    #[getter]
+    fn actor_path(&self) -> &String {
+        &self.actor_path
+    }
+
+    #[getter]
+    fn config_path(&self) -> &String {
+        &self.config_path
+    }
+
+    #[getter]
+    fn config(&self) -> &std::collections::HashMap<String, String> {
+        &self.config
+    }
+}
 
 #[allow(non_camel_case_types)]
 #[pyo3::pyclass(
@@ -125,7 +169,23 @@ impl PyDataActor {
         clock: Rc<RefCell<dyn Clock>>,
         cache: Rc<RefCell<Cache>>,
     ) -> anyhow::Result<()> {
-        self.core.register(trader_id, clock, cache)
+        self.core.register(trader_id, clock, cache)?;
+
+        // Register default time event handler for this actor
+        let _actor_id = self.actor_id().inner();
+
+        // // TODO: This should be a Python callback
+        // let callback = TimeEventCallback::Python(Arc::new(move |event: TimeEvent| {
+        //     if let Some(actor) = try_get_actor_unchecked::<Self>(&actor_id) {
+        //         actor.handle_time_event(&event);
+        //     } else {
+        //         log::error!("Actor {actor_id} not found for time event handling");
+        //     }
+        // }));
+        //
+        // clock.borrow_mut().register_default_handler(callback);
+
+        self.initialize()
     }
 }
 
@@ -472,7 +532,9 @@ impl PyDataActor {
     fn py_on_time_event(&mut self, event: TimeEvent) -> PyResult<()> {
         // Dispatch to Python instance's on_time_event method if available
         if let Some(ref py_self) = self.py_self {
-            Python::with_gil(|py| py_self.call_method0(py, "on_time_event"))?;
+            Python::with_gil(|py| {
+                py_self.call_method1(py, "on_time_event", (event.into_py_any_unwrap(py),))
+            })?;
         }
         Ok(())
     }
@@ -486,12 +548,14 @@ impl PyDataActor {
         Ok(())
     }
 
-    #[allow(unused_variables)] // TODO: Wire up call_method1
+    #[allow(unused_variables)]
     #[pyo3(name = "on_signal")]
     fn py_on_signal(&mut self, signal: &Signal) -> PyResult<()> {
         // Dispatch to Python instance's on_signal method if available
         if let Some(ref py_self) = self.py_self {
-            Python::with_gil(|py| py_self.call_method0(py, "on_signal"))?;
+            Python::with_gil(|py| {
+                py_self.call_method1(py, "on_signal", (signal.clone().into_py_any_unwrap(py),))
+            })?;
         }
         Ok(())
     }
@@ -505,62 +569,74 @@ impl PyDataActor {
         Ok(())
     }
 
-    #[allow(unused_variables)] // TODO: Wire up call_method1
+    #[allow(unused_variables)]
     #[pyo3(name = "on_quote")]
     fn py_on_quote(&mut self, quote: QuoteTick) -> PyResult<()> {
         // Dispatch to Python instance's on_quote method if available
         if let Some(ref py_self) = self.py_self {
-            Python::with_gil(|py| py_self.call_method0(py, "on_quote"))?;
+            Python::with_gil(|py| {
+                py_self.call_method1(py, "on_quote", (quote.into_py_any_unwrap(py),))
+            })?;
         }
         Ok(())
     }
 
-    #[allow(unused_variables)] // TODO: Wire up call_method1
+    #[allow(unused_variables)]
     #[pyo3(name = "on_trade")]
     fn py_on_trade(&mut self, trade: TradeTick) -> PyResult<()> {
         // Dispatch to Python instance's on_trade method if available
         if let Some(ref py_self) = self.py_self {
-            Python::with_gil(|py| py_self.call_method0(py, "on_trade"))?;
+            Python::with_gil(|py| {
+                py_self.call_method1(py, "on_trade", (trade.into_py_any_unwrap(py),))
+            })?;
         }
         Ok(())
     }
 
-    #[allow(unused_variables)] // TODO: Wire up call_method1
+    #[allow(unused_variables)]
     #[pyo3(name = "on_bar")]
     fn py_on_bar(&mut self, bar: Bar) -> PyResult<()> {
         // Dispatch to Python instance's on_bar method if available
         if let Some(ref py_self) = self.py_self {
-            Python::with_gil(|py| py_self.call_method0(py, "on_bar"))?;
+            Python::with_gil(|py| {
+                py_self.call_method1(py, "on_bar", (bar.into_py_any_unwrap(py),))
+            })?;
         }
         Ok(())
     }
 
-    #[allow(unused_variables)] // TODO: Wire up call_method1
+    #[allow(unused_variables)]
     #[pyo3(name = "on_book_deltas")]
     fn py_on_book_deltas(&mut self, deltas: OrderBookDeltas) -> PyResult<()> {
         // Dispatch to Python instance's on_book_deltas method if available
         if let Some(ref py_self) = self.py_self {
-            Python::with_gil(|py| py_self.call_method0(py, "on_book_deltas"))?;
+            Python::with_gil(|py| {
+                py_self.call_method1(py, "on_book_deltas", (deltas.into_py_any_unwrap(py),))
+            })?;
         }
         Ok(())
     }
 
-    #[allow(unused_variables)] // TODO: Wire up call_method1
+    #[allow(unused_variables)]
     #[pyo3(name = "on_book")]
-    fn py_on_book(&mut self, order_book: &OrderBook) -> PyResult<()> {
+    fn py_on_book(&mut self, book: &OrderBook) -> PyResult<()> {
         // Dispatch to Python instance's on_book method if available
         if let Some(ref py_self) = self.py_self {
-            Python::with_gil(|py| py_self.call_method0(py, "on_book"))?;
+            Python::with_gil(|py| {
+                py_self.call_method1(py, "on_book", (book.clone().into_py_any_unwrap(py),))
+            })?;
         }
         Ok(())
     }
 
-    #[allow(unused_variables)] // TODO: Wire up call_method1
+    #[allow(unused_variables)]
     #[pyo3(name = "on_mark_price")]
     fn py_on_mark_price(&mut self, mark_price: MarkPriceUpdate) -> PyResult<()> {
         // Dispatch to Python instance's on_mark_price method if available
         if let Some(ref py_self) = self.py_self {
-            Python::with_gil(|py| py_self.call_method0(py, "on_mark_price"))?;
+            Python::with_gil(|py| {
+                py_self.call_method1(py, "on_mark_price", (mark_price.into_py_any_unwrap(py),))
+            })?;
         }
         Ok(())
     }
@@ -570,71 +646,89 @@ impl PyDataActor {
     fn py_on_index_price(&mut self, index_price: IndexPriceUpdate) -> PyResult<()> {
         // Dispatch to Python instance's on_index_price method if available
         if let Some(ref py_self) = self.py_self {
-            Python::with_gil(|py| py_self.call_method0(py, "on_index_price"))?;
+            Python::with_gil(|py| {
+                py_self.call_method1(py, "on_index_price", (index_price.into_py_any_unwrap(py),))
+            })?;
         }
         Ok(())
     }
 
-    #[allow(unused_variables)] // TODO: Wire up call_method1
+    #[allow(unused_variables)]
     #[pyo3(name = "on_instrument_status")]
     fn py_on_instrument_status(&mut self, status: InstrumentStatus) -> PyResult<()> {
         // Dispatch to Python instance's on_instrument_status method if available
         if let Some(ref py_self) = self.py_self {
-            Python::with_gil(|py| py_self.call_method0(py, "on_instrument_status"))?;
+            Python::with_gil(|py| {
+                py_self.call_method1(py, "on_instrument_status", (status.into_py_any_unwrap(py),))
+            })?;
         }
         Ok(())
     }
 
-    #[allow(unused_variables)] // TODO: Wire up call_method1
+    #[allow(unused_variables)]
     #[pyo3(name = "on_instrument_close")]
     fn py_on_instrument_close(&mut self, close: InstrumentClose) -> PyResult<()> {
         // Dispatch to Python instance's on_instrument_close method if available
         if let Some(ref py_self) = self.py_self {
-            Python::with_gil(|py| py_self.call_method0(py, "on_instrument_close"))?;
+            Python::with_gil(|py| {
+                py_self.call_method1(py, "on_instrument_close", (close.into_py_any_unwrap(py),))
+            })?;
         }
         Ok(())
     }
 
     #[cfg(feature = "defi")]
-    #[allow(unused_variables)] // TODO: Wire up call_method1
+    #[allow(unused_variables)]
     #[pyo3(name = "on_block")]
     fn py_on_block(&mut self, block: Block) -> PyResult<()> {
         // Dispatch to Python instance's on_instrument_close method if available
         if let Some(ref py_self) = self.py_self {
-            Python::with_gil(|py| py_self.call_method0(py, "on_block"))?;
+            Python::with_gil(|py| {
+                py_self.call_method1(py, "on_block", (block.into_py_any_unwrap(py),))
+            })?;
         }
         Ok(())
     }
 
     #[cfg(feature = "defi")]
-    #[allow(unused_variables)] // TODO: Wire up call_method1
+    #[allow(unused_variables)]
     #[pyo3(name = "on_pool")]
     fn py_on_pool(&mut self, pool: Pool) -> PyResult<()> {
         // Dispatch to Python instance's on_pool method if available
         if let Some(ref py_self) = self.py_self {
-            Python::with_gil(|py| py_self.call_method0(py, "on_pool"))?;
+            Python::with_gil(|py| {
+                py_self.call_method1(py, "on_pool", (pool.into_py_any_unwrap(py),))
+            })?;
         }
         Ok(())
     }
 
     #[cfg(feature = "defi")]
-    #[allow(unused_variables)] // TODO: Wire up call_method1
+    #[allow(unused_variables)]
     #[pyo3(name = "on_pool_swap")]
     fn py_on_pool_swap(&mut self, swap: PoolSwap) -> PyResult<()> {
         // Dispatch to Python instance's on_pool_swap method if available
         if let Some(ref py_self) = self.py_self {
-            Python::with_gil(|py| py_self.call_method0(py, "on_pool_swap"))?;
+            Python::with_gil(|py| {
+                py_self.call_method1(py, "on_pool_swap", (swap.into_py_any_unwrap(py),))
+            })?;
         }
         Ok(())
     }
 
     #[cfg(feature = "defi")]
-    #[allow(unused_variables)] // TODO: Wire up call_method1
+    #[allow(unused_variables)]
     #[pyo3(name = "on_pool_liquidity_update")]
     fn py_on_pool_liquidity_update(&mut self, update: PoolLiquidityUpdate) -> PyResult<()> {
         // Dispatch to Python instance's on_pool_liquidity_update method if available
         if let Some(ref py_self) = self.py_self {
-            Python::with_gil(|py| py_self.call_method0(py, "on_pool_liquidity_update"))?;
+            Python::with_gil(|py| {
+                py_self.call_method1(
+                    py,
+                    "on_pool_liquidity_update",
+                    (update.into_py_any_unwrap(py),),
+                )
+            })?;
         }
         Ok(())
     }
@@ -1379,9 +1473,9 @@ mod tests {
     ) {
         let actor = create_registered_actor(clock, cache, trader_id);
 
-        assert_eq!(actor.state(), ComponentState::PreInitialized);
+        assert_eq!(actor.state(), ComponentState::Ready);
         assert_eq!(actor.trader_id(), Some(TraderId::from("TRADER-001")));
-        assert!(!actor.py_is_ready());
+        assert!(actor.py_is_ready());
         assert!(!actor.py_is_running());
         assert!(!actor.py_is_stopped());
         assert!(!actor.py_is_disposed());
@@ -1483,7 +1577,7 @@ mod tests {
     ) {
         let actor = create_registered_actor(clock, cache, trader_id);
         let state = actor.state();
-        assert_eq!(state, ComponentState::PreInitialized);
+        assert_eq!(state, ComponentState::Ready);
     }
 
     // Test actor that tracks method calls for verification
