@@ -77,6 +77,7 @@ Released on TBD (UTC).
 - Fixed EOD bar for Interactive Brokers (#2764), thanks @faysou
 - Fixed dYdX Take Profit order type mapping error (#2758), thanks @nicolad
 - Fixed typo in logging for dYdX adapter (#2790), thanks @DeirhX
+- Fixed bars request pagination logic for OKX (#2798), thanks @nicolad
 
 ### Documentation Updates
 - Added FFI Memory Contract developer guide
