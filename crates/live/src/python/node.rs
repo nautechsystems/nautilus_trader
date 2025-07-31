@@ -18,10 +18,13 @@
 use std::{cell::RefCell, rc::Rc};
 
 use nautilus_common::{
-    actor::data_actor::ImportableActorConfig, enums::Environment, python::actor::PyDataActor,
+    actor::data_actor::{DataActorConfig, ImportableActorConfig},
+    component::{Component, register_component_actor_by_ref},
+    enums::Environment,
+    python::actor::PyDataActor,
 };
-use nautilus_core::UUID4;
-use nautilus_model::identifiers::{ActorId, TraderId};
+use nautilus_core::{UUID4, python::to_pyruntime_err};
+use nautilus_model::identifiers::TraderId;
 use nautilus_system::get_global_pyo3_registry;
 use pyo3::prelude::*;
 
@@ -161,13 +164,14 @@ impl LiveNode {
         Ok(())
     }
 
+    #[allow(unsafe_code)] // Required for Python actor component registration
     #[pyo3(name = "add_actor_from_config")]
     fn py_add_actor_from_config(
         &mut self,
         _py: Python,
         config: ImportableActorConfig,
     ) -> PyResult<()> {
-        log::info!("Starting add_actor_from_config with: {config:?}");
+        log::debug!("`add_actor_from_config` with: {config:?}");
 
         // Extract module and class name from actor_path
         let parts: Vec<&str> = config.actor_path.split(':').collect();
@@ -190,51 +194,100 @@ impl LiveNode {
             pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to import Python class: {e}"))
         })?;
 
-        // TODO: Convert config HashMap to DataActorConfig directly for now
-        let mut actor_id = None;
-        let mut log_events = true;
-        let mut log_commands = true;
+        // TODO: Create default DataActorConfig for Rust PyDataActor,
+        // the Python class will handle its own configuration for now
+        let basic_data_actor_config = DataActorConfig::default();
 
-        for (key, value) in &config.config {
-            match key.as_str() {
-                "actor_id" => {
-                    actor_id = Some(ActorId::from(value.as_str()));
+        log::debug!("Created basic DataActorConfig for Rust: {basic_data_actor_config:?}");
+
+        // Create the Python actor and register the internal PyDataActor
+        let python_actor = Python::with_gil(|py| -> anyhow::Result<PyObject> {
+            // Import the Python class
+            let actor_module = py
+                .import(module_name)
+                .map_err(|e| anyhow::anyhow!("Failed to import module {module_name}: {e}"))?;
+            let actor_class = actor_module
+                .getattr(class_name)
+                .map_err(|e| anyhow::anyhow!("Failed to get class {class_name}: {e}"))?;
+
+            // Create the Python actor instance with no config for now (uses defaults)
+            let python_actor = actor_class.call0()?;
+
+            log::debug!("Created Python actor instance: {python_actor:?}");
+
+            // Get a mutable reference to the internal PyDataActor for registration
+            let mut py_data_actor_ref = python_actor.extract::<PyRefMut<PyDataActor>>()?;
+
+            log::debug!(
+                "Internal PyDataActor mem_addr: {}, registered: {}",
+                &py_data_actor_ref.mem_address(),
+                py_data_actor_ref.is_registered()
+            );
+
+            // Set the Python instance reference for method dispatch on the original
+            py_data_actor_ref.set_python_instance(python_actor.clone().unbind());
+
+            log::debug!("Set Python instance reference for method dispatch");
+
+            // Register the internal PyDataActor
+            let trader_id = self.trader_id();
+            let clock = self.kernel().clock();
+            let cache = self.kernel().cache();
+
+            py_data_actor_ref
+                .register(trader_id, clock, cache)
+                .map_err(|e| anyhow::anyhow!("Failed to register PyDataActor: {e}"))?;
+
+            log::debug!(
+                "Internal PyDataActor registered: {}, state: {:?}",
+                py_data_actor_ref.is_registered(),
+                py_data_actor_ref.state()
+            );
+
+            py_data_actor_ref
+                .initialize()
+                .map_err(|e| anyhow::anyhow!("Failed to initialize PyDataActor: {e}"))?;
+
+            log::debug!(
+                "Internal PyDataActor initialized, state: {:?}",
+                py_data_actor_ref.state()
+            );
+
+            Ok(python_actor.unbind())
+        })
+        .map_err(to_pyruntime_err)?;
+
+        // Add the actor to the trader's lifecycle management without consuming it
+        let actor_id = Python::with_gil(
+            |py| -> anyhow::Result<nautilus_model::identifiers::ActorId> {
+                let py_actor = python_actor.bind(py);
+                let py_data_actor_ref = py_actor
+                    .downcast::<PyDataActor>()
+                    .map_err(|e| anyhow::anyhow!("Failed to downcast to PyDataActor: {e}"))?;
+                let py_data_actor = py_data_actor_ref.borrow();
+
+                // Register the component in the global registry using the unsafe method
+                // SAFETY: The Python instance will remain alive, keeping the PyDataActor valid
+                unsafe {
+                    register_component_actor_by_ref(&*py_data_actor);
                 }
-                "log_events" => {
-                    log_events = value.parse::<bool>().unwrap_or(true);
-                }
-                "log_commands" => {
-                    log_commands = value.parse::<bool>().unwrap_or(true);
-                }
-                _ => {
-                    log::warn!("Unknown config key '{key}' ignored");
-                }
-            }
-        }
 
-        // Create DataActorConfig directly in Rust
-        let data_actor_config = nautilus_common::actor::data_actor::DataActorConfig {
-            actor_id,
-            log_events,
-            log_commands,
-        };
+                Ok(py_data_actor.actor_id())
+            },
+        )
+        .map_err(to_pyruntime_err)?;
 
-        log::info!("Created Rust DataActorConfig: {data_actor_config:?}");
+        // TODO: Add the actor ID to the trader for lifecycle management; clean up approach
+        self.kernel_mut()
+            .trader
+            .add_actor_id_for_lifecycle(actor_id)
+            .map_err(to_pyruntime_err)?;
 
-        // Create a factory closure that will be called by the registration system
-        let actor_factory = move || -> anyhow::Result<PyDataActor> {
-            // For now, create a basic PyDataActor directly to get the registration working
-            // TODO: Add Python method dispatch integration in a separate step
-            let actor = PyDataActor::new(Some(data_actor_config));
-            log::info!("Created PyDataActor directly in factory (method dispatch TODO)");
-            Ok(actor)
-        };
+        // Store the Python actor reference to prevent garbage collection
+        // TODO: Add to a proper LiveNode registry for Python actors
+        std::mem::forget(python_actor); // Prevent dropping - we'll manage lifecycle manually
 
-        // Use the factory-based registration approach
-        self.add_actor_from_factory(actor_factory)
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-
-        log::info!("Registered actor from factory");
+        log::info!("Registered Python actor {actor_id}");
         Ok(())
     }
 

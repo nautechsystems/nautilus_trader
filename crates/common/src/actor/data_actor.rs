@@ -1785,6 +1785,13 @@ impl DataActorCore {
         }
     }
 
+    /// Returns the memory address of this instance as a hexadecimal string.
+    #[must_use]
+    pub fn mem_address(&self) -> String {
+        format!("{self:p}")
+    }
+
+    /// Returns the actors state.
     pub fn state(&self) -> ComponentState {
         self.state
     }
@@ -1794,6 +1801,7 @@ impl DataActorCore {
         self.trader_id
     }
 
+    /// Returns the actors ID.
     pub fn actor_id(&self) -> ActorId {
         self.actor_id
     }
@@ -1803,6 +1811,7 @@ impl DataActorCore {
         ActorId::from(format!("{}-{memory_address}", stringify!(DataActor)))
     }
 
+    /// Returns a UNIX nanoseconds timestamp from the actors internal clock.
     pub fn timestamp_ns(&self) -> UnixNanos {
         self.clock_ref().timestamp_ns()
     }
@@ -1895,9 +1904,13 @@ impl DataActorCore {
         log::debug!("Deregistered event type '{event_type}' from warning logs")
     }
 
+    pub fn is_registered(&self) -> bool {
+        self.trader_id.is_some()
+    }
+
     fn check_registered(&self) {
         assert!(
-            self.trader_id.is_some(),
+            self.is_registered(),
             "Actor has not been registered with a Trader"
         );
     }
