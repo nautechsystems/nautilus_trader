@@ -965,46 +965,52 @@ impl OKXHttpClient {
             }
         };
 
-        // Determine endpoint based on data age
-        let now = Utc::now();
-        let use_history_endpoint = if let Some(start_time) = start {
-            let age = now - start_time;
-            age.num_days() > 100
-        } else {
-            false
-        };
+        // Determine endpoint based on whether time range parameters are provided
+        // If start OR end is provided, use history endpoint (as per OKX API docs)
+        let use_history_endpoint = start.is_some() || end.is_some();
 
         let endpoint_max = if use_history_endpoint { 100 } else { 300 };
 
         // Pre-allocate result vector
         let mut all_bars = Vec::with_capacity(limit.unwrap_or_default() as usize);
 
-        // Determine cursor strategy
-        let (cursor_mode, mut cursor_value) = match (start, end) {
-            (Some(start_time), Some(_)) => {
-                // Both start & end provided - forward pagination
-                ("after", Some(start_time.timestamp_millis().to_string()))
+        // Determine cursor strategy based on OKX API semantics:
+        // - 'after' parameter = older bound (start time)
+        // - 'before' parameter = newer bound (end time)
+        // - OKX returns data in DESC order (newest first)
+        let (cursor_mode, mut cursor_value, end_boundary) = match (start, end) {
+            (Some(start_time), Some(end_time)) => {
+                // Both start & end provided - use history endpoint with both bounds
+                (
+                    "both",
+                    Some(start_time.timestamp_millis().to_string()),
+                    Some(end_time),
+                ) // Fixed time range with boundaries
             }
             (Some(start_time), None) => {
-                // Only start provided - forward pagination
-                ("after", Some(start_time.timestamp_millis().to_string()))
+                // Only start provided - forward pagination from start
+                (
+                    "after",
+                    Some(start_time.timestamp_millis().to_string()),
+                    None,
+                )
             }
             (None, Some(end_time)) => {
-                // Only end provided - backward pagination
-                ("before", Some(end_time.timestamp_millis().to_string()))
+                // Only end provided - backward pagination before end
+                (
+                    "before",
+                    Some(end_time.timestamp_millis().to_string()),
+                    None,
+                )
             }
             (None, None) => {
-                // No bounds with None/0 limit - one-shot
-                // No bounds with limit > endpoint_max - backward pagination
-                if limit.is_none() || limit == Some(0) {
-                    ("none", None)
-                } else {
-                    ("before", Some(now.timestamp_millis().to_string()))
-                }
+                // No bounds - get most recent data
+                ("none", None, None)
             }
         };
 
         // For backward pagination, we need to reverse the final result
+        // Don't reverse for "both" case as it's already been handled
         let needs_final_reverse = matches!(cursor_mode, "before");
 
         // Pagination loop
@@ -1033,14 +1039,27 @@ impl OKXHttpClient {
 
             // Set cursor based on pagination mode
             match cursor_mode {
+                "both" => {
+                    // WORKAROUND: OKX API doesn't support both 'after' and 'before' parameters together
+                    // Use 'after' only and filter results client-side
+                    if let Some(start_time) = start {
+                        builder.after_ms(start_time.timestamp_millis());
+                    }
+                    // Note: 'before' parameter omitted due to OKX API limitation
+                    // Client-side filtering will be applied below
+                }
                 "after" => {
                     if let Some(ref cursor) = cursor_value {
-                        builder.after(cursor.clone());
+                        if let Ok(cursor_i64) = cursor.parse::<i64>() {
+                            builder.after_ms(cursor_i64);
+                        }
                     }
                 }
                 "before" => {
                     if let Some(ref cursor) = cursor_value {
-                        builder.before(cursor.clone());
+                        if let Ok(cursor_i64) = cursor.parse::<i64>() {
+                            builder.before_ms(cursor_i64);
+                        }
                     }
                 }
                 "none" => {
@@ -1087,10 +1106,13 @@ impl OKXHttpClient {
             let mut page_bars = Vec::with_capacity(page.len());
             let ts_init = self.generate_ts_init();
 
+            // IMPORTANT: Use the original bar_type parameter to ensure BarType identity
+            // matches what was registered with DataTester. Creating a new BarType here
+            // (even with identical fields) would cause hash lookup failures downstream.
             for raw in &page {
                 let bar = parse_candlestick(
                     raw,
-                    bar_type,
+                    bar_type, // Use original BarType to maintain identity consistency
                     inst.price_precision(),
                     inst.size_precision(),
                     ts_init,
@@ -1100,6 +1122,10 @@ impl OKXHttpClient {
 
             // Handle ordering based on cursor mode
             match cursor_mode {
+                "both" => {
+                    // Fixed time range: OKX returns desc order, reverse to get chronological
+                    page_bars.reverse();
+                }
                 "after" => {
                     // Forward pagination: reverse each page, then append
                     page_bars.reverse();
@@ -1115,14 +1141,44 @@ impl OKXHttpClient {
                 _ => unreachable!(),
             }
 
-            // Add to results with limit checking
+            // Add to results with limit and boundary checking
             for bar in page_bars {
+                // Apply client-side filtering for end time when both start and end are provided
+                if cursor_mode == "both" {
+                    if let Some(end_time) = end {
+                        let end_nanos = end_time.timestamp_nanos_opt().unwrap_or_default() as u64;
+                        if bar.ts_event > end_nanos {
+                            // Bar is after end time, skip it
+                            continue;
+                        }
+                    }
+                }
+
+                // Check end boundary when doing forward pagination with both start and end
+                if let Some(end_time) = end_boundary {
+                    let end_nanos = end_time.timestamp_nanos_opt().unwrap_or_default() as u64;
+                    if bar.ts_event > end_nanos {
+                        // We've exceeded the end boundary, stop processing
+                        break;
+                    }
+                }
+
                 if let Some(l) = limit {
                     if all_bars.len() >= l as usize {
                         break; // Stop condition: limit reached
                     }
                 }
                 all_bars.push(bar);
+            }
+
+            // Stop condition: Hit end boundary during forward pagination
+            if let Some(end_time) = end_boundary {
+                if let Some(last_bar) = all_bars.last() {
+                    let end_nanos = end_time.timestamp_nanos_opt().unwrap_or_default() as u64;
+                    if last_bar.ts_event >= end_nanos {
+                        break; // We've reached the end boundary
+                    }
+                }
             }
 
             // Stop condition: Time window fully covered
@@ -1145,6 +1201,26 @@ impl OKXHttpClient {
 
             // Update cursor for next page
             match cursor_mode {
+                "both" => {
+                    // Time range mode: continue paginating with 'after' until we have enough data
+                    // or hit the end time boundary
+                    if let Some(last_raw) = page.last() {
+                        cursor_value = Some(last_raw.0.clone());
+
+                        // Check if we've passed the end time
+                        if let Some(end_time) = end {
+                            let end_millis = end_time.timestamp_millis();
+                            if let Ok(last_ts) = last_raw.0.parse::<i64>() {
+                                if last_ts >= end_millis {
+                                    // We've reached or passed the end time, stop
+                                    break;
+                                }
+                            }
+                        }
+                    } else {
+                        break;
+                    }
+                }
                 "after" => {
                     // Forward pagination: use oldest timestamp from current page
                     if let Some(last_raw) = page.last() {

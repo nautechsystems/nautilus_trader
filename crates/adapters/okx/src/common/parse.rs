@@ -35,8 +35,8 @@ use nautilus_model::{
         },
     },
     enums::{
-        AccountType, AggressorSide, AssetClass, CurrencyType, LiquiditySide, OptionKind, OrderSide,
-        OrderStatus, OrderType, PositionSide, TimeInForce,
+        AccountType, AggregationSource, AggressorSide, AssetClass, CurrencyType, LiquiditySide,
+        OptionKind, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
     },
     events::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, VenueOrderId},
@@ -591,6 +591,20 @@ pub fn okx_timeframe_as_bar_spec(timeframe: &str) -> anyhow::Result<BarSpecifica
         _ => anyhow::bail!("Invalid timeframe for `BarSpecification`, was {timeframe}"),
     };
     Ok(bar_spec)
+}
+
+/// Constructs a properly formatted BarType from OKX instrument ID and timeframe string.
+/// This ensures the BarType uses canonical Nautilus format instead of raw OKX strings.
+pub fn okx_bar_type_from_timeframe(
+    instrument_id: InstrumentId,
+    timeframe: &str,
+) -> anyhow::Result<BarType> {
+    let bar_spec = okx_timeframe_as_bar_spec(timeframe)?;
+    Ok(BarType::new(
+        instrument_id,
+        bar_spec,
+        AggregationSource::External,
+    ))
 }
 
 /// Converts OKX WebSocket channel to bar specification if it's a candle channel.
@@ -1558,5 +1572,38 @@ mod tests {
         assert_eq!(fill_report.last_px, Price::from("42219.50"));
         assert_eq!(fill_report.last_qty, Quantity::from("0.00100000"));
         assert_eq!(fill_report.liquidity_side, LiquiditySide::Taker);
+    }
+
+    #[test]
+    fn test_bar_type_identity_preserved_through_parse() {
+        use std::str::FromStr;
+
+        use crate::http::models::OKXCandlestick;
+
+        // Create a BarType
+        let bar_type = BarType::from_str("ETH-USDT-SWAP.OKX-1-MINUTE-LAST-EXTERNAL").unwrap();
+
+        // Create sample candlestick data
+        let raw_candlestick = OKXCandlestick(
+            "1721807460000".to_string(), // timestamp
+            "3177.9".to_string(),        // open
+            "3177.9".to_string(),        // high
+            "3177.7".to_string(),        // low
+            "3177.8".to_string(),        // close
+            "18.603".to_string(),        // volume
+            "59054.8231".to_string(),    // turnover
+            "18.603".to_string(),        // base_volume
+            "1".to_string(),             // count
+        );
+
+        // Parse the candlestick
+        let bar =
+            parse_candlestick(&raw_candlestick, bar_type, 1, 3, UnixNanos::default()).unwrap();
+
+        // Verify that the BarType is preserved exactly
+        assert_eq!(
+            bar.bar_type, bar_type,
+            "BarType must be preserved exactly through parsing"
+        );
     }
 }
