@@ -3855,9 +3855,9 @@ dependencies = [
 
 [[package]]
 name = "implied-vol"
-version = "1.2.1"
+version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a60bf2b803276e1e88e32c1771faac6e483b0cb15a9400c62b7bf809c9e0d20d"
+checksum = "17acb653d4c10729d31acc45f886be89baa86ff78a0223278cef938d6f266d41"
 
 [[package]]
 name = "indexmap"

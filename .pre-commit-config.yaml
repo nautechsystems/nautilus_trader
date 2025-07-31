@@ -146,7 +146,7 @@ repos:
         ]
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.17.0
+    rev: v1.17.1
     hooks:
       - id: mypy
         exclude: ^python/nautilus_trader/.*__init__\.py$
@@ -164,7 +164,7 @@ repos:
         ]
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.8.3  # uv version
+    rev: 0.8.4  # uv version
     hooks:
       - id: uv-lock
 
