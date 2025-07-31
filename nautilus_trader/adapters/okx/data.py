@@ -423,7 +423,7 @@ class OKXDataClient(LiveMarketDataClient):
             if nautilus_pyo3.is_pycapsule(msg):
                 # The capsule will fall out of scope at the end of this method,
                 # and eventually be garbage collected. The contained pointer
-                # to `Data` is still owned and managed by Rust
+                # to `Data` is still owned and managed by Rust.
                 data = capsule_to_data(msg)
                 self._handle_data(data)
             else:
