@@ -215,7 +215,6 @@ class BybitInstrumentProvider(InstrumentProvider):
         instrument: BybitInstrument,
         fee_rate: BybitFeeRate,
     ) -> None:
-        
         try:
             base_currency = self.currency(instrument.baseCoin)
             quote_currency = self.currency(instrument.quoteCoin)

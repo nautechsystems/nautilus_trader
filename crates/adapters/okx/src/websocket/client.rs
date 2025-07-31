@@ -122,6 +122,8 @@ pub struct OKXWebSocketClient {
     credential: Option<Credential>,
     heartbeat: Option<u64>,
     inner: Option<Arc<WebSocketClient>>,
+    auth_state: Arc<tokio::sync::watch::Sender<bool>>,
+    auth_state_rx: tokio::sync::watch::Receiver<bool>,
     rx: Option<Arc<tokio::sync::mpsc::UnboundedReceiver<NautilusWsMessage>>>,
     signal: Arc<AtomicBool>,
     task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
@@ -181,6 +183,7 @@ impl OKXWebSocketClient {
         let subscriptions_inst_type = Arc::new(Mutex::new(AHashMap::new()));
         let subscriptions_inst_family = Arc::new(Mutex::new(AHashMap::new()));
         let subscriptions_inst_id = Arc::new(Mutex::new(AHashMap::new()));
+        let (auth_tx, auth_rx) = tokio::sync::watch::channel(false);
 
         Ok(Self {
             url,
@@ -188,6 +191,8 @@ impl OKXWebSocketClient {
             credential,
             heartbeat,
             inner: None,
+            auth_state: Arc::new(auth_tx),
+            auth_state_rx: auth_rx,
             rx: None,
             signal,
             task_handle: None,
@@ -314,10 +319,6 @@ impl OKXWebSocketClient {
 
         self.inner = Some(Arc::new(client));
 
-        if self.credential.is_some() {
-            self.authenticate().await?;
-        }
-
         let account_id = self.account_id;
         let mut instruments_map: AHashMap<Ustr, InstrumentAny> = AHashMap::new();
         for inst in instruments {
@@ -333,6 +334,7 @@ impl OKXWebSocketClient {
         let pending_place_requests = self.pending_place_requests.clone();
         let pending_cancel_requests = self.pending_cancel_requests.clone();
         let pending_amend_requests = self.pending_amend_requests.clone();
+        let auth_state = self.auth_state.clone();
 
         let stream_handle = get_runtime().spawn(async move {
             OKXWsMessageHandler::new(
@@ -344,12 +346,20 @@ impl OKXWebSocketClient {
                 pending_place_requests,
                 pending_cancel_requests,
                 pending_amend_requests,
+                auth_state,
             )
             .run()
             .await;
         });
 
         self.task_handle = Some(Arc::new(stream_handle));
+
+        if self.credential.is_some() {
+            if self.auth_state.send(false).is_err() {
+                tracing::error!("Failed to reset auth state, receiver dropped.");
+            };
+            self.authenticate().await?;
+        }
 
         Ok(())
     }
@@ -382,13 +392,34 @@ impl OKXWebSocketClient {
 
         if let Some(inner) = &self.inner {
             if let Err(e) = inner.send_text(auth_message.to_string(), None).await {
-                tracing::error!("Error sending message: {e:?}");
+                tracing::error!("Error sending auth message: {e:?}");
+                return Err(Error::Io(std::io::Error::other(e.to_string())));
             }
         } else {
             log::error!("Cannot authenticate: not connected");
+            return Err(Error::ConnectionClosed);
         }
 
-        Ok(())
+        // Wait for authentication to complete
+        let mut rx = self.auth_state_rx.clone();
+        match tokio::time::timeout(Duration::from_secs(10), rx.wait_for(|&auth| auth)).await {
+            Ok(Ok(_)) => {
+                tracing::info!("Authentication confirmed by client");
+                Ok(())
+            }
+            Ok(Err(e)) => {
+                tracing::error!("Authentication watch channel closed unexpectedly: {e}");
+                Err(Error::Io(std::io::Error::other(
+                    "Authentication watch channel closed",
+                )))
+            }
+            Err(_) => {
+                tracing::error!("Timeout waiting for authentication response");
+                Err(Error::Io(std::io::Error::other(
+                    "Timeout waiting for authentication",
+                )))
+            }
+        }
     }
 
     /// Provides the internal data stream as a channel-based stream.
@@ -1588,13 +1619,12 @@ impl OKXFeedHandler {
                                         tracing::info!(
                                             "Successfully authenticated with OKX WebSocket, conn_id={conn_id}"
                                         );
-                                        continue;
                                     } else {
                                         tracing::error!(
                                             "Authentication failed: {event} {code} - {msg}"
                                         );
-                                        return Some(ws_event);
                                     }
+                                    return Some(ws_event);
                                 }
                                 OKXWebSocketEvent::Subscription {
                                     event,
@@ -1706,6 +1736,7 @@ struct OKXWsMessageHandler {
     instruments: AHashMap<Ustr, InstrumentAny>,
     last_account_state: Option<AccountState>,
     fee_cache: AHashMap<Ustr, Money>, // Key is order ID
+    auth_state: Arc<tokio::sync::watch::Sender<bool>>,
 }
 
 impl OKXWsMessageHandler {
@@ -1720,6 +1751,7 @@ impl OKXWsMessageHandler {
         pending_place_requests: Arc<DashMap<String, PlaceRequestData>>,
         pending_cancel_requests: Arc<DashMap<String, CancelRequestData>>,
         pending_amend_requests: Arc<DashMap<String, AmendRequestData>>,
+        auth_state: Arc<tokio::sync::watch::Sender<bool>>,
     ) -> Self {
         Self {
             account_id,
@@ -1731,6 +1763,7 @@ impl OKXWsMessageHandler {
             instruments,
             last_account_state: None,
             fee_cache: AHashMap::new(),
+            auth_state,
         }
     }
 
@@ -1748,6 +1781,24 @@ impl OKXWsMessageHandler {
 
         while let Some(event) = self.handler.next().await {
             let ts_init = clock.get_time_ns();
+
+            if let OKXWebSocketEvent::Login { code, msg, .. } = event {
+                if code == "0" {
+                    if self.auth_state.send(true).is_err() {
+                        tracing::error!(
+                            "Failed to send authentication success signal: receiver dropped"
+                        );
+                    }
+                } else {
+                    tracing::error!("Authentication failed: {msg}");
+                    if self.auth_state.send(false).is_err() {
+                        tracing::error!(
+                            "Failed to send authentication failure signal: receiver dropped"
+                        );
+                    }
+                }
+                continue; // Don't forward login events as Nautilus messages
+            }
 
             if let OKXWebSocketEvent::BookData { arg, action, data } = event {
                 let inst = match arg.inst_id {

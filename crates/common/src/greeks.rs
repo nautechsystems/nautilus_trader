@@ -130,6 +130,9 @@ pub struct InstrumentGreeksParams {
     /// Beta weights for portfolio calculations
     #[builder(default)]
     pub beta_weights: Option<HashMap<InstrumentId, f64>>,
+    /// Base value in days for time-weighting vega
+    #[builder(default)]
+    pub vega_time_weight_base: Option<i32>,
 }
 
 impl InstrumentGreeksParams {
@@ -154,6 +157,7 @@ impl InstrumentGreeksParams {
             Some(self.percent_greeks),
             self.index_instrument_id,
             self.beta_weights.clone(),
+            self.vega_time_weight_base,
         )
     }
 }
@@ -213,6 +217,9 @@ pub struct PortfolioGreeksParams {
     /// Filter function for greeks
     #[builder(default)]
     pub greeks_filter: Option<GreeksFilterCallback>,
+    /// Base value in days for time-weighting vega
+    #[builder(default)]
+    pub vega_time_weight_base: Option<i32>,
 }
 
 impl std::fmt::Debug for PortfolioGreeksParams {
@@ -269,6 +276,7 @@ impl PortfolioGreeksParams {
             self.index_instrument_id,
             self.beta_weights.clone(),
             greeks_filter,
+            self.vega_time_weight_base,
         )
     }
 }
@@ -331,6 +339,7 @@ impl GreeksCalculator {
         percent_greeks: Option<bool>,
         index_instrument_id: Option<InstrumentId>,
         beta_weights: Option<HashMap<InstrumentId, f64>>,
+        vega_time_weight_base: Option<i32>,
     ) -> anyhow::Result<GreeksData> {
         // Set default values
         let flat_interest_rate = flat_interest_rate.unwrap_or(0.0425);
@@ -359,7 +368,7 @@ impl GreeksCalculator {
                 .price(&underlying_instrument_id, PriceType::Last)
                 .unwrap_or_default()
                 .as_f64();
-            let (delta, _) = self.modify_greeks(
+            let (delta, _, _) = self.modify_greeks(
                 multiplier.as_f64(),
                 0.0,
                 underlying_instrument_id,
@@ -368,6 +377,10 @@ impl GreeksCalculator {
                 percent_greeks,
                 index_instrument_id,
                 beta_weights.as_ref(),
+                0.0,
+                0.0,
+                0,
+                None,
             );
             let mut greeks_data =
                 GreeksData::from_delta(instrument_id, delta, multiplier.as_f64(), ts_event);
@@ -409,7 +422,8 @@ impl GreeksCalculator {
                 .to_string()
                 .parse::<i32>()
                 .unwrap_or(0);
-            let expiry_in_years = (expiry_utc - utc_now).num_days().min(1) as f64 / 365.25;
+            let expiry_in_days = (expiry_utc - utc_now).num_days().min(1) as i32;
+            let expiry_in_years = expiry_in_days as f64 / 365.25;
             let currency = instrument.quote_currency().code.to_string();
             let interest_rate = match cache.yield_curve(&currency) {
                 Some(yield_curve) => yield_curve(expiry_in_years),
@@ -449,7 +463,7 @@ impl GreeksCalculator {
                 option_mid_price,
                 multiplier.as_f64(),
             );
-            let (delta, gamma) = self.modify_greeks(
+            let (delta, gamma, vega) = self.modify_greeks(
                 greeks.delta,
                 greeks.gamma,
                 underlying_instrument_id,
@@ -458,6 +472,10 @@ impl GreeksCalculator {
                 percent_greeks,
                 index_instrument_id,
                 beta_weights.as_ref(),
+                greeks.vega,
+                greeks.vol,
+                expiry_in_days,
+                vega_time_weight_base,
             );
             greeks_data = Some(GreeksData::new(
                 utc_now_ns,
@@ -466,6 +484,7 @@ impl GreeksCalculator {
                 is_call,
                 strike,
                 expiry_int,
+                expiry_in_days,
                 expiry_in_years,
                 multiplier.as_f64(),
                 1.0,
@@ -477,7 +496,7 @@ impl GreeksCalculator {
                 greeks.price,
                 delta,
                 gamma,
-                greeks.vega,
+                vega,
                 greeks.theta,
                 (greeks.delta / multiplier.as_f64()).abs(),
             ));
@@ -508,6 +527,7 @@ impl GreeksCalculator {
             let shocked_underlying_price = underlying_price + spot_shock;
             let shocked_vol = greeks_data.vol + vol_shock;
             let shocked_time_to_expiry = greeks_data.expiry_in_years - time_to_expiry_shock;
+            let shocked_expiry_in_days = (shocked_time_to_expiry * 365.25) as i32;
 
             let greeks = black_scholes_greeks(
                 shocked_underlying_price,
@@ -519,7 +539,7 @@ impl GreeksCalculator {
                 shocked_time_to_expiry,
                 greeks_data.multiplier,
             );
-            let (delta, gamma) = self.modify_greeks(
+            let (delta, gamma, vega) = self.modify_greeks(
                 greeks.delta,
                 greeks.gamma,
                 underlying_instrument_id,
@@ -528,6 +548,10 @@ impl GreeksCalculator {
                 percent_greeks,
                 index_instrument_id,
                 beta_weights.as_ref(),
+                greeks.vega,
+                shocked_vol,
+                shocked_expiry_in_days,
+                vega_time_weight_base,
             );
             greeks_data = GreeksData::new(
                 greeks_data.ts_event,
@@ -536,6 +560,7 @@ impl GreeksCalculator {
                 greeks_data.is_call,
                 greeks_data.strike,
                 greeks_data.expiry,
+                shocked_expiry_in_days,
                 shocked_time_to_expiry,
                 greeks_data.multiplier,
                 greeks_data.quantity,
@@ -547,7 +572,7 @@ impl GreeksCalculator {
                 greeks.price,
                 delta,
                 gamma,
-                greeks.vega,
+                vega,
                 greeks.theta,
                 (greeks.delta / greeks_data.multiplier).abs(),
             );
@@ -589,9 +614,14 @@ impl GreeksCalculator {
         percent_greeks: bool,
         index_instrument_id: Option<InstrumentId>,
         beta_weights: Option<&HashMap<InstrumentId, f64>>,
-    ) -> (f64, f64) {
+        vega_input: f64,
+        vol: f64,
+        expiry_in_days: i32,
+        vega_time_weight_base: Option<i32>,
+    ) -> (f64, f64, f64) {
         let mut delta = delta_input;
         let mut gamma = gamma_input;
+        let mut vega = vega_input;
 
         let mut index_price = None;
 
@@ -632,9 +662,20 @@ impl GreeksCalculator {
                 delta *= underlying_price / 100.0;
                 gamma *= (underlying_price / 100.0).powi(2);
             }
+
+            // Apply percent vega when percent_greeks is True
+            vega *= vol / 100.0;
         }
 
-        (delta, gamma)
+        // Apply time weighting to vega if vega_time_weight_base is provided
+        if let Some(time_base) = vega_time_weight_base {
+            if expiry_in_days > 0 {
+                let time_weight = (time_base as f64 / expiry_in_days as f64).sqrt();
+                vega *= time_weight;
+            }
+        }
+
+        (delta, gamma, vega)
     }
 
     /// Calculates the portfolio Greeks for a given set of positions.
@@ -673,6 +714,7 @@ impl GreeksCalculator {
         index_instrument_id: Option<InstrumentId>,
         beta_weights: Option<HashMap<InstrumentId, f64>>,
         greeks_filter: Option<GreeksFilter>,
+        vega_time_weight_base: Option<i32>,
     ) -> anyhow::Result<PortfolioGreeks> {
         let ts_event = self.clock.borrow().timestamp_ns();
         let mut portfolio_greeks =
@@ -736,6 +778,7 @@ impl GreeksCalculator {
                 Some(percent_greeks),
                 index_instrument_id,
                 beta_weights.clone(),
+                vega_time_weight_base,
             )?;
             let position_greeks = (quantity * &instrument_greeks).into();
 

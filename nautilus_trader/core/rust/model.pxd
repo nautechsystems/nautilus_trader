@@ -2067,7 +2067,7 @@ cdef extern from "../includes/model.h":
 
     uint8_t orderbook_check_integrity(const OrderBook_API *book);
 
-    void vec_fills_drop(CVec v);
+    void vec_drop_fills(CVec v);
 
     # Returns a pretty printed `OrderBook` number of levels per side, as a C string pointer.
     const char *orderbook_pprint_to_cstr(const OrderBook_API *book, uintptr_t num_levels);
@@ -2088,9 +2088,9 @@ cdef extern from "../includes/model.h":
 
     double level_exposure(const BookLevel_API *level);
 
-    void vec_levels_drop(CVec v);
+    void vec_drop_book_levels(CVec v);
 
-    void vec_orders_drop(CVec v);
+    void vec_drop_book_orders(CVec v);
 
     # Returns a [`Currency`] from pointers and primitives.
     #

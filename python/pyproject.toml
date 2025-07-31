@@ -94,6 +94,14 @@ ignore = [
     "E741", "PD901", "RUF012", "S101", "S105", "S106", "S113", "S603",
 ]
 
+[tool.ruff.lint.isort]
+force-single-line = true
+single-line-exclusions = ["typing"]
+lines-after-imports = 2
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
 [tool.mypy]
 python_version = "3.11"
 disallow_incomplete_defs = true

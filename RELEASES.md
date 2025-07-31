@@ -17,6 +17,7 @@ Released on TBD (UTC).
 - Added support for requesting any number of historical bars for dYdX (#2766, #2777), thanks @DeirhX
 - Added `use_hyphens_in_client_order_ids` config option for `StrategyConfig`
 - Added `greeks_filter` function to `portfolio_greeks` (#2756), thanks @faysou
+- Added time weighted and percent vega for `GreeksCalculator` (#2817), thanks @faysou
 - Added `VERBOSE` option to common make targets (#2759), thanks @faysou
 - Added bulk key loading capability for Redis cache database adapter
 - Added `multiplier` field for `CurrencyPair` instrument (required for some crypto pairs)
@@ -57,7 +58,7 @@ Released on TBD (UTC).
 - Updated PostgreSQL connection parameters to use 'nautilus' user (#2805), thanks @stastnypremysl
 - Upgraded `web3` for Polymarket allowances script (#2814), thanks @DeirhX
 - Upgraded `databento` crate to v0.30.0
-- Upgraded `datafusion` crate to v48.0.1
+- Upgraded `datafusion` crate to v49.0.0
 - Upgraded `redis` crate to v0.32.4
 - Upgraded `tokio` crate to v1.47.0
 
@@ -114,6 +115,7 @@ Released on 5th July 2025 (UTC).
 - Changed timer `allow_past=False` behavior: now validates the `next_event_time` instead of the `start_time`. This allows timers with past start times as long as their next scheduled event is still in the future
 - Changed behavior of timers `allow_past=False` to permit start times in the past if the next event time is still in the future
 - Changed Databento DBN upgrade policy to default v3
+- Removed `basename_template` from `ParquetDataCatalog.write_data(...)`, run `catalog.reset_catalog_file_names()` to update file names to the new convention
 - Removed problematic negative balance check for margin accounts (cash account negative balance check remains unchanged)
 - Removed support for Databento DBN v1 schemas (migrate to DBN v2 or v3, see [DBN Changelog](https://github.com/databento/dbn/blob/main/CHANGELOG.md#0350---2025-05-28))
 
