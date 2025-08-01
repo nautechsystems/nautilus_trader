@@ -317,7 +317,7 @@ impl RiskEngine {
         }
     }
 
-    fn handle_submit_order(&self, command: SubmitOrder) {
+    fn handle_submit_order(&mut self, command: SubmitOrder) {
         if self.config.bypass {
             self.send_to_execution(TradingCommand::SubmitOrder(command));
             return;
@@ -377,10 +377,11 @@ impl RiskEngine {
             return; // Denied
         }
 
-        self.execution_gateway(instrument, TradingCommand::SubmitOrder(command.clone()));
+        // Route through execution gateway for TradingState checks & throttling
+        self.execution_gateway(instrument, TradingCommand::SubmitOrder(command));
     }
 
-    fn handle_submit_order_list(&self, command: SubmitOrderList) {
+    fn handle_submit_order_list(&mut self, command: SubmitOrderList) {
         if self.config.bypass {
             self.send_to_execution(TradingCommand::SubmitOrderList(command));
             return;
@@ -421,7 +422,7 @@ impl RiskEngine {
         self.execution_gateway(instrument, TradingCommand::SubmitOrderList(command));
     }
 
-    fn handle_modify_order(&self, command: ModifyOrder) {
+    fn handle_modify_order(&mut self, command: ModifyOrder) {
         ////////////////////////////////////////////////////////////////////////////////
         // VALIDATE COMMAND
         ////////////////////////////////////////////////////////////////////////////////
@@ -519,8 +520,7 @@ impl RiskEngine {
             _ => {}
         }
 
-        // TODO: Fix message bus usage
-        // self.throttled_modify_order.send(command);
+        self.throttled_modify_order.send(command);
     }
 
     // -- PRE-TRADE CHECKS ------------------------------------------------------------------------
@@ -680,8 +680,14 @@ impl RiskEngine {
                 continue;
             };
 
+            let effective_quantity = if order.is_quote_quantity() && !instrument.is_inverse() {
+                instrument.calculate_base_quantity(order.quantity(), last_px)
+            } else {
+                order.quantity()
+            };
+
             let notional =
-                instrument.calculate_notional_value(order.quantity(), last_px, Some(true));
+                instrument.calculate_notional_value(effective_quantity, last_px, Some(true));
 
             if self.config.debug {
                 log::debug!("Notional: {notional:?}");
@@ -729,7 +735,7 @@ impl RiskEngine {
             }
 
             // Calculate OrderBalanceImpact (valid for CashAccount only)
-            let notional = instrument.calculate_notional_value(order.quantity(), last_px, None);
+            let notional = instrument.calculate_notional_value(effective_quantity, last_px, None);
             let order_balance_impact = match order.order_side() {
                 OrderSide::Buy => Money::from_raw(-notional.raw, notional.currency),
                 OrderSide::Sell => Money::from_raw(notional.raw, notional.currency),
@@ -807,8 +813,7 @@ impl RiskEngine {
                 // Account is already of type Cash, so no check
                 else if let Some(base_currency) = base_currency {
                     let cash_value = Money::from_raw(
-                        order
-                            .quantity()
+                        effective_quantity
                             .raw
                             .try_into()
                             .map_err(|e| log::error!("Unable to convert Quantity to f64: {e}"))
@@ -990,7 +995,7 @@ impl RiskEngine {
 
     // -- EGRESS ----------------------------------------------------------------------------------
 
-    fn execution_gateway(&self, instrument: InstrumentAny, command: TradingCommand) {
+    fn execution_gateway(&mut self, instrument: InstrumentAny, command: TradingCommand) {
         match self.trading_state {
             TradingState::Halted => match command {
                 TradingCommand::SubmitOrder(submit_order) => {
@@ -1049,12 +1054,12 @@ impl RiskEngine {
                 _ => {}
             },
             TradingState::Active => match command {
-                TradingCommand::SubmitOrder(_submit_order) => {
-                    // TODO: Fix message bus usage
-                    // self.throttled_submit_order.send(submit_order);
+                TradingCommand::SubmitOrder(submit_order) => {
+                    self.throttled_submit_order.send(submit_order);
                 }
-                TradingCommand::SubmitOrderList(_submit_order_list) => {
-                    todo!("NOT IMPLEMENTED");
+                TradingCommand::SubmitOrderList(submit_order_list) => {
+                    // TODO: implement throttler for order lists
+                    self.send_to_execution(TradingCommand::SubmitOrderList(submit_order_list));
                 }
                 _ => {}
             },
