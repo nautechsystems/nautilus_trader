@@ -1,3 +1,4 @@
+import traceback
 from dataclasses import dataclass
 from dataclasses import field
 from pathlib import Path
@@ -12,19 +13,26 @@ from Cython.Compiler.Visitor import ScopeTrackingTransform
 
 @dataclass
 class MemberVariable:
+    """Represents a member variable of a class."""
+
     name: str
     type_hint: str | None = None
     is_private: bool = False
     default_value: str | None = None
-    is_public: bool = False  # cdef public 여부
-    is_readonly: bool = False  # cdef readonly 여부
+    is_public: bool = False
+    is_readonly: bool = False
+    is_class: bool = False
+    is_instance: bool = False
 
 
 @dataclass
 class MethodInfo:
+    """Represents a method of a class."""
+
     name: str
     args: list[str] = field(default_factory=list)
     return_type: str | None = None
+    docstring: str | None = None
     is_private: bool = False
     is_static: bool = False
     is_classmethod: bool = False
@@ -35,26 +43,33 @@ class MethodInfo:
 
 @dataclass
 class FunctionInfo:
+    """Represents a function."""
+
     name: str
     args: list[str] = field(default_factory=list)
     return_type: str | None = None
+    docstring: str | None = None
     is_cdef: bool = False
     is_cpdef: bool = False
 
 
 @dataclass
 class GlobalVariable:
+    """Represents a global variable."""
+
     name: str
     type_hint: str | None = None
     value: str | None = None
     is_constant: bool = False
-    is_cdef: bool = False
 
 
 @dataclass
 class ClassInfo:
+    """Represents a class."""
+
     name: str
     base_classes: list[str] = field(default_factory=list)
+    docstring: str | None = None
     member_variables: list[MemberVariable] = field(default_factory=list)
     methods: list[MethodInfo] = field(default_factory=list)
     is_cdef_class: bool = False
@@ -62,6 +77,10 @@ class ClassInfo:
 
 
 class CythonCodeAnalyzer(ScopeTrackingTransform):
+    """
+    Analyzes Cython code and extracts information about classes, functions, and variables.
+    """
+
     def __init__(self, context):
         super().__init__(context=context)
         self.classes: list[ClassInfo] = []
@@ -72,47 +91,44 @@ class CythonCodeAnalyzer(ScopeTrackingTransform):
         self.class_stack: list[ClassInfo] = []
 
     def visit_ModuleNode(self, node):
-        """모듈 노드 방문"""
+        """Visit the root module node."""
         self.visitchildren(node)
         return node
 
     def visit_CClassDefNode(self, node):
-        """Cython 확장 타입 클래스 정의 노드 방문 (cdef class)"""
+        """Visit a Cython extension type class definition node (cdef class)."""
         return self._visit_class_node(node, is_cdef_class=True, is_extension_type=True)
 
     def visit_PyClassDefNode(self, node):
-        """Python 클래스 정의 노드 방문 (class)"""
+        """Visit a Python class definition node (class)."""
         return self._visit_class_node(node, is_cdef_class=False, is_extension_type=False)
 
-    def _visit_class_node(self, node, is_cdef_class=False, is_extension_type=False):
-        """클래스 노드 공통 처리"""
-        # 기본 클래스 추출
+    def _visit_class_node(self, node, is_cdef_class: bool = False, is_extension_type: bool = False):
+        """Visit common processing for class nodes."""
         base_classes = []
         if hasattr(node, "bases") and node.bases:
-            for arg in node.bases.args:
-                base_name = self._extract_name_from_node(arg)
-                if base_name:
-                    base_classes.append(base_name)
+            base_classes = [
+                name
+                for arg in node.bases.args
+                if (name := self._extract_name_from_node(arg))
+            ]
 
-        # 클래스 이름 추출
+        docstring = self._extract_doc_from_node(node)
         class_name = getattr(node, "class_name", None) or getattr(node, "name", "Unknown")
 
-        # 새 클래스 정보 생성
         class_info = ClassInfo(
             name=class_name,
             base_classes=base_classes,
+            docstring=docstring,
             is_cdef_class=is_cdef_class,
-            is_extension_type=is_extension_type
+            is_extension_type=is_extension_type,
         )
 
-        # 클래스 스택에 추가
         self.class_stack.append(class_info)
         self.current_class = class_info
 
-        # 자식 노드들 방문
         self.visitchildren(node)
 
-        # 클래스 스택에서 제거
         self.class_stack.pop()
         self.current_class = self.class_stack[-1] if self.class_stack else None
 
@@ -120,157 +136,151 @@ class CythonCodeAnalyzer(ScopeTrackingTransform):
         return node
 
     def visit_FuncDefNode(self, node):
-        """Python 함수 정의 노드 방문 (def)"""
+        """Visit a Python function definition node (def)."""
         return self._visit_function_node(node, is_cdef=False, is_cpdef=False)
 
     def visit_CFuncDefNode(self, node):
-        """Cython C 함수 정의 노드 방문 (cdef)"""
+        """Visit a Cython C function definition node (cdef)."""
         return self._visit_function_node(node, is_cdef=not node.overridable, is_cpdef=node.overridable)
 
     def visit_DefNode(self, node):
-        """일반적인 함수 정의 노드 방문"""
+        """Visit a generic function definition node."""
         return self._visit_function_node(node)
 
-    def _visit_function_node(self, node, is_cdef=False, is_cpdef=False):
-        """함수/메소드 노드 공통 처리"""
+    def _visit_function_node(self, node, is_cdef: bool = False, is_cpdef: bool = False):
+        """Visit common processing for function/method nodes."""
         is_cfunc = is_cdef or is_cpdef
-        function_name = node.name if not is_cdef and not is_cpdef else node.declarator.base.name
+        function_name = node.name if not is_cfunc else node.declarator.base.name
 
         args = self._extract_function_args(node, is_cfunc)
         return_type = self._extract_return_type(node, is_cfunc)
         decorators = self._analyze_decorators(node)
+        docstring = self._extract_doc_from_node(node)
 
         is_private = (function_name.startswith("_") and not function_name.startswith("__")) or function_name.endswith("__")
 
         if self.current_class:
-            # 클래스 메소드인 경우
             method_info = MethodInfo(
                 name=function_name,
                 args=args,
                 return_type=return_type,
+                docstring=docstring,
                 is_private=is_private,
                 is_static=decorators.get("staticmethod", False),
                 is_classmethod=decorators.get("classmethod", False),
                 is_property=decorators.get("property", False),
                 is_cdef=is_cdef,
-                is_cpdef=is_cpdef
+                is_cpdef=is_cpdef,
             )
             self.current_class.methods.append(method_info)
             self.current_function = method_info
         else:
-            # 일반 함수인 경우
             function_info = FunctionInfo(
                 name=function_name,
                 args=args,
                 return_type=return_type,
+                docstring=docstring,
                 is_cdef=is_cdef,
-                is_cpdef=is_cpdef
+                is_cpdef=is_cpdef,
             )
             self.functions.append(function_info)
             self.current_function = function_info
 
         self.visitchildren(node)
-
         self.current_function = None
-
-        return node
-
-    def visit_CVarDefNode(self, node):
-        """C 변수 정의 노드 방문 (cdef)"""
-        self._process_variable_declaration(node, is_cdef=True)
-        self.visitchildren(node)
         return node
 
     def visit_SingleAssignmentNode(self, node):
-        """단일 할당 노드 방문 (Python 스타일 변수 할당)"""
-        if hasattr(node, "lhs") and hasattr(node, "rhs"):
+        """Visit a single assignment node (Python-style variable assignment)."""
+        if hasattr(node, "lhs") and hasattr(node, "rhs") and not hasattr(node.rhs, "module_name"):
             var_name = self._extract_name_from_node(node.lhs)
             if var_name:
+                type_hint = None
+                if hasattr(node.lhs, "annotation") and node.lhs.annotation:
+                    type_hint = self._extract_type_from_node(node.lhs.annotation)
+
                 value = self._extract_value_from_node(node.rhs)
-                self._add_variable(var_name, None, value, is_cdef=False)
+
+                self._add_variable(
+                    var_name,
+                    type_hint,
+                    value,
+                    is_class=self.current_class is not None,
+                    is_instance=self.current_function is not None,
+                )
 
         self.visitchildren(node)
         return node
 
-    def _process_variable_declaration(self, node, is_cdef=False):
-        """변수 선언 처리"""
-        if not hasattr(node, "declarators"):
-            return
+    def _add_variable(
+        self,
+        name: str,
+        type_hint: str | None,
+        value: str | None,
+        is_public: bool = False,
+        is_readonly: bool = False,
+        is_class: bool = False,
+        is_instance: bool = False,
+    ):
+        """Add a variable to the appropriate scope (global, class, or instance)."""
+        is_private = name.replace("self.", "").startswith("_") and not name.startswith("__")
+        is_constant = name.isupper()
 
-        base_type = self._extract_type_from_node(getattr(node, "base_type", None))
-
-        # visibility 확인
-        is_public = getattr(node, "visibility", None) == "public"
-        is_readonly = getattr(node, "visibility", None) == "readonly"
-
-        for declarator in node.declarators:
-            var_name = getattr(declarator, "name", None)
-            if not var_name:
-                continue
-
-            default_value = None
-            if hasattr(declarator, "default") and declarator.default:
-                default_value = self._extract_value_from_node(declarator.default)
-
-            self._add_variable(
-                var_name,
-                base_type,
-                default_value,
-                is_cdef=is_cdef,
-                is_public=is_public,
-                is_readonly=is_readonly
-            )
-
-    def _add_variable(self, name, type_hint, value, is_cdef=False, is_public=False, is_readonly=False):
-        """변수 추가"""
-        is_private = name.startswith("_") and not name.startswith("__")
-        is_constant = name.isupper() and "_" in name  # 상수 패턴
-
-        if self.current_class and name.startswith("self.") and self.current_function.name == "__init__":
-            # 클래스 멤버 변수
+        if is_class and is_instance and name.startswith("self.") and self.current_function and self.current_function.name == "__init__":
             member_var = MemberVariable(
                 name=name,
                 type_hint=type_hint,
                 is_private=is_private,
                 default_value=value,
                 is_public=is_public,
-                is_readonly=is_readonly
+                is_readonly=is_readonly,
+                is_instance=True,
             )
-            self.current_class.member_variables.append(member_var)
-        elif self.current_function is None:
-            # 글로벌 변수
+            if self.current_class:
+                self.current_class.member_variables.append(member_var)
+        elif is_class and not is_instance:
+            member_var = MemberVariable(
+                name=name,
+                type_hint=type_hint,
+                is_private=is_private,
+                default_value=value,
+                is_public=is_public,
+                is_readonly=is_readonly,
+                is_class=True,
+            )
+            if self.current_class:
+                self.current_class.member_variables.append(member_var)
+        elif not is_class and not is_instance:
             global_var = GlobalVariable(
                 name=name,
                 type_hint=type_hint,
                 value=value,
                 is_constant=is_constant,
-                is_cdef=is_cdef
             )
             self.global_variables.append(global_var)
 
-    def _extract_function_args(self, node, is_cfunc) -> list[str]:
-        """함수 매개변수 추출"""
+    def _extract_function_args(self, node, is_cfunc: bool) -> list[str]:
+        """Extract function parameters."""
         args = []
         node_args = node.declarator.args if is_cfunc else node.args
 
         for arg in node_args:
             arg_name = getattr(arg.declarator, "name", str(arg))
 
-            # 타입 정보 추출
             arg_type = None
             if hasattr(arg, "type") and arg.type:
                 arg_type = self._extract_type_from_node(arg.type)
             elif hasattr(arg, "base_type") and arg.base_type:
                 arg_type = self._extract_type_from_node(arg.base_type)
 
-            # 기본값 추출
+            arg_type = self.map_cython_type(arg_type) if arg_type else None
+
             default_val = None
             if hasattr(arg, "default") and arg.default:
                 default_val = self._extract_value_from_node(arg.default)
 
-            # 매개변수 문자열 구성
             arg_str = arg_name
-            if arg_type:
+            if arg_type and arg_type != "self":
                 arg_str += f": {arg_type}"
             if default_val:
                 arg_str += f" = {default_val}"
@@ -279,16 +289,16 @@ class CythonCodeAnalyzer(ScopeTrackingTransform):
 
         return args
 
-    def _extract_return_type(self, node, is_cfunc) -> str | None:
-        """반환 타입 추출"""
+    def _extract_return_type(self, node, is_cfunc: bool) -> str | None:
+        """Extract the return type."""
         if is_cfunc:
-            return self._extract_name_from_node(node.base_type)
+            return self.map_cython_type(self._extract_name_from_node(node.base_type))
         if hasattr(node, "return_type_annotation") and node.return_type_annotation:
             return self._extract_type_from_node(node.return_type_annotation.expr)
         return None
 
     def _analyze_decorators(self, node) -> dict[str, bool]:
-        """데코레이터 분석"""
+        """Analyzes decorators."""
         decorators = {}
         if not hasattr(node, "decorators") or not node.decorators:
             return decorators
@@ -302,7 +312,7 @@ class CythonCodeAnalyzer(ScopeTrackingTransform):
         return decorators
 
     def _extract_name_from_node(self, node) -> str | None:
-        """노드에서 이름 추출"""
+        """Extract a name from a node."""
         if node is None:
             return None
         if hasattr(node, "name"):
@@ -313,9 +323,11 @@ class CythonCodeAnalyzer(ScopeTrackingTransform):
         return str(node) if node else None
 
     def _extract_type_from_node(self, type_node) -> str | None:
-        """타입 노드에서 문자열 추출"""
+        """Extract a type string from a type node."""
         if type_node is None:
             return None
+        if hasattr(type_node, "string") and hasattr(type_node.string, "constant_result"):
+            return type_node.string.constant_result
         if hasattr(type_node, "name"):
             return type_node.name
         if isinstance(type_node, PyrexTypes.BaseType):
@@ -325,60 +337,78 @@ class CythonCodeAnalyzer(ScopeTrackingTransform):
         return None
 
     def _extract_value_from_node(self, node) -> str | None:
-        """노드의 값을 문자열로 추출"""
+        """Extract a value as a string from a node."""
         if node is None:
             return None
         if hasattr(node, "value"):
-            return str(node.value)
+            value = str(node.value)
+            return "None" if value == "Py_None" else value
         if hasattr(node, "compile_time_value"):
             return "expr"
         return str(node)
 
+    def _extract_doc_from_node(self, node) -> str | None:
+        """Extract the docstring from a node."""
+        if node is None or not hasattr(node, "doc"):
+            return None
+        doc = str(node.doc)
+        return doc if doc != "None" else None
 
-def analyze_cython_code(name:str, code_content: str) -> CythonCodeAnalyzer:
-    """Cython 코드를 분석하여 정보를 추출합니다."""
+    def map_cython_type(self, type_hint: str) -> str:
+        """Map Cython types to Python types."""
+        type_map = {
+            "object": "Any",
+            "bint": "bool",
+            "double": "float",
+            "uint64_t": "int",
+            "int64_t": "int",
+            "uint32_t": "int",
+            "int32_t": "int",
+            "uint16_t": "int",
+            "int16_t": "int",
+            "uint8_t": "int",
+            "int8_t": "int",
+            "long": "int",
+            "void": "None",
+        }
+        return type_map.get(type_hint, type_hint)
+
+
+def analyze_cython_code(name: str, code_content: str) -> CythonCodeAnalyzer:
+    """Analyzes Cython code and extracts information."""
     options = CompilationOptions(default_options)
-    context = Context(include_directories="./", compiler_directives={}, options=options)
+    context = Context(include_directories=["./"], compiler_directives={}, options=options)
     try:
-        # TreeFragment를 사용하여 Cython 코드를 AST로 파싱
         tree = parse_from_strings(name, code_content)
-
         if tree:
             analyzer = CythonCodeAnalyzer(context)
-            # CythonTransform을 사용하여 트리 변환/분석
             analyzer.visit(tree)
             return analyzer
         else:
-            raise ValueError("코드 파싱에 실패했습니다.")
-
+            raise ValueError("Failed to parse code.")
     except Exception as e:
-        print(f"분석 중 오류 발생: {e}")
-        import traceback
+        print(f"An error occurred during analysis: {e}")
         traceback.print_exc()
-        # 기본 분석기 반환
-        return CythonCodeAnalyzer()
+        return CythonCodeAnalyzer(context)
 
 
-def print_analysis_results(analyzer: CythonCodeAnalyzer):  # noqa: C901
-    """분석 결과를 출력합니다."""
-    print("=" * 60)
-    print("CYTHON 코드 분석 결과 (CythonTransform 사용)")
-    print("=" * 60)
-
-    # 클래스 정보 출력
+def print_results(analyzer: CythonCodeAnalyzer):  # noqa: C901
+    """Print the analysis results."""
     if analyzer.classes:
-        print("\n📦 클래스들:")
+        print("\n📦 Classes:")
         for cls in analyzer.classes:
             class_type = "cdef class" if cls.is_cdef_class else "class"
-            extension_info = " (확장 타입)" if cls.is_extension_type else ""
+            extension_info = " (extension type)" if cls.is_extension_type else ""
             print(f"\n{class_type}: {cls.name}{extension_info}")
 
             if cls.base_classes:
-                print(f"  상속: {', '.join(cls.base_classes)}")
+                print(f"  Inherits: {', '.join(cls.base_classes)}")
 
-            # 멤버 변수
+            if cls.docstring:
+                print(f'  """{cls.docstring}"""')
+
             if cls.member_variables:
-                print("  멤버 변수:")
+                print("  Member Variables:")
                 for var in cls.member_variables:
                     visibility = "private" if var.is_private else "public"
                     type_info = f": {var.type_hint}" if var.type_hint else ""
@@ -390,25 +420,21 @@ def print_analysis_results(analyzer: CythonCodeAnalyzer):  # noqa: C901
                     if var.is_readonly:
                         modifiers.append("readonly")
                     modifier_str = f" ({', '.join(modifiers)})" if modifiers else ""
+                    scope = "instance" if var.is_instance else "class"
 
-                    print(f"    - {var.name}{type_info}{default_info} ({visibility}){modifier_str}")
+                    print(f"    - {var.name}{type_info}{default_info} ({visibility}){modifier_str} {scope}")
 
-            # 메소드
             if cls.methods:
-                print("  메소드:")
+                print("  Methods:")
                 for method in cls.methods:
                     visibility = "private" if method.is_private else "public"
 
-                    # 함수 타입 확인
-                    func_type = ""
+                    func_type = "def "
                     if method.is_cdef:
                         func_type = "cdef "
                     elif method.is_cpdef:
                         func_type = "cpdef "
-                    else:
-                        func_type = "def "
 
-                    # 데코레이터
                     decorators = []
                     if method.is_static:
                         decorators.append("@staticmethod")
@@ -419,44 +445,39 @@ def print_analysis_results(analyzer: CythonCodeAnalyzer):  # noqa: C901
 
                     decorator_str = " ".join(decorators) + " " if decorators else ""
                     args_str = ", ".join(method.args) if method.args else ""
-                    return_str = f" -> {method.return_type}"
+                    return_str = f" -> {method.return_type}" if method.return_type else ""
 
                     print(f"    - {decorator_str}{func_type}{method.name}({args_str}){return_str} ({visibility})")
+                    if method.docstring:
+                        print(f'    """{method.docstring}"""')
 
-    # 일반 함수 정보 출력
     if analyzer.functions:
-        print("\n🔧 함수들:")
+        print("\n🔧 Functions:")
         for func in analyzer.functions:
-            func_type = ""
+            func_type = "def "
             if func.is_cdef:
                 func_type = "cdef "
             elif func.is_cpdef:
                 func_type = "cpdef "
-            else:
-                func_type = "def "
 
             args_str = ", ".join(func.args) if func.args else ""
             return_str = f" -> {func.return_type}" if func.return_type else ""
             print(f"  - {func_type}{func.name}({args_str}){return_str}")
+            if func.docstring:
+                print(f'  """{func.docstring}"""')
 
-    # 글로벌 변수 정보 출력
     if analyzer.global_variables:
-        print("\n🌍 글로벌 변수들:")
+        print("\n🌍 Global Variables:")
         for var in analyzer.global_variables:
-            var_type = "cdef " if var.is_cdef else ""
             type_info = f": {var.type_hint}" if var.type_hint else ""
             value_info = f" = {var.value}" if var.value else ""
-            classification = "상수" if var.is_constant else "변수"
-            print(f"  - {var_type}{var.name}{type_info}{value_info} ({classification})")
+            classification = "Constant" if var.is_constant else "Variable"
+            print(f"  - {var.name}{type_info}{value_info} ({classification})")
 
 
-# 사용 예제
 if __name__ == "__main__":
-    file_path = Path("/Users/sam/Documents/Development/woung717/nautilus_trader/nautilus_trader/accounting/accounts/cash.pyx")
+    file_path = Path("/Users/sam/Documents/Development/woung717/nautilus_trader/nautilus_trader/persistence/wranglers.pyx")
     code = file_path.read_text(encoding="utf-8")
 
-    # 코드 분석 실행
-    analyzer = analyze_cython_code(name=str(file_path), code_content=code)
-
-    # 결과 출력
-    print_analysis_results(analyzer)
+    analyzer_result = analyze_cython_code(name=str(file_path), code_content=code)
+    print_results(analyzer_result)

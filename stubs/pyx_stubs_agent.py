@@ -1,25 +1,23 @@
 import os
-import litellm
 from glob import glob
 from pathlib import Path
 
+import litellm
 
-os.environ["OPENROUTER_API_KEY"] = "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"
-os.environ["GEMINI_API_KEY"] = "AIzaSyA1KgrdTr7bXLpJ5VjqqkVoA_F_ufRNAnM"
 
 module_path = "nautilus_trader/"
 stub_file_path = "stubs/"
 symbol_file_path = "nautilus_trader/core/nautilus_pyo3.pyi"
 
 
-def generate_stubs_instruction_prompt(symbol_code: str, cython_source_code: str) -> str : 
+def generate_stubs_instruction_prompt(symbol_code: str, cython_source_code: str) -> str :
     return f"""You are a Python programming assistant that generates .pyi stub file from the provided .pyx Cython source code.
 
 Follow these rules strictly when extracting information and generating the .pyi stub:
 
 # General Rules
 - Only include Python-accessible symbols. Skip any cdef functions or variables that are not accessible from regular Python code.
-- Do not import from cython or use cimport statements in the generated .pyi stub, skip them. 
+- Do not import from cython or use cimport statements in the generated .pyi stub, skip them.
 - Only standard Python imports which are exist in .pyx should be included.
 - Include all Python-accessible functions, classes (with inheritances), global variables, and class members (variables, methods, and properties) with types.
 - Class variables should be type hinted with 'var: ClassVar[type]' with 'from typing import ClassVar', whereas instance variables should be type hinted with 'var: type'
@@ -50,8 +48,8 @@ type -> type
 Below is a symbol definition file that you must reference in order to resolve dependencies when generating a stub file. 
 The symbols defined in this file can be imported as follows: 'from nautilus_trader.core.nautilus_pyo3 import ...'
 Symbols that can not found in .pxy should be imported from this file.
-================  
-{symbol_code}  
+================
+{symbol_code}
 ================
 
 # Input
@@ -75,7 +73,7 @@ def generate_stubs(symbol_code:str, cython_source_code: str) -> str:
     response = litellm.completion(
         model="gemini/gemini-2.5-flash", # "openrouter/qwen/qwen3-32b", # "openrouter/deepseek/deepseek-r1-0528"
         messages=[{
-            "role": "user", 
+            "role": "user",
             "content": prompt,
         }],
         reasoning_effort="disable"
@@ -85,20 +83,20 @@ def generate_stubs(symbol_code:str, cython_source_code: str) -> str:
 
 
 def main():
-    symbol_file = open(symbol_file_path, "r")
+    symbol_file = open(symbol_file_path)
     symbol_code = symbol_file.read()
     symbol_file.close()
-    
+
     for cython_file_path in glob(module_path + "**/*.pyx", recursive=True):
         relative_path = os.path.relpath(cython_file_path, module_path)
         stub_filename = os.path.splitext(relative_path)[0] + ".pyi"
         target_path = os.path.join(stub_file_path, stub_filename)
-        
+
         if Path(target_path).is_file():
             print(f"Stub for {cython_file_path} already exists at {target_path}")
             continue
 
-        with open(cython_file_path, "r") as f:
+        with open(cython_file_path) as f:
             stubs = generate_stubs(
                 symbol_code=symbol_code,
                 cython_source_code=f.read()
@@ -107,7 +105,7 @@ def main():
             os.makedirs(os.path.dirname(target_path), exist_ok=True)
             with open(target_path, "w") as f_out:
                 f_out.write(stubs)
- 
+
             print(f"Generated stub for {cython_file_path} at {target_path}")
 
 

@@ -1,9 +1,11 @@
 from datetime import datetime
 from typing import Any
 
-from nautilus_trader.core.nautilus_pyo3 import UUID4, ClientOrderId, ExecAlgorithmId
+from nautilus_trader.core.nautilus_pyo3 import UUID4
 from nautilus_trader.core.nautilus_pyo3 import ClientId
+from nautilus_trader.core.nautilus_pyo3 import ClientOrderId
 from nautilus_trader.core.nautilus_pyo3 import Command
+from nautilus_trader.core.nautilus_pyo3 import ExecAlgorithmId
 from nautilus_trader.core.nautilus_pyo3 import InstrumentId
 from nautilus_trader.core.nautilus_pyo3 import LogLevel
 from nautilus_trader.core.nautilus_pyo3 import Order
