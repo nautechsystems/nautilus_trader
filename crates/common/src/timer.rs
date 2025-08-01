@@ -109,7 +109,7 @@ impl Display for TimeEvent {
         write!(
             f,
             "{}(name={}, event_id={}, ts_event={}, ts_init={})",
-            stringify!(self),
+            stringify!(TimeEvent),
             self.name,
             self.event_id,
             self.ts_event,
