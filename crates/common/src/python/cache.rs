@@ -17,9 +17,14 @@
 
 use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
-    data::{Bar, BarType, QuoteTick, TradeTick},
+    data::{
+        Bar, BarType, QuoteTick, TradeTick,
+        prices::{IndexPriceUpdate, MarkPriceUpdate},
+    },
     enums::{OmsType, OrderSide, PositionSide},
     identifiers::{ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, Venue},
+    instruments::SyntheticInstrument,
+    orderbook::OrderBook,
     position::Position,
     python::{
         instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
@@ -443,5 +448,50 @@ impl Cache {
     #[pyo3(name = "bar_count")]
     fn py_bar_count(&self, bar_type: BarType) -> usize {
         self.bar_count(&bar_type)
+    }
+
+    #[pyo3(name = "mark_price")]
+    fn py_mark_price(&self, instrument_id: InstrumentId) -> Option<MarkPriceUpdate> {
+        self.mark_price(&instrument_id).cloned()
+    }
+
+    #[pyo3(name = "mark_prices")]
+    fn py_mark_prices(&self, instrument_id: InstrumentId) -> Option<Vec<MarkPriceUpdate>> {
+        self.mark_prices(&instrument_id)
+    }
+
+    #[pyo3(name = "index_price")]
+    fn py_index_price(&self, instrument_id: InstrumentId) -> Option<IndexPriceUpdate> {
+        self.index_price(&instrument_id).cloned()
+    }
+
+    #[pyo3(name = "index_prices")]
+    fn py_index_prices(&self, instrument_id: InstrumentId) -> Option<Vec<IndexPriceUpdate>> {
+        self.index_prices(&instrument_id)
+    }
+
+    #[pyo3(name = "order_book")]
+    fn py_order_book(&self, instrument_id: InstrumentId) -> Option<OrderBook> {
+        self.order_book(&instrument_id).cloned()
+    }
+
+    #[pyo3(name = "has_order_book")]
+    fn py_has_order_book(&self, instrument_id: InstrumentId) -> bool {
+        self.has_order_book(&instrument_id)
+    }
+
+    #[pyo3(name = "book_update_count")]
+    fn py_book_update_count(&self, instrument_id: InstrumentId) -> usize {
+        self.book_update_count(&instrument_id)
+    }
+
+    #[pyo3(name = "synthetic")]
+    fn py_synthetic(&self, instrument_id: InstrumentId) -> Option<SyntheticInstrument> {
+        self.synthetic(&instrument_id).cloned()
+    }
+
+    #[pyo3(name = "synthetic_ids")]
+    fn py_synthetic_ids(&self) -> Vec<InstrumentId> {
+        self.synthetic_ids().into_iter().copied().collect()
     }
 }
