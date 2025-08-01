@@ -5,38 +5,45 @@ from typing import Any
 
 from nautilus_trader.cache.config import CacheConfig
 from nautilus_trader.core import nautilus_pyo3
-from nautilus_trader.core.nautilus_pyo3 import Account, AccountId, OwnOrderBook, SyntheticInstrument
-from nautilus_trader.core.nautilus_pyo3 import Bar
-from nautilus_trader.core.nautilus_pyo3 import BarType
-from nautilus_trader.core.nautilus_pyo3 import ClientId
-from nautilus_trader.core.nautilus_pyo3 import ClientOrderId
-from nautilus_trader.core.nautilus_pyo3 import ComponentId
-from nautilus_trader.core.nautilus_pyo3 import Currency
-from nautilus_trader.core.nautilus_pyo3 import ExecAlgorithmId
-from nautilus_trader.core.nautilus_pyo3 import IndexPriceUpdate
-from nautilus_trader.core.nautilus_pyo3 import Instrument
-from nautilus_trader.core.nautilus_pyo3 import InstrumentId
-from nautilus_trader.core.nautilus_pyo3 import MarkPriceUpdate
-from nautilus_trader.core.nautilus_pyo3 import Money
-from nautilus_trader.core.nautilus_pyo3 import OmsType
-from nautilus_trader.core.nautilus_pyo3 import Order
-from nautilus_trader.core.nautilus_pyo3 import OrderBook
-from nautilus_trader.core.nautilus_pyo3 import OrderListId
-from nautilus_trader.core.nautilus_pyo3 import OrderSide
-from nautilus_trader.core.nautilus_pyo3 import OrderStatus
-from nautilus_trader.core.nautilus_pyo3 import Position
-from nautilus_trader.core.nautilus_pyo3 import PositionId
-from nautilus_trader.core.nautilus_pyo3 import PositionSide
-from nautilus_trader.core.nautilus_pyo3 import Price
-from nautilus_trader.core.nautilus_pyo3 import PriceType
-from nautilus_trader.core.nautilus_pyo3 import Quantity
-from nautilus_trader.core.nautilus_pyo3 import QuoteTick
-from nautilus_trader.core.nautilus_pyo3 import StrategyId
-from nautilus_trader.core.nautilus_pyo3 import TradeTick
-from nautilus_trader.core.nautilus_pyo3 import Venue
-from nautilus_trader.core.nautilus_pyo3 import VenueOrderId
-from nautilus_trader.core.nautilus_pyo3 import Strategy
-from stubs.model.orders.list import OrderList
+from nautilus_trader.cache.facade import CacheDatabaseFacade, CacheFacade
+from nautilus_trader.model.data import BarAggregation
+from nautilus_trader.model.book import OrderBook
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import BarSpecification
+from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import IndexPriceUpdate
+from nautilus_trader.model.data import MarkPriceUpdate
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import ComponentId
+from nautilus_trader.model.identifiers import ExecAlgorithmId
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import OrderListId
+from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.instruments.synthetic import SyntheticInstrument
+from nautilus_trader.model.objects import Currency
+from nautilus_trader.model.objects import Money
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orders.base import Order
+from nautilus_trader.model.orders.list import OrderList
+from nautilus_trader.trading.strategy import Strategy
+from nautilus_trader.accounting.accounts.base import Account
+from nautilus_trader.core.rust.model import OrderSide
+from nautilus_trader.core.rust.model import OrderStatus
+from nautilus_trader.core.rust.model import OmsType
+from nautilus_trader.core.rust.model import PositionSide
+from nautilus_trader.core.rust.model import PriceType
+from nautilus_trader.common.component import Actor
+from stubs.model.position import Position
+
 
 class Cache(CacheFacade):
     """
@@ -55,13 +62,13 @@ class Cache(CacheFacade):
         If `config` is not of type `CacheConfig`.
     """
 
-    _database: Any
+    _database: CacheDatabaseFacade | None
     _log: Any
     _drop_instruments_on_reset: bool
     has_backing: bool
     tick_capacity: int
     bar_capacity: int
-    _specific_venue: Any
+    _specific_venue: Venue | None
     _general: dict[str, bytes]
     _currencies: dict[str, Currency]
     _instruments: dict[InstrumentId, Instrument]
@@ -331,8 +338,8 @@ class Cache(CacheFacade):
 
         """
         ...
-    def calculate_unrealized_pnl(self, position: Position) -> Money: ...
-    def load_actor(self, actor: Any) -> None:
+    def calculate_unrealized_pnl(self, position: Position) -> Money | None: ...
+    def load_actor(self, actor: Actor) -> None:
         """
         Load the state dictionary into the given actor.
 
@@ -369,7 +376,7 @@ class Cache(CacheFacade):
 
         """
         ...
-    def load_synthetic(self, instrument_id: InstrumentId) -> Any | None:
+    def load_synthetic(self, instrument_id: InstrumentId) -> SyntheticInstrument | None:
         """
         Load the synthetic instrument associated with the given `instrument_id` (if found).
 
@@ -389,7 +396,7 @@ class Cache(CacheFacade):
 
         """
         ...
-    def load_account(self, account_id: AccountId) -> Any | None:
+    def load_account(self, account_id: AccountId) -> Account | None:
         """
         Load the account associated with the given account_id (if found).
 
@@ -461,7 +468,7 @@ class Cache(CacheFacade):
 
         """
         ...
-    def add_own_order_book(self, own_order_book: Any) -> None:
+    def add_own_order_book(self, own_order_book: nautilus_pyo3.OwnOrderBook) -> None:
         """
         Add the given own order book to the cache.
 
@@ -527,7 +534,7 @@ class Cache(CacheFacade):
 
         """
         ...
-    def add_quote_ticks(self, ticks: list) -> None:
+    def add_quote_ticks(self, ticks: list[QuoteTick]) -> None:
         """
         Add the given quotes to the cache.
 
@@ -538,7 +545,7 @@ class Cache(CacheFacade):
 
         """
         ...
-    def add_trade_ticks(self, ticks: list) -> None:
+    def add_trade_ticks(self, ticks: list[TradeTick]) -> None:
         """
         Add the given trades to the cache.
 
@@ -549,7 +556,7 @@ class Cache(CacheFacade):
 
         """
         ...
-    def add_bars(self, bars: list) -> None:
+    def add_bars(self, bars: list[Bar]) -> None:
         """
         Add the given bars to the cache.
 
@@ -582,7 +589,7 @@ class Cache(CacheFacade):
 
         """
         ...
-    def add_synthetic(self, synthetic: Any) -> None:
+    def add_synthetic(self, synthetic: SyntheticInstrument) -> None:
         """
         Add the given synthetic instrument to the cache.
 
@@ -593,7 +600,7 @@ class Cache(CacheFacade):
 
         """
         ...
-    def add_account(self, account: Any) -> None:
+    def add_account(self, account: Account) -> None:
         """
         Add the given account to the cache.
 
@@ -667,7 +674,7 @@ class Cache(CacheFacade):
 
         """
         ...
-    def add_order_list(self, order_list: Any) -> None:
+    def add_order_list(self, order_list: OrderList) -> None:
         """
         Add the given order list to the cache.
 
@@ -746,7 +753,7 @@ class Cache(CacheFacade):
 
         """
         ...
-    def greeks(self, instrument_id: InstrumentId) -> object:
+    def greeks(self, instrument_id: InstrumentId) -> object | None:
         """
         Return the latest cached greeks for the given instrument ID.
 
@@ -762,7 +769,7 @@ class Cache(CacheFacade):
 
         """
         ...
-    def yield_curve(self, curve_name: str) -> object:
+    def yield_curve(self, curve_name: str) -> object | None:
         """
         Return the latest cached yield curve for the given curve name.
 
@@ -830,7 +837,7 @@ class Cache(CacheFacade):
 
         """
         ...
-    def update_account(self, account: Any) -> None:
+    def update_account(self, account: Account) -> None:
         """
         Update the given account in the cache.
 
@@ -884,7 +891,7 @@ class Cache(CacheFacade):
 
         """
         ...
-    def update_actor(self, actor: Any) -> None:
+    def update_actor(self, actor: Actor) -> None:
         """
         Update the given actor state in the cache.
 
@@ -904,7 +911,7 @@ class Cache(CacheFacade):
             The strategy to update.
         """
         ...
-    def delete_actor(self, actor: Any) -> None:
+    def delete_actor(self, actor: Actor) -> None:
         """
         Delete the given actor from the cache.
 
@@ -1198,6 +1205,7 @@ class Cache(CacheFacade):
         Last trade tick if no index specified.
 
         Parameters
+    
         ----------
         instrument_id : InstrumentId
             The instrument ID for the tick to get.
@@ -1620,7 +1628,7 @@ class Cache(CacheFacade):
         self,
         instrument_id: InstrumentId | None = None,
         price_type: PriceType | None = None,
-        aggregation_source: Any | None = None,
+        aggregation_source: BarAggregation | None = None,
     ) -> list[BarType]:
         """
         Return all bar types with the given query filters.
@@ -1642,7 +1650,7 @@ class Cache(CacheFacade):
 
         """
         ...
-    def synthetic(self, instrument_id: InstrumentId) -> Any | None:
+    def synthetic(self, instrument_id: InstrumentId) -> SyntheticInstrument | None:
         """
         Return the synthetic instrument corresponding to the given instrument ID.
 
@@ -1672,7 +1680,7 @@ class Cache(CacheFacade):
 
         """
         ...
-    def synthetics(self) -> list[Any]:
+    def synthetics(self) -> list[SyntheticInstrument]:
         """
         Return all synthetic instruments held by the cache.
 
@@ -1682,7 +1690,7 @@ class Cache(CacheFacade):
 
         """
         ...
-    def account(self, account_id: AccountId) -> Any | None:
+    def account(self, account_id: AccountId) -> Account | None:
         """
         Return the account matching the given ID (if found).
 
@@ -1697,7 +1705,7 @@ class Cache(CacheFacade):
 
         """
         ...
-    def account_for_venue(self, venue: Venue) -> Any | None:
+    def account_for_venue(self, venue: Venue) -> Account | None:
         """
         Return the account matching the given client ID (if found).
 
@@ -1729,7 +1737,7 @@ class Cache(CacheFacade):
 
         """
         ...
-    def accounts(self) -> list[Any]:
+    def accounts(self) -> list[Account]:
         """
         Return all accounts in the cache.
 
@@ -2406,7 +2414,7 @@ class Cache(CacheFacade):
 
         """
         ...
-    def order_list(self, order_list_id: OrderListId) -> Any | None:
+    def order_list(self, order_list_id: OrderListId) -> OrderList | None:
         """
         Return the order list matching the given order list ID (if found).
 
@@ -2421,7 +2429,7 @@ class Cache(CacheFacade):
         venue: Venue | None = None,
         instrument_id: InstrumentId | None = None,
         strategy_id: StrategyId | None = None,
-    ) -> list[Any]:
+    ) -> list[OrderList]:
         """
         Return all order lists matching the given query filters.
 
@@ -2609,7 +2617,7 @@ class Cache(CacheFacade):
 
         """
         ...
-    def position_snapshots(self, position_id: PositionId | None = None) -> list[Position]:
+    def position_snapshots(self, position_id: PositionId | None = None) -> list[Any]:
         """
         Return all position snapshots with the given optional identifier filter.
 
@@ -2630,7 +2638,7 @@ class Cache(CacheFacade):
         instrument_id: InstrumentId | None = None,
         strategy_id: StrategyId | None = None,
         side: PositionSide = PositionSide.NO_POSITION_SIDE,
-    ) -> list[Position]:
+    ) -> list[Any]:
         """
         Return all positions with the given query filters.
 
@@ -2659,7 +2667,7 @@ class Cache(CacheFacade):
         instrument_id: InstrumentId | None = None,
         strategy_id: StrategyId | None = None,
         side: PositionSide = PositionSide.NO_POSITION_SIDE,
-    ) -> list[Position]:
+    ) -> list[Any]:
         """
         Return all open positions with the given query filters.
 
@@ -2687,7 +2695,7 @@ class Cache(CacheFacade):
         venue: Venue | None = None,
         instrument_id: InstrumentId | None = None,
         strategy_id: StrategyId | None = None,
-    ) -> list[Position]:
+    ) -> list[Any]:
         """
         Return all closed positions with the given query filters.
 
@@ -2863,7 +2871,7 @@ class Cache(CacheFacade):
 
         """
         ...
-    def heartbeat(self, timestamp: dt.datetime) -> None:
+    def heartbeat(self, timestamp: datetime) -> None:
         """
         Add a heartbeat at the given `timestamp`.
 

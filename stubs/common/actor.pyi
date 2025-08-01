@@ -1,3 +1,4 @@
+import asyncio
 import datetime as dt
 from collections.abc import Callable
 from concurrent.futures import Executor
@@ -5,13 +6,15 @@ from typing import Any
 
 from nautilus_trader.common.config import ActorConfig
 from nautilus_trader.common.config import ImportableActorConfig
-from nautilus_trader.common.executor import TaskId
+from nautilus_trader.common.executor import ActorExecutor, TaskId
 from nautilus_trader.core.nautilus_pyo3 import UUID4
 from nautilus_trader.core.nautilus_pyo3 import Bar
 from nautilus_trader.core.nautilus_pyo3 import BarType
 from nautilus_trader.core.nautilus_pyo3 import BookType
 from nautilus_trader.core.nautilus_pyo3 import ClientId
+from nautilus_trader.core.nautilus_pyo3 import Data
 from nautilus_trader.core.nautilus_pyo3 import DataType
+from nautilus_trader.core.nautilus_pyo3 import Event
 from nautilus_trader.core.nautilus_pyo3 import IndexPriceUpdate
 from nautilus_trader.core.nautilus_pyo3 import Instrument
 from nautilus_trader.core.nautilus_pyo3 import InstrumentClose
@@ -25,6 +28,11 @@ from nautilus_trader.core.nautilus_pyo3 import QuoteTick
 from nautilus_trader.core.nautilus_pyo3 import SyntheticInstrument
 from nautilus_trader.core.nautilus_pyo3 import TradeTick
 from nautilus_trader.core.nautilus_pyo3 import Venue
+from nautilus_trader.cache.base import CacheFacade
+from nautilus_trader.common.component import Clock, MessageBus
+from nautilus_trader.portfolio.base import PortfolioFacade
+from nautilus_trader.model.greeks import GreeksCalculator
+from nautilus_trader.data.messages import DataResponse
 from stubs.common.component import Component
 from stubs.indicators.base.indicator import Indicator
 
@@ -48,24 +56,25 @@ class Actor(Component):
     - Do not call components such as `clock` and `logger` in the `__init__` prior to registration.
     """
 
-    portfolio: Any
-    msgbus: Any
-    cache: Any
-    clock: Any
-    greeks: Any
-    log: Any
+    portfolio: PortfolioFacade | None
+    msgbus: MessageBus | None
+    cache: CacheFacade | None
+    clock: Clock | None
+    greeks: GreeksCalculator | None
+    log: Any # Logger type from Component
     config: ActorConfig
-    trader_id: Any
+    trader_id: UUID4 | None
     _log_events: bool
     _log_commands: bool
     _warning_events: set[type]
     _pending_requests: dict[UUID4, Callable[[UUID4], None] | None]
-    _pyo3_conversion_types: set
+    _pyo3_conversion_types: set[type]
     _signal_classes: dict[str, type]
     _indicators: list[Indicator]
     _indicators_for_quotes: dict[InstrumentId, list[Indicator]]
     _indicators_for_trades: dict[InstrumentId, list[Indicator]]
     _indicators_for_bars: dict[BarType, list[Indicator]]
+    _executor: ActorExecutor | None
 
     def __init__(self, config: ActorConfig | None = None) -> None: ...
     def to_importable_config(self) -> ImportableActorConfig:
@@ -265,7 +274,7 @@ class Actor(Component):
 
         """
         ...
-    def on_order_book_deltas(self, deltas: OrderBookDeltas | nautilus_pyo3.OrderBookDeltas) -> None:
+    def on_order_book_deltas(self, deltas: OrderBookDeltas | Any) -> None: # pyo3 type hint
         """
         Actions to be performed when running and receives order book deltas.
 
@@ -370,7 +379,7 @@ class Actor(Component):
 
         """
         ...
-    def on_data(self, data: Any) -> None:
+    def on_data(self, data: Data) -> None:
         """
         Actions to be performed when running and receives data.
 
@@ -385,7 +394,7 @@ class Actor(Component):
 
         """
         ...
-    def on_signal(self, signal: Any) -> None:
+    def on_signal(self, signal: Data) -> None:
         """
         Actions to be performed when running and receives signal data.
 
@@ -404,7 +413,7 @@ class Actor(Component):
 
         """
         ...
-    def on_historical_data(self, data: Any) -> None:
+    def on_historical_data(self, data: Data) -> None:
         """
         Actions to be performed when running and receives historical data.
 
@@ -419,7 +428,7 @@ class Actor(Component):
 
         """
         ...
-    def on_event(self, event: Any) -> None:
+    def on_event(self, event: Event) -> None:
         """
         Actions to be performed running and receives an event.
 
@@ -435,7 +444,7 @@ class Actor(Component):
         """
         ...
     @property
-    def registered_indicators(self) -> list[Any]:
+    def registered_indicators(self) -> list[Indicator]:
         """
         Return the registered indicators for the strategy.
 
@@ -458,10 +467,10 @@ class Actor(Component):
         ...
     def register_base(
         self,
-        portfolio: Any,
-        msgbus: Any,
-        cache: Any,
-        clock: Any,
+        portfolio: PortfolioFacade,
+        msgbus: MessageBus,
+        cache: CacheFacade,
+        clock: Clock,
     ) -> None:
         """
         Register with a trader.
@@ -527,7 +536,7 @@ class Actor(Component):
 
         """
         ...
-    def register_indicator_for_quote_ticks(self, instrument_id: InstrumentId, indicator: Any) -> None:
+    def register_indicator_for_quote_ticks(self, instrument_id: InstrumentId, indicator: Indicator) -> None:
         """
         Register the given indicator with the actor/strategy to receive quote tick
         data for the given instrument ID.
@@ -541,7 +550,7 @@ class Actor(Component):
 
         """
         ...
-    def register_indicator_for_trade_ticks(self, instrument_id: InstrumentId, indicator: Any) -> None:
+    def register_indicator_for_trade_ticks(self, instrument_id: InstrumentId, indicator: Indicator) -> None:
         """
         Register the given indicator with the actor/strategy to receive trade tick
         data for the given instrument ID.
@@ -555,7 +564,7 @@ class Actor(Component):
 
         """
         ...
-    def register_indicator_for_bars(self, bar_type: BarType, indicator: Any) -> None:
+    def register_indicator_for_bars(self, bar_type: BarType, indicator: Indicator) -> None:
         """
         Register the given indicator with the actor/strategy to receive bar data for the
         given bar type.
@@ -647,8 +656,8 @@ class Actor(Component):
         self,
         func: Callable[..., Any],
         args: tuple | None = None,
-        kwargs: dict | None = None,
-    ) -> Any:
+        kwargs: dict[str, Any] | None = None,
+    ) -> TaskId:
         """
         Queues the callable `func` to be executed as `fn(*args, **kwargs)` sequentially.
 
@@ -678,7 +687,7 @@ class Actor(Component):
         self,
         func: Callable[..., Any],
         args: tuple | None = None,
-        kwargs: dict | None = None,
+        kwargs: dict[str, Any] | None = None,
     ) -> TaskId:
         """
         Schedules the callable `func` to be executed as `fn(*args, **kwargs)`.
@@ -711,7 +720,7 @@ class Actor(Component):
 
         """
         ...
-    def queued_task_ids(self) -> list[Any]:
+    def queued_task_ids(self) -> list[TaskId]:
         """
         Return the queued task identifiers.
 
@@ -721,7 +730,7 @@ class Actor(Component):
 
         """
         ...
-    def active_task_ids(self) -> list[Any]:
+    def active_task_ids(self) -> list[TaskId]:
         """
         Return the active task identifiers.
 
@@ -779,6 +788,13 @@ class Actor(Component):
         Cancel all queued and active tasks.
         """
         ...
+    def _start(self) -> None: ...
+    def _stop(self) -> None: ...
+    def _resume(self) -> None: ...
+    def _reset(self) -> None: ...
+    def _dispose(self) -> None: ...
+    def _degrade(self) -> None: ...
+    def _fault(self) -> None: ...
     def subscribe_data(
         self,
         data_type: DataType,
@@ -859,7 +875,7 @@ class Actor(Component):
     def subscribe_order_book_deltas(
         self,
         instrument_id: InstrumentId,
-        book_type: BookType = ...,
+        book_type: BookType = BookType.L2_MBP,
         depth: int = 0,
         client_id: ClientId | None = None,
         managed: bool = True,
@@ -897,7 +913,7 @@ class Actor(Component):
     def subscribe_order_book_depth(
         self,
         instrument_id: InstrumentId,
-        book_type: BookType = ...,
+        book_type: BookType = BookType.L2_MBP,
         depth: int = 0,
         client_id: ClientId | None = None,
         managed: bool = True,
@@ -932,7 +948,7 @@ class Actor(Component):
     def subscribe_order_book_at_interval(
         self,
         instrument_id: InstrumentId,
-        book_type: BookType = ...,
+        book_type: BookType = BookType.L2_MBP,
         depth: int = 0,
         interval_ms: int = 1000,
         client_id: ClientId | None = None,
@@ -1265,7 +1281,7 @@ class Actor(Component):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
-        params : dict[str, Any], optional
+        params : dict[str, Any] | None = None,
             Additional parameters potentially used by a specific client.
 
         """
@@ -1312,7 +1328,7 @@ class Actor(Component):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
-        params : dict[str, Any], optional
+        params : dict[str, Any] | None = None,
             Additional parameters potentially used by a specific client.
 
         """
@@ -1333,7 +1349,7 @@ class Actor(Component):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
-        params : dict[str, Any], optional
+        params : dict[str, Any] | None = None,
             Additional parameters potentially used by a specific client.
 
         """
@@ -1354,7 +1370,7 @@ class Actor(Component):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
-        params : dict[str, Any], optional
+        params : dict[str, Any] | None = None,
             Additional parameters potentially used by a specific client.
 
         """
@@ -1375,7 +1391,7 @@ class Actor(Component):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
-        params : dict[str, Any], optional
+        params : dict[str, Any] | None = None,
             Additional parameters potentially used by a specific client.
 
         """
@@ -1396,7 +1412,7 @@ class Actor(Component):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
-        params : dict[str, Any], optional
+        params : dict[str, Any] | None = None,
             Additional parameters potentially used by a specific client.
 
         """
@@ -1417,12 +1433,12 @@ class Actor(Component):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue.
-        params : dict[str, Any], optional
+        params : dict[str, Any] | None = None,
             Additional parameters potentially used by a specific client.
 
         """
         ...
-    def publish_data(self, data_type: DataType, data: Any) -> None:
+    def publish_data(self, data_type: DataType, data: Data) -> None:
         """
         Publish the given data to the message bus.
 
@@ -1435,7 +1451,7 @@ class Actor(Component):
 
         """
         ...
-    def publish_signal(self, name: str, value: Any, ts_event: int = 0) -> None:
+    def publish_signal(self, name: str, value: int | float | str, ts_event: int = 0) -> None:
         """
         Publish the given value as a signal to the message bus.
 
@@ -1667,9 +1683,9 @@ class Actor(Component):
         client_id : ClientId, optional
             The specific client ID for the command.
             If None, it will be inferred from the venue in the instrument ID.
-        callback : Callable[[UUID4], None], optional
+        callback : Callable[[UUID4], None] | None = None,
             The registered callback, to be called with the request ID when the response has completed processing.
-        params : dict[str, Any], optional
+        params : dict[str, Any] | None = None,
             Additional parameters potentially used by a specific client.
 
         Returns
@@ -1874,7 +1890,7 @@ class Actor(Component):
         ...
     def request_aggregated_bars(
         self,
-        bar_types: list[Any],
+        bar_types: list[BarType],
         start: dt.datetime | None = None,
         end: dt.datetime | None = None,
         limit: int = 0,
@@ -2005,7 +2021,7 @@ class Actor(Component):
 
         """
         ...
-    def handle_instruments(self, instruments: list[Any]) -> None:
+    def handle_instruments(self, instruments: list[Instrument]) -> None:
         """
         Handle the given instruments data by handling each instrument individually.
 
@@ -2020,7 +2036,7 @@ class Actor(Component):
 
         """
         ...
-    def handle_order_book_deltas(self, deltas: Any) -> None:
+    def handle_order_book_deltas(self, deltas: OrderBookDeltas | Any) -> None:
         """
         Handle the given order book deltas.
 
@@ -2090,7 +2106,7 @@ class Actor(Component):
 
         """
         ...
-    def handle_quote_ticks(self, ticks: list[Any]) -> None:
+    def handle_quote_ticks(self, ticks: list[QuoteTick]) -> None:
         """
         Handle the given historical quote tick data by handling each tick individually.
 
@@ -2156,7 +2172,7 @@ class Actor(Component):
 
         """
         ...
-    def handle_trade_ticks(self, ticks: list[Any]) -> None:
+    def handle_trade_ticks(self, ticks: list[TradeTick]) -> None:
         """
         Handle the given historical trade tick data by handling each tick individually.
 
@@ -2188,7 +2204,7 @@ class Actor(Component):
 
         """
         ...
-    def handle_bars(self, bars: list[Any]) -> None:
+    def handle_bars(self, bars: list[Bar]) -> None:
         """
         Handle the given historical bar data by handling each bar individually.
 
@@ -2242,7 +2258,7 @@ class Actor(Component):
 
         """
         ...
-    def handle_data(self, data: Any) -> None:
+    def handle_data(self, data: Data) -> None:
         """
         Handle the given data.
 
@@ -2259,7 +2275,7 @@ class Actor(Component):
 
         """
         ...
-    def handle_signal(self, signal: Any) -> None:
+    def handle_signal(self, signal: Data) -> None:
         """
         Handle the given signal.
 
@@ -2276,7 +2292,7 @@ class Actor(Component):
 
         """
         ...
-    def handle_historical_data(self, data: Any) -> None:
+    def handle_historical_data(self, data: Data) -> None:
         """
         Handle the given historical data.
 
@@ -2291,7 +2307,7 @@ class Actor(Component):
 
         """
         ...
-    def handle_event(self, event: Any) -> None:
+    def handle_event(self, event: Event) -> None:
         """
         Handle the given event.
 
@@ -2308,3 +2324,15 @@ class Actor(Component):
 
         """
         ...
+    def _handle_data_response(self, response: DataResponse) -> None: ...
+    def _handle_instrument_response(self, response: DataResponse) -> None: ...
+    def _handle_instruments_response(self, response: DataResponse) -> None: ...
+    def _handle_quote_ticks_response(self, response: DataResponse) -> None: ...
+    def _handle_trade_ticks_response(self, response: DataResponse) -> None: ...
+    def _handle_bars_response(self, response: DataResponse) -> None: ...
+    def _handle_aggregated_bars_response(self, response: DataResponse) -> None: ...
+    def _finish_response(self, request_id: UUID4) -> None: ...
+    def _handle_indicators_for_quote(self, indicators: list[Indicator], tick: QuoteTick) -> None: ...
+    def _handle_indicators_for_trade(self, indicators: list[Indicator], tick: TradeTick) -> None: ...
+    def _handle_indicators_for_bar(self, indicators: list[Indicator], bar: Bar) -> None: ...
+

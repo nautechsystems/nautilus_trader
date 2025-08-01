@@ -19,5 +19,27 @@ class AroonOscillator(Indicator):
     value: float
 
     def __init__(self, period: int) -> None: ...
-    def handle_bar(self, bar: Bar) -> None: ...
-    def update_raw(self, high: float, low: float) -> None: ...
+    def handle_bar(self, bar: Bar) -> None:
+        """
+        Update the indicator with the given bar.
+
+        Parameters
+        ----------
+        bar : Bar
+            The update bar.
+
+        """
+        ...
+    def update_raw(self, high: float, low: float) -> None:
+        """
+        Update the indicator with the given raw values.
+
+        Parameters
+        ----------
+        high : double
+            The high price.
+        low : double
+            The low price.
+        """
+        ...
+    def _reset(self) -> None: ...

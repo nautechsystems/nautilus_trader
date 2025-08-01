@@ -1,7 +1,8 @@
+from nautilus_trader.indicators.average.ma_factory import MovingAverageFactory
+from nautilus_trader.indicators.average.moving_average import MovingAverageType
 from nautilus_trader.core.nautilus_pyo3 import AverageTrueRange
-from nautilus_trader.core.nautilus_pyo3 import Bar
-from nautilus_trader.core.nautilus_pyo3 import MovingAverageType
-from stubs.indicators.average.moving_average import MovingAverage
+from nautilus_trader.model.data import Bar
+from nautilus_trader.indicators.base.indicator import Indicator
 
 class Pressure(Indicator):
     """
@@ -29,32 +30,46 @@ class Pressure(Indicator):
     value: float
     value_cumulative: float
     _atr: AverageTrueRange
-    _average_volume: MovingAverage
+    _average_volume: MovingAverageFactory
 
     def __init__(
         self,
         period: int,
-        ma_type: MovingAverageType = ...,
+        ma_type: MovingAverageType = MovingAverageType.EXPONENTIAL,
         atr_floor: float = 0,
     ) -> None: ...
-    @property
-    def name(self) -> str: ...
-    @property
-    def period(self) -> int: ...
-    @property
-    def initialized(self) -> bool: ...
-    @property
-    def has_inputs(self) -> bool: ...
-    @property
-    def value(self) -> float: ...
-    @property
-    def value_cumulative(self) -> float: ...
-    def handle_bar(self, bar: Bar) -> None: ...
+    def handle_bar(self, bar: Bar) -> None:
+        """
+        Update the indicator with the given bar.
+
+        Parameters
+        ----------
+        bar : Bar
+            The update bar.
+
+        """
+        ...
     def update_raw(
         self,
         high: float,
         low: float,
         close: float,
         volume: float,
-    ) -> None: ...
-    def reset(self) -> None: ...
+    ) -> None:
+        """
+        Update the indicator with the given raw values.
+
+        Parameters
+        ----------
+        high : double
+            The high price.
+        low : double
+            The low price.
+        close : double
+            The close price.
+        volume : double
+            The volume.
+
+        """
+        ...
+    def _reset(self) -> None: ...

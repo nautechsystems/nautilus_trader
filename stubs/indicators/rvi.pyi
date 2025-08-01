@@ -1,6 +1,6 @@
 from nautilus_trader.indicators.average.ma_factory import MovingAverageType
-from nautilus_trader.core.nautilus_pyo3 import Bar
-from nautilus_trader.core.nautilus_pyo3 import RelativeVolatilityIndex as Indicator # Importing from symbol reference since parent class is skipped
+from nautilus_trader.model.data import Bar
+from nautilus_trader.indicators.base.indicator import Indicator
 
 
 class RelativeVolatilityIndex(Indicator):
@@ -19,22 +19,16 @@ class RelativeVolatilityIndex(Indicator):
         The moving average type for the vip and vim (cannot be None).
     """
 
+    period: int
+    scalar: float
+    value: float
+
     def __init__(
         self,
         period: int,
         scalar: float = 100.0,
         ma_type: MovingAverageType = MovingAverageType.EXPONENTIAL,
     ) -> None: ...
-    @property
-    def period(self) -> int: ...
-    @property
-    def scalar(self) -> float: ...
-    @property
-    def initialized(self) -> bool: ...
-    @property
-    def has_inputs(self) -> bool: ...
-    @property
-    def value(self) -> float: ...
     def handle_bar(self, bar: Bar) -> None:
         """
         Update the indicator with the given bar.
@@ -55,5 +49,12 @@ class RelativeVolatilityIndex(Indicator):
         close : double
             The close price.
 
+        """
+        ...
+    def _reset(self) -> None:
+        """
+        Reset the indicator.
+
+        All stateful fields are reset to their initial value.
         """
         ...

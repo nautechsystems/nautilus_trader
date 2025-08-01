@@ -4429,7 +4429,7 @@ cdef class TradeTick(Data):
         return InstrumentId.from_mem_c(self._mem.instrument_id)
 
     @property
-    def trade_id(self) -> InstrumentId:
+    def trade_id(self) -> TradeId:
         """
         Return the ticks trade match ID.
 

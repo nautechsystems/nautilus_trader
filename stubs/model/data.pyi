@@ -5,25 +5,37 @@ from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.nautilus_pyo3 import AggregationSource, OrderSide
 from nautilus_trader.core.nautilus_pyo3 import AggressorSide
-from nautilus_trader.core.nautilus_pyo3 import Bar
 from nautilus_trader.core.nautilus_pyo3 import BarAggregation
 from nautilus_trader.core.nautilus_pyo3 import BookAction
-from nautilus_trader.core.nautilus_pyo3 import BookOrder
 from nautilus_trader.core.nautilus_pyo3 import InstrumentCloseType
 from nautilus_trader.core.nautilus_pyo3 import InstrumentId
 from nautilus_trader.core.nautilus_pyo3 import MarketStatusAction
-from nautilus_trader.core.nautilus_pyo3 import MarkPriceUpdate
-from nautilus_trader.core.nautilus_pyo3 import OrderBookDelta
-from nautilus_trader.core.nautilus_pyo3 import OrderBookDeltas
-from nautilus_trader.core.nautilus_pyo3 import OrderBookDepth10
-from nautilus_trader.core.nautilus_pyo3 import Price
 from nautilus_trader.core.nautilus_pyo3 import PriceType
-from nautilus_trader.core.nautilus_pyo3 import Quantity
-from nautilus_trader.core.nautilus_pyo3 import QuoteTick
-from nautilus_trader.core.nautilus_pyo3 import TradeId
-from nautilus_trader.core.nautilus_pyo3 import TradeTick
+from nautilus_trader.model.objects import Price, Quantity
+from nautilus_trader.model.identifiers import TradeId
+
 
 from datetime import timedelta
+
+# Forward declarations for classes defined later in this file
+# This is necessary when classes refer to each other.
+class BarSpecification: ...
+class BarType: ...
+class Bar(Data): ...
+class BookOrder: ...
+class OrderBookDelta(Data): ...
+class OrderBookDeltas(Data): ...
+class OrderBookDepth10(Data): ...
+class QuoteTick(Data): ...
+class TradeTick(Data): ...
+class MarkPriceUpdate(Data): ...
+class IndexPriceUpdate(Data): ...
+class InstrumentStatus(Data): ...
+
+
+def capsule_to_list(capsule: Any) -> list[Data]: ...
+def capsule_to_data(capsule: Any) -> Data: ...
+
 
 class BarSpecification:
     """
@@ -47,6 +59,8 @@ class BarSpecification:
     """
 
     def __init__(self, step: int, aggregation: BarAggregation, price_type: PriceType) -> None: ...
+    def __getstate__(self) -> tuple[int, BarAggregation, PriceType]: ...
+    def __setstate__(self, state: tuple[int, BarAggregation, PriceType]) -> None: ...
     def __eq__(self, other: BarSpecification) -> bool: ...
     def __lt__(self, other: BarSpecification) -> bool: ...
     def __le__(self, other: BarSpecification) -> bool: ...
@@ -283,6 +297,8 @@ class BarType:
     """
 
     def __init__(self, instrument_id: InstrumentId, bar_spec: BarSpecification, aggregation_source: AggregationSource = AggregationSource.EXTERNAL) -> None: ...
+    def __getstate__(self) -> tuple[Any, ...]: ...
+    def __setstate__(self, state: tuple[Any, ...]) -> None: ...
     def __eq__(self, other: BarType) -> bool: ...
     def __lt__(self, other: BarType) -> bool: ...
     def __le__(self, other: BarType) -> bool: ...
@@ -428,6 +444,8 @@ class Bar(Data):
 
     is_revision: bool
     def __init__(self, bar_type: BarType, open: Price, high: Price, low: Price, close: Price, volume: Quantity, ts_event: int, ts_init: int, is_revision: bool = False) -> None: ...
+    def __getstate__(self) -> tuple[Any, ...]: ...
+    def __setstate__(self, state: tuple[Any, ...]) -> None: ...
     def __eq__(self, other: Bar) -> bool: ...
     def __hash__(self) -> int: ...
     def __str__(self) -> str: ...
@@ -521,9 +539,9 @@ class Bar(Data):
         """
         ...
     @staticmethod
-    def from_raw_arrays_to_list(bar_type: BarType, price_prec: int, size_prec: int, opens: float[:], highs: float[:], lows: float[:], closes: float[:], volumes: float[:], ts_events: int[:], ts_inits: int[:]) -> list[Bar]: ... # skip-validate
+    def from_raw_arrays_to_list(bar_type: BarType, price_prec: int, size_prec: int, opens: np.ndarray[Any, np.dtype[np.float64]], highs: np.ndarray[Any, np.dtype[np.float64]], lows: np.ndarray[Any, np.dtype[np.float64]], closes: np.ndarray[Any, np.dtype[np.float64]], volumes: np.ndarray[Any, np.dtype[np.float64]], ts_events: np.ndarray[Any, np.dtype[np.uint64]], ts_inits: np.ndarray[Any, np.dtype[np.uint64]]) -> list[Bar]: ...
     @staticmethod
-    def from_raw(bar_type: BarType, open: int, high: int, low: int, close: int, price_prec: int, volume: int, size_prec: int, ts_event: int, ts_init: int) -> Bar: ...
+    def from_raw(bar_type: BarType, open: PriceRaw, high: PriceRaw, low: PriceRaw, close: PriceRaw, price_prec: int, volume: QuantityRaw, size_prec: int, ts_event: int, ts_init: int) -> Bar: ...
     @staticmethod
     def from_dict(values: dict[str, Any]) -> Bar:
         """
@@ -568,7 +586,7 @@ class Bar(Data):
         """
         ...
     @staticmethod
-    def from_pyo3_list(pyo3_bars: list[Bar]) -> list[Bar]:
+    def from_pyo3_list(pyo3_bars: list[nautilus_pyo3.Bar]) -> list[Bar]:
         """
         Return legacy Cython bars converted from the given pyo3 Rust objects.
 
@@ -584,7 +602,7 @@ class Bar(Data):
         """
         ...
     @staticmethod
-    def from_pyo3(pyo3_bar: Bar) -> Bar:
+    def from_pyo3(pyo3_bar: nautilus_pyo3.Bar) -> Bar:
         """
         Return a legacy Cython bar converted from the given pyo3 Rust object.
 
@@ -718,6 +736,8 @@ class BookOrder:
     """
 
     def __init__(self, side: OrderSide, price: Price, size: Quantity, order_id: int) -> None: ...
+    def __getstate__(self) -> tuple[OrderSide, int, int, int, int, int]: ...
+    def __setstate__(self, state: tuple[OrderSide, int, int, int, int, int]) -> None: ...
     def __eq__(self, other: BookOrder) -> bool: ...
     def __hash__(self) -> int: ...
     def __repr__(self) -> str: ...
@@ -786,7 +806,7 @@ class BookOrder:
         """
         ...
     @staticmethod
-    def from_raw(side: OrderSide, price_raw: int, price_prec: int, size_raw: int, size_prec: int, order_id: int) -> BookOrder:
+    def from_raw(side: OrderSide, price_raw: PriceRaw, price_prec: int, size_raw: QuantityRaw, size_prec: int, order_id: int) -> BookOrder:
         """
         Return an book order from the given raw values.
 
@@ -870,6 +890,8 @@ class OrderBookDelta(Data):
     """
 
     def __init__(self, instrument_id: InstrumentId, action: BookAction, order: BookOrder | None, flags: int, sequence: int, ts_event: int, ts_init: int) -> None: ...
+    def __getstate__(self) -> tuple[Any, ...]: ...
+    def __setstate__(self, state: tuple[Any, ...]) -> None: ...
     def __eq__(self, other: OrderBookDelta) -> bool: ...
     def __hash__(self) -> int: ...
     def __repr__(self) -> str: ...
@@ -997,9 +1019,9 @@ class OrderBookDelta(Data):
     @staticmethod
     def list_from_capsule(capsule: Any) -> list[OrderBookDelta]: ...
     @staticmethod
-    def capsule_from_list(items: list[Any]) -> Any: ...
+    def capsule_from_list(items: list[OrderBookDelta]) -> Any: ...
     @staticmethod
-    def from_raw(instrument_id: InstrumentId, action: BookAction, side: OrderSide, price_raw: int, price_prec: int, size_raw: int, size_prec: int, order_id: int, flags: int, sequence: int, ts_event: int, ts_init: int) -> OrderBookDelta:
+    def from_raw(instrument_id: InstrumentId, action: BookAction, side: OrderSide, price_raw: PriceRaw, price_prec: int, size_raw: QuantityRaw, size_prec: int, order_id: int, flags: int, sequence: int, ts_event: int, ts_init: int) -> OrderBookDelta:
         """
         Return an order book delta from the given raw values.
 
@@ -1093,7 +1115,7 @@ class OrderBookDelta(Data):
         """
         ...
     @staticmethod
-    def from_pyo3(pyo3_delta: OrderBookDelta) -> OrderBookDelta:
+    def from_pyo3(pyo3_delta: nautilus_pyo3.OrderBookDelta) -> OrderBookDelta:
         """
         Return a legacy Cython order book delta converted from the given pyo3 Rust object.
 
@@ -1109,7 +1131,7 @@ class OrderBookDelta(Data):
         """
         ...
     @staticmethod
-    def from_pyo3_list(pyo3_deltas: list[OrderBookDelta]) -> list[OrderBookDelta]:
+    def from_pyo3_list(pyo3_deltas: list[nautilus_pyo3.OrderBookDelta]) -> list[OrderBookDelta]:
         """
         Return legacy Cython order book deltas converted from the given pyo3 Rust objects.
 
@@ -1143,7 +1165,9 @@ class OrderBookDeltas(Data):
 
     """
 
-    def __init__(self, instrument_id: InstrumentId, deltas: list[Any]) -> None: ...
+    def __init__(self, instrument_id: InstrumentId, deltas: list[OrderBookDelta]) -> None: ...
+    def __getstate__(self) -> tuple[str, bytes]: ...
+    def __setstate__(self, state: tuple[str, bytes]) -> None: ...
     def __del__(self) -> None: ...
     def __eq__(self, other: OrderBookDeltas) -> bool: ...
     def __hash__(self) -> int: ...
@@ -1328,7 +1352,9 @@ class OrderBookDepth10(Data):
 
     """
 
-    def __init__(self, instrument_id: InstrumentId, bids: list[Any], asks: list[Any], bid_counts: list[Any], ask_counts: list[Any], flags: int, sequence: int, ts_event: int, ts_init: int) -> None: ...
+    def __init__(self, instrument_id: InstrumentId, bids: list[BookOrder], asks: list[BookOrder], bid_counts: list[int], ask_counts: list[int], flags: int, sequence: int, ts_event: int, ts_init: int) -> None: ...
+    def __getstate__(self) -> tuple[str, bytes, bytes, bytes, bytes, int, int, int, int]: ...
+    def __setstate__(self, state: tuple[str, bytes, bytes, bytes, bytes, int, int, int, int]) -> None: ...
     def __eq__(self, other: OrderBookDepth10) -> bool: ...
     def __hash__(self) -> int: ...
     def __repr__(self) -> str: ...
@@ -1434,7 +1460,7 @@ class OrderBookDepth10(Data):
     @staticmethod
     def list_from_capsule(capsule: Any) -> list[OrderBookDepth10]: ...
     @staticmethod
-    def capsule_from_list(items: list[Any]) -> Any: ...
+    def capsule_from_list(items: list[OrderBookDepth10]) -> Any: ...
     @staticmethod
     def from_dict(values: dict[str, Any]) -> OrderBookDepth10:
         """
@@ -1463,7 +1489,7 @@ class OrderBookDepth10(Data):
         """
         ...
     @staticmethod
-    def from_pyo3(pyo3_depth: OrderBookDepth10) -> OrderBookDepth10:
+    def from_pyo3(pyo3_depth: nautilus_pyo3.OrderBookDepth10) -> OrderBookDepth10:
         """
         Return a legacy Cython order book depth converted from the given pyo3 Rust object.
 
@@ -1479,7 +1505,7 @@ class OrderBookDepth10(Data):
         """
         ...
     @staticmethod
-    def from_pyo3_list(pyo3_depths: Any) -> list[OrderBookDepth10]:
+    def from_pyo3_list(pyo3_depths: list[nautilus_pyo3.OrderBookDepth10]) -> list[OrderBookDepth10]:
         """
         Return legacy Cython order book depths converted from the given pyo3 Rust objects.
 
@@ -1528,6 +1554,9 @@ class InstrumentStatus(Data):
     ts_init: int
     reason: str | None
     trading_event: str | None
+    _is_trading: bool | None
+    _is_quoting: bool | None
+    _is_short_sell_restricted: bool | None
     def __init__(self, instrument_id: InstrumentId, action: MarketStatusAction, ts_event: int, ts_init: int, reason: str | None = None, trading_event: str | None = None, is_trading: bool | None = None, is_quoting: bool | None = None, is_short_sell_restricted: bool | None = None) -> None: ...
     def __eq__(self, other: InstrumentStatus) -> bool: ...
     def __hash__(self) -> int: ...
@@ -1593,7 +1622,7 @@ class InstrumentStatus(Data):
         """
         ...
     @staticmethod
-    def from_pyo3_list(pyo3_status_list: list[nautilus_pyo3.InstrumentStatus]) -> list[QuoteTick]:
+    def from_pyo3_list(pyo3_status_list: list[nautilus_pyo3.InstrumentStatus]) -> list[InstrumentStatus]:
         """
         Return legacy Cython instrument status converted from the given pyo3 Rust objects.
 
@@ -1609,7 +1638,7 @@ class InstrumentStatus(Data):
         """
         ...
     @staticmethod
-    def from_pyo3(pyo3_status: InstrumentStatus) -> InstrumentStatus:
+    def from_pyo3(pyo3_status: nautilus_pyo3.InstrumentStatus) -> InstrumentStatus:
         """
         Return a legacy Cython quote tick converted from the given pyo3 Rust object.
 
@@ -1707,7 +1736,7 @@ class InstrumentClose(Data):
         """
         ...
     @staticmethod
-    def from_pyo3_list(pyo3_closes: list[InstrumentClose]) -> list[InstrumentClose]:
+    def from_pyo3_list(pyo3_closes: list[nautilus_pyo3.InstrumentClose]) -> list[InstrumentClose]:
         """
         Return legacy Cython instrument closes converted from the given pyo3 Rust objects.
 
@@ -1723,7 +1752,7 @@ class InstrumentClose(Data):
         """
         ...
     @staticmethod
-    def from_pyo3(pyo3_close: InstrumentClose) -> InstrumentClose:
+    def from_pyo3(pyo3_close: nautilus_pyo3.InstrumentClose) -> InstrumentClose:
         """
         Return a legacy Cython instrument close converted from the given pyo3 Rust object.
 
@@ -1782,6 +1811,8 @@ class QuoteTick(Data):
     """
 
     def __init__(self, instrument_id: InstrumentId, bid_price: Price, ask_price: Price, bid_size: Quantity, ask_size: Quantity, ts_event: int, ts_init: int) -> None: ...
+    def __getstate__(self) -> tuple[str, int, int, int, int, int, int, int, int, int, int]: ...
+    def __setstate__(self, state: tuple[str, int, int, int, int, int, int, int, int, int, int]) -> None: ...
     def __eq__(self, other: QuoteTick) -> bool: ...
     def __hash__(self) -> int: ...
     def __str__(self) -> str: ...
@@ -1864,13 +1895,13 @@ class QuoteTick(Data):
         """
         ...
     @staticmethod
-    def from_raw_arrays_to_list(instrument_id: InstrumentId, price_prec: int, size_prec: int, bid_prices_raw: np.ndarray, ask_prices_raw: np.ndarray, bid_sizes_raw: np.ndarray, ask_sizes_raw: np.ndarray, ts_events: np.ndarray, ts_inits: np.ndarray) -> list[QuoteTick]: ...
+    def from_raw_arrays_to_list(instrument_id: InstrumentId, price_prec: int, size_prec: int, bid_prices_raw: np.ndarray[Any, np.dtype[np.float64]], ask_prices_raw: np.ndarray[Any, np.dtype[np.float64]], bid_sizes_raw: np.ndarray[Any, np.dtype[np.float64]], ask_sizes_raw: np.ndarray[Any, np.dtype[np.float64]], ts_events: np.ndarray[Any, np.dtype[np.uint64]], ts_inits: np.ndarray[Any, np.dtype[np.uint64]]) -> list[QuoteTick]: ...
     @staticmethod
     def list_from_capsule(capsule: Any) -> list[QuoteTick]: ...
     @staticmethod
-    def capsule_from_list(items: list[Any]) -> Any: ...
+    def capsule_from_list(items: list[QuoteTick]) -> Any: ...
     @staticmethod
-    def from_raw(instrument_id: InstrumentId, bid_price_raw: int, ask_price_raw: int, bid_price_prec: int, ask_price_prec: int, bid_size_raw: int, ask_size_raw: int, bid_size_prec: int, ask_size_prec: int, ts_event: int, ts_init: int) -> QuoteTick:
+    def from_raw(instrument_id: InstrumentId, bid_price_raw: PriceRaw, ask_price_raw: PriceRaw, bid_price_prec: int, ask_price_prec: int, bid_size_raw: QuantityRaw, ask_size_raw: QuantityRaw, bid_size_prec: int, ask_size_prec: int, ts_event: int, ts_init: int) -> QuoteTick:
         """
         Return a quote tick from the given raw values.
 
@@ -1940,7 +1971,7 @@ class QuoteTick(Data):
         """
         ...
     @staticmethod
-    def from_pyo3_list(pyo3_quotes: list[QuoteTick]) -> list[QuoteTick]:
+    def from_pyo3_list(pyo3_quotes: list[nautilus_pyo3.QuoteTick]) -> list[QuoteTick]:
         """
         Return legacy Cython quotes converted from the given pyo3 Rust objects.
 
@@ -1972,11 +2003,12 @@ class QuoteTick(Data):
         """
         ...
     @staticmethod
-    def from_pyo3(pyo3_quote: QuoteTick) -> QuoteTick:
+    def from_pyo3(pyo3_quote: nautilus_pyo3.QuoteTick) -> QuoteTick:
         """
         Return a legacy Cython quote tick converted from the given pyo3 Rust object.
 
         Parameters
+  # Corrected return type
         ----------
         pyo3_quote : nautilus_pyo3.QuoteTick
             The pyo3 Rust quote tick to convert from.
@@ -2062,6 +2094,8 @@ class TradeTick(Data):
     """
 
     def __init__(self, instrument_id: InstrumentId, price: Price, size: Quantity, aggressor_side: AggressorSide, trade_id: TradeId, ts_event: int, ts_init: int) -> None: ...
+    def __getstate__(self) -> tuple[str, int, int, int, int, AggressorSide, str, int, int]: ...
+    def __setstate__(self, state: tuple[str, int, int, int, int, AggressorSide, str, int, int]) -> None: ...
     def __eq__(self, other: TradeTick) -> bool: ...
     def __hash__(self) -> int: ...
     def __str__(self) -> str: ...
@@ -2078,7 +2112,7 @@ class TradeTick(Data):
         """
         ...
     @property
-    def trade_id(self) -> InstrumentId:
+    def trade_id(self) -> TradeId:
         """
         Return the ticks trade match ID.
 
@@ -2144,13 +2178,13 @@ class TradeTick(Data):
         """
         ...
     @staticmethod
-    def from_raw_arrays_to_list(instrument_id: InstrumentId, price_prec: int, size_prec: int, prices_raw: float[:], sizes_raw: float[:], aggressor_sides: int[:], trade_ids: list[str], ts_events: int[:], ts_inits: int[:]) -> list[TradeTick]: ... # skip-validate
+    def from_raw_arrays_to_list(instrument_id: InstrumentId, price_prec: int, size_prec: int, prices_raw: np.ndarray[Any, np.dtype[np.float64]], sizes_raw: np.ndarray[Any, np.dtype[np.float64]], aggressor_sides: np.ndarray[Any, np.dtype[np.uint8]], trade_ids: list[str], ts_events: np.ndarray[Any, np.dtype[np.uint64]], ts_inits: np.ndarray[Any, np.dtype[np.uint64]]) -> list[TradeTick]: ...
     @staticmethod
     def list_from_capsule(capsule: Any) -> list[TradeTick]: ...
     @staticmethod
-    def capsule_from_list(items: list[Any]) -> Any: ...
+    def capsule_from_list(items: list[TradeTick]) -> Any: ...
     @staticmethod
-    def from_raw(instrument_id: InstrumentId, price_raw: int, price_prec: int, size_raw: int, size_prec: int, aggressor_side: AggressorSide, trade_id: TradeId, ts_event: int, ts_init: int) -> TradeTick:
+    def from_raw(instrument_id: InstrumentId, price_raw: PriceRaw, price_prec: int, size_raw: QuantityRaw, size_prec: int, aggressor_side: AggressorSide, trade_id: TradeId, ts_event: int, ts_init: int) -> TradeTick:
         """
         Return a trade tick from the given raw values.
 
@@ -2225,7 +2259,7 @@ class TradeTick(Data):
         """
         ...
     @staticmethod
-    def from_pyo3_list(pyo3_trades: list[TradeTick]) -> list[TradeTick]:
+    def from_pyo3_list(pyo3_trades: list[nautilus_pyo3.TradeTick]) -> list[TradeTick]:
         """
         Return legacy Cython trades converted from the given pyo3 Rust objects.
 
@@ -2241,7 +2275,7 @@ class TradeTick(Data):
         """
         ...
     @staticmethod
-    def from_pyo3(pyo3_trade: TradeTick) -> TradeTick:
+    def from_pyo3(pyo3_trade: nautilus_pyo3.TradeTick) -> TradeTick:
         """
         Return a legacy Cython trade tick converted from the given pyo3 Rust object.
 
@@ -2377,7 +2411,7 @@ class MarkPriceUpdate(Data):
         """
         ...
     @staticmethod
-    def from_pyo3_list(pyo3_mark_prices: list[MarkPriceUpdate]) -> list[MarkPriceUpdate]:
+    def from_pyo3_list(pyo3_mark_prices: list[nautilus_pyo3.MarkPriceUpdate]) -> list[MarkPriceUpdate]:
         """
         Return legacy Cython trades converted from the given pyo3 Rust objects.
 
@@ -2393,7 +2427,7 @@ class MarkPriceUpdate(Data):
         """
         ...
     @staticmethod
-    def from_pyo3(pyo3_mark_price: MarkPriceUpdate) -> MarkPriceUpdate:
+    def from_pyo3(pyo3_mark_price: nautilus_pyo3.MarkPriceUpdate) -> MarkPriceUpdate:
         """
         Return a legacy Cython mark price converted from the given pyo3 Rust object.
 
@@ -2489,7 +2523,7 @@ class IndexPriceUpdate(Data):
         """
         ...
     @staticmethod
-    def from_pyo3_list(pyo3_index_prices: list[IndexPriceUpdate]) -> list[IndexPriceUpdate]:
+    def from_pyo3_list(pyo3_index_prices: list[nautilus_pyo3.IndexPriceUpdate]) -> list[IndexPriceUpdate]:
         """
         Return legacy Cython index prices converted from the given pyo3 Rust objects.
 
@@ -2505,7 +2539,7 @@ class IndexPriceUpdate(Data):
         """
         ...
     @staticmethod
-    def from_pyo3(pyo3_index_price: IndexPriceUpdate) -> IndexPriceUpdate:
+    def from_pyo3(pyo3_index_price: nautilus_pyo3.IndexPriceUpdate) -> IndexPriceUpdate:
         """
         Return a legacy Cython index price converted from the given pyo3 Rust object.
 

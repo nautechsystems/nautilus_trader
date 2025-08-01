@@ -1,6 +1,5 @@
 from nautilus_trader.indicators.average.ma_factory import MovingAverageType
 from nautilus_trader.core.nautilus_pyo3 import Bar
-from nautilus_trader.core.nautilus_pyo3 import MovingAverageType
 from nautilus_trader.core.nautilus_pyo3 import Indicator
 
 
@@ -27,6 +26,12 @@ class KeltnerChannel(Indicator):
         The ATR floor (minimum) output value for the indicator (>= 0).
     """
 
+    period: int
+    k_multiplier: float
+    upper: float
+    middle: float
+    lower: float
+
     def __init__(
         self,
         period: int,
@@ -36,31 +41,45 @@ class KeltnerChannel(Indicator):
         use_previous: bool = True,
         atr_floor: float = 0,
     ) -> None: ...
-    @property
-    def name(self) -> str: ...
-    @property
-    def period(self) -> int: ...
-    @property
-    def k_multiplier(self) -> float: ...
-    @property
-    def use_previous(self) -> bool: ...
-    @property
-    def atr_floor(self) -> float: ...
-    @property
-    def initialized(self) -> bool: ...
-    @property
-    def has_inputs(self) -> bool: ...
-    @property
-    def upper(self) -> float: ...
-    @property
-    def middle(self) -> float: ...
-    @property
-    def lower(self) -> float: ...
+
+    def handle_bar(self, bar: Bar) -> None:
+        """
+        Update the indicator with the given bar.
+
+        Parameters
+        ----------
+        bar : Bar
+            The update bar.
+
+        """
+        ...
+
     def update_raw(
         self,
         high: float,
         low: float,
         close: float,
-    ) -> None: ...
-    def handle_bar(self, bar: Bar) -> None: ...
-    def reset(self) -> None: ...
+    ) -> None:
+        """
+        Update the indicator with the given raw values.
+
+        Parameters
+        ----------
+        high : double
+            The high price.
+        low : double
+            The low price.
+        close : double
+            The close price.
+
+        """
+        ...
+
+    def _reset(self) -> None:
+        """
+        Reset the indicator.
+
+        All stateful fields are reset to their initial value.
+        """
+        ...
+

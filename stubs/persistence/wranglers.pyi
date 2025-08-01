@@ -9,6 +9,10 @@ from nautilus_trader.core.nautilus_pyo3 import Instrument
 from nautilus_trader.core.nautilus_pyo3 import OrderBookDelta
 from nautilus_trader.core.nautilus_pyo3 import QuoteTick
 from nautilus_trader.core.nautilus_pyo3 import TradeTick
+from nautilus_trader.core.nautilus_pyo3 import AggressorSide
+from nautilus_trader.core.nautilus_pyo3 import OrderSide
+from nautilus_trader.core.nautilus_pyo3 import BookAction
+
 
 BAR_PRICES: tuple[str, str, str, str]
 BAR_COLUMNS: tuple[str, str, str, str, str]
@@ -33,7 +37,7 @@ def preprocess_bar_data(data: pd.DataFrame, is_raw: bool) -> pd.DataFrame:
 
     """
     ...
-def calculate_bar_price_offsets(num_records: int, timestamp_is_close: bool, offset_interval_ms: int, random_seed: int | None = None) -> dict[str, Any]: 
+def calculate_bar_price_offsets(num_records: int, timestamp_is_close: bool, offset_interval_ms: int, random_seed: int | None = None) -> dict[str, Any]:
     """
     Calculate and potentially randomize the time offsets for bar prices based on the closeness of the timestamp.
 
@@ -54,7 +58,7 @@ def calculate_bar_price_offsets(num_records: int, timestamp_is_close: bool, offs
               high and low offsets are randomized.
     """
     ...
-def calculate_volume_quarter(volume: np.ndarray, precision: int, size_increment: float) -> np.ndarray: 
+def calculate_volume_quarter(volume: np.ndarray, precision: int, size_increment: float) -> np.ndarray:
     """
     Convert raw volume data to quarter precision.
 
@@ -72,22 +76,7 @@ def calculate_volume_quarter(volume: np.ndarray, precision: int, size_increment:
 
     """
     ...
-def align_bid_ask_bar_data(bid_data: pd.DataFrame, ask_data: pd.DataFrame) -> pd.DataFrame: 
-    """
-    Merge bid and ask data into a single DataFrame with prefixed column names.
-
-    Parameters
-    ----------
-    bid_data : pd.DataFrame
-        The DataFrame containing bid data.
-    ask_data : pd.DataFrame
-        The DataFrame containing ask data.
-
-    Returns
-    pd.DataFrame
-        A merged DataFrame with columns prefixed by 'bid_' for bid data and 'ask_' for ask data, joined on their indexes.
-
-    """
+def align_bid_ask_bar_data(bid_data: pd.DataFrame, ask_data: pd.DataFrame) -> pd.DataFrame:
     """
     Merge bid and ask data into a single DataFrame with prefixed column names.
 
@@ -109,10 +98,12 @@ def prepare_event_and_init_timestamps(index: pd.DatetimeIndex, ts_init_delta: in
 class OrderBookDeltaDataWrangler:
     """
     Provides a means of building lists of Nautilus `OrderBookDelta` objects.
+
     Parameters
     ----------
     instrument : Instrument
         The instrument for the data wrangler.
+
     """
     instrument: Instrument
     def __init__(self, instrument: Instrument) -> None: ...
@@ -138,10 +129,23 @@ class OrderBookDeltaDataWrangler:
 
         """
         ...
+    def _build_delta(
+        self,
+        action: BookAction,
+        side: OrderSide,
+        price: float,
+        size: float,
+        order_id: int,
+        flags: int,
+        sequence: int,
+        ts_event: int,
+        ts_init: int,
+    ) -> OrderBookDelta: ...
 
 class QuoteTickDataWrangler:
     """
     Provides a means of building lists of Nautilus `QuoteTick` objects.
+
     Parameters
     ----------
     instrument : Instrument
@@ -149,7 +153,7 @@ class QuoteTickDataWrangler:
     """
     instrument: Instrument
     def __init__(self, instrument: Instrument) -> None: ...
-    def process(self, data: pd.DataFrame, default_volume: float = 1_000_000.0, ts_init_delta: int = 0) -> list[QuoteTick]: 
+    def process(self, data: pd.DataFrame, default_volume: float = 1_000_000.0, ts_init_delta: int = 0) -> list[QuoteTick]:
         """
         Process the given tick dataset into Nautilus `QuoteTick` objects.
 
@@ -174,7 +178,7 @@ class QuoteTickDataWrangler:
 
         """
         ...
-    def process_bar_data(self, bid_data: pd.DataFrame, ask_data: pd.DataFrame, default_volume: float = 1_000_000.0, ts_init_delta: int = 0, offset_interval_ms: int = 100, timestamp_is_close: bool = True, random_seed: int | None = None, is_raw: bool = False, sort_data: bool = True) -> list[QuoteTick]: 
+    def process_bar_data(self, bid_data: pd.DataFrame, ask_data: pd.DataFrame, default_volume: float = 1_000_000.0, ts_init_delta: int = 0, offset_interval_ms: int = 100, timestamp_is_close: bool = True, random_seed: int | None = None, is_raw: bool = False, sort_data: bool = True) -> list[QuoteTick]:
         """
         Process the given bar datasets into Nautilus `QuoteTick` objects.
 
@@ -211,11 +215,21 @@ class QuoteTickDataWrangler:
 
         """
         ...
-    def _create_quote_ticks_array(self, merged_data, is_raw, instrument: Instrument, offsets, ts_init_delta) -> None: ...
+    def _create_quote_ticks_array(self, merged_data: Any, is_raw: bool, instrument: Instrument, offsets: dict[str, Any], ts_init_delta: int) -> np.ndarray: ...
+    def _build_tick(
+        self,
+        bid: float,
+        ask: float,
+        bid_size: float,
+        ask_size: float,
+        ts_event: int,
+        ts_init: int,
+    ) -> QuoteTick: ...
 
 class TradeTickDataWrangler:
     """
     Provides a means of building lists of Nautilus `TradeTick` objects.
+
     Parameters
     ----------
     instrument : Instrument
@@ -249,7 +263,7 @@ class TradeTickDataWrangler:
 
         """
         ...
-    def process_bar_data(self, data: pd.DataFrame, ts_init_delta: int = 0, offset_interval_ms: int = 100, timestamp_is_close: bool = True, random_seed: int | None = None, is_raw: bool = False, sort_data: bool = True) -> list[TradeTick]: 
+    def process_bar_data(self, data: pd.DataFrame, ts_init_delta: int = 0, offset_interval_ms: int = 100, timestamp_is_close: bool = True, random_seed: int | None = None, is_raw: bool = False, sort_data: bool = True) -> list[TradeTick]:
         """
         Process the given bar datasets into Nautilus `TradeTick` objects.
 
@@ -291,12 +305,22 @@ class TradeTickDataWrangler:
 
         """
         ...
-    def _create_trade_ticks_array(self, records, offsets) -> None: ...
-    def _create_side_if_not_exist(self, data) -> None: ...
+    def _create_trade_ticks_array(self, records: Any, offsets: dict[str, Any]) -> np.ndarray: ...
+    def _create_side_if_not_exist(self, data: pd.DataFrame) -> Any: ...
+    def _build_tick(
+        self,
+        price: float,
+        size: float,
+        aggressor_side: AggressorSide,
+        trade_id: str,
+        ts_event: int,
+        ts_init: int,
+    ) -> TradeTick: ...
 
 class BarDataWrangler:
     """
     Provides a means of building lists of Nautilus `Bar` objects.
+
     Parameters
     ----------
     bar_type : BarType
@@ -336,3 +360,5 @@ class BarDataWrangler:
 
         """
         ...
+    def _build_bar(self, values: memoryview, ts_event: int, ts_init: int) -> Bar: ...
+

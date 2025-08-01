@@ -1,7 +1,6 @@
 from nautilus_trader.indicators.average.ma_factory import MovingAverageType
-from nautilus_trader.core.nautilus_pyo3 import Bar
-from nautilus_trader.core.nautilus_pyo3 import MovingAverageType
-from nautilus_trader.core.nautilus_pyo3 import Indicator
+from nautilus_trader.model.data import Bar
+from nautilus_trader.indicators.base.indicator import Indicator
 
 
 class Bias(Indicator):
@@ -16,23 +15,14 @@ class Bias(Indicator):
         The moving average type for the indicator (cannot be None).
     """
 
+    period: int
+    value: float
+
     def __init__(
         self,
         period: int,
         ma_type: MovingAverageType = MovingAverageType.SIMPLE,
     ) -> None: ...
-    @property
-    def name(self) -> str: ...
-    @property
-    def period(self) -> int: ...
-    @property
-    def count(self) -> int: ...
-    @property
-    def initialized(self) -> bool: ...
-    @property
-    def has_inputs(self) -> bool: ...
-    @property
-    def value(self) -> float: ...
     def handle_bar(self, bar: Bar) -> None:
         """
         Update the indicator with the given bar.
@@ -55,4 +45,4 @@ class Bias(Indicator):
 
         """
         ...
-    def reset(self) -> None: ...
+    def _reset(self) -> None: ...

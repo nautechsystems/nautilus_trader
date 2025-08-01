@@ -44,12 +44,14 @@ class PositionSizer:
         stop_loss: Price,
         equity: Money,
         risk: Decimal,
-        commission_rate: Decimal = ...,
-        exchange_rate: Decimal = ...,
+        commission_rate: Decimal = Decimal(0),
+        exchange_rate: Decimal = Decimal(1),
         hard_limit: Decimal | None = None,
-        unit_batch_size: Decimal = ...,
+        unit_batch_size: Decimal = Decimal(1),
         units: int = 1,
-    ) -> Quantity: ...
+    ) -> Quantity:
+        """Abstract method (implement in subclass)."""
+        ...
 
 
 class FixedRiskSizer(PositionSizer):
@@ -69,10 +71,10 @@ class FixedRiskSizer(PositionSizer):
         stop_loss: Price,
         equity: Money,
         risk: Decimal,
-        commission_rate: Decimal = ...,
-        exchange_rate: Decimal = ...,
+        commission_rate: Decimal = Decimal(0),
+        exchange_rate: Decimal = Decimal(1),
         hard_limit: Decimal | None = None,
-        unit_batch_size: Decimal = ...,
+        unit_batch_size: Decimal = Decimal(1),
         units: int = 1,
     ) -> Quantity:
         """
@@ -120,3 +122,4 @@ class FixedRiskSizer(PositionSizer):
 
         """
         ...
+

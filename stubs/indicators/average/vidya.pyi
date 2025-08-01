@@ -32,20 +32,17 @@ class VariableIndexDynamicAverage(MovingAverage):
         If `cmo_ma_type` is ``VARIABLE_INDEX_DYNAMIC``.
     """
 
+    cmo: ChandeMomentumOscillator
+    cmo_pct: float
+    alpha: float
+    value: float
+
     def __init__(
         self,
         period: int,
         price_type: PriceType = PriceType.LAST,
         cmo_ma_type: MovingAverageType = MovingAverageType.SIMPLE,
     ) -> None: ...
-    @property
-    def cmo(self) -> ChandeMomentumOscillator: ...
-    @property
-    def cmo_pct(self) -> float: ...
-    @property
-    def alpha(self) -> float: ...
-    @property
-    def value(self) -> float: ...
     def handle_quote_tick(self, tick: QuoteTick) -> None:
         """
         Update the indicator with the given quote tick.

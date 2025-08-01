@@ -1,13 +1,13 @@
 from collections import deque
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Iterable
 
 import numpy as np
 
 from nautilus_trader.core.nautilus_pyo3 import Bar
-from nautilus_trader.core.nautilus_pyo3 import MovingAverageType
 from nautilus_trader.core.nautilus_pyo3 import PriceType
 from nautilus_trader.core.nautilus_pyo3 import QuoteTick
 from nautilus_trader.core.nautilus_pyo3 import TradeTick
+from nautilus_trader.indicators.average.nautilus_pyo3 import MovingAverage
 
 class WeightedMovingAverage(MovingAverage):
     """
@@ -28,12 +28,13 @@ class WeightedMovingAverage(MovingAverage):
         If `period` is not positive (> 0).
     """
 
+    _inputs: deque
     weights: np.ndarray | None
     value: float
     def __init__(
         self,
         period: int,
-        weights: Any | None = None,
+        weights: Iterable[float] | np.ndarray | None = None,
         price_type: PriceType = PriceType.LAST,
     ) -> None: ...
     def handle_quote_tick(self, tick: QuoteTick) -> None:
@@ -80,3 +81,4 @@ class WeightedMovingAverage(MovingAverage):
 
         """
         ...
+    def _reset_ma(self) -> None: ...

@@ -1,3 +1,4 @@
+import re
 import traceback
 from dataclasses import dataclass
 from dataclasses import field
@@ -297,6 +298,9 @@ class CythonCodeAnalyzer(ScopeTrackingTransform):
             if arg_type == "self":
                 arg_str = "self"
             else:
+                if arg_name == "" and arg_type: # when there is no name and is type
+                    arg_name, arg_type = arg_type, None
+
                 arg_str = arg_name
                 if arg_type and arg_type != "self":
                     arg_str += f": {arg_type}"
@@ -312,6 +316,8 @@ class CythonCodeAnalyzer(ScopeTrackingTransform):
         if is_cfunc:
             return self.map_cython_type(self._extract_name_from_node(node.base_type))
         if hasattr(node, "return_type_annotation") and node.return_type_annotation:
+            if hasattr(node.return_type_annotation, "string") and node.return_type_annotation.string:
+                return self._extract_type_from_node(node.return_type_annotation)
             return self._extract_type_from_node(node.return_type_annotation.expr)
         return None
 
@@ -391,11 +397,11 @@ class CythonCodeAnalyzer(ScopeTrackingTransform):
         }
         return type_map.get(type_hint, type_hint)
 
-
 def analyze_cython_code(name: str, code_content: str) -> CythonCodeAnalyzer:
     """Analyzes Cython code and extracts information."""
     options = CompilationOptions(default_options)
     context = Context(include_directories=["./"], compiler_directives={}, options=options)
+
     try:
         tree = parse_from_strings(name, code_content)
         if tree:
@@ -493,7 +499,7 @@ def print_results(analyzer: CythonCodeAnalyzer):  # noqa: C901
             print(f"  - {var.name}{type_info}{value_info} ({classification})")
 
 if __name__ == "__main__":
-    file_path = Path("/Users/sam/Documents/Development/woung717/nautilus_trader/nautilus_trader/persistence/wranglers.pyx")
+    file_path = Path("/Users/sam/Documents/Development/woung717/nautilus_trader/nautilus_trader/model/instruments/base.pyx")
     code = file_path.read_text(encoding="utf-8")
 
     analyzer_result = analyze_cython_code(name=str(file_path), code_content=code)

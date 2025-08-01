@@ -1,6 +1,7 @@
 from collections import deque
 
 from nautilus_trader.core.nautilus_pyo3 import Bar
+from nautilus_trader.indicators.base.indicator import Indicator
 
 class RateOfChange(Indicator):
     """
@@ -48,3 +49,5 @@ class RateOfChange(Indicator):
 
         """
         ...
+    def _reset(self) -> None: ...
+

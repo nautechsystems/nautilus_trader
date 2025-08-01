@@ -3,8 +3,8 @@ from statistics import mean
 
 import numpy as np
 
-from nautilus_trader.core.nautilus_pyo3 import Bar
-from nautilus_trader.core.nautilus_pyo3 import Indicator
+from nautilus_trader.model.data import Bar
+from nautilus_trader.indicators.base.indicator import Indicator
 
 
 class LinearRegression(Indicator):
@@ -22,27 +22,15 @@ class LinearRegression(Indicator):
         If `period` is not greater than zero.
     """
 
+    period: int
+    slope: float
+    intercept: float
+    degree: float
+    cfo: float
+    R2: float
+    value: float
+
     def __init__(self, period: int = 0) -> None: ...
-    @property
-    def name(self) -> str: ...
-    @property
-    def period(self) -> int: ...
-    @property
-    def slope(self) -> float: ...
-    @property
-    def intercept(self) -> float: ...
-    @property
-    def degree(self) -> float: ...
-    @property
-    def cfo(self) -> float: ...
-    @property
-    def r2(self) -> float: ...
-    @property
-    def value(self) -> float: ...
-    @property
-    def initialized(self) -> bool: ...
-    @property
-    def has_inputs(self) -> bool: ...
     def handle_bar(self, bar: Bar) -> None:
         """
         Update the indicator with the given bar.
@@ -65,4 +53,4 @@ class LinearRegression(Indicator):
 
         """
         ...
-    def reset(self) -> None: ...
+    def _reset(self) -> None: ...

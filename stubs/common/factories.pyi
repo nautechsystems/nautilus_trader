@@ -2,7 +2,6 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from nautilus_trader.core.nautilus_pyo3 import ClientId
 from nautilus_trader.core.nautilus_pyo3 import ContingencyType
 from nautilus_trader.core.nautilus_pyo3 import ExecAlgorithmId
 from nautilus_trader.core.nautilus_pyo3 import InstrumentId
@@ -12,7 +11,6 @@ from nautilus_trader.core.nautilus_pyo3 import MarketIfTouchedOrder
 from nautilus_trader.core.nautilus_pyo3 import MarketOrder
 from nautilus_trader.core.nautilus_pyo3 import MarketToLimitOrder
 from nautilus_trader.core.nautilus_pyo3 import Order
-from nautilus_trader.core.nautilus_pyo3 import OrderListId
 from nautilus_trader.core.nautilus_pyo3 import OrderSide
 from nautilus_trader.core.nautilus_pyo3 import OrderType
 from nautilus_trader.core.nautilus_pyo3 import Price
@@ -20,15 +18,14 @@ from nautilus_trader.core.nautilus_pyo3 import Quantity
 from nautilus_trader.core.nautilus_pyo3 import StopLimitOrder
 from nautilus_trader.core.nautilus_pyo3 import StopMarketOrder
 from nautilus_trader.core.nautilus_pyo3 import TimeInForce
-from nautilus_trader.core.nautilus_pyo3 import TraderId
 from nautilus_trader.core.nautilus_pyo3 import TrailingOffsetType
 from nautilus_trader.core.nautilus_pyo3 import TrailingStopLimitOrder
 from nautilus_trader.core.nautilus_pyo3 import TrailingStopMarketOrder
 from nautilus_trader.core.nautilus_pyo3 import TriggerType
 from nautilus_trader.model.orders.list import OrderList
-from nautilus_trader.model.identifiers import StrategyId
-from stubs.cache.base import CacheFacade
-from stubs.common.component import Clock
+from nautilus_trader.model.identifiers import ClientOrderId, OrderListId, StrategyId, TraderId
+from nautilus_trader.cache.base import CacheFacade
+from nautilus_trader.common.component import Clock
 
 
 class OrderFactory:
@@ -118,7 +115,7 @@ class OrderFactory:
 
         """
         ...
-    def generate_client_order_id(self) -> ClientId:
+    def generate_client_order_id(self) -> ClientOrderId:
         """
         Generate and return a new client order ID.
 
@@ -184,7 +181,7 @@ class OrderFactory:
         exec_algorithm_id: ExecAlgorithmId | None = None,
         exec_algorithm_params: dict[str, Any] | None = None,
         tags: list[str] | None = None,
-        client_order_id: ClientId | None = None,
+        client_order_id: ClientOrderId | None = None,
     ) -> MarketOrder:
         """
         Create a new ``MARKET`` order.
@@ -238,12 +235,12 @@ class OrderFactory:
         reduce_only: bool = False,
         quote_quantity: bool = False,
         display_qty: Quantity | None = None,
-        emulation_trigger: TriggerType = TriggerType.DEFAULT,
+        emulation_trigger: TriggerType = TriggerType.NO_TRIGGER,
         trigger_instrument_id: InstrumentId | None = None,
         exec_algorithm_id: ExecAlgorithmId | None = None,
         exec_algorithm_params: dict[str, Any] | None = None,
         tags: list[str] | None = None,
-        client_order_id: ClientId | None = None,
+        client_order_id: ClientOrderId | None = None,
     ) -> LimitOrder:
         """
         Create a new ``LIMIT`` order.
@@ -313,12 +310,12 @@ class OrderFactory:
         expire_time: datetime | None = None,
         reduce_only: bool = False,
         quote_quantity: bool = False,
-        emulation_trigger: TriggerType = TriggerType.DEFAULT,
+        emulation_trigger: TriggerType = TriggerType.NO_TRIGGER,
         trigger_instrument_id: InstrumentId | None = None,
         exec_algorithm_id: ExecAlgorithmId | None = None,
         exec_algorithm_params: dict[str, Any] | None = None,
         tags: list[str] | None = None,
-        client_order_id: ClientId | None = None,
+        client_order_id: ClientOrderId | None = None,
     ) -> StopMarketOrder:
         """
         Create a new ``STOP_MARKET`` conditional order.
@@ -391,12 +388,12 @@ class OrderFactory:
         reduce_only: bool = False,
         quote_quantity: bool = False,
         display_qty: Quantity | None = None,
-        emulation_trigger: TriggerType = TriggerType.DEFAULT,
+        emulation_trigger: TriggerType = TriggerType.NO_TRIGGER,
         trigger_instrument_id: InstrumentId | None = None,
         exec_algorithm_id: ExecAlgorithmId | None = None,
         exec_algorithm_params: dict[str, Any] | None = None,
         tags: list[str] | None = None,
-        client_order_id: ClientId | None = None,
+        client_order_id: ClientOrderId | None = None,
     ) -> StopLimitOrder:
         """
         Create a new ``STOP_LIMIT`` conditional order.
@@ -476,7 +473,7 @@ class OrderFactory:
         exec_algorithm_id: ExecAlgorithmId | None = None,
         exec_algorithm_params: dict[str, Any] | None = None,
         tags: list[str] | None = None,
-        client_order_id: ClientId | None = None,
+        client_order_id: ClientOrderId | None = None,
     ) -> MarketToLimitOrder:
         """
         Create a new ``MARKET`` order.
@@ -533,12 +530,12 @@ class OrderFactory:
         expire_time: datetime | None = None,
         reduce_only: bool = False,
         quote_quantity: bool = False,
-        emulation_trigger: TriggerType = TriggerType.DEFAULT,
+        emulation_trigger: TriggerType = TriggerType.NO_TRIGGER,
         trigger_instrument_id: InstrumentId | None = None,
         exec_algorithm_id: ExecAlgorithmId | None = None,
         exec_algorithm_params: dict[str, Any] | None = None,
         tags: list[str] | None = None,
-        client_order_id: ClientId | None = None,
+        client_order_id: ClientOrderId | None = None,
     ) -> MarketIfTouchedOrder:
         """
         Create a new ``MARKET_IF_TOUCHED`` (MIT) conditional order.
@@ -611,12 +608,12 @@ class OrderFactory:
         reduce_only: bool = False,
         quote_quantity: bool = False,
         display_qty: Quantity | None = None,
-        emulation_trigger: TriggerType = TriggerType.DEFAULT,
+        emulation_trigger: TriggerType = TriggerType.NO_TRIGGER,
         trigger_instrument_id: InstrumentId | None = None,
         exec_algorithm_id: ExecAlgorithmId | None = None,
         exec_algorithm_params: dict[str, Any] | None = None,
         tags: list[str] | None = None,
-        client_order_id: ClientId | None = None,
+        client_order_id: ClientOrderId | None = None,
     ) -> LimitIfTouchedOrder:
         """
         Create a new ``LIMIT_IF_TOUCHED`` (LIT) conditional order.
@@ -697,12 +694,12 @@ class OrderFactory:
         expire_time: datetime | None = None,
         reduce_only: bool = False,
         quote_quantity: bool = False,
-        emulation_trigger: TriggerType = TriggerType.DEFAULT,
+        emulation_trigger: TriggerType = TriggerType.NO_TRIGGER,
         trigger_instrument_id: InstrumentId | None = None,
         exec_algorithm_id: ExecAlgorithmId | None = None,
         exec_algorithm_params: dict[str, Any] | None = None,
         tags: list[str] | None = None,
-        client_order_id: ClientId | None = None,
+        client_order_id: ClientOrderId | None = None,
     ) -> TrailingStopMarketOrder:
         """
         Create a new ``TRAILING_STOP_MARKET`` conditional order.
@@ -786,12 +783,12 @@ class OrderFactory:
         reduce_only: bool = False,
         quote_quantity: bool = False,
         display_qty: Quantity | None = None,
-        emulation_trigger: TriggerType = TriggerType.DEFAULT,
+        emulation_trigger: TriggerType = TriggerType.NO_TRIGGER,
         trigger_instrument_id: InstrumentId | None = None,
         exec_algorithm_id: ExecAlgorithmId | None = None,
         exec_algorithm_params: dict[str, Any] | None = None,
         tags: list[str] | None = None,
-        client_order_id: ClientId | None = None,
+        client_order_id: ClientOrderId | None = None,
     ) -> TrailingStopLimitOrder:
         """
         Create a new ``TRAILING_STOP_LIMIT`` conditional order.
@@ -876,9 +873,11 @@ class OrderFactory:
         order_side: OrderSide,
         quantity: Quantity,
         quote_quantity: bool = False,
-        emulation_trigger: TriggerType = TriggerType.DEFAULT,
+        emulation_trigger: TriggerType = TriggerType.NO_TRIGGER,
         trigger_instrument_id: InstrumentId | None = None,
         contingency_type: ContingencyType = ContingencyType.OUO,
+
+        # Entry order
         entry_order_type: OrderType = OrderType.MARKET,
         entry_price: Price | None = None,
         entry_trigger_price: Price | None = None,
@@ -888,7 +887,9 @@ class OrderFactory:
         entry_exec_algorithm_id: ExecAlgorithmId | None = None,
         entry_exec_algorithm_params: dict[str, Any] | None = None,
         entry_tags: list[str] | None = None,
-        entry_client_order_id: ClientId | None = None,
+        entry_client_order_id: ClientOrderId | None = None,
+
+        # Take-profit order
         tp_order_type: OrderType = OrderType.LIMIT,
         tp_price: Price | None = None,
         tp_trigger_price: Price | None = None,
@@ -902,7 +903,9 @@ class OrderFactory:
         tp_exec_algorithm_id: ExecAlgorithmId | None = None,
         tp_exec_algorithm_params: dict[str, Any] | None = None,
         tp_tags: list[str] | None = None,
-        tp_client_order_id: ClientId | None = None,
+        tp_client_order_id: ClientOrderId | None = None,
+
+        # Stop-loss order
         sl_order_type: OrderType = OrderType.STOP_MARKET,
         sl_trigger_price: Price | None = None,
         sl_trigger_type: TriggerType = TriggerType.DEFAULT,
@@ -913,7 +916,7 @@ class OrderFactory:
         sl_exec_algorithm_id: ExecAlgorithmId | None = None,
         sl_exec_algorithm_params: dict[str, Any] | None = None,
         sl_tags: list[str] | None = None,
-        sl_client_order_id: ClientId | None = None,
+        sl_client_order_id: ClientOrderId | None = None,
     ) -> OrderList:
         """
         Create a bracket order with optional entry of take-profit order types.
@@ -955,7 +958,7 @@ class OrderFactory:
             The entry order execution algorithm ID.
         entry_exec_algorithm_params : dict[str, Any], optional
             The execution algorithm parameters for the order.
-        entry_tags : list[str], default ["ENTRY"]
+        entry_tags : list[str], default [ENTRY]
             The custom user tags for the entry order.
         entry_client_order_id : ClientOrderId, optional
             The custom client order ID for the order.
@@ -1019,3 +1022,4 @@ class OrderFactory:
 
         """
         ...
+

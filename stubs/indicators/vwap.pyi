@@ -1,8 +1,7 @@
-import datetime as dt
+import datetime
 import pandas as pd
-from nautilus_trader.core.nautilus_pyo3 import Bar
-from nautilus_trader.core.nautilus_pyo3 import Quantity
-from nautilus_trader.indicators.base.indicator import Indicator # self reference
+from nautilus_trader.model.data import Bar
+from nautilus_trader.indicators.base.indicator import Indicator
 
 
 class VolumeWeightedAveragePrice(Indicator):
@@ -24,7 +23,7 @@ class VolumeWeightedAveragePrice(Indicator):
 
         """
         ...
-    def update_raw(self, price: float, volume: float, timestamp: dt.datetime) -> None:
+    def update_raw(self, price: float, volume: float, timestamp: datetime) -> None:
         """
         Update the indicator with the given raw values.
 
@@ -39,3 +38,5 @@ class VolumeWeightedAveragePrice(Indicator):
 
         """
         ...
+    def _reset(self) -> None: ...
+

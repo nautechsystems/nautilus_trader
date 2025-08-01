@@ -16,25 +16,47 @@ class DirectionalMovement(Indicator):
         The moving average type for the indicator (cannot be None).
     """
 
+    period: int
+    pos: float
+    neg: float
+
     def __init__(
         self,
         period: int,
         ma_type: MovingAverageType = MovingAverageType.EXPONENTIAL,
     ) -> None: ...
-    @property
-    def period(self) -> int: ...
-    @property
-    def initialized(self) -> bool: ...
-    @property
-    def has_inputs(self) -> bool: ...
-    @property
-    def pos(self) -> float: ...
-    @property
-    def neg(self) -> float: ...
-    def handle_bar(self, bar: Bar) -> None: ...
+    def handle_bar(self, bar: Bar) -> None:
+        """
+        Update the indicator with the given bar.
+
+        Parameters
+        ----------
+        bar : Bar
+            The update bar.
+
+        """
+        ...
     def update_raw(
         self,
         high: float,
         low: float,
-    ) -> None: ...
-    def reset(self) -> None: ...
+    ) -> None:
+        """
+        Update the indicator with the given raw values.
+
+        Parameters
+        ----------
+        high : double
+            The high price.
+        low : double
+            The low price.
+
+        """
+        ...
+    def _reset(self) -> None:
+        """
+        Reset the indicator.
+
+        All stateful fields are reset to their initial value.
+        """
+        ...

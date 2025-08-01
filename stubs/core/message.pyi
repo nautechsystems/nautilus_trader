@@ -49,7 +49,7 @@ class Document:
     This class should not be used directly, but through a concrete subclass.
     """
 
-    document_id: UUID4
+    id: UUID4
     ts_init: int
 
     def __init__(

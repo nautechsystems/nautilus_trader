@@ -1,16 +1,21 @@
 import datetime as dt
 from decimal import Decimal
-from typing import Any
+from typing import Any, Dict, List, Optional, Tuple, Union
 
-from nautilus_trader.core.nautilus_pyo3 import InstrumentId
-from nautilus_trader.core.nautilus_pyo3 import MessageBus
-from nautilus_trader.core.nautilus_pyo3 import TradingCommand
-from nautilus_trader.core.nautilus_pyo3 import TradingState
+from nautilus_trader.accounting.accounts.base import Account
+from nautilus_trader.cache.cache import Cache
+from nautilus_trader.common.component import Clock, Component, MessageBus
+from nautilus_trader.core.message import Command, Event
+from nautilus_trader.core.rust.model import TradingState
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.orders.base import Order
+from nautilus_trader.model.orders.list import OrderList
+from nautilus_trader.portfolio.base import PortfolioFacade
 from nautilus_trader.risk.config import RiskEngineConfig
-from stubs.cache.cache import Cache
-from stubs.common.component import Clock
-from stubs.common.component import Component
-from stubs.portfolio.base import PortfolioFacade
+from nautilus_trader.execution.messages import ModifyOrder, SubmitOrder, SubmitOrderList, TradingCommand
+from nautilus_trader.model.objects import Price, Quantity
+
 
 class RiskEngine(Component):
     """
@@ -54,11 +59,11 @@ class RiskEngine(Component):
         self,
         portfolio: PortfolioFacade,
         msgbus: MessageBus,
-        cache:Cache,
+        cache: Cache,
         clock: Clock,
         config: RiskEngineConfig | None = None,
     ) -> None: ...
-    def execute(self, command: TradingCommand) -> None:
+    def execute(self, command: Command) -> None:
         """
         Execute the given command.
 
@@ -69,7 +74,7 @@ class RiskEngine(Component):
 
         """
         ...
-    def process(self, event: Any) -> None:
+    def process(self, event: Event) -> None:
         """
         Process the given event.
 
@@ -94,7 +99,7 @@ class RiskEngine(Component):
     def set_max_notional_per_order(
         self,
         instrument_id: InstrumentId,
-        new_value: int | float | str | Decimal,
+        new_value: Union[int, float, str, Decimal, None],
     ) -> None:
         """
         Set the maximum notional value per order for the given instrument ID.
@@ -118,7 +123,7 @@ class RiskEngine(Component):
 
         """
         ...
-    def max_order_submit_rate(self) -> tuple[int, dt.timedelta]:
+    def max_order_submit_rate(self) -> Tuple[int, dt.timedelta]:
         """
         Return the current maximum order submit rate limit setting.
 
@@ -129,7 +134,7 @@ class RiskEngine(Component):
 
         """
         ...
-    def max_order_modify_rate(self) -> tuple[int, dt.timedelta]:
+    def max_order_modify_rate(self) -> Tuple[int, dt.timedelta]:
         """
         Return the current maximum order modify rate limit setting.
 
@@ -140,7 +145,7 @@ class RiskEngine(Component):
 
         """
         ...
-    def max_notionals_per_order(self) -> dict[InstrumentId, Decimal]:
+    def max_notionals_per_order(self) -> Dict[InstrumentId, Decimal]:
         """
         Return the current maximum notionals per order settings.
 
@@ -150,7 +155,7 @@ class RiskEngine(Component):
 
         """
         ...
-    def max_notional_per_order(self, instrument_id: InstrumentId) -> Decimal | None:
+    def max_notional_per_order(self, instrument_id: InstrumentId) -> Optional[Decimal]:
         """
         Return the current maximum notional per order for the given instrument ID.
 
@@ -160,3 +165,31 @@ class RiskEngine(Component):
 
         """
         ...
+    def _initialize_risk_checks(self, config: RiskEngineConfig) -> None: ...
+    def _log_state(self) -> None: ...
+    def _on_start(self) -> None: ...
+    def _on_stop(self) -> None: ...
+    def _start(self) -> None: ...
+    def _stop(self) -> None: ...
+    def _reset(self) -> None: ...
+    def _dispose(self) -> None: ...
+    def _execute_command(self, command: Command) -> None: ...
+    def _handle_submit_order(self, command: SubmitOrder) -> None: ...
+    def _handle_submit_order_list(self, command: SubmitOrderList) -> None: ...
+    def _handle_modify_order(self, command: ModifyOrder) -> None: ...
+    def _check_order(self, instrument: Instrument, order: Order) -> bool: ...
+    def _check_order_price(self, instrument: Instrument, order: Order) -> bool: ...
+    def _check_order_quantity(self, instrument: Instrument, order: Order) -> bool: ...
+    def _check_orders_risk(self, instrument: Instrument, orders: List[Order]) -> bool: ...
+    def _check_price(self, instrument: Instrument, price: Price | None) -> str | None: ...
+    def _check_quantity(self, instrument: Instrument, quantity: Quantity | None) -> str | None: ...
+    def _deny_command(self, command: TradingCommand, reason: str) -> None: ...
+    def _deny_new_order(self, command: TradingCommand) -> None: ...
+    def _deny_modify_order(self, command: ModifyOrder) -> None: ...
+    def _deny_order(self, order: Order, reason: str) -> None: ...
+    def _deny_order_list(self, order_list: OrderList, reason: str) -> None: ...
+    def _execution_gateway(self, instrument: Instrument, command: TradingCommand) -> None: ...
+    def _send_to_execution(self, command: TradingCommand) -> None: ...
+    def _reject_modify_order(self, order: Order, reason: str) -> None: ...
+    def _handle_event(self, event: Event) -> None: ...
+

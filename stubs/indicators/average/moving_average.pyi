@@ -2,10 +2,7 @@ from enum import Enum
 from enum import unique
 from typing import ClassVar
 
-from nautilus_trader.core.nautilus_pyo3 import PriceType
-from nautilus_trader.core.nautilus_pyo3 import QuoteTick
-from nautilus_trader.core.nautilus_pyo3 import TradeTick
-from nautilus_trader.core.nautilus_pyo3 import Bar
+from nautilus_trader.core.rust.model import PriceType
 from nautilus_trader.indicators.base.indicator import Indicator
 
 
@@ -53,8 +50,17 @@ class MovingAverage(Indicator):
         params: list,
         price_type: PriceType,
     ) -> None: ...
-    def update_raw(self, value: float) -> None: ...
-    def handle_quote_tick(self, quote: QuoteTick) -> None: ...
-    def handle_trade_tick(self, trade: TradeTick) -> None: ...
-    def handle_bar(self, bar: Bar) -> None: ...
-    def reset(self) -> None: ...
+    def update_raw(self, value: float) -> None:
+        """
+        Update the indicator with the given raw value.
+
+        Parameters
+        ----------
+        value : double
+            The update value.
+
+        """
+        ...
+    def _increment_count(self) -> None: ...
+    def _reset(self) -> None: ...
+    def _reset_ma(self) -> None: ...

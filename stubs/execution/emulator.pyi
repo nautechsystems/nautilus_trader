@@ -4,12 +4,14 @@ from nautilus_trader.core.nautilus_pyo3 import InstrumentId
 from nautilus_trader.core.nautilus_pyo3 import MatchingCore
 from nautilus_trader.core.nautilus_pyo3 import MessageBus
 from nautilus_trader.core.nautilus_pyo3 import OrderBookDeltas
-from nautilus_trader.core.nautilus_pyo3 import OrderEvent
 from nautilus_trader.core.nautilus_pyo3 import Price
 from nautilus_trader.core.nautilus_pyo3 import QuoteTick
 from nautilus_trader.core.nautilus_pyo3 import SubmitOrder
 from nautilus_trader.core.nautilus_pyo3 import TradeTick
 from nautilus_trader.core.nautilus_pyo3 import TradingCommand
+from nautilus_trader.model.objects import Quantity
+from nautilus_trader.core.message import Event
+from nautilus_trader.model.orders.base import Order
 from stubs.cache.cache import Cache
 from stubs.common.actor import Actor
 from stubs.common.component import Clock
@@ -45,7 +47,6 @@ class OrderEmulator(Actor):
     _subscribed_trades: set[InstrumentId]
     _subscribed_strategies: set[StrategyId]
     _monitored_positions: set[PositionId]
-    _msgbus: MessageBus
 
     def __init__(
         self,
@@ -98,7 +99,7 @@ class OrderEmulator(Actor):
         """
         ...
     def on_start(self) -> None: ...
-    def on_event(self, event: OrderEvent) -> None:
+    def on_event(self, event: Event) -> None:
         """
         Handle the given `event`.
 
@@ -152,3 +153,10 @@ class OrderEmulator(Actor):
     def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None: ...
     def on_quote_tick(self, tick: QuoteTick) -> None: ...
     def on_trade_tick(self, tick: TradeTick) -> None: ...
+    def _check_monitoring(self, strategy_id: StrategyId, position_id: PositionId) -> None: ...
+    def _cancel_order(self, order: Order) -> None: ...
+    def _update_order(self, order: Order, new_quantity: Quantity) -> None: ...
+    def _trigger_stop_order(self, order: Order) -> None: ...
+    def _fill_market_order(self, order: Order) -> None: ...
+    def _fill_limit_order(self, order: Order) -> None: ...
+

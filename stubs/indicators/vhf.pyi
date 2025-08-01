@@ -17,21 +17,14 @@ class VerticalHorizontalFilter(Indicator):
         The moving average type for the indicator (cannot be None).
     """
 
+    period: int
+    value: float
+
     def __init__(
         self,
         period: int,
         ma_type: MovingAverageType = MovingAverageType.SIMPLE,
     ) -> None: ...
-    @property
-    def name(self) -> str: ...
-    @property
-    def period(self) -> int: ...
-    @property
-    def initialized(self) -> bool: ...
-    @property
-    def has_inputs(self) -> bool: ...
-    @property
-    def value(self) -> float: ...
     def handle_bar(self, bar: Bar) -> None:
         """
         Update the indicator with the given bar.
@@ -54,4 +47,5 @@ class VerticalHorizontalFilter(Indicator):
 
         """
         ...
-    def reset(self) -> None: ...
+    def _reset(self) -> None: ...
+

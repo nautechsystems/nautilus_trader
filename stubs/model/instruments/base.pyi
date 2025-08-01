@@ -146,7 +146,7 @@ class Instrument(Data):
     _min_price_increment_precision: int
     _min_size_increment_precision: int
     _increment_pow10: float
-    _tick_scheme: TickScheme
+    _tick_scheme: TickScheme | None # This can be None if not initialized
 
     def __init__(
         self,
@@ -177,7 +177,7 @@ class Instrument(Data):
         tick_scheme_name: str | None = None,
         info: dict[str, Any] | None = None,
     ) -> None: ...
-    def __eq__(self, other: Any) -> bool: ...
+    def __eq__(self, other: Instrument) -> bool: ...
     def __hash__(self) -> int: ...
     def __repr__(self) -> str: ...
     @staticmethod
@@ -267,7 +267,7 @@ class Instrument(Data):
 
         """
         ...
-    def make_price(self, value: float) -> Price:
+    def make_price(self, value: float | int | str | Decimal) -> Price:
         """
         Return a new price from the given value using the instruments price
         precision.
@@ -383,7 +383,7 @@ class Instrument(Data):
             If a tick scheme is not initialized.
         """
         ...
-    def make_qty(self, value: float, round_down: bool = False) -> Quantity:
+    def make_qty(self, value: float | int | str | Decimal, round_down: bool = False) -> Quantity:
         """
         Return a new quantity from the given value using the instruments size
         precision.
@@ -458,3 +458,4 @@ class Instrument(Data):
         ...
 
 def instruments_from_pyo3(pyo3_instruments: list[Any]) -> list[Instrument]: ...
+

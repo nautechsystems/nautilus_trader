@@ -104,7 +104,26 @@ class SubscribeData(DataCommand):
         start: datetime | None,
         end: datetime | None,
         callback: Callable[[Any], None],
-    ) -> RequestData: ...
+    ) -> RequestData:
+        """
+        Convert this subscribe message to a request message.
+
+        Parameters
+        ----------
+        start : datetime
+            The start datetime (UTC) of request time range (inclusive).
+        end : datetime
+            The end datetime (UTC) of request time range.
+            The inclusiveness depends on individual data client implementation.
+        callback : Callable[[Any], None]
+            The delegate to call with the data.
+
+        Returns
+        -------
+        RequestQuoteTicks
+            The converted request message.
+        """
+        ...
 
 class SubscribeInstruments(SubscribeData):
     """
@@ -145,7 +164,26 @@ class SubscribeInstruments(SubscribeData):
         start: datetime | None,
         end: datetime | None,
         callback: Callable[[Any], None],
-    ) -> RequestInstruments: ...
+    ) -> RequestInstruments:
+        """
+        Convert this subscribe message to a request message.
+
+        Parameters
+        ----------
+        start : datetime
+            The start datetime (UTC) of request time range (inclusive).
+        end : datetime
+            The end datetime (UTC) of request time range.
+            The inclusiveness depends on individual data client implementation.
+        callback : Callable[[Any], None]
+            The delegate to call with the data.
+
+        Returns
+        -------
+        RequestInstruments
+            The converted request message.
+        """
+        ...
 
 class SubscribeInstrument(SubscribeData):
     """
@@ -287,7 +325,26 @@ class SubscribeQuoteTicks(SubscribeData):
         start: datetime | None,
         end: datetime | None,
         callback: Callable[[Any], None],
-    ) -> RequestQuoteTicks: ...
+    ) -> RequestQuoteTicks:
+        """
+        Convert this subscribe message to a request message.
+
+        Parameters
+        ----------
+        start : datetime
+            The start datetime (UTC) of request time range (inclusive).
+        end : datetime
+            The end datetime (UTC) of request time range.
+            The inclusiveness depends on individual data client implementation.
+        callback : Callable[[Any], None]
+            The delegate to call with the data.
+
+        Returns
+        -------
+        RequestQuoteTicks
+            The converted request message.
+        """
+        ...
 
 class SubscribeTradeTicks(SubscribeData):
     """
@@ -476,7 +533,26 @@ class SubscribeBars(SubscribeData):
         start: datetime | None,
         end: datetime | None,
         callback: Callable[[Any], None],
-    ) -> RequestBars: ...
+    ) -> RequestBars:
+        """
+        Convert this subscribe message to a request message.
+
+        Parameters
+        ----------
+        start : datetime
+            The start datetime (UTC) of request time range (inclusive).
+        end : datetime
+            The end datetime (UTC) of request time range.
+            The inclusiveness depends on individual data client implementation.
+        callback : Callable[[Any], None]
+            The delegate to call with the data.
+
+        Returns
+        -------
+        RequestBars
+            The converted request message.
+        """
+        ...
 
 class SubscribeInstrumentStatus(SubscribeData):
     """
@@ -663,6 +739,8 @@ class UnsubscribeInstrument(UnsubscribeData):
         ts_init: int,
         params: dict[str, Any] | None = None,
     ) -> None: ...
+    def __str__(self) -> str: ...
+    def __repr__(self) -> str: ...
 
 class UnsubscribeOrderBook(UnsubscribeData):
     """
@@ -1281,6 +1359,7 @@ class RequestTradeTicks(RequestData):
     def __str__(self) -> str: ...
     def __repr__(self) -> str: ...
 
+
 class RequestBars(RequestData):
     """
     Represents a request for bars.
@@ -1382,3 +1461,4 @@ class DataResponse(Response):
     ) -> None: ...
     def __str__(self) -> str: ...
     def __repr__(self) -> str: ...
+

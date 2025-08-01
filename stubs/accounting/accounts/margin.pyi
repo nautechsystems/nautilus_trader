@@ -402,3 +402,4 @@ class MarginAccount(Account):
 
         """
     def balance_impact(self, instrument: Instrument, quantity: Quantity, price: Price, order_side: OrderSide) -> Money: ...
+

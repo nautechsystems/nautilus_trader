@@ -13,6 +13,9 @@ from nautilus_trader.core.nautilus_pyo3 import OrderUpdated
 from nautilus_trader.core.nautilus_pyo3 import PositionId
 from nautilus_trader.core.nautilus_pyo3 import Quantity
 from nautilus_trader.core.nautilus_pyo3 import TradingCommand
+from nautilus_trader.core.nautilus_pyo3 import Event
+from nautilus_trader.core.nautilus_pyo3 import PositionEvent
+from nautilus_trader.core.nautilus_pyo3 import ExecAlgorithmId
 from stubs.cache.cache import Cache
 from stubs.common.component import Clock
 from stubs.common.component import Logger
@@ -62,9 +65,9 @@ class OrderManager:
     _log: Logger
     _msgbus: MessageBus
     _cache: Cache
-    _submit_order_handler: Callable[[SubmitOrder], None]
-    _cancel_order_handler: Callable[[Order], None]
-    _modify_order_handler: Callable[[Order, Quantity], None]
+    _submit_order_handler: Callable[[SubmitOrder], None] | None
+    _cancel_order_handler: Callable[[Order], None] | None
+    _modify_order_handler: Callable[[Order, Quantity], None] | None
     _submit_order_commands: dict[ClientOrderId, SubmitOrder]
 
     def __init__(
@@ -81,20 +84,119 @@ class OrderManager:
         log_events: bool = True,
         log_commands: bool = True,
     ) -> None: ...
-    def get_submit_order_commands(self) -> dict[ClientOrderId, TradingCommand]: ...
-    def cache_submit_order_command(self, command) -> None: ...
-    def pop_submit_order_command(self, client_order_id: ClientOrderId): ...
-    def reset(self) -> None: ...
-    def cancel_order(self, order: Order) -> None: ...
-    def modify_order_quantity(self, order: Order, new_quantity: Quantity) -> None: ...
+    def get_submit_order_commands(self) -> dict[ClientOrderId, SubmitOrder]:
+        """
+        Return the managers cached submit order commands.
+
+        Returns
+        -------
+        dict[ClientOrderId, SubmitOrder]
+
+        """
+        ...
+    def cache_submit_order_command(self, command: SubmitOrder) -> None:
+        """
+        Cache the given submit order `command` with the manager.
+
+        Parameters
+        ----------
+        command : SubmitOrder
+            The submit order command to cache.
+
+        """
+        ...
+    def pop_submit_order_command(self, client_order_id: ClientOrderId) -> SubmitOrder | None:
+        """
+        Pop the submit order command for the given `client_order_id` out of the managers
+        cache (if found).
+
+        Parameters
+        ----------
+        client_order_id : ClientOrderId
+            The client order ID for the command to pop.
+
+        Returns
+        -------
+        SubmitOrder or ``None``
+
+        """
+        ...
+    def reset(self) -> None:
+        """
+        Reset the manager, clearing all stateful values.
+        """
+        ...
+    def cancel_order(self, order: Order) -> None:
+        """
+        Cancel the given `order` with the manager.
+
+        Parameters
+        ----------
+        order : Order
+            The order to cancel.
+
+        """
+        ...
+    def modify_order_quantity(self, order: Order, new_quantity: Quantity) -> None:
+        """
+        Modify the given `order` with the manager.
+
+        Parameters
+        ----------
+        order : Order
+            The order to modify.
+
+        """
+        ...
     def create_new_submit_order(
         self,
         order: Order,
         position_id: PositionId | None = None,
         client_id: ClientId | None = None,
-    ) -> None: ...
-    def should_manage_order(self, order: Order) -> bool: ...
-    def handle_event(self, event) -> None: ...
+    ) -> None:
+        """
+        Create a new submit order command for the given `order`.
+
+        Parameters
+        ----------
+        order : Order
+            The order for the command.
+        position_id : PositionId, optional
+            The position ID for the command.
+        client_id : ClientId, optional
+            The client ID for the command.
+
+        """
+        ...
+    def should_manage_order(self, order: Order) -> bool:
+        """
+        Check if the given order should be managed.
+
+        Parameters
+        ----------
+        order : Order
+            The order to check.
+
+        Returns
+        -------
+        bool
+            True if the order should be managed, else False.
+
+        """
+        ...
+    def handle_event(self, event: Event) -> None:
+        """
+        Handle the given `event`.
+
+        If a handler for the given event is not implemented then this will simply be a no-op.
+
+        Parameters
+        ----------
+        event : Event
+            The event to handle
+
+        """
+        ...
     def handle_order_rejected(self, rejected: OrderRejected) -> None: ...
     def handle_order_canceled(self, canceled: OrderCanceled) -> None: ...
     def handle_order_expired(self, expired: OrderExpired) -> None: ...
@@ -102,10 +204,11 @@ class OrderManager:
     def handle_order_filled(self, filled: OrderFilled) -> None: ...
     def handle_contingencies(self, order: Order) -> None: ...
     def handle_contingencies_update(self, order: Order) -> None: ...
-    def handle_position_event(self, event) -> None: ...
+    def handle_position_event(self, event: PositionEvent) -> None: ...
     def send_emulator_command(self, command: TradingCommand) -> None: ...
-    def send_algo_command(self, command: TradingCommand, exec_algorithm_id) -> None: ...
+    def send_algo_command(self, command: TradingCommand, exec_algorithm_id: ExecAlgorithmId) -> None: ...
     def send_risk_command(self, command: TradingCommand) -> None: ...
     def send_exec_command(self, command: TradingCommand) -> None: ...
     def send_risk_event(self, event: OrderEvent) -> None: ...
     def send_exec_event(self, event: OrderEvent) -> None: ...
+

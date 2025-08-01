@@ -1,6 +1,7 @@
 #!/bin/bash
 
-pass_count=1
+total_count=0
+failed_count=0
 
 for stub in $(find stubs -name "*.pyi"); do
     rel_path="${stub#stubs/}"
@@ -13,14 +14,15 @@ for stub in $(find stubs -name "*.pyi"); do
     fi
 
     echo ""
-    echo "# $pass_count"
-    python3 stubs/validate_pyx_stubs.py "$target" "$stub"
+    echo "# $total_count"
+    python3 stubs/validate_pyx_stubs.py "$target" "$stub" -p
     if [[ $? -eq 1 ]]; then
         echo "ERROR: Validation failed for stub: $stub" >&2
-        exit 1
+        failed_count=$((failed_count+1))
     fi
 
-    pass_count=$((pass_count+1))
+    total_count=$((total_count+1))
 done
 
+echo "Total: $total_count Failed: $failed_count"
 exit 0

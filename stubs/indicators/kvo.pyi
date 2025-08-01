@@ -1,6 +1,6 @@
 from nautilus_trader.indicators.average.moving_average import MovingAverageType
-from nautilus_trader.core.nautilus_pyo3 import Bar, MovingAverageType
-from nautilus_trader.core.nautilus_pyo3 import KlingerVolumeOscillator as Indicator # Added for inheritance
+from nautilus_trader.model.data import Bar
+from nautilus_trader.indicators.base.indicator import Indicator
 
 class KlingerVolumeOscillator(Indicator):
     """
@@ -18,6 +18,11 @@ class KlingerVolumeOscillator(Indicator):
     ma_type : MovingAverageType
         The moving average type for the calculations.
     """
+
+    fast_period: int
+    slow_period: int
+    signal_period: int
+    value: float
 
     def __init__(
         self,
@@ -60,4 +65,4 @@ class KlingerVolumeOscillator(Indicator):
 
         """
         ...
-    def reset(self) -> None: ...
+    def _reset(self) -> None: ...

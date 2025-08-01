@@ -1,10 +1,9 @@
-import datetime as dt
+from datetime import date
 from decimal import Decimal
-from typing import Any
 
 import pandas as pd
 
-from nautilus_trader.core.nautilus_pyo3 import InstrumentId
+from nautilus_trader.model.identifiers import InstrumentId
 
 class RolloverInterestCalculator:
     """
@@ -20,7 +19,7 @@ class RolloverInterestCalculator:
     """
 
     def __init__(self, data: pd.DataFrame): ...
-    def get_rate_data(self) -> pd.DataFrame:
+    def get_rate_data(self) -> dict[str, pd.DataFrame]:
         """
         Return the short-term interest rate dataframe.
 
@@ -30,7 +29,7 @@ class RolloverInterestCalculator:
 
         """
         ...
-    def calc_overnight_rate(self, instrument_id: InstrumentId, date: dt.date) -> Decimal:
+    def calc_overnight_rate(self, instrument_id: InstrumentId, date: date) -> Decimal:
         """
         Return the rollover interest rate between the given base currency and quote currency.
 
@@ -56,3 +55,4 @@ class RolloverInterestCalculator:
 
         """
         ...
+

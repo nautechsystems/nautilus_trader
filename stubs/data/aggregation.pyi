@@ -13,6 +13,7 @@ from nautilus_trader.core.nautilus_pyo3 import Price
 from nautilus_trader.core.nautilus_pyo3 import Quantity
 from nautilus_trader.core.nautilus_pyo3 import QuoteTick
 from nautilus_trader.core.nautilus_pyo3 import TradeTick
+from nautilus_trader.core.nautilus_pyo3 import TimeEvent
 from stubs.common.component import Logger
 
 class BarBuilder:
@@ -49,12 +50,79 @@ class BarBuilder:
 
     def __init__(self, instrument: Instrument, bar_type: BarType) -> None: ...
     def __repr__(self) -> str: ...
-    def set_partial(self, partial_bar: Bar) -> None: ...
-    def update(self, price: Price, size: Quantity, ts_event: int) -> None: ...
-    def update_bar(self, bar: Bar, volume: Quantity, ts_init: int) -> None: ...
-    def reset(self) -> None: ...
-    def build_now(self) -> Bar: ...
-    def build(self, ts_event: int, ts_init: int) -> Bar: ...
+    def set_partial(self, partial_bar: Bar) -> None:
+        """
+        Set the initial values for a partially completed bar.
+
+        This method can only be called once per instance.
+
+        Parameters
+        ----------
+        partial_bar : Bar
+            The partial bar with values to set.
+
+        """
+        ...
+    def update(self, price: Price, size: Quantity, ts_event: int) -> None:
+        """
+        Update the bar builder.
+
+        Parameters
+        ----------
+        price : Price
+            The update price.
+        size : Decimal
+            The update size.
+        ts_event : uint64_t
+            UNIX timestamp (nanoseconds) of the update.
+
+        """
+        ...
+    def update_bar(self, bar: Bar, volume: Quantity, ts_init: int) -> None:
+        """
+        Update the bar builder.
+
+        Parameters
+        ----------
+        bar : Bar
+            The update Bar.
+
+        """
+        ...
+    def reset(self) -> None:
+        """
+        Reset the bar builder.
+
+        All stateful fields are reset to their initial value.
+        """
+        ...
+    def build_now(self) -> Bar:
+        """
+        Return the aggregated bar and reset.
+
+        Returns
+        -------
+        Bar
+
+        """
+        ...
+    def build(self, ts_event: int, ts_init: int) -> Bar:
+        """
+        Return the aggregated bar with the given closing timestamp, and reset.
+
+        Parameters
+        ----------
+        ts_event : uint64_t
+            UNIX timestamp (nanoseconds) for the bar event.
+        ts_init : uint64_t
+            UNIX timestamp (nanoseconds) for the bar initialization.
+
+        Returns
+        -------
+        Bar
+
+        """
+        ...
 
 class BarAggregator:
     """
@@ -92,10 +160,52 @@ class BarAggregator:
     def _start_batch_time(self, time_ns: int): ...
     def stop_batch_update(self) -> None: ...
     def set_await_partial(self, value: bool) -> None: ...
-    def handle_quote_tick(self, tick: QuoteTick) -> None: ...
-    def handle_trade_tick(self, tick: TradeTick) -> None: ...
-    def handle_bar(self, bar: Bar) -> None: ...
-    def set_partial(self, partial_bar: Bar) -> None: ...
+    def handle_quote_tick(self, tick: QuoteTick) -> None:
+        """
+        Update the aggregator with the given tick.
+
+        Parameters
+        ----------
+        tick : QuoteTick
+            The tick for the update.
+
+        """
+        ...
+    def handle_trade_tick(self, tick: TradeTick) -> None:
+        """
+        Update the aggregator with the given tick.
+
+        Parameters
+        ----------
+        tick : TradeTick
+            The tick for the update.
+
+        """
+        ...
+    def handle_bar(self, bar: Bar) -> None:
+        """
+        Update the aggregator with the given bar.
+
+        Parameters
+        ----------
+        bar : Bar
+            The bar for the update.
+
+        """
+        ...
+    def set_partial(self, partial_bar: Bar) -> None:
+        """
+        Set the initial values for a partially completed bar.
+
+        This method can only be called once per instance.
+
+        Parameters
+        ----------
+        partial_bar : Bar
+            The partial bar with values to set.
+
+        """
+        ...
 
 class TickBarAggregator(BarAggregator):
     """
@@ -226,7 +336,6 @@ class TimeBarAggregator(BarAggregator):
 
     _clock: Clock
     _is_left_open: bool
-    _is_left_open: bool
     _timestamp_on_close: bool
     _skip_first_non_full_bar: bool
     _build_with_no_updates: bool
@@ -252,5 +361,12 @@ class TimeBarAggregator(BarAggregator):
 
         """
         ...
+    def _set_build_timer(self) -> None: ...
+    def stop(self) -> None:
+        """
+        Stop the bar aggregator.
+        """
+        ...
     def _start_batch_time(self, time_ns: int): ...
-    def stop(self) -> None: ...
+    def _build_bar(self, event: TimeEvent) -> None: ...
+

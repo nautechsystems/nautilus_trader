@@ -1,6 +1,7 @@
 from nautilus_trader.indicators.average.ma_factory import MovingAverageType
 from nautilus_trader.core.nautilus_pyo3 import Bar
-from nautilus_trader.core.nautilus_pyo3 import PsychologicalLine as Indicator
+from nautilus_trader.core.nautilus_pyo3 import Indicator
+
 
 class PsychologicalLine(Indicator):
     """
@@ -43,3 +44,5 @@ class PsychologicalLine(Indicator):
 
         """
         ...
+    def _reset(self) -> None: ...
+

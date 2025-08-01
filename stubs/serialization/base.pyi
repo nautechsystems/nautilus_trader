@@ -1,41 +1,63 @@
 from typing import Any
 from typing import Callable
-from nautilus_trader.core.nautilus_pyo3 import AccountState
-from nautilus_trader.core.nautilus_pyo3 import Bar
-from nautilus_trader.core.nautilus_pyo3 import BettingInstrument
-from nautilus_trader.core.nautilus_pyo3 import BinaryOption
-from nautilus_trader.core.nautilus_pyo3 import CryptoFuture
-from nautilus_trader.core.nautilus_pyo3 import CryptoOption
-from nautilus_trader.core.nautilus_pyo3 import CryptoPerpetual
-from nautilus_trader.core.nautilus_pyo3 import CurrencyPair
-from nautilus_trader.core.nautilus_pyo3 import Equity
-from nautilus_trader.core.nautilus_pyo3 import FuturesContract
-from nautilus_trader.core.nautilus_pyo3 import FuturesSpread
-from nautilus_trader.core.nautilus_pyo3 import InstrumentClose
-from nautilus_trader.core.nautilus_pyo3 import InstrumentStatus
-from nautilus_trader.core.nautilus_pyo3 import OrderAccepted
-from nautilus_trader.core.nautilus_pyo3 import OrderBookDelta
-from nautilus_trader.core.nautilus_pyo3 import OrderBookDeltas
-from nautilus_trader.core.nautilus_pyo3 import OrderCanceled
-from nautilus_trader.core.nautilus_pyo3 import OrderCancelRejected
-from nautilus_trader.core.nautilus_pyo3 import OrderDenied
-from nautilus_trader.core.nautilus_pyo3 import OrderEmulated
-from nautilus_trader.core.nautilus_pyo3 import OrderExpired
-from nautilus_trader.core.nautilus_pyo3 import OrderFilled
-from nautilus_trader.core.nautilus_pyo3 import OrderInitialized
-from nautilus_trader.core.nautilus_pyo3 import OrderModifyRejected
-from nautilus_trader.core.nautilus_pyo3 import OrderPendingCancel
-from nautilus_trader.core.nautilus_pyo3 import OrderPendingUpdate
-from nautilus_trader.core.nautilus_pyo3 import OrderRejected
-from nautilus_trader.core.nautilus_pyo3 import OrderReleased
-from nautilus_trader.core.nautilus_pyo3 import OrderSubmitted
-from nautilus_trader.core.nautilus_pyo3 import OrderTriggered
-from nautilus_trader.core.nautilus_pyo3 import OrderUpdated
-from nautilus_trader.core.nautilus_pyo3 import OptionContract
-from nautilus_trader.core.nautilus_pyo3 import OptionSpread
-from nautilus_trader.core.nautilus_pyo3 import QuoteTick
-from nautilus_trader.core.nautilus_pyo3 import SyntheticInstrument
-from nautilus_trader.core.nautilus_pyo3 import TradeTick
+from typing import Dict
+from nautilus_trader.common.messages import ComponentStateChanged
+from nautilus_trader.common.messages import ShutdownSystem
+from nautilus_trader.common.messages import TradingStateChanged
+from nautilus_trader.execution.messages import BatchCancelOrders
+from nautilus_trader.execution.messages import CancelAllOrders
+from nautilus_trader.execution.messages import CancelOrder
+from nautilus_trader.execution.messages import ModifyOrder
+from nautilus_trader.execution.messages import QueryOrder
+from nautilus_trader.execution.messages import SubmitOrder
+from nautilus_trader.execution.messages import SubmitOrderList
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import InstrumentClose
+from nautilus_trader.model.data import InstrumentStatus
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.events.account import AccountState
+from nautilus_trader.model.events.order import OrderAccepted
+from nautilus_trader.model.events.order import OrderCanceled
+from nautilus_trader.model.events.order import OrderCancelRejected
+from nautilus_trader.model.events.order import OrderDenied
+from nautilus_trader.model.events.order import OrderEmulated
+from nautilus_trader.model.events.order import OrderExpired
+from nautilus_trader.model.events.order import OrderFilled
+from nautilus_trader.model.events.order import OrderInitialized
+from nautilus_trader.model.events.order import OrderModifyRejected
+from nautilus_trader.model.events.order import OrderPendingCancel
+from nautilus_trader.model.events.order import OrderPendingUpdate
+from nautilus_trader.model.events.order import OrderRejected
+from nautilus_trader.model.events.order import OrderReleased
+from nautilus_trader.model.events.order import OrderSubmitted
+from nautilus_trader.model.events.order import OrderTriggered
+from nautilus_trader.model.events.order import OrderUpdated
+from nautilus_trader.model.events.position import PositionChanged
+from nautilus_trader.model.events.position import PositionClosed
+from nautilus_trader.model.events.position import PositionOpened
+from nautilus_trader.model.instruments.betting import BettingInstrument
+from nautilus_trader.model.instruments.binary_option import BinaryOption
+from nautilus_trader.model.instruments.cfd import Cfd
+from nautilus_trader.model.instruments.commodity import Commodity
+from nautilus_trader.model.instruments.crypto_future import CryptoFuture
+from nautilus_trader.model.instruments.crypto_option import CryptoOption
+from nautilus_trader.model.instruments.crypto_perpetual import CryptoPerpetual
+from nautilus_trader.model.instruments.currency_pair import CurrencyPair
+from nautilus_trader.model.instruments.equity import Equity
+from nautilus_trader.model.instruments.futures_contract import FuturesContract
+from nautilus_trader.model.instruments.futures_spread import FuturesSpread
+from nautilus_trader.model.instruments.index import IndexInstrument
+from nautilus_trader.model.instruments.option_contract import OptionContract
+from nautilus_trader.model.instruments.option_spread import OptionSpread
+from nautilus_trader.model.instruments.synthetic import SyntheticInstrument
+
+
+_OBJECT_TO_DICT_MAP: Dict[str, Callable[[Any], dict]] = ...
+_OBJECT_FROM_DICT_MAP: Dict[str, Callable[[dict], Any]] = ...
+_EXTERNAL_PUBLISHABLE_TYPES: set = ...
 
 
 def register_serializable_type(
@@ -89,3 +111,4 @@ class Serializer:
     def deserialize(self, obj_bytes: bytes) -> object:
         """Abstract method (implement in subclass)."""
         ...
+

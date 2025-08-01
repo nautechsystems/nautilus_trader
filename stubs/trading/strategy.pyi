@@ -2,8 +2,10 @@ from typing import Any
 
 from nautilus_trader.core.nautilus_pyo3 import Actor
 from nautilus_trader.core.nautilus_pyo3 import Cache
+from nautilus_trader.core.nautilus_pyo3 import CacheFacade
 from nautilus_trader.core.nautilus_pyo3 import ClientId
 from nautilus_trader.core.nautilus_pyo3 import Clock
+from nautilus_trader.core.nautilus_pyo3 import Event
 from nautilus_trader.core.nautilus_pyo3 import InstrumentId
 from nautilus_trader.core.nautilus_pyo3 import MessageBus
 from nautilus_trader.core.nautilus_pyo3 import OmsType
@@ -41,6 +43,7 @@ from nautilus_trader.core.nautilus_pyo3 import Quantity
 from nautilus_trader.core.nautilus_pyo3 import StrategyId
 from nautilus_trader.core.nautilus_pyo3 import TimeInForce
 from nautilus_trader.core.nautilus_pyo3 import TraderId
+from nautilus_trader.core.nautilus_pyo3 import TimeEvent
 from nautilus_trader.trading.config import ImportableStrategyConfig
 from nautilus_trader.trading.config import StrategyConfig
 
@@ -91,6 +94,10 @@ class Strategy(Actor):
     order_factory: OrderFactory
 
     def __init__(self, config: StrategyConfig | None = None): ...
+    def _parse_external_order_claims(
+        self,
+        config_claims: list[str] | None,
+    ) -> list[InstrumentId]: ...
     def to_importable_config(self) -> ImportableStrategyConfig:
         """
         Returns an importable configuration for this strategy.
@@ -110,7 +117,7 @@ class Strategy(Actor):
         trader_id: TraderId,
         portfolio: PortfolioFacade,
         msgbus: MessageBus,
-        cache: Cache,
+        cache: CacheFacade,
         clock: Clock,
     ) -> None:
         """
@@ -157,6 +164,8 @@ class Strategy(Actor):
 
         """
         ...
+    def _start(self) -> None: ...
+    def _reset(self) -> None: ...
     def on_order_event(self, event: OrderEvent) -> None:
         """
         Actions to be performed when running and receives an order event.
@@ -717,7 +726,7 @@ class Strategy(Actor):
         reduce_only : bool, default True
             If the market order to close the position should carry the 'reduce-only' execution instruction.
             Optional, as not all venues support this feature.
-        params : dict[str, Any], optional
+        params : dict[str, Any] | None, optional
             Additional parameters potentially used by a specific client.
 
         """
@@ -751,7 +760,7 @@ class Strategy(Actor):
         reduce_only : bool, default True
             If the market orders to close positions should carry the 'reduce-only' execution instruction.
             Optional, as not all venues support this feature.
-        params : dict[str, Any], optional
+        params : dict[str, Any] | None, optional
             Additional parameters potentially used by a specific client.
 
         """
@@ -772,7 +781,7 @@ class Strategy(Actor):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
-        params : dict[str, Any], optional
+        params : dict[str, Any] | None, optional
             Additional parameters potentially used by a specific client.
 
         """
@@ -790,6 +799,7 @@ class Strategy(Actor):
 
         """
         ...
+    def _expire_gtd_order(self, event: TimeEvent) -> None: ...
     def handle_event(self, event: Event) -> None:
         """
         Handle the given event.
@@ -807,3 +817,4 @@ class Strategy(Actor):
 
         """
         ...
+

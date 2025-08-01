@@ -187,31 +187,342 @@ class SimulatedExchange:
         trade_execution: bool = False,
     ) -> None: ...
     def __repr__(self) -> str: ...
-    def register_client(self, client: BacktestExecClient) -> None: ...
-    def set_fill_model(self, fill_model: FillModel) -> None: ...
-    def set_latency_model(self, latency_model: LatencyModel) -> None: ...
-    def initialize_account(self) -> None: ...
-    def add_instrument(self, instrument: Instrument) -> None: ...
-    def best_bid_price(self, instrument_id: InstrumentId) -> Price | None: ...
-    def best_ask_price(self, instrument_id: InstrumentId) -> Price | None: ...
-    def get_book(self, instrument_id: InstrumentId) -> OrderBook | None: ...
-    def get_matching_engine(self, instrument_id: InstrumentId) -> OrderMatchingEngine | None: ...
-    def get_matching_engines(self) -> dict[InstrumentId, OrderMatchingEngine]: ...
-    def get_books(self) -> dict[InstrumentId, OrderBook]: ...
-    def get_open_orders(self, instrument_id: InstrumentId | None = None) -> list[Order]: ...
-    def get_open_bid_orders(self, instrument_id: InstrumentId | None = None) -> list[Order]: ...
-    def get_open_ask_orders(self, instrument_id: InstrumentId | None = None) -> list[Order]: ...
-    def get_account(self) -> Account: ...
-    def adjust_account(self, adjustment: Money) -> None: ...
-    def update_instrument(self, instrument: Instrument) -> None: ...
-    def send(self, command: TradingCommand) -> None: ...
-    def process_order_book_delta(self, delta: OrderBookDelta) -> None: ...
-    def process_order_book_deltas(self, deltas: OrderBookDeltas) -> None: ...
-    def process_order_book_depth10(self, depth: OrderBookDepth10) -> None: ...
-    def process_quote_tick(self, tick: QuoteTick) -> None: ...
-    def process_trade_tick(self, tick: TradeTick) -> None: ...
-    def process_bar(self, bar: Bar) -> None: ...
-    def process_instrument_status(self, data: InstrumentStatus) -> None: ...
-    def process_instrument_close(self, close: InstrumentClose) -> None: ...
-    def process(self, ts_now: int) -> None: ...
-    def reset(self) -> None: ...
+    def register_client(self, client: BacktestExecClient) -> None:
+        """
+        Register the given execution client with the simulated exchange.
+
+        Parameters
+        ----------
+        client : BacktestExecClient
+            The client to register
+
+        """
+        ...
+    def set_fill_model(self, fill_model: FillModel) -> None:
+        """
+        Set the fill model for all matching engines.
+
+        Parameters
+        ----------
+        fill_model : FillModel
+            The fill model to set.
+
+        """
+        ...
+    def set_latency_model(self, latency_model: LatencyModel) -> None:
+        """
+        Change the latency model for this exchange.
+
+        Parameters
+        ----------
+        latency_model : LatencyModel
+            The latency model to set.
+
+        """
+        ...
+    def initialize_account(self) -> None:
+        """
+        Initialize the account to the starting balances.
+
+        """
+        ...
+    def add_instrument(self, instrument: Instrument) -> None:
+        """
+        Add the given instrument to the exchange.
+
+        Parameters
+        ----------
+        instrument : Instrument
+            The instrument to add.
+
+        Raises
+        ------
+        ValueError
+            If `instrument.id.venue` is not equal to the venue ID.
+        InvalidConfiguration
+            If `instrument` is invalid for this venue.
+
+        """
+        ...
+    def best_bid_price(self, instrument_id: InstrumentId) -> Price | None:
+        """
+        Return the best bid price for the given instrument ID (if found).
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the price.
+
+        Returns
+        -------
+        Price or ``None``
+
+        """
+        ...
+    def best_ask_price(self, instrument_id: InstrumentId) -> Price | None:
+        """
+        Return the best ask price for the given instrument ID (if found).
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the price.
+
+        Returns
+        -------
+        Price or ``None``
+
+        """
+        ...
+    def get_book(self, instrument_id: InstrumentId) -> OrderBook | None:
+        """
+        Return the order book for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the price.
+
+        Returns
+        -------
+        OrderBook or ``None``
+
+        """
+        ...
+    def get_matching_engine(self, instrument_id: InstrumentId) -> OrderMatchingEngine | None:
+        """
+        Return the matching engine for the given instrument ID (if found).
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the matching engine.
+
+        Returns
+        -------
+        OrderMatchingEngine or ``None``
+
+        """
+        ...
+    def get_matching_engines(self) -> dict[InstrumentId, OrderMatchingEngine]:
+        """
+        Return all matching engines for the exchange (for every instrument).
+
+        Returns
+        -------
+        dict[InstrumentId, OrderMatchingEngine]
+
+        """
+        ...
+    def get_books(self) -> dict[InstrumentId, OrderBook]:
+        """
+        Return all order books within the exchange.
+
+        Returns
+        -------
+        dict[InstrumentId, OrderBook]
+
+        """
+        ...
+    def get_open_orders(self, instrument_id: InstrumentId | None = None) -> list[Order]:
+        """
+        Return the open orders at the exchange.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId, optional
+            The instrument_id query filter.
+
+        Returns
+        -------
+        list[Order]
+
+        """
+        ...
+    def get_open_bid_orders(self, instrument_id: InstrumentId | None = None) -> list[Order]:
+        """
+        Return the open bid orders at the exchange.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId, optional
+            The instrument_id query filter.
+
+        Returns
+        -------
+        list[Order]
+
+        """
+        ...
+    def get_open_ask_orders(self, instrument_id: InstrumentId | None = None) -> list[Order]:
+        """
+        Return the open ask orders at the exchange.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId, optional
+            The instrument_id query filter.
+
+        Returns
+        -------
+        list[Order]
+
+        """
+        ...
+    def get_account(self) -> Account:
+        """
+        Return the account for the registered client (if registered).
+
+        Returns
+        -------
+        Account or ``None``
+
+        """
+        ...
+    def adjust_account(self, adjustment: Money) -> None:
+        """
+        Adjust the account at the exchange with the given adjustment.
+
+        Parameters
+        ----------
+        adjustment : Money
+            The adjustment for the account.
+
+        """
+        ...
+    def update_instrument(self, instrument: Instrument) -> None:
+        """
+        Update the venues current instrument definition with the given instrument.
+
+        Parameters
+        ----------
+        instrument : Instrument
+            The instrument definition to update.
+
+        """
+        ...
+    def send(self, command: TradingCommand) -> None:
+        """
+        Send the given trading command into the exchange.
+
+        Parameters
+        ----------
+        command : TradingCommand
+            The command to send.
+
+        """
+        ...
+    def process_order_book_delta(self, delta: OrderBookDelta) -> None:
+        """
+        Process the exchanges market for the given order book delta.
+
+        Parameters
+        ----------
+        data : OrderBookDelta
+            The order book delta to process.
+
+        """
+        ...
+    def process_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
+        """
+        Process the exchanges market for the given order book deltas.
+
+        Parameters
+        ----------
+        data : OrderBookDeltas
+            The order book deltas to process.
+
+        """
+        ...
+    def process_order_book_depth10(self, depth: OrderBookDepth10) -> None:
+        """
+        Process the exchanges market for the given order book depth.
+
+        Parameters
+        ----------
+        depth : OrderBookDepth10
+            The order book depth to process.
+
+        """
+        ...
+    def process_quote_tick(self, tick: QuoteTick) -> None:
+        """
+        Process the exchanges market for the given quote tick.
+
+        Market dynamics are simulated by auctioning open orders.
+
+        Parameters
+        ----------
+        tick : QuoteTick
+            The tick to process.
+
+        """
+        ...
+    def process_trade_tick(self, tick: TradeTick) -> None:
+        """
+        Process the exchanges market for the given trade tick.
+
+        Market dynamics are simulated by auctioning open orders.
+
+        Parameters
+        ----------
+        tick : TradeTick
+            The tick to process.
+
+        """
+        ...
+    def process_bar(self, bar: Bar) -> None:
+        """
+        Process the exchanges market for the given bar.
+
+        Market dynamics are simulated by auctioning open orders.
+
+        Parameters
+        ----------
+        bar : Bar
+            The bar to process.
+
+        """
+        ...
+    def process_instrument_status(self, data: InstrumentStatus) -> None:
+        """
+        Process a specific instrument status.
+
+        Parameters
+        ----------
+        data : InstrumentStatus
+            The instrument status update to process.
+
+        """
+        ...
+    def process_instrument_close(self, close: InstrumentClose) -> None:
+        """
+        Process the exchanges market for the given instrument close.
+
+        Parameters
+        ----------
+        close : InstrumentClose
+            The instrument close to process.
+
+        """
+        ...
+    def process(self, ts_now: int) -> None:
+        """
+        Process the exchange to the given time.
+
+        All pending commands will be processed along with all simulation modules.
+
+        Parameters
+        ----------
+        ts_now : uint64_t
+            The current UNIX timestamp (nanoseconds).
+
+        """
+        ...
+    def reset(self) -> None:
+        """
+        Reset the simulated exchange.
+
+        All stateful fields are reset to their initial value.
+        """
+        ...

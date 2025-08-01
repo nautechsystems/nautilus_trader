@@ -1,5 +1,9 @@
+from collections import deque
+
 from nautilus_trader.core.nautilus_pyo3 import InstrumentId
 from nautilus_trader.core.nautilus_pyo3 import QuoteTick
+from nautilus_trader.indicators.base.indicator import Indicator
+
 
 class SpreadAnalyzer(Indicator):
     """
@@ -42,3 +46,4 @@ class SpreadAnalyzer(Indicator):
 
         """
         ...
+    def _reset(self) -> None: ...

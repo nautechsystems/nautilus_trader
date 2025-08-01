@@ -1,7 +1,7 @@
 from nautilus_trader.indicators.average.moving_average import MovingAverageType
-from nautilus_trader.core.nautilus_pyo3 import Bar
-from nautilus_trader.core.nautilus_pyo3 import AverageTrueRange
-from nautilus_trader.core.nautilus_pyo3 import Indicator
+from nautilus_trader.model.data import Bar
+from nautilus_trader.indicators.atr import AverageTrueRange
+from nautilus_trader.indicators.base.indicator import Indicator
 
 class VolatilityRatio(Indicator):
     """
@@ -33,6 +33,10 @@ class VolatilityRatio(Indicator):
         If `value_floor` is negative (< 0).
     """
 
+    fast_period: int
+    slow_period: int
+    value: float
+
     def __init__(
         self,
         fast_period: int,
@@ -41,12 +45,6 @@ class VolatilityRatio(Indicator):
         use_previous: bool = True,
         value_floor: float = 0,
     ) -> None: ...
-    @property
-    def fast_period(self) -> int: ...
-    @property
-    def slow_period(self) -> int: ...
-    @property
-    def value(self) -> float: ...
     def handle_bar(self, bar: Bar) -> None:
         """
         Update the indicator with the given bar.
@@ -78,3 +76,4 @@ class VolatilityRatio(Indicator):
 
         """
         ...
+    def _reset(self) -> None: ...

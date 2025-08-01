@@ -1,6 +1,6 @@
 from nautilus_trader.indicators.average.moving_average import MovingAverageType
-from nautilus_trader.core.nautilus_pyo3 import Bar
-from nautilus_trader.core.nautilus_pyo3 import RelativeStrengthIndex as Indicator
+from nautilus_trader.model.data import Bar
+from nautilus_trader.indicators.base.indicator import Indicator
 
 
 class RelativeStrengthIndex(Indicator):
@@ -25,5 +25,26 @@ class RelativeStrengthIndex(Indicator):
         period: int,
         ma_type: MovingAverageType = MovingAverageType.EXPONENTIAL,
     ) -> None: ...
-    def handle_bar(self, bar: Bar) -> None: ...
-    def update_raw(self, value: float) -> None: ...
+    def handle_bar(self, bar: Bar) -> None:
+        """
+        Update the indicator with the given bar.
+
+        Parameters
+        ----------
+        bar : Bar
+            The update bar.
+
+        """
+        ...
+    def update_raw(self, value: float) -> None:
+        """
+        Update the indicator with the given value.
+
+        Parameters
+        ----------
+        value : double
+            The update value.
+
+        """
+        ...
+    def _reset(self) -> None: ...

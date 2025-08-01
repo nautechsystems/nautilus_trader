@@ -1,5 +1,6 @@
 from nautilus_trader.core.nautilus_pyo3 import Bar
 from nautilus_trader.core.nautilus_pyo3 import MovingAverageType
+from nautilus_trader.indicators.base.indicator import Indicator
 
 class AverageTrueRange(Indicator):
     """
@@ -20,6 +21,9 @@ class AverageTrueRange(Indicator):
         The floor (minimum) output value for the indicator (>= 0).
     """
 
+    period: int
+    value: float
+
     def __init__(
         self,
         period: int,
@@ -27,18 +31,6 @@ class AverageTrueRange(Indicator):
         use_previous: bool = True,
         value_floor: float = 0,
     ) -> None: ...
-    @property
-    def name(self) -> str: ...
-    @property
-    def period(self) -> int: ...
-    @property
-    def count(self) -> int: ...
-    @property
-    def initialized(self) -> bool: ...
-    @property
-    def has_inputs(self) -> bool: ...
-    @property
-    def value(self) -> float: ...
     def handle_bar(self, bar: Bar) -> None:
         """
         Update the indicator with the given bar.
@@ -70,4 +62,4 @@ class AverageTrueRange(Indicator):
 
         """
         ...
-    def reset(self) -> None: ...
+    def _reset(self) -> None: ...

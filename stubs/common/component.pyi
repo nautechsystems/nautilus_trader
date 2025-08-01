@@ -5,6 +5,7 @@ from datetime import tzinfo
 from typing import Any, ClassVar
 
 from nautilus_trader.common.config import NautilusConfig
+from nautilus_trader.common.enums import ComponentTrigger
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.nautilus_pyo3 import UUID4, ComponentState
 from nautilus_trader.core.nautilus_pyo3 import ComponentId
@@ -14,10 +15,13 @@ from nautilus_trader.core.nautilus_pyo3 import LogLevel
 from nautilus_trader.core.nautilus_pyo3 import MessageBusListener
 from nautilus_trader.core.nautilus_pyo3 import TraderId
 from stubs.serialization.base import Serializer
+from nautilus_trader.core.message import Event
+
 
 _COMPONENT_CLOCKS: dict[UUID4, list['TestClock']]
 _FORCE_STOP: ClassVar[bool]
 LOGGING_PYO3: ClassVar[bool]
+
 
 class Clock:
     """
@@ -43,6 +47,7 @@ class Clock:
 
         """
         ...
+
     @property
     def timer_count(self) -> int:
         """
@@ -54,6 +59,7 @@ class Clock:
 
         """
         ...
+
     def timestamp(self) -> float:
         """
         Return the current UNIX timestamp in seconds.
@@ -68,6 +74,7 @@ class Clock:
 
         """
         ...
+
     def timestamp_ms(self) -> int:
         """
         Return the current UNIX timestamp in milliseconds (ms).
@@ -82,6 +89,7 @@ class Clock:
 
         """
         ...
+
     def timestamp_us(self) -> int:
         """
         Return the current UNIX timestamp in microseconds (μs).
@@ -96,6 +104,7 @@ class Clock:
 
         """
         ...
+
     def timestamp_ns(self) -> int:
         """
         Return the current UNIX timestamp in nanoseconds (ns).
@@ -110,6 +119,7 @@ class Clock:
 
         """
         ...
+
     def utc_now(self) -> datetime:
         """
         Return the current time (UTC).
@@ -121,6 +131,7 @@ class Clock:
 
         """
         ...
+
     def local_now(self, tz: tzinfo | None = None) -> datetime:
         """
         Return the current datetime of the clock in the given local timezone.
@@ -138,7 +149,8 @@ class Clock:
 
         """
         ...
-    def register_default_handler(self, handler: Callable[[TimeEvent], None]) -> None:
+
+    def register_default_handler(self, handler: Callable[['TimeEvent'], None]) -> None:
         """
         Register the given handler as the clocks default handler.
 
@@ -154,6 +166,7 @@ class Clock:
 
         """
         ...
+
     def next_time_ns(self, name: str) -> int:
         """
         Find a particular timer.
@@ -174,11 +187,12 @@ class Clock:
 
         """
         ...
+
     def set_time_alert(
         self,
         name: str,
         alert_time: datetime,
-        callback: Callable[[TimeEvent], None] | None = None,
+        callback: Callable[['TimeEvent'], None] | None = None,
         override: bool = False,
         allow_past: bool = True,
     ) -> None:
@@ -222,11 +236,12 @@ class Clock:
 
         """
         ...
+
     def set_time_alert_ns(
         self,
         name: str,
         alert_time_ns: int,
-        callback: Callable[[TimeEvent], None] | None = None,
+        callback: Callable[['TimeEvent'], None] | None = None,
         allow_past: bool = True,
     ) -> None:
         """
@@ -267,13 +282,14 @@ class Clock:
 
         """
         ...
+
     def set_timer(
         self,
         name: str,
         interval: timedelta,
         start_time: datetime | None = None,
         stop_time: datetime | None = None,
-        callback: Callable[[TimeEvent], None] | None = None,
+        callback: Callable[['TimeEvent'], None] | None = None,
         allow_past: bool = True,
         fire_immediately: bool = False,
     ) -> None:
@@ -324,13 +340,14 @@ class Clock:
 
         """
         ...
+
     def set_timer_ns(
         self,
         name: str,
         interval_ns: int,
         start_time_ns: int,
         stop_time_ns: int,
-        callback: Callable[[TimeEvent], None] | None = None,
+        callback: Callable[['TimeEvent'], None] | None = None,
         allow_past: bool = True,
         fire_immediately: bool = False,
     ) -> None:
@@ -381,6 +398,7 @@ class Clock:
 
         """
         ...
+
     def cancel_timer(self, name: str) -> None:
         """
         Cancel the timer corresponding to the given label.
@@ -399,18 +417,21 @@ class Clock:
 
         """
         ...
+
     def cancel_timers(self) -> None:
         """
         Cancel all timers.
         """
         ...
 
-def get_component_clocks(instance_id: UUID4) -> list[TestClock]: ...
+
+def get_component_clocks(instance_id: UUID4) -> list['TestClock']: ...
 def register_component_clock(instance_id: UUID4, clock: Clock) -> None: ...
 def deregister_component_clock(instance_id: UUID4, clock: Clock) -> None: ...
 def remove_instance_component_clocks(instance_id: UUID4) -> None: ...
 def set_backtest_force_stop(value: bool) -> None: ...
 def is_backtest_force_stop() -> bool: ...
+
 
 class TestClock(Clock):
     """
@@ -419,36 +440,45 @@ class TestClock(Clock):
     """
 
     __test__: ClassVar[bool] = ...
+
     def __init__(self) -> None: ...
+    def __del__(self) -> None: ...
+
     @property
     def timer_names(self) -> list[str]: ...
+
     @property
     def timer_count(self) -> int: ...
+
     def timestamp(self) -> float: ...
     def timestamp_ms(self) -> int: ...
     def timestamp_us(self) -> int: ...
     def timestamp_ns(self) -> int: ...
-    def register_default_handler(self, callback: Callable[[TimeEvent], None]) -> None: ...
+    def register_default_handler(self, handler: Callable[['TimeEvent'], None]) -> None: ...
+
     def set_time_alert_ns(
         self,
         name: str,
         alert_time_ns: int,
-        callback: Callable[[TimeEvent], None] | None = None,
+        callback: Callable[['TimeEvent'], None] | None = None,
         allow_past: bool = True,
     ) -> None: ...
+
     def set_timer_ns(
         self,
         name: str,
         interval_ns: int,
         start_time_ns: int,
         stop_time_ns: int,
-        callback: Callable[[TimeEvent], None] | None = None,
+        callback: Callable[['TimeEvent'], None] | None = None,
         allow_past: bool = True,
         fire_immediately: bool = False,
     ) -> None: ...
+
     def next_time_ns(self, name: str) -> int: ...
     def cancel_timer(self, name: str) -> None: ...
     def cancel_timers(self) -> None: ...
+
     def set_time(self, to_time_ns: int) -> None:
         """
         Set the clocks datetime to the given time (UTC).
@@ -460,7 +490,8 @@ class TestClock(Clock):
 
         """
         ...
-    def advance_time(self, to_time_ns: int, set_time: bool = True) -> list[Any]:
+
+    def advance_time(self, to_time_ns: int, set_time: bool = True) -> list[TimeEventHandler]:
         """
         Advance the clocks time to the given `to_time_ns`.
 
@@ -484,6 +515,7 @@ class TestClock(Clock):
         """
         ...
 
+
 class LiveClock(Clock):
     """
     Provides a monotonic clock for live trading.
@@ -497,37 +529,46 @@ class LiveClock(Clock):
     """
 
     def __init__(self) -> None: ...
+    def __del__(self) -> None: ...
+
     @property
     def timer_names(self) -> list[str]: ...
+
     @property
     def timer_count(self) -> int: ...
+
     def timestamp(self) -> float: ...
     def timestamp_ms(self) -> int: ...
     def timestamp_us(self) -> int: ...
     def timestamp_ns(self) -> int: ...
-    def register_default_handler(self, callback: Callable[[TimeEvent], None]) -> None: ...
+    def register_default_handler(self, callback: Callable[['TimeEvent'], None]) -> None: ...
+
     def set_time_alert_ns(
         self,
         name: str,
         alert_time_ns: int,
-        callback: Callable[[TimeEvent], None] | None = None,
+        callback: Callable[['TimeEvent'], None] | None = None,
         allow_past: bool = True,
     ) -> None: ...
+
     def set_timer_ns(
         self,
         name: str,
         interval_ns: int,
         start_time_ns: int,
         stop_time_ns: int,
-        callback: Callable[[TimeEvent], None] | None = None,
+        callback: Callable[['TimeEvent'], None] | None = None,
         allow_past: bool = True,
         fire_immediately: bool = False,
     ) -> None: ...
+
     def next_time_ns(self, name: str) -> int: ...
     def cancel_timer(self, name: str) -> None: ...
     def cancel_timers(self) -> None: ...
 
-def create_pyo3_conversion_wrapper(callback: Any) -> Callable: ...
+
+def create_pyo3_conversion_wrapper(callback: Any) -> Callable[[Any], Any]: ...
+
 
 class TimeEvent(Event):
     """
@@ -552,10 +593,15 @@ class TimeEvent(Event):
         ts_event: int,
         ts_init: int,
     ) -> None: ...
-    def __eq__(self, other: TimeEvent) -> bool: ...
+
+    def __getstate__(self) -> Any: ...
+    def __setstate__(self, state: Any) -> None: ...
+
+    def __eq__(self, other: 'TimeEvent') -> bool: ...
     def __hash__(self) -> int: ...
     def __str__(self) -> str: ...
     def __repr__(self) -> str: ...
+
     @property
     def name(self) -> str:
         """
@@ -567,6 +613,7 @@ class TimeEvent(Event):
 
         """
         ...
+
     @property
     def id(self) -> UUID4:
         """
@@ -578,6 +625,7 @@ class TimeEvent(Event):
 
         """
         ...
+
     @property
     def ts_event(self) -> int:
         """
@@ -589,6 +637,7 @@ class TimeEvent(Event):
 
         """
         ...
+
     @property
     def ts_init(self) -> int:
         """
@@ -601,26 +650,31 @@ class TimeEvent(Event):
         """
         ...
 
+
 class TimeEventHandler:
     """
     Represents a time event with its associated handler.
     """
 
     event: TimeEvent
+
     def __init__(
         self,
         event: TimeEvent,
         handler: Callable[[TimeEvent], None],
     ) -> None: ...
+
     def handle(self) -> None:
         """Call the handler with the contained time event."""
         ...
+
     def __eq__(self, other: TimeEventHandler) -> bool: ...
     def __lt__(self, other: TimeEventHandler) -> bool: ...
     def __le__(self, other: TimeEventHandler) -> bool: ...
     def __gt__(self, other: TimeEventHandler) -> bool: ...
     def __ge__(self, other: TimeEventHandler) -> bool: ...
     def __repr__(self) -> str: ...
+
 
 RECV: ClassVar[str] = ...
 SENT: ClassVar[str] = ...
@@ -631,6 +685,7 @@ RPT: ClassVar[str] = ...
 REQ: ClassVar[str] = ...
 RES: ClassVar[str] = ...
 
+
 def set_logging_clock_realtime_mode() -> None: ...
 def set_logging_clock_static_mode() -> None: ...
 def set_logging_clock_static_time(time_ns: int) -> None: ...
@@ -638,6 +693,7 @@ def log_color_from_str(value: str) -> LogColor: ...
 def log_color_to_str(value: LogColor) -> str: ...
 def log_level_from_str(value: str) -> LogLevel: ...
 def log_level_to_str(value: LogLevel) -> str: ...
+
 
 class LogGuard:
     """
@@ -647,6 +703,7 @@ class LogGuard:
     """
 
     def __del__(self) -> None: ...
+
 
 def init_logging(
     trader_id: TraderId | None = None,
@@ -720,10 +777,13 @@ def init_logging(
 
     """
     ...
+
+
 def is_logging_initialized() -> bool: ...
 def is_logging_pyo3() -> bool: ...
 def set_logging_pyo3(value: bool) -> None: ...
 def flush_logger() -> None: ...
+
 
 class Logger:
     """
@@ -737,6 +797,7 @@ class Logger:
     """
 
     def __init__(self, name: str) -> None: ...
+
     @property
     def name(self) -> str:
         """
@@ -748,6 +809,7 @@ class Logger:
 
         """
         ...
+
     def debug(
         self,
         message: str,
@@ -765,6 +827,7 @@ class Logger:
 
         """
         ...
+
     def info(
         self, message: str,
         color: LogColor = ...,
@@ -781,6 +844,7 @@ class Logger:
 
         """
         ...
+
     def warning(
         self,
         message: str,
@@ -798,6 +862,7 @@ class Logger:
 
         """
         ...
+
     def error(
         self,
         message: str,
@@ -815,6 +880,7 @@ class Logger:
 
         """
         ...
+
     def exception(
         self,
         message: str,
@@ -833,17 +899,23 @@ class Logger:
         """
         ...
 
+
 def log_header(
     trader_id: TraderId,
     machine_id: str,
     instance_id: UUID4,
     component: str,
 ) -> None: ...
+
+
 def log_sysinfo(component: str) -> None: ...
-def component_state_from_str(value: str) -> nautilus_pyo3.ComponentState: ...
-def component_state_to_str(value: nautilus_pyo3.ComponentState) -> str: ...
-def component_trigger_from_str(value: str) -> nautilus_pyo3.ComponentTrigger: ...
-def component_trigger_to_str(value: nautilus_pyo3.ComponentTrigger) -> str: ...
+
+
+def component_state_from_str(value: str) -> ComponentState: ...
+def component_state_to_str(value: ComponentState) -> str: ...
+def component_trigger_from_str(value: str) -> ComponentTrigger: ...
+def component_trigger_to_str(value: ComponentTrigger) -> str: ...
+
 
 class ComponentFSMFactory:
     """
@@ -862,6 +934,10 @@ class ComponentFSMFactory:
 
         """
         ...
+
+    @staticmethod
+    def create() -> 'nautilus_trader.core.fsm.FiniteStateMachine': ...
+
 
 class Component:
     """
@@ -906,19 +982,22 @@ class Component:
     trader_id: TraderId | None
     id: Identifier
     type: type
+
     def __init__(
         self,
         clock: Clock,
         trader_id: TraderId | None = None,
         component_id: Identifier | None = None,
         component_name: str | None = None,
-        msgbus: MessageBus | None = None,
+        msgbus: 'MessageBus' | None = None,
         config: NautilusConfig | None = None,
     ) -> None: ...
-    def __eq__(self, other: Component) -> bool: ...
+
+    def __eq__(self, other: 'Component') -> bool: ...
     def __hash__(self) -> int: ...
     def __str__(self) -> str: ...
     def __repr__(self) -> str: ...
+
     @classmethod
     def fully_qualified_name(cls) -> str:
         """
@@ -934,6 +1013,7 @@ class Component:
 
         """
         ...
+
     @property
     def state(self) -> ComponentState:
         """
@@ -945,6 +1025,7 @@ class Component:
 
         """
         ...
+
     @property
     def is_initialized(self) -> bool:
         """
@@ -956,6 +1037,7 @@ class Component:
 
         """
         ...
+
     @property
     def is_running(self) -> bool:
         """
@@ -967,6 +1049,7 @@ class Component:
 
         """
         ...
+
     @property
     def is_stopped(self) -> bool:
         """
@@ -978,6 +1061,7 @@ class Component:
 
         """
         ...
+
     @property
     def is_disposed(self) -> bool:
         """
@@ -989,6 +1073,7 @@ class Component:
 
         """
         ...
+
     @property
     def is_degraded(self) -> bool:
         """
@@ -1000,6 +1085,7 @@ class Component:
 
         """
         ...
+
     @property
     def is_faulted(self) -> bool:
         """
@@ -1011,6 +1097,15 @@ class Component:
 
         """
         ...
+
+    def _start(self) -> None: ...
+    def _stop(self) -> None: ...
+    def _resume(self) -> None: ...
+    def _reset(self) -> None: ...
+    def _dispose(self) -> None: ...
+    def _degrade(self) -> None: ...
+    def _fault(self) -> None: ...
+
     def start(self) -> None:
         """
         Start the component.
@@ -1027,6 +1122,7 @@ class Component:
 
         """
         ...
+
     def stop(self) -> None:
         """
         Stop the component.
@@ -1043,6 +1139,7 @@ class Component:
 
         """
         ...
+
     def resume(self) -> None:
         """
         Resume the component.
@@ -1059,6 +1156,7 @@ class Component:
 
         """
         ...
+
     def reset(self) -> None:
         """
         Reset the component.
@@ -1077,6 +1175,7 @@ class Component:
 
         """
         ...
+
     def dispose(self) -> None:
         """
         Dispose of the component.
@@ -1093,6 +1192,7 @@ class Component:
 
         """
         ...
+
     def degrade(self) -> None:
         """
         Degrade the component.
@@ -1109,6 +1209,7 @@ class Component:
 
         """
         ...
+
     def fault(self) -> None:
         """
         Fault the component.
@@ -1128,6 +1229,7 @@ class Component:
 
         """
         ...
+
     def shutdown_system(self, reason: str | None = None) -> None:
         """
         Initiate a system-wide shutdown by generating and publishing a `ShutdownSystem` command.
@@ -1142,6 +1244,7 @@ class Component:
 
         """
         ...
+
 
 class MessageBus:
     """
@@ -1176,7 +1279,7 @@ class MessageBus:
         The custom name for the message bus.
     serializer : Serializer, optional
         The serializer for database operations.
-    database : nautilus_pyo3.RedisMessageBusDatabase, optional
+    database : RedisMessageBusDatabase, optional
         The backing database for the message bus.
     config : MessageBusConfig, optional
         The configuration for the message bus.
@@ -1202,13 +1305,13 @@ class MessageBus:
 
     _clock: Clock
     _log: Logger
-    _database: nautilus_pyo3.RedisMessageBusDatabase | None
-    _listeners: list[nautilus_pyo3.MessageBusListener]
+    _database: RedisMessageBusDatabase | None
+    _listeners: list[MessageBusListener]
     _endpoints: dict[str, Callable[[Any], None]]
-    _patterns: dict[str, Subscription[:]]
+    _patterns: dict[str, Any] # Changed from Subscription[:] due to type hint complexities
     _subscriptions: dict[Subscription, list[str]]
     _correlation_index: dict[UUID4, Callable[[Any], None]]
-    _publishable_types: tuple[type]
+    _publishable_types: tuple[type, ...]
     _streaming_types: set[type]
     _resolved: bool
 
@@ -1216,13 +1319,14 @@ class MessageBus:
         self,
         trader_id: TraderId,
         clock: Clock,
-        instance_id: UUID4 = None,
+        instance_id: UUID4 | None = None,
         name: str | None = None,
         serializer: Serializer | None = None,
-        database: nautilus_pyo3.RedisMessageBusDatabase | None = None,
+        database: RedisMessageBusDatabase | None = None,
         config: Any | None = None,
     ) -> None: ...
-    def endpoints(self) -> list[Any]:
+
+    def endpoints(self) -> list[str]:
         """
         Return all endpoint addresses registered with the message bus.
 
@@ -1232,6 +1336,7 @@ class MessageBus:
 
         """
         ...
+
     def topics(self) -> list[str]:
         """
         Return all topics with active subscribers.
@@ -1242,7 +1347,8 @@ class MessageBus:
 
         """
         ...
-    def subscriptions(self, pattern: str | None = None) -> list[Any]:
+
+    def subscriptions(self, pattern: str | None = None) -> list[Subscription]:
         """
         Return all subscriptions matching the given topic `pattern`.
 
@@ -1258,8 +1364,9 @@ class MessageBus:
 
         """
         ...
+
     @property
-    def streaming_types(self) -> set[Any]:
+    def streaming_types(self) -> set[type]:
         """
         Return all types registered for external streaming -> internal publishing.
 
@@ -1269,6 +1376,7 @@ class MessageBus:
 
         """
         ...
+
     def has_subscribers(self, pattern: str | None = None) -> bool:
         """
         If the message bus has subscribers for the give topic `pattern`.
@@ -1285,6 +1393,7 @@ class MessageBus:
 
         """
         ...
+
     def is_subscribed(self, topic: str, handler: Callable[[Any], None]) -> bool:
         """
         Return if topic and handler is subscribed to the message bus.
@@ -1304,6 +1413,7 @@ class MessageBus:
 
         """
         ...
+
     def is_pending_request(self, request_id: UUID4) -> bool:
         """
         Return if the given `request_id` is still pending a response.
@@ -1319,6 +1429,7 @@ class MessageBus:
 
         """
         ...
+
     def is_streaming_type(self, cls: type) -> bool:
         """
         Return whether the given type has been registered for external message streaming.
@@ -1330,12 +1441,14 @@ class MessageBus:
 
         """
         ...
+
     def dispose(self) -> None:
         """
         Dispose of the message bus which will close the internal channel and thread.
 
         """
         ...
+
     def register(self, endpoint: str, handler: Callable[[Any], None]) -> None:
         """
         Register the given `handler` to receive messages at the `endpoint` address.
@@ -1358,6 +1471,7 @@ class MessageBus:
 
         """
         ...
+
     def deregister(self, endpoint: str, handler: Callable[[Any], None]) -> None:
         """
         Deregister the given `handler` from the `endpoint` address.
@@ -1382,6 +1496,7 @@ class MessageBus:
 
         """
         ...
+
     def add_streaming_type(self, cls: type) -> None:
         """
         Register the given type for external->internal message bus streaming.
@@ -1393,17 +1508,19 @@ class MessageBus:
 
         """
         ...
+
     def add_listener(self, listener: MessageBusListener) -> None:
         """
         Adds the given listener to the message bus.
 
         Parameters
         ----------
-        listener : nautilus_pyo3.MessageBusListener
+        listener : MessageBusListener
             The listener to add.
 
         """
         ...
+
     def send(self, endpoint: str, msg: Any) -> None:
         """
         Send the given message to the given `endpoint` address.
@@ -1417,7 +1534,8 @@ class MessageBus:
 
         """
         ...
-    def request(self, endpoint: str, request: Any) -> None:
+
+    def request(self, endpoint: str, request: Any) -> None: # Cannot import Request without circular dependency
         """
         Handle the given `request`.
 
@@ -1432,7 +1550,8 @@ class MessageBus:
 
         """
         ...
-    def response(self, response: Any) -> None:
+
+    def response(self, response: Any) -> None: # Cannot import Response without circular dependency
         """
         Handle the given `response`.
 
@@ -1445,6 +1564,7 @@ class MessageBus:
 
         """
         ...
+
     def subscribe(
         self,
         topic: str,
@@ -1484,6 +1604,7 @@ class MessageBus:
 
         """
         ...
+
     def unsubscribe(self, topic: str, handler: Callable[[Any], None]) -> None:
         """
         Unsubscribe the given callback `handler` from the given message `topic`.
@@ -1505,6 +1626,7 @@ class MessageBus:
 
         """
         ...
+
     def publish(self, topic: str, msg: Any, external_pub: bool = True) -> None:
         """
         Publish the given message for the given `topic`.
@@ -1524,7 +1646,9 @@ class MessageBus:
         """
         ...
 
+
 def is_matching_py(topic: str, pattern: str) -> bool: ...
+
 
 class Subscription:
     """
@@ -1560,12 +1684,14 @@ class Subscription:
     topic: str
     handler: Callable[[Any], None]
     priority: int
+
     def __init__(
         self,
         topic: str,
         handler: Callable[[Any], None],
         priority: int = 0,
     ) -> None: ...
+
     def __eq__(self, other: Subscription) -> bool: ...
     def __lt__(self, other: Subscription) -> bool: ...
     def __le__(self, other: Subscription) -> bool: ...
@@ -1573,6 +1699,7 @@ class Subscription:
     def __ge__(self, other: Subscription) -> bool: ...
     def __hash__(self) -> int: ...
     def __repr__(self) -> str: ...
+
 
 class Throttler:
     """
@@ -1628,6 +1755,7 @@ class Throttler:
     is_limiting: bool
     recv_count: int
     sent_count: int
+
     def __init__(
         self,
         name: str,
@@ -1637,6 +1765,7 @@ class Throttler:
         output_send: Callable[[Any], None],
         output_drop: Callable[[Any], None] | None = None,
     ) -> None: ...
+
     @property
     def qsize(self) -> int:
         """
@@ -1648,12 +1777,14 @@ class Throttler:
 
         """
         ...
+
     def reset(self) -> None:
         """
         Reset the state of the throttler.
 
         """
         ...
+
     def used(self) -> float:
         """
         Return the percentage of maximum rate currently used.
@@ -1665,6 +1796,7 @@ class Throttler:
 
         """
         ...
+
     def send(self, msg: Any) -> None:
         """
         Send the given message through the throttler.
@@ -1676,5 +1808,7 @@ class Throttler:
 
         """
         ...
+
     def _process(self, event: TimeEvent) -> None: ...
     def _resume(self, event: TimeEvent) -> None: ...
+

@@ -2,7 +2,7 @@ from decimal import Decimal
 from typing import Any
 
 from nautilus_trader.core import nautilus_pyo3
-from nautilus_trader.core.nautilus_pyo3 import UUID4, OrderInitialized, Symbol, Venue
+from nautilus_trader.core.nautilus_pyo3 import UUID4, Symbol, Venue
 from nautilus_trader.core.nautilus_pyo3 import AccountId
 from nautilus_trader.core.nautilus_pyo3 import ClientOrderId
 from nautilus_trader.core.nautilus_pyo3 import Currency
@@ -22,7 +22,7 @@ from nautilus_trader.core.nautilus_pyo3 import TradeId
 from nautilus_trader.core.nautilus_pyo3 import TriggerType
 from nautilus_trader.core.nautilus_pyo3 import VenueOrderId
 from stubs.core.fsm import FiniteStateMachine
-from stubs.model.events.order import OrderEvent
+from nautilus_trader.model.events.order import OrderInitialized, OrderEvent
 
 STOP_ORDER_TYPES: set[OrderType]
 LIMIT_ORDER_TYPES: set[OrderType]
@@ -556,7 +556,7 @@ class Order:
         list[Money]
 
         """
-    def apply(self, event: Any) -> None:
+    def apply(self, event: OrderEvent) -> None:
         """
         Apply the given order event to the order.
 

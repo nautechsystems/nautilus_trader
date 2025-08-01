@@ -29,5 +29,26 @@ class EfficiencyRatio(Indicator):
     _deltas: ClassVar[deque]
 
     def __init__(self, period: int) -> None: ...
-    def handle_bar(self, bar: Bar) -> None: ...
-    def update_raw(self, price: float) -> None: ...
+    def handle_bar(self, bar: Bar) -> None:
+        """
+        Update the indicator with the given bar.
+
+        Parameters
+        ----------
+        bar : Bar
+            The update bar.
+
+        """
+        ...
+    def update_raw(self, price: float) -> None:
+        """
+        Update the indicator with the given price.
+
+        Parameters
+        ----------
+        price : double
+            The update price.
+
+        """
+        ...
+    def _reset(self) -> None: ...

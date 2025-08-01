@@ -115,6 +115,7 @@ class ExecAlgorithm(Actor):
 
         """
         ...
+    def _reset(self) -> None: ...
     def execute(self, command: TradingCommand) -> None:
         """
         Handle the given trading command by processing it with the execution algorithm.
@@ -783,3 +784,4 @@ class ExecAlgorithm(Actor):
 
         """
         ...
+

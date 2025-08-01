@@ -36,7 +36,11 @@ from stubs.backtest.models import LatencyModel
 from stubs.backtest.modules import SimulationModule
 from stubs.common.actor import Actor
 from stubs.data.engine import DataEngine
+from stubs.data.messages import DataCommand
+from stubs.data.messages import DataResponse
 from stubs.data.messages import RequestData
+from stubs.data.messages import SubscribeData
+from stubs.data.messages import UnsubscribeData
 
 class BacktestEngine:
     """
@@ -137,7 +141,7 @@ class BacktestEngine:
         """
         ...
     @property
-    def run_config_id(self) -> str:
+    def run_config_id(self) -> str | None:
         """
         Return the last backtest engine run config ID.
 
@@ -148,7 +152,7 @@ class BacktestEngine:
         """
         ...
     @property
-    def run_id(self) -> UUID4:
+    def run_id(self) -> UUID4 | None:
         """
         Return the last backtest engine run ID (if run).
 
@@ -187,7 +191,7 @@ class BacktestEngine:
 
         Returns
         -------
-        pd.Timestamp or ``None``
+        pd.Timestamp | None
 
         """
         ...
@@ -332,7 +336,7 @@ class BacktestEngine:
             The fill model for the exchange.
         fee_model : FeeModel, optional
             The fee model for the venue.
-        latency_model : LatencyModel, optional
+        latency_model : Latency, optional
             The latency model for the exchange.
         book_type : BookType, default ``BookType.L1_MBP``
             The default order book type.
@@ -414,8 +418,8 @@ class BacktestEngine:
         ...
     def add_data(
         self,
-        data: list,
-        client_id: ClientId = None,
+        data: list[Data],
+        client_id: ClientId | None = None,
         validate: bool = True,
         sort: bool = True,
     ) -> None:
@@ -458,6 +462,11 @@ class BacktestEngine:
 
         """
         ...
+    def _handle_data_command(self, command: DataCommand) -> None: ...
+    def _handle_subscribe(self, command: SubscribeData) -> None: ...
+    def _handle_data_response(self, response: DataResponse) -> None: ...
+    def _handle_unsubscribe(self, command: UnsubscribeData) -> None: ...
+    def _handle_empty_data(self, subscription_name: str, last_ts_init: int) -> None: ...
     def dump_pickled_data(self) -> bytes:
         """
         Return the internal data stream pickled.
@@ -643,6 +652,13 @@ class BacktestEngine:
 
         """
         ...
+    def _run(
+        self,
+        start: datetime | str | int | None = None,
+        end: datetime | str | int | None = None,
+        run_config_id: str | None = None,
+        streaming: bool = False,
+    ) -> None: ...
     def end(self) -> None:
         """
         Manually end the backtest.
@@ -663,33 +679,39 @@ class BacktestEngine:
 
         """
         ...
+    def _get_log_color_code(self) -> str: ...
+    def _log_pre_run(self) -> None: ...
+    def _log_run(self, start: pd.Timestamp, end: pd.Timestamp) -> None: ...
+    def _log_post_run(self) -> None: ...
+    def _add_data_client_if_not_exists(self, client_id: ClientId) -> None: ...
+    def _add_market_data_client_if_not_exists(self, venue: Venue) -> None: ...
     def set_default_market_data_client(self) -> None: ...
 
 class BacktestDataIterator:
     _empty_data_callback: Callable[[str, int], None] | None
     _log: Logger
-    _data: dict
-    _data_name: dict
-    _data_priority: dict
-    _data_len: dict
-    _data_index: dict
-    _heap: list
+    _data: dict[int, list[Data]]
+    _data_name: dict[int, str]
+    _data_priority: dict[str, int]
+    _data_len: dict[int, int]
+    _data_index: dict[int, int]
+    _heap: list[tuple[int, int, int]]
     _next_data_priority: int
-    _single_data: list
-    _single_data_name: str
-    _single_data_priority: int
-    _single_data_len: int
-    _single_data_index: int
-    _is_single_data: bool
 
     def __init__(self, empty_data_callback: Callable[[str, int], None] | None = None) -> None: ...
-    def add_data(self, data_name: str, data_list: list, append_data: bool = True) -> None: ...
+    def _reset_single_data(self) -> None: ...
+    def add_data(self, data_name: str, data_list: list[Data], append_data: bool = True) -> None: ...
     def remove_data(self, data_name: str) -> None: ...
-    def next(self) -> Data: ...
+    def _activate_single_data(self) -> None: ...
+    def _deactivate_single_data(self) -> None: ...
+    def next(self) -> Data | None: ...
+    def _push_data(self, data_priority: int, data_index: int) -> None: ...
     def reset(self) -> None: ...
+    def _reset_heap(self) -> None: ...
     def set_index(self, data_name: str, index: int) -> None: ...
     def is_done(self) -> bool: ...
-    def all_data(self) -> dict: ...
-    def data(self, data_name: str) -> list: ...
-    def __iter__(self) -> Iterator: ...
-    def __next__(self) -> Any | None: ...
+    def all_data(self) -> dict[str, list[Data]]: ...
+    def data(self, data_name: str) -> list[Data]: ...
+    def __iter__(self) -> Iterator[Data]: ...
+    def __next__(self) -> Data: ...
+

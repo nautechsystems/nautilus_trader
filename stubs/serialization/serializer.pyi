@@ -1,7 +1,7 @@
 import re
 import pandas as pd
 import pytz
-from typing import Any
+from typing import Any, Callable
 from nautilus_trader.serialization.base import Serializer
 
 class MsgSpecSerializer(Serializer):
@@ -20,11 +20,52 @@ class MsgSpecSerializer(Serializer):
         and back to `uint64_t` on deserialization.
     """
 
+    timestamps_as_str: bool
+    timestamps_as_iso8601: bool
+
     def __init__(
         self,
-        encoding: Any,
+        encoding: Callable,
         timestamps_as_str: bool = False,
         timestamps_as_iso8601: bool = False,
     ) -> None: ...
-    def serialize(self, obj: object) -> bytes: ...
-    def deserialize(self, obj_bytes: bytes) -> object: ...
+    def serialize(self, obj: object) -> bytes:
+        """
+        Serialize the given object to `MessagePack` specification bytes.
+
+        Parameters
+        ----------
+        obj : object
+            The object to serialize.
+
+        Returns
+        -------
+        bytes
+
+        Raises
+        ------
+        RuntimeError
+            If `obj` cannot be serialized.
+
+        """
+        ...
+    def deserialize(self, obj_bytes: bytes) -> object:
+        """
+        Deserialize the given `MessagePack` specification bytes to an object.
+
+        Parameters
+        ----------
+        obj_bytes : bytes
+            The object bytes to deserialize.
+
+        Returns
+        -------
+        Instrument
+
+        Raises
+        ------
+        RuntimeError
+            If `obj_bytes` cannot be deserialized.
+
+        """
+        ...

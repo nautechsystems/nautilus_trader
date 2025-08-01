@@ -26,7 +26,7 @@ class ChandeMomentumOscillator(Indicator):
         self,
         period: int,
         ma_type: MovingAverageType = MovingAverageType.WILDER,
-    ): ...
+    ) -> None: ...
     def handle_bar(self, bar: Bar) -> None:
         """
         Update the indicator with the given bar.
@@ -49,3 +49,4 @@ class ChandeMomentumOscillator(Indicator):
 
         """
         ...
+    def _reset(self) -> None: ...

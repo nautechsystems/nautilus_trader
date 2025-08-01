@@ -1,6 +1,6 @@
 from collections import deque
 from nautilus_trader.core.nautilus_pyo3 import Bar
-from nautilus_trader.core.nautilus_pyo3 import Data
+from nautilus_trader.indicators.base.indicator import Indicator
 
 class OnBalanceVolume(Indicator):
     """
@@ -54,3 +54,4 @@ class OnBalanceVolume(Indicator):
 
         """
         ...
+    def _reset(self) -> None: ...
