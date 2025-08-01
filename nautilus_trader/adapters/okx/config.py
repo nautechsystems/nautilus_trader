@@ -36,7 +36,7 @@ class OKXDataClientConfig(LiveDataClientConfig, frozen=True):
     api_passphrase : str, [default=None]
         The passphrase used when creating the OKX API keys.
         If ``None`` then will source the `OKX_PASSPHRASE` environment variable.
-    instrument_types : tuple[OKXInstrumentType], default `(OKXInstrumentType.SWAP,)`
+    instrument_types : tuple[OKXInstrumentType], default `(OKXInstrumentType.SPOT,)`
         The OKX instrument types of instruments to load.
         If None, all instrument types are loaded (subject to contract types and their compatibility with instrument types).
     contract_types : tuple[OKXInstrumentType], optional

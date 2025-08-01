@@ -61,7 +61,23 @@ use crate::{
     websocket::enums::OKXWsChannel,
 };
 
-/// Deserializes empty strings as None for optional fields.
+/// Deserializes an empty string into [`None`].
+///
+/// OKX frequently represents *null* string fields as an empty string (`""`).
+/// When such a payload is mapped onto `Option<String>` the default behaviour
+/// would yield `Some("")`, which is semantically different from the intended
+/// absence of a value.  Applying this helper via
+///
+/// ```rust
+/// #[serde(deserialize_with = "crate::common::parse::deserialize_empty_string_as_none")]
+/// pub cl_ord_id: Option<String>,
+/// ```
+///
+/// ensures that empty strings are normalised to `None` during deserialization.
+///
+/// # Errors
+///
+/// Returns an error if the JSON value cannot be deserialised into a string.
 pub fn deserialize_empty_string_as_none<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
 where
     D: Deserializer<'de>,
@@ -70,7 +86,11 @@ where
     Ok(opt.filter(|s| !s.is_empty()))
 }
 
-/// Deserializes empty Ustr values as None for optional fields.
+/// Deserializes an empty [`Ustr`] into [`None`].
+///
+/// # Errors
+///
+/// Returns an error if the JSON value cannot be deserialised into a string.
 pub fn deserialize_empty_ustr_as_none<'de, D>(deserializer: D) -> Result<Option<Ustr>, D::Error>
 where
     D: Deserializer<'de>,
@@ -79,7 +99,11 @@ where
     Ok(opt.filter(|s| !s.is_empty()))
 }
 
-/// Deserializes string values to u64 integers.
+/// Deserializes a numeric string into a `u64`.
+///
+/// # Errors
+///
+/// Returns an error if the string cannot be parsed into a `u64`.
 pub fn deserialize_string_to_u64<'de, D>(deserializer: D) -> Result<u64, D::Error>
 where
     D: Deserializer<'de>,
@@ -92,7 +116,11 @@ where
     }
 }
 
-/// Deserializes optional string values to u64 integers.
+/// Deserializes an optional numeric string into `Option<u64>`.
+///
+/// # Errors
+///
+/// Returns an error under the same cases as [`deserialize_string_to_u64`].
 pub fn deserialize_optional_string_to_u64<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
 where
     D: Deserializer<'de>,
@@ -115,7 +143,12 @@ fn get_currency(code: &str) -> Currency {
         .unwrap_or(Currency::new(code, 8, 0, code, CurrencyType::Crypto))
 }
 
-/// Gets the OKX instrument type for the given instrument.
+/// Returns the [`OKXInstrumentType`] that corresponds to the supplied
+/// [`InstrumentAny`].
+///
+/// # Errors
+///
+/// Returns an error if the instrument variant is not supported by OKX.
 pub fn okx_instrument_type(instrument: &InstrumentAny) -> anyhow::Result<OKXInstrumentType> {
     match instrument {
         InstrumentAny::CurrencyPair(_) => Ok(OKXInstrumentType::Spot),
@@ -142,10 +175,19 @@ pub fn parse_client_order_id(value: &str) -> Option<ClientOrderId> {
     }
 }
 
+/// Converts a millisecond-based timestamp (as returned by OKX) into
+/// [`UnixNanos`].
+#[must_use]
 pub fn parse_millisecond_timestamp(timestamp_ms: u64) -> UnixNanos {
     UnixNanos::from(timestamp_ms * NANOSECONDS_IN_MILLISECOND)
 }
 
+/// Parses an RFC 3339 timestamp string into [`UnixNanos`].
+///
+/// # Errors
+///
+/// Returns an error if the string is not a valid RFC 3339 datetime or if the
+/// timestamp cannot be represented in nanoseconds.
 pub fn parse_rfc3339_timestamp(timestamp: &str) -> anyhow::Result<UnixNanos> {
     let dt = chrono::DateTime::parse_from_rfc3339(timestamp)?;
     let nanos = dt.timestamp_nanos_opt().ok_or_else(|| {
@@ -154,14 +196,35 @@ pub fn parse_rfc3339_timestamp(timestamp: &str) -> anyhow::Result<UnixNanos> {
     Ok(UnixNanos::from(nanos as u64))
 }
 
+/// Converts a textual price to a [`Price`] using the given precision.
+///
+/// # Errors
+///
+/// Returns an error if the string fails to parse into `f64` or if the number
+/// of decimal places exceeds `precision`.
 pub fn parse_price(value: &str, precision: u8) -> anyhow::Result<Price> {
     Price::new_checked(value.parse::<f64>()?, precision)
 }
 
+/// Converts a textual quantity to a [`Quantity`].
+///
+/// # Errors
+///
+/// Returns an error for the same reasons as [`parse_price`] – parsing failure or invalid
+/// precision.
 pub fn parse_quantity(value: &str, precision: u8) -> anyhow::Result<Quantity> {
     Quantity::new_checked(value.parse::<f64>()?, precision)
 }
 
+/// Converts a textual fee amount into a [`Money`] value.
+///
+/// OKX represents *charges* as positive numbers but they reduce the account
+/// balance, hence the value is negated.
+///
+/// # Errors
+///
+/// Returns an error if the fee cannot be parsed into `f64` or fails internal
+/// validation in [`Money::new_checked`].
 pub fn parse_fee(value: Option<&str>, currency: Currency) -> anyhow::Result<Money> {
     // OKX report positive fees with negative signs (i.e., fee charged)
     let fee_f64 = value.unwrap_or("0").parse::<f64>()?;
@@ -205,6 +268,11 @@ pub fn parse_order_side(order_side: &Option<OKXSide>) -> OrderSide {
 }
 
 /// Parses an OKX mark price record into a Nautilus [`MarkPriceUpdate`].
+///
+/// # Errors
+///
+/// Returns an error if `raw.mark_px` cannot be parsed into a [`Price`] with
+/// the specified precision.
 pub fn parse_mark_price_update(
     raw: &crate::http::models::OKXMarkPrice,
     instrument_id: InstrumentId,
@@ -222,6 +290,12 @@ pub fn parse_mark_price_update(
 }
 
 /// Parses an OKX index ticker record into a Nautilus [`IndexPriceUpdate`].
+/// Parses an OKX index ticker record into a Nautilus [`IndexPriceUpdate`].
+///
+/// # Errors
+///
+/// Returns an error if `raw.idx_px` cannot be parsed into a [`Price`] with the
+/// specified precision.
 pub fn parse_index_price_update(
     raw: &crate::http::models::OKXIndexTicker,
     instrument_id: InstrumentId,
@@ -239,6 +313,11 @@ pub fn parse_index_price_update(
 }
 
 /// Parses an OKX trade record into a Nautilus [`TradeTick`].
+///
+/// # Errors
+///
+/// Returns an error if the price or quantity strings cannot be parsed, or if
+/// [`TradeTick::new_checked`] validation fails.
 pub fn parse_trade_tick(
     raw: &OKXTrade,
     instrument_id: InstrumentId,
@@ -265,6 +344,11 @@ pub fn parse_trade_tick(
 }
 
 /// Parses an OKX historical candlestick record into a Nautilus [`Bar`].
+///
+/// # Errors
+///
+/// Returns an error if any of the price or volume strings cannot be parsed or
+/// if [`Bar::new`] validation fails.
 pub fn parse_candlestick(
     raw: &OKXCandlestick,
     bar_type: BarType,
