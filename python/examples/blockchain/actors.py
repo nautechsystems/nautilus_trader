@@ -15,6 +15,8 @@
 
 # ruff: noqa (under development)
 
+import pandas as pd
+
 from dataclasses import dataclass
 
 from nautilus_trader.common import DataActor  # type: ignore[attr-defined]
@@ -25,6 +27,8 @@ from nautilus_trader.model import ActorId  # type: ignore[attr-defined]
 from nautilus_trader.model import Block  # type: ignore[attr-defined]
 from nautilus_trader.model import ClientId
 from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import PoolSwap  # type: ignore[attr-defined]
+from nautilus_trader.model import PoolLiquidityUpdate  # type: ignore[attr-defined]
 
 
 @dataclass
@@ -62,8 +66,8 @@ class BlockchainActor(DataActor):
             self.subscribe_pool_swaps(instrument_id, self.client_id)
             self.subscribe_pool_liquidity_updates(instrument_id, self.client_id)
 
-        # TODO: Fix dispatching of time events to global queue
-        # self.clock.set_timer_ns("TEST-TIMER", 1_000_000_000)
+        self.clock.set_timer("TEST-TIMER-SECONDS-1", pd.Timedelta(seconds=1))
+        self.clock.set_timer("TEST-TIMER-SECONDS-2", pd.Timedelta(seconds=2))
 
     def on_stop(self) -> None:
         """
@@ -76,8 +80,26 @@ class BlockchainActor(DataActor):
             self.unsubscribe_pool_swaps(instrument_id, self.client_id)
             self.unsubscribe_pool_liquidity_updates(instrument_id, self.client_id)
 
+    def on_time_event(self, event) -> None:
+        """
+        Actions to be performed on receiving a time event.
+        """
+        self.log.info(repr(event), LogColor.BLUE)
+
     def on_block(self, block: Block) -> None:
         """
         Actions to be performed on receiving a block.
         """
         self.log.info(repr(block), LogColor.CYAN)
+
+    def on_pool_swap(self, swap: PoolSwap) -> None:
+        """
+        Actions to be performed on receiving a pool swap.
+        """
+        self.log.info(repr(swap), LogColor.CYAN)
+
+    def on_pool_liquidity_update(self, update: PoolLiquidityUpdate) -> None:
+        """
+        Actions to be performed on receiving a pool liquidity update.
+        """
+        self.log.info(repr(update), LogColor.CYAN)

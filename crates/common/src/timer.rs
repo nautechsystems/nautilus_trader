@@ -108,8 +108,12 @@ impl Display for TimeEvent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "TimeEvent(name={}, event_id={}, ts_event={}, ts_init={})",
-            self.name, self.event_id, self.ts_event, self.ts_init
+            "{}(name={}, event_id={}, ts_event={}, ts_init={})",
+            stringify!(self),
+            self.name,
+            self.event_id,
+            self.ts_event,
+            self.ts_init
         )
     }
 }
