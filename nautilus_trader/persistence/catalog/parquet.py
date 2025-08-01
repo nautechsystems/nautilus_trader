@@ -325,14 +325,6 @@ class ParquetDataCatalog(BaseDataCatalog):
         directory = self._make_path(data_cls=data_cls, identifier=identifier)
         self.fs.mkdirs(directory, exist_ok=True)
 
-        if isinstance(data[0], Instrument):
-            # When writing an instrument for a given instrument_id, we don't want duplicates
-            # Also keeping the first occurrence can give information about when it's first available
-            data = [data[0]]
-
-            for file in self.fs.glob(f"{directory}/*.parquet"):
-                self.fs.rm(file)
-
         start = start if start else data[0].ts_init
         end = end if end else data[-1].ts_init
         filename = _timestamps_to_filename(start, end)

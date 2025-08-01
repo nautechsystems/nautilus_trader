@@ -1,18 +1,19 @@
-#!/usr/bin/env python3
-# -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
-#  https://nautechsystems.io
-#
-#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
-#  You may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-# -------------------------------------------------------------------------------------------------
+# ---
+# jupyter:
+#   jupytext:
+#     formats: py:percent
+#     text_representation:
+#       extension: .py
+#       format_name: percent
+#       format_version: '1.3'
+#       jupytext_version: 1.17.2
+#   kernelspec:
+#     display_name: Python 3 (ipykernel)
+#     language: python
+#     name: python3
+# ---
+
+# %%
 """
 Test 1x2 Ratio Spread with Quantity 3.
 
@@ -29,13 +30,14 @@ This will test the new spread execution functionality and verify:
 
 """
 
+# %%
+# fmt: off
 import os
 import threading
 import time
 
 from ibapi.common import MarketDataTypeEnum as IBMarketDataTypeEnum
 
-# fmt: off
 from nautilus_trader.adapters.interactive_brokers.common import IB
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
@@ -62,6 +64,7 @@ from nautilus_trader.trading.strategy import Strategy
 # fmt: on
 
 
+# %%
 class RatioSpreadTestConfig(StrategyConfig, frozen=True):
     """
     Configuration for 1x2 ratio spread test.
@@ -70,6 +73,7 @@ class RatioSpreadTestConfig(StrategyConfig, frozen=True):
     spread_instrument_id: InstrumentId
 
 
+# %%
 class RatioSpreadTestStrategy(Strategy):
     """
     Strategy to test 1x2 ratio spread execution with quantity 3.
@@ -306,6 +310,7 @@ class RatioSpreadTestStrategy(Strategy):
             self.log.info("No fills received")
 
 
+# %%
 def auto_stop_node(node, delay_seconds=15):
     """
     Automatically stop the node after a delay.
@@ -320,89 +325,90 @@ def auto_stop_node(node, delay_seconds=15):
     thread.start()
 
 
-if __name__ == "__main__":
-    # Create 1x2 ratio spread
-    leg1_id = InstrumentId.from_str("E1AQ5 C6400.XCME")  # Long put
-    leg2_id = InstrumentId.from_str("E1AQ5 P6440.XCME")  # Short put
+# %%
+# Create 1x2 ratio spread
+leg1_id = InstrumentId.from_str("E1AQ5 C6400.XCME")  # Long put
+leg2_id = InstrumentId.from_str("E1AQ5 P6440.XCME")  # Short put
 
-    spread_id = InstrumentId.new_spread(
-        [
-            (leg1_id, 1),  # Long 1 contract P6350
-            (leg2_id, 2),  # Long 2 contracts P6355 (both positive ratios)
-        ],
-    )
+spread_id = InstrumentId.new_spread(
+    [
+        (leg1_id, 1),  # Long 1 contract P6350
+        (leg2_id, 2),  # Long 2 contracts P6355 (both positive ratios)
+    ],
+)
 
-    print(f"Testing 1x2 ratio spread: {spread_id}")
-    print("Order: 3 spread units")
-    print("Expected execution: Long 3 P6350, Long 6 P6355")
-    print()
+print(f"Testing 1x2 ratio spread: {spread_id}")
+print("Order: 3 spread units")
+print("Expected execution: Long 3 P6350, Long 6 P6355")
+print()
 
-    # Configure instrument provider (no pre-loaded spread IDs)
-    instrument_provider = InteractiveBrokersInstrumentProviderConfig(
-        symbology_method=SymbologyMethod.IB_SIMPLIFIED,
-        convert_exchange_to_mic_venue=True,
-        build_futures_chain=False,
-        build_options_chain=False,
-        min_expiry_days=0,
-        max_expiry_days=30,
-        # load_ids=frozenset([spread_id]),  # Removed - testing dynamic loading
-    )
+# Configure instrument provider (no pre-loaded spread IDs)
+instrument_provider = InteractiveBrokersInstrumentProviderConfig(
+    symbology_method=SymbologyMethod.IB_SIMPLIFIED,
+    convert_exchange_to_mic_venue=True,
+    build_futures_chain=False,
+    build_options_chain=False,
+    min_expiry_days=0,
+    max_expiry_days=30,
+    # load_ids=frozenset([spread_id]),  # Removed - testing dynamic loading
+)
 
-    # Configure the trading node
-    config_node = TradingNodeConfig(
-        trader_id="RATIO-SPREAD-TEST",
-        logging=LoggingConfig(log_level="INFO"),
-        data_clients={
-            IB: InteractiveBrokersDataClientConfig(
-                ibg_port=7497,
-                instrument_provider=instrument_provider,
-                market_data_type=IBMarketDataTypeEnum.DELAYED_FROZEN,
-            ),
-        },
-        exec_clients={
-            IB: InteractiveBrokersExecClientConfig(
-                ibg_port=7497,
-                instrument_provider=instrument_provider,
-                routing=RoutingConfig(default=True),
-                account_id=os.environ.get("TWS_ACCOUNT"),
-            ),
-        },
-        timeout_connection=90.0,
-        timeout_reconciliation=5.0,
-        timeout_portfolio=5.0,
-        timeout_disconnection=5.0,
-        timeout_post_stop=2.0,
-    )
+# Configure the trading node
+config_node = TradingNodeConfig(
+    trader_id="RATIO-SPREAD-TEST",
+    logging=LoggingConfig(log_level="INFO"),
+    data_clients={
+        IB: InteractiveBrokersDataClientConfig(
+            ibg_port=7497,
+            instrument_provider=instrument_provider,
+            market_data_type=IBMarketDataTypeEnum.DELAYED_FROZEN,
+        ),
+    },
+    exec_clients={
+        IB: InteractiveBrokersExecClientConfig(
+            ibg_port=7497,
+            instrument_provider=instrument_provider,
+            routing=RoutingConfig(default=True),
+            account_id=os.environ.get("TWS_ACCOUNT"),
+        ),
+    },
+    timeout_connection=90.0,
+    timeout_reconciliation=5.0,
+    timeout_portfolio=5.0,
+    timeout_disconnection=5.0,
+    timeout_post_stop=2.0,
+)
 
-    # Create and configure node
-    node = TradingNode(config=config_node)
-    strategy_config = RatioSpreadTestConfig(spread_instrument_id=spread_id)
-    strategy = RatioSpreadTestStrategy(config=strategy_config)
+# Create and configure node
+node = TradingNode(config=config_node)
+strategy_config = RatioSpreadTestConfig(spread_instrument_id=spread_id)
+strategy = RatioSpreadTestStrategy(config=strategy_config)
 
-    node.trader.add_strategy(strategy)
-    node.add_data_client_factory(IB, InteractiveBrokersLiveDataClientFactory)
-    node.add_exec_client_factory(IB, InteractiveBrokersLiveExecClientFactory)
-    node.build()
+node.trader.add_strategy(strategy)
+node.add_data_client_factory(IB, InteractiveBrokersLiveDataClientFactory)
+node.add_exec_client_factory(IB, InteractiveBrokersLiveExecClientFactory)
+node.build()
 
-    print("Starting 1x2 Ratio Spread Test (Dynamic Loading + Quote Ticks)...")
-    print("This will:")
-    print("1. Connect to Interactive Brokers")
-    print("2. Dynamically request the 1x2 ratio spread instrument (not pre-loaded)")
-    print("3. Subscribe to quote ticks for the spread")
-    print("4. Place a market order for 3 spread units")
-    print("5. Monitor execution events and quote ticks for 60 seconds")
-    print("6. Auto-stop and analyze results")
-    print()
-    print("IMPORTANT: Make sure TWS/IB Gateway is running!")
-    print("IMPORTANT: This will place a REAL market order in paper trading!")
-    print()
+# %%
+print("Starting 1x2 Ratio Spread Test (Dynamic Loading + Quote Ticks)...")
+print("This will:")
+print("1. Connect to Interactive Brokers")
+print("2. Dynamically request the 1x2 ratio spread instrument (not pre-loaded)")
+print("3. Subscribe to quote ticks for the spread")
+print("4. Place a market order for 3 spread units")
+print("5. Monitor execution events and quote ticks for 60 seconds")
+print("6. Auto-stop and analyze results")
+print()
+print("IMPORTANT: Make sure TWS/IB Gateway is running!")
+print("IMPORTANT: This will place a REAL market order in paper trading!")
+print()
 
-    # Start auto-stop timer
-    auto_stop_node(node, delay_seconds=60)
+# Start auto-stop timer
+auto_stop_node(node, delay_seconds=60)
 
-    try:
-        node.run()
-    except KeyboardInterrupt:
-        node.stop()
-    finally:
-        node.dispose()
+try:
+    node.run()
+except KeyboardInterrupt:
+    node.stop()
+finally:
+    node.dispose()

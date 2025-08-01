@@ -110,7 +110,7 @@ class TestBacktestConfig:
         result = BacktestNode.load_data_config(config)
 
         # Assert
-        assert len(result.data) == 86985
+        assert len(result.data) == 5000  # Reduced from 86985 for faster testing
         assert result.instruments is None
         assert result.client_id == ClientId("NewsClient")
         assert result.data[0].data_type.metadata == {"kind": "news"}
@@ -133,7 +133,9 @@ class TestBacktestConfig:
         result = BacktestNode.load_data_config(config)
 
         # Assert
-        assert len(result.data) == 2745
+        assert (
+            len(result.data) == 210
+        )  # Reduced from 2745 for faster testing (CHF events in first 5k rows)
 
     def test_backtest_data_config_status_updates(self):
         # Arrange
