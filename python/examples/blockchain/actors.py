@@ -19,6 +19,7 @@ from dataclasses import dataclass
 
 from nautilus_trader.common import DataActor  # type: ignore[attr-defined]
 from nautilus_trader.common import DataActorConfig  # type: ignore[attr-defined]
+from nautilus_trader.common import LogColor  # type: ignore[attr-defined]
 from nautilus_trader.model import Chain  # type: ignore[attr-defined]
 from nautilus_trader.model import ActorId  # type: ignore[attr-defined]
 from nautilus_trader.model import Block  # type: ignore[attr-defined]
@@ -61,6 +62,9 @@ class BlockchainActor(DataActor):
             self.subscribe_pool_swaps(instrument_id, self.client_id)
             self.subscribe_pool_liquidity_updates(instrument_id, self.client_id)
 
+        # TODO: Fix dispatching of time events to global queue
+        # self.clock.set_timer_ns("TEST-TIMER", 1_000_000_000)
+
     def on_stop(self) -> None:
         """
         Actions to be performed on actor stop.
@@ -76,4 +80,4 @@ class BlockchainActor(DataActor):
         """
         Actions to be performed on receiving a block.
         """
-        print(block)
+        self.log.info(repr(block), LogColor.CYAN)

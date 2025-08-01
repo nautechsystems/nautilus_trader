@@ -1809,6 +1809,18 @@ impl DataActorCore {
             .borrow_mut()
     }
 
+    /// Returns a clone of the reference-counted clock.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the actor has not yet been registered (clock is `None`).
+    pub fn clock_rc(&self) -> Rc<RefCell<dyn Clock>> {
+        self.clock
+            .as_ref()
+            .expect("DataActor must be registered before accessing clock")
+            .clone()
+    }
+
     fn clock_ref(&self) -> Ref<'_, dyn Clock> {
         self.clock
             .as_ref()

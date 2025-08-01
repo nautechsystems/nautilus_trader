@@ -55,6 +55,7 @@ use crate::{
     clock::Clock,
     component::Component,
     enums::ComponentState,
+    python::{clock::PyClock, logging::PyLogger},
     signal::Signal,
     timer::TimeEvent,
 };
@@ -111,6 +112,8 @@ impl ImportableActorConfig {
 pub struct PyDataActor {
     core: DataActorCore,
     py_self: Option<PyObject>,
+    clock: PyClock,
+    logger: PyLogger,
 }
 
 impl Deref for PyDataActor {
@@ -131,9 +134,15 @@ impl PyDataActor {
     // Rust constructor for tests and direct Rust usage
     pub fn new(config: Option<DataActorConfig>) -> Self {
         let config = config.unwrap_or_default();
+        let core = DataActorCore::new(config);
+        let clock = PyClock::new_test(); // Temporary clock, will be updated on registration
+        let logger = PyLogger::new(core.actor_id().as_str());
+
         Self {
-            core: DataActorCore::new(config),
+            core,
             py_self: None,
+            clock,
+            logger,
         }
     }
 
@@ -171,19 +180,21 @@ impl PyDataActor {
     ) -> anyhow::Result<()> {
         self.core.register(trader_id, clock, cache)?;
 
-        // Register default time event handler for this actor
-        let _actor_id = self.actor_id().inner();
+        self.clock = PyClock::from_rc(self.core.clock_rc());
 
-        // // TODO: This should be a Python callback
-        // let callback = TimeEventCallback::Python(Arc::new(move |event: TimeEvent| {
+        // Register default time event handler for this actor
+        // let actor_id = self.actor_id().inner();
+        // let callback = TimeEventCallback::Rust(Rc::new(move |event: TimeEvent| {
         //     if let Some(actor) = try_get_actor_unchecked::<Self>(&actor_id) {
-        //         actor.handle_time_event(&event);
+        //         if let Err(e) = actor.py_on_time_event(event) {
+        //             log::error!("Python time event handler failed for actor {actor_id}: {e}");
+        //         }
         //     } else {
         //         log::error!("Actor {actor_id} not found for time event handling");
         //     }
         // }));
         //
-        // clock.borrow_mut().register_default_handler(callback);
+        // self.clock.inner_mut().register_default_handler(callback);
 
         self.initialize()
     }
@@ -367,12 +378,25 @@ impl PyDataActor {
     #[new]
     #[pyo3(signature = (config=None))]
     fn py_new(config: Option<DataActorConfig>) -> PyResult<Self> {
-        let config = config.unwrap_or_default();
+        Ok(Self::new(config))
+    }
 
-        Ok(Self {
-            core: DataActorCore::new(config),
-            py_self: None,
-        })
+    #[getter]
+    #[pyo3(name = "clock")]
+    fn py_clock(&self) -> PyResult<PyClock> {
+        if !self.core.is_registered() {
+            Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                "Actor must be registered with a trader before accessing clock",
+            ))
+        } else {
+            Ok(self.clock.clone())
+        }
+    }
+
+    #[getter]
+    #[pyo3(name = "log")]
+    fn py_log(&self) -> PyLogger {
+        self.logger.clone()
     }
 
     #[getter]
@@ -1434,12 +1458,37 @@ mod tests {
 
     #[rstest]
     fn test_new_actor_creation() {
+        pyo3::prepare_freethreaded_python();
+
         let actor = PyDataActor::new(None);
         assert!(actor.trader_id().is_none());
     }
 
     #[rstest]
+    fn test_clock_access_before_registration_raises_error() {
+        pyo3::prepare_freethreaded_python();
+
+        let actor = PyDataActor::new(None);
+
+        // Accessing clock before registration should raise PyRuntimeError
+        let result = actor.py_clock();
+        assert!(result.is_err());
+
+        let error = result.unwrap_err();
+        pyo3::Python::with_gil(|py| {
+            assert!(error.is_instance_of::<pyo3::exceptions::PyRuntimeError>(py));
+        });
+
+        let error_msg = error.to_string();
+        assert!(
+            error_msg.contains("Actor must be registered with a trader before accessing clock")
+        );
+    }
+
+    #[rstest]
     fn test_unregistered_actor_methods_work() {
+        pyo3::prepare_freethreaded_python();
+
         let actor = create_unregistered_actor();
 
         assert!(!actor.py_is_ready());
@@ -1459,6 +1508,8 @@ mod tests {
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
+        pyo3::prepare_freethreaded_python();
+
         let mut actor = create_unregistered_actor();
         actor.register(trader_id, clock, cache).unwrap();
         assert!(actor.trader_id().is_some());
@@ -1471,6 +1522,8 @@ mod tests {
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
+        pyo3::prepare_freethreaded_python();
+
         let actor = create_registered_actor(clock, cache, trader_id);
 
         assert_eq!(actor.state(), ComponentState::Ready);
@@ -1492,6 +1545,8 @@ mod tests {
         client_id: ClientId,
         audusd_sim: CurrencyPair,
     ) {
+        pyo3::prepare_freethreaded_python();
+
         let mut actor = create_registered_actor(clock, cache, trader_id);
 
         let _ = actor.py_subscribe_data(data_type.clone(), Some(client_id), None);
@@ -1520,6 +1575,8 @@ mod tests {
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
+        pyo3::prepare_freethreaded_python();
+
         let actor = create_registered_actor(clock, cache, trader_id);
 
         assert!(
@@ -1565,6 +1622,8 @@ mod tests {
 
     #[rstest]
     fn test_request_methods_signatures_exist() {
+        pyo3::prepare_freethreaded_python();
+
         let actor = create_unregistered_actor();
         assert!(actor.trader_id().is_none());
     }
@@ -1575,6 +1634,8 @@ mod tests {
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
+        pyo3::prepare_freethreaded_python();
+
         let actor = create_registered_actor(clock, cache, trader_id);
         let state = actor.state();
         assert_eq!(state, ComponentState::Ready);
