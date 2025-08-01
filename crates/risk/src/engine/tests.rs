@@ -62,6 +62,148 @@ use rstest::{fixture, rstest};
 use rust_decimal::{Decimal, prelude::FromPrimitive};
 use ustr::Ustr;
 
+// Helper that registers message collectors for ExecEngine.process events and
+// returns the shared handler so callers can later retrieve the collected
+// OrderEventAny messages via `get_process_order_event_handler_messages`.
+fn register_process_handler() -> ShareableMessageHandler {
+    let handler =
+        get_message_saving_handler::<OrderEventAny>(Some(Ustr::from("ExecEngine.process")));
+    msgbus::register(MessagingSwitchboard::exec_engine_process(), handler.clone());
+    handler
+}
+
+#[rstest]
+fn test_deny_order_on_price_precision_exceeded(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    client_order_id: ClientOrderId,
+    instrument_audusd: InstrumentAny,
+    venue_order_id: VenueOrderId,
+) {
+    // Register collector for denied events
+    let process_handler = register_process_handler();
+
+    // Build a RiskEngine with default (non-bypassed) settings and an account with ample balance
+    let mut cache = Cache::default();
+    cache.add_instrument(instrument_audusd.clone()).unwrap();
+    // Add large cash account so balance checks pass (focus is price precision)
+    cache
+        .add_account(AccountAny::Cash(cash_account(
+            cash_account_state_million_usd("1000000 USD", "0 USD", "1000000 USD"),
+        )))
+        .unwrap();
+
+    // Add a last quote so notional calculation can proceed if needed
+    cache.add_quote(quote_audusd()).unwrap();
+
+    let mut risk_engine = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
+
+    // AUD/USD price precision is 5 – create a Limit order with 6-dp price (invalid)
+    let bad_price = Price::from("1.000001"); // precision 6
+    assert!(bad_price.precision > instrument_audusd.price_precision());
+
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_audusd.id())
+        .side(OrderSide::Buy)
+        .price(bad_price)
+        .quantity(Quantity::from("1000"))
+        .build();
+
+    let submit_order = SubmitOrder::new(
+        trader_id,
+        client_id_binance,
+        strategy_id_ema_cross,
+        instrument_audusd.id(),
+        client_order_id,
+        venue_order_id,
+        order,
+        None,
+        None,
+        UUID4::new(),
+        risk_engine.clock.borrow().timestamp_ns(),
+    )
+    .unwrap();
+
+    risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+    // Expect an OrderDenied to be emitted
+    let saved_events = get_process_order_event_handler_messages(process_handler);
+    assert_eq!(saved_events.len(), 1);
+    matches!(saved_events[0], OrderEventAny::Denied(_));
+}
+
+#[rstest]
+fn test_deny_order_exceeding_max_notional(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    client_order_id: ClientOrderId,
+    instrument_audusd: InstrumentAny,
+    venue_order_id: VenueOrderId,
+) {
+    let process_handler = register_process_handler();
+
+    // Prepare small max_notional setting (1 USD)
+    let mut max_notional_map = HashMap::new();
+    max_notional_map.insert(instrument_audusd.id(), Decimal::from_i64(1).unwrap());
+
+    let mut cache = Cache::default();
+    cache.add_instrument(instrument_audusd.clone()).unwrap();
+    cache
+        .add_account(AccountAny::Cash(cash_account(
+            cash_account_state_million_usd("1000000 USD", "0 USD", "1000000 USD"),
+        )))
+        .unwrap();
+    cache.add_quote(quote_audusd()).unwrap();
+
+    let risk_config = RiskEngineConfig {
+        debug: true,
+        bypass: false,
+        max_order_submit: RateLimit::new(10, 1000),
+        max_order_modify: RateLimit::new(5, 1000),
+        max_notional_per_order: HashMap::new(),
+    };
+
+    let mut risk_engine = get_risk_engine(
+        Some(Rc::new(RefCell::new(cache))),
+        Some(risk_config),
+        None,
+        false,
+    );
+
+    risk_engine.set_max_notional_per_order(instrument_audusd.id(), Decimal::from_i64(1).unwrap());
+
+    // Build an order with notional ~100 USD (price 1, qty 100) > max 1 USD
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_audusd.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1"))
+        .quantity(Quantity::from("100"))
+        .build();
+
+    let submit_order = SubmitOrder::new(
+        trader_id,
+        client_id_binance,
+        strategy_id_ema_cross,
+        instrument_audusd.id(),
+        client_order_id,
+        venue_order_id,
+        order,
+        None,
+        None,
+        UUID4::new(),
+        risk_engine.clock.borrow().timestamp_ns(),
+    )
+    .unwrap();
+
+    risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+    let saved_events = get_process_order_event_handler_messages(process_handler);
+    assert_eq!(saved_events.len(), 1);
+    matches!(saved_events[0], OrderEventAny::Denied(_));
+}
+
 use super::{RiskEngine, config::RiskEngineConfig};
 
 #[fixture]
@@ -490,7 +632,6 @@ fn test_given_random_event_then_logs_and_continues(instrument_audusd: Instrument
 }
 
 // SUBMIT ORDER TESTS
-#[ignore = "Message bus related changes re-investigate"]
 #[rstest]
 fn test_submit_order_with_default_settings_then_sends_to_client(
     strategy_id_ema_cross: StrategyId,
@@ -1439,7 +1580,6 @@ fn test_submit_order_when_invalid_quantity_less_than_minimum_then_denies(
     );
 }
 
-#[ignore = "Message bus related changes re-investigate"]
 #[rstest]
 fn test_submit_order_when_market_order_and_no_market_then_logs_warning(
     strategy_id_ema_cross: StrategyId,
@@ -2539,7 +2679,7 @@ fn test_submit_order_list_when_trading_halted_then_denies_orders(
     }
 }
 
-#[ignore = "Revisit after high-precision merged"]
+#[ignore = "Under development"]
 #[rstest]
 fn test_submit_order_list_buys_when_trading_reducing_then_denies_orders(
     strategy_id_ema_cross: StrategyId,
