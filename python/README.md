@@ -61,7 +61,7 @@ uv run --active maturin develop --extras dev,test
 
 This is the only command you need to get started. If you make changes to the Rust code, simply run it again to recompile.
 
-## How It Works
+## How it works
 
 The `nautilus_trader` Python package acts as a "facade" over the compiled Rust core.
 
