@@ -290,7 +290,6 @@ pub fn parse_mark_price_update(
 }
 
 /// Parses an OKX index ticker record into a Nautilus [`IndexPriceUpdate`].
-/// Parses an OKX index ticker record into a Nautilus [`IndexPriceUpdate`].
 ///
 /// # Errors
 ///
