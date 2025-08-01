@@ -4,18 +4,24 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 from nautilus_trader.accounting.accounts.base import Account
 from nautilus_trader.cache.cache import Cache
-from nautilus_trader.common.component import Clock, Component, MessageBus
-from nautilus_trader.core.message import Command, Event
+from nautilus_trader.common.component import Clock
+from nautilus_trader.common.component import Component
+from nautilus_trader.common.component import MessageBus
+from nautilus_trader.core.message import Command
+from nautilus_trader.core.message import Event
 from nautilus_trader.core.rust.model import TradingState
+from nautilus_trader.execution.messages import ModifyOrder
+from nautilus_trader.execution.messages import SubmitOrder
+from nautilus_trader.execution.messages import SubmitOrderList
+from nautilus_trader.execution.messages import TradingCommand
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders.base import Order
 from nautilus_trader.model.orders.list import OrderList
 from nautilus_trader.portfolio.base import PortfolioFacade
 from nautilus_trader.risk.config import RiskEngineConfig
-from nautilus_trader.execution.messages import ModifyOrder, SubmitOrder, SubmitOrderList, TradingCommand
-from nautilus_trader.model.objects import Price, Quantity
-
 
 class RiskEngine(Component):
     """
