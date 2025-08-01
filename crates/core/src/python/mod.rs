@@ -13,8 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Python bindings and interoperability helpers built on top of
-//! [`PyO3`](https://pyo3.rs).
+//! Python bindings and interoperability built using [`PyO3`](https://pyo3.rs).
 //!
 //! This sub-module groups together the Rust code that is *only* required when compiling the
 //! `python` feature flag. It provides thin adapters so that NautilusTrader functionality can be

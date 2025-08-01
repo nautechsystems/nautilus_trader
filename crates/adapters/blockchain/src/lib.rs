@@ -13,9 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! A high-performance, universal, extensible adapter for ingesting DeFi data from decentralized exchanges (DEXs),
-//! liquidity pools, and on-chain events. It enables you to power analytics pipelines and trading strategies
-//! with real-time and historical on-chain data.
+//! The *blockchain* crate provides a high-performance, universal, extensible adapter for ingesting
+//! DeFi data from decentralized exchanges (DEXs), liquidity pools, and on-chain events.
+//! It enables you to power analytics pipelines and trading strategies with real-time and historical
+//! on-chain data.
+//!
+//! # Platform
 //!
 //! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
 //! algorithmic trading platform, providing quantitative traders with the ability to backtest
