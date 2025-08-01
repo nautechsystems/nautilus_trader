@@ -13,57 +13,41 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::{cell::RefCell, rc::Rc};
+
 use chrono::{DateTime, Duration, Utc};
 use nautilus_core::{UnixNanos, python::to_pyvalue_err};
 use pyo3::prelude::*;
 
-use super::timer::TimeEventHandler_Py;
 use crate::{
     clock::{Clock, LiveClock, TestClock},
-    timer::{TimeEvent, TimeEventCallback},
+    timer::TimeEventCallback,
 };
 
-/// PyO3 compatible interface for an underlying [`TestClock`].
+/// Unified PyO3 interface over both [`TestClock`] and [`LiveClock`].
 ///
-/// This struct wraps `TestClock` in a way that makes it possible to create
-/// Python bindings for it.
+/// A `PyClock` instance owns a boxed trait object implementing [`Clock`].  It
+/// delegates method calls to this inner clock, allowing a single Python class
+/// to transparently wrap either implementation and eliminating the large
+/// amount of duplicated glue code previously required.
 ///
-/// It implements the `Deref` trait, allowing instances of `TestClock_API` to be
-/// dereferenced to `TestClock`, providing access to `TestClock`'s methods without
-/// having to manually access the underlying `TestClock` instance.
+/// It intentionally does **not** expose a `__new__` constructor to Python –
+/// clocks should be created from Rust and handed over to Python as needed.
 #[allow(non_camel_case_types)]
 #[pyo3::pyclass(
     module = "nautilus_trader.core.nautilus_pyo3.common",
-    name = "TestClock",
+    name = "Clock",
     unsendable
 )]
-#[derive(Debug)]
-pub struct TestClock_Py(Box<TestClock>);
+#[derive(Debug, Clone)]
+pub struct PyClock(Rc<RefCell<dyn Clock>>);
 
 #[pymethods]
-impl TestClock_Py {
-    #[new]
-    fn py_new() -> Self {
-        Self(Box::default())
-    }
-
-    #[pyo3(name = "advance_time")]
-    fn py_advance_time(&mut self, to_time_ns: u64, set_time: bool) -> Vec<TimeEvent> {
-        self.0.advance_time(to_time_ns.into(), set_time)
-    }
-
-    #[pyo3(name = "match_handlers")]
-    fn py_match_handlers(&self, events: Vec<TimeEvent>) -> Vec<TimeEventHandler_Py> {
-        self.0
-            .match_handlers(events)
-            .into_iter()
-            .map(Into::into)
-            .collect()
-    }
-
+impl PyClock {
     #[pyo3(name = "register_default_handler")]
     fn py_register_default_handler(&mut self, callback: PyObject) {
         self.0
+            .borrow_mut()
             .register_default_handler(TimeEventCallback::from(callback));
     }
 
@@ -78,11 +62,11 @@ impl TestClock_Py {
         callback: Option<PyObject>,
         allow_past: Option<bool>,
     ) -> PyResult<()> {
-        let alert_time_ns = UnixNanos::from(alert_time);
         self.0
-            .set_time_alert_ns(
+            .borrow_mut()
+            .set_time_alert(
                 name,
-                alert_time_ns,
+                alert_time,
                 callback.map(TimeEventCallback::from),
                 allow_past,
             )
@@ -101,6 +85,7 @@ impl TestClock_Py {
         allow_past: Option<bool>,
     ) -> PyResult<()> {
         self.0
+            .borrow_mut()
             .set_time_alert_ns(
                 name,
                 alert_time_ns.into(),
@@ -134,7 +119,9 @@ impl TestClock_Py {
             ));
         }
         let interval_ns = interval_ns_i64 as u64;
+
         self.0
+            .borrow_mut()
             .set_timer_ns(
                 name,
                 interval_ns,
@@ -150,7 +137,7 @@ impl TestClock_Py {
     #[allow(clippy::too_many_arguments)]
     #[pyo3(
         name = "set_timer_ns",
-        signature = (name, interval_ns, start_time_ns, stop_time_ns=None, callback=None, allow_past=None, fire_immediately=None)
+        signature = (name, interval_ns, start_time_ns=None, stop_time_ns=None, callback=None, allow_past=None, fire_immediately=None)
     )]
     fn py_set_timer_ns(
         &mut self,
@@ -163,6 +150,7 @@ impl TestClock_Py {
         fire_immediately: Option<bool>,
     ) -> PyResult<()> {
         self.0
+            .borrow_mut()
             .set_timer_ns(
                 name,
                 interval_ns,
@@ -177,171 +165,49 @@ impl TestClock_Py {
 
     #[pyo3(name = "next_time_ns")]
     fn py_next_time_ns(&self, name: &str) -> Option<u64> {
-        self.0.next_time_ns(name).map(|n| n.as_u64())
+        self.0.borrow().next_time_ns(name).map(|t| t.as_u64())
     }
 
     #[pyo3(name = "cancel_timer")]
     fn py_cancel_timer(&mut self, name: &str) {
-        self.0.cancel_timer(name);
+        self.0.borrow_mut().cancel_timer(name);
     }
 
     #[pyo3(name = "cancel_timers")]
     fn py_cancel_timers(&mut self) {
-        self.0.cancel_timers();
+        self.0.borrow_mut().cancel_timers();
     }
 }
 
-/// PyO3 compatible interface for an underlying [`LiveClock`].
-///
-/// This struct wraps `LiveClock` in a way that makes it possible to create
-/// Python bindings for it.
-///
-/// It implements the `Deref` trait, allowing instances of `LiveClock_Py` to be
-/// dereferenced to `LiveClock`, providing access to `LiveClock`'s methods without
-/// having to manually access the underlying `LiveClock` instance.
-#[allow(non_camel_case_types)]
-#[pyo3::pyclass(
-    module = "nautilus_trader.core.nautilus_pyo3.common",
-    name = "LiveClock",
-    unsendable
-)]
-#[derive(Debug)]
-pub struct LiveClock_Py(Box<LiveClock>);
-
-#[pymethods]
-impl LiveClock_Py {
-    #[new]
-    fn py_new() -> Self {
-        Self(Box::default())
+impl PyClock {
+    /// Creates a `PyClock` directly from an `Rc<RefCell<dyn Clock>>`.
+    #[must_use]
+    pub fn from_rc(rc: Rc<RefCell<dyn Clock>>) -> Self {
+        Self(rc)
     }
 
-    #[pyo3(name = "register_default_handler")]
-    fn py_register_default_handler(&mut self, callback: PyObject) {
-        self.0
-            .register_default_handler(TimeEventCallback::from(callback));
+    /// Creates a clock backed by [`TestClock`].
+    #[must_use]
+    pub fn new_test() -> Self {
+        Self(Rc::new(RefCell::new(TestClock::default())))
     }
 
-    #[pyo3(
-        name = "set_time_alert",
-        signature = (name, alert_time, callback=None, allow_past=None)
-    )]
-    fn py_set_time_alert(
-        &mut self,
-        name: &str,
-        alert_time: DateTime<Utc>,
-        callback: Option<PyObject>,
-        allow_past: Option<bool>,
-    ) -> PyResult<()> {
-        let alert_time_ns = UnixNanos::from(alert_time);
-        self.0
-            .set_time_alert_ns(
-                name,
-                alert_time_ns,
-                callback.map(TimeEventCallback::from),
-                allow_past,
-            )
-            .map_err(to_pyvalue_err)
+    /// Creates a clock backed by [`LiveClock`].
+    #[must_use]
+    pub fn new_live() -> Self {
+        Self(Rc::new(RefCell::new(LiveClock::default())))
     }
 
-    #[pyo3(
-        name = "set_time_alert_ns",
-        signature = (name, alert_time_ns, callback=None, allow_past=None)
-    )]
-    fn py_set_time_alert_ns(
-        &mut self,
-        name: &str,
-        alert_time_ns: u64,
-        callback: Option<PyObject>,
-        allow_past: Option<bool>,
-    ) -> PyResult<()> {
-        self.0
-            .set_time_alert_ns(
-                name,
-                alert_time_ns.into(),
-                callback.map(TimeEventCallback::from),
-                allow_past,
-            )
-            .map_err(to_pyvalue_err)
+    /// Provides access to the inner [`Clock`] trait object.
+    #[must_use]
+    pub fn inner(&self) -> std::cell::Ref<'_, dyn Clock> {
+        self.0.borrow()
     }
 
-    #[allow(clippy::too_many_arguments)]
-    #[pyo3(
-        name = "set_timer",
-        signature = (name, interval, start_time=None, stop_time=None, callback=None, allow_past=None, fire_immediately=None)
-    )]
-    fn py_set_timer(
-        &mut self,
-        name: &str,
-        interval: Duration,
-        start_time: Option<DateTime<Utc>>,
-        stop_time: Option<DateTime<Utc>>,
-        callback: Option<PyObject>,
-        allow_past: Option<bool>,
-        fire_immediately: Option<bool>,
-    ) -> PyResult<()> {
-        let interval_ns_i64 = interval
-            .num_nanoseconds()
-            .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("Interval too large"))?;
-        if interval_ns_i64 <= 0 {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "Interval must be positive",
-            ));
-        }
-        let interval_ns = interval_ns_i64 as u64;
-        self.0
-            .set_timer_ns(
-                name,
-                interval_ns,
-                start_time.map(UnixNanos::from),
-                stop_time.map(UnixNanos::from),
-                callback.map(TimeEventCallback::from),
-                allow_past,
-                fire_immediately,
-            )
-            .map_err(to_pyvalue_err)
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    #[pyo3(
-        name = "set_timer_ns",
-        signature = (name, interval_ns, start_time_ns, stop_time_ns=None, callback=None, allow_past=None, fire_immediately=None)
-    )]
-    fn py_set_timer_ns(
-        &mut self,
-        name: &str,
-        interval_ns: u64,
-        start_time_ns: Option<u64>,
-        stop_time_ns: Option<u64>,
-        callback: Option<PyObject>,
-        allow_past: Option<bool>,
-        fire_immediately: Option<bool>,
-    ) -> PyResult<()> {
-        self.0
-            .set_timer_ns(
-                name,
-                interval_ns,
-                start_time_ns.map(UnixNanos::from),
-                stop_time_ns.map(UnixNanos::from),
-                callback.map(TimeEventCallback::from),
-                allow_past,
-                fire_immediately,
-            )
-            .map_err(to_pyvalue_err)
-    }
-
-    #[pyo3(name = "next_time_ns")]
-    fn py_next_time_ns(&self, name: &str) -> Option<u64> {
-        self.0.next_time_ns(name).map(|t| t.as_u64())
-    }
-
-    #[pyo3(name = "cancel_timer")]
-    fn py_cancel_timer(&mut self, name: &str) {
-        self.0.cancel_timer(name);
-    }
-
-    #[pyo3(name = "cancel_timers")]
-    fn py_cancel_timers(&mut self) {
-        self.0.cancel_timers();
+    /// Mutably accesses the underlying [`Clock`].
+    #[must_use]
+    pub fn inner_mut(&mut self) -> std::cell::RefMut<'_, dyn Clock> {
+        self.0.borrow_mut()
     }
 }
 
@@ -359,7 +225,7 @@ mod tests {
 
     use crate::{
         clock::{Clock, TestClock},
-        python::clock::{LiveClock_Py, TestClock_Py},
+        python::clock::PyClock,
         runner::{TimeEventSender, set_time_event_sender},
         timer::{TimeEventCallback, TimeEventHandlerV2},
     };
@@ -409,11 +275,11 @@ mod tests {
         pyo3::prepare_freethreaded_python();
 
         Python::with_gil(|_py| {
-            let mut clock_py = TestClock_Py::py_new();
+            let mut py_clock = PyClock::new_test();
             let callback = test_py_callback();
-            clock_py.py_register_default_handler(callback);
+            py_clock.py_register_default_handler(callback);
             let dt = Utc::now() + Duration::seconds(1);
-            clock_py
+            py_clock
                 .py_set_time_alert("ALERT1", dt, None, None)
                 .expect("set_time_alert failed");
         });
@@ -424,11 +290,11 @@ mod tests {
         pyo3::prepare_freethreaded_python();
 
         Python::with_gil(|_py| {
-            let mut clock_py = TestClock_Py::py_new();
+            let mut py_clock = PyClock::new_test();
             let callback = test_py_callback();
-            clock_py.py_register_default_handler(callback);
+            py_clock.py_register_default_handler(callback);
             let interval = Duration::seconds(2);
-            clock_py
+            py_clock
                 .py_set_timer("TIMER1", interval, None, None, None, None, None)
                 .expect("set_timer failed");
         });
@@ -439,13 +305,13 @@ mod tests {
         pyo3::prepare_freethreaded_python();
 
         Python::with_gil(|_py| {
-            let mut clock_py = TestClock_Py::py_new();
+            let mut py_clock = PyClock::new_test();
             let callback = test_py_callback();
-            clock_py.py_register_default_handler(callback);
+            py_clock.py_register_default_handler(callback);
             let ts_ns = (Utc::now() + Duration::seconds(1))
                 .timestamp_nanos_opt()
                 .unwrap() as u64;
-            clock_py
+            py_clock
                 .py_set_time_alert_ns("ALERT_NS", ts_ns, None, None)
                 .expect("set_time_alert_ns failed");
         });
@@ -456,10 +322,10 @@ mod tests {
         pyo3::prepare_freethreaded_python();
 
         Python::with_gil(|_py| {
-            let mut clock_py = TestClock_Py::py_new();
+            let mut py_clock = PyClock::new_test();
             let callback = test_py_callback();
-            clock_py.py_register_default_handler(callback);
-            clock_py
+            py_clock.py_register_default_handler(callback);
+            py_clock
                 .py_set_timer_ns("TIMER_NS", 1_000_000, None, None, None, None, None)
                 .expect("set_timer_ns failed");
         });
@@ -612,12 +478,12 @@ mod tests {
         ensure_sender();
 
         Python::with_gil(|_py| {
-            let mut live_clock_py = LiveClock_Py::py_new();
+            let mut py_clock = PyClock::new_live();
             let callback = test_py_callback();
-            live_clock_py.py_register_default_handler(callback);
+            py_clock.py_register_default_handler(callback);
             let dt = Utc::now() + Duration::seconds(1);
 
-            live_clock_py
+            py_clock
                 .py_set_time_alert("ALERT1", dt, None, None)
                 .expect("live set_time_alert failed");
         });
@@ -629,12 +495,12 @@ mod tests {
         ensure_sender();
 
         Python::with_gil(|_py| {
-            let mut live_clock_py = LiveClock_Py::py_new();
+            let mut py_clock = PyClock::new_live();
             let callback = test_py_callback();
-            live_clock_py.py_register_default_handler(callback);
+            py_clock.py_register_default_handler(callback);
             let interval = Duration::seconds(3);
 
-            live_clock_py
+            py_clock
                 .py_set_timer("TIMER1", interval, None, None, None, None, None)
                 .expect("live set_timer failed");
         });
@@ -646,14 +512,14 @@ mod tests {
         ensure_sender();
 
         Python::with_gil(|_py| {
-            let mut live_clock_py = LiveClock_Py::py_new();
+            let mut py_clock = PyClock::new_live();
             let callback = test_py_callback();
-            live_clock_py.py_register_default_handler(callback);
+            py_clock.py_register_default_handler(callback);
             let dt_ns = (Utc::now() + Duration::seconds(1))
                 .timestamp_nanos_opt()
                 .unwrap() as u64;
 
-            live_clock_py
+            py_clock
                 .py_set_time_alert_ns("ALERT_NS", dt_ns, None, None)
                 .expect("live set_time_alert_ns failed");
         });
@@ -665,12 +531,12 @@ mod tests {
         ensure_sender();
 
         Python::with_gil(|_py| {
-            let mut live_clock_py = LiveClock_Py::py_new();
+            let mut py_clock = PyClock::new_live();
             let callback = test_py_callback();
-            live_clock_py.py_register_default_handler(callback);
+            py_clock.py_register_default_handler(callback);
             let interval_ns = 1_000_000_000_u64; // 1 second
 
-            live_clock_py
+            py_clock
                 .py_set_timer_ns("TIMER_NS", interval_ns, None, None, None, None, None)
                 .expect("live set_timer_ns failed");
         });
