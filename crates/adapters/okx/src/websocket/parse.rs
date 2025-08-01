@@ -621,7 +621,13 @@ pub fn parse_fill_report(
     Ok(report)
 }
 
-/// Parses OKX WebSocket message data based on channel type.
+/// Parses OKX WebSocket message payloads into Nautilus data structures.
+///
+/// # Panics
+///
+/// Panics only in the case where `okx_channel_to_bar_spec(channel)` returns
+/// `None` after a prior `is_some` check – an unreachable scenario indicating a
+/// logic error.
 pub fn parse_ws_message_data(
     channel: &OKXWsChannel,
     data: serde_json::Value,
@@ -684,7 +690,7 @@ pub fn parse_ws_message_data(
             Ok(Some(NautilusWsMessage::Data(data_vec)))
         }
         channel if okx_channel_to_bar_spec(channel).is_some() => {
-            let bar_spec = okx_channel_to_bar_spec(channel).unwrap();
+            let bar_spec = okx_channel_to_bar_spec(channel).expect("bar_spec checked above");
             let data_vec = parse_candle_msg_vec(
                 data,
                 instrument_id,

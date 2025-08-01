@@ -13,12 +13,25 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Provides the HTTP client integration for the [OKX](https://okx.com) REST API.
+//! Provides an ergonomic wrapper around the **OKX v5 REST API** –
+//! <https://www.okx.com/docs-v5/en/>.
 //!
-//! This module defines and implements a strongly-typed [`OKXHttpClient`] for
-//! sending requests to various OKX endpoints. It handles request signing
-//! (when credentials are provided), constructs valid HTTP requests
-//! using the [`HttpClient`], and parses the responses back into structured data or a [`OKXHttpError`].
+//! The core type exported by this module is [`OKXHttpClient`].  It offers a
+//! *strongly-typed* interface to all exchange endpoints currently required by
+//! NautilusTrader.
+//!
+//! Key responsibilities handled internally:
+//! • Request signing and header composition for private routes (HMAC-SHA256).
+//! • Rate-limiting based on the public OKX specification.
+//! • Zero-copy deserialization of large JSON payloads into domain models.
+//! • Conversion of raw exchange errors into the rich [`OKXHttpError`] enum.
+//!
+//! # Quick links to official docs
+//! | Domain                               | OKX reference                                                             |
+//! |--------------------------------------|---------------------------------------------------------------------------|
+//! | Market data                          | <https://www.okx.com/docs-v5/en/#rest-api-market-data>                    |
+//! | Account & positions                  | <https://www.okx.com/docs-v5/en/#rest-api-account>                       |
+//! | Funding & asset balances             | <https://www.okx.com/docs-v5/en/#rest-api-funding>                       |
 
 use std::{
     collections::HashMap,
@@ -308,6 +321,11 @@ impl OKXHttpInnerClient {
 
     /// Set the position mode for an account.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if JSON serialization of `params` fails, if the HTTP
+    /// request fails, or if the response body cannot be deserialized.
+    ///
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#trading-account-rest-api-set-position-mode>
@@ -316,12 +334,17 @@ impl OKXHttpInnerClient {
         params: SetPositionModeParams,
     ) -> Result<Vec<serde_json::Value>, OKXHttpError> {
         let path = "/api/v5/account/set-position-mode";
-        let body = serde_json::to_vec(&params).expect("Failed to serialize position mode params");
+        let body = serde_json::to_vec(&params)?;
         self.send_request(Method::POST, path, Some(body), true)
             .await
     }
 
     /// Requests position tiers information, maximum leverage depends on your borrowings and margin ratio.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails, authentication is rejected
+    /// or the response cannot be deserialized.
     ///
     /// # References
     ///
@@ -335,6 +358,11 @@ impl OKXHttpInnerClient {
     }
 
     /// Request a list of instruments with open contracts.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if JSON serialization of `params` fails, if the HTTP
+    /// request fails, or if the response body cannot be deserialized.
     ///
     /// # References
     ///
@@ -351,6 +379,11 @@ impl OKXHttpInnerClient {
     ///
     /// We set the mark price based on the SPOT index and at a reasonable basis to prevent individual
     /// users from manipulating the market and causing the contract price to fluctuate.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or if the response body
+    /// cannot be parsed into [`OKXMarkPrice`].
     ///
     /// # References
     ///
@@ -627,6 +660,13 @@ impl OKXHttpClient {
 
     /// Returns the cached instrument symbols.
     #[must_use]
+    /// Returns a snapshot of all instrument symbols currently held in the
+    /// internal cache.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal mutex guarding the instrument cache is poisoned
+    /// (which would indicate a previous panic while the lock was held).
     pub fn get_cached_symbols(&self) -> Vec<String> {
         self.instruments_cache
             .lock()
@@ -639,6 +679,11 @@ impl OKXHttpClient {
     /// Adds the `instruments` to the clients instrument cache.
     ///
     /// Any existing instruments will be replaced.
+    /// Inserts multiple instruments into the local cache.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the mutex guarding the instrument cache is poisoned.
     pub fn add_instruments(&mut self, instruments: Vec<InstrumentAny>) {
         for inst in instruments {
             self.instruments_cache
@@ -652,6 +697,11 @@ impl OKXHttpClient {
     /// Adds the `instrument` to the clients instrument cache.
     ///
     /// Any existing instrument will be replaced.
+    /// Inserts a single instrument into the local cache.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the mutex guarding the instrument cache is poisoned.
     pub fn add_instrument(&mut self, instrument: InstrumentAny) {
         self.instruments_cache
             .lock()

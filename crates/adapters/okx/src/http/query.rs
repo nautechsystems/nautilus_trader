@@ -13,6 +13,31 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Strongly-typed request parameter structures for the OKX **v5 REST API**.
+//!
+//! Each struct corresponds 1-to-1 with an OKX REST endpoint and is annotated
+//! using `serde` so that it can be serialized directly into the query string
+//! or request body expected by the exchange.
+//!
+//! The inline documentation repeats the required/optional fields described in
+//! the [official OKX documentation](https://www.okx.com/docs-v5/en/) and, where
+//! beneficial, links to the exact endpoint section.  All links point to the
+//! English version.
+//!
+//! Example – building a request for historical trades:
+//! ```rust
+//! use nautilus_okx::http::query::{GetTradesParams, GetTradesParamsBuilder};
+//!
+//! let params = GetTradesParamsBuilder::default()
+//!     .inst_id("BTC-USDT")
+//!     .limit(200)
+//!     .build()
+//!     .unwrap();
+//! ```
+//!
+//! Once built these parameter structs are passed to `OKXHttpClient::get`/`post`
+//! where they are automatically serialized.
+
 use derive_builder::Builder;
 use serde::{self, Deserialize, Serialize};
 

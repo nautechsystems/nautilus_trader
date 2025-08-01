@@ -13,13 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Defines the error structures and enumerations for the OKX integration.
+//! Error structures and enumerations for the OKX integration.
 //!
-//! This module includes data types for deserializing exchange errors from OKX
-//! (`OKXErrorResponse`, `OKXErrorMessage`), as well as a higher-level typed
-//! error enum (`OKXHttpError`) that represents the various failure states in
-//! the client (e.g., missing credentials, network errors, unexpected status
-//! codes, etc.).
+//! The JSON error schema is described in the OKX documentation under
+//! *REST API > Error Codes* – <https://www.okx.com/docs-v5/en/#error-codes>.
+//! The types below mirror that structure and are reused across the entire
+//! crate.
 
 use nautilus_network::http::HttpClientError;
 use reqwest::StatusCode;
@@ -93,5 +92,13 @@ pub enum OKXHttpError {
 impl From<String> for OKXHttpError {
     fn from(error: String) -> Self {
         OKXHttpError::ValidationError(error)
+    }
+}
+
+// Allow use of the `?` operator on `serde_json` results inside the HTTP
+// client implementation by converting them into our typed error.
+impl From<serde_json::Error> for OKXHttpError {
+    fn from(error: serde_json::Error) -> Self {
+        OKXHttpError::JsonError(error.to_string())
     }
 }
