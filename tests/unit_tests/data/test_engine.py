@@ -2449,10 +2449,9 @@ class TestDataEngine:
         assert handler[0].data.ts_init == ts_2
 
     @pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
-    def test_request_instruments_with_different_ts_init_values_and_keep_last_instrument(self):
+    def test_request_instruments_with_different_ts_init_values_and_only_last(self):
         """
-        Test that RequestInstruments with keep_last_instrument parameter works
-        correctly.
+        Test that RequestInstruments with only_last parameter works correctly.
         """
         # Arrange
         catalog = setup_catalog(protocol="file", path=self.tmp_path / "catalog")
@@ -2552,7 +2551,7 @@ class TestDataEngine:
         # Advance clock to after all instrument timestamps to avoid "future data" error
         self.clock.advance_time(ts_3 + 1_000_000_000_000_000_000)
 
-        # Test 1: Request with keep_last_instrument=True (default) should return latest version of each instrument
+        # Test 1: Request with only_last=True (default) should return only latest version of each instrument
         handler = []
         request = RequestInstruments(
             start=None,
@@ -2562,7 +2561,7 @@ class TestDataEngine:
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
-            params={"keep_last_instrument": True},
+            params={"only_last": True},
         )
 
         self.msgbus.request(endpoint="DataEngine.request", request=request)
@@ -2582,7 +2581,7 @@ class TestDataEngine:
         assert instruments[1].id == eurusd_base.id
         assert instruments[1].ts_init == ts_2
 
-        # Test 2: Request with keep_last_instrument=False should return all instruments
+        # Test 2: Request with only_last=False should return all instruments
         handler.clear()
         request = RequestInstruments(
             start=None,
@@ -2592,7 +2591,7 @@ class TestDataEngine:
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
-            params={"keep_last_instrument": False},
+            params={"only_last": False},
         )
 
         self.msgbus.request(endpoint="DataEngine.request", request=request)

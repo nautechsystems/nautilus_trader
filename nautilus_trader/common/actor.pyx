@@ -2678,7 +2678,8 @@ cdef class Actor(Component):
         update_catalog : bool, optional
             Whether to update a catalog with the received data.
         params : dict[str, Any], optional
-            Additional parameters potentially used by a specific client.
+            Additional parameters potentially used by a specific client:
+            - `only_last` (default `True`) retains only the latest instrument record per instrument_id, based on the most recent ts_init.
 
         Returns
         -------
