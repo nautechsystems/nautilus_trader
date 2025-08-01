@@ -55,13 +55,14 @@ Released on TBD (UTC).
 - Refined Rust `GreeksCalculator` (#2760), thanks @faysou
 - Refined Databento bars timestamp decoding and backtest execution usage (#2800), thanks @faysou
 - Refined `FillModel` (#2795), thanks @faysou and @stefansimik
+- Refined request of instruments (#2822), thanks @faysou
 - Updated `request_aggregated_bars` example (#2815), thanks @faysou
 - Updated PostgreSQL connection parameters to use 'nautilus' user (#2805), thanks @stastnypremysl
 - Upgraded `web3` for Polymarket allowances script (#2814), thanks @DeirhX
 - Upgraded `databento` crate to v0.30.0
 - Upgraded `datafusion` crate to v49.0.0
 - Upgraded `redis` crate to v0.32.4
-- Upgraded `tokio` crate to v1.47.0
+- Upgraded `tokio` crate to v1.47.1
 
 ### Fixes
 - Fixed `TimeEventHandler` memory leaks with Python callback references in FFI layer

@@ -180,7 +180,7 @@ rustls-pemfile = "2.2.0"
 ryu = "1.0.20"
 semver = "1.0.25"
 serde = { version = "1.0.219", default-features = false, features = ["derive", "std", "rc"] }
-serde_json = { version = "1.0.141", default-features = false, features = ["std"] }
+serde_json = { version = "1.0.142", default-features = false, features = ["std"] }
 serde_urlencoded = "0.7.1"
 simple_logger = "5.0.0"
 sqlx = { version = "0.8.6", default-features = false, features = [
@@ -200,7 +200,7 @@ time = { version = "0.3.41", default-features = false, features = [
   "serde",
   "std",
 ] }
-tokio = { version = "1.47.0", default-features = false, features = [
+tokio = { version = "1.47.1", default-features = false, features = [
   "rt-multi-thread",
   "sync",
   "fs",
