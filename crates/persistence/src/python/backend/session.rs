@@ -121,9 +121,11 @@ impl DataQueryResult {
         match slf.next() {
             Some(acc) if !acc.is_empty() => {
                 let cvec = slf.set_chunk(acc);
-                Python::with_gil(|py| match PyCapsule::new::<CVec>(py, cvec, None) {
-                    Ok(capsule) => Ok(Some(capsule.into_py_any_unwrap(py))),
-                    Err(e) => Err(to_pyruntime_err(e)),
+                Python::with_gil(|py| {
+                    match PyCapsule::new_with_destructor::<CVec, _>(py, cvec, None, |_, _| {}) {
+                        Ok(capsule) => Ok(Some(capsule.into_py_any_unwrap(py))),
+                        Err(e) => Err(to_pyruntime_err(e)),
+                    }
                 })
             }
             _ => Ok(None),

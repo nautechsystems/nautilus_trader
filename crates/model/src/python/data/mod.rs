@@ -87,7 +87,10 @@ impl DataType {
 /// Rust data structure.
 #[must_use]
 pub fn data_to_pycapsule(py: Python, data: Data) -> PyObject {
-    let capsule = PyCapsule::new(py, data, None).expect("Error creating `PyCapsule`");
+    // Register a destructor which simply drops the `Data` value once the
+    // capsule is released by Python.
+    let capsule = PyCapsule::new_with_destructor(py, data, None, |_, _| {})
+        .expect("Error creating `PyCapsule`");
     capsule.into_any().unbind()
 }
 

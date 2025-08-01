@@ -420,7 +420,7 @@ fn exhaust_data_iter_to_pycapsule(
     }
 
     let cvec: CVec = data.into();
-    let capsule = PyCapsule::new::<CVec>(py, cvec, None)?;
+    let capsule = PyCapsule::new_with_destructor::<CVec, _>(py, cvec, None, |_, _| {})?;
 
     // TODO: Improve error domain. Replace anyhow errors with nautilus
     // errors to unify pyo3 and anyhow errors.
