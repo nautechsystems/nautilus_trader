@@ -1512,8 +1512,6 @@ cdef class DataEngine(Component):
         # Catalog query
         if has_catalog_data and not skip_catalog_data:
             new_request = request.with_dates(start, end, now.value)
-            new_request.params["request_ts_start"] = start.value
-            new_request.params["request_ts_end"] = end.value
             new_request.params["identifier"] = identifier
             self._query_catalog(new_request)
 
@@ -1521,8 +1519,6 @@ cdef class DataEngine(Component):
         if len(missing_intervals) > 0 and used_client:
             for request_start, request_end in missing_intervals:
                 new_request = request.with_dates(time_object_to_dt(request_start), time_object_to_dt(request_end), now.value)
-                new_request.params["request_ts_start"] = request_start
-                new_request.params["request_ts_end"] = request_end
                 new_request.params["identifier"] = identifier
                 self._date_range_client_request(used_client, new_request)
 
@@ -1547,19 +1543,6 @@ cdef class DataEngine(Component):
         self._log.warning(f"Cannot handle request: no client registered for '{request.client_id}', {request}")
 
     cpdef void _query_catalog(self, RequestData request):
-        """
-        Query the catalog for data matching the request parameters.
-
-        Special handling for instrument queries:
-        - RequestInstruments: Queries without a start time constraint to ensure all historical
-          instruments are found, then filters to return one instrument per ID that was
-          valid at or before the start time + all instruments per ID between start and end.
-        - RequestInstrument: Queries without a start time constraint, then returns the most recent
-          instrument that was valid at or before the requested start time.
-
-        This ensures instruments are always available even when requested at a time after
-        their creation (e.g., requesting at 10:00 for an instrument created at 00:00).
-        """
         cdef datetime start = request.start
         cdef datetime end = request.end
         cdef bint query_past_data = request.params.get("subscription_name") is None
@@ -1583,24 +1566,17 @@ cdef class DataEngine(Component):
         # We assume each symbol is only in one catalog
         for catalog in self._catalogs.values():
             if isinstance(request, RequestInstruments):
-                # For instruments requests, we omit the start parameter to ensure we find
-                # all historical instruments, regardless of when they were created.
-                # The catalog will return all instruments up to the end time.
-                # The filtering logic after the query will ensure we return:
-                # - One instrument per ID that was valid at/before start time
-                # - All instruments per ID that were created between start and end times
+                # We only use ts_end if end is passed as request argument
                 data += catalog.instruments(
-                    end=ts_end,
+                    start=ts_start,
+                    end=(ts_end if end is not None else None),
                 )
             elif isinstance(request, RequestInstrument):
-                # For single instrument requests, we omit the start parameter to ensure
-                # we find the instrument even if it was created before the requested start time.
-                # The catalog will return all versions of the instrument up to the start time.
-                # The post-processing will select the most recent instrument that was valid
-                # at or before the requested start time.
+                # We only use ts_end if end is passed as request argument
                 data = catalog.instruments(
                     instrument_ids=[str(request.instrument_id)],
-                    end=ts_start,
+                    start=ts_start,
+                    end=(ts_end if end is not None else None),
                 )
             elif isinstance(request, RequestQuoteTicks):
                 data = catalog.quote_ticks(
@@ -1646,34 +1622,26 @@ cdef class DataEngine(Component):
                 f"data[-1].ts_init={data[-1].ts_init}, {ts_now=}",
             )
 
-        # Special handling for instruments requests to ensure proper filtering
-        if isinstance(request, RequestInstruments) and request.start is not None:
-            # Group instruments by ID
-            instruments_by_id = {}
-            for instrument in data:
-                if instrument.id not in instruments_by_id:
-                    instruments_by_id[instrument.id] = []
-                instruments_by_id[instrument.id].append(instrument)
-
-            # Filter to get one before/at start + all between start and end
-            data = []
-            for _, instruments in instruments_by_id.items():
-                # Input instruments are sorted by ts_init
-                for i in instruments:
-                    if i.ts_init <= ts_end:
-                        data.append(i)
-                    elif i.ts_init <= ts_start:
-                        data.append(i)
-
-            data.sort(key=_instrument_ts_init)
-        elif isinstance(request, RequestInstrument):
+        if isinstance(request, RequestInstrument):
             if len(data) == 0:
                 self._log.error(f"Cannot find instrument for {request.instrument_id}")
                 return
 
-            # Input instruments are sorted by ts_init
-            data = data[len(data)-1]
+            data = data[-1]
+        elif isinstance(request, RequestInstruments):
+            keep_last_instrument = request.params.get("keep_last_instrument", True)
 
+            if keep_last_instrument:
+                # Filtering last available instrument by instrument_id
+                last_instrument = {}
+
+                for instrument in data:
+                    if instrument.id not in last_instrument:
+                        last_instrument[instrument.id] = instrument
+                    elif instrument.ts_init > last_instrument[instrument.id].ts_init:
+                        last_instrument[instrument.id] = instrument
+
+                data = list(last_instrument.values())
 
         params = request.params.copy()
         params["update_catalog"] = False
@@ -1978,8 +1946,8 @@ cdef class DataEngine(Component):
 
         if correlation_id not in self._query_group_n_responses or self._query_group_n_responses[correlation_id] == 1:
             self._check_bounds(response)
-            start = response.params.get("request_ts_start")
-            end = response.params.get("request_ts_end")
+            start = response.start.value if response.start is not None else None
+            end = response.end.value if response.end is not None else None
             identifier = response.params.get("identifier")
             update_catalog = response.params.get("update_catalog", False)
 
@@ -2012,8 +1980,8 @@ cdef class DataEngine(Component):
             update_catalog = response.params.get("update_catalog", False)
 
             if update_catalog:
-                start = response.params.get("request_ts_start")
-                end = response.params.get("request_ts_end")
+                start = response.start.value if response.start is not None else None
+                end = response.end.value if response.end is not None else None
                 identifier = response.params.get("identifier")
                 self._update_catalog(
                     response.data,
@@ -2038,8 +2006,8 @@ cdef class DataEngine(Component):
         if data_len == 0:
             return
 
-        cdef uint64_t start = response.params.get("request_ts_start", 0)
-        cdef uint64_t end = response.params.get("request_ts_end", 0)
+        cdef uint64_t start = response.start.value if response.start is not None else 0
+        cdef uint64_t end = response.end.value if response.end is not None else 0
         cdef int first_index = 0
         cdef int last_index = data_len - 1
 

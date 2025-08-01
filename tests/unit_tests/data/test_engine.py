@@ -26,6 +26,7 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.datetime import time_object_to_dt
+from nautilus_trader.core.datetime import unix_nanos_to_dt
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.data.engine import DataEngineConfig
@@ -75,6 +76,7 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.instruments.currency_pair import CurrencyPair
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog.parquet import _timestamps_to_filename
@@ -2242,6 +2244,7 @@ class TestDataEngine:
         assert self.data_engine.request_count == 1
         assert len(handler) == 1
         assert isinstance(handler[0].data, Instrument)
+        assert handler[0].data.id == instrument.id
 
     @pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
     def test_request_instruments_for_venue_when_catalog_registered(self):
@@ -2274,6 +2277,521 @@ class TestDataEngine:
         assert self.data_engine.request_count == 1
         assert len(handler) == 1
         assert len(handler[0].data) == 1
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
+    def test_request_instrument_with_different_ts_init_values(self):
+        """
+        Test that RequestInstrument returns the correct instrument based on ts_init and
+        time filtering.
+
+        RequestInstrument always returns the latest instrument (data[-1]) regardless of
+        parameters.
+
+        """
+        # Arrange
+        catalog = setup_catalog(protocol="file", path=self.tmp_path / "catalog")
+
+        idealpro = Venue("IDEALPRO")
+        base_instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=idealpro)
+
+        # Create instruments with different ts_init values (representing different times when instrument was created/updated)
+        ts_1 = 1_000_000_000_000_000_000  # Earlier time
+        ts_2 = 2_000_000_000_000_000_000  # Later time
+        ts_3 = 3_000_000_000_000_000_000  # Even later time
+
+        # Create the same instrument with different ts_init values
+        instrument_v1 = CurrencyPair(
+            instrument_id=base_instrument.id,
+            raw_symbol=base_instrument.raw_symbol,
+            base_currency=base_instrument.base_currency,
+            quote_currency=base_instrument.quote_currency,
+            price_precision=base_instrument.price_precision,
+            size_precision=base_instrument.size_precision,
+            price_increment=base_instrument.price_increment,
+            size_increment=base_instrument.size_increment,
+            lot_size=base_instrument.lot_size,
+            max_quantity=base_instrument.max_quantity,
+            min_quantity=base_instrument.min_quantity,
+            max_price=base_instrument.max_price,
+            min_price=base_instrument.min_price,
+            max_notional=base_instrument.max_notional,
+            min_notional=base_instrument.min_notional,
+            margin_init=base_instrument.margin_init,
+            margin_maint=base_instrument.margin_maint,
+            maker_fee=base_instrument.maker_fee,
+            taker_fee=base_instrument.taker_fee,
+            ts_event=ts_1,
+            ts_init=ts_1,
+        )
+
+        instrument_v2 = CurrencyPair(
+            instrument_id=base_instrument.id,
+            raw_symbol=base_instrument.raw_symbol,
+            base_currency=base_instrument.base_currency,
+            quote_currency=base_instrument.quote_currency,
+            price_precision=base_instrument.price_precision,
+            size_precision=base_instrument.size_precision,
+            price_increment=base_instrument.price_increment,
+            size_increment=base_instrument.size_increment,
+            lot_size=base_instrument.lot_size,
+            max_quantity=base_instrument.max_quantity,
+            min_quantity=base_instrument.min_quantity,
+            max_price=base_instrument.max_price,
+            min_price=base_instrument.min_price,
+            max_notional=base_instrument.max_notional,
+            min_notional=base_instrument.min_notional,
+            margin_init=base_instrument.margin_init,
+            margin_maint=base_instrument.margin_maint,
+            maker_fee=base_instrument.maker_fee,
+            taker_fee=base_instrument.taker_fee,
+            ts_event=ts_2,
+            ts_init=ts_2,
+        )
+
+        instrument_v3 = CurrencyPair(
+            instrument_id=base_instrument.id,
+            raw_symbol=base_instrument.raw_symbol,
+            base_currency=base_instrument.base_currency,
+            quote_currency=base_instrument.quote_currency,
+            price_precision=base_instrument.price_precision,
+            size_precision=base_instrument.size_precision,
+            price_increment=base_instrument.price_increment,
+            size_increment=base_instrument.size_increment,
+            lot_size=base_instrument.lot_size,
+            max_quantity=base_instrument.max_quantity,
+            min_quantity=base_instrument.min_quantity,
+            max_price=base_instrument.max_price,
+            min_price=base_instrument.min_price,
+            max_notional=base_instrument.max_notional,
+            min_notional=base_instrument.min_notional,
+            margin_init=base_instrument.margin_init,
+            margin_maint=base_instrument.margin_maint,
+            maker_fee=base_instrument.maker_fee,
+            taker_fee=base_instrument.taker_fee,
+            ts_event=ts_3,
+            ts_init=ts_3,
+        )
+
+        # Write instruments to catalog in order
+        catalog.write_data([instrument_v1])
+        catalog.write_data([instrument_v2])
+        catalog.write_data([instrument_v3])
+
+        self.data_engine.register_catalog(catalog)
+
+        # Advance clock to after all instrument timestamps to avoid "future data" error
+        self.clock.advance_time(ts_3 + 1_000_000_000_000_000_000)
+
+        # Test 1: Request without time constraints should return the latest instrument (v3)
+        handler = []
+        request = RequestInstrument(
+            instrument_id=base_instrument.id,
+            start=None,
+            end=None,
+            client_id=None,
+            venue=idealpro,
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            params=None,
+        )
+
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Should return the latest instrument (v3)
+        assert len(handler) == 1
+        assert isinstance(handler[0].data, Instrument)
+        assert handler[0].data.id == base_instrument.id
+        assert handler[0].data.ts_init == ts_3
+
+        # Test 2: Request with end time between ts_1 and ts_2 should return v1
+        handler.clear()
+        request = RequestInstrument(
+            instrument_id=base_instrument.id,
+            start=unix_nanos_to_dt(ts_1 - 500_000_000_000_000_000),  # Before ts_1
+            end=unix_nanos_to_dt(ts_1 + 500_000_000_000_000_000),  # Between ts_1 and ts_2
+            client_id=None,
+            venue=idealpro,
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            params=None,
+        )
+
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Should return instrument v1
+        assert len(handler) == 1
+        assert isinstance(handler[0].data, Instrument)
+        assert handler[0].data.id == base_instrument.id
+        assert handler[0].data.ts_init == ts_1
+
+        # Test 3: Request with end time between ts_2 and ts_3 should return v2
+        handler.clear()
+        request = RequestInstrument(
+            instrument_id=base_instrument.id,
+            start=unix_nanos_to_dt(ts_2 - 500_000_000_000_000_000),  # Before ts_2
+            end=unix_nanos_to_dt(ts_2 + 500_000_000_000_000_000),  # Between ts_2 and ts_3
+            client_id=None,
+            venue=idealpro,
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            params=None,
+        )
+
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Should return instrument v2
+        assert len(handler) == 1
+        assert isinstance(handler[0].data, Instrument)
+        assert handler[0].data.id == base_instrument.id
+        assert handler[0].data.ts_init == ts_2
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
+    def test_request_instruments_with_different_ts_init_values_and_keep_last_instrument(self):
+        """
+        Test that RequestInstruments with keep_last_instrument parameter works
+        correctly.
+        """
+        # Arrange
+        catalog = setup_catalog(protocol="file", path=self.tmp_path / "catalog")
+
+        idealpro = Venue("IDEALPRO")
+
+        # Create two different instruments
+        audusd_base = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=idealpro)
+        eurusd_base = TestInstrumentProvider.default_fx_ccy("EUR/USD", venue=idealpro)
+
+        # Create multiple versions of each instrument with different ts_init values
+        ts_1 = 1_000_000_000_000_000_000  # Earlier time
+        ts_2 = 2_000_000_000_000_000_000  # Later time
+        ts_3 = 3_000_000_000_000_000_000  # Even later time
+
+        # AUD/USD versions
+        audusd_v1 = CurrencyPair(
+            instrument_id=audusd_base.id,
+            raw_symbol=audusd_base.raw_symbol,
+            base_currency=audusd_base.base_currency,
+            quote_currency=audusd_base.quote_currency,
+            price_precision=audusd_base.price_precision,
+            size_precision=audusd_base.size_precision,
+            price_increment=audusd_base.price_increment,
+            size_increment=audusd_base.size_increment,
+            lot_size=audusd_base.lot_size,
+            max_quantity=audusd_base.max_quantity,
+            min_quantity=audusd_base.min_quantity,
+            max_price=audusd_base.max_price,
+            min_price=audusd_base.min_price,
+            max_notional=audusd_base.max_notional,
+            min_notional=audusd_base.min_notional,
+            margin_init=audusd_base.margin_init,
+            margin_maint=audusd_base.margin_maint,
+            maker_fee=audusd_base.maker_fee,
+            taker_fee=audusd_base.taker_fee,
+            ts_event=ts_1,
+            ts_init=ts_1,
+        )
+
+        audusd_v2 = CurrencyPair(
+            instrument_id=audusd_base.id,
+            raw_symbol=audusd_base.raw_symbol,
+            base_currency=audusd_base.base_currency,
+            quote_currency=audusd_base.quote_currency,
+            price_precision=audusd_base.price_precision,
+            size_precision=audusd_base.size_precision,
+            price_increment=audusd_base.price_increment,
+            size_increment=audusd_base.size_increment,
+            lot_size=audusd_base.lot_size,
+            max_quantity=audusd_base.max_quantity,
+            min_quantity=audusd_base.min_quantity,
+            max_price=audusd_base.max_price,
+            min_price=audusd_base.min_price,
+            max_notional=audusd_base.max_notional,
+            min_notional=audusd_base.min_notional,
+            margin_init=audusd_base.margin_init,
+            margin_maint=audusd_base.margin_maint,
+            maker_fee=audusd_base.maker_fee,
+            taker_fee=audusd_base.taker_fee,
+            ts_event=ts_3,
+            ts_init=ts_3,
+        )
+
+        # EUR/USD versions
+        eurusd_v1 = CurrencyPair(
+            instrument_id=eurusd_base.id,
+            raw_symbol=eurusd_base.raw_symbol,
+            base_currency=eurusd_base.base_currency,
+            quote_currency=eurusd_base.quote_currency,
+            price_precision=eurusd_base.price_precision,
+            size_precision=eurusd_base.size_precision,
+            price_increment=eurusd_base.price_increment,
+            size_increment=eurusd_base.size_increment,
+            lot_size=eurusd_base.lot_size,
+            max_quantity=eurusd_base.max_quantity,
+            min_quantity=eurusd_base.min_quantity,
+            max_price=eurusd_base.max_price,
+            min_price=eurusd_base.min_price,
+            max_notional=eurusd_base.max_notional,
+            min_notional=eurusd_base.min_notional,
+            margin_init=eurusd_base.margin_init,
+            margin_maint=eurusd_base.margin_maint,
+            maker_fee=eurusd_base.maker_fee,
+            taker_fee=eurusd_base.taker_fee,
+            ts_event=ts_2,
+            ts_init=ts_2,
+        )
+
+        # Write instruments to catalog
+        catalog.write_data([audusd_v1])
+        catalog.write_data([eurusd_v1])
+        catalog.write_data([audusd_v2])  # Later version of AUD/USD
+
+        self.data_engine.register_catalog(catalog)
+
+        # Advance clock to after all instrument timestamps to avoid "future data" error
+        self.clock.advance_time(ts_3 + 1_000_000_000_000_000_000)
+
+        # Test 1: Request with keep_last_instrument=True (default) should return latest version of each instrument
+        handler = []
+        request = RequestInstruments(
+            start=None,
+            end=None,
+            client_id=None,
+            venue=idealpro,
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            params={"keep_last_instrument": True},
+        )
+
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Should return 2 instruments: latest AUD/USD (v2) and EUR/USD (v1)
+        assert len(handler) == 1
+        assert len(handler[0].data) == 2
+
+        # Sort by instrument ID for consistent testing
+        instruments = sorted(handler[0].data, key=lambda x: str(x.id))
+
+        # First should be AUD/USD v2 (latest)
+        assert instruments[0].id == audusd_base.id
+        assert instruments[0].ts_init == ts_3
+
+        # Second should be EUR/USD v1 (only version)
+        assert instruments[1].id == eurusd_base.id
+        assert instruments[1].ts_init == ts_2
+
+        # Test 2: Request with keep_last_instrument=False should return all instruments
+        handler.clear()
+        request = RequestInstruments(
+            start=None,
+            end=None,
+            client_id=None,
+            venue=idealpro,
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            params={"keep_last_instrument": False},
+        )
+
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Should return 3 instruments: both AUD/USD versions and EUR/USD
+        assert len(handler) == 1
+        assert len(handler[0].data) == 3
+
+        # Sort by ts_init for consistent testing
+        instruments = sorted(handler[0].data, key=lambda x: x.ts_init)
+
+        # First should be AUD/USD v1
+        assert instruments[0].id == audusd_base.id
+        assert instruments[0].ts_init == ts_1
+
+        # Second should be EUR/USD v1
+        assert instruments[1].id == eurusd_base.id
+        assert instruments[1].ts_init == ts_2
+
+        # Third should be AUD/USD v2
+        assert instruments[2].id == audusd_base.id
+        assert instruments[2].ts_init == ts_3
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
+    def test_request_instruments_with_time_filtering(self):
+        """
+        Test that RequestInstruments respects start and end time parameters.
+        """
+        # Arrange
+        catalog = setup_catalog(protocol="file", path=self.tmp_path / "catalog")
+
+        idealpro = Venue("IDEALPRO")
+
+        # Create instruments with different ts_init values
+        ts_1 = 1_000_000_000_000_000_000  # Earlier time
+        ts_2 = 2_000_000_000_000_000_000  # Middle time
+        ts_3 = 3_000_000_000_000_000_000  # Later time
+
+        audusd_base = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=idealpro)
+        eurusd_base = TestInstrumentProvider.default_fx_ccy("EUR/USD", venue=idealpro)
+        gbpusd_base = TestInstrumentProvider.default_fx_ccy("GBP/USD", venue=idealpro)
+
+        # Create instruments at different times
+        audusd_early = CurrencyPair(
+            instrument_id=audusd_base.id,
+            raw_symbol=audusd_base.raw_symbol,
+            base_currency=audusd_base.base_currency,
+            quote_currency=audusd_base.quote_currency,
+            price_precision=audusd_base.price_precision,
+            size_precision=audusd_base.size_precision,
+            price_increment=audusd_base.price_increment,
+            size_increment=audusd_base.size_increment,
+            lot_size=audusd_base.lot_size,
+            max_quantity=audusd_base.max_quantity,
+            min_quantity=audusd_base.min_quantity,
+            max_price=audusd_base.max_price,
+            min_price=audusd_base.min_price,
+            max_notional=audusd_base.max_notional,
+            min_notional=audusd_base.min_notional,
+            margin_init=audusd_base.margin_init,
+            margin_maint=audusd_base.margin_maint,
+            maker_fee=audusd_base.maker_fee,
+            taker_fee=audusd_base.taker_fee,
+            ts_event=ts_1,
+            ts_init=ts_1,
+        )
+
+        eurusd_middle = CurrencyPair(
+            instrument_id=eurusd_base.id,
+            raw_symbol=eurusd_base.raw_symbol,
+            base_currency=eurusd_base.base_currency,
+            quote_currency=eurusd_base.quote_currency,
+            price_precision=eurusd_base.price_precision,
+            size_precision=eurusd_base.size_precision,
+            price_increment=eurusd_base.price_increment,
+            size_increment=eurusd_base.size_increment,
+            lot_size=eurusd_base.lot_size,
+            max_quantity=eurusd_base.max_quantity,
+            min_quantity=eurusd_base.min_quantity,
+            max_price=eurusd_base.max_price,
+            min_price=eurusd_base.min_price,
+            max_notional=eurusd_base.max_notional,
+            min_notional=eurusd_base.min_notional,
+            margin_init=eurusd_base.margin_init,
+            margin_maint=eurusd_base.margin_maint,
+            maker_fee=eurusd_base.maker_fee,
+            taker_fee=eurusd_base.taker_fee,
+            ts_event=ts_2,
+            ts_init=ts_2,
+        )
+
+        gbpusd_late = CurrencyPair(
+            instrument_id=gbpusd_base.id,
+            raw_symbol=gbpusd_base.raw_symbol,
+            base_currency=gbpusd_base.base_currency,
+            quote_currency=gbpusd_base.quote_currency,
+            price_precision=gbpusd_base.price_precision,
+            size_precision=gbpusd_base.size_precision,
+            price_increment=gbpusd_base.price_increment,
+            size_increment=gbpusd_base.size_increment,
+            lot_size=gbpusd_base.lot_size,
+            max_quantity=gbpusd_base.max_quantity,
+            min_quantity=gbpusd_base.min_quantity,
+            max_price=gbpusd_base.max_price,
+            min_price=gbpusd_base.min_price,
+            max_notional=gbpusd_base.max_notional,
+            min_notional=gbpusd_base.min_notional,
+            margin_init=gbpusd_base.margin_init,
+            margin_maint=gbpusd_base.margin_maint,
+            maker_fee=gbpusd_base.maker_fee,
+            taker_fee=gbpusd_base.taker_fee,
+            ts_event=ts_3,
+            ts_init=ts_3,
+        )
+
+        # Write instruments to catalog
+        catalog.write_data([audusd_early])
+        catalog.write_data([eurusd_middle])
+        catalog.write_data([gbpusd_late])
+
+        self.data_engine.register_catalog(catalog)
+
+        # Advance clock to after all instrument timestamps to avoid "future data" error
+        self.clock.advance_time(ts_3 + 1_000_000_000_000_000_000)
+
+        # Test 1: Request instruments from start to middle time (should get AUD/USD and EUR/USD)
+        handler = []
+        request = RequestInstruments(
+            start=unix_nanos_to_dt(ts_1 - 500_000_000_000_000_000),  # Before ts_1
+            end=unix_nanos_to_dt(ts_2 + 500_000_000_000_000_000),  # After ts_2, before ts_3
+            client_id=None,
+            venue=idealpro,
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            params=None,
+        )
+
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Should return 2 instruments: AUD/USD and EUR/USD (not GBP/USD which is after end time)
+        assert len(handler) == 1
+        assert len(handler[0].data) == 2
+
+        # Sort by ts_init for consistent testing
+        instruments = sorted(handler[0].data, key=lambda x: x.ts_init)
+
+        assert instruments[0].id == audusd_base.id
+        assert instruments[0].ts_init == ts_1
+        assert instruments[1].id == eurusd_base.id
+        assert instruments[1].ts_init == ts_2
+
+        # Test 2: Request instruments from middle to late time (should get EUR/USD and GBP/USD)
+        handler.clear()
+        request = RequestInstruments(
+            start=unix_nanos_to_dt(ts_2 - 500_000_000_000_000_000),  # Before ts_2
+            end=unix_nanos_to_dt(ts_3 + 500_000_000_000_000_000),  # After ts_3
+            client_id=None,
+            venue=idealpro,
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            params=None,
+        )
+
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Should return 2 instruments: EUR/USD and GBP/USD (not AUD/USD which is before start time)
+        assert len(handler) == 1
+        assert len(handler[0].data) == 2
+
+        # Sort by ts_init for consistent testing
+        instruments = sorted(handler[0].data, key=lambda x: x.ts_init)
+
+        assert instruments[0].id == eurusd_base.id
+        assert instruments[0].ts_init == ts_2
+        assert instruments[1].id == gbpusd_base.id
+        assert instruments[1].ts_init == ts_3
+
+        # Test 3: Request instruments with narrow time window (should get only EUR/USD)
+        handler.clear()
+        request = RequestInstruments(
+            start=unix_nanos_to_dt(ts_2 - 100_000_000_000_000_000),  # Just before ts_2
+            end=unix_nanos_to_dt(ts_2 + 100_000_000_000_000_000),  # Just after ts_2
+            client_id=None,
+            venue=idealpro,
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            params=None,
+        )
+
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Should return 1 instrument: only EUR/USD
+        assert len(handler) == 1
+        assert len(handler[0].data) == 1
+        assert handler[0].data[0].id == eurusd_base.id
+        assert handler[0].data[0].ts_init == ts_2
 
     def test_request_order_book_snapshot_reaches_client(self):
         # Arrange

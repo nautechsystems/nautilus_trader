@@ -363,14 +363,9 @@ init-db:  #-- Initialize PostgreSQL database schema
 #== Python Testing
 
 .PHONY: pytest
-pytest:  #-- Run Python tests with pytest
-ifeq ($(VERBOSE),true)
-	$(info $(M) Running Python tests with verbose output...)
-	uv run --active --no-sync pytest --new-first --failed-first -v -n logical --dist=loadgroup
-else
-	$(info $(M) Running Python tests (showing failures and summary only)...)
-	uv run --active --no-sync pytest --new-first --failed-first --tb=short -n logical --dist=loadgroup
-endif
+pytest:  #-- Run Python tests with pytest in parallel with immediate failure reporting
+	$(info $(M) Running Python tests in parallel with immediate failure reporting...)
+	uv run --active --no-sync pytest --new-first --failed-first --tb=line -n logical --dist=loadgroup --maxfail=50 $(if $(VERBOSE),-v,)
 
 .PHONY: pytest-memory-tracking
 pytest-memory-tracking:  #-- Run Python tests with memory tracking enabled
@@ -394,7 +389,8 @@ help:  #-- Show this help message and exit
 	@printf "Nautilus Trader Makefile\n\n"
 	@printf "$(GREEN)Usage:$(RESET) make $(CYAN)<target>$(RESET)\n\n"
 	@printf "$(GRAY)Tips: Use $(CYAN)make <target> V=1$(GRAY) for verbose output$(RESET)\n"
-	@printf "$(GRAY)      Use $(CYAN)make <target> VERBOSE=false$(GRAY) to disable verbose output for build-debug, cargo-test, and pytest$(RESET)\n\n"
+	@printf "$(GRAY)      Use $(CYAN)make <target> VERBOSE=false$(GRAY) to disable verbose output for build-debug, cargo-test, and pytest$(RESET)\n"
+	@printf "$(GRAY)      Use $(CYAN)make pytest VERBOSE=true$(GRAY) to run tests with verbose output$(RESET)\n\n"
 
 	@printf "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣴⣶⡟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n"
 	@printf "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣰⣾⣿⣿⣿⠀⢸⣿⣿⣿⣿⣶⣶⣤⣀⠀⠀⠀⠀⠀\n"

@@ -133,13 +133,13 @@ def betting_instruments_from_file(
                 if mc.market_definition:
                     market_def = msgspec.structs.replace(mc.market_definition, market_id=mc.id)
                     mc = msgspec.structs.replace(mc, market_definition=market_def)
-                    instruments = make_instruments(
+                    new_instruments = make_instruments(
                         mc.market_definition,
                         currency=currency,
                         ts_event=ts_event,
                         ts_init=ts_init,
                         min_notional=min_notional,
                     )
-                    instruments.extend(instruments)
+                    instruments.extend(new_instruments)
 
     return list(set(instruments))
