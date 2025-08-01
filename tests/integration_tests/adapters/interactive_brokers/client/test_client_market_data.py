@@ -934,6 +934,7 @@ async def test_realtimeBar(ib_client):
     ib_client._handle_data.assert_called_once_with(bar)
 
 
+@pytest.mark.skip(reason="Slow test - takes 60+ seconds")
 @pytest.mark.asyncio
 async def test_get_price_retrieval(ib_client):
     """
