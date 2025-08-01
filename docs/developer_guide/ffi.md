@@ -59,3 +59,56 @@ Earlier versions of the codebase shipped a generic `cvec_drop` function that alw
 buffer as `Vec<u8>`. Using it with any other element type causes a size-mismatch during
 deallocation and corrupts the allocator’s bookkeeping. Because the helper was not referenced
 anywhere inside the project it has been removed to avoid accidental misuse.
+
+## Box-backed `*_API` wrappers (owned Rust objects)
+
+When the Rust core needs to hand a *complex* value (for example an
+`OrderBook`, `SyntheticInstrument`, or `TimeEventAccumulator`) to foreign
+code it allocates the value on the heap with `Box::new` and returns a
+small `repr(C)` wrapper whose only field is that `Box`.
+
+```rust
+#[repr(C)]
+pub struct OrderBook_API(Box<OrderBook>);
+
+#[unsafe(no_mangle)]
+pub extern "C" fn orderbook_new(id: InstrumentId, book_type: BookType) -> OrderBook_API {
+    OrderBook_API(Box::new(OrderBook::new(id, book_type)))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn orderbook_drop(book: OrderBook_API) {
+    drop(book); // frees the heap allocation
+}
+```
+
+Memory-safety requirements are therefore:
+
+1.  Every constructor (`*_new`) **must** have a matching `*_drop` exported
+    next to it.
+2.  The *Python/Cython* binding must guarantee that `*_drop` is invoked
+    exactly once.  Two approaches are accepted:
+
+    • Wrap the pointer in a `PyCapsule` created with
+      `PyCapsule::new_with_destructor`, passing a destructor that calls
+      the drop helper.
+
+    • Call the helper explicitly in `__del__`/`__dealloc__` on the Python
+      side.  This is the historical pattern for most v1 Cython modules:
+
+      ```cython
+      cdef class OrderBook:
+          cdef OrderBook_API _mem
+
+          def __cinit__(self, ...):
+              self._mem = orderbook_new(...)
+
+          def __dealloc__(self):
+              if self._mem._0 != NULL:
+                  orderbook_drop(self._mem)
+      ```
+
+Whichever style is used, remember: **forgetting the drop call leaks the
+entire structure**, while calling it twice will double-free and crash.
+
+New FFI code must follow this template before it can be merged.
