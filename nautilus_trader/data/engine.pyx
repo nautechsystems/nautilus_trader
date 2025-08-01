@@ -1629,10 +1629,10 @@ cdef class DataEngine(Component):
 
             data = data[-1]
         elif isinstance(request, RequestInstruments):
-            keep_last_instrument = request.params.get("keep_last_instrument", True)
+            only_last = request.params.get("only_last", True)
 
-            if keep_last_instrument:
-                # Filtering last available instrument by instrument_id
+            if only_last:
+                # Retains only the latest instrument record per instrument_id, based on the most recent ts_init
                 last_instrument = {}
 
                 for instrument in data:
@@ -2028,7 +2028,7 @@ cdef class DataEngine(Component):
 
     def _update_catalog(
         self,
-        ticks: list,
+        data: list,
         data_cls: type,
         identifier: object,
         start: int | None = None,
@@ -2048,11 +2048,11 @@ cdef class DataEngine(Component):
             used_catalog = list(self._catalogs.values())[0]
 
         if used_catalog is not None:
-            if len(ticks) == 0 and data_cls and start and end:
+            if len(data) == 0 and data_cls and start and end:
                 # identifier can be None for custom data
                 used_catalog.extend_file_name(data_cls, identifier, start, end)
             else:
-                used_catalog.write_data(ticks, start, end)
+                used_catalog.write_data(data, start, end)
         else:
             self._log.warning("No catalog available for appending data.")
 
