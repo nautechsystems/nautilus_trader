@@ -1,6 +1,6 @@
 #!/bin/bash
 
-pass_count = 1
+pass_count=1
 
 for stub in $(find stubs -name "*.pyi"); do
     rel_path="${stub#stubs/}"

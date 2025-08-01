@@ -23,6 +23,7 @@ class MemberVariable:
     is_readonly: bool = False
     is_class: bool = False
     is_instance: bool = False
+    line_number: int | None = None
 
 
 @dataclass
@@ -39,6 +40,7 @@ class MethodInfo:
     is_cdef: bool = False
     is_cpdef: bool = False
     is_property: bool = False
+    line_number: int | None = None
 
 
 @dataclass
@@ -51,6 +53,7 @@ class FunctionInfo:
     docstring: str | None = None
     is_cdef: bool = False
     is_cpdef: bool = False
+    line_number: int | None = None
 
 
 @dataclass
@@ -61,6 +64,7 @@ class GlobalVariable:
     type_hint: str | None = None
     value: str | None = None
     is_constant: bool = False
+    line_number: int | None = None
 
 
 @dataclass
@@ -74,7 +78,7 @@ class ClassInfo:
     methods: list[MethodInfo] = field(default_factory=list)
     is_cdef_class: bool = False
     is_extension_type: bool = False
-
+    line_number: int | None = None
 
 class CythonCodeAnalyzer(ScopeTrackingTransform):
     """
@@ -122,6 +126,7 @@ class CythonCodeAnalyzer(ScopeTrackingTransform):
             docstring=docstring,
             is_cdef_class=is_cdef_class,
             is_extension_type=is_extension_type,
+            line_number=node.pos[1],
         )
 
         self.class_stack.append(class_info)
@@ -171,6 +176,7 @@ class CythonCodeAnalyzer(ScopeTrackingTransform):
                 is_property=decorators.get("property", False),
                 is_cdef=is_cdef,
                 is_cpdef=is_cpdef,
+                line_number=node.pos[1],
             )
             self.current_class.methods.append(method_info)
             self.current_function = method_info
@@ -182,6 +188,7 @@ class CythonCodeAnalyzer(ScopeTrackingTransform):
                 docstring=docstring,
                 is_cdef=is_cdef,
                 is_cpdef=is_cpdef,
+                line_number=node.pos[1],
             )
             self.functions.append(function_info)
             self.current_function = function_info
@@ -207,6 +214,7 @@ class CythonCodeAnalyzer(ScopeTrackingTransform):
                     value,
                     is_class=self.current_class is not None,
                     is_instance=self.current_function is not None,
+                    line_number=node.pos[1],
                 )
 
         self.visitchildren(node)
@@ -221,6 +229,7 @@ class CythonCodeAnalyzer(ScopeTrackingTransform):
         is_readonly: bool = False,
         is_class: bool = False,
         is_instance: bool = False,
+        line_number: int | None = None,
     ):
         """Add a variable to the appropriate scope (global, class, or instance)."""
         is_private = name.replace("self.", "").startswith("_") and not name.startswith("__")
@@ -235,6 +244,7 @@ class CythonCodeAnalyzer(ScopeTrackingTransform):
                 is_public=is_public,
                 is_readonly=is_readonly,
                 is_instance=True,
+                line_number=line_number,
             )
             if self.current_class:
                 self.current_class.member_variables.append(member_var)
@@ -247,6 +257,7 @@ class CythonCodeAnalyzer(ScopeTrackingTransform):
                 is_public=is_public,
                 is_readonly=is_readonly,
                 is_class=True,
+                line_number=line_number,
             )
             if self.current_class:
                 self.current_class.member_variables.append(member_var)
@@ -256,6 +267,7 @@ class CythonCodeAnalyzer(ScopeTrackingTransform):
                 type_hint=type_hint,
                 value=value,
                 is_constant=is_constant,
+                line_number=line_number,
             )
             self.global_variables.append(global_var)
 
@@ -265,10 +277,13 @@ class CythonCodeAnalyzer(ScopeTrackingTransform):
         node_args = node.declarator.args if is_cfunc else node.args
 
         for arg in node_args:
-            arg_name = getattr(arg.declarator, "name", str(arg))
+            if hasattr(arg, "declarator"):
+                arg_name = self._extract_name_from_node(arg.declarator)
 
             arg_type = None
-            if hasattr(arg, "type") and arg.type:
+            if hasattr(arg, "annotation") and arg.annotation:
+                arg_type = self._extract_type_from_node(arg.annotation)
+            elif hasattr(arg, "type") and arg.type:
                 arg_type = self._extract_type_from_node(arg.type)
             elif hasattr(arg, "base_type") and arg.base_type:
                 arg_type = self._extract_type_from_node(arg.base_type)
@@ -279,11 +294,14 @@ class CythonCodeAnalyzer(ScopeTrackingTransform):
             if hasattr(arg, "default") and arg.default:
                 default_val = self._extract_value_from_node(arg.default)
 
-            arg_str = arg_name
-            if arg_type and arg_type != "self":
-                arg_str += f": {arg_type}"
-            if default_val:
-                arg_str += f" = {default_val}"
+            if arg_type == "self":
+                arg_str = "self"
+            else:
+                arg_str = arg_name
+                if arg_type and arg_type != "self":
+                    arg_str += f": {arg_type}"
+                if default_val:
+                    arg_str += f" = {default_val}"
 
             args.append(arg_str)
 
@@ -395,7 +413,7 @@ def analyze_cython_code(name: str, code_content: str) -> CythonCodeAnalyzer:
 def print_results(analyzer: CythonCodeAnalyzer):  # noqa: C901
     """Print the analysis results."""
     if analyzer.classes:
-        print("\n📦 Classes:")
+        print("\n Classes:")
         for cls in analyzer.classes:
             class_type = "cdef class" if cls.is_cdef_class else "class"
             extension_info = " (extension type)" if cls.is_extension_type else ""
@@ -452,7 +470,7 @@ def print_results(analyzer: CythonCodeAnalyzer):  # noqa: C901
                         print(f'    """{method.docstring}"""')
 
     if analyzer.functions:
-        print("\n🔧 Functions:")
+        print("\n  Functions:")
         for func in analyzer.functions:
             func_type = "def "
             if func.is_cdef:
@@ -467,13 +485,12 @@ def print_results(analyzer: CythonCodeAnalyzer):  # noqa: C901
                 print(f'  """{func.docstring}"""')
 
     if analyzer.global_variables:
-        print("\n🌍 Global Variables:")
+        print("\n  Global Variables:")
         for var in analyzer.global_variables:
             type_info = f": {var.type_hint}" if var.type_hint else ""
             value_info = f" = {var.value}" if var.value else ""
             classification = "Constant" if var.is_constant else "Variable"
             print(f"  - {var.name}{type_info}{value_info} ({classification})")
-
 
 if __name__ == "__main__":
     file_path = Path("/Users/sam/Documents/Development/woung717/nautilus_trader/nautilus_trader/persistence/wranglers.pyx")

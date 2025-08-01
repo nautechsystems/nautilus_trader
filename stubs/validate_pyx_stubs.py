@@ -6,17 +6,21 @@ PYX to PYI Validation Script
 해당하는 .pyi 스텁 파일에 올바르게 추출되었는지 검증합니다.
 """
 
+import argparse
 import ast
-import keyword  # Added for Python keyword checking
-import re
 import sys
 from dataclasses import dataclass
 from dataclasses import field
 from pathlib import Path
 
+from cython_parser import ClassInfo as CythonClassInfo
+from cython_parser import MemberVariable as CythonMemberVariable
+from cython_parser import MethodInfo as CythonMethodInfo
+from cython_parser import analyze_cython_code
+
 
 @dataclass
-class Member:
+class PyiMember:
     """클래스 멤버 정보"""
 
     name: str
@@ -41,12 +45,12 @@ class Member:
 
 
 @dataclass
-class ClassInfo:
+class PyiClassInfo:
     """클래스 정보"""
 
     name: str
     docstring: str | None = None
-    members: dict[str, Member] = None
+    members: dict[str, PyiMember] = None
     base_classes: list[str] = None
     line_number: int | None = None
 
@@ -57,420 +61,6 @@ class ClassInfo:
             self.base_classes = []
 
 
-class PyxParser:
-    """Cython .pyx 파일 파서"""
-
-    def __init__(self, file_path: Path):
-        self.file_path = file_path
-        self.content = file_path.read_text(encoding="utf-8")
-        self.classes: dict[str, ClassInfo] = {}
-        self.PYTHON_KEYWORDS = set(keyword.kwlist) # Initialize Python keywords
-
-    def parse(self) -> dict[str, ClassInfo]:
-        """Pyx 파일을 파싱하여 클래스 정보 추출"""
-        comment_line_pattern = re.compile(r"^\s*#.*$")
-        lines = [re.sub(comment_line_pattern, "", l) for l in self.content.split("\n")]
-        current_class = None
-        current_indent = 0
-        in_docstring = False
-        docstring_quote = None
-        i = 0
-
-
-        while i < len(lines):
-            line = lines[i].rstrip()
-            if not line:
-                i += 1
-                continue
-
-            indent = len(line) - len(line.lstrip())
-            stripped_line = line.strip()
-
-            # docstring 상태 추적
-            if not in_docstring:
-                if stripped_line.startswith(('"""', "'''")):
-                    docstring_quote = '"""' if stripped_line.startswith('"""') else "'''"
-                    # 한 줄 docstring인지 확인
-                    if stripped_line.count(docstring_quote) >= 2 and len(stripped_line) > 6:
-                        # 한 줄 docstring - 다음 라인으로
-                        i += 1
-                        continue
-                    else:
-                        # 여러 줄 docstring 시작
-                        in_docstring = True
-                        i += 1
-                        continue
-            else:
-                # docstring 내부
-                if docstring_quote in stripped_line:
-                    # docstring 끝
-                    in_docstring = False
-                    docstring_quote = None
-                i += 1
-                continue
-
-            # docstring 내부라면 파싱하지 않음
-            if in_docstring:
-                i += 1
-                continue
-
-            # 클래스 정의 찾기
-            class_match = re.match(r"^(\s*)(?:cdef\s+)?class\s+(\w+)(?:\((.*?)\))?:", line)
-            if class_match:
-                class_indent, class_name, bases = class_match.groups()
-                current_indent = len(class_indent)
-
-                base_classes = []
-                if bases:
-                    base_classes = [b.strip() for b in bases.split(",") if b.strip()]
-
-                current_class = ClassInfo(name=class_name, base_classes=base_classes, line_number=i+1)
-
-                # docstring 추출 - _extract_docstring 메서드 사용
-                i += 1
-                if i < len(lines):
-                    docstring, extra_lines = self._extract_docstring(lines, i)
-                    if docstring:
-                        current_class.docstring = docstring
-                        i += extra_lines
-
-                self.classes[class_name] = current_class
-                continue
-
-            # 클래스 내부의 멤버들 파싱
-            if current_class and indent > current_indent:
-                member_info = self._parse_member(line, lines, i)
-                if member_info:
-                    member, lines_consumed = member_info
-                    member.line_number = i + 1  # 라인 넘버 추가
-                    current_class.members[member.name] = member
-                    i += lines_consumed
-                    continue
-
-            # 클래스 끝
-            if current_class and indent <= current_indent and line.strip():
-                current_class = None
-                current_indent = 0
-
-            i += 1
-
-        return self.classes
-
-    def _parse_member(self, line: str, lines: list[str], start_idx: int) -> tuple[Member, int] | None:
-        """멤버 변수/메서드 파싱 (데코레이터 지원 추가, cpdef 메서드 포함)"""
-        line = line.strip()
-
-        # cdef 멤버 변수는 검증에서 제외 (Python에서 접근 불가)
-        # 단, cpdef는 포함 (Python에서도 접근 가능)
-        if re.match(r"^\s*cdef\s+(?!.*\bdef\b)", line):
-            return None
-
-        # 데코레이터 수집
-        decorators = []
-        current_line_idx = start_idx
-
-        # 현재 라인이 데코레이터인지 확인하고 수집
-        while current_line_idx < len(lines):
-            current_line = lines[current_line_idx].strip()
-            if current_line.startswith("@"):
-                decorators.append(current_line)
-                current_line_idx += 1
-            else:
-                break
-
-        # 데코레이터 다음의 실제 정의 라인
-        if current_line_idx < len(lines):
-            definition_line = lines[current_line_idx].strip()
-        else:
-            return None
-
-        lines_consumed = current_line_idx - start_idx
-
-        # 메서드 정의 확인 (def, cpdef 모두 포함)
-        method_start = re.match(r"(?:cpdef\s+|cdef\s+)?def\s+(\w+)\s*\(", definition_line)
-        if method_start:
-            method_name = method_start.group(1)
-            if method_name in self.PYTHON_KEYWORDS: # Filter out Python keywords
-                return None
-
-            # 전체 메서드 시그니처 수집 (여러 줄 가능)
-            full_signature = definition_line
-            paren_count = definition_line.count("(") - definition_line.count(")")
-
-            # 괄호가 닫힐 때까지 다음 줄들 수집
-            while paren_count > 0 and current_line_idx + 1 < len(lines):
-                current_line_idx += 1
-                next_line = lines[current_line_idx].rstrip()
-                full_signature += " " + next_line.strip()
-                paren_count += next_line.count("(") - next_line.count(")")
-
-            lines_consumed = current_line_idx - start_idx + 1
-
-            # 완전한 시그니처에서 파라미터와 반환 타입 추출
-            signature_match = re.match(r"(?:cpdef\s+|cdef\s+)?def\s+\w+\s*\((.*?)\)(?:\s*->\s*(.+?))?:", full_signature)
-            if signature_match:
-                params, return_type = signature_match.groups()
-
-                # 파라미터 파싱
-                param_list = self._parse_parameters(params)
-
-                # 데코레이터 분석
-                is_property = any("@property" in dec for dec in decorators)
-                is_staticmethod = any("@staticmethod" in dec for dec in decorators)
-                is_classmethod = any("@classmethod" in dec for dec in decorators)
-                is_overload = any("@overload" in dec for dec in decorators)
-
-                member = Member(
-                    name=method_name,
-                    is_method=True,
-                    is_property=is_property,
-                    is_staticmethod=is_staticmethod,
-                    is_classmethod=is_classmethod,
-                    is_overload=is_overload,
-                    parameters=param_list,
-                    return_type=return_type.strip() if return_type else None
-                )
-
-                # docstring 추출 - _extract_docstring 메서드 사용
-                if current_line_idx + 1 < len(lines):
-                    docstring, extra_lines = self._extract_docstring(lines, current_line_idx + 1)
-                    if docstring:
-                        member.docstring = docstring
-                        lines_consumed += extra_lines
-
-                return member, lines_consumed
-
-        # 프로퍼티 (레거시 지원 - 데코레이터가 이미 처리됨)
-        if line.startswith("@property") and start_idx + 1 < len(lines):
-            next_line = lines[start_idx + 1].strip()
-            prop_method = re.match(r"def\s+(\w+)\s*\(.*?\)(?:\s*->\s*(.+?))?:", next_line)
-            if prop_method:
-                prop_name, return_type = prop_method.groups()
-                member = Member(
-                    name=prop_name,
-                    is_property=True,
-                    return_type=return_type.strip() if return_type else None
-                )
-                return member, 2
-
-        # 멤버 변수 (Python 접근 가능한 것만)
-        # cdef가 포함된 변수 정의는 제외 (단, cpdef는 허용)
-        if re.match(r"^\s*cdef\s+(?!.*\bdef\b)", line):
-            return None
-
-        # Python 타입 힌트 형식만 허용
-        # Member variables must be explicitly prefixed with 'self.'
-        # This regex specifically looks for 'self.variable_name: type_hint' patterns.
-        var_match = re.match(r"self\.(\w+)\s*:\s*(.+?)(?:\s*=.*)?$", line)
-
-        if var_match:
-            var_name, type_hint = var_match.groups()
-            if var_name in self.PYTHON_KEYWORDS: # Filter out Python keywords
-                return None
-            member = Member(
-                name=var_name,
-                type_hint=type_hint.strip()
-            )
-            return member, 1
-
-        return None
-
-    def _parse_parameters(self, params_str: str) -> list[str]:
-        """파라미터 문자열을 파싱하여 리스트로 반환 (Cython 문법 지원)"""
-        if not params_str.strip():
-            return []
-
-        param_list = []
-        current_param = ""
-        paren_depth = 0
-        bracket_depth = 0
-        in_string = False
-        string_char = None
-
-        for char in params_str:
-            if not in_string:
-                if char in ['"', "'"]:
-                    in_string = True
-                    string_char = char
-                elif char == "(":
-                    paren_depth += 1
-                elif char == ")":
-                    paren_depth -= 1
-                elif char == "[":
-                    bracket_depth += 1
-                elif char == "]":
-                    bracket_depth -= 1
-                elif char == "," and paren_depth == 0 and bracket_depth == 0:
-                    # 최상위 레벨의 콤마만 파라미터 구분자로 사용
-                    param = current_param.strip()
-                    if param and param != "self" and param not in ["**kwargs"]:
-                        # Cython 파라미터 정규화
-                        normalized_param = self._normalize_cython_parameter(param)
-                        param_name = normalized_param.split(":")[0].strip().split("=")[0].strip() # Extract name
-                        if param_name not in self.PYTHON_KEYWORDS: # Filter out Python keywords
-                            param_list.append(normalized_param)
-                    current_param = ""
-                    continue
-            else:
-                if char == string_char:
-                    in_string = False
-                    string_char = None
-
-            current_param += char
-
-        # 마지막 파라미터 처리
-        param = current_param.strip()
-        if param and param != "self":
-            normalized_param = self._normalize_cython_parameter(param)
-            param_name = normalized_param.split(":")[0].strip().split("=")[0].strip() # Extract name
-            if param_name not in self.PYTHON_KEYWORDS: # Filter out Python keywords
-                param_list.append(normalized_param)
-
-        return param_list
-
-    def _normalize_cython_parameter(self, param: str) -> str:
-        """
-        Cython 파라미터를 Python 스타일로 정규화
-
-        예시:
-        - "UUID4 event_id not None" -> "event_id: UUID4"
-        - "str name" -> "name: str"
-        - "int count = 0" -> "count: int = 0"
-        - "event_id: UUID4" -> "event_id: UUID4" (이미 Python 형식인 경우 그대로)
-        """
-        # 일반적인 Cython 한정자들: not None, or None, nogil, etc.
-        cython_qualifiers = [
-            "not None",
-            "or None",
-            "nogil",
-            "except *",
-            "except +",
-            "except?"
-        ]
-
-        param = param.strip()
-
-        # 이미 Python 형식인지 확인 (param: type 패턴)
-        if ":" in param:
-            for qualifier in cython_qualifiers:
-                if qualifier in param:
-                    param = param.replace(qualifier, "").strip()
-            return param
-
-        # 기본값 분리 (= 이후)
-        default_value = ""
-        if "=" in param:
-            param, default_value = param.split("=", 1)
-            param = param.strip()
-            default_value = f" = {default_value.strip()}"
-
-        for qualifier in cython_qualifiers:
-            if qualifier in param:
-                param = param.replace(qualifier, "").strip()
-
-        # 토큰들로 분할
-        tokens = param.split()
-        if len(tokens) == 0:
-            return param
-        elif len(tokens) == 1:
-            # 타입이나 이름만 있는 경우
-            return tokens[0]
-        elif len(tokens) == 2:
-            # "타입 이름" 형태 (Cython 스타일)
-            type_hint, param_name = tokens
-            return f"{param_name}: {type_hint}{default_value}"
-        else:
-            # 더 복잡한 경우는 마지막 토큰을 이름으로, 나머지를 타입으로 처리
-            param_name = tokens[-1]
-            type_hint = " ".join(tokens[:-1])
-            return f"{param_name}: {type_hint}{default_value}"
-
-    def _is_in_docstring(self, lines: list[str], line_idx: int) -> bool:
-        # 현재 라인부터 역순으로 검사하여 docstring 시작을 찾음
-        docstring_start = None
-        docstring_quote = None
-
-        for i in range(line_idx, -1, -1):
-            line = lines[i].strip()
-
-            # docstring 끝 (현재 위치에서 역순 검사)
-            if line.endswith('"""') and not line.startswith('"""'):
-                # 이미 docstring 내부라면 시작점 확인 계속
-                continue
-            elif line.endswith("'''") and not line.startswith("'''"):
-                continue
-
-            # docstring 시작 찾기
-            if '"""' in line:
-                # 한 줄 docstring인지 확인
-                if line.count('"""') >= 2:
-                    # 한 줄 docstring - 현재 라인이 이 라인이면 docstring 내부
-                    return i == line_idx
-                else:
-                    # 여러 줄 docstring 시작
-                    docstring_start = i
-                    docstring_quote = '"""'
-                    break
-            elif "'''" in line:
-                if line.count("'''") >= 2:
-                    return i == line_idx
-                else:
-                    docstring_start = i
-                    docstring_quote = "'''"
-                    break
-
-        # docstring 시작을 찾았다면, 현재 라인이 그 범위 내인지 확인
-        if docstring_start is not None:
-            # docstring 끝 찾기
-            for i in range(docstring_start + 1, len(lines)):
-                if docstring_quote in lines[i]:
-                    docstring_end = i
-                    return docstring_start < line_idx <= docstring_end
-
-        return False
-
-    def _extract_docstring(self, lines: list[str], start_idx: int) -> tuple[str | None, int]:
-        """Docstring 추출 - 통일된 메서드"""
-        if start_idx >= len(lines):
-            return None, 0
-
-        line = lines[start_idx].strip()
-
-        # docstring 시작 확인
-        quote = None
-        if line.startswith('"""'):
-            quote = '"""'
-        elif line.startswith("'''"):
-            quote = "'''"
-        else:
-            return None, 0
-
-        # 한 줄 docstring 확인
-        if line.endswith(quote) and len(line) > 6:
-            # 한 줄 docstring
-            docstring = line[3:-3].strip()
-            return docstring if docstring else None, 1
-
-        # 여러 줄 docstring
-        docstring_lines = [line[3:]]  # 첫 번째 줄에서 """ 제거
-        lines_consumed = 1
-
-        for i in range(start_idx + 1, len(lines)):
-            line_content = lines[i].rstrip()
-            if line_content.strip().endswith(quote):
-                # docstring 끝 발견
-                remaining_content = line_content.rstrip()[:-3]
-                if remaining_content:
-                    docstring_lines.append(remaining_content)
-                lines_consumed += 1
-                break
-            docstring_lines.append(line_content)
-            lines_consumed += 1
-
-        docstring = "\n".join(docstring_lines).strip()
-        return docstring if docstring else None, lines_consumed
-
-
 class PyiParser:
     """Python .pyi 스텁 파일 파서"""
 
@@ -478,9 +68,9 @@ class PyiParser:
         self.file_path = file_path
         self.file_content = self.file_path.read_text(encoding="utf-8")
         self.file_lines = self.file_content.splitlines()
-        self.classes: dict[str, ClassInfo] = {}
+        self.classes: dict[str, PyiClassInfo] = {}
 
-    def parse(self) -> dict[str, ClassInfo]:
+    def parse(self) -> dict[str, PyiClassInfo]:
         """Pyi 파일을 파싱하여 클래스 정보 추출"""
         try:
             tree = ast.parse(self.file_content)
@@ -505,7 +95,7 @@ class PyiParser:
             return line.endswith("# skip-validate")
         return False
 
-    def _parse_class(self, node: ast.ClassDef) -> ClassInfo:
+    def _parse_class(self, node: ast.ClassDef) -> PyiClassInfo:
         """클래스 노드 파싱"""
         # 베이스 클래스
         base_classes = []
@@ -515,7 +105,7 @@ class PyiParser:
             elif isinstance(base, ast.Attribute):
                 base_classes.append(ast.unparse(base))
 
-        class_info = ClassInfo(
+        class_info = PyiClassInfo(
             name=node.name,
             docstring=ast.get_docstring(node),
             base_classes=base_classes,
@@ -531,11 +121,10 @@ class PyiParser:
                 for arg in item.args.args:
                     if self._is_ignored(arg):
                         ignored_params.add(arg.arg)
-                    if arg.arg != "self":
-                        param_str = arg.arg
-                        if arg.annotation:
-                            param_str += f": {ast.unparse(arg.annotation)}"
-                        parameters.append(param_str)
+                    param_str = arg.arg
+                    if arg.annotation:
+                        param_str += f": {ast.unparse(arg.annotation)}"
+                    parameters.append(param_str)
 
                 # 기본값이 있는 파라미터 처리
                 defaults = item.args.defaults
@@ -569,7 +158,7 @@ class PyiParser:
                         if "overload" in decorator_name:
                             is_overload = True
 
-                member = Member(
+                member = PyiMember(
                     name=item.name,
                     is_method=True,
                     is_property=is_property,
@@ -587,7 +176,7 @@ class PyiParser:
 
             elif isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name):
                 # 타입 어노테이션이 있는 변수
-                member = Member(
+                member = PyiMember(
                     name=item.target.id,
                     type_hint=ast.unparse(item.annotation),
                     line_number=item.lineno,
@@ -599,7 +188,7 @@ class PyiParser:
                 # 일반 변수 할당
                 for target in item.targets:
                     if isinstance(target, ast.Name):
-                        member = Member(
+                        member = PyiMember(
                             name=target.id,
                             line_number=item.lineno,
                             ignore_validation=self._is_ignored(item),
@@ -612,11 +201,13 @@ class PyiParser:
 class PyxPyiValidator:
     """PYX와 PYI 파일 검증기"""
 
-    def __init__(self, pyx_file: Path, pyi_file: Path):
+    def __init__(self, pyx_file: Path, pyi_file: Path, include_private: bool = False, pass_warning: bool = False):
         self.pyx_file = pyx_file
         self.pyi_file = pyi_file
-        self.pyx_classes = {}
-        self.pyi_classes = {}
+        self.include_private = include_private
+        self.pass_warning = pass_warning
+        self.pyx_classes: dict[str, CythonClassInfo] = {}
+        self.pyi_classes: dict[str, PyiClassInfo] = {}
         self.errors = []
         self.warnings = []
         self.COLLECTIONS = ["list", "tuple", "set", "dict"]
@@ -636,8 +227,8 @@ class PyxPyiValidator:
 
         # 파싱
         try:
-            pyx_parser = PyxParser(self.pyx_file)
-            self.pyx_classes = pyx_parser.parse()
+            pyx_analyzer = analyze_cython_code(name=str(self.pyx_file), code_content=self.pyx_file.read_text(encoding="utf-8"))
+            self.pyx_classes = {cls.name: cls for cls in pyx_analyzer.classes}
         except Exception as e:
             self.errors.append(f"Error parsing PYX file: {e}")
             return False
@@ -679,7 +270,7 @@ class PyxPyiValidator:
                 self.pyi_classes[class_name]
             )
 
-    def _validate_class(self, pyx_class: ClassInfo, pyi_class: ClassInfo):
+    def _validate_class(self, pyx_class: CythonClassInfo, pyi_class: PyiClassInfo):
         """개별 클래스 검증"""
         class_name = pyx_class.name
 
@@ -706,37 +297,69 @@ class PyxPyiValidator:
                 self.warnings.append(f"Class '{class_name}': docstring differs ({self.pyx_file.name}:{pyx_line}, {self.pyi_file.name}:{pyi_line})")
 
         # 멤버들 검증
-        self._validate_members(class_name, pyx_class.members, pyi_class.members)
+        self._validate_members(class_name, pyx_class.methods, pyx_class.member_variables, pyi_class.members)
 
-    def _validate_members(self, class_name: str, pyx_members: dict[str, Member], pyi_members: dict[str, Member]):
+    def _validate_members(self, class_name: str, pyx_methods: list[CythonMethodInfo], pyx_member_variables: list[CythonMemberVariable], pyi_members: dict[str, PyiMember]):
         """클래스 멤버들 검증"""
-        # private 멤버 제외한 public 멤버들만 검증
-        pyx_public = {name: member for name, member in pyx_members.items()
-                     if not name.startswith("__") or name.endswith("__")}
+        pyx_combined_members = {}
+        for method in pyx_methods:
+            pyx_combined_members[method.name] = method
+        for var in pyx_member_variables:
+            pyx_combined_members[var.name] = var
 
-        pyx_member_names = set(pyx_public.keys())
+        # private 멤버 포함 여부에 따라 검증 대상 결정
+        if self.include_private:
+            pyx_members_to_validate = pyx_combined_members
+        else:
+            pyx_members_to_validate = {name: member for name, member in pyx_combined_members.items()
+                                       if not member.is_private}
+
+        pyx_member_names = set(pyx_members_to_validate.keys())
         pyi_member_names = set(pyi_members.keys())
 
         # 누락된 멤버들
         missing_members = pyx_member_names - pyi_member_names
         for member_name in missing_members:
-            member = pyx_public[member_name]
+            member = pyx_members_to_validate[member_name]
             pyx_line = member.line_number
-            if not member.is_private:  # public 멤버만 에러로 처리
-                self.errors.append(f"Class '{class_name}': member '{member_name}' missing in PYI ({self.pyx_file.name}:{pyx_line})")
+            if isinstance(member, CythonMethodInfo) and member.is_cdef:
+                self.warnings.append(f"Class '{class_name}': cdef method '{member_name}' not expected in PYI ({self.pyx_file.name}:{pyx_line})")
             else:
-                self.warnings.append(f"Class '{class_name}': private member '{member_name}' missing in PYI ({self.pyx_file.name}:{pyx_line})")
+                self.errors.append(f"Class '{class_name}': member '{member_name}' missing in PYI ({self.pyx_file.name}:{pyx_line})")
+
+        # 추가된 멤버들 (경고)
+        extra_members = pyi_member_names - pyx_member_names
+        for member_name in extra_members:
+            pyi_member = pyi_members[member_name]
+            if not pyi_member.ignore_validation:
+                self.warnings.append(f"Class '{class_name}': member '{member_name}' in PYI but not in PYX ({self.pyi_file.name}:{pyi_member.line_number})")
 
         # 공통 멤버들 검증
         common_members = pyx_member_names & pyi_member_names
         for member_name in common_members:
             if pyi_members[member_name].ignore_validation:
                 continue
-            self._validate_member(
-                class_name, member_name,
-                pyx_public[member_name],
-                pyi_members[member_name]
-            )
+            pyx_member = pyx_members_to_validate[member_name]
+            pyi_member = pyi_members[member_name]
+
+            if isinstance(pyx_member, CythonMethodInfo):
+                if pyx_member.is_cdef:
+                    # cdef 함수는 비교에서 제외
+                    continue
+                if pyi_member.is_method:
+                    self._validate_method(class_name, member_name, pyx_member, pyi_member)
+                else:
+                    self.errors.append(
+                        f"Class '{class_name}': member '{member_name}' type mismatch (method/variable) "
+                        f"(.pyx: {type(pyx_member).__name__}, .pyi: {type(pyi_member).__name__})"
+                    )
+            elif isinstance(pyx_member, CythonMemberVariable) and not pyi_member.is_method:
+                self._validate_member_variable(class_name, member_name, pyx_member, pyi_member)
+            else:
+                self.errors.append(
+                    f"Class '{class_name}': member '{member_name}' type mismatch (method/variable) "
+                    f"(.pyx: {type(pyx_member).__name__}, .pyi: {type(pyi_member).__name__})"
+                )
 
     def _normalize_parameter(self, param: str) -> tuple[str, str]:
         """파라미터를 정규화하여 이름과 타입을 분리 (Cython과 Python 모두 지원)"""
@@ -780,6 +403,7 @@ class PyxPyiValidator:
             "uint8_t": "int",
             "int8_t": "int",
             "long": "int",
+            "void": "None",
             # Add more mappings as needed
         }
 
@@ -792,94 +416,89 @@ class PyxPyiValidator:
 
         return cleaned_type
 
-    def _validate_member(self, class_name: str, member_name: str, pyx_member: Member, pyi_member: Member):
-        """개별 멤버 검증 (데코레이터 검증 추가)"""
-        pyx_line = pyx_member.line_number
+    def _validate_method(self, class_name: str, method_name: str, pyx_method: CythonMethodInfo, pyi_member: PyiMember):
+        """개별 메서드 검증 (데코레이터 검증 추가)"""
+        pyx_line = pyx_method.line_number
         pyi_line = pyi_member.line_number
 
-        # 메서드/프로퍼티 타입 검증
-        if not pyx_member.is_method and not pyi_member.is_method:
-            pyx_member_normalized_type = self._normalize_cython_type(pyx_member.type_hint) if pyx_member.type_hint else ""
-            pyi_member_normalized_type = self._normalize_cython_type(pyi_member.type_hint) if pyi_member.type_hint else ""
-
-            if pyx_member_normalized_type != pyi_member_normalized_type:
-                if not (pyx_member_normalized_type in self.COLLECTIONS and pyi_member_normalized_type.startswith(pyx_member_normalized_type)):
-                    self.errors.append(
-                        f"Class '{class_name}': member '{member_name}' type mismatch "
-                        f"(.pyx: {pyx_member.type_hint} {self.pyx_file.name}:{pyx_line}, "
-                        f".pyi: {pyi_member.type_hint} {self.pyi_file.name}:{pyi_line})"
-                    )
-
         # 데코레이터 검증
-        if pyx_member.is_property != pyi_member.is_property:
+        if pyx_method.is_property != pyi_member.is_property:
             self.errors.append(
-                f"Class '{class_name}': member '{member_name}' @property decorator mismatch "
-                f"(.pyx: {pyx_member.is_property} {self.pyx_file.name}:{pyx_line}, "
+                f"Class '{class_name}': method '{method_name}' @property decorator mismatch "
+                f"(.pyx: {pyx_method.is_property} {self.pyx_file.name}:{pyx_line}, "
                 f".pyi: {pyi_member.is_property} {self.pyi_file.name}:{pyi_line})"
             )
 
-        if pyx_member.is_staticmethod != pyi_member.is_staticmethod:
+        if pyx_method.is_static != pyi_member.is_staticmethod:
             self.errors.append(
-                f"Class '{class_name}': member '{member_name}' @staticmethod decorator mismatch "
-                f"(.pyx: {pyx_member.is_staticmethod} {self.pyx_file.name}:{pyx_line}, "
+                f"Class '{class_name}': method '{method_name}' @staticmethod decorator mismatch "
+                f"(.pyx: {pyx_method.is_static} {self.pyx_file.name}:{pyx_line}, "
                 f".pyi: {pyi_member.is_staticmethod} {self.pyi_file.name}:{pyi_line})"
             )
 
-        if pyx_member.is_classmethod != pyi_member.is_classmethod:
+        if pyx_method.is_classmethod != pyi_member.is_classmethod:
             self.errors.append(
-                f"Class '{class_name}': member '{member_name}' @classmethod decorator mismatch "
-                f"(.pyx: {pyx_member.is_classmethod} {self.pyx_file.name}:{pyx_line}, "
+                f"Class '{class_name}': method '{method_name}' @classmethod decorator mismatch "
+                f"(.pyx: {pyx_method.is_classmethod} {self.pyx_file.name}:{pyx_line}, "
                 f".pyi: {pyi_member.is_classmethod} {self.pyi_file.name}:{pyi_line})"
             )
 
-        if pyx_member.is_overload != pyi_member.is_overload:
-            self.warnings.append(
-                f"Class '{class_name}': member '{member_name}' @overload decorator mismatch "
-                f"(.pyx: {pyx_member.is_overload} {self.pyx_file.name}:{pyx_line}, "
-                f".pyi: {pyi_member.is_overload} {self.pyi_file.name}:{pyi_line})"
-            )
+        # CythonCodeAnalyzer does not directly provide @overload info, so we skip this check for now
+        # if pyx_method.is_overload != pyi_member.is_overload:
+        #     self.warnings.append(
+        #         f"Class '{class_name}': method '{method_name}' @overload decorator mismatch "
+        #         f"(.pyx: {pyx_method.is_overload} {self.pyx_file.name}, "
+        #         f".pyi: {pyi_member.is_overload} {self.pyi_file.name}:{pyi_line})"
+        #     )
 
-        # 메서드의 경우 파라미터 검증
-        if pyx_member.is_method and pyi_member.is_method:
-            self._validate_method_parameters(class_name, member_name, pyx_member, pyi_member)
+        # 파라미터 검증
+        self._validate_method_parameters(class_name, method_name, pyx_method, pyi_member)
 
-        # 타입 힌트 검증
-        if pyx_member.type_hint and not pyi_member.type_hint:
+        # 반환 타입 검증
+        pyx_return = pyx_method.return_type.strip() if pyx_method.return_type else ""
+        pyi_return = pyi_member.return_type.strip() if pyi_member.return_type else ""
+        pyx_return_normalized = self._normalize_cython_type(pyx_return)
+        pyi_return_normalized = self._normalize_cython_type(pyi_return)
+
+        if pyx_return and not pyi_return:
             self.warnings.append(
-                f"Class '{class_name}': member '{member_name}' type hint missing in PYI "
+                f"Class '{class_name}': method '{method_name}' return type missing in PYI "
                 f"({self.pyx_file.name}:{pyx_line}, {self.pyi_file.name}:{pyi_line})"
             )
-
-        # 반환 타입 검증 (메서드의 경우)
-        if pyx_member.is_method:
-            pyx_return = pyx_member.return_type.strip() if pyx_member.return_type else ""
-            pyi_return = pyi_member.return_type.strip() if pyi_member.return_type else ""
-            pyx_return_normalized = self._normalize_cython_type(pyx_return)
-            pyi_return_normalized = self._normalize_cython_type(pyi_return)
-
-            if pyx_return and not pyi_return:
-                self.warnings.append(
-                    f"Class '{class_name}': method '{member_name}' return type missing in PYI "
-                    f"({self.pyx_file.name}:{pyx_line}, {self.pyi_file.name}:{pyi_line})"
-                )
-            elif pyx_return and pyi_return and pyx_return_normalized != pyi_return_normalized:
-                self.warnings.append(
-                    f"Class '{class_name}': method '{member_name}' return type mismatch "
-                    f"(.pyx: '{pyx_return}' {self.pyx_file.name}:{pyx_line}, .pyi: '{pyi_return}' {self.pyi_file.name}:{pyi_line})"
-                )
+        elif pyx_return and pyi_return and pyx_return_normalized != pyi_return_normalized:
+            self.warnings.append(
+                f"Class '{class_name}': method '{method_name}' return type mismatch "
+                f"(.pyx: '{pyx_return}' {self.pyx_file.name}:{pyx_line}, .pyi: '{pyi_return}' {self.pyi_file.name}:{pyi_line})"
+            )
 
         # docstring 검증
-        if pyx_member.docstring and not pyi_member.docstring:
+        if pyx_method.docstring and not pyi_member.docstring:
             self.warnings.append(
-                f"Class '{class_name}': member '{member_name}' docstring missing in PYI "
+                f"Class '{class_name}': method '{method_name}' docstring missing in PYI "
                 f"({self.pyx_file.name}:{pyx_line}, {self.pyi_file.name}:{pyi_line})"
             )
 
-    def _validate_method_parameters(self, class_name: str, method_name: str, pyx_member: Member, pyi_member: Member):
-        """메서드 파라미터 검증"""
-        pyx_params = pyx_member.parameters or []
-        pyi_params = pyi_member.parameters or []
+    def _validate_member_variable(self, class_name: str, member_name: str, pyx_member: CythonMemberVariable, pyi_member: PyiMember):
+        """개별 멤버 변수 검증"""
         pyx_line = pyx_member.line_number
+        pyi_line = pyi_member.line_number
+
+        pyx_type_normalized = self._normalize_cython_type(pyx_member.type_hint) if pyx_member.type_hint else ""
+        pyi_type_normalized = self._normalize_cython_type(pyi_member.type_hint) if pyi_member.type_hint else ""
+
+        if pyx_type_normalized != pyi_type_normalized:
+            if not (pyx_type_normalized in self.COLLECTIONS and pyi_type_normalized.startswith(pyx_type_normalized)):
+                self.errors.append(
+                    f"Class '{class_name}': member '{member_name}' type mismatch "
+                    f"(.pyx: {pyx_member.type_hint} {self.pyx_file.name}:{pyx_line}, "
+                    f".pyi: {pyi_member.type_hint} {self.pyi_file.name}:{pyi_line})"
+                )
+
+    def _validate_method_parameters(self, class_name: str, method_name: str, pyx_method: CythonMethodInfo, pyi_member: PyiMember):
+        """메서드 파라미터 검증"""
+        pyx_params = pyx_method.args or []
+        pyi_params = pyi_member.parameters or []
+        pyx_line = pyx_method.line_number
         pyi_line = pyi_member.line_number
 
         # 파라미터 개수 검증
@@ -891,17 +510,12 @@ class PyxPyiValidator:
             return
 
         # 각 파라미터 검증
-        for i, (pyx_param, pyi_param) in enumerate(zip(pyx_params, pyi_params)):
-            pyx_name, pyx_type = self._normalize_parameter(pyx_param)
-            pyi_name, pyi_type = self._normalize_parameter(pyi_param)
+        for i, (pyx_param_str, pyi_param_str) in enumerate(zip(pyx_params, pyi_params)):
+            pyx_name, pyx_type = self._normalize_parameter(pyx_param_str)
+            pyi_name, pyi_type = self._normalize_parameter(pyi_param_str)
 
             if pyi_name in pyi_member.ignored_params:
                 continue
-
-            # When Cython type is attached in pyx_name, dettach it
-            pyx_name_split = pyx_name.split()
-            if len(pyx_name_split) > 1:
-                pyx_name = pyx_name_split[-1]
 
             # 파라미터 이름 검증
             if pyx_name != pyi_name:
@@ -937,28 +551,39 @@ class PyxPyiValidator:
             for error in self.errors:
                 print(f"  • {error}")
 
-        if self.warnings:
+        if self.warnings and not self.pass_warning:
             print(f"\n⚠️  WARNINGS ({len(self.warnings)}):")
             for warning in self.warnings:
                 print(f"  • {warning}")
 
-        print(f"\n* {len(self.errors)} errors, {len(self.warnings)} warnings")
+        if self.pass_warning:
+            print(f"\n* {len(self.errors)} errors, {len(self.warnings)} warnings (warnings suppressed)")
+        else:
+            print(f"\n* {len(self.errors)} errors, {len(self.warnings)} warnings")
 
 
 def main():
     """메인 함수"""
-    if len(sys.argv) != 3:
-        print(f"Usage: python {sys.argv[0]} <pyx_file> <pyi_file>")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(description="Validate Cython PYX files against PYI stub files.")
+    parser.add_argument("pyx_file", type=Path, help="Path to the .pyx file")
+    parser.add_argument("pyi_file", type=Path, help="Path to the .pyi stub file")
+    parser.add_argument(
+        "-p", "--include-private",
+        action="store_true",
+        help="Include private members (starting with '_') in validation"
+    )
+    parser.add_argument(
+        "-w", "--pass-warning",
+        action="store_true",
+        help="Do not print warnings and exit with success even if warnings exist"
+    )
+    args = parser.parse_args()
 
-    pyx_file = Path(sys.argv[1])
-    pyi_file = Path(sys.argv[2])
-
-    validator = PyxPyiValidator(pyx_file, pyi_file)
+    validator = PyxPyiValidator(args.pyx_file, args.pyi_file, args.include_private, args.pass_warning)
     success = validator.validate()
     validator.print_results()
 
-    sys.exit(0 if success else 1)
+    sys.exit(0 if success and (args.pass_warning or not validator.warnings) else 1)
 
 
 if __name__ == "__main__":
