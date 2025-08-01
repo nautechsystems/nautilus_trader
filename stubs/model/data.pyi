@@ -3,14 +3,6 @@ import numpy as np
 
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.data import Data
-from nautilus_trader.core.nautilus_pyo3 import AggregationSource, OrderSide
-from nautilus_trader.core.nautilus_pyo3 import AggressorSide
-from nautilus_trader.core.nautilus_pyo3 import BarAggregation
-from nautilus_trader.core.nautilus_pyo3 import BookAction
-from nautilus_trader.core.nautilus_pyo3 import InstrumentCloseType
-from nautilus_trader.core.nautilus_pyo3 import InstrumentId
-from nautilus_trader.core.nautilus_pyo3 import MarketStatusAction
-from nautilus_trader.core.nautilus_pyo3 import PriceType
 from nautilus_trader.model.objects import Price, Quantity
 from nautilus_trader.model.identifiers import TradeId
 

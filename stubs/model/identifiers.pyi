@@ -1,6 +1,3 @@
-from nautilus_trader.core.nautilus_pyo3 import InstrumentId
-from nautilus_trader.core.nautilus_pyo3 import Symbol
-from nautilus_trader.core.nautilus_pyo3 import Venue
 
 class Identifier:
     """

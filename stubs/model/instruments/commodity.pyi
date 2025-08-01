@@ -1,14 +1,6 @@
 from decimal import Decimal
 from typing import Any
 
-from nautilus_trader.core.nautilus_pyo3 import AssetClass
-from nautilus_trader.core.nautilus_pyo3 import Currency
-from nautilus_trader.core.nautilus_pyo3 import InstrumentId
-from nautilus_trader.core.nautilus_pyo3 import Money
-from nautilus_trader.core.nautilus_pyo3 import Price
-from nautilus_trader.core.nautilus_pyo3 import Quantity
-from nautilus_trader.core.nautilus_pyo3 import Symbol
-from nautilus_trader.core.nautilus_pyo3 import Instrument
 
 class Commodity(Instrument):
     """

@@ -1,8 +1,3 @@
-from nautilus_trader.core.nautilus_pyo3 import Bar
-from nautilus_trader.core.nautilus_pyo3 import MovingAverage
-from nautilus_trader.core.nautilus_pyo3 import PriceType
-from nautilus_trader.core.nautilus_pyo3 import QuoteTick
-from nautilus_trader.core.nautilus_pyo3 import TradeTick
 from typing import ClassVar
 
 

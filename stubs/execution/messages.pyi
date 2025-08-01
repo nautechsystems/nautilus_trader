@@ -1,22 +1,6 @@
 from datetime import datetime
 from typing import Any
 
-from nautilus_trader.core.nautilus_pyo3 import UUID4
-from nautilus_trader.core.nautilus_pyo3 import ClientId
-from nautilus_trader.core.nautilus_pyo3 import ClientOrderId
-from nautilus_trader.core.nautilus_pyo3 import Command
-from nautilus_trader.core.nautilus_pyo3 import ExecAlgorithmId
-from nautilus_trader.core.nautilus_pyo3 import InstrumentId
-from nautilus_trader.core.nautilus_pyo3 import LogLevel
-from nautilus_trader.core.nautilus_pyo3 import Order
-from nautilus_trader.core.nautilus_pyo3 import OrderList
-from nautilus_trader.core.nautilus_pyo3 import OrderSide
-from nautilus_trader.core.nautilus_pyo3 import PositionId
-from nautilus_trader.core.nautilus_pyo3 import Price
-from nautilus_trader.core.nautilus_pyo3 import Quantity
-from nautilus_trader.core.nautilus_pyo3 import StrategyId
-from nautilus_trader.core.nautilus_pyo3 import TraderId
-from nautilus_trader.core.nautilus_pyo3 import VenueOrderId
 
 class ExecutionReportCommand(Command):
     """

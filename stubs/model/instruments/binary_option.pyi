@@ -5,8 +5,6 @@ from typing import Any
 import pandas as pd
 import pytz
 
-from nautilus_trader.core.nautilus_pyo3 import AssetClass, Currency, InstrumentId, Price, Quantity, Symbol
-from nautilus_trader.core.nautilus_pyo3 import Instrument
 
 class BinaryOption(Instrument):
     """

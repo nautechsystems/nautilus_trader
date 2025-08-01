@@ -1,7 +1,5 @@
 import numpy as np
 
-from nautilus_trader.core.nautilus_pyo3 import Price
-from nautilus_trader.core.nautilus_pyo3 import TickScheme
 
 class TieredTickScheme(TickScheme):
     """

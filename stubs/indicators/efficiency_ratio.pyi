@@ -1,9 +1,6 @@
 from collections import deque
 from typing import ClassVar
 
-from nautilus_trader.core.nautilus_pyo3 import Bar, PriceType
-from nautilus_trader.core.nautilus_pyo3 import EfficiencyRatio as EfficiencyRatioBase
-from nautilus_trader.core.nautilus_pyo3 import Indicator
 
 
 class EfficiencyRatio(Indicator):

@@ -1,7 +1,6 @@
 from collections.abc import Callable
 from typing import Any
 
-from nautilus_trader.core.nautilus_pyo3 import UUID4
 
 class Command:
     """

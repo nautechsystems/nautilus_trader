@@ -1,11 +1,5 @@
 from typing import Any
 
-from nautilus_trader.core.nautilus_pyo3 import UUID4
-from nautilus_trader.core.nautilus_pyo3 import AccountBalance
-from nautilus_trader.core.nautilus_pyo3 import AccountId
-from nautilus_trader.core.nautilus_pyo3 import AccountType
-from nautilus_trader.core.nautilus_pyo3 import Currency
-from nautilus_trader.core.nautilus_pyo3 import MarginBalance
 from stubs.core.message import Event
 
 class AccountState(Event):

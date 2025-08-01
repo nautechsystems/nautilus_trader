@@ -1,9 +1,5 @@
 from collections import deque
 
-from nautilus_trader.core.nautilus_pyo3 import Bar
-from nautilus_trader.core.nautilus_pyo3 import MovingAverageType
-from nautilus_trader.core.nautilus_pyo3 import QuoteTick
-from nautilus_trader.core.nautilus_pyo3 import TradeTick
 from nautilus_trader.indicators.base.indicator import Indicator
 
 

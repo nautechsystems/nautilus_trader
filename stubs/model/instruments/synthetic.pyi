@@ -1,4 +1,3 @@
-from nautilus_trader.core.nautilus_pyo3 import Data, InstrumentId, Price, Symbol, Venue
 from typing import Any
 
 class SyntheticInstrument(Data):

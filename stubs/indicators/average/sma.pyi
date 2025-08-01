@@ -1,11 +1,5 @@
 from collections import deque
 import numpy as np
-from nautilus_trader.core.nautilus_pyo3 import Bar
-from nautilus_trader.core.nautilus_pyo3 import MovingAverage
-from nautilus_trader.core.nautilus_pyo3 import PriceType
-from nautilus_trader.core.nautilus_pyo3 import QuoteTick
-from nautilus_trader.core.nautilus_pyo3 import TradeTick
-from nautilus_trader.core.nautilus_pyo3 import Price
 class SimpleMovingAverage(MovingAverage):
     """
     An indicator which calculates a simple moving average across a rolling window.

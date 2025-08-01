@@ -1,8 +1,5 @@
 import decimal
 
-from nautilus_trader.core.nautilus_pyo3 import Currency
-from nautilus_trader.core.nautilus_pyo3 import CurrencyType
-from nautilus_trader.core.nautilus_pyo3 import InstrumentId
 
 QUANTITY_MAX: float = ...
 QUANTITY_MIN: float = ...

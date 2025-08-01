@@ -1,4 +1,3 @@
-from nautilus_trader.core.nautilus_pyo3 import MovingAverageType
 from stubs.indicators.average.moving_average import MovingAverage
 
 class MovingAverageFactory:

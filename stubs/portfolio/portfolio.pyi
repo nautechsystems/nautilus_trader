@@ -2,19 +2,6 @@ from decimal import Decimal
 from typing import Any
 
 from nautilus_trader.analysis.analyzer import PortfolioAnalyzer
-from nautilus_trader.core.nautilus_pyo3 import Account
-from nautilus_trader.core.nautilus_pyo3 import AccountState
-from nautilus_trader.core.nautilus_pyo3 import Bar
-from nautilus_trader.core.nautilus_pyo3 import Currency
-from nautilus_trader.core.nautilus_pyo3 import InstrumentId
-from nautilus_trader.core.nautilus_pyo3 import MessageBus
-from nautilus_trader.core.nautilus_pyo3 import Money
-from nautilus_trader.core.nautilus_pyo3 import OrderEvent
-from nautilus_trader.core.nautilus_pyo3 import PositionEvent
-from nautilus_trader.core.nautilus_pyo3 import PositionId
-from nautilus_trader.core.nautilus_pyo3 import Price
-from nautilus_trader.core.nautilus_pyo3 import QuoteTick
-from nautilus_trader.core.nautilus_pyo3 import Venue
 from nautilus_trader.portfolio.config import PortfolioConfig
 from stubs.accounting.manager import AccountsManager
 from stubs.cache.base import CacheFacade

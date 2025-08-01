@@ -1,5 +1,4 @@
 from typing import ClassVar
-from nautilus_trader.core.nautilus_pyo3 import Bar, EfficiencyRatio, MovingAverage, PriceType, QuoteTick, TradeTick
 
 class AdaptiveMovingAverage(MovingAverage):
     """

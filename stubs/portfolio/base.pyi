@@ -1,10 +1,5 @@
 from typing import Any
 
-from nautilus_trader.core.nautilus_pyo3 import Account
-from nautilus_trader.core.nautilus_pyo3 import InstrumentId
-from nautilus_trader.core.nautilus_pyo3 import Money
-from nautilus_trader.core.nautilus_pyo3 import Price
-from nautilus_trader.core.nautilus_pyo3 import Venue
 
 class PortfolioFacade:
     """

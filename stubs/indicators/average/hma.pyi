@@ -5,7 +5,6 @@ from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.objects import Price
-from nautilus_trader.core.nautilus_pyo3 import PriceType
 
 class HullMovingAverage(MovingAverage):
     """

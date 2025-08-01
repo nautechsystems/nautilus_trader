@@ -2,25 +2,6 @@ from datetime import datetime
 from typing import Any, ClassVar
 
 from nautilus_trader.cache.config import CacheConfig
-from nautilus_trader.core.nautilus_pyo3 import UUID4, VenueOrderId
-from nautilus_trader.core.nautilus_pyo3 import Account
-from nautilus_trader.core.nautilus_pyo3 import AccountId
-from nautilus_trader.core.nautilus_pyo3 import Actor
-from nautilus_trader.core.nautilus_pyo3 import ClientId
-from nautilus_trader.core.nautilus_pyo3 import ClientOrderId
-from nautilus_trader.core.nautilus_pyo3 import ComponentId
-from nautilus_trader.core.nautilus_pyo3 import Currency
-from nautilus_trader.core.nautilus_pyo3 import Instrument
-from nautilus_trader.core.nautilus_pyo3 import InstrumentId
-from nautilus_trader.core.nautilus_pyo3 import Money
-from nautilus_trader.core.nautilus_pyo3 import Order
-from nautilus_trader.core.nautilus_pyo3 import Position
-from nautilus_trader.core.nautilus_pyo3 import PositionId
-from nautilus_trader.core.nautilus_pyo3 import Serializer
-from nautilus_trader.core.nautilus_pyo3 import Strategy
-from nautilus_trader.core.nautilus_pyo3 import StrategyId
-from nautilus_trader.core.nautilus_pyo3 import SyntheticInstrument
-from nautilus_trader.core.nautilus_pyo3 import TraderId
 
 class CacheDatabaseAdapter(CacheDatabaseFacade):
     """

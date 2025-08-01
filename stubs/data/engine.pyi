@@ -1,11 +1,5 @@
 from typing import Any, Callable, ClassVar, Union, Type, Tuple
 
-from nautilus_trader.core.nautilus_pyo3 import UUID4, BarType, MessageBus, OrderBook, OrderBookDelta, SyntheticInstrument
-from nautilus_trader.core.nautilus_pyo3 import ClientId
-from nautilus_trader.core.nautilus_pyo3 import Data
-from nautilus_trader.core.nautilus_pyo3 import DataType
-from nautilus_trader.core.nautilus_pyo3 import InstrumentId
-from nautilus_trader.core.nautilus_pyo3 import Venue
 from nautilus_trader.data.config import DataEngineConfig
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
 from nautilus_trader.core.datetime import DateTime
@@ -13,7 +7,6 @@ from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.data import Bar, QuoteTick, TradeTick, MarkPriceUpdate, IndexPriceUpdate, InstrumentStatus, InstrumentClose, CustomData, OrderBookDepth10, OrderBookDeltas
 from nautilus_trader.data.messages import RequestInstruments, RequestInstrument, RequestOrderBookSnapshot, RequestQuoteTicks, RequestTradeTicks, RequestBars, DataCommand, RequestData, DataResponse
 from nautilus_trader.data.messages import SubscribeData, UnsubscribeData, SubscribeInstruments, UnsubscribeInstruments, SubscribeInstrument, UnsubscribeInstrument, SubscribeOrderBook, UnsubscribeOrderBook, SubscribeQuoteTicks, UnsubscribeQuoteTicks, SubscribeTradeTicks, UnsubscribeTradeTicks, SubscribeMarkPrices, UnsubscribeMarkPrices, SubscribeIndexPrices, UnsubscribeIndexPrices, SubscribeBars, UnsubscribeBars, SubscribeInstrumentStatus, UnsubscribeInstrumentStatus, SubscribeInstrumentClose, UnsubscribeInstrumentClose
-from nautilus_trader.core.nautilus_pyo3 import TimeEvent
 from nautilus_trader.model.enums import BookType # Added missing import
 from nautilus_trader.common.component import Clock, Component # Updated to direct import
 from nautilus_trader.data.client import DataClient, MarketDataClient # Updated to direct import

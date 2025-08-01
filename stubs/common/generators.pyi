@@ -1,10 +1,5 @@
 from typing import ClassVar
 
-from nautilus_trader.core.nautilus_pyo3 import ClientOrderId
-from nautilus_trader.core.nautilus_pyo3 import OrderListId
-from nautilus_trader.core.nautilus_pyo3 import PositionId
-from nautilus_trader.core.nautilus_pyo3 import StrategyId
-from nautilus_trader.core.nautilus_pyo3 import TraderId
 from stubs.common.component import Clock
 
 class IdentifierGenerator:

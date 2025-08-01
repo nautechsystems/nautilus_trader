@@ -2,13 +2,6 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from nautilus_trader.core.nautilus_pyo3 import BetSide
-from nautilus_trader.core.nautilus_pyo3 import Instrument
-from nautilus_trader.core.nautilus_pyo3 import Money
-from nautilus_trader.core.nautilus_pyo3 import OrderSide
-from nautilus_trader.core.nautilus_pyo3 import Price
-from nautilus_trader.core.nautilus_pyo3 import Quantity
-from nautilus_trader.core.nautilus_pyo3 import Symbol
 
 class BettingInstrument(Instrument):
     """

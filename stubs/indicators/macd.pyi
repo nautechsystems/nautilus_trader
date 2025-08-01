@@ -1,6 +1,4 @@
 from nautilus_trader.indicators.average.moving_average import MovingAverageType
-from nautilus_trader.core.nautilus_pyo3 import Bar, Price, QuoteTick, TradeTick
-from nautilus_trader.core.nautilus_pyo3 import PriceType
 from nautilus_trader.indicators.base.indicator import Indicator
 
 

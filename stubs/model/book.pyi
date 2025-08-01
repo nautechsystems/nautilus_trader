@@ -1,17 +1,3 @@
-from nautilus_trader.core.nautilus_pyo3 import BookAction
-from nautilus_trader.core.nautilus_pyo3 import BookOrder
-from nautilus_trader.core.nautilus_pyo3 import BookType
-from nautilus_trader.core.nautilus_pyo3 import Data
-from nautilus_trader.core.nautilus_pyo3 import InstrumentId
-from nautilus_trader.core.nautilus_pyo3 import Order
-from nautilus_trader.core.nautilus_pyo3 import OrderBookDelta
-from nautilus_trader.core.nautilus_pyo3 import OrderBookDeltas
-from nautilus_trader.core.nautilus_pyo3 import OrderBookDepth10
-from nautilus_trader.core.nautilus_pyo3 import OrderSide
-from nautilus_trader.core.nautilus_pyo3 import Price
-from nautilus_trader.core.nautilus_pyo3 import Quantity
-from nautilus_trader.core.nautilus_pyo3 import QuoteTick
-from nautilus_trader.core.nautilus_pyo3 import TradeTick
 
 
 class OrderBook(Data):

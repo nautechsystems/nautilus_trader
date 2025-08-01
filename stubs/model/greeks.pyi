@@ -4,8 +4,6 @@ from typing import Literal
 from typing import overload
 from typing import Union
 
-from nautilus_trader.core.nautilus_pyo3 import MessageBus, PositionSide, black_scholes_greeks
-from nautilus_trader.core.nautilus_pyo3 import imply_vol_and_greeks
 from nautilus_trader.model.enums import InstrumentClass
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.greeks_data import GreeksData

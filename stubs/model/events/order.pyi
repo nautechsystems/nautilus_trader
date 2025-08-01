@@ -1,26 +1,4 @@
 from typing import Any
-from nautilus_trader.core.nautilus_pyo3 import AccountId
-from nautilus_trader.core.nautilus_pyo3 import ClientOrderId
-from nautilus_trader.core.nautilus_pyo3 import ContingencyType
-from nautilus_trader.core.nautilus_pyo3 import Event
-from nautilus_trader.core.nautilus_pyo3 import ExecAlgorithmId
-from nautilus_trader.core.nautilus_pyo3 import InstrumentId
-from nautilus_trader.core.nautilus_pyo3 import LiquiditySide
-from nautilus_trader.core.nautilus_pyo3 import Money
-from nautilus_trader.core.nautilus_pyo3 import OrderListId
-from nautilus_trader.core.nautilus_pyo3 import OrderSide
-from nautilus_trader.core.nautilus_pyo3 import OrderType
-from nautilus_trader.core.nautilus_pyo3 import PositionId
-from nautilus_trader.core.nautilus_pyo3 import Price
-from nautilus_trader.core.nautilus_pyo3 import Quantity
-from nautilus_trader.core.nautilus_pyo3 import StrategyId
-from nautilus_trader.core.nautilus_pyo3 import TimeInForce
-from nautilus_trader.core.nautilus_pyo3 import TradeId
-from nautilus_trader.core.nautilus_pyo3 import TraderId
-from nautilus_trader.core.nautilus_pyo3 import TriggerType
-from nautilus_trader.core.nautilus_pyo3 import UUID4
-from nautilus_trader.core.nautilus_pyo3 import VenueOrderId
-from nautilus_trader.core.nautilus_pyo3 import Currency
 
 class OrderEvent(Event):
     """

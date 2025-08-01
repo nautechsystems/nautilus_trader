@@ -2,13 +2,6 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
-from nautilus_trader.core.nautilus_pyo3 import UUID4
-from nautilus_trader.core.nautilus_pyo3 import BarType
-from nautilus_trader.core.nautilus_pyo3 import BookType
-from nautilus_trader.core.nautilus_pyo3 import ClientId
-from nautilus_trader.core.nautilus_pyo3 import DataType
-from nautilus_trader.core.nautilus_pyo3 import InstrumentId
-from nautilus_trader.core.nautilus_pyo3 import Venue
 from stubs.core.message import Command
 from stubs.core.message import Request
 from stubs.core.message import Response

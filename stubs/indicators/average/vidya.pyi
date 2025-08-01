@@ -1,11 +1,5 @@
 from nautilus_trader.indicators.average.ma_factory import MovingAverageType
-from nautilus_trader.core.nautilus_pyo3 import PriceType
 from nautilus_trader.indicators.average.moving_average import MovingAverage
-from nautilus_trader.core.nautilus_pyo3 import ChandeMomentumOscillator
-from nautilus_trader.core.nautilus_pyo3 import Bar
-from nautilus_trader.core.nautilus_pyo3 import QuoteTick
-from nautilus_trader.core.nautilus_pyo3 import TradeTick
-from nautilus_trader.core.nautilus_pyo3 import Price
 
 
 class VariableIndexDynamicAverage(MovingAverage):

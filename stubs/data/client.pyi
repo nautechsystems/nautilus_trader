@@ -1,17 +1,6 @@
 from typing import Any
 
 from nautilus_trader.common.config import NautilusConfig
-from nautilus_trader.core.nautilus_pyo3 import Bar
-from nautilus_trader.core.nautilus_pyo3 import BarType
-from nautilus_trader.core.nautilus_pyo3 import ClientId
-from nautilus_trader.core.nautilus_pyo3 import Component  # Base class for DataClient and MarketDataClient
-from nautilus_trader.core.nautilus_pyo3 import Data
-from nautilus_trader.core.nautilus_pyo3 import DataType
-from nautilus_trader.core.nautilus_pyo3 import Instrument
-from nautilus_trader.core.nautilus_pyo3 import InstrumentId
-from nautilus_trader.core.nautilus_pyo3 import MessageBus
-from nautilus_trader.core.nautilus_pyo3 import UUID4
-from nautilus_trader.core.nautilus_pyo3 import Venue
 from stubs.cache.cache import Cache
 from stubs.common.component import Clock
 from stubs.data.messages import RequestBars, RequestData, RequestInstrument, RequestInstruments, RequestOrderBookSnapshot, RequestQuoteTicks, RequestTradeTicks, SubscribeBars, SubscribeData, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices, SubscribeOrderBook, SubscribeQuoteTicks, SubscribeTradeTicks, UnsubscribeBars, UnsubscribeData, UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeOrderBook, UnsubscribeQuoteTicks, UnsubscribeTradeTicks

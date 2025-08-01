@@ -1,6 +1,5 @@
 from nautilus_trader.indicators.average.ma_factory import MovingAverageFactory
 from nautilus_trader.indicators.average.moving_average import MovingAverageType
-from nautilus_trader.core.nautilus_pyo3 import AverageTrueRange
 from nautilus_trader.model.data import Bar
 from nautilus_trader.indicators.base.indicator import Indicator
 

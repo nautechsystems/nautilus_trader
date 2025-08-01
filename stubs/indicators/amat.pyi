@@ -1,7 +1,5 @@
 from typing import ClassVar
 
-from nautilus_trader.core.nautilus_pyo3 import Bar
-from nautilus_trader.core.nautilus_pyo3 import MovingAverageType
 from stubs.indicators.base.indicator import Indicator
 
 class ArcherMovingAveragesTrends(Indicator):

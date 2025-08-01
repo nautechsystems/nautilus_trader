@@ -2,26 +2,6 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from nautilus_trader.core.nautilus_pyo3 import ContingencyType
-from nautilus_trader.core.nautilus_pyo3 import ExecAlgorithmId
-from nautilus_trader.core.nautilus_pyo3 import InstrumentId
-from nautilus_trader.core.nautilus_pyo3 import LimitIfTouchedOrder
-from nautilus_trader.core.nautilus_pyo3 import LimitOrder
-from nautilus_trader.core.nautilus_pyo3 import MarketIfTouchedOrder
-from nautilus_trader.core.nautilus_pyo3 import MarketOrder
-from nautilus_trader.core.nautilus_pyo3 import MarketToLimitOrder
-from nautilus_trader.core.nautilus_pyo3 import Order
-from nautilus_trader.core.nautilus_pyo3 import OrderSide
-from nautilus_trader.core.nautilus_pyo3 import OrderType
-from nautilus_trader.core.nautilus_pyo3 import Price
-from nautilus_trader.core.nautilus_pyo3 import Quantity
-from nautilus_trader.core.nautilus_pyo3 import StopLimitOrder
-from nautilus_trader.core.nautilus_pyo3 import StopMarketOrder
-from nautilus_trader.core.nautilus_pyo3 import TimeInForce
-from nautilus_trader.core.nautilus_pyo3 import TrailingOffsetType
-from nautilus_trader.core.nautilus_pyo3 import TrailingStopLimitOrder
-from nautilus_trader.core.nautilus_pyo3 import TrailingStopMarketOrder
-from nautilus_trader.core.nautilus_pyo3 import TriggerType
 from nautilus_trader.model.orders.list import OrderList
 from nautilus_trader.model.identifiers import ClientOrderId, OrderListId, StrategyId, TraderId
 from nautilus_trader.cache.base import CacheFacade

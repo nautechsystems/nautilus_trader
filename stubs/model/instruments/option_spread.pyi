@@ -1,14 +1,6 @@
 from decimal import Decimal
 import pandas as pd
 import pytz
-from nautilus_trader.core.nautilus_pyo3 import AssetClass
-from nautilus_trader.core.nautilus_pyo3 import Currency
-from nautilus_trader.core.nautilus_pyo3 import Instrument
-from nautilus_trader.core.nautilus_pyo3 import InstrumentId
-from nautilus_trader.core.nautilus_pyo3 import Price
-from nautilus_trader.core.nautilus_pyo3 import Quantity
-from nautilus_trader.core.nautilus_pyo3 import Symbol
-from nautilus_trader.core.nautilus_pyo3 import OptionSpread as NautilusPyO3OptionSpread
 from typing import Any
 class OptionSpread(Instrument):
     """

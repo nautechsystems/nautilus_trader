@@ -2,8 +2,6 @@ from collections import deque
 import pandas as pd
 import datetime
 
-from nautilus_trader.core.nautilus_pyo3 import Bar
-from nautilus_trader.core.nautilus_pyo3 import Indicator
 
 
 class Swings(Indicator):

@@ -1,10 +1,5 @@
 from collections.abc import Callable
 
-from nautilus_trader.core.nautilus_pyo3 import ClientOrderId
-from nautilus_trader.core.nautilus_pyo3 import InstrumentId
-from nautilus_trader.core.nautilus_pyo3 import Order
-from nautilus_trader.core.nautilus_pyo3 import OrderSide
-from nautilus_trader.core.nautilus_pyo3 import Price
 
 class MatchingCore:
     """

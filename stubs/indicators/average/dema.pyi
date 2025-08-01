@@ -1,7 +1,3 @@
-from nautilus_trader.core.nautilus_pyo3 import Bar, ExponentialMovingAverage
-from nautilus_trader.core.nautilus_pyo3 import PriceType
-from nautilus_trader.core.nautilus_pyo3 import QuoteTick
-from nautilus_trader.core.nautilus_pyo3 import TradeTick
 from stubs.indicators.average.moving_average import MovingAverage
 
 class DoubleExponentialMovingAverage(MovingAverage):

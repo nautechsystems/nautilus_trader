@@ -1,5 +1,3 @@
-from nautilus_trader.core.nautilus_pyo3 import Bar
-from nautilus_trader.core.nautilus_pyo3 import MovingAverageType
 from stubs.indicators.average.moving_average import MovingAverage
 from stubs.indicators.base.indicator import Indicator
 

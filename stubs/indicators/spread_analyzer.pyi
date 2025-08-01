@@ -1,7 +1,5 @@
 from collections import deque
 
-from nautilus_trader.core.nautilus_pyo3 import InstrumentId
-from nautilus_trader.core.nautilus_pyo3 import QuoteTick
 from nautilus_trader.indicators.base.indicator import Indicator
 
 

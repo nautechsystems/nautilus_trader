@@ -3,15 +3,6 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from nautilus_trader.core.nautilus_pyo3 import Bar
-from nautilus_trader.core.nautilus_pyo3 import BarType
-from nautilus_trader.core.nautilus_pyo3 import Instrument
-from nautilus_trader.core.nautilus_pyo3 import OrderBookDelta
-from nautilus_trader.core.nautilus_pyo3 import QuoteTick
-from nautilus_trader.core.nautilus_pyo3 import TradeTick
-from nautilus_trader.core.nautilus_pyo3 import AggressorSide
-from nautilus_trader.core.nautilus_pyo3 import OrderSide
-from nautilus_trader.core.nautilus_pyo3 import BookAction
 
 
 BAR_PRICES: tuple[str, str, str, str]

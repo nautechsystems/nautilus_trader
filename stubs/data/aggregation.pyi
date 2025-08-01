@@ -5,15 +5,6 @@ from decimal import Decimal
 
 import pandas as pd
 
-from nautilus_trader.core.nautilus_pyo3 import Bar
-from nautilus_trader.core.nautilus_pyo3 import BarType
-from nautilus_trader.core.nautilus_pyo3 import Clock
-from nautilus_trader.core.nautilus_pyo3 import Instrument
-from nautilus_trader.core.nautilus_pyo3 import Price
-from nautilus_trader.core.nautilus_pyo3 import Quantity
-from nautilus_trader.core.nautilus_pyo3 import QuoteTick
-from nautilus_trader.core.nautilus_pyo3 import TradeTick
-from nautilus_trader.core.nautilus_pyo3 import TimeEvent
 from stubs.common.component import Logger
 
 class BarBuilder:

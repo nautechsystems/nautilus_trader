@@ -1,8 +1,6 @@
 from collections import deque
 from nautilus_trader.indicators.average.ma_factory import MovingAverageType
 from nautilus_trader.indicators.average.ma_factory import MovingAverageFactory
-from nautilus_trader.core.nautilus_pyo3 import Bar
-from nautilus_trader.core.nautilus_pyo3 import Indicator
 import numpy as np
 
 

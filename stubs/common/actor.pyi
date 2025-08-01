@@ -7,27 +7,6 @@ from typing import Any
 from nautilus_trader.common.config import ActorConfig
 from nautilus_trader.common.config import ImportableActorConfig
 from nautilus_trader.common.executor import ActorExecutor, TaskId
-from nautilus_trader.core.nautilus_pyo3 import UUID4
-from nautilus_trader.core.nautilus_pyo3 import Bar
-from nautilus_trader.core.nautilus_pyo3 import BarType
-from nautilus_trader.core.nautilus_pyo3 import BookType
-from nautilus_trader.core.nautilus_pyo3 import ClientId
-from nautilus_trader.core.nautilus_pyo3 import Data
-from nautilus_trader.core.nautilus_pyo3 import DataType
-from nautilus_trader.core.nautilus_pyo3 import Event
-from nautilus_trader.core.nautilus_pyo3 import IndexPriceUpdate
-from nautilus_trader.core.nautilus_pyo3 import Instrument
-from nautilus_trader.core.nautilus_pyo3 import InstrumentClose
-from nautilus_trader.core.nautilus_pyo3 import InstrumentId
-from nautilus_trader.core.nautilus_pyo3 import InstrumentStatus
-from nautilus_trader.core.nautilus_pyo3 import MarkPriceUpdate
-from nautilus_trader.core.nautilus_pyo3 import OrderBook
-from nautilus_trader.core.nautilus_pyo3 import OrderBookDeltas
-from nautilus_trader.core.nautilus_pyo3 import OrderBookDepth10
-from nautilus_trader.core.nautilus_pyo3 import QuoteTick
-from nautilus_trader.core.nautilus_pyo3 import SyntheticInstrument
-from nautilus_trader.core.nautilus_pyo3 import TradeTick
-from nautilus_trader.core.nautilus_pyo3 import Venue
 from nautilus_trader.cache.base import CacheFacade
 from nautilus_trader.common.component import Clock, MessageBus
 from nautilus_trader.portfolio.base import PortfolioFacade

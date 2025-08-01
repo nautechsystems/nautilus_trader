@@ -1,7 +1,5 @@
 from typing import Any
 
-from nautilus_trader.core.nautilus_pyo3 import Order
-from nautilus_trader.core.nautilus_pyo3 import OrderInitialized
 
 class OrderUnpacker:
     """

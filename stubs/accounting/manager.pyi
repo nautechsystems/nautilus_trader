@@ -1,14 +1,6 @@
 from typing import Any
 
 from nautilus_trader.cache.base import CacheFacade
-from nautilus_trader.core.nautilus_pyo3 import Account
-from nautilus_trader.core.nautilus_pyo3 import AccountState
-from nautilus_trader.core.nautilus_pyo3 import Clock
-from nautilus_trader.core.nautilus_pyo3 import Instrument
-from nautilus_trader.core.nautilus_pyo3 import Logger
-from nautilus_trader.core.nautilus_pyo3 import MarginAccount
-from nautilus_trader.core.nautilus_pyo3 import OrderFilled
-from nautilus_trader.core.nautilus_pyo3 import Position
 
 class AccountsManager:
     """

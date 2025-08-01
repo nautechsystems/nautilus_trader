@@ -7,13 +7,6 @@ from typing import Any, ClassVar
 from nautilus_trader.common.config import NautilusConfig
 from nautilus_trader.common.enums import ComponentTrigger
 from nautilus_trader.core import nautilus_pyo3
-from nautilus_trader.core.nautilus_pyo3 import UUID4, ComponentState
-from nautilus_trader.core.nautilus_pyo3 import ComponentId
-from nautilus_trader.core.nautilus_pyo3 import Identifier
-from nautilus_trader.core.nautilus_pyo3 import LogColor
-from nautilus_trader.core.nautilus_pyo3 import LogLevel
-from nautilus_trader.core.nautilus_pyo3 import MessageBusListener
-from nautilus_trader.core.nautilus_pyo3 import TraderId
 from stubs.serialization.base import Serializer
 from nautilus_trader.core.message import Event
 

@@ -1,14 +1,4 @@
 from nautilus_trader.common.config import OrderEmulatorConfig
-from nautilus_trader.core.nautilus_pyo3 import ClientOrderId, PositionId, StrategyId
-from nautilus_trader.core.nautilus_pyo3 import InstrumentId
-from nautilus_trader.core.nautilus_pyo3 import MatchingCore
-from nautilus_trader.core.nautilus_pyo3 import MessageBus
-from nautilus_trader.core.nautilus_pyo3 import OrderBookDeltas
-from nautilus_trader.core.nautilus_pyo3 import Price
-from nautilus_trader.core.nautilus_pyo3 import QuoteTick
-from nautilus_trader.core.nautilus_pyo3 import SubmitOrder
-from nautilus_trader.core.nautilus_pyo3 import TradeTick
-from nautilus_trader.core.nautilus_pyo3 import TradingCommand
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.core.message import Event
 from nautilus_trader.model.orders.base import Order

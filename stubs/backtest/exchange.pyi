@@ -2,34 +2,6 @@ from collections import deque
 from decimal import Decimal
 from typing import Any
 
-from nautilus_trader.core.nautilus_pyo3 import Account
-from nautilus_trader.core.nautilus_pyo3 import AccountType
-from nautilus_trader.core.nautilus_pyo3 import BacktestExecClient
-from nautilus_trader.core.nautilus_pyo3 import Bar
-from nautilus_trader.core.nautilus_pyo3 import BookType
-from nautilus_trader.core.nautilus_pyo3 import Currency
-from nautilus_trader.core.nautilus_pyo3 import FeeModel
-from nautilus_trader.core.nautilus_pyo3 import FillModel
-from nautilus_trader.core.nautilus_pyo3 import Instrument
-from nautilus_trader.core.nautilus_pyo3 import InstrumentClose
-from nautilus_trader.core.nautilus_pyo3 import InstrumentId
-from nautilus_trader.core.nautilus_pyo3 import InstrumentStatus
-from nautilus_trader.core.nautilus_pyo3 import LatencyModel
-from nautilus_trader.core.nautilus_pyo3 import MessageBus
-from nautilus_trader.core.nautilus_pyo3 import Money
-from nautilus_trader.core.nautilus_pyo3 import OmsType
-from nautilus_trader.core.nautilus_pyo3 import Order
-from nautilus_trader.core.nautilus_pyo3 import OrderBook
-from nautilus_trader.core.nautilus_pyo3 import OrderBookDelta
-from nautilus_trader.core.nautilus_pyo3 import OrderBookDeltas
-from nautilus_trader.core.nautilus_pyo3 import OrderBookDepth10
-from nautilus_trader.core.nautilus_pyo3 import OrderMatchingEngine
-from nautilus_trader.core.nautilus_pyo3 import Price
-from nautilus_trader.core.nautilus_pyo3 import QuoteTick
-from nautilus_trader.core.nautilus_pyo3 import SimulationModule
-from nautilus_trader.core.nautilus_pyo3 import TradeTick
-from nautilus_trader.core.nautilus_pyo3 import TradingCommand
-from nautilus_trader.core.nautilus_pyo3 import Venue
 from stubs.cache.base import CacheFacade
 from stubs.common.component import Logger, TestClock
 from stubs.portfolio.base import PortfolioFacade

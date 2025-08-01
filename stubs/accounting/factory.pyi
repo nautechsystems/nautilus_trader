@@ -1,5 +1,3 @@
-from nautilus_trader.core.nautilus_pyo3 import Account
-from nautilus_trader.core.nautilus_pyo3 import AccountState
 
 
 class AccountFactory:

@@ -1,4 +1,3 @@
-from nautilus_trader.core.nautilus_pyo3 import Data
 
 class Data:
     """

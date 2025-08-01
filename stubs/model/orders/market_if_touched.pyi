@@ -1,21 +1,6 @@
 from datetime import datetime
 from typing import Any
 
-from nautilus_trader.core.nautilus_pyo3 import UUID4
-from nautilus_trader.core.nautilus_pyo3 import ClientOrderId
-from nautilus_trader.core.nautilus_pyo3 import ContingencyType
-from nautilus_trader.core.nautilus_pyo3 import ExecAlgorithmId
-from nautilus_trader.core.nautilus_pyo3 import InstrumentId
-from nautilus_trader.core.nautilus_pyo3 import Order
-from nautilus_trader.core.nautilus_pyo3 import OrderInitialized
-from nautilus_trader.core.nautilus_pyo3 import OrderListId
-from nautilus_trader.core.nautilus_pyo3 import OrderSide
-from nautilus_trader.core.nautilus_pyo3 import Price
-from nautilus_trader.core.nautilus_pyo3 import Quantity
-from nautilus_trader.core.nautilus_pyo3 import StrategyId
-from nautilus_trader.core.nautilus_pyo3 import TimeInForce
-from nautilus_trader.core.nautilus_pyo3 import TraderId
-from nautilus_trader.core.nautilus_pyo3 import TriggerType
 
 class MarketIfTouchedOrder(Order):
     """
