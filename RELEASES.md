@@ -64,6 +64,8 @@ Released on TBD (UTC).
 - Upgraded `tokio` crate to v1.47.0
 
 ### Fixes
+- Fixed `TimeEventHandler` memory leaks with Python callback references in FFI layer
+- Fixed `PyCapsule` memory leaks by adding destructors to enable proper Rust value cleanup
 - Fixed incorrect raw price type for matching engine in high-precision mode that could overflow during trades processing (#2810), thanks for reporting @Frzgunr1 and @happysammy
 - Fixed decoding zero-sized trades for Databento MBO data
 - Fixed purging of contingent orders where open linked orders would still be purged

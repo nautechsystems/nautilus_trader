@@ -7,7 +7,7 @@ the FFI boundary **by value**.
 
 The rules below are *strict*; violating them results in undefined behaviour (usually a double-free or a memory leak).
 
-## CVec lifecycle at a glance
+## CVec lifecycle
 
 | Step  | Owner                         | Action |
 |-------|-------------------------------|--------|
@@ -28,7 +28,32 @@ destructor** (`capsule_destructor` or `capsule_destructor_deltas`) that frees bo
 and the `CVec`. Callers must therefore *not* free the memory manually – doing so would double
 free.
 
-### Why there is no generic `cvec_drop` anymore
+## Capsules created on the Rust side *(PyO3 bindings)*
+
+When Rust code pushes a heap-allocated value into Python it **must** use
+`PyCapsule::new_with_destructor` so that Python knows how to free the allocation
+once the capsule becomes unreachable.  The closure/destructor is responsible
+for reconstructing the original `Box<T>` or `Vec<T>` and letting it drop.
+
+```rust
+Python::with_gil(|py| {
+    // allocate the value on the heap
+    let my_data = MyStruct::new();
+
+    // move it into the capsule and register a destructor
+    let capsule = pyo3::types::PyCapsule::new_with_destructor(py, my_data, None, |_, _| {})
+        .expect("capsule creation failed");
+
+    // ... pass `capsule` back to Python ...
+});
+```
+
+Do **not** use `PyCapsule::new(…, None)`; that variant registers *no* destructor
+and will leak memory unless the recipient manually extracts and frees the
+pointer (something we never rely on).  The codebase has been updated to follow
+this rule everywhere – adding new FFI modules must follow the same pattern.
+
+## Why there is no generic `cvec_drop` anymore
 
 Earlier versions of the codebase shipped a generic `cvec_drop` function that always treated the
 buffer as `Vec<u8>`. Using it with any other element type causes a size-mismatch during

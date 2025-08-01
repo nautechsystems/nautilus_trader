@@ -554,8 +554,14 @@ fn call_python_with_time_event(event: TimeEvent, callback: &PyObject) {
     use pyo3::types::PyCapsule;
 
     Python::with_gil(|py| {
-        // Create new time event
-        let capsule: PyObject = PyCapsule::new(py, event, None)
+        // Create a new PyCapsule that owns `event` and registers a destructor so
+        // the contained `TimeEvent` is properly freed once the capsule is
+        // garbage-collected by Python. Without the destructor the memory would
+        // leak because the capsule would not know how to drop the Rust value.
+
+        // Register a destructor that simply drops the `TimeEvent` once the
+        // capsule is freed on the Python side.
+        let capsule: PyObject = PyCapsule::new_with_destructor(py, event, None, |_, _| {})
             .expect("Error creating `PyCapsule`")
             .into_py_any_unwrap(py);
 
