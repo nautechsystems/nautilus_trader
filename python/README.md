@@ -51,7 +51,7 @@ All commands should be run from within this `python/` directory.
 - Python 3.11-3.13
 - The Rust toolchain (via `rustup`).
 
-### Installation
+### Quick start
 
 To set up your development environment, run the following command. It will compile the Rust extension, install it in "editable" mode, and install all necessary development and test dependencies.
 
@@ -81,6 +81,39 @@ from nautilus_trader.core import UUID4
 UUID4()
 # ...
 ```
+
+## Installation
+
+### From source
+
+To build and install from source, you need Rust and Python 3.11+ installed. You can use either uv or Poetry:
+
+**Using uv:**
+
+```bash
+# Clone the repository
+git clone https://github.com/nautechsystems/nautilus_trader.git
+cd nautilus_trader/python
+
+# Install dependencies and build
+uv run --active maturin develop --extras dev,test
+```
+
+### Development wheels (pre-release)
+
+While v2 is still under heavy development, every successful build from the
+`develop`, or `nightly` branches publishes a wheel to our private package v2 index.
+
+```bash
+# Add the Nautilus v2 index
+pip install --index-url https://packages.nautechsystems.io/v2/simple/ --pre nautilus-trader
+```
+
+Key points:
+
+- The `--pre` flag is required because the wheels are tagged as development
+   releases (e.g. `0.2.0.dev20250601`).
+- The wheels are built for CPython 3.13 on x86-64 Linux and ARM64 macOS.
 
 ## Python type stubs
 

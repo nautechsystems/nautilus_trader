@@ -39,7 +39,7 @@ for file in dist/all/*.whl; do
 
   echo "Uploading $file..."
   for i in {1..3}; do
-    if aws s3 cp "$file" "s3://${CLOUDFLARE_R2_BUCKET_NAME}/simple/nautilus-trader/" \
+    if aws s3 cp "$file" "s3://${CLOUDFLARE_R2_BUCKET_NAME}/${CLOUDFLARE_R2_PREFIX:-simple/nautilus-trader}/" \
       --endpoint-url="${CLOUDFLARE_R2_URL}" \
       --content-type "application/zip"; then
       echo "Successfully uploaded $file"
