@@ -22,6 +22,7 @@ use nautilus_common::{
     component::{Component, register_component_actor_by_ref},
     enums::Environment,
     python::actor::PyDataActor,
+    runtime::get_runtime,
 };
 use nautilus_core::{UUID4, python::to_pyruntime_err};
 use nautilus_model::identifiers::TraderId;
@@ -87,11 +88,7 @@ impl LiveNode {
         }
 
         // Non-blocking start - just start the node in the background
-        let rt = tokio::runtime::Runtime::new().map_err(|e| {
-            pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to create runtime: {e}"))
-        })?;
-
-        rt.block_on(async {
+        get_runtime().block_on(async {
             self.start()
                 .await
                 .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
@@ -134,11 +131,7 @@ impl LiveNode {
 
         // Run the node and restore signal handler afterward
         let result = {
-            let rt = tokio::runtime::Runtime::new().map_err(|e| {
-                pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to create runtime: {e}"))
-            })?;
-
-            rt.block_on(async {
+            get_runtime().block_on(async {
                 self.run()
                     .await
                     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
