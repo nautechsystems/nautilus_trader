@@ -1652,7 +1652,7 @@ where
 
     fn transition_state(&mut self, trigger: ComponentTrigger) -> anyhow::Result<()> {
         self.state = self.state.transition(&trigger)?;
-        log::info!("{}", self.state);
+        log::info!("{}", self.state.to_sentence_case());
         Ok(())
     }
 

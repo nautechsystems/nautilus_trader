@@ -180,13 +180,10 @@ impl LiveNode {
             anyhow::bail!("Already running");
         }
 
-        log::info!("Starting...");
-
         self.kernel.start_async().await;
         self.is_running = true;
         self.handle.set_running(true);
 
-        log::info!("Started");
         Ok(())
     }
 
@@ -200,13 +197,10 @@ impl LiveNode {
             anyhow::bail!("Not running");
         }
 
-        log::info!("Stopping...");
-
         self.kernel.stop_async().await;
         self.is_running = false;
         self.handle.set_running(false);
 
-        log::info!("Stopped");
         Ok(())
     }
 

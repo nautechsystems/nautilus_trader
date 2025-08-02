@@ -403,8 +403,6 @@ impl Trader {
     ///
     /// Returns an error if any component fails to start.
     pub fn start_components(&mut self) -> anyhow::Result<()> {
-        log::info!("Starting {} components", self.component_count());
-
         // Start actors (retrieved from global registry)
         for actor_id in &self.actor_ids {
             log::debug!("Starting actor '{actor_id}'");
@@ -431,8 +429,6 @@ impl Trader {
     ///
     /// Returns an error if any component fails to stop.
     pub fn stop_components(&mut self) -> anyhow::Result<()> {
-        log::info!("Stopping {} components", self.component_count());
-
         for (id, exec_algorithm) in &mut self.exec_algorithms {
             log::debug!("Stopping execution algorithm '{id}'");
             // exec_algorithm.stop()?;  // TODO: TBD
@@ -448,7 +444,6 @@ impl Trader {
             stop_component(&actor_id.inner())?;
         }
 
-        log::info!("All components stopped successfully");
         Ok(())
     }
 
@@ -458,8 +453,6 @@ impl Trader {
     ///
     /// Returns an error if any component fails to reset.
     pub fn reset_components(&mut self) -> anyhow::Result<()> {
-        log::info!("Resetting {} components", self.component_count());
-
         // Reset actors (retrieved from global registry)
         for actor_id in &self.actor_ids {
             log::debug!("Resetting actor '{actor_id}'");
@@ -476,7 +469,6 @@ impl Trader {
             // exec_algorithm.reset()?;  // TODO: TBD
         }
 
-        log::info!("All components reset successfully");
         Ok(())
     }
 
@@ -486,8 +478,6 @@ impl Trader {
     ///
     /// Returns an error if any component fails to dispose.
     pub fn dispose_components(&mut self) -> anyhow::Result<()> {
-        log::info!("Disposing {} components", self.component_count());
-
         // Dispose actors (retrieved from global registry)
         for actor_id in &self.actor_ids {
             log::debug!("Disposing actor '{actor_id}'");
@@ -509,7 +499,6 @@ impl Trader {
         self.exec_algorithms.clear();
         self.clocks.clear();
 
-        log::info!("All components disposed successfully");
         Ok(())
     }
 
@@ -521,47 +510,35 @@ impl Trader {
     ///
     /// Returns an error if the trader cannot be initialized from its current state.
     pub fn initialize(&mut self) -> anyhow::Result<()> {
-        log::info!("Initializing trader {}", self.trader_id);
-
         let new_state = self.state.transition(&ComponentTrigger::Initialize)?;
         self.state = new_state;
 
-        log::info!("Trader {} initialized successfully", self.trader_id);
         Ok(())
     }
 
     fn on_start(&mut self) -> anyhow::Result<()> {
-        log::info!("Starting trader {}", self.trader_id);
-
         self.start_components()?;
 
         // Transition to running state
         self.ts_started = Some(self.clock.borrow().timestamp_ns());
 
-        log::info!("Trader {} started successfully", self.trader_id);
         Ok(())
     }
 
     fn on_stop(&mut self) -> anyhow::Result<()> {
-        log::info!("Stopping trader {}", self.trader_id);
-
         self.stop_components()?;
 
         self.ts_stopped = Some(self.clock.borrow().timestamp_ns());
 
-        log::info!("Trader {} stopped successfully", self.trader_id);
         Ok(())
     }
 
     fn on_reset(&mut self) -> anyhow::Result<()> {
-        log::info!("Resetting trader {}", self.trader_id);
-
         self.reset_components()?;
 
         self.ts_started = None;
         self.ts_stopped = None;
 
-        log::info!("Trader {} reset successfully", self.trader_id);
         Ok(())
     }
 
@@ -570,11 +547,8 @@ impl Trader {
             self.stop()?;
         }
 
-        log::info!("Disposing trader {}", self.trader_id);
-
         self.dispose_components()?;
 
-        log::info!("Trader {} disposed successfully", self.trader_id);
         Ok(())
     }
 }
@@ -590,7 +564,7 @@ impl Component for Trader {
 
     fn transition_state(&mut self, trigger: ComponentTrigger) -> anyhow::Result<()> {
         self.state = self.state.transition(&trigger)?;
-        log::info!("{}", self.state);
+        log::info!("{}", self.state.to_sentence_case());
         Ok(())
     }
 
@@ -705,7 +679,7 @@ mod tests {
 
         fn transition_state(&mut self, trigger: ComponentTrigger) -> anyhow::Result<()> {
             self.state = self.state.transition(&trigger)?;
-            log::info!("{}", self.state);
+            log::info!("{}", self.state.to_sentence_case());
             Ok(())
         }
 
