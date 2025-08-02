@@ -13,10 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    sync::{Arc, atomic::Ordering},
-    time::Duration,
-};
+use std::{sync::atomic::Ordering, time::Duration};
 
 use nautilus_core::python::to_pyruntime_err;
 use pyo3::prelude::*;
@@ -50,7 +47,7 @@ impl SocketConfig {
             url,
             mode,
             suffix,
-            py_handler: Some(Arc::new(handler)),
+            py_handler: Some(handler),
             heartbeat,
             reconnect_timeout_ms,
             reconnect_delay_initial_ms,

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{str::FromStr, sync::Arc};
+use std::str::FromStr;
 
 use nautilus_core::{
     UUID4, UnixNanos,
@@ -33,7 +33,6 @@ use crate::timer::{TimeEvent, TimeEventCallback, TimeEventHandlerV2};
     module = "nautilus_trader.core.nautilus_pyo3.common",
     name = "TimeEventHandler"
 )]
-#[derive(Clone)]
 /// Temporary time event handler for Python inter-operatbility
 ///
 /// TODO: Remove once control flow moves into Rust
@@ -46,7 +45,7 @@ pub struct TimeEventHandler_Py {
     /// The time event.
     pub event: TimeEvent,
     /// The callable python object.
-    pub callback: Arc<PyObject>,
+    pub callback: PyObject,
 }
 
 impl From<TimeEventHandlerV2> for TimeEventHandler_Py {

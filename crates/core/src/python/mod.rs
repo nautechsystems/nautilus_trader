@@ -45,6 +45,29 @@ use crate::{
     },
 };
 
+/// Safely clones a Python object by acquiring the GIL and properly managing reference counts.
+///
+/// This function exists to break reference cycles between Rust and Python that can occur
+/// when using `Arc<PyObject>` in callback-holding structs. The original design wrapped
+/// Python callbacks in `Arc` for thread-safe sharing, but this created circular references:
+///
+/// 1. Rust `Arc` holds Python objects → increases Python reference count.
+/// 2. Python objects might reference Rust objects → creates cycles.
+/// 3. Neither side can be garbage collected → memory leak.
+///
+/// By using plain `PyObject` with GIL-based cloning instead of `Arc<PyObject>`, we:
+/// - Avoid circular references between Rust and Python memory management.
+/// - Ensure proper Python reference counting under the GIL.
+/// - Allow both Rust and Python garbage collectors to work correctly.
+///
+/// # Safety
+///
+/// This function properly acquires the Python GIL before performing the clone operation,
+/// ensuring thread-safe access to the Python object and correct reference counting.
+pub fn clone_py_object(obj: &PyObject) -> PyObject {
+    Python::with_gil(|py| obj.clone_ref(py))
+}
+
 /// Extend `IntoPyObjectExt` helper trait to unwrap `PyObject` after conversion.
 pub trait IntoPyObjectNautilusExt<'py>: IntoPyObjectExt<'py> {
     /// Convert `self` into a [`PyObject`] while *panicking* if the conversion fails.

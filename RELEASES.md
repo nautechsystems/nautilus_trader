@@ -65,6 +65,7 @@ Released on TBD (UTC).
 - Upgraded `tokio` crate to v1.47.1
 
 ### Fixes
+- Fixed Rust-Python reference cycles by replacing `Arc<PyObject>` with plain `PyObject` in callback-holding structs, eliminating memory leaks
 - Fixed `TimeEventHandler` memory leaks with Python callback references in FFI layer
 - Fixed `PyCapsule` memory leaks by adding destructors to enable proper Rust value cleanup
 - Fixed incorrect raw price type for matching engine in high-precision mode that could overflow during trades processing (#2810), thanks for reporting @Frzgunr1 and @happysammy

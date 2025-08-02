@@ -13,10 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    sync::{Arc, atomic::Ordering},
-    time::Duration,
-};
+use std::{sync::atomic::Ordering, time::Duration};
 
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use pyo3::{create_exception, exceptions::PyException, prelude::*};
@@ -55,11 +52,11 @@ impl WebSocketConfig {
     ) -> Self {
         Self {
             url,
-            handler: Consumer::Python(Some(Arc::new(handler))),
+            handler: Consumer::Python(Some(handler)),
             headers,
             heartbeat,
             heartbeat_msg,
-            ping_handler: ping_handler.map(Arc::new),
+            ping_handler,
             reconnect_timeout_ms,
             reconnect_delay_initial_ms,
             reconnect_delay_max_ms,
