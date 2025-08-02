@@ -1,6 +1,6 @@
 [project]
 name = "nautilus-trader"
-version = "2.0.0-dev"
+version = "2.0.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = [
     {name = "Nautech Systems", email = "info@nautechsystems.io"},
