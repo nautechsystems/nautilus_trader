@@ -16,9 +16,11 @@
 use std::{
     collections::HashMap,
     ffi::c_char,
-    sync::{Arc, Mutex, OnceLock},
+    sync::{Mutex, OnceLock},
 };
 
+#[cfg(feature = "python")]
+use nautilus_core::python::clone_py_object;
 use nautilus_core::{
     UUID4,
     ffi::string::{cstr_to_ustr, str_to_cstr},
@@ -70,7 +72,7 @@ pub struct TimeEventHandler {
 // leaks, and is safe on any thread.
 
 #[cfg(feature = "python")]
-type CallbackEntry = (Arc<Py<PyAny>>, usize); // (object, ref_count)
+type CallbackEntry = (PyObject, usize); // (object, ref_count)
 
 #[cfg(feature = "python")]
 fn registry() -> &'static Mutex<HashMap<usize, CallbackEntry>> {
@@ -95,9 +97,9 @@ pub fn registry_size() -> usize {
 #[cfg(feature = "python")]
 pub fn cleanup_callback_registry() {
     // Drain entries while locked, then drop callbacks with the GIL outside
-    let callbacks: Vec<Arc<Py<PyAny>>> = {
+    let callbacks: Vec<PyObject> = {
         let mut map = registry_lock();
-        map.drain().map(|(_, (arc, _))| arc).collect()
+        map.drain().map(|(_, (obj, _))| obj).collect()
     };
 
     Python::with_gil(|_| {
@@ -128,7 +130,7 @@ impl From<TimeEventHandlerV2> for TimeEventHandler {
                         e.get_mut().1 += 1;
                     }
                     std::collections::hash_map::Entry::Vacant(e) => {
-                        e.insert((callback_arc.clone(), 1));
+                        e.insert((clone_py_object(&callback_arc), 1));
                     }
                 }
 

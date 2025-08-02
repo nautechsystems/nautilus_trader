@@ -42,6 +42,8 @@ use futures_util::{
     stream::{SplitSink, SplitStream},
 };
 use http::HeaderName;
+use nautilus_core::python::clone_py_object;
+#[cfg(feature = "python")]
 use nautilus_cryptography::providers::install_cryptographic_provider;
 #[cfg(feature = "python")]
 use pyo3::{prelude::*, types::PyBytes};
@@ -66,13 +68,23 @@ type MessageWriter = SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Messa
 pub type MessageReader = SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
 
 /// Defines how WebSocket messages are consumed.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum Consumer {
     /// Python-based message handler.
     #[cfg(feature = "python")]
-    Python(Option<Arc<PyObject>>),
+    Python(Option<PyObject>),
     /// Rust-based message handler using a channel sender.
     Rust(Sender<Message>),
+}
+
+impl Clone for Consumer {
+    fn clone(&self) -> Self {
+        match self {
+            #[cfg(feature = "python")]
+            Self::Python(opt) => Self::Python(opt.as_ref().map(clone_py_object)),
+            Self::Rust(sender) => Self::Rust(sender.clone()),
+        }
+    }
 }
 
 impl Consumer {
@@ -86,7 +98,7 @@ impl Consumer {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
@@ -104,7 +116,7 @@ pub struct WebSocketConfig {
     pub heartbeat_msg: Option<String>,
     /// The handler for incoming pings.
     #[cfg(feature = "python")]
-    pub ping_handler: Option<Arc<PyObject>>,
+    pub ping_handler: Option<PyObject>,
     /// The timeout (milliseconds) for reconnection attempts.
     pub reconnect_timeout_ms: Option<u64>,
     /// The initial reconnection delay (milliseconds) for reconnects.
@@ -115,6 +127,25 @@ pub struct WebSocketConfig {
     pub reconnect_backoff_factor: Option<f64>,
     /// The maximum jitter (milliseconds) added to reconnection delays.
     pub reconnect_jitter_ms: Option<u64>,
+}
+
+impl Clone for WebSocketConfig {
+    fn clone(&self) -> Self {
+        Self {
+            url: self.url.clone(),
+            headers: self.headers.clone(),
+            handler: self.handler.clone(),
+            heartbeat: self.heartbeat,
+            heartbeat_msg: self.heartbeat_msg.clone(),
+            #[cfg(feature = "python")]
+            ping_handler: self.ping_handler.as_ref().map(clone_py_object),
+            reconnect_timeout_ms: self.reconnect_timeout_ms,
+            reconnect_delay_initial_ms: self.reconnect_delay_initial_ms,
+            reconnect_delay_max_ms: self.reconnect_delay_max_ms,
+            reconnect_backoff_factor: self.reconnect_backoff_factor,
+            reconnect_jitter_ms: self.reconnect_jitter_ms,
+        }
+    }
 }
 
 /// Represents a command for the writer task.
@@ -178,12 +209,14 @@ impl WebSocketClientInner {
 
         let read_task = match &handler {
             #[cfg(feature = "python")]
-            Consumer::Python(handler) => handler.as_ref().map(|handler| {
+            Consumer::Python(handler) => handler.as_ref().map(|handler_obj| {
+                let owned_handler = clone_py_object(handler_obj);
+                let owned_ping = ping_handler.as_ref().map(clone_py_object);
                 Self::spawn_python_callback_task(
                     connection_mode.clone(),
                     reader,
-                    handler.clone(),
-                    ping_handler.clone(),
+                    owned_handler,
+                    owned_ping,
                 )
             }),
             Consumer::Rust(sender) => Some(Self::spawn_rust_streaming_task(
@@ -305,8 +338,8 @@ impl WebSocketClientInner {
                     Self::spawn_python_callback_task(
                         self.connection_mode.clone(),
                         reader,
-                        handler.clone(),
-                        self.config.ping_handler.clone(),
+                        clone_py_object(handler),
+                        self.config.ping_handler.as_ref().map(clone_py_object),
                     )
                 }),
                 Consumer::Rust(sender) => Some(Self::spawn_rust_streaming_task(
@@ -389,8 +422,8 @@ impl WebSocketClientInner {
     fn spawn_python_callback_task(
         connection_state: Arc<AtomicU8>,
         mut reader: MessageReader,
-        handler: Arc<PyObject>,
-        ping_handler: Option<Arc<PyObject>>,
+        handler: PyObject,
+        ping_handler: Option<PyObject>,
     ) -> tokio::task::JoinHandle<()> {
         log_task_started("read");
 
