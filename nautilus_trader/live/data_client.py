@@ -376,6 +376,7 @@ class LiveMarketDataClient(MarketDataClient):
         actions: Callable | None = None,
         success_msg: str | None = None,
         success_color: LogColor = LogColor.NORMAL,
+        await_request: bool = False,
     ) -> asyncio.Task | None:
         """
         Run the given coroutine with error handling and optional callback actions when
@@ -393,6 +394,8 @@ class LiveMarketDataClient(MarketDataClient):
             The log message to write on `actions` success.
         success_color : LogColor, default ``NORMAL``
             The log message color for `actions` success.
+        await_request : bool, False
+            Runs request in sync mode instead of async mode by default.
 
         Returns
         -------
@@ -401,7 +404,7 @@ class LiveMarketDataClient(MarketDataClient):
         """
         task_name = log_msg or coro.__name__
 
-        if self._is_sync:
+        if await_request or self._is_sync:
             self._log.debug(f"Running coroutine '{task_name}' synchronously...")
             result = None
             exception: BaseException | None = None
@@ -758,6 +761,7 @@ class LiveMarketDataClient(MarketDataClient):
         self.create_task(
             self._request(request),
             log_msg=f"request: {request.data_type}",
+            await_request=request.params.get("await_request", False),
         )
 
     def request_instrument(self, request: RequestInstrument) -> None:
@@ -766,6 +770,7 @@ class LiveMarketDataClient(MarketDataClient):
         self.create_task(
             self._request_instrument(request),
             log_msg=f"request: instrument {request.instrument_id}",
+            await_request=request.params.get("await_request", False),
         )
 
     def request_instruments(self, request: RequestInstruments) -> None:
@@ -777,6 +782,7 @@ class LiveMarketDataClient(MarketDataClient):
         self.create_task(
             self._request_instruments(request),
             log_msg=f"request: instruments for {request.venue}",
+            await_request=request.params.get("await_request", False),
         )
 
     def request_quote_ticks(self, request: RequestQuoteTicks) -> None:
@@ -789,6 +795,7 @@ class LiveMarketDataClient(MarketDataClient):
         self.create_task(
             self._request_quote_ticks(request),
             log_msg=f"request: quotes {request.instrument_id}",
+            await_request=request.params.get("await_request", False),
         )
 
     def request_trade_ticks(self, request: RequestTradeTicks) -> None:
@@ -801,6 +808,7 @@ class LiveMarketDataClient(MarketDataClient):
         self.create_task(
             self._request_trade_ticks(request),
             log_msg=f"request: trades {request.instrument_id}",
+            await_request=request.params.get("await_request", False),
         )
 
     def request_bars(self, request: RequestBars) -> None:
@@ -810,6 +818,7 @@ class LiveMarketDataClient(MarketDataClient):
         self.create_task(
             self._request_bars(request),
             log_msg=f"request: bars {request.bar_type}",
+            await_request=request.params.get("await_request", False),
         )
 
     def request_order_book_snapshot(self, request: RequestOrderBookSnapshot) -> None:
@@ -821,6 +830,7 @@ class LiveMarketDataClient(MarketDataClient):
         self.create_task(
             self._request_order_book_snapshot(request),
             log_msg=f"request: order_book_snapshot {request.instrument_id}",
+            await_request=request.params.get("await_request", False),
         )
 
     ############################################################################
