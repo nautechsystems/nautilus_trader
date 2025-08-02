@@ -370,10 +370,10 @@ impl NautilusKernel {
 
     /// Starts the Nautilus system kernel.
     pub async fn start_async(&mut self) {
-        log::info!("Starting engines...");
+        log::info!("Starting");
         self.start_engines();
 
-        log::info!("Initializing trader...");
+        log::info!("Initializing trader");
         if let Err(e) = self.trader.initialize() {
             log::error!("Error initializing trader: {e:?}");
             return;
@@ -385,11 +385,9 @@ impl NautilusKernel {
         }
         log::info!("Clients connected");
 
-        log::info!("Starting trader...");
         if let Err(e) = self.trader.start() {
             log::error!("Error starting trader: {e:?}");
         }
-        log::info!("Trader started");
 
         self.ts_started = Some(self.clock.borrow().timestamp_ns());
         log::info!("Started");
@@ -397,7 +395,7 @@ impl NautilusKernel {
 
     /// Stops the Nautilus system kernel.
     pub async fn stop_async(&mut self) {
-        log::info!("Stopping...");
+        log::info!("Stopping");
 
         // Stop the trader (it will stop all registered components)
         if let Err(e) = self.trader.stop() {
@@ -418,6 +416,8 @@ impl NautilusKernel {
 
     /// Resets the Nautilus system kernel to its initial state.
     pub fn reset(&mut self) {
+        log::info!("Resetting");
+
         if let Err(e) = self.trader.reset() {
             log::error!("Error resetting trader: {e:?}");
         }
@@ -434,6 +434,8 @@ impl NautilusKernel {
 
     /// Disposes of the Nautilus system kernel, releasing resources.
     pub fn dispose(&mut self) {
+        log::info!("Disposing");
+
         if let Err(e) = self.trader.dispose() {
             log::error!("Error disposing trader: {e:?}");
         }

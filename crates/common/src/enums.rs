@@ -76,6 +76,13 @@ pub enum ComponentState {
     Faulted = 13,
 }
 
+impl ComponentState {
+    pub fn to_sentence_case(&self) -> String {
+        let s = self.to_string();
+        format!("{}{}", s[0..1].to_uppercase(), s[1..].to_lowercase())
+    }
+}
+
 /// A trigger condition for a component within the system.
 #[repr(C)]
 #[derive(
