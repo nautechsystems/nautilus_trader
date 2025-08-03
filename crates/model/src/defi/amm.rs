@@ -34,10 +34,10 @@ use crate::{
 /// `venue`  – The DEX name plus chain name.
 ///
 /// The string representation therefore has the form:
-/// `<BASE>/<QUOTE>-<FEE>.<DEX_NAME>:<CHAIN_NAME>`
+/// `<BASE>/<QUOTE>-<FEE>.<CHAIN_NAME>:<DEX_NAME>`
 ///
 /// Example:
-/// `WETH/USDT-3000.UniswapV3:Arbitrum`
+/// `WETH/USDT-3000.Arbitrum:UniswapV3`
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")

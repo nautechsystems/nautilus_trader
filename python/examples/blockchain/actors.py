@@ -53,7 +53,7 @@ class BlockchainActor(DataActor):
 
         self.chain = config.chain or Chain.ARBITRUM()
         self.client_id = config.client_id or ClientId(f"BLOCKCHAIN-{self.chain.name}")
-        self.pools = config.pools or [InstrumentId.from_str("WETH/USDC-3000.UniswapV3:Arbitrum")]
+        self.pools = config.pools or [InstrumentId.from_str("WETH/USDC-3000.Arbitrum:UniswapV3")]
 
     def on_start(self) -> None:
         """
