@@ -15,12 +15,12 @@
 
 //! Basic structures for representing on-chain blocks and transactions in DeFi integrations.
 
+use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 use std::{
     fmt::{Display, Formatter},
     sync::Arc,
 };
-
-use serde::{Deserialize, Serialize};
 use strum::{Display, EnumIter, EnumString};
 
 /// Represents different blockchain networks.
@@ -249,6 +249,94 @@ impl Chain {
             _ => None,
         }
     }
+
+    /// Returns a reference to the `Chain` corresponding to the given chain name, or `None` if it is not found.
+    pub fn from_chain_name(chain_name: &str) -> Option<&'static Chain> {
+        let blockchain = Blockchain::from_str(chain_name).ok()?;
+
+        match blockchain {
+            Blockchain::Abstract => Some(&chains::ABSTRACT),
+            Blockchain::Arbitrum => Some(&chains::ARBITRUM),
+            Blockchain::ArbitrumNova => Some(&chains::ARBITRUM_NOVA),
+            Blockchain::ArbitrumSepolia => Some(&chains::ARBITRUM_SEPOLIA),
+            Blockchain::Aurora => Some(&chains::AURORA),
+            Blockchain::Avalanche => Some(&chains::AVALANCHE),
+            Blockchain::Base => Some(&chains::BASE),
+            Blockchain::BaseSepolia => Some(&chains::BASE_SEPOLIA),
+            Blockchain::Berachain => Some(&chains::BERACHAIN),
+            Blockchain::BerachainBartio => Some(&chains::BERACHAIN_BARTIO),
+            Blockchain::Blast => Some(&chains::BLAST),
+            Blockchain::BlastSepolia => Some(&chains::BLAST_SEPOLIA),
+            Blockchain::Boba => Some(&chains::BOBA),
+            Blockchain::Bsc => Some(&chains::BSC),
+            Blockchain::BscTestnet => Some(&chains::BSC_TESTNET),
+            Blockchain::Celo => Some(&chains::CELO),
+            Blockchain::Chiliz => Some(&chains::CHILIZ),
+            Blockchain::CitreaTestnet => Some(&chains::CITREA_TESTNET),
+            Blockchain::Curtis => Some(&chains::CURTIS),
+            Blockchain::Cyber => Some(&chains::CYBER),
+            Blockchain::Darwinia => Some(&chains::DARWINIA),
+            Blockchain::Ethereum => Some(&chains::ETHEREUM),
+            Blockchain::Fantom => Some(&chains::FANTOM),
+            Blockchain::Flare => Some(&chains::FLARE),
+            Blockchain::Fraxtal => Some(&chains::FRAXTAL),
+            Blockchain::Fuji => Some(&chains::FUJI),
+            Blockchain::GaladrielDevnet => Some(&chains::GALADRIEL_DEVNET),
+            Blockchain::Gnosis => Some(&chains::GNOSIS),
+            Blockchain::GnosisChiado => Some(&chains::GNOSIS_CHIADO),
+            Blockchain::GnosisTraces => Some(&chains::GNOSIS_TRACES),
+            Blockchain::HarmonyShard0 => Some(&chains::HARMONY_SHARD_0),
+            Blockchain::Holesky => Some(&chains::HOLESKY),
+            Blockchain::HoleskyTokenTest => Some(&chains::HOLESKY_TOKEN_TEST),
+            Blockchain::Hyperliquid => Some(&chains::HYPERLIQUID),
+            Blockchain::HyperliquidTemp => Some(&chains::HYPERLIQUID_TEMP),
+            Blockchain::Ink => Some(&chains::INK),
+            Blockchain::InternalTestChain => Some(&chains::INTERNAL_TEST_CHAIN),
+            Blockchain::Kroma => Some(&chains::KROMA),
+            Blockchain::Linea => Some(&chains::LINEA),
+            Blockchain::Lisk => Some(&chains::LISK),
+            Blockchain::Lukso => Some(&chains::LUKSO),
+            Blockchain::LuksoTestnet => Some(&chains::LUKSO_TESTNET),
+            Blockchain::Manta => Some(&chains::MANTA),
+            Blockchain::Mantle => Some(&chains::MANTLE),
+            Blockchain::MegaethTestnet => Some(&chains::MEGAETH_TESTNET),
+            Blockchain::Merlin => Some(&chains::MERLIN),
+            Blockchain::Metall2 => Some(&chains::METALL2),
+            Blockchain::Metis => Some(&chains::METIS),
+            Blockchain::MevCommit => Some(&chains::MEV_COMMIT),
+            Blockchain::Mode => Some(&chains::MODE),
+            Blockchain::MonadTestnet => Some(&chains::MONAD_TESTNET),
+            Blockchain::MonadTestnetBackup => Some(&chains::MONAD_TESTNET_BACKUP),
+            Blockchain::MoonbaseAlpha => Some(&chains::MOONBASE_ALPHA),
+            Blockchain::Moonbeam => Some(&chains::MOONBEAM),
+            Blockchain::Morph => Some(&chains::MORPH),
+            Blockchain::MorphHolesky => Some(&chains::MORPH_HOLESKY),
+            Blockchain::Opbnb => Some(&chains::OPBNB),
+            Blockchain::Optimism => Some(&chains::OPTIMISM),
+            Blockchain::OptimismSepolia => Some(&chains::OPTIMISM_SEPOLIA),
+            Blockchain::PharosDevnet => Some(&chains::PHAROS_DEVNET),
+            Blockchain::Polygon => Some(&chains::POLYGON),
+            Blockchain::PolygonAmoy => Some(&chains::POLYGON_AMOY),
+            Blockchain::PolygonZkEvm => Some(&chains::POLYGON_ZKEVM),
+            Blockchain::Rootstock => Some(&chains::ROOTSTOCK),
+            Blockchain::Saakuru => Some(&chains::SAAKURU),
+            Blockchain::Scroll => Some(&chains::SCROLL),
+            Blockchain::Sepolia => Some(&chains::SEPOLIA),
+            Blockchain::ShimmerEvm => Some(&chains::SHIMMER_EVM),
+            Blockchain::Soneium => Some(&chains::SONEIUM),
+            Blockchain::Sophon => Some(&chains::SOPHON),
+            Blockchain::SophonTestnet => Some(&chains::SOPHON_TESTNET),
+            Blockchain::Superseed => Some(&chains::SUPERSEED),
+            Blockchain::Unichain => Some(&chains::UNICHAIN),
+            Blockchain::UnichainSepolia => Some(&chains::UNICHAIN_SEPOLIA),
+            Blockchain::Xdc => Some(&chains::XDC),
+            Blockchain::XdcTestnet => Some(&chains::XDC_TESTNET),
+            Blockchain::Zeta => Some(&chains::ZETA),
+            Blockchain::Zircuit => Some(&chains::ZIRCUIT),
+            Blockchain::ZKsync => Some(&chains::ZKSYNC),
+            Blockchain::Zora => Some(&chains::ZORA),
+        }
+    }
 }
 
 impl Display for Chain {
@@ -461,5 +549,76 @@ mod tests {
         // Test unknown chain ID
         assert!(Chain::from_chain_id(999999).is_none());
         assert!(Chain::from_chain_id(0).is_none());
+    }
+
+    #[rstest]
+    fn test_chain_from_chain_name_valid() {
+        // Test some known chain names
+        assert!(Chain::from_chain_name("Ethereum").is_some());
+        assert!(Chain::from_chain_name("Polygon").is_some());
+        assert!(Chain::from_chain_name("Arbitrum").is_some());
+        assert!(Chain::from_chain_name("Base").is_some());
+
+        // Verify specific chain
+        let eth_chain = Chain::from_chain_name("Ethereum").unwrap();
+        assert_eq!(eth_chain.name, Blockchain::Ethereum);
+        assert_eq!(eth_chain.chain_id, 1);
+
+        // Verify ArbitrumNova (compound name)
+        let arbitrum_nova_chain = Chain::from_chain_name("ArbitrumNova").unwrap();
+        assert_eq!(arbitrum_nova_chain.name, Blockchain::ArbitrumNova);
+        assert_eq!(arbitrum_nova_chain.chain_id, 42170);
+
+        // Verify BSC (abbreviated name)
+        let bsc_chain = Chain::from_chain_name("Bsc").unwrap();
+        assert_eq!(bsc_chain.name, Blockchain::Bsc);
+        assert_eq!(bsc_chain.chain_id, 56);
+    }
+
+    #[rstest]
+    fn test_chain_from_chain_name_invalid() {
+        // Test unknown chain names
+        assert!(Chain::from_chain_name("InvalidChain").is_none());
+        assert!(Chain::from_chain_name("").is_none());
+        assert!(Chain::from_chain_name("NonExistentNetwork").is_none());
+    }
+
+    #[rstest]
+    fn test_chain_from_chain_name_case_sensitive() {
+        // Test case sensitivity - should be case sensitive
+        assert!(Chain::from_chain_name("Ethereum").is_some());
+        assert!(Chain::from_chain_name("ethereum").is_none()); // lowercase
+        assert!(Chain::from_chain_name("ETHEREUM").is_none()); // uppercase
+        assert!(Chain::from_chain_name("EtHeReUm").is_none()); // mixed case
+
+        assert!(Chain::from_chain_name("Arbitrum").is_some());
+        assert!(Chain::from_chain_name("arbitrum").is_none()); // lowercase
+    }
+
+    #[rstest]
+    fn test_chain_from_chain_name_consistency_with_id() {
+        // Test that from_chain_name and from_chain_id return the same chain instances
+        let chains_to_test = [
+            ("Ethereum", 1),
+            ("Polygon", 137),
+            ("Arbitrum", 42161),
+            ("Base", 8453),
+            ("Optimism", 10),
+            ("Avalanche", 43114),
+            ("Fantom", 250),
+            ("Bsc", 56),
+        ];
+
+        for (name, id) in chains_to_test {
+            let chain_by_name =
+                Chain::from_chain_name(name).unwrap_or_else(|| panic!("Chain {name} should exist"));
+            let chain_by_id =
+                Chain::from_chain_id(id).unwrap_or_else(|| panic!("Chain {name} should exist"));
+
+            // Should return the same chain instance
+            assert_eq!(chain_by_name.name, chain_by_id.name);
+            assert_eq!(chain_by_name.chain_id, chain_by_id.chain_id);
+            assert_eq!(chain_by_name.hypersync_url, chain_by_id.hypersync_url);
+        }
     }
 }
