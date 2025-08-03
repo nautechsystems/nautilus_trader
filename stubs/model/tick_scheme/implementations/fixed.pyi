@@ -73,5 +73,5 @@ class FixedTickScheme(TickScheme):
 
         """
 
-FOREX_5DECIMAL_TICK_SCHEME: ClassVar[FixedTickScheme]
-FOREX_3DECIMAL_TICK_SCHEME: ClassVar[FixedTickScheme]
+FOREX_5DECIMAL_TICK_SCHEME: FixedTickScheme
+FOREX_3DECIMAL_TICK_SCHEME: FixedTickScheme

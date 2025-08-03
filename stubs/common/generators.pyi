@@ -42,9 +42,9 @@ class ClientOrderIdGenerator(IdentifierGenerator):
         If `initial_count` is negative (< 0).
     """
 
-    count: ClassVar[int]
-    use_uuids: ClassVar[bool]
-    use_hyphens: ClassVar[bool]
+    count: int
+    use_uuids: bool
+    use_hyphens: bool
     _id_tag_strategy: str
 
     def __init__(self, trader_id: TraderId, strategy_id: StrategyId, clock: Clock, initial_count: int = 0, use_uuids: bool = False, use_hyphens: bool = True) -> None: ...
@@ -99,7 +99,9 @@ class OrderListIdGenerator(IdentifierGenerator):
         If `initial_count` is negative (< 0).
     """
 
-    count: ClassVar[int]
+    count: int
+    _id_tag_strategy: str
+
     def __init__(self, trader_id: TraderId, strategy_id: StrategyId, clock: Clock, initial_count: int = 0) -> None: ...
     def set_count(self, count: int) -> None:
         """

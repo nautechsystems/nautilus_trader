@@ -35,9 +35,9 @@ class FillModel:
         If `random_seed` is not None and not of type `int`.
     """
 
-    prob_fill_on_limit: ClassVar[float]
-    prob_fill_on_stop: ClassVar[float]
-    prob_slippage: ClassVar[float]
+    prob_fill_on_limit: float
+    prob_fill_on_stop: float
+    prob_slippage: float
 
     def __init__(
         self,
@@ -108,10 +108,10 @@ class LatencyModel:
         If `cancel_latency_nanos` is negative (< 0).
     """
 
-    base_latency_nanos: ClassVar[int]
-    insert_latency_nanos: ClassVar[int]
-    update_latency_nanos: ClassVar[int]
-    cancel_latency_nanos: ClassVar[int]
+    base_latency_nanos: int
+    insert_latency_nanos: int
+    update_latency_nanos: int
+    cancel_latency_nanos: int
 
     def __init__(
         self,

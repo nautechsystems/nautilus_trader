@@ -26,8 +26,9 @@ class DonchianChannel(Indicator):
     upper: float
     middle: float
     lower: float
-    _upper_prices: ClassVar[deque]
-    _lower_prices: ClassVar[deque]
+
+    _upper_prices: deque
+    _lower_prices: deque
 
     def __init__(self, period: int) -> None: ...
     def handle_quote_tick(self, tick: QuoteTick) -> None:

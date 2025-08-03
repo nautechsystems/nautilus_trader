@@ -22,8 +22,9 @@ class EfficiencyRatio(Indicator):
 
     period: int
     value: float
-    _inputs: ClassVar[deque]
-    _deltas: ClassVar[deque]
+
+    _inputs: deque
+    _deltas: deque
 
     def __init__(self, period: int) -> None: ...
     def handle_bar(self, bar: Bar) -> None:

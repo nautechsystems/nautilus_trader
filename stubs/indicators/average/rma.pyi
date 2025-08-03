@@ -19,8 +19,9 @@ class WilderMovingAverage(MovingAverage):
         If `period` is not positive (> 0).
     """
 
-    alpha: ClassVar[float]
-    value: ClassVar[float]
+    alpha: float
+    value: float
+    
     def __init__(self, period: int, price_type: PriceType = PriceType.LAST) -> None: ...
     def handle_quote_tick(self, tick: QuoteTick) -> None:
         """
