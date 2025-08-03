@@ -42,6 +42,7 @@ use futures_util::{
     stream::{SplitSink, SplitStream},
 };
 use http::HeaderName;
+#[cfg(feature = "python")]
 use nautilus_core::python::clone_py_object;
 #[cfg(feature = "python")]
 use nautilus_cryptography::providers::install_cryptographic_provider;
@@ -634,6 +635,20 @@ impl Drop for WebSocketClientInner {
         {
             handle.abort();
             log_task_aborted("heartbeat");
+        }
+
+        #[cfg(feature = "python")]
+        {
+            // Clear the main message handler to break ref cycle
+            match &mut self.config.handler {
+                Consumer::Python(handler_opt) => {
+                    *handler_opt = None;
+                }
+                Consumer::Rust(_) => {}
+            }
+
+            // Clear optional ping handler to break ref cycle
+            self.config.ping_handler = None;
         }
     }
 }

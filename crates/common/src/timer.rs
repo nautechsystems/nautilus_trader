@@ -185,8 +185,9 @@ impl From<PyObject> for TimeEventCallback {
 }
 
 // TimeEventCallback supports both single-threaded and async use cases:
-// - Python variant uses Arc<PyObject> for cross-thread compatibility with Python's GIL
-// - Rust variant uses Rc<dyn Fn(TimeEvent)> for efficient single-threaded callbacks
+// - Python variant uses PyObject for cross-thread compatibility with Python's GIL.
+// - Rust variant uses Rc<dyn Fn(TimeEvent)> for efficient single-threaded callbacks.
+//
 // SAFETY: The async timer tasks only use Python callbacks, and Rust callbacks are never
 // sent across thread boundaries in practice. This unsafe implementation allows the enum
 // to be moved into async tasks while maintaining the efficient Rc for single-threaded use.

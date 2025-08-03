@@ -67,6 +67,7 @@ pub mod nanos;
 pub mod parsing;
 pub mod paths;
 pub mod serialization;
+pub mod shared;
 pub mod time;
 pub mod uuid;
 
@@ -80,4 +81,9 @@ pub mod python;
 compile_error!("Unsupported platform: Nautilus supports only Linux, macOS, and Windows");
 
 // Re-exports
-pub use crate::{nanos::UnixNanos, time::AtomicTime, uuid::UUID4};
+pub use crate::{
+    nanos::UnixNanos,
+    shared::{SharedCell, WeakCell},
+    time::AtomicTime,
+    uuid::UUID4,
+};
