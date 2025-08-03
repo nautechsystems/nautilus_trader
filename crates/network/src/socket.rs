@@ -584,6 +584,12 @@ impl Drop for SocketClientInner {
             handle.abort();
             log_task_aborted("heartbeat");
         }
+
+        #[cfg(feature = "python")]
+        {
+            // Remove stored Python handler to break ref cycle
+            self.config.py_handler = None;
+        }
     }
 }
 

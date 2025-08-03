@@ -31,6 +31,7 @@ Released on TBD (UTC).
 ### Internal Improvements
 - Refactored OKX adapter to Rust API clients
 - Refactored `BacktestDataIterator` (#2791) to consolidate data generator usage, thanks @faysou
+- Introduced `SharedCell` / `WeakCell` wrappers for ergonomic and safer handling of `Rc<RefCell<T>>` / `Weak<RefCell<T>>` pairs
 - Added stream iterators support `BacktestDataIterator`
 - Added serialization support for execution reports
 - Added serialization support for execution report commands
@@ -68,6 +69,7 @@ Released on TBD (UTC).
 - Fixed Rust-Python reference cycles by replacing `Arc<PyObject>` with plain `PyObject` in callback-holding structs, eliminating memory leaks
 - Fixed `TimeEventHandler` memory leaks with Python callback references in FFI layer
 - Fixed `PyCapsule` memory leaks by adding destructors to enable proper Rust value cleanup
+- Fixed multiple circular-dependency memory leaks for network and bar Python callbacks using new `SharedCell`/`WeakCell` helpers
 - Fixed incorrect raw price type for matching engine in high-precision mode that could overflow during trades processing (#2810), thanks for reporting @Frzgunr1 and @happysammy
 - Fixed decoding zero-sized trades for Databento MBO data
 - Fixed purging of contingent orders where open linked orders would still be purged

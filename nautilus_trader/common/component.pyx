@@ -1109,18 +1109,28 @@ cdef inline TimeEvent capsule_to_time_event(capsule):
 cdef class TimeEventHandler:
     """
     Represents a time event with its associated handler.
+
+    Parameters
+    ----------
+    event : TimeEvent
+        The time event to handle
+    handler : Callable[[TimeEvent], None]
+        The handler to call.
+
     """
 
     def __init__(
         self,
         TimeEvent event not None,
         handler not None: Callable[[TimeEvent], None],
-    ):
+    ) -> None:
         self.event = event
         self._handler = handler
 
     cpdef void handle(self):
-        """Call the handler with the contained time event."""
+        """
+        Call the handler with the contained time event.
+        """
         self._handler(self.event)
 
     def __eq__(self, TimeEventHandler other) -> bool:
