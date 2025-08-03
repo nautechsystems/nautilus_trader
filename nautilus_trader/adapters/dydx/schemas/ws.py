@@ -665,6 +665,8 @@ class DYDXWsFillSubaccountMessageContents(msgspec.Struct, forbid_unknown_fields=
     clientMetadata: str | None = None
     fee: str | None = None
     affiliateRevShare: str | None = None
+    builderFee: str | None = None
+    builderAddress: str | None = None
 
 
 class DYDXWsOrderSubaccountMessageContents(msgspec.Struct, forbid_unknown_fields=True):
@@ -696,6 +698,8 @@ class DYDXWsOrderSubaccountMessageContents(msgspec.Struct, forbid_unknown_fields
     triggerPrice: str | None = None
     updatedAt: datetime.datetime | None = None
     updatedAtHeight: str | None = None
+    builderAddress: str | None = None
+    feePpm: str | None = None
 
     def parse_to_order_status_report(
         self,
