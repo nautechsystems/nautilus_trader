@@ -77,7 +77,7 @@ pub enum ComponentState {
 }
 
 impl ComponentState {
-    pub fn to_sentence_case(&self) -> String {
+    pub fn variant_name(&self) -> String {
         let s = self.to_string();
         format!("{}{}", s[0..1].to_uppercase(), s[1..].to_lowercase())
     }
