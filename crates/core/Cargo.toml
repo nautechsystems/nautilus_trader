@@ -35,6 +35,7 @@ chrono = { workspace = true }
 heck = { workspace = true }
 indexmap = { workspace = true }
 pyo3 = { workspace = true, optional = true }
+pyo3-stub-gen = { workspace = true }
 rand = { workspace = true }
 rmp-serde = { workspace = true }
 rust_decimal = { workspace = true }

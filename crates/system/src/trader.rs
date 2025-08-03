@@ -19,10 +19,6 @@
 //! and individual trading components. It manages component lifecycles, provides
 //! unique identification, and coordinates with system engines.
 
-// Under development
-#![allow(dead_code)]
-#![allow(unused_variables)]
-
 use std::{cell::RefCell, collections::HashMap, fmt::Debug, rc::Rc};
 
 use nautilus_common::{
@@ -409,17 +405,16 @@ impl Trader {
             start_component(&actor_id.inner())?;
         }
 
-        for (id, strategy) in &mut self.strategies {
-            log::debug!("Starting strategy '{id}'");
+        for strategy_id in &mut self.strategies.keys() {
+            log::debug!("Starting strategy '{strategy_id}'");
             // strategy.start()?; // TODO: TBD
         }
 
-        for (id, exec_algorithm) in &mut self.exec_algorithms {
-            log::debug!("Starting execution algorithm '{id}'");
+        for exec_algorithm_id in &mut self.exec_algorithms.keys() {
+            log::debug!("Starting execution algorithm '{exec_algorithm_id}'");
             // exec_algorithm.start()?;  // TODO: TBD
         }
 
-        log::info!("All components started successfully");
         Ok(())
     }
 
@@ -429,19 +424,19 @@ impl Trader {
     ///
     /// Returns an error if any component fails to stop.
     pub fn stop_components(&mut self) -> anyhow::Result<()> {
-        for (id, exec_algorithm) in &mut self.exec_algorithms {
-            log::debug!("Stopping execution algorithm '{id}'");
-            // exec_algorithm.stop()?;  // TODO: TBD
-        }
-
-        for (id, strategy) in &mut self.strategies {
-            log::debug!("Stopping strategy '{id}'");
-            // strategy.stop()?;  // TODO: TBD
-        }
-
         for actor_id in &self.actor_ids {
             log::debug!("Stopping actor '{actor_id}'");
             stop_component(&actor_id.inner())?;
+        }
+
+        for exec_algorithm_id in &mut self.exec_algorithms.keys() {
+            log::debug!("Stopping execution algorithm '{exec_algorithm_id}'");
+            // exec_algorithm.stop()?;  // TODO: TBD
+        }
+
+        for strategy_id in &mut self.strategies.keys() {
+            log::debug!("Stopping strategy '{strategy_id}'");
+            // strategy.stop()?;  // TODO: TBD
         }
 
         Ok(())
@@ -459,13 +454,13 @@ impl Trader {
             reset_component(&actor_id.inner())?;
         }
 
-        for (id, strategy) in &mut self.strategies {
-            log::debug!("Resetting strategy '{id}'");
+        for strategy_id in &mut self.strategies.keys() {
+            log::debug!("Resetting strategy '{strategy_id}'");
             // strategy.reset()?;  // TODO: TBD
         }
 
-        for (id, exec_algorithm) in &mut self.exec_algorithms {
-            log::debug!("Resetting execution algorithm '{id}'");
+        for exec_algorithm_id in &mut self.exec_algorithms.keys() {
+            log::debug!("Resetting execution algorithm '{exec_algorithm_id}'");
             // exec_algorithm.reset()?;  // TODO: TBD
         }
 
@@ -484,13 +479,13 @@ impl Trader {
             dispose_component(&actor_id.inner())?;
         }
 
-        for (id, strategy) in &mut self.strategies {
-            log::debug!("Disposing strategy '{id}'");
+        for strategy_id in &mut self.strategies.keys() {
+            log::debug!("Disposing strategy '{strategy_id}'");
             // strategy.dispose()?;  // TODO: TBD
         }
 
-        for (id, exec_algorithm) in &mut self.exec_algorithms {
-            log::debug!("Disposing execution algorithm '{id}'");
+        for exec_algorithm_id in &mut self.exec_algorithms.keys() {
+            log::debug!("Disposing execution algorithm '{exec_algorithm_id}'");
             // exec_algorithm.dispose()?;  // TODO: TBD
         }
 
@@ -764,7 +759,7 @@ mod tests {
 
     #[rstest]
     fn test_trader_creation() {
-        let (msgbus, cache, portfolio, data_engine, risk_engine, exec_engine, clock) =
+        let (_msgbus, cache, _portfolio, _data_engine, _risk_engine, _exec_engine, clock) =
             create_trader_components();
         let trader_id = TraderId::default();
         let instance_id = UUID4::new();
@@ -789,7 +784,7 @@ mod tests {
 
     #[rstest]
     fn test_trader_component_id() {
-        let (msgbus, cache, portfolio, data_engine, risk_engine, exec_engine, clock) =
+        let (_msgbus, cache, _portfolio, _data_engine, _risk_engine, _exec_engine, clock) =
             create_trader_components();
         let trader_id = TraderId::from("TRADER-001");
         let instance_id = UUID4::new();
@@ -804,7 +799,7 @@ mod tests {
 
     #[rstest]
     fn test_add_actor_success() {
-        let (msgbus, cache, portfolio, data_engine, risk_engine, exec_engine, clock) =
+        let (_msgbus, cache, _portfolio, _data_engine, _risk_engine, _exec_engine, clock) =
             create_trader_components();
         let trader_id = TraderId::default();
         let instance_id = UUID4::new();
@@ -823,7 +818,7 @@ mod tests {
 
     #[rstest]
     fn test_add_duplicate_actor_fails() {
-        let (msgbus, cache, portfolio, data_engine, risk_engine, exec_engine, clock) =
+        let (_msgbus, cache, _portfolio, _data_engine, _risk_engine, _exec_engine, clock) =
             create_trader_components();
         let trader_id = TraderId::default();
         let instance_id = UUID4::new();
@@ -855,7 +850,7 @@ mod tests {
 
     #[rstest]
     fn test_add_strategy_success() {
-        let (msgbus, cache, portfolio, data_engine, risk_engine, exec_engine, clock) =
+        let (_msgbus, cache, _portfolio, _data_engine, _risk_engine, _exec_engine, clock) =
             create_trader_components();
         let trader_id = TraderId::default();
         let instance_id = UUID4::new();
@@ -874,7 +869,7 @@ mod tests {
 
     #[rstest]
     fn test_add_exec_algorithm_success() {
-        let (msgbus, cache, portfolio, data_engine, risk_engine, exec_engine, clock) =
+        let (_msgbus, cache, _portfolio, _data_engine, _risk_engine, _exec_engine, clock) =
             create_trader_components();
         let trader_id = TraderId::default();
         let instance_id = UUID4::new();
@@ -894,7 +889,7 @@ mod tests {
 
     #[rstest]
     fn test_component_lifecycle() {
-        let (msgbus, cache, portfolio, data_engine, risk_engine, exec_engine, clock) =
+        let (_msgbus, cache, _portfolio, _data_engine, _risk_engine, _exec_engine, clock) =
             create_trader_components();
         let trader_id = TraderId::default();
         let instance_id = UUID4::new();
@@ -927,7 +922,7 @@ mod tests {
 
     #[rstest]
     fn test_trader_component_lifecycle() {
-        let (msgbus, cache, portfolio, data_engine, risk_engine, exec_engine, clock) =
+        let (_msgbus, cache, _portfolio, _data_engine, _risk_engine, _exec_engine, clock) =
             create_trader_components();
         let trader_id = TraderId::default();
         let instance_id = UUID4::new();
@@ -972,7 +967,7 @@ mod tests {
 
     #[rstest]
     fn test_cannot_add_components_while_running() {
-        let (msgbus, cache, portfolio, data_engine, risk_engine, exec_engine, clock) =
+        let (_msgbus, cache, _portfolio, _data_engine, _risk_engine, _exec_engine, clock) =
             create_trader_components();
         let trader_id = TraderId::default();
         let instance_id = UUID4::new();
@@ -995,7 +990,7 @@ mod tests {
 
     #[rstest]
     fn test_create_component_clock_backtest_vs_live() {
-        let (msgbus, cache, portfolio, data_engine, risk_engine, exec_engine, clock) =
+        let (_msgbus, cache, _portfolio, _data_engine, _risk_engine, _exec_engine, clock) =
             create_trader_components();
         let trader_id = TraderId::default();
         let instance_id = UUID4::new();
