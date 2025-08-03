@@ -145,36 +145,50 @@ impl NautilusKernel {
         let data_engine = Rc::new(RefCell::new(data_engine));
 
         // Register DataEngine command execution
-        let data_engine_ref = data_engine.clone();
+        use nautilus_core::WeakCell;
+
+        let data_engine_weak = WeakCell::from(Rc::downgrade(&data_engine));
+        let data_engine_weak_clone1 = data_engine_weak.clone();
         let endpoint = MessagingSwitchboard::data_engine_execute();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |cmd: &DataCommand| data_engine_ref.borrow_mut().execute(cmd),
+            move |cmd: &DataCommand| {
+                if let Some(engine_rc) = data_engine_weak_clone1.upgrade() {
+                    engine_rc.borrow_mut().execute(cmd);
+                }
+            },
         )));
         msgbus::register(endpoint, handler);
 
         // Register DataEngine command queueing
         let endpoint = MessagingSwitchboard::data_engine_queue_execute();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |cmd: &DataCommand| get_data_cmd_sender().clone().execute(cmd.clone()), // TODO:
+            move |cmd: &DataCommand| {
+                get_data_cmd_sender().clone().execute(cmd.clone());
+            },
         )));
         msgbus::register(endpoint, handler);
 
         // Register DataEngine process handler
-        let data_engine_ref = data_engine.clone();
         let endpoint = MessagingSwitchboard::data_engine_process();
-        // TODO: Optimize this back to a typed handler
+        let data_engine_weak2 = data_engine_weak.clone();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::with_any(
             move |data: &dyn Any| {
-                data_engine_ref.borrow_mut().process(data);
+                if let Some(engine_rc) = data_engine_weak2.upgrade() {
+                    engine_rc.borrow_mut().process(data);
+                }
             },
         )));
         msgbus::register(endpoint, handler);
 
         // Register DataEngine response handler
-        let data_engine_ref = data_engine.clone();
         let endpoint = MessagingSwitchboard::data_engine_response();
+        let data_engine_weak3 = data_engine_weak;
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |resp: &DataResponse| data_engine_ref.borrow_mut().response(resp.clone()),
+            move |resp: &DataResponse| {
+                if let Some(engine_rc) = data_engine_weak3.upgrade() {
+                    engine_rc.borrow_mut().response(resp.clone());
+                }
+            },
         )));
         msgbus::register(endpoint, handler);
 

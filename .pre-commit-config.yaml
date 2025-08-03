@@ -167,6 +167,7 @@ repos:
     rev: 0.8.4  # uv version
     hooks:
       - id: uv-lock
+        files: ^python/uv\.lock$
 
   - repo: https://github.com/kynan/nbstripout
     rev: 0.8.1

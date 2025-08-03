@@ -528,20 +528,7 @@ let callback = Arc::new(py_function);  // ❌
 let callback = py_function;  // ✅
 ```
 
-### Migration Checklist
-
-When refactoring existing code to eliminate reference cycles:
-
-- [ ] Replace `Arc<PyObject>` with `PyObject` in struct fields.
-- [ ] Remove `#[derive(Clone)]` from callback-holding structs.
-- [ ] Add manual `Clone` implementations using `clone_py_object()`.
-- [ ] Update function signatures to accept `PyObject` instead of `Arc<PyObject>`.
-- [ ] Replace `handler.clone()` calls with `clone_py_object(handler)`.
-- [ ] Remove `Arc::new()` wrappers around Python callbacks.
-- [ ] Update FFI registries and callback storage to use `PyObject`.
-- [ ] Clean up unused `Arc` imports.
-
-### Why This Works
+### Why this works
 
 The `clone_py_object()` function:
 

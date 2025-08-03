@@ -12,5 +12,3 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-from nautilus_trader._libnautilus.common import *  # noqa: F403 (undefined-local-with-import-star)

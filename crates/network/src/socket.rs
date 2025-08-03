@@ -39,6 +39,7 @@ use std::{
 };
 
 use bytes::Bytes;
+use nautilus_core::CleanDrop;
 #[cfg(feature = "python")]
 use nautilus_core::python::clone_py_object;
 use nautilus_cryptography::providers::install_cryptographic_provider;
@@ -568,6 +569,13 @@ impl SocketClientInner {
 
 impl Drop for SocketClientInner {
     fn drop(&mut self) {
+        // Delegate to explicit cleanup handler
+        self.clean_drop();
+    }
+}
+
+impl CleanDrop for SocketClientInner {
+    fn clean_drop(&mut self) {
         if !self.read_task.is_finished() {
             self.read_task.abort();
             log_task_aborted("read");

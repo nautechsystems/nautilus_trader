@@ -20,7 +20,7 @@ use std::{
     ops::{Add, Mul},
 };
 
-use implied_vol::{implied_black_volatility, norm_cdf, norm_pdf};
+use implied_vol::{DefaultSpecialFn, SpecialFn, implied_black_volatility};
 use nautilus_core::{UnixNanos, datetime::unix_nanos_to_iso8601, math::quadratic_interpolation};
 
 use crate::{data::HasTsInit, identifiers::InstrumentId};
@@ -56,9 +56,9 @@ pub fn black_scholes_greeks(
     let scaled_vol = sigma * t.sqrt();
     let d1 = ((s / k).ln() + (b + 0.5 * sigma.powi(2)) * t) / scaled_vol;
     let d2 = d1 - scaled_vol;
-    let cdf_phi_d1 = norm_cdf(phi * d1);
-    let cdf_phi_d2 = norm_cdf(phi * d2);
-    let dist_d1 = norm_pdf(d1);
+    let cdf_phi_d1 = DefaultSpecialFn::norm_cdf(phi * d1);
+    let cdf_phi_d2 = DefaultSpecialFn::norm_cdf(phi * d2);
+    let dist_d1 = DefaultSpecialFn::norm_pdf(d1);
     let df = ((b - r) * t).exp();
     let s_t = s * df;
     let k_t = k * (-r * t).exp();
