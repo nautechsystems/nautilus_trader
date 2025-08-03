@@ -119,7 +119,7 @@ impl Pool {
             sanitize_symbol(&token1.symbol),
             fee
         );
-        let venue = format!("{}:{}", dex.name, chain);
+        let venue = format!("{}:{}", chain, dex.name);
         InstrumentId::from(format!("{symbol}.{venue}").as_str())
     }
 }
@@ -308,7 +308,7 @@ mod tests {
 
         assert_eq!(
             pool.instrument_id.to_string(),
-            "WETH/USDT-3000.UniswapV3:Ethereum"
+            "WETH/USDT-3000.Ethereum:UniswapV3"
         );
     }
 }

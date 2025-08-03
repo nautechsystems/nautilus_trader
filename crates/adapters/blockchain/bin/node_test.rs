@@ -87,7 +87,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client_id = ClientId::new(format!("BLOCKCHAIN-{}", chain.name));
 
     let pools = vec![
-        InstrumentId::from("WETH/USDC-3000.UniswapV3:Arbitrum"), // Arbitrum WETH/USDC 0.30% pool
+        InstrumentId::from("WETH/USDC-3000.Arbitrum:UniswapV3"), // Arbitrum WETH/USDC 0.30% pool
     ];
 
     let actor_config = BlockchainSubscriberActorConfig::new(client_id, chain.name, pools);
