@@ -1652,7 +1652,7 @@ where
 
     fn transition_state(&mut self, trigger: ComponentTrigger) -> anyhow::Result<()> {
         self.state = self.state.transition(&trigger)?;
-        log::info!("{}", self.state.to_sentence_case());
+        log::info!("{}", self.state.variant_name());
         Ok(())
     }
 
@@ -1739,6 +1739,36 @@ impl Debug for DataActorCore {
 }
 
 impl DataActorCore {
+    /// Adds a subscription handler for the `topic`.
+    ///
+    //// Logs a warning if the actor is already subscribed to the topic.
+    fn add_subscription(&mut self, topic: MStr<Topic>, handler: ShareableMessageHandler) {
+        if self.topic_handlers.contains_key(&topic) {
+            log::warn!(
+                "Actor {} attempted duplicate subscription to topic '{topic}'",
+                self.actor_id,
+            );
+            return;
+        }
+
+        self.topic_handlers.insert(topic, handler.clone());
+        msgbus::subscribe_topic(topic, handler, None);
+    }
+
+    /// Removes a subscription handler for the `topic` if present.
+    ///
+    /// Logs a warning if the actor is not currently subscribed to the topic.
+    fn remove_subscription(&mut self, topic: MStr<Topic>) {
+        if let Some(handler) = self.topic_handlers.remove(&topic) {
+            msgbus::unsubscribe_topic(topic, handler.clone());
+        } else {
+            log::warn!(
+                "Actor {} attempted to unsubscribe from topic '{topic}' when not subscribed",
+                self.actor_id,
+            );
+        }
+    }
+
     /// Creates a new [`DataActorCore`] instance.
     pub fn new(config: DataActorConfig) -> Self {
         let actor_id = config
@@ -1975,8 +2005,7 @@ impl DataActorCore {
         }
 
         let topic = get_custom_topic(&data_type);
-        self.topic_handlers.insert(topic, handler.clone());
-        msgbus::subscribe_topic(topic, handler, None);
+        self.add_subscription(topic, handler);
 
         // If no client ID specified, just subscribe to the topic
         if client_id.is_none() {
@@ -2006,8 +2035,7 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.topic_handlers.insert(topic, handler.clone());
-        msgbus::subscribe_topic(topic, handler, None);
+        self.add_subscription(topic, handler);
 
         let command = SubscribeCommand::Quotes(SubscribeQuotes {
             instrument_id,
@@ -2032,8 +2060,7 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.topic_handlers.insert(topic, handler.clone());
-        msgbus::subscribe_topic(topic, handler, None);
+        self.add_subscription(topic, handler);
 
         let command = SubscribeCommand::Instruments(SubscribeInstruments {
             client_id,
@@ -2057,8 +2084,7 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.topic_handlers.insert(topic, handler.clone());
-        msgbus::subscribe_topic(topic, handler, None);
+        self.add_subscription(topic, handler);
 
         let command = SubscribeCommand::Instrument(SubscribeInstrument {
             instrument_id,
@@ -2087,8 +2113,7 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.topic_handlers.insert(topic, handler.clone());
-        msgbus::subscribe_topic(topic, handler, None);
+        self.add_subscription(topic, handler);
 
         let command = SubscribeCommand::BookDeltas(SubscribeBookDeltas {
             instrument_id,
@@ -2120,8 +2145,7 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.topic_handlers.insert(topic, handler.clone());
-        msgbus::subscribe_topic(topic, handler, None);
+        self.add_subscription(topic, handler);
 
         let command = SubscribeCommand::BookSnapshots(SubscribeBookSnapshots {
             instrument_id,
@@ -2149,8 +2173,7 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.topic_handlers.insert(topic, handler.clone());
-        msgbus::subscribe_topic(topic, handler, None);
+        self.add_subscription(topic, handler);
 
         let command = SubscribeCommand::Trades(SubscribeTrades {
             instrument_id,
@@ -2176,8 +2199,7 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.topic_handlers.insert(topic, handler.clone());
-        msgbus::subscribe_topic(topic, handler, None);
+        self.add_subscription(topic, handler);
 
         let command = SubscribeCommand::Bars(SubscribeBars {
             bar_type,
@@ -2203,8 +2225,7 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.topic_handlers.insert(topic, handler.clone());
-        msgbus::subscribe_topic(topic, handler, None);
+        self.add_subscription(topic, handler);
 
         let command = SubscribeCommand::MarkPrices(SubscribeMarkPrices {
             instrument_id,
@@ -2229,8 +2250,7 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.topic_handlers.insert(topic, handler.clone());
-        msgbus::subscribe_topic(topic, handler, None);
+        self.add_subscription(topic, handler);
 
         let command = SubscribeCommand::IndexPrices(SubscribeIndexPrices {
             instrument_id,
@@ -2255,8 +2275,7 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.topic_handlers.insert(topic, handler.clone());
-        msgbus::subscribe_topic(topic, handler, None);
+        self.add_subscription(topic, handler);
 
         let command = SubscribeCommand::InstrumentStatus(SubscribeInstrumentStatus {
             instrument_id,
@@ -2281,8 +2300,7 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.topic_handlers.insert(topic, handler.clone());
-        msgbus::subscribe_topic(topic, handler, None);
+        self.add_subscription(topic, handler);
 
         let command = SubscribeCommand::InstrumentClose(SubscribeInstrumentClose {
             instrument_id,
@@ -2310,8 +2328,7 @@ impl DataActorCore {
 
         self.check_registered();
 
-        self.topic_handlers.insert(topic, handler.clone());
-        msgbus::subscribe_topic(topic, handler, None);
+        self.add_subscription(topic, handler);
 
         let command = DefiSubscribeCommand::Blocks(SubscribeBlocks {
             chain,
@@ -2338,8 +2355,7 @@ impl DataActorCore {
 
         self.check_registered();
 
-        self.topic_handlers.insert(topic, handler.clone());
-        msgbus::subscribe_topic(topic, handler, None);
+        self.add_subscription(topic, handler);
 
         let command = DefiSubscribeCommand::Pool(SubscribePool {
             instrument_id,
@@ -2366,8 +2382,7 @@ impl DataActorCore {
 
         self.check_registered();
 
-        self.topic_handlers.insert(topic, handler.clone());
-        msgbus::subscribe_topic(topic, handler, None);
+        self.add_subscription(topic, handler);
 
         let command = DefiSubscribeCommand::PoolSwaps(SubscribePoolSwaps {
             instrument_id,
@@ -2394,8 +2409,7 @@ impl DataActorCore {
 
         self.check_registered();
 
-        self.topic_handlers.insert(topic, handler.clone());
-        msgbus::subscribe_topic(topic, handler, None);
+        self.add_subscription(topic, handler);
 
         let command = DefiSubscribeCommand::PoolLiquidityUpdates(SubscribePoolLiquidityUpdates {
             instrument_id,
@@ -2410,7 +2424,7 @@ impl DataActorCore {
 
     /// Helper method for unsubscribing from data.
     pub fn unsubscribe_data(
-        &self,
+        &mut self,
         data_type: DataType,
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
@@ -2418,9 +2432,7 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_custom_topic(&data_type);
-        if let Some(handler) = self.topic_handlers.get(&topic) {
-            msgbus::unsubscribe_topic(topic, handler.clone());
-        };
+        self.remove_subscription(topic);
 
         if client_id.is_none() {
             return;
@@ -2440,7 +2452,7 @@ impl DataActorCore {
 
     /// Helper method for unsubscribing from instruments.
     pub fn unsubscribe_instruments(
-        &self,
+        &mut self,
         venue: Venue,
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
@@ -2448,9 +2460,7 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_instruments_topic(venue);
-        if let Some(handler) = self.topic_handlers.get(&topic) {
-            msgbus::unsubscribe_topic(topic, handler.clone());
-        };
+        self.remove_subscription(topic);
 
         let command = UnsubscribeCommand::Instruments(UnsubscribeInstruments {
             client_id,
@@ -2465,7 +2475,7 @@ impl DataActorCore {
 
     /// Helper method for unsubscribing from instrument.
     pub fn unsubscribe_instrument(
-        &self,
+        &mut self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
@@ -2473,9 +2483,7 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_instrument_topic(instrument_id);
-        if let Some(handler) = self.topic_handlers.get(&topic) {
-            msgbus::unsubscribe_topic(topic, handler.clone());
-        };
+        self.remove_subscription(topic);
 
         let command = UnsubscribeCommand::Instrument(UnsubscribeInstrument {
             instrument_id,
@@ -2491,7 +2499,7 @@ impl DataActorCore {
 
     /// Helper method for unsubscribing from book deltas.
     pub fn unsubscribe_book_deltas(
-        &self,
+        &mut self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
@@ -2499,9 +2507,7 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_book_deltas_topic(instrument_id);
-        if let Some(handler) = self.topic_handlers.get(&topic) {
-            msgbus::unsubscribe_topic(topic, handler.clone());
-        };
+        self.remove_subscription(topic);
 
         let command = UnsubscribeCommand::BookDeltas(UnsubscribeBookDeltas {
             instrument_id,
@@ -2526,9 +2532,7 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_book_snapshots_topic(instrument_id, interval_ms);
-        if let Some(handler) = self.topic_handlers.get(&topic) {
-            msgbus::unsubscribe_topic(topic, handler.clone());
-        };
+        self.remove_subscription(topic);
 
         let command = UnsubscribeCommand::BookSnapshots(UnsubscribeBookSnapshots {
             instrument_id,
@@ -2544,7 +2548,7 @@ impl DataActorCore {
 
     /// Helper method for unsubscribing from quotes.
     pub fn unsubscribe_quotes(
-        &self,
+        &mut self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
@@ -2552,9 +2556,7 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_quotes_topic(instrument_id);
-        if let Some(handler) = self.topic_handlers.get(&topic) {
-            msgbus::unsubscribe_topic(topic, handler.clone());
-        };
+        self.remove_subscription(topic);
 
         let command = UnsubscribeCommand::Quotes(UnsubscribeQuotes {
             instrument_id,
@@ -2570,7 +2572,7 @@ impl DataActorCore {
 
     /// Helper method for unsubscribing from trades.
     pub fn unsubscribe_trades(
-        &self,
+        &mut self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
@@ -2578,9 +2580,7 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_trades_topic(instrument_id);
-        if let Some(handler) = self.topic_handlers.get(&topic) {
-            msgbus::unsubscribe_topic(topic, handler.clone());
-        };
+        self.remove_subscription(topic);
 
         let command = UnsubscribeCommand::Trades(UnsubscribeTrades {
             instrument_id,
@@ -2604,9 +2604,7 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_bars_topic(bar_type);
-        if let Some(handler) = self.topic_handlers.get(&topic) {
-            msgbus::unsubscribe_topic(topic, handler.clone());
-        };
+        self.remove_subscription(topic);
 
         let command = UnsubscribeCommand::Bars(UnsubscribeBars {
             bar_type,
@@ -2622,7 +2620,7 @@ impl DataActorCore {
 
     /// Helper method for unsubscribing from mark prices.
     pub fn unsubscribe_mark_prices(
-        &self,
+        &mut self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
@@ -2630,9 +2628,7 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_mark_price_topic(instrument_id);
-        if let Some(handler) = self.topic_handlers.get(&topic) {
-            msgbus::unsubscribe_topic(topic, handler.clone());
-        };
+        self.remove_subscription(topic);
 
         let command = UnsubscribeCommand::MarkPrices(UnsubscribeMarkPrices {
             instrument_id,
@@ -2648,7 +2644,7 @@ impl DataActorCore {
 
     /// Helper method for unsubscribing from index prices.
     pub fn unsubscribe_index_prices(
-        &self,
+        &mut self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
@@ -2656,9 +2652,7 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_index_price_topic(instrument_id);
-        if let Some(handler) = self.topic_handlers.get(&topic) {
-            msgbus::unsubscribe_topic(topic, handler.clone());
-        };
+        self.remove_subscription(topic);
 
         let command = UnsubscribeCommand::IndexPrices(UnsubscribeIndexPrices {
             instrument_id,
@@ -2674,7 +2668,7 @@ impl DataActorCore {
 
     /// Helper method for unsubscribing from instrument status.
     pub fn unsubscribe_instrument_status(
-        &self,
+        &mut self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
@@ -2682,9 +2676,7 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_instrument_status_topic(instrument_id);
-        if let Some(handler) = self.topic_handlers.get(&topic) {
-            msgbus::unsubscribe_topic(topic, handler.clone());
-        };
+        self.remove_subscription(topic);
 
         let command = UnsubscribeCommand::InstrumentStatus(UnsubscribeInstrumentStatus {
             instrument_id,
@@ -2700,7 +2692,7 @@ impl DataActorCore {
 
     /// Helper method for unsubscribing from instrument close.
     pub fn unsubscribe_instrument_close(
-        &self,
+        &mut self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
@@ -2708,9 +2700,7 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_instrument_close_topic(instrument_id);
-        if let Some(handler) = self.topic_handlers.get(&topic) {
-            msgbus::unsubscribe_topic(topic, handler.clone());
-        };
+        self.remove_subscription(topic);
 
         let command = UnsubscribeCommand::InstrumentClose(UnsubscribeInstrumentClose {
             instrument_id,
@@ -2737,9 +2727,7 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_defi_blocks_topic(chain);
-        if let Some(handler) = self.topic_handlers.get(&topic) {
-            msgbus::unsubscribe_topic(topic, handler.clone());
-        };
+        self.remove_subscription(topic);
 
         let command = DefiUnsubscribeCommand::Blocks(UnsubscribeBlocks {
             chain,
@@ -2765,9 +2753,7 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_defi_pool_topic(instrument_id);
-        if let Some(handler) = self.topic_handlers.get(&topic) {
-            msgbus::unsubscribe_topic(topic, handler.clone());
-        };
+        self.remove_subscription(topic);
 
         let command = DefiUnsubscribeCommand::Pool(UnsubscribePool {
             instrument_id,
@@ -2793,9 +2779,7 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_defi_pool_swaps_topic(instrument_id);
-        if let Some(handler) = self.topic_handlers.get(&topic) {
-            msgbus::unsubscribe_topic(topic, handler.clone());
-        };
+        self.remove_subscription(topic);
 
         let command = DefiUnsubscribeCommand::PoolSwaps(UnsubscribePoolSwaps {
             instrument_id,
@@ -2821,9 +2805,7 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_defi_liquidity_topic(instrument_id);
-        if let Some(handler) = self.topic_handlers.get(&topic) {
-            msgbus::unsubscribe_topic(topic, handler.clone());
-        };
+        self.remove_subscription(topic);
 
         let command =
             DefiUnsubscribeCommand::PoolLiquidityUpdates(UnsubscribePoolLiquidityUpdates {

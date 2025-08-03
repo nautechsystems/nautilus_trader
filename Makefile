@@ -365,7 +365,7 @@ init-db:  #-- Initialize PostgreSQL database schema
 .PHONY: pytest
 pytest:  #-- Run Python tests with pytest in parallel with immediate failure reporting
 	$(info $(M) Running Python tests in parallel with immediate failure reporting...)
-	uv run --active --no-sync pytest --new-first --failed-first --tb=line -n logical --dist=loadgroup --maxfail=50 $(if $(VERBOSE),-v,)
+	uv run --active --no-sync pytest --new-first --failed-first --tb=line -n logical --dist=loadgroup --maxfail=50 $(if $(filter true,$(VERBOSE)),-v,)
 
 .PHONY: pytest-memory-tracking
 pytest-memory-tracking:  #-- Run Python tests with memory tracking enabled

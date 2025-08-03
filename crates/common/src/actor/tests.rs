@@ -24,6 +24,7 @@ use std::{
 };
 
 use bytes::Bytes;
+use indexmap::IndexMap;
 use log::LevelFilter;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
@@ -1647,4 +1648,125 @@ fn test_unsubscribe_pool_swaps(
     // Should still only have one swap
     assert_eq!(actor.received_pool_swaps.len(), 1);
     assert_eq!(actor.received_pool_swaps[0], swap1);
+}
+
+#[rstest]
+fn test_duplicate_subscribe_custom_data(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    // Register actor
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    // Subscribe twice to the same DataType
+    let data_type = DataType::new(stringify!(String), None);
+    actor.subscribe_data(data_type.clone(), None, None);
+    actor.subscribe_data(data_type.clone(), None, None);
+
+    // Publish a single message
+    let topic = get_custom_topic(&data_type);
+    let payload = String::from("Custom-XYZ");
+    msgbus::publish(topic, &payload);
+
+    // Only a single handler should be active despite duplicate subscribe attempt
+    assert_eq!(actor.received_data.len(), 1);
+}
+
+#[rstest]
+fn test_unsubscribe_before_subscribe_custom_data(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    let data_type = DataType::new(stringify!(String), None);
+
+    // Unsubscribe without prior subscription: should not panic and no data received
+    actor.unsubscribe_data(data_type.clone(), None, None);
+
+    let topic = get_custom_topic(&data_type);
+    let payload = String::from("Custom-ABC");
+    msgbus::publish(topic, &payload);
+
+    assert!(actor.received_data.is_empty());
+}
+
+// ---------------------------------------------------------------------------------------------
+// save / load round-trip
+// ---------------------------------------------------------------------------------------------
+
+#[derive(Debug)]
+struct SaveLoadActor {
+    core: DataActorCore,
+    loaded_state: Option<IndexMap<String, Vec<u8>>>,
+}
+
+impl SaveLoadActor {
+    fn new(config: DataActorConfig) -> Self {
+        Self {
+            core: DataActorCore::new(config),
+            loaded_state: None,
+        }
+    }
+}
+
+impl Deref for SaveLoadActor {
+    type Target = DataActorCore;
+    fn deref(&self) -> &Self::Target {
+        &self.core
+    }
+}
+
+impl DerefMut for SaveLoadActor {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.core
+    }
+}
+
+impl DataActor for SaveLoadActor {
+    fn on_save(&self) -> anyhow::Result<IndexMap<String, Vec<u8>>> {
+        let mut map = IndexMap::new();
+        map.insert("answer".to_string(), vec![4, 2]);
+        Ok(map)
+    }
+
+    fn on_load(&mut self, state: IndexMap<String, Vec<u8>>) -> anyhow::Result<()> {
+        self.loaded_state = Some(state);
+        Ok(())
+    }
+}
+
+#[rstest]
+fn test_on_save_and_on_load(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let config = DataActorConfig::default();
+
+    // Prepare actor & register
+    let mut actor = SaveLoadActor::new(config);
+    actor.register(trader_id, clock, cache).unwrap();
+    let actor_id = actor.actor_id();
+    register_actor(actor);
+
+    // Fetch back to mutate
+    let actor_key = actor_id.inner();
+    let actor_ref = get_actor_unchecked::<SaveLoadActor>(&actor_key);
+
+    // Invoke on_save – emulate persistence snapshot
+    let snapshot = actor_ref.on_save().unwrap();
+    assert!(snapshot.contains_key("answer"));
+
+    // Invoke on_load with snapshot
+    actor_ref.on_load(snapshot.clone()).unwrap();
+
+    // Verify state stored
+    assert_eq!(actor_ref.loaded_state.as_ref(), Some(&snapshot));
 }
