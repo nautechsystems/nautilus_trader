@@ -268,7 +268,8 @@ mod tests {
         expected = "Error parsing `InstrumentId` from '0xC31E54c7a869B9FcBEcc14363CF510d1c41fa443.Arbitrum:InvalidDex': invalid blockchain venue 'Arbitrum:InvalidDex': dex 'InvalidDex' not recognized"
     )]
     fn test_blockchain_instrument_id_invalid_dex() {
-        let _ = InstrumentId::from("0xC31E54c7a869B9FcBEcc14363CF510d1c41fa443.Arbitrum:InvalidDex");
+        let _ =
+            InstrumentId::from("0xC31E54c7a869B9FcBEcc14363CF510d1c41fa443.Arbitrum:InvalidDex");
     }
 
     #[cfg(feature = "defi")]
@@ -276,14 +277,23 @@ mod tests {
     fn test_blockchain_instrument_id_valid_dex_names() {
         // Test various valid DEX names
         let valid_dexes = vec![
-            "UniswapV3", "UniswapV2", "UniswapV4",
-            "SushiSwapV2", "SushiSwapV3",
-            "PancakeSwapV3", "CamelotV3",
-            "CurveFinance", "FluidDEX",
-            "MaverickV1", "MaverickV2",
-            "BaseX", "BaseSwapV2",
-            "AerodromeV1", "AerodromeSlipstream",
-            "BalancerV2", "BalancerV3"
+            "UniswapV3",
+            "UniswapV2",
+            "UniswapV4",
+            "SushiSwapV2",
+            "SushiSwapV3",
+            "PancakeSwapV3",
+            "CamelotV3",
+            "CurveFinance",
+            "FluidDEX",
+            "MaverickV1",
+            "MaverickV2",
+            "BaseX",
+            "BaseSwapV2",
+            "AerodromeV1",
+            "AerodromeSlipstream",
+            "BalancerV2",
+            "BalancerV3",
         ];
 
         for dex_name in valid_dexes {
@@ -308,7 +318,8 @@ mod tests {
     #[rstest]
     fn test_blockchain_instrument_id_chain_and_dex_validation_combined() {
         // Test that both chain and DEX validation work together
-        let id = InstrumentId::from("0xC31E54c7a869B9FcBEcc14363CF510d1c41fa443.Ethereum:UniswapV3");
+        let id =
+            InstrumentId::from("0xC31E54c7a869B9FcBEcc14363CF510d1c41fa443.Ethereum:UniswapV3");
         assert_eq!(
             id.symbol.to_string(),
             "0xC31E54c7a869B9FcBEcc14363CF510d1c41fa443"

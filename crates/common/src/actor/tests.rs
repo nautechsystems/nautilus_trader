@@ -1451,14 +1451,14 @@ fn test_subscribe_and_receive_pools(
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    use nautilus_model::defi::{Dex, Pool, Token, chain::chains, dex::AmmType};
+    use nautilus_model::defi::{Dex, DexType, Pool, Token, chain::chains, dex::AmmType};
 
     use crate::msgbus::switchboard::get_defi_pool_topic;
 
     let chain = Arc::new(chains::ETHEREUM.clone());
     let dex = Dex::new(
         chains::ETHEREUM.clone(),
-        "Uniswap V3",
+        DexType::UniswapV3,
         "0x1F98431c8aD98523631AE4a59f267346ea31F984",
         0,
         AmmType::CLAMM,
@@ -1516,14 +1516,14 @@ fn test_subscribe_and_receive_pool_swaps(
     actor.start().unwrap();
 
     use nautilus_model::{
-        defi::{AmmType, Dex, chain::chains},
+        defi::{AmmType, Dex, DexType, chain::chains},
         identifiers::InstrumentId,
     };
 
     let chain = Arc::new(chains::ETHEREUM.clone());
     let dex = Dex::new(
         chains::ETHEREUM.clone(),
-        "Uniswap V3",
+        DexType::UniswapV3,
         "0x1F98431c8aD98523631AE4a59f267346ea31F984",
         0,
         AmmType::CLAMM,
@@ -1573,12 +1573,12 @@ fn test_unsubscribe_pool_swaps(
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    use nautilus_model::defi::{Dex, Pool, Token, chain::chains, dex::AmmType};
+    use nautilus_model::defi::{Dex, DexType, Pool, Token, chain::chains, dex::AmmType};
 
     let chain = Arc::new(chains::ETHEREUM.clone());
     let dex = Dex::new(
         chains::ETHEREUM.clone(),
-        "Uniswap V3",
+        DexType::UniswapV3,
         "0x1F98431c8aD98523631AE4a59f267346ea31F984",
         0,
         AmmType::CLAMM,

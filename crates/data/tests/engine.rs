@@ -53,7 +53,7 @@ use nautilus_model::{
         prices::{IndexPriceUpdate, MarkPriceUpdate},
         stubs::{stub_delta, stub_deltas, stub_depth10},
     },
-    defi::{AmmType, Dex, chain::chains},
+    defi::{AmmType, Dex, DexType, chain::chains},
     enums::{BookType, PriceType},
     identifiers::{ClientId, InstrumentId, TraderId, Venue},
     instruments::{CurrencyPair, Instrument, InstrumentAny, stubs::audusd_sim},
@@ -1633,7 +1633,7 @@ fn test_process_pool_swap(data_engine: Rc<RefCell<DataEngine>>, data_client: Dat
     let chain = Arc::new(chains::ETHEREUM.clone());
     let dex = Arc::new(Dex::new(
         chains::ETHEREUM.clone(),
-        "Uniswap V3",
+        DexType::UniswapV3,
         "0x1F98431c8aD98523631AE4a59f267346ea31F984",
         0,
         AmmType::CLAMM,

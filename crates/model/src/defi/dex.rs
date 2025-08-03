@@ -73,7 +73,6 @@ pub enum AmmType {
     Serialize,
     Deserialize,
 )]
-#[non_exhaustive]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
@@ -114,8 +113,8 @@ impl DexType {
 pub struct Dex {
     /// The blockchain network where this DEX operates.
     pub chain: Chain,
-    /// The name of the DEX protocol.
-    pub name: Cow<'static, str>,
+    /// The variant of the DEX protocol.
+    pub name: DexType,
     /// The blockchain address of the DEX factory contract.
     pub factory: Cow<'static, str>,
     /// The block number at which the DEX factory contract was deployed.
@@ -144,7 +143,7 @@ impl Dex {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         chain: Chain,
-        name: impl Into<Cow<'static, str>>,
+        name: DexType,
         factory: impl Into<Cow<'static, str>>,
         factory_creation_block: u64,
         amm_type: AmmType,
@@ -155,7 +154,7 @@ impl Dex {
     ) -> Self {
         Self {
             chain,
-            name: name.into(),
+            name,
             factory: factory.into(),
             factory_creation_block,
             pool_created_event: pool_created_event.into(),
@@ -274,10 +273,23 @@ mod tests {
     fn test_dex_type_all_variants_mappable() {
         // Test that all DEX variants can be mapped from their string representation
         let all_dex_names = vec![
-            "AerodromeSlipstream", "AerodromeV1", "BalancerV2", "BalancerV3",
-            "BaseSwapV2", "BaseX", "CamelotV3", "CurveFinance", "FluidDEX",
-            "MaverickV1", "MaverickV2", "PancakeSwapV3", "SushiSwapV2",
-            "SushiSwapV3", "UniswapV2", "UniswapV3", "UniswapV4"
+            "AerodromeSlipstream",
+            "AerodromeV1",
+            "BalancerV2",
+            "BalancerV3",
+            "BaseSwapV2",
+            "BaseX",
+            "CamelotV3",
+            "CurveFinance",
+            "FluidDEX",
+            "MaverickV1",
+            "MaverickV2",
+            "PancakeSwapV3",
+            "SushiSwapV2",
+            "SushiSwapV3",
+            "UniswapV2",
+            "UniswapV3",
+            "UniswapV4",
         ];
 
         for dex_name in all_dex_names {
@@ -294,7 +306,10 @@ mod tests {
         // Test that DexType variants display correctly (using strum::Display)
         assert_eq!(DexType::UniswapV3.to_string(), "UniswapV3");
         assert_eq!(DexType::SushiSwapV2.to_string(), "SushiSwapV2");
-        assert_eq!(DexType::AerodromeSlipstream.to_string(), "AerodromeSlipstream");
+        assert_eq!(
+            DexType::AerodromeSlipstream.to_string(),
+            "AerodromeSlipstream"
+        );
         assert_eq!(DexType::FluidDEX.to_string(), "FluidDEX");
     }
 }
