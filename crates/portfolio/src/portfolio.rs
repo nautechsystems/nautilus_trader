@@ -13,10 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-// TODO: Under development
-#![allow(dead_code)] // For PortfolioConfig
-
 //! Provides a generic `Portfolio` for all environments.
+
+use nautilus_core::WeakCell;
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
@@ -130,6 +129,8 @@ impl Portfolio {
         inner: Rc<RefCell<PortfolioState>>,
         bar_updates: bool,
     ) {
+        let inner_weak = WeakCell::from(Rc::downgrade(&inner));
+
         let update_account_handler = {
             let cache = cache.clone();
             ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
@@ -142,10 +143,12 @@ impl Portfolio {
         let update_position_handler = {
             let cache = cache.clone();
             let clock = clock.clone();
-            let inner = inner.clone();
+            let inner = inner_weak.clone();
             ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
                 move |event: &PositionEvent| {
-                    update_position(cache.clone(), clock.clone(), inner.clone(), event);
+                    if let Some(inner_rc) = inner.upgrade() {
+                        update_position(cache.clone(), clock.clone(), inner_rc.into(), event);
+                    }
                 },
             )))
         };
@@ -153,10 +156,12 @@ impl Portfolio {
         let update_quote_handler = {
             let cache = cache.clone();
             let clock = clock.clone();
-            let inner = inner.clone();
+            let inner = inner_weak.clone();
             ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
                 move |quote: &QuoteTick| {
-                    update_quote_tick(cache.clone(), clock.clone(), inner.clone(), quote);
+                    if let Some(inner_rc) = inner.upgrade() {
+                        update_quote_tick(cache.clone(), clock.clone(), inner_rc.into(), quote);
+                    }
                 },
             )))
         };
@@ -164,19 +169,23 @@ impl Portfolio {
         let update_bar_handler = {
             let cache = cache.clone();
             let clock = clock.clone();
-            let inner = inner.clone();
+            let inner = inner_weak.clone();
             ShareableMessageHandler(Rc::new(TypedMessageHandler::from(move |bar: &Bar| {
-                update_bar(cache.clone(), clock.clone(), inner.clone(), bar);
+                if let Some(inner_rc) = inner.upgrade() {
+                    update_bar(cache.clone(), clock.clone(), inner_rc.into(), bar);
+                }
             })))
         };
 
         let update_order_handler = {
             let cache = cache;
             let clock = clock.clone();
-            let inner = inner;
+            let inner = inner_weak.clone();
             ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
                 move |event: &OrderEventAny| {
-                    update_order(cache.clone(), clock.clone(), inner.clone(), event);
+                    if let Some(inner_rc) = inner.upgrade() {
+                        update_order(cache.clone(), clock.clone(), inner_rc.into(), event);
+                    }
                 },
             )))
         };
