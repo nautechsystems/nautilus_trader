@@ -77,7 +77,7 @@ def main() -> None:
 
     # Pool instrument IDs to monitor (TODO: Add to config)
     pools = [
-        InstrumentId.from_str("WETH/USDC-3000.UniswapV3:Arbitrum"),  # Arbitrum WETH/USDC 0.30% pool
+        InstrumentId.from_str("WETH/USDC-3000.Arbitrum:UniswapV3"),  # Arbitrum WETH/USDC 0.30% pool
     ]
 
     actor_config = ImportableActorConfig(
