@@ -16,6 +16,7 @@
 use std::{any::Any, cell::RefCell, rc::Rc};
 
 use nautilus_common::msgbus::handler::MessageHandler;
+use nautilus_core::WeakCell;
 use nautilus_model::data::{Bar, BarType, QuoteTick, TradeTick};
 use ustr::Ustr;
 
@@ -28,14 +29,14 @@ use crate::aggregation::BarAggregator;
 /// routing infrastructure to build bars from incoming quote data.
 #[derive(Debug)]
 pub struct BarQuoteHandler {
-    aggregator: Rc<RefCell<Box<dyn BarAggregator>>>,
+    aggregator: WeakCell<Box<dyn BarAggregator>>,
     bar_type: BarType,
 }
 
 impl BarQuoteHandler {
     pub(crate) fn new(aggregator: Rc<RefCell<Box<dyn BarAggregator>>>, bar_type: BarType) -> Self {
         Self {
-            aggregator,
+            aggregator: WeakCell::from(Rc::downgrade(&aggregator)),
             bar_type,
         }
     }
@@ -48,7 +49,9 @@ impl MessageHandler for BarQuoteHandler {
 
     fn handle(&self, msg: &dyn Any) {
         if let Some(quote) = msg.downcast_ref::<QuoteTick>() {
-            self.aggregator.borrow_mut().handle_quote(*quote);
+            if let Some(agg) = self.aggregator.upgrade() {
+                agg.borrow_mut().handle_quote(*quote);
+            }
         }
     }
 
@@ -64,14 +67,14 @@ impl MessageHandler for BarQuoteHandler {
 /// routing infrastructure to build bars from incoming trade data.
 #[derive(Debug)]
 pub struct BarTradeHandler {
-    aggregator: Rc<RefCell<Box<dyn BarAggregator>>>,
+    aggregator: WeakCell<Box<dyn BarAggregator>>,
     bar_type: BarType,
 }
 
 impl BarTradeHandler {
     pub(crate) fn new(aggregator: Rc<RefCell<Box<dyn BarAggregator>>>, bar_type: BarType) -> Self {
         Self {
-            aggregator,
+            aggregator: WeakCell::from(Rc::downgrade(&aggregator)),
             bar_type,
         }
     }
@@ -84,7 +87,9 @@ impl MessageHandler for BarTradeHandler {
 
     fn handle(&self, msg: &dyn Any) {
         if let Some(trade) = msg.downcast_ref::<TradeTick>() {
-            self.aggregator.borrow_mut().handle_trade(*trade);
+            if let Some(agg) = self.aggregator.upgrade() {
+                agg.borrow_mut().handle_trade(*trade);
+            }
         }
     }
 
@@ -101,14 +106,14 @@ impl MessageHandler for BarTradeHandler {
 /// lower timeframe bars.
 #[derive(Debug)]
 pub struct BarBarHandler {
-    aggregator: Rc<RefCell<Box<dyn BarAggregator>>>,
+    aggregator: WeakCell<Box<dyn BarAggregator>>,
     bar_type: BarType,
 }
 
 impl BarBarHandler {
     pub(crate) fn new(aggregator: Rc<RefCell<Box<dyn BarAggregator>>>, bar_type: BarType) -> Self {
         Self {
-            aggregator,
+            aggregator: WeakCell::from(Rc::downgrade(&aggregator)),
             bar_type,
         }
     }
@@ -121,7 +126,9 @@ impl MessageHandler for BarBarHandler {
 
     fn handle(&self, msg: &dyn Any) {
         if let Some(bar) = msg.downcast_ref::<Bar>() {
-            self.aggregator.borrow_mut().handle_bar(*bar);
+            if let Some(agg) = self.aggregator.upgrade() {
+                agg.borrow_mut().handle_bar(*bar);
+            }
         }
     }
 

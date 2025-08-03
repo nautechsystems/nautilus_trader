@@ -60,10 +60,12 @@ pub mod collections;
 pub mod consts;
 pub mod correctness;
 pub mod datetime;
+pub mod drop;
 pub mod env;
 pub mod math;
 pub mod message;
 pub mod nanos;
+
 pub mod parsing;
 pub mod paths;
 pub mod serialization;
@@ -82,6 +84,7 @@ compile_error!("Unsupported platform: Nautilus supports only Linux, macOS, and W
 
 // Re-exports
 pub use crate::{
+    drop::CleanDrop,
     nanos::UnixNanos,
     shared::{SharedCell, WeakCell},
     time::AtomicTime,

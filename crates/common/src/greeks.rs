@@ -15,6 +15,8 @@
 
 //! Greeks calculator for options and futures.
 
+// TODO:: use of deprecated function `implied_vol::norm_cdf`: Use `DefaultSpecialFn::norm_cdf` instead
+#[allow(deprecated)]
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use anyhow;

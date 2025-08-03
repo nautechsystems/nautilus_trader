@@ -42,9 +42,9 @@ use futures_util::{
     stream::{SplitSink, SplitStream},
 };
 use http::HeaderName;
+use nautilus_core::CleanDrop;
 #[cfg(feature = "python")]
 use nautilus_core::python::clone_py_object;
-#[cfg(feature = "python")]
 use nautilus_cryptography::providers::install_cryptographic_provider;
 #[cfg(feature = "python")]
 use pyo3::{prelude::*, types::PyBytes};
@@ -618,6 +618,13 @@ impl WebSocketClientInner {
 
 impl Drop for WebSocketClientInner {
     fn drop(&mut self) {
+        // Delegate to explicit cleanup handler
+        self.clean_drop();
+    }
+}
+
+impl CleanDrop for WebSocketClientInner {
+    fn clean_drop(&mut self) {
         if let Some(ref read_task) = self.read_task.take()
             && !read_task.is_finished()
         {
