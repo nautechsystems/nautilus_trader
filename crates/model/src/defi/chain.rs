@@ -249,6 +249,93 @@ impl Chain {
             _ => None,
         }
     }
+
+    /// Returns a reference to the `Chain` corresponding to the given chain name, or `None` if it is not found.
+    pub fn from_chain_name(chain_name: &str) -> Option<&'static Chain> {
+        match chain_name {
+            "Abstract" => Some(&chains::ABSTRACT),
+            "Arbitrum" => Some(&chains::ARBITRUM),
+            "ArbitrumNova" => Some(&chains::ARBITRUM_NOVA),
+            "ArbitrumSepolia" => Some(&chains::ARBITRUM_SEPOLIA),
+            "Aurora" => Some(&chains::AURORA),
+            "Avalanche" => Some(&chains::AVALANCHE),
+            "Base" => Some(&chains::BASE),
+            "BaseSepolia" => Some(&chains::BASE_SEPOLIA),
+            "Berachain" => Some(&chains::BERACHAIN),
+            "BerachainBartio" => Some(&chains::BERACHAIN_BARTIO),
+            "Blast" => Some(&chains::BLAST),
+            "BlastSepolia" => Some(&chains::BLAST_SEPOLIA),
+            "Boba" => Some(&chains::BOBA),
+            "Bsc" => Some(&chains::BSC),
+            "BscTestnet" => Some(&chains::BSC_TESTNET),
+            "Celo" => Some(&chains::CELO),
+            "Chiliz" => Some(&chains::CHILIZ),
+            "CitreaTestnet" => Some(&chains::CITREA_TESTNET),
+            "Curtis" => Some(&chains::CURTIS),
+            "Cyber" => Some(&chains::CYBER),
+            "Darwinia" => Some(&chains::DARWINIA),
+            "Ethereum" => Some(&chains::ETHEREUM),
+            "Fantom" => Some(&chains::FANTOM),
+            "Flare" => Some(&chains::FLARE),
+            "Fraxtal" => Some(&chains::FRAXTAL),
+            "Fuji" => Some(&chains::FUJI),
+            "GaladrielDevnet" => Some(&chains::GALADRIEL_DEVNET),
+            "Gnosis" => Some(&chains::GNOSIS),
+            "GnosisChiado" => Some(&chains::GNOSIS_CHIADO),
+            "GnosisTraces" => Some(&chains::GNOSIS_TRACES),
+            "HarmonyShard0" => Some(&chains::HARMONY_SHARD_0),
+            "Holesky" => Some(&chains::HOLESKY),
+            "HoleskyTokenTest" => Some(&chains::HOLESKY_TOKEN_TEST),
+            "Hyperliquid" => Some(&chains::HYPERLIQUID),
+            "HyperliquidTemp" => Some(&chains::HYPERLIQUID_TEMP),
+            "Ink" => Some(&chains::INK),
+            "InternalTestChain" => Some(&chains::INTERNAL_TEST_CHAIN),
+            "Kroma" => Some(&chains::KROMA),
+            "Linea" => Some(&chains::LINEA),
+            "Lisk" => Some(&chains::LISK),
+            "Lukso" => Some(&chains::LUKSO),
+            "LuksoTestnet" => Some(&chains::LUKSO_TESTNET),
+            "Manta" => Some(&chains::MANTA),
+            "Mantle" => Some(&chains::MANTLE),
+            "MegaethTestnet" => Some(&chains::MEGAETH_TESTNET),
+            "Merlin" => Some(&chains::MERLIN),
+            "Metall2" => Some(&chains::METALL2),
+            "Metis" => Some(&chains::METIS),
+            "MevCommit" => Some(&chains::MEV_COMMIT),
+            "Mode" => Some(&chains::MODE),
+            "MonadTestnet" => Some(&chains::MONAD_TESTNET),
+            "MonadTestnetBackup" => Some(&chains::MONAD_TESTNET_BACKUP),
+            "MoonbaseAlpha" => Some(&chains::MOONBASE_ALPHA),
+            "Moonbeam" => Some(&chains::MOONBEAM),
+            "Morph" => Some(&chains::MORPH),
+            "MorphHolesky" => Some(&chains::MORPH_HOLESKY),
+            "Opbnb" => Some(&chains::OPBNB),
+            "Optimism" => Some(&chains::OPTIMISM),
+            "OptimismSepolia" => Some(&chains::OPTIMISM_SEPOLIA),
+            "PharosDevnet" => Some(&chains::PHAROS_DEVNET),
+            "Polygon" => Some(&chains::POLYGON),
+            "PolygonAmoy" => Some(&chains::POLYGON_AMOY),
+            "PolygonZkEvm" => Some(&chains::POLYGON_ZKEVM),
+            "Rootstock" => Some(&chains::ROOTSTOCK),
+            "Saakuru" => Some(&chains::SAAKURU),
+            "Scroll" => Some(&chains::SCROLL),
+            "Sepolia" => Some(&chains::SEPOLIA),
+            "ShimmerEvm" => Some(&chains::SHIMMER_EVM),
+            "Soneium" => Some(&chains::SONEIUM),
+            "Sophon" => Some(&chains::SOPHON),
+            "SophonTestnet" => Some(&chains::SOPHON_TESTNET),
+            "Superseed" => Some(&chains::SUPERSEED),
+            "Unichain" => Some(&chains::UNICHAIN),
+            "UnichainSepolia" => Some(&chains::UNICHAIN_SEPOLIA),
+            "Xdc" => Some(&chains::XDC),
+            "XdcTestnet" => Some(&chains::XDC_TESTNET),
+            "Zeta" => Some(&chains::ZETA),
+            "Zircuit" => Some(&chains::ZIRCUIT),
+            "ZKsync" => Some(&chains::ZKSYNC),
+            "Zora" => Some(&chains::ZORA),
+            _ => None,
+        }
+    }
 }
 
 impl Display for Chain {
@@ -461,5 +548,76 @@ mod tests {
         // Test unknown chain ID
         assert!(Chain::from_chain_id(999999).is_none());
         assert!(Chain::from_chain_id(0).is_none());
+    }
+
+    #[rstest]
+    fn test_chain_from_chain_name_valid() {
+        // Test some known chain names
+        assert!(Chain::from_chain_name("Ethereum").is_some());
+        assert!(Chain::from_chain_name("Polygon").is_some());
+        assert!(Chain::from_chain_name("Arbitrum").is_some());
+        assert!(Chain::from_chain_name("Base").is_some());
+
+        // Verify specific chain
+        let eth_chain = Chain::from_chain_name("Ethereum").unwrap();
+        assert_eq!(eth_chain.name, Blockchain::Ethereum);
+        assert_eq!(eth_chain.chain_id, 1);
+
+        // Verify ArbitrumNova (compound name)
+        let arbitrum_nova_chain = Chain::from_chain_name("ArbitrumNova").unwrap();
+        assert_eq!(arbitrum_nova_chain.name, Blockchain::ArbitrumNova);
+        assert_eq!(arbitrum_nova_chain.chain_id, 42170);
+
+        // Verify BSC (abbreviated name)
+        let bsc_chain = Chain::from_chain_name("Bsc").unwrap();
+        assert_eq!(bsc_chain.name, Blockchain::Bsc);
+        assert_eq!(bsc_chain.chain_id, 56);
+    }
+
+    #[rstest]
+    fn test_chain_from_chain_name_invalid() {
+        // Test unknown chain names
+        assert!(Chain::from_chain_name("InvalidChain").is_none());
+        assert!(Chain::from_chain_name("").is_none());
+        assert!(Chain::from_chain_name("NonExistentNetwork").is_none());
+    }
+
+    #[rstest]
+    fn test_chain_from_chain_name_case_sensitive() {
+        // Test case sensitivity - should be case sensitive
+        assert!(Chain::from_chain_name("Ethereum").is_some());
+        assert!(Chain::from_chain_name("ethereum").is_none()); // lowercase
+        assert!(Chain::from_chain_name("ETHEREUM").is_none()); // uppercase
+        assert!(Chain::from_chain_name("EtHeReUm").is_none()); // mixed case
+
+        assert!(Chain::from_chain_name("Arbitrum").is_some());
+        assert!(Chain::from_chain_name("arbitrum").is_none()); // lowercase
+    }
+
+    #[rstest]
+    fn test_chain_from_chain_name_consistency_with_id() {
+        // Test that from_chain_name and from_chain_id return the same chain instances
+        let chains_to_test = [
+            ("Ethereum", 1),
+            ("Polygon", 137),
+            ("Arbitrum", 42161),
+            ("Base", 8453),
+            ("Optimism", 10),
+            ("Avalanche", 43114),
+            ("Fantom", 250),
+            ("Bsc", 56),
+        ];
+
+        for (name, id) in chains_to_test {
+            let chain_by_name =
+                Chain::from_chain_name(name).unwrap_or_else(|| panic!("Chain {name} should exist"));
+            let chain_by_id =
+                Chain::from_chain_id(id).unwrap_or_else(|| panic!("Chain {name} should exist"));
+
+            // Should return the same chain instance
+            assert_eq!(chain_by_name.name, chain_by_id.name);
+            assert_eq!(chain_by_name.chain_id, chain_by_id.chain_id);
+            assert_eq!(chain_by_name.hypersync_url, chain_by_id.hypersync_url);
+        }
     }
 }
