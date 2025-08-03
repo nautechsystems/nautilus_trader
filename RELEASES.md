@@ -45,6 +45,7 @@ Released on TBD (UTC).
 - Optimized Redis key scans to improve efficiency over a network
 - Completed bar request implementation for OKX (#2789), thanks @nicolad
 - Enabled parallel pytest tests with `pytest-xdist` (#2808), thanks @stastnypremysl
+- Standardized DeFi chain name validation for `InstrumentId` (#2826), thanks @filipmacek
 - Improved reconciliation handling of internally generated orders to align positions (now uses the `INTERNAL-DIFF` strategy ID)
 - Improved data client for blockchain adapter (#2787), thanks @filipmacek
 - Improved DEX pool sync process in the blockchain adapter (#2796), thanks @filipmacek
