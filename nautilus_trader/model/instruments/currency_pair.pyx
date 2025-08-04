@@ -182,9 +182,9 @@ cdef class CurrencyPair(Instrument):
             margin_maint=margin_maint or Decimal(0),
             maker_fee=maker_fee or Decimal(0),
             taker_fee=taker_fee or Decimal(0),
-            tick_scheme_name=tick_scheme_name,
             ts_event=ts_event,
             ts_init=ts_init,
+            tick_scheme_name=tick_scheme_name,
             info=info,
         )
 
@@ -234,6 +234,7 @@ cdef class CurrencyPair(Instrument):
             taker_fee=Decimal(values["taker_fee"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
+            tick_scheme_name=values.get("tick_scheme_name"),
             info=values["info"],
         )
 
@@ -264,6 +265,7 @@ cdef class CurrencyPair(Instrument):
             "taker_fee": str(obj.taker_fee),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
+            "tick_scheme_name": obj.tick_scheme_name,
             "info": obj.info,
         }
 

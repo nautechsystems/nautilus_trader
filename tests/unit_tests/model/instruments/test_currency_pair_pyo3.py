@@ -67,6 +67,7 @@ def test_pyo3_cython_conversion():
     currency_pair_pyo3_dict = currency_pair_pyo3.to_dict()
     currency_pair_cython = CurrencyPair.from_pyo3(currency_pair_pyo3)
     currency_pair_cython_dict = CurrencyPair.to_dict(currency_pair_cython)
+    del currency_pair_cython_dict["tick_scheme_name"]  # TODO: Under development
     currency_pair_pyo3_back = nautilus_pyo3.CurrencyPair.from_dict(currency_pair_cython_dict)
     assert currency_pair_cython_dict == currency_pair_pyo3_dict
     assert currency_pair_pyo3 == currency_pair_pyo3_back

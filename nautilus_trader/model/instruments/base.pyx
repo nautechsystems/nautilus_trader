@@ -319,6 +319,7 @@ cdef class Instrument(Data):
             taker_fee=Decimal(values["taker_fee"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
+            tick_scheme_name=values.get("tick_scheme_name"),
             info=values["info"],
         )
 
@@ -350,6 +351,7 @@ cdef class Instrument(Data):
             "taker_fee": str(obj.taker_fee),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
+            "tick_scheme_name": obj.tick_scheme_name,
             "info": obj.info,
         }
 
