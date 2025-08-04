@@ -15,12 +15,13 @@
 
 //! Basic structures for representing on-chain blocks and transactions in DeFi integrations.
 
-use serde::{Deserialize, Serialize};
-use std::str::FromStr;
 use std::{
     fmt::{Display, Formatter},
+    str::FromStr,
     sync::Arc,
 };
+
+use serde::{Deserialize, Serialize};
 use strum::{Display, EnumIter, EnumString};
 
 /// Represents different blockchain networks.
