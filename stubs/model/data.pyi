@@ -1,7 +1,11 @@
+from nautilus_trader.model.enums import AggregationSource
+from nautilus_trader.model.identifiers import InstrumentId
+from enum import Enum
+from datetime import timedelta
+from nautilus_trader.model.enums import PriceType
 from typing import Any
 import numpy as np
 
-from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.objects import Price, Quantity
 from nautilus_trader.model.identifiers import TradeId
@@ -9,20 +13,23 @@ from nautilus_trader.model.identifiers import TradeId
 
 from datetime import timedelta
 
-# Forward declarations for classes defined later in this file
-# This is necessary when classes refer to each other.
-class BarSpecification: ...
-class BarType: ...
-class Bar(Data): ...
-class BookOrder: ...
-class OrderBookDelta(Data): ...
-class OrderBookDeltas(Data): ...
-class OrderBookDepth10(Data): ...
-class QuoteTick(Data): ...
-class TradeTick(Data): ...
-class MarkPriceUpdate(Data): ...
-class IndexPriceUpdate(Data): ...
-class InstrumentStatus(Data): ...
+class BarAggregation(Enum):
+    TICK = 1
+    TICK_IMBALANCE = 2
+    TICK_RUNS = 3
+    VOLUME = 4
+    VOLUME_IMBALANCE = 5
+    VOLUME_RUNS = 6
+    VALUE = 7
+    VALUE_IMBALANCE = 8
+    VALUE_RUNS = 9
+    MILLISECOND = 10
+    SECOND = 11
+    MINUTE = 12
+    HOUR = 13
+    DAY = 14
+    WEEK = 15
+    MONTH = 16
 
 
 def capsule_to_list(capsule: Any) -> list[Data]: ...

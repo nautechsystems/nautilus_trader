@@ -4,16 +4,21 @@ from collections.abc import Callable
 from concurrent.futures import Executor
 from typing import Any
 
+from nautilus_trader.cache.base import CacheFacade
+from nautilus_trader.common.component import Clock
+from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.config import ActorConfig
 from nautilus_trader.common.config import ImportableActorConfig
-from nautilus_trader.common.executor import ActorExecutor, TaskId
-from nautilus_trader.cache.base import CacheFacade
-from nautilus_trader.common.component import Clock, MessageBus
-from nautilus_trader.portfolio.base import PortfolioFacade
-from nautilus_trader.model.greeks import GreeksCalculator
+from nautilus_trader.common.executor import ActorExecutor
+from nautilus_trader.common.executor import TaskId
 from nautilus_trader.data.messages import DataResponse
+from nautilus_trader.model.greeks import GreeksCalculator
+from nautilus_trader.portfolio.base import PortfolioFacade
 from stubs.common.component import Component
+from stubs.core.uuid import UUID4
 from stubs.indicators.base.indicator import Indicator
+from stubs.model.data import BarType
+from stubs.model.identifiers import InstrumentId
 
 class Actor(Component):
     """
