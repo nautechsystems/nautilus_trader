@@ -218,19 +218,19 @@ class TestBinanceFactories:
                 BinanceAccountType.SPOT,
                 True,
                 False,
-                "wss://testnet.binance.vision",
+                "wss://stream.testnet.binance.vision",
             ],
             [
                 BinanceAccountType.MARGIN,
                 True,
                 False,
-                "wss://testnet.binance.vision",
+                "wss://stream.testnet.binance.vision",
             ],
             [
                 BinanceAccountType.ISOLATED_MARGIN,
                 True,
                 False,
-                "wss://testnet.binance.vision",
+                "wss://stream.testnet.binance.vision",
             ],
             [
                 BinanceAccountType.USDT_FUTURE,

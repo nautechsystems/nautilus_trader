@@ -86,7 +86,8 @@ Released on TBD (UTC).
 - Fixed dYdX Take Profit order type mapping error (#2758), thanks @nicolad
 - Fixed typo in logging for dYdX adapter (#2790), thanks @DeirhX
 - Fixed bars request pagination logic for OKX (#2798), thanks @nicolad
-- Fix dYdX order and fill message schemas (#2824), thanks @davidsblom
+- Fixed dYdX order and fill message schemas (#2824), thanks @davidsblom
+- Fixed Binance Spot testnet streaming URL
 
 ### Documentation Updates
 - Added FFI Memory Contract developer guide

@@ -58,9 +58,9 @@ def test_get_http_base_url(account_type, is_testnet, is_us, expected):
         (BinanceAccountType.COIN_FUTURE, False, False, "wss://dstream.binance.com"),
         (BinanceAccountType.COIN_FUTURE, False, True, "wss://dstream.binance.us"),
         # Testnet URLs (US flag ignored)
-        (BinanceAccountType.SPOT, True, False, "wss://testnet.binance.vision"),
-        (BinanceAccountType.SPOT, True, True, "wss://testnet.binance.vision"),
-        (BinanceAccountType.MARGIN, True, False, "wss://testnet.binance.vision"),
+        (BinanceAccountType.SPOT, True, False, "wss://stream.testnet.binance.vision"),
+        (BinanceAccountType.SPOT, True, True, "wss://stream.testnet.binance.vision"),
+        (BinanceAccountType.MARGIN, True, False, "wss://stream.testnet.binance.vision"),
         (BinanceAccountType.USDT_FUTURE, True, False, "wss://stream.binancefuture.com"),
     ],
 )
