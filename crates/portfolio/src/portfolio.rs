@@ -15,7 +15,6 @@
 
 //! Provides a generic `Portfolio` for all environments.
 
-use nautilus_core::WeakCell;
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
@@ -32,6 +31,7 @@ use nautilus_common::{
         handler::{ShareableMessageHandler, TypedMessageHandler},
     },
 };
+use nautilus_core::WeakCell;
 use nautilus_model::{
     accounts::AccountAny,
     data::{Bar, QuoteTick},
