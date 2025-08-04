@@ -148,7 +148,7 @@ impl BlockchainCache {
                 .cloned()
                 .expect("Dex should have been registered.");
             let pool_rows = database
-                .load_pools(self.chain.clone(), &dex_extended.name)
+                .load_pools(self.chain.clone(), &dex_extended.name.to_string())
                 .await?;
             tracing::info!(
                 "Loading {} pools for DEX {} from cache database",

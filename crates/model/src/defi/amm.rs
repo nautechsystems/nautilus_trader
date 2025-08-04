@@ -183,7 +183,7 @@ mod tests {
     use super::*;
     use crate::defi::{
         chain::chains,
-        dex::{AmmType, Dex},
+        dex::{AmmType, Dex, DexType},
         token::Token,
     };
 
@@ -192,7 +192,7 @@ mod tests {
         let chain = Arc::new(chains::ETHEREUM.clone());
         let dex = Dex::new(
             chains::ETHEREUM.clone(),
-            "UniswapV3",
+            DexType::UniswapV3,
             "0x1F98431c8aD98523631AE4a59f267346ea31F984",
             0,
             AmmType::CLAMM,
@@ -240,7 +240,7 @@ mod tests {
         );
 
         assert_eq!(pool.chain.chain_id, chain.chain_id);
-        assert_eq!(pool.dex.name, "UniswapV3");
+        assert_eq!(pool.dex.name, DexType::UniswapV3);
         assert_eq!(pool.address, pool_address);
         assert_eq!(pool.creation_block, 12345678);
         assert_eq!(pool.token0.symbol, "WETH");
@@ -262,7 +262,7 @@ mod tests {
 
         let dex = Dex::new(
             chains::ETHEREUM.clone(),
-            "UniswapV3",
+            DexType::UniswapV3,
             factory_address,
             0,
             AmmType::CLAMM,
