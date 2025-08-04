@@ -54,6 +54,7 @@ Released on TBD (UTC).
 - Improved `databento_test_request_bars` example (#2762), thanks @faysou
 - Improved zero-sized trades handling for Tardis CSV loader (will log a warning)
 - Improved ergonomics of `TardisInstrumentProvider` datetime filter params (can be either `pd.Timestamp` or Unix nanos `int`)
+- Improved handling of Tardis Machine websocket connection errors
 - Refined Rust catalog path handling (#2743), thanks @faysou
 - Refined Rust `GreeksCalculator` (#2760), thanks @faysou
 - Refined Databento bars timestamp decoding and backtest execution usage (#2800), thanks @faysou
