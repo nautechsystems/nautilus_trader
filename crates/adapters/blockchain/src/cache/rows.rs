@@ -15,9 +15,8 @@
 
 use alloy::primitives::Address;
 use nautilus_core::UnixNanos;
+use nautilus_model::defi::validation::validate_address;
 use sqlx::{FromRow, Row, postgres::PgRow};
-
-use crate::validation::validate_address;
 
 /// A data transfer object that maps database rows to token data.
 ///

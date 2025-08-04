@@ -15,12 +15,9 @@
 
 use std::sync::Arc;
 
+use crate::rpc::{error::BlockchainRpcClientError, http::BlockchainHttpRpcClient};
 use alloy::{primitives::Address, sol, sol_types::SolCall};
-
-use crate::{
-    rpc::{error::BlockchainRpcClientError, http::BlockchainHttpRpcClient},
-    validation::validate_address,
-};
+use nautilus_model::defi::validation::validate_address;
 
 sol! {
     #[sol(rpc)]

@@ -33,6 +33,7 @@ pub mod hex;
 pub mod rpc;
 pub mod token;
 pub mod types;
+pub mod validation;
 
 // Re-exports
 pub use amm::{Pool, SharedPool};

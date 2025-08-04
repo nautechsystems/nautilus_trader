@@ -24,20 +24,20 @@ use serde::{Deserialize, Serialize};
 use crate::{
     data::HasTsInit,
     defi::{Blockchain, SharedDex, chain::SharedChain, dex::Dex, token::Token},
-    identifiers::InstrumentId,
+    identifiers::{InstrumentId, Symbol, Venue},
 };
 
 /// Represents a liquidity pool in a decentralized exchange.
 ///
 /// The instrument ID encodes with the following components:
-/// `symbol` – The base/quote ticker plus the pool fee tier (in hundred-thousandths).
-/// `venue`  – The DEX name plus chain name.
+/// `symbol` – The pool address.
+/// `venue`  – The chain name plus DEX ID.
 ///
 /// The string representation therefore has the form:
-/// `<BASE>/<QUOTE>-<FEE>.<CHAIN_NAME>:<DEX_NAME>`
+/// `<POOL_ADDRESS>.<CHAIN_NAME>:<DEX_ID>`
 ///
 /// Example:
-/// `WETH/USDT-3000.Arbitrum:UniswapV3`
+/// `0x11b815efB8f581194ae79006d24E0d814B7697F6.Ethereum:UniswapV3`
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
@@ -90,7 +90,7 @@ impl Pool {
         tick_spacing: u32,
         ts_init: UnixNanos,
     ) -> Self {
-        let instrument_id = Self::create_instrument_id(chain.name, &dex, &token0, &token1, fee);
+        let instrument_id = Self::create_instrument_id(chain.name, &dex, &address);
 
         Self {
             chain,
@@ -106,56 +106,11 @@ impl Pool {
         }
     }
 
-    pub fn create_instrument_id(
-        chain: Blockchain,
-        dex: &Dex,
-        token0: &Token,
-        token1: &Token,
-        fee: u32,
-    ) -> InstrumentId {
-        let symbol = format!(
-            "{}/{}-{}",
-            sanitize_symbol(&token0.symbol),
-            sanitize_symbol(&token1.symbol),
-            fee
-        );
-        let venue = format!("{}:{}", chain, dex.name);
-        InstrumentId::from(format!("{symbol}.{venue}").as_str())
+    pub fn create_instrument_id(chain: Blockchain, dex: &Dex, address: &Address) -> InstrumentId {
+        let symbol = Symbol::new(format!("{address:#x}"));
+        let venue = Venue::new(format!("{}:{}", chain, dex.name));
+        InstrumentId::new(symbol, venue)
     }
-}
-
-fn sanitize_symbol(symbol: &str) -> String {
-    symbol
-        .chars()
-        .map(|c| match c {
-            '₮' => 'T', // Tugrik sign
-            '₽' => 'R', // Ruble sign
-            '₹' => 'R', // Rupee sign
-            '₩' => 'W', // Won sign
-            '₴' => 'H', // Hryvnia sign
-            '₡' => 'C', // Colon sign
-            '₪' => 'S', // Shekel sign
-            '₫' => 'D', // Dong sign
-            '₦' => 'N', // Naira sign
-            '₨' => 'R', // Rupee sign
-            '₧' => 'P', // Peseta sign
-            '₭' => 'K', // Kip sign
-            '₵' => 'C', // Cedi sign
-            '₱' => 'P', // Peso sign
-            '₲' => 'G', // Guarani sign
-            '₳' => 'A', // Austral sign
-            '₸' => 'T', // Tenge sign
-            '₶' => 'L', // Livre sign
-            '₷' => 'S', // Spesmilo sign
-            '₺' => 'T', // Lira sign
-            '₻' => 'N', // Nordic mark sign
-            '₼' => 'M', // Manat sign
-            '₾' => 'L', // Lari sign
-            '₿' => 'B', // Bitcoin sign
-            _ if c.is_ascii() => c,
-            _ => '_', // Replace any other non-ASCII with underscore
-        })
-        .collect()
 }
 
 impl Display for Pool {
@@ -248,11 +203,11 @@ mod tests {
         assert_eq!(pool.fee, 3000);
         assert_eq!(pool.tick_spacing, 60);
         assert_eq!(pool.ts_init, ts_init);
-        assert_eq!(pool.instrument_id.symbol.as_str(), "WETH/USDT-3000");
-
-        let instrument_id = pool.instrument_id;
-        assert!(instrument_id.to_string().contains("WETH/USDT"));
-        assert!(instrument_id.to_string().contains("UniswapV3"));
+        assert_eq!(
+            pool.instrument_id.symbol.as_str(),
+            "0x11b815efb8f581194ae79006d24e0d814b7697f6"
+        );
+        assert_eq!(pool.instrument_id.venue.as_str(), "Ethereum:UniswapV3");
     }
 
     #[rstest]
@@ -308,7 +263,7 @@ mod tests {
 
         assert_eq!(
             pool.instrument_id.to_string(),
-            "WETH/USDT-3000.Ethereum:UniswapV3"
+            "0x11b815efb8f581194ae79006d24e0d814b7697f6.Ethereum:UniswapV3"
         );
     }
 }

@@ -49,7 +49,6 @@ pub mod decode;
 pub mod events;
 pub mod math;
 pub mod rpc;
-pub mod validation;
 
 #[cfg(feature = "hypersync")]
 pub mod cache;
