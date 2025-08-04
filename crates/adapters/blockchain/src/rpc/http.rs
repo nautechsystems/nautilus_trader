@@ -62,12 +62,15 @@ impl BlockchainHttpRpcClient {
             BlockchainRpcClientError::ClientError(format!("Failed to serialize request: {e}"))
         })?;
 
+        let mut headers = HashMap::new();
+        headers.insert("Content-Type".to_string(), "application/json".to_string());
+
         match self
             .http_client
             .request(
                 Method::POST,
                 self.http_rpc_url.clone(),
-                None,
+                Some(headers),
                 Some(body_bytes),
                 None,
                 None,
