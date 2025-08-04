@@ -14,9 +14,6 @@ on:
     branches:
       - develop
       - nightly
-    paths:
-      - "python/**"
-      - ".github/workflows/build-v2.yml"
 
 env:
   PACKAGE_DIR: python
