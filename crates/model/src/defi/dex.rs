@@ -295,8 +295,7 @@ mod tests {
         for dex_name in all_dex_names {
             assert!(
                 DexType::from_dex_name(dex_name).is_some(),
-                "DEX name '{}' should be valid but was not found",
-                dex_name
+                "DEX name '{dex_name}' should be valid but was not found",
             );
         }
     }

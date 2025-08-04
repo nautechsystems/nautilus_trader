@@ -202,7 +202,7 @@ impl Dex {
     ) -> PyResult<Self> {
         let amm_type = AmmType::from_str(&amm_type).map_err(to_pyvalue_err)?;
         let dex_type = DexType::from_dex_name(&name)
-            .ok_or_else(|| to_pyvalue_err(format!("Invalid DEX name: {}", name)))?;
+            .ok_or_else(|| to_pyvalue_err(format!("Invalid DEX name: {name}")))?;
         Ok(Self::new(
             chain,
             dex_type,
