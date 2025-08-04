@@ -22,6 +22,7 @@ Released on TBD (UTC).
 - Added bulk key loading capability for Redis cache database adapter
 - Added `multiplier` field for `CurrencyPair` instrument (required for some crypto pairs)
 - Added `tick_scheme_name` field for instrument dictionary conversions
+- Added default `FixedTickScheme`(s) for all valid precisions
 
 ### Breaking Changes
 - Added `multiplier` field for `CurrencyPair` Arrow schema

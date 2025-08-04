@@ -455,6 +455,20 @@ cdef class Instrument(Data):
         else:
             return self.quote_currency
 
+    cpdef void set_tick_scheme_name(self, str tick_scheme_name):
+        """
+        Set the tick scheme name for the instrument.
+
+        Raises
+        ------
+        ValueError
+            If `tick_scheme_name` is not a valid string.
+        ValueError
+            If `tick_scheme_name` is not a registered tick scheme.
+
+        """
+        self._tick_scheme = get_tick_scheme(tick_scheme_name)
+
     cpdef Price make_price(self, value):
         """
         Return a new price from the given value using the instruments price

@@ -573,8 +573,10 @@ class TestInstrument:
 
     def test_next_bid_price_when_no_tick_scheme(self):
         # Arrange, Act
+        instrument = TestInstrumentProvider.btcusdt_binance()
+
         with pytest.raises(ValueError) as exc_info:
-            BTCUSDT_BINANCE.next_bid_price(100_000.0)
+            instrument.next_bid_price(100_000.0)
 
         # Assert
         assert (
@@ -584,14 +586,30 @@ class TestInstrument:
 
     def test_next_ask_price_when_no_tick_scheme(self):
         # Arrange, Act
+        instrument = TestInstrumentProvider.btcusdt_binance()
+
         with pytest.raises(ValueError) as exc_info:
-            BTCUSDT_BINANCE.next_ask_price(100_000.0)
+            instrument.next_ask_price(100_000.0)
 
         # Assert
         assert (
             str(exc_info.value)
             == "No tick scheme for instrument BTCUSDT.BINANCE. You can specify a tick scheme by passing a `tick_scheme_name` at initialization."
         )
+
+    def test_set_tick_scheme_name_enables_tick_scheme(self):
+        # Arrange
+        instrument = TestInstrumentProvider.btcusdt_binance()
+
+        with pytest.raises(ValueError):
+            instrument.next_bid_price(100.123456)
+
+        # Act
+        instrument.set_tick_scheme_name("FOREX_5DECIMAL")
+        result = instrument.next_bid_price(100.123456)
+
+        # Assert
+        assert result == Price.from_str("100.12345")
 
     @pytest.mark.parametrize(
         ("instrument", "value", "n", "expected"),
@@ -623,8 +641,11 @@ class TestInstrument:
 
     def test_next_bid_prices_when_no_tick_scheme(self):
         # Arrange, Act
+        instrument = TestInstrumentProvider.btcusdt_binance()
+
         with pytest.raises(ValueError) as exc_info:
-            BTCUSDT_BINANCE.next_bid_prices(100_000.0)
+            instrument.next_bid_prices(100_000.0)
+
         # Assert
         assert (
             str(exc_info.value)
@@ -633,8 +654,11 @@ class TestInstrument:
 
     def test_next_ask_prices_when_no_tick_scheme(self):
         # Arrange, Act
+        instrument = TestInstrumentProvider.btcusdt_binance()
+
         with pytest.raises(ValueError) as exc_info:
-            BTCUSDT_BINANCE.next_ask_prices(100_000.0)
+            instrument.next_ask_prices(100_000.0)
+
         # Assert
         assert (
             str(exc_info.value)

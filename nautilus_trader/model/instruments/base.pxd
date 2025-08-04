@@ -99,6 +99,7 @@ cdef class Instrument(Data):
     cpdef Currency get_base_currency(self)
     cpdef Currency get_settlement_currency(self)
     cpdef Currency get_cost_currency(self)
+    cpdef void set_tick_scheme_name(self, str tick_scheme_name)
     cpdef Price make_price(self, value)
     cpdef Price next_bid_price(self, double value, int num_ticks=*)
     cpdef Price next_ask_price(self, double value, int num_ticks=*)

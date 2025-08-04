@@ -13,6 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.core.rust.model cimport FIXED_PRECISION
+from nautilus_trader.core.rust.model cimport PRICE_RAW_MAX
+from nautilus_trader.core.rust.model cimport PRICE_RAW_MIN
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.tick_scheme.base cimport TickScheme
 from nautilus_trader.model.tick_scheme.base cimport register_tick_scheme
@@ -118,3 +121,14 @@ FOREX_3DECIMAL_TICK_SCHEME = FixedTickScheme(
     min_tick=Price.from_str_c("0.001"),
     max_tick=Price.from_str_c("999.999"),
 )
+
+# Generate fixed precision tick schemes for all valid precisions
+for precision in range(FIXED_PRECISION + 1):
+    tick_scheme = FixedTickScheme(
+        name=f"FIXED_PRECISION_{precision}",
+        price_precision=precision,
+        min_tick=Price.from_raw_c(PRICE_RAW_MIN, precision),
+        max_tick=Price.from_raw_c(PRICE_RAW_MAX, precision),
+    )
+
+    register_tick_scheme(tick_scheme)
