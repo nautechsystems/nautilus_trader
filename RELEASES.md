@@ -23,6 +23,7 @@ Released on TBD (UTC).
 - Added `multiplier` field for `CurrencyPair` instrument (required for some crypto pairs)
 - Added `tick_scheme_name` field for instrument dictionary conversions
 - Added default `FixedTickScheme`(s) for all valid precisions
+- Added PancakeSwapV3 pool parsing (#2829), thanks @filipmacek
 
 ### Breaking Changes
 - Added `multiplier` field for `CurrencyPair` Arrow schema
@@ -48,6 +49,7 @@ Released on TBD (UTC).
 - Completed bar request implementation for OKX (#2789), thanks @nicolad
 - Enabled parallel pytest tests with `pytest-xdist` (#2808), thanks @stastnypremysl
 - Standardized DeFi chain name validation for `InstrumentId` (#2826), thanks @filipmacek
+- Improved typing for all the DEX IDs with `DexType` and add validation (#2827), thanks @filipmacek
 - Improved reconciliation handling of internally generated orders to align positions (now uses the `INTERNAL-DIFF` strategy ID)
 - Improved data client for blockchain adapter (#2787), thanks @filipmacek
 - Improved DEX pool sync process in the blockchain adapter (#2796), thanks @filipmacek
@@ -89,7 +91,8 @@ Released on TBD (UTC).
 - Fixed typo in logging for dYdX adapter (#2790), thanks @DeirhX
 - Fixed bars request pagination logic for OKX (#2798), thanks @nicolad
 - Fixed dYdX order and fill message schemas (#2824), thanks @davidsblom
-- Fixed Binance Spot testnet streaming URL
+- Fixed Binance Spot testnet streaming URL, thanks for reporting @Frzgunr1
+- Fixed RPC client content type header (#2828), thanks @filipmacek
 
 ### Documentation Updates
 - Added FFI Memory Contract developer guide

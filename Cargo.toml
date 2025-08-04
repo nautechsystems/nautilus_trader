@@ -214,7 +214,7 @@ tokio-rustls = "0.26.2"
 tokio-stream = "0.1.17"
 tokio-tungstenite = { version = "0.27.0", features = ["rustls-tls-webpki-roots"] }
 tokio-util = { version = "0.7.16", default-features = false, features = ["io"] }
-toml = { version = "0.9.4", default-features = false, features = ["parse", "serde"] }
+toml = { version = "0.9.5", default-features = false, features = ["parse", "serde"] }
 tracing = { version = "0.1.41", default-features = false, features = ["std", "attributes"] }
 # Disable default feature "tracing-log" since it interferes with custom logging
 tracing-subscriber = { version = "0.3.19", default-features = false, features = [
