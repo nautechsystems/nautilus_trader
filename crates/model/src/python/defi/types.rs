@@ -73,6 +73,16 @@ impl Chain {
     }
 
     #[staticmethod]
+    #[pyo3(name = "from_chain_name")]
+    fn py_from_chain_name(chain_name: &str) -> PyResult<Chain> {
+        Self::from_chain_name(chain_name).cloned().ok_or_else(|| {
+            pyo3::exceptions::PyValueError::new_err(format!(
+                "`chain_name` '{chain_name}' is not recognized",
+            ))
+        })
+    }
+
+    #[staticmethod]
     #[pyo3(name = "from_chain_id")]
     fn py_from_chain_id(chain_id: u32) -> Option<Chain> {
         Self::from_chain_id(chain_id).cloned()
