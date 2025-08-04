@@ -17,7 +17,6 @@
 from nautilus_trader.common import Environment
 from nautilus_trader.common import ImportableActorConfig  # type: ignore[attr-defined]
 from nautilus_trader.live import LiveNode  # type: ignore[attr-defined]
-from nautilus_trader.model import ActorId  # type: ignore[attr-defined]
 from nautilus_trader.model import TraderId
 
 
@@ -28,15 +27,16 @@ def test_factory_approach():
     trader_id = TraderId("TESTER-001")
     node = LiveNode.builder("test_factory", trader_id, Environment.SANDBOX).build()
 
-    actor_id = ActorId("BLOCKCHAIN-001")
-
     actor_config = ImportableActorConfig(
         actor_path="actors:BlockchainActor",
         config_path="actors:BlockchainActorConfig",
         config={
-            "actor_id": str(actor_id),
-            "log_events": "True",
-            "log_commands": "True",
+            "actor_id": "BLOCKCHAIN-001",
+            "log_events": True,
+            "log_commands": True,
+            "chain": "Arbitrum",
+            "client_id": "BLOCKCHAIN-Arbitrum",
+            "pools": ["WETH/USDC-3000.Arbitrum:UniswapV3"],
         },
     )
 

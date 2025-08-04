@@ -4774,6 +4774,7 @@ dependencies = [
  "pyo3-async-runtimes",
  "rstest",
  "serde",
+ "serde_json",
  "tokio",
  "tracing",
 ]

@@ -124,7 +124,7 @@ pub struct ImportableActorConfig {
     /// The fully qualified name of the Actor config class.
     pub config_path: String,
     /// The actor configuration as a dictionary.
-    pub config: HashMap<String, String>,
+    pub config: HashMap<String, serde_json::Value>,
 }
 
 type RequestCallback = Box<dyn Fn(UUID4) + Send + Sync>; // TODO: TBD

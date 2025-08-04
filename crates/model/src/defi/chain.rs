@@ -41,6 +41,7 @@ use strum::{Display, EnumIter, EnumString};
     Deserialize,
 )]
 #[non_exhaustive]
+#[strum(ascii_case_insensitive)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
@@ -252,6 +253,8 @@ impl Chain {
     }
 
     /// Returns a reference to the `Chain` corresponding to the given chain name, or `None` if it is not found.
+    ///
+    /// String matching is case-insensitive.
     pub fn from_chain_name(chain_name: &str) -> Option<&'static Chain> {
         let blockchain = Blockchain::from_str(chain_name).ok()?;
 
@@ -586,14 +589,14 @@ mod tests {
 
     #[rstest]
     fn test_chain_from_chain_name_case_sensitive() {
-        // Test case sensitivity - should be case sensitive
+        // Test case sensitivity - should be case insensitive
         assert!(Chain::from_chain_name("Ethereum").is_some());
-        assert!(Chain::from_chain_name("ethereum").is_none()); // lowercase
-        assert!(Chain::from_chain_name("ETHEREUM").is_none()); // uppercase
-        assert!(Chain::from_chain_name("EtHeReUm").is_none()); // mixed case
+        assert!(Chain::from_chain_name("ethereum").is_some()); // lowercase
+        assert!(Chain::from_chain_name("ETHEREUM").is_some()); // uppercase
+        assert!(Chain::from_chain_name("EtHeReUm").is_some()); // mixed case
 
         assert!(Chain::from_chain_name("Arbitrum").is_some());
-        assert!(Chain::from_chain_name("arbitrum").is_none()); // lowercase
+        assert!(Chain::from_chain_name("arbitrum").is_some()); // lowercase
     }
 
     #[rstest]

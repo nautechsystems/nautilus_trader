@@ -43,6 +43,19 @@ class BlockchainActorConfig(DataActorConfig):
     client_id: ClientId | None = None
     pools: list[InstrumentId] | None = None
 
+    def __post_init__(self):
+        if isinstance(self.actor_id, str):
+            self.actor_id = ActorId(self.actor_id)
+
+        if isinstance(self.client_id, str):
+            self.client_id = ClientId(self.client_id)
+
+        if isinstance(self.pools, list) and self.pools and isinstance(self.pools[0], str):
+            self.pools = [InstrumentId.from_str(pool_str) for pool_str in self.pools]
+
+        if isinstance(self.chain, str):
+            self.chain = Chain.from_chain_name(self.chain)
+
 
 class BlockchainActor(DataActor):
 

@@ -42,9 +42,9 @@ use nautilus_model::{
     orderbook::OrderBook,
     python::instruments::instrument_any_to_pyobject,
 };
+use pyo3::types::PyDict;
 use pyo3::{exceptions::PyValueError, prelude::*};
 
-#[cfg(feature = "python")]
 use crate::actor::data_actor::ImportableActorConfig;
 use crate::{
     actor::{
@@ -74,16 +74,30 @@ impl DataActorConfig {
     }
 }
 
-#[cfg(feature = "python")]
 #[pyo3::pymethods]
 impl ImportableActorConfig {
     #[new]
-    fn py_new(actor_path: String, config_path: String, config: HashMap<String, String>) -> Self {
-        Self {
+    fn py_new(actor_path: String, config_path: String, config: Py<PyDict>) -> PyResult<Self> {
+        let json_config = Python::with_gil(|py| -> PyResult<HashMap<String, serde_json::Value>> {
+            let json_str: String = PyModule::import(py, "json")?
+                .call_method("dumps", (config.bind(py),), None)?
+                .extract()?;
+
+            let json_value: serde_json::Value = serde_json::from_str(&json_str)
+                .map_err(|e| PyErr::new::<PyValueError, _>(e.to_string()))?;
+
+            if let serde_json::Value::Object(map) = json_value {
+                Ok(map.into_iter().collect())
+            } else {
+                Err(PyErr::new::<PyValueError, _>("Config must be a dictionary"))
+            }
+        })?;
+
+        Ok(Self {
             actor_path,
             config_path,
-            config,
-        }
+            config: json_config,
+        })
     }
 
     #[getter]
@@ -97,8 +111,17 @@ impl ImportableActorConfig {
     }
 
     #[getter]
-    fn config(&self) -> &std::collections::HashMap<String, String> {
-        &self.config
+    fn config(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
+        // Convert HashMap<String, serde_json::Value> back to Python dict
+        let py_dict = PyDict::new(py);
+        for (key, value) in &self.config {
+            // Convert serde_json::Value back to Python object via JSON
+            let json_str = serde_json::to_string(value)
+                .map_err(|e| PyErr::new::<PyValueError, _>(e.to_string()))?;
+            let py_value = PyModule::import(py, "json")?.call_method("loads", (json_str,), None)?;
+            py_dict.set_item(key, py_value)?;
+        }
+        Ok(py_dict.unbind())
     }
 }
 
