@@ -1552,7 +1552,8 @@ fn test_execute_subscribe_pool_swaps(
         &mut data_engine,
     );
 
-    let instrument_id = InstrumentId::from("WETH/USDT-3000.Arbitrum:UniswapV3");
+    let instrument_id =
+        InstrumentId::from("0x11b815efB8f581194ae79006d24E0d814B7697F6.Arbitrum:UniswapV3");
 
     let sub_cmd = DataCommand::DefiSubscribe(DefiSubscribeCommand::PoolSwaps(SubscribePoolSwaps {
         instrument_id,

@@ -15,15 +15,17 @@
 
 //! Represents a valid trading venue ID.
 
-#[cfg(feature = "defi")]
-use crate::defi::{Chain, DexType};
-use crate::venues::VENUE_MAP;
-use nautilus_core::correctness::{FAILED, check_valid_string};
 use std::{
     fmt::{Debug, Display, Formatter},
     hash::Hash,
 };
+
+use nautilus_core::correctness::{FAILED, check_valid_string};
 use ustr::Ustr;
+
+#[cfg(feature = "defi")]
+use crate::defi::{Chain, DexType};
+use crate::venues::VENUE_MAP;
 
 pub const SYNTHETIC_VENUE: &str = "SYNTH";
 
@@ -119,6 +121,13 @@ impl Venue {
     #[must_use]
     pub fn is_synthetic(&self) -> bool {
         self.0.as_str() == SYNTHETIC_VENUE
+    }
+
+    /// Returns true if the venue represents a decentralized exchange (contains ':').
+    #[cfg(feature = "defi")]
+    #[must_use]
+    pub fn is_dex(&self) -> bool {
+        self.0.as_str().contains(':')
     }
 }
 
