@@ -24,16 +24,19 @@ use crate::exchanges::extended::DexExtended;
 
 /// PancakeSwap V3 DEX on Arbitrum.
 pub static PANCAKESWAP_V3: LazyLock<DexExtended> = LazyLock::new(|| {
-    let dex = Dex::new(
+    let mut dex = DexExtended::new(Dex::new(
         chains::ARBITRUM.clone(),
         DexType::PancakeSwapV3,
         "0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865",
         105068129,
         AmmType::CLAMM,
+        "PoolCreated(address,address,uint24,int24,address)",
         "",
         "",
         "",
-        "",
+    ));
+    dex.set_pool_created_event_parsing(
+        crate::exchanges::ethereum::uniswap_v3::parse_pool_created_event,
     );
-    DexExtended::new(dex)
+    dex
 });
