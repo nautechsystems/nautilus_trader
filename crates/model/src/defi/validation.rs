@@ -21,7 +21,7 @@
 
 use std::str::FromStr;
 
-use alloy::primitives::Address;
+use alloy_primitives::Address;
 
 /// Validates an Ethereum address format, checksum, and returns the parsed address.
 ///

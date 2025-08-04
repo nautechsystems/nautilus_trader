@@ -1679,7 +1679,8 @@ fn test_defi_pool_swaps_subscription(
     let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
-    let instrument_id = InstrumentId::from("WETH/USDT-3000.Arbitrum:UniswapV3");
+    let instrument_id =
+        InstrumentId::from("0x11b815efB8f581194ae79006d24E0d814B7697F6.Arbitrum:UniswapV3");
 
     let sub = DefiSubscribeCommand::PoolSwaps(SubscribePoolSwaps {
         instrument_id,
@@ -1778,7 +1779,8 @@ fn test_defi_pool_swaps_unsubscribe_noop(
     let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
-    let instrument_id = InstrumentId::from("WETH/USDT-3000.Arbitrum:UniswapV3");
+    let instrument_id =
+        InstrumentId::from("0x11b815efB8f581194ae79006d24E0d814B7697F6.Arbitrum:UniswapV3");
 
     // Unsubscribe without prior subscribe should be no-op
     let unsub = DefiUnsubscribeCommand::PoolSwaps(UnsubscribePoolSwaps {
@@ -1804,7 +1806,8 @@ fn test_defi_pool_swaps_unsubscribe_idempotent(
     let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
-    let instrument_id = InstrumentId::from("WETH/USDT-3000.Arbitrum:UniswapV3");
+    let instrument_id =
+        InstrumentId::from("0x11b815efB8f581194ae79006d24E0d814B7697F6.Arbitrum:UniswapV3");
 
     // Subscribe then unsubscribe twice
     let sub = DefiSubscribeCommand::PoolSwaps(SubscribePoolSwaps {
