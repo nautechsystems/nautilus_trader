@@ -15,14 +15,14 @@
 
 //! Represents a valid trading venue ID.
 
+#[cfg(feature = "defi")]
+use crate::defi::{Chain, DexType};
+use crate::venues::VENUE_MAP;
+use nautilus_core::correctness::{FAILED, check_valid_string};
 use std::{
     fmt::{Debug, Display, Formatter},
     hash::Hash,
 };
-
-use crate::defi::{Chain, DexType};
-use crate::venues::VENUE_MAP;
-use nautilus_core::correctness::{FAILED, check_valid_string};
 use ustr::Ustr;
 
 pub const SYNTHETIC_VENUE: &str = "SYNTH";
