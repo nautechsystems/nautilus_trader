@@ -1,4 +1,5 @@
-import re
+#!/usr/bin/env python3
+
 import traceback
 from dataclasses import dataclass
 from dataclasses import field
@@ -280,6 +281,8 @@ class CythonCodeAnalyzer(ScopeTrackingTransform):
         for arg in node_args:
             if hasattr(arg, "declarator"):
                 arg_name = self._extract_name_from_node(arg.declarator)
+                if not arg_name and hasattr(arg, "base_type"):
+                    arg_name = self._extract_name_from_node(arg.base_type)
 
             arg_type = None
             if hasattr(arg, "annotation") and arg.annotation:
@@ -499,7 +502,7 @@ def print_results(analyzer: CythonCodeAnalyzer):  # noqa: C901
             print(f"  - {var.name}{type_info}{value_info} ({classification})")
 
 if __name__ == "__main__":
-    file_path = Path("/Users/sam/Documents/Development/woung717/nautilus_trader/nautilus_trader/model/instruments/base.pyx")
+    file_path = Path("/Users/sam/Documents/Development/woung717/nautilus_trader/nautilus_trader/risk/sizing.pyx")
     code = file_path.read_text(encoding="utf-8")
 
     analyzer_result = analyze_cython_code(name=str(file_path), code_content=code)

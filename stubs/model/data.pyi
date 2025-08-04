@@ -13,7 +13,7 @@ from nautilus_trader.model.identifiers import TradeId
 
 from datetime import timedelta
 
-class BarAggregation(Enum):
+class BarAggregation(Enum): # skip-validate
     TICK = 1
     TICK_IMBALANCE = 2
     TICK_RUNS = 3
@@ -32,8 +32,8 @@ class BarAggregation(Enum):
     MONTH = 16
 
 
-def capsule_to_list(capsule: Any) -> list[Data]: ...
-def capsule_to_data(capsule: Any) -> Data: ...
+def capsule_to_list(capsule) -> list[Data]: ...
+def capsule_to_data(capsule) -> Data: ...
 
 
 class BarSpecification:

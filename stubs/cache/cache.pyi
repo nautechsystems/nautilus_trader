@@ -468,7 +468,7 @@ class Cache(CacheFacade):
 
         """
         ...
-    def add_own_order_book(self, own_order_book: nautilus_pyo3.OwnOrderBook) -> None:
+    def add_own_order_book(self, own_order_book) -> None:
         """
         Add the given own order book to the cache.
 
@@ -1628,7 +1628,7 @@ class Cache(CacheFacade):
         self,
         instrument_id: InstrumentId | None = None,
         price_type: PriceType | None = None,
-        aggregation_source: BarAggregation | None = None,
+        aggregation_source = None,
     ) -> list[BarType]:
         """
         Return all bar types with the given query filters.

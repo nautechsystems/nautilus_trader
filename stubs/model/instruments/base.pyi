@@ -257,7 +257,7 @@ class Instrument(Data):
 
         """
         ...
-    def make_price(self, value: float | int | str | Decimal) -> Price:
+    def make_price(self, value) -> Price:
         """
         Return a new price from the given value using the instruments price
         precision.
@@ -373,7 +373,7 @@ class Instrument(Data):
             If a tick scheme is not initialized.
         """
         ...
-    def make_qty(self, value: float | int | str | Decimal, round_down: bool = False) -> Quantity:
+    def make_qty(self, value, round_down: bool = False) -> Quantity:
         """
         Return a new quantity from the given value using the instruments size
         precision.

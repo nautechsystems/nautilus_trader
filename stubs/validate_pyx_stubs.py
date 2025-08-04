@@ -162,7 +162,7 @@ class PyiParser:
 
         # Parse members
         for item in node.body:
-            if isinstance(item, ast.FunctionDef):
+            if isinstance(item, ast.FunctionDef) or isinstance(item, ast.AsyncFunctionDef):
                 # Extract parameter information in more detail
                 parameters = []
                 ignored_params = set()

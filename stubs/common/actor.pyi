@@ -40,7 +40,6 @@ class Actor(Component):
     - Do not call components such as `clock` and `logger` in the `__init__` prior to registration.
     """
 
-    portfolio: PortfolioFacade | None
     msgbus: MessageBus | None
     cache: CacheFacade | None
     clock: Clock | None
@@ -58,7 +57,6 @@ class Actor(Component):
     _indicators_for_quotes: dict[InstrumentId, list[Indicator]]
     _indicators_for_trades: dict[InstrumentId, list[Indicator]]
     _indicators_for_bars: dict[BarType, list[Indicator]]
-    _executor: ActorExecutor | None
 
     def __init__(self, config: ActorConfig | None = None) -> None: ...
     def to_importable_config(self) -> ImportableActorConfig:
@@ -258,7 +256,7 @@ class Actor(Component):
 
         """
         ...
-    def on_order_book_deltas(self, deltas: OrderBookDeltas | Any) -> None: # pyo3 type hint
+    def on_order_book_deltas(self, deltas) -> None: # pyo3 type hint
         """
         Actions to be performed when running and receives order book deltas.
 
@@ -273,7 +271,7 @@ class Actor(Component):
 
         """
         ...
-    def on_order_book_depth(self, depth: OrderBookDepth10) -> None:
+    def on_order_book_depth(self, depth) -> None:
         """
         Actions to be performed when running and receives an order book depth.
 
@@ -378,7 +376,7 @@ class Actor(Component):
 
         """
         ...
-    def on_signal(self, signal: Data) -> None:
+    def on_signal(self, signal) -> None:
         """
         Actions to be performed when running and receives signal data.
 
@@ -1435,7 +1433,7 @@ class Actor(Component):
 
         """
         ...
-    def publish_signal(self, name: str, value: int | float | str, ts_event: int = 0) -> None:
+    def publish_signal(self, name: str, value, ts_event: int = 0) -> None:
         """
         Publish the given value as a signal to the message bus.
 
@@ -1977,7 +1975,6 @@ class Actor(Component):
 
         """
         ...
-    @property
     def pending_requests(self) -> set[UUID4]:
         """
         Return the request IDs which are currently pending processing.
@@ -2020,7 +2017,7 @@ class Actor(Component):
 
         """
         ...
-    def handle_order_book_deltas(self, deltas: OrderBookDeltas | Any) -> None:
+    def handle_order_book_deltas(self, deltas) -> None:
         """
         Handle the given order book deltas.
 

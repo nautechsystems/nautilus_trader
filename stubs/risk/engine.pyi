@@ -105,7 +105,7 @@ class RiskEngine(Component):
     def set_max_notional_per_order(
         self,
         instrument_id: InstrumentId,
-        new_value: Union[int, float, str, Decimal, None],
+        new_value,
     ) -> None:
         """
         Set the maximum notional value per order for the given instrument ID.

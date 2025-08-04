@@ -454,7 +454,7 @@ class TestClock(Clock):
     def timestamp_ms(self) -> int: ...
     def timestamp_us(self) -> int: ...
     def timestamp_ns(self) -> int: ...
-    def register_default_handler(self, handler: Callable[TimeEvent, None]) -> None: ...
+    def register_default_handler(self, callback: Callable[TimeEvent, None]) -> None: ...
 
     def set_time_alert_ns(
         self,
@@ -884,7 +884,7 @@ class Logger:
     def exception(
         self,
         message: str,
-        ex: Any,
+        ex,
     ) -> None:
         """
         Log the given exception including stack trace information.
@@ -1279,7 +1279,7 @@ class MessageBus:
         The custom name for the message bus.
     serializer : Serializer, optional
         The serializer for database operations.
-    database : RedisMessageBusDatabase, optional
+    database : nautilus_pyo3.RedisMessageBusDatabase, optional
         The backing database for the message bus.
     config : MessageBusConfig, optional
         The configuration for the message bus.
@@ -1322,7 +1322,7 @@ class MessageBus:
         instance_id: UUID4 | None = None,
         name: str | None = None,
         serializer: Serializer | None = None,
-        database: RedisMessageBusDatabase | None = None,
+        database: nautilus_pyo3.RedisMessageBusDatabase | None = None,
         config: Any | None = None,
     ) -> None: ...
 
@@ -1365,7 +1365,6 @@ class MessageBus:
         """
         ...
 
-    @property
     def streaming_types(self) -> set[type]:
         """
         Return all types registered for external streaming -> internal publishing.
@@ -1509,7 +1508,7 @@ class MessageBus:
         """
         ...
 
-    def add_listener(self, listener: MessageBusListener) -> None:
+    def add_listener(self, listener: nautilus_pyo3.MessageBusListener) -> None:
         """
         Adds the given listener to the message bus.
 
@@ -1535,7 +1534,7 @@ class MessageBus:
         """
         ...
 
-    def request(self, endpoint: str, request: Any) -> None: # Cannot import Request without circular dependency
+    def request(self, endpoint: str, request: Request) -> None: # Cannot import Request without circular dependency
         """
         Handle the given `request`.
 
@@ -1551,7 +1550,7 @@ class MessageBus:
         """
         ...
 
-    def response(self, response: Any) -> None: # Cannot import Response without circular dependency
+    def response(self, response: Response) -> None: # Cannot import Response without circular dependency
         """
         Handle the given `response`.
 
@@ -1797,7 +1796,7 @@ class Throttler:
         """
         ...
 
-    def send(self, msg: Any) -> None:
+    def send(self, msg) -> None:
         """
         Send the given message through the throttler.
 
