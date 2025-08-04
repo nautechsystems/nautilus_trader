@@ -198,7 +198,7 @@ impl TardisMachineClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let stream = stream_normalized(&base_url, options, replay_signal)
                 .await
-                .expect("Failed to connect to WebSocket");
+                .map_err(to_pyruntime_err)?;
 
             // We use Box::pin to heap-allocate the stream and ensure it implements
             // Unpin for safe async handling across lifetimes.
