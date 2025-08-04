@@ -15,31 +15,6 @@
 
 use std::{cmp::max, collections::HashSet, sync::Arc};
 
-use alloy::primitives::{Address, U256};
-use futures_util::StreamExt;
-use nautilus_common::{
-    messages::{
-        DataEvent,
-        defi::{
-            DefiDataCommand, DefiSubscribeCommand, DefiUnsubscribeCommand, SubscribeBlocks,
-            SubscribePool, SubscribePoolLiquidityUpdates, SubscribePoolSwaps, UnsubscribeBlocks,
-            UnsubscribePool, UnsubscribePoolLiquidityUpdates, UnsubscribePoolSwaps,
-        },
-    },
-    runner::get_data_event_sender,
-};
-use nautilus_core::UnixNanos;
-use nautilus_data::client::DataClient;
-use nautilus_infrastructure::sql::pg::PostgresConnectOptions;
-use nautilus_model::{
-    defi::{
-        Block, Blockchain, DefiData, Pool, PoolLiquidityUpdate, PoolLiquidityUpdateType, PoolSwap,
-        SharedChain, SharedDex, SharedPool, Token,
-    },
-    identifiers::{ClientId, Venue},
-};
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-
 use crate::{
     cache::BlockchainCache,
     config::BlockchainDataClientConfig,
@@ -58,8 +33,32 @@ use crate::{
         http::BlockchainHttpRpcClient,
         types::BlockchainMessage,
     },
-    validation::validate_address,
 };
+use alloy::primitives::{Address, U256};
+use futures_util::StreamExt;
+use nautilus_common::{
+    messages::{
+        DataEvent,
+        defi::{
+            DefiDataCommand, DefiSubscribeCommand, DefiUnsubscribeCommand, SubscribeBlocks,
+            SubscribePool, SubscribePoolLiquidityUpdates, SubscribePoolSwaps, UnsubscribeBlocks,
+            UnsubscribePool, UnsubscribePoolLiquidityUpdates, UnsubscribePoolSwaps,
+        },
+    },
+    runner::get_data_event_sender,
+};
+use nautilus_core::UnixNanos;
+use nautilus_data::client::DataClient;
+use nautilus_infrastructure::sql::pg::PostgresConnectOptions;
+use nautilus_model::defi::validation::validate_address;
+use nautilus_model::{
+    defi::{
+        Block, Blockchain, DefiData, Pool, PoolLiquidityUpdate, PoolLiquidityUpdateType, PoolSwap,
+        SharedChain, SharedDex, SharedPool, Token,
+    },
+    identifiers::{ClientId, Venue},
+};
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 const BLOCKS_PROCESS_IN_SYNC_REPORT: u64 = 50000;
 

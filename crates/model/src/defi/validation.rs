@@ -19,9 +19,8 @@
 //! of blockchain-related data, particularly Ethereum addresses and other EVM-compatible
 //! blockchain identifiers.
 
+use alloy_primitives::Address;
 use std::str::FromStr;
-
-use alloy::primitives::Address;
 
 /// Validates an Ethereum address format, checksum, and returns the parsed address.
 ///
