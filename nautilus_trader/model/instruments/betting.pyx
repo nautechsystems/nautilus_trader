@@ -190,6 +190,10 @@ cdef class BettingInstrument(Instrument):
         if taker_fee:
             data["taker_fee"] = Decimal(taker_fee)
 
+        tick_scheme_name = values.get("tick_scheme_name")
+        if tick_scheme_name:
+            data["tick_scheme_name"] = tick_scheme_name
+
         data.pop("raw_symbol", None)
         data.pop("price_increment", None)
         data.pop("size_increment", None)
@@ -236,6 +240,7 @@ cdef class BettingInstrument(Instrument):
             "taker_fee": str(obj.taker_fee),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
+            "tick_scheme_name": obj.tick_scheme_name,
             "info": obj.info,
         }
 

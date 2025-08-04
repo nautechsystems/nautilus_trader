@@ -69,6 +69,7 @@ def test_pyo3_cython_conversion():
     crypto_perpetual_pyo3_dict = crypto_perpetual_pyo3.to_dict()
     crypto_perpetual_cython = CryptoPerpetual.from_pyo3(crypto_perpetual_pyo3)
     crypto_perpetual_cython_dict = CryptoPerpetual.to_dict(crypto_perpetual_cython)
+    del crypto_perpetual_cython_dict["tick_scheme_name"]  # TODO: Under development
     crypto_perpetual_pyo3_back = nautilus_pyo3.CryptoPerpetual.from_dict(
         crypto_perpetual_cython_dict,
     )

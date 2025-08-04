@@ -21,6 +21,7 @@ Released on TBD (UTC).
 - Added `VERBOSE` option to common make targets (#2759), thanks @faysou
 - Added bulk key loading capability for Redis cache database adapter
 - Added `multiplier` field for `CurrencyPair` instrument (required for some crypto pairs)
+- Added `tick_scheme_name` field for instrument dictionary conversions
 
 ### Breaking Changes
 - Added `multiplier` field for `CurrencyPair` Arrow schema

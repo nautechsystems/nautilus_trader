@@ -55,6 +55,8 @@ cdef class IndexInstrument(Instrument):
         UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the data object was initialized.
+    tick_scheme_name : str, optional
+        The name of the tick scheme.
     info : dict[str, object], optional
         The additional instrument information.
 
@@ -86,6 +88,7 @@ cdef class IndexInstrument(Instrument):
         Quantity size_increment not None,
         uint64_t ts_event,
         uint64_t ts_init,
+        str tick_scheme_name = None,
         dict info = None,
     ) -> None:
         super().__init__(
@@ -100,13 +103,14 @@ cdef class IndexInstrument(Instrument):
             price_increment=price_increment,
             size_increment=size_increment,
             multiplier=Quantity.from_int_c(1),
-            ts_event=ts_event,
-            ts_init=ts_init,
-            info=info,
             margin_init=Decimal(0),
             margin_maint=Decimal(0),
             maker_fee=Decimal(0),
             taker_fee=Decimal(0),
+            ts_event=ts_event,
+            ts_init=ts_init,
+            tick_scheme_name=tick_scheme_name,
+            info=info,
         )
 
     @staticmethod
@@ -122,6 +126,7 @@ cdef class IndexInstrument(Instrument):
             size_increment=Quantity.from_str(values["size_increment"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
+            tick_scheme_name=values.get("tick_scheme_name"),
             info=values["info"],
         )
 
@@ -139,6 +144,7 @@ cdef class IndexInstrument(Instrument):
             "size_increment": str(obj.size_increment),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
+            "tick_scheme_name": obj.tick_scheme_name,
             "info": obj.info,
         }
 

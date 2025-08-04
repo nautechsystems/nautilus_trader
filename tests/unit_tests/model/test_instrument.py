@@ -117,6 +117,7 @@ class TestInstrument:
             "taker_fee": "0.001",
             "ts_event": 0,
             "ts_init": 0,
+            "tick_scheme_name": None,
             "info": None,
         }
 
@@ -148,6 +149,7 @@ class TestInstrument:
             "taker_fee": "0.001",
             "ts_event": 0,
             "ts_init": 0,
+            "tick_scheme_name": None,
             "info": None,
         }
 
@@ -202,6 +204,7 @@ class TestInstrument:
             "ts_event": 0,
             "ts_init": 0,
             "info": {},
+            "tick_scheme_name": None,
         }
 
     def test_crypto_perpetual_instrument_to_dict(self):
@@ -237,6 +240,7 @@ class TestInstrument:
             "ts_event": 0,
             "ts_init": 0,
             "info": None,
+            "tick_scheme_name": None,
         }
 
     def test_crypto_future_instrument_to_dict(self):
@@ -274,6 +278,7 @@ class TestInstrument:
             "ts_event": 0,
             "ts_init": 0,
             "info": None,
+            "tick_scheme_name": None,
         }
 
     def test_equity_instrument_to_dict(self):
@@ -302,6 +307,7 @@ class TestInstrument:
             "ts_event": 0,
             "ts_init": 0,
             "info": None,
+            "tick_scheme_name": None,
         }
 
     def test_future_instrument_to_dict(self):
@@ -337,6 +343,7 @@ class TestInstrument:
             "ts_event": 1622842200000000000,
             "ts_init": 1622842200000000000,
             "info": None,
+            "tick_scheme_name": None,
         }
 
     def test_option_instrument_to_dict(self):
@@ -374,6 +381,7 @@ class TestInstrument:
             "ts_event": 0,
             "ts_init": 0,
             "info": None,
+            "tick_scheme_name": None,
         }
 
     @pytest.mark.parametrize(

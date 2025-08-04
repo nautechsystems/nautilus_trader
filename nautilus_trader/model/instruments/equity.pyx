@@ -60,6 +60,8 @@ cdef class Equity(Instrument):
         The fee rate for liquidity takers as a percentage of order value.
     isin : str, optional
         The instruments International Securities Identification Number (ISIN).
+    tick_scheme_name : str, optional
+        The name of the tick scheme.
     info : dict[str, object], optional
         The additional instrument information.
 
@@ -97,6 +99,7 @@ cdef class Equity(Instrument):
         maker_fee: Decimal | None = None,
         taker_fee: Decimal | None = None,
         str isin: str | None = None,
+        str tick_scheme_name = None,
         dict info = None,
     ) -> None:
         if isin is not None:
@@ -126,6 +129,7 @@ cdef class Equity(Instrument):
             taker_fee=taker_fee or Decimal(0),
             ts_event=ts_event,
             ts_init=ts_init,
+            tick_scheme_name=tick_scheme_name,
             info=info,
         )
 
@@ -148,6 +152,7 @@ cdef class Equity(Instrument):
             taker_fee=Decimal(values.get("taker_fee", 0))  if values.get("taker_fee") is not None else None,
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
+            tick_scheme_name=values.get("tick_scheme_name"),
             info=values["info"],
         )
 
@@ -173,6 +178,7 @@ cdef class Equity(Instrument):
             "min_quantity": str(obj.min_quantity) if obj.min_quantity is not None else None,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
+            "tick_scheme_name": obj.tick_scheme_name,
             "info": obj.info,
         }
 
