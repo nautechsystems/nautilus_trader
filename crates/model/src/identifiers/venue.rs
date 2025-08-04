@@ -15,15 +15,15 @@
 
 //! Represents a valid trading venue ID.
 
+#[cfg(feature = "defi")]
+use crate::defi::{Chain, DexType};
+use crate::venues::VENUE_MAP;
+use nautilus_core::correctness::{FAILED, check_valid_string};
 use std::{
     fmt::{Debug, Display, Formatter},
     hash::Hash,
 };
-
-use nautilus_core::correctness::{FAILED, check_valid_string};
 use ustr::Ustr;
-
-use crate::venues::VENUE_MAP;
 
 pub const SYNTHETIC_VENUE: &str = "SYNTH";
 
@@ -49,6 +49,14 @@ impl Venue {
     pub fn new_checked<T: AsRef<str>>(value: T) -> anyhow::Result<Self> {
         let value = value.as_ref();
         check_valid_string(value, stringify!(value))?;
+
+        #[cfg(feature = "defi")]
+        if value.contains(':') {
+            if let Err(e) = validate_blockchain_venue(value) {
+                anyhow::bail!("Error creating `Venue` from '{value}': {e}");
+            }
+        }
+
         Ok(Self(Ustr::from(value)))
     }
 
@@ -126,6 +134,45 @@ impl Display for Venue {
     }
 }
 
+/// Validates blockchain venue format "Chain:DexId".
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Format is not "Chain:DexId" (missing colon or empty parts)
+/// - Chain or Dex is not recognized
+#[cfg(feature = "defi")]
+pub fn validate_blockchain_venue(venue_part: &str) -> anyhow::Result<()> {
+    if let Some((chain_name, dex_id)) = venue_part.split_once(':') {
+        if chain_name.is_empty() || dex_id.is_empty() {
+            anyhow::bail!(
+                "invalid blockchain venue '{}': expected format 'Chain:DexId'",
+                venue_part
+            );
+        }
+        if Chain::from_chain_name(chain_name).is_none() {
+            anyhow::bail!(
+                "invalid blockchain venue '{}': chain '{}' not recognized",
+                venue_part,
+                chain_name
+            );
+        }
+        if DexType::from_dex_name(dex_id).is_none() {
+            anyhow::bail!(
+                "invalid blockchain venue '{}': dex '{}' not recognized",
+                venue_part,
+                dex_id
+            );
+        }
+        Ok(())
+    } else {
+        anyhow::bail!(
+            "invalid blockchain venue '{}': expected format 'Chain:DexId'",
+            venue_part
+        );
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
@@ -139,5 +186,99 @@ mod tests {
     fn test_string_reprs(venue_binance: Venue) {
         assert_eq!(venue_binance.as_str(), "BINANCE");
         assert_eq!(format!("{venue_binance}"), "BINANCE");
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn test_blockchain_venue_valid_dex_names() {
+        // Test various valid DEX names
+        let valid_dexes = vec![
+            "UniswapV3",
+            "UniswapV2",
+            "UniswapV4",
+            "SushiSwapV2",
+            "SushiSwapV3",
+            "PancakeSwapV3",
+            "CamelotV3",
+            "CurveFinance",
+            "FluidDEX",
+            "MaverickV1",
+            "MaverickV2",
+            "BaseX",
+            "BaseSwapV2",
+            "AerodromeV1",
+            "AerodromeSlipstream",
+            "BalancerV2",
+            "BalancerV3",
+        ];
+
+        for dex_name in valid_dexes {
+            let venue_str = format!("Arbitrum:{dex_name}");
+            let venue = Venue::new(&venue_str);
+            assert_eq!(venue.to_string(), venue_str);
+        }
+    }
+    #[cfg(feature = "defi")]
+    #[rstest]
+    #[should_panic(
+        expected = "Error creating `Venue` from 'InvalidChain:UniswapV3': invalid blockchain venue 'InvalidChain:UniswapV3': chain 'InvalidChain' not recognized"
+    )]
+    fn test_blockchain_venue_invalid_chain() {
+        let _ = Venue::new("InvalidChain:UniswapV3");
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    #[should_panic(
+        expected = "Error creating `Venue` from 'Arbitrum:': invalid blockchain venue 'Arbitrum:': expected format 'Chain:DexId'"
+    )]
+    fn test_blockchain_venue_empty_dex() {
+        let _ = Venue::new("Arbitrum:");
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn test_regular_venue_with_blockchain_like_name_but_without_dex() {
+        // Should work fine since it doesn't contain ':'
+        let venue = Venue::new("Ethereum");
+        assert_eq!(venue.to_string(), "Ethereum");
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    #[should_panic(
+        expected = "Error creating `Venue` from 'Arbitrum:InvalidDex': invalid blockchain venue 'Arbitrum:InvalidDex': dex 'InvalidDex' not recognized"
+    )]
+    fn test_blockchain_venue_invalid_dex() {
+        let _ = Venue::new("Arbitrum:InvalidDex");
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    #[should_panic(
+        expected = "Error creating `Venue` from 'Arbitrum:uniswapv3': invalid blockchain venue 'Arbitrum:uniswapv3': dex 'uniswapv3' not recognized"
+    )]
+    fn test_blockchain_venue_dex_case_sensitive() {
+        // DEX names should be case sensitive
+        let _ = Venue::new("Arbitrum:uniswapv3");
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn test_blockchain_venue_various_chain_dex_combinations() {
+        // Test various valid chain:dex combinations
+        let valid_combinations = vec![
+            ("Ethereum", "UniswapV2"),
+            ("Ethereum", "BalancerV2"),
+            ("Arbitrum", "CamelotV3"),
+            ("Base", "AerodromeV1"),
+            ("Polygon", "SushiSwapV3"),
+        ];
+
+        for (chain, dex) in valid_combinations {
+            let venue_str = format!("{chain}:{dex}");
+            let venue = Venue::new(&venue_str);
+            assert_eq!(venue.to_string(), venue_str);
+        }
     }
 }

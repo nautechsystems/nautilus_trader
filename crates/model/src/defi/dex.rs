@@ -13,9 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{borrow::Cow, fmt::Display, sync::Arc};
+use std::{borrow::Cow, fmt::Display, str::FromStr, sync::Arc};
 
 use serde::{Deserialize, Serialize};
+use strum::{Display, EnumIter, EnumString};
 
 use crate::{
     defi::{amm::Pool, chain::Chain},
@@ -56,6 +57,53 @@ pub enum AmmType {
     ComposablePool,
 }
 
+/// Represents different types of decentralized exchanges (DEXes) supported by Nautilus.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Hash,
+    PartialOrd,
+    PartialEq,
+    Ord,
+    Eq,
+    Display,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
+pub enum DexType {
+    AerodromeSlipstream,
+    AerodromeV1,
+    BalancerV2,
+    BalancerV3,
+    BaseSwapV2,
+    BaseX,
+    CamelotV3,
+    CurveFinance,
+    FluidDEX,
+    MaverickV1,
+    MaverickV2,
+    PancakeSwapV3,
+    SushiSwapV2,
+    SushiSwapV3,
+    UniswapV2,
+    UniswapV3,
+    UniswapV4,
+}
+
+impl DexType {
+    /// Returns a reference to the `DexType` corresponding to the given dex name, or `None` if it is not found.
+    pub fn from_dex_name(dex_name: &str) -> Option<DexType> {
+        DexType::from_str(dex_name).ok()
+    }
+}
+
 /// Represents a decentralized exchange (DEX) in a blockchain ecosystem.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
@@ -65,8 +113,8 @@ pub enum AmmType {
 pub struct Dex {
     /// The blockchain network where this DEX operates.
     pub chain: Chain,
-    /// The name of the DEX protocol.
-    pub name: Cow<'static, str>,
+    /// The variant of the DEX protocol.
+    pub name: DexType,
     /// The blockchain address of the DEX factory contract.
     pub factory: Cow<'static, str>,
     /// The block number at which the DEX factory contract was deployed.
@@ -95,7 +143,7 @@ impl Dex {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         chain: Chain,
-        name: impl Into<Cow<'static, str>>,
+        name: DexType,
         factory: impl Into<Cow<'static, str>>,
         factory_creation_block: u64,
         amm_type: AmmType,
@@ -106,7 +154,7 @@ impl Dex {
     ) -> Self {
         Self {
             chain,
-            name: name.into(),
+            name,
             factory: factory.into(),
             factory_creation_block,
             pool_created_event: pool_created_event.into(),
@@ -171,5 +219,96 @@ impl From<Pool> for CurrencyPair {
 impl From<Pool> for InstrumentAny {
     fn from(p: Pool) -> Self {
         CurrencyPair::from(p).into_any()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::DexType;
+
+    #[rstest]
+    fn test_dex_type_from_dex_name_valid() {
+        // Test some known DEX names
+        assert!(DexType::from_dex_name("UniswapV3").is_some());
+        assert!(DexType::from_dex_name("SushiSwapV2").is_some());
+        assert!(DexType::from_dex_name("BalancerV2").is_some());
+        assert!(DexType::from_dex_name("CamelotV3").is_some());
+
+        // Verify specific DEX type
+        let uniswap_v3 = DexType::from_dex_name("UniswapV3").unwrap();
+        assert_eq!(uniswap_v3, DexType::UniswapV3);
+
+        // Verify compound names
+        let aerodrome_slipstream = DexType::from_dex_name("AerodromeSlipstream").unwrap();
+        assert_eq!(aerodrome_slipstream, DexType::AerodromeSlipstream);
+
+        // Verify specialized names
+        let fluid_dex = DexType::from_dex_name("FluidDEX").unwrap();
+        assert_eq!(fluid_dex, DexType::FluidDEX);
+    }
+
+    #[rstest]
+    fn test_dex_type_from_dex_name_invalid() {
+        // Test unknown DEX names
+        assert!(DexType::from_dex_name("InvalidDEX").is_none());
+        assert!(DexType::from_dex_name("").is_none());
+        assert!(DexType::from_dex_name("NonExistentDEX").is_none());
+    }
+
+    #[rstest]
+    fn test_dex_type_from_dex_name_case_sensitive() {
+        // Test case sensitivity - should be case sensitive
+        assert!(DexType::from_dex_name("UniswapV3").is_some());
+        assert!(DexType::from_dex_name("uniswapv3").is_none()); // lowercase
+        assert!(DexType::from_dex_name("UNISWAPV3").is_none()); // uppercase
+        assert!(DexType::from_dex_name("UniSwapV3").is_none()); // mixed case
+
+        assert!(DexType::from_dex_name("SushiSwapV2").is_some());
+        assert!(DexType::from_dex_name("sushiswapv2").is_none()); // lowercase
+    }
+
+    #[rstest]
+    fn test_dex_type_all_variants_mappable() {
+        // Test that all DEX variants can be mapped from their string representation
+        let all_dex_names = vec![
+            "AerodromeSlipstream",
+            "AerodromeV1",
+            "BalancerV2",
+            "BalancerV3",
+            "BaseSwapV2",
+            "BaseX",
+            "CamelotV3",
+            "CurveFinance",
+            "FluidDEX",
+            "MaverickV1",
+            "MaverickV2",
+            "PancakeSwapV3",
+            "SushiSwapV2",
+            "SushiSwapV3",
+            "UniswapV2",
+            "UniswapV3",
+            "UniswapV4",
+        ];
+
+        for dex_name in all_dex_names {
+            assert!(
+                DexType::from_dex_name(dex_name).is_some(),
+                "DEX name '{dex_name}' should be valid but was not found",
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_dex_type_display() {
+        // Test that DexType variants display correctly (using strum::Display)
+        assert_eq!(DexType::UniswapV3.to_string(), "UniswapV3");
+        assert_eq!(DexType::SushiSwapV2.to_string(), "SushiSwapV2");
+        assert_eq!(
+            DexType::AerodromeSlipstream.to_string(),
+            "AerodromeSlipstream"
+        );
+        assert_eq!(DexType::FluidDEX.to_string(), "FluidDEX");
     }
 }

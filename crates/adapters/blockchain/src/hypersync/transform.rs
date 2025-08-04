@@ -457,7 +457,7 @@ pub fn transform_hypersync_burn_log(
 mod tests {
     use std::sync::Arc;
 
-    use nautilus_model::defi::{AmmType, Chain, Dex, Pool, Token};
+    use nautilus_model::defi::{AmmType, Chain, Dex, DexType, Pool, Token};
     use rstest::rstest;
     use serde_json::json;
 
@@ -469,7 +469,7 @@ mod tests {
 
         let dex = Arc::new(Dex::new(
             (*chain).clone(),
-            "Uniswap V3",
+            DexType::UniswapV3,
             "0x1F98431c8aD98523631AE4a59f267346ea31F984",
             0,
             AmmType::CLAMM,
@@ -501,7 +501,7 @@ mod tests {
 
         let pool = Arc::new(Pool::new(
             chain.clone(),
-            (*dex).clone(),
+            dex.clone(),
             "0x11b815efB8f581194ae79006d24E0d814B7697F6"
                 .parse()
                 .unwrap(),

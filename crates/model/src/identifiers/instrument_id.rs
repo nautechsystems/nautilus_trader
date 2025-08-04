@@ -25,7 +25,7 @@ use nautilus_core::correctness::check_valid_string;
 use serde::{Deserialize, Deserializer, Serialize};
 
 #[cfg(feature = "defi")]
-use crate::defi::chain::Chain;
+use crate::identifiers::venue::validate_blockchain_venue;
 use crate::identifiers::{Symbol, Venue};
 
 /// Represents a valid instrument ID.
@@ -75,7 +75,6 @@ impl FromStr for InstrumentId {
                 check_valid_string(symbol_part, stringify!(value))?;
                 check_valid_string(venue_part, stringify!(value))?;
 
-                // Validate blockchain venues when defi feature is enabled
                 #[cfg(feature = "defi")]
                 if venue_part.contains(':') {
                     if let Err(e) = validate_blockchain_venue(venue_part) {
@@ -148,31 +147,6 @@ impl<'de> Deserialize<'de> for InstrumentId {
     {
         let instrument_id_str = String::deserialize(deserializer)?;
         Ok(Self::from(instrument_id_str.as_str()))
-    }
-}
-
-#[cfg(feature = "defi")]
-fn validate_blockchain_venue(venue_part: &str) -> anyhow::Result<()> {
-    if let Some((chain_name, dex_id)) = venue_part.split_once(':') {
-        if chain_name.is_empty() || dex_id.is_empty() {
-            anyhow::bail!(
-                "invalid blockchain venue '{}': expected format 'Chain:DexId'",
-                venue_part
-            );
-        }
-        if Chain::from_chain_name(chain_name).is_none() {
-            anyhow::bail!(
-                "invalid blockchain venue '{}': chain '{}' not recognized",
-                venue_part,
-                chain_name
-            );
-        }
-        Ok(())
-    } else {
-        anyhow::bail!(
-            "invalid blockchain venue '{}': expected format 'Chain:DexId'",
-            venue_part
-        );
     }
 }
 

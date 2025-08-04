@@ -260,7 +260,7 @@ impl BlockchainCacheDatabase {
         ",
         )
         .bind(dex.chain.chain_id as i32)
-        .bind(dex.name.as_ref())
+        .bind(dex.name.to_string())
         .bind(dex.factory.as_ref())
         .bind(dex.factory_creation_block as i64)
         .execute(&self.pool)
@@ -298,7 +298,7 @@ impl BlockchainCacheDatabase {
         )
         .bind(pool.chain.chain_id as i32)
         .bind(pool.address.to_string())
-        .bind(pool.dex.name.as_ref())
+        .bind(pool.dex.name.to_string())
         .bind(pool.creation_block as i64)
         .bind(pool.token0.chain.chain_id as i32)
         .bind(pool.token0.address.to_string())

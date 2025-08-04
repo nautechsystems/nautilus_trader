@@ -17,7 +17,7 @@ use std::sync::LazyLock;
 
 use nautilus_model::defi::{
     chain::chains,
-    dex::{AmmType, Dex},
+    dex::{AmmType, Dex, DexType},
 };
 
 use crate::exchanges::extended::DexExtended;
@@ -26,7 +26,7 @@ use crate::exchanges::extended::DexExtended;
 pub static UNISWAP_V4: LazyLock<DexExtended> = LazyLock::new(|| {
     let dex = Dex::new(
         chains::ARBITRUM.clone(),
-        "UniswapV4",
+        DexType::UniswapV4,
         "0x360E68faCcca8cA495c1B759Fd9EEe466db9FB32", // Pool Manager
         304081360,
         AmmType::CLAMEnhanced,

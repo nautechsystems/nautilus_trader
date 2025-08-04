@@ -17,7 +17,7 @@ use std::sync::LazyLock;
 
 use nautilus_model::defi::{
     chain::chains,
-    dex::{AmmType, Dex},
+    dex::{AmmType, Dex, DexType},
 };
 
 use crate::exchanges::extended::DexExtended;
@@ -26,7 +26,7 @@ use crate::exchanges::extended::DexExtended;
 pub static CURVE_FINANCE: LazyLock<DexExtended> = LazyLock::new(|| {
     let dex = Dex::new(
         chains::ARBITRUM.clone(),
-        "CurveFinance",
+        DexType::CurveFinance,
         "0xb17b674D9c5CB2e441F8e196a2f048A81355d031",
         1413161,
         AmmType::StableSwap,

@@ -17,7 +17,7 @@ use std::sync::LazyLock;
 
 use nautilus_model::defi::{
     chain::chains,
-    dex::{AmmType, Dex},
+    dex::{AmmType, Dex, DexType},
 };
 
 use crate::exchanges::extended::DexExtended;
@@ -26,7 +26,7 @@ use crate::exchanges::extended::DexExtended;
 pub static MAVERICK_V1: LazyLock<DexExtended> = LazyLock::new(|| {
     let dex = Dex::new(
         chains::BASE.clone(),
-        "MaverickV1",
+        DexType::MaverickV1,
         "0x5bE9AB35Fa26d8a0F6E9a5C29C1F337A5B3efF4a",
         0,
         AmmType::CLAMM,
