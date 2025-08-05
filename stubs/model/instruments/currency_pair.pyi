@@ -1,7 +1,13 @@
 from decimal import Decimal
 from typing import Any
 
-
+from stubs.model.identifiers import InstrumentId
+from stubs.model.identifiers import Symbol
+from stubs.model.instruments.base import Instrument
+from stubs.model.objects import Currency
+from stubs.model.objects import Money
+from stubs.model.objects import Price
+from stubs.model.objects import Quantity
 
 class CurrencyPair(Instrument):
     """
@@ -131,7 +137,6 @@ class CurrencyPair(Instrument):
         Currency
 
         """
-        ...
     @staticmethod
     def from_dict(values: dict) -> CurrencyPair:
         """
@@ -147,7 +152,6 @@ class CurrencyPair(Instrument):
         CurrencyPair
 
         """
-        ...
     @staticmethod
     def to_dict(obj: CurrencyPair) -> dict[str, Any]:
         """
@@ -158,6 +162,5 @@ class CurrencyPair(Instrument):
         dict[str, object]
 
         """
-        ...
     @staticmethod
     def from_pyo3(pyo3_instrument: Any) -> CurrencyPair: ...

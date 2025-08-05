@@ -1,7 +1,16 @@
 from decimal import Decimal
-import pandas as pd
-import pytz
 from typing import Any
+
+import pandas as pd
+
+from nautilus_trader.model.enums import AssetClass
+from stubs.model.identifiers import InstrumentId
+from stubs.model.identifiers import Symbol
+from stubs.model.instruments.base import Instrument
+from stubs.model.objects import Currency
+from stubs.model.objects import Price
+from stubs.model.objects import Quantity
+
 class OptionSpread(Instrument):
     """
     Represents a generic option spread instrument.

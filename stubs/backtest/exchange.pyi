@@ -2,8 +2,37 @@ from collections import deque
 from decimal import Decimal
 from typing import Any
 
+from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import OmsType
+from stubs.accounting.accounts.base import Account
+from stubs.backtest.execution_client import BacktestExecClient
+from stubs.backtest.matching_engine import OrderMatchingEngine
+from stubs.backtest.models import FeeModel
+from stubs.backtest.models import FillModel
+from stubs.backtest.models import LatencyModel
+from stubs.backtest.modules import SimulationModule
 from stubs.cache.base import CacheFacade
-from stubs.common.component import Logger, TestClock
+from stubs.common.component import Logger
+from stubs.common.component import MessageBus
+from stubs.common.component import TestClock
+from stubs.execution.messages import TradingCommand
+from stubs.model.book import OrderBook
+from stubs.model.data import Bar
+from stubs.model.data import InstrumentClose
+from stubs.model.data import InstrumentStatus
+from stubs.model.data import OrderBookDelta
+from stubs.model.data import OrderBookDeltas
+from stubs.model.data import OrderBookDepth10
+from stubs.model.data import QuoteTick
+from stubs.model.data import TradeTick
+from stubs.model.identifiers import InstrumentId
+from stubs.model.identifiers import Venue
+from stubs.model.instruments.base import Instrument
+from stubs.model.objects import Currency
+from stubs.model.objects import Money
+from stubs.model.objects import Price
+from stubs.model.orders.base import Order
 from stubs.portfolio.base import PortfolioFacade
 
 class SimulatedExchange:

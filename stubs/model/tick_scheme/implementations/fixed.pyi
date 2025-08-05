@@ -1,6 +1,5 @@
-from typing import ClassVar
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.tick_scheme.base import TickScheme
+from stubs.model.objects import Price
+from stubs.model.tick_scheme.base import TickScheme
 
 class FixedTickScheme(TickScheme):
     """

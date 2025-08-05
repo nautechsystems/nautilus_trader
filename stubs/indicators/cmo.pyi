@@ -1,5 +1,7 @@
 from stubs.indicators.average.moving_average import MovingAverage
+from stubs.indicators.average.moving_average import MovingAverageType
 from stubs.indicators.base.indicator import Indicator
+from stubs.model.data import Bar
 
 class ChandeMomentumOscillator(Indicator):
     """
@@ -23,7 +25,7 @@ class ChandeMomentumOscillator(Indicator):
     def __init__(
         self,
         period: int,
-        ma_type: MovingAverageType = MovingAverageType.WILDER,
+        ma_type: MovingAverageType = ...,
     ) -> None: ...
     def handle_bar(self, bar: Bar) -> None:
         """
@@ -35,7 +37,6 @@ class ChandeMomentumOscillator(Indicator):
             The update bar.
 
         """
-        ...
     def update_raw(self, close: float) -> None:
         """
         Update the indicator with the given value.
@@ -46,5 +47,4 @@ class ChandeMomentumOscillator(Indicator):
             The update value.
 
         """
-        ...
     def _reset(self) -> None: ...

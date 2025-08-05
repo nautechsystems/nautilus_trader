@@ -1,4 +1,39 @@
 from nautilus_trader.common.config import NautilusConfig
+from stubs.cache.cache import Cache
+from stubs.common.component import Clock
+from stubs.common.component import MessageBus
+from stubs.data.client import DataClient
+from stubs.data.client import MarketDataClient
+from stubs.data.messages import RequestBars
+from stubs.data.messages import RequestData
+from stubs.data.messages import RequestInstrument
+from stubs.data.messages import RequestInstruments
+from stubs.data.messages import RequestOrderBookSnapshot
+from stubs.data.messages import RequestQuoteTicks
+from stubs.data.messages import RequestTradeTicks
+from stubs.data.messages import SubscribeBars
+from stubs.data.messages import SubscribeData
+from stubs.data.messages import SubscribeIndexPrices
+from stubs.data.messages import SubscribeInstrument
+from stubs.data.messages import SubscribeInstrumentClose
+from stubs.data.messages import SubscribeInstruments
+from stubs.data.messages import SubscribeInstrumentStatus
+from stubs.data.messages import SubscribeMarkPrices
+from stubs.data.messages import SubscribeOrderBook
+from stubs.data.messages import SubscribeQuoteTicks
+from stubs.data.messages import SubscribeTradeTicks
+from stubs.data.messages import UnsubscribeBars
+from stubs.data.messages import UnsubscribeData
+from stubs.data.messages import UnsubscribeIndexPrices
+from stubs.data.messages import UnsubscribeInstrument
+from stubs.data.messages import UnsubscribeInstrumentClose
+from stubs.data.messages import UnsubscribeInstruments
+from stubs.data.messages import UnsubscribeInstrumentStatus
+from stubs.data.messages import UnsubscribeMarkPrices
+from stubs.data.messages import UnsubscribeOrderBook
+from stubs.data.messages import UnsubscribeQuoteTicks
+from stubs.data.messages import UnsubscribeTradeTicks
+from stubs.model.identifiers import ClientId
 
 class BacktestDataClient(DataClient):
     """
@@ -17,6 +52,8 @@ class BacktestDataClient(DataClient):
     config : NautilusConfig, optional
         The configuration for the instance.
     """
+
+    is_connected: bool
 
     def __init__(
         self,
@@ -47,6 +84,8 @@ class BacktestMarketDataClient(MarketDataClient):
     clock : Clock
         The clock for the client.
     """
+
+    is_connected: bool
 
     def __init__(
         self,

@@ -1,5 +1,11 @@
 from collections import deque
-import numpy as np
+
+from nautilus_trader.model.enums import PriceType
+from stubs.indicators.average.moving_average import MovingAverage
+from stubs.model.data import Bar
+from stubs.model.data import QuoteTick
+from stubs.model.data import TradeTick
+
 class SimpleMovingAverage(MovingAverage):
     """
     An indicator which calculates a simple moving average across a rolling window.
@@ -20,7 +26,7 @@ class SimpleMovingAverage(MovingAverage):
     _inputs: deque
     value: float
 
-    def __init__(self, period: int, price_type: PriceType = PriceType.LAST) -> None: ...
+    def __init__(self, period: int, price_type: PriceType = ...) -> None: ...
     def handle_quote_tick(self, tick: QuoteTick) -> None:
         """
         Update the indicator with the given quote tick.
@@ -31,7 +37,6 @@ class SimpleMovingAverage(MovingAverage):
             The update tick to handle.
 
         """
-        ...
     def handle_trade_tick(self, tick: TradeTick) -> None:
         """
         Update the indicator with the given trade tick.
@@ -42,7 +47,6 @@ class SimpleMovingAverage(MovingAverage):
             The update tick to handle.
 
         """
-        ...
     def handle_bar(self, bar: Bar) -> None:
         """
         Update the indicator with the given bar.
@@ -53,7 +57,6 @@ class SimpleMovingAverage(MovingAverage):
             The update bar to handle.
 
         """
-        ...
     def update_raw(self, value: float) -> None:
         """
         Update the indicator with the given raw value.
@@ -64,5 +67,4 @@ class SimpleMovingAverage(MovingAverage):
             The update value.
 
         """
-        ...
     def _reset_ma(self) -> None: ...

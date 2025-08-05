@@ -1,11 +1,11 @@
-from nautilus_trader.backtest.config import FXRolloverInterestConfig
-from nautilus_trader.backtest.config import SimulationModuleConfig
-from nautilus_trader.core.data import Data
-from nautilus_trader.backtest.exchange import SimulatedExchange
-import pandas as pd
-import datetime as dt
 import pytz
 
+from nautilus_trader.backtest.config import FXRolloverInterestConfig
+from nautilus_trader.backtest.config import SimulationModuleConfig
+from stubs.backtest.exchange import SimulatedExchange
+from stubs.common.actor import Actor
+from stubs.common.component import Logger
+from stubs.core.data import Data
 
 _TZ_US_EAST: pytz.tzinfo.DstTzInfo
 

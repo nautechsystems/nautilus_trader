@@ -1,6 +1,6 @@
-from nautilus_trader.indicators.average.moving_average import MovingAverageType
-from nautilus_trader.model.data import Bar
-from nautilus_trader.indicators.base.indicator import Indicator
+from stubs.indicators.average.moving_average import MovingAverageType
+from stubs.indicators.base.indicator import Indicator
+from stubs.model.data import Bar
 
 class KlingerVolumeOscillator(Indicator):
     """
@@ -29,7 +29,7 @@ class KlingerVolumeOscillator(Indicator):
         fast_period: int,
         slow_period: int,
         signal_period: int,
-        ma_type: MovingAverageType = MovingAverageType.EXPONENTIAL,
+        ma_type: MovingAverageType = ...,
     ) -> None: ...
     def handle_bar(self, bar: Bar) -> None:
         """
@@ -41,7 +41,6 @@ class KlingerVolumeOscillator(Indicator):
             The update bar.
 
         """
-        ...
     def update_raw(
         self,
         high: float,
@@ -64,5 +63,4 @@ class KlingerVolumeOscillator(Indicator):
             The volume.
 
         """
-        ...
     def _reset(self) -> None: ...

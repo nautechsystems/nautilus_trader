@@ -1,6 +1,14 @@
 from decimal import Decimal
 from typing import Any
 
+from nautilus_trader.model.enums import AssetClass
+from stubs.model.identifiers import InstrumentId
+from stubs.model.identifiers import Symbol
+from stubs.model.instruments.base import Instrument
+from stubs.model.objects import Currency
+from stubs.model.objects import Money
+from stubs.model.objects import Price
+from stubs.model.objects import Quantity
 
 class Cfd(Instrument):
     """
@@ -99,6 +107,7 @@ class Cfd(Instrument):
     https://en.wikipedia.org/wiki/Contract_for_difference
 
     """
+
     def __init__(
         self,
         instrument_id: InstrumentId,
@@ -141,7 +150,6 @@ class Cfd(Instrument):
         Cfd
 
         """
-        ...
     @staticmethod
     def to_dict(obj: Cfd) -> dict[str, Any]:
         """
@@ -152,6 +160,5 @@ class Cfd(Instrument):
         dict[str, object]
 
         """
-        ...
     @staticmethod
     def from_pyo3(pyo3_instrument: Any) -> Cfd: ...

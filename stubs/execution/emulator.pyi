@@ -1,11 +1,22 @@
 from nautilus_trader.common.config import OrderEmulatorConfig
-from nautilus_trader.model.objects import Quantity
-from nautilus_trader.core.message import Event
-from nautilus_trader.model.orders.base import Order
 from stubs.cache.cache import Cache
 from stubs.common.actor import Actor
 from stubs.common.component import Clock
+from stubs.common.component import MessageBus
+from stubs.core.message import Event
 from stubs.execution.manager import OrderManager
+from stubs.execution.matching_core import MatchingCore
+from stubs.execution.messages import SubmitOrder
+from stubs.execution.messages import TradingCommand
+from stubs.model.data import QuoteTick
+from stubs.model.data import TradeTick
+from stubs.model.identifiers import ClientOrderId
+from stubs.model.identifiers import InstrumentId
+from stubs.model.identifiers import PositionId
+from stubs.model.identifiers import StrategyId
+from stubs.model.objects import Price
+from stubs.model.objects import Quantity
+from stubs.model.orders.base import Order
 from stubs.portfolio.base import PortfolioFacade
 
 class OrderEmulator(Actor):
@@ -56,7 +67,6 @@ class OrderEmulator(Actor):
         list[InstrumentId]
 
         """
-        ...
     @property
     def subscribed_trades(self) -> list[InstrumentId]:
         """
@@ -67,7 +77,6 @@ class OrderEmulator(Actor):
         list[InstrumentId]
 
         """
-        ...
     def get_submit_order_commands(self) -> dict[ClientOrderId, SubmitOrder]:
         """
         Return the emulators cached submit order commands.
@@ -77,7 +86,6 @@ class OrderEmulator(Actor):
         dict[ClientOrderId, SubmitOrder]
 
         """
-        ...
     def get_matching_core(self, instrument_id: InstrumentId) -> MatchingCore | None:
         """
         Return the emulators matching core for the given instrument ID.
@@ -87,7 +95,6 @@ class OrderEmulator(Actor):
         MatchingCore or ``None``
 
         """
-        ...
     def on_start(self) -> None: ...
     def on_event(self, event: Event) -> None:
         """
@@ -99,7 +106,6 @@ class OrderEmulator(Actor):
             The received event to handle.
 
         """
-        ...
     def on_stop(self) -> None: ...
     def on_reset(self) -> None: ...
     def on_dispose(self) -> None: ...
@@ -113,7 +119,6 @@ class OrderEmulator(Actor):
             The command to execute.
 
         """
-        ...
     def create_matching_core(
         self,
         instrument_id: InstrumentId,
@@ -139,7 +144,6 @@ class OrderEmulator(Actor):
             If a matching core for the given `instrument_id` already exists.
 
         """
-        ...
     def on_order_book_deltas(self, deltas) -> None: ...
     def on_quote_tick(self, tick: QuoteTick) -> None: ...
     def on_trade_tick(self, tick: TradeTick) -> None: ...

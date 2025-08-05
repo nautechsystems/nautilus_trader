@@ -1,6 +1,12 @@
 from typing import Any
 
+from nautilus_trader.model.enums import AccountType
 from stubs.core.message import Event
+from stubs.core.uuid import UUID4
+from stubs.model.identifiers import AccountId
+from stubs.model.objects import AccountBalance
+from stubs.model.objects import Currency
+from stubs.model.objects import MarginBalance
 
 class AccountState(Event):
     """

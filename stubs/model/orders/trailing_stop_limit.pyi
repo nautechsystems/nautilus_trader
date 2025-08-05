@@ -1,6 +1,22 @@
 from datetime import datetime
 from decimal import Decimal
 
+from nautilus_trader.model.enums import ContingencyType
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import TrailingOffsetType
+from nautilus_trader.model.enums import TriggerType
+from stubs.core.uuid import UUID4
+from stubs.model.events.order import OrderInitialized
+from stubs.model.identifiers import ClientOrderId
+from stubs.model.identifiers import ExecAlgorithmId
+from stubs.model.identifiers import InstrumentId
+from stubs.model.identifiers import OrderListId
+from stubs.model.identifiers import StrategyId
+from stubs.model.identifiers import TraderId
+from stubs.model.objects import Price
+from stubs.model.objects import Quantity
+from stubs.model.orders.base import Order
 
 class TrailingStopLimitOrder(Order):
     """
@@ -124,15 +140,15 @@ class TrailingStopLimitOrder(Order):
         init_id: UUID4,
         ts_init: int,
         activation_price: Price | None = None,
-        time_in_force: TimeInForce = TimeInForce.GTC,
+        time_in_force: TimeInForce = ...,
         expire_time_ns: int = 0,
         post_only: bool = False,
         reduce_only: bool = False,
         quote_quantity: bool = False,
         display_qty: Quantity | None = None,
-        emulation_trigger: TriggerType = TriggerType.NO_TRIGGER,
+        emulation_trigger: TriggerType = ...,
         trigger_instrument_id: InstrumentId | None = None,
-        contingency_type: ContingencyType = ContingencyType.NO_CONTINGENCY,
+        contingency_type: ContingencyType = ...,
         order_list_id: OrderListId | None = None,
         linked_order_ids: list[ClientOrderId] | None = None,
         parent_order_id: ClientOrderId | None = None,
@@ -151,7 +167,6 @@ class TrailingStopLimitOrder(Order):
         datetime or ``None``
 
         """
-        ...
     def info(self) -> str:
         """
         Return a summary description of the order.
@@ -161,7 +176,6 @@ class TrailingStopLimitOrder(Order):
         str
 
         """
-        ...
     def to_dict(self) -> dict[str, object]:
         """
         Return a dictionary representation of this object.
@@ -171,6 +185,5 @@ class TrailingStopLimitOrder(Order):
         dict[str, object]
 
         """
-        ...
     @staticmethod
     def create(init: OrderInitialized) -> TrailingStopLimitOrder: ...

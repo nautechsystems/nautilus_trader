@@ -1,4 +1,30 @@
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import AggregationSource
+from nautilus_trader.model.enums import AggressorSide
+from nautilus_trader.model.enums import AssetClass
+from nautilus_trader.model.enums import BookAction
+from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import ContingencyType
+from nautilus_trader.model.enums import CurrencyType
+from nautilus_trader.model.enums import InstrumentClass
+from nautilus_trader.model.enums import InstrumentCloseType
+from nautilus_trader.model.enums import LiquiditySide
+from nautilus_trader.model.enums import MarketStatus
+from nautilus_trader.model.enums import MarketStatusAction
+from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.enums import OptionKind
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderStatus
+from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import PositionSide
+from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.enums import RecordFlag
+from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import TradingState
+from nautilus_trader.model.enums import TrailingOffsetType
+from nautilus_trader.model.enums import TriggerType
+from stubs.model.data import BarAggregation
 
 def account_type_from_str(value: str) -> AccountType: ...
 def account_type_to_str(value: AccountType) -> str: ...

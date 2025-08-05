@@ -1,10 +1,10 @@
-from typing import Callable
+from collections.abc import Callable
 
 class InvalidStateTrigger(Exception):
     """
     Represents an invalid trigger for the current state.
     """
-    ...
+
 
 class FiniteStateMachine:
     """
@@ -40,8 +40,8 @@ class FiniteStateMachine:
         self,
         state_transition_table: dict,
         initial_state: int,
-        trigger_parser: Callable[[int], str] = str,
-        state_parser: Callable[[int], str] = str,
+        trigger_parser: Callable[[int], str] = ...,
+        state_parser: Callable[[int], str] = ...,
     ) -> None: ...
     @property
     def state_string(self) -> str:
@@ -53,7 +53,6 @@ class FiniteStateMachine:
         str
 
         """
-        ...
     def trigger(self, trigger: int) -> None:
         """
         Process the FSM with the given trigger. The trigger must be valid for
@@ -71,4 +70,3 @@ class FiniteStateMachine:
             If the state and `trigger` combination is not found in the transition table.
 
         """
-        ...

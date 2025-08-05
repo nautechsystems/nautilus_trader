@@ -2,9 +2,16 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
+from nautilus_trader.model.enums import BookType
 from stubs.core.message import Command
 from stubs.core.message import Request
 from stubs.core.message import Response
+from stubs.core.uuid import UUID4
+from stubs.model.data import BarType
+from stubs.model.data import DataType
+from stubs.model.identifiers import ClientId
+from stubs.model.identifiers import InstrumentId
+from stubs.model.identifiers import Venue
 
 class DataCommand(Command):
     """

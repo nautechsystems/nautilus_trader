@@ -3,7 +3,23 @@ from collections.abc import Callable
 from stubs.cache.cache import Cache
 from stubs.common.component import Clock
 from stubs.common.component import Logger
+from stubs.common.component import MessageBus
+from stubs.core.message import Event
 from stubs.execution.messages import SubmitOrder
+from stubs.execution.messages import TradingCommand
+from stubs.model.events.order import OrderCanceled
+from stubs.model.events.order import OrderEvent
+from stubs.model.events.order import OrderExpired
+from stubs.model.events.order import OrderFilled
+from stubs.model.events.order import OrderRejected
+from stubs.model.events.order import OrderUpdated
+from stubs.model.events.position import PositionEvent
+from stubs.model.identifiers import ClientId
+from stubs.model.identifiers import ClientOrderId
+from stubs.model.identifiers import ExecAlgorithmId
+from stubs.model.identifiers import PositionId
+from stubs.model.objects import Quantity
+from stubs.model.orders.base import Order
 
 class OrderManager:
     """
@@ -77,7 +93,6 @@ class OrderManager:
         dict[ClientOrderId, SubmitOrder]
 
         """
-        ...
     def cache_submit_order_command(self, command: SubmitOrder) -> None:
         """
         Cache the given submit order `command` with the manager.
@@ -88,7 +103,6 @@ class OrderManager:
             The submit order command to cache.
 
         """
-        ...
     def pop_submit_order_command(self, client_order_id: ClientOrderId) -> SubmitOrder | None:
         """
         Pop the submit order command for the given `client_order_id` out of the managers
@@ -104,12 +118,10 @@ class OrderManager:
         SubmitOrder or ``None``
 
         """
-        ...
     def reset(self) -> None:
         """
         Reset the manager, clearing all stateful values.
         """
-        ...
     def cancel_order(self, order: Order) -> None:
         """
         Cancel the given `order` with the manager.
@@ -120,7 +132,6 @@ class OrderManager:
             The order to cancel.
 
         """
-        ...
     def modify_order_quantity(self, order: Order, new_quantity: Quantity) -> None:
         """
         Modify the given `order` with the manager.
@@ -131,7 +142,6 @@ class OrderManager:
             The order to modify.
 
         """
-        ...
     def create_new_submit_order(
         self,
         order: Order,
@@ -151,7 +161,6 @@ class OrderManager:
             The client ID for the command.
 
         """
-        ...
     def should_manage_order(self, order: Order) -> bool:
         """
         Check if the given order should be managed.
@@ -167,7 +176,6 @@ class OrderManager:
             True if the order should be managed, else False.
 
         """
-        ...
     def handle_event(self, event: Event) -> None:
         """
         Handle the given `event`.
@@ -180,7 +188,6 @@ class OrderManager:
             The event to handle
 
         """
-        ...
     def handle_order_rejected(self, rejected: OrderRejected) -> None: ...
     def handle_order_canceled(self, canceled: OrderCanceled) -> None: ...
     def handle_order_expired(self, expired: OrderExpired) -> None: ...

@@ -1,4 +1,3 @@
-
 class Data:
     """
     The abstract base class for all data.
@@ -18,7 +17,6 @@ class Data:
         int
 
         """
-        ...
     @property
     def ts_init(self) -> int:
         """
@@ -29,7 +27,6 @@ class Data:
         int
 
         """
-        ...
     @classmethod
     def fully_qualified_name(cls) -> str:
         """
@@ -44,7 +41,6 @@ class Data:
         https://www.python.org/dev/peps/pep-3155/
 
         """
-        ...
     @classmethod
     def is_signal(cls, name: str = "") -> bool:
         """
@@ -64,4 +60,3 @@ class Data:
             True if the class name matches the signal type or the specific signal name, otherwise False.
 
         """
-        ...

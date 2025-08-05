@@ -1,18 +1,69 @@
-from typing import Any, Callable, ClassVar, Union, Type, Tuple
+from collections.abc import Callable
+from typing import Any
 
 from nautilus_trader.data.config import DataEngineConfig
-from nautilus_trader.persistence.catalog import ParquetDataCatalog
-from nautilus_trader.core.datetime import DateTime
-from nautilus_trader.model.instruments.base import Instrument
-from nautilus_trader.model.data import Bar, QuoteTick, TradeTick, MarkPriceUpdate, IndexPriceUpdate, InstrumentStatus, InstrumentClose, CustomData, OrderBookDepth10, OrderBookDeltas
-from nautilus_trader.data.messages import RequestInstruments, RequestInstrument, RequestOrderBookSnapshot, RequestQuoteTicks, RequestTradeTicks, RequestBars, DataCommand, RequestData, DataResponse
-from nautilus_trader.data.messages import SubscribeData, UnsubscribeData, SubscribeInstruments, UnsubscribeInstruments, SubscribeInstrument, UnsubscribeInstrument, SubscribeOrderBook, UnsubscribeOrderBook, SubscribeQuoteTicks, UnsubscribeQuoteTicks, SubscribeTradeTicks, UnsubscribeTradeTicks, SubscribeMarkPrices, UnsubscribeMarkPrices, SubscribeIndexPrices, UnsubscribeIndexPrices, SubscribeBars, UnsubscribeBars, SubscribeInstrumentStatus, UnsubscribeInstrumentStatus, SubscribeInstrumentClose, UnsubscribeInstrumentClose
-from nautilus_trader.model.enums import BookType # Added missing import
-from nautilus_trader.common.component import Clock, Component # Updated to direct import
-from nautilus_trader.data.client import DataClient, MarketDataClient # Updated to direct import
-from nautilus_trader.cache.cache import Cache # Updated to direct import
-from nautilus_trader.data.aggregation import BarAggregator, TimeBarAggregator, TickBarAggregator, VolumeBarAggregator, ValueBarAggregator # Updated to direct import
-
+from nautilus_trader.model.enums import BookType
+from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
+from stubs.cache.cache import Cache
+from stubs.common.component import Clock
+from stubs.common.component import Component
+from stubs.common.component import MessageBus
+from stubs.common.component import TimeEvent
+from stubs.core.data import Data
+from stubs.core.uuid import UUID4
+from stubs.data.aggregation import BarAggregator
+from stubs.data.client import DataClient
+from stubs.data.client import MarketDataClient
+from stubs.data.messages import DataCommand
+from stubs.data.messages import DataResponse
+from stubs.data.messages import RequestBars
+from stubs.data.messages import RequestData
+from stubs.data.messages import RequestInstrument
+from stubs.data.messages import RequestInstruments
+from stubs.data.messages import RequestOrderBookSnapshot
+from stubs.data.messages import RequestQuoteTicks
+from stubs.data.messages import RequestTradeTicks
+from stubs.data.messages import SubscribeBars
+from stubs.data.messages import SubscribeData
+from stubs.data.messages import SubscribeIndexPrices
+from stubs.data.messages import SubscribeInstrument
+from stubs.data.messages import SubscribeInstrumentClose
+from stubs.data.messages import SubscribeInstruments
+from stubs.data.messages import SubscribeInstrumentStatus
+from stubs.data.messages import SubscribeMarkPrices
+from stubs.data.messages import SubscribeOrderBook
+from stubs.data.messages import SubscribeQuoteTicks
+from stubs.data.messages import SubscribeTradeTicks
+from stubs.data.messages import UnsubscribeBars
+from stubs.data.messages import UnsubscribeData
+from stubs.data.messages import UnsubscribeIndexPrices
+from stubs.data.messages import UnsubscribeInstrument
+from stubs.data.messages import UnsubscribeInstrumentClose
+from stubs.data.messages import UnsubscribeInstruments
+from stubs.data.messages import UnsubscribeInstrumentStatus
+from stubs.data.messages import UnsubscribeMarkPrices
+from stubs.data.messages import UnsubscribeOrderBook
+from stubs.data.messages import UnsubscribeQuoteTicks
+from stubs.data.messages import UnsubscribeTradeTicks
+from stubs.model.book import OrderBook
+from stubs.model.data import Bar
+from stubs.model.data import BarType
+from stubs.model.data import CustomData
+from stubs.model.data import DataType
+from stubs.model.data import IndexPriceUpdate
+from stubs.model.data import InstrumentClose
+from stubs.model.data import InstrumentStatus
+from stubs.model.data import MarkPriceUpdate
+from stubs.model.data import OrderBookDelta
+from stubs.model.data import OrderBookDeltas
+from stubs.model.data import OrderBookDepth10
+from stubs.model.data import QuoteTick
+from stubs.model.data import TradeTick
+from stubs.model.identifiers import ClientId
+from stubs.model.identifiers import InstrumentId
+from stubs.model.identifiers import Venue
+from stubs.model.instruments.base import Instrument
+from stubs.model.instruments.synthetic import SyntheticInstrument
 
 class DataEngine(Component):
     """
@@ -36,7 +87,7 @@ class DataEngine(Component):
     data_count: int
     request_count: int
     response_count: int
-    
+
     _time_bars_interval_type: Any
     _time_bars_timestamp_on_close: bool
     _time_bars_skip_first_non_full_bar: bool
@@ -79,7 +130,6 @@ class DataEngine(Component):
         list[ClientId]
 
         """
-        ...
     @property
     def default_client(self) -> ClientId | None:
         """
@@ -90,7 +140,6 @@ class DataEngine(Component):
         ClientId or ``None``
 
         """
-        ...
     @property
     def routing_map(self) -> dict[Venue, DataClient]:
         """
@@ -101,17 +150,14 @@ class DataEngine(Component):
         ClientId or ``None``
 
         """
-        ...
     def connect(self) -> None:
         """
         Connect the engine by calling connect on all registered clients.
         """
-        ...
     def disconnect(self) -> None:
         """
         Disconnect the engine by calling disconnect on all registered clients.
         """
-        ...
     def check_connected(self) -> bool:
         """
         Check all of the engines clients are connected.
@@ -122,7 +168,6 @@ class DataEngine(Component):
             True if all clients connected, else False.
 
         """
-        ...
     def check_disconnected(self) -> bool:
         """
         Check all of the engines clients are disconnected.
@@ -133,7 +178,6 @@ class DataEngine(Component):
             True if all clients disconnected, else False.
 
         """
-        ...
     def register_catalog(self, catalog: ParquetDataCatalog, name: str = "catalog_0") -> None:
         """
         Register the given data catalog with the engine.
@@ -146,7 +190,6 @@ class DataEngine(Component):
             The name of the catalog to register.
 
         """
-        ...
     def register_client(self, client: DataClient) -> None:
         """
         Register the given data client with the data engine.
@@ -162,7 +205,6 @@ class DataEngine(Component):
             If `client` is already registered.
 
         """
-        ...
     def register_default_client(self, client: DataClient) -> None:
         """
         Register the given client as the default routing client (when a specific
@@ -176,7 +218,6 @@ class DataEngine(Component):
             The client to register.
 
         """
-        ...
     def register_venue_routing(self, client: DataClient, venue: Venue) -> None:
         """
         Register the given client to route messages to the given venue.
@@ -192,7 +233,6 @@ class DataEngine(Component):
             The client for the venue routing.
 
         """
-        ...
     def deregister_client(self, client: DataClient) -> None:
         """
         Deregister the given data client from the data engine.
@@ -203,7 +243,6 @@ class DataEngine(Component):
             The data client to deregister.
 
         """
-        ...
     def subscribed_custom_data(self) -> list[DataType]:
         """
         Return the custom data types subscribed to.
@@ -213,7 +252,6 @@ class DataEngine(Component):
         list[DataType]
 
         """
-        ...
     def subscribed_instruments(self) -> list[InstrumentId]:
         """
         Return the instruments subscribed to.
@@ -223,7 +261,6 @@ class DataEngine(Component):
         list[InstrumentId]
 
         """
-        ...
     def subscribed_order_book_deltas(self) -> list[InstrumentId]:
         """
         Return the order book delta instruments subscribed to.
@@ -233,7 +270,6 @@ class DataEngine(Component):
         list[InstrumentId]
 
         """
-        ...
     def subscribed_order_book_snapshots(self) -> list[InstrumentId]:
         """
         Return the order book snapshot instruments subscribed to.
@@ -243,7 +279,6 @@ class DataEngine(Component):
         list[InstrumentId]
 
         """
-        ...
     def subscribed_quote_ticks(self) -> list[InstrumentId]:
         """
         Return the quote tick instruments subscribed to.
@@ -253,7 +288,6 @@ class DataEngine(Component):
         list[InstrumentId]
 
         """
-        ...
     def subscribed_trade_ticks(self) -> list[InstrumentId]:
         """
         Return the trade tick instruments subscribed to.
@@ -263,7 +297,6 @@ class DataEngine(Component):
         list[InstrumentId]
 
         """
-        ...
     def subscribed_mark_prices(self) -> list[InstrumentId]:
         """
         Return the mark price update instruments subscribed to.
@@ -273,7 +306,6 @@ class DataEngine(Component):
         list[InstrumentId]
 
         """
-        ...
     def subscribed_index_prices(self) -> list[InstrumentId]:
         """
         Return the index price update instruments subscribed to.
@@ -283,7 +315,6 @@ class DataEngine(Component):
         list[InstrumentId]
 
         """
-        ...
     def subscribed_bars(self) -> list[BarType]:
         """
         Return the bar types subscribed to.
@@ -293,7 +324,6 @@ class DataEngine(Component):
         list[BarType]
 
         """
-        ...
     def subscribed_instrument_status(self) -> list[InstrumentId]:
         """
         Return the status update instruments subscribed to.
@@ -303,7 +333,6 @@ class DataEngine(Component):
         list[InstrumentId]
 
         """
-        ...
     def subscribed_instrument_close(self) -> list[InstrumentId]:
         """
         Return the close price instruments subscribed to.
@@ -313,7 +342,6 @@ class DataEngine(Component):
         list[InstrumentId]
 
         """
-        ...
     def subscribed_synthetic_quotes(self) -> list[InstrumentId]:
         """
         Return the synthetic instrument quotes subscribed to.
@@ -323,7 +351,6 @@ class DataEngine(Component):
         list[InstrumentId]
 
         """
-        ...
     def subscribed_synthetic_trades(self) -> list[InstrumentId]:
         """
         Return the synthetic instrument trades subscribed to.
@@ -333,7 +360,6 @@ class DataEngine(Component):
         list[InstrumentId]
 
         """
-        ...
     def _on_start(self) -> None: ...
     def _on_stop(self) -> None: ...
     def _start(self) -> None: ...
@@ -344,7 +370,6 @@ class DataEngine(Component):
         """
         Stop the registered clients.
         """
-        ...
     def execute(self, command: DataCommand) -> None:
         """
         Execute the given data command.
@@ -355,7 +380,6 @@ class DataEngine(Component):
             The command to execute.
 
         """
-        ...
     def process(self, data: Data) -> None:
         """
         Process the given data.
@@ -366,7 +390,6 @@ class DataEngine(Component):
             The data to process.
 
         """
-        ...
     def request(self, request: RequestData) -> None:
         """
         Handle the given request.
@@ -377,7 +400,6 @@ class DataEngine(Component):
             The request to handle.
 
         """
-        ...
     def response(self, response: DataResponse) -> None:
         """
         Handle the given response.
@@ -388,7 +410,6 @@ class DataEngine(Component):
             The response to handle.
 
         """
-        ...
     def _execute_command(self, command: DataCommand) -> None: ...
     def _handle_subscribe(self, client: DataClient, command: SubscribeData) -> None: ...
     def _handle_unsubscribe(self, client: DataClient, command: UnsubscribeData) -> None: ...

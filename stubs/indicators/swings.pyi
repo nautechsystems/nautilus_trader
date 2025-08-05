@@ -1,8 +1,8 @@
 from collections import deque
-import pandas as pd
-import datetime
+from datetime import datetime
 
-
+from stubs.indicators.base.indicator import Indicator
+from stubs.model.data import Bar
 
 class Swings(Indicator):
     """
@@ -39,7 +39,6 @@ class Swings(Indicator):
             The update bar.
 
         """
-        ...
     def update_raw(self, high: float, low: float, timestamp: datetime) -> None:
         """
         Update the indicator with the given raw values.
@@ -54,6 +53,5 @@ class Swings(Indicator):
             The current timestamp.
 
         """
-        ...
     def _reset(self) -> None: ...
 

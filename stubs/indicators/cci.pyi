@@ -1,8 +1,6 @@
-from collections import deque
-from nautilus_trader.indicators.average.ma_factory import MovingAverageType
-from nautilus_trader.indicators.average.ma_factory import MovingAverageFactory
-import numpy as np
-
+from stubs.indicators.average.moving_average import MovingAverageType
+from stubs.indicators.base.indicator import Indicator
+from stubs.model.data import Bar
 
 class CommodityChannelIndex(Indicator):
     """
@@ -31,7 +29,7 @@ class CommodityChannelIndex(Indicator):
         self,
         period: int,
         scalar: float = 0.015,
-        ma_type: MovingAverageType = MovingAverageType.SIMPLE,
+        ma_type: MovingAverageType = ...,
     ) -> None: ...
     def handle_bar(self, bar: Bar) -> None:
         """
@@ -43,7 +41,6 @@ class CommodityChannelIndex(Indicator):
             The update bar.
 
         """
-        ...
     def update_raw(
         self,
         high: float,
@@ -63,11 +60,9 @@ class CommodityChannelIndex(Indicator):
             The close price.
 
         """
-        ...
     def _reset(self) -> None:
         """
         Reset the indicator.
 
         All stateful fields are reset to their initial value.
         """
-        ...

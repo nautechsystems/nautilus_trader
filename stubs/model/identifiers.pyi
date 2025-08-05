@@ -1,4 +1,3 @@
-
 class Identifier:
     """
     The abstract base class for all identifiers.

@@ -1,6 +1,9 @@
-from nautilus_trader.indicators.average.moving_average import MovingAverageType
-from nautilus_trader.indicators.base.indicator import Indicator
-
+from nautilus_trader.model.enums import PriceType
+from stubs.indicators.average.moving_average import MovingAverageType
+from stubs.indicators.base.indicator import Indicator
+from stubs.model.data import Bar
+from stubs.model.data import QuoteTick
+from stubs.model.data import TradeTick
 
 class MovingAverageConvergenceDivergence(Indicator):
     """
@@ -32,8 +35,8 @@ class MovingAverageConvergenceDivergence(Indicator):
         self,
         fast_period: int,
         slow_period: int,
-        ma_type: MovingAverageType = MovingAverageType.EXPONENTIAL,
-        price_type: PriceType = PriceType.LAST,
+        ma_type: MovingAverageType = ...,
+        price_type: PriceType = ...,
     ) -> None: ...
     def handle_quote_tick(self, tick: QuoteTick) -> None:
         """
@@ -45,7 +48,6 @@ class MovingAverageConvergenceDivergence(Indicator):
             The update tick to handle.
 
         """
-        ...
     def handle_trade_tick(self, tick: TradeTick) -> None:
         """
         Update the indicator with the given trade tick.
@@ -56,7 +58,6 @@ class MovingAverageConvergenceDivergence(Indicator):
             The update tick to handle.
 
         """
-        ...
     def handle_bar(self, bar: Bar) -> None:
         """
         Update the indicator with the given bar.
@@ -67,7 +68,6 @@ class MovingAverageConvergenceDivergence(Indicator):
             The update bar.
 
         """
-        ...
     def update_raw(self, close: float) -> None:
         """
         Update the indicator with the given close price.
@@ -78,5 +78,4 @@ class MovingAverageConvergenceDivergence(Indicator):
             The close price.
 
         """
-        ...
     def _reset(self) -> None: ...

@@ -1,13 +1,10 @@
-import datetime as dt
-from collections.abc import Awaitable
-from collections.abc import Callable
-from collections.abc import Iterator
-from decimal import Decimal
-from enum import Enum
-from os import PathLike
-from typing import Any, Final, TypeAlias, Union, ClassVar
+from typing import Any
 
-
+from stubs.model.instruments.base import Instrument
+from stubs.model.objects import Money
+from stubs.model.objects import Price
+from stubs.model.objects import Quantity
+from stubs.model.orders.base import Order
 
 class FillModel:
     """
@@ -56,7 +53,6 @@ class FillModel:
         bool
 
         """
-        ...
     def is_stop_filled(self) -> bool:
         """
         Return a value indicating whether a ``STOP-MARKET`` order filled.
@@ -66,7 +62,6 @@ class FillModel:
         bool
 
         """
-        ...
     def is_slipped(self) -> bool:
         """
         Return a value indicating whether an order fill slipped.
@@ -76,7 +71,6 @@ class FillModel:
         bool
 
         """
-        ...
 
 
 class LatencyModel:
@@ -115,7 +109,7 @@ class LatencyModel:
 
     def __init__(
         self,
-        base_latency_nanos: int = 1_000_000_000,
+        base_latency_nanos: int = ...,
         insert_latency_nanos: int = 0,
         update_latency_nanos: int = 0,
         cancel_latency_nanos: int = 0,
@@ -154,7 +148,6 @@ class FeeModel:
         Money
 
         """
-        ...
 
 
 class MakerTakerFeeModel(FeeModel):

@@ -1,5 +1,6 @@
-from nautilus_trader.indicators.average.ma_factory import MovingAverageType
-
+from stubs.indicators.average.moving_average import MovingAverageType
+from stubs.indicators.base.indicator import Indicator
+from stubs.model.data import Bar
 
 class PsychologicalLine(Indicator):
     """
@@ -15,10 +16,11 @@ class PsychologicalLine(Indicator):
     ma_type : MovingAverageType
         The moving average type for the indicator (cannot be None).
     """
+
     def __init__(
         self,
         period: int,
-        ma_type: MovingAverageType = MovingAverageType.SIMPLE,
+        ma_type: MovingAverageType = ...,
     ) -> None: ...
     def handle_bar(self, bar: Bar) -> None:
         """
@@ -30,7 +32,6 @@ class PsychologicalLine(Indicator):
             The update bar.
 
         """
-        ...
     def update_raw(self, close: float) -> None:
         """
         Update the indicator with the given raw value.
@@ -41,6 +42,5 @@ class PsychologicalLine(Indicator):
             The close price.
 
         """
-        ...
     def _reset(self) -> None: ...
 

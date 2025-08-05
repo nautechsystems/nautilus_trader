@@ -1,6 +1,24 @@
 from decimal import Decimal
 from typing import Any
 
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import PositionSide
+from stubs.model.events.order import OrderFilled
+from stubs.model.identifiers import AccountId
+from stubs.model.identifiers import ClientOrderId
+from stubs.model.identifiers import InstrumentId
+from stubs.model.identifiers import PositionId
+from stubs.model.identifiers import StrategyId
+from stubs.model.identifiers import Symbol
+from stubs.model.identifiers import TradeId
+from stubs.model.identifiers import TraderId
+from stubs.model.identifiers import Venue
+from stubs.model.identifiers import VenueOrderId
+from stubs.model.instruments.base import Instrument
+from stubs.model.objects import Currency
+from stubs.model.objects import Money
+from stubs.model.objects import Price
+from stubs.model.objects import Quantity
 
 class Position:
     """

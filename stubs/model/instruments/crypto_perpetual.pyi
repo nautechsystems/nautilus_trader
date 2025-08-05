@@ -1,7 +1,13 @@
 from decimal import Decimal
 from typing import Any
 
-
+from stubs.model.identifiers import InstrumentId
+from stubs.model.identifiers import Symbol
+from stubs.model.instruments.base import Instrument
+from stubs.model.objects import Currency
+from stubs.model.objects import Money
+from stubs.model.objects import Price
+from stubs.model.objects import Quantity
 
 class CryptoPerpetual(Instrument):
     """
@@ -129,7 +135,6 @@ class CryptoPerpetual(Instrument):
         Currency
 
         """
-        ...
     def get_settlement_currency(self) -> Currency:
         """
         Return the currency used to settle a trade of the instrument.
@@ -139,7 +144,6 @@ class CryptoPerpetual(Instrument):
         Currency
 
         """
-        ...
     @staticmethod
     def from_dict(values: dict) -> CryptoPerpetual:
         """
@@ -155,7 +159,6 @@ class CryptoPerpetual(Instrument):
         CryptoPerpetual
 
         """
-        ...
     @staticmethod
     def to_dict(obj: CryptoPerpetual) -> dict[str, Any]:
         """
@@ -166,6 +169,5 @@ class CryptoPerpetual(Instrument):
         dict[str, object]
 
         """
-        ...
     @staticmethod
     def from_pyo3(pyo3_instrument: Any) -> CryptoPerpetual: ...

@@ -1,7 +1,7 @@
-from nautilus_trader.indicators.fuzzy_enums.candle_body import CandleBodySize
-from nautilus_trader.indicators.fuzzy_enums.candle_direction import CandleDirection
-from nautilus_trader.indicators.fuzzy_enums.candle_size import CandleSize
-from nautilus_trader.indicators.fuzzy_enums.candle_wick import CandleWickSize
+from nautilus_trader.core.nautilus_pyo3 import CandleBodySize
+from nautilus_trader.core.nautilus_pyo3 import CandleDirection
+from nautilus_trader.core.nautilus_pyo3 import CandleSize
+from nautilus_trader.core.nautilus_pyo3 import CandleWickSize
 
 __all__ = [
     "CandleBodySize",

@@ -1,23 +1,37 @@
 from nautilus_trader.execution.config import ExecEngineConfig
 from nautilus_trader.execution.reports import ExecutionMassStatus
 from nautilus_trader.execution.reports import ExecutionReport
-from nautilus_trader.trading.strategy import Strategy
-from nautilus_trader.execution.messages import TradingCommand, SubmitOrder, SubmitOrderList, ModifyOrder, CancelOrder, CancelAllOrders, BatchCancelOrders, QueryOrder
-from nautilus_trader.model.events.order import OrderEvent
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.events.order import OrderFilled
-from nautilus_trader.model.orders.base import OrderSide
-from nautilus_trader.model.position.base import Position
-from nautilus_trader.common.component import TimeEvent
-from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.enums import OrderSide
 from stubs.cache.cache import Cache
-from stubs.common.component import Clock, Component
+from stubs.common.component import Clock
+from stubs.common.component import Component
+from stubs.common.component import MessageBus
+from stubs.common.component import TimeEvent
 from stubs.common.generators import PositionIdGenerator
 from stubs.execution.client import ExecutionClient
+from stubs.execution.messages import BatchCancelOrders
+from stubs.execution.messages import CancelAllOrders
+from stubs.execution.messages import CancelOrder
+from stubs.execution.messages import ModifyOrder
+from stubs.execution.messages import QueryOrder
+from stubs.execution.messages import SubmitOrder
+from stubs.execution.messages import SubmitOrderList
+from stubs.execution.messages import TradingCommand
+from stubs.model.events.order import OrderEvent
+from stubs.model.events.order import OrderFilled
 from stubs.model.events.position import PositionEvent
-from nautilus_trader.model.instruments.base import Instrument
-
+from stubs.model.identifiers import ClientId
+from stubs.model.identifiers import InstrumentId
+from stubs.model.identifiers import PositionId
+from stubs.model.identifiers import StrategyId
+from stubs.model.identifiers import Venue
+from stubs.model.instruments.base import Instrument
+from stubs.model.objects import Price
+from stubs.model.objects import Quantity
+from stubs.model.orders.base import Order
+from stubs.model.position import Position
+from stubs.trading.strategy import Strategy
 
 class ExecutionEngine(Component):
     """
@@ -78,7 +92,6 @@ class ExecutionEngine(Component):
         bool
 
         """
-        ...
     @property
     def registered_clients(self) -> list[ClientId]:
         """
@@ -89,7 +102,6 @@ class ExecutionEngine(Component):
         list[ClientId]
 
         """
-        ...
     @property
     def default_client(self) -> ClientId | None:
         """
@@ -100,17 +112,14 @@ class ExecutionEngine(Component):
         ClientId or ``None``
 
         """
-        ...
     def connect(self) -> None:
         """
         Connect the engine by calling connect on all registered clients.
         """
-        ...
     def disconnect(self) -> None:
         """
         Disconnect the engine by calling disconnect on all registered clients.
         """
-        ...
     def position_id_count(self, strategy_id: StrategyId) -> int:
         """
         The position ID count for the given strategy ID.
@@ -125,7 +134,6 @@ class ExecutionEngine(Component):
         int
 
         """
-        ...
     def check_integrity(self) -> bool:
         """
         Check integrity of data within the cache and clients.
@@ -135,7 +143,6 @@ class ExecutionEngine(Component):
         bool
             True if checks pass, else False.
         """
-        ...
     def check_connected(self) -> bool:
         """
         Check all of the engines clients are connected.
@@ -146,7 +153,6 @@ class ExecutionEngine(Component):
             True if all clients connected, else False.
 
         """
-        ...
     def check_disconnected(self) -> bool:
         """
         Check all of the engines clients are disconnected.
@@ -157,7 +163,6 @@ class ExecutionEngine(Component):
             True if all clients disconnected, else False.
 
         """
-        ...
     def check_residuals(self) -> bool:
         """
         Check for any residual open state and log warnings if found.
@@ -170,7 +175,6 @@ class ExecutionEngine(Component):
             True if residuals exist, else False.
 
         """
-        ...
     def get_external_order_claim(self, instrument_id: InstrumentId) -> StrategyId | None:
         """
         Get any external order claim for the given instrument ID.
@@ -185,7 +189,6 @@ class ExecutionEngine(Component):
         StrategyId or ``None``
 
         """
-        ...
     def get_external_order_claims_instruments(self) -> set[InstrumentId]:
         """
         Get all instrument IDs registered for external order claims.
@@ -195,7 +198,6 @@ class ExecutionEngine(Component):
         set[InstrumentId]
 
         """
-        ...
     def get_clients_for_orders(self, orders: list[Order]) -> set[ExecutionClient]:
         """
         Get all execution clients corresponding to the given orders.
@@ -210,7 +212,6 @@ class ExecutionEngine(Component):
         set[ExecutionClient]
 
         """
-        ...
     def set_manage_own_order_books(self, value: bool) -> None:
         """
         Set the `manage_own_order_books` setting with the given `value`.
@@ -221,7 +222,6 @@ class ExecutionEngine(Component):
             The value to set.
 
         """
-        ...
     def register_client(self, client: ExecutionClient) -> None:
         """
         Register the given execution client with the execution engine.
@@ -240,7 +240,6 @@ class ExecutionEngine(Component):
             If `client` is already registered with the execution engine.
 
         """
-        ...
     def register_default_client(self, client: ExecutionClient) -> None:
         """
         Register the given client as the default routing client (when a specific
@@ -254,7 +253,6 @@ class ExecutionEngine(Component):
             The client to register.
 
         """
-        ...
     def register_venue_routing(self, client: ExecutionClient, venue: Venue) -> None:
         """
         Register the given client to route orders to the given venue.
@@ -270,7 +268,6 @@ class ExecutionEngine(Component):
             The client for the venue routing.
 
         """
-        ...
     def register_oms_type(self, strategy: Strategy) -> None:
         """
         Register the given trading strategies OMS (Order Management System) type.
@@ -281,7 +278,6 @@ class ExecutionEngine(Component):
             The strategy for the registration.
 
         """
-        ...
     def register_external_order_claims(self, strategy: Strategy) -> None:
         """
         Register the given strategies external order claim instrument IDs (if any)
@@ -297,7 +293,6 @@ class ExecutionEngine(Component):
             If a strategy is already registered to claim external orders for an instrument ID.
 
         """
-        ...
     def deregister_client(self, client: ExecutionClient) -> None:
         """
         Deregister the given execution client from the execution engine.
@@ -313,7 +308,6 @@ class ExecutionEngine(Component):
             If `client` is not registered with the execution engine.
 
         """
-        ...
     async def reconcile_state(self, timeout_secs: float = 10.0) -> bool:
         """
         Reconcile the internal execution state with all execution clients (external state).
@@ -334,7 +328,6 @@ class ExecutionEngine(Component):
             If `timeout_secs` is not positive (> 0).
 
         """
-        ...
     def reconcile_report(self, report: ExecutionReport) -> bool:
         """
         Check the given execution report.
@@ -350,7 +343,6 @@ class ExecutionEngine(Component):
             True if reconciliation successful, else False.
 
         """
-        ...
     def reconcile_mass_status(self, report: ExecutionMassStatus) -> None:
         """
         Reconcile the given execution mass status report.
@@ -361,7 +353,6 @@ class ExecutionEngine(Component):
             The execution mass status report to reconcile.
 
         """
-        ...
     def _on_start(self) -> None: ...
     def _on_stop(self) -> None: ...
     def _start(self) -> None: ...
@@ -372,12 +363,10 @@ class ExecutionEngine(Component):
         """
         Stop the registered clients.
         """
-        ...
     def load_cache(self) -> None:
         """
         Load the cache up from the execution database.
         """
-        ...
     def execute(self, command: TradingCommand) -> None:
         """
         Execute the given command.
@@ -388,7 +377,6 @@ class ExecutionEngine(Component):
             The command to execute.
 
         """
-        ...
     def process(self, event: OrderEvent) -> None:
         """
         Process the given order event.
@@ -399,7 +387,6 @@ class ExecutionEngine(Component):
             The order event to process.
 
         """
-        ...
     def flush_db(self) -> None:
         """
         Flush the execution database which permanently removes all persisted data.
@@ -409,7 +396,6 @@ class ExecutionEngine(Component):
         Permanent data loss.
 
         """
-        ...
     def _set_position_id_counts(self) -> None: ...
     def _last_px_for_conversion(self, instrument_id: InstrumentId, order_side: OrderSide) -> Price | None: ...
     def _set_order_base_qty(self, order: Order, base_qty: Quantity) -> None: ...

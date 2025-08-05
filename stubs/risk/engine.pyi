@@ -1,27 +1,25 @@
 import datetime as dt
 from decimal import Decimal
-from typing import Any, Dict, List, Optional, Tuple, Union
 
-from nautilus_trader.accounting.accounts.base import Account
-from nautilus_trader.cache.cache import Cache
-from nautilus_trader.common.component import Clock
-from nautilus_trader.common.component import Component
-from nautilus_trader.common.component import MessageBus
-from nautilus_trader.core.message import Command
-from nautilus_trader.core.message import Event
-from nautilus_trader.core.rust.model import TradingState
-from nautilus_trader.execution.messages import ModifyOrder
-from nautilus_trader.execution.messages import SubmitOrder
-from nautilus_trader.execution.messages import SubmitOrderList
-from nautilus_trader.execution.messages import TradingCommand
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.instruments.base import Instrument
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orders.base import Order
-from nautilus_trader.model.orders.list import OrderList
-from nautilus_trader.portfolio.base import PortfolioFacade
+from nautilus_trader.model.enums import TradingState
 from nautilus_trader.risk.config import RiskEngineConfig
+from stubs.cache.cache import Cache
+from stubs.common.component import Clock
+from stubs.common.component import Component
+from stubs.common.component import MessageBus
+from stubs.core.message import Command
+from stubs.core.message import Event
+from stubs.execution.messages import ModifyOrder
+from stubs.execution.messages import SubmitOrder
+from stubs.execution.messages import SubmitOrderList
+from stubs.execution.messages import TradingCommand
+from stubs.model.identifiers import InstrumentId
+from stubs.model.instruments.base import Instrument
+from stubs.model.objects import Price
+from stubs.model.objects import Quantity
+from stubs.model.orders.base import Order
+from stubs.model.orders.list import OrderList
+from stubs.portfolio.base import PortfolioFacade
 
 class RiskEngine(Component):
     """
@@ -79,7 +77,6 @@ class RiskEngine(Component):
             The command to execute.
 
         """
-        ...
     def process(self, event: Event) -> None:
         """
         Process the given event.
@@ -90,7 +87,6 @@ class RiskEngine(Component):
             The event to process.
 
         """
-        ...
     def set_trading_state(self, state: TradingState) -> None:
         """
         Set the trading state for the engine.
@@ -101,7 +97,6 @@ class RiskEngine(Component):
             The state to set.
 
         """
-        ...
     def set_max_notional_per_order(
         self,
         instrument_id: InstrumentId,
@@ -128,8 +123,7 @@ class RiskEngine(Component):
             If `new_value` is not ``None`` and not positive.
 
         """
-        ...
-    def max_order_submit_rate(self) -> Tuple[int, dt.timedelta]:
+    def max_order_submit_rate(self) -> tuple[int, dt.timedelta]:
         """
         Return the current maximum order submit rate limit setting.
 
@@ -139,8 +133,7 @@ class RiskEngine(Component):
             The limit per timedelta interval.
 
         """
-        ...
-    def max_order_modify_rate(self) -> Tuple[int, dt.timedelta]:
+    def max_order_modify_rate(self) -> tuple[int, dt.timedelta]:
         """
         Return the current maximum order modify rate limit setting.
 
@@ -150,8 +143,7 @@ class RiskEngine(Component):
             The limit per timedelta interval.
 
         """
-        ...
-    def max_notionals_per_order(self) -> Dict[InstrumentId, Decimal]:
+    def max_notionals_per_order(self) -> dict[InstrumentId, Decimal]:
         """
         Return the current maximum notionals per order settings.
 
@@ -160,8 +152,7 @@ class RiskEngine(Component):
         dict[InstrumentId, Decimal]
 
         """
-        ...
-    def max_notional_per_order(self, instrument_id: InstrumentId) -> Optional[Decimal]:
+    def max_notional_per_order(self, instrument_id: InstrumentId) -> Decimal | None:
         """
         Return the current maximum notional per order for the given instrument ID.
 
@@ -170,7 +161,6 @@ class RiskEngine(Component):
         Decimal or ``None``
 
         """
-        ...
     def _initialize_risk_checks(self, config: RiskEngineConfig) -> None: ...
     def _log_state(self) -> None: ...
     def _on_start(self) -> None: ...
@@ -186,7 +176,7 @@ class RiskEngine(Component):
     def _check_order(self, instrument: Instrument, order: Order) -> bool: ...
     def _check_order_price(self, instrument: Instrument, order: Order) -> bool: ...
     def _check_order_quantity(self, instrument: Instrument, order: Order) -> bool: ...
-    def _check_orders_risk(self, instrument: Instrument, orders: List[Order]) -> bool: ...
+    def _check_orders_risk(self, instrument: Instrument, orders: list[Order]) -> bool: ...
     def _check_price(self, instrument: Instrument, price: Price | None) -> str | None: ...
     def _check_quantity(self, instrument: Instrument, quantity: Quantity | None) -> str | None: ...
     def _deny_command(self, command: TradingCommand, reason: str) -> None: ...

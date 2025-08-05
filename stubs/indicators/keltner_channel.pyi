@@ -1,5 +1,6 @@
-from nautilus_trader.indicators.average.ma_factory import MovingAverageType
-
+from stubs.indicators.average.moving_average import MovingAverageType
+from stubs.indicators.base.indicator import Indicator
+from stubs.model.data import Bar
 
 class KeltnerChannel(Indicator):
     """
@@ -34,8 +35,8 @@ class KeltnerChannel(Indicator):
         self,
         period: int,
         k_multiplier: float,
-        ma_type: MovingAverageType = MovingAverageType.EXPONENTIAL,
-        ma_type_atr: MovingAverageType = MovingAverageType.SIMPLE,
+        ma_type: MovingAverageType = ...,
+        ma_type_atr: MovingAverageType = ...,
         use_previous: bool = True,
         atr_floor: float = 0,
     ) -> None: ...
@@ -50,7 +51,6 @@ class KeltnerChannel(Indicator):
             The update bar.
 
         """
-        ...
 
     def update_raw(
         self,
@@ -71,7 +71,6 @@ class KeltnerChannel(Indicator):
             The close price.
 
         """
-        ...
 
     def _reset(self) -> None:
         """
@@ -79,5 +78,4 @@ class KeltnerChannel(Indicator):
 
         All stateful fields are reset to their initial value.
         """
-        ...
 

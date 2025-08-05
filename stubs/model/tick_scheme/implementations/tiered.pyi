@@ -1,5 +1,7 @@
 import numpy as np
 
+from stubs.model.objects import Price
+from stubs.model.tick_scheme.base import TickScheme
 
 class TieredTickScheme(TickScheme):
     """
@@ -53,7 +55,6 @@ class TieredTickScheme(TickScheme):
         Price
 
         """
-        ...
     def next_bid_price(self, value: float, n: int = 0) -> Price:
         """
         Return the price `n` bid ticks away from value.
@@ -72,7 +73,6 @@ class TieredTickScheme(TickScheme):
         Price
 
         """
-        ...
 
     @staticmethod
     def _validate_tiers(tiers: list) -> list: ...

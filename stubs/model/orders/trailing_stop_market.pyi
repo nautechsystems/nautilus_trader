@@ -2,6 +2,22 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
+from nautilus_trader.model.enums import ContingencyType
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import TrailingOffsetType
+from nautilus_trader.model.enums import TriggerType
+from stubs.core.uuid import UUID4
+from stubs.model.events.order import OrderInitialized
+from stubs.model.identifiers import ClientOrderId
+from stubs.model.identifiers import ExecAlgorithmId
+from stubs.model.identifiers import InstrumentId
+from stubs.model.identifiers import OrderListId
+from stubs.model.identifiers import StrategyId
+from stubs.model.identifiers import TraderId
+from stubs.model.objects import Price
+from stubs.model.objects import Quantity
+from stubs.model.orders.base import Order
 
 class TrailingStopMarketOrder(Order):
     """
@@ -132,7 +148,6 @@ class TrailingStopMarketOrder(Order):
         datetime or ``None``
 
         """
-        ...
     def info(self) -> str:
         """
         Return a summary description of the order.
@@ -142,7 +157,6 @@ class TrailingStopMarketOrder(Order):
         str
 
         """
-        ...
     def to_dict(self) -> dict[str, Any]:
         """
         Return a dictionary representation of this object.
@@ -152,6 +166,5 @@ class TrailingStopMarketOrder(Order):
         dict[str, object]
 
         """
-        ...
     @staticmethod
     def create(init: OrderInitialized) -> TrailingStopMarketOrder: ...

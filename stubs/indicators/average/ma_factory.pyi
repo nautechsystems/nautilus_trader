@@ -1,4 +1,5 @@
 from stubs.indicators.average.moving_average import MovingAverage
+from stubs.indicators.average.moving_average import MovingAverageType
 
 class MovingAverageFactory:
     """
@@ -31,4 +32,3 @@ class MovingAverageFactory:
             If `period` is not positive (> 0).
 
         """
-        ...

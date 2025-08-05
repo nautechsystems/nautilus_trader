@@ -1,6 +1,14 @@
 from typing import Any
 
-from nautilus_trader.cache.base import CacheFacade
+from stubs.accounting.accounts.base import Account
+from stubs.accounting.accounts.margin import MarginAccount
+from stubs.cache.base import CacheFacade
+from stubs.common.component import Clock
+from stubs.common.component import Logger
+from stubs.model.events.account import AccountState
+from stubs.model.events.order import OrderFilled
+from stubs.model.instruments.base import Instrument
+from stubs.model.position import Position
 
 class AccountsManager:
     """

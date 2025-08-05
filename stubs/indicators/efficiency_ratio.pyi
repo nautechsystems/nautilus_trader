@@ -1,7 +1,7 @@
 from collections import deque
-from typing import ClassVar
 
-
+from stubs.indicators.base.indicator import Indicator
+from stubs.model.data import Bar
 
 class EfficiencyRatio(Indicator):
     """
@@ -37,7 +37,6 @@ class EfficiencyRatio(Indicator):
             The update bar.
 
         """
-        ...
     def update_raw(self, price: float) -> None:
         """
         Update the indicator with the given price.
@@ -48,5 +47,4 @@ class EfficiencyRatio(Indicator):
             The update price.
 
         """
-        ...
     def _reset(self) -> None: ...

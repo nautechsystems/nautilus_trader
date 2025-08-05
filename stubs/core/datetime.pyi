@@ -1,8 +1,6 @@
 from datetime import datetime
-from typing import Any
 
 import pandas as pd
-
 
 def unix_nanos_to_dt(nanos: int):
     """
@@ -18,7 +16,6 @@ def unix_nanos_to_dt(nanos: int):
     pd.Timestamp
 
     """
-    ...
 def dt_to_unix_nanos(dt: pd.Timestamp):
     """
     Return the UNIX timestamp (nanoseconds) from the given datetime (UTC).
@@ -38,7 +35,6 @@ def dt_to_unix_nanos(dt: pd.Timestamp):
     objects are only accurate to 1 microsecond (μs).
 
     """
-    ...
 def unix_nanos_to_iso8601(unix_nanos: int,  nanos_precision: bool = True) -> str:
     """
     Convert the given `unix_nanos` to an ISO 8601 (RFC 3339) format string.
@@ -55,7 +51,6 @@ def unix_nanos_to_iso8601(unix_nanos: int,  nanos_precision: bool = True) -> str
     str
 
     """
-    ...
 def format_iso8601(dt: datetime, nanos_precision: bool = True) -> str:
     """
     Format the given datetime as an ISO 8601 (RFC 3339) specification string.
@@ -72,7 +67,6 @@ def format_iso8601(dt: datetime, nanos_precision: bool = True) -> str:
     str
 
     """
-    ...
 def  format_optional_iso8601(dt: datetime, nanos_precision: bool = True) -> str:
     """
     Format the given optional datetime as an ISO 8601 (RFC 3339) specification string.
@@ -91,7 +85,6 @@ def  format_optional_iso8601(dt: datetime, nanos_precision: bool = True) -> str:
     str
 
     """
-    ...
 def maybe_unix_nanos_to_dt(nanos):
     """
     Return the datetime (UTC) from the given UNIX timestamp (nanoseconds), or ``None``.
@@ -108,7 +101,6 @@ def maybe_unix_nanos_to_dt(nanos):
     pd.Timestamp or ``None``
 
     """
-    ...
 def maybe_dt_to_unix_nanos(dt: pd.Timestamp):
     """
     Return the UNIX timestamp (nanoseconds) from the given datetime, or ``None``.
@@ -130,7 +122,6 @@ def maybe_dt_to_unix_nanos(dt: pd.Timestamp):
     as standard Python `datetime` objects are only accurate to 1 microsecond (μs).
 
     """
-    ...
 def is_datetime_utc(dt: datetime) -> bool:
     """
     Return a value indicating whether the given timestamp is timezone aware UTC.
@@ -146,7 +137,6 @@ def is_datetime_utc(dt: datetime) -> bool:
         True if timezone aware UTC, else False.
 
     """
-    ...
 def is_tz_aware(time_object) -> bool:
     """
     Return a value indicating whether the given object is timezone aware.
@@ -162,7 +152,6 @@ def is_tz_aware(time_object) -> bool:
         True if timezone aware, else False.
 
     """
-    ...
 def is_tz_naive(time_object) -> bool:
     """
     Return a value indicating whether the given object is timezone naive.
@@ -178,7 +167,6 @@ def is_tz_naive(time_object) -> bool:
         True if object timezone naive, else False.
 
     """
-    ...
 def as_utc_timestamp(dt: datetime) -> datetime:
     """
     Ensure the given timestamp is tz-aware UTC.
@@ -192,8 +180,7 @@ def as_utc_timestamp(dt: datetime) -> datetime:
     -------
     datetime
 
-    """ 
-    ...
+    """
 def as_utc_index(data: pd.DataFrame) -> pd.DataFrame | None:
     """
     Ensure the given data has a DateTimeIndex which is tz-aware UTC.
@@ -208,7 +195,6 @@ def as_utc_index(data: pd.DataFrame) -> pd.DataFrame | None:
     pd.Series, pd.DataFrame or ``None``
 
     """
-    ...
 def time_object_to_dt(time_object) -> datetime | None:
     """
     Return the datetime (UTC) from the given UNIX timestamp as integer (nanoseconds), string or pd.Timestamp.
@@ -224,7 +210,6 @@ def time_object_to_dt(time_object) -> datetime | None:
         Returns None if the input is None.
 
     """
-    ...
 def max_date(date1: pd.Timestamp | str | int | None = None, date2: str | int | None = None) -> pd.Timestamp | None:
     """
     Return the maximum date as a datetime (UTC).
@@ -242,7 +227,6 @@ def max_date(date1: pd.Timestamp | str | int | None = None, date2: str | int | N
         The maximum date, or None if both input dates are None.
 
     """
-    ...
 def min_date(date1: pd.Timestamp | str | int | None = None, date2: str | int | None = None) -> pd.Timestamp | None:
     """
     Return the minimum date as a datetime (UTC).
@@ -260,5 +244,4 @@ def min_date(date1: pd.Timestamp | str | int | None = None, date2: str | int | N
         The minimum date, or None if both input dates are None.
 
     """
-    ...
 

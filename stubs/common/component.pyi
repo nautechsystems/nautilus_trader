@@ -2,21 +2,23 @@ from collections.abc import Callable
 from datetime import datetime
 from datetime import timedelta
 from datetime import tzinfo
-from typing import Any, ClassVar
+from typing import Any
 
+import nautilus_trader
 from nautilus_trader.common.config import NautilusConfig
+from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.enums import ComponentTrigger
+from nautilus_trader.common.enums import LogColor
+from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.core import nautilus_pyo3
-from nautilus_trader.core.nautilus_pyo3 import UUID4, ComponentState
-from nautilus_trader.core.nautilus_pyo3 import ComponentId
-from nautilus_trader.core.nautilus_pyo3 import Identifier
-from nautilus_trader.core.nautilus_pyo3 import LogColor
-from nautilus_trader.core.nautilus_pyo3 import LogLevel
-from nautilus_trader.core.nautilus_pyo3 import MessageBusListener
-from nautilus_trader.core.nautilus_pyo3 import TraderId
+from stubs.core.message import Event
+from stubs.core.message import Request
+from stubs.core.message import Response
+from stubs.core.uuid import UUID4
+from stubs.model.identifiers import ComponentId
+from stubs.model.identifiers import Identifier
+from stubs.model.identifiers import TraderId
 from stubs.serialization.base import Serializer
-from nautilus_trader.core.message import Event
-
 
 _COMPONENT_CLOCKS: dict[UUID4, list[TestClock]]
 _FORCE_STOP: bool
@@ -1305,8 +1307,8 @@ class MessageBus:
 
     _clock: Clock
     _log: Logger
-    _database: RedisMessageBusDatabase | None
-    _listeners: list[MessageBusListener]
+    _database: nautilus_pyo3.RedisMessageBusDatabase | None
+    _listeners: list[nautilus_pyo3.MessageBusListener]
     _endpoints: dict[str, Callable[[Any], None]]
     _patterns: dict[str, Any] # Changed from Subscription[:] due to type hint complexities
     _subscriptions: dict[Subscription, list[str]]

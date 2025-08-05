@@ -1,8 +1,6 @@
-import re
-import pandas as pd
-import pytz
-from typing import Any, Callable
-from nautilus_trader.serialization.base import Serializer
+from collections.abc import Callable
+
+from stubs.serialization.base import Serializer
 
 class MsgSpecSerializer(Serializer):
     """
@@ -48,7 +46,6 @@ class MsgSpecSerializer(Serializer):
             If `obj` cannot be serialized.
 
         """
-        ...
     def deserialize(self, obj_bytes: bytes) -> object:
         """
         Deserialize the given `MessagePack` specification bytes to an object.
@@ -68,4 +65,3 @@ class MsgSpecSerializer(Serializer):
             If `obj_bytes` cannot be deserialized.
 
         """
-        ...

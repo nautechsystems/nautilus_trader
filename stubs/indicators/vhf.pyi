@@ -1,8 +1,6 @@
-from collections import deque
-from nautilus_trader.indicators.average.ma_factory import MovingAverageType
-from nautilus_trader.indicators.base.indicator import Indicator
-from nautilus_trader.model.data import Bar
-
+from stubs.indicators.average.moving_average import MovingAverageType
+from stubs.indicators.base.indicator import Indicator
+from stubs.model.data import Bar
 
 class VerticalHorizontalFilter(Indicator):
     """
@@ -23,7 +21,7 @@ class VerticalHorizontalFilter(Indicator):
     def __init__(
         self,
         period: int,
-        ma_type: MovingAverageType = MovingAverageType.SIMPLE,
+        ma_type: MovingAverageType = ...,
     ) -> None: ...
     def handle_bar(self, bar: Bar) -> None:
         """
@@ -35,7 +33,6 @@ class VerticalHorizontalFilter(Indicator):
             The update bar.
 
         """
-        ...
     def update_raw(self, close: float) -> None:
         """
         Update the indicator with the given raw value.
@@ -46,6 +43,5 @@ class VerticalHorizontalFilter(Indicator):
             The close price.
 
         """
-        ...
     def _reset(self) -> None: ...
 

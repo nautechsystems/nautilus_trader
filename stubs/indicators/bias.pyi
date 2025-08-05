@@ -1,7 +1,6 @@
-from nautilus_trader.indicators.average.ma_factory import MovingAverageType
-from nautilus_trader.model.data import Bar
-from nautilus_trader.indicators.base.indicator import Indicator
-
+from stubs.indicators.average.moving_average import MovingAverageType
+from stubs.indicators.base.indicator import Indicator
+from stubs.model.data import Bar
 
 class Bias(Indicator):
     """
@@ -21,7 +20,7 @@ class Bias(Indicator):
     def __init__(
         self,
         period: int,
-        ma_type: MovingAverageType = MovingAverageType.SIMPLE,
+        ma_type: MovingAverageType = ...,
     ) -> None: ...
     def handle_bar(self, bar: Bar) -> None:
         """
@@ -33,7 +32,6 @@ class Bias(Indicator):
             The update bar.
 
         """
-        ...
     def update_raw(self, close: float) -> None:
         """
         Update the indicator with the given raw values.
@@ -44,5 +42,4 @@ class Bias(Indicator):
             The close price.
 
         """
-        ...
     def _reset(self) -> None: ...

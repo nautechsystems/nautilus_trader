@@ -1,3 +1,5 @@
+from stubs.indicators.base.indicator import Indicator
+from stubs.model.data import Bar
 
 class AroonOscillator(Indicator):
     """
@@ -27,7 +29,6 @@ class AroonOscillator(Indicator):
             The update bar.
 
         """
-        ...
     def update_raw(self, high: float, low: float) -> None:
         """
         Update the indicator with the given raw values.
@@ -39,5 +40,4 @@ class AroonOscillator(Indicator):
         low : double
             The low price.
         """
-        ...
     def _reset(self) -> None: ...

@@ -1,7 +1,6 @@
-from nautilus_trader.indicators.average.ma_factory import MovingAverageType
-
-from nautilus_trader.indicators.base.indicator import Indicator
-
+from stubs.indicators.average.moving_average import MovingAverageType
+from stubs.indicators.base.indicator import Indicator
+from stubs.model.data import Bar
 
 class DirectionalMovement(Indicator):
     """
@@ -22,7 +21,7 @@ class DirectionalMovement(Indicator):
     def __init__(
         self,
         period: int,
-        ma_type: MovingAverageType = MovingAverageType.EXPONENTIAL,
+        ma_type: MovingAverageType = ...,
     ) -> None: ...
     def handle_bar(self, bar: Bar) -> None:
         """
@@ -34,7 +33,6 @@ class DirectionalMovement(Indicator):
             The update bar.
 
         """
-        ...
     def update_raw(
         self,
         high: float,
@@ -51,11 +49,9 @@ class DirectionalMovement(Indicator):
             The low price.
 
         """
-        ...
     def _reset(self) -> None:
         """
         Reset the indicator.
 
         All stateful fields are reset to their initial value.
         """
-        ...

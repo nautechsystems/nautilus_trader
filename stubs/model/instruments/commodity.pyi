@@ -1,6 +1,14 @@
 from decimal import Decimal
 from typing import Any
 
+from nautilus_trader.model.enums import AssetClass
+from stubs.model.identifiers import InstrumentId
+from stubs.model.identifiers import Symbol
+from stubs.model.instruments.base import Instrument
+from stubs.model.objects import Currency
+from stubs.model.objects import Money
+from stubs.model.objects import Price
+from stubs.model.objects import Quantity
 
 class Commodity(Instrument):
     """
@@ -134,7 +142,6 @@ class Commodity(Instrument):
         Commodity
 
         """
-        ...
     @staticmethod
     def to_dict(obj: Commodity) -> dict[str, Any]:
         """
@@ -145,6 +152,5 @@ class Commodity(Instrument):
         dict[str, object]
 
         """
-        ...
     @staticmethod
     def from_pyo3(pyo3_instrument: Any) -> Commodity: ...

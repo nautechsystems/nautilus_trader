@@ -3,7 +3,46 @@ from typing import Any
 from nautilus_trader.common.config import NautilusConfig
 from stubs.cache.cache import Cache
 from stubs.common.component import Clock
-from stubs.data.messages import RequestBars, RequestData, RequestInstrument, RequestInstruments, RequestOrderBookSnapshot, RequestQuoteTicks, RequestTradeTicks, SubscribeBars, SubscribeData, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices, SubscribeOrderBook, SubscribeQuoteTicks, SubscribeTradeTicks, UnsubscribeBars, UnsubscribeData, UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeOrderBook, UnsubscribeQuoteTicks, UnsubscribeTradeTicks
+from stubs.common.component import Component
+from stubs.common.component import MessageBus
+from stubs.core.data import Data
+from stubs.core.uuid import UUID4
+from stubs.data.messages import RequestBars
+from stubs.data.messages import RequestData
+from stubs.data.messages import RequestInstrument
+from stubs.data.messages import RequestInstruments
+from stubs.data.messages import RequestOrderBookSnapshot
+from stubs.data.messages import RequestQuoteTicks
+from stubs.data.messages import RequestTradeTicks
+from stubs.data.messages import SubscribeBars
+from stubs.data.messages import SubscribeData
+from stubs.data.messages import SubscribeIndexPrices
+from stubs.data.messages import SubscribeInstrument
+from stubs.data.messages import SubscribeInstrumentClose
+from stubs.data.messages import SubscribeInstruments
+from stubs.data.messages import SubscribeInstrumentStatus
+from stubs.data.messages import SubscribeMarkPrices
+from stubs.data.messages import SubscribeOrderBook
+from stubs.data.messages import SubscribeQuoteTicks
+from stubs.data.messages import SubscribeTradeTicks
+from stubs.data.messages import UnsubscribeBars
+from stubs.data.messages import UnsubscribeData
+from stubs.data.messages import UnsubscribeIndexPrices
+from stubs.data.messages import UnsubscribeInstrument
+from stubs.data.messages import UnsubscribeInstrumentClose
+from stubs.data.messages import UnsubscribeInstruments
+from stubs.data.messages import UnsubscribeInstrumentStatus
+from stubs.data.messages import UnsubscribeMarkPrices
+from stubs.data.messages import UnsubscribeOrderBook
+from stubs.data.messages import UnsubscribeQuoteTicks
+from stubs.data.messages import UnsubscribeTradeTicks
+from stubs.model.data import Bar
+from stubs.model.data import BarType
+from stubs.model.data import DataType
+from stubs.model.identifiers import ClientId
+from stubs.model.identifiers import InstrumentId
+from stubs.model.identifiers import Venue
+from stubs.model.instruments.base import Instrument
 
 class DataClient(Component):
     """

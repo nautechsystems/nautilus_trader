@@ -1,7 +1,10 @@
 from collections import deque
 
-from nautilus_trader.indicators.base.indicator import Indicator
-
+from stubs.indicators.average.moving_average import MovingAverageType
+from stubs.indicators.base.indicator import Indicator
+from stubs.model.data import Bar
+from stubs.model.data import QuoteTick
+from stubs.model.data import TradeTick
 
 class BollingerBands(Indicator):
     """
@@ -39,7 +42,7 @@ class BollingerBands(Indicator):
         self,
         period: int,
         k: float,
-        ma_type: MovingAverageType = MovingAverageType.SIMPLE,
+        ma_type: MovingAverageType = ...,
     ) -> None: ...
     def handle_quote_tick(self, tick: QuoteTick) -> None:
         """
@@ -51,7 +54,6 @@ class BollingerBands(Indicator):
             The tick for the update.
 
         """
-        ...
     def handle_trade_tick(self, tick: TradeTick) -> None:
         """
         Update the indicator with the given tick.
@@ -62,7 +64,6 @@ class BollingerBands(Indicator):
             The tick for the update.
 
         """
-        ...
     def handle_bar(self, bar: Bar) -> None:
         """
         Update the indicator with the given bar.
@@ -73,7 +74,6 @@ class BollingerBands(Indicator):
             The update bar.
 
         """
-        ...
     def update_raw(self, high: float, low: float, close: float) -> None:
         """
         Update the indicator with the given prices.
@@ -88,6 +88,5 @@ class BollingerBands(Indicator):
             The closing price for calculations
 
         """
-        ...
     def _reset(self) -> None: ...
 

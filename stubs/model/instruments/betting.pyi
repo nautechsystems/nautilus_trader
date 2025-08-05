@@ -2,6 +2,13 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
+from nautilus_trader.adapters.betfair.parsing.common import order_side_to_bet_side
+from nautilus_trader.model.enums import OrderSide
+from stubs.model.identifiers import Symbol
+from stubs.model.instruments.base import Instrument
+from stubs.model.objects import Money
+from stubs.model.objects import Price
+from stubs.model.objects import Quantity
 
 class BettingInstrument(Instrument):
     """
@@ -78,7 +85,6 @@ class BettingInstrument(Instrument):
         BettingInstrument
 
         """
-        ...
     @staticmethod
     def to_dict(obj: BettingInstrument) -> dict[str, Any]:
         """
@@ -89,7 +95,6 @@ class BettingInstrument(Instrument):
         dict[str, object]
 
         """
-        ...
     def notional_value(
         self, quantity: Quantity, price: Price, use_quote_for_inverse: bool = False
     ) -> Money: ...
@@ -107,7 +112,6 @@ def make_symbol(
     Symbol('1-201070830-123456-None')
 
     """
-    ...
 
 
 def null_handicap() -> float: ...

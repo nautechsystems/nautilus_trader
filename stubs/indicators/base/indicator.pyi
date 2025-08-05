@@ -1,6 +1,6 @@
-from nautilus_trader.model.data import Bar
-from nautilus_trader.model.data import QuoteTick
-from nautilus_trader.model.data import TradeTick
+from stubs.model.data import Bar
+from stubs.model.data import QuoteTick
+from stubs.model.data import TradeTick
 
 class Indicator:
     """
@@ -39,4 +39,3 @@ class Indicator:
     def _reset(self) -> None:
         """Abstract method (implement in subclass)."""
         ...
-

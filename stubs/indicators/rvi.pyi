@@ -1,7 +1,6 @@
-from nautilus_trader.indicators.average.ma_factory import MovingAverageType
-from nautilus_trader.model.data import Bar
-from nautilus_trader.indicators.base.indicator import Indicator
-
+from stubs.indicators.average.moving_average import MovingAverageType
+from stubs.indicators.base.indicator import Indicator
+from stubs.model.data import Bar
 
 class RelativeVolatilityIndex(Indicator):
     """
@@ -27,7 +26,7 @@ class RelativeVolatilityIndex(Indicator):
         self,
         period: int,
         scalar: float = 100.0,
-        ma_type: MovingAverageType = MovingAverageType.EXPONENTIAL,
+        ma_type: MovingAverageType = ...,
     ) -> None: ...
     def handle_bar(self, bar: Bar) -> None:
         """
@@ -39,7 +38,6 @@ class RelativeVolatilityIndex(Indicator):
             The update bar.
 
         """
-        ...
     def update_raw(self, close: float) -> None:
         """
         Update the indicator with the given raw values.
@@ -50,11 +48,9 @@ class RelativeVolatilityIndex(Indicator):
             The close price.
 
         """
-        ...
     def _reset(self) -> None:
         """
         Reset the indicator.
 
         All stateful fields are reset to their initial value.
         """
-        ...

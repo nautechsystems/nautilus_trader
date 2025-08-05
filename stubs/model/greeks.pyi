@@ -1,19 +1,15 @@
-from typing import Any
-from typing import Callable
-from typing import Literal
-from typing import overload
-from typing import Union
+from collections.abc import Callable
 
-from nautilus_trader.model.enums import InstrumentClass
-from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.greeks_data import GreeksData
 from nautilus_trader.model.greeks_data import PortfolioGreeks
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import StrategyId
-from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.position import Position
 from stubs.cache.base import CacheFacade
 from stubs.common.component import Clock
+from stubs.common.component import MessageBus
+from stubs.model.identifiers import InstrumentId
+from stubs.model.identifiers import StrategyId
+from stubs.model.identifiers import Venue
+from stubs.model.position import Position
 
 class GreeksCalculator:
     """
@@ -34,7 +30,7 @@ class GreeksCalculator:
         The logger for logging messages.
 
     Notes
-    ----------
+    -----
     Currently implemented greeks are:
     - Delta (first derivative of price with respect to spot move).
     - Gamma (second derivative of price with respect to spot move).
@@ -47,8 +43,9 @@ class GreeksCalculator:
     Also note that for ease of implementation we consider that american options (for stock options for example) are european for the computation of greeks.
 
     """
+
     def __init__(self, msgbus: MessageBus, cache: CacheFacade, clock: Clock) -> None: ...
-    def instrument_greeks(self, instrument_id: InstrumentId, flat_interest_rate: float = 0.0425, flat_dividend_yield: float | None = None, spot_shock: float = 0.0, vol_shock: float = 0.0, time_to_expiry_shock: float = 0.0, use_cached_greeks: bool = False, cache_greeks: bool = False, publish_greeks: bool = False, ts_event: int = 0, position: Position | None = None, percent_greeks: bool = False, index_instrument_id: InstrumentId | None = None, beta_weights: dict[InstrumentId, float] | None = None) -> GreeksData: 
+    def instrument_greeks(self, instrument_id: InstrumentId, flat_interest_rate: float = 0.0425, flat_dividend_yield: float | None = None, spot_shock: float = 0.0, vol_shock: float = 0.0, time_to_expiry_shock: float = 0.0, use_cached_greeks: bool = False, cache_greeks: bool = False, publish_greeks: bool = False, ts_event: int = 0, position: Position | None = None, percent_greeks: bool = False, index_instrument_id: InstrumentId | None = None, beta_weights: dict[InstrumentId, float] | None = None) -> GreeksData:
         """
         Calculate option or underlying greeks for a given instrument and a quantity of 1.
 
@@ -99,8 +96,7 @@ class GreeksCalculator:
           Contains price, delta, gamma, vega, theta as well as additional information used for the computation.
 
         """
-        ...
-    def modify_greeks(self, delta_input: float, gamma_input: float, underlying_instrument_id: InstrumentId, underlying_price: float, unshocked_underlying_price: float, percent_greeks: bool, index_instrument_id: InstrumentId | None, beta_weights: dict[InstrumentId, float] | None) -> tuple[float, float]: 
+    def modify_greeks(self, delta_input: float, gamma_input: float, underlying_instrument_id: InstrumentId, underlying_price: float, unshocked_underlying_price: float, percent_greeks: bool, index_instrument_id: InstrumentId | None, beta_weights: dict[InstrumentId, float] | None) -> tuple[float, float]:
         """
         Modify delta and gamma based on beta weighting and percentage calculations.
 
@@ -147,8 +143,7 @@ class GreeksCalculator:
         V(x = x0 * (1 + stock_percent_return / 100))
         or V(I = I0 * (1 + index_percent_return / 100))
         """
-        ...
-    def portfolio_greeks(self, underlyings: list[str] | None = None, venue: Venue | None = None, instrument_id: InstrumentId | None = None, strategy_id: StrategyId | None = None, side: PositionSide = ..., flat_interest_rate: float = 0.0425, flat_dividend_yield: float | None = None, spot_shock: float = 0.0, vol_shock: float = 0.0, time_to_expiry_shock: float = 0.0, use_cached_greeks: bool = False, cache_greeks: bool = False, publish_greeks: bool = False, percent_greeks: bool = False, index_instrument_id: InstrumentId | None = None, beta_weights: dict[InstrumentId, float] | None = None, greeks_filter: Callable | None = None) -> PortfolioGreeks: 
+    def portfolio_greeks(self, underlyings: list[str] | None = None, venue: Venue | None = None, instrument_id: InstrumentId | None = None, strategy_id: StrategyId | None = None, side: PositionSide = ..., flat_interest_rate: float = 0.0425, flat_dividend_yield: float | None = None, spot_shock: float = 0.0, vol_shock: float = 0.0, time_to_expiry_shock: float = 0.0, use_cached_greeks: bool = False, cache_greeks: bool = False, publish_greeks: bool = False, percent_greeks: bool = False, index_instrument_id: InstrumentId | None = None, beta_weights: dict[InstrumentId, float] | None = None, greeks_filter: Callable | None = None) -> PortfolioGreeks:
         """
         Calculate the portfolio Greeks for a given set of positions.
 
@@ -216,7 +211,6 @@ class GreeksCalculator:
         size and aggregated into portfolio-level risk metrics.
 
         """
-        ...
     def subscribe_greeks(self, instrument_id: InstrumentId | None = None, handler: Callable[[GreeksData], None] | None = None) -> None:
         """
         Subscribe to Greeks data for a given underlying instrument.
@@ -238,4 +232,3 @@ class GreeksCalculator:
         None
 
         """
-        ...

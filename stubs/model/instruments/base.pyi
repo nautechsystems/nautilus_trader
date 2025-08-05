@@ -1,6 +1,16 @@
 from decimal import Decimal
 from typing import Any
 
+from nautilus_trader.model.enums import AssetClass
+from nautilus_trader.model.enums import InstrumentClass
+from stubs.core.data import Data
+from stubs.model.identifiers import InstrumentId
+from stubs.model.identifiers import Symbol
+from stubs.model.identifiers import Venue
+from stubs.model.objects import Currency
+from stubs.model.objects import Money
+from stubs.model.objects import Price
+from stubs.model.objects import Quantity
 from stubs.model.tick_scheme.base import TickScheme
 
 EXPIRING_INSTRUMENT_TYPES: set[InstrumentClass]
@@ -448,4 +458,3 @@ class Instrument(Data):
         ...
 
 def instruments_from_pyo3(pyo3_instruments: list[Any]) -> list[Instrument]: ...
-

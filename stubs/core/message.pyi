@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from typing import Any
 
+from stubs.core.uuid import UUID4
 
 class Command:
     """

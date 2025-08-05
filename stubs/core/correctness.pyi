@@ -1,6 +1,5 @@
+import builtins
 from typing import Any
-from typing import Type
-
 
 class Condition:
     """
@@ -13,7 +12,7 @@ class Condition:
     """
 
     @staticmethod
-    def is_true(predicate: bool, fail_msg: str, ex_type: Type[Exception] | None = None) -> None:
+    def is_true(predicate: bool, fail_msg: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
         Check the condition predicate is True.
 
@@ -27,15 +26,14 @@ class Condition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         ValueError
             If `predicate` condition is False.
 
         """
-        ...
 
     @staticmethod
-    def is_false(predicate: bool, fail_msg: str, ex_type: Type[Exception] | None = None) -> None:
+    def is_false(predicate: bool, fail_msg: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
         Check the condition predicate is False.
 
@@ -49,15 +47,14 @@ class Condition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         ValueError
             If `predicate` condition is True.
 
         """
-        ...
 
     @staticmethod
-    def none(argument: Any, param: str, ex_type: Type[Exception] | None = None) -> None:
+    def none(argument: Any, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
         Check the argument is ``None``.
 
@@ -71,15 +68,14 @@ class Condition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         TypeError
             If `argument` is not ``None``.
 
         """
-        ...
 
     @staticmethod
-    def not_none(argument: Any, param: str, ex_type: Type[Exception] | None = None) -> None:
+    def not_none(argument: Any, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
         Check the argument is not ``None``.
 
@@ -93,19 +89,18 @@ class Condition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         TypeError
             If `argument` is ``None``.
 
         """
-        ...
 
     @staticmethod
     def type(
         argument: Any,
         expected: Any,
         param: str,
-        ex_type: Type[Exception] | None = None,
+        ex_type: builtins.type[Exception] | None = None,
     ) -> None:
         """
         Check the argument is of the specified type.
@@ -122,19 +117,18 @@ class Condition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         TypeError
             If `object` is not of the expected type.
 
         """
-        ...
 
     @staticmethod
     def type_or_none(
         argument: Any,
         expected: Any,
         param: str,
-        ex_type: Type[Exception] | None = None,
+        ex_type: builtins.type[Exception] | None = None,
     ) -> None:
         """
         Check the argument is of the specified type, or is ``None``.
@@ -151,15 +145,14 @@ class Condition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         TypeError
             If `object` is not ``None`` and not of the expected type.
 
         """
-        ...
 
     @staticmethod
-    def callable(argument: Any, param: str, ex_type: Type[Exception] | None = None) -> None:
+    def callable(argument: Any, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
         Check the object is of type `Callable`.
 
@@ -173,15 +166,14 @@ class Condition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         TypeError
             If `argument` is not of type `Callable`.
 
         """
-        ...
 
     @staticmethod
-    def callable_or_none(argument: Any, param: str, ex_type: Type[Exception] | None = None) -> None:
+    def callable_or_none(argument: Any, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
         Check the object is of type `Callable` or ``None``.
 
@@ -195,12 +187,11 @@ class Condition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         TypeError
             If `argument` is not ``None`` and not of type `Callable`.
 
         """
-        ...
 
     @staticmethod
     def equal(
@@ -208,7 +199,7 @@ class Condition:
         argument2: Any,
         param1: str,
         param2: str,
-        ex_type: Type[Exception] | None = None,
+        ex_type: builtins.type[Exception] | None = None,
     ) -> None:
         """
         Check the objects are equal.
@@ -227,12 +218,11 @@ class Condition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         ValueError
             If objects are not equal.
 
         """
-        ...
 
     @staticmethod
     def not_equal(
@@ -240,7 +230,7 @@ class Condition:
         object2: Any,
         param1: str,
         param2: str,
-        ex_type: Type[Exception] | None = None,
+        ex_type: builtins.type[Exception] | None = None,
     ) -> None:
         """
         Check the objects are not equal.
@@ -259,19 +249,18 @@ class Condition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         ValueError
             If objects are equal.
 
         """
-        ...
 
     @staticmethod
     def list_type(
         argument: list,
         expected_type: type,
         param: str,
-        ex_type: Type[Exception] | None = None,
+        ex_type: builtins.type[Exception] | None = None,
     ) -> None:
         """
         Check the list only contains types of the given expected type.
@@ -288,12 +277,11 @@ class Condition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         TypeError
              If `argument` is not empty and contains a type other than `expected_type`.
 
         """
-        ...
 
     @staticmethod
     def dict_types(
@@ -301,7 +289,7 @@ class Condition:
         key_type: type,
         value_type: type,
         param: str,
-        ex_type: Type[Exception] | None = None,
+        ex_type: builtins.type[Exception] | None = None,
     ) -> None:
         """
         Check the dictionary only contains types of the given key and value types to contain.
@@ -320,13 +308,12 @@ class Condition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         TypeError
             If `argument` is not empty and contains a key type other than `key_type`.
             If `argument` is not empty and contains a value type other than `value_type`.
 
         """
-        ...
 
     @staticmethod
     def is_in(
@@ -334,7 +321,7 @@ class Condition:
         collection: Any,
         param1: str,
         param2: str,
-        ex_type: Type[Exception] | None = None,
+        ex_type: builtins.type[Exception] | None = None,
     ) -> None:
         """
         Check the element is contained within the specified collection.
@@ -353,12 +340,11 @@ class Condition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         KeyError
             If `element` is not contained in the `collection`.
 
         """
-        ...
 
     @staticmethod
     def not_in(
@@ -366,7 +352,7 @@ class Condition:
         collection: Any,
         param1: str,
         param2: str,
-        ex_type: Type[Exception] | None = None,
+        ex_type: builtins.type[Exception] | None = None,
     ) -> None:
         """
         Check the element is not contained within the specified collection.
@@ -385,15 +371,14 @@ class Condition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         KeyError
             If `element` is contained in the `collection`.
 
         """
-        ...
 
     @staticmethod
-    def not_empty(collection: Any, param: str, ex_type: Type[Exception] | None = None) -> None:
+    def not_empty(collection: Any, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
         Check the collection is not empty.
 
@@ -407,15 +392,14 @@ class Condition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         ValueError
              If `collection` is empty.
 
         """
-        ...
 
     @staticmethod
-    def empty(collection: Any, param: str, ex_type: Type[Exception] | None = None) -> None:
+    def empty(collection: Any, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
         Check the collection is empty.
 
@@ -429,15 +413,14 @@ class Condition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         ValueError
              If `collection` is not empty.
 
         """
-        ...
 
     @staticmethod
-    def positive(value: float, param: str, ex_type: Type[Exception] | None = None) -> None:
+    def positive(value: float, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
         Check the real number value is positive (> 0).
 
@@ -451,15 +434,14 @@ class Condition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         ValueError
              If `value` is not positive (> 0).
 
         """
-        ...
 
     @staticmethod
-    def positive_int(value: int, param: str, ex_type: Type[Exception] | None = None) -> None:
+    def positive_int(value: int, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
         Check the integer value is a positive integer (> 0).
 
@@ -473,15 +455,14 @@ class Condition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         ValueError
               If `value` is not positive (> 0).
 
         """
-        ...
 
     @staticmethod
-    def not_negative(value: float, param: str, ex_type: Type[Exception] | None = None) -> None:
+    def not_negative(value: float, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
         Check the real number value is not negative (< 0).
 
@@ -495,15 +476,14 @@ class Condition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         ValueError
               If `value` is negative (< 0).
 
         """
-        ...
 
     @staticmethod
-    def not_negative_int(value: int, param: str, ex_type: Type[Exception] | None = None) -> None:
+    def not_negative_int(value: int, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
         Check the integer value is not negative (< 0).
 
@@ -517,12 +497,11 @@ class Condition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         ValueError
               If `value` is negative (< 0).
 
         """
-        ...
 
     @staticmethod
     def in_range(
@@ -530,7 +509,7 @@ class Condition:
         start: float,
         end: float,
         param: str,
-        ex_type: Type[Exception] | None = None,
+        ex_type: builtins.type[Exception] | None = None,
     ) -> None:
         """
         Check the real number value is within the specified range (inclusive).
@@ -552,12 +531,11 @@ class Condition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         ValueError
               If `value` is not within the range (inclusive of the end points).
 
         """
-        ...
 
     @staticmethod
     def in_range_int(
@@ -565,7 +543,7 @@ class Condition:
         start: int,
         end: int,
         param: str,
-        ex_type: Type[Exception] | None = None,
+        ex_type: builtins.type[Exception] | None = None,
     ) -> None:
         """
         Check the integer value is within the specified range (inclusive).
@@ -584,15 +562,14 @@ class Condition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         ValueError
               If `value` is not within the range (inclusive of the end points).
 
         """
-        ...
 
     @staticmethod
-    def valid_string(argument: str, param: str, ex_type: Type[Exception] | None = None) -> None:
+    def valid_string(argument: str, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
         Check the string argument is valid (not ``None``, empty or whitespace).
 
@@ -606,12 +583,11 @@ class Condition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         ValueError
               If `argument` is ``None``, empty or whitespace.
 
         """
-        ...
 
 
 class PyCondition:
@@ -625,7 +601,7 @@ class PyCondition:
     """
 
     @staticmethod
-    def is_true(predicate: bool, fail_msg: str, ex_type: Type[Exception] | None = None) -> None:
+    def is_true(predicate: bool, fail_msg: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
         Check the condition predicate is True.
 
@@ -639,15 +615,14 @@ class PyCondition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         ValueError
             If `predicate` condition is False.
 
         """
-        ...
 
     @staticmethod
-    def is_false(predicate: bool, fail_msg: str, ex_type: Type[Exception] | None = None) -> None:
+    def is_false(predicate: bool, fail_msg: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
         Check the condition predicate is False.
 
@@ -661,15 +636,14 @@ class PyCondition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         ValueError
             If `predicate` condition is True.
 
         """
-        ...
 
     @staticmethod
-    def none(argument: Any, param: str, ex_type: Type[Exception] | None = None) -> None:
+    def none(argument: Any, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
         Check the argument is ``None``.
 
@@ -683,15 +657,14 @@ class PyCondition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         TypeError
             If `argument` is not ``None``.
 
         """
-        ...
 
     @staticmethod
-    def not_none(argument: Any, param: str, ex_type: Type[Exception] | None = None) -> None:
+    def not_none(argument: Any, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
         Check the argument is not ``None``.
 
@@ -705,15 +678,14 @@ class PyCondition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         TypeError
             If `argument` is ``None``.
 
         """
-        ...
 
     @staticmethod
-    def type(argument: Any, expected: Any, param: str, ex_type: Type[Exception] | None = None) -> None:
+    def type(argument: Any, expected: Any, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
         Check the argument is of the specified type.
 
@@ -729,15 +701,14 @@ class PyCondition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         TypeError
             If `argument` is not of the expected type.
 
         """
-        ...
 
     @staticmethod
-    def type_or_none(argument: Any, expected: Any, param: str, ex_type: Type[Exception] | None = None) -> None:
+    def type_or_none(argument: Any, expected: Any, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
         Check the argument is of the specified type, or is ``None``.
 
@@ -753,15 +724,14 @@ class PyCondition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         TypeError
             If `argument` is not ``None`` and not of the expected type.
 
         """
-        ...
 
     @staticmethod
-    def callable(argument: Any, param: str, ex_type: Type[Exception] | None = None) -> None:
+    def callable(argument: Any, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
         Check the object is of type `Callable`.
 
@@ -775,15 +745,14 @@ class PyCondition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         TypeError
             If `argument` is not of type `Callable`.
 
         """
-        ...
 
     @staticmethod
-    def callable_or_none(argument: Any, param: str, ex_type: Type[Exception] | None = None) -> None:
+    def callable_or_none(argument: Any, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
         Check the object is of type `Callable` or ``None``.
 
@@ -797,15 +766,14 @@ class PyCondition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         TypeError
             If `argument` is not ``None`` and not of type `Callable`.
 
         """
-        ...
 
     @staticmethod
-    def equal(argument1: Any, argument2: Any, param1: str, param2: str, ex_type: Type[Exception] | None = None) -> None:
+    def equal(argument1: Any, argument2: Any, param1: str, param2: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
         Check the objects are equal.
 
@@ -823,15 +791,14 @@ class PyCondition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         ValueError
             If objects are not equal.
 
         """
-        ...
 
     @staticmethod
-    def not_equal(argument1: Any, argument2: Any, param1: str, param2: str, ex_type: Type[Exception] | None = None) -> None:
+    def not_equal(argument1: Any, argument2: Any, param1: str, param2: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
         Check the objects are not equal.
 
@@ -849,15 +816,14 @@ class PyCondition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         ValueError
             If objects are equal.
 
         """
-        ...
 
     @staticmethod
-    def list_type(argument: list, expected_type: type, param: str, ex_type: Type[Exception] | None = None) -> None:
+    def list_type(argument: list, expected_type: type, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
         Check the list only contains types of the given expected type.
 
@@ -873,15 +839,14 @@ class PyCondition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         TypeError
              If `argument` is not empty and contains a type other than `expected_type`.
 
         """
-        ...
 
     @staticmethod
-    def dict_types(argument: dict, key_type: type, value_type: type, param: str, ex_type: Type[Exception] | None = None) -> None:
+    def dict_types(argument: dict, key_type: type, value_type: type, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
         Check the dictionary only contains types of the given key and value types to contain.
 
@@ -899,16 +864,15 @@ class PyCondition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         TypeError
             If `argument` is not empty and contains a key type other than `key_type`.
             If `argument` is not empty and contains a value type other than `value_type`.
 
         """
-        ...
 
     @staticmethod
-    def is_in(element: Any, collection: Any, param1: str, param2: str, ex_type: Type[Exception] | None = None) -> None:
+    def is_in(element: Any, collection: Any, param1: str, param2: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
         Check the element is contained within the specified collection.
 
@@ -926,15 +890,14 @@ class PyCondition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         KeyError
             If `element` is not contained in the `collection`.
 
         """
-        ...
 
     @staticmethod
-    def not_in(element: Any, collection: Any, param1: str, param2: str, ex_type: Type[Exception] | None = None) -> None:
+    def not_in(element: Any, collection: Any, param1: str, param2: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
         Check the element is not contained within the specified collection.
 
@@ -952,15 +915,14 @@ class PyCondition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         KeyError
             If `element` is contained in the `collection`.
 
         """
-        ...
 
     @staticmethod
-    def not_empty(argument: Any, param: str, ex_type: Type[Exception] | None = None) -> None:
+    def not_empty(argument: Any, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
         Check the collection is not empty.
 
@@ -974,15 +936,14 @@ class PyCondition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         ValueError
              If `collection` is empty.
 
         """
-        ...
 
     @staticmethod
-    def empty(argument: Any, param: str, ex_type: Type[Exception] | None = None) -> None:
+    def empty(argument: Any, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
         Check the collection is empty.
 
@@ -996,15 +957,14 @@ class PyCondition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         ValueError
              If `collection` is not empty.
 
         """
-        ...
 
     @staticmethod
-    def positive(value: float, param: str, ex_type: Type[Exception] | None = None) -> None:
+    def positive(value: float, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
         Check the real number value is positive (> 0).
 
@@ -1018,15 +978,14 @@ class PyCondition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         ValueError
              If `value` is not positive (> 0).
 
         """
-        ...
 
     @staticmethod
-    def positive_int(value: int, param: str, ex_type: Type[Exception] | None = None) -> None:
+    def positive_int(value: int, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
         Check the integer value is a positive integer (> 0).
 
@@ -1040,15 +999,14 @@ class PyCondition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         ValueError
               If `value` is not positive (> 0).
 
         """
-        ...
 
     @staticmethod
-    def not_negative(value: float, param: str, ex_type: Type[Exception] | None = None) -> None:
+    def not_negative(value: float, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
         Check the real number value is not negative (< 0).
 
@@ -1062,15 +1020,14 @@ class PyCondition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         ValueError
               If `value` is negative (< 0).
 
         """
-        ...
 
     @staticmethod
-    def not_negative_int(value: int, param: str, ex_type: Type[Exception] | None = None) -> None:
+    def not_negative_int(value: int, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
         Check the integer value is not negative (< 0).
 
@@ -1084,12 +1041,11 @@ class PyCondition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         ValueError
               If `value` is negative (< 0).
 
         """
-        ...
 
     @staticmethod
     def in_range(
@@ -1097,7 +1053,7 @@ class PyCondition:
         start: float,
         end: float,
         param: str,
-        ex_type: Type[Exception] | None = None,
+        ex_type: builtins.type[Exception] | None = None,
     ) -> None:
         """
         Check the real number value is within the specified range (inclusive).
@@ -1119,12 +1075,11 @@ class PyCondition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         ValueError
               If `value` is not within the range (inclusive of the end points).
 
         """
-        ...
 
     @staticmethod
     def in_range_int(
@@ -1132,7 +1087,7 @@ class PyCondition:
         start: int,
         end: int,
         param: str,
-        ex_type: Type[Exception] | None = None,
+        ex_type: builtins.type[Exception] | None = None,
     ) -> None:
         """
         Check the integer value is within the specified range (inclusive).
@@ -1151,15 +1106,14 @@ class PyCondition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         ValueError
               If `value` is not within the range (inclusive of the end points).
 
         """
-        ...
 
     @staticmethod
-    def valid_string(argument: str, param: str, ex_type: Type[Exception] | None = None) -> None:
+    def valid_string(argument: str, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
         Check the string argument is valid (not ``None``, empty or whitespace).
 
@@ -1173,9 +1127,8 @@ class PyCondition:
             The custom exception type to be raised on a failed check.
 
         Raises
-        -------
+        ------
         ValueError
               If `argument` is ``None``, empty or whitespace.
 
         """
-        ...

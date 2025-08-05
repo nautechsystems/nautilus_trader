@@ -1,7 +1,8 @@
-from nautilus_trader.indicators.average.ma_factory import MovingAverageFactory
-from nautilus_trader.indicators.average.moving_average import MovingAverageType
-from nautilus_trader.model.data import Bar
-from nautilus_trader.indicators.base.indicator import Indicator
+from stubs.indicators.atr import AverageTrueRange
+from stubs.indicators.average.ma_factory import MovingAverageFactory
+from stubs.indicators.average.moving_average import MovingAverageType
+from stubs.indicators.base.indicator import Indicator
+from stubs.model.data import Bar
 
 class Pressure(Indicator):
     """
@@ -34,7 +35,7 @@ class Pressure(Indicator):
     def __init__(
         self,
         period: int,
-        ma_type: MovingAverageType = MovingAverageType.EXPONENTIAL,
+        ma_type: MovingAverageType = ...,
         atr_floor: float = 0,
     ) -> None: ...
     def handle_bar(self, bar: Bar) -> None:
@@ -47,7 +48,6 @@ class Pressure(Indicator):
             The update bar.
 
         """
-        ...
     def update_raw(
         self,
         high: float,
@@ -70,5 +70,4 @@ class Pressure(Indicator):
             The volume.
 
         """
-        ...
     def _reset(self) -> None: ...

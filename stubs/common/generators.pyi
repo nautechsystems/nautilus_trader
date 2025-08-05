@@ -1,6 +1,9 @@
-from typing import ClassVar
-
 from stubs.common.component import Clock
+from stubs.model.identifiers import ClientOrderId
+from stubs.model.identifiers import OrderListId
+from stubs.model.identifiers import PositionId
+from stubs.model.identifiers import StrategyId
+from stubs.model.identifiers import TraderId
 
 class IdentifierGenerator:
     """
@@ -58,7 +61,6 @@ class ClientOrderIdGenerator(IdentifierGenerator):
             The count to set.
 
         """
-        ...
     def generate(self) -> ClientOrderId:
         """
         Return a unique client order ID.
@@ -68,14 +70,12 @@ class ClientOrderIdGenerator(IdentifierGenerator):
         ClientOrderId
 
         """
-        ...
     def reset(self) -> None:
         """
         Reset the ID generator.
 
         All stateful fields are reset to their initial value.
         """
-        ...
 
 
 class OrderListIdGenerator(IdentifierGenerator):
@@ -113,7 +113,6 @@ class OrderListIdGenerator(IdentifierGenerator):
             The count to set.
 
         """
-        ...
     def generate(self) -> OrderListId:
         """
         Return a unique order list ID.
@@ -123,14 +122,12 @@ class OrderListIdGenerator(IdentifierGenerator):
         OrderListId
 
         """
-        ...
     def reset(self) -> None:
         """
         Reset the ID generator.
 
         All stateful fields are reset to their initial value.
         """
-        ...
 
 
 class PositionIdGenerator(IdentifierGenerator):
@@ -163,7 +160,6 @@ class PositionIdGenerator(IdentifierGenerator):
             If `count` is negative (< 0).
 
         """
-        ...
     def get_count(self, strategy_id: StrategyId) -> int:
         """
         Return the internal position count for the given strategy ID.
@@ -178,7 +174,6 @@ class PositionIdGenerator(IdentifierGenerator):
         int
 
         """
-        ...
     def generate(self, strategy_id: StrategyId, flipped: bool = False) -> PositionId:
         """
         Return a unique position ID.
@@ -196,12 +191,10 @@ class PositionIdGenerator(IdentifierGenerator):
         PositionId
 
         """
-        ...
     def reset(self) -> None:
         """
         Reset the ID generator.
 
         All stateful fields are reset to their initial value.
         """
-        ...
 

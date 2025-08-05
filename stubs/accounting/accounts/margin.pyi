@@ -1,6 +1,19 @@
 from decimal import Decimal
-from typing import Any, ClassVar
+from typing import Any
 
+from nautilus_trader.model.enums import LiquiditySide
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import PositionSide
+from stubs.accounting.accounts.base import Account
+from stubs.model.events.account import AccountState
+from stubs.model.events.order import OrderFilled
+from stubs.model.identifiers import InstrumentId
+from stubs.model.instruments.base import Instrument
+from stubs.model.objects import MarginBalance
+from stubs.model.objects import Money
+from stubs.model.objects import Price
+from stubs.model.objects import Quantity
+from stubs.model.position import Position
 
 class MarginAccount(Account):
     """
@@ -389,4 +402,3 @@ class MarginAccount(Account):
 
         """
     def balance_impact(self, instrument: Instrument, quantity: Quantity, price: Price, order_side: OrderSide) -> Money: ...
-

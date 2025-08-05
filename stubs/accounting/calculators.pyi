@@ -3,7 +3,7 @@ from decimal import Decimal
 
 import pandas as pd
 
-from nautilus_trader.model.identifiers import InstrumentId
+from stubs.model.identifiers import InstrumentId
 
 class RolloverInterestCalculator:
     """
@@ -55,4 +55,3 @@ class RolloverInterestCalculator:
 
         """
         ...
-

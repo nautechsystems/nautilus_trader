@@ -1,4 +1,6 @@
-from nautilus_trader.indicators.base.indicator import Indicator
+from stubs.indicators.average.moving_average import MovingAverageType
+from stubs.indicators.base.indicator import Indicator
+from stubs.model.data import Bar
 
 class AverageTrueRange(Indicator):
     """
@@ -25,7 +27,7 @@ class AverageTrueRange(Indicator):
     def __init__(
         self,
         period: int,
-        ma_type: MovingAverageType = MovingAverageType.SIMPLE,
+        ma_type: MovingAverageType = ...,
         use_previous: bool = True,
         value_floor: float = 0,
     ) -> None: ...
@@ -39,7 +41,6 @@ class AverageTrueRange(Indicator):
             The update bar.
 
         """
-        ...
     def update_raw(
         self,
         high: float,
@@ -59,5 +60,4 @@ class AverageTrueRange(Indicator):
             The close price.
 
         """
-        ...
     def _reset(self) -> None: ...

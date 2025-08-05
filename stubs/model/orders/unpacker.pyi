@@ -1,5 +1,7 @@
 from typing import Any
 
+from stubs.model.events.order import OrderInitialized
+from stubs.model.orders.base import Order
 
 class OrderUnpacker:
     """
@@ -20,7 +22,6 @@ class OrderUnpacker:
         Order
 
         """
-        ...
     @staticmethod
     def from_init(init: OrderInitialized) -> Order:
         """
@@ -36,4 +37,3 @@ class OrderUnpacker:
         Order
 
         """
-        ...

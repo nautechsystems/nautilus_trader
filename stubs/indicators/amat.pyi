@@ -1,6 +1,6 @@
-from typing import ClassVar
-
+from stubs.indicators.average.moving_average import MovingAverageType
 from stubs.indicators.base.indicator import Indicator
+from stubs.model.data import Bar
 
 class ArcherMovingAveragesTrends(Indicator):
     """
@@ -33,7 +33,7 @@ class ArcherMovingAveragesTrends(Indicator):
         fast_period: int,
         slow_period: int,
         signal_period: int,
-        ma_type: MovingAverageType = MovingAverageType.EXPONENTIAL,
+        ma_type: MovingAverageType = ...,
     ) -> None: ...
     def handle_bar(self, bar: Bar) -> None:
         """
@@ -45,7 +45,6 @@ class ArcherMovingAveragesTrends(Indicator):
             The update bar.
 
         """
-        ...
     def update_raw(self, close: float) -> None:
         """
         Update the indicator with the given close price value.
@@ -56,6 +55,5 @@ class ArcherMovingAveragesTrends(Indicator):
             The close price.
 
         """
-        ...
     def _reset(self) -> None: ...
 

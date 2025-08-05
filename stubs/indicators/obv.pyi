@@ -1,5 +1,7 @@
 from collections import deque
-from nautilus_trader.indicators.base.indicator import Indicator
+
+from stubs.indicators.base.indicator import Indicator
+from stubs.model.data import Bar
 
 class OnBalanceVolume(Indicator):
     """
@@ -32,7 +34,6 @@ class OnBalanceVolume(Indicator):
             The update bar.
 
         """
-        ...
     def update_raw(
         self,
         open: float,
@@ -52,5 +53,4 @@ class OnBalanceVolume(Indicator):
             The close price.
 
         """
-        ...
     def _reset(self) -> None: ...

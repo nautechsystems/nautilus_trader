@@ -1,7 +1,8 @@
 from collections import deque
 
-from nautilus_trader.indicators.base.indicator import Indicator
-
+from stubs.indicators.base.indicator import Indicator
+from stubs.model.data import QuoteTick
+from stubs.model.identifiers import InstrumentId
 
 class SpreadAnalyzer(Indicator):
     """
@@ -43,5 +44,4 @@ class SpreadAnalyzer(Indicator):
             If `tick.instrument_id` does not equal the analyzers instrument ID.
 
         """
-        ...
     def _reset(self) -> None: ...

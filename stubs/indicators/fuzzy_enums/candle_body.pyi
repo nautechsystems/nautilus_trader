@@ -1,3 +1,3 @@
-from nautilus_trader.indicators.fuzzy_enums.candle_body import CandleBodySize
+from nautilus_trader.core.nautilus_pyo3 import CandleBodySize
 
 __all__ = [CandleBodySize]

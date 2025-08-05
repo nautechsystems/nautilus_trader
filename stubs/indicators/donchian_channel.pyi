@@ -1,6 +1,9 @@
 from collections import deque
-from typing import ClassVar
 
+from stubs.indicators.base.indicator import Indicator
+from stubs.model.data import Bar
+from stubs.model.data import QuoteTick
+from stubs.model.data import TradeTick
 
 class DonchianChannel(Indicator):
     """
@@ -41,7 +44,6 @@ class DonchianChannel(Indicator):
             The tick for the update.
 
         """
-        ...
     def handle_trade_tick(self, tick: TradeTick) -> None:
         """
         Update the indicator with the given ticks price.
@@ -52,7 +54,6 @@ class DonchianChannel(Indicator):
             The tick for the update.
 
         """
-        ...
     def handle_bar(self, bar: Bar) -> None:
         """
         Update the indicator with the given bar.
@@ -63,7 +64,6 @@ class DonchianChannel(Indicator):
             The update bar.
 
         """
-        ...
     def update_raw(self, high: float, low: float) -> None:
         """
         Update the indicator with the given prices.
@@ -76,5 +76,4 @@ class DonchianChannel(Indicator):
             The price for the lower channel.
 
         """
-        ...
     def _reset(self) -> None: ...

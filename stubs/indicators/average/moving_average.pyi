@@ -2,15 +2,15 @@ from enum import Enum
 from enum import unique
 from typing import ClassVar
 
-from nautilus_trader.core.rust.model import PriceType
-from nautilus_trader.indicators.base.indicator import Indicator
-
+from nautilus_trader.model.enums import PriceType
+from stubs.indicators.base.indicator import Indicator
 
 @unique
 class MovingAverageType(Enum):
     """
     Represents the type of moving average.
     """
+
     SIMPLE: ClassVar[int] = 0
     EXPONENTIAL: ClassVar[int] = 1
     WEIGHTED: ClassVar[int] = 2
@@ -60,7 +60,6 @@ class MovingAverage(Indicator):
             The update value.
 
         """
-        ...
     def _increment_count(self) -> None: ...
     def _reset(self) -> None: ...
     def _reset_ma(self) -> None: ...

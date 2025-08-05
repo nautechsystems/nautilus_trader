@@ -1,6 +1,13 @@
 from decimal import Decimal
 from typing import ClassVar
 
+from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import OrderSide
+from stubs.accounting.accounts.cash import CashAccount
+from stubs.model.instruments.base import Instrument
+from stubs.model.objects import Money
+from stubs.model.objects import Price
+from stubs.model.objects import Quantity
 
 class BettingAccount(CashAccount):
     """

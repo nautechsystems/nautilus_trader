@@ -5,7 +5,16 @@ from decimal import Decimal
 
 import pandas as pd
 
+from stubs.common.component import Clock
 from stubs.common.component import Logger
+from stubs.common.component import TimeEvent
+from stubs.model.data import Bar
+from stubs.model.data import BarType
+from stubs.model.data import QuoteTick
+from stubs.model.data import TradeTick
+from stubs.model.instruments.base import Instrument
+from stubs.model.objects import Price
+from stubs.model.objects import Quantity
 
 class BarBuilder:
     """

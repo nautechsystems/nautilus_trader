@@ -1,7 +1,6 @@
-from nautilus_trader.indicators.average.moving_average import MovingAverageType
-from nautilus_trader.model.data import Bar
-from nautilus_trader.indicators.atr import AverageTrueRange
-from nautilus_trader.indicators.base.indicator import Indicator
+from stubs.indicators.average.moving_average import MovingAverageType
+from stubs.indicators.base.indicator import Indicator
+from stubs.model.data import Bar
 
 class VolatilityRatio(Indicator):
     """
@@ -41,7 +40,7 @@ class VolatilityRatio(Indicator):
         self,
         fast_period: int,
         slow_period: int,
-        ma_type: MovingAverageType = MovingAverageType.SIMPLE,
+        ma_type: MovingAverageType = ...,
         use_previous: bool = True,
         value_floor: float = 0,
     ) -> None: ...
@@ -55,7 +54,6 @@ class VolatilityRatio(Indicator):
             The update bar.
 
         """
-        ...
     def update_raw(
         self,
         high: float,
@@ -75,5 +73,4 @@ class VolatilityRatio(Indicator):
             The close price.
 
         """
-        ...
     def _reset(self) -> None: ...

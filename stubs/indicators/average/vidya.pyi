@@ -1,6 +1,10 @@
-from nautilus_trader.indicators.average.ma_factory import MovingAverageType
-from nautilus_trader.indicators.average.moving_average import MovingAverage
-
+from nautilus_trader.model.enums import PriceType
+from stubs.indicators.average.moving_average import MovingAverage
+from stubs.indicators.average.moving_average import MovingAverageType
+from stubs.indicators.cmo import ChandeMomentumOscillator
+from stubs.model.data import Bar
+from stubs.model.data import QuoteTick
+from stubs.model.data import TradeTick
 
 class VariableIndexDynamicAverage(MovingAverage):
     """
@@ -34,8 +38,8 @@ class VariableIndexDynamicAverage(MovingAverage):
     def __init__(
         self,
         period: int,
-        price_type: PriceType = PriceType.LAST,
-        cmo_ma_type: MovingAverageType = MovingAverageType.SIMPLE,
+        price_type: PriceType = ...,
+        cmo_ma_type: MovingAverageType = ...,
     ) -> None: ...
     def handle_quote_tick(self, tick: QuoteTick) -> None:
         """
@@ -47,7 +51,6 @@ class VariableIndexDynamicAverage(MovingAverage):
             The update tick to handle.
 
         """
-        ...
     def handle_trade_tick(self, tick: TradeTick) -> None:
         """
         Update the indicator with the given trade tick.
@@ -58,7 +61,6 @@ class VariableIndexDynamicAverage(MovingAverage):
             The update tick to handle.
 
         """
-        ...
     def handle_bar(self, bar: Bar) -> None:
         """
         Update the indicator with the given bar.
@@ -69,7 +71,6 @@ class VariableIndexDynamicAverage(MovingAverage):
             The update bar to handle.
 
         """
-        ...
     def update_raw(self, value: float) -> None:
         """
         Update the indicator with the given raw value.
@@ -80,4 +81,3 @@ class VariableIndexDynamicAverage(MovingAverage):
             The update value.
 
         """
-        ...

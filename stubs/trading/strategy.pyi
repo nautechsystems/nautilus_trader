@@ -1,7 +1,51 @@
 from typing import Any
 
+from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import PositionSide
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.trading.config import ImportableStrategyConfig
 from nautilus_trader.trading.config import StrategyConfig
+from stubs.cache.base import CacheFacade
+from stubs.cache.cache import Cache
+from stubs.common.actor import Actor
+from stubs.common.component import Clock
+from stubs.common.component import MessageBus
+from stubs.common.component import TimeEvent
+from stubs.common.factories import OrderFactory
+from stubs.core.message import Event
+from stubs.model.events.order import OrderAccepted
+from stubs.model.events.order import OrderCanceled
+from stubs.model.events.order import OrderCancelRejected
+from stubs.model.events.order import OrderDenied
+from stubs.model.events.order import OrderEmulated
+from stubs.model.events.order import OrderEvent
+from stubs.model.events.order import OrderExpired
+from stubs.model.events.order import OrderFilled
+from stubs.model.events.order import OrderInitialized
+from stubs.model.events.order import OrderModifyRejected
+from stubs.model.events.order import OrderPendingCancel
+from stubs.model.events.order import OrderPendingUpdate
+from stubs.model.events.order import OrderRejected
+from stubs.model.events.order import OrderReleased
+from stubs.model.events.order import OrderSubmitted
+from stubs.model.events.order import OrderTriggered
+from stubs.model.events.order import OrderUpdated
+from stubs.model.events.position import PositionChanged
+from stubs.model.events.position import PositionClosed
+from stubs.model.events.position import PositionEvent
+from stubs.model.events.position import PositionOpened
+from stubs.model.identifiers import ClientId
+from stubs.model.identifiers import InstrumentId
+from stubs.model.identifiers import PositionId
+from stubs.model.identifiers import StrategyId
+from stubs.model.identifiers import TraderId
+from stubs.model.objects import Price
+from stubs.model.objects import Quantity
+from stubs.model.orders.base import Order
+from stubs.model.orders.list import OrderList
+from stubs.model.position import Position
+from stubs.portfolio.base import PortfolioFacade
 
 class Strategy(Actor):
     """
@@ -63,7 +107,6 @@ class Strategy(Actor):
         ImportableStrategyConfig
 
         """
-        ...
     def on_start(self) -> None: ...
     def on_stop(self) -> None: ...
     def on_resume(self) -> None: ...
@@ -97,7 +140,6 @@ class Strategy(Actor):
         System method (not intended to be called by user code).
 
         """
-        ...
     def change_id(self, strategy_id: StrategyId) -> None:
         """
         Change the strategies identifier to the given `strategy_id`.
@@ -108,7 +150,6 @@ class Strategy(Actor):
             The new strategy ID to change to.
 
         """
-        ...
     def change_order_id_tag(self, order_id_tag: str) -> None:
         """
         Change the order identifier tag to the given `order_id_tag`.
@@ -119,7 +160,6 @@ class Strategy(Actor):
             The new order ID tag to change to.
 
         """
-        ...
     def _start(self) -> None: ...
     def _reset(self) -> None: ...
     def on_order_event(self, event: OrderEvent) -> None:
@@ -136,7 +176,6 @@ class Strategy(Actor):
         System method (not intended to be called by user code).
 
         """
-        ...
     def on_order_initialized(self, event: OrderInitialized) -> None:
         """
         Actions to be performed when running and receives an order initialized event.
@@ -151,7 +190,6 @@ class Strategy(Actor):
         System method (not intended to be called by user code).
 
         """
-        ...
     def on_order_denied(self, event: OrderDenied) -> None:
         """
         Actions to be performed when running and receives an order denied event.
@@ -166,7 +204,6 @@ class Strategy(Actor):
         System method (not intended to be called by user code).
 
         """
-        ...
     def on_order_emulated(self, event: OrderEmulated) -> None:
         """
         Actions to be performed when running and receives an order emulated event.
@@ -181,7 +218,6 @@ class Strategy(Actor):
         System method (not intended to be called by user code).
 
         """
-        ...
     def on_order_released(self, event: OrderReleased) -> None:
         """
         Actions to be performed when running and receives an order released event.
@@ -196,7 +232,6 @@ class Strategy(Actor):
         System method (not intended to be called by user code).
 
         """
-        ...
     def on_order_submitted(self, event: OrderSubmitted) -> None:
         """
         Actions to be performed when running and receives an order submitted event.
@@ -211,7 +246,6 @@ class Strategy(Actor):
         System method (not intended to be called by user code).
 
         """
-        ...
     def on_order_rejected(self, event: OrderRejected) -> None:
         """
         Actions to be performed when running and receives an order rejected event.
@@ -226,7 +260,6 @@ class Strategy(Actor):
         System method (not intended to be called by user code).
 
         """
-        ...
     def on_order_accepted(self, event: OrderAccepted) -> None:
         """
         Actions to be performed when running and receives an order accepted event.
@@ -241,7 +274,6 @@ class Strategy(Actor):
         System method (not intended to be called by user code).
 
         """
-        ...
     def on_order_canceled(self, event: OrderCanceled) -> None:
         """
         Actions to be performed when running and receives an order canceled event.
@@ -256,7 +288,6 @@ class Strategy(Actor):
         System method (not intended to be called by user code).
 
         """
-        ...
     def on_order_expired(self, event: OrderExpired) -> None:
         """
         Actions to be performed when running and receives an order expired event.
@@ -271,7 +302,6 @@ class Strategy(Actor):
         System method (not intended to be called by user code).
 
         """
-        ...
     def on_order_triggered(self, event: OrderTriggered) -> None:
         """
         Actions to be performed when running and receives an order triggered event.
@@ -286,7 +316,6 @@ class Strategy(Actor):
         System method (not intended to be called by user code).
 
         """
-        ...
     def on_order_pending_update(self, event: OrderPendingUpdate) -> None:
         """
         Actions to be performed when running and receives an order pending update event.
@@ -301,7 +330,6 @@ class Strategy(Actor):
         System method (not intended to be called by user code).
 
         """
-        ...
     def on_order_pending_cancel(self, event: OrderPendingCancel) -> None:
         """
         Actions to be performed when running and receives an order pending cancel event.
@@ -316,7 +344,6 @@ class Strategy(Actor):
         System method (not intended to be called by user code).
 
         """
-        ...
     def on_order_modify_rejected(self, event: OrderModifyRejected) -> None:
         """
         Actions to be performed when running and receives an order modify rejected event.
@@ -331,7 +358,6 @@ class Strategy(Actor):
         System method (not intended to be called by user code).
 
         """
-        ...
     def on_order_cancel_rejected(self, event: OrderCancelRejected) -> None:
         """
         Actions to be performed when running and receives an order cancel rejected event.
@@ -346,7 +372,6 @@ class Strategy(Actor):
         System method (not intended to be called by user code).
 
         """
-        ...
     def on_order_updated(self, event: OrderUpdated) -> None:
         """
         Actions to be performed when running and receives an order updated event.
@@ -361,7 +386,6 @@ class Strategy(Actor):
         System method (not intended to be called by user code).
 
         """
-        ...
     def on_order_filled(self, event: OrderFilled) -> None:
         """
         Actions to be performed when running and receives an order filled event.
@@ -376,7 +400,6 @@ class Strategy(Actor):
         System method (not intended to be called by user code).
 
         """
-        ...
     def on_position_event(self, event: PositionEvent) -> None:
         """
         Actions to be performed when running and receives a position event.
@@ -391,7 +414,6 @@ class Strategy(Actor):
         System method (not intended to be called by user code).
 
         """
-        ...
     def on_position_opened(self, event: PositionOpened) -> None:
         """
         Actions to be performed when running and receives a position opened event.
@@ -406,7 +428,6 @@ class Strategy(Actor):
         System method (not intended to be called by user code).
 
         """
-        ...
     def on_position_changed(self, event: PositionChanged) -> None:
         """
         Actions to be performed when running and receives a position changed event.
@@ -421,7 +442,6 @@ class Strategy(Actor):
         System method (not intended to be called by user code).
 
         """
-        ...
     def on_position_closed(self, event: PositionClosed) -> None:
         """
         Actions to be performed when running and receives a position closed event.
@@ -436,7 +456,6 @@ class Strategy(Actor):
         System method (not intended to be called by user code).
 
         """
-        ...
     def submit_order(
         self,
         order: Order,
@@ -479,7 +498,6 @@ class Strategy(Actor):
         not be what you intended.
 
         """
-        ...
     def submit_order_list(
         self,
         order_list: OrderList,
@@ -522,7 +540,6 @@ class Strategy(Actor):
         not be what you intended.
 
         """
-        ...
     def modify_order(
         self,
         order: Order,
@@ -578,7 +595,6 @@ class Strategy(Actor):
         https://www.onixs.biz/fix-dictionary/5.0.SP2/msgType_G_71.html
 
         """
-        ...
     def cancel_order(self, order: Order, client_id: ClientId | None = None, params: dict[str, Any] | None = None) -> None:
         """
         Cancel the given order with optional routing instructions.
@@ -597,7 +613,6 @@ class Strategy(Actor):
             Additional parameters potentially used by a specific client.
 
         """
-        ...
     def cancel_orders(self, orders: list[Order], client_id: ClientId | None = None, params: dict[str, Any] | None = None) -> None:
         """
         Batch cancel the given list of orders with optional routing instructions.
@@ -625,11 +640,10 @@ class Strategy(Actor):
             If `orders` contains a type other than `Order`.
 
         """
-        ...
     def cancel_all_orders(
         self,
         instrument_id: InstrumentId,
-        order_side: OrderSide = OrderSide.NO_ORDER_SIDE,
+        order_side: OrderSide = ...,
         client_id: ClientId | None = None,
         params: dict[str, Any] | None = None,
     ) -> None:
@@ -652,13 +666,12 @@ class Strategy(Actor):
             Additional parameters potentially used by a specific client.
 
         """
-        ...
     def close_position(
         self,
         position: Position,
         client_id: ClientId | None = None,
         tags: list[str] | None = None,
-        time_in_force: TimeInForce = TimeInForce.GTC,
+        time_in_force: TimeInForce = ...,
         reduce_only: bool = True,
         params: dict[str, Any] | None = None,
     ) -> None:
@@ -686,14 +699,13 @@ class Strategy(Actor):
             Additional parameters potentially used by a specific client.
 
         """
-        ...
     def close_all_positions(
         self,
         instrument_id: InstrumentId,
-        position_side: PositionSide = PositionSide.NO_POSITION_SIDE,
+        position_side: PositionSide = ...,
         client_id: ClientId | None = None,
         tags: list[str] | None = None,
-        time_in_force: TimeInForce = TimeInForce.GTC,
+        time_in_force: TimeInForce = ...,
         reduce_only: bool = True,
         params: dict[str, Any] | None = None,
     ) -> None:
@@ -720,7 +732,6 @@ class Strategy(Actor):
             Additional parameters potentially used by a specific client.
 
         """
-        ...
     def query_order(self, order: Order, client_id: ClientId | None = None, params: dict[str, Any] | None = None) -> None:
         """
         Query the given order with optional routing instructions.
@@ -741,7 +752,6 @@ class Strategy(Actor):
             Additional parameters potentially used by a specific client.
 
         """
-        ...
     def cancel_gtd_expiry(self, order: Order) -> None:
         """
         Cancel the managed GTD expiry for the given order.
@@ -754,7 +764,6 @@ class Strategy(Actor):
             The order to cancel the GTD expiry for.
 
         """
-        ...
     def _expire_gtd_order(self, event: TimeEvent) -> None: ...
     def handle_event(self, event: Event) -> None:
         """
@@ -772,5 +781,4 @@ class Strategy(Actor):
         System method (not intended to be called by user code).
 
         """
-        ...
 

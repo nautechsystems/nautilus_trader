@@ -1,5 +1,11 @@
 from typing import Any
 
+from stubs.model.identifiers import InstrumentId
+from stubs.model.identifiers import Symbol
+from stubs.model.instruments.base import Instrument
+from stubs.model.objects import Currency
+from stubs.model.objects import Price
+from stubs.model.objects import Quantity
 
 class IndexInstrument(Instrument):
     """
@@ -77,7 +83,6 @@ class IndexInstrument(Instrument):
         IndexInstrument
 
         """
-        ...
     @staticmethod
     def to_dict(obj: Instrument) -> dict[str, Any]:
         """
@@ -88,7 +93,6 @@ class IndexInstrument(Instrument):
         dict[str, object]
 
         """
-        ...
     @staticmethod
     def from_pyo3(pyo3_instrument: Any) -> IndexInstrument:
         """
@@ -104,4 +108,3 @@ class IndexInstrument(Instrument):
         IndexInstrument
 
         """
-        ...
