@@ -64,6 +64,7 @@ use crate::{
 ///
 /// This function properly acquires the Python GIL before performing the clone operation,
 /// ensuring thread-safe access to the Python object and correct reference counting.
+#[must_use]
 pub fn clone_py_object(obj: &PyObject) -> PyObject {
     Python::with_gil(|py| obj.clone_ref(py))
 }
