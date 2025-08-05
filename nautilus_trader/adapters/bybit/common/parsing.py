@@ -58,7 +58,7 @@ def parse_bybit_delta(
 ) -> OrderBookDelta:
     price = values[0]
     size = values[1]
-    
+
     # Handle zero sizes better
     if size.as_double() == 0:
         action = BookAction.DELETE

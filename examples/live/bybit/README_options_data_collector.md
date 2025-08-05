@@ -20,12 +20,14 @@ This script discovers all available options for a given underlying asset (e.g., 
 ## Setup
 
 1. Set your Bybit API credentials as environment variables:
+
 ```bash
 export BYBIT_API_KEY="your_api_key"
 export BYBIT_API_SECRET="your_api_secret"
 ```
 
 2. Run the script:
+
 ```bash
 python examples/live/bybit/bybit_options_data_collector.py
 ```
@@ -68,6 +70,7 @@ data/
 
 ### Quote Ticks Data
 Each quote tick record contains:
+
 - `timestamp`: When the data was received
 - `instrument_id`: The instrument identifier
 - `bid_price`: Best bid price
@@ -79,6 +82,7 @@ Each quote tick record contains:
 
 ### Orderbook Deltas Data
 Each orderbook delta record contains:
+
 - `timestamp`: When the data was received
 - `instrument_id`: The instrument identifier
 - `sequence`: Sequence number
@@ -91,6 +95,7 @@ Each orderbook delta record contains:
 ## Usage Examples
 
 ### Basic Usage
+
 ```bash
 # Collect data for all BTC options
 python examples/live/bybit/bybit_options_data_collector.py
@@ -98,6 +103,7 @@ python examples/live/bybit/bybit_options_data_collector.py
 
 ### Custom Configuration
 You can modify the script to:
+
 - Change the underlying asset (e.g., ETH instead of BTC)
 - Adjust the orderbook depth
 - Change the data storage directory
@@ -106,6 +112,7 @@ You can modify the script to:
 ## Monitoring
 
 The script provides real-time monitoring through logs:
+
 - Discovery phase: Shows all found options grouped by expiry
 - Data collection: Shows statistics every 60 seconds (configurable)
 - File operations: Logs when data is written to parquet files
@@ -144,4 +151,4 @@ The script provides real-time monitoring through logs:
 1. **No options found**: Check that the underlying asset is correct and that Bybit has options available for that asset
 2. **Connection issues**: Verify your API credentials and internet connection
 3. **Memory issues**: Reduce the batch_size if collecting data for many options
-4. **Disk space**: Monitor disk usage as the script can generate large amounts of data 
+4. **Disk space**: Monitor disk usage as the script can generate large amounts of data

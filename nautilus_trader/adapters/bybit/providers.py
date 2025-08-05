@@ -220,14 +220,24 @@ class BybitInstrumentProvider(InstrumentProvider):
             quote_currency = self.currency(instrument.quoteCoin)
             ts_event = self._clock.timestamp_ns()
             ts_init = self._clock.timestamp_ns()
-            instrument = instrument.parse_to_instrument(
-                base_currency=base_currency,
-                quote_currency=quote_currency,
-                fee_rate=fee_rate,
-                ts_event=ts_event,
-                ts_init=ts_init,
-            )
-            self.add(instrument=instrument)
+
+            # Handle different instrument types with their specific parse_to_instrument signatures
+            if isinstance(instrument, BybitInstrumentOption):
+                # Options only need quote_currency
+                parsed_instrument = instrument.parse_to_instrument(
+                    quote_currency=quote_currency,
+                )
+            else:
+                # Other instrument types need all parameters
+                parsed_instrument = instrument.parse_to_instrument(
+                    base_currency=base_currency,
+                    quote_currency=quote_currency,
+                    fee_rate=fee_rate,
+                    ts_event=ts_event,
+                    ts_init=ts_init,
+                )
+
+            self.add(instrument=parsed_instrument)
         except ValueError as e:
             if self._log_warnings:
                 self._log.warning(
