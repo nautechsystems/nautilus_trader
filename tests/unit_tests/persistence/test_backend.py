@@ -43,7 +43,7 @@ def test_backend_session_order_book_deltas() -> None:
     # Assert
     assert pd.read_parquet(data_path).shape[0] == 1077
     assert len(ticks) == 1077
-    is_ascending = all(ticks[i].ts_init <= ticks[i].ts_init for i in range(len(ticks) - 1))
+    is_ascending = all(ticks[i].ts_init <= ticks[i+1].ts_init for i in range(len(ticks) - 1))
     assert is_ascending
 
 
@@ -68,7 +68,7 @@ def test_backend_session_quotes() -> None:
     # Assert
     assert len(ticks) == 9_500
     assert str(ticks[-1]) == "EUR/USD.SIM,112.13000,112.13200,10000000,10000000,1577919652000000125"
-    is_ascending = all(ticks[i].ts_init <= ticks[i].ts_init for i in range(len(ticks) - 1))
+    is_ascending = all(ticks[i].ts_init <= ticks[i+1].ts_init for i in range(len(ticks) - 1))
     assert is_ascending
 
 
@@ -91,7 +91,7 @@ def test_backend_session_trades() -> None:
 
     # Assert
     assert len(ticks) == 100
-    is_ascending = all(ticks[i].ts_init <= ticks[i].ts_init for i in range(len(ticks) - 1))
+    is_ascending = all(ticks[i].ts_init <= ticks[i+1].ts_init for i in range(len(ticks) - 1))
     assert is_ascending
 
 
@@ -114,7 +114,7 @@ def test_backend_session_bars() -> None:
 
     # Assert
     assert len(bars) == 10
-    is_ascending = all(bars[i].ts_init <= bars[i].ts_init for i in range(len(bars) - 1))
+    is_ascending = all(bars[i].ts_init <= bars[i+1].ts_init for i in range(len(bars) - 1))
     assert is_ascending
 
 
@@ -140,7 +140,7 @@ def test_backend_session_multiple_types() -> None:
 
     # Assert
     assert len(ticks) == 9_600
-    is_ascending = all(ticks[i].ts_init <= ticks[i].ts_init for i in range(len(ticks) - 1))
+    is_ascending = all(ticks[i].ts_init <= ticks[i+1].ts_init for i in range(len(ticks) - 1))
     assert is_ascending
 
 
@@ -170,7 +170,7 @@ def test_backend_session_register_object_store_from_uri_local_file() -> None:
 
     # Assert
     assert len(ticks) == 100
-    is_ascending = all(ticks[i].ts_init <= ticks[i].ts_init for i in range(len(ticks) - 1))
+    is_ascending = all(ticks[i].ts_init <= ticks[i+1].ts_init for i in range(len(ticks) - 1))
     assert is_ascending
 
 
