@@ -93,6 +93,7 @@ Released on TBD (UTC).
 - Fixed bars request pagination logic for OKX (#2798), thanks @nicolad
 - Fixed dYdX order and fill message schemas (#2824), thanks @davidsblom
 - Fixed Binance Spot testnet streaming URL, thanks for reporting @Frzgunr1
+- Fixed Binance Ed25519 key handling
 - Fixed RPC client content type header (#2828), thanks @filipmacek
 
 ### Documentation Updates
