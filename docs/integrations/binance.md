@@ -38,7 +38,7 @@ on the use case.
 - `BinanceLiveExecClientFactory`: Factory for Binance execution clients (used by the trading node builder).
 
 :::note
-Most users will simply define a configuration for a live trading node (as below),
+Most users will define a configuration for a live trading node (as below),
 and won't need to necessarily work with these lower level components directly.
 :::
 
@@ -47,7 +47,7 @@ and won't need to necessarily work with these lower level components directly.
 | Product Type                             | Supported | Notes                               |
 |------------------------------------------|-----------|-------------------------------------|
 | Spot Markets (incl. Binance US)          | ✓         |                                     |
-| Margin Accounts (Cross & Isolated)       | ✗         | Margin trading not implemented      |
+| Margin Accounts (Cross & Isolated)       | -         | Margin trading not implemented.     |
 | USDT-Margined Futures (PERP & Delivery)  | ✓         |                                     |
 | Coin-Margined Futures                    | ✓         |                                     |
 
@@ -146,7 +146,7 @@ Binance uses the concept of an activation price for trailing stops, as detailed 
 This approach is somewhat unconventional. For trailing stop orders to function on Binance, the activation price should be set using the `activation_price` parameter.
 
 Note that the activation price is **not** the same as the trigger/STOP price. Binance will always calculate the trigger price for the order based on the current market price and the callback rate provided by `trailing_offset`.
-The activation price is simply the price at which the order will begin trailing based on the callback rate.
+The activation price is the price at which the order will begin trailing based on the callback rate.
 
 :::warning
 For Binance trailing stop orders, you must use `activation_price` instead of `trigger_price`. Using `trigger_price` will result in an order rejection.
@@ -217,31 +217,55 @@ node.add_exec_client_factory(BINANCE, BinanceLiveExecClientFactory)
 node.build()
 ```
 
+### Key types
+
+Binance supports multiple cryptographic key types for API authentication:
+
+- **HMAC** (default): Uses HMAC-SHA256 with your API secret
+- **RSA**: Uses RSA signature with your private key
+- **Ed25519**: Uses Ed25519 signature with your private key
+
+You can specify the key type in your configuration:
+
+```python
+from nautilus_trader.adapters.binance import BinanceKeyType
+
+config = TradingNodeConfig(
+    data_clients={
+        BINANCE: {
+            "api_key": "YOUR_BINANCE_API_KEY",
+            "api_secret": "YOUR_BINANCE_API_SECRET",  # For HMAC
+            "key_type": BinanceKeyType.ED25519,  # or RSA, HMAC (default)
+            "account_type": "spot",
+        },
+    },
+)
+```
+
+:::note
+Ed25519 keys must be provided in base64-encoded ASN.1/DER format. The implementation automatically extracts the 32-byte seed from the DER structure.
+:::
+
 ### API credentials
 
-There are two options for supplying your credentials to the Binance clients.
-Either pass the corresponding `api_key` and `api_secret` values to the configuration objects, or
+There are multiple options for supplying your credentials to the Binance clients.
+Either pass the corresponding values to the configuration objects, or
 set the following environment variables:
 
-For Binance Spot/Margin live clients, you can set:
+For Binance live clients (shared between Spot/Margin and Futures), you can set:
 
 - `BINANCE_API_KEY`
-- `BINANCE_API_SECRET`
+- `BINANCE_API_SECRET` (for all key types)
 
 For Binance Spot/Margin testnet clients, you can set:
 
 - `BINANCE_TESTNET_API_KEY`
-- `BINANCE_TESTNET_API_SECRET`
-
-For Binance Futures live clients, you can set:
-
-- `BINANCE_FUTURES_API_KEY`
-- `BINANCE_FUTURES_API_SECRET`
+- `BINANCE_TESTNET_API_SECRET` (for all key types)
 
 For Binance Futures testnet clients, you can set:
 
 - `BINANCE_FUTURES_TESTNET_API_KEY`
-- `BINANCE_FUTURES_TESTNET_API_SECRET`
+- `BINANCE_FUTURES_TESTNET_API_SECRET` (for all key types)
 
 When starting the trading node, you'll receive immediate confirmation of whether your
 credentials are valid and have trading permissions.
@@ -276,7 +300,7 @@ should behave identically to standard Binance.
 ### Testnets
 
 It's also possible to configure one or both clients to connect to the Binance testnet.
-Simply set the `testnet` option to `True` (this is `False` by default):
+Set the `testnet` option to `True` (this is `False` by default):
 
 ```python
 from nautilus_trader.adapters.binance import BINANCE
@@ -451,7 +475,7 @@ As more adapters are built out which need for example mark price and funding rat
 methods may eventually become first-class (not requiring custom/generic subscriptions as below).
 :::
 
-### BinanceFuturesMarkPriceUpdate
+### `BinanceFuturesMarkPriceUpdate`
 
 You can subscribe to `BinanceFuturesMarkPriceUpdate` (including funding rating info)
 data streams by subscribing in the following way from your actor or strategy:

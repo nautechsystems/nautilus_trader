@@ -31,6 +31,7 @@ Released on TBD (UTC).
 - Reverted implementation of `delete_account_event` from cache database that was too inefficient and is now a no-op pending redesign
 - Renamed `ParquetDataCatalog.reset_catalog_file_names` to `reset_all_file_names`
 - Removed the generic `cvec_drop` FFI function, as it was unused and prone to misuse, potentially causing memory leaks
+- Simplified Binance environment variables for API credentials: removed separate variables for RSA/Ed25519 keys and consolidated mainnet spot/futures credentials
 
 ### Internal Improvements
 - Refactored OKX adapter to Rust API clients
