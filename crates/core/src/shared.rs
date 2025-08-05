@@ -32,7 +32,7 @@
 //! * Use **`WeakCell<T>`** for back-references that could otherwise form a reference cycle.
 //!   The back-pointer does **not** keep the value alive, and every access must first
 //!   `upgrade()` to a strong `SharedCell`. This pattern is how we break circular ownership such
-//!   as *Exchange ↔ ExecutionClient*: the exchange keeps a `SharedCell` to the client, while the
+//!   as *Exchange ↔ `ExecutionClient`*: the exchange keeps a `SharedCell` to the client, while the
 //!   client holds only a `WeakCell` back to the exchange.
 
 use std::{
@@ -60,30 +60,35 @@ impl<T> SharedCell<T> {
 
     /// Creates a [`WeakCell`] pointing to the same allocation.
     #[inline]
+    #[must_use]
     pub fn downgrade(&self) -> WeakCell<T> {
         WeakCell(Rc::downgrade(&self.0))
     }
 
     /// Immutable borrow of the inner value.
     #[inline]
+    #[must_use]
     pub fn borrow(&self) -> Ref<'_, T> {
         self.0.borrow()
     }
 
     /// Mutable borrow of the inner value.
     #[inline]
+    #[must_use]
     pub fn borrow_mut(&self) -> RefMut<'_, T> {
         self.0.borrow_mut()
     }
 
     /// Number of active strong references.
     #[inline]
+    #[must_use]
     pub fn strong_count(&self) -> usize {
         Rc::strong_count(&self.0)
     }
 
     /// Number of active weak references.
     #[inline]
+    #[must_use]
     pub fn weak_count(&self) -> usize {
         Rc::weak_count(&self.0)
     }
@@ -129,6 +134,7 @@ impl<T> WeakCell<T> {
 
     /// Returns `true` if the pointed-to value has been dropped.
     #[inline]
+    #[must_use]
     pub fn is_dropped(&self) -> bool {
         self.0.strong_count() == 0
     }
