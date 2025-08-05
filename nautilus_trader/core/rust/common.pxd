@@ -7,68 +7,68 @@ from nautilus_trader.core.rust.model cimport TraderId_t
 
 cdef extern from "../includes/common.h":
 
-    # The state of a component within the system.
-    cpdef enum ComponentState:
-        # When a component is instantiated, but not yet ready to fulfill its specification.
+    # The state of an actor within the system.
+    cpdef enum ActorState:
+        # When an actor is instantiated, but not yet ready to fulfill its specification.
         PRE_INITIALIZED # = 0,
-        # When a component is able to be started.
+        # When an actor is able to be started.
         READY # = 1,
-        # When a component is executing its actions on `start`.
+        # When an actor is executing its actions on `start`.
         STARTING # = 2,
-        # When a component is operating normally and can fulfill its specification.
+        # When an actor is operating normally and can fulfill its specification.
         RUNNING # = 3,
-        # When a component is executing its actions on `stop`.
+        # When an actor is executing its actions on `stop`.
         STOPPING # = 4,
-        # When a component has successfully stopped.
+        # When an actor has successfully stopped.
         STOPPED # = 5,
-        # When a component is started again after its initial start.
+        # When an actor is started again after its initial start.
         RESUMING # = 6,
-        # When a component is executing its actions on `reset`.
+        # When an actor is executing its actions on `reset`.
         RESETTING # = 7,
-        # When a component is executing its actions on `dispose`.
+        # When an actor is executing its actions on `dispose`.
         DISPOSING # = 8,
-        # When a component has successfully shut down and released all of its resources.
+        # When an actor has successfully shut down and released all of its resources.
         DISPOSED # = 9,
-        # When a component is executing its actions on `degrade`.
+        # When an actor is executing its actions on `degrade`.
         DEGRADING # = 10,
-        # When a component has successfully degraded and may not meet its full specification.
+        # When an actor has successfully degraded and may not meet its full specification.
         DEGRADED # = 11,
-        # When a component is executing its actions on `fault`.
+        # When an actor is executing its actions on `fault`.
         FAULTING # = 12,
-        # When a component has successfully shut down due to a detected fault.
+        # When an actor has successfully shut down due to a detected fault.
         FAULTED # = 13,
 
-    # A trigger condition for a component within the system.
-    cpdef enum ComponentTrigger:
-        # A trigger for the component to initialize.
+    # A trigger condition for an actor within the system.
+    cpdef enum ActorTrigger:
+        # A trigger for the actor to initialize.
         INITIALIZE # = 1,
-        # A trigger for the component to start.
+        # A trigger for the actor to start.
         START # = 2,
-        # A trigger when the component has successfully started.
+        # A trigger when the actor has successfully started.
         START_COMPLETED # = 3,
-        # A trigger for the component to stop.
+        # A trigger for the actor to stop.
         STOP # = 4,
-        # A trigger when the component has successfully stopped.
+        # A trigger when the actor has successfully stopped.
         STOP_COMPLETED # = 5,
-        # A trigger for the component to resume (after being stopped).
+        # A trigger for the actor to resume (after being stopped).
         RESUME # = 6,
-        # A trigger when the component has successfully resumed.
+        # A trigger when the actor has successfully resumed.
         RESUME_COMPLETED # = 7,
-        # A trigger for the component to reset.
+        # A trigger for the actor to reset.
         RESET # = 8,
-        # A trigger when the component has successfully reset.
+        # A trigger when the actor has successfully reset.
         RESET_COMPLETED # = 9,
-        # A trigger for the component to dispose and release resources.
+        # A trigger for the actor to dispose and release resources.
         DISPOSE # = 10,
-        # A trigger when the component has successfully disposed.
+        # A trigger when the actor has successfully disposed.
         DISPOSE_COMPLETED # = 11,
-        # A trigger for the component to degrade.
+        # A trigger for the actor to degrade.
         DEGRADE # = 12,
-        # A trigger when the component has successfully degraded.
+        # A trigger when the actor has successfully degraded.
         DEGRADE_COMPLETED # = 13,
-        # A trigger for the component to fault.
+        # A trigger for the actor to fault.
         FAULT # = 14,
-        # A trigger when the component has successfully faulted.
+        # A trigger when the actor has successfully faulted.
         FAULT_COMPLETED # = 15,
 
     # The log color for log messages.
@@ -344,7 +344,7 @@ cdef extern from "../includes/common.h":
 
     void live_clock_cancel_timers(LiveClock_API *clock);
 
-    const char *component_state_to_cstr(ComponentState value);
+    const char *component_state_to_cstr(ActorState value);
 
     # Returns an enum from a Python string.
     #
@@ -355,9 +355,9 @@ cdef extern from "../includes/common.h":
     # # Panics
     #
     # Panics if the input C string does not match a valid enum variant.
-    ComponentState component_state_from_cstr(const char *ptr);
+    ActorState component_state_from_cstr(const char *ptr);
 
-    const char *component_trigger_to_cstr(ComponentTrigger value);
+    const char *component_trigger_to_cstr(ActorTrigger value);
 
     # Returns an enum from a Python string.
     #
@@ -368,7 +368,7 @@ cdef extern from "../includes/common.h":
     # # Panics
     #
     # Panics if the input C string does not match a valid enum variant.
-    ComponentTrigger component_trigger_from_cstr(const char *ptr);
+    ActorTrigger component_trigger_from_cstr(const char *ptr);
 
     const char *log_level_to_cstr(LogLevel value);
 

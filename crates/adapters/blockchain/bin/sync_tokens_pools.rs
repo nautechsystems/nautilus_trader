@@ -82,21 +82,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     data_client.connect().await?;
     data_client.register_dex_exchange(&dex_id).await?;
 
-    loop {
-        tokio::select! {
-            () = notify.notified() => break,
-             result = data_client.sync_exchange_pools(dex_id.as_str(), from_block, None) => {
-                match result {
-                    Ok(()) => {
-                        // Exit after the tokens and pool are synced successfully
-                        log::info!("Successfully synced tokens and pools");
-                        break;
-                    },
-                    Err(e) => {
-                        // Handle error case
-                        log::error!("Error syncing tokens and pools: {e}");
-                        break;
-                    }
+    tokio::select! {
+        () = notify.notified() => {
+            log::info!("Received shutdown signal");
+        },
+        result = data_client.sync_exchange_pools(dex_id.as_str(), from_block, None) => {
+            match result {
+                Ok(()) => {
+                    // Exit after the tokens and pool are synced successfully
+                    log::info!("Successfully synced tokens and pools");
+                },
+                Err(e) => {
+                    // Handle error case
+                    log::error!("Error syncing tokens and pools: {e}");
                 }
             }
         }

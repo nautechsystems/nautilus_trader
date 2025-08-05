@@ -86,35 +86,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     data_client.connect().await?;
     data_client.register_dex_exchange(&dex_id).await?;
 
-    loop {
-        tokio::select! {
-            () = notify.notified() => break,
-             () = async {
-                data_client.sync_exchange_pools(
-                    dex_id.as_str(),
-                    Some(pool_creation_block),
-                    Some(pool_creation_block + 1),
-                ).await.unwrap();
-                data_client.sync_pool_swaps(
-                    dex_id.as_str(),
-                    weth_usdc_pool.to_string(),
-                    from_block,
-                    None,
-                ).await.unwrap();
-                data_client.sync_pool_mints(
-                    dex_id.as_str(),
-                    weth_usdc_pool.to_string(),
-                    from_block,
-                    None,
-                ).await.unwrap();
-                data_client.sync_pool_burns(
-                    dex_id.as_str(),
-                    weth_usdc_pool.to_string(),
-                    from_block,
-                    None,
-                ).await.unwrap();
-            } => break,
-        }
+    tokio::select! {
+        () = notify.notified() => {
+            log::info!("Received shutdown signal");
+        },
+        () = async {
+            data_client.sync_exchange_pools(
+                dex_id.as_str(),
+                Some(pool_creation_block),
+                Some(pool_creation_block + 1),
+            ).await.unwrap();
+            data_client.sync_pool_swaps(
+                dex_id.as_str(),
+                weth_usdc_pool.to_string(),
+                from_block,
+                None,
+            ).await.unwrap();
+            data_client.sync_pool_mints(
+                dex_id.as_str(),
+                weth_usdc_pool.to_string(),
+                from_block,
+                None,
+            ).await.unwrap();
+            data_client.sync_pool_burns(
+                dex_id.as_str(),
+                weth_usdc_pool.to_string(),
+                from_block,
+                None,
+            ).await.unwrap();
+            log::info!("Successfully synced pool events");
+        } => {},
     }
 
     data_client.disconnect().await?;

@@ -25,9 +25,9 @@ use std::{
 
 use futures::future::join_all;
 use nautilus_common::{
+    actor::Actor,
     cache::{Cache, CacheConfig, database::CacheDatabaseAdapter},
     clock::{Clock, LiveClock, TestClock},
-    component::Component,
     enums::Environment,
     logging::{
         headers, init_logging, init_tracing,

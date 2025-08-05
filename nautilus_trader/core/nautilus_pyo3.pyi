@@ -189,7 +189,7 @@ class DataActor:
     @property
     def trader_id(self) -> TraderId | None: ...
 
-    def state(self) -> ComponentState: ...
+    def state(self) -> ActorState: ...
     def is_ready(self) -> bool: ...
     def is_running(self) -> bool: ...
     def is_stopped(self) -> bool: ...
@@ -1262,7 +1262,7 @@ class ContingencyType(Enum):
     OTO = "OTO"
     OUO = "OUO"
 
-class ComponentState(Enum):
+class ActorState(Enum):
     PRE_INITIALIZED = "PRE_INITIALIZED"
     READY = "READY"
     STARTING = "STARTING"
@@ -1277,6 +1277,9 @@ class ComponentState(Enum):
     DEGRADED = "DEGRADED"
     FAULTING = "FAULTING"
     FAULTED = "FAULTED"
+
+# Backward compatibility alias
+ComponentState = ActorState
 
 class CurrencyType(Enum):
     CRYPTO = "CRYPTO"

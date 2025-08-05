@@ -33,7 +33,7 @@ use nautilus_model::{
         OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick, close::InstrumentClose, stubs::*,
     },
     enums::{BookAction, BookType, OrderSide},
-    identifiers::{ClientId, TraderId, Venue},
+    identifiers::{ActorId, ClientId, TraderId, Venue},
     instruments::{CurrencyPair, InstrumentAny, stubs::*},
     orderbook::OrderBook,
     types::{Price, Quantity},
@@ -52,8 +52,8 @@ use crate::msgbus::switchboard::{get_defi_blocks_topic, get_defi_pool_swaps_topi
 use crate::{
     actor::registry::{get_actor, get_actor_unchecked, register_actor},
     cache::Cache,
-    clock::TestClock,
-    component::Component,
+    clock::{Clock, TestClock},
+    enums::{ActorState, ActorTrigger},
     logging::{logger::LogGuard, logging_is_initialized},
     messages::data::{
         BarsResponse, BookResponse, CustomDataResponse, InstrumentResponse, InstrumentsResponse,
@@ -309,6 +309,28 @@ impl Actor for DummyActor {
     fn handle(&mut self, _msg: &dyn std::any::Any) {}
     fn as_any(&self) -> &dyn std::any::Any {
         self
+    }
+
+    // Actor lifecycle methods - minimal implementation for test dummy
+    fn actor_id(&self) -> ActorId {
+        ActorId::new(self.id_str.as_str())
+    }
+
+    fn state(&self) -> ActorState {
+        ActorState::Ready // Always ready for test dummy
+    }
+
+    fn transition_state(&mut self, _trigger: ActorTrigger) -> anyhow::Result<()> {
+        Ok(()) // No-op for test dummy
+    }
+
+    fn register(
+        &mut self,
+        _trader_id: TraderId,
+        _clock: Rc<RefCell<dyn Clock>>,
+        _cache: Rc<RefCell<Cache>>,
+    ) -> anyhow::Result<()> {
+        Ok(()) // No-op for test dummy
     }
 }
 

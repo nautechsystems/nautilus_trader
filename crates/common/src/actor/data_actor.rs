@@ -35,7 +35,7 @@ use nautilus_model::{
         OrderBookDeltas, QuoteTick, TradeTick, close::InstrumentClose,
     },
     enums::BookType,
-    identifiers::{ActorId, ClientId, ComponentId, InstrumentId, TraderId, Venue},
+    identifiers::{ActorId, ClientId, InstrumentId, TraderId, Venue},
     instruments::InstrumentAny,
     orderbook::OrderBook,
 };
@@ -54,8 +54,7 @@ use crate::msgbus::switchboard::{
 use crate::{
     cache::Cache,
     clock::Clock,
-    component::Component,
-    enums::{ComponentState, ComponentTrigger},
+    enums::{ActorState, ActorTrigger},
     logging::{CMD, RECV, REQ, SEND},
     messages::{
         data::{
@@ -129,9 +128,7 @@ pub struct ImportableActorConfig {
 
 type RequestCallback = Box<dyn Fn(UUID4) + Send + Sync>; // TODO: TBD
 
-pub trait DataActor:
-    Component + Deref<Target = DataActorCore> + DerefMut<Target = DataActorCore>
-{
+pub trait DataActor: Deref<Target = DataActorCore> + DerefMut<Target = DataActorCore> {
     /// Actions to be performed when the actor state is saved.
     ///
     /// # Errors
@@ -476,7 +473,7 @@ pub trait DataActor:
         log_received(&event);
 
         if let Err(e) = DataActor::on_time_event(self, event) {
-            log_error(&e);
+            log::error!("{e}");
         }
     }
 
@@ -484,13 +481,13 @@ pub trait DataActor:
     fn handle_data(&mut self, data: &dyn Any) {
         log_received(&data);
 
-        if self.not_running() {
+        if self.state != ActorState::Running {
             log_not_running(&data);
             return;
         }
 
         if let Err(e) = self.on_data(data) {
-            log_error(&e);
+            log::error!("{e}");
         }
     }
 
@@ -498,13 +495,13 @@ pub trait DataActor:
     fn handle_signal(&mut self, signal: &Signal) {
         log_received(&signal);
 
-        if self.not_running() {
+        if self.state != ActorState::Running {
             log_not_running(&signal);
             return;
         }
 
         if let Err(e) = self.on_signal(signal) {
-            log_error(&e);
+            log::error!("{e}");
         }
     }
 
@@ -512,13 +509,13 @@ pub trait DataActor:
     fn handle_instrument(&mut self, instrument: &InstrumentAny) {
         log_received(&instrument);
 
-        if self.not_running() {
+        if self.state != ActorState::Running {
             log_not_running(&instrument);
             return;
         }
 
         if let Err(e) = self.on_instrument(instrument) {
-            log_error(&e);
+            log::error!("{e}");
         }
     }
 
@@ -526,13 +523,13 @@ pub trait DataActor:
     fn handle_book_deltas(&mut self, deltas: &OrderBookDeltas) {
         log_received(&deltas);
 
-        if self.not_running() {
+        if self.state != ActorState::Running {
             log_not_running(&deltas);
             return;
         }
 
         if let Err(e) = self.on_book_deltas(deltas) {
-            log_error(&e);
+            log::error!("{e}");
         }
     }
 
@@ -540,13 +537,13 @@ pub trait DataActor:
     fn handle_book(&mut self, book: &OrderBook) {
         log_received(&book);
 
-        if self.not_running() {
+        if self.state != ActorState::Running {
             log_not_running(&book);
             return;
         }
 
         if let Err(e) = self.on_book(book) {
-            log_error(&e);
+            log::error!("{e}");
         };
     }
 
@@ -554,13 +551,13 @@ pub trait DataActor:
     fn handle_quote(&mut self, quote: &QuoteTick) {
         log_received(&quote);
 
-        if self.not_running() {
+        if self.state != ActorState::Running {
             log_not_running(&quote);
             return;
         }
 
         if let Err(e) = self.on_quote(quote) {
-            log_error(&e);
+            log::error!("{e}");
         }
     }
 
@@ -568,13 +565,13 @@ pub trait DataActor:
     fn handle_trade(&mut self, trade: &TradeTick) {
         log_received(&trade);
 
-        if self.not_running() {
+        if self.state != ActorState::Running {
             log_not_running(&trade);
             return;
         }
 
         if let Err(e) = self.on_trade(trade) {
-            log_error(&e);
+            log::error!("{e}");
         }
     }
 
@@ -582,13 +579,13 @@ pub trait DataActor:
     fn handle_bar(&mut self, bar: &Bar) {
         log_received(&bar);
 
-        if self.not_running() {
+        if self.state != ActorState::Running {
             log_not_running(&bar);
             return;
         }
 
         if let Err(e) = self.on_bar(bar) {
-            log_error(&e);
+            log::error!("{e}");
         }
     }
 
@@ -596,13 +593,13 @@ pub trait DataActor:
     fn handle_mark_price(&mut self, mark_price: &MarkPriceUpdate) {
         log_received(&mark_price);
 
-        if self.not_running() {
+        if self.state != ActorState::Running {
             log_not_running(&mark_price);
             return;
         }
 
         if let Err(e) = self.on_mark_price(mark_price) {
-            log_error(&e);
+            log::error!("{e}");
         }
     }
 
@@ -610,13 +607,13 @@ pub trait DataActor:
     fn handle_index_price(&mut self, index_price: &IndexPriceUpdate) {
         log_received(&index_price);
 
-        if self.not_running() {
+        if self.state != ActorState::Running {
             log_not_running(&index_price);
             return;
         }
 
         if let Err(e) = self.on_index_price(index_price) {
-            log_error(&e);
+            log::error!("{e}");
         }
     }
 
@@ -624,13 +621,13 @@ pub trait DataActor:
     fn handle_instrument_status(&mut self, status: &InstrumentStatus) {
         log_received(&status);
 
-        if self.not_running() {
+        if self.state != ActorState::Running {
             log_not_running(&status);
             return;
         }
 
         if let Err(e) = self.on_instrument_status(status) {
-            log_error(&e);
+            log::error!("{e}");
         }
     }
 
@@ -638,13 +635,13 @@ pub trait DataActor:
     fn handle_instrument_close(&mut self, close: &InstrumentClose) {
         log_received(&close);
 
-        if self.not_running() {
+        if self.state != ActorState::Running {
             log_not_running(&close);
             return;
         }
 
         if let Err(e) = self.on_instrument_close(close) {
-            log_error(&e);
+            log::error!("{e}");
         }
     }
 
@@ -653,13 +650,13 @@ pub trait DataActor:
     fn handle_block(&mut self, block: &Block) {
         log_received(&block);
 
-        if self.not_running() {
+        if self.state != ActorState::Running {
             log_not_running(&block);
             return;
         }
 
         if let Err(e) = self.on_block(block) {
-            log_error(&e);
+            log::error!("{e}");
         }
     }
 
@@ -668,13 +665,13 @@ pub trait DataActor:
     fn handle_pool(&mut self, pool: &Pool) {
         log_received(&pool);
 
-        if self.not_running() {
+        if self.state != ActorState::Running {
             log_not_running(&pool);
             return;
         }
 
         if let Err(e) = self.on_pool(pool) {
-            log_error(&e);
+            log::error!("{e}");
         }
     }
 
@@ -683,13 +680,13 @@ pub trait DataActor:
     fn handle_pool_swap(&mut self, swap: &PoolSwap) {
         log_received(&swap);
 
-        if self.not_running() {
+        if self.state != ActorState::Running {
             log_not_running(&swap);
             return;
         }
 
         if let Err(e) = self.on_pool_swap(swap) {
-            log_error(&e);
+            log::error!("{e}");
         }
     }
 
@@ -698,13 +695,13 @@ pub trait DataActor:
     fn handle_pool_liquidity_update(&mut self, update: &PoolLiquidityUpdate) {
         log_received(&update);
 
-        if self.not_running() {
+        if self.state != ActorState::Running {
             log_not_running(&update);
             return;
         }
 
         if let Err(e) = self.on_pool_liquidity_update(update) {
-            log_error(&e);
+            log::error!("{e}");
         }
     }
 
@@ -713,7 +710,7 @@ pub trait DataActor:
         log_received(&data);
 
         if let Err(e) = self.on_historical_data(data) {
-            log_error(&e);
+            log::error!("{e}");
         }
     }
 
@@ -722,7 +719,7 @@ pub trait DataActor:
         log_received(&resp);
 
         if let Err(e) = self.on_historical_data(resp.data.as_ref()) {
-            log_error(&e);
+            log::error!("{e}");
         }
     }
 
@@ -731,7 +728,7 @@ pub trait DataActor:
         log_received(&resp);
 
         if let Err(e) = self.on_instrument(&resp.data) {
-            log_error(&e);
+            log::error!("{e}");
         }
     }
 
@@ -741,7 +738,7 @@ pub trait DataActor:
 
         for inst in &resp.data {
             if let Err(e) = self.on_instrument(inst) {
-                log_error(&e);
+                log::error!("{e}");
             }
         }
     }
@@ -751,7 +748,7 @@ pub trait DataActor:
         log_received(&resp);
 
         if let Err(e) = self.on_book(&resp.data) {
-            log_error(&e);
+            log::error!("{e}");
         }
     }
 
@@ -760,7 +757,7 @@ pub trait DataActor:
         log_received(&resp);
 
         if let Err(e) = self.on_historical_quotes(&resp.data) {
-            log_error(&e);
+            log::error!("{e}");
         }
     }
 
@@ -769,7 +766,7 @@ pub trait DataActor:
         log_received(&resp);
 
         if let Err(e) = self.on_historical_trades(&resp.data) {
-            log_error(&e);
+            log::error!("{e}");
         }
     }
 
@@ -778,7 +775,7 @@ pub trait DataActor:
         log_received(&resp);
 
         if let Err(e) = self.on_historical_bars(&resp.data) {
-            log_error(&e);
+            log::error!("{e}");
         }
     }
 
@@ -1635,22 +1632,17 @@ where
     fn as_any(&self) -> &dyn Any {
         self
     }
-}
 
-// Blanket implementation: any DataActor automatically implements Component
-impl<T> Component for T
-where
-    T: DataActor + Debug + 'static,
-{
-    fn component_id(&self) -> ComponentId {
-        ComponentId::new(self.actor_id.inner().as_str())
+    // Actor lifecycle methods - delegate to DataActorCore
+    fn actor_id(&self) -> ActorId {
+        self.actor_id
     }
 
-    fn state(&self) -> ComponentState {
+    fn state(&self) -> ActorState {
         self.state
     }
 
-    fn transition_state(&mut self, trigger: ComponentTrigger) -> anyhow::Result<()> {
+    fn transition_state(&mut self, trigger: ActorTrigger) -> anyhow::Result<()> {
         self.state = self.state.transition(&trigger)?;
         log::info!("{}", self.state.variant_name());
         Ok(())
@@ -1679,6 +1671,7 @@ where
         self.initialize()
     }
 
+    // Lifecycle hook methods - delegate to DataActor trait
     fn on_start(&mut self) -> anyhow::Result<()> {
         DataActor::on_start(self)
     }
@@ -1718,7 +1711,7 @@ pub struct DataActorCore {
     trader_id: Option<TraderId>,
     clock: Option<Rc<RefCell<dyn Clock>>>, // Wired up on registration
     cache: Option<Rc<RefCell<Cache>>>,     // Wired up on registration
-    state: ComponentState,
+    state: ActorState,
     warning_events: AHashSet<String>, // TODO: TBD
     pending_requests: AHashMap<UUID4, Option<RequestCallback>>,
     signal_classes: AHashMap<String, String>,
@@ -1781,7 +1774,7 @@ impl DataActorCore {
             trader_id: None, // None until registered
             clock: None,     // None until registered
             cache: None,     // None until registered
-            state: ComponentState::default(),
+            state: ActorState::default(),
             warning_events: AHashSet::new(),
             pending_requests: AHashMap::new(),
             signal_classes: AHashMap::new(),
@@ -1798,7 +1791,7 @@ impl DataActorCore {
     }
 
     /// Returns the actors state.
-    pub fn state(&self) -> ComponentState {
+    pub fn state(&self) -> ActorState {
         self.state
     }
 
@@ -3117,10 +3110,6 @@ fn check_timestamps(
     }
 
     Ok(())
-}
-
-fn log_error(e: &anyhow::Error) {
-    log::error!("{e}");
 }
 
 fn log_not_running<T>(msg: &T)

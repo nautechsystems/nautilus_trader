@@ -26,8 +26,8 @@ from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.message cimport Request
 from nautilus_trader.core.message cimport Response
-from nautilus_trader.core.rust.common cimport ComponentState
-from nautilus_trader.core.rust.common cimport ComponentTrigger
+from nautilus_trader.core.rust.common cimport ActorState
+from nautilus_trader.core.rust.common cimport ActorTrigger
 from nautilus_trader.core.rust.common cimport LiveClock_API
 from nautilus_trader.core.rust.common cimport LogColor
 from nautilus_trader.core.rust.common cimport LogGuard_API
@@ -202,11 +202,11 @@ cpdef void log_header(
 cpdef void log_sysinfo(str component)
 
 
-cpdef ComponentState component_state_from_str(str value)
-cpdef str component_state_to_str(ComponentState value)
+cpdef ActorState component_state_from_str(str value)
+cpdef str component_state_to_str(ActorState value)
 
-cpdef ComponentTrigger component_trigger_from_str(str value)
-cpdef str component_trigger_to_str(ComponentTrigger value)
+cpdef ActorTrigger component_trigger_from_str(str value)
+cpdef str component_trigger_to_str(ActorTrigger value)
 
 
 cdef class ComponentFSMFactory:
@@ -258,7 +258,7 @@ cdef class Component:
 
     cdef void _trigger_fsm(
         self,
-        ComponentTrigger trigger,
+        ActorTrigger trigger,
         bint is_transitory,
         action: Callable[[None], None]=*,
     )

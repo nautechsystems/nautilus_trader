@@ -89,7 +89,11 @@ pub fn get_token_symbol(token_address: Address) -> String {
 }
 
 /// Returns the token address for a given Arbitrum token symbol.
-#[must_use]
+/// Get token address from symbol.
+///
+/// # Errors
+///
+/// Returns an error if the symbol is not found.
 pub fn get_token_symbol_reverse(symbol: &str) -> anyhow::Result<Address> {
     match symbol {
         "WETH" => Ok("0x82af49447d8a07e3bd95bd0d56f35241523fbab1".parse()?),

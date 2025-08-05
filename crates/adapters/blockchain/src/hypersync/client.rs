@@ -87,6 +87,11 @@ impl HyperSyncClient {
     }
 
     /// Creates a stream of contract event logs matching the specified criteria.
+    /// Request contract events as a stream.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the query serialization fails.
     pub async fn request_contract_events_stream(
         &self,
         from_block: u64,

@@ -29,6 +29,10 @@ use crate::events::{
     burn::BurnEvent, mint::MintEvent, pool_created::PoolCreatedEvent, swap::SwapEvent,
 };
 
+/// Type alias for trade data conversion function.
+type TradeDataConverter =
+    fn(&Token, &Token, &SwapEvent) -> anyhow::Result<(OrderSide, Quantity, Price)>;
+
 /// Extended DEX wrapper that adds provider-specific event parsing capabilities to the domain `Dex` model.
 #[derive(Debug, Clone)]
 pub struct DexExtended {
@@ -43,8 +47,7 @@ pub struct DexExtended {
     /// Function to parse burn events
     pub parse_burn_event_fn: Option<fn(Log) -> anyhow::Result<BurnEvent>>,
     /// Function to convert to trade data
-    pub convert_to_trade_data_fn:
-        Option<fn(&Token, &Token, &SwapEvent) -> anyhow::Result<(OrderSide, Quantity, Price)>>,
+    pub convert_to_trade_data_fn: Option<TradeDataConverter>,
 }
 
 impl DexExtended {
@@ -94,18 +97,16 @@ impl DexExtended {
     }
 
     /// Sets the function used to convert trade data for this Dex.
-    pub fn set_convert_trade_data(
-        &mut self,
-        convert_trade_data: fn(
-            &Token,
-            &Token,
-            &SwapEvent,
-        ) -> anyhow::Result<(OrderSide, Quantity, Price)>,
-    ) {
+    pub fn set_convert_trade_data(&mut self, convert_trade_data: TradeDataConverter) {
         self.convert_to_trade_data_fn = Some(convert_trade_data);
     }
 
     /// Parses a pool creation event log using this DEX's specific parsing function.
+    /// Parse a pool created event from a log.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the log parsing fails or no parser is configured.
     pub fn parse_pool_created_event(&self, log: Log) -> anyhow::Result<PoolCreatedEvent> {
         if let Some(parse_pool_created_event_fn) = &self.parse_pool_created_event_fn {
             parse_pool_created_event_fn(log)
@@ -118,6 +119,11 @@ impl DexExtended {
     }
 
     /// Parses a swap event log using this DEX's specific parsing function.
+    /// Parse a swap event from a log.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the log parsing fails or no parser is configured.
     pub fn parse_swap_event(&self, log: Log) -> anyhow::Result<SwapEvent> {
         if let Some(parse_swap_event_fn) = &self.parse_swap_event_fn {
             parse_swap_event_fn(log)
@@ -130,6 +136,11 @@ impl DexExtended {
     }
 
     /// Convert to trade data from a log using this DEX's specific parsing function.
+    /// Convert swap event to trade data.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the conversion fails or no converter is configured.
     pub fn convert_to_trade_data(
         &self,
         token0: &Token,
@@ -147,6 +158,11 @@ impl DexExtended {
     }
 
     /// Parses a mint event log using this DEX's specific parsing function.
+    /// Parse a mint event from a log.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the log parsing fails or no parser is configured.
     pub fn parse_mint_event(&self, log: Log) -> anyhow::Result<MintEvent> {
         if let Some(parse_mint_event_fn) = &self.parse_mint_event_fn {
             parse_mint_event_fn(log)
@@ -159,6 +175,11 @@ impl DexExtended {
     }
 
     /// Parses a burn event log using this DEX's specific parsing function.
+    /// Parse a burn event from a log.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the log parsing fails or no parser is configured.
     pub fn parse_burn_event(&self, log: Log) -> anyhow::Result<BurnEvent> {
         if let Some(parse_burn_event_fn) = &self.parse_burn_event_fn {
             parse_burn_event_fn(log)

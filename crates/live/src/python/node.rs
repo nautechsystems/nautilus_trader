@@ -18,8 +18,11 @@
 use std::{cell::RefCell, rc::Rc};
 
 use nautilus_common::{
-    actor::data_actor::{DataActorConfig, ImportableActorConfig},
-    component::{Component, register_component_actor_by_ref},
+    actor::{
+        Actor,
+        data_actor::{DataActorConfig, ImportableActorConfig},
+        registry::register_actor_by_ref,
+    },
     enums::Environment,
     python::actor::PyDataActor,
     runtime::get_runtime,
@@ -348,10 +351,10 @@ impl LiveNode {
                     .map_err(|e| anyhow::anyhow!("Failed to downcast to PyDataActor: {e}"))?;
                 let py_data_actor = py_data_actor_ref.borrow();
 
-                // Register the component in the global registry using the unsafe method
+                // Register the actor in the global registry using the unsafe method
                 // SAFETY: The Python instance will remain alive, keeping the PyDataActor valid
                 unsafe {
-                    register_component_actor_by_ref(&*py_data_actor);
+                    register_actor_by_ref(&*py_data_actor);
                 }
 
                 Ok(py_data_actor.actor_id())

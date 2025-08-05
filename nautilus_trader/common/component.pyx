@@ -32,7 +32,7 @@ import pytz
 from nautilus_trader.common.config import InvalidConfiguration
 from nautilus_trader.common.config import NautilusConfig
 from nautilus_trader.core import nautilus_pyo3
-from nautilus_trader.core.rust.common import ComponentState as PyComponentState
+from nautilus_trader.core.rust.common import ActorState as PyActorState
 
 cimport numpy as np
 from cpython.datetime cimport datetime
@@ -54,8 +54,8 @@ from nautilus_trader.core.datetime cimport maybe_dt_to_unix_nanos
 from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.core.rust.common cimport ComponentState
-from nautilus_trader.core.rust.common cimport ComponentTrigger
+from nautilus_trader.core.rust.common cimport ActorState
+from nautilus_trader.core.rust.common cimport ActorTrigger
 from nautilus_trader.core.rust.common cimport LogColor
 from nautilus_trader.core.rust.common cimport LogGuard_API
 from nautilus_trader.core.rust.common cimport LogLevel
@@ -1546,49 +1546,49 @@ cpdef void log_sysinfo(str component):
 
 
 
-cpdef ComponentState component_state_from_str(str value):
+cpdef ActorState component_state_from_str(str value):
     return component_state_from_cstr(pystr_to_cstr(value))
 
 
-cpdef str component_state_to_str(ComponentState value):
+cpdef str component_state_to_str(ActorState value):
     return cstr_to_pystr(component_state_to_cstr(value))
 
 
-cpdef ComponentTrigger component_trigger_from_str(str value):
+cpdef ActorTrigger component_trigger_from_str(str value):
     return component_trigger_from_cstr(pystr_to_cstr(value))
 
 
-cpdef str component_trigger_to_str(ComponentTrigger value):
+cpdef str component_trigger_to_str(ActorTrigger value):
     return cstr_to_pystr(component_trigger_to_cstr(value))
 
 
-cdef dict[tuple[ComponentState, ComponentTrigger], ComponentState] _COMPONENT_STATE_TABLE = {
-    (ComponentState.PRE_INITIALIZED, ComponentTrigger.INITIALIZE): ComponentState.READY,
-    (ComponentState.READY, ComponentTrigger.RESET): ComponentState.RESETTING,  # Transitional state
-    (ComponentState.READY, ComponentTrigger.START): ComponentState.STARTING,  # Transitional state
-    (ComponentState.READY, ComponentTrigger.DISPOSE): ComponentState.DISPOSING,  # Transitional state
-    (ComponentState.RESETTING, ComponentTrigger.RESET_COMPLETED): ComponentState.READY,
-    (ComponentState.STARTING, ComponentTrigger.START_COMPLETED): ComponentState.RUNNING,
-    (ComponentState.STARTING, ComponentTrigger.STOP): ComponentState.STOPPING,  # Transitional state
-    (ComponentState.STARTING, ComponentTrigger.FAULT): ComponentState.FAULTING,  # Transitional state
-    (ComponentState.RUNNING, ComponentTrigger.STOP): ComponentState.STOPPING,  # Transitional state
-    (ComponentState.RUNNING, ComponentTrigger.DEGRADE): ComponentState.DEGRADING,  # Transitional state
-    (ComponentState.RUNNING, ComponentTrigger.FAULT): ComponentState.FAULTING,  # Transitional state
-    (ComponentState.RESUMING, ComponentTrigger.STOP): ComponentState.STOPPING,  # Transitional state
-    (ComponentState.RESUMING, ComponentTrigger.RESUME_COMPLETED): ComponentState.RUNNING,
-    (ComponentState.RESUMING, ComponentTrigger.FAULT): ComponentState.FAULTING,  # Transitional state
-    (ComponentState.STOPPING, ComponentTrigger.STOP_COMPLETED): ComponentState.STOPPED,
-    (ComponentState.STOPPING, ComponentTrigger.FAULT): ComponentState.FAULTING,  # Transitional state
-    (ComponentState.STOPPED, ComponentTrigger.RESET): ComponentState.RESETTING,  # Transitional state
-    (ComponentState.STOPPED, ComponentTrigger.RESUME): ComponentState.RESUMING,  # Transitional state
-    (ComponentState.STOPPED, ComponentTrigger.DISPOSE): ComponentState.DISPOSING,  # Transitional state
-    (ComponentState.STOPPED, ComponentTrigger.FAULT): ComponentState.FAULTING,  # Transitional state
-    (ComponentState.DEGRADING, ComponentTrigger.DEGRADE_COMPLETED): ComponentState.DEGRADED,
-    (ComponentState.DEGRADED, ComponentTrigger.RESUME): ComponentState.RESUMING,  # Transitional state
-    (ComponentState.DEGRADED, ComponentTrigger.STOP): ComponentState.STOPPING,  # Transitional state
-    (ComponentState.DEGRADED, ComponentTrigger.FAULT): ComponentState.FAULTING,  # Transition state
-    (ComponentState.DISPOSING, ComponentTrigger.DISPOSE_COMPLETED): ComponentState.DISPOSED,  # Terminal state
-    (ComponentState.FAULTING, ComponentTrigger.FAULT_COMPLETED): ComponentState.FAULTED,  # Terminal state
+cdef dict[tuple[ActorState, ActorTrigger], ActorState] _COMPONENT_STATE_TABLE = {
+    (ActorState.PRE_INITIALIZED, ActorTrigger.INITIALIZE): ActorState.READY,
+    (ActorState.READY, ActorTrigger.RESET): ActorState.RESETTING,  # Transitional state
+    (ActorState.READY, ActorTrigger.START): ActorState.STARTING,  # Transitional state
+    (ActorState.READY, ActorTrigger.DISPOSE): ActorState.DISPOSING,  # Transitional state
+    (ActorState.RESETTING, ActorTrigger.RESET_COMPLETED): ActorState.READY,
+    (ActorState.STARTING, ActorTrigger.START_COMPLETED): ActorState.RUNNING,
+    (ActorState.STARTING, ActorTrigger.STOP): ActorState.STOPPING,  # Transitional state
+    (ActorState.STARTING, ActorTrigger.FAULT): ActorState.FAULTING,  # Transitional state
+    (ActorState.RUNNING, ActorTrigger.STOP): ActorState.STOPPING,  # Transitional state
+    (ActorState.RUNNING, ActorTrigger.DEGRADE): ActorState.DEGRADING,  # Transitional state
+    (ActorState.RUNNING, ActorTrigger.FAULT): ActorState.FAULTING,  # Transitional state
+    (ActorState.RESUMING, ActorTrigger.STOP): ActorState.STOPPING,  # Transitional state
+    (ActorState.RESUMING, ActorTrigger.RESUME_COMPLETED): ActorState.RUNNING,
+    (ActorState.RESUMING, ActorTrigger.FAULT): ActorState.FAULTING,  # Transitional state
+    (ActorState.STOPPING, ActorTrigger.STOP_COMPLETED): ActorState.STOPPED,
+    (ActorState.STOPPING, ActorTrigger.FAULT): ActorState.FAULTING,  # Transitional state
+    (ActorState.STOPPED, ActorTrigger.RESET): ActorState.RESETTING,  # Transitional state
+    (ActorState.STOPPED, ActorTrigger.RESUME): ActorState.RESUMING,  # Transitional state
+    (ActorState.STOPPED, ActorTrigger.DISPOSE): ActorState.DISPOSING,  # Transitional state
+    (ActorState.STOPPED, ActorTrigger.FAULT): ActorState.FAULTING,  # Transitional state
+    (ActorState.DEGRADING, ActorTrigger.DEGRADE_COMPLETED): ActorState.DEGRADED,
+    (ActorState.DEGRADED, ActorTrigger.RESUME): ActorState.RESUMING,  # Transitional state
+    (ActorState.DEGRADED, ActorTrigger.STOP): ActorState.STOPPING,  # Transitional state
+    (ActorState.DEGRADED, ActorTrigger.FAULT): ActorState.FAULTING,  # Transition state
+    (ActorState.DISPOSING, ActorTrigger.DISPOSE_COMPLETED): ActorState.DISPOSED,  # Terminal state
+    (ActorState.FAULTING, ActorTrigger.FAULT_COMPLETED): ActorState.FAULTED,  # Terminal state
 }
 
 cdef class ComponentFSMFactory:
@@ -1621,7 +1621,7 @@ cdef class ComponentFSMFactory:
         """
         return FiniteStateMachine(
             state_transition_table=ComponentFSMFactory.get_state_transition_table(),
-            initial_state=ComponentState.PRE_INITIALIZED,
+            initial_state=ActorState.PRE_INITIALIZED,
             trigger_parser=component_trigger_to_str,
             state_parser=component_state_to_str,
         )
@@ -1725,16 +1725,16 @@ cdef class Component:
         return cls.__module__ + ':' + cls.__qualname__
 
     @property
-    def state(self) -> ComponentState:
+    def state(self) -> ActorState:
         """
         Return the components current state.
 
         Returns
         -------
-        ComponentState
+        ActorState
 
         """
-        return PyComponentState(self._fsm.state)
+        return PyActorState(self._fsm.state)
 
     @property
     def is_initialized(self) -> bool:
@@ -1746,7 +1746,7 @@ cdef class Component:
         bool
 
         """
-        return self._fsm.state >= ComponentState.READY
+        return self._fsm.state >= ActorState.READY
 
     @property
     def is_running(self) -> bool:
@@ -1758,7 +1758,7 @@ cdef class Component:
         bool
 
         """
-        return self._fsm.state == ComponentState.RUNNING
+        return self._fsm.state == ActorState.RUNNING
 
     @property
     def is_stopped(self) -> bool:
@@ -1770,7 +1770,7 @@ cdef class Component:
         bool
 
         """
-        return self._fsm.state == ComponentState.STOPPED
+        return self._fsm.state == ActorState.STOPPED
 
     @property
     def is_disposed(self) -> bool:
@@ -1782,7 +1782,7 @@ cdef class Component:
         bool
 
         """
-        return self._fsm.state == ComponentState.DISPOSED
+        return self._fsm.state == ActorState.DISPOSED
 
     @property
     def is_degraded(self) -> bool:
@@ -1794,7 +1794,7 @@ cdef class Component:
         bool
 
         """
-        return self._fsm.state == ComponentState.DEGRADED
+        return self._fsm.state == ActorState.DEGRADED
 
     @property
     def is_faulted(self) -> bool:
@@ -1806,7 +1806,7 @@ cdef class Component:
         bool
 
         """
-        return self._fsm.state == ComponentState.FAULTED
+        return self._fsm.state == ActorState.FAULTED
 
     cdef void _change_clock(self, Clock clock):
         Condition.not_none(clock, "clock")
@@ -1860,7 +1860,7 @@ cdef class Component:
         # This is a protected method dependent on registration of a message bus
         try:
             self._trigger_fsm(
-                trigger=ComponentTrigger.INITIALIZE,  # -> INITIALIZED
+                trigger=ActorTrigger.INITIALIZE,  # -> INITIALIZED
                 is_transitory=False,
                 action=None,
             )
@@ -1885,7 +1885,7 @@ cdef class Component:
         """
         try:
             self._trigger_fsm(
-                trigger=ComponentTrigger.START,  # -> STARTING
+                trigger=ActorTrigger.START,  # -> STARTING
                 is_transitory=True,
                 action=self._start,
             )
@@ -1894,7 +1894,7 @@ cdef class Component:
             raise  # Halt state transition
 
         self._trigger_fsm(
-            trigger=ComponentTrigger.START_COMPLETED,
+            trigger=ActorTrigger.START_COMPLETED,
             is_transitory=False,
             action=None,
         )
@@ -1916,7 +1916,7 @@ cdef class Component:
         """
         try:
             self._trigger_fsm(
-                trigger=ComponentTrigger.STOP,  # -> STOPPING
+                trigger=ActorTrigger.STOP,  # -> STOPPING
                 is_transitory=True,
                 action=self._stop,
             )
@@ -1925,7 +1925,7 @@ cdef class Component:
             raise  # Halt state transition
 
         self._trigger_fsm(
-            trigger=ComponentTrigger.STOP_COMPLETED,
+            trigger=ActorTrigger.STOP_COMPLETED,
             is_transitory=False,
             action=None,
         )
@@ -1947,7 +1947,7 @@ cdef class Component:
         """
         try:
             self._trigger_fsm(
-                trigger=ComponentTrigger.RESUME,  # -> RESUMING
+                trigger=ActorTrigger.RESUME,  # -> RESUMING
                 is_transitory=True,
                 action=self._resume,
             )
@@ -1956,7 +1956,7 @@ cdef class Component:
             raise  # Halt state transition
 
         self._trigger_fsm(
-            trigger=ComponentTrigger.RESUME_COMPLETED,
+            trigger=ActorTrigger.RESUME_COMPLETED,
             is_transitory=False,
             action=None,
         )
@@ -1980,7 +1980,7 @@ cdef class Component:
         """
         try:
             self._trigger_fsm(
-                trigger=ComponentTrigger.RESET,  # -> RESETTING
+                trigger=ActorTrigger.RESET,  # -> RESETTING
                 is_transitory=True,
                 action=self._reset,
             )
@@ -1989,7 +1989,7 @@ cdef class Component:
             raise  # Halt state transition
 
         self._trigger_fsm(
-            trigger=ComponentTrigger.RESET_COMPLETED,
+            trigger=ActorTrigger.RESET_COMPLETED,
             is_transitory=False,
             action=None,
         )
@@ -2011,7 +2011,7 @@ cdef class Component:
         """
         try:
             self._trigger_fsm(
-                trigger=ComponentTrigger.DISPOSE,  # -> DISPOSING
+                trigger=ActorTrigger.DISPOSE,  # -> DISPOSING
                 is_transitory=True,
                 action=self._dispose,
             )
@@ -2020,7 +2020,7 @@ cdef class Component:
             raise  # Halt state transition
 
         self._trigger_fsm(
-            trigger=ComponentTrigger.DISPOSE_COMPLETED,
+            trigger=ActorTrigger.DISPOSE_COMPLETED,
             is_transitory=False,
             action=None,
         )
@@ -2042,7 +2042,7 @@ cdef class Component:
         """
         try:
             self._trigger_fsm(
-                trigger=ComponentTrigger.DEGRADE,  # -> DEGRADING
+                trigger=ActorTrigger.DEGRADE,  # -> DEGRADING
                 is_transitory=True,
                 action=self._degrade,
             )
@@ -2051,7 +2051,7 @@ cdef class Component:
             raise  # Halt state transition
 
         self._trigger_fsm(
-            trigger=ComponentTrigger.DEGRADE_COMPLETED,
+            trigger=ActorTrigger.DEGRADE_COMPLETED,
             is_transitory=False,
             action=None,
         )
@@ -2076,7 +2076,7 @@ cdef class Component:
         """
         try:
             self._trigger_fsm(
-                trigger=ComponentTrigger.FAULT,  # -> FAULTING
+                trigger=ActorTrigger.FAULT,  # -> FAULTING
                 is_transitory=True,
                 action=self._fault,
             )
@@ -2085,7 +2085,7 @@ cdef class Component:
             raise  # Halt state transition
 
         self._trigger_fsm(
-            trigger=ComponentTrigger.FAULT_COMPLETED,
+            trigger=ActorTrigger.FAULT_COMPLETED,
             is_transitory=False,
             action=None,
         )
@@ -2116,7 +2116,7 @@ cdef class Component:
 
     cdef void _trigger_fsm(
         self,
-        ComponentTrigger trigger,
+        ActorTrigger trigger,
         bint is_transitory,
         action: Callable[[None], None] | None = None,
     ):
@@ -2134,7 +2134,7 @@ cdef class Component:
         if action is not None:
             action()
 
-        if self._fsm == ComponentState.PRE_INITIALIZED:
+        if self._fsm == ActorState.PRE_INITIALIZED:
             return  # Cannot publish event
 
         cdef uint64_t ts_now = self._clock.timestamp_ns()

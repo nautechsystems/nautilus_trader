@@ -955,10 +955,6 @@ cdef extern from "../includes/model.h":
     cdef struct ClientId_t:
         char* _0;
 
-    # Represents a valid component ID.
-    cdef struct ComponentId_t:
-        char* _0;
-
     # Represents a valid execution algorithm ID.
     cdef struct ExecAlgorithmId_t:
         char* _0;
@@ -1757,15 +1753,6 @@ cdef extern from "../includes/model.h":
     ClientOrderId_t client_order_id_new(const char *ptr);
 
     uint64_t client_order_id_hash(const ClientOrderId_t *id);
-
-    # Returns a Nautilus identifier from a C string pointer.
-    #
-    # # Safety
-    #
-    # Assumes `ptr` is a valid C string pointer.
-    ComponentId_t component_id_new(const char *ptr);
-
-    uint64_t component_id_hash(const ComponentId_t *id);
 
     # Returns a Nautilus identifier from a C string pointer.
     #

@@ -54,7 +54,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport unix_nanos_to_dt
-from nautilus_trader.core.rust.common cimport ComponentState
+from nautilus_trader.core.rust.common cimport ActorState
 from nautilus_trader.core.rust.core cimport NANOSECONDS_IN_MILLISECOND
 from nautilus_trader.core.rust.core cimport NANOSECONDS_IN_SECOND
 from nautilus_trader.core.rust.core cimport millis_to_nanos
@@ -2095,7 +2095,7 @@ cdef class DataEngine(Component):
                 aggregator.set_await_partial(False)
                 aggregator.set_partial(partial)
             else:
-                if self._fsm.state == ComponentState.RUNNING:
+                if self._fsm.state == ActorState.RUNNING:
                     # Only log this error if the component is running, because
                     # there may have been an immediate stop called after start
                     # - with the partial bar being for a now removed aggregator.

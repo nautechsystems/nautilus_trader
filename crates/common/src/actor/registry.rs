@@ -107,11 +107,41 @@ where
     let actor_id = actor.id();
     let actor_ref = Rc::new(UnsafeCell::new(actor));
 
-    // Register as Actor (message handling only)
+    // Register as Actor (message handling and lifecycle management)
     let actor_trait_ref: Rc<UnsafeCell<dyn Actor>> = actor_ref.clone();
     get_actor_registry().insert(actor_id, actor_trait_ref);
 
     actor_ref
+}
+
+/// Registers an actor by reference without consuming it.
+///
+/// This is useful for actors that are owned by other structures (like Python instances)
+/// but still need to be registered in the global actor registry for lifecycle management.
+///
+/// # Safety
+///
+/// The caller must ensure that the referenced actor remains valid for the lifetime
+/// of the registration. The actor should not be dropped while registered.
+/// This creates an aliasing raw pointer which could lead to undefined behavior if
+/// the original actor is mutated while the registry holds a reference.
+pub unsafe fn register_actor_by_ref<T>(actor: &T)
+where
+    T: Actor + 'static,
+{
+    let actor_id = actor.id();
+
+    // SAFETY: We create an Rc<UnsafeCell<T>> pointing to the same memory as the actor.
+    // This is extremely unsafe as it creates aliasing mutable references.
+    // The caller must ensure no mutation happens while registered.
+    let actor_ptr = actor as *const T as *mut T;
+    let actor_ref = Rc::new(UnsafeCell::new(unsafe {
+        std::ptr::read_unaligned(actor_ptr)
+    }));
+
+    // Register in actor registry
+    let actor_trait_ref: Rc<UnsafeCell<dyn Actor>> = actor_ref.clone();
+    get_actor_registry().insert(actor_id, actor_trait_ref);
 }
 
 pub fn get_actor(id: &Ustr) -> Option<Rc<UnsafeCell<dyn Actor>>> {
@@ -156,6 +186,73 @@ pub fn actor_exists(id: &Ustr) -> bool {
 /// Returns the number of registered actors.
 pub fn actor_count() -> usize {
     get_actor_registry().len()
+}
+
+// Lifecycle management functions for actors
+
+/// Safely calls start() on an actor in the global registry.
+///
+/// # Errors
+///
+/// Returns an error if the actor is not found or if start() fails.
+pub fn start_actor(id: &Ustr) -> anyhow::Result<()> {
+    if let Some(actor_ref) = get_actor_registry().get(id) {
+        // SAFETY: We have exclusive access to the actor and are calling start() which takes &mut self
+        unsafe {
+            let actor = &mut *actor_ref.get();
+            actor.start()
+        }
+    } else {
+        anyhow::bail!("Actor '{id}' not found in global registry");
+    }
+}
+
+/// Safely calls stop() on an actor in the global registry.
+///
+/// # Errors
+///
+/// Returns an error if the actor is not found or if stop() fails.
+pub fn stop_actor(id: &Ustr) -> anyhow::Result<()> {
+    if let Some(actor_ref) = get_actor_registry().get(id) {
+        unsafe {
+            let actor = &mut *actor_ref.get();
+            actor.stop()
+        }
+    } else {
+        anyhow::bail!("Actor '{id}' not found in global registry");
+    }
+}
+
+/// Safely calls reset() on an actor in the global registry.
+///
+/// # Errors
+///
+/// Returns an error if the actor is not found or if reset() fails.
+pub fn reset_actor(id: &Ustr) -> anyhow::Result<()> {
+    if let Some(actor_ref) = get_actor_registry().get(id) {
+        unsafe {
+            let actor = &mut *actor_ref.get();
+            actor.reset()
+        }
+    } else {
+        anyhow::bail!("Actor '{id}' not found in global registry");
+    }
+}
+
+/// Safely calls dispose() on an actor in the global registry.
+///
+/// # Errors
+///
+/// Returns an error if the actor is not found or if dispose() fails.
+pub fn dispose_actor(id: &Ustr) -> anyhow::Result<()> {
+    if let Some(actor_ref) = get_actor_registry().get(id) {
+        unsafe {
+            let actor = &mut *actor_ref.get();
+            actor.dispose()
+        }
+    } else {
+        anyhow::bail!("Actor '{id}' not found in global registry");
+    }
 }
 
 #[cfg(test)]

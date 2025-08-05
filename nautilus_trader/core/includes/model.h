@@ -1750,13 +1750,6 @@ typedef struct ClientId_t {
 } ClientId_t;
 
 /**
- * Represents a valid component ID.
- */
-typedef struct ComponentId_t {
-    char* _0;
-} ComponentId_t;
-
-/**
  * Represents a valid execution algorithm ID.
  */
 typedef struct ExecAlgorithmId_t {
@@ -2708,17 +2701,6 @@ uint64_t client_id_hash(const struct ClientId_t *id);
 struct ClientOrderId_t client_order_id_new(const char *ptr);
 
 uint64_t client_order_id_hash(const struct ClientOrderId_t *id);
-
-/**
- * Returns a Nautilus identifier from a C string pointer.
- *
- * # Safety
- *
- * Assumes `ptr` is a valid C string pointer.
- */
-struct ComponentId_t component_id_new(const char *ptr);
-
-uint64_t component_id_hash(const struct ComponentId_t *id);
 
 /**
  * Returns a Nautilus identifier from a C string pointer.

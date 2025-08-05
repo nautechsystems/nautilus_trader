@@ -569,6 +569,11 @@ impl BlockchainDataClient {
     }
 
     /// Fetches and caches all mint events for a specific liquidity pool within the given block range.
+    /// Sync pool mint events from the blockchain.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the blockchain sync fails.
     pub async fn sync_pool_mints(
         &self,
         dex_id: &str,
@@ -648,6 +653,11 @@ impl BlockchainDataClient {
     }
 
     /// Fetches and caches all burn events for a specific liquidity pool within the given block range.
+    /// Sync pool burn events from the blockchain.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the blockchain sync fails.
     pub async fn sync_pool_burns(
         &self,
         dex_id: &str,
@@ -727,6 +737,11 @@ impl BlockchainDataClient {
     }
 
     /// Synchronizes token and pool data for a specific DEX from the specified block.
+    /// Sync exchange pools from the blockchain.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the blockchain sync fails.
     pub async fn sync_exchange_pools(
         &mut self,
         dex_id: &str,
@@ -930,6 +945,11 @@ impl BlockchainDataClient {
     }
 
     /// Registers a decentralized exchange with the client.
+    /// Register a DEX exchange.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the registration fails.
     pub async fn register_dex_exchange(&mut self, dex_id: &str) -> anyhow::Result<()> {
         if let Some(dex) = dex_extended_map().get(dex_id) {
             tracing::info!("Registering blockchain exchange {dex_id}");
@@ -970,6 +990,11 @@ impl BlockchainDataClient {
     }
 
     /// Processes incoming messages from the RPC client.
+    /// Process RPC messages.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the RPC client is not initialized.
     pub async fn process_rpc_messages(&mut self) {
         tracing::info!("Starting task 'process_rpc_messages'");
 
@@ -999,6 +1024,11 @@ impl BlockchainDataClient {
     }
 
     /// Subscribes to new blockchain blocks from the available data source.
+    /// Subscribe to block events asynchronously.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription fails.
     pub async fn subscribe_blocks_async(&mut self) -> anyhow::Result<()> {
         if let Some(rpc_client) = self.rpc_client.as_mut() {
             rpc_client.subscribe_blocks().await?;
@@ -1010,6 +1040,11 @@ impl BlockchainDataClient {
     }
 
     /// Subscribes to new blockchain blocks from the available data source.
+    /// Subscribe to pool swap events asynchronously.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription fails.
     pub async fn subscribe_pool_swaps_async(&mut self) -> anyhow::Result<()> {
         if let Some(rpc_client) = self.rpc_client.as_mut() {
             rpc_client.subscribe_swaps().await?;
@@ -1022,6 +1057,11 @@ impl BlockchainDataClient {
     }
 
     /// Unsubscribes from block events.
+    /// Unsubscribe from block events asynchronously.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscription fails.
     pub async fn unsubscribe_blocks_async(&mut self) -> anyhow::Result<()> {
         if let Some(_rpc_client) = self.rpc_client.as_mut() {
             todo!("Not implemented");
@@ -1034,6 +1074,11 @@ impl BlockchainDataClient {
     }
 
     /// Unsubscribes from swap events.
+    /// Unsubscribe from pool swap events asynchronously.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscription fails.
     pub async fn unsubscribe_pool_swaps_async(&mut self) -> anyhow::Result<()> {
         if let Some(_rpc_client) = self.rpc_client.as_mut() {
             todo!("Not implemented");
@@ -1199,7 +1244,7 @@ impl DataClient for BlockchainDataClient {
     fn is_connected(&self) -> bool {
         // TODO: Improve connection detection
         // For now, we'll assume connected if we have either RPC or HyperSync configured
-        self.rpc_client.is_some() || true // HyperSync is always available
+        true // HyperSync is always available
     }
 
     fn is_disconnected(&self) -> bool {

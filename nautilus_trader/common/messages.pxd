@@ -17,7 +17,7 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.core.rust.common cimport ComponentState
+from nautilus_trader.core.rust.common cimport ActorState
 from nautilus_trader.core.rust.model cimport TradingState
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.identifiers cimport ComponentId
@@ -54,8 +54,8 @@ cdef class ComponentStateChanged(Event):
     """The component ID associated with the event.\n\n:returns: `Identifier`"""
     cdef readonly str component_type
     """The component type associated with the event.\n\n:returns: `str`"""
-    cdef readonly ComponentState state
-    """The component state.\n\n:returns: `ComponentState`"""
+    cdef readonly ActorState state
+    """The component state.\n\n:returns: `ActorState`"""
     cdef readonly dict config
     """The component configuration.\n\n:returns: `dict[str, Any]`"""
 

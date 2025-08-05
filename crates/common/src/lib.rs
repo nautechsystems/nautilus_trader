@@ -55,7 +55,7 @@
 pub mod actor;
 pub mod cache;
 pub mod clock;
-pub mod component;
+
 pub mod custom;
 pub mod enums;
 pub mod factories;

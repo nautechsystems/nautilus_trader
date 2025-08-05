@@ -23,7 +23,7 @@ from nautilus_trader.common.component cimport component_state_from_str
 from nautilus_trader.common.component cimport component_state_to_str
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.core.rust.common cimport ComponentState
+from nautilus_trader.core.rust.common cimport ActorState
 from nautilus_trader.core.rust.model cimport TradingState
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.functions cimport trading_state_from_str
@@ -157,7 +157,7 @@ cdef class ComponentStateChanged(Event):
         The component ID associated with the event.
     component_type : str
         The component type.
-    state : ComponentState
+    state : ActorState
         The component state.
     config : dict[str, Any]
         The component configuration for the event.
@@ -174,7 +174,7 @@ cdef class ComponentStateChanged(Event):
         TraderId trader_id not None,
         Identifier component_id not None,
         str component_type not None,
-        ComponentState state,
+        ActorState state,
         dict config not None,
         UUID4 event_id not None,
         uint64_t ts_event,

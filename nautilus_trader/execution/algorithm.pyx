@@ -35,7 +35,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.core.message cimport Command
-from nautilus_trader.core.rust.common cimport ComponentState
+from nautilus_trader.core.rust.common cimport ActorState
 from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport OrderStatus
 from nautilus_trader.core.rust.model cimport TimeInForce
@@ -258,7 +258,7 @@ cdef class ExecAlgorithm(Actor):
         if self._log_commands:
             self._log.debug(f"{RECV}{CMD} {command}", LogColor.MAGENTA)
 
-        if self._fsm.state != ComponentState.RUNNING:
+        if self._fsm.state != ActorState.RUNNING:
             return
 
         if isinstance(command, SubmitOrder):
@@ -342,7 +342,7 @@ cdef class ExecAlgorithm(Actor):
             if order.exec_algorithm_id is None or order.exec_algorithm_id != self.id:
                 return  # Not for this algorithm
 
-        if self._fsm.state != ComponentState.RUNNING:
+        if self._fsm.state != ActorState.RUNNING:
             return
 
         try:

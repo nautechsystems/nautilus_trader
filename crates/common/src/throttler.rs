@@ -29,6 +29,7 @@ use std::{
 };
 
 use nautilus_core::{UnixNanos, correctness::FAILED};
+use nautilus_model::identifiers::{ActorId, TraderId};
 use ustr::Ustr;
 
 use crate::{
@@ -36,7 +37,9 @@ use crate::{
         Actor,
         registry::{get_actor_unchecked, register_actor},
     },
+    cache::Cache,
     clock::Clock,
+    enums::{ActorState, ActorTrigger},
     msgbus::{
         self,
         handler::{MessageHandler, ShareableMessageHandler},
@@ -103,6 +106,28 @@ where
 
     fn as_any(&self) -> &dyn Any {
         self
+    }
+
+    // Actor lifecycle methods - minimal implementation for throttler
+    fn actor_id(&self) -> ActorId {
+        ActorId::new(self.actor_id.as_str())
+    }
+
+    fn state(&self) -> ActorState {
+        ActorState::Ready // Always ready for throttler
+    }
+
+    fn transition_state(&mut self, _trigger: ActorTrigger) -> anyhow::Result<()> {
+        Ok(()) // No-op for throttler
+    }
+
+    fn register(
+        &mut self,
+        _trader_id: TraderId,
+        _clock: Rc<RefCell<dyn Clock>>,
+        _cache: Rc<RefCell<Cache>>,
+    ) -> anyhow::Result<()> {
+        Ok(()) // No-op for throttler
     }
 }
 

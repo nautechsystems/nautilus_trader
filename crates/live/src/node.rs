@@ -31,7 +31,6 @@ use std::{
 use nautilus_common::{
     actor::{Actor, DataActor},
     clock::LiveClock,
-    component::Component,
     enums::Environment,
 };
 use nautilus_core::UUID4;
@@ -303,7 +302,7 @@ impl LiveNode {
     /// - The node is currently running.
     pub fn add_actor<T>(&mut self, actor: T) -> anyhow::Result<()>
     where
-        T: DataActor + Component + Actor + 'static,
+        T: DataActor + Actor + 'static,
     {
         if self.is_running {
             anyhow::bail!(
@@ -316,7 +315,7 @@ impl LiveNode {
 
     pub(crate) fn add_registered_actor<T>(&mut self, actor: T) -> anyhow::Result<()>
     where
-        T: DataActor + Component + Actor + 'static,
+        T: DataActor + Actor + 'static,
     {
         if self.is_running {
             anyhow::bail!(
@@ -341,7 +340,7 @@ impl LiveNode {
     pub fn add_actor_from_factory<F, T>(&mut self, factory: F) -> anyhow::Result<()>
     where
         F: FnOnce() -> anyhow::Result<T>,
-        T: DataActor + Component + Actor + 'static,
+        T: DataActor + Actor + 'static,
     {
         if self.is_running {
             anyhow::bail!(

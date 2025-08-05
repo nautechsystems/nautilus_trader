@@ -19,7 +19,7 @@ use log::Level;
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumIter, EnumString, FromRepr};
 
-/// The state of a component within the system.
+/// The state of an actor within the system.
 #[repr(C)]
 #[derive(
     Copy,
@@ -44,46 +44,85 @@ use strum::{Display, EnumIter, EnumString, FromRepr};
     feature = "python",
     pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.common.enums")
 )]
-pub enum ComponentState {
-    /// When a component is instantiated, but not yet ready to fulfill its specification.
+pub enum ActorState {
+    /// When an actor is instantiated, but not yet ready to fulfill its specification.
     #[default]
     PreInitialized = 0,
-    /// When a component is able to be started.
+    /// When an actor is able to be started.
     Ready = 1,
-    /// When a component is executing its actions on `start`.
+    /// When an actor is executing its actions on `start`.
     Starting = 2,
-    /// When a component is operating normally and can fulfill its specification.
+    /// When an actor is operating normally and can fulfill its specification.
     Running = 3,
-    /// When a component is executing its actions on `stop`.
+    /// When an actor is executing its actions on `stop`.
     Stopping = 4,
-    /// When a component has successfully stopped.
+    /// When an actor has successfully stopped.
     Stopped = 5,
-    /// When a component is started again after its initial start.
+    /// When an actor is started again after its initial start.
     Resuming = 6,
-    /// When a component is executing its actions on `reset`.
+    /// When an actor is executing its actions on `reset`.
     Resetting = 7,
-    /// When a component is executing its actions on `dispose`.
+    /// When an actor is executing its actions on `dispose`.
     Disposing = 8,
-    /// When a component has successfully shut down and released all of its resources.
+    /// When an actor has successfully shut down and released all of its resources.
     Disposed = 9,
-    /// When a component is executing its actions on `degrade`.
+    /// When an actor is executing its actions on `degrade`.
     Degrading = 10,
-    /// When a component has successfully degraded and may not meet its full specification.
+    /// When an actor has successfully degraded and may not meet its full specification.
     Degraded = 11,
-    /// When a component is executing its actions on `fault`.
+    /// When an actor is executing its actions on `fault`.
     Faulting = 12,
-    /// When a component has successfully shut down due to a detected fault.
+    /// When an actor has successfully shut down due to a detected fault.
     Faulted = 13,
 }
 
-impl ComponentState {
+impl ActorState {
     pub fn variant_name(&self) -> String {
         let s = self.to_string();
         format!("{}{}", s[0..1].to_uppercase(), s[1..].to_lowercase())
     }
+
+    /// Transition the state machine with the actor `trigger`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `trigger` is invalid for the current state.
+    #[rustfmt::skip]
+    pub fn transition(&mut self, trigger: &ActorTrigger) -> anyhow::Result<Self> {
+        let new_state = match (&self, trigger) {
+            (Self::PreInitialized, ActorTrigger::Initialize) => Self::Ready,
+            (Self::Ready, ActorTrigger::Reset) => Self::Resetting,
+            (Self::Ready, ActorTrigger::Start) => Self::Starting,
+            (Self::Ready, ActorTrigger::Dispose) => Self::Disposing,
+            (Self::Resetting, ActorTrigger::ResetCompleted) => Self::Ready,
+            (Self::Starting, ActorTrigger::StartCompleted) => Self::Running,
+            (Self::Starting, ActorTrigger::Stop) => Self::Stopping,
+            (Self::Starting, ActorTrigger::Fault) => Self::Faulting,
+            (Self::Running, ActorTrigger::Stop) => Self::Stopping,
+            (Self::Running, ActorTrigger::Degrade) => Self::Degrading,
+            (Self::Running, ActorTrigger::Fault) => Self::Faulting,
+            (Self::Resuming, ActorTrigger::Stop) => Self::Stopping,
+            (Self::Resuming, ActorTrigger::ResumeCompleted) => Self::Running,
+            (Self::Resuming, ActorTrigger::Fault) => Self::Faulting,
+            (Self::Stopping, ActorTrigger::StopCompleted) => Self::Stopped,
+            (Self::Stopping, ActorTrigger::Fault) => Self::Faulting,
+            (Self::Stopped, ActorTrigger::Reset) => Self::Resetting,
+            (Self::Stopped, ActorTrigger::Resume) => Self::Resuming,
+            (Self::Stopped, ActorTrigger::Dispose) => Self::Disposing,
+            (Self::Stopped, ActorTrigger::Fault) => Self::Faulting,
+            (Self::Degrading, ActorTrigger::DegradeCompleted) => Self::Degraded,
+            (Self::Degraded, ActorTrigger::Resume) => Self::Resuming,
+            (Self::Degraded, ActorTrigger::Stop) => Self::Stopping,
+            (Self::Degraded, ActorTrigger::Fault) => Self::Faulting,
+            (Self::Disposing, ActorTrigger::DisposeCompleted) => Self::Disposed,
+            (Self::Faulting, ActorTrigger::FaultCompleted) => Self::Faulted,
+            _ => anyhow::bail!("Invalid state trigger {self} -> {trigger}"),
+        };
+        Ok(new_state)
+    }
 }
 
-/// A trigger condition for a component within the system.
+/// A trigger condition for an actor within the system.
 #[repr(C)]
 #[derive(
     Copy,
@@ -107,36 +146,36 @@ impl ComponentState {
     feature = "python",
     pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.common.enums")
 )]
-pub enum ComponentTrigger {
-    /// A trigger for the component to initialize.
+pub enum ActorTrigger {
+    /// A trigger for the actor to initialize.
     Initialize = 1,
-    /// A trigger for the component to start.
+    /// A trigger for the actor to start.
     Start = 2,
-    /// A trigger when the component has successfully started.
+    /// A trigger when the actor has successfully started.
     StartCompleted = 3,
-    /// A trigger for the component to stop.
+    /// A trigger for the actor to stop.
     Stop = 4,
-    /// A trigger when the component has successfully stopped.
+    /// A trigger when the actor has successfully stopped.
     StopCompleted = 5,
-    /// A trigger for the component to resume (after being stopped).
+    /// A trigger for the actor to resume (after being stopped).
     Resume = 6,
-    /// A trigger when the component has successfully resumed.
+    /// A trigger when the actor has successfully resumed.
     ResumeCompleted = 7,
-    /// A trigger for the component to reset.
+    /// A trigger for the actor to reset.
     Reset = 8,
-    /// A trigger when the component has successfully reset.
+    /// A trigger when the actor has successfully reset.
     ResetCompleted = 9,
-    /// A trigger for the component to dispose and release resources.
+    /// A trigger for the actor to dispose and release resources.
     Dispose = 10,
-    /// A trigger when the component has successfully disposed.
+    /// A trigger when the actor has successfully disposed.
     DisposeCompleted = 11,
-    /// A trigger for the component to degrade.
+    /// A trigger for the actor to degrade.
     Degrade = 12,
-    /// A trigger when the component has successfully degraded.
+    /// A trigger when the actor has successfully degraded.
     DegradeCompleted = 13,
-    /// A trigger for the component to fault.
+    /// A trigger for the actor to fault.
     Fault = 14,
-    /// A trigger when the component has successfully faulted.
+    /// A trigger when the actor has successfully faulted.
     FaultCompleted = 15,
 }
 

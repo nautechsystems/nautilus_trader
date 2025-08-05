@@ -32,7 +32,6 @@ identifier_for_python!(crate::identifiers::ActorId);
 identifier_for_python!(crate::identifiers::AccountId);
 identifier_for_python!(crate::identifiers::ClientId);
 identifier_for_python!(crate::identifiers::ClientOrderId);
-identifier_for_python!(crate::identifiers::ComponentId);
 identifier_for_python!(crate::identifiers::ExecAlgorithmId);
 identifier_for_python!(crate::identifiers::OrderListId);
 identifier_for_python!(crate::identifiers::PositionId);

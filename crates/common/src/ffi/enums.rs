@@ -17,10 +17,10 @@ use std::{ffi::c_char, str::FromStr};
 
 use nautilus_core::ffi::string::{cstr_as_str, str_to_cstr};
 
-use crate::enums::{ComponentState, ComponentTrigger, LogColor, LogLevel};
+use crate::enums::{ActorState, ActorTrigger, LogColor, LogLevel};
 
 #[unsafe(no_mangle)]
-pub extern "C" fn component_state_to_cstr(value: ComponentState) -> *const c_char {
+pub extern "C" fn component_state_to_cstr(value: ActorState) -> *const c_char {
     str_to_cstr(&value.to_string())
 }
 
@@ -34,14 +34,14 @@ pub extern "C" fn component_state_to_cstr(value: ComponentState) -> *const c_cha
 ///
 /// Panics if the input C string does not match a valid enum variant.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn component_state_from_cstr(ptr: *const c_char) -> ComponentState {
+pub unsafe extern "C" fn component_state_from_cstr(ptr: *const c_char) -> ActorState {
     let value = unsafe { cstr_as_str(ptr) };
-    ComponentState::from_str(value)
-        .unwrap_or_else(|_| panic!("invalid `ComponentState` enum string value, was '{value}'"))
+    ActorState::from_str(value)
+        .unwrap_or_else(|_| panic!("invalid `ActorState` enum string value, was '{value}'"))
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn component_trigger_to_cstr(value: ComponentTrigger) -> *const c_char {
+pub extern "C" fn component_trigger_to_cstr(value: ActorTrigger) -> *const c_char {
     str_to_cstr(&value.to_string())
 }
 
@@ -55,10 +55,10 @@ pub extern "C" fn component_trigger_to_cstr(value: ComponentTrigger) -> *const c
 ///
 /// Panics if the input C string does not match a valid enum variant.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn component_trigger_from_cstr(ptr: *const c_char) -> ComponentTrigger {
+pub unsafe extern "C" fn component_trigger_from_cstr(ptr: *const c_char) -> ActorTrigger {
     let value = unsafe { cstr_as_str(ptr) };
-    ComponentTrigger::from_str(value)
-        .unwrap_or_else(|_| panic!("invalid `ComponentTrigger` enum string value, was '{value}'"))
+    ActorTrigger::from_str(value)
+        .unwrap_or_else(|_| panic!("invalid `ActorTrigger` enum string value, was '{value}'"))
 }
 
 #[unsafe(no_mangle)]

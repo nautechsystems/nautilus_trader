@@ -440,6 +440,11 @@ impl BlockchainCacheDatabase {
             .map_err(|e| anyhow::anyhow!("Failed to load tokens: {e}"))
     }
 
+    /// Load pools from the database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database query fails.
     pub async fn load_pools(
         &self,
         chain: SharedChain,

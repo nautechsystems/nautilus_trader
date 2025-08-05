@@ -15,9 +15,9 @@
 
 from typing import Any
 
-from nautilus_trader.common.component import ComponentState
 from nautilus_trader.core.message import Command
 from nautilus_trader.core.message import Event
+from nautilus_trader.core.nautilus_pyo3 import ActorState
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.enums import TradingState
 from nautilus_trader.model.identifiers import ComponentId
@@ -47,7 +47,7 @@ class ComponentStateChanged(Event):
     @property
     def component_type(self) -> str: ...
     @property
-    def state(self) -> ComponentState: ...
+    def state(self) -> ActorState: ...
     @property
     def config(self) -> dict[str, Any]: ...
     @property

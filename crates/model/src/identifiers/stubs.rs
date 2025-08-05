@@ -19,8 +19,8 @@ use nautilus_core::UUID4;
 use rstest::fixture;
 
 use crate::identifiers::{
-    AccountId, ClientId, ClientOrderId, ComponentId, ExecAlgorithmId, InstrumentId, OrderListId,
-    PositionId, StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
+    AccountId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
+    StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
 };
 
 // ---- AccountId ----
@@ -52,13 +52,6 @@ pub fn client_id_dydx() -> ClientId {
 #[fixture]
 pub fn client_order_id() -> ClientOrderId {
     ClientOrderId::from("O-19700101-000000-001-001-1")
-}
-
-// ---- ComponentId ----
-
-#[fixture]
-pub fn component_risk_engine() -> ComponentId {
-    ComponentId::from("RiskEngine")
 }
 
 // ---- ExecAlgorithmId ----

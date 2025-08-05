@@ -53,8 +53,8 @@ use nautilus_model::{
     },
     enums::{AggregationSource, OmsType, OrderSide, PositionSide, PriceType, TriggerType},
     identifiers::{
-        AccountId, ClientId, ClientOrderId, ComponentId, ExecAlgorithmId, InstrumentId,
-        OrderListId, PositionId, StrategyId, Venue, VenueOrderId,
+        AccountId, ActorId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId,
+        PositionId, StrategyId, Venue, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny, SyntheticInstrument},
     orderbook::{OrderBook, own::OwnOrderBook},
@@ -2283,9 +2283,9 @@ impl Cache {
         }
     }
 
-    /// Returns the `ComponentId`s of all actors.
+    /// Returns the `ActorId`s of all actors.
     #[must_use]
-    pub fn actor_ids(&self) -> AHashSet<ComponentId> {
+    pub fn actor_ids(&self) -> AHashSet<ActorId> {
         self.index.actors.clone()
     }
 

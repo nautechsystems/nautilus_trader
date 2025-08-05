@@ -141,6 +141,15 @@ impl BlockchainCache {
     }
 
     /// Loads DEX exchange pools from the database into the in-memory cache.
+    /// Load pools for a given DEX.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database query fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the DEX has not been registered.
     pub async fn load_pools(&mut self, dex_id: &str) -> anyhow::Result<()> {
         if let Some(database) = &self.database {
             let dex_extended = self

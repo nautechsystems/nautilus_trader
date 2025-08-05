@@ -71,6 +71,15 @@ pub static UNISWAP_V3: LazyLock<DexExtended> = LazyLock::new(|| {
     dex
 });
 
+/// Parse a pool created event from a log.
+///
+/// # Errors
+///
+/// Returns an error if the log parsing fails.
+///
+/// # Panics
+///
+/// Panics if the block number is not set in the log.
 pub fn parse_pool_created_event(log: Log) -> anyhow::Result<PoolCreatedEvent> {
     validate_event_signature_hash("PoolCreatedEvent", POOL_CREATED_EVENT_SIGNATURE_HASH, &log)?;
 

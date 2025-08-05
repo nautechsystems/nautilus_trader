@@ -44,7 +44,7 @@ from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.core.rust.common cimport ComponentState
+from nautilus_trader.core.rust.common cimport ActorState
 from nautilus_trader.core.rust.model cimport OrderStatus
 from nautilus_trader.core.rust.model cimport TimeInForce
 from nautilus_trader.core.rust.model cimport TriggerType
@@ -1640,7 +1640,7 @@ cdef class Strategy(Actor):
             if order is not None and order.is_closed_c() and self._has_gtd_expiry_timer(order.client_order_id):
                 self.cancel_gtd_expiry(order)
 
-        if self._fsm.state != ComponentState.RUNNING:
+        if self._fsm.state != ActorState.RUNNING:
             return
 
         if self.manage_contingent_orders and self._manager is not None:

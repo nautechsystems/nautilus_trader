@@ -27,7 +27,7 @@ use nautilus_model::{
     data::{Bar, DataType, GreeksData, QuoteTick, TradeTick, YieldCurveData},
     events::{OrderEventAny, OrderSnapshot, position::snapshot::PositionSnapshot},
     identifiers::{
-        AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
+        AccountId, ActorId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId,
         VenueOrderId,
     },
     instruments::{InstrumentAny, SyntheticInstrument},
@@ -210,7 +210,7 @@ pub trait CacheDatabaseAdapter {
     /// # Errors
     ///
     /// Returns an error if loading actor state fails.
-    fn load_actor(&self, component_id: &ComponentId) -> anyhow::Result<AHashMap<String, Bytes>>;
+    fn load_actor(&self, actor_id: &ActorId) -> anyhow::Result<AHashMap<String, Bytes>>;
 
     /// Loads strategy state by strategy ID.
     ///
@@ -402,7 +402,7 @@ pub trait CacheDatabaseAdapter {
     /// # Errors
     ///
     /// Returns an error if deleting actor state fails.
-    fn delete_actor(&self, component_id: &ComponentId) -> anyhow::Result<()>;
+    fn delete_actor(&self, actor_id: &ActorId) -> anyhow::Result<()>;
 
     /// Deletes strategy state from the cache.
     ///

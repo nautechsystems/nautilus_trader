@@ -26,15 +26,17 @@ from nautilus_trader.common.component import component_trigger_from_str
 from nautilus_trader.common.component import component_trigger_to_str
 from nautilus_trader.common.component import log_level_from_str
 from nautilus_trader.common.component import log_level_to_str
-from nautilus_trader.core.rust.common import ComponentState
-from nautilus_trader.core.rust.common import ComponentTrigger
+from nautilus_trader.core.rust.common import ActorState
+from nautilus_trader.core.rust.common import ActorTrigger
 from nautilus_trader.core.rust.common import LogColor
 from nautilus_trader.core.rust.common import LogLevel
 
 
 __all__ = [
-    "ComponentState",
-    "ComponentTrigger",
+    "ActorState",
+    "ActorTrigger",
+    "ComponentState",  # Backward compatibility
+    "ComponentTrigger",  # Backward compatibility
     "LogColor",
     "LogLevel",
     "component_state_from_str",
@@ -51,7 +53,7 @@ __all__ = [
 if TYPE_CHECKING:
 
     @unique
-    class ComponentState(Enum):
+    class ActorState(Enum):
         PRE_INITIALIZED = 0
         READY = 1
         STARTING = 2
@@ -68,7 +70,7 @@ if TYPE_CHECKING:
         FAULTED = 13
 
     @unique
-    class ComponentTrigger(Enum):
+    class ActorTrigger(Enum):
         INITIALIZE = 1
         START = 2
         START_COMPLETED = 3
@@ -103,3 +105,8 @@ if TYPE_CHECKING:
         CYAN = 4
         YELLOW = 5
         RED = 6
+
+
+# Backward compatibility aliases
+ComponentState = ActorState
+ComponentTrigger = ActorTrigger

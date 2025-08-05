@@ -52,7 +52,7 @@ from nautilus_trader.common.component cimport is_logging_initialized
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.core.rust.common cimport ComponentState
+from nautilus_trader.core.rust.common cimport ActorState
 from nautilus_trader.core.rust.common cimport LogColor
 from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.rust.model cimport PriceType
@@ -3286,7 +3286,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(instrument, "instrument")
 
-        if self._fsm.state == ComponentState.RUNNING:
+        if self._fsm.state == ActorState.RUNNING:
             try:
                 self.on_instrument(instrument)
             except Exception as e:
@@ -3348,7 +3348,7 @@ cdef class Actor(Component):
         if OrderBookDeltas in self._pyo3_conversion_types:
             deltas = deltas.to_pyo3()
 
-        if self._fsm.state == ComponentState.RUNNING:
+        if self._fsm.state == ActorState.RUNNING:
             try:
                 self.on_order_book_deltas(deltas)
             except Exception as e:
@@ -3373,7 +3373,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(depth, "depth")
 
-        if self._fsm.state == ComponentState.RUNNING:
+        if self._fsm.state == ActorState.RUNNING:
             try:
                 self.on_order_book_depth(depth)
             except Exception as e:
@@ -3398,7 +3398,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(order_book, "order_book")
 
-        if self._fsm.state == ComponentState.RUNNING:
+        if self._fsm.state == ActorState.RUNNING:
             try:
                 self.on_order_book(order_book)
             except Exception as e:
@@ -3429,7 +3429,7 @@ cdef class Actor(Component):
         if indicators:
             self._handle_indicators_for_quote(indicators, tick)
 
-        if self._fsm.state == ComponentState.RUNNING:
+        if self._fsm.state == ActorState.RUNNING:
             try:
                 self.on_quote_tick(tick)
             except Exception as e:
@@ -3502,7 +3502,7 @@ cdef class Actor(Component):
         if indicators:
             self._handle_indicators_for_trade(indicators, tick)
 
-        if self._fsm.state == ComponentState.RUNNING:
+        if self._fsm.state == ActorState.RUNNING:
             try:
                 self.on_trade_tick(tick)
             except Exception as e:
@@ -3527,7 +3527,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(mark_price, "mark_price")
 
-        if self._fsm.state == ComponentState.RUNNING:
+        if self._fsm.state == ActorState.RUNNING:
             try:
                 self.on_mark_price(mark_price)
             except Exception as e:
@@ -3552,7 +3552,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(index_price, "index_price")
 
-        if self._fsm.state == ComponentState.RUNNING:
+        if self._fsm.state == ActorState.RUNNING:
             try:
                 self.on_index_price(index_price)
             except Exception as e:
@@ -3625,7 +3625,7 @@ cdef class Actor(Component):
         if indicators:
             self._handle_indicators_for_bar(indicators, bar)
 
-        if self._fsm.state == ComponentState.RUNNING:
+        if self._fsm.state == ActorState.RUNNING:
             try:
                 self.on_bar(bar)
             except Exception as e:
@@ -3700,7 +3700,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(data, "data")
 
-        if self._fsm.state == ComponentState.RUNNING:
+        if self._fsm.state == ActorState.RUNNING:
             try:
                 self.on_instrument_status(data)
             except Exception as e:
@@ -3725,7 +3725,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(update, "update")
 
-        if self._fsm.state == ComponentState.RUNNING:
+        if self._fsm.state == ActorState.RUNNING:
             try:
                 self.on_instrument_close(update)
             except Exception as e:
@@ -3750,7 +3750,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(data, "data")
 
-        if self._fsm.state == ComponentState.RUNNING:
+        if self._fsm.state == ActorState.RUNNING:
             try:
                 self.on_data(data)
             except Exception as e:
@@ -3775,7 +3775,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(signal, "signal")
 
-        if self._fsm.state == ComponentState.RUNNING:
+        if self._fsm.state == ActorState.RUNNING:
             try:
                 self.on_signal(signal)
             except Exception as e:
@@ -3822,7 +3822,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(event, "event")
 
-        if self._fsm.state == ComponentState.RUNNING:
+        if self._fsm.state == ActorState.RUNNING:
             try:
                 self.on_event(event)
             except Exception as e:
