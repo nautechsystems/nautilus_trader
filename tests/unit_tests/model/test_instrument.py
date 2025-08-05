@@ -604,11 +604,14 @@ class TestInstrument:
         with pytest.raises(ValueError):
             instrument.next_bid_price(100.123456)
 
+        tick_scheme_name = "FOREX_5DECIMAL"
+
         # Act
-        instrument.set_tick_scheme_name("FOREX_5DECIMAL")
+        instrument.set_tick_scheme(tick_scheme_name)
         result = instrument.next_bid_price(100.123456)
 
         # Assert
+        assert instrument.tick_scheme_name == tick_scheme_name
         assert result == Price.from_str("100.12345")
 
     @pytest.mark.parametrize(
