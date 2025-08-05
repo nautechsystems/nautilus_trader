@@ -164,7 +164,7 @@ def test_extend_file_name(catalog: ParquetDataCatalog):
     assert intervals == [(1, 3), (4, 4)]
 
 
-def test_reset_catalog_file_names(catalog: ParquetDataCatalog):
+def test_reset_all_file_names(catalog: ParquetDataCatalog):
     # Arrange
     pyo3_catalog = ParquetDataCatalogV2(catalog.path)
     pyo3_catalog.write_bars([bar(1), bar(2)])
@@ -182,7 +182,7 @@ def test_reset_catalog_file_names(catalog: ParquetDataCatalog):
         os.rename(path, new_path)
 
     # Act
-    pyo3_catalog.reset_catalog_file_names()
+    pyo3_catalog.reset_all_file_names()
 
     # Assert
     intervals = pyo3_catalog.get_intervals("bars", "AUD/USD.SIM")

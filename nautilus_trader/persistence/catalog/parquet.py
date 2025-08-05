@@ -428,7 +428,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             intervals,
         ), "Intervals are not disjoint after extending file name"
 
-    def reset_catalog_file_names(self) -> None:
+    def reset_all_file_names(self) -> None:
         """
         Reset the filenames of all parquet files in the catalog to match their actual
         content timestamps.
@@ -467,7 +467,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         ID.
 
         This method resets the filenames of parquet files for the specified data class and
-        instrument ID to accurately reflect the minimum and maximum timestamps of the data
+        identifier to accurately reflect the minimum and maximum timestamps of the data
         they contain. It examines the parquet metadata for each file and renames the file
         to follow the pattern '{first_timestamp}-{last_timestamp}.parquet'.
 
@@ -476,13 +476,13 @@ class ParquetDataCatalog(BaseDataCatalog):
         data_cls : type
             The data class type to reset filenames for (e.g., QuoteTick, TradeTick, Bar).
         identifier : str, optional
-            The specific instrument ID to reset filenames for. If None, resets filenames
-            for all instruments of the specified data class.
+            The specific identifier (instrument ID, etc) to reset filenames for.
+            If None, resets filenames for all instruments of the specified data class.
 
         Notes
         -----
-        - This operation is more targeted than `reset_catalog_file_names` as it only affects
-          files for a specific data class and instrument ID.
+        - This operation is more targeted than `reset_all_file_names` as it only affects
+          files for a specific data class and identifier.
         - The method does not modify the content of the files, only their names.
         - After renaming, the method verifies that the intervals represented by the filenames
           are disjoint (non-overlapping) to maintain data integrity.

@@ -3048,7 +3048,7 @@ class TestDataEngine:
         os.rename(parquet_file, other_name)
 
         # Act
-        catalog.reset_catalog_file_names()
+        catalog.reset_all_file_names()
 
         # Assert
         assert catalog.get_intervals(Bar, bar_type) == [
