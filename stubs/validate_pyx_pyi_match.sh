@@ -15,7 +15,7 @@ for stub in $(find stubs -name "*.pyi"); do
 
     echo ""
     echo "# $total_count"
-    python3 stubs/validate_pyx_stubs.py "$target" "$stub" -p
+    python3 stubs/validate_pyx_stubs.py "$target" "$stub" -w
     if [[ $? -eq 1 ]]; then
         echo "ERROR: Validation failed for stub: $stub" >&2
         failed_count=$((failed_count+1))
