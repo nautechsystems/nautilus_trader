@@ -77,6 +77,7 @@ config_node = TradingNodeConfig(
         BINANCE: BinanceDataClientConfig(
             api_key=None,  # 'BINANCE_API_KEY' env var
             api_secret=None,  # 'BINANCE_API_SECRET' env var
+            # key_type=BinanceKeyType.ED25519,
             account_type=BinanceAccountType.SPOT,
             base_url_http=None,  # Override with custom endpoint
             base_url_ws=None,  # Override with custom endpoint
@@ -89,6 +90,7 @@ config_node = TradingNodeConfig(
         BINANCE: BinanceExecClientConfig(
             api_key=None,  # 'BINANCE_API_KEY' env var
             api_secret=None,  # 'BINANCE_API_SECRET' env var
+            # key_type=BinanceKeyType.ED25519,
             account_type=BinanceAccountType.SPOT,
             base_url_http=None,  # Override with custom endpoint
             base_url_ws=None,  # Override with custom endpoint

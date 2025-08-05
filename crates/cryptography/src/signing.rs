@@ -87,7 +87,7 @@ pub fn ed25519_signature(private_key: &[u8], data: &str) -> anyhow::Result<Strin
             .map_err(|_| anyhow::anyhow!("Invalid Ed25519 private key length"))?,
     );
     let signature: Ed25519Signature = signing_key.sign(data.as_bytes());
-    Ok(hex::encode(signature.to_bytes()))
+    Ok(BASE64_STANDARD.encode(signature.to_bytes()))
 }
 
 ////////////////////////////////////////////////////////////////////////////////
