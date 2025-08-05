@@ -42,14 +42,12 @@ use nautilus_model::{
     orderbook::OrderBook,
     python::instruments::instrument_any_to_pyobject,
 };
-use pyo3::types::PyDict;
-use pyo3::{exceptions::PyValueError, prelude::*};
+use pyo3::{exceptions::PyValueError, prelude::*, types::PyDict};
 
-use crate::actor::data_actor::ImportableActorConfig;
 use crate::{
     actor::{
         DataActor,
-        data_actor::{DataActorConfig, DataActorCore},
+        data_actor::{DataActorConfig, DataActorCore, ImportableActorConfig},
         registry::try_get_actor_unchecked,
     },
     cache::Cache,
