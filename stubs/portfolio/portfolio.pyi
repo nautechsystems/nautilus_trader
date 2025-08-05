@@ -52,7 +52,7 @@ class Portfolio(PortfolioFacade):
     _realized_pnls: dict[InstrumentId, Money]
     _unrealized_pnls: dict[InstrumentId, Money]
     _net_positions: dict[InstrumentId, Decimal]
-    _bet_positions: dict[InstrumentId, Any] # skip-validate
+    _bet_positions: dict[InstrumentId, Any]
     _index_bet_positions: dict[InstrumentId, set[PositionId]]
     _pending_calcs: set[InstrumentId]
     _bar_close_prices: dict[InstrumentId, Price]

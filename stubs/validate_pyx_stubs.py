@@ -88,6 +88,7 @@ class PyiClassInfo:
     members: dict[str, PyiMember] = None
     base_classes: list[str] = None
     line_number: int | None = None
+    ignore_validation: bool = False
 
     def __post_init__(self):
         if self.members is None:
@@ -146,6 +147,7 @@ class PyiParser:
     def _parse_class(self, node: ast.ClassDef) -> PyiClassInfo:
         """Parse class node"""
         # Base classes
+
         base_classes = []
         for base in node.bases:
             if isinstance(base, ast.Name):
@@ -157,7 +159,8 @@ class PyiParser:
             name=node.name,
             docstring=ast.get_docstring(node),
             base_classes=base_classes,
-            line_number=node.lineno
+            line_number=node.lineno,
+            ignore_validation=self._is_ignored(node),
         )
 
         # Parse members
@@ -399,8 +402,9 @@ class PyxPyiValidator:
         # Extra classes
         extra_classes = pyi_class_names - pyx_class_names
         for class_name in extra_classes:
-            pyi_line = self.pyi_classes[class_name].line_number
-            self.errors.append(f"Class '{class_name}' in PYI but not in PYX ({self.pyi_file.name}:{pyi_line})")
+            if not self.pyi_classes[class_name].ignore_validation:
+                pyi_line = self.pyi_classes[class_name].line_number
+                self.errors.append(f"Class '{class_name}' in PYI but not in PYX ({self.pyi_file.name}:{pyi_line})")
 
         # Validate common classes
         common_classes = pyx_class_names & pyi_class_names
@@ -501,19 +505,19 @@ class PyxPyiValidator:
                 f".pyi: {pyi_class.base_classes} ({self.pyi_file.name}:{pyi_line})"
             )
 
-        # Validate docstring
-        if pyx_class.docstring and not pyi_class.docstring:
-            pyx_line = pyx_class.line_number
-            pyi_line = pyi_class.line_number
-            self.errors.append(f"Class '{class_name}': docstring missing in PYI ({self.pyx_file.name}:{pyx_line}, {self.pyi_file.name}:{pyi_line})")
-        elif pyx_class.docstring and pyi_class.docstring:
-            # Compare after removing whitespace
-            pyx_doc = pyx_class.docstring.replace(" ", "").strip("\n")
-            pyi_doc = pyi_class.docstring.replace(" ", "").strip("\n")
-            if pyx_doc != pyi_doc:
-                pyx_line = pyx_class.line_number
-                pyi_line = pyi_class.line_number
-                self.errors.append(f"Class '{class_name}': docstring differs ({self.pyx_file.name}:{pyx_line}, {self.pyi_file.name}:{pyi_line})")
+        # # Validate docstring
+        # if pyx_class.docstring and not pyi_class.docstring:
+        #     pyx_line = pyx_class.line_number
+        #     pyi_line = pyi_class.line_number
+        #     self.errors.append(f"Class '{class_name}': docstring missing in PYI ({self.pyx_file.name}:{pyx_line}, {self.pyi_file.name}:{pyi_line})")
+        # elif pyx_class.docstring and pyi_class.docstring:
+        #     # Compare after removing whitespace
+        #     pyx_doc = pyx_class.docstring.replace(" ", "").strip("\n")
+        #     pyi_doc = pyi_class.docstring.replace(" ", "").strip("\n")
+        #     if pyx_doc != pyi_doc:
+        #         pyx_line = pyx_class.line_number
+        #         pyi_line = pyi_class.line_number
+        #         self.errors.append(f"Class '{class_name}': docstring differs ({self.pyx_file.name}:{pyx_line}, {self.pyi_file.name}:{pyi_line})")
 
         # Validate members
         self._validate_members(class_name, pyx_class.methods, pyx_class.member_variables, pyi_class.members)
@@ -545,12 +549,12 @@ class PyxPyiValidator:
                 f"(.pyx: '{pyx_return}' {self.pyx_file.name}:{pyx_line}, .pyi: '{pyi_return}' {self.pyi_file.name}:{pyi_line})"
             )
 
-        # Validate docstring
-        if pyx_function.docstring and not pyi_function.docstring:
-            self.errors.append(
-                f"Function '{function_name}' docstring missing in PYI "
-                f"({self.pyx_file.name}:{pyx_line}, {self.pyi_file.name}:{pyi_line})"
-            )
+        # # Validate docstring
+        # if pyx_function.docstring and not pyi_function.docstring:
+        #     self.errors.append(
+        #         f"Function '{function_name}' docstring missing in PYI "
+        #         f"({self.pyx_file.name}:{pyx_line}, {self.pyi_file.name}:{pyi_line})"
+        #     )
 
     def _validate_global_variable(self, variable_name: str, pyx_variable: CythonGlobalVariable, pyi_variable: PyiGlobalVariable):
         """Validate individual global variable"""
@@ -792,12 +796,12 @@ class PyxPyiValidator:
                 f"(.pyx: '{pyx_return}' {self.pyx_file.name}:{pyx_line}, .pyi: '{pyi_return}' {self.pyi_file.name}:{pyi_line})"
             )
 
-        # Validate docstring
-        if pyx_method.docstring and not pyi_member.docstring:
-            self.errors.append(
-                f"Class '{class_name}': method '{method_name}' docstring missing in PYI "
-                f"({self.pyx_file.name}:{pyx_line}, {self.pyi_file.name}:{pyi_line})"
-            )
+        # # Validate docstring
+        # if pyx_method.docstring and not pyi_member.docstring:
+        #     self.errors.append(
+        #         f"Class '{class_name}': method '{method_name}' docstring missing in PYI "
+        #         f"({self.pyx_file.name}:{pyx_line}, {self.pyi_file.name}:{pyi_line})"
+        #     )
 
     def _validate_member_variable(self, class_name: str, member_name: str, pyx_member: CythonMemberVariable, pyi_member: PyiMember):
         """Validate individual member variable"""

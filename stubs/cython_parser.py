@@ -142,10 +142,6 @@ class CythonCodeAnalyzer(ScopeTrackingTransform):
         self.classes.append(class_info)
         return node
 
-    def visit_FuncDefNode(self, node):
-        """Visit a Python function definition node (def)."""
-        return self._visit_function_node(node, is_cdef=False, is_cpdef=False)
-
     def visit_CFuncDefNode(self, node):
         """Visit a Cython C function definition node (cdef)."""
         return self._visit_function_node(node, is_cdef=not node.overridable, is_cpdef=node.overridable)
@@ -156,6 +152,11 @@ class CythonCodeAnalyzer(ScopeTrackingTransform):
 
     def _visit_function_node(self, node, is_cdef: bool = False, is_cpdef: bool = False):
         """Visit common processing for function/method nodes."""
+        if self.current_function: # If we are already in a function, we should not process this node
+            self.visitchildren(node)
+            self.current_function = None
+            return node
+
         is_cfunc = is_cdef or is_cpdef
         function_name = node.name if not is_cfunc else node.declarator.base.name
 
@@ -279,10 +280,12 @@ class CythonCodeAnalyzer(ScopeTrackingTransform):
         node_args = node.declarator.args if is_cfunc else node.args
 
         for arg in node_args:
+            got_name_from_type = False
             if hasattr(arg, "declarator"):
                 arg_name = self._extract_name_from_node(arg.declarator)
                 if not arg_name and hasattr(arg, "base_type"):
                     arg_name = self._extract_name_from_node(arg.base_type)
+                    got_name_from_type = True
 
             arg_type = None
             if hasattr(arg, "annotation") and arg.annotation:
@@ -291,6 +294,8 @@ class CythonCodeAnalyzer(ScopeTrackingTransform):
                 arg_type = self._extract_type_from_node(arg.type)
             elif hasattr(arg, "base_type") and arg.base_type:
                 arg_type = self._extract_type_from_node(arg.base_type)
+                if got_name_from_type:
+                    arg_type = None
 
             arg_type = self.map_cython_type(arg_type) if arg_type else None
 
@@ -502,7 +507,7 @@ def print_results(analyzer: CythonCodeAnalyzer):  # noqa: C901
             print(f"  - {var.name}{type_info}{value_info} ({classification})")
 
 if __name__ == "__main__":
-    file_path = Path("/Users/sam/Documents/Development/woung717/nautilus_trader/nautilus_trader/risk/sizing.pyx")
+    file_path = Path("/Users/sam/Documents/Development/woung717/nautilus_trader/nautilus_trader/data/messages.pyx")
     code = file_path.read_text(encoding="utf-8")
 
     analyzer_result = analyze_cython_code(name=str(file_path), code_content=code)

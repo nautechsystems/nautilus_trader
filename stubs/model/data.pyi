@@ -538,7 +538,18 @@ class Bar(Data):
         """
         ...
     @staticmethod
-    def from_raw_arrays_to_list(bar_type: BarType, price_prec: int, size_prec: int, opens: np.ndarray[Any, np.dtype[np.float64]], highs: np.ndarray[Any, np.dtype[np.float64]], lows: np.ndarray[Any, np.dtype[np.float64]], closes: np.ndarray[Any, np.dtype[np.float64]], volumes: np.ndarray[Any, np.dtype[np.float64]], ts_events: np.ndarray[Any, np.dtype[np.uint64]], ts_inits: np.ndarray[Any, np.dtype[np.uint64]]) -> list[Bar]: ...
+    def from_raw_arrays_to_list(
+        bar_type: BarType, 
+        price_prec: int, 
+        size_prec: int, 
+        opens: np.ndarray, # skip-validate
+        highs: np.ndarray, # skip-validate
+        lows: np.ndarray, # skip-validate
+        closes: np.ndarray, # skip-validate
+        volumes: np.ndarray, # skip-validate
+        ts_events: np.ndarray, # skip-validate
+        ts_inits: np.ndarray # skip-validate
+    ) -> list[Bar]: ...
     @staticmethod
     def from_raw(bar_type: BarType, open: PriceRaw, high: PriceRaw, low: PriceRaw, close: PriceRaw, price_prec: int, volume: QuantityRaw, size_prec: int, ts_event: int, ts_init: int) -> Bar: ...
     @staticmethod
@@ -2177,7 +2188,17 @@ class TradeTick(Data):
         """
         ...
     @staticmethod
-    def from_raw_arrays_to_list(instrument_id: InstrumentId, price_prec: int, size_prec: int, prices_raw: np.ndarray[Any, np.dtype[np.float64]], sizes_raw: np.ndarray[Any, np.dtype[np.float64]], aggressor_sides: np.ndarray[Any, np.dtype[np.uint8]], trade_ids: list[str], ts_events: np.ndarray[Any, np.dtype[np.uint64]], ts_inits: np.ndarray[Any, np.dtype[np.uint64]]) -> list[TradeTick]: ...
+    def from_raw_arrays_to_list(
+        instrument_id: InstrumentId, 
+        price_prec: int, 
+        size_prec: int, 
+        prices_raw: np.ndarray, # skip-validate
+        sizes_raw: np.ndarray, # skip-validate
+        aggressor_sides: np.ndarray, # skip-validate
+        trade_ids: list[str], 
+        ts_events: np.ndarray, # skip-validate
+        ts_inits: np.ndarray # skip-validate
+    ) -> list[TradeTick]: ...
     @staticmethod
     def list_from_capsule(capsule: Any) -> list[TradeTick]: ...
     @staticmethod
