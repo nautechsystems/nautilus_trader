@@ -455,9 +455,19 @@ cdef class Instrument(Data):
         else:
             return self.quote_currency
 
-    cpdef void set_tick_scheme_name(self, str tick_scheme_name):
+    cpdef void set_tick_scheme(self, str tick_scheme_name):
         """
-        Set the tick scheme name for the instrument.
+        Set the tick scheme for the instrument.
+
+        Sets both the `tick_scheme_name` and the corresponding tick scheme implementation
+        used for price rounding and tick calculations.
+
+        This will override any previously set tick scheme, including the `tick_scheme_name` field.
+
+        Parameters
+        ----------
+        tick_scheme_name : str
+            The name of the registered tick scheme.
 
         Raises
         ------
@@ -467,6 +477,7 @@ cdef class Instrument(Data):
             If `tick_scheme_name` is not a registered tick scheme.
 
         """
+        self.tick_scheme_name = tick_scheme_name
         self._tick_scheme = get_tick_scheme(tick_scheme_name)
 
     cpdef Price make_price(self, value):

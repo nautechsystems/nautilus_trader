@@ -102,7 +102,7 @@ class TardisInstrumentProvider(InstrumentProvider):
                 instruments = instruments_from_pyo3(pyo3_instruments)
 
                 for instrument in instruments:
-                    instrument.set_tick_scheme_name(f"FIXED_PRECISION_{instrument.price_precision}")
+                    instrument.set_tick_scheme(f"FIXED_PRECISION_{instrument.price_precision}")
                     self.add(instrument=instrument)
 
     async def load_ids_async(
@@ -168,7 +168,7 @@ class TardisInstrumentProvider(InstrumentProvider):
                 if symbols and symbol not in symbols:
                     continue  # Filter instrument ID
 
-                instrument.set_tick_scheme_name(f"FIXED_PRECISION_{instrument.price_precision}")
+                instrument.set_tick_scheme(f"FIXED_PRECISION_{instrument.price_precision}")
                 self.add(instrument=instrument)
 
     async def load_async(self, instrument_id: InstrumentId, filters: dict | None = None) -> None:
