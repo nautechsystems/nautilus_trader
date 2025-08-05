@@ -452,9 +452,9 @@ impl ParquetDataCatalogV2 {
     }
 
     /// Reset all catalog file names to their canonical form.
-    pub fn reset_catalog_file_names(&self) -> PyResult<()> {
+    pub fn reset_all_file_names(&self) -> PyResult<()> {
         self.inner
-            .reset_catalog_file_names()
+            .reset_all_file_names()
             .map_err(|e| PyIOError::new_err(format!("Failed to reset catalog file names: {e}")))
     }
 

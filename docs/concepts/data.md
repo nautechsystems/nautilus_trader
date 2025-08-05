@@ -1049,7 +1049,7 @@ Reset parquet file names to match their actual content timestamps. This ensures 
 
 ```python
 # Reset all parquet files in the catalog
-catalog.reset_catalog_file_names()
+catalog.reset_all_file_names()
 ```
 
 **Reset specific data type:**
