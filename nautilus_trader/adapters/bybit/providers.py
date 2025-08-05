@@ -99,10 +99,21 @@ class BybitInstrumentProvider(InstrumentProvider):
         instrument_infos: dict[BybitProductType, BybitInstrumentList] = {}
         fee_rates: dict[BybitProductType, list[BybitFeeRate]] = {}
 
+        # Extract base_coin from filters if provided
+        base_coin = filters.get("base_coin") if filters else None
+
         for product_type in self._product_types:
-            instrument_infos[product_type] = await self._http_market.fetch_all_instruments(
-                product_type,
-            )
+            # For options, use base_coin filter if provided
+            if product_type == BybitProductType.OPTION and base_coin:
+                self._log.info(f"Loading {base_coin} options only...")
+                instrument_infos[product_type] = await self._http_market.fetch_all_instruments(
+                    product_type,
+                    base_coin=base_coin,
+                )
+            else:
+                instrument_infos[product_type] = await self._http_market.fetch_all_instruments(
+                    product_type,
+                )
             fee_rates[product_type] = await self._http_account.fetch_fee_rate(
                 product_type,
             )
