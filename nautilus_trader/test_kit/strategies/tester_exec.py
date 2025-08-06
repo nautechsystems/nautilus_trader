@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+from typing import Any
 
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import PositiveInt
@@ -47,6 +48,7 @@ class ExecTesterConfig(StrategyConfig, frozen=True):
 
     instrument_id: InstrumentId
     order_qty: Decimal
+    order_params: list[Any] | None = None
     client_id: ClientId | None = None
     subscribe_quotes: bool = True
     subscribe_trades: bool = True
@@ -229,7 +231,11 @@ class ExecTester(Strategy):
         )
 
         self.buy_order = order
-        self.submit_order(order, client_id=self.client_id)
+        self.submit_order(
+            order,
+            client_id=self.client_id,
+            params=self.config.order_params,
+        )
 
     def create_sell_order(self, price: Price) -> None:
         if not self.instrument:
@@ -260,7 +266,11 @@ class ExecTester(Strategy):
         )
 
         self.sell_order = order
-        self.submit_order(order, client_id=self.client_id)
+        self.submit_order(
+            order,
+            client_id=self.client_id,
+            params=self.config.order_params,
+        )
 
     def on_stop(self) -> None:
         """

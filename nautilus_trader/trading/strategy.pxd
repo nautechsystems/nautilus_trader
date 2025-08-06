@@ -125,13 +125,15 @@ cdef class Strategy(Actor):
         self,
         Order order,
         PositionId position_id=*,
-        ClientId client_id=*, dict[str, object] params=*,
+        ClientId client_id=*,
+        dict[str, object] params=*,
     )
     cpdef void submit_order_list(
         self,
         OrderList order_list,
         PositionId position_id=*,
-        ClientId client_id=*, dict[str, object] params=*,
+        ClientId client_id=*,
+        dict[str, object] params=*,
     )
     cpdef void modify_order(
         self,
@@ -139,7 +141,8 @@ cdef class Strategy(Actor):
         Quantity quantity=*,
         Price price=*,
         Price trigger_price=*,
-        ClientId client_id=*, dict[str, object] params=*,
+        ClientId client_id=*,
+        dict[str, object] params=*,
     )
     cpdef void cancel_order(self, Order order, ClientId client_id=*, dict[str, object] params=*)
     cpdef void cancel_orders(self, list orders, ClientId client_id=*, dict[str, object] params=*)

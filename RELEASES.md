@@ -9,6 +9,7 @@ Released on TBD (UTC).
 - Added additional built-in backtest fill models (#2795), thanks @faysou and @stefansimik
 - Added `OrderBookDepth10DataWrangler` (#2801), thanks @trylovetom
 - Added Bybit options support (#2821), thanks @Baerenstein
+- Added Bybit `is_leverage` order parameter support
 - Added `persist_account_events` config option for `CacheConfig` (default `True` to retain current behavior)
 - Added `query_account` method for `Strategy`
 - Added `QueryAccount` execution message
