@@ -72,11 +72,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             order_side,
             order_type,
             quantity,
-            None,
-            None,
-            None,
-            None,
-            None,
+            None, // price
+            None, // trigger_price
+            None, // post_only
+            None, // reduce_only
+            None, // quote_quantity
+            None, // position_side
         )
         .await;
 

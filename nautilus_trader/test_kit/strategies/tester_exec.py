@@ -12,3 +12,290 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+from decimal import Decimal
+
+from nautilus_trader.common.enums import LogColor
+from nautilus_trader.config import PositiveInt
+from nautilus_trader.config import StrategyConfig
+from nautilus_trader.model.book import OrderBook
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import MarkPriceUpdate
+from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import TriggerType
+from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.instruments import Instrument
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.orders import LimitOrder
+from nautilus_trader.model.orders import Order
+from nautilus_trader.trading.strategy import Strategy
+
+
+# *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
+# *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
+
+
+class ExecTesterConfig(StrategyConfig, frozen=True):
+    """
+    Configuration for ``ExecTester`` instances.
+    """
+
+    instrument_id: InstrumentId
+    order_qty: Decimal
+    client_id: ClientId | None = None
+    subscribe_quotes: bool = True
+    subscribe_trades: bool = True
+    subscribe_book: bool = False
+    book_type: BookType = BookType.L2_MBP
+    book_depth: PositiveInt | None = None
+    book_interval_ms: PositiveInt = 1000
+    book_levels_to_print: PositiveInt = 10
+    enable_buys: bool = True
+    enable_sells: bool = True
+    market_offset_ticks: PositiveInt = 500  # Definitely out of the market
+    use_post_only: bool = True
+    use_quote_quantity: bool = False
+    emulation_trigger: str = "NO_TRIGGER"
+    reduce_only_on_stop: bool = True
+    dry_run: bool = False
+    log_data: bool = True
+
+
+class ExecTester(Strategy):
+    """
+    A strategy for testing execution functionality for integration adapters.
+
+    Cancels all orders and closes all positions on stop by default.
+
+    Parameters
+    ----------
+    config : ExecTesterConfig
+        The configuration for the instance.
+
+    """
+
+    def __init__(self, config: ExecTesterConfig) -> None:
+        super().__init__(config)
+
+        self.instrument: Instrument | None = None  # Initialized in on_start
+        self.client_id = config.client_id
+
+        # Order management
+        self.buy_order: LimitOrder | None = None
+        self.sell_order: LimitOrder | None = None
+
+    def on_start(self) -> None:
+        """
+        Actions to be performed on strategy start.
+        """
+        self.instrument = self.cache.instrument(self.config.instrument_id)
+        if self.instrument is None:
+            self.log.error(f"Could not find instrument for {self.config.instrument_id}")
+            self.stop()
+            return
+
+        # Subscribe to live data
+        if self.config.subscribe_quotes:
+            self.subscribe_quote_ticks(self.config.instrument_id, client_id=self.client_id)
+
+        if self.config.subscribe_trades:
+            self.subscribe_trade_ticks(self.config.instrument_id, client_id=self.client_id)
+
+        if self.config.subscribe_book:
+            self.subscribe_order_book_at_interval(
+                self.config.instrument_id,
+                book_type=self.config.book_type,
+                depth=self.config.book_depth or 0,
+                interval_ms=self.config.book_interval_ms,
+                client_id=self.client_id,
+            )
+
+    def on_order_book(self, book: OrderBook) -> None:
+        """
+        Actions to be performed when the strategy is running and receives a book.
+        """
+        if self.config.log_data:
+            num_levels = 10
+            self.log.info(
+                f"\n{book.instrument_id}\n{book.pprint(num_levels)}",
+                LogColor.CYAN,
+            )
+
+        self.maintain_orders(book.best_bid_price(), book.best_ask_price())
+
+    def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
+        """
+        Actions to be performed when the strategy is running and receives book deltas.
+        """
+        if self.config.log_data:
+            self.log.info(repr(deltas), LogColor.CYAN)
+
+    def on_quote_tick(self, quote: QuoteTick) -> None:
+        """
+        Actions to be performed when the strategy is running and receives a quote.
+        """
+        if self.config.log_data:
+            self.log.info(repr(quote), LogColor.CYAN)
+
+        self.maintain_orders(quote.bid_price, quote.ask_price)
+
+    def on_trade_tick(self, trade: TradeTick) -> None:
+        """
+        Actions to be performed when the strategy is running and receives a trade.
+        """
+        if self.config.log_data:
+            self.log.info(repr(trade), LogColor.CYAN)
+
+    def on_mark_price(self, update: MarkPriceUpdate) -> None:
+        """
+        Actions to be performed when the strategy is running and receives a mark price
+        update.
+        """
+        if self.config.log_data:
+            self.log.info(repr(update), LogColor.CYAN)
+
+    def on_index_price(self, update: MarkPriceUpdate) -> None:
+        """
+        Actions to be performed when the strategy is running and receives an index price
+        update.
+        """
+        if self.config.log_data:
+            self.log.info(repr(update), LogColor.CYAN)
+
+    def on_bar(self, bar: Bar) -> None:
+        """
+        Actions to be performed when the strategy is running and receives a bar.
+        """
+        if self.config.log_data:
+            self.log.info(repr(bar), LogColor.CYAN)
+
+    def maintain_orders(self, best_bid: Price, best_ask: Price) -> None:
+        if self.config.dry_run:
+            return
+
+        # Maintain BUY orders
+        if self.config.enable_buys:
+            if not self.buy_order or not self.is_order_active(self.buy_order):
+                self.create_buy_order(best_bid)
+            # elif self.buy_order.price != best_bid:
+            #     self.cancel_order(self.buy_order)
+            #     self.create_buy_order(best_bid)
+
+        # Maintain SELL orders
+        if self.config.enable_sells:
+            if not self.sell_order or not self.is_order_active(self.sell_order):
+                self.create_sell_order(best_ask)
+            # elif self.sell_order.price != best_ask:
+            #     self.cancel_order(self.sell_order)
+            #     self.create_sell_order(best_ask)
+
+    def get_market_offset(self, instrument: Instrument) -> Decimal:
+        return instrument.price_increment * self.config.market_offset_ticks
+
+    def is_order_active(self, order: Order) -> bool:
+        return order.is_active_local or order.is_inflight or order.is_open
+
+    def create_buy_order(self, price: Price) -> None:
+        if not self.instrument:
+            self.log.error("No instrument loaded")
+            return
+
+        if self.config.dry_run:
+            self.log.warning("Dry run, skipping create BUY order")
+            return
+
+        if not self.config.enable_buys:
+            self.log.warning("BUY orders not enabled, skipping")
+            return
+
+        market_offset = self.get_market_offset(self.instrument)
+        price = self.instrument.make_price(price - market_offset)
+
+        order: LimitOrder = self.order_factory.limit(
+            instrument_id=self.config.instrument_id,
+            order_side=OrderSide.BUY,
+            quantity=self.instrument.make_qty(self.config.order_qty),
+            price=price,
+            # time_in_force=TimeInForce.GTD,
+            # expire_time=self.clock.utc_now() + pd.Timedelta(minutes=10),
+            post_only=self.config.use_post_only,
+            quote_quantity=self.config.use_quote_quantity,
+            emulation_trigger=TriggerType[self.config.emulation_trigger],
+        )
+
+        self.buy_order = order
+        self.submit_order(order, client_id=self.client_id)
+
+    def create_sell_order(self, price: Price) -> None:
+        if not self.instrument:
+            self.log.error("No instrument loaded")
+            return
+
+        if self.config.dry_run:
+            self.log.warning("Dry run, skipping create SELL order")
+            return
+
+        if not self.config.enable_sells:
+            self.log.warning("SELL orders not enabled, skipping")
+            return
+
+        market_offset = self.get_market_offset(self.instrument)
+        price = self.instrument.make_price(price + market_offset)
+
+        order: LimitOrder = self.order_factory.limit(
+            instrument_id=self.config.instrument_id,
+            order_side=OrderSide.SELL,
+            quantity=self.instrument.make_qty(self.config.order_qty),
+            price=price,
+            # time_in_force=TimeInForce.GTD,
+            # expire_time=self.clock.utc_now() + pd.Timedelta(minutes=10),
+            post_only=self.config.use_post_only,
+            quote_quantity=self.config.use_quote_quantity,
+            emulation_trigger=TriggerType[self.config.emulation_trigger],
+        )
+
+        self.sell_order = order
+        self.submit_order(order, client_id=self.client_id)
+
+    def on_stop(self) -> None:
+        """
+        Actions to be performed when the strategy is stopped.
+        """
+        if self.config.dry_run:
+            self.log.warning("Dry run mode, skipping cancel all orders and close all positions")
+            return
+
+        self.cancel_all_orders(self.config.instrument_id, client_id=self.client_id)
+
+        # # Uncomment to test individual cancels
+        # for order in self.cache.orders_open(instrument_id=self.config.instrument_id):
+        #     self.cancel_order(order)
+
+        # # Uncomment to test batch cancel
+        # open_orders = self.cache.orders_open(instrument_id=self.config.instrument_id)
+        # if open_orders:
+        #     self.cancel_orders(open_orders, client_id=self.client_id)
+
+        self.close_all_positions(
+            instrument_id=self.config.instrument_id,
+            client_id=self.client_id,
+            reduce_only=self.config.reduce_only_on_stop,
+        )
+
+        # Unsubscribe from data
+        if self.config.subscribe_quotes:
+            self.unsubscribe_quote_ticks(self.config.instrument_id, client_id=self.client_id)
+
+        if self.config.subscribe_trades:
+            self.unsubscribe_trade_ticks(self.config.instrument_id, client_id=self.client_id)
+
+        if self.config.subscribe_book:
+            self.unsubscribe_order_book_at_interval(
+                self.config.instrument_id,
+                client_id=self.client_id,
+            )

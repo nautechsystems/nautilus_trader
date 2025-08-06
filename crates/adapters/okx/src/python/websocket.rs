@@ -592,7 +592,8 @@ impl OKXWebSocketClient {
         trigger_price=None,
         post_only=None,
         reduce_only=None,
-        position_side=None
+        quote_quantity=None,
+        position_side=None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn py_submit_order<'py>(
@@ -610,6 +611,7 @@ impl OKXWebSocketClient {
         trigger_price: Option<Price>,
         post_only: Option<bool>,
         reduce_only: Option<bool>,
+        quote_quantity: Option<bool>,
         position_side: Option<PositionSide>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -629,6 +631,7 @@ impl OKXWebSocketClient {
                     trigger_price,
                     post_only,
                     reduce_only,
+                    quote_quantity,
                     position_side,
                 )
                 .await
