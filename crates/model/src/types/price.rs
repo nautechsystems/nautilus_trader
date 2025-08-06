@@ -579,7 +579,7 @@ pub fn decode_raw_price_i64(value: i64) -> PriceRaw {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use float_cmp::approx_eq;
+    use nautilus_core::approx_eq;
     use rstest::rstest;
     use rust_decimal_macros::dec;
 
