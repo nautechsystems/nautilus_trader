@@ -48,8 +48,6 @@ def main() -> None:
     # Chain setup
     chain = Chain.ARBITRUM()
     print(f"\nChain: {chain}")
-    print(f"Chain ID: {chain.chain_id}")
-    print(f"Chain name: {chain.name}")
 
     # RPC URLs (equivalent to get_env_var calls)
     http_rpc_url = os.getenv("RPC_HTTP_URL", "https://arb1.arbitrum.io/rpc")
@@ -84,7 +82,7 @@ def main() -> None:
             "log_commands": True,
             "chain": "Arbitrum",
             "client_id": "BLOCKCHAIN-Arbitrum",
-            "pools": ["WETH/USDC-3000.Arbitrum:UniswapV3"],
+            "pools": ["0xC31E54c7a869B9FcBEcc14363CF510d1c41fa443.Arbitrum:UniswapV3"],
         },
     )
 

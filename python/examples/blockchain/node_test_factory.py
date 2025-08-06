@@ -36,7 +36,7 @@ def test_factory_approach():
             "log_commands": True,
             "chain": "Arbitrum",
             "client_id": "BLOCKCHAIN-Arbitrum",
-            "pools": ["WETH/USDC-3000.Arbitrum:UniswapV3"],
+            "pools": ["0xC31E54c7a869B9FcBEcc14363CF510d1c41fa443.Arbitrum:UniswapV3"],
         },
     )
 
