@@ -258,7 +258,7 @@ impl OrderBook {
         if let Some(own_book) = own_book {
             filter_quantities(
                 &mut public_map,
-                own_book.bid_quantity(status, accepted_buffer_ns, now),
+                own_book.bid_quantity(status, None, None, accepted_buffer_ns, now),
             );
         }
 
@@ -286,7 +286,7 @@ impl OrderBook {
         if let Some(own_book) = own_book {
             filter_quantities(
                 &mut public_map,
-                own_book.ask_quantity(status, accepted_buffer_ns, now),
+                own_book.ask_quantity(status, None, None, accepted_buffer_ns, now),
             );
         }
 
@@ -312,7 +312,7 @@ impl OrderBook {
         if let Some(own_book) = own_book {
             filter_quantities(
                 &mut public_map,
-                own_book.group_bids(group_size, depth, status, accepted_buffer_ns, now),
+                own_book.bid_quantity(status, depth, Some(group_size), accepted_buffer_ns, now),
             );
         }
 
@@ -338,7 +338,7 @@ impl OrderBook {
         if let Some(own_book) = own_book {
             filter_quantities(
                 &mut public_map,
-                own_book.group_asks(group_size, depth, status, accepted_buffer_ns, now),
+                own_book.ask_quantity(status, depth, Some(group_size), accepted_buffer_ns, now),
             );
         }
 

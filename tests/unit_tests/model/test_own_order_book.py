@@ -867,3 +867,280 @@ def test_mixed_status_filtering():
 
     assert len(accepted_ask_qty) == 1
     assert accepted_ask_qty[Price(101.0, 2).as_decimal()] == Decimal("25")
+
+
+def test_bid_quantity_with_depth_limit():
+    """
+    Test that depth parameter limits the number of price levels returned.
+    """
+    instrument_id = InstrumentId.from_str("AAPL.XNAS")
+    book = OwnOrderBook(instrument_id)
+
+    # Add orders at multiple price levels
+    prices_and_sizes = [(100.0, 10.0), (99.0, 15.0), (98.0, 20.0), (97.0, 5.0)]
+
+    for i, (price, size) in enumerate(prices_and_sizes):
+        book.add(
+            OwnBookOrder(
+                trader_id=TraderId("TRADER-001"),
+                client_order_id=ClientOrderId(f"O-{i+1}"),
+                venue_order_id=VenueOrderId(f"{i+1}"),
+                side=OrderSide.BUY,
+                price=Price(price, 2),
+                size=Quantity(size, 0),
+                order_type=OrderType.LIMIT,
+                time_in_force=TimeInForce.GTC,
+                status=OrderStatus.ACCEPTED,
+                ts_last=2,
+                ts_accepted=2,
+                ts_submitted=1,
+                ts_init=1,
+            ),
+        )
+
+    # Test without depth limit (should return all 4 levels)
+    all_quantities = book.bid_quantity()
+    assert len(all_quantities) == 4
+
+    # Test with depth limit of 2
+    limited_quantities = book.bid_quantity(depth=2)
+    assert len(limited_quantities) == 2
+    # Should get the first 2 price levels in the IndexMap order
+    quantities_list = list(limited_quantities.items())
+    assert quantities_list[0] == (Price(100.0, 2).as_decimal(), Decimal("10"))
+    assert quantities_list[1] == (Price(99.0, 2).as_decimal(), Decimal("15"))
+
+    # Test with depth limit of 1
+    single_quantity = book.bid_quantity(depth=1)
+    assert len(single_quantity) == 1
+    assert single_quantity[Price(100.0, 2).as_decimal()] == Decimal("10")
+
+    # Test with depth limit larger than available levels
+    over_limit = book.bid_quantity(depth=10)
+    assert len(over_limit) == 4  # Should return all available
+
+
+def test_ask_quantity_with_depth_limit():
+    """
+    Test that depth parameter limits the number of ask price levels returned.
+    """
+    instrument_id = InstrumentId.from_str("AAPL.XNAS")
+    book = OwnOrderBook(instrument_id)
+
+    # Add orders at multiple ask price levels
+    prices_and_sizes = [(101.0, 8.0), (102.0, 12.0), (103.0, 6.0)]
+
+    for i, (price, size) in enumerate(prices_and_sizes):
+        book.add(
+            OwnBookOrder(
+                trader_id=TraderId("TRADER-001"),
+                client_order_id=ClientOrderId(f"A-{i+1}"),
+                venue_order_id=VenueOrderId(f"{i+1}"),
+                side=OrderSide.SELL,
+                price=Price(price, 2),
+                size=Quantity(size, 0),
+                order_type=OrderType.LIMIT,
+                time_in_force=TimeInForce.GTC,
+                status=OrderStatus.ACCEPTED,
+                ts_last=2,
+                ts_accepted=2,
+                ts_submitted=1,
+                ts_init=1,
+            ),
+        )
+
+    # Test with depth limit of 2
+    limited_quantities = book.ask_quantity(depth=2)
+    assert len(limited_quantities) == 2
+    quantities_list = list(limited_quantities.items())
+    assert quantities_list[0] == (Price(101.0, 2).as_decimal(), Decimal("8"))
+    assert quantities_list[1] == (Price(102.0, 2).as_decimal(), Decimal("12"))
+
+
+def test_bid_quantity_with_grouping():
+    """
+    Test grouping bids into price buckets using group_size parameter.
+    """
+    instrument_id = InstrumentId.from_str("AAPL.XNAS")
+    book = OwnOrderBook(instrument_id)
+
+    # Add orders at various prices that will be grouped
+    orders_data = [
+        (100.25, 10.0),  # Should group to 100.00
+        (100.75, 15.0),  # Should group to 100.00
+        (99.10, 5.0),  # Should group to 99.00
+        (99.90, 8.0),  # Should group to 99.00
+        (98.50, 20.0),  # Should group to 98.00
+    ]
+
+    for i, (price, size) in enumerate(orders_data):
+        book.add(
+            OwnBookOrder(
+                trader_id=TraderId("TRADER-001"),
+                client_order_id=ClientOrderId(f"O-{i+1}"),
+                venue_order_id=VenueOrderId(f"{i+1}"),
+                side=OrderSide.BUY,
+                price=Price(price, 2),
+                size=Quantity(size, 0),
+                order_type=OrderType.LIMIT,
+                time_in_force=TimeInForce.GTC,
+                status=OrderStatus.ACCEPTED,
+                ts_last=2,
+                ts_accepted=2,
+                ts_submitted=1,
+                ts_init=1,
+            ),
+        )
+
+    # Test grouping by 1.00 (group_size = 1.0)
+    grouped = book.bid_quantity(group_size=Decimal("1.0"))
+
+    assert len(grouped) == 3
+    assert grouped[Decimal("100.00")] == Decimal("25")  # 10 + 15
+    assert grouped[Decimal("99.00")] == Decimal("13")  # 5 + 8
+    assert grouped[Decimal("98.00")] == Decimal("20")  # 20
+
+
+def test_ask_quantity_with_grouping():
+    """
+    Test grouping asks into price buckets using group_size parameter.
+    """
+    instrument_id = InstrumentId.from_str("AAPL.XNAS")
+    book = OwnOrderBook(instrument_id)
+
+    # Add ask orders at various prices that will be grouped
+    orders_data = [
+        (101.25, 12.0),  # Should group to 102.00 (ceiling for asks)
+        (101.75, 8.0),  # Should group to 102.00
+        (102.10, 15.0),  # Should group to 103.00
+        (103.90, 5.0),  # Should group to 104.00
+    ]
+
+    for i, (price, size) in enumerate(orders_data):
+        book.add(
+            OwnBookOrder(
+                trader_id=TraderId("TRADER-001"),
+                client_order_id=ClientOrderId(f"A-{i+1}"),
+                venue_order_id=VenueOrderId(f"{i+1}"),
+                side=OrderSide.SELL,
+                price=Price(price, 2),
+                size=Quantity(size, 0),
+                order_type=OrderType.LIMIT,
+                time_in_force=TimeInForce.GTC,
+                status=OrderStatus.ACCEPTED,
+                ts_last=2,
+                ts_accepted=2,
+                ts_submitted=1,
+                ts_init=1,
+            ),
+        )
+
+    # Test grouping by 1.00 (group_size = 1.0)
+    grouped = book.ask_quantity(group_size=Decimal("1.0"))
+
+    assert len(grouped) == 3
+    assert grouped[Decimal("102.00")] == Decimal("20")  # 12 + 8
+    assert grouped[Decimal("103.00")] == Decimal("15")  # 15
+    assert grouped[Decimal("104.00")] == Decimal("5")  # 5
+
+
+def test_bid_quantity_with_grouping_and_depth():
+    """
+    Test combining grouping with depth limiting for bid quantities.
+    """
+    instrument_id = InstrumentId.from_str("AAPL.XNAS")
+    book = OwnOrderBook(instrument_id)
+
+    # Add orders across multiple price ranges
+    orders_data = [
+        (100.25, 10.0),  # Group to 100.00
+        (100.75, 15.0),  # Group to 100.00
+        (99.10, 5.0),  # Group to 99.00
+        (99.90, 8.0),  # Group to 99.00
+        (98.50, 20.0),  # Group to 98.00
+        (97.25, 12.0),  # Group to 97.00
+    ]
+
+    for i, (price, size) in enumerate(orders_data):
+        book.add(
+            OwnBookOrder(
+                trader_id=TraderId("TRADER-001"),
+                client_order_id=ClientOrderId(f"O-{i+1}"),
+                venue_order_id=VenueOrderId(f"{i+1}"),
+                side=OrderSide.BUY,
+                price=Price(price, 2),
+                size=Quantity(size, 0),
+                order_type=OrderType.LIMIT,
+                time_in_force=TimeInForce.GTC,
+                status=OrderStatus.ACCEPTED,
+                ts_last=2,
+                ts_accepted=2,
+                ts_submitted=1,
+                ts_init=1,
+            ),
+        )
+
+    # Test grouping by 1.0 with depth limit of 2
+    grouped_limited = book.bid_quantity(group_size=Decimal("1.0"), depth=2)
+
+    # Should get top 2 grouped price levels
+    assert len(grouped_limited) == 2
+    levels = list(grouped_limited.items())
+    assert levels[0][0] == Decimal("100.00")
+    assert levels[0][1] == Decimal("25")  # 10 + 15
+    assert levels[1][0] == Decimal("99.00")
+    assert levels[1][1] == Decimal("13")  # 5 + 8
+
+
+def test_quantity_methods_with_status_and_grouping():
+    """
+    Test combining status filtering with grouping functionality.
+    """
+    instrument_id = InstrumentId.from_str("AAPL.XNAS")
+    book = OwnOrderBook(instrument_id)
+
+    # Add orders with different statuses at various prices
+    orders_data = [
+        (100.25, 10.0, OrderStatus.ACCEPTED),  # Group to 100.00
+        (100.75, 15.0, OrderStatus.SUBMITTED),  # Group to 100.00
+        (99.10, 5.0, OrderStatus.ACCEPTED),  # Group to 99.00
+        (99.90, 8.0, OrderStatus.CANCELED),  # Group to 99.00
+    ]
+
+    for i, (price, size, status) in enumerate(orders_data):
+        book.add(
+            OwnBookOrder(
+                trader_id=TraderId("TRADER-001"),
+                client_order_id=ClientOrderId(f"O-{i+1}"),
+                venue_order_id=VenueOrderId(f"{i+1}") if status == OrderStatus.ACCEPTED else None,
+                side=OrderSide.BUY,
+                price=Price(price, 2),
+                size=Quantity(size, 0),
+                order_type=OrderType.LIMIT,
+                time_in_force=TimeInForce.GTC,
+                status=status,
+                ts_last=2,
+                ts_accepted=2 if status == OrderStatus.ACCEPTED else 0,
+                ts_submitted=1,
+                ts_init=1,
+            ),
+        )
+
+    # Test grouping with ACCEPTED status filter
+    grouped_accepted = book.bid_quantity(
+        status={OrderStatus.ACCEPTED},
+        group_size=Decimal("1.0"),
+    )
+
+    assert len(grouped_accepted) == 2
+    assert grouped_accepted[Decimal("100.00")] == Decimal("10")  # Only accepted order
+    assert grouped_accepted[Decimal("99.00")] == Decimal("5")  # Only accepted order
+
+    # Test grouping with SUBMITTED status filter
+    grouped_submitted = book.bid_quantity(
+        status={OrderStatus.SUBMITTED},
+        group_size=Decimal("1.0"),
+    )
+
+    assert len(grouped_submitted) == 1
+    assert grouped_submitted[Decimal("100.00")] == Decimal("15")  # Only submitted order
