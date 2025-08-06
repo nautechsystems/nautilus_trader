@@ -470,7 +470,7 @@ pub fn check_positive_money(value: Money, param: &str) -> anyhow::Result<()> {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use float_cmp::approx_eq;
+    use nautilus_core::approx_eq;
     use rstest::rstest;
     use rust_decimal_macros::dec;
 

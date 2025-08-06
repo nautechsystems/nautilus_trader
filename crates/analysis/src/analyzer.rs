@@ -420,6 +420,7 @@ impl PortfolioAnalyzer {
 mod tests {
     use std::sync::Arc;
 
+    use nautilus_core::approx_eq;
     use nautilus_model::{
         enums::{AccountType, LiquiditySide, OrderSide},
         events::{AccountState, OrderFilled},
@@ -658,14 +659,14 @@ mod tests {
 
         // Test total PnL calculation
         let result = analyzer.total_pnl(Some(&currency), None).unwrap();
-        assert_eq!(result, 500.0);
+        assert!(approx_eq!(f64, result, 500.0, epsilon = 1e-9));
 
         // Test with unrealized PnL
         let unrealized_pnl = Money::new(100.0, currency);
         let result = analyzer
             .total_pnl(Some(&currency), Some(&unrealized_pnl))
             .unwrap();
-        assert_eq!(result, 600.0);
+        assert!(approx_eq!(f64, result, 600.0, epsilon = 1e-9));
     }
 
     #[rstest]
@@ -691,14 +692,14 @@ mod tests {
         let result = analyzer
             .total_pnl_percentage(Some(&currency), None)
             .unwrap();
-        assert_eq!(result, 50.0); // (1500 - 1000) / 1000 * 100
+        assert!(approx_eq!(f64, result, 50.0, epsilon = 1e-9)); // (1500 - 1000) / 1000 * 100
 
         // Test with unrealized PnL
         let unrealized_pnl = Money::new(500.0, currency);
         let result = analyzer
             .total_pnl_percentage(Some(&currency), Some(&unrealized_pnl))
             .unwrap();
-        assert_eq!(result, 100.0); // (2000 - 1000) / 1000 * 100
+        assert!(approx_eq!(f64, result, 100.0, epsilon = 1e-9)); // (2000 - 1000) / 1000 * 100
     }
 
     #[rstest]
@@ -716,13 +717,18 @@ mod tests {
         // Verify realized PnLs were recorded
         let pnls = analyzer.realized_pnls(Some(&currency)).unwrap();
         assert_eq!(pnls.len(), 2);
-        assert_eq!(pnls[0].1, 100.0);
-        assert_eq!(pnls[1].1, 200.0);
+        assert!(approx_eq!(f64, pnls[0].1, 100.0, epsilon = 1e-9));
+        assert!(approx_eq!(f64, pnls[1].1, 200.0, epsilon = 1e-9));
 
         // Verify returns were recorded
         let returns = analyzer.returns();
         assert_eq!(returns.len(), 1);
-        assert_eq!(*returns.values().next().unwrap(), 0.30000000000000004);
+        assert!(approx_eq!(
+            f64,
+            *returns.values().next().unwrap(),
+            0.30000000000000004,
+            epsilon = 1e-9
+        ));
     }
 
     #[rstest]

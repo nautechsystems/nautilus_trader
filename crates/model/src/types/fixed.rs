@@ -216,7 +216,7 @@ pub fn fixed_u128_to_f64(value: u128) -> f64 {
 #[cfg(feature = "high-precision")]
 #[cfg(test)]
 mod tests {
-    use float_cmp::approx_eq;
+    use nautilus_core::approx_eq;
     use rstest::rstest;
 
     use super::*;
@@ -514,7 +514,7 @@ mod tests {
 #[cfg(not(feature = "high-precision"))]
 #[cfg(test)]
 mod tests {
-    use float_cmp::approx_eq;
+    use nautilus_core::approx_eq;
     use rstest::rstest;
 
     use super::*;
