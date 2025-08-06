@@ -19,7 +19,7 @@ import asyncio
 from collections import defaultdict
 from datetime import timedelta
 from functools import partial
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import msgspec
 
@@ -38,7 +38,6 @@ from nautilus_trader.adapters.bybit.http.market import BybitMarketHttpAPI
 from nautilus_trader.adapters.bybit.schemas.common import BYBIT_PONG
 from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickerData
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsMessageGeneral
-from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTickerLinearMsg
 from nautilus_trader.adapters.bybit.schemas.ws import decoder_ws_kline
 from nautilus_trader.adapters.bybit.schemas.ws import decoder_ws_orderbook
 from nautilus_trader.adapters.bybit.schemas.ws import decoder_ws_trade
@@ -80,8 +79,6 @@ from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
 
 
 if TYPE_CHECKING:
@@ -705,64 +702,113 @@ class BybitDataClient(LiveMarketDataClient):
         self._handle_data(deltas)
 
     def _handle_ticker(self, product_type: BybitProductType, raw: bytes) -> None:
-        # Currently we use the ticker stream to parse quotes, and this
-        # is only handled of LINEAR / INVERSE. Other product types should
-        # subscribe to an orderbook stream.
-        if product_type in (BybitProductType.LINEAR, BybitProductType.INVERSE):
-            decoder = msgspec.json.Decoder(BybitWsTickerLinearMsg)
-        else:
-            raise ValueError(f"Invalid product type for ticker: {product_type}")
+        """
+        Handle ticker data from Bybit websocket.
+        """
+        if product_type not in [
+            BybitProductType.LINEAR,
+            BybitProductType.INVERSE,
+            BybitProductType.OPTION,
+        ]:
+            return
 
-        msg = decoder.decode(raw)
+        # Parse ticker data
+        ticker = self._parse_ticker_data(raw, product_type)
+        if not ticker:
+            return
+
+        # Create quote tick
+        quote_tick = self._create_quote_tick_from_ticker(ticker, product_type)
+        if quote_tick:
+            self._handle_data([quote_tick])
+
+    def _parse_ticker_data(self, raw: bytes, product_type: BybitProductType) -> Any:
+        """
+        Parse ticker data from raw bytes.
+        """
         try:
-            instrument_id = self._get_cached_instrument_id(msg.data.symbol, product_type)
-            instrument = self._cache.instrument(instrument_id)
-            if instrument is None:
-                self._log.error(f"Cannot parse trade data: no instrument for {instrument_id}")
-                return
+            data = self._decoder_ws_msg_general.decode(raw)
+            # Use attribute access instead of get method
+            return getattr(data, "data", {})
+        except Exception as e:
+            self._log.error(f"Error parsing ticker data: {e}")
+            return None
 
-            last_quote = self._last_quotes.get(instrument_id)
+    def _create_quote_tick_from_ticker(
+        self,
+        ticker: Any,
+        product_type: BybitProductType,
+    ) -> QuoteTick | None:
+        """
+        Create QuoteTick from ticker data.
+        """
+        try:
+            # Extract price and size data based on product type
+            bid_price, ask_price, bid_size, ask_size = self._extract_ticker_prices_and_sizes(
+                ticker,
+                product_type,
+            )
 
-            bid_price = None
-            ask_price = None
-            bid_size = None
-            ask_size = None
+            if bid_price is None or ask_price is None:
+                return None
 
-            if last_quote is not None:
-                # Convert the previous quote to new price and sizes to ensure that the precision
-                # of the new Quote is consistent with the instrument definition even after
-                # updates of the instrument.
-                bid_price = Price(last_quote.bid_price.as_double(), instrument.price_precision)
-                ask_price = Price(last_quote.ask_price.as_double(), instrument.price_precision)
-                bid_size = Quantity(last_quote.bid_size.as_double(), instrument.size_precision)
-                ask_size = Quantity(last_quote.ask_size.as_double(), instrument.size_precision)
-
-            if msg.data.bid1Price is not None:
-                bid_price = Price(float(msg.data.bid1Price), instrument.price_precision)
-
-            if msg.data.ask1Price is not None:
-                ask_price = Price(float(msg.data.ask1Price), instrument.price_precision)
-
-            if msg.data.bid1Size is not None:
-                bid_size = Quantity(float(msg.data.bid1Size), instrument.size_precision)
-
-            if msg.data.ask1Size is not None:
-                ask_size = Quantity(float(msg.data.ask1Size), instrument.size_precision)
-
-            quote = QuoteTick(
-                instrument_id=instrument_id,
+            # Create QuoteTick
+            return QuoteTick(
+                instrument_id=self._get_instrument_id_from_ticker(ticker),
                 bid_price=bid_price,
                 ask_price=ask_price,
                 bid_size=bid_size,
                 ask_size=ask_size,
-                ts_event=millis_to_nanos(msg.ts),
+                ts_event=self._get_timestamp_from_ticker(ticker),
                 ts_init=self._clock.timestamp_ns(),
             )
-
-            self._last_quotes[quote.instrument_id] = quote
-            self._handle_data(quote)
         except Exception as e:
-            self._log.exception(f"Failed to parse ticker: {msg}", e)
+            self._log.error(f"Error creating QuoteTick from ticker: {e}")
+            return None
+
+    def _extract_ticker_prices_and_sizes(
+        self,
+        ticker: Any,
+        product_type: BybitProductType,
+    ) -> tuple[float | None, float | None, float | None, float | None]:
+        """
+        Extract bid/ask prices and sizes from ticker data.
+        """
+        if product_type == BybitProductType.LINEAR:
+            return (
+                getattr(ticker, "bid1Price", None),
+                getattr(ticker, "ask1Price", None),
+                getattr(ticker, "bid1Size", None),
+                getattr(ticker, "ask1Size", None),
+            )
+        elif product_type == BybitProductType.INVERSE:
+            return (
+                getattr(ticker, "bid1Price", None),
+                getattr(ticker, "ask1Price", None),
+                getattr(ticker, "bid1Size", None),
+                getattr(ticker, "ask1Size", None),
+            )
+        elif product_type == BybitProductType.OPTION:
+            return (
+                getattr(ticker, "bid1Price", None),
+                getattr(ticker, "ask1Price", None),
+                getattr(ticker, "bid1Size", None),
+                getattr(ticker, "ask1Size", None),
+            )
+        return None, None, None, None
+
+    def _get_instrument_id_from_ticker(self, ticker: Any) -> InstrumentId:
+        """
+        Get InstrumentId from ticker data.
+        """
+        symbol = getattr(ticker, "symbol", "")
+        return InstrumentId.from_str(f"{symbol}.BYBIT")
+
+    def _get_timestamp_from_ticker(self, ticker: Any) -> int:
+        """
+        Get timestamp from ticker data.
+        """
+        return getattr(ticker, "ts", self._clock.timestamp_ns())
 
     def _handle_trade(self, product_type: BybitProductType, raw: bytes) -> None:
         msg = self._decoder_ws_trade.decode(raw)
