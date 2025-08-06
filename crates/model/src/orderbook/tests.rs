@@ -2311,8 +2311,8 @@ fn test_own_order_book_quantity_empty_levels() {
     let instrument_id = InstrumentId::from("AAPL.XNAS");
     let book = OwnOrderBook::new(instrument_id);
 
-    let bid_quantities = book.bid_quantity(None, None, None);
-    let ask_quantities = book.ask_quantity(None, None, None);
+    let bid_quantities = book.bid_quantity(None, None, None, None, None);
+    let ask_quantities = book.ask_quantity(None, None, None, None, None);
 
     assert!(bid_quantities.is_empty());
     assert!(ask_quantities.is_empty());
@@ -2409,12 +2409,12 @@ fn test_own_order_book_bid_ask_quantity() {
     book.add(ask_order1);
     book.add(ask_order2);
 
-    let bid_quantities = book.bid_quantity(None, None, None);
+    let bid_quantities = book.bid_quantity(None, None, None, None, None);
     assert_eq!(bid_quantities.len(), 2);
     assert_eq!(bid_quantities.get(&dec!(100.00)), Some(&dec!(25)));
     assert_eq!(bid_quantities.get(&dec!(99.50)), Some(&dec!(20)));
 
-    let ask_quantities = book.ask_quantity(None, None, None);
+    let ask_quantities = book.ask_quantity(None, None, None, None, None);
     assert_eq!(ask_quantities.len(), 1);
     assert_eq!(ask_quantities.get(&dec!(101.00)), Some(&dec!(20)));
 }
@@ -2631,7 +2631,7 @@ fn test_status_filtering_bid_quantity() {
     book.add(canceled);
 
     // Test with no filter (should include all orders)
-    let all_quantities = book.bid_quantity(None, None, None);
+    let all_quantities = book.bid_quantity(None, None, None, None, None);
     assert_eq!(all_quantities.len(), 2); // Two price levels
     assert_eq!(all_quantities.get(&dec!(100.00)), Some(&dec!(25))); // 10 + 15 = 25
     assert_eq!(all_quantities.get(&dec!(99.50)), Some(&dec!(20))); // 20
@@ -2639,7 +2639,7 @@ fn test_status_filtering_bid_quantity() {
     // Filter for just SUBMITTED status
     let mut filter_submitted = HashSet::new();
     filter_submitted.insert(OrderStatus::Submitted);
-    let submitted_quantities = book.bid_quantity(Some(filter_submitted), None, None);
+    let submitted_quantities = book.bid_quantity(Some(filter_submitted), None, None, None, None);
     assert_eq!(submitted_quantities.len(), 1); // One price level
     assert_eq!(submitted_quantities.get(&dec!(100.00)), Some(&dec!(10))); // 10
     assert!(submitted_quantities.get(&dec!(99.50)).is_none()); // No SUBMITTED orders at 99.50
@@ -2649,7 +2649,7 @@ fn test_status_filtering_bid_quantity() {
     filter_accepted_canceled.insert(OrderStatus::Accepted);
     filter_accepted_canceled.insert(OrderStatus::Canceled);
     let accepted_canceled_quantities =
-        book.bid_quantity(Some(filter_accepted_canceled), None, None);
+        book.bid_quantity(Some(filter_accepted_canceled), None, None, None, None);
     assert_eq!(accepted_canceled_quantities.len(), 2); // Two price levels
     assert_eq!(
         accepted_canceled_quantities.get(&dec!(100.00)),
@@ -2720,7 +2720,7 @@ fn test_status_filtering_ask_quantity() {
     book.add(canceled);
 
     // Test with no filter (should include all orders)
-    let all_quantities = book.ask_quantity(None, None, None);
+    let all_quantities = book.ask_quantity(None, None, None, None, None);
     assert_eq!(all_quantities.len(), 2); // Two price levels
     assert_eq!(all_quantities.get(&dec!(101.00)), Some(&dec!(25))); // 10 + 15 = 25
     assert_eq!(all_quantities.get(&dec!(102.00)), Some(&dec!(20))); // 20
@@ -2728,7 +2728,7 @@ fn test_status_filtering_ask_quantity() {
     // Filter for just SUBMITTED status
     let mut filter_submitted = HashSet::new();
     filter_submitted.insert(OrderStatus::Submitted);
-    let submitted_quantities = book.ask_quantity(Some(filter_submitted), None, None);
+    let submitted_quantities = book.ask_quantity(Some(filter_submitted), None, None, None, None);
     assert_eq!(submitted_quantities.len(), 1); // One price level
     assert_eq!(submitted_quantities.get(&dec!(101.00)), Some(&dec!(10))); // 10
     assert!(submitted_quantities.get(&dec!(102.00)).is_none()); // No SUBMITTED orders at 102.00
@@ -2737,7 +2737,7 @@ fn test_status_filtering_ask_quantity() {
     let mut filter_multiple = HashSet::new();
     filter_multiple.insert(OrderStatus::Submitted);
     filter_multiple.insert(OrderStatus::Canceled);
-    let multiple_quantities = book.ask_quantity(Some(filter_multiple), None, None);
+    let multiple_quantities = book.ask_quantity(Some(filter_multiple), None, None, None, None);
     assert_eq!(multiple_quantities.len(), 2); // Two price levels
     assert_eq!(multiple_quantities.get(&dec!(101.00)), Some(&dec!(10))); // 10 (Submitted only)
     assert_eq!(multiple_quantities.get(&dec!(102.00)), Some(&dec!(20))); // 20 (Canceled only)
@@ -2745,7 +2745,7 @@ fn test_status_filtering_ask_quantity() {
     // Check empty price levels are filtered out
     let mut filter_filled = HashSet::new();
     filter_filled.insert(OrderStatus::Filled);
-    let filled_quantities = book.ask_quantity(Some(filter_filled), None, None);
+    let filled_quantities = book.ask_quantity(Some(filter_filled), None, None, None, None);
     assert_eq!(filled_quantities.len(), 0); // No orders match
 }
 
@@ -2754,8 +2754,8 @@ fn test_own_book_group_empty_book() {
     let instrument_id = InstrumentId::from("AAPL.XNAS");
     let book = OwnOrderBook::new(instrument_id);
 
-    let grouped_bids = book.group_bids(dec!(1), None, None, None, None);
-    let grouped_asks = book.group_asks(dec!(1), None, None, None, None);
+    let grouped_bids = book.bid_quantity(None, None, Some(dec!(1)), None, None);
+    let grouped_asks = book.ask_quantity(None, None, Some(dec!(1)), None, None);
 
     assert!(grouped_bids.is_empty());
     assert!(grouped_asks.is_empty());
@@ -2872,8 +2872,8 @@ fn test_own_book_group_price_levels() {
     book.add(ask_order3);
 
     // Group with a 0.5 increment
-    let grouped_bids = book.group_bids(dec!(0.5), None, None, None, None);
-    let grouped_asks = book.group_asks(dec!(0.5), None, None, None, None);
+    let grouped_bids = book.bid_quantity(None, None, Some(dec!(0.5)), None, None);
+    let grouped_asks = book.ask_quantity(None, None, Some(dec!(0.5)), None, None);
 
     // Check bid grouping
     assert_eq!(grouped_bids.len(), 2);
@@ -2992,8 +2992,8 @@ fn test_own_book_group_with_depth_limit() {
     }
 
     // Group with depth=2 to limit number of levels returned
-    let grouped_bids = book.group_bids(dec!(1.0), Some(2), None, None, None);
-    let grouped_asks = book.group_asks(dec!(1.0), Some(2), None, None, None);
+    let grouped_bids = book.bid_quantity(None, Some(2), Some(dec!(1.0)), None, None);
+    let grouped_asks = book.ask_quantity(None, Some(2), Some(dec!(1.0)), None, None);
 
     // Check bid grouping
     assert_eq!(grouped_bids.len(), 2); // Should only have 2 levels
@@ -3084,8 +3084,8 @@ fn test_own_book_group_with_multiple_orders_at_same_level() {
     book.add(ask_order2);
 
     // Group with a 1.0 increment (same as the price differences)
-    let grouped_bids = book.group_bids(dec!(1.0), None, None, None, None);
-    let grouped_asks = book.group_asks(dec!(1.0), None, None, None, None);
+    let grouped_bids = book.bid_quantity(None, None, Some(dec!(1.0)), None, None);
+    let grouped_asks = book.ask_quantity(None, None, Some(dec!(1.0)), None, None);
 
     // Check that orders at the same price level are aggregated correctly
     assert_eq!(grouped_bids.len(), 1);
@@ -3206,8 +3206,8 @@ fn test_own_book_group_with_larger_group_size() {
     }
 
     // Group with a larger increment: 2.0
-    let grouped_bids = book.group_bids(dec!(2), None, None, None, None);
-    let grouped_asks = book.group_asks(dec!(2), None, None, None, None);
+    let grouped_bids = book.bid_quantity(None, None, Some(dec!(2)), None, None);
+    let grouped_asks = book.ask_quantity(None, None, Some(dec!(2)), None, None);
 
     // Check bid grouping with larger group size
     assert_eq!(grouped_bids.len(), 2);
@@ -3331,8 +3331,8 @@ fn test_own_book_group_with_fractional_group_size() {
     }
 
     // Group with a fractional increment: 0.1
-    let grouped_bids = book.group_bids(dec!(0.1), None, None, None, None);
-    let grouped_asks = book.group_asks(dec!(0.1), None, None, None, None);
+    let grouped_bids = book.bid_quantity(None, None, Some(dec!(0.1)), None, None);
+    let grouped_asks = book.ask_quantity(None, None, Some(dec!(0.1)), None, None);
 
     // Check bid grouping with fractional group size
     assert_eq!(grouped_bids.len(), 2);
@@ -3394,10 +3394,10 @@ fn test_own_book_group_with_status_and_buffer() {
     status_filter.insert(OrderStatus::Accepted);
 
     // Group with a buffer of 300 ns - only orders accepted before 700 ns should be included
-    let grouped_bids = own_book.group_bids(
-        dec!(1.0),
-        None,
+    let grouped_bids = own_book.bid_quantity(
         Some(status_filter.clone()),
+        None,
+        Some(dec!(1.0)),
         Some(300),
         Some(now),
     );
@@ -3407,8 +3407,13 @@ fn test_own_book_group_with_status_and_buffer() {
     assert_eq!(grouped_bids.get(&dec!(100.0)), Some(&dec!(30))); // Only older order is included
 
     // Test with a smaller buffer of 50 ns - all orders should be included
-    let grouped_all =
-        own_book.group_bids(dec!(1.0), None, Some(status_filter), Some(50), Some(now));
+    let grouped_all = own_book.bid_quantity(
+        Some(status_filter),
+        None,
+        Some(dec!(1.0)),
+        Some(50),
+        Some(now),
+    );
 
     // Both orders should be included
     assert_eq!(grouped_all.len(), 1);
