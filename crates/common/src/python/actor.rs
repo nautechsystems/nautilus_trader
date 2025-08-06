@@ -178,6 +178,28 @@ impl PyDataActor {
         self.py_self = Some(py_obj);
     }
 
+    /// Updates the actor_id in both the core config and the actor_id field.
+    ///
+    /// # Safety
+    ///
+    /// This method is only exposed for the Python actor to assist with configuration and should
+    /// **never** be called post registration. Calling this after registration will cause
+    /// inconsistent state where the actor is registered under one ID but its internal actor_id
+    /// field contains another, breaking message routing and lifecycle management.
+    pub fn set_actor_id(&mut self, actor_id: ActorId) {
+        self.core.config.actor_id = Some(actor_id);
+        self.core.actor_id = actor_id;
+    }
+
+    /// Updates the log_events setting in the core config.
+    pub fn set_log_events(&mut self, log_events: bool) {
+        self.core.config.log_events = log_events;
+    }
+
+    /// Updates the log_commands setting in the core config.
+    pub fn set_log_commands(&mut self, log_commands: bool) {
+        self.core.config.log_commands = log_commands;
+    }
     /// Returns the memory address of this instance as a hexadecimal string.
     pub fn mem_address(&self) -> String {
         self.core.mem_address()

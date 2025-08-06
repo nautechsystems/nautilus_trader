@@ -25,7 +25,7 @@ use nautilus_common::{
     runtime::get_runtime,
 };
 use nautilus_core::{UUID4, python::to_pyruntime_err};
-use nautilus_model::identifiers::TraderId;
+use nautilus_model::identifiers::{ActorId, TraderId};
 use nautilus_system::get_global_pyo3_registry;
 use pyo3::{
     exceptions::{PyRuntimeError, PyValueError},
@@ -182,8 +182,8 @@ impl LiveNode {
         })
         .map_err(|e| PyRuntimeError::new_err(format!("Failed to import Python class: {e}")))?;
 
-        // TODO: Create default DataActorConfig for Rust PyDataActor,
-        // the Python class will handle its own configuration for now
+        // Create default DataActorConfig for Rust PyDataActor
+        // Inherited config attributes will be extracted and wired in after Python actor creation
         let basic_data_actor_config = DataActorConfig::default();
 
         log::debug!("Created basic DataActorConfig for Rust: {basic_data_actor_config:?}");
@@ -242,7 +242,8 @@ impl LiveNode {
 
                             // Manually call __post_init__ if it exists
                             if let Err(e) = instance.call_method0("__post_init__") {
-                                log::warn!("Failed to call __post_init__ on config instance: {e}");
+                                log::error!("Failed to call __post_init__ on config instance: {e}");
+                                anyhow::bail!("__post_init__ failed: {e}");
                             } else {
                                 log::debug!("Successfully called __post_init__ on config instance");
                             }
@@ -269,9 +270,10 @@ impl LiveNode {
 
                                     // Manually call __post_init__ if it exists
                                     if let Err(e) = instance.call_method0("__post_init__") {
-                                        log::warn!("Failed to call __post_init__ on config instance: {e}");
+                                        log::error!("Failed to call __post_init__ on config instance: {e}");
+                                        anyhow::bail!("__post_init__ failed: {e}");
                                     } else {
-                                        log::debug!("Successfully called __post_init__ on config instance");
+                                        log::debug!("Called __post_init__ on config instance");
                                     }
 
                                     instance
@@ -298,7 +300,7 @@ impl LiveNode {
             };
 
             // Create the Python actor instance with the config
-            let python_actor = if let Some(config_obj) = config_instance {
+            let python_actor = if let Some(config_obj) = config_instance.clone() {
                 actor_class.call1((config_obj,))?
             } else {
                 actor_class.call0()?
@@ -314,6 +316,48 @@ impl LiveNode {
                 &py_data_actor_ref.mem_address(),
                 py_data_actor_ref.is_registered()
             );
+
+            // Extract inherited DataActorConfig fields from the Python actor instance
+            // and wire them into the PyDataActor's core config
+            if let Some(config_obj) = config_instance.as_ref() {
+                log::debug!("Extracting inherited config fields from Python actor config");
+
+                // Extract actor_id if present
+                if let Ok(actor_id) = config_obj.getattr("actor_id") {
+                    if !actor_id.is_none() {
+                        // Try to extract as ActorId first, then as string
+                        let actor_id_val = if let Ok(actor_id_val) = actor_id.extract::<ActorId>() {
+                            actor_id_val
+                        } else if let Ok(actor_id_str) = actor_id.extract::<String>() {
+                            ActorId::from(actor_id_str.as_str())
+                        } else {
+                            log::warn!("Failed to extract actor_id as ActorId or String");
+                            anyhow::bail!("Invalid `actor_id` type");
+                        };
+
+                        log::debug!("Extracted actor_id: {actor_id_val}");
+                        py_data_actor_ref.set_actor_id(actor_id_val);
+                    }
+                }
+
+                // Extract log_events if present
+                if let Ok(log_events) = config_obj.getattr("log_events") {
+                    if let Ok(log_events_val) = log_events.extract::<bool>() {
+                        log::debug!("Extracted log_events: {log_events_val}");
+                        py_data_actor_ref.set_log_events(log_events_val);
+                    }
+                }
+
+                // Extract log_commands if present
+                if let Ok(log_commands) = config_obj.getattr("log_commands") {
+                    if let Ok(log_commands_val) = log_commands.extract::<bool>() {
+                        log::debug!("Extracted log_commands: {log_commands_val}");
+                        py_data_actor_ref.set_log_commands(log_commands_val);
+                    }
+                }
+
+                log::debug!("Successfully updated PyDataActor config from Python actor instance");
+            }
 
             // Set the Python instance reference for method dispatch on the original
             py_data_actor_ref.set_python_instance(python_actor.clone().unbind());

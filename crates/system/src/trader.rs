@@ -300,7 +300,7 @@ impl Trader {
         // Store actor ID for lifecycle management
         self.actor_ids.push(actor_id);
 
-        log::info!(
+        log::debug!(
             "Added actor ID '{actor_id}' to trader {} for lifecycle management",
             self.trader_id
         );
