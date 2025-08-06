@@ -51,7 +51,7 @@ class TestFixedTickScheme:
         ("value", "precision", "expected"),
         [
             (0.72775, 4, "0.7278"),
-            (0.7277, 4, "0.7278"),
+            (0.7277, 4, "0.7277"),  # Price-inclusive: already on boundary
             (0.727741111, 4, "0.7278"),
             (0.799999, 2, "0.80"),
         ],
@@ -69,7 +69,7 @@ class TestFixedTickScheme:
     @pytest.mark.parametrize(
         ("value", "expected"),
         [
-            (0.727, "0.728"),
+            (0.727, "0.727"),  # Price-inclusive: already on boundary
             (0.99999, "1.0000"),
             (0.72775, "0.728"),
             (10000, None),
