@@ -45,6 +45,7 @@ class TickScheme:
         Price
 
         """
+        ...
     def next_bid_price(self, value: float, n: int = 0) -> Price:
         """
         Return the price `n` bid ticks away from value.
@@ -63,6 +64,7 @@ class TickScheme:
         Price
 
         """
+        ...
 
 def round_down(value: float, base: float) -> float:
     """
@@ -72,6 +74,7 @@ def round_up(value: float, base: float) -> float:
     """
     Returns a value rounded down to a specific number of decimal places.
     """
+    ...
 def register_tick_scheme(tick_scheme: TickScheme) -> None: ...
 def get_tick_scheme(name: str) -> TickScheme: ...
 def list_tick_schemes() -> list[str]: ...

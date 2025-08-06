@@ -37,6 +37,7 @@ class RateOfChange(Indicator):
             The update bar.
 
         """
+        ...
     def update_raw(self, price: float) -> None:
         """
         Update the indicator with the given price.
@@ -47,5 +48,6 @@ class RateOfChange(Indicator):
             The update price.
 
         """
+        ...
     def _reset(self) -> None: ...
 

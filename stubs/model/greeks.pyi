@@ -96,6 +96,7 @@ class GreeksCalculator:
           Contains price, delta, gamma, vega, theta as well as additional information used for the computation.
 
         """
+        ...
     def modify_greeks(self, delta_input: float, gamma_input: float, underlying_instrument_id: InstrumentId, underlying_price: float, unshocked_underlying_price: float, percent_greeks: bool, index_instrument_id: InstrumentId | None, beta_weights: dict[InstrumentId, float] | None) -> tuple[float, float]:
         """
         Modify delta and gamma based on beta weighting and percentage calculations.
@@ -143,6 +144,7 @@ class GreeksCalculator:
         V(x = x0 * (1 + stock_percent_return / 100))
         or V(I = I0 * (1 + index_percent_return / 100))
         """
+        ...
     def portfolio_greeks(self, underlyings: list[str] | None = None, venue: Venue | None = None, instrument_id: InstrumentId | None = None, strategy_id: StrategyId | None = None, side: PositionSide = ..., flat_interest_rate: float = 0.0425, flat_dividend_yield: float | None = None, spot_shock: float = 0.0, vol_shock: float = 0.0, time_to_expiry_shock: float = 0.0, use_cached_greeks: bool = False, cache_greeks: bool = False, publish_greeks: bool = False, percent_greeks: bool = False, index_instrument_id: InstrumentId | None = None, beta_weights: dict[InstrumentId, float] | None = None, greeks_filter: Callable | None = None) -> PortfolioGreeks:
         """
         Calculate the portfolio Greeks for a given set of positions.
@@ -211,6 +213,7 @@ class GreeksCalculator:
         size and aggregated into portfolio-level risk metrics.
 
         """
+        ...
     def subscribe_greeks(self, instrument_id: InstrumentId | None = None, handler: Callable[[GreeksData], None] | None = None) -> None:
         """
         Subscribe to Greeks data for a given underlying instrument.
@@ -232,3 +235,4 @@ class GreeksCalculator:
         None
 
         """
+        ...

@@ -32,6 +32,7 @@ class Bias(Indicator):
             The update bar.
 
         """
+        ...
     def update_raw(self, close: float) -> None:
         """
         Update the indicator with the given raw values.
@@ -42,4 +43,5 @@ class Bias(Indicator):
             The close price.
 
         """
+        ...
     def _reset(self) -> None: ...

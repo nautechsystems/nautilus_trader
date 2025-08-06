@@ -142,6 +142,7 @@ class Commodity(Instrument):
         Commodity
 
         """
+        ...
     @staticmethod
     def to_dict(obj: Commodity) -> dict[str, Any]:
         """
@@ -152,5 +153,6 @@ class Commodity(Instrument):
         dict[str, object]
 
         """
+        ...
     @staticmethod
     def from_pyo3(pyo3_instrument: Any) -> Commodity: ...

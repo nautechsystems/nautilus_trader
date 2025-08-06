@@ -1,11 +1,17 @@
 from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import LiquiditySide
+from nautilus_trader.model.enums import OrderSide
 from stubs.model.events.account import AccountState
+from stubs.model.events.order import OrderFilled
 from stubs.model.identifiers import AccountId
+from stubs.model.identifiers import InstrumentId
 from stubs.model.instruments.base import Instrument
 from stubs.model.objects import AccountBalance
 from stubs.model.objects import Currency
 from stubs.model.objects import Money
+from stubs.model.objects import Price
 from stubs.model.objects import Quantity
+from stubs.model.position import Position
 
 class Account:
     """

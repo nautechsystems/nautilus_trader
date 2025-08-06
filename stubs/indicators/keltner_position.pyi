@@ -49,6 +49,7 @@ class KeltnerPosition(Indicator):
             The update bar.
 
         """
+        ...
     def update_raw(
         self,
         high: float,
@@ -68,4 +69,5 @@ class KeltnerPosition(Indicator):
             The close price.
 
         """
+        ...
     def _reset(self) -> None: ...

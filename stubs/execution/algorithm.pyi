@@ -84,6 +84,7 @@ class ExecAlgorithm(Actor):
         ImportableExecAlgorithmConfig
 
         """
+        ...
     def register(
         self,
         trader_id: TraderId,
@@ -113,6 +114,7 @@ class ExecAlgorithm(Actor):
         System method (not intended to be called by user code).
 
         """
+        ...
     def _reset(self) -> None: ...
     def execute(self, command: TradingCommand) -> None:
         """
@@ -129,6 +131,7 @@ class ExecAlgorithm(Actor):
             If `command.exec_algorithm_id` is not equal to `self.id`.
 
         """
+        ...
     def on_order(self, order: Order) -> None:
         """
         Actions to be performed when running and receives an order.
@@ -143,6 +146,7 @@ class ExecAlgorithm(Actor):
         System method (not intended to be called by user code).
 
         """
+        ...
     def on_order_list(self, order_list: OrderList) -> None:
         """
         Actions to be performed when running and receives an order list.
@@ -157,6 +161,7 @@ class ExecAlgorithm(Actor):
         System method (not intended to be called by user code).
 
         """
+        ...
     def on_order_event(self, event: OrderEvent) -> None:
         """
         Actions to be performed when running and receives an order event.
@@ -171,6 +176,7 @@ class ExecAlgorithm(Actor):
         System method (not intended to be called by user code).
 
         """
+        ...
     def on_order_initialized(self, event: OrderInitialized) -> None:
         """
         Actions to be performed when running and receives an order initialized event.
@@ -185,6 +191,7 @@ class ExecAlgorithm(Actor):
         System method (not intended to be called by user code).
 
         """
+        ...
     def on_order_denied(self, event: OrderDenied) -> None:
         """
         Actions to be performed when running and receives an order denied event.
@@ -199,6 +206,7 @@ class ExecAlgorithm(Actor):
         System method (not intended to be called by user code).
 
         """
+        ...
     def on_order_emulated(self, event: OrderEmulated) -> None:
         """
         Actions to be performed when running and receives an order initialized event.
@@ -213,6 +221,7 @@ class ExecAlgorithm(Actor):
         System method (not intended to be called by user code).
 
         """
+        ...
     def on_order_released(self, event: OrderReleased) -> None:
         """
         Actions to be performed when running and receives an order released event.
@@ -227,6 +236,7 @@ class ExecAlgorithm(Actor):
         System method (not intended to be called by user code).
 
         """
+        ...
     def on_order_submitted(self, event: OrderSubmitted) -> None:
         """
         Actions to be performed when running and receives an order submitted event.
@@ -241,6 +251,7 @@ class ExecAlgorithm(Actor):
         System method (not intended to be called by user code).
 
         """
+        ...
     def on_order_rejected(self, event: OrderRejected) -> None:
         """
         Actions to be performed when running and receives an order rejected event.
@@ -255,6 +266,7 @@ class ExecAlgorithm(Actor):
         System method (not intended to be called by user code).
 
         """
+        ...
     def on_order_accepted(self, event: OrderAccepted) -> None:
         """
         Actions to be performed when running and receives an order accepted event.
@@ -269,6 +281,7 @@ class ExecAlgorithm(Actor):
         System method (not intended to be called by user code).
 
         """
+        ...
     def on_order_canceled(self, event: OrderCanceled) -> None:
         """
         Actions to be performed when running and receives an order canceled event.
@@ -283,6 +296,7 @@ class ExecAlgorithm(Actor):
         System method (not intended to be called by user code).
 
         """
+        ...
     def on_order_expired(self, event: OrderExpired) -> None:
         """
         Actions to be performed when running and receives an order expired event.
@@ -297,6 +311,7 @@ class ExecAlgorithm(Actor):
         System method (not intended to be called by user code).
 
         """
+        ...
     def on_order_triggered(self, event: OrderTriggered) -> None:
         """
         Actions to be performed when running and receives an order triggered event.
@@ -311,6 +326,7 @@ class ExecAlgorithm(Actor):
         System method (not intended to be called by user code).
 
         """
+        ...
     def on_order_pending_update(self, event: OrderPendingUpdate) -> None:
         """
         Actions to be performed when running and receives an order pending update event.
@@ -325,6 +341,7 @@ class ExecAlgorithm(Actor):
         System method (not intended to be called by user code).
 
         """
+        ...
     def on_order_pending_cancel(self, event: OrderPendingCancel) -> None:
         """
         Actions to be performed when running and receives an order pending cancel event.
@@ -339,6 +356,7 @@ class ExecAlgorithm(Actor):
         System method (not intended to be called by user code).
 
         """
+        ...
     def on_order_modify_rejected(self, event: OrderModifyRejected) -> None:
         """
         Actions to be performed when running and receives an order modify rejected event.
@@ -353,6 +371,7 @@ class ExecAlgorithm(Actor):
         System method (not intended to be called by user code).
 
         """
+        ...
     def on_order_cancel_rejected(self, event: OrderCancelRejected) -> None:
         """
         Actions to be performed when running and receives an order cancel rejected event.
@@ -367,6 +386,7 @@ class ExecAlgorithm(Actor):
         System method (not intended to be called by user code).
 
         """
+        ...
     def on_order_updated(self, event: OrderUpdated) -> None:
         """
         Actions to be performed when running and receives an order updated event.
@@ -381,6 +401,7 @@ class ExecAlgorithm(Actor):
         System method (not intended to be called by user code).
 
         """
+        ...
     def on_order_filled(self, event: OrderFilled) -> None:
         """
         Actions to be performed when running and receives an order filled event.
@@ -395,6 +416,7 @@ class ExecAlgorithm(Actor):
         System method (not intended to be called by user code).
 
         """
+        ...
     def on_position_event(self, event: PositionEvent) -> None:
         """
         Actions to be performed when running and receives a position event.
@@ -409,6 +431,7 @@ class ExecAlgorithm(Actor):
         System method (not intended to be called by user code).
 
         """
+        ...
     def on_position_opened(self, event: PositionOpened) -> None:
         """
         Actions to be performed when running and receives a position opened event.
@@ -423,6 +446,7 @@ class ExecAlgorithm(Actor):
         System method (not intended to be called by user code).
 
         """
+        ...
     def on_position_changed(self, event: PositionChanged) -> None:
         """
         Actions to be performed when running and receives a position changed event.
@@ -437,6 +461,7 @@ class ExecAlgorithm(Actor):
         System method (not intended to be called by user code).
 
         """
+        ...
     def on_position_closed(self, event: PositionClosed) -> None:
         """
         Actions to be performed when running and receives a position closed event.
@@ -451,6 +476,7 @@ class ExecAlgorithm(Actor):
         System method (not intended to be called by user code).
 
         """
+        ...
     def spawn_market(
         self,
         primary: Order,
@@ -492,6 +518,7 @@ class ExecAlgorithm(Actor):
             If `time_in_force` is ``GTD``.
 
         """
+        ...
     def spawn_limit(
         self,
         primary: Order,
@@ -553,6 +580,7 @@ class ExecAlgorithm(Actor):
             If `display_qty` is negative (< 0) or greater than `quantity`.
 
         """
+        ...
     def spawn_market_to_limit(
         self,
         primary: Order,
@@ -608,6 +636,7 @@ class ExecAlgorithm(Actor):
             If `display_qty` is negative (< 0) or greater than `quantity`.
 
         """
+        ...
     def submit_order(self, order: Order) -> None:
         """
         Submit the given order (may be the primary or spawned order).
@@ -640,6 +669,7 @@ class ExecAlgorithm(Actor):
         Emulated orders cannot be sent from execution algorithms (intentionally constraining complexity).
 
         """
+        ...
     def modify_order(
         self,
         order: Order,
@@ -691,6 +721,7 @@ class ExecAlgorithm(Actor):
         https://www.onixs.biz/fix-dictionary/5.0.SP2/msgType_G_71.html
 
         """
+        ...
     def modify_order_in_place(
         self,
         order: Order,
@@ -733,6 +764,7 @@ class ExecAlgorithm(Actor):
         https://www.onixs.biz/fix-dictionary/5.0.SP2/msgType_G_71.html
 
         """
+        ...
     def cancel_order(self, order: Order, client_id: ClientId | None = None) -> None:
         """
         Cancel the given order with optional routing instructions.
@@ -751,4 +783,5 @@ class ExecAlgorithm(Actor):
             If ``None`` then will be inferred from the venue in the instrument ID.
 
         """
+        ...
 

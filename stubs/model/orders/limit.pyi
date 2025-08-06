@@ -142,6 +142,7 @@ class LimitOrder(Order):
         datetime or ``None``
 
         """
+        ...
     def info(self) -> str:
         """
         Return a summary description of the order.
@@ -151,6 +152,7 @@ class LimitOrder(Order):
         str
 
         """
+        ...
     @staticmethod
     def from_pyo3(pyo3_order: Any) -> LimitOrder: ...
     def to_dict(self) -> dict[str, Any]:
@@ -162,6 +164,7 @@ class LimitOrder(Order):
         dict[str, object]
 
         """
+        ...
     @staticmethod
     def create(init: OrderInitialized) -> LimitOrder: ...
     @staticmethod

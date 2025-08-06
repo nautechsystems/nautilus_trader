@@ -149,6 +149,7 @@ class StopLimitOrder(Order):
         datetime or ``None``
 
         """
+        ...
     def info(self) -> str:
         """
         Return a summary description of the order.
@@ -158,6 +159,7 @@ class StopLimitOrder(Order):
         str
 
         """
+        ...
     @staticmethod
     def from_pyo3(pyo3_order: object) -> StopLimitOrder:
         ...
@@ -170,6 +172,7 @@ class StopLimitOrder(Order):
         dict[str, object]
 
         """
+        ...
     @staticmethod
     def create(init: OrderInitialized) -> StopLimitOrder:
         """
@@ -190,3 +193,4 @@ class StopLimitOrder(Order):
             If `init.order_type` is not equal to ``STOP_LIMIT``.
 
         """
+        ...

@@ -34,6 +34,7 @@ class OnBalanceVolume(Indicator):
             The update bar.
 
         """
+        ...
     def update_raw(
         self,
         open: float,
@@ -53,4 +54,5 @@ class OnBalanceVolume(Indicator):
             The close price.
 
         """
+        ...
     def _reset(self) -> None: ...

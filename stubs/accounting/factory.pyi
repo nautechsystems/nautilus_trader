@@ -25,7 +25,6 @@ class AccountFactory:
 
         """
         ...
-
     @staticmethod
     def register_calculated_account(issuer: str) -> None:
         """
@@ -44,7 +43,6 @@ class AccountFactory:
 
         """
         ...
-
     @staticmethod
     def create(event: AccountState) -> Account:
         """

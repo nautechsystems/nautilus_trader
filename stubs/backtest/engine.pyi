@@ -94,6 +94,7 @@ class BacktestEngine:
         TraderId
 
         """
+        ...
     @property
     def machine_id(self) -> str:
         """
@@ -104,6 +105,7 @@ class BacktestEngine:
         str
 
         """
+        ...
     @property
     def instance_id(self) -> UUID4:
         """
@@ -116,6 +118,7 @@ class BacktestEngine:
         UUID4
 
         """
+        ...
     @property
     def kernel(self) -> NautilusKernel:
         """
@@ -126,6 +129,7 @@ class BacktestEngine:
         NautilusKernel
 
         """
+        ...
     @property
     def logger(self) -> Logger:
         """
@@ -136,6 +140,7 @@ class BacktestEngine:
         Logger
 
         """
+        ...
     @property
     def run_config_id(self) -> str | None:
         """
@@ -146,6 +151,7 @@ class BacktestEngine:
         str or ``None``
 
         """
+        ...
     @property
     def run_id(self) -> UUID4 | None:
         """
@@ -156,6 +162,7 @@ class BacktestEngine:
         UUID4 or ``None``
 
         """
+        ...
     @property
     def iteration(self) -> int:
         """
@@ -166,6 +173,7 @@ class BacktestEngine:
         int
 
         """
+        ...
     @property
     def run_started(self) -> pd.Timestamp | None:
         """
@@ -176,6 +184,7 @@ class BacktestEngine:
         pd.Timestamp or ``None``
 
         """
+        ...
     @property
     def run_finished(self) -> pd.Timestamp | None:
         """
@@ -186,6 +195,7 @@ class BacktestEngine:
         pd.Timestamp | None
 
         """
+        ...
     @property
     def backtest_start(self) -> pd.Timestamp | None:
         """
@@ -196,6 +206,7 @@ class BacktestEngine:
         pd.Timestamp or ``None``
 
         """
+        ...
     @property
     def backtest_end(self) -> pd.Timestamp | None:
         """
@@ -206,6 +217,7 @@ class BacktestEngine:
         pd.Timestamp or ``None``
 
         """
+        ...
     @property
     def trader(self) -> Trader:
         """
@@ -216,6 +228,7 @@ class BacktestEngine:
         Trader
 
         """
+        ...
     @property
     def cache(self) -> CacheFacade:
         """
@@ -226,6 +239,7 @@ class BacktestEngine:
         CacheFacade
 
         """
+        ...
     @property
     def data(self) -> list[Data]:
         """
@@ -236,6 +250,7 @@ class BacktestEngine:
         list[Data]
 
         """
+        ...
     @property
     def portfolio(self) -> PortfolioFacade:
         """
@@ -246,6 +261,7 @@ class BacktestEngine:
         PortfolioFacade
 
         """
+        ...
     def get_log_guard(self) -> nautilus_pyo3.LogGuard | LogGuard | None:
         """
         Return the global logging subsystems log guard.
@@ -257,6 +273,7 @@ class BacktestEngine:
         nautilus_pyo3.LogGuard | LogGuard | None
 
         """
+        ...
     def list_venues(self) -> list[Venue]:
         """
         Return the venues contained within the engine.
@@ -266,6 +283,7 @@ class BacktestEngine:
         list[Venue]
 
         """
+        ...
     def add_venue(
         self,
         venue: Venue,
@@ -363,6 +381,7 @@ class BacktestEngine:
             If `venue` is already registered with the engine.
 
         """
+        ...
     def change_fill_model(self, venue: Venue, model: FillModel) -> None:
         """
         Change the fill model for the exchange of the given venue.
@@ -375,6 +394,7 @@ class BacktestEngine:
             The fill model to change to.
 
         """
+        ...
     def add_instrument(self, instrument: Instrument) -> None:
         """
         Add the instrument to the backtest engine.
@@ -396,6 +416,7 @@ class BacktestEngine:
             If `instrument` is not valid for its associated venue.
 
         """
+        ...
     def add_data(
         self,
         data: list[Data],
@@ -441,6 +462,7 @@ class BacktestEngine:
         on a stream which does not have monotonically increasing timestamps.
 
         """
+        ...
     def _handle_data_command(self, command: DataCommand) -> None: ...
     def _handle_subscribe(self, command: SubscribeData) -> None: ...
     def _handle_data_response(self, response: DataResponse) -> None: ...
@@ -455,6 +477,7 @@ class BacktestEngine:
         bytes
 
         """
+        ...
     def load_pickled_data(self, data: bytes) -> None:
         """
         Load the given pickled data directly into the internal data stream.
@@ -471,6 +494,7 @@ class BacktestEngine:
          - All required instruments have been added to the engine.
 
         """
+        ...
     def add_actor(self, actor: Actor) -> None: # Actor
         """
         Add the given actor to the backtest engine.
@@ -481,6 +505,7 @@ class BacktestEngine:
             The actor to add.
 
         """
+        ...
     def add_actors(self, actors: list[Actor]) -> None: # Actor
         """
         Add the given list of actors to the backtest engine.
@@ -491,6 +516,7 @@ class BacktestEngine:
             The actors to add.
 
         """
+        ...
     def add_strategy(self, strategy: Strategy) -> None:
         """
         Add the given strategy to the backtest engine.
@@ -501,6 +527,7 @@ class BacktestEngine:
             The strategy to add.
 
         """
+        ...
     def add_strategies(self, strategies: list[Strategy]) -> None:
         """
         Add the given list of strategies to the backtest engine.
@@ -511,6 +538,7 @@ class BacktestEngine:
             The strategies to add.
 
         """
+        ...
     def add_exec_algorithm(self, exec_algorithm: ExecAlgorithm) -> None:
         """
         Add the given execution algorithm to the backtest engine.
@@ -521,6 +549,7 @@ class BacktestEngine:
             The execution algorithm to add.
 
         """
+        ...
     def add_exec_algorithms(self, exec_algorithms: list[ExecAlgorithm]) -> None:
         """
         Add the given list of execution algorithms to the backtest engine.
@@ -531,6 +560,7 @@ class BacktestEngine:
             The execution algorithms to add.
 
         """
+        ...
     def reset(self) -> None:
         """
         Reset the backtest engine.
@@ -541,6 +571,7 @@ class BacktestEngine:
         separate call to `.clear_data()` if desired.
 
         """
+        ...
     def clear_data(self) -> None:
         """
         Clear the engines internal data stream.
@@ -548,21 +579,25 @@ class BacktestEngine:
         Does not clear added instruments.
 
         """
+        ...
     def clear_actors(self) -> None:
         """
         Clear all actors from the engines internal trader.
 
         """
+        ...
     def clear_strategies(self) -> None:
         """
         Clear all trading strategies from the engines internal trader.
 
         """
+        ...
     def clear_exec_algorithms(self) -> None:
         """
         Clear all execution algorithms from the engines internal trader.
 
         """
+        ...
     def dispose(self) -> None:
         """
         Dispose of the backtest engine by disposing the trader and releasing system resources.
@@ -571,6 +606,7 @@ class BacktestEngine:
         Once called, it cannot be reversed, and no other methods should be called on this instance.
 
         """
+        ...
     def run(
         self,
         start: datetime | str | int | None = None,
@@ -616,6 +652,7 @@ class BacktestEngine:
             If the `start` is >= the `end` datetime.
 
         """
+        ...
     def _run(
         self,
         start: datetime | str | int | None = None,
@@ -632,6 +669,7 @@ class BacktestEngine:
         Only required if you have previously been running with streaming.
 
         """
+        ...
     def get_result(self) -> BacktestResult:
         """
         Return the backtest result from the last run.
@@ -641,6 +679,7 @@ class BacktestEngine:
         BacktestResult
 
         """
+        ...
     def _get_log_color_code(self) -> str: ...
     def _log_pre_run(self) -> None: ...
     def _log_run(self, start: pd.Timestamp, end: pd.Timestamp) -> None: ...

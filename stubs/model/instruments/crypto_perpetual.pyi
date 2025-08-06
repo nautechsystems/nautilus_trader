@@ -135,6 +135,7 @@ class CryptoPerpetual(Instrument):
         Currency
 
         """
+        ...
     def get_settlement_currency(self) -> Currency:
         """
         Return the currency used to settle a trade of the instrument.
@@ -144,6 +145,7 @@ class CryptoPerpetual(Instrument):
         Currency
 
         """
+        ...
     @staticmethod
     def from_dict(values: dict) -> CryptoPerpetual:
         """
@@ -159,6 +161,7 @@ class CryptoPerpetual(Instrument):
         CryptoPerpetual
 
         """
+        ...
     @staticmethod
     def to_dict(obj: CryptoPerpetual) -> dict[str, Any]:
         """
@@ -169,5 +172,6 @@ class CryptoPerpetual(Instrument):
         dict[str, object]
 
         """
+        ...
     @staticmethod
     def from_pyo3(pyo3_instrument: Any) -> CryptoPerpetual: ...

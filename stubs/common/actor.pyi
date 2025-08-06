@@ -84,6 +84,7 @@ class Actor(Component):
         ImportableActorConfig
 
         """
+        ...
     def on_save(self) -> dict[str, bytes]:
         """
         Actions to be performed when the actor state is saved.
@@ -100,6 +101,7 @@ class Actor(Component):
         System method (not intended to be called by user code).
 
         """
+        ...
     def on_load(self, state: dict[str, bytes]) -> None:
         """
         Actions to be performed when the actor state is loaded.
@@ -116,6 +118,7 @@ class Actor(Component):
         System method (not intended to be called by user code).
 
         """
+        ...
     def on_start(self) -> None:
         """
         Actions to be performed on start.
@@ -132,6 +135,7 @@ class Actor(Component):
         Should be overridden in a user implementation.
 
         """
+        ...
     def on_stop(self) -> None:
         """
         Actions to be performed on stop.
@@ -145,6 +149,7 @@ class Actor(Component):
         Should be overridden in a user implementation.
 
         """
+        ...
     def on_resume(self) -> None:
         """
         Actions to be performed on resume.
@@ -154,6 +159,7 @@ class Actor(Component):
         System method (not intended to be called by user code).
 
         """
+        ...
     def on_reset(self) -> None:
         """
         Actions to be performed on reset.
@@ -165,6 +171,7 @@ class Actor(Component):
         Should be overridden in a user implementation.
 
         """
+        ...
     def on_dispose(self) -> None:
         """
         Actions to be performed on dispose.
@@ -176,6 +183,7 @@ class Actor(Component):
         System method (not intended to be called by user code).
 
         """
+        ...
     def on_degrade(self) -> None:
         """
         Actions to be performed on degrade.
@@ -187,6 +195,7 @@ class Actor(Component):
         Should be overridden in the actor implementation.
 
         """
+        ...
     def on_fault(self) -> None:
         """
         Actions to be performed on fault.
@@ -200,6 +209,7 @@ class Actor(Component):
         Should be overridden in the actor implementation.
 
         """
+        ...
     def on_instrument_status(self, data: InstrumentStatus) -> None:
         """
         Actions to be performed when running and receives an instrument status
@@ -215,6 +225,7 @@ class Actor(Component):
         System method (not intended to be called by user code).
 
         """
+        ...
     def on_instrument_close(self, update: InstrumentClose) -> None:
         """
         Actions to be performed when running and receives an instrument close
@@ -230,6 +241,7 @@ class Actor(Component):
         System method (not intended to be called by user code).
 
         """
+        ...
     def on_instrument(self, instrument: Instrument) -> None:
         """
         Actions to be performed when running and receives an instrument.
@@ -244,6 +256,7 @@ class Actor(Component):
         System method (not intended to be called by user code).
 
         """
+        ...
     def on_order_book(self, order_book: OrderBook) -> None:
         """
         Actions to be performed when running and receives an order book.
@@ -258,6 +271,7 @@ class Actor(Component):
         System method (not intended to be called by user code).
 
         """
+        ...
     def on_order_book_deltas(self, deltas) -> None: # pyo3 type hint
         """
         Actions to be performed when running and receives order book deltas.
@@ -272,6 +286,7 @@ class Actor(Component):
         System method (not intended to be called by user code).
 
         """
+        ...
     def on_order_book_depth(self, depth) -> None:
         """
         Actions to be performed when running and receives an order book depth.
@@ -286,6 +301,7 @@ class Actor(Component):
         System method (not intended to be called by user code).
 
         """
+        ...
     def on_quote_tick(self, tick: QuoteTick) -> None:
         """
         Actions to be performed when running and receives a quote tick.
@@ -300,6 +316,7 @@ class Actor(Component):
         System method (not intended to be called by user code).
 
         """
+        ...
     def on_trade_tick(self, tick: TradeTick) -> None:
         """
         Actions to be performed when running and receives a trade tick.
@@ -314,6 +331,7 @@ class Actor(Component):
         System method (not intended to be called by user code).
 
         """
+        ...
     def on_mark_price(self, mark_price: MarkPriceUpdate) -> None:
         """
         Actions to be performed when running and receives a mark price update.
@@ -328,6 +346,7 @@ class Actor(Component):
         System method (not intended to be called by user code).
 
         """
+        ...
     def on_index_price(self, index_price: IndexPriceUpdate) -> None:
         """
         Actions to be performed when running and receives an index price update.
@@ -342,6 +361,7 @@ class Actor(Component):
         System method (not intended to be called by user code).
 
         """
+        ...
     def on_bar(self, bar: Bar) -> None:
         """
         Actions to be performed when running and receives a bar.
@@ -356,6 +376,7 @@ class Actor(Component):
         System method (not intended to be called by user code).
 
         """
+        ...
     def on_data(self, data: Data) -> None:
         """
         Actions to be performed when running and receives data.
@@ -370,6 +391,7 @@ class Actor(Component):
         System method (not intended to be called by user code).
 
         """
+        ...
     def on_signal(self, signal) -> None:
         """
         Actions to be performed when running and receives signal data.
@@ -388,6 +410,7 @@ class Actor(Component):
         This refers to a data signal, not an operating system signal (such as SIGTERM, SIGKILL, etc.).
 
         """
+        ...
     def on_historical_data(self, data: Data) -> None:
         """
         Actions to be performed when running and receives historical data.
@@ -402,6 +425,7 @@ class Actor(Component):
         System method (not intended to be called by user code).
 
         """
+        ...
     def on_event(self, event: Event) -> None:
         """
         Actions to be performed running and receives an event.
@@ -426,6 +450,7 @@ class Actor(Component):
         list[Indicator]
 
         """
+        ...
     def indicators_initialized(self) -> bool:
         """
         Return a value indicating whether all indicators are initialized.
@@ -436,6 +461,7 @@ class Actor(Component):
             True if all initialized, else False
 
         """
+        ...
     def register_base(
         self,
         portfolio: PortfolioFacade,
@@ -462,6 +488,7 @@ class Actor(Component):
         System method (not intended to be called by user code).
 
         """
+        ...
     def register_executor(
         self,
         loop: asyncio.AbstractEventLoop,
@@ -483,6 +510,7 @@ class Actor(Component):
             If `executor` is not of type `concurrent.futures.Executor`
 
         """
+        ...
     def register_warning_event(self, event: type) -> None:
         """
         Register the given event type for warning log levels.
@@ -493,6 +521,7 @@ class Actor(Component):
             The event class to register.
 
         """
+        ...
     def deregister_warning_event(self, event: type) -> None:
         """
         Deregister the given event type from warning log levels.
@@ -503,6 +532,7 @@ class Actor(Component):
             The event class to deregister.
 
         """
+        ...
     def register_indicator_for_quote_ticks(self, instrument_id: InstrumentId, indicator: Indicator) -> None:
         """
         Register the given indicator with the actor/strategy to receive quote tick
@@ -516,6 +546,7 @@ class Actor(Component):
             The indicator to register.
 
         """
+        ...
     def register_indicator_for_trade_ticks(self, instrument_id: InstrumentId, indicator: Indicator) -> None:
         """
         Register the given indicator with the actor/strategy to receive trade tick
@@ -529,6 +560,7 @@ class Actor(Component):
             The indicator to register.
 
         """
+        ...
     def register_indicator_for_bars(self, bar_type: BarType, indicator: Indicator) -> None:
         """
         Register the given indicator with the actor/strategy to receive bar data for the
@@ -542,6 +574,7 @@ class Actor(Component):
             The indicator to register.
 
         """
+        ...
     def save(self) -> dict[str, bytes]:
         """
         Return the actor/strategy state dictionary to be saved.
@@ -558,6 +591,7 @@ class Actor(Component):
         Exceptions raised will be caught, logged, and reraised.
 
         """
+        ...
     def load(self, state: dict[str, bytes]) -> None:
         """
         Load the actor/strategy state from the give state dictionary.
@@ -574,6 +608,7 @@ class Actor(Component):
         Exceptions raised will be caught, logged, and reraised.
 
         """
+        ...
     def add_synthetic(self, synthetic: SyntheticInstrument) -> None:
         """
         Add the created synthetic instrument to the cache.
@@ -593,6 +628,7 @@ class Actor(Component):
         If you are updating the synthetic instrument then you should use the `update_synthetic` method.
 
         """
+        ...
     def update_synthetic(self, synthetic: SyntheticInstrument) -> None:
         """
         Update the synthetic instrument in the cache.
@@ -612,6 +648,7 @@ class Actor(Component):
         If you are adding a new synthetic instrument then you should use the `add_synthetic` method.
 
         """
+        ...
     def queue_for_executor(
         self,
         func: Callable[..., Any],
@@ -642,6 +679,7 @@ class Actor(Component):
         and so the results of `func` are 'immediately' available after it's called.
 
         """
+        ...
     def run_in_executor(
         self,
         func: Callable[..., Any],
@@ -678,6 +716,7 @@ class Actor(Component):
         and so the results of `func` are 'immediately' available after it's called.
 
         """
+        ...
     def queued_task_ids(self) -> list[TaskId]:
         """
         Return the queued task identifiers.
@@ -687,6 +726,7 @@ class Actor(Component):
         list[TaskId]
 
         """
+        ...
     def active_task_ids(self) -> list[TaskId]:
         """
         Return the active task identifiers.
@@ -696,6 +736,7 @@ class Actor(Component):
         list[TaskId]
 
         """
+        ...
     def has_queued_tasks(self) -> bool:
         """
         Return a value indicating whether there are any queued tasks.
@@ -705,6 +746,7 @@ class Actor(Component):
         bool
 
         """
+        ...
     def has_active_tasks(self) -> bool:
         """
         Return a value indicating whether there are any active tasks.
@@ -714,6 +756,7 @@ class Actor(Component):
         bool
 
         """
+        ...
     def has_any_tasks(self) -> bool:
         """
         Return a value indicating whether there are any queued OR active tasks.
@@ -723,6 +766,7 @@ class Actor(Component):
         bool
 
         """
+        ...
     def cancel_task(self, task_id: TaskId) -> None:
         """
         Cancel the task with the given `task_id` (if queued or active).
@@ -735,10 +779,12 @@ class Actor(Component):
             The task identifier.
 
         """
+        ...
     def cancel_all_tasks(self) -> None:
         """
         Cancel all queued and active tasks.
         """
+        ...
     def _start(self) -> None: ...
     def _stop(self) -> None: ...
     def _resume(self) -> None: ...
@@ -774,6 +820,7 @@ class Actor(Component):
             Additional parameters potentially used by a specific client.
 
         """
+        ...
     def subscribe_instruments(
         self,
         venue: Venue,
@@ -797,6 +844,7 @@ class Actor(Component):
             Additional parameters potentially used by a specific client.
 
         """
+        ...
     def subscribe_instrument(
         self,
         instrument_id: InstrumentId,
@@ -820,6 +868,7 @@ class Actor(Component):
             Additional parameters potentially used by a specific client.
 
         """
+        ...
     def subscribe_order_book_deltas(
         self,
         instrument_id: InstrumentId,
@@ -857,6 +906,7 @@ class Actor(Component):
             Additional parameters potentially used by a specific client.
 
         """
+        ...
     def subscribe_order_book_depth(
         self,
         instrument_id: InstrumentId,
@@ -891,6 +941,7 @@ class Actor(Component):
             Additional parameters potentially used by a specific client.
 
         """
+        ...
     def subscribe_order_book_at_interval(
         self,
         instrument_id: InstrumentId,
@@ -941,6 +992,7 @@ class Actor(Component):
         Consider subscribing to order book deltas if you need intervals less than 100 milliseconds.
 
         """
+        ...
     def subscribe_quote_ticks(
         self,
         instrument_id: InstrumentId,
@@ -968,6 +1020,7 @@ class Actor(Component):
             Additional parameters potentially used by a specific client.
 
         """
+        ...
     def subscribe_trade_ticks(
         self,
         instrument_id: InstrumentId,
@@ -995,6 +1048,7 @@ class Actor(Component):
             Additional parameters potentially used by a specific client.
 
         """
+        ...
     def subscribe_mark_prices(
         self,
         instrument_id: InstrumentId,
@@ -1018,6 +1072,7 @@ class Actor(Component):
             Additional parameters potentially used by a specific client.
 
         """
+        ...
     def subscribe_index_prices(
         self,
         instrument_id: InstrumentId,
@@ -1041,6 +1096,7 @@ class Actor(Component):
             Additional parameters potentially used by a specific client.
 
         """
+        ...
     def subscribe_bars(
         self,
         bar_type: BarType,
@@ -1072,6 +1128,7 @@ class Actor(Component):
             Additional parameters potentially used by a specific client.
 
         """
+        ...
     def subscribe_instrument_status(
         self,
         instrument_id: InstrumentId,
@@ -1095,6 +1152,7 @@ class Actor(Component):
             Additional parameters potentially used by a specific client.
 
         """
+        ...
     def subscribe_instrument_close(
         self,
         instrument_id: InstrumentId,
@@ -1118,6 +1176,7 @@ class Actor(Component):
             Additional parameters potentially used by a specific client.
 
         """
+        ...
     def unsubscribe_data(
         self,
         data_type: DataType,
@@ -1139,6 +1198,7 @@ class Actor(Component):
             Additional parameters potentially used by a specific client.
 
         """
+        ...
     def unsubscribe_instruments(
         self,
         venue: Venue,
@@ -1159,6 +1219,7 @@ class Actor(Component):
             Additional parameters potentially used by a specific client.
 
         """
+        ...
     def unsubscribe_instrument(
         self,
         instrument_id: InstrumentId,
@@ -1179,6 +1240,7 @@ class Actor(Component):
             Additional parameters potentially used by a specific client.
 
         """
+        ...
     def unsubscribe_order_book_deltas(
         self,
         instrument_id: InstrumentId,
@@ -1199,6 +1261,7 @@ class Actor(Component):
             Additional parameters potentially used by a specific client.
 
         """
+        ...
     def unsubscribe_order_book_depth(
         self,
         instrument_id: InstrumentId,
@@ -1219,6 +1282,7 @@ class Actor(Component):
             Additional parameters potentially used by a specific client.
 
         """
+        ...
     def unsubscribe_order_book_at_interval(
         self,
         instrument_id: InstrumentId,
@@ -1244,6 +1308,7 @@ class Actor(Component):
             Additional parameters potentially used by a specific client.
 
         """
+        ...
     def unsubscribe_quote_ticks(
         self,
         instrument_id: InstrumentId,
@@ -1264,6 +1329,7 @@ class Actor(Component):
             Additional parameters potentially used by a specific client.
 
         """
+        ...
     def unsubscribe_trade_ticks(
         self,
         instrument_id: InstrumentId,
@@ -1284,6 +1350,7 @@ class Actor(Component):
             Additional parameters potentially used by a specific client.
 
         """
+        ...
     def unsubscribe_mark_prices(
         self,
         instrument_id: InstrumentId,
@@ -1304,6 +1371,7 @@ class Actor(Component):
             Additional parameters potentially used by a specific client.
 
         """
+        ...
     def unsubscribe_index_prices(
         self,
         instrument_id: InstrumentId,
@@ -1324,6 +1392,7 @@ class Actor(Component):
             Additional parameters potentially used by a specific client.
 
         """
+        ...
     def unsubscribe_bars(
         self,
         bar_type: BarType,
@@ -1344,6 +1413,7 @@ class Actor(Component):
             Additional parameters potentially used by a specific client.
 
         """
+        ...
     def unsubscribe_instrument_status(
         self,
         instrument_id: InstrumentId,
@@ -1364,6 +1434,7 @@ class Actor(Component):
             Additional parameters potentially used by a specific client.
 
         """
+        ...
     def publish_data(self, data_type: DataType, data: Data) -> None:
         """
         Publish the given data to the message bus.
@@ -1376,6 +1447,7 @@ class Actor(Component):
             The data to publish.
 
         """
+        ...
     def publish_signal(self, name: str, value, ts_event: int = 0) -> None:
         """
         Publish the given value as a signal to the message bus.
@@ -1393,6 +1465,7 @@ class Actor(Component):
             If ``None`` then will timestamp current time.
 
         """
+        ...
     def subscribe_signal(self, name: str = "") -> None:
         """
         Subscribe to a specific signal by name, or to all signals if no name is provided.
@@ -1409,6 +1482,7 @@ class Actor(Component):
             (e.g., 'example' becomes 'SignalExample*').
 
         """
+        ...
     def request_data(
         self,
         data_type: DataType,
@@ -1462,6 +1536,7 @@ class Actor(Component):
             If `callback` is not `None` and not of type `Callable`.
 
         """
+        ...
     def request_instrument(
         self,
         instrument_id: InstrumentId,
@@ -1520,6 +1595,7 @@ class Actor(Component):
             If `callback` is not `None` and not of type `Callable`.
 
         """
+        ...
     def request_instruments(
         self,
         venue: Venue,
@@ -1578,6 +1654,7 @@ class Actor(Component):
             If `callback` is not `None` and not of type `Callable`.
 
         """
+        ...
     def request_order_book_snapshot(
         self,
         instrument_id: InstrumentId,
@@ -1621,6 +1698,7 @@ class Actor(Component):
             If callback is not None and not of type Callable.
 
         """
+        ...
     def request_quote_ticks(
         self,
         instrument_id: InstrumentId,
@@ -1682,6 +1760,7 @@ class Actor(Component):
             If `callback` is not `None` and not of type `Callable`.
 
         """
+        ...
     def request_trade_ticks(
         self,
         instrument_id: InstrumentId,
@@ -1743,6 +1822,7 @@ class Actor(Component):
             If `callback` is not `None` and not of type `Callable`.
 
         """
+        ...
     def request_bars(
         self,
         bar_type: BarType,
@@ -1804,6 +1884,7 @@ class Actor(Component):
             If `callback` is not `None` and not of type `Callable`.
 
         """
+        ...
     def request_aggregated_bars(
         self,
         bar_types: list[BarType],
@@ -1881,6 +1962,7 @@ class Actor(Component):
             If `bar_types` is empty or contains elements not of type `BarType`.
 
         """
+        ...
     def is_pending_request(self, request_id: UUID4) -> bool:
         """
         Return whether the request for the given identifier is pending processing.
@@ -1896,6 +1978,7 @@ class Actor(Component):
             True if request is pending, else False.
 
         """
+        ...
     def has_pending_requests(self) -> bool:
         """
         Return whether the actor is pending processing for any requests.
@@ -1906,6 +1989,7 @@ class Actor(Component):
             True if any requests are pending, else False.
 
         """
+        ...
     def pending_requests(self) -> set[UUID4]:
         """
         Return the request IDs which are currently pending processing.
@@ -1915,6 +1999,7 @@ class Actor(Component):
         set[UUID4]
 
         """
+        ...
     def handle_instrument(self, instrument: Instrument) -> None:
         """
         Handle the given instrument.
@@ -1931,6 +2016,7 @@ class Actor(Component):
         System method (not intended to be called by user code).
 
         """
+        ...
     def handle_instruments(self, instruments: list[Instrument]) -> None:
         """
         Handle the given instruments data by handling each instrument individually.
@@ -1945,6 +2031,7 @@ class Actor(Component):
         System method (not intended to be called by user code).
 
         """
+        ...
     def handle_order_book_deltas(self, deltas) -> None:
         """
         Handle the given order book deltas.
@@ -1963,6 +2050,7 @@ class Actor(Component):
         System method (not intended to be called by user code).
 
         """
+        ...
     def handle_order_book_depth(self, depth: OrderBookDepth10) -> None:
         """
         Handle the given order book depth
@@ -1979,6 +2067,7 @@ class Actor(Component):
         System method (not intended to be called by user code).
 
         """
+        ...
     def handle_order_book(self, order_book: OrderBook) -> None:
         """
         Handle the given order book.
@@ -1995,6 +2084,7 @@ class Actor(Component):
         System method (not intended to be called by user code).
 
         """
+        ...
     def handle_quote_tick(self, tick: QuoteTick) -> None:
         """
         Handle the given quote tick.
@@ -2011,6 +2101,7 @@ class Actor(Component):
         System method (not intended to be called by user code).
 
         """
+        ...
     def handle_quote_ticks(self, ticks: list[QuoteTick]) -> None:
         """
         Handle the given historical quote tick data by handling each tick individually.
@@ -2025,6 +2116,7 @@ class Actor(Component):
         System method (not intended to be called by user code).
 
         """
+        ...
     def handle_trade_tick(self, tick: TradeTick) -> None:
         """
         Handle the given trade tick.
@@ -2041,6 +2133,7 @@ class Actor(Component):
         System method (not intended to be called by user code).
 
         """
+        ...
     def handle_mark_price(self, mark_price: MarkPriceUpdate) -> None:
         """
         Handle the given mark price update.
@@ -2057,6 +2150,7 @@ class Actor(Component):
         System method (not intended to be called by user code).
 
         """
+        ...
     def handle_index_price(self, index_price: IndexPriceUpdate) -> None:
         """
         Handle the given index price update.
@@ -2073,6 +2167,7 @@ class Actor(Component):
         System method (not intended to be called by user code).
 
         """
+        ...
     def handle_trade_ticks(self, ticks: list[TradeTick]) -> None:
         """
         Handle the given historical trade tick data by handling each tick individually.
@@ -2087,6 +2182,7 @@ class Actor(Component):
         System method (not intended to be called by user code).
 
         """
+        ...
     def handle_bar(self, bar: Bar) -> None:
         """
         Handle the given bar data.
@@ -2103,6 +2199,7 @@ class Actor(Component):
         System method (not intended to be called by user code).
 
         """
+        ...
     def handle_bars(self, bars: list[Bar]) -> None:
         """
         Handle the given historical bar data by handling each bar individually.
@@ -2122,6 +2219,7 @@ class Actor(Component):
             If bar data has incorrectly sorted timestamps (not monotonically increasing).
 
         """
+        ...
     def handle_instrument_status(self, data: InstrumentStatus) -> None:
         """
         Handle the given instrument status update.
@@ -2138,6 +2236,7 @@ class Actor(Component):
         System method (not intended to be called by user code).
 
         """
+        ...
     def handle_instrument_close(self, update: InstrumentClose) -> None:
         """
         Handle the given instrument close update.
@@ -2154,6 +2253,7 @@ class Actor(Component):
         System method (not intended to be called by user code).
 
         """
+        ...
     def handle_data(self, data: Data) -> None:
         """
         Handle the given data.
@@ -2170,6 +2270,7 @@ class Actor(Component):
         System method (not intended to be called by user code).
 
         """
+        ...
     def handle_signal(self, signal: Data) -> None:
         """
         Handle the given signal.
@@ -2186,6 +2287,7 @@ class Actor(Component):
         System method (not intended to be called by user code).
 
         """
+        ...
     def handle_historical_data(self, data: Data) -> None:
         """
         Handle the given historical data.
@@ -2200,6 +2302,7 @@ class Actor(Component):
         System method (not intended to be called by user code).
 
         """
+        ...
     def handle_event(self, event: Event) -> None:
         """
         Handle the given event.
@@ -2216,6 +2319,7 @@ class Actor(Component):
         System method (not intended to be called by user code).
 
         """
+        ...
     def _handle_data_response(self, response: DataResponse) -> None: ...
     def _handle_instrument_response(self, response: DataResponse) -> None: ...
     def _handle_instruments_response(self, response: DataResponse) -> None: ...

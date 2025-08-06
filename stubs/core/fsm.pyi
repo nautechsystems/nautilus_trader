@@ -53,6 +53,7 @@ class FiniteStateMachine:
         str
 
         """
+        ...
     def trigger(self, trigger: int) -> None:
         """
         Process the FSM with the given trigger. The trigger must be valid for
@@ -70,3 +71,4 @@ class FiniteStateMachine:
             If the state and `trigger` combination is not found in the transition table.
 
         """
+        ...

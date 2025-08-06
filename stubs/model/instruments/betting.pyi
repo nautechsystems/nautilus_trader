@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from nautilus_trader.adapters.betfair.parsing.common import order_side_to_bet_side
+from nautilus_trader.core.nautilus_pyo3 import BetSide
 from nautilus_trader.model.enums import OrderSide
 from stubs.model.identifiers import Symbol
 from stubs.model.instruments.base import Instrument
@@ -85,6 +85,7 @@ class BettingInstrument(Instrument):
         BettingInstrument
 
         """
+        ...
     @staticmethod
     def to_dict(obj: BettingInstrument) -> dict[str, Any]:
         """
@@ -95,6 +96,7 @@ class BettingInstrument(Instrument):
         dict[str, object]
 
         """
+        ...
     def notional_value(
         self, quantity: Quantity, price: Price, use_quote_for_inverse: bool = False
     ) -> Money: ...

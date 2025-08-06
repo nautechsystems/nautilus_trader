@@ -41,6 +41,7 @@ class CommodityChannelIndex(Indicator):
             The update bar.
 
         """
+        ...
     def update_raw(
         self,
         high: float,
@@ -60,9 +61,11 @@ class CommodityChannelIndex(Indicator):
             The close price.
 
         """
+        ...
     def _reset(self) -> None:
         """
         Reset the indicator.
 
         All stateful fields are reset to their initial value.
         """
+        ...

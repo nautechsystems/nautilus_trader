@@ -34,6 +34,7 @@ class RelativeStrengthIndex(Indicator):
             The update bar.
 
         """
+        ...
     def update_raw(self, value: float) -> None:
         """
         Update the indicator with the given value.
@@ -44,4 +45,5 @@ class RelativeStrengthIndex(Indicator):
             The update value.
 
         """
+        ...
     def _reset(self) -> None: ...

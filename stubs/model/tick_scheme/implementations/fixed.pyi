@@ -53,6 +53,7 @@ class FixedTickScheme(TickScheme):
         Price
 
         """
+        ...
     def next_bid_price(self, value: float, n: int = 0) -> Price | None:
         """
         Return the price `n` bid ticks away from value.
@@ -71,6 +72,7 @@ class FixedTickScheme(TickScheme):
         Price
 
         """
+        ...
 
 FOREX_5DECIMAL_TICK_SCHEME: FixedTickScheme
 FOREX_3DECIMAL_TICK_SCHEME: FixedTickScheme

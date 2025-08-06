@@ -102,6 +102,7 @@ class BinaryOption(Instrument):
             tz-aware UTC.
 
         """
+        ...
     @property
     def expiration_utc(self) -> pd.Timestamp:
         """
@@ -113,6 +114,7 @@ class BinaryOption(Instrument):
             tz-aware UTC.
 
         """
+        ...
     @staticmethod
     def from_dict(values: dict[str, Any]) -> BinaryOption:
         """
@@ -128,6 +130,7 @@ class BinaryOption(Instrument):
         BinaryOption
 
         """
+        ...
     @staticmethod
     def to_dict(obj: BinaryOption) -> dict[str, Any]:
         """
@@ -138,3 +141,4 @@ class BinaryOption(Instrument):
         dict[str, object]
 
         """
+        ...

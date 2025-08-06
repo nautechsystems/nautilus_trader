@@ -51,7 +51,9 @@ class Serializer:
 
     def serialize(self, obj: object) -> bytes:
         """Abstract method (implement in subclass)."""
+        ...
 
     def deserialize(self, obj_bytes: bytes) -> object:
         """Abstract method (implement in subclass)."""
+        ...
 

@@ -33,6 +33,7 @@ class DirectionalMovement(Indicator):
             The update bar.
 
         """
+        ...
     def update_raw(
         self,
         high: float,
@@ -49,9 +50,11 @@ class DirectionalMovement(Indicator):
             The low price.
 
         """
+        ...
     def _reset(self) -> None:
         """
         Reset the indicator.
 
         All stateful fields are reset to their initial value.
         """
+        ...

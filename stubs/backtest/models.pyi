@@ -53,6 +53,7 @@ class FillModel:
         bool
 
         """
+        ...
     def is_stop_filled(self) -> bool:
         """
         Return a value indicating whether a ``STOP-MARKET`` order filled.
@@ -62,6 +63,7 @@ class FillModel:
         bool
 
         """
+        ...
     def is_slipped(self) -> bool:
         """
         Return a value indicating whether an order fill slipped.
@@ -71,6 +73,7 @@ class FillModel:
         bool
 
         """
+        ...
 
 
 class LatencyModel:
@@ -148,6 +151,7 @@ class FeeModel:
         Money
 
         """
+        ...
 
 
 class MakerTakerFeeModel(FeeModel):

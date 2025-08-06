@@ -77,6 +77,7 @@ class RiskEngine(Component):
             The command to execute.
 
         """
+        ...
     def process(self, event: Event) -> None:
         """
         Process the given event.
@@ -87,6 +88,7 @@ class RiskEngine(Component):
             The event to process.
 
         """
+        ...
     def set_trading_state(self, state: TradingState) -> None:
         """
         Set the trading state for the engine.
@@ -97,6 +99,7 @@ class RiskEngine(Component):
             The state to set.
 
         """
+        ...
     def set_max_notional_per_order(
         self,
         instrument_id: InstrumentId,
@@ -123,6 +126,7 @@ class RiskEngine(Component):
             If `new_value` is not ``None`` and not positive.
 
         """
+        ...
     def max_order_submit_rate(self) -> tuple[int, dt.timedelta]:
         """
         Return the current maximum order submit rate limit setting.
@@ -133,6 +137,7 @@ class RiskEngine(Component):
             The limit per timedelta interval.
 
         """
+        ...
     def max_order_modify_rate(self) -> tuple[int, dt.timedelta]:
         """
         Return the current maximum order modify rate limit setting.
@@ -143,6 +148,7 @@ class RiskEngine(Component):
             The limit per timedelta interval.
 
         """
+        ...
     def max_notionals_per_order(self) -> dict[InstrumentId, Decimal]:
         """
         Return the current maximum notionals per order settings.
@@ -152,6 +158,7 @@ class RiskEngine(Component):
         dict[InstrumentId, Decimal]
 
         """
+        ...
     def max_notional_per_order(self, instrument_id: InstrumentId) -> Decimal | None:
         """
         Return the current maximum notional per order for the given instrument ID.
@@ -161,6 +168,7 @@ class RiskEngine(Component):
         Decimal or ``None``
 
         """
+        ...
     def _initialize_risk_checks(self, config: RiskEngineConfig) -> None: ...
     def _log_state(self) -> None: ...
     def _on_start(self) -> None: ...
@@ -188,4 +196,3 @@ class RiskEngine(Component):
     def _send_to_execution(self, command: TradingCommand) -> None: ...
     def _reject_modify_order(self, order: Order, reason: str) -> None: ...
     def _handle_event(self, event: Event) -> None: ...
-

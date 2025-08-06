@@ -35,6 +35,7 @@ def preprocess_bar_data(data: pd.DataFrame, is_raw: bool) -> pd.DataFrame:
         pd.DataFrame: The preprocessed DataFrame with a cleaned and standardized structure.
 
     """
+    ...
 def calculate_bar_price_offsets(num_records: int, timestamp_is_close: bool, offset_interval_ms: int, random_seed: int | None = None) -> dict[str, Any]:
     """
     Calculate and potentially randomize the time offsets for bar prices based on the closeness of the timestamp.
@@ -55,6 +56,7 @@ def calculate_bar_price_offsets(num_records: int, timestamp_is_close: bool, offs
         dict: A dictionary with arrays of offsets for open, high, low, and close prices. If random_seed is provided,
               high and low offsets are randomized.
     """
+    ...
 def calculate_volume_quarter(volume: np.ndarray, precision: int, size_increment: float) -> np.ndarray:
     """
     Convert raw volume data to quarter precision.
@@ -72,6 +74,7 @@ def calculate_volume_quarter(volume: np.ndarray, precision: int, size_increment:
         The volume data adjusted to quarter precision.
 
     """
+    ...
 def align_bid_ask_bar_data(bid_data: pd.DataFrame, ask_data: pd.DataFrame) -> pd.DataFrame:
     """
     Merge bid and ask data into a single DataFrame with prefixed column names.
@@ -89,6 +92,7 @@ def align_bid_ask_bar_data(bid_data: pd.DataFrame, ask_data: pd.DataFrame) -> pd
         A merged DataFrame with columns prefixed by 'bid_' for bid data and 'ask_' for ask data, joined on their indexes.
 
     """
+    ...
 def prepare_event_and_init_timestamps(index: pd.DatetimeIndex, ts_init_delta: int) -> tuple[np.ndarray, np.ndarray]: ...
 
 class OrderBookDeltaDataWrangler:
@@ -125,6 +129,7 @@ class OrderBookDeltaDataWrangler:
             If `data` is empty.
 
         """
+        ...
     def _build_delta(
         self,
         action: BookAction,
@@ -174,6 +179,7 @@ class QuoteTickDataWrangler:
         list[QuoteTick]
 
         """
+        ...
     def process_bar_data(self, bid_data: pd.DataFrame, ask_data: pd.DataFrame, default_volume: float = ..., ts_init_delta: int = 0, offset_interval_ms: int = 100, timestamp_is_close: bool = True, random_seed: int | None = None, is_raw: bool = False, sort_data: bool = True) -> list[QuoteTick]:
         """
         Process the given bar datasets into Nautilus `QuoteTick` objects.
@@ -210,6 +216,7 @@ class QuoteTickDataWrangler:
             If the data should be sorted by timestamp.
 
         """
+        ...
     def _create_quote_ticks_array(self, merged_data: Any, is_raw: bool, instrument: Instrument, offsets: dict[str, Any], ts_init_delta: int) -> np.ndarray: ...
     def _build_tick(
         self,
@@ -258,6 +265,7 @@ class TradeTickDataWrangler:
             If `data` is empty.
 
         """
+        ...
     def process_bar_data(self, data: pd.DataFrame, ts_init_delta: int = 0, offset_interval_ms: int = 100, timestamp_is_close: bool = True, random_seed: int | None = None, is_raw: bool = False, sort_data: bool = True) -> list[TradeTick]:
         """
         Process the given bar datasets into Nautilus `TradeTick` objects.
@@ -299,6 +307,7 @@ class TradeTickDataWrangler:
             If `data` is empty.
 
         """
+        ...
     def _create_trade_ticks_array(self, records: Any, offsets: dict[str, Any]) -> np.ndarray: ...
     def _create_side_if_not_exist(self, data: pd.DataFrame) -> Any: ...
     def _build_tick(
@@ -354,5 +363,6 @@ class BarDataWrangler:
             If `data` is empty.
 
         """
+        ...
     def _build_bar(self, values: memoryview, ts_event: int, ts_init: int) -> Bar: ...
 

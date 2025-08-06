@@ -113,6 +113,7 @@ class MarketOrder(Order):
         str
 
         """
+        ...
     @staticmethod
     def from_pyo3(pyo3_order: Any) -> MarketOrder: ...
     def to_dict(self) -> dict[str, Any]:
@@ -124,6 +125,7 @@ class MarketOrder(Order):
         dict[str, object]
 
         """
+        ...
     @staticmethod
     def create(init: OrderInitialized) -> MarketOrder: ...
     @staticmethod

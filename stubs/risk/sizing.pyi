@@ -37,6 +37,7 @@ class PositionSizer:
             If `instrument` does not equal the currently held instrument.
 
         """
+        ...
     def calculate(
         self,
         entry: Price,
@@ -50,6 +51,7 @@ class PositionSizer:
         units: int = 1,
     ) -> Quantity:
         """Abstract method (implement in subclass)."""
+        ...
 
 
 class FixedRiskSizer(PositionSizer):
@@ -119,4 +121,4 @@ class FixedRiskSizer(PositionSizer):
         Quantity
 
         """
-
+        ...

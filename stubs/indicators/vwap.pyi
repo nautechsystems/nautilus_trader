@@ -21,6 +21,7 @@ class VolumeWeightedAveragePrice(Indicator):
             The update bar.
 
         """
+        ...
     def update_raw(self, price: float, volume: float, timestamp: datetime) -> None:
         """
         Update the indicator with the given raw values.
@@ -35,5 +36,6 @@ class VolumeWeightedAveragePrice(Indicator):
             The current timestamp.
 
         """
+        ...
     def _reset(self) -> None: ...
 

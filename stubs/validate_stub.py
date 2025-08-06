@@ -208,7 +208,6 @@ class PyxPyiValidator:
     def validate(self) -> bool:
         print(f"Validating {self.pyx_file} -> {self.pyi_file}")
 
-        # Check file existence
         if not self.pyx_file.exists():
             self.reporter.add_error(f"PYX file not found: {self.pyx_file}")
             return False
@@ -216,11 +215,9 @@ class PyxPyiValidator:
             self.reporter.add_error(f"PYI file not found: {self.pyi_file}")
             return False
 
-        # Parse files
         if not self._parse_files():
             return False
 
-        # Perform validation
         self._validate_classes()
         self._validate_functions()
         self._validate_global_variables()
@@ -275,7 +272,6 @@ class PyxPyiValidator:
             )
 
     def _validate_functions(self):
-        # Determine validation targets based on whether to include private functions
         pyx_function_names = set(self.pyx_functions.keys())
         pyi_function_names = set(self.pyi_functions.keys())
 
@@ -310,7 +306,6 @@ class PyxPyiValidator:
             self._validate_function(function_name, pyx_function, pyi_function)
 
     def _validate_global_variables(self):
-        # Determine validation targets based on whether to include private variables
         pyx_variable_names = set(self.pyx_global_variables.keys())
         pyi_variable_names = set(self.pyi_global_variables.keys())
 

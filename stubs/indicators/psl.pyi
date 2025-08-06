@@ -32,6 +32,7 @@ class PsychologicalLine(Indicator):
             The update bar.
 
         """
+        ...
     def update_raw(self, close: float) -> None:
         """
         Update the indicator with the given raw value.
@@ -42,5 +43,6 @@ class PsychologicalLine(Indicator):
             The close price.
 
         """
+        ...
     def _reset(self) -> None: ...
 

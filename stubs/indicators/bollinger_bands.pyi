@@ -54,6 +54,7 @@ class BollingerBands(Indicator):
             The tick for the update.
 
         """
+        ...
     def handle_trade_tick(self, tick: TradeTick) -> None:
         """
         Update the indicator with the given tick.
@@ -64,6 +65,7 @@ class BollingerBands(Indicator):
             The tick for the update.
 
         """
+        ...
     def handle_bar(self, bar: Bar) -> None:
         """
         Update the indicator with the given bar.
@@ -74,6 +76,7 @@ class BollingerBands(Indicator):
             The update bar.
 
         """
+        ...
     def update_raw(self, high: float, low: float, close: float) -> None:
         """
         Update the indicator with the given prices.
@@ -88,5 +91,6 @@ class BollingerBands(Indicator):
             The closing price for calculations
 
         """
+        ...
     def _reset(self) -> None: ...
 

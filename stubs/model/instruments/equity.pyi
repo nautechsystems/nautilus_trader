@@ -96,6 +96,7 @@ class Equity(Instrument):
         Equity
 
         """
+        ...
     @staticmethod
     def to_dict(obj: Instrument) -> dict[str, Any]:
         """
@@ -106,6 +107,7 @@ class Equity(Instrument):
         dict[str, object]
 
         """
+        ...
     @staticmethod
     def from_pyo3(pyo3_instrument: Any) -> Equity:
         """
@@ -121,3 +123,4 @@ class Equity(Instrument):
         Equity
 
         """
+        ...

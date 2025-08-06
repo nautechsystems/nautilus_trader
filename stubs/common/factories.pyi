@@ -76,6 +76,7 @@ class OrderFactory:
         int
 
         """
+        ...
     def get_order_list_id_count(self) -> int:
         """
         Return the order list ID count for the factory.
@@ -85,6 +86,7 @@ class OrderFactory:
         int
 
         """
+        ...
     def set_client_order_id_count(self, count: int) -> None:
         """
         Set the internal order ID generator count to the given count.
@@ -99,6 +101,7 @@ class OrderFactory:
         System method (not intended to be called by user code).
 
         """
+        ...
     def set_order_list_id_count(self, count: int) -> None:
         """
         Set the internal order list ID generator count to the given count.
@@ -113,6 +116,7 @@ class OrderFactory:
         System method (not intended to be called by user code).
 
         """
+        ...
     def generate_client_order_id(self) -> ClientOrderId:
         """
         Generate and return a new client order ID.
@@ -124,6 +128,7 @@ class OrderFactory:
         ClientOrderId
 
         """
+        ...
     def generate_order_list_id(self) -> OrderListId:
         """
         Generate and return a new order list ID.
@@ -135,12 +140,14 @@ class OrderFactory:
         OrderListId
 
         """
+        ...
     def reset(self) -> None:
         """
         Reset the order factory.
 
         All stateful fields are reset to their initial value.
         """
+        ...
     def create_list(self, orders: list[Order]) -> OrderList:
         """
         Return a new order list containing the given `orders`.
@@ -164,6 +171,7 @@ class OrderFactory:
         The order at index 0 in the list will be considered the 'first' order.
 
         """
+        ...
     def market(
         self,
         instrument_id: InstrumentId,
@@ -216,6 +224,7 @@ class OrderFactory:
             If `time_in_force` is ``GTD``.
 
         """
+        ...
     def limit(
         self,
         instrument_id: InstrumentId,
@@ -291,6 +300,7 @@ class OrderFactory:
             If `display_qty` is negative (< 0) or greater than `quantity`.
 
         """
+        ...
     def stop_market(
         self,
         instrument_id: InstrumentId,
@@ -365,6 +375,7 @@ class OrderFactory:
             If `time_in_force` is ``GTD`` and `expire_time` <= UNIX epoch.
 
         """
+        ...
     def stop_limit(
         self,
         instrument_id: InstrumentId,
@@ -450,6 +461,7 @@ class OrderFactory:
             If `display_qty` is negative (< 0) or greater than `quantity`.
 
         """
+        ...
     def market_to_limit(
         self,
         instrument_id: InstrumentId,
@@ -508,6 +520,7 @@ class OrderFactory:
             If `time_in_force` is ``AT_THE_OPEN`` or ``AT_THE_CLOSE``.
 
         """
+        ...
     def market_if_touched(
         self,
         instrument_id: InstrumentId,
@@ -582,6 +595,7 @@ class OrderFactory:
             If `time_in_force` is ``GTD`` and `expire_time` <= UNIX epoch.
 
         """
+        ...
     def limit_if_touched(
         self,
         instrument_id: InstrumentId,
@@ -667,6 +681,7 @@ class OrderFactory:
             If `display_qty` is negative (< 0) or greater than `quantity`.
 
         """
+        ...
     def trailing_stop_market(
         self,
         instrument_id: InstrumentId,
@@ -751,6 +766,7 @@ class OrderFactory:
             If `time_in_force` is ``GTD`` and `expire_time` <= UNIX epoch.
 
         """
+        ...
     def trailing_stop_limit(
         self,
         instrument_id: InstrumentId,
@@ -852,6 +868,7 @@ class OrderFactory:
             If `display_qty` is negative (< 0) or greater than `quantity`.
 
         """
+        ...
     def bracket(
         self,
         instrument_id: InstrumentId,
@@ -1006,4 +1023,4 @@ class OrderFactory:
         OrderList
 
         """
-
+        ...

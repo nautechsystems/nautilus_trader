@@ -70,6 +70,7 @@ class SyntheticInstrument(Data):
         int
 
         """
+        ...
     @property
     def price_increment(self) -> Price:
         """
@@ -80,6 +81,7 @@ class SyntheticInstrument(Data):
         Price
 
         """
+        ...
     @property
     def components(self) -> list[InstrumentId]:
         """
@@ -90,6 +92,7 @@ class SyntheticInstrument(Data):
         list[InstrumentId]
 
         """
+        ...
     @property
     def formula(self) -> str:
         """
@@ -100,6 +103,7 @@ class SyntheticInstrument(Data):
         str
 
         """
+        ...
     @property
     def ts_event(self) -> int:
         """
@@ -110,6 +114,7 @@ class SyntheticInstrument(Data):
         int
 
         """
+        ...
     @property
     def ts_init(self) -> int:
         """
@@ -120,6 +125,7 @@ class SyntheticInstrument(Data):
         int
 
         """
+        ...
     def change_formula(self, formula: str) -> None:
         """
         Change the internal derivation formula for the synthetic instrument.
@@ -137,6 +143,7 @@ class SyntheticInstrument(Data):
             If the `formula` is not a valid expression.
 
         """
+        ...
     def calculate(self, inputs: list[float]) -> Price:
         """
         Calculate the price of the synthetic instrument from the given `inputs`.
@@ -157,6 +164,7 @@ class SyntheticInstrument(Data):
             If an internal error occurs when calculating the price.
 
         """
+        ...
     @staticmethod
     def from_dict(values: dict[str, Any]) -> SyntheticInstrument:
         """
@@ -172,6 +180,7 @@ class SyntheticInstrument(Data):
         SyntheticInstrument
 
         """
+        ...
     @staticmethod
     def to_dict(obj: SyntheticInstrument) -> dict[str, Any]:
         """
@@ -182,3 +191,4 @@ class SyntheticInstrument(Data):
         dict[str, object]
 
         """
+        ...

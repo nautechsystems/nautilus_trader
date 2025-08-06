@@ -32,3 +32,4 @@ class MovingAverageFactory:
             If `period` is not positive (> 0).
 
         """
+        ...

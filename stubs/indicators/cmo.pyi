@@ -37,6 +37,7 @@ class ChandeMomentumOscillator(Indicator):
             The update bar.
 
         """
+        ...
     def update_raw(self, close: float) -> None:
         """
         Update the indicator with the given value.
@@ -47,4 +48,5 @@ class ChandeMomentumOscillator(Indicator):
             The update value.
 
         """
+        ...
     def _reset(self) -> None: ...

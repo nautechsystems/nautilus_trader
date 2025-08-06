@@ -22,6 +22,7 @@ class OrderUnpacker:
         Order
 
         """
+        ...
     @staticmethod
     def from_init(init: OrderInitialized) -> Order:
         """
@@ -37,3 +38,4 @@ class OrderUnpacker:
         Order
 
         """
+        ...

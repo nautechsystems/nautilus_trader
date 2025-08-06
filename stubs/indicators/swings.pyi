@@ -39,6 +39,7 @@ class Swings(Indicator):
             The update bar.
 
         """
+        ...
     def update_raw(self, high: float, low: float, timestamp: datetime) -> None:
         """
         Update the indicator with the given raw values.
@@ -53,5 +54,6 @@ class Swings(Indicator):
             The current timestamp.
 
         """
+        ...
     def _reset(self) -> None: ...
 

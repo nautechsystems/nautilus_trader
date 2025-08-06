@@ -54,6 +54,7 @@ class VolatilityRatio(Indicator):
             The update bar.
 
         """
+        ...
     def update_raw(
         self,
         high: float,
@@ -73,4 +74,5 @@ class VolatilityRatio(Indicator):
             The close price.
 
         """
+        ...
     def _reset(self) -> None: ...

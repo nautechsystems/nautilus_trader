@@ -83,6 +83,7 @@ class IndexInstrument(Instrument):
         IndexInstrument
 
         """
+        ...
     @staticmethod
     def to_dict(obj: Instrument) -> dict[str, Any]:
         """
@@ -93,6 +94,7 @@ class IndexInstrument(Instrument):
         dict[str, object]
 
         """
+        ...
     @staticmethod
     def from_pyo3(pyo3_instrument: Any) -> IndexInstrument:
         """
@@ -108,3 +110,4 @@ class IndexInstrument(Instrument):
         IndexInstrument
 
         """
+        ...

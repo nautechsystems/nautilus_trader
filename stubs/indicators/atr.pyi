@@ -41,6 +41,7 @@ class AverageTrueRange(Indicator):
             The update bar.
 
         """
+        ...
     def update_raw(
         self,
         high: float,
@@ -60,4 +61,5 @@ class AverageTrueRange(Indicator):
             The close price.
 
         """
+        ...
     def _reset(self) -> None: ...

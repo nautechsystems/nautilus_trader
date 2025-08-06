@@ -87,6 +87,7 @@ class Portfolio(PortfolioFacade):
             The value to set.
 
         """
+        ...
     def set_use_mark_xrates(self, value: bool) -> None:
         """
         Set the `use_mark_xrates` setting with the given `value`.
@@ -97,6 +98,7 @@ class Portfolio(PortfolioFacade):
             The value to set.
 
         """
+        ...
     def set_specific_venue(self, venue: Venue) -> None:
         """
         Set a specific venue for the portfolio.
@@ -107,18 +109,21 @@ class Portfolio(PortfolioFacade):
             The specific venue to set.
 
         """
+        ...
     def initialize_orders(self) -> None:
         """
         Initialize the portfolios orders.
 
         Performs all account calculations for the current orders state.
         """
+        ...
     def initialize_positions(self) -> None:
         """
         Initialize the portfolios positions.
 
         Performs all account calculations for the current position state.
         """
+        ...
     def update_quote_tick(self, tick: QuoteTick) -> None:
         """
         Update the portfolio with the given quote tick.
@@ -133,10 +138,12 @@ class Portfolio(PortfolioFacade):
             The quote tick to update with.
 
         """
+        ...
     def update_mark_price(self, mark_price: object) -> None:
         """
         TBD
         """
+        ...
     def update_bar(self, bar: Bar) -> None:
         """
         Update the portfolio with the given bar.
@@ -151,6 +158,7 @@ class Portfolio(PortfolioFacade):
             The bar to update with.
 
         """
+        ...
     def update_account(self, event: AccountState) -> None:
         """
         Apply the given account state.
@@ -161,6 +169,7 @@ class Portfolio(PortfolioFacade):
             The account state to apply.
 
         """
+        ...
     def update_order(self, event: OrderEvent) -> None:
         """
         Update the portfolio with the given order.
@@ -171,6 +180,7 @@ class Portfolio(PortfolioFacade):
             The event to update with.
 
         """
+        ...
     def update_position(self, event: PositionEvent) -> None:
         """
         Update the portfolio with the given position event.
@@ -181,6 +191,7 @@ class Portfolio(PortfolioFacade):
             The event to update with.
 
         """
+        ...
     def on_order_event(self, event: OrderEvent) -> None:
         """
         Actions to be performed on receiving an order event.
@@ -191,6 +202,7 @@ class Portfolio(PortfolioFacade):
             The event received.
 
         """
+        ...
     def on_position_event(self, event: PositionEvent) -> None:
         """
         Actions to be performed on receiving a position event.
@@ -201,6 +213,7 @@ class Portfolio(PortfolioFacade):
             The event received.
 
         """
+        ...
     def _reset(self) -> None: ...
     def reset(self) -> None:
         """
@@ -209,6 +222,7 @@ class Portfolio(PortfolioFacade):
         All stateful fields are reset to their initial value.
 
         """
+        ...
     def dispose(self) -> None:
         """
         Dispose of the portfolio.
@@ -216,6 +230,7 @@ class Portfolio(PortfolioFacade):
         All stateful fields are reset to their initial value.
 
         """
+        ...
     def account(self, venue: Venue) -> Account | None:
         """
         Return the account for the given venue (if found).
@@ -230,6 +245,7 @@ class Portfolio(PortfolioFacade):
         Account or ``None``
 
         """
+        ...
     def balances_locked(self, venue: Venue) -> dict[Currency, Money] | None:
         """
         Return the balances locked for the given venue (if found).
@@ -244,6 +260,7 @@ class Portfolio(PortfolioFacade):
         dict[Currency, Money] or ``None``
 
         """
+        ...
     def margins_init(self, venue: Venue) -> dict[Currency, Money] | None:
         """
         Return the initial (order) margins for the given venue (if found).
@@ -258,6 +275,7 @@ class Portfolio(PortfolioFacade):
         dict[Currency, Money] or ``None``
 
         """
+        ...
     def margins_maint(self, venue: Venue) -> dict[Currency, Money] | None:
         """
         Return the maintenance (position) margins for the given venue (if found).
@@ -272,6 +290,7 @@ class Portfolio(PortfolioFacade):
         dict[Currency, Money] or ``None``
 
         """
+        ...
     def realized_pnls(self, venue: Venue) -> dict[Currency, Money]:
         """
         Return the realized PnLs for the given venue (if found).
@@ -289,6 +308,7 @@ class Portfolio(PortfolioFacade):
         dict[Currency, Money]
 
         """
+        ...
     def unrealized_pnls(self, venue: Venue) -> dict[Currency, Money]:
         """
         Return the unrealized PnLs for the given venue (if found).
@@ -303,6 +323,7 @@ class Portfolio(PortfolioFacade):
         dict[Currency, Money]
 
         """
+        ...
     def total_pnls(self, venue: Venue) -> dict[Currency, Money]:
         """
         Return the total PnLs for the given venue (if found).
@@ -317,6 +338,7 @@ class Portfolio(PortfolioFacade):
         dict[Currency, Money]
 
         """
+        ...
     def net_exposures(self, venue: Venue) -> dict[Currency, Money] | None:
         """
         Return the net exposures for the given venue (if found).
@@ -331,6 +353,7 @@ class Portfolio(PortfolioFacade):
         dict[Currency, Money] or ``None``
 
         """
+        ...
     def realized_pnl(self, instrument_id: InstrumentId) -> Money | None:
         """
         Return the realized PnL for the given instrument ID (if found).
@@ -345,6 +368,7 @@ class Portfolio(PortfolioFacade):
         Money or ``None``
 
         """
+        ...
     def unrealized_pnl(self, instrument_id: InstrumentId, price: Price | None = None) -> Money | None:
         """
         Return the unrealized PnL for the given instrument ID (if found).
@@ -373,6 +397,7 @@ class Portfolio(PortfolioFacade):
             The unrealized PnL or None if the calculation cannot be performed.
 
         """
+        ...
     def total_pnl(self, instrument_id: InstrumentId, price: Price | None = None) -> Money | None:
         """
         Return the total PnL for the given instrument ID (if found).
@@ -390,6 +415,7 @@ class Portfolio(PortfolioFacade):
         Money or ``None``
 
         """
+        ...
     def net_exposure(self, instrument_id: InstrumentId, price: Price | None = None) -> Money | None:
         """
         Return the net exposure for the given instrument (if found).
@@ -407,6 +433,7 @@ class Portfolio(PortfolioFacade):
         Money or ``None``
 
         """
+        ...
     def net_position(self, instrument_id: InstrumentId) -> object:
         """
         Return the total net position for the given instrument ID.
@@ -422,6 +449,7 @@ class Portfolio(PortfolioFacade):
         Decimal
 
         """
+        ...
     def is_net_long(self, instrument_id: InstrumentId) -> bool:
         """
         Return a value indicating whether the portfolio is net long the given
@@ -438,6 +466,7 @@ class Portfolio(PortfolioFacade):
             True if net long, else False.
 
         """
+        ...
     def is_net_short(self, instrument_id: InstrumentId) -> bool:
         """
         Return a value indicating whether the portfolio is net short the given
@@ -454,6 +483,7 @@ class Portfolio(PortfolioFacade):
             True if net short, else False.
 
         """
+        ...
     def is_flat(self, instrument_id: InstrumentId) -> bool:
         """
         Return a value indicating whether the portfolio is flat for the given
@@ -470,6 +500,7 @@ class Portfolio(PortfolioFacade):
             True if net flat, else False.
 
         """
+        ...
     def is_completely_flat(self) -> bool:
         """
         Return a value indicating whether the portfolio is completely flat.
@@ -480,3 +511,4 @@ class Portfolio(PortfolioFacade):
             True if net flat across all instruments, else False.
 
         """
+        ...

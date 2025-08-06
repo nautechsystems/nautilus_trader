@@ -41,6 +41,7 @@ class KlingerVolumeOscillator(Indicator):
             The update bar.
 
         """
+        ...
     def update_raw(
         self,
         high: float,
@@ -63,4 +64,5 @@ class KlingerVolumeOscillator(Indicator):
             The volume.
 
         """
+        ...
     def _reset(self) -> None: ...

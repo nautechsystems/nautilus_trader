@@ -59,6 +59,7 @@ class MatchingCore:
         InstrumentId
 
         """
+        ...
     @property
     def price_precision(self) -> int:
         """
@@ -69,6 +70,7 @@ class MatchingCore:
         int
 
         """
+        ...
     @property
     def price_increment(self) -> Price:
         """
@@ -79,6 +81,7 @@ class MatchingCore:
         Price
 
         """
+        ...
     @property
     def bid(self) -> Price | None:
         """
@@ -89,6 +92,7 @@ class MatchingCore:
         Price or ``None``
 
         """
+        ...
     @property
     def ask(self) -> Price | None:
         """
@@ -99,6 +103,7 @@ class MatchingCore:
         Price or ``None``
 
         """
+        ...
     @property
     def last(self) -> Price | None:
         """
@@ -109,6 +114,7 @@ class MatchingCore:
         Price or ``None``
 
         """
+        ...
     def get_order(self, client_order_id: ClientOrderId) -> Order: ...
     def order_exists(self, client_order_id: ClientOrderId) -> bool: ...
     def get_orders(self) -> list[Order]: ...
@@ -135,6 +141,7 @@ class MatchingCore:
             If the `order.order_type` is an invalid type for the core (e.g. `MARKET`).
 
         """
+        ...
     def match_limit_order(self, order: Order) -> None: ...
     def match_stop_market_order(self, order: Order) -> None: ...
     def match_stop_limit_order(self, order: Order, initial: bool) -> None: ...

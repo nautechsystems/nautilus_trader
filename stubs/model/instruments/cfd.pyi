@@ -150,6 +150,7 @@ class Cfd(Instrument):
         Cfd
 
         """
+        ...
     @staticmethod
     def to_dict(obj: Cfd) -> dict[str, Any]:
         """
@@ -160,5 +161,6 @@ class Cfd(Instrument):
         dict[str, object]
 
         """
+        ...
     @staticmethod
     def from_pyo3(pyo3_instrument: Any) -> Cfd: ...

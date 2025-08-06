@@ -167,6 +167,7 @@ class TrailingStopLimitOrder(Order):
         datetime or ``None``
 
         """
+        ...
     def info(self) -> str:
         """
         Return a summary description of the order.
@@ -176,6 +177,7 @@ class TrailingStopLimitOrder(Order):
         str
 
         """
+        ...
     def to_dict(self) -> dict[str, object]:
         """
         Return a dictionary representation of this object.
@@ -185,5 +187,6 @@ class TrailingStopLimitOrder(Order):
         dict[str, object]
 
         """
+        ...
     @staticmethod
     def create(init: OrderInitialized) -> TrailingStopLimitOrder: ...

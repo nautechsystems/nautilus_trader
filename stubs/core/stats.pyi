@@ -138,4 +138,3 @@ def basis_points_as_percentage(basis_points: float) -> float:
 
     """
     ...
-

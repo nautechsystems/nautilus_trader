@@ -48,6 +48,7 @@ class Pressure(Indicator):
             The update bar.
 
         """
+        ...
     def update_raw(
         self,
         high: float,
@@ -70,4 +71,5 @@ class Pressure(Indicator):
             The volume.
 
         """
+        ...
     def _reset(self) -> None: ...

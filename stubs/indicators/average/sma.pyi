@@ -37,6 +37,7 @@ class SimpleMovingAverage(MovingAverage):
             The update tick to handle.
 
         """
+        ...
     def handle_trade_tick(self, tick: TradeTick) -> None:
         """
         Update the indicator with the given trade tick.
@@ -47,6 +48,7 @@ class SimpleMovingAverage(MovingAverage):
             The update tick to handle.
 
         """
+        ...
     def handle_bar(self, bar: Bar) -> None:
         """
         Update the indicator with the given bar.
@@ -57,6 +59,7 @@ class SimpleMovingAverage(MovingAverage):
             The update bar to handle.
 
         """
+        ...
     def update_raw(self, value: float) -> None:
         """
         Update the indicator with the given raw value.
@@ -67,4 +70,5 @@ class SimpleMovingAverage(MovingAverage):
             The update value.
 
         """
+        ...
     def _reset_ma(self) -> None: ...

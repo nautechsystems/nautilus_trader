@@ -48,6 +48,7 @@ class MovingAverageConvergenceDivergence(Indicator):
             The update tick to handle.
 
         """
+        ...
     def handle_trade_tick(self, tick: TradeTick) -> None:
         """
         Update the indicator with the given trade tick.
@@ -58,6 +59,7 @@ class MovingAverageConvergenceDivergence(Indicator):
             The update tick to handle.
 
         """
+        ...
     def handle_bar(self, bar: Bar) -> None:
         """
         Update the indicator with the given bar.
@@ -68,6 +70,7 @@ class MovingAverageConvergenceDivergence(Indicator):
             The update bar.
 
         """
+        ...
     def update_raw(self, close: float) -> None:
         """
         Update the indicator with the given close price.
@@ -78,4 +81,5 @@ class MovingAverageConvergenceDivergence(Indicator):
             The close price.
 
         """
+        ...
     def _reset(self) -> None: ...

@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from datetime import datetime
 from typing import Any
 
 from nautilus_trader.data.config import DataEngineConfig
@@ -130,6 +131,7 @@ class DataEngine(Component):
         list[ClientId]
 
         """
+        ...
     @property
     def default_client(self) -> ClientId | None:
         """
@@ -140,6 +142,7 @@ class DataEngine(Component):
         ClientId or ``None``
 
         """
+        ...
     @property
     def routing_map(self) -> dict[Venue, DataClient]:
         """
@@ -150,14 +153,17 @@ class DataEngine(Component):
         ClientId or ``None``
 
         """
+        ...
     def connect(self) -> None:
         """
         Connect the engine by calling connect on all registered clients.
         """
+        ...
     def disconnect(self) -> None:
         """
         Disconnect the engine by calling disconnect on all registered clients.
         """
+        ...
     def check_connected(self) -> bool:
         """
         Check all of the engines clients are connected.
@@ -168,6 +174,7 @@ class DataEngine(Component):
             True if all clients connected, else False.
 
         """
+        ...
     def check_disconnected(self) -> bool:
         """
         Check all of the engines clients are disconnected.
@@ -178,6 +185,7 @@ class DataEngine(Component):
             True if all clients disconnected, else False.
 
         """
+        ...
     def register_catalog(self, catalog: ParquetDataCatalog, name: str = "catalog_0") -> None:
         """
         Register the given data catalog with the engine.
@@ -190,6 +198,7 @@ class DataEngine(Component):
             The name of the catalog to register.
 
         """
+        ...
     def register_client(self, client: DataClient) -> None:
         """
         Register the given data client with the data engine.
@@ -205,6 +214,7 @@ class DataEngine(Component):
             If `client` is already registered.
 
         """
+        ...
     def register_default_client(self, client: DataClient) -> None:
         """
         Register the given client as the default routing client (when a specific
@@ -218,6 +228,7 @@ class DataEngine(Component):
             The client to register.
 
         """
+        ...
     def register_venue_routing(self, client: DataClient, venue: Venue) -> None:
         """
         Register the given client to route messages to the given venue.
@@ -233,6 +244,7 @@ class DataEngine(Component):
             The client for the venue routing.
 
         """
+        ...
     def deregister_client(self, client: DataClient) -> None:
         """
         Deregister the given data client from the data engine.
@@ -243,6 +255,7 @@ class DataEngine(Component):
             The data client to deregister.
 
         """
+        ...
     def subscribed_custom_data(self) -> list[DataType]:
         """
         Return the custom data types subscribed to.
@@ -252,6 +265,7 @@ class DataEngine(Component):
         list[DataType]
 
         """
+        ...
     def subscribed_instruments(self) -> list[InstrumentId]:
         """
         Return the instruments subscribed to.
@@ -261,6 +275,7 @@ class DataEngine(Component):
         list[InstrumentId]
 
         """
+        ...
     def subscribed_order_book_deltas(self) -> list[InstrumentId]:
         """
         Return the order book delta instruments subscribed to.
@@ -270,6 +285,7 @@ class DataEngine(Component):
         list[InstrumentId]
 
         """
+        ...
     def subscribed_order_book_snapshots(self) -> list[InstrumentId]:
         """
         Return the order book snapshot instruments subscribed to.
@@ -279,6 +295,7 @@ class DataEngine(Component):
         list[InstrumentId]
 
         """
+        ...
     def subscribed_quote_ticks(self) -> list[InstrumentId]:
         """
         Return the quote tick instruments subscribed to.
@@ -288,6 +305,7 @@ class DataEngine(Component):
         list[InstrumentId]
 
         """
+        ...
     def subscribed_trade_ticks(self) -> list[InstrumentId]:
         """
         Return the trade tick instruments subscribed to.
@@ -297,6 +315,7 @@ class DataEngine(Component):
         list[InstrumentId]
 
         """
+        ...
     def subscribed_mark_prices(self) -> list[InstrumentId]:
         """
         Return the mark price update instruments subscribed to.
@@ -306,6 +325,7 @@ class DataEngine(Component):
         list[InstrumentId]
 
         """
+        ...
     def subscribed_index_prices(self) -> list[InstrumentId]:
         """
         Return the index price update instruments subscribed to.
@@ -315,6 +335,7 @@ class DataEngine(Component):
         list[InstrumentId]
 
         """
+        ...
     def subscribed_bars(self) -> list[BarType]:
         """
         Return the bar types subscribed to.
@@ -324,6 +345,7 @@ class DataEngine(Component):
         list[BarType]
 
         """
+        ...
     def subscribed_instrument_status(self) -> list[InstrumentId]:
         """
         Return the status update instruments subscribed to.
@@ -333,6 +355,7 @@ class DataEngine(Component):
         list[InstrumentId]
 
         """
+        ...
     def subscribed_instrument_close(self) -> list[InstrumentId]:
         """
         Return the close price instruments subscribed to.
@@ -342,6 +365,7 @@ class DataEngine(Component):
         list[InstrumentId]
 
         """
+        ...
     def subscribed_synthetic_quotes(self) -> list[InstrumentId]:
         """
         Return the synthetic instrument quotes subscribed to.
@@ -351,6 +375,7 @@ class DataEngine(Component):
         list[InstrumentId]
 
         """
+        ...
     def subscribed_synthetic_trades(self) -> list[InstrumentId]:
         """
         Return the synthetic instrument trades subscribed to.
@@ -360,6 +385,7 @@ class DataEngine(Component):
         list[InstrumentId]
 
         """
+        ...
     def _on_start(self) -> None: ...
     def _on_stop(self) -> None: ...
     def _start(self) -> None: ...
@@ -370,6 +396,7 @@ class DataEngine(Component):
         """
         Stop the registered clients.
         """
+        ...
     def execute(self, command: DataCommand) -> None:
         """
         Execute the given data command.
@@ -380,6 +407,7 @@ class DataEngine(Component):
             The command to execute.
 
         """
+        ...
     def process(self, data: Data) -> None:
         """
         Process the given data.
@@ -390,6 +418,7 @@ class DataEngine(Component):
             The data to process.
 
         """
+        ...
     def request(self, request: RequestData) -> None:
         """
         Handle the given request.
@@ -400,6 +429,7 @@ class DataEngine(Component):
             The request to handle.
 
         """
+        ...
     def response(self, response: DataResponse) -> None:
         """
         Handle the given response.
@@ -410,6 +440,7 @@ class DataEngine(Component):
             The response to handle.
 
         """
+        ...
     def _execute_command(self, command: DataCommand) -> None: ...
     def _handle_subscribe(self, client: DataClient, command: SubscribeData) -> None: ...
     def _handle_unsubscribe(self, client: DataClient, command: UnsubscribeData) -> None: ...
@@ -483,9 +514,9 @@ class DataEngine(Component):
     ) -> None: ...
     def _catalog_last_timestamp(
         self,
-        data_cls: Type,
+        data_cls: type,
         identifier = ...,
-    ) -> Tuple[DateTime | None, object | None]: ...
+    ) -> tuple[datetime | None, object | None]: ...
     def _handle_instruments(self, instruments: list[Instrument], update_catalog: bool = False, force_update_catalog: bool = False) -> None: ...
     def _handle_quote_ticks(self, ticks: list[QuoteTick]) -> None: ...
     def _handle_trade_ticks(self, ticks: list[TradeTick]) -> None: ...

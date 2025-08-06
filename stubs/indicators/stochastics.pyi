@@ -41,6 +41,7 @@ class Stochastics(Indicator):
             The update bar.
 
         """
+        ...
     def update_raw(self, high: float, low: float, close: float) -> None:
         """
         Update the indicator with the given raw values.
@@ -55,4 +56,5 @@ class Stochastics(Indicator):
             The close price.
 
         """
+        ...
     def _reset(self) -> None: ...

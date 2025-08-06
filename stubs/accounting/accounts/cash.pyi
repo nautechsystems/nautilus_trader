@@ -1,6 +1,6 @@
 from typing import ClassVar, Literal
 
-from nautilus_trader.model.enums import LiquiditySide
+from nautilus_trader.model.enums import AccountType, LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from stubs.accounting.accounts.base import Account
 from stubs.model.events.account import AccountState
@@ -29,7 +29,7 @@ class CashAccount(Account):
         If `event.account_type` is not equal to ``CASH``.
     """
 
-    ACCOUNT_TYPE: ClassVar[Literal[CASH]] = ...
+    ACCOUNT_TYPE: ClassVar[AccountType] = ...
 
     _balances_locked: dict[InstrumentId, Money]
 

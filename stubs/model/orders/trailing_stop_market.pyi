@@ -148,6 +148,7 @@ class TrailingStopMarketOrder(Order):
         datetime or ``None``
 
         """
+        ...
     def info(self) -> str:
         """
         Return a summary description of the order.
@@ -157,6 +158,7 @@ class TrailingStopMarketOrder(Order):
         str
 
         """
+        ...
     def to_dict(self) -> dict[str, Any]:
         """
         Return a dictionary representation of this object.
@@ -166,5 +168,6 @@ class TrailingStopMarketOrder(Order):
         dict[str, object]
 
         """
+        ...
     @staticmethod
     def create(init: OrderInitialized) -> TrailingStopMarketOrder: ...

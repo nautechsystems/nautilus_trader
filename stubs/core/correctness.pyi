@@ -31,7 +31,7 @@ class Condition:
             If `predicate` condition is False.
 
         """
-
+        ...
     @staticmethod
     def is_false(predicate: bool, fail_msg: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
@@ -52,7 +52,7 @@ class Condition:
             If `predicate` condition is True.
 
         """
-
+        ...
     @staticmethod
     def none(argument: Any, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
@@ -73,7 +73,7 @@ class Condition:
             If `argument` is not ``None``.
 
         """
-
+        ...
     @staticmethod
     def not_none(argument: Any, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
@@ -94,7 +94,7 @@ class Condition:
             If `argument` is ``None``.
 
         """
-
+        ...
     @staticmethod
     def type(
         argument: Any,
@@ -122,7 +122,7 @@ class Condition:
             If `object` is not of the expected type.
 
         """
-
+        ...
     @staticmethod
     def type_or_none(
         argument: Any,
@@ -150,7 +150,7 @@ class Condition:
             If `object` is not ``None`` and not of the expected type.
 
         """
-
+        ...
     @staticmethod
     def callable(argument: Any, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
@@ -171,7 +171,7 @@ class Condition:
             If `argument` is not of type `Callable`.
 
         """
-
+        ...
     @staticmethod
     def callable_or_none(argument: Any, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
@@ -192,7 +192,7 @@ class Condition:
             If `argument` is not ``None`` and not of type `Callable`.
 
         """
-
+        ...
     @staticmethod
     def equal(
         argument1: Any,
@@ -223,7 +223,7 @@ class Condition:
             If objects are not equal.
 
         """
-
+        ...
     @staticmethod
     def not_equal(
         object1: Any,
@@ -254,7 +254,7 @@ class Condition:
             If objects are equal.
 
         """
-
+        ...
     @staticmethod
     def list_type(
         argument: list,
@@ -282,7 +282,7 @@ class Condition:
              If `argument` is not empty and contains a type other than `expected_type`.
 
         """
-
+        ...
     @staticmethod
     def dict_types(
         argument: dict,
@@ -314,7 +314,7 @@ class Condition:
             If `argument` is not empty and contains a value type other than `value_type`.
 
         """
-
+        ...
     @staticmethod
     def is_in(
         element: Any,
@@ -345,7 +345,7 @@ class Condition:
             If `element` is not contained in the `collection`.
 
         """
-
+        ...
     @staticmethod
     def not_in(
         element: Any,
@@ -376,7 +376,7 @@ class Condition:
             If `element` is contained in the `collection`.
 
         """
-
+        ...
     @staticmethod
     def not_empty(collection: Any, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
@@ -397,7 +397,7 @@ class Condition:
              If `collection` is empty.
 
         """
-
+        ...
     @staticmethod
     def empty(collection: Any, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
@@ -418,7 +418,7 @@ class Condition:
              If `collection` is not empty.
 
         """
-
+        ...
     @staticmethod
     def positive(value: float, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
@@ -439,7 +439,7 @@ class Condition:
              If `value` is not positive (> 0).
 
         """
-
+        ...
     @staticmethod
     def positive_int(value: int, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
@@ -460,7 +460,7 @@ class Condition:
               If `value` is not positive (> 0).
 
         """
-
+        ...
     @staticmethod
     def not_negative(value: float, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
@@ -481,7 +481,7 @@ class Condition:
               If `value` is negative (< 0).
 
         """
-
+        ...
     @staticmethod
     def not_negative_int(value: int, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
@@ -502,7 +502,7 @@ class Condition:
               If `value` is negative (< 0).
 
         """
-
+        ...
     @staticmethod
     def in_range(
         value: float,
@@ -536,7 +536,7 @@ class Condition:
               If `value` is not within the range (inclusive of the end points).
 
         """
-
+        ...
     @staticmethod
     def in_range_int(
         value: int,
@@ -567,7 +567,7 @@ class Condition:
               If `value` is not within the range (inclusive of the end points).
 
         """
-
+        ...
     @staticmethod
     def valid_string(argument: str, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
@@ -620,7 +620,7 @@ class PyCondition:
             If `predicate` condition is False.
 
         """
-
+        ...
     @staticmethod
     def is_false(predicate: bool, fail_msg: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
@@ -641,7 +641,7 @@ class PyCondition:
             If `predicate` condition is True.
 
         """
-
+        ...
     @staticmethod
     def none(argument: Any, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
@@ -662,7 +662,7 @@ class PyCondition:
             If `argument` is not ``None``.
 
         """
-
+        ...
     @staticmethod
     def not_none(argument: Any, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
@@ -683,7 +683,7 @@ class PyCondition:
             If `argument` is ``None``.
 
         """
-
+        ...
     @staticmethod
     def type(argument: Any, expected: Any, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
@@ -706,7 +706,7 @@ class PyCondition:
             If `argument` is not of the expected type.
 
         """
-
+        ...
     @staticmethod
     def type_or_none(argument: Any, expected: Any, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
@@ -729,7 +729,7 @@ class PyCondition:
             If `argument` is not ``None`` and not of the expected type.
 
         """
-
+        ...
     @staticmethod
     def callable(argument: Any, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
@@ -750,7 +750,7 @@ class PyCondition:
             If `argument` is not of type `Callable`.
 
         """
-
+        ...
     @staticmethod
     def callable_or_none(argument: Any, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
@@ -771,7 +771,7 @@ class PyCondition:
             If `argument` is not ``None`` and not of type `Callable`.
 
         """
-
+        ...
     @staticmethod
     def equal(argument1: Any, argument2: Any, param1: str, param2: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
@@ -796,7 +796,7 @@ class PyCondition:
             If objects are not equal.
 
         """
-
+        ...
     @staticmethod
     def not_equal(argument1: Any, argument2: Any, param1: str, param2: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
@@ -821,7 +821,7 @@ class PyCondition:
             If objects are equal.
 
         """
-
+        ...
     @staticmethod
     def list_type(argument: list, expected_type: type, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
@@ -844,7 +844,7 @@ class PyCondition:
              If `argument` is not empty and contains a type other than `expected_type`.
 
         """
-
+        ...
     @staticmethod
     def dict_types(argument: dict, key_type: type, value_type: type, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
@@ -870,7 +870,7 @@ class PyCondition:
             If `argument` is not empty and contains a value type other than `value_type`.
 
         """
-
+        ...
     @staticmethod
     def is_in(element: Any, collection: Any, param1: str, param2: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
@@ -895,7 +895,7 @@ class PyCondition:
             If `element` is not contained in the `collection`.
 
         """
-
+        ...
     @staticmethod
     def not_in(element: Any, collection: Any, param1: str, param2: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
@@ -920,7 +920,7 @@ class PyCondition:
             If `element` is contained in the `collection`.
 
         """
-
+        ...
     @staticmethod
     def not_empty(argument: Any, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
@@ -941,7 +941,7 @@ class PyCondition:
              If `collection` is empty.
 
         """
-
+        ...
     @staticmethod
     def empty(argument: Any, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
@@ -962,7 +962,7 @@ class PyCondition:
              If `collection` is not empty.
 
         """
-
+        ...
     @staticmethod
     def positive(value: float, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
@@ -983,7 +983,7 @@ class PyCondition:
              If `value` is not positive (> 0).
 
         """
-
+        ...
     @staticmethod
     def positive_int(value: int, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
@@ -1004,7 +1004,7 @@ class PyCondition:
               If `value` is not positive (> 0).
 
         """
-
+        ...
     @staticmethod
     def not_negative(value: float, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
@@ -1025,7 +1025,7 @@ class PyCondition:
               If `value` is negative (< 0).
 
         """
-
+        ...
     @staticmethod
     def not_negative_int(value: int, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """
@@ -1046,7 +1046,7 @@ class PyCondition:
               If `value` is negative (< 0).
 
         """
-
+        ...
     @staticmethod
     def in_range(
         value: float,
@@ -1080,7 +1080,7 @@ class PyCondition:
               If `value` is not within the range (inclusive of the end points).
 
         """
-
+        ...
     @staticmethod
     def in_range_int(
         value: int,
@@ -1111,7 +1111,7 @@ class PyCondition:
               If `value` is not within the range (inclusive of the end points).
 
         """
-
+        ...
     @staticmethod
     def valid_string(argument: str, param: str, ex_type: builtins.type[Exception] | None = None) -> None:
         """

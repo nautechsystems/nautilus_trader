@@ -137,6 +137,7 @@ class CurrencyPair(Instrument):
         Currency
 
         """
+        ...
     @staticmethod
     def from_dict(values: dict) -> CurrencyPair:
         """
@@ -152,6 +153,7 @@ class CurrencyPair(Instrument):
         CurrencyPair
 
         """
+        ...
     @staticmethod
     def to_dict(obj: CurrencyPair) -> dict[str, Any]:
         """
@@ -162,5 +164,6 @@ class CurrencyPair(Instrument):
         dict[str, object]
 
         """
+        ...
     @staticmethod
     def from_pyo3(pyo3_instrument: Any) -> CurrencyPair: ...

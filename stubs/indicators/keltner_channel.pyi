@@ -51,7 +51,7 @@ class KeltnerChannel(Indicator):
             The update bar.
 
         """
-
+        ...
     def update_raw(
         self,
         high: float,
@@ -71,11 +71,11 @@ class KeltnerChannel(Indicator):
             The close price.
 
         """
-
+        ...
     def _reset(self) -> None:
         """
         Reset the indicator.
 
         All stateful fields are reset to their initial value.
         """
-
+        ...

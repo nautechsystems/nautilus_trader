@@ -140,6 +140,7 @@ class MarketIfTouchedOrder(Order):
         datetime or ``None``
 
         """
+        ...
     def info(self) -> str:
         """
         Return a summary description of the order.
@@ -149,6 +150,7 @@ class MarketIfTouchedOrder(Order):
         str
 
         """
+        ...
     def to_dict(self) -> dict[str, Any]:
         """
         Return a dictionary representation of this object.
@@ -158,5 +160,6 @@ class MarketIfTouchedOrder(Order):
         dict[str, object]
 
         """
+        ...
     @staticmethod
     def create(init: OrderInitialized) -> MarketIfTouchedOrder: ...

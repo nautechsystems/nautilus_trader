@@ -50,6 +50,7 @@ class MarginAccount(Account):
         dict[InstrumentId, Money]
 
         """
+        ...
     def margins_init(self) -> dict[InstrumentId, Money]:
         """
         Return the initial (order) margins for the account.
@@ -59,6 +60,7 @@ class MarginAccount(Account):
         dict[InstrumentId, Money]
 
         """
+        ...
     def margins_maint(self) -> dict[InstrumentId, Money]:
         """
         Return the maintenance (position) margins for the account.
@@ -68,6 +70,7 @@ class MarginAccount(Account):
         dict[InstrumentId, Money]
 
         """
+        ...
     def leverages(self) -> dict[InstrumentId, Decimal]:
         """
         Return the account leverages.
@@ -77,6 +80,7 @@ class MarginAccount(Account):
         dict[InstrumentId, Decimal]
 
         """
+        ...
     def leverage(self, instrument_id: InstrumentId) -> Decimal | None:
         """
         Return the leverage for the given instrument (if found).
@@ -91,6 +95,7 @@ class MarginAccount(Account):
         Decimal or ``None``
 
         """
+        ...
     def margin_init(self, instrument_id: InstrumentId) -> Money | None:
         """
         Return the current initial (order) margin.
@@ -110,6 +115,7 @@ class MarginAccount(Account):
         rather than `Money` of zero amount.
 
         """
+        ...
     def margin_maint(self, instrument_id: InstrumentId) -> Money | None:
         """
         Return the current maintenance (position) margin.
@@ -129,6 +135,7 @@ class MarginAccount(Account):
         rather than `Money` of zero amount.
 
         """
+        ...
     def margin(self, instrument_id: InstrumentId) -> MarginBalance | None:
         """
         Return the current margin balance.
@@ -148,6 +155,7 @@ class MarginAccount(Account):
         rather than `MarginBalance` with zero amounts.
 
         """
+        ...
     def set_default_leverage(self, leverage: Decimal) -> None:
         """
         Set the default leverage for the account (if not specified by instrument).
@@ -165,6 +173,7 @@ class MarginAccount(Account):
             If leverage is not >= 1.
 
         """
+        ...
     def set_leverage(self, instrument_id: InstrumentId, leverage: Decimal) -> None:
         """
         Set the leverage for the given instrument.
@@ -184,6 +193,7 @@ class MarginAccount(Account):
             If leverage is not >= 1.
 
         """
+        ...
     def update_margin_init(self, instrument_id: InstrumentId, margin_init: Money) -> None:
         """
         Update the initial (order) margin.
@@ -205,6 +215,7 @@ class MarginAccount(Account):
         System method (not intended to be called by user code).
 
         """
+        ...
     def update_margin_maint(self, instrument_id: InstrumentId, margin_maint: Money) -> None:
         """
         Update the maintenance (position) margin.
@@ -226,6 +237,7 @@ class MarginAccount(Account):
         System method (not intended to be called by user code).
 
         """
+        ...
     def update_margin(self, margin: MarginBalance) -> None:
         """
         Update the margin balance.
@@ -239,6 +251,7 @@ class MarginAccount(Account):
         System method (not intended to be called by user code).
 
         """
+        ...
     def clear_margin_init(self, instrument_id: InstrumentId) -> None:
         """
         Clear the initial (order) margins for the given instrument ID.
@@ -253,6 +266,7 @@ class MarginAccount(Account):
         System method (not intended to be called by user code).
 
         """
+        ...
     def clear_margin_maint(self, instrument_id: InstrumentId) -> None:
         """
         Clear the maintenance (position) margins for the given instrument ID.
@@ -267,6 +281,7 @@ class MarginAccount(Account):
         System method (not intended to be called by user code).
 
         """
+        ...
     def clear_margin(self, instrument_id: InstrumentId) -> None:
         """
         Clear the maintenance (position) margins for the given instrument ID.
@@ -281,6 +296,7 @@ class MarginAccount(Account):
         System method (not intended to be called by user code).
 
         """
+        ...
     def is_unleveraged(self, instrument_id: InstrumentId) -> bool: ...
     def calculate_commission(
         self,
@@ -320,6 +336,7 @@ class MarginAccount(Account):
             If `liquidity_side` is ``NO_LIQUIDITY_SIDE``.
 
         """
+        ...
     def calculate_margin_init(
         self,
         instrument: Instrument,
@@ -349,6 +366,7 @@ class MarginAccount(Account):
         Money
 
         """
+        ...
     def calculate_margin_maint(
         self,
         instrument: Instrument,
@@ -381,6 +399,7 @@ class MarginAccount(Account):
         Money
 
         """
+        ...
     def calculate_pnls(self, instrument: Instrument, fill: OrderFilled, position: Position | None = None) -> list[Money]:
         """
         Return the calculated PnL.
@@ -401,4 +420,5 @@ class MarginAccount(Account):
         list[Money]
 
         """
+        ...
     def balance_impact(self, instrument: Instrument, quantity: Quantity, price: Price, order_side: OrderSide) -> Money: ...

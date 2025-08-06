@@ -39,7 +39,7 @@ class ShutdownSystem(Command):
     def __str__(self) -> str: ...
     def __repr__(self) -> str: ...
     @staticmethod
-    def from_dict(values: dict[str, Any]) -> ShutdownSystem: 
+    def from_dict(values: dict[str, Any]) -> ShutdownSystem:
         """
         Return a shutdown system command from the given dict values.
 
@@ -155,7 +155,7 @@ class ComponentStateChanged(Event):
         """
         ...
     @staticmethod
-    def to_dict(obj: ComponentStateChanged) -> dict[str, Any]: 
+    def to_dict(obj: ComponentStateChanged) -> dict[str, Any]:
         """
         Return a dictionary representation of this object.
 
