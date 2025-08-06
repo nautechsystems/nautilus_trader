@@ -278,51 +278,29 @@ impl OwnOrderBook {
     }
 
     #[pyo3(name = "bid_quantity")]
-    #[pyo3(signature = (status=None, accepted_buffer_ns=None, ts_now=None))]
+    #[pyo3(signature = (status=None, depth=None, group_size=None, accepted_buffer_ns=None, ts_now=None))]
     fn py_bid_quantity(
         &self,
         status: Option<HashSet<OrderStatus>>,
+        depth: Option<usize>,
+        group_size: Option<Decimal>,
         accepted_buffer_ns: Option<u64>,
         ts_now: Option<u64>,
     ) -> IndexMap<Decimal, Decimal> {
-        self.bid_quantity(status, accepted_buffer_ns, ts_now)
+        self.bid_quantity(status, depth, group_size, accepted_buffer_ns, ts_now)
     }
 
     #[pyo3(name = "ask_quantity")]
-    #[pyo3(signature = (status=None, accepted_buffer_ns=None, ts_now=None))]
+    #[pyo3(signature = (status=None, depth=None, group_size=None, accepted_buffer_ns=None, ts_now=None))]
     fn py_ask_quantity(
         &self,
         status: Option<HashSet<OrderStatus>>,
-        accepted_buffer_ns: Option<u64>,
-        ts_now: Option<u64>,
-    ) -> IndexMap<Decimal, Decimal> {
-        self.ask_quantity(status, accepted_buffer_ns, ts_now)
-    }
-
-    #[pyo3(name = "group_bids")]
-    #[pyo3(signature = (group_size, depth=None, status=None, accepted_buffer_ns=None, ts_now=None))]
-    fn py_group_bids(
-        &self,
-        group_size: Decimal,
         depth: Option<usize>,
-        status: Option<HashSet<OrderStatus>>,
+        group_size: Option<Decimal>,
         accepted_buffer_ns: Option<u64>,
         ts_now: Option<u64>,
     ) -> IndexMap<Decimal, Decimal> {
-        self.group_bids(group_size, depth, status, accepted_buffer_ns, ts_now)
-    }
-
-    #[pyo3(name = "group_asks")]
-    #[pyo3(signature = (group_size, depth=None, status=None, accepted_buffer_ns=None, ts_now=None))]
-    fn py_group_asks(
-        &self,
-        group_size: Decimal,
-        depth: Option<usize>,
-        status: Option<HashSet<OrderStatus>>,
-        accepted_buffer_ns: Option<u64>,
-        ts_now: Option<u64>,
-    ) -> IndexMap<Decimal, Decimal> {
-        self.group_asks(group_size, depth, status, accepted_buffer_ns, ts_now)
+        self.ask_quantity(status, depth, group_size, accepted_buffer_ns, ts_now)
     }
 
     #[pyo3(name = "audit_open_orders")]

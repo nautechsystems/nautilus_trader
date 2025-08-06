@@ -364,69 +364,65 @@ impl OwnOrderBook {
     ///
     /// Filters by `status` if provided, including only matching orders. With `accepted_buffer_ns`,
     /// only includes orders accepted at least that many nanoseconds before `ts_now` (defaults to now).
+    ///
+    /// If `group_size` is provided, groups quantities into price buckets.
+    /// If `depth` is provided, limits the number of price levels returned.
     pub fn bid_quantity(
         &self,
         status: Option<HashSet<OrderStatus>>,
+        depth: Option<usize>,
+        group_size: Option<Decimal>,
         accepted_buffer_ns: Option<u64>,
         ts_now: Option<u64>,
     ) -> IndexMap<Decimal, Decimal> {
-        self.bids_as_map(status, accepted_buffer_ns, ts_now)
+        let quantities = self
+            .bids_as_map(status, accepted_buffer_ns, ts_now)
             .into_iter()
             .map(|(price, orders)| (price, sum_order_sizes(orders.iter())))
             .filter(|(_, quantity)| *quantity > Decimal::ZERO)
-            .collect()
+            .collect::<IndexMap<Decimal, Decimal>>();
+
+        if let Some(group_size) = group_size {
+            group_quantities(quantities, group_size, depth, true)
+        } else if let Some(depth) = depth {
+            quantities.into_iter().take(depth).collect()
+        } else {
+            quantities
+        }
     }
 
     /// Aggregates own ask quantities per price level, omitting zero-quantity levels.
     ///
     /// Filters by `status` if provided, including only matching orders. With `accepted_buffer_ns`,
     /// only includes orders accepted at least that many nanoseconds before `ts_now` (defaults to now).
+    ///
+    /// If `group_size` is provided, groups quantities into price buckets.
+    /// If `depth` is provided, limits the number of price levels returned.
     pub fn ask_quantity(
         &self,
         status: Option<HashSet<OrderStatus>>,
+        depth: Option<usize>,
+        group_size: Option<Decimal>,
         accepted_buffer_ns: Option<u64>,
         ts_now: Option<u64>,
     ) -> IndexMap<Decimal, Decimal> {
-        self.asks_as_map(status, accepted_buffer_ns, ts_now)
+        let quantities = self
+            .asks_as_map(status, accepted_buffer_ns, ts_now)
             .into_iter()
             .map(|(price, orders)| {
                 let quantity = sum_order_sizes(orders.iter());
                 (price, quantity)
             })
             .filter(|(_, quantity)| *quantity > Decimal::ZERO)
-            .collect()
-    }
+            .collect::<IndexMap<Decimal, Decimal>>();
 
-    /// Groups own bid quantities by price into buckets, truncating to a maximum depth.
-    ///
-    /// Filters by `status` if provided. With `accepted_buffer_ns`, only includes orders accepted
-    /// at least that many nanoseconds before `ts_now` (defaults to now).
-    pub fn group_bids(
-        &self,
-        group_size: Decimal,
-        depth: Option<usize>,
-        status: Option<HashSet<OrderStatus>>,
-        accepted_buffer_ns: Option<u64>,
-        ts_now: Option<u64>,
-    ) -> IndexMap<Decimal, Decimal> {
-        let quantities = self.bid_quantity(status, accepted_buffer_ns, ts_now);
-        group_quantities(quantities, group_size, depth, true)
-    }
-
-    /// Groups own ask quantities by price into buckets, truncating to a maximum depth.
-    ///
-    /// Filters by `status` if provided. With `accepted_buffer_ns`, only includes orders accepted
-    /// at least that many nanoseconds before `ts_now` (defaults to now).
-    pub fn group_asks(
-        &self,
-        group_size: Decimal,
-        depth: Option<usize>,
-        status: Option<HashSet<OrderStatus>>,
-        accepted_buffer_ns: Option<u64>,
-        ts_now: Option<u64>,
-    ) -> IndexMap<Decimal, Decimal> {
-        let quantities = self.ask_quantity(status, accepted_buffer_ns, ts_now);
-        group_quantities(quantities, group_size, depth, false)
+        if let Some(group_size) = group_size {
+            group_quantities(quantities, group_size, depth, false)
+        } else if let Some(depth) = depth {
+            quantities.into_iter().take(depth).collect()
+        } else {
+            quantities
+        }
     }
 
     /// Return a formatted string representation of the order book.
