@@ -1,15 +1,8 @@
 #!/usr/bin/env python3
-"""
-A script validates that classes, methods, member variables, functions, global variables,
-docstrings, and type annotations from Cython .pyx files are correctly extracted
-to their corresponding .pyi stub files.
-"""
+
 import argparse
-import ast
 import re
 import sys
-from dataclasses import dataclass
-from dataclasses import field
 from pathlib import Path
 
 from cython_parser import ClassInfo as CythonClassInfo
@@ -18,330 +11,14 @@ from cython_parser import GlobalVariable as CythonGlobalVariable
 from cython_parser import MemberVariable as CythonMemberVariable
 from cython_parser import MethodInfo as CythonMethodInfo
 from cython_parser import analyze_cython_code
-
-
-SKIPPING_COMMENT = "# skip-validate"
-
-@dataclass
-class Decorators:
-    """Helper class to track decorator information"""
-
-    is_property: bool = False
-    is_staticmethod: bool = False
-    is_classmethod: bool = False
-    is_overload: bool = False
-
-# Data Classes for PYI Elements
-@dataclass
-class PyiMember:
-    """Class member information"""
-
-    name: str
-    type_hint: str | None = None
-    is_method: bool = False
-    is_property: bool = False
-    is_staticmethod: bool = False
-    is_classmethod: bool = False
-    is_overload: bool = False
-    docstring: str | None = None
-    is_private: bool = False
-    parameters: list[str] = field(default_factory=list)
-    return_type: str | None = None
-    line_number: int | None = None
-    ignore_validation: bool = False
-    ignored_params: set[str] = field(default_factory=set)
-
-    def __post_init__(self):
-        self.is_private = self.name.startswith("_")
-
-
-@dataclass
-class PyiFunction:
-    """Top-level function information"""
-
-    name: str
-    parameters: list[str] = field(default_factory=list)
-    return_type: str | None = None
-    docstring: str | None = None
-    is_private: bool = False
-    is_overload: bool = False
-    line_number: int | None = None
-    ignore_validation: bool = False
-    ignored_params: set[str] = field(default_factory=set)
-
-    def __post_init__(self):
-        self.is_private = self.name.startswith("_")
-
-
-@dataclass
-class PyiGlobalVariable:
-    """Global variable information"""
-
-    name: str
-    type_hint: str | None = None
-    value: str | None = None
-    is_private: bool = False
-    line_number: int | None = None
-    ignore_validation: bool = False
-
-    def __post_init__(self):
-        self.is_private = self.name.startswith("_")
-
-
-@dataclass
-class PyiClassInfo:
-    """Class information"""
-
-    name: str
-    docstring: str | None = None
-    members: dict[str, PyiMember] = field(default_factory=dict)
-    base_classes: list[str] = field(default_factory=list)
-    line_number: int | None = None
-    ignore_validation: bool = False
-
-
-class PyiParser:
-    """Python .pyi stub file parser"""
-
-    def __init__(self, file_path: Path):
-        self.file_path = file_path
-        self.file_content = self.file_path.read_text(encoding="utf-8")
-        self.file_lines = self.file_content.splitlines()
-        self.classes: dict[str, PyiClassInfo] = {}
-        self.functions: dict[str, PyiFunction] = {}
-        self.global_variables: dict[str, PyiGlobalVariable] = {}
-
-    def parse(self) -> tuple[dict[str, PyiClassInfo], dict[str, PyiFunction], dict[str, PyiGlobalVariable]]:
-        """Parse Pyi file to extract class, function, and global variable information"""
-        try:
-            tree = ast.parse(self.file_content)
-        except SyntaxError as e:
-            print(f"Syntax error parsing {self.file_path}: {e}")
-            return {}, {}, {}
-        except Exception as e:
-            print(f"Error parsing {self.file_path}: {e}")
-            return {}, {}, {}
-
-        for node in tree.body:
-            try:
-                if isinstance(node, ast.ClassDef):
-                    class_info = self._parse_class(node)
-                    self.classes[class_info.name] = class_info
-                elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
-                    function_info = self._parse_function(node)
-                    self.functions[function_info.name] = function_info
-                elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-                    var_info = self._parse_global_variable_annotated(node)
-                    self.global_variables[var_info.name] = var_info
-                elif isinstance(node, ast.Assign):
-                    for var_info in self._parse_global_variable_assign(node):
-                        self.global_variables[var_info.name] = var_info
-            except Exception as e:
-                print(f"Error processing node in {self.file_path}: {e}")
-                continue
-
-        return self.classes, self.functions, self.global_variables
-
-    def _is_ignored(self, node: ast.AST) -> bool:
-        """Check if the source line ends with # skip-validate."""
-        if not hasattr(node, "lineno"):
-            return False
-        line_index = node.lineno - 1
-        if 0 <= line_index < len(self.file_lines):
-            line = self.file_lines[line_index].rstrip()
-            return line.endswith(SKIPPING_COMMENT)
-        return False
-
-    def _parse_class(self, node: ast.ClassDef) -> PyiClassInfo:
-        """Parse class node"""
-        base_classes = self._parse_base_classes(node.bases)
-
-        class_info = PyiClassInfo(
-            name=node.name,
-            docstring=ast.get_docstring(node),
-            base_classes=base_classes,
-            line_number=node.lineno,
-            ignore_validation=self._is_ignored(node),
-        )
-
-        for item in node.body:
-            if isinstance(item, ast.FunctionDef | ast.AsyncFunctionDef):
-                member = self._parse_class_method(item)
-                class_info.members[item.name] = member
-            elif isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name):
-                member = self._parse_class_variable_annotated(item)
-                class_info.members[item.target.id] = member
-            elif isinstance(item, ast.Assign):
-                for target in item.targets:
-                    if isinstance(target, ast.Name):
-                        member = self._parse_class_variable_assign(item, target.id)
-                        class_info.members[target.id] = member
-
-        return class_info
-
-    def _parse_base_classes(self, bases: list[ast.expr]) -> list[str]:
-        """Extract base class names from AST nodes"""
-        base_classes = []
-        for base in bases:
-            if isinstance(base, ast.Name):
-                base_classes.append(base.id)
-            elif isinstance(base, ast.Attribute):
-                base_classes.append(ast.unparse(base))
-        return base_classes
-
-    def _parse_class_method(self, item: ast.FunctionDef | ast.AsyncFunctionDef) -> PyiMember:
-        """Parse a method within a class"""
-        parameters, ignored_params = self._parse_parameters(item)
-        decorators = self._analyze_decorators(item.decorator_list)
-
-        return PyiMember(
-            name=item.name,
-            is_method=True,
-            is_property=decorators.is_property,
-            is_staticmethod=decorators.is_staticmethod,
-            is_classmethod=decorators.is_classmethod,
-            is_overload=decorators.is_overload,
-            parameters=parameters,
-            return_type=ast.unparse(item.returns) if item.returns else None,
-            docstring=ast.get_docstring(item),
-            line_number=item.lineno,
-            ignore_validation=self._is_ignored(item),
-            ignored_params=ignored_params
-        )
-
-    def _parse_class_variable_annotated(self, item: ast.AnnAssign) -> PyiMember:
-        """Parse a class variable with type annotation"""
-        return PyiMember(
-            name=item.target.id,
-            type_hint=ast.unparse(item.annotation),
-            line_number=item.lineno,
-            ignore_validation=self._is_ignored(item),
-        )
-
-    def _parse_class_variable_assign(self, item: ast.Assign, name: str) -> PyiMember:
-        """Parse a class variable assignment"""
-        return PyiMember(
-            name=name,
-            line_number=item.lineno,
-            ignore_validation=self._is_ignored(item),
-        )
-
-    def _parse_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> PyiFunction:
-        """Parse top-level function"""
-        parameters, ignored_params = self._parse_parameters(node)
-        is_overload = self._has_overload_decorator(node.decorator_list)
-
-        return PyiFunction(
-            name=node.name,
-            parameters=parameters,
-            return_type=ast.unparse(node.returns) if node.returns else None,
-            docstring=ast.get_docstring(node),
-            is_overload=is_overload,
-            line_number=node.lineno,
-            ignore_validation=self._is_ignored(node),
-            ignored_params=ignored_params
-        )
-
-    def _parse_parameters(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> tuple[list[str], set[str]]:
-        """Extract parameter information from a function node"""
-        parameters = []
-        ignored_params = set()
-
-        for arg in node.args.args:
-            if self._is_ignored(arg):
-                ignored_params.add(arg.arg)
-
-            param_str = arg.arg
-            if arg.annotation:
-                param_str += f": {ast.unparse(arg.annotation)}"
-            parameters.append(param_str)
-
-        # Handle parameters with default values
-        defaults = node.args.defaults
-        if defaults:
-            defaults_start = len(parameters) - len(defaults)
-            for i, default in enumerate(defaults):
-                param_idx = defaults_start + i
-                if param_idx < len(parameters):
-                    parameters[param_idx] += f" = {ast.unparse(default)}"
-
-        return parameters, ignored_params
-
-    def _analyze_decorators(self, decorator_list: list[ast.expr]) -> "Decorators":
-        """Analyze function decorators to determine method types"""
-        decorators = Decorators()
-
-        for decorator in decorator_list:
-            if isinstance(decorator, ast.Name):
-                if decorator.id == "property":
-                    decorators.is_property = True
-                elif decorator.id == "staticmethod":
-                    decorators.is_staticmethod = True
-                elif decorator.id == "classmethod":
-                    decorators.is_classmethod = True
-                elif decorator.id == "overload":
-                    decorators.is_overload = True
-            elif isinstance(decorator, ast.Attribute):
-                decorator_name = ast.unparse(decorator)
-                if "overload" in decorator_name:
-                    decorators.is_overload = True
-
-        return decorators
-
-    def _has_overload_decorator(self, decorator_list: list[ast.expr]) -> bool:
-        """Check if function has an overload decorator"""
-        for decorator in decorator_list:
-            if isinstance(decorator, ast.Name) and decorator.id == "overload":
-                return True
-            elif isinstance(decorator, ast.Attribute):
-                decorator_name = ast.unparse(decorator)
-                if "overload" in decorator_name:
-                    return True
-        return False
-
-    def _parse_global_variable_annotated(self, node: ast.AnnAssign) -> PyiGlobalVariable:
-        """Parse global variable with type annotation"""
-        value = None
-        if node.value:
-            try:
-                value = ast.unparse(node.value)
-            except Exception:
-                value = str(node.value)
-
-        return PyiGlobalVariable(
-            name=node.target.id,
-            type_hint=ast.unparse(node.annotation),
-            value=value,
-            line_number=node.lineno,
-            ignore_validation=self._is_ignored(node),
-        )
-
-    def _parse_global_variable_assign(self, node: ast.Assign) -> list[PyiGlobalVariable]:
-        """Parse regular global variable assignment"""
-        variables = []
-        value = None
-        if node.value:
-            try:
-                value = ast.unparse(node.value)
-            except Exception:
-                value = str(node.value)
-
-        for target in node.targets:
-            if isinstance(target, ast.Name):
-                var_info = PyiGlobalVariable(
-                    name=target.id,
-                    value=value,
-                    line_number=node.lineno,
-                    ignore_validation=self._is_ignored(node),
-                )
-                variables.append(var_info)
-
-        return variables
+from stub_parser import PyiClassInfo
+from stub_parser import PyiFunction
+from stub_parser import PyiGlobalVariable
+from stub_parser import PyiMember
+from stub_parser import PyiParser
 
 
 class TypeNormalizer:
-    """Utility class for normalizing and comparing types between Cython and Python"""
-
     CYTHON_TO_PYTHON_TYPE_MAP = {
         "object": "Any",
         "bint": "bool",
@@ -362,7 +39,6 @@ class TypeNormalizer:
 
     @classmethod
     def normalize_cython_type(cls, cython_type: str) -> str:
-        """Normalize Cython types to their Python equivalents for comparison"""
         if not cython_type:
             return cython_type
 
@@ -377,7 +53,6 @@ class TypeNormalizer:
         return cleaned_type
 
     def _parse_union_types(cls, type_str: str) -> set[str]:
-        """Parse a union type string into a set of individual types"""
         type_str = type_str.strip()
 
         if type_str.startswith("union[") and type_str.endswith("]"):
@@ -422,7 +97,6 @@ class TypeNormalizer:
 
     @staticmethod
     def normalize_parameter(param: str) -> tuple[str, str]:
-        """Normalize parameter to separate name and type"""
         param = param.strip()
 
         # Remove default value (after =)
@@ -445,8 +119,6 @@ class TypeNormalizer:
 
 
 class ValidationReporter:
-    """Helper class for reporting validation results"""
-
     def __init__(self, pyx_file: Path, pyi_file: Path):
         self.pyx_file = pyx_file
         self.pyi_file = pyi_file
@@ -454,17 +126,14 @@ class ValidationReporter:
         self.warnings: list[str] = []
 
     def add_error(self, message: str, pyx_line: int | None = None, pyi_line: int | None = None):
-        """Add an error message with optional line numbers"""
         line_info = self._format_line_info(pyx_line, pyi_line)
         self.errors.append(f"{message} {line_info}")
 
     def add_warning(self, message: str, pyx_line: int | None = None, pyi_line: int | None = None):
-        """Add a warning message with optional line numbers"""
         line_info = self._format_line_info(pyx_line, pyi_line)
         self.warnings.append(f"{message} {line_info}")
 
     def _format_line_info(self, pyx_line: int | None, pyi_line: int | None) -> str:
-        """Format line number information"""
         parts = []
         if pyx_line is not None:
             parts.append(f"({self.pyx_file.name}:{pyx_line})")
@@ -473,15 +142,12 @@ class ValidationReporter:
         return " ".join(parts) if parts else ""
 
     def has_errors(self) -> bool:
-        """Check if there are any errors"""
         return len(self.errors) > 0
 
     def has_warnings(self) -> bool:
-        """Check if there are any warnings"""
         return len(self.warnings) > 0
 
     def print_results(self, pass_warning: bool = False):
-        """Print validation results"""
         if not self.errors and not self.warnings:
             print("✅ All validations passed!")
             return
@@ -502,7 +168,6 @@ class ValidationReporter:
             print(f"\n* {len(self.errors)} errors, {len(self.warnings)} warnings")
 
     def results(self, pass_warning: bool = False) -> str:
-        """Return validation results as string"""
         output = []
         if not self.errors and not self.warnings:
             output.append("✅ All validations passed!")
@@ -527,8 +192,6 @@ class ValidationReporter:
 
 
 class PyxPyiValidator:
-    """PYX and PYI file validator"""
-
     def __init__(self, pyx_file: Path, pyi_file: Path, pass_warning: bool = False):
         self.pyx_file = pyx_file
         self.pyi_file = pyi_file
@@ -543,7 +206,6 @@ class PyxPyiValidator:
         self.type_normalizer = TypeNormalizer()
 
     def validate(self) -> bool:
-        """Perform validation"""
         print(f"Validating {self.pyx_file} -> {self.pyi_file}")
 
         # Check file existence
@@ -566,7 +228,6 @@ class PyxPyiValidator:
         return not self.reporter.has_errors() and (self.pass_warning or not self.reporter.has_warnings())
 
     def _parse_files(self) -> bool:
-        """Parse both PYX and PYI files"""
         try:
             pyx_analyzer = analyze_cython_code(
                 name=str(self.pyx_file),
@@ -589,7 +250,6 @@ class PyxPyiValidator:
         return True
 
     def _validate_classes(self):
-        """Validate classes"""
         pyx_class_names = set(self.pyx_classes.keys())
         pyi_class_names = set(self.pyi_classes.keys())
 
@@ -615,7 +275,6 @@ class PyxPyiValidator:
             )
 
     def _validate_functions(self):
-        """Validate top-level functions"""
         # Determine validation targets based on whether to include private functions
         pyx_function_names = set(self.pyx_functions.keys())
         pyi_function_names = set(self.pyi_functions.keys())
@@ -651,7 +310,6 @@ class PyxPyiValidator:
             self._validate_function(function_name, pyx_function, pyi_function)
 
     def _validate_global_variables(self):
-        """Validate global variables"""
         # Determine validation targets based on whether to include private variables
         pyx_variable_names = set(self.pyx_global_variables.keys())
         pyi_variable_names = set(self.pyi_global_variables.keys())
@@ -682,7 +340,6 @@ class PyxPyiValidator:
             self._validate_global_variable(variable_name, pyx_variable, pyi_variable)
 
     def _validate_class(self, pyx_class: CythonClassInfo, pyi_class: PyiClassInfo):
-        """Validate individual class"""
         class_name = pyx_class.name
 
         # Validate base classes
@@ -699,7 +356,6 @@ class PyxPyiValidator:
         self._validate_members(class_name, pyx_class.methods, pyx_class.member_variables, pyi_class.members)
 
     def _validate_function(self, function_name: str, pyx_function: CythonFunctionInfo, pyi_function: PyiFunction):
-        """Validate individual function"""
         pyx_line = pyx_function.line_number
         pyi_line = pyi_function.line_number
 
@@ -728,7 +384,6 @@ class PyxPyiValidator:
             )
 
     def _validate_global_variable(self, variable_name: str, pyx_variable: CythonGlobalVariable, pyi_variable: PyiGlobalVariable):
-        """Validate individual global variable"""
         pyx_line = pyx_variable.line_number
         pyi_line = pyi_variable.line_number
 
@@ -743,9 +398,8 @@ class PyxPyiValidator:
                 pyx_line, pyi_line
             )
 
-    def _validate_members(self, class_name: str, pyx_methods: list[CythonMethodInfo],
+    def _validate_members(self, class_name: str, pyx_methods: list[CythonMethodInfo], # noqa: C901
                          pyx_member_variables: list[CythonMemberVariable], pyi_members: dict[str, PyiMember]):
-        """Validate class members"""
         pyx_combined_members = {}
 
         for method in pyx_methods:
@@ -810,7 +464,6 @@ class PyxPyiValidator:
                 )
 
     def _validate_method(self, class_name: str, method_name: str, pyx_method: CythonMethodInfo, pyi_member: PyiMember):
-        """Validate individual method (with decorator validation)"""
         pyx_line = pyx_method.line_number
         pyi_line = pyi_member.line_number
 
@@ -862,7 +515,6 @@ class PyxPyiValidator:
 
     def _validate_member_variable(self, class_name: str, member_name: str,
                                  pyx_member: CythonMemberVariable, pyi_member: PyiMember):
-        """Validate individual member variable"""
         pyx_line = pyx_member.line_number
         pyi_line = pyi_member.line_number
 
@@ -879,7 +531,6 @@ class PyxPyiValidator:
 
     def _validate_method_parameters(self, class_name: str, method_name: str,
                                    pyx_method: CythonMethodInfo, pyi_member: PyiMember):
-        """Validate method parameters"""
         pyx_params = pyx_method.args or []
         pyi_params = pyi_member.parameters or []
         pyx_line = pyx_method.line_number
@@ -929,7 +580,6 @@ class PyxPyiValidator:
                 )
 
     def _validate_function_parameters(self, function_name: str, pyx_function: CythonFunctionInfo, pyi_function: PyiFunction):
-        """Validate function parameters"""
         pyx_params = pyx_function.args or []
         pyi_params = pyi_function.parameters or []
         pyx_line = pyx_function.line_number
@@ -979,11 +629,9 @@ class PyxPyiValidator:
                 )
 
     def print_results(self):
-        """Print validation results"""
         self.reporter.print_results(self.pass_warning)
 
     def results(self) -> str:
-        """Return validation results as string"""
         return self.reporter.results(self.pass_warning)
 
 
