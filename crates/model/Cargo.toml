@@ -63,7 +63,6 @@ ustr = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }
-float-cmp = { workspace = true }
 iai = { workspace = true }
 proptest = { workspace = true }
 rstest = { workspace = true }

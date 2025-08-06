@@ -553,6 +553,10 @@ pub struct WsPostOrderParams {
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tgt_ccy: Option<String>,
+    /// Order tag for categorization.
+    #[builder(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
 }
 
 /// Parameters for WebSocket cancel order operation (instType not included).

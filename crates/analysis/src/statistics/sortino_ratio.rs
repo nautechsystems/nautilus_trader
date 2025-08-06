@@ -73,7 +73,7 @@ impl PortfolioStatistic for SortinoRatio {
 mod tests {
     use std::collections::BTreeMap;
 
-    use nautilus_core::UnixNanos;
+    use nautilus_core::{UnixNanos, approx_eq};
     use rstest::rstest;
 
     use super::*;
@@ -115,7 +115,12 @@ mod tests {
         let returns = create_returns(vec![-0.01, 0.02, -0.015, 0.005, -0.02]);
         let result = ratio.calculate_from_returns(&returns);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), -5.273224492824493);
+        assert!(approx_eq!(
+            f64,
+            result.unwrap(),
+            -5.273224492824493,
+            epsilon = 1e-9
+        ));
     }
 
     #[rstest]

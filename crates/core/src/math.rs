@@ -19,6 +19,36 @@
 //! including linear and quadratic interpolation functions commonly used in financial
 //! data processing and analysis.
 
+/// Macro for approximate floating-point equality comparison.
+///
+/// This macro compares two floating-point values with a specified epsilon tolerance,
+/// providing a safe alternative to exact equality checks which can fail due to
+/// floating-point precision issues.
+///
+/// # Usage
+///
+/// ```rust
+/// use nautilus_core::approx_eq;
+///
+/// let a = 0.1 + 0.2;
+/// let b = 0.3;
+/// assert!(approx_eq!(f64, a, b, epsilon = 1e-10));
+/// ```
+#[macro_export]
+macro_rules! approx_eq {
+    ($type:ty, $left:expr, $right:expr, epsilon = $epsilon:expr) => {{
+        let left_val: $type = $left;
+        let right_val: $type = $right;
+        (left_val - right_val).abs() < $epsilon
+    }};
+    ($type:ty, $left:expr, $right:expr, epsilon = $epsilon:expr, ulps = $ulps:expr) => {{
+        let left_val: $type = $left;
+        let right_val: $type = $right;
+        // For compatibility, we use epsilon comparison and ignore ulps
+        (left_val - right_val).abs() < $epsilon
+    }};
+}
+
 /// Calculates the interpolation weight between `x1` and `x2` for a value `x`.
 ///
 /// The returned weight `w` satisfies `y = (1 - w) * y1 + w * y2` when
@@ -176,7 +206,7 @@ mod tests {
     ) {
         let result = linear_weight(x1, x2, x);
         assert!(
-            (result - expected).abs() < 1e-10,
+            approx_eq!(f64, result, expected, epsilon = 1e-10),
             "Expected {expected}, got {result}"
         );
     }
@@ -200,7 +230,7 @@ mod tests {
     ) {
         let result = linear_weighting(y1, y2, weight);
         assert!(
-            (result - expected).abs() < 1e-10,
+            approx_eq!(f64, result, expected, epsilon = 1e-10),
             "Expected {expected}, got {result}"
         );
     }
@@ -235,7 +265,7 @@ mod tests {
     fn test_quad_polynomial_linear_case() {
         // Test with three collinear points - should behave like linear interpolation
         let result = quad_polynomial(1.5, 1.0, 2.0, 3.0, 1.0, 2.0, 3.0);
-        assert!((result - 1.5).abs() < 1e-10);
+        assert!(approx_eq!(f64, result, 1.5, epsilon = 1e-10));
     }
 
     #[rstest]
@@ -244,7 +274,7 @@ mod tests {
         // Points: (0,0), (1,1), (2,4)
         let result = quad_polynomial(1.5, 0.0, 1.0, 2.0, 0.0, 1.0, 4.0);
         let expected = 1.5 * 1.5; // Should be 2.25
-        assert!((result - expected).abs() < 1e-10);
+        assert!(approx_eq!(f64, result, expected, epsilon = 1e-10));
     }
 
     #[rstest]
@@ -275,7 +305,7 @@ mod tests {
         // Test exact points
         for (i, &x) in xs.iter().enumerate() {
             let result = quadratic_interpolation(x, &xs, &ys);
-            assert!((result - ys[i]).abs() < 1e-6);
+            assert!(approx_eq!(f64, result, ys[i], epsilon = 1e-6));
         }
     }
 

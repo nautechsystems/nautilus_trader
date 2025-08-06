@@ -52,6 +52,7 @@ impl PortfolioStatistic for AvgWinner {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::approx_eq;
     use rstest::rstest;
 
     use super::*;
@@ -61,7 +62,7 @@ mod tests {
         let avg_winner = AvgWinner {};
         let result = avg_winner.calculate_from_realized_pnls(&[]);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), 0.0);
+        assert!(approx_eq!(f64, result.unwrap(), 0.0, epsilon = 1e-9));
     }
 
     #[rstest]
@@ -70,7 +71,7 @@ mod tests {
         let realized_pnls = vec![-100.0, -50.0, -200.0];
         let result = avg_winner.calculate_from_realized_pnls(&realized_pnls);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), 0.0);
+        assert!(approx_eq!(f64, result.unwrap(), 0.0, epsilon = 1e-9));
     }
 
     #[rstest]
@@ -79,7 +80,12 @@ mod tests {
         let realized_pnls = vec![100.0, 50.0, 200.0];
         let result = avg_winner.calculate_from_realized_pnls(&realized_pnls);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), 116.66666666666667);
+        assert!(approx_eq!(
+            f64,
+            result.unwrap(),
+            116.66666666666667,
+            epsilon = 1e-9
+        ));
     }
 
     #[rstest]
@@ -88,7 +94,7 @@ mod tests {
         let realized_pnls = vec![100.0, -50.0, 200.0, -100.0];
         let result = avg_winner.calculate_from_realized_pnls(&realized_pnls);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), 150.0);
+        assert!(approx_eq!(f64, result.unwrap(), 150.0, epsilon = 1e-9));
     }
 
     #[rstest]

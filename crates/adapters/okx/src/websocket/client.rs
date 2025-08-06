@@ -68,7 +68,7 @@ use super::{
 };
 use crate::{
     common::{
-        consts::OKX_WS_PUBLIC_URL,
+        consts::{OKX_NAUTILUS_BROKER_ID, OKX_WS_PUBLIC_URL},
         credential::Credential,
         enums::{OKXInstrumentType, OKXOrderType, OKXPositionSide, OKXSide, OKXTradeMode},
         parse::{bar_spec_as_okx_channel, okx_instrument_type, parse_account_state},
@@ -1199,6 +1199,7 @@ impl OKXWebSocketClient {
         trigger_price: Option<Price>,
         post_only: Option<bool>,
         reduce_only: Option<bool>,
+        quote_quantity: Option<bool>,
         position_side: Option<PositionSide>,
     ) -> Result<(), OKXWsError> {
         let mut builder = WsPostOrderParamsBuilder::default();
@@ -1251,6 +1252,13 @@ impl OKXWebSocketClient {
             }
         };
 
+        if let Some(is_quote_quantity) = quote_quantity {
+            if is_quote_quantity {
+                builder.tgt_ccy(quote_currency.to_string());
+            }
+            // If is_quote_quantity is false, we don't set tgtCcy (defaults to base currency)
+        }
+
         builder.side(OKXSide::from(order_side));
 
         if let Some(pos_side) = position_side {
@@ -1271,6 +1279,8 @@ impl OKXWebSocketClient {
         } else if let Some(p) = price {
             builder.px(p.to_string());
         }
+
+        builder.tag(OKX_NAUTILUS_BROKER_ID);
 
         let params = builder
             .build()
@@ -1477,6 +1487,7 @@ impl OKXWebSocketClient {
             if let Some(ro) = reduce_only {
                 builder.reduce_only(ro);
             }
+            builder.tag(OKX_NAUTILUS_BROKER_ID);
 
             let params = builder
                 .build()

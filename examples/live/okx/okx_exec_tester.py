@@ -27,13 +27,12 @@ from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.core.nautilus_pyo3 import OKXContractType
 from nautilus_trader.core.nautilus_pyo3 import OKXInstrumentType
-from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMaker
-from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMakerConfig
 from nautilus_trader.live.node import TradingNode
-from nautilus_trader.model.data import BarType
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.test_kit.strategies.tester_exec import ExecTester
+from nautilus_trader.test_kit.strategies.tester_exec import ExecTesterConfig
 
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
@@ -46,20 +45,20 @@ instrument_type = OKXInstrumentType.SWAP  # SPOT, SWAP, FUTURES, OPTION
 if instrument_type == OKXInstrumentType.SPOT:
     symbol = "ETH-USDT"
     contract_types: tuple[OKXContractType, ...] | None = None  # SPOT doesn't use contract types
-    trade_size = Decimal("0.01")
+    order_qty = Decimal("0.01")
 elif instrument_type == OKXInstrumentType.SWAP:
     symbol = "ETH-USDT-SWAP"
     contract_types = (OKXContractType.LINEAR, OKXContractType.INVERSE)
-    trade_size = Decimal("0.01")
+    order_qty = Decimal("0.01")
 elif instrument_type == OKXInstrumentType.FUTURES:
     # Format: ETH-USD-YYMMDD (e.g., ETH-USD-241227, ETH-USD-250131)
     symbol = "ETH-USD-251226"  # ETH-USD futures expiring 2025-12-26
     contract_types = (OKXContractType.INVERSE,)  # ETH-USD futures are inverse contracts
-    trade_size = Decimal(1)
+    order_qty = Decimal(1)
 elif instrument_type == OKXInstrumentType.OPTION:
     symbol = "ETH-USD-250328-4000-C"  # Example: ETH-USD call option, strike 4000, exp 2025-03-28
     contract_types = None  # Options don't use contract types in the same way
-    trade_size = Decimal(1)
+    order_qty = Decimal(1)
 else:
     raise ValueError(f"Unsupported instrument type: {instrument_type}")
 
@@ -148,17 +147,21 @@ config_node = TradingNodeConfig(
 node = TradingNode(config=config_node)
 
 # Configure your strategy
-strat_config = VolatilityMarketMakerConfig(
+config_strat = ExecTesterConfig(
     instrument_id=InstrumentId.from_str(f"{symbol}.OKX"),
     external_order_claims=[InstrumentId.from_str(f"{symbol}.OKX")],
-    bar_type=BarType.from_str(f"{symbol}.OKX-1-MINUTE-LAST-EXTERNAL"),
-    atr_period=20,
-    atr_multiple=3.0,
-    trade_size=trade_size,
     use_hyphens_in_client_order_ids=False,  # OKX doesn't allow hyphens in client order IDs
+    # subscribe_quotes=False,
+    # subscribe_trades=False,
+    # subscribe_book=True,
+    order_qty=order_qty,
+    use_post_only=True,
+    log_data=True,
+    dry_run=False,
 )
+
 # Instantiate your strategy
-strategy = VolatilityMarketMaker(config=strat_config)
+strategy = ExecTester(config=config_strat)
 
 # Add your strategies and modules
 node.trader.add_strategy(strategy)

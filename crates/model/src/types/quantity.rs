@@ -580,7 +580,7 @@ pub fn check_positive_quantity(value: Quantity, param: &str) -> anyhow::Result<(
 mod tests {
     use std::str::FromStr;
 
-    use float_cmp::approx_eq;
+    use nautilus_core::approx_eq;
     use rstest::rstest;
     use rust_decimal_macros::dec;
 

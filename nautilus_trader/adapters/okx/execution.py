@@ -596,7 +596,7 @@ class OKXExecutionClient(LiveExecutionClient):
             trigger_price=pyo3_trigger_price,
             post_only=order.is_post_only,
             reduce_only=order.is_reduce_only,
-            position_side=None,  # Will be determined by the Rust client
+            quote_quantity=order.is_quote_quantity,
         )
 
     # -- WEBSOCKET HANDLERS -----------------------------------------------------------------------

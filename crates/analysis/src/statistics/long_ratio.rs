@@ -65,7 +65,7 @@ impl PortfolioStatistic for LongRatio {
 mod tests {
     use std::collections::HashMap;
 
-    use nautilus_core::UnixNanos;
+    use nautilus_core::{UnixNanos, approx_eq};
     use nautilus_model::{
         enums::OrderSide,
         identifiers::{
@@ -134,7 +134,7 @@ mod tests {
 
         let result = long_ratio.calculate_from_positions(&positions);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), 1.00);
+        assert!(approx_eq!(f64, result.unwrap(), 1.00, epsilon = 1e-9));
     }
 
     #[rstest]
@@ -148,7 +148,7 @@ mod tests {
 
         let result = long_ratio.calculate_from_positions(&positions);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), 0.00);
+        assert!(approx_eq!(f64, result.unwrap(), 0.00, epsilon = 1e-9));
     }
 
     #[rstest]
@@ -163,7 +163,7 @@ mod tests {
 
         let result = long_ratio.calculate_from_positions(&positions);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), 0.50);
+        assert!(approx_eq!(f64, result.unwrap(), 0.50, epsilon = 1e-9));
     }
 
     #[rstest]
@@ -177,7 +177,7 @@ mod tests {
 
         let result = long_ratio.calculate_from_positions(&positions);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), 0.667);
+        assert!(approx_eq!(f64, result.unwrap(), 0.667, epsilon = 1e-9));
     }
 
     #[rstest]
@@ -187,7 +187,7 @@ mod tests {
 
         let result = long_ratio.calculate_from_positions(&positions);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), 1.00);
+        assert!(approx_eq!(f64, result.unwrap(), 1.00, epsilon = 1e-9));
     }
 
     #[rstest]
@@ -197,7 +197,7 @@ mod tests {
 
         let result = long_ratio.calculate_from_positions(&positions);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), 0.00);
+        assert!(approx_eq!(f64, result.unwrap(), 0.00, epsilon = 1e-9));
     }
 
     #[rstest]
@@ -211,7 +211,7 @@ mod tests {
 
         let result = long_ratio.calculate_from_positions(&positions);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), 1.00);
+        assert!(approx_eq!(f64, result.unwrap(), 1.00, epsilon = 1e-9));
     }
 
     #[rstest]

@@ -5908,6 +5908,7 @@ class OKXWebSocketClient:
         trigger_price: Price | None = None,
         post_only: bool | None = None,
         reduce_only: bool | None = None,
+        quote_quantity: bool | None = None,
         position_side: PositionSide | None = None,
     ) -> None: ...
     async def cancel_order(

@@ -926,11 +926,14 @@ class BybitExecutionClient(LiveExecutionClient):
 
         retry_manager = await self._retry_manager_pool.acquire()
         try:
+            is_leverage = command.params.get("is_leverage", False)
+
             await retry_manager.run(
                 "submit_order",
                 [order.client_order_id],
-                self._submit_order_methods[order.order_type],
+                self._submit_order_methods[order.order_type],  # type: ignore[arg-type]
                 order,
+                is_leverage,
             )
             if not retry_manager.result:
                 self.generate_order_rejected(
@@ -950,6 +953,7 @@ class BybitExecutionClient(LiveExecutionClient):
         bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
         product_type = bybit_symbol.product_type
         command_orders = command.order_list.orders
+        is_leverage = command.params.get("is_leverage", False)
         max_batch = 20 if product_type == BybitProductType.OPTION else 10
 
         for i in range(0, len(command_orders), max_batch):
@@ -962,7 +966,10 @@ class BybitExecutionClient(LiveExecutionClient):
                     return  # Do not submit batch
 
                 try:
-                    batch_order = self._batch_order_create_handlers[order.order_type](order)
+                    batch_order = self._batch_order_create_handlers[order.order_type](
+                        order,
+                        is_leverage,
+                    )
                 except KeyError:
                     self._log.error(
                         f"Error on {command} - Unsupported order type for 'submit_order_list': {order}",
@@ -1039,7 +1046,7 @@ class BybitExecutionClient(LiveExecutionClient):
 
         return True
 
-    async def _submit_market_order(self, order: MarketOrder) -> None:
+    async def _submit_market_order(self, order: MarketOrder, is_leverage: bool = False) -> None:
         bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
         time_in_force = self._determine_time_in_force(order)
         order_side = self._enum_parser.parse_nautilus_order_side(order.side)
@@ -1050,12 +1057,13 @@ class BybitExecutionClient(LiveExecutionClient):
             order_type=BybitOrderType.MARKET,
             quantity=str(order.quantity),
             quote_quantity=order.is_quote_quantity,
+            is_leverage=is_leverage,
             time_in_force=time_in_force,
             client_order_id=str(order.client_order_id),
             reduce_only=order.is_reduce_only if order.is_reduce_only else None,
         )
 
-    async def _submit_limit_order(self, order: LimitOrder) -> None:
+    async def _submit_limit_order(self, order: LimitOrder, is_leverage: bool = False) -> None:
         bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
         time_in_force = self._determine_time_in_force(order)
         order_side = self._enum_parser.parse_nautilus_order_side(order.side)
@@ -1070,9 +1078,14 @@ class BybitExecutionClient(LiveExecutionClient):
             time_in_force=time_in_force,
             client_order_id=str(order.client_order_id),
             reduce_only=order.is_reduce_only if order.is_reduce_only else None,
+            is_leverage=is_leverage,
         )
 
-    async def _submit_stop_market_order(self, order: StopMarketOrder) -> None:
+    async def _submit_stop_market_order(
+        self,
+        order: StopMarketOrder,
+        is_leverage: bool = False,
+    ) -> None:
         bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
         product_type = bybit_symbol.product_type
         time_in_force = self._determine_time_in_force(order)
@@ -1095,9 +1108,14 @@ class BybitExecutionClient(LiveExecutionClient):
             trigger_type=trigger_type,
             sl_trigger_price=str(order.trigger_price),
             sl_order_type=BybitOrderType.MARKET,
+            is_leverage=is_leverage,
         )
 
-    async def _submit_stop_limit_order(self, order: StopLimitOrder) -> None:
+    async def _submit_stop_limit_order(
+        self,
+        order: StopLimitOrder,
+        is_leverage: bool = False,
+    ) -> None:
         bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
         product_type = bybit_symbol.product_type
         time_in_force = self._determine_time_in_force(order)
@@ -1119,9 +1137,14 @@ class BybitExecutionClient(LiveExecutionClient):
             trigger_type=trigger_type,
             sl_trigger_price=str(order.trigger_price),
             sl_order_type=BybitOrderType.LIMIT,
+            is_leverage=is_leverage,
         )
 
-    async def _submit_market_if_touched_order(self, order: MarketIfTouchedOrder) -> None:
+    async def _submit_market_if_touched_order(
+        self,
+        order: MarketIfTouchedOrder,
+        is_leverage: bool = False,
+    ) -> None:
         bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
         product_type = bybit_symbol.product_type
         time_in_force = self._determine_time_in_force(order)
@@ -1143,9 +1166,14 @@ class BybitExecutionClient(LiveExecutionClient):
             trigger_direction=trigger_direction,
             trigger_type=trigger_type,
             trigger_price=str(order.trigger_price),
+            is_leverage=is_leverage,
         )
 
-    async def _submit_limit_if_touched_order(self, order: LimitIfTouchedOrder) -> None:
+    async def _submit_limit_if_touched_order(
+        self,
+        order: LimitIfTouchedOrder,
+        is_leverage: bool = False,
+    ) -> None:
         bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
         product_type = bybit_symbol.product_type
         time_in_force = self._determine_time_in_force(order)
@@ -1168,6 +1196,7 @@ class BybitExecutionClient(LiveExecutionClient):
             tp_trigger_price=str(order.trigger_price),
             tp_limit_price=str(order.price),
             tp_order_type=BybitOrderType.LIMIT,
+            is_leverage=is_leverage,
         )
 
     async def _submit_trailing_stop_market(self, order: TrailingStopMarketOrder) -> None:
@@ -1469,6 +1498,7 @@ class BybitExecutionClient(LiveExecutionClient):
     def _create_market_batch_order(
         self,
         order: MarketOrder,
+        is_leverage: bool = False,
     ) -> BybitBatchPlaceOrder:
         bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
         time_in_force = self._determine_time_in_force(order)
@@ -1479,6 +1509,7 @@ class BybitExecutionClient(LiveExecutionClient):
             orderType=BybitOrderType.MARKET,
             qty=str(order.quantity),
             marketUnit="baseCoin" if not order.is_quote_quantity else "quoteCoin",
+            isLeverage=int(is_leverage),
             timeInForce=time_in_force,
             orderLinkId=str(order.client_order_id),
             reduceOnly=order.is_reduce_only if order.is_reduce_only else None,
@@ -1487,6 +1518,7 @@ class BybitExecutionClient(LiveExecutionClient):
     def _create_limit_batch_order(
         self,
         order: LimitOrder,
+        is_leverage: bool = False,
     ) -> BybitBatchPlaceOrder:
         bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
         time_in_force = self._determine_time_in_force(order)
@@ -1497,6 +1529,7 @@ class BybitExecutionClient(LiveExecutionClient):
             orderType=BybitOrderType.LIMIT,
             qty=str(order.quantity),
             marketUnit="baseCoin" if not order.is_quote_quantity else "quoteCoin",
+            isLeverage=int(is_leverage),
             price=str(order.price),
             timeInForce=time_in_force,
             orderLinkId=str(order.client_order_id),
@@ -1506,6 +1539,7 @@ class BybitExecutionClient(LiveExecutionClient):
     def _create_limit_if_touched_batch_order(
         self,
         order: LimitIfTouchedOrder,
+        is_leverage: bool = False,
     ) -> BybitBatchPlaceOrder:
         bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
         product_type = bybit_symbol.product_type
@@ -1519,6 +1553,7 @@ class BybitExecutionClient(LiveExecutionClient):
             orderType=BybitOrderType.MARKET,
             qty=str(order.quantity),
             marketUnit="baseCoin" if not order.is_quote_quantity else "quoteCoin",
+            isLeverage=int(is_leverage),
             price=str(order.price),
             timeInForce=time_in_force,
             orderLinkId=order.client_order_id.value,
@@ -1536,6 +1571,7 @@ class BybitExecutionClient(LiveExecutionClient):
     def _create_stop_market_batch_order(
         self,
         order: MarketOrder,
+        is_leverage: bool = False,
     ) -> BybitBatchPlaceOrder:
         bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
         product_type = bybit_symbol.product_type
@@ -1549,6 +1585,7 @@ class BybitExecutionClient(LiveExecutionClient):
             orderType=BybitOrderType.MARKET,
             qty=str(order.quantity),
             marketUnit="baseCoin" if not order.is_quote_quantity else "quoteCoin",
+            isLeverage=int(is_leverage),
             timeInForce=time_in_force,
             orderLinkId=str(order.client_order_id),
             reduceOnly=order.is_reduce_only if order.is_reduce_only else None,
@@ -1563,6 +1600,7 @@ class BybitExecutionClient(LiveExecutionClient):
     def _create_market_if_touched_batch_order(
         self,
         order: MarketOrder,
+        is_leverage: bool = False,
     ) -> BybitBatchPlaceOrder:
         bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
         product_type = bybit_symbol.product_type
@@ -1576,6 +1614,7 @@ class BybitExecutionClient(LiveExecutionClient):
             orderType=BybitOrderType.MARKET,
             qty=str(order.quantity),
             marketUnit="baseCoin" if not order.is_quote_quantity else "quoteCoin",
+            isLeverage=int(is_leverage),
             timeInForce=time_in_force,
             orderLinkId=str(order.client_order_id),
             reduceOnly=order.is_reduce_only if order.is_reduce_only else None,

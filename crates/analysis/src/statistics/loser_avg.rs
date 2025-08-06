@@ -52,6 +52,7 @@ impl PortfolioStatistic for AvgLoser {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::approx_eq;
     use rstest::rstest;
 
     use super::*;
@@ -61,7 +62,7 @@ mod tests {
         let avg_loser = AvgLoser {};
         let result = avg_loser.calculate_from_realized_pnls(&[]);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), 0.0);
+        assert!(approx_eq!(f64, result.unwrap(), 0.0, epsilon = 1e-9));
     }
 
     #[rstest]
@@ -70,7 +71,7 @@ mod tests {
         let pnls = vec![10.0, 20.0, 30.0];
         let result = avg_loser.calculate_from_realized_pnls(&pnls);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), 0.0);
+        assert!(approx_eq!(f64, result.unwrap(), 0.0, epsilon = 1e-9));
     }
 
     #[rstest]
@@ -79,7 +80,7 @@ mod tests {
         let pnls = vec![-10.0, -20.0, -30.0];
         let result = avg_loser.calculate_from_realized_pnls(&pnls);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), -20.0);
+        assert!(approx_eq!(f64, result.unwrap(), -20.0, epsilon = 1e-9));
     }
 
     #[rstest]
@@ -88,7 +89,7 @@ mod tests {
         let pnls = vec![10.0, -20.0, 30.0, -40.0];
         let result = avg_loser.calculate_from_realized_pnls(&pnls);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), -30.0);
+        assert!(approx_eq!(f64, result.unwrap(), -30.0, epsilon = 1e-9));
     }
 
     #[rstest]
@@ -98,7 +99,12 @@ mod tests {
         let result = avg_loser.calculate_from_realized_pnls(&pnls);
         assert!(result.is_some());
         // Average of [0.0, -20.0, -30.0]
-        assert_eq!(result.unwrap(), -16.666666666666668);
+        assert!(approx_eq!(
+            f64,
+            result.unwrap(),
+            -16.666666666666668,
+            epsilon = 1e-9
+        ));
     }
 
     #[rstest]
@@ -107,7 +113,7 @@ mod tests {
         let pnls = vec![-10.0];
         let result = avg_loser.calculate_from_realized_pnls(&pnls);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), -10.0);
+        assert!(approx_eq!(f64, result.unwrap(), -10.0, epsilon = 1e-9));
     }
 
     #[rstest]

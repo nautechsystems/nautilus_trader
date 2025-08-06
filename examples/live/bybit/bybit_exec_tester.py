@@ -28,22 +28,22 @@ from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMaker
-from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMakerConfig
 from nautilus_trader.live.node import TradingNode
-from nautilus_trader.model.data import BarType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.test_kit.strategies.tester_exec import ExecTester
+from nautilus_trader.test_kit.strategies.tester_exec import ExecTesterConfig
 
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 # SPOT/LINEAR
-product_type = BybitProductType.LINEAR
+product_type = BybitProductType.SPOT
 symbol = f"ETHUSDT-{product_type.value.upper()}"
-instrument_id = InstrumentId.from_str(f"{symbol}.BYBIT")
-trade_size = Decimal("0.010")
+instrument_id = InstrumentId.from_str(f"{symbol}.{BYBIT}")
+order_qty = Decimal("0.010")
+order_params = {"is_leverage": False}
 
 # INVERSE
 # product_type = BybitProductType.INVERSE
@@ -137,16 +137,21 @@ config_node = TradingNodeConfig(
 node = TradingNode(config=config_node)
 
 # Configure your strategy
-strat_config = VolatilityMarketMakerConfig(
-    instrument_id=instrument_id,
-    external_order_claims=[instrument_id],
-    bar_type=BarType.from_str(f"{symbol}.BYBIT-1-MINUTE-LAST-EXTERNAL"),
-    atr_period=20,
-    atr_multiple=3.0,
-    trade_size=trade_size,
+config_strat = ExecTesterConfig(
+    instrument_id=InstrumentId.from_str(f"{symbol}.{BYBIT}"),
+    external_order_claims=[InstrumentId.from_str(f"{symbol}.{BYBIT}")],
+    use_hyphens_in_client_order_ids=False,  # OKX doesn't allow hyphens in client order IDs
+    # subscribe_quotes=False,
+    # subscribe_trades=False,
+    # subscribe_book=True,
+    order_qty=order_qty,
+    use_post_only=True,
+    log_data=True,
+    dry_run=False,
 )
+
 # Instantiate your strategy
-strategy = VolatilityMarketMaker(config=strat_config)
+strategy = ExecTester(config=config_strat)
 
 # Add your strategies and modules
 node.trader.add_strategy(strategy)

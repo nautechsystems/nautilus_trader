@@ -17,7 +17,6 @@ import time
 from decimal import Decimal
 
 import msgspec
-import pandas as pd
 
 from nautilus_trader.adapters.bybit.common.enums import BybitContractType
 from nautilus_trader.adapters.bybit.common.enums import BybitOptionType
@@ -96,9 +95,39 @@ class BybitInstrumentSpot(msgspec.Struct):
 
 
 def get_strike_price_from_symbol(symbol: str) -> int:
-    ## symbols are in the format of ETH-3JAN23-1250-P
-    ## where the strike price is 1250
-    return int(symbol.split("-")[2])
+    """
+    Extract strike price from Bybit option symbol.
+
+    Bybit option symbols are in the format: ETH-26JUN26-16000-P-USDT
+    where the strike price is the 3rd element (index 2).
+
+    Parameters
+    ----------
+    symbol : str
+        The option symbol (e.g., "ETH-26JUN26-16000-P-USDT")
+
+    Returns
+    -------
+    int
+        The strike price
+
+    Raises
+    ------
+    ValueError
+        If the symbol format is invalid or strike price cannot be parsed
+
+    """
+    try:
+        parts = symbol.split("-")
+        if len(parts) < 4:
+            raise ValueError(
+                f"Invalid option symbol format: {symbol}. Expected format: BASE-EXPIRY-STRIKE-TYPE[-QUOTE]",
+            )
+
+        strike_str = parts[2]
+        return int(strike_str)
+    except (IndexError, ValueError) as e:
+        raise ValueError(f"Failed to extract strike price from symbol '{symbol}': {e}")
 
 
 class BybitInstrumentLinear(msgspec.Struct):
@@ -340,8 +369,10 @@ class BybitInstrumentOption(msgspec.Struct):
 
         timestamp = time.time_ns()
         strike_price = get_strike_price_from_symbol(self.symbol)
-        activation_ns = pd.Timedelta(milliseconds=int(self.launchTime)).total_seconds() * 1e9
-        expiration_ns = pd.Timedelta(milliseconds=int(self.deliveryTime)).total_seconds() * 1e9
+
+        # Convert milliseconds to nanoseconds
+        activation_ns = int(self.launchTime) * 1_000_000  # ms to ns
+        expiration_ns = int(self.deliveryTime) * 1_000_000  # ms to ns
 
         return OptionContract(
             instrument_id=instrument_id,
@@ -353,7 +384,7 @@ class BybitInstrumentOption(msgspec.Struct):
             multiplier=Quantity.from_str("1.0"),
             lot_size=Quantity.from_str(self.lotSizeFilter.qtyStep),
             underlying=self.baseCoin,
-            kind=option_kind,
+            option_kind=option_kind,
             activation_ns=activation_ns,
             expiration_ns=expiration_ns,
             strike_price=Price.from_int(strike_price),
