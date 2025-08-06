@@ -10,9 +10,6 @@ from stubs.model.objects import Price
 from stubs.model.objects import Quantity
 
 class BettingAccount(CashAccount):
-    """
-    Provides a betting account.
-    """
 
     ACCOUNT_TYPE: ClassVar[AccountType] = ...
 
@@ -23,29 +20,7 @@ class BettingAccount(CashAccount):
         quantity: Quantity,
         price: Price,
         use_quote_for_inverse: bool = False,
-    ) -> Money:
-        """
-        Calculate the locked balance.
-
-        Parameters
-        ----------
-        instrument : Instrument
-            The instrument for the calculation.
-        side : OrderSide {``BUY``, ``SELL``}
-            The order side.
-        quantity : Quantity
-            The order quantity.
-        price : Price
-            The order price.
-        use_quote_for_inverse : bool
-            Not applicable for betting accounts.
-
-        Returns
-        -------
-        Money
-
-        """
-        ...
+    ) -> Money: ...
     def balance_impact(
         self,
         instrument: Instrument,

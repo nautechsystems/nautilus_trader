@@ -36,22 +36,6 @@ from stubs.data.messages import UnsubscribeTradeTicks
 from stubs.model.identifiers import ClientId
 
 class BacktestDataClient(DataClient):
-    """
-    Provides an implementation of `DataClient` for backtesting.
-
-    Parameters
-    ----------
-    client_id : ClientId
-        The data client ID.
-    msgbus : MessageBus
-        The message bus for the client.
-    cache : Cache
-        The cache for the client.
-    clock : Clock
-        The clock for the client.
-    config : NautilusConfig, optional
-        The configuration for the instance.
-    """
 
     is_connected: bool
 
@@ -70,20 +54,6 @@ class BacktestDataClient(DataClient):
     def request(self, request: RequestData) -> None: ...
 
 class BacktestMarketDataClient(MarketDataClient):
-    """
-    Provides an implementation of `MarketDataClient` for backtesting.
-
-    Parameters
-    ----------
-    client_id : ClientId
-        The data client ID.
-    msgbus : MessageBus
-        The message bus for the client.
-    cache : Cache
-        The cache for the client.
-    clock : Clock
-        The clock for the client.
-    """
 
     is_connected: bool
 

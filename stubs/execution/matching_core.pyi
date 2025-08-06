@@ -7,22 +7,6 @@ from stubs.model.objects import Price
 from stubs.model.orders.base import Order
 
 class MatchingCore:
-    """
-    Provides a generic order matching core.
-
-    Parameters
-    ----------
-    instrument_id : InstrumentId
-        The instrument ID for the matching core.
-    price_increment : Price
-        The minimum price increment (tick size) for the matching core.
-    trigger_stop_order : Callable[[Order], None]
-        The callable when a stop order is triggered.
-    fill_market_order : Callable[[Order], None]
-        The callable when a market order is filled.
-    fill_limit_order : Callable[[Order], None]
-        The callable when a limit order is filled.
-    """
 
     bid_raw: int
     ask_raw: int
@@ -50,71 +34,17 @@ class MatchingCore:
         fill_limit_order: Callable,
     ) -> None: ...
     @property
-    def instrument_id(self) -> InstrumentId:
-        """
-        Return the instrument ID for the matching core.
-
-        Returns
-        -------
-        InstrumentId
-
-        """
-        ...
+    def instrument_id(self) -> InstrumentId: ...
     @property
-    def price_precision(self) -> int:
-        """
-        Return the instruments price precision for the matching core.
-
-        Returns
-        -------
-        int
-
-        """
-        ...
+    def price_precision(self) -> int: ...
     @property
-    def price_increment(self) -> Price:
-        """
-        Return the instruments minimum price increment (tick size) for the matching core.
-
-        Returns
-        -------
-        Price
-
-        """
-        ...
+    def price_increment(self) -> Price: ...
     @property
-    def bid(self) -> Price | None:
-        """
-        Return the current bid price for the matching core.
-
-        Returns
-        -------
-        Price or ``None``
-
-        """
-        ...
+    def bid(self) -> Price | None: ...
     @property
-    def ask(self) -> Price | None:
-        """
-        Return the current ask price for the matching core.
-
-        Returns
-        -------
-        Price or ``None``
-
-        """
-        ...
+    def ask(self) -> Price | None: ...
     @property
-    def last(self) -> Price | None:
-        """
-        Return the current last price for the matching core.
-
-        Returns
-        -------
-        Price or ``None``
-
-        """
-        ...
+    def last(self) -> Price | None: ...
     def get_order(self, client_order_id: ClientOrderId) -> Order: ...
     def order_exists(self, client_order_id: ClientOrderId) -> bool: ...
     def get_orders(self) -> list[Order]: ...
@@ -124,24 +54,7 @@ class MatchingCore:
     def add_order(self, order: Order) -> None: ...
     def delete_order(self, order: Order) -> None: ...
     def iterate(self, timestamp_ns: int) -> None: ...
-    def match_order(self, order: Order, initial: bool = False) -> None:
-        """
-        Match the given order.
-
-        Parameters
-        ----------
-        order : Order
-            The order to match.
-        initial : bool, default False
-            If this is an initial match.
-
-        Raises
-        ------
-        TypeError
-            If the `order.order_type` is an invalid type for the core (e.g. `MARKET`).
-
-        """
-        ...
+    def match_order(self, order: Order, initial: bool = False) -> None: ...
     def match_limit_order(self, order: Order) -> None: ...
     def match_stop_market_order(self, order: Order) -> None: ...
     def match_stop_limit_order(self, order: Order, initial: bool) -> None: ...

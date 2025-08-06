@@ -11,9 +11,6 @@ from stubs.model.objects import Price
 from stubs.model.objects import Quantity
 
 class BettingInstrument(Instrument):
-    """
-    Represents an instrument in a betting market.
-    """
 
     event_type_id: int
     event_type_name: str
@@ -71,32 +68,9 @@ class BettingInstrument(Instrument):
         info: dict | None = None,
     ) -> None: ...
     @staticmethod
-    def from_dict(values: dict) -> BettingInstrument:
-        """
-        Return an instrument from the given initialization values.
-
-        Parameters
-        ----------
-        values : dict[str, object]
-            The values to initialize the instrument with.
-
-        Returns
-        -------
-        BettingInstrument
-
-        """
-        ...
+    def from_dict(values: dict) -> BettingInstrument: ...
     @staticmethod
-    def to_dict(obj: BettingInstrument) -> dict[str, Any]:
-        """
-        Return a dictionary representation of this object.
-
-        Returns
-        -------
-        dict[str, object]
-
-        """
-        ...
+    def to_dict(obj: BettingInstrument) -> dict[str, Any]: ...
     def notional_value(
         self, quantity: Quantity, price: Price, use_quote_for_inverse: bool = False
     ) -> Money: ...
@@ -106,15 +80,6 @@ def make_symbol(
     market_id: str,
     selection_id: int,
     selection_handicap: float,
-) -> Symbol:
-    """
-    Make symbol.
-
-    >>> make_symbol(market_id="1.201070830", selection_id=123456, selection_handicap=null_handicap())
-    Symbol('1-201070830-123456-None')
-
-    """
-
-
+) -> Symbol: ...
 def null_handicap() -> float: ...
 def order_side_to_bet_side(order_side: OrderSide) -> BetSide: ...

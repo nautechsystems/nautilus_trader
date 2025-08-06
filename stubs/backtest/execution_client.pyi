@@ -11,24 +11,6 @@ from stubs.execution.messages import SubmitOrder
 from stubs.execution.messages import SubmitOrderList
 
 class BacktestExecClient(ExecutionClient):
-    """
-    Provides an execution client for the `BacktestEngine`.
-
-    Parameters
-    ----------
-    exchange : SimulatedExchange
-        The simulated exchange for the backtest.
-    msgbus : MessageBus
-        The message bus for the client.
-    cache : Cache
-        The cache for the client.
-    clock : TestClock
-        The clock for the client.
-    routing : bool
-        If multi-venue routing is enabled for the client.
-    frozen_account : bool
-        If the backtest run account is frozen.
-    """
 
     def __init__(
         self,
