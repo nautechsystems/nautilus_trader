@@ -58,10 +58,14 @@ def parse_bybit_delta(
 ) -> OrderBookDelta:
     price = values[0]
     size = values[1]
-    if snapshot:
+
+    # Handle zero sizes better
+    if size.as_double() == 0:
+        action = BookAction.DELETE
+    elif snapshot:
         action = BookAction.ADD
     else:
-        action = BookAction.DELETE if size == 0 else BookAction.UPDATE
+        action = BookAction.UPDATE
 
     return OrderBookDelta(
         instrument_id=instrument_id,
