@@ -138,10 +138,10 @@ impl Iterator for DeltaStreamIterator {
     type Item = anyhow::Result<Vec<OrderBookDelta>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(limit) = self.limit {
-            if self.records_processed >= limit {
-                return None;
-            }
+        if let Some(limit) = self.limit
+            && self.records_processed >= limit
+        {
+            return None;
         }
 
         self.buffer.clear();
@@ -179,10 +179,10 @@ impl Iterator for DeltaStreamIterator {
                             records_read += 1;
                             self.records_processed += 1;
 
-                            if let Some(limit) = self.limit {
-                                if self.records_processed >= limit {
-                                    break;
-                                }
+                            if let Some(limit) = self.limit
+                                && self.records_processed >= limit
+                            {
+                                break;
                             }
                         }
                         Err(e) => {
@@ -358,10 +358,10 @@ impl Iterator for BatchedDeltasStreamIterator {
     type Item = anyhow::Result<Vec<PyObject>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(limit) = self.limit {
-            if self.records_processed >= limit {
-                return None;
-            }
+        if let Some(limit) = self.limit
+            && self.records_processed >= limit
+        {
+            return None;
         }
 
         self.buffer.clear();
@@ -396,10 +396,10 @@ impl Iterator for BatchedDeltasStreamIterator {
                     self.current_batch.push(delta);
                     self.records_processed += 1;
 
-                    if let Some(limit) = self.limit {
-                        if self.records_processed >= limit {
-                            break;
-                        }
+                    if let Some(limit) = self.limit
+                        && self.records_processed >= limit
+                    {
+                        break;
                     }
                 }
                 Ok(false) => {
@@ -568,10 +568,10 @@ impl Iterator for QuoteStreamIterator {
     type Item = anyhow::Result<Vec<QuoteTick>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(limit) = self.limit {
-            if self.records_processed >= limit {
-                return None;
-            }
+        if let Some(limit) = self.limit
+            && self.records_processed >= limit
+        {
+            return None;
         }
 
         self.buffer.clear();
@@ -592,10 +592,10 @@ impl Iterator for QuoteStreamIterator {
                         records_read += 1;
                         self.records_processed += 1;
 
-                        if let Some(limit) = self.limit {
-                            if self.records_processed >= limit {
-                                break;
-                            }
+                        if let Some(limit) = self.limit
+                            && self.records_processed >= limit
+                        {
+                            break;
                         }
                     }
                     Err(e) => {
@@ -745,10 +745,10 @@ impl Iterator for TradeStreamIterator {
     type Item = anyhow::Result<Vec<TradeTick>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(limit) = self.limit {
-            if self.records_processed >= limit {
-                return None;
-            }
+        if let Some(limit) = self.limit
+            && self.records_processed >= limit
+        {
+            return None;
         }
 
         self.buffer.clear();
@@ -772,10 +772,10 @@ impl Iterator for TradeStreamIterator {
                             records_read += 1;
                             self.records_processed += 1;
 
-                            if let Some(limit) = self.limit {
-                                if self.records_processed >= limit {
-                                    break;
-                                }
+                            if let Some(limit) = self.limit
+                                && self.records_processed >= limit
+                            {
+                                break;
                             }
                         } else {
                             log::warn!("Skipping zero-sized trade: {data:?}");
@@ -1114,10 +1114,10 @@ impl Iterator for Depth10StreamIterator {
     type Item = anyhow::Result<Vec<OrderBookDepth10>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(limit) = self.limit {
-            if self.records_processed >= limit {
-                return None;
-            }
+        if let Some(limit) = self.limit
+            && self.records_processed >= limit
+        {
+            return None;
         }
 
         if !self.buffer.is_empty() {
@@ -1149,10 +1149,10 @@ impl Iterator for Depth10StreamIterator {
                             records_read += 1;
                             self.records_processed += 1;
 
-                            if let Some(limit) = self.limit {
-                                if self.records_processed >= limit {
-                                    break;
-                                }
+                            if let Some(limit) = self.limit
+                                && self.records_processed >= limit
+                            {
+                                break;
                             }
                         }
                         Err(e) => {

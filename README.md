@@ -16,10 +16,10 @@
 
 | Platform           | Rust   | Python     |
 | :----------------- | :----- | :--------- |
-| `Linux (x86_64)`   | 1.88.0 | 3.11-3.13  |
-| `Linux (ARM64)`    | 1.88.0 | 3.11-3.13  |
-| `macOS (ARM64)`    | 1.88.0 | 3.11-3.13  |
-| `Windows (x86_64)` | 1.88.0 | 3.11-3.13* |
+| `Linux (x86_64)`   | 1.89.0 | 3.11-3.13  |
+| `Linux (ARM64)`    | 1.89.0 | 3.11-3.13  |
+| `macOS (ARM64)`    | 1.89.0 | 3.11-3.13  |
+| `Windows (x86_64)` | 1.89.0 | 3.11-3.13* |
 
 \* Windows builds are currently pinned to CPython 3.13.2, see [installation guide](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/getting_started/installation.md).
 

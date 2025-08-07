@@ -323,8 +323,8 @@ impl LiveNode {
                 log::debug!("Extracting inherited config fields from Python actor config");
 
                 // Extract actor_id if present
-                if let Ok(actor_id) = config_obj.getattr("actor_id") {
-                    if !actor_id.is_none() {
+                if let Ok(actor_id) = config_obj.getattr("actor_id")
+                    && !actor_id.is_none() {
                         // Try to extract as ActorId first, then as string
                         let actor_id_val = if let Ok(actor_id_val) = actor_id.extract::<ActorId>() {
                             actor_id_val
@@ -338,23 +338,20 @@ impl LiveNode {
                         log::debug!("Extracted actor_id: {actor_id_val}");
                         py_data_actor_ref.set_actor_id(actor_id_val);
                     }
-                }
 
                 // Extract log_events if present
-                if let Ok(log_events) = config_obj.getattr("log_events") {
-                    if let Ok(log_events_val) = log_events.extract::<bool>() {
+                if let Ok(log_events) = config_obj.getattr("log_events")
+                    && let Ok(log_events_val) = log_events.extract::<bool>() {
                         log::debug!("Extracted log_events: {log_events_val}");
                         py_data_actor_ref.set_log_events(log_events_val);
                     }
-                }
 
                 // Extract log_commands if present
-                if let Ok(log_commands) = config_obj.getattr("log_commands") {
-                    if let Ok(log_commands_val) = log_commands.extract::<bool>() {
+                if let Ok(log_commands) = config_obj.getattr("log_commands")
+                    && let Ok(log_commands_val) = log_commands.extract::<bool>() {
                         log::debug!("Extracted log_commands: {log_commands_val}");
                         py_data_actor_ref.set_log_commands(log_commands_val);
                     }
-                }
 
                 log::debug!("Successfully updated PyDataActor config from Python actor instance");
             }

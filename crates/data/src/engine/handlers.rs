@@ -48,10 +48,10 @@ impl MessageHandler for BarQuoteHandler {
     }
 
     fn handle(&self, msg: &dyn Any) {
-        if let Some(quote) = msg.downcast_ref::<QuoteTick>() {
-            if let Some(agg) = self.aggregator.upgrade() {
-                agg.borrow_mut().handle_quote(*quote);
-            }
+        if let Some(quote) = msg.downcast_ref::<QuoteTick>()
+            && let Some(agg) = self.aggregator.upgrade()
+        {
+            agg.borrow_mut().handle_quote(*quote);
         }
     }
 
@@ -86,10 +86,10 @@ impl MessageHandler for BarTradeHandler {
     }
 
     fn handle(&self, msg: &dyn Any) {
-        if let Some(trade) = msg.downcast_ref::<TradeTick>() {
-            if let Some(agg) = self.aggregator.upgrade() {
-                agg.borrow_mut().handle_trade(*trade);
-            }
+        if let Some(trade) = msg.downcast_ref::<TradeTick>()
+            && let Some(agg) = self.aggregator.upgrade()
+        {
+            agg.borrow_mut().handle_trade(*trade);
         }
     }
 
@@ -125,10 +125,10 @@ impl MessageHandler for BarBarHandler {
     }
 
     fn handle(&self, msg: &dyn Any) {
-        if let Some(bar) = msg.downcast_ref::<Bar>() {
-            if let Some(agg) = self.aggregator.upgrade() {
-                agg.borrow_mut().handle_bar(*bar);
-            }
+        if let Some(bar) = msg.downcast_ref::<Bar>()
+            && let Some(agg) = self.aggregator.upgrade()
+        {
+            agg.borrow_mut().handle_bar(*bar);
         }
     }
 

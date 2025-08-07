@@ -1026,12 +1026,11 @@ mod property_tests {
             let p_delta = Price::new(delta, precision);
 
             // Use raw arithmetic to avoid floating-point precision issues
-            if let Some(added_raw) = p_base.raw.checked_add(p_delta.raw) {
-                if let Some(result_raw) = added_raw.checked_sub(p_delta.raw) {
+            if let Some(added_raw) = p_base.raw.checked_add(p_delta.raw)
+                && let Some(result_raw) = added_raw.checked_sub(p_delta.raw) {
                     // (base + delta) - delta should equal base exactly using raw arithmetic
                     prop_assert_eq!(result_raw, p_base.raw, "Inverse operation failed in raw arithmetic");
                 }
-            }
         }
 
         /// Property: Price ordering should be transitive

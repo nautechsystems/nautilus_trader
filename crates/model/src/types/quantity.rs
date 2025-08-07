@@ -1099,12 +1099,11 @@ mod property_tests {
             let q_delta = Quantity::new(delta, precision);
 
             // Use raw arithmetic to avoid floating-point precision issues
-            if let Some(added_raw) = q_base.raw.checked_add(q_delta.raw) {
-                if let Some(result_raw) = added_raw.checked_sub(q_delta.raw) {
+            if let Some(added_raw) = q_base.raw.checked_add(q_delta.raw)
+                && let Some(result_raw) = added_raw.checked_sub(q_delta.raw) {
                     // (base + delta) - delta should equal base exactly using raw arithmetic
                     prop_assert_eq!(result_raw, q_base.raw, "Inverse operation failed in raw arithmetic");
                 }
-            }
         }
 
         /// Property: Quantity ordering should be transitive

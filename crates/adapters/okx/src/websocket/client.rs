@@ -1228,10 +1228,10 @@ impl OKXWebSocketClient {
                 builder.ccy(quote_currency.to_string());
 
                 // TODO: Consider position mode (only applicable for NET)
-                if let Some(ro) = reduce_only {
-                    if ro {
-                        builder.reduce_only(ro);
-                    }
+                if let Some(ro) = reduce_only
+                    && ro
+                {
+                    builder.reduce_only(ro);
                 }
             }
             OKXInstrumentType::Swap | OKXInstrumentType::Futures => {
@@ -1244,20 +1244,20 @@ impl OKXWebSocketClient {
                 builder.tgt_ccy(quote_currency.to_string());
 
                 // TODO: Consider position mode (only applicable for NET)
-                if let Some(ro) = reduce_only {
-                    if ro {
-                        builder.reduce_only(ro);
-                    }
+                if let Some(ro) = reduce_only
+                    && ro
+                {
+                    builder.reduce_only(ro);
                 }
             }
         };
 
-        if let Some(is_quote_quantity) = quote_quantity {
-            if is_quote_quantity {
-                builder.tgt_ccy(quote_currency.to_string());
-            }
-            // If is_quote_quantity is false, we don't set tgtCcy (defaults to base currency)
+        if let Some(is_quote_quantity) = quote_quantity
+            && is_quote_quantity
+        {
+            builder.tgt_ccy(quote_currency.to_string());
         }
+        // If is_quote_quantity is false, we don't set tgtCcy (defaults to base currency)
 
         builder.side(OKXSide::from(order_side));
 
@@ -2006,12 +2006,11 @@ impl OKXWsMessageHandler {
                                 match parse_account_state(account, self.account_id, ts_init) {
                                     Ok(account_state) => {
                                         // TODO: Optimize this account state comparison
-                                        if let Some(last_account_state) = &self.last_account_state {
-                                            if account_state
+                                        if let Some(last_account_state) = &self.last_account_state
+                                            && account_state
                                                 .has_same_balances_and_margins(last_account_state)
-                                            {
-                                                continue; // Nothing to update
-                                            }
+                                        {
+                                            continue; // Nothing to update
                                         }
                                         self.last_account_state = Some(account_state.clone());
                                         return Some(NautilusWsMessage::AccountUpdate(
@@ -2128,16 +2127,15 @@ impl OKXWsMessageHandler {
             if let OKXWebSocketEvent::Login {
                 code, msg, conn_id, ..
             } = &event
+                && code != "0"
             {
-                if code != "0" {
-                    let error = OKXWebSocketError {
-                        code: code.clone(),
-                        message: msg.clone(),
-                        conn_id: Some(conn_id.clone()),
-                        timestamp: clock.get_time_ns().as_u64(),
-                    };
-                    return Some(NautilusWsMessage::Error(error));
-                }
+                let error = OKXWebSocketError {
+                    code: code.clone(),
+                    message: msg.clone(),
+                    conn_id: Some(conn_id.clone()),
+                    timestamp: clock.get_time_ns().as_u64(),
+                };
+                return Some(NautilusWsMessage::Error(error));
             }
 
             // Handle general error events

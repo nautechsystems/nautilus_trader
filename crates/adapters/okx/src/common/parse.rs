@@ -499,15 +499,15 @@ pub fn parse_order_status_report(
     );
 
     // Optional fields
-    if !order.px.is_empty() {
-        if let Ok(p) = order.px.parse::<f64>() {
-            report = report.with_price(Price::new(p, price_precision));
-        }
+    if !order.px.is_empty()
+        && let Ok(p) = order.px.parse::<f64>()
+    {
+        report = report.with_price(Price::new(p, price_precision));
     }
-    if !order.avg_px.is_empty() {
-        if let Ok(avg) = order.avg_px.parse::<f64>() {
-            report = report.with_avg_px(avg);
-        }
+    if !order.avg_px.is_empty()
+        && let Ok(avg) = order.avg_px.parse::<f64>()
+    {
+        report = report.with_avg_px(avg);
     }
     if order.ord_type == "post_only" {
         report = report.with_post_only(true);

@@ -353,11 +353,11 @@ impl Iterator for TestTimer {
             None
         } else {
             // Check if current event would exceed stop time before creating the event
-            if let Some(stop_time_ns) = self.stop_time_ns {
-                if self.next_time_ns > stop_time_ns {
-                    self.is_expired = true;
-                    return None;
-                }
+            if let Some(stop_time_ns) = self.stop_time_ns
+                && self.next_time_ns > stop_time_ns
+            {
+                self.is_expired = true;
+                return None;
             }
 
             let item = (
@@ -371,10 +371,10 @@ impl Iterator for TestTimer {
             );
 
             // Check if we should expire after this event (for repeating timers at stop boundary)
-            if let Some(stop_time_ns) = self.stop_time_ns {
-                if self.next_time_ns == stop_time_ns {
-                    self.is_expired = true;
-                }
+            if let Some(stop_time_ns) = self.stop_time_ns
+                && self.next_time_ns == stop_time_ns
+            {
+                self.is_expired = true;
             }
 
             self.next_time_ns += self.interval_ns;
@@ -540,10 +540,10 @@ impl LiveTimer {
                 next_time_atomic.store(next_time_ns.as_u64(), atomic::Ordering::SeqCst);
 
                 // Check if expired
-                if let Some(stop_time_ns) = stop_time_ns {
-                    if std::cmp::max(next_time_ns, now_ns) >= stop_time_ns {
-                        break; // Timer expired
-                    }
+                if let Some(stop_time_ns) = stop_time_ns
+                    && std::cmp::max(next_time_ns, now_ns) >= stop_time_ns
+                {
+                    break; // Timer expired
                 }
             }
         });
@@ -895,27 +895,29 @@ mod tests {
 
                 // If timer has stop time, check if it should be considered logically expired
                 // Note: Timer only becomes actually expired when advance() or next() is called
-                if let Some(stop_time_ns) = stop_time_ns {
-                    if timer.next_time_ns().as_u64() > stop_time_ns {
-                        // The timer should expire on the next advance/iteration
-                        let mut test_timer = timer;
-                        let events: Vec<TimeEvent> = test_timer
-                            .advance(UnixNanos::from(stop_time_ns + 1))
-                            .collect();
-                        assert!(
-                            events.is_empty() || test_timer.is_expired(),
-                            "Timer should not generate events beyond stop time"
-                        );
-                    }
+                if let Some(stop_time_ns) = stop_time_ns
+                    && timer.next_time_ns().as_u64() > stop_time_ns
+                {
+                    // The timer should expire on the next advance/iteration
+                    let mut test_timer = timer;
+                    let events: Vec<TimeEvent> = test_timer
+                        .advance(UnixNanos::from(stop_time_ns + 1))
+                        .collect();
+                    assert!(
+                        events.is_empty() || test_timer.is_expired(),
+                        "Timer should not generate events beyond stop time"
+                    );
                 }
             }
         }
 
         // Final consistency check: if timer is not expired and we haven't hit stop time,
         // advancing far enough should eventually expire it
-        if !timer.is_expired() && stop_time_ns.is_some() {
+        if !timer.is_expired()
+            && let Some(stop_time_ns) = stop_time_ns
+        {
             let events: Vec<TimeEvent> = timer
-                .advance(UnixNanos::from(stop_time_ns.unwrap() + 1000))
+                .advance(UnixNanos::from(stop_time_ns + 1000))
                 .collect();
             assert!(
                 timer.is_expired() || events.is_empty(),

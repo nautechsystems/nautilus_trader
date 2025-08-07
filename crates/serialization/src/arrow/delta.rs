@@ -155,10 +155,11 @@ impl EncodeToRecordBatch for OrderBookDelta {
             .first()
             .expect("Chunk should have at least one element to encode");
 
-        if delta.order.price.precision == 0 && delta.order.size.precision == 0 {
-            if let Some(delta) = chunk.get(1) {
-                return EncodeToRecordBatch::metadata(delta);
-            }
+        if delta.order.price.precision == 0
+            && delta.order.size.precision == 0
+            && let Some(delta) = chunk.get(1)
+        {
+            return EncodeToRecordBatch::metadata(delta);
         }
 
         EncodeToRecordBatch::metadata(delta)

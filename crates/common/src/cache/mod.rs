@@ -402,10 +402,11 @@ impl Cache {
             }
 
             // 12: Build index.orders_emulated -> {ClientOrderId}
-            if let Some(emulation_trigger) = order.emulation_trigger() {
-                if emulation_trigger != TriggerType::NoTrigger && !order.is_closed() {
-                    self.index.orders_emulated.insert(*client_order_id);
-                }
+            if let Some(emulation_trigger) = order.emulation_trigger()
+                && emulation_trigger != TriggerType::NoTrigger
+                && !order.is_closed()
+            {
+                self.index.orders_emulated.insert(*client_order_id);
             }
 
             // 13: Build index.orders_inflight -> {ClientOrderId}
@@ -892,24 +893,23 @@ impl Cache {
         let buffer_ns = secs_to_nanos(buffer_secs as f64);
 
         'outer: for client_order_id in self.index.orders_closed.clone() {
-            if let Some(order) = self.orders.get(&client_order_id) {
-                if let Some(ts_closed) = order.ts_closed() {
-                    if ts_closed + buffer_ns <= ts_now {
-                        // Check any linked orders (contingency orders)
-                        if let Some(linked_order_ids) = order.linked_order_ids() {
-                            for linked_order_id in linked_order_ids {
-                                if let Some(linked_order) = self.orders.get(linked_order_id) {
-                                    if linked_order.is_open() {
-                                        // Do not purge if linked order still open
-                                        continue 'outer;
-                                    }
-                                }
-                            }
+            if let Some(order) = self.orders.get(&client_order_id)
+                && let Some(ts_closed) = order.ts_closed()
+                && ts_closed + buffer_ns <= ts_now
+            {
+                // Check any linked orders (contingency orders)
+                if let Some(linked_order_ids) = order.linked_order_ids() {
+                    for linked_order_id in linked_order_ids {
+                        if let Some(linked_order) = self.orders.get(linked_order_id)
+                            && linked_order.is_open()
+                        {
+                            // Do not purge if linked order still open
+                            continue 'outer;
                         }
-
-                        self.purge_order(client_order_id);
                     }
                 }
+
+                self.purge_order(client_order_id);
             }
         }
     }
@@ -928,12 +928,11 @@ impl Cache {
         let buffer_ns = secs_to_nanos(buffer_secs as f64);
 
         for position_id in self.index.positions_closed.clone() {
-            if let Some(position) = self.positions.get(&position_id) {
-                if let Some(ts_closed) = position.ts_closed {
-                    if ts_closed + buffer_ns <= ts_now {
-                        self.purge_position(position_id);
-                    }
-                }
+            if let Some(position) = self.positions.get(&position_id)
+                && let Some(ts_closed) = position.ts_closed
+                && ts_closed + buffer_ns <= ts_now
+            {
+                self.purge_position(position_id);
             }
         }
     }
@@ -943,10 +942,10 @@ impl Cache {
     /// All `OrderFilled` events for the order will also be purged from any associated position.
     pub fn purge_order(&mut self, client_order_id: ClientOrderId) {
         // Purge events from associated position if exists
-        if let Some(position_id) = self.index.order_position.get(&client_order_id) {
-            if let Some(position) = self.positions.get_mut(position_id) {
-                position.purge_events_for_order(client_order_id);
-            }
+        if let Some(position_id) = self.index.order_position.get(&client_order_id)
+            && let Some(position) = self.positions.get_mut(position_id)
+        {
+            position.purge_events_for_order(client_order_id);
         }
 
         if let Some(order) = self.orders.remove(&client_order_id) {
@@ -972,19 +971,18 @@ impl Cache {
             }
 
             // Remove from position orders index if associated with a position
-            if let Some(position_id) = order.position_id() {
-                if let Some(position_orders) = self.index.position_orders.get_mut(&position_id) {
-                    position_orders.remove(&client_order_id);
-                }
+            if let Some(position_id) = order.position_id()
+                && let Some(position_orders) = self.index.position_orders.get_mut(&position_id)
+            {
+                position_orders.remove(&client_order_id);
             }
 
             // Remove from exec algorithm orders index if it has an exec algorithm
-            if let Some(exec_algorithm_id) = order.exec_algorithm_id() {
-                if let Some(exec_algorithm_orders) =
+            if let Some(exec_algorithm_id) = order.exec_algorithm_id()
+                && let Some(exec_algorithm_orders) =
                     self.index.exec_algorithm_orders.get_mut(&exec_algorithm_id)
-                {
-                    exec_algorithm_orders.remove(&client_order_id);
-                }
+            {
+                exec_algorithm_orders.remove(&client_order_id);
             }
 
             log::info!("Purged order {client_order_id}");
@@ -1169,10 +1167,10 @@ impl Cache {
     pub fn add_order_book(&mut self, book: OrderBook) -> anyhow::Result<()> {
         log::debug!("Adding `OrderBook` {}", book.instrument_id);
 
-        if self.config.save_market_data {
-            if let Some(database) = &mut self.database {
-                database.add_order_book(&book)?;
-            }
+        if self.config.save_market_data
+            && let Some(database) = &mut self.database
+        {
+            database.add_order_book(&book)?;
         }
 
         self.books.insert(book.instrument_id, book);
@@ -1255,10 +1253,10 @@ impl Cache {
     pub fn add_quote(&mut self, quote: QuoteTick) -> anyhow::Result<()> {
         log::debug!("Adding `QuoteTick` {}", quote.instrument_id);
 
-        if self.config.save_market_data {
-            if let Some(database) = &mut self.database {
-                database.add_quote(&quote)?;
-            }
+        if self.config.save_market_data
+            && let Some(database) = &mut self.database
+        {
+            database.add_quote(&quote)?;
         }
 
         let quotes_deque = self
@@ -1280,11 +1278,11 @@ impl Cache {
         let instrument_id = quotes[0].instrument_id;
         log::debug!("Adding `QuoteTick`[{}] {instrument_id}", quotes.len());
 
-        if self.config.save_market_data {
-            if let Some(database) = &mut self.database {
-                for quote in quotes {
-                    database.add_quote(quote)?;
-                }
+        if self.config.save_market_data
+            && let Some(database) = &mut self.database
+        {
+            for quote in quotes {
+                database.add_quote(quote)?;
             }
         }
 
@@ -1307,10 +1305,10 @@ impl Cache {
     pub fn add_trade(&mut self, trade: TradeTick) -> anyhow::Result<()> {
         log::debug!("Adding `TradeTick` {}", trade.instrument_id);
 
-        if self.config.save_market_data {
-            if let Some(database) = &mut self.database {
-                database.add_trade(&trade)?;
-            }
+        if self.config.save_market_data
+            && let Some(database) = &mut self.database
+        {
+            database.add_trade(&trade)?;
         }
 
         let trades_deque = self
@@ -1332,11 +1330,11 @@ impl Cache {
         let instrument_id = trades[0].instrument_id;
         log::debug!("Adding `TradeTick`[{}] {instrument_id}", trades.len());
 
-        if self.config.save_market_data {
-            if let Some(database) = &mut self.database {
-                for trade in trades {
-                    database.add_trade(trade)?;
-                }
+        if self.config.save_market_data
+            && let Some(database) = &mut self.database
+        {
+            for trade in trades {
+                database.add_trade(trade)?;
             }
         }
 
@@ -1359,10 +1357,10 @@ impl Cache {
     pub fn add_bar(&mut self, bar: Bar) -> anyhow::Result<()> {
         log::debug!("Adding `Bar` {}", bar.bar_type);
 
-        if self.config.save_market_data {
-            if let Some(database) = &mut self.database {
-                database.add_bar(&bar)?;
-            }
+        if self.config.save_market_data
+            && let Some(database) = &mut self.database
+        {
+            database.add_bar(&bar)?;
         }
 
         let bars = self
@@ -1384,11 +1382,11 @@ impl Cache {
         let bar_type = bars[0].bar_type;
         log::debug!("Adding `Bar`[{}] {bar_type}", bars.len());
 
-        if self.config.save_market_data {
-            if let Some(database) = &mut self.database {
-                for bar in bars {
-                    database.add_bar(bar)?;
-                }
+        if self.config.save_market_data
+            && let Some(database) = &mut self.database
+        {
+            for bar in bars {
+                database.add_bar(bar)?;
             }
         }
 
@@ -1411,10 +1409,10 @@ impl Cache {
     pub fn add_greeks(&mut self, greeks: GreeksData) -> anyhow::Result<()> {
         log::debug!("Adding `GreeksData` {}", greeks.instrument_id);
 
-        if self.config.save_market_data {
-            if let Some(_database) = &mut self.database {
-                // TODO: Implement database.add_greeks(&greeks) when database adapter is updated
-            }
+        if self.config.save_market_data
+            && let Some(_database) = &mut self.database
+        {
+            // TODO: Implement database.add_greeks(&greeks) when database adapter is updated
         }
 
         self.greeks.insert(greeks.instrument_id, greeks);
@@ -1434,10 +1432,10 @@ impl Cache {
     pub fn add_yield_curve(&mut self, yield_curve: YieldCurveData) -> anyhow::Result<()> {
         log::debug!("Adding `YieldCurveData` {}", yield_curve.curve_name);
 
-        if self.config.save_market_data {
-            if let Some(_database) = &mut self.database {
-                // TODO: Implement database.add_yield_curve(&yield_curve) when database adapter is updated
-            }
+        if self.config.save_market_data
+            && let Some(_database) = &mut self.database
+        {
+            // TODO: Implement database.add_yield_curve(&yield_curve) when database adapter is updated
         }
 
         self.yield_curves
@@ -1535,15 +1533,16 @@ impl Cache {
         venue_order_id: &VenueOrderId,
         overwrite: bool,
     ) -> anyhow::Result<()> {
-        if let Some(existing_venue_order_id) = self.index.client_order_ids.get(client_order_id) {
-            if !overwrite && existing_venue_order_id != venue_order_id {
-                anyhow::bail!(
-                    "Existing {existing_venue_order_id} for {client_order_id}
+        if let Some(existing_venue_order_id) = self.index.client_order_ids.get(client_order_id)
+            && !overwrite
+            && existing_venue_order_id != venue_order_id
+        {
+            anyhow::bail!(
+                "Existing {existing_venue_order_id} for {client_order_id}
                     did not match the given {venue_order_id}.
                     If you are writing a test then try a different `venue_order_id`,
                     otherwise this is probably a bug."
-                );
-            }
+            );
         }
 
         self.index
@@ -2563,10 +2562,10 @@ impl Cache {
         let query = self.build_order_query_filter_set(venue, instrument_id, strategy_id);
         let exec_algorithm_order_ids = self.index.exec_algorithm_orders.get(exec_algorithm_id);
 
-        if let Some(query) = query {
-            if let Some(exec_algorithm_order_ids) = exec_algorithm_order_ids {
-                let _exec_algorithm_order_ids = exec_algorithm_order_ids.intersection(&query);
-            }
+        if let Some(query) = query
+            && let Some(exec_algorithm_order_ids) = exec_algorithm_order_ids
+        {
+            let _exec_algorithm_order_ids = exec_algorithm_order_ids.intersection(&query);
         }
 
         if let Some(exec_algorithm_order_ids) = exec_algorithm_order_ids {
