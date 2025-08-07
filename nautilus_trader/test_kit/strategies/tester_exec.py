@@ -33,6 +33,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.orders import LimitOrder
+from nautilus_trader.model.orders import MarketOrder
 from nautilus_trader.model.orders import Order
 from nautilus_trader.trading.strategy import Strategy
 
@@ -59,7 +60,8 @@ class ExecTesterConfig(StrategyConfig, frozen=True):
     book_levels_to_print: PositiveInt = 10
     enable_buys: bool = True
     enable_sells: bool = True
-    market_offset_ticks: PositiveInt = 500  # Definitely out of the market
+    open_position_on_start_qty: Decimal | None = None
+    tob_offset_ticks: PositiveInt = 500  # Definitely out of the market
     use_post_only: bool = True
     use_quote_quantity: bool = False
     emulation_trigger: str = "NO_TRIGGER"
@@ -116,6 +118,9 @@ class ExecTester(Strategy):
                 interval_ms=self.config.book_interval_ms,
                 client_id=self.client_id,
             )
+
+        if self.config.open_position_on_start_qty:
+            self.open_position(self.config.open_position_on_start_qty)
 
     def on_order_book(self, book: OrderBook) -> None:
         """
@@ -183,7 +188,7 @@ class ExecTester(Strategy):
         # Maintain BUY orders
         if self.config.enable_buys:
             if not self.buy_order or not self.is_order_active(self.buy_order):
-                self.create_buy_order(best_bid)
+                self.submit_buy_limit_order(best_bid)
             # elif self.buy_order.price != best_bid:
             #     self.cancel_order(self.buy_order)
             #     self.create_buy_order(best_bid)
@@ -191,18 +196,40 @@ class ExecTester(Strategy):
         # Maintain SELL orders
         if self.config.enable_sells:
             if not self.sell_order or not self.is_order_active(self.sell_order):
-                self.create_sell_order(best_ask)
+                self.submit_sell_limit_order(best_ask)
             # elif self.sell_order.price != best_ask:
             #     self.cancel_order(self.sell_order)
             #     self.create_sell_order(best_ask)
 
-    def get_market_offset(self, instrument: Instrument) -> Decimal:
-        return instrument.price_increment * self.config.market_offset_ticks
+    def open_position(self, net_qty: Decimal) -> None:
+        if not self.instrument:
+            self.log.error("No instrument loaded")
+            return
+
+        if net_qty == Decimal(0):
+            self.log.warning(f"Open position with {net_qty}, skipping")
+            return
+
+        order: MarketOrder = self.order_factory.market(
+            instrument_id=self.config.instrument_id,
+            order_side=OrderSide.BUY if net_qty > 0 else OrderSide.SELL,
+            quantity=self.instrument.make_qty(self.config.order_qty),
+            quote_quantity=self.config.use_quote_quantity,
+        )
+
+        self.submit_order(
+            order,
+            client_id=self.client_id,
+            params=self.config.order_params,
+        )
+
+    def get_price_offset(self, instrument: Instrument) -> Decimal:
+        return instrument.price_increment * self.config.tob_offset_ticks
 
     def is_order_active(self, order: Order) -> bool:
         return order.is_active_local or order.is_inflight or order.is_open
 
-    def create_buy_order(self, price: Price) -> None:
+    def submit_buy_limit_order(self, price: Price) -> None:
         if not self.instrument:
             self.log.error("No instrument loaded")
             return
@@ -215,7 +242,7 @@ class ExecTester(Strategy):
             self.log.warning("BUY orders not enabled, skipping")
             return
 
-        market_offset = self.get_market_offset(self.instrument)
+        market_offset = self.get_price_offset(self.instrument)
         price = self.instrument.make_price(price - market_offset)
 
         order: LimitOrder = self.order_factory.limit(
@@ -237,7 +264,7 @@ class ExecTester(Strategy):
             params=self.config.order_params,
         )
 
-    def create_sell_order(self, price: Price) -> None:
+    def submit_sell_limit_order(self, price: Price) -> None:
         if not self.instrument:
             self.log.error("No instrument loaded")
             return
@@ -250,7 +277,7 @@ class ExecTester(Strategy):
             self.log.warning("SELL orders not enabled, skipping")
             return
 
-        market_offset = self.get_market_offset(self.instrument)
+        market_offset = self.get_price_offset(self.instrument)
         price = self.instrument.make_price(price + market_offset)
 
         order: LimitOrder = self.order_factory.limit(
