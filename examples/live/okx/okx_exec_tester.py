@@ -154,6 +154,7 @@ config_strat = ExecTesterConfig(
     # subscribe_quotes=False,
     # subscribe_trades=False,
     # subscribe_book=True,
+    # open_position_on_start_qty=order_qty,
     order_qty=order_qty,
     use_post_only=True,
     log_data=True,
