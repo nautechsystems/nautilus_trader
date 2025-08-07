@@ -127,7 +127,7 @@ class ExecTester(Strategy):
         Actions to be performed when the strategy is running and receives a book.
         """
         if self.config.log_data:
-            num_levels = 10
+            num_levels = self.config.book_levels_to_print
             self.log.info(
                 f"\n{book.instrument_id}\n{book.pprint(num_levels)}",
                 LogColor.CYAN,

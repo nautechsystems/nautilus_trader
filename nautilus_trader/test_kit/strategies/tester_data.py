@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
 from typing import Any
 
 import pandas as pd
@@ -21,6 +22,7 @@ from nautilus_trader.common.actor import Actor
 from nautilus_trader.common.config import ActorConfig
 from nautilus_trader.common.config import PositiveInt
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
@@ -59,6 +61,7 @@ class DataTesterConfig(ActorConfig, frozen=True):
     requests_start_delta: pd.Timedelta | None = None
     book_type: BookType = BookType.L2_MBP
     book_depth: PositiveInt | None = None
+    book_group_size: Decimal | None = None
     book_interval_ms: PositiveInt = 1000
     book_levels_to_print: PositiveInt = 10
     manage_book: bool = False
@@ -150,8 +153,6 @@ class DataTester(Actor):
         self._books[instrument_id] = OrderBook(instrument_id, self.config.book_type)
 
     def setup_book_pyo3(self, instrument_id: InstrumentId) -> None:
-        from nautilus_trader.core import nautilus_pyo3
-
         book_type: nautilus_pyo3.BookType = nautilus_pyo3.BookType.L2_MBP
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(instrument_id.value)
         self._books[pyo3_instrument_id] = nautilus_pyo3.OrderBook(pyo3_instrument_id, book_type)
@@ -213,11 +214,19 @@ class DataTester(Actor):
         Actions to be performed when the actor is running and receives order book
         deltas.
         """
-        if self.config.log_data:
-            self.log.info(repr(deltas), LogColor.CYAN)
-
         if self.config.manage_book:
-            self._books[deltas.instrument_id].apply_deltas(deltas)
+            book = self._books[deltas.instrument_id]
+            book.apply_deltas(deltas)
+
+            if self.config.log_data:
+                num_levels = self.config.book_levels_to_print
+                group_size = self.config.book_group_size
+                self.log.info(
+                    f"\n{book.instrument_id}\n{book.pprint(num_levels, group_size)}",
+                    LogColor.CYAN,
+                )
+        elif self.config.log_data:
+            self.log.info(repr(deltas), LogColor.CYAN)
 
     def on_order_book_depth(self, depth: OrderBookDepth10) -> None:
         """
@@ -231,7 +240,7 @@ class DataTester(Actor):
         Actions to be performed when an order book update is received.
         """
         if self.config.log_data:
-            num_levels = 10
+            num_levels = self.config.book_levels_to_print
             self.log.info(
                 f"\n{order_book.instrument_id}\n{order_book.pprint(num_levels)}",
                 LogColor.CYAN,
