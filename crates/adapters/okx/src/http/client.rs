@@ -759,13 +759,12 @@ impl OKXHttpClient {
                     error_code,
                     message,
                 } = &e
+                    && error_code == "50115"
                 {
-                    if error_code == "50115" {
-                        tracing::warn!(
-                            "Account does not support position mode setting (derivatives trading not enabled): {message}"
-                        );
-                        return Ok(()); // Gracefully handle this case
-                    }
+                    tracing::warn!(
+                        "Account does not support position mode setting (derivatives trading not enabled): {message}"
+                    );
+                    return Ok(()); // Gracefully handle this case
                 }
                 anyhow::bail!(e)
             }
@@ -971,10 +970,10 @@ impl OKXHttpClient {
         }
 
         // Validate time range consistency
-        if let (Some(start_time), Some(end_time)) = (start, end) {
-            if start_time >= end_time {
-                anyhow::bail!("Invalid time range: start={start_time:?} end={end_time:?}");
-            }
+        if let (Some(start_time), Some(end_time)) = (start, end)
+            && start_time >= end_time
+        {
+            anyhow::bail!("Invalid time range: start={start_time:?} end={end_time:?}");
         }
 
         let symbol = bar_type.instrument_id().symbol;
@@ -1099,17 +1098,17 @@ impl OKXHttpClient {
                     // Client-side filtering will be applied below
                 }
                 "after" => {
-                    if let Some(ref cursor) = cursor_value {
-                        if let Ok(cursor_i64) = cursor.parse::<i64>() {
-                            builder.after_ms(cursor_i64);
-                        }
+                    if let Some(ref cursor) = cursor_value
+                        && let Ok(cursor_i64) = cursor.parse::<i64>()
+                    {
+                        builder.after_ms(cursor_i64);
                     }
                 }
                 "before" => {
-                    if let Some(ref cursor) = cursor_value {
-                        if let Ok(cursor_i64) = cursor.parse::<i64>() {
-                            builder.before_ms(cursor_i64);
-                        }
+                    if let Some(ref cursor) = cursor_value
+                        && let Ok(cursor_i64) = cursor.parse::<i64>()
+                    {
+                        builder.before_ms(cursor_i64);
                     }
                 }
                 "none" => {
@@ -1194,13 +1193,13 @@ impl OKXHttpClient {
             // Add to results with limit and boundary checking
             for bar in page_bars {
                 // Apply client-side filtering for end time when both start and end are provided
-                if cursor_mode == "both" {
-                    if let Some(end_time) = end {
-                        let end_nanos = end_time.timestamp_nanos_opt().unwrap_or_default() as u64;
-                        if bar.ts_event > end_nanos {
-                            // Bar is after end time, skip it
-                            continue;
-                        }
+                if cursor_mode == "both"
+                    && let Some(end_time) = end
+                {
+                    let end_nanos = end_time.timestamp_nanos_opt().unwrap_or_default() as u64;
+                    if bar.ts_event > end_nanos {
+                        // Bar is after end time, skip it
+                        continue;
                     }
                 }
 
@@ -1213,40 +1212,40 @@ impl OKXHttpClient {
                     }
                 }
 
-                if let Some(l) = limit {
-                    if all_bars.len() >= l as usize {
-                        break; // Stop condition: limit reached
-                    }
+                if let Some(l) = limit
+                    && all_bars.len() >= l as usize
+                {
+                    break; // Stop condition: limit reached
                 }
                 all_bars.push(bar);
             }
 
             // Stop condition: Hit end boundary during forward pagination
-            if let Some(end_time) = end_boundary {
-                if let Some(last_bar) = all_bars.last() {
-                    let end_nanos = end_time.timestamp_nanos_opt().unwrap_or_default() as u64;
-                    if last_bar.ts_event >= end_nanos {
-                        break; // We've reached the end boundary
-                    }
+            if let Some(end_time) = end_boundary
+                && let Some(last_bar) = all_bars.last()
+            {
+                let end_nanos = end_time.timestamp_nanos_opt().unwrap_or_default() as u64;
+                if last_bar.ts_event >= end_nanos {
+                    break; // We've reached the end boundary
                 }
             }
 
             // Stop condition: Time window fully covered
-            if let (Some(start_time), Some(end_time)) = (start, end) {
-                if let (Some(first_bar), Some(last_bar)) = (all_bars.first(), all_bars.last()) {
-                    let start_nanos = start_time.timestamp_nanos_opt().unwrap_or_default() as u64;
-                    let end_nanos = end_time.timestamp_nanos_opt().unwrap_or_default() as u64;
-                    if first_bar.ts_event <= start_nanos && last_bar.ts_event >= end_nanos {
-                        break;
-                    }
+            if let (Some(start_time), Some(end_time)) = (start, end)
+                && let (Some(first_bar), Some(last_bar)) = (all_bars.first(), all_bars.last())
+            {
+                let start_nanos = start_time.timestamp_nanos_opt().unwrap_or_default() as u64;
+                let end_nanos = end_time.timestamp_nanos_opt().unwrap_or_default() as u64;
+                if first_bar.ts_event <= start_nanos && last_bar.ts_event >= end_nanos {
+                    break;
                 }
             }
 
             // Check if we've reached the limit
-            if let Some(l) = limit {
-                if all_bars.len() >= l as usize {
-                    break; // Stop condition: limit reached
-                }
+            if let Some(l) = limit
+                && all_bars.len() >= l as usize
+            {
+                break; // Stop condition: limit reached
             }
 
             // Update cursor for next page
@@ -1260,11 +1259,11 @@ impl OKXHttpClient {
                         // Check if we've passed the end time
                         if let Some(end_time) = end {
                             let end_millis = end_time.timestamp_millis();
-                            if let Ok(last_ts) = last_raw.0.parse::<i64>() {
-                                if last_ts >= end_millis {
-                                    // We've reached or passed the end time, stop
-                                    break;
-                                }
+                            if let Ok(last_ts) = last_raw.0.parse::<i64>()
+                                && last_ts >= end_millis
+                            {
+                                // We've reached or passed the end time, stop
+                                break;
                             }
                         }
                     } else {
@@ -1410,16 +1409,16 @@ impl OKXHttpClient {
                 ts_init,
             );
 
-            if let Some(start_ns) = start_ns {
-                if report.ts_last < start_ns {
-                    continue;
-                }
+            if let Some(start_ns) = start_ns
+                && report.ts_last < start_ns
+            {
+                continue;
             }
 
-            if let Some(end_ns) = end_ns {
-                if report.ts_last > end_ns {
-                    continue;
-                }
+            if let Some(end_ns) = end_ns
+                && report.ts_last > end_ns
+            {
+                continue;
             }
 
             reports.push(report);
@@ -1494,16 +1493,16 @@ impl OKXHttpClient {
                 ts_init,
             )?;
 
-            if let Some(start_ns) = start_ns {
-                if report.ts_event < start_ns {
-                    continue;
-                }
+            if let Some(start_ns) = start_ns
+                && report.ts_event < start_ns
+            {
+                continue;
             }
 
-            if let Some(end_ns) = end_ns {
-                if report.ts_event > end_ns {
-                    continue;
-                }
+            if let Some(end_ns) = end_ns
+                && report.ts_event > end_ns
+            {
+                continue;
             }
 
             reports.push(report);

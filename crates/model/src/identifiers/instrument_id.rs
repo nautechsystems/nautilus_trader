@@ -79,10 +79,10 @@ impl FromStr for InstrumentId {
                 let venue = Venue::new_checked(venue_part)?;
 
                 #[cfg(feature = "defi")]
-                if venue.is_dex() {
-                    if let Err(e) = validate_address(symbol_part) {
-                        anyhow::bail!(err_message(s, e.to_string()));
-                    }
+                if venue.is_dex()
+                    && let Err(e) = validate_address(symbol_part)
+                {
+                    anyhow::bail!(err_message(s, e.to_string()));
                 }
 
                 Ok(Self { symbol, venue })

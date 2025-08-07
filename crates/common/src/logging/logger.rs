@@ -449,10 +449,10 @@ impl Logger {
         while let Ok(event) = rx.recv() {
             match event {
                 LogEvent::Log(line) => {
-                    if let Some(&filter_level) = component_level.get(&line.component) {
-                        if line.level > filter_level {
-                            continue;
-                        }
+                    if let Some(&filter_level) = component_level.get(&line.component)
+                        && line.level > filter_level
+                    {
+                        continue;
                     }
 
                     let mut wrapper = LogLineWrapper::new(line, trader_id_cache);
@@ -473,13 +473,13 @@ impl Logger {
                         }
                     }
 
-                    if let Some(ref mut file_writer) = file_writer_opt {
-                        if file_writer.enabled(&wrapper.line) {
-                            if file_writer.json_format {
-                                file_writer.write(&wrapper.get_json());
-                            } else {
-                                file_writer.write(wrapper.get_string());
-                            }
+                    if let Some(ref mut file_writer) = file_writer_opt
+                        && file_writer.enabled(&wrapper.line)
+                    {
+                        if file_writer.json_format {
+                            file_writer.write(&wrapper.get_json());
+                        } else {
+                            file_writer.write(wrapper.get_string());
                         }
                     }
                 }

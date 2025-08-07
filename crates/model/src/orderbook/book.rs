@@ -569,19 +569,19 @@ impl OrderBook {
     }
 
     fn update_book_bid(&mut self, order: BookOrder, ts_event: UnixNanos) {
-        if let Some(top_bids) = self.bids.top() {
-            if let Some(top_bid) = top_bids.first() {
-                self.bids.remove(top_bid.order_id, 0, ts_event);
-            }
+        if let Some(top_bids) = self.bids.top()
+            && let Some(top_bid) = top_bids.first()
+        {
+            self.bids.remove(top_bid.order_id, 0, ts_event);
         }
         self.bids.add(order);
     }
 
     fn update_book_ask(&mut self, order: BookOrder, ts_event: UnixNanos) {
-        if let Some(top_asks) = self.asks.top() {
-            if let Some(top_ask) = top_asks.first() {
-                self.asks.remove(top_ask.order_id, 0, ts_event);
-            }
+        if let Some(top_asks) = self.asks.top()
+            && let Some(top_ask) = top_asks.first()
+        {
+            self.asks.remove(top_ask.order_id, 0, ts_event);
         }
         self.asks.add(order);
     }

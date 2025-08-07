@@ -220,35 +220,35 @@ impl GetCandlesticksParamsBuilder {
         // - after_ms represents the start time (older bound)
         // - before_ms represents the end time (newer bound)
         // Therefore: after_ms < before_ms for valid time ranges
-        if let (Some(after), Some(before)) = (after_ms, before_ms) {
-            if after >= before {
-                return Err(BuildError::InvalidTimeRange {
-                    after_ms: after,
-                    before_ms: before,
-                });
-            }
+        if let (Some(after), Some(before)) = (after_ms, before_ms)
+            && after >= before
+        {
+            return Err(BuildError::InvalidTimeRange {
+                after_ms: after,
+                before_ms: before,
+            });
         }
 
         // ───────── Cursor unit (≤ 13 digits ⇒ milliseconds)
-        if let Some(nanos) = after_ms {
-            if nanos.abs() > 9_999_999_999_999 {
-                return Err(BuildError::CursorIsNanoseconds);
-            }
+        if let Some(nanos) = after_ms
+            && nanos.abs() > 9_999_999_999_999
+        {
+            return Err(BuildError::CursorIsNanoseconds);
         }
 
-        if let Some(nanos) = before_ms {
-            if nanos.abs() > 9_999_999_999_999 {
-                return Err(BuildError::CursorIsNanoseconds);
-            }
+        if let Some(nanos) = before_ms
+            && nanos.abs() > 9_999_999_999_999
+        {
+            return Err(BuildError::CursorIsNanoseconds);
         }
 
         // ───────── Limit validation
         // Note: Regular endpoint supports up to 300, history endpoint up to 100
         // This validation is conservative for safety across both endpoints
-        if let Some(limit) = limit {
-            if limit > 300 {
-                return Err(BuildError::LimitTooHigh);
-            }
+        if let Some(limit) = limit
+            && limit > 300
+        {
+            return Err(BuildError::LimitTooHigh);
         }
 
         Ok(GetCandlesticksParams {

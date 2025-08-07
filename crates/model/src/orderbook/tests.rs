@@ -3783,16 +3783,16 @@ fn test_orderbook_with_operations(book_type: BookType, operations: Vec<OrderBook
         }
 
         // 5. Midpoint should be between bid and ask (when both exist)
-        if let (Some(bid), Some(ask)) = (book.best_bid_price(), book.best_ask_price()) {
-            if let Some(mid) = book.midpoint() {
-                assert!(mid.is_finite(), "Midpoint should be finite");
-                // Only check ordering for non-crossed markets
-                if bid <= ask {
-                    assert!(
-                        mid >= bid.as_f64() && mid <= ask.as_f64(),
-                        "Midpoint {mid} should be between bid {bid} and ask {ask}"
-                    );
-                }
+        if let (Some(bid), Some(ask)) = (book.best_bid_price(), book.best_ask_price())
+            && let Some(mid) = book.midpoint()
+        {
+            assert!(mid.is_finite(), "Midpoint should be finite");
+            // Only check ordering for non-crossed markets
+            if bid <= ask {
+                assert!(
+                    mid >= bid.as_f64() && mid <= ask.as_f64(),
+                    "Midpoint {mid} should be between bid {bid} and ask {ask}"
+                );
             }
         }
 

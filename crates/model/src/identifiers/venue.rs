@@ -53,10 +53,10 @@ impl Venue {
         check_valid_string(value, stringify!(value))?;
 
         #[cfg(feature = "defi")]
-        if value.contains(':') {
-            if let Err(e) = validate_blockchain_venue(value) {
-                anyhow::bail!("Error creating `Venue` from '{value}': {e}");
-            }
+        if value.contains(':')
+            && let Err(e) = validate_blockchain_venue(value)
+        {
+            anyhow::bail!("Error creating `Venue` from '{value}': {e}");
         }
 
         Ok(Self(Ustr::from(value)))

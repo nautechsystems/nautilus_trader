@@ -528,14 +528,14 @@ impl Clock for TestClock {
             }
         }
 
-        if let Some(stop_time) = stop_time_ns {
-            if stop_time <= start_time_ns {
-                anyhow::bail!(
-                    "Timer '{name}' stop time {} must be after start time {}",
-                    stop_time.to_rfc3339(),
-                    start_time_ns.to_rfc3339(),
-                );
-            }
+        if let Some(stop_time) = stop_time_ns
+            && stop_time <= start_time_ns
+        {
+            anyhow::bail!(
+                "Timer '{name}' stop time {} must be after start time {}",
+                stop_time.to_rfc3339(),
+                start_time_ns.to_rfc3339(),
+            );
         }
 
         let interval_ns = create_valid_interval(interval_ns);
@@ -800,14 +800,14 @@ impl Clock for LiveClock {
             );
         }
 
-        if let Some(stop_time) = stop_time_ns {
-            if stop_time <= start_time_ns {
-                anyhow::bail!(
-                    "Timer '{name}' stop time {} must be after start time {}",
-                    stop_time.to_rfc3339(),
-                    start_time_ns.to_rfc3339(),
-                );
-            }
+        if let Some(stop_time) = stop_time_ns
+            && stop_time <= start_time_ns
+        {
+            anyhow::bail!(
+                "Timer '{name}' stop time {} must be after start time {}",
+                stop_time.to_rfc3339(),
+                start_time_ns.to_rfc3339(),
+            );
         }
 
         let interval_ns = create_valid_interval(interval_ns);

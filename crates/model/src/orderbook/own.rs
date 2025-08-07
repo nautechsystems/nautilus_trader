@@ -609,20 +609,20 @@ impl OwnBookLadder {
     /// Returns an error if the order is not found.
     pub fn update(&mut self, order: OwnBookOrder) -> anyhow::Result<()> {
         let price = self.cache.get(&order.client_order_id).copied();
-        if let Some(price) = price {
-            if let Some(level) = self.levels.get_mut(&price) {
-                if order.price == level.price.value {
-                    // Update at current price level
-                    level.update(order);
-                    return Ok(());
-                }
+        if let Some(price) = price
+            && let Some(level) = self.levels.get_mut(&price)
+        {
+            if order.price == level.price.value {
+                // Update at current price level
+                level.update(order);
+                return Ok(());
+            }
 
-                // Price update: delete and insert at new level
-                self.cache.remove(&order.client_order_id);
-                level.delete(&order.client_order_id)?;
-                if level.is_empty() {
-                    self.levels.remove(&price);
-                }
+            // Price update: delete and insert at new level
+            self.cache.remove(&order.client_order_id);
+            level.delete(&order.client_order_id)?;
+            if level.is_empty() {
+                self.levels.remove(&price);
             }
         }
 
@@ -645,12 +645,12 @@ impl OwnBookLadder {
     ///
     /// Returns an error if the order is not found.
     pub fn remove(&mut self, client_order_id: &ClientOrderId) -> anyhow::Result<()> {
-        if let Some(price) = self.cache.remove(client_order_id) {
-            if let Some(level) = self.levels.get_mut(&price) {
-                level.delete(client_order_id)?;
-                if level.is_empty() {
-                    self.levels.remove(&price);
-                }
+        if let Some(price) = self.cache.remove(client_order_id)
+            && let Some(level) = self.levels.get_mut(&price)
+        {
+            level.delete(client_order_id)?;
+            if level.is_empty() {
+                self.levels.remove(&price);
             }
         }
 

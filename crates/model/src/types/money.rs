@@ -860,8 +860,8 @@ mod tests {
                 if let (Some(sum1), Some(sum2)) = (
                     money1.raw.checked_add(money2.raw),
                     money2.raw.checked_add(money3.raw)
-                ) {
-                    if let (Some(left), Some(right)) = (
+                )
+                    && let (Some(left), Some(right)) = (
                         sum1.checked_add(money3.raw),
                         money1.raw.checked_add(sum2)
                     ) {
@@ -869,7 +869,6 @@ mod tests {
                         let right_result = Money::from_raw(right, money1.currency);
                         prop_assert_eq!(left_result, right_result, "Addition should be associative");
                     }
-                }
             }
         }
 
