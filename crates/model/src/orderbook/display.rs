@@ -48,6 +48,9 @@ pub(crate) fn pprint_book(
         let mut sorted_prices: Vec<Decimal> = all_prices.into_iter().collect();
         sorted_prices.sort_by(|a, b| b.cmp(a)); // Descending order for display
 
+        // Determine consistent precision from the first price
+        let precision = sorted_prices.first().map_or(1, |p| p.scale());
+
         sorted_prices
             .iter()
             .map(|price| {
@@ -64,7 +67,7 @@ pub(crate) fn pprint_book(
                     } else {
                         String::new()
                     },
-                    price: price.to_string(),
+                    price: format!("{price:.precision$}", precision = precision as usize),
                     asks: if let Some(qty) = ask_quantity {
                         if *qty > Decimal::ZERO {
                             qty.to_string()
@@ -159,6 +162,9 @@ pub(crate) fn pprint_own_book(
         let mut sorted_prices: Vec<Decimal> = all_prices.into_iter().collect();
         sorted_prices.sort_by(|a, b| b.cmp(a)); // Descending order for display
 
+        // Determine consistent precision from the first price
+        let precision = sorted_prices.first().map_or(1, |p| p.scale());
+
         sorted_prices
             .iter()
             .map(|price| {
@@ -175,7 +181,7 @@ pub(crate) fn pprint_own_book(
                     } else {
                         String::new()
                     },
-                    price: price.to_string(),
+                    price: format!("{price:.precision$}", precision = precision as usize),
                     asks: if let Some(qty) = ask_quantity {
                         if *qty > Decimal::ZERO {
                             qty.to_string()
