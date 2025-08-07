@@ -75,15 +75,21 @@ impl FromStr for InstrumentId {
                 check_valid_string(symbol_part, stringify!(value))?;
                 check_valid_string(venue_part, stringify!(value))?;
 
-                let symbol = Symbol::new(symbol_part);
                 let venue = Venue::new_checked(venue_part)?;
 
-                #[cfg(feature = "defi")]
-                if venue.is_dex()
-                    && let Err(e) = validate_address(symbol_part)
-                {
-                    anyhow::bail!(err_message(s, e.to_string()));
-                }
+                let symbol = {
+                    #[cfg(feature = "defi")]
+                    if venue.is_dex() {
+                        let validated_address = validate_address(symbol_part)
+                            .map_err(|e| anyhow::anyhow!(err_message(s, e.to_string())))?;
+                        Symbol::new(validated_address.to_string())
+                    } else {
+                        Symbol::new(symbol_part)
+                    }
+
+                    #[cfg(not(feature = "defi"))]
+                    Symbol::new(symbol_part)
+                };
 
                 Ok(Self { symbol, venue })
             }
@@ -220,7 +226,7 @@ mod tests {
     #[cfg(feature = "defi")]
     #[rstest]
     fn test_regular_venue_with_blockchain_like_name_but_without_dex() {
-        // Should work fine since it doesn't contain ':'
+        // Should work fine since it doesn't contain ':' (not a DEX venue)
         let id = InstrumentId::from("0xC31E54c7a869B9FcBEcc14363CF510d1c41fa443.Ethereum");
         assert_eq!(
             id.symbol.to_string(),
