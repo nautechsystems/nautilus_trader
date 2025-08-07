@@ -24,7 +24,7 @@ use nautilus_core::correctness::{FAILED, check_valid_string};
 use ustr::Ustr;
 
 #[cfg(feature = "defi")]
-use crate::defi::{Chain, DexType};
+use crate::defi::{Blockchain, Chain, DexType};
 use crate::venues::VENUE_MAP;
 
 pub const SYNTHETIC_VENUE: &str = "SYNTH";
@@ -129,6 +129,38 @@ impl Venue {
     pub fn is_dex(&self) -> bool {
         self.0.as_str().contains(':')
     }
+
+    #[cfg(feature = "defi")]
+    /// Parses a venue string to extract blockchain and DEX type information.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The venue string is not in the format "chain:dex"
+    /// - The chain name is not recognized
+    /// - The DEX name is not recognized
+    pub fn parse_dex(&self) -> anyhow::Result<(Blockchain, DexType)> {
+        let venue_str = self.as_str();
+
+        if let Some((chain_name, dex_id)) = venue_str.split_once(':') {
+            // Get the chain reference and extract the Blockchain enum
+            let chain = Chain::from_chain_name(chain_name).ok_or_else(|| {
+                anyhow::anyhow!("Invalid chain '{}' in venue '{}'", chain_name, venue_str)
+            })?;
+
+            // Get the DexType enum
+            let dex_type = DexType::from_dex_name(dex_id).ok_or_else(|| {
+                anyhow::anyhow!("Invalid DEX '{}' in venue '{}'", dex_id, venue_str)
+            })?;
+
+            Ok((chain.name, dex_type))
+        } else {
+            anyhow::bail!(
+                "Venue '{}' is not a DEX venue (expected format 'Chain:DexId')",
+                venue_str
+            )
+        }
+    }
 }
 
 impl Debug for Venue {
@@ -189,7 +221,10 @@ pub fn validate_blockchain_venue(venue_part: &str) -> anyhow::Result<()> {
 mod tests {
     use rstest::rstest;
 
-    use crate::identifiers::{Venue, stubs::*};
+    use crate::{
+        defi::{Blockchain, DexType},
+        identifiers::{Venue, stubs::*},
+    };
 
     #[rstest]
     fn test_string_reprs(venue_binance: Venue) {
@@ -289,5 +324,49 @@ mod tests {
             let venue = Venue::new(&venue_str);
             assert_eq!(venue.to_string(), venue_str);
         }
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    #[case("Ethereum:UniswapV3", Blockchain::Ethereum, DexType::UniswapV3)]
+    #[case("Arbitrum:CamelotV3", Blockchain::Arbitrum, DexType::CamelotV3)]
+    #[case("Base:AerodromeV1", Blockchain::Base, DexType::AerodromeV1)]
+    #[case("Polygon:SushiSwapV2", Blockchain::Polygon, DexType::SushiSwapV2)]
+    fn test_parse_dex_valid(
+        #[case] venue_str: &str,
+        #[case] expected_chain: Blockchain,
+        #[case] expected_dex: DexType,
+    ) {
+        let venue = Venue::new(venue_str);
+        let (blockchain, dex_type) = venue.parse_dex().unwrap();
+
+        assert_eq!(blockchain, expected_chain);
+        assert_eq!(dex_type, expected_dex);
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn test_parse_dex_non_dex_venue() {
+        let venue = Venue::new("BINANCE");
+        let result = venue.parse_dex();
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("is not a DEX venue")
+        );
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn test_parse_dex_invalid_components() {
+        // Test invalid chain
+        let venue = Venue::from_str_unchecked("InvalidChain:UniswapV3");
+        assert!(venue.parse_dex().is_err());
+
+        // Test invalid DEX
+        let venue = Venue::from_str_unchecked("Ethereum:InvalidDex");
+        assert!(venue.parse_dex().is_err());
     }
 }
