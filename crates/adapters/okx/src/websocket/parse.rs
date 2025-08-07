@@ -740,6 +740,7 @@ mod tests {
         types::{Currency, Price, Quantity},
     };
     use rstest::rstest;
+    use rust_decimal::Decimal;
     use ustr::Ustr;
 
     use super::*;
@@ -894,6 +895,35 @@ mod tests {
         assert_eq!(bar.volume, Quantity::from(45247));
         assert_eq!(bar.ts_event, UnixNanos::from(1597026383085000000));
         assert_eq!(bar.ts_init, UnixNanos::default());
+    }
+
+    #[rstest]
+    fn test_parse_funding_rate() {
+        let json_data = load_test_json("ws_funding_rate.json");
+        let msg: OKXWebSocketEvent = serde_json::from_str(&json_data).unwrap();
+
+        let okx_funding_rates: Vec<crate::websocket::messages::OKXFundingRateMsg> = match msg {
+            OKXWebSocketEvent::Data { data, .. } => serde_json::from_value(data).unwrap(),
+            _ => panic!("Expected a `Data` variant"),
+        };
+
+        let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
+        let funding_rate = crate::common::parse::parse_funding_rate_msg(
+            &okx_funding_rates[0],
+            instrument_id,
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(funding_rate.instrument_id, instrument_id);
+        assert_eq!(funding_rate.funding_rate, Decimal::new(1, 4));
+        assert_eq!(funding_rate.next_funding_rate, Decimal::new(2, 4));
+        assert_eq!(
+            funding_rate.funding_time,
+            UnixNanos::from(1744590349506000000)
+        );
+        assert_eq!(funding_rate.ts_event, UnixNanos::from(1744590349506000000));
+        assert_eq!(funding_rate.ts_init, UnixNanos::default());
     }
 
     #[rstest]

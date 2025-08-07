@@ -1469,24 +1469,30 @@ impl OKXWebSocketClient {
             builder.td_mode(td_mode);
             builder.cl_ord_id(cl_ord_id.as_str());
             builder.side(OKXSide::from(ord_side));
+
             if let Some(ps) = pos_side {
                 builder.pos_side(OKXPositionSide::from(ps));
             }
+
             let okx_ord_type = if post_only.unwrap_or(false) {
                 OKXOrderType::PostOnly
             } else {
                 OKXOrderType::from(ord_type)
             };
+
             builder.ord_type(okx_ord_type);
             builder.sz(qty.to_string());
+
             if let Some(p) = pr {
                 builder.px(p.to_string());
             } else if let Some(p) = tp {
                 builder.px(p.to_string());
             }
+
             if let Some(ro) = reduce_only {
                 builder.reduce_only(ro);
             }
+
             builder.tag(OKX_NAUTILUS_BROKER_ID);
 
             let params = builder
@@ -1849,7 +1855,7 @@ impl OKXWsMessageHandler {
             } = event
             {
                 if code == "0" {
-                    tracing::info!(
+                    tracing::debug!(
                         "Order operation successful: id={:?} op={op} code={code}",
                         id
                     );
@@ -1859,7 +1865,7 @@ impl OKXWsMessageHandler {
                             .get("sMsg")
                             .and_then(|s| s.as_str())
                             .unwrap_or("Order operation successful");
-                        tracing::debug!("Order success details: {success_msg}");
+                        tracing::debug!("Order details: {success_msg}");
 
                         // Note: We rely on the orders channel subscription to provide the proper
                         // OrderStatusReport with correct instrument ID and full order details.
