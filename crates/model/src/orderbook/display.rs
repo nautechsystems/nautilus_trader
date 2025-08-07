@@ -20,7 +20,7 @@ use rust_decimal::Decimal;
 use tabled::{Table, Tabled, settings::Style};
 
 use super::{BookPrice, level::BookLevel, own::OwnBookLevel};
-use crate::orderbook::own::OwnOrderBook;
+use crate::orderbook::{OrderBook, own::OwnOrderBook};
 
 #[derive(Tabled)]
 struct BookLevelDisplay {
@@ -32,7 +32,7 @@ struct BookLevelDisplay {
 /// Return a [`String`] representation of the order book in a human-readable table format.
 #[must_use]
 pub(crate) fn pprint_book(
-    order_book: &super::book::OrderBook,
+    order_book: &OrderBook,
     num_levels: usize,
     group_size: Option<Decimal>,
 ) -> String {
@@ -57,17 +57,17 @@ pub(crate) fn pprint_book(
                 BookLevelDisplay {
                     bids: if let Some(qty) = bid_quantity {
                         if *qty > Decimal::ZERO {
-                            format!("{qty}")
+                            qty.to_string()
                         } else {
                             String::new()
                         }
                     } else {
                         String::new()
                     },
-                    price: format!("{price}"),
+                    price: price.to_string(),
                     asks: if let Some(qty) = ask_quantity {
                         if *qty > Decimal::ZERO {
-                            format!("{qty}")
+                            qty.to_string()
                         } else {
                             String::new()
                         }
@@ -168,17 +168,17 @@ pub(crate) fn pprint_own_book(
                 BookLevelDisplay {
                     bids: if let Some(qty) = bid_quantity {
                         if *qty > Decimal::ZERO {
-                            format!("{qty}")
+                            qty.to_string()
                         } else {
                             String::new()
                         }
                     } else {
                         String::new()
                     },
-                    price: format!("{price}"),
+                    price: price.to_string(),
                     asks: if let Some(qty) = ask_quantity {
                         if *qty > Decimal::ZERO {
-                            format!("{qty}")
+                            qty.to_string()
                         } else {
                             String::new()
                         }

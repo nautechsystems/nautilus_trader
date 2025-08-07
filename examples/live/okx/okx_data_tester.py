@@ -94,15 +94,19 @@ config_tester = DataTesterConfig(
     instrument_ids=[InstrumentId.from_str(f"{symbol}.OKX")],
     bar_types=[BarType.from_str(f"{symbol}.OKX-1-MINUTE-LAST-EXTERNAL")],
     subscribe_book_deltas=True,
-    subscribe_book_at_interval=True,
-    subscribe_quotes=True,
-    subscribe_trades=True,
-    subscribe_mark_prices=True,
-    subscribe_index_prices=True if instrument_type == OKXInstrumentType.SPOT else False,
-    subscribe_bars=True,
-    subscribe_instrument_status=False,
-    subscribe_instrument_close=False,
-    request_bars=True,
+    # subscribe_book_at_interval=True,  # Only legacy Cython wrapped book (not PyO3)
+    # subscribe_quotes=True,
+    # subscribe_trades=True,
+    # subscribe_mark_prices=True,
+    # subscribe_index_prices=True if instrument_type == OKXInstrumentType.SPOT else False,
+    # subscribe_bars=True,
+    # subscribe_instrument_status=False,
+    # subscribe_instrument_close=False,
+    # request_bars=True,
+    # book_group_size=Decimal("1"),  # Only PyO3 wrapped book (not legacy Cython)
+    # book_levels_to_print=20,
+    manage_book=True,
+    use_pyo3_book=True,
 )
 tester = DataTester(config=config_tester)
 
