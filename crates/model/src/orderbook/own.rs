@@ -427,8 +427,8 @@ impl OwnOrderBook {
 
     /// Return a formatted string representation of the order book.
     #[must_use]
-    pub fn pprint(&self, num_levels: usize) -> String {
-        pprint_own_book(&self.bids, &self.asks, num_levels)
+    pub fn pprint(&self, num_levels: usize, group_size: Option<Decimal>) -> String {
+        pprint_own_book(self, num_levels, group_size)
     }
 
     pub fn audit_open_orders(&mut self, open_order_ids: &HashSet<ClientOrderId>) {

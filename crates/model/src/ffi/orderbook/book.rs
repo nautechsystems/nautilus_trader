@@ -322,5 +322,5 @@ pub extern "C" fn orderbook_pprint_to_cstr(
     book: &OrderBook_API,
     num_levels: usize,
 ) -> *const c_char {
-    str_to_cstr(&book.pprint(num_levels))
+    str_to_cstr(&book.pprint(num_levels, None))
 }

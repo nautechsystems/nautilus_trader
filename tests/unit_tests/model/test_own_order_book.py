@@ -1144,3 +1144,136 @@ def test_quantity_methods_with_status_and_grouping():
 
     assert len(grouped_submitted) == 1
     assert grouped_submitted[Decimal("100.00")] == Decimal("15")  # Only submitted order
+
+
+def test_own_order_book_pprint():
+    """
+    Test that the pprint method works correctly without grouping.
+    """
+    instrument_id = InstrumentId.from_str("AAPL.XNAS")
+    book = OwnOrderBook(instrument_id)
+
+    # Add orders at various prices
+    orders_data = [
+        (100.25, 10.0, OrderSide.BUY),
+        (100.75, 15.0, OrderSide.BUY),
+        (99.10, 5.0, OrderSide.BUY),
+        (101.25, 8.0, OrderSide.SELL),
+        (101.75, 12.0, OrderSide.SELL),
+    ]
+
+    for i, (price, size, side) in enumerate(orders_data):
+        book.add(
+            OwnBookOrder(
+                trader_id=TraderId("TRADER-001"),
+                client_order_id=ClientOrderId(f"O-{i+1}"),
+                venue_order_id=VenueOrderId(f"{i+1}"),
+                side=side,
+                price=Price(price, 2),
+                size=Quantity(size, 0),
+                order_type=OrderType.LIMIT,
+                time_in_force=TimeInForce.GTC,
+                status=OrderStatus.ACCEPTED,
+                ts_last=2,
+                ts_accepted=2,
+                ts_submitted=1,
+                ts_init=1,
+            ),
+        )
+
+    # Test pprint without grouping
+    output_no_grouping = book.pprint(10)
+    assert "100.25" in output_no_grouping or "100.75" in output_no_grouping
+    assert isinstance(output_no_grouping, str)
+    assert len(output_no_grouping) > 0
+
+
+def test_own_order_book_pprint_empty():
+    """
+    Test pprint with empty book.
+    """
+    instrument_id = InstrumentId.from_str("AAPL.XNAS")
+    book = OwnOrderBook(instrument_id)
+
+    # Test with empty book
+    output = book.pprint(5)
+    assert isinstance(output, str)
+    assert len(output) > 0
+    assert "bid_levels: 0" in output
+    assert "ask_levels: 0" in output
+
+    # Test with group_size on empty book
+    output_grouped = book.pprint(5, Decimal("1.0"))
+    assert isinstance(output_grouped, str)
+    assert output_grouped == (
+        "bid_levels: 0\n"
+        "ask_levels: 0\n"
+        "╭──────┬───────┬──────╮\n"
+        "│ bids │ price │ asks │\n"
+        "├──────┼───────┼──────┤"
+    )
+
+
+def test_own_order_book_pprint_with_group_size():
+    """
+    Test pprint with different group_size values.
+    """
+    instrument_id = InstrumentId.from_str("EURUSD.SIM")
+    book = OwnOrderBook(instrument_id)
+
+    # Add orders with 5-digit precision (typical for forex)
+    orders_data = [
+        (1.08234, 100000, OrderSide.BUY),
+        (1.08567, 200000, OrderSide.BUY),
+        (1.08789, 150000, OrderSide.SELL),
+        (1.09123, 175000, OrderSide.SELL),
+    ]
+
+    for i, (price, size, side) in enumerate(orders_data):
+        book.add(
+            OwnBookOrder(
+                trader_id=TraderId("TRADER-001"),
+                client_order_id=ClientOrderId(f"O-{i+1}"),
+                venue_order_id=VenueOrderId(f"{i+1}"),
+                side=side,
+                price=Price(price, 5),
+                size=Quantity(size, 0),
+                order_type=OrderType.LIMIT,
+                time_in_force=TimeInForce.GTC,
+                status=OrderStatus.ACCEPTED,
+                ts_last=2,
+                ts_accepted=2,
+                ts_submitted=1,
+                ts_init=1,
+            ),
+        )
+
+    # Test with different group sizes
+    output_001 = book.pprint(10, Decimal("0.001"))
+    output_01 = book.pprint(10, Decimal("0.01"))
+
+    assert isinstance(output_001, str)
+    assert isinstance(output_01, str)
+    assert output_001 == (
+        "bid_levels: 2\n"
+        "ask_levels: 2\n"
+        "╭────────┬───────┬────────╮\n"
+        "│ bids   │ price │ asks   │\n"
+        "├────────┼───────┼────────┤\n"
+        "│        │ 1.092 │ 175000 │\n"
+        "│        │ 1.088 │ 150000 │\n"
+        "│ 200000 │ 1.085 │        │\n"
+        "│ 100000 │ 1.082 │        │\n"
+        "╰────────┴───────┴────────╯"
+    )
+    assert output_01 == (
+        "bid_levels: 2\n"
+        "ask_levels: 2\n"
+        "╭────────┬───────┬────────╮\n"
+        "│ bids   │ price │ asks   │\n"
+        "├────────┼───────┼────────┤\n"
+        "│        │ 1.10  │ 175000 │\n"
+        "│        │ 1.09  │ 150000 │\n"
+        "│ 300000 │ 1.08  │        │\n"
+        "╰────────┴───────┴────────╯"
+    )

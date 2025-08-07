@@ -451,8 +451,8 @@ impl OrderBook {
 
     /// Return a formatted string representation of the order book.
     #[must_use]
-    pub fn pprint(&self, num_levels: usize) -> String {
-        pprint_book(&self.bids, &self.asks, num_levels)
+    pub fn pprint(&self, num_levels: usize, group_size: Option<Decimal>) -> String {
+        pprint_book(self, num_levels, group_size)
     }
 
     fn increment(&mut self, sequence: u64, ts_event: UnixNanos) {

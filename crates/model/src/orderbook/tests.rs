@@ -530,7 +530,7 @@ fn test_book_pprint() {
     book.add(order5, 0, 5, 500.into());
     book.add(order6, 0, 6, 600.into());
 
-    let pprint_output = book.pprint(3);
+    let pprint_output = book.pprint(3, None);
 
     let expected_output = "bid_levels: 3\n\
 ask_levels: 3\n\
