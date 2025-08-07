@@ -21,7 +21,6 @@ use serde::{Deserialize, Serialize};
 use strum::{Display, EnumIter, EnumString};
 
 use crate::{
-    data::HasTsInit,
     defi::{SharedChain, SharedDex},
     identifiers::InstrumentId,
     types::Quantity,
@@ -95,9 +94,9 @@ pub struct PoolLiquidityUpdate {
     /// The upper price tick boundary of the liquidity position.
     pub tick_upper: i32,
     /// The timestamp of the liquidity update in Unix nanoseconds.
-    pub timestamp: UnixNanos,
+    pub timestamp: Option<UnixNanos>,
     /// UNIX timestamp (nanoseconds) when the instance was created.
-    pub ts_init: UnixNanos,
+    pub ts_init: Option<UnixNanos>,
 }
 
 impl PoolLiquidityUpdate {
@@ -121,7 +120,7 @@ impl PoolLiquidityUpdate {
         amount1: Quantity,
         tick_lower: i32,
         tick_upper: i32,
-        timestamp: UnixNanos,
+        timestamp: Option<UnixNanos>,
     ) -> Self {
         Self {
             chain,
@@ -153,11 +152,5 @@ impl Display for PoolLiquidityUpdate {
             "PoolLiquidityUpdate(instrument_id={}, kind={}, amount0={}, amount1={}, liquidity={})",
             self.instrument_id, self.kind, self.amount0, self.amount1, self.position_liquidity
         )
-    }
-}
-
-impl HasTsInit for PoolLiquidityUpdate {
-    fn ts_init(&self) -> UnixNanos {
-        self.ts_init
     }
 }

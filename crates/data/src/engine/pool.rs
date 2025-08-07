@@ -49,17 +49,15 @@ impl PoolUpdater {
         }
     }
 
-    fn handle_pool_swap(&self, swap: &PoolSwap) {
-        if let Some(pool) = self.cache.borrow_mut().pool_mut(&self.instrument_id) {
-            // TODO: At the moment `Pool` only stores static metadata. We still
-            pool.ts_init = swap.timestamp; // Simple placeholder update
+    fn handle_pool_swap(&self, _swap: &PoolSwap) {
+        if let Some(_pool) = self.cache.borrow_mut().pool_mut(&self.instrument_id) {
+            // TODO: Implement handling pool swap
         }
     }
 
-    fn handle_pool_liquidity_update(&self, update: &PoolLiquidityUpdate) {
-        if let Some(pool) = self.cache.borrow_mut().pool_mut(&self.instrument_id) {
-            // Placeholder – keep the last interaction timestamp in-sync
-            pool.ts_init = update.timestamp;
+    fn handle_pool_liquidity_update(&self, _update: &PoolLiquidityUpdate) {
+        if let Some(_pool) = self.cache.borrow_mut().pool_mut(&self.instrument_id) {
+            // TODO: implement handling pool liquidity update
         }
     }
 }

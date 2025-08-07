@@ -20,7 +20,6 @@ use nautilus_core::UnixNanos;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    data::HasTsInit,
     defi::{SharedChain, SharedDex},
     enums::OrderSide,
     identifiers::InstrumentId,
@@ -59,9 +58,9 @@ pub struct PoolSwap {
     /// The exchange rate at which the swap occurred.
     pub price: Price,
     /// UNIX timestamp (nanoseconds) when the swap occurred.
-    pub timestamp: UnixNanos,
+    pub timestamp: Option<UnixNanos>,
     /// UNIX timestamp (nanoseconds) when the instance was initialized.
-    pub ts_init: UnixNanos,
+    pub ts_init: Option<UnixNanos>,
 }
 
 impl PoolSwap {
@@ -77,7 +76,7 @@ impl PoolSwap {
         transaction_hash: String,
         transaction_index: u32,
         log_index: u32,
-        timestamp: UnixNanos,
+        timestamp: Option<UnixNanos>,
         sender: Address,
         side: OrderSide,
         size: Quantity,
@@ -99,12 +98,6 @@ impl PoolSwap {
             price,
             ts_init: timestamp, // TODO: Use swap timestamp as init timestamp for now
         }
-    }
-}
-
-impl HasTsInit for PoolSwap {
-    fn ts_init(&self) -> UnixNanos {
-        self.ts_init
     }
 }
 
