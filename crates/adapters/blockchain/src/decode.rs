@@ -20,7 +20,7 @@ use crate::math::convert_u256_to_f64;
 
 /// Convert a `U256` amount to [`Quantity`].
 ///
-/// - If `decimals == 18` the value represents WEI and we leverage the dedicated
+/// - If `decimals == 18` the value represents wei and we leverage the dedicated
 ///   `Price::from_wei` constructor for loss-less conversion.
 /// - For other precisions we fall back to a floating-point conversion identical
 ///   to the pre-existing path in `convert_u256_to_f64` and then construct a
@@ -43,7 +43,7 @@ pub fn u256_to_quantity(amount: U256, decimals: u8) -> anyhow::Result<Quantity> 
 
 /// Convert a `U256` amount to [`Price`].
 ///
-/// - If `decimals == 18` the value represents WEI and we leverage the dedicated
+/// - If `decimals == 18` the value represents wei and we leverage the dedicated
 ///   `Quantity::from_wei` constructor for loss-less conversion.
 /// - For other precisions we fall back to a floating-point conversion identical
 ///   to the pre-existing path in `convert_u256_to_f64` and then construct a

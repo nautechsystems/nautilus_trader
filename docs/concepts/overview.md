@@ -16,7 +16,7 @@ and live deployment workloads.
 
 The platform is also universal and asset-class-agnostic — with any REST API or WebSocket stream able to be integrated via modular
 adapters. It supports high-frequency trading across a wide range of asset classes and instrument types
-including FX, Equities, Futures, Options, Crypto and Betting, enabling seamless operations across multiple venues simultaneously.
+including FX, Equities, Futures, Options, Crypto, DeFi, and Betting, enabling seamless operations across multiple venues simultaneously.
 
 ## Features
 

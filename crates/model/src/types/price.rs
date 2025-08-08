@@ -44,7 +44,7 @@ use crate::types::fixed::MAX_FLOAT_PRECISION;
 // -----------------------------------------------------------------------------
 
 // Use 128-bit integers when either `high-precision` or `defi` features are enabled. This is
-// required for the extended 18-decimal WEI precision used in DeFi contexts.
+// required for the extended 18-decimal wei precision used in DeFi contexts.
 
 #[cfg(feature = "high-precision")]
 pub type PriceRaw = i128;
@@ -158,7 +158,7 @@ impl Price {
         if precision > MAX_FLOAT_PRECISION {
             // Floats are only reliable up to ~16 decimal digits of precision regardless of feature flags
             anyhow::bail!(
-                "`precision` exceeded maximum float precision ({MAX_FLOAT_PRECISION}), use `Price::from_wei()` for WEI values instead"
+                "`precision` exceeded maximum float precision ({MAX_FLOAT_PRECISION}), use `Price::from_wei()` for wei values instead"
             );
         }
 

@@ -20,7 +20,7 @@ use alloy_primitives::U256;
 use crate::types::price::Price;
 
 impl Price {
-    /// Constructs a [`Price`] from a raw amount expressed in WEI (18-decimal fixed-point).
+    /// Constructs a [`Price`] from a raw amount expressed in wei (18-decimal fixed-point).
     ///
     /// The resulting [`Price`] will always have `precision` equal to `18`.
     ///
@@ -36,18 +36,18 @@ impl Price {
         let raw_u256: U256 = raw_wei.into();
         let raw_u128: u128 = raw_u256
             .try_into()
-            .expect("raw WEI value exceeds 128-bit range");
+            .expect("raw wei value exceeds 128-bit range");
 
         assert!(
             raw_u128 <= i128::MAX as u128,
-            "raw WEI value exceeds signed 128-bit range"
+            "raw wei value exceeds signed 128-bit range"
         );
 
         let raw_i128: i128 = raw_u128 as i128;
         Self::from_raw(raw_i128, 18)
     }
 
-    /// Converts this [`Price`] to a WEI amount (U256).
+    /// Converts this [`Price`] to a wei amount (U256).
     ///
     /// Only valid for prices with precision 18. For other precisions convert to precision 18 first.
     ///
@@ -58,13 +58,13 @@ impl Price {
     pub fn as_wei(&self) -> U256 {
         if self.precision != 18 {
             panic!(
-                "Failed to convert price with precision {} to WEI (requires precision 18)",
+                "Failed to convert price with precision {} to wei (requires precision 18)",
                 self.precision
             );
         }
 
         if self.raw < 0 {
-            panic!("Failed to convert negative price to WEI");
+            panic!("Failed to convert negative price to wei");
         }
 
         // SAFETY: We've checked that raw is non-negative, so casting to u128 is safe
@@ -84,7 +84,7 @@ mod tests {
 
     #[rstest]
     fn test_from_wei_basic() {
-        let price = Price::from_wei(U256::from(1_000_000_000_000_000_000_u128)); // 1 ETH in WEI
+        let price = Price::from_wei(U256::from(1_000_000_000_000_000_000_u128)); // 1 ETH in wei
         assert_eq!(price.precision, 18);
         assert_eq!(price.as_decimal(), dec!(1.0));
     }
@@ -98,7 +98,7 @@ mod tests {
             result
                 .unwrap_err()
                 .to_string()
-                .contains("use `Price::from_wei()` for WEI values")
+                .contains("use `Price::from_wei()` for wei values")
         );
 
         // But from_wei works fine with precision 18
@@ -116,7 +116,7 @@ mod tests {
 
     #[rstest]
     #[should_panic(
-        expected = "Failed to convert price with precision 2 to WEI (requires precision 18)"
+        expected = "Failed to convert price with precision 2 to wei (requires precision 18)"
     )]
     fn test_as_wei_wrong_precision() {
         let price = Price::new(1.23, 2);
@@ -149,7 +149,7 @@ mod tests {
 
     #[rstest]
     fn test_from_wei_very_large_value() {
-        // Test with a very large but valid WEI amount (1 billion ETH)
+        // Test with a very large but valid wei amount (1 billion ETH)
         let large_wei = U256::from(1_000_000_000_000_000_000_000_000_000_u128);
         let price = Price::from_wei(large_wei);
         assert_eq!(price.precision, 18);
@@ -158,7 +158,7 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "raw WEI value exceeds 128-bit range")]
+    #[should_panic(expected = "raw wei value exceeds 128-bit range")]
     fn test_from_wei_overflow() {
         let overflow_wei = U256::from(u128::MAX) + U256::from(1u64);
         let _ = Price::from_wei(overflow_wei);
@@ -166,9 +166,9 @@ mod tests {
 
     #[rstest]
     fn test_from_wei_small_amounts() {
-        // Test various small WEI amounts
+        // Test various small wei amounts
         let test_cases = vec![
-            (1_u128, dec!(0.000000000000000001)),    // 1 WEI
+            (1_u128, dec!(0.000000000000000001)),    // 1 wei
             (1000_u128, dec!(0.000000000000001)),    // 1 picoether
             (1_000_000_u128, dec!(0.000000000001)),  // 1 nanoether
             (1_000_000_000_u128, dec!(0.000000001)), // 1 gwei
@@ -184,7 +184,7 @@ mod tests {
 
     #[rstest]
     fn test_from_wei_large_amounts() {
-        // Test various large WEI amounts
+        // Test various large wei amounts
         let test_cases = vec![
             (1_000_000_000_000_000_000_u128, dec!(1)),        // 1 ETH
             (10_000_000_000_000_000_000_u128, dec!(10)),      // 10 ETH

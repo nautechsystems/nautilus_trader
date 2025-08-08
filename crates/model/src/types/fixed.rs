@@ -99,7 +99,7 @@ pub const PRECISION_DIFF_SCALAR: f64 = 1.0;
 /// which has approximately 15-17 significant decimal digits. Beyond 16 decimal places,
 /// floating-point arithmetic becomes unreliable due to rounding errors.
 ///
-/// For higher precision values (such as 18-decimal WEI values in DeFi), specialized
+/// For higher precision values (such as 18-decimal wei values in DeFi), specialized
 /// constructors that work with integer representations should be used instead.
 pub const MAX_FLOAT_PRECISION: u8 = 16;
 
