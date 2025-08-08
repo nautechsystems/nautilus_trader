@@ -1079,7 +1079,7 @@ cdef class MarketDataClient(DataClient):
             client_id=self.id,
             venue=instrument.venue,
             data_type=DataType(Instrument, metadata=({"instrument_id": instrument.id})),
-            data=instrument,
+            data=[instrument],
             correlation_id=correlation_id,
             response_id=UUID4(),
             start=start,

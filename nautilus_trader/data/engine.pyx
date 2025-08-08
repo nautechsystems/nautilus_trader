@@ -32,8 +32,6 @@ just need to override the `execute`, `process`, `send` and `receive` methods.
 from typing import Callable
 
 from nautilus_trader.common.enums import LogColor
-from nautilus_trader.core import nautilus_pyo3
-from nautilus_trader.core.datetime import max_date
 from nautilus_trader.core.datetime import min_date
 from nautilus_trader.core.datetime import time_object_to_dt
 from nautilus_trader.data.config import DataEngineConfig
@@ -121,10 +119,6 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-
-
-cdef inline uint64_t _instrument_ts_init(Instrument instrument):
-    return instrument.ts_init
 
 
 cdef class DataEngine(Component):
@@ -316,6 +310,23 @@ cdef class DataEngine(Component):
 
         """
         return self._external_clients.copy()
+
+    cpdef bint _is_backtest_client(self, DataClient client):
+        """
+        Check if we're in a backtest context by looking for the default backtest client.
+
+        Returns
+        -------
+        bool
+            True if in backtest context, else False.
+
+        """
+        # Avoid importing `BacktestMarketDataClient` from the `backtest` subpackage at
+        # module import time – doing so creates a circular import between
+        # `nautilus_trader.data` and `nautilus_trader.backtest`.
+        from nautilus_trader.backtest.data_client import BacktestMarketDataClient
+
+        return isinstance(client, BacktestMarketDataClient)
 
 # --REGISTRATION ----------------------------------------------------------------------------------
 
@@ -1443,12 +1454,7 @@ cdef class DataEngine(Component):
     cpdef void _handle_date_range_request(self, DataClient client, RequestData request):
         cdef DataClient used_client = client
 
-        # Avoid importing `BacktestMarketDataClient` from the `backtest` subpackage at
-        # module import time – doing so creates a circular import between
-        # `nautilus_trader.data` and `nautilus_trader.backtest`.
-        from nautilus_trader.backtest.data_client import BacktestMarketDataClient
-
-        if isinstance(client, BacktestMarketDataClient):
+        if self._is_backtest_client(client):
             used_client = None
 
         # Capping dates to the now datetime
@@ -1627,8 +1633,7 @@ cdef class DataEngine(Component):
                 self._log.error(f"Cannot find instrument for {request.instrument_id}")
                 return
 
-            data = data[-1]
-        elif isinstance(request, RequestInstruments):
+        if isinstance(request, RequestInstruments) or isinstance(request, RequestInstrument):
             only_last = request.params.get("only_last", True)
 
             if only_last:
@@ -1905,11 +1910,7 @@ cdef class DataEngine(Component):
             if response_2.data_type.type == Instrument:
                 update_catalog = response_2.params.get("update_catalog", False)
                 force_update_catalog = response_2.params.get("force_update_catalog", False)
-
-                if isinstance(response_2.data, list):
-                    self._handle_instruments(response_2.data, update_catalog, force_update_catalog)
-                else:
-                    self._handle_instrument(response_2.data, update_catalog, force_update_catalog)
+                self._handle_instruments(response_2.data, update_catalog, force_update_catalog)
             elif response_2.data_type.type == QuoteTick:
                 if response_2.params.get("bars_market_data_type"):
                     response_2.data = self._handle_aggregated_bars(response_2)
@@ -2285,7 +2286,7 @@ cdef class DataEngine(Component):
         return topic
 
     # Python wrapper to enable callbacks
-    cpdef void _internal_update_instruments(self, list instruments: [Instrument]):
+    cpdef void _internal_update_instruments(self, list instruments):
         # Handle all instruments individually
         cdef Instrument instrument
 

@@ -314,7 +314,6 @@ cdef class Actor(Component):
 # -- HANDLERS -------------------------------------------------------------------------------------
 
     cpdef void _handle_data_response(self, DataResponse response)
-    cpdef void _handle_instrument_response(self, DataResponse response)
     cpdef void _handle_instruments_response(self, DataResponse response)
     cpdef void _handle_quote_ticks_response(self, DataResponse response)
     cpdef void _handle_trade_ticks_response(self, DataResponse response)
