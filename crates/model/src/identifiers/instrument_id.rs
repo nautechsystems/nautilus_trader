@@ -25,11 +25,8 @@ use nautilus_core::correctness::check_valid_string;
 use serde::{Deserialize, Deserializer, Serialize};
 
 #[cfg(feature = "defi")]
-use crate::defi::validation::validate_address;
-use crate::{
-    defi::Blockchain,
-    identifiers::{Symbol, Venue},
-};
+use crate::defi::{Blockchain, validation::validate_address};
+use crate::identifiers::{Symbol, Venue};
 
 /// Represents a valid instrument ID.
 ///
