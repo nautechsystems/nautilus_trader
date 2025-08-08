@@ -59,6 +59,7 @@
 pub mod accumulator;
 pub mod config;
 pub mod data_client;
+pub mod data_iterator;
 pub mod engine;
 pub mod exchange;
 pub mod execution_client;
