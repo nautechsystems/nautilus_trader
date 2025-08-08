@@ -21,7 +21,7 @@ use nautilus_common::{cache::Cache, clock::Clock};
 use nautilus_data::client::DataClient;
 use nautilus_system::factories::{ClientConfig, DataClientFactory};
 
-use crate::{config::BlockchainDataClientConfig, data::BlockchainDataClient};
+use crate::{config::BlockchainDataClientConfig, data::client::BlockchainDataClient};
 
 impl ClientConfig for BlockchainDataClientConfig {
     fn as_any(&self) -> &dyn Any {
