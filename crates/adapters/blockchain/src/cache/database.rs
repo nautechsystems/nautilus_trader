@@ -15,7 +15,7 @@
 
 use alloy::primitives::U256;
 use nautilus_model::defi::{
-    Block, Chain, Dex, Pool, PoolLiquidityUpdate, PoolSwap, SharedChain, Token,
+    Block, Chain, Pool, PoolLiquidityUpdate, PoolSwap, SharedChain, SharedDex, Token,
 };
 use sqlx::{PgPool, postgres::PgConnectOptions};
 
@@ -246,7 +246,7 @@ impl BlockchainCacheDatabase {
     /// # Errors
     ///
     /// Returns an error if the database operation fails.
-    pub async fn add_dex(&self, dex: &Dex) -> anyhow::Result<()> {
+    pub async fn add_dex(&self, dex: SharedDex) -> anyhow::Result<()> {
         sqlx::query(
             r"
             INSERT INTO dex (

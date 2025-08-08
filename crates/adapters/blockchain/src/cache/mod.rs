@@ -20,18 +20,18 @@
 //! DeFi protocol events.
 
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     sync::Arc,
 };
 
 use alloy::primitives::Address;
 use nautilus_core::UnixNanos;
 use nautilus_model::defi::{
-    Block, Pool, PoolLiquidityUpdate, PoolSwap, SharedChain, SharedPool, Token,
+    Block, DexType, Pool, PoolLiquidityUpdate, PoolSwap, SharedChain, SharedDex, SharedPool, Token,
 };
 use sqlx::postgres::PgConnectOptions;
 
-use crate::{cache::database::BlockchainCacheDatabase, exchanges::extended::DexExtended};
+use crate::cache::database::BlockchainCacheDatabase;
 
 pub mod database;
 pub mod rows;
@@ -43,8 +43,8 @@ pub struct BlockchainCache {
     chain: SharedChain,
     /// Map of block numbers to their corresponding timestamp
     block_timestamps: BTreeMap<u64, UnixNanos>,
-    /// Map of DEX identifiers to their corresponding extended DEX objects.
-    dexes: HashMap<String, DexExtended>,
+    /// Map of DEX identifiers to their corresponding DEX objects.
+    dexes: HashMap<DexType, SharedDex>,
     /// Map of token addresses to their corresponding `Token` objects.
     tokens: HashMap<Address, Token>,
     /// Map of pool addresses to their corresponding `Pool` objects.
@@ -141,19 +141,18 @@ impl BlockchainCache {
     }
 
     /// Loads DEX exchange pools from the database into the in-memory cache.
-    pub async fn load_pools(&mut self, dex_id: &str) -> anyhow::Result<()> {
+    pub async fn load_pools(&mut self, dex_id: &DexType) -> anyhow::Result<()> {
         if let Some(database) = &self.database {
-            let dex_extended = self
+            let dex = self
                 .get_dex(dex_id)
-                .cloned()
                 .expect("Dex should have been registered.");
             let pool_rows = database
-                .load_pools(self.chain.clone(), &dex_extended.name.to_string())
+                .load_pools(self.chain.clone(), &dex_id.to_string())
                 .await?;
             tracing::info!(
                 "Loading {} pools for DEX {} from cache database",
                 pool_rows.len(),
-                dex_id
+                dex_id,
             );
 
             for pool_row in pool_rows {
@@ -186,7 +185,7 @@ impl BlockchainCache {
                 // Construct pool from row data and cached tokens
                 let pool = Pool::new(
                     self.chain.clone(),
-                    dex_extended.dex.clone(),
+                    dex.clone(),
                     pool_row.address,
                     pool_row.creation_block as u64,
                     token0.clone(),
@@ -285,14 +284,14 @@ impl BlockchainCache {
     /// # Errors
     ///
     /// Returns an error if adding the DEX to the database fails.
-    pub async fn add_dex(&mut self, dex_id: String, dex: DexExtended) -> anyhow::Result<()> {
-        tracing::info!("Adding dex {dex_id} to the cache");
+    pub async fn add_dex(&mut self, dex: SharedDex) -> anyhow::Result<()> {
+        tracing::info!("Adding dex {} to the cache", dex.name);
 
         if let Some(database) = &self.database {
-            database.add_dex(&dex).await?;
+            database.add_dex(dex.clone()).await?;
         }
 
-        self.dexes.insert(dex_id, dex);
+        self.dexes.insert(dex.name, dex);
         Ok(())
     }
 
@@ -357,8 +356,14 @@ impl BlockchainCache {
 
     /// Returns a reference to the `DexExtended` associated with the given name.
     #[must_use]
-    pub fn get_dex(&self, name: &str) -> Option<&DexExtended> {
-        self.dexes.get(name)
+    pub fn get_dex(&self, dex_id: &DexType) -> Option<SharedDex> {
+        self.dexes.get(&dex_id).cloned()
+    }
+
+    /// Returns a list of registered `DexType` in the cache.
+    #[must_use]
+    pub fn get_registered_dexes(&self) -> HashSet<DexType> {
+        self.dexes.keys().copied().collect()
     }
 
     /// Returns a reference to the pool associated with the given address.
