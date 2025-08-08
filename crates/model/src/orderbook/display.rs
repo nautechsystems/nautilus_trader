@@ -15,7 +15,6 @@
 
 //! Functions related to order book display.
 
-use ahash::AHashSet;
 use rust_decimal::Decimal;
 use tabled::{Table, Tabled, settings::Style};
 
@@ -40,46 +39,30 @@ pub(crate) fn pprint_book(
         let bid_quantities = order_book.group_bids(group_size, Some(num_levels));
         let ask_quantities = order_book.group_asks(group_size, Some(num_levels));
 
-        let all_prices: AHashSet<Decimal> = bid_quantities
-            .keys()
-            .chain(ask_quantities.keys())
-            .cloned()
-            .collect();
-        let mut sorted_prices: Vec<Decimal> = all_prices.into_iter().collect();
-        sorted_prices.sort_by(|a, b| b.cmp(a)); // Descending order for display
+        // Use the precision of the group_size for consistent formatting
+        let precision = group_size.scale();
 
-        // Determine consistent precision from the first price
-        let precision = sorted_prices.first().map_or(1, |p| p.scale());
+        let mut data = Vec::new();
 
-        sorted_prices
-            .iter()
-            .map(|price| {
-                let bid_quantity = bid_quantities.get(price);
-                let ask_quantity = ask_quantities.get(price);
+        // Add ask levels (highest to lowest)
+        for (price, qty) in ask_quantities.iter().rev() {
+            data.push(BookLevelDisplay {
+                bids: String::new(),
+                price: format!("{price:.precision$}", precision = precision as usize),
+                asks: qty.to_string(),
+            });
+        }
 
-                BookLevelDisplay {
-                    bids: if let Some(qty) = bid_quantity {
-                        if *qty > Decimal::ZERO {
-                            qty.to_string()
-                        } else {
-                            String::new()
-                        }
-                    } else {
-                        String::new()
-                    },
-                    price: format!("{price:.precision$}", precision = precision as usize),
-                    asks: if let Some(qty) = ask_quantity {
-                        if *qty > Decimal::ZERO {
-                            qty.to_string()
-                        } else {
-                            String::new()
-                        }
-                    } else {
-                        String::new()
-                    },
-                }
-            })
-            .collect()
+        // Add bid levels (highest to lowest)
+        for (price, qty) in &bid_quantities {
+            data.push(BookLevelDisplay {
+                bids: qty.to_string(),
+                price: format!("{price:.precision$}", precision = precision as usize),
+                asks: String::new(),
+            });
+        }
+
+        data
     } else {
         let ask_levels: Vec<(&BookPrice, &BookLevel)> = order_book
             .asks
@@ -154,46 +137,30 @@ pub(crate) fn pprint_own_book(
         let ask_quantities =
             own_order_book.ask_quantity(None, Some(num_levels), Some(group_size), None, None);
 
-        let all_prices: AHashSet<Decimal> = bid_quantities
-            .keys()
-            .chain(ask_quantities.keys())
-            .cloned()
-            .collect();
-        let mut sorted_prices: Vec<Decimal> = all_prices.into_iter().collect();
-        sorted_prices.sort_by(|a, b| b.cmp(a)); // Descending order for display
+        // Use the precision of the group_size for consistent formatting
+        let precision = group_size.scale();
 
-        // Determine consistent precision from the first price
-        let precision = sorted_prices.first().map_or(1, |p| p.scale());
+        let mut data = Vec::new();
 
-        sorted_prices
-            .iter()
-            .map(|price| {
-                let bid_quantity = bid_quantities.get(price);
-                let ask_quantity = ask_quantities.get(price);
+        // Add ask levels (highest to lowest)
+        for (price, qty) in ask_quantities.iter().rev() {
+            data.push(BookLevelDisplay {
+                bids: String::new(),
+                price: format!("{price:.precision$}", precision = precision as usize),
+                asks: qty.to_string(),
+            });
+        }
 
-                BookLevelDisplay {
-                    bids: if let Some(qty) = bid_quantity {
-                        if *qty > Decimal::ZERO {
-                            qty.to_string()
-                        } else {
-                            String::new()
-                        }
-                    } else {
-                        String::new()
-                    },
-                    price: format!("{price:.precision$}", precision = precision as usize),
-                    asks: if let Some(qty) = ask_quantity {
-                        if *qty > Decimal::ZERO {
-                            qty.to_string()
-                        } else {
-                            String::new()
-                        }
-                    } else {
-                        String::new()
-                    },
-                }
-            })
-            .collect()
+        // Add bid levels (highest to lowest)
+        for (price, qty) in &bid_quantities {
+            data.push(BookLevelDisplay {
+                bids: qty.to_string(),
+                price: format!("{price:.precision$}", precision = precision as usize),
+                asks: String::new(),
+            });
+        }
+
+        data
     } else {
         let ask_levels: Vec<(&BookPrice, &OwnBookLevel)> = own_order_book
             .asks
