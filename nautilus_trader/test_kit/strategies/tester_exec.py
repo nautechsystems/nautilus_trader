@@ -65,6 +65,8 @@ class ExecTesterConfig(StrategyConfig, frozen=True):
     use_post_only: bool = True
     use_quote_quantity: bool = False
     emulation_trigger: str = "NO_TRIGGER"
+    cancel_orders_on_stop: bool = True
+    close_positions_on_stop: bool = True
     reduce_only_on_stop: bool = True
     dry_run: bool = False
     log_data: bool = True
@@ -307,7 +309,8 @@ class ExecTester(Strategy):
             self.log.warning("Dry run mode, skipping cancel all orders and close all positions")
             return
 
-        self.cancel_all_orders(self.config.instrument_id, client_id=self.client_id)
+        if self.config.cancel_orders_on_stop:
+            self.cancel_all_orders(self.config.instrument_id, client_id=self.client_id)
 
         # # Uncomment to test individual cancels
         # for order in self.cache.orders_open(instrument_id=self.config.instrument_id):
@@ -318,11 +321,12 @@ class ExecTester(Strategy):
         # if open_orders:
         #     self.cancel_orders(open_orders, client_id=self.client_id)
 
-        self.close_all_positions(
-            instrument_id=self.config.instrument_id,
-            client_id=self.client_id,
-            reduce_only=self.config.reduce_only_on_stop,
-        )
+        if self.config.close_positions_on_stop:
+            self.close_all_positions(
+                instrument_id=self.config.instrument_id,
+                client_id=self.client_id,
+                reduce_only=self.config.reduce_only_on_stop,
+            )
 
         # Unsubscribe from data
         if self.config.subscribe_quotes:
