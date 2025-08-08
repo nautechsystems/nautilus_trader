@@ -38,5 +38,9 @@ pub static UNISWAP_V3: LazyLock<DexExtended> = LazyLock::new(|| {
     dex.set_pool_created_event_parsing(
         crate::exchanges::ethereum::uniswap_v3::parse_pool_created_event,
     );
+    dex.set_swap_event_parsing(crate::exchanges::ethereum::uniswap_v3::parse_swap_event);
+    dex.set_mint_event_parsing(crate::exchanges::ethereum::uniswap_v3::parse_mint_event);
+    dex.set_burn_event_parsing(crate::exchanges::ethereum::uniswap_v3::parse_burn_event);
+    dex.set_convert_trade_data(crate::exchanges::ethereum::uniswap_v3::convert_to_trade_data);
     dex
 });

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::LazyLock};
 
 use crate::exchanges::extended::DexExtended;
 
@@ -32,39 +32,24 @@ pub use balancer_v3::BALANCER_V3;
 pub use curve_finance::CURVE_FINANCE;
 pub use fluid::FLUID_DEX;
 pub use maverick_v2::MAVERICK_V2;
+use nautilus_model::defi::DexType;
 pub use pancakeswap_v3::PANCAKESWAP_V3;
 pub use uniswap_v2::UNISWAP_V2;
 pub use uniswap_v3::UNISWAP_V3;
 pub use uniswap_v4::UNISWAP_V4;
 
-/// Returns a slice of all Ethereum Dexes
-#[must_use]
-pub fn all() -> Vec<&'static DexExtended> {
-    vec![
-        &*UNISWAP_V2,
-        &*UNISWAP_V3,
-        &*UNISWAP_V4,
-        &*CURVE_FINANCE,
-        &*FLUID_DEX,
-        &*MAVERICK_V2,
-        &*BALANCER_V2,
-        &*BALANCER_V3,
-        &*PANCAKESWAP_V3,
-    ]
-}
+pub static ETHEREUM_DEX_EXTENDED_MAP: LazyLock<HashMap<DexType, &'static DexExtended>> =
+    LazyLock::new(|| {
+        let mut map = HashMap::new();
+        map.insert(UNISWAP_V2.dex.name, &*UNISWAP_V2);
+        map.insert(UNISWAP_V3.dex.name, &*UNISWAP_V3);
+        map.insert(UNISWAP_V4.dex.name, &*UNISWAP_V4);
+        map.insert(CURVE_FINANCE.dex.name, &*CURVE_FINANCE);
+        map.insert(FLUID_DEX.dex.name, &*FLUID_DEX);
+        map.insert(MAVERICK_V2.dex.name, &*MAVERICK_V2);
+        map.insert(BALANCER_V2.dex.name, &*BALANCER_V2);
+        map.insert(BALANCER_V3.dex.name, &*BALANCER_V3);
+        map.insert(PANCAKESWAP_V3.dex.name, &*PANCAKESWAP_V3);
 
-/// Returns a map of Ethereum DEX name to Dex reference for easy lookup
-#[must_use]
-pub fn dex_map() -> HashMap<String, &'static DexExtended> {
-    let mut map = HashMap::new();
-    map.insert(UNISWAP_V2.id(), &*UNISWAP_V2);
-    map.insert(UNISWAP_V3.id(), &*UNISWAP_V3);
-    map.insert(UNISWAP_V4.id(), &*UNISWAP_V4);
-    map.insert(CURVE_FINANCE.id(), &*CURVE_FINANCE);
-    map.insert(FLUID_DEX.id(), &*FLUID_DEX);
-    map.insert(MAVERICK_V2.id(), &*MAVERICK_V2);
-    map.insert(BALANCER_V2.id(), &*BALANCER_V2);
-    map.insert(BALANCER_V3.id(), &*BALANCER_V3);
-    map.insert(PANCAKESWAP_V3.id(), &*PANCAKESWAP_V3);
-    map
-}
+        map
+    });

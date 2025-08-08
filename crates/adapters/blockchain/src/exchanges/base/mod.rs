@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::LazyLock};
 
 use crate::exchanges::extended::DexExtended;
 
@@ -35,44 +35,26 @@ pub use baseswap_v2::BASESWAP_V2;
 pub use basex::BASEX;
 pub use maverick_v1::MAVERICK_V1;
 pub use maverick_v2::MAVERICK_V2;
+use nautilus_model::defi::DexType;
 pub use pancakeswap_v3::PANCAKESWAP_V3;
 pub use sushiswap_v3::SUSHISWAP_V3;
 pub use uniswap_v2::UNISWAP_V2;
 pub use uniswap_v3::UNISWAP_V3;
 pub use uniswap_v4::UNISWAP_V4;
 
-/// Returns a vector of references to all Base Dexes
-#[must_use]
-pub fn all() -> Vec<&'static DexExtended> {
-    vec![
-        &*AERODROME_SLIPSTREAM,
-        &*AERODROME_V1,
-        &*UNISWAP_V2,
-        &*UNISWAP_V3,
-        &*UNISWAP_V4,
-        &*PANCAKESWAP_V3,
-        &*MAVERICK_V1,
-        &*MAVERICK_V2,
-        &*SUSHISWAP_V3,
-        &*BASEX,
-        &*BASESWAP_V2,
-    ]
-}
-
-/// Returns a map of Base DEX name to Dex reference for easy lookup
-#[must_use]
-pub fn dex_map() -> HashMap<String, &'static DexExtended> {
-    let mut map = HashMap::new();
-    map.insert(AERODROME_SLIPSTREAM.id(), &*AERODROME_SLIPSTREAM);
-    map.insert(AERODROME_V1.id(), &*AERODROME_V1);
-    map.insert(UNISWAP_V2.id(), &*UNISWAP_V2);
-    map.insert(UNISWAP_V3.id(), &*UNISWAP_V3);
-    map.insert(UNISWAP_V4.id(), &*UNISWAP_V4);
-    map.insert(PANCAKESWAP_V3.id(), &*PANCAKESWAP_V3);
-    map.insert(MAVERICK_V1.id(), &*MAVERICK_V1);
-    map.insert(MAVERICK_V2.id(), &*MAVERICK_V2);
-    map.insert(SUSHISWAP_V3.id(), &*SUSHISWAP_V3);
-    map.insert(BASEX.id(), &*BASEX);
-    map.insert(BASESWAP_V2.id(), &*BASESWAP_V2);
-    map
-}
+pub static BASE_DEX_EXTENDED_MAP: LazyLock<HashMap<DexType, &'static DexExtended>> =
+    LazyLock::new(|| {
+        let mut map = HashMap::new();
+        map.insert(AERODROME_SLIPSTREAM.dex.name, &*AERODROME_SLIPSTREAM);
+        map.insert(AERODROME_V1.dex.name, &*AERODROME_V1);
+        map.insert(UNISWAP_V2.dex.name, &*UNISWAP_V2);
+        map.insert(UNISWAP_V3.dex.name, &*UNISWAP_V3);
+        map.insert(UNISWAP_V4.dex.name, &*UNISWAP_V4);
+        map.insert(PANCAKESWAP_V3.dex.name, &*PANCAKESWAP_V3);
+        map.insert(MAVERICK_V1.dex.name, &*MAVERICK_V1);
+        map.insert(MAVERICK_V2.dex.name, &*MAVERICK_V2);
+        map.insert(SUSHISWAP_V3.dex.name, &*SUSHISWAP_V3);
+        map.insert(BASEX.dex.name, &*BASEX);
+        map.insert(BASESWAP_V2.dex.name, &*BASESWAP_V2);
+        map
+    });
