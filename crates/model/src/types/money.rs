@@ -109,7 +109,7 @@ impl Money {
         if currency.precision > MAX_FLOAT_PRECISION {
             // Floats are only reliable up to ~16 decimal digits of precision regardless of feature flags
             anyhow::bail!(
-                "`currency.precision` exceeded maximum float precision ({MAX_FLOAT_PRECISION}), use `Money::from_wei()` for WEI values instead"
+                "`currency.precision` exceeded maximum float precision ({MAX_FLOAT_PRECISION}), use `Money::from_wei()` for wei values instead"
             );
         }
 
@@ -521,9 +521,9 @@ mod tests {
     #[case(
         1_000_000_000_000_000_000_i128,
         18,
-        "WEI",
-        "Money(1000000000000000000, WEI)",
-        "1000000000000000000 WEI"
+        "wei",
+        "Money(1000000000000000000, wei)",
+        "1000000000000000000 wei"
     )] // High precision
     #[case(
         2_500_000_000_000_000_000_i128,
