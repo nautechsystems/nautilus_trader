@@ -28,7 +28,6 @@ from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.core.nautilus_pyo3 import OKXContractType
 from nautilus_trader.core.nautilus_pyo3 import OKXInstrumentType
 from nautilus_trader.live.node import TradingNode
-from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.test_kit.strategies.tester_exec import ExecTester
@@ -75,7 +74,6 @@ config_node = TradingNodeConfig(
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,
         # reconciliation_lookback_mins=60,
-        filtered_client_order_ids=[ClientOrderId("O20250711001")],  # For demonstration
         open_check_interval_secs=5.0,
         open_check_open_only=True,
         # own_books_audit_interval_secs=2.0,
@@ -157,7 +155,9 @@ config_strat = ExecTesterConfig(
     # open_position_on_start_qty=order_qty,
     order_qty=order_qty,
     use_post_only=True,
-    log_data=True,
+    cancel_orders_on_stop=True,
+    close_positions_on_stop=True,
+    log_data=False,
     dry_run=False,
 )
 
