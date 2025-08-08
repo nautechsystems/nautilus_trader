@@ -31,6 +31,7 @@ from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.portfolio.config import PortfolioConfig
 from nautilus_trader.test_kit.strategies.tester_exec import ExecTester
 from nautilus_trader.test_kit.strategies.tester_exec import ExecTesterConfig
 
@@ -84,6 +85,7 @@ config_node = TradingNodeConfig(
         persist_account_events=False,  # Useful for HFT ops where this can quickly accumulate
         buffer_interval_ms=100,
     ),
+    portfolio=PortfolioConfig(min_account_state_logging_interval_ms=1_000),
     # message_bus=MessageBusConfig(
     #     database=DatabaseConfig(),
     #     timestamps_as_iso8601=True,

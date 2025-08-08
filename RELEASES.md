@@ -27,6 +27,7 @@ Released on TBD (UTC).
 - Added `tick_scheme_name` field for instrument dictionary conversions
 - Added default `FixedTickScheme`(s) for all valid precisions
 - Added PancakeSwapV3 pool parsing (#2829), thanks @filipmacek
+- Added `PortfolioConfig.min_account_state_logging_interval_ms` config option for throttling account state logging
 
 ### Breaking Changes
 - Added `multiplier` field for `CurrencyPair` Arrow schema
