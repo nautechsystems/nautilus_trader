@@ -18,7 +18,7 @@
 use std::sync::Arc;
 
 use nautilus_infrastructure::sql::pg::PostgresConnectOptions;
-use nautilus_model::defi::Chain;
+use nautilus_model::defi::{Chain, DexType};
 use pyo3::prelude::*;
 
 use crate::config::BlockchainDataClientConfig;
@@ -31,7 +31,7 @@ impl BlockchainDataClientConfig {
     #[pyo3(signature = (chain, dex_ids, http_rpc_url, rpc_requests_per_second=None, wss_rpc_url=None, use_hypersync_for_live_data=true, from_block=None, postgres_cache_database_config=None))]
     fn py_new(
         chain: &Chain,
-        dex_ids: Vec<String>,
+        dex_ids: Vec<DexType>,
         http_rpc_url: String,
         rpc_requests_per_second: Option<u32>,
         wss_rpc_url: Option<String>,
