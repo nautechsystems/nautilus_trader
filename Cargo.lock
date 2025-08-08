@@ -5076,6 +5076,7 @@ dependencies = [
  "nautilus-core",
  "nautilus-model",
  "pyo3",
+ "rand 0.9.2",
  "reqwest",
  "rstest",
  "serde_json",
