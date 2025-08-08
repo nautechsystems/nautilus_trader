@@ -33,6 +33,7 @@ from nautilus_trader.live import LiveNode  # type: ignore[attr-defined]
 from nautilus_trader.model import Chain  # type: ignore[attr-defined]
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import TraderId
+from nautilus_trader.model import DexType  # type: ignore[attr-defined]
 
 
 def main() -> None:
@@ -52,7 +53,7 @@ def main() -> None:
     # RPC URLs (equivalent to get_env_var calls)
     http_rpc_url = os.getenv("RPC_HTTP_URL", "https://arb1.arbitrum.io/rpc")
     wss_rpc_url = os.getenv("RPC_WSS_URL", "wss://arb1.arbitrum.io/ws")
-    from_block = 360_000_000  # Sync from reasonably recent block for now
+    from_block = 0
 
     print(f"HTTP RPC URL: {http_rpc_url}")
     print(f"WSS RPC URL: {wss_rpc_url}")
@@ -62,7 +63,9 @@ def main() -> None:
     client_factory = BlockchainDataClientFactory()
     client_config = BlockchainDataClientConfig(
         chain=chain,
-        dex_ids=["Arbitrum:UniswapV3"],
+        dex_ids=[
+            DexType.UniswapV3,
+        ],
         http_rpc_url=http_rpc_url,
         wss_rpc_url=wss_rpc_url,
         use_hypersync_for_live_data=True,
@@ -82,7 +85,9 @@ def main() -> None:
             "log_commands": True,
             "chain": "Arbitrum",
             "client_id": "BLOCKCHAIN-Arbitrum",
-            "pools": ["0xC31E54c7a869B9FcBEcc14363CF510d1c41fa443.Arbitrum:UniswapV3"],
+            "pools": [
+                "0xC31E54c7a869B9FcBEcc14363CF510d1c41fa443.Arbitrum:UniswapV3",
+            ],
         },
     )
 
