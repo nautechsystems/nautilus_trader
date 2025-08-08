@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.stdint cimport uint64_t
+
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.accounting.manager cimport AccountsManager
 from nautilus_trader.cache.cache cimport Cache
@@ -46,6 +48,7 @@ cdef class Portfolio(PortfolioFacade):
     cdef bint _use_mark_prices
     cdef bint _use_mark_xrates
     cdef bint _convert_to_account_base_currency
+    cdef uint64_t _min_account_state_logging_interval_ns
     cdef str _log_price
     cdef str _log_xrate
 
@@ -56,6 +59,7 @@ cdef class Portfolio(PortfolioFacade):
     cdef object _index_bet_positions
     cdef set[InstrumentId] _pending_calcs
     cdef dict[InstrumentId, Price] _bar_close_prices
+    cdef dict[AccountId, uint64_t] _last_account_state_log_ts
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 

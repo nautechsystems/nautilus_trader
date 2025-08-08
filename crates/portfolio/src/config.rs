@@ -36,6 +36,11 @@ pub struct PortfolioConfig {
     /// This setting is only effective for accounts with a specified base currency.
     #[serde(default = "default_true")]
     pub convert_to_account_base_currency: bool,
+    /// The minimum interval (milliseconds) between logging account state events for the same account.
+    /// When set, account state updates will only be logged if this much time has passed since the last log.
+    /// Useful for HFT deployments to prevent excessive logging when account states change rapidly.
+    #[serde(default)]
+    pub min_account_state_logging_interval_ms: Option<u64>,
     /// If debug mode is active (will provide extra debug logging).
     #[serde(default)]
     pub debug: bool,
@@ -52,6 +57,7 @@ impl Default for PortfolioConfig {
             use_mark_xrates: false,
             bar_updates: true,
             convert_to_account_base_currency: true,
+            min_account_state_logging_interval_ms: None,
             debug: false,
         }
     }

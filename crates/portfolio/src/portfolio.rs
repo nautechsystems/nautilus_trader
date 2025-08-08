@@ -31,13 +31,13 @@ use nautilus_common::{
         handler::{ShareableMessageHandler, TypedMessageHandler},
     },
 };
-use nautilus_core::WeakCell;
+use nautilus_core::{WeakCell, datetime::NANOSECONDS_IN_MILLISECOND};
 use nautilus_model::{
     accounts::AccountAny,
     data::{Bar, QuoteTick},
     enums::{OrderSide, OrderType, PositionSide, PriceType},
     events::{AccountState, OrderEventAny, position::PositionEvent},
-    identifiers::{InstrumentId, Venue},
+    identifiers::{AccountId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     position::Position,
@@ -56,10 +56,21 @@ struct PortfolioState {
     pending_calcs: HashSet<InstrumentId>,
     bar_close_prices: HashMap<InstrumentId, Price>,
     initialized: bool,
+    last_account_state_log_ts: HashMap<AccountId, u64>,
+    min_account_state_logging_interval_ns: u64,
 }
 
 impl PortfolioState {
-    fn new(clock: Rc<RefCell<dyn Clock>>, cache: Rc<RefCell<Cache>>) -> Self {
+    fn new(
+        clock: Rc<RefCell<dyn Clock>>,
+        cache: Rc<RefCell<Cache>>,
+        config: &PortfolioConfig,
+    ) -> Self {
+        let min_account_state_logging_interval_ns = config
+            .min_account_state_logging_interval_ms
+            .map(|ms| ms * NANOSECONDS_IN_MILLISECOND)
+            .unwrap_or(0);
+
         Self {
             accounts: AccountsManager::new(clock, cache),
             analyzer: PortfolioAnalyzer::default(),
@@ -69,6 +80,8 @@ impl PortfolioState {
             pending_calcs: HashSet::new(),
             bar_close_prices: HashMap::new(),
             initialized: false,
+            last_account_state_log_ts: HashMap::new(),
+            min_account_state_logging_interval_ns,
         }
     }
 
@@ -78,6 +91,7 @@ impl PortfolioState {
         self.unrealized_pnls.clear();
         self.realized_pnls.clear();
         self.pending_calcs.clear();
+        self.last_account_state_log_ts.clear();
         self.analyzer.reset();
         log::debug!("READY");
     }
@@ -102,11 +116,12 @@ impl Portfolio {
         clock: Rc<RefCell<dyn Clock>>,
         config: Option<PortfolioConfig>,
     ) -> Self {
+        let config = config.unwrap_or_default();
         let inner = Rc::new(RefCell::new(PortfolioState::new(
             clock.clone(),
             cache.clone(),
+            &config,
         )));
-        let config = config.unwrap_or_default();
 
         Self::register_message_handlers(
             cache.clone(),
@@ -133,9 +148,12 @@ impl Portfolio {
 
         let update_account_handler = {
             let cache = cache.clone();
+            let inner = inner_weak.clone();
             ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
                 move |event: &AccountState| {
-                    update_account(cache.clone(), event);
+                    if let Some(inner_rc) = inner.upgrade() {
+                        update_account(cache.clone(), inner_rc.into(), event);
+                    }
                 },
             )))
         };
@@ -807,7 +825,7 @@ impl Portfolio {
 
     /// Updates portfolio with a new account state event.
     pub fn update_account(&mut self, event: &AccountState) {
-        update_account(self.cache.clone(), event);
+        update_account(self.cache.clone(), self.inner.clone(), event);
     }
 
     /// Updates portfolio calculations based on an order event.
@@ -1387,7 +1405,11 @@ fn update_position(
     }
 }
 
-pub fn update_account(cache: Rc<RefCell<Cache>>, event: &AccountState) {
+fn update_account(
+    cache: Rc<RefCell<Cache>>,
+    inner: Rc<RefCell<PortfolioState>>,
+    event: &AccountState,
+) {
     let mut cache_ref = cache.borrow_mut();
 
     if let Some(existing) = cache_ref.account(&event.account_id) {
@@ -1413,5 +1435,30 @@ pub fn update_account(cache: Rc<RefCell<Cache>>, event: &AccountState) {
         }
     }
 
-    log::info!("Updated {event}");
+    // Throttled logging logic
+    let mut inner_ref = inner.borrow_mut();
+    let should_log = if inner_ref.min_account_state_logging_interval_ns > 0 {
+        let current_ts = event.ts_init.as_u64();
+        let last_ts = inner_ref
+            .last_account_state_log_ts
+            .get(&event.account_id)
+            .copied()
+            .unwrap_or(0);
+
+        if last_ts == 0 || (current_ts - last_ts) >= inner_ref.min_account_state_logging_interval_ns
+        {
+            inner_ref
+                .last_account_state_log_ts
+                .insert(event.account_id, current_ts);
+            true
+        } else {
+            false
+        }
+    } else {
+        true // Throttling disabled, always log
+    };
+
+    if should_log {
+        log::info!("Updated {event}");
+    }
 }
