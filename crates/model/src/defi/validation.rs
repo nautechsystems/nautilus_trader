@@ -51,9 +51,11 @@ pub fn validate_address(address: &str) -> anyhow::Result<Address> {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
-    #[test]
+    #[rstest]
     fn test_validate_address_invalid_prefix() {
         let invalid_address = "742d35Cc6634C0532925a3b844Bc454e4438f44e";
         let result = validate_address(invalid_address);
@@ -64,7 +66,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn test_validate_invalid_address_format() {
         let invalid_length_address = "0x1233";
         let invalid_characters_address = "0xZZZd35Cc6634C0532925a3b844Bc454e4438f44e";
@@ -83,7 +85,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn test_validate_invalid_checksum() {
         let invalid_checksum_address = "0x742d35cc6634c0532925a3b844bc454e4438f44e";
         assert_eq!(

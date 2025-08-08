@@ -26,15 +26,16 @@ use nautilus_common::{
     actor::{DataActor, DataActorCore, data_actor::DataActorConfig},
     enums::{Environment, LogColor},
     logging::log_info,
+    runtime::get_runtime,
 };
 use nautilus_core::env::get_env_var;
 use nautilus_infrastructure::sql::pg::PostgresConnectOptions;
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
-    defi::{Block, Blockchain, Pool, PoolLiquidityUpdate, PoolSwap, chain::chains},
+    defi::{Block, Blockchain, DexType, Pool, PoolLiquidityUpdate, PoolSwap, chain::chains},
+    enums::OrderSide,
     identifiers::{ClientId, InstrumentId, TraderId},
 };
-
 // Requires capnp installed on the machine
 // Run with `cargo run -p nautilus-blockchain --bin node_test --features hypersync`
 // To see additional tracing logs `export RUST_LOG=debug,h2=off`
@@ -45,8 +46,7 @@ use nautilus_model::{
 // If you need production-ready actors, create them in a separate production module.
 // ================================================================================================
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
     let environment = Environment::Live;
@@ -63,7 +63,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client_factory = BlockchainDataClientFactory::new();
     let client_config = BlockchainDataClientConfig::new(
         Arc::new(chain.clone()),
-        vec!["Arbitrum:UniswapV3".to_string()],
+        vec![DexType::UniswapV3],
         http_rpc_url,
         None, // RPC requests per second
         Some(wss_rpc_url),
@@ -86,18 +86,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create and register a blockchain subscriber actor
     let client_id = ClientId::new(format!("BLOCKCHAIN-{}", chain.name));
 
-    let pools = vec![
-        InstrumentId::from("WETH/USDC-3000.Arbitrum:UniswapV3"), // Arbitrum WETH/USDC 0.30% pool
-    ];
+    let pools = vec![InstrumentId::from(
+        "0xC31E54c7a869B9FcBEcc14363CF510d1c41fa443.Arbitrum:UniswapV3",
+    )];
 
     let actor_config = BlockchainSubscriberActorConfig::new(client_id, chain.name, pools);
     let actor = BlockchainSubscriberActor::new(actor_config);
 
     node.add_actor(actor)?;
 
-    node.run().await?;
-
-    Ok(())
+    Ok(get_runtime().block_on(async move { node.run().await })?)
 }
 
 /// Configuration for the blockchain subscriber actor.
@@ -258,7 +256,11 @@ impl DataActor for BlockchainSubscriberActor {
     }
 
     fn on_pool_swap(&mut self, swap: &PoolSwap) -> anyhow::Result<()> {
-        log_info!("Received {swap}", color = LogColor::Cyan);
+        if swap.side == OrderSide::Sell {
+            log_info!("️➡️  {swap}", color = LogColor::Red);
+        } else {
+            log_info!("➡️ {swap}", color = LogColor::Green);
+        }
 
         self.received_pool_swaps.push(swap.clone());
         Ok(())

@@ -107,7 +107,7 @@ impl Pool {
     }
 
     pub fn create_instrument_id(chain: Blockchain, dex: &Dex, address: &Address) -> InstrumentId {
-        let symbol = Symbol::new(format!("{address:#x}"));
+        let symbol = Symbol::new(address.to_string());
         let venue = Venue::new(format!("{}:{}", chain, dex.name));
         InstrumentId::new(symbol, venue)
     }
@@ -205,7 +205,7 @@ mod tests {
         assert_eq!(pool.ts_init, ts_init);
         assert_eq!(
             pool.instrument_id.symbol.as_str(),
-            "0x11b815efb8f581194ae79006d24e0d814b7697f6"
+            "0x11b815efB8f581194ae79006d24E0d814B7697F6"
         );
         assert_eq!(pool.instrument_id.venue.as_str(), "Ethereum:UniswapV3");
     }
@@ -263,7 +263,7 @@ mod tests {
 
         assert_eq!(
             pool.instrument_id.to_string(),
-            "0x11b815efb8f581194ae79006d24e0d814b7697f6.Ethereum:UniswapV3"
+            "0x11b815efB8f581194ae79006d24E0d814B7697F6.Ethereum:UniswapV3"
         );
     }
 }

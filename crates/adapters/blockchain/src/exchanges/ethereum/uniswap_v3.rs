@@ -23,6 +23,7 @@ use alloy::{
 use hypersync_client::simple_types::Log;
 use nautilus_model::{
     defi::{
+        SharedDex,
         chain::chains,
         dex::{AmmType, Dex, DexType},
         token::Token,
@@ -135,7 +136,7 @@ sol! {
     }
 }
 
-fn parse_swap_event(log: Log) -> anyhow::Result<SwapEvent> {
+pub fn parse_swap_event(dex: SharedDex, log: Log) -> anyhow::Result<SwapEvent> {
     validate_event_signature_hash("SwapEvent", SWAP_EVENT_SIGNATURE_HASH, &log)?;
 
     let sender = match log.topics.get(1).and_then(|t| t.as_ref()) {
@@ -162,8 +163,15 @@ fn parse_swap_event(log: Log) -> anyhow::Result<SwapEvent> {
             Err(e) => anyhow::bail!("Failed to decode swap event data: {e}"),
         };
         let _ = decoded.amount0;
-
+        let pool_address = Address::from_slice(
+            log.address
+                .clone()
+                .expect("Contract address should be set in logs")
+                .as_ref(),
+        );
         Ok(SwapEvent::new(
+            dex,
+            pool_address,
             extract_block_number(&log)?,
             extract_transaction_hash(&log)?,
             extract_transaction_index(&log)?,
@@ -185,19 +193,32 @@ fn calculate_price_from_sqrt_price(
     token0_decimals: u8,
     token1_decimals: u8,
 ) -> f64 {
-    let sqrt_price = sqrt_price_x96 >> 96;
-    let price = sqrt_price * sqrt_price;
-    let price: f64 = U256::from(price)
-        .to_string()
-        .parse()
-        .expect("Failed to parse U256 to f64");
-    let token0_multiplier = 10u128.pow(u32::from(token0_decimals));
-    let token1_multiplier = 10u128.pow(u32::from(token1_decimals));
-    let factor = token1_multiplier as f64 / token0_multiplier as f64;
-    factor / price
+    // Convert sqrt_price_x96 to U256 for better precision
+    let sqrt_price_u256 = U256::from(sqrt_price_x96);
+
+    // Calculate price = (sqrt_price_x96 / 2^96)^2
+    // Which is equivalent to: sqrt_price_x96^2 / 2^192
+    let price_x192 = sqrt_price_u256 * sqrt_price_u256;
+
+    // Convert to f64 maintaining precision
+    // Price = price_x192 / 2^192
+    let price_str = price_x192.to_string();
+    let price_x192_f64: f64 = price_str.parse().unwrap_or(f64::INFINITY);
+
+    // 2^192 as f64
+    let two_pow_192: f64 = (1u128 << 96) as f64 * (1u128 << 96) as f64;
+    let price_raw = price_x192_f64 / two_pow_192;
+
+    // Adjust for decimal differences
+    // The raw price is in terms of raw token amounts (token1_raw / token0_raw)
+    // To get human readable price (token1 per token0), we need to adjust:
+    // price_human = price_raw * (10^token0_decimals / 10^token1_decimals)
+    let decimal_adjustment = 10f64.powi(i32::from(token0_decimals) - i32::from(token1_decimals));
+
+    price_raw * decimal_adjustment
 }
 
-fn convert_to_trade_data(
+pub fn convert_to_trade_data(
     token0: &Token,
     token1: &Token,
     swap_event: &SwapEvent,
@@ -207,22 +228,53 @@ fn convert_to_trade_data(
         token0.decimals,
         token1.decimals,
     );
+
+    // Validate price is finite and positive
+    if !price_f64.is_finite() || price_f64 <= 0.0 {
+        anyhow::bail!(
+            "Invalid price calculated from sqrt_price_x96: {}, result: {}",
+            swap_event.sqrt_price_x96,
+            price_f64
+        );
+    }
+
+    // Additional validation for extremely small or large prices
+    if price_f64 < 1e-18 || price_f64 > 1e18 {
+        anyhow::bail!(
+            "Price outside reasonable bounds: {} (sqrt_price_x96: {})",
+            price_f64,
+            swap_event.sqrt_price_x96
+        );
+    }
+
     let price = Price::from(format!(
         "{:.precision$}",
         price_f64,
         precision = FIXED_PRECISION as usize
     ));
+
     let quantity_f64 = convert_i256_to_f64(swap_event.amount1, token1.decimals)?.abs();
+
+    // Validate quantity is finite and non-negative
+    if !quantity_f64.is_finite() || quantity_f64 < 0.0 {
+        anyhow::bail!(
+            "Invalid quantity calculated from amount1: {}, result: {}",
+            swap_event.amount1,
+            quantity_f64
+        );
+    }
+
     let quantity = Quantity::from(format!(
         "{:.precision$}",
         quantity_f64,
         precision = FIXED_PRECISION as usize
     ));
+
     let zero = Signed::<256, 4>::ZERO;
     let side = if swap_event.amount1 > zero {
-        OrderSide::Sell
+        OrderSide::Buy // User receives token1 (buys token1)
     } else {
-        OrderSide::Buy
+        OrderSide::Sell // User gives token1 (sells token1)
     };
     Ok((side, quantity, price))
 }
@@ -239,7 +291,7 @@ sol! {
     }
 }
 
-fn parse_mint_event(log: Log) -> anyhow::Result<MintEvent> {
+pub fn parse_mint_event(dex: SharedDex, log: Log) -> anyhow::Result<MintEvent> {
     validate_event_signature_hash("Mint", MINT_EVENT_SIGNATURE_HASH, &log)?;
 
     let owner = match log.topics.get(1).and_then(|t| t.as_ref()) {
@@ -279,7 +331,15 @@ fn parse_mint_event(log: Log) -> anyhow::Result<MintEvent> {
             Err(e) => anyhow::bail!("Failed to decode mint event data: {e}"),
         };
 
+        let pool_address = Address::from_slice(
+            log.address
+                .clone()
+                .expect("Contract address should be set in logs")
+                .as_ref(),
+        );
         Ok(MintEvent::new(
+            dex,
+            pool_address,
             extract_block_number(&log)?,
             extract_transaction_hash(&log)?,
             extract_transaction_index(&log)?,
@@ -308,7 +368,7 @@ sol! {
     }
 }
 
-fn parse_burn_event(log: Log) -> anyhow::Result<BurnEvent> {
+pub fn parse_burn_event(dex: SharedDex, log: Log) -> anyhow::Result<BurnEvent> {
     validate_event_signature_hash("Burn", BURN_EVENT_SIGNATURE_HASH, &log)?;
 
     let owner = match log.topics.get(1).and_then(|t| t.as_ref()) {
@@ -348,7 +408,15 @@ fn parse_burn_event(log: Log) -> anyhow::Result<BurnEvent> {
             Err(e) => anyhow::bail!("Failed to decode burn event data: {e}"),
         };
 
+        let pool_address = Address::from_slice(
+            log.address
+                .clone()
+                .expect("Contract address should be set in logs")
+                .as_ref(),
+        );
         Ok(BurnEvent::new(
+            dex,
+            pool_address,
             extract_block_number(&log)?,
             extract_transaction_hash(&log)?,
             extract_transaction_index(&log)?,
@@ -372,6 +440,11 @@ mod tests {
     use super::*;
 
     #[fixture]
+    fn dex() -> SharedDex {
+        UNISWAP_V3.dex.clone()
+    }
+
+    #[fixture]
     fn mint_event_log() -> Log {
         serde_json::from_str(r#"{
             "removed": null,
@@ -380,7 +453,7 @@ mod tests {
             "transaction_hash": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
             "block_hash": null,
             "block_number": "0x1581756",
-            "address": null,
+            "address": "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
             "data": "0x000000000000000000000000f5a96d43e4b9a2c47f302b54d006d7e20f038658000000000000000000000000000000000000000000000028c8b4995ae1ad0e9e000000000000000000000000000000000000000000000000000009423c32486c0000000000000000000000000000000000000000000000bb5bc19aa32e5d05b4",
             "topics": [
                 "0x7a53080ba414158be7ec69b987b5fb7d07dee101fe85488f0853ae16239d0bde",
@@ -392,8 +465,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_mint_event(mint_event_log: Log) {
-        let result = parse_mint_event(mint_event_log);
+    fn test_parse_mint_event(dex: SharedDex, mint_event_log: Log) {
+        let result = parse_mint_event(dex, mint_event_log);
         assert!(result.is_ok());
         let mint_event = result.unwrap();
 
@@ -414,29 +487,29 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_mint_event_missing_data() {
+    fn test_parse_mint_event_missing_data(dex: SharedDex) {
         let mut log = mint_event_log();
         log.data = None;
 
-        let result = parse_mint_event(log);
+        let result = parse_mint_event(dex, log);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Missing data"));
     }
 
     #[rstest]
-    fn test_parse_mint_event_missing_topics() {
+    fn test_parse_mint_event_missing_topics(dex: SharedDex) {
         let mut log = mint_event_log();
 
         // Test missing owner
         log.topics.truncate(1);
-        let result = parse_mint_event(log.clone());
+        let result = parse_mint_event(dex.clone(), log.clone());
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Missing owner"));
 
         // Test missing tickLower
         log = mint_event_log();
         log.topics.truncate(2);
-        let result = parse_mint_event(log.clone());
+        let result = parse_mint_event(dex.clone(), log.clone());
         assert!(result.is_err());
         assert!(
             result
@@ -448,7 +521,7 @@ mod tests {
         // Test missing tickUpper
         log = mint_event_log();
         log.topics.truncate(3);
-        let result = parse_mint_event(log);
+        let result = parse_mint_event(dex, log);
         assert!(result.is_err());
         assert!(
             result

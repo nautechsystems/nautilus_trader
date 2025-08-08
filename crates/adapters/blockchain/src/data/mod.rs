@@ -13,28 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_model::defi::{Blockchain, DexType};
-
-use crate::exchanges::{
-    arbitrum::ARBITRUM_DEX_EXTENDED_MAP, base::BASE_DEX_EXTENDED_MAP,
-    ethereum::ETHEREUM_DEX_EXTENDED_MAP, extended::DexExtended,
-};
-
-pub mod arbitrum;
-pub mod base;
-pub mod ethereum;
-pub mod extended;
-
-/// Returns a map of all DEX names to Dex instances across all chains
-#[must_use]
-pub fn get_dex_extended(
-    blockchain: Blockchain,
-    dex_type: &DexType,
-) -> Option<&'static DexExtended> {
-    match blockchain {
-        Blockchain::Ethereum => ETHEREUM_DEX_EXTENDED_MAP.get(dex_type).copied(),
-        Blockchain::Base => BASE_DEX_EXTENDED_MAP.get(dex_type).copied(),
-        Blockchain::Arbitrum => ARBITRUM_DEX_EXTENDED_MAP.get(dex_type).copied(),
-        _ => None,
-    }
-}
+pub mod client;
+pub mod core;
+pub mod subscription;

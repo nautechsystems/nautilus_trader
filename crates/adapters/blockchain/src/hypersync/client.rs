@@ -22,13 +22,17 @@ use hypersync_client::{
     net_types::{BlockSelection, FieldSelection, Query},
     simple_types::Log,
 };
+use nautilus_common::runtime::get_runtime;
 use nautilus_model::{
-    defi::{Block, SharedChain},
+    defi::{Block, DexType, SharedChain},
     identifiers::InstrumentId,
 };
 use reqwest::Url;
 
-use crate::{hypersync::transform::transform_hypersync_block, rpc::types::BlockchainMessage};
+use crate::{
+    exchanges::get_dex_extended, hypersync::transform::transform_hypersync_block,
+    rpc::types::BlockchainMessage,
+};
 
 /// The interval in milliseconds at which to check for new blocks when waiting
 /// for the hypersync to index the block.
@@ -43,10 +47,6 @@ pub struct HyperSyncClient {
     client: Arc<hypersync_client::Client>,
     /// Background task handle for the block subscription task.
     blocks_task: Option<tokio::task::JoinHandle<()>>,
-    /// Background task handles for swap subscription tasks (keyed by pool address).
-    swaps_tasks: AHashMap<Address, tokio::task::JoinHandle<()>>,
-    /// Background task handles for liquidity update subscription tasks (keyed by pool address).
-    liquidity_tasks: AHashMap<Address, tokio::task::JoinHandle<()>>,
     /// Channel for sending blockchain messages to the adapter data client.
     tx: tokio::sync::mpsc::UnboundedSender<BlockchainMessage>,
     /// Index of pool addressed keyed by instrument ID.
@@ -74,8 +74,6 @@ impl HyperSyncClient {
             chain,
             client: Arc::new(client),
             blocks_task: None,
-            swaps_tasks: AHashMap::new(),
-            liquidity_tasks: AHashMap::new(),
             tx,
             pool_addresses: AHashMap::new(),
         }
@@ -84,6 +82,112 @@ impl HyperSyncClient {
     #[must_use]
     pub fn get_pool_address(&self, instrument_id: InstrumentId) -> Option<&Address> {
         self.pool_addresses.get(&instrument_id)
+    }
+
+    pub async fn process_block_dex_contract_events(
+        &self,
+        dex: &DexType,
+        block: u64,
+        contract_addresses: Vec<Address>,
+        swap_event_encoded_signature: String,
+        mint_event_encoded_signature: String,
+        burn_event_encoded_signature: String,
+    ) {
+        let topics = vec![
+            swap_event_encoded_signature.clone(),
+            mint_event_encoded_signature.clone(),
+            burn_event_encoded_signature.clone(),
+        ];
+        let query = Self::construct_contract_events_query(
+            block,
+            Some(block + 1),
+            contract_addresses,
+            vec![topics],
+        );
+        let tx = self.tx.clone();
+        let client = self.client.clone();
+        let dex_extended =
+            get_dex_extended(self.chain.name, dex).expect("Failed to get dex extended");
+
+        get_runtime().spawn(async move {
+            let mut rx = client
+                .stream(query, Default::default())
+                .await
+                .expect("Failed to create stream");
+
+            while let Some(response) = rx.recv().await {
+                let response = response.unwrap();
+
+                for batch in response.data.logs {
+                    for log in batch {
+                        let event_signature = match log.topics.get(0).and_then(|t| t.as_ref()) {
+                            Some(log_argument) => {
+                                format!("0x{}", hex::encode(log_argument.as_ref()))
+                            }
+                            None => continue,
+                        };
+                        if event_signature == swap_event_encoded_signature {
+                            match dex_extended.parse_swap_event(log.clone()) {
+                                Ok(swap_event) => {
+                                    if let Err(e) =
+                                        tx.send(BlockchainMessage::SwapEvent(swap_event))
+                                    {
+                                        tracing::error!("Failed to send swap event: {}", e);
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::error!(
+                                        "Failed to parse swap with error '{:?}' for event: {:?}",
+                                        e,
+                                        log
+                                    );
+                                    continue;
+                                }
+                            }
+                        } else if event_signature == mint_event_encoded_signature {
+                            match dex_extended.parse_mint_event(log.clone()) {
+                                Ok(swap_event) => {
+                                    if let Err(e) =
+                                        tx.send(BlockchainMessage::MintEvent(swap_event))
+                                    {
+                                        tracing::error!("Failed to send mint event: {}", e);
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::error!(
+                                        "Failed to parse mint with error '{:?}' for event: {:?}",
+                                        e,
+                                        log
+                                    );
+                                    continue;
+                                }
+                            }
+                        } else if event_signature == burn_event_encoded_signature {
+                            match dex_extended.parse_burn_event(log.clone()) {
+                                Ok(swap_event) => {
+                                    if let Err(e) =
+                                        tx.send(BlockchainMessage::BurnEvent(swap_event))
+                                    {
+                                        tracing::error!("Failed to send burn event: {}", e);
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::error!(
+                                        "Failed to parse burn with error '{:?}' for event: {:?}",
+                                        e,
+                                        log
+                                    );
+                                    continue;
+                                }
+                            }
+                        } else {
+                            tracing::error!("Unknown event signature: {}", event_signature);
+                            continue;
+                        }
+                    }
+                }
+            }
+        });
     }
 
     /// Creates a stream of contract event logs matching the specified criteria.
@@ -104,36 +208,12 @@ impl HyperSyncClient {
             topics_array.push(vec![additional_topic]);
         }
 
-        let mut query_value = serde_json::json!({
-            "from_block": from_block,
-            "logs": [{
-                "topics": topics_array,
-                "address": [
-                    contract_address,
-                ]
-            }],
-            "field_selection": {
-                "log": [
-                    "block_number",
-                    "transaction_hash",
-                    "transaction_index",
-                    "log_index",
-                    "data",
-                    "topic0",
-                    "topic1",
-                    "topic2",
-                    "topic3",
-                ]
-            }
-        });
-
-        if let Some(to_block) = to_block
-            && let Some(obj) = query_value.as_object_mut()
-        {
-            obj.insert("to_block".to_string(), serde_json::json!(to_block));
-        }
-
-        let query = serde_json::from_value(query_value).unwrap();
+        let query = Self::construct_contract_events_query(
+            from_block,
+            to_block,
+            vec![contract_address.parse().unwrap()],
+            topics_array,
+        );
 
         let mut rx = self
             .client
@@ -158,8 +238,6 @@ impl HyperSyncClient {
     /// Disconnects from the HyperSync service and stops all background tasks.
     pub fn disconnect(&mut self) {
         self.unsubscribe_blocks();
-        self.unsubscribe_all_swaps();
-        self.unsubscribe_all_liquidity_updates();
     }
 
     /// Returns the current block
@@ -210,11 +288,15 @@ impl HyperSyncClient {
     ///
     /// Panics if client height requests or block transformations fail.
     pub fn subscribe_blocks(&mut self) {
+        if self.blocks_task.is_some() {
+            return;
+        }
+
         let chain = self.chain.name;
         let client = self.client.clone();
         let tx = self.tx.clone();
 
-        let task = tokio::spawn(async move {
+        let task = get_runtime().spawn(async move {
             tracing::debug!("Starting task 'blocks_feed");
 
             let current_block_height = client.get_height().await.unwrap();
@@ -270,42 +352,41 @@ impl HyperSyncClient {
         }
     }
 
-    /// Unsubscribes from swap events for a specific pool address.
-    pub fn unsubscribe_pool_swaps(&mut self, pool_address: Address) {
-        if let Some(task) = self.swaps_tasks.remove(&pool_address) {
-            task.abort();
-            tracing::debug!("Unsubscribed from swaps for pool: {pool_address}");
-        }
-    }
+    fn construct_contract_events_query(
+        from_block: u64,
+        to_block: Option<u64>,
+        contract_addresses: Vec<Address>,
+        topics: Vec<Vec<String>>,
+    ) -> Query {
+        let mut query_value = serde_json::json!({
+            "from_block": from_block,
+            "logs": [{
+                "topics": topics,
+                "address": contract_addresses
+            }],
+            "field_selection": {
+                "log": [
+                    "block_number",
+                    "transaction_hash",
+                    "transaction_index",
+                    "log_index",
+                    "address",
+                    "data",
+                    "topic0",
+                    "topic1",
+                    "topic2",
+                    "topic3",
+                ]
+            }
+        });
 
-    /// Unsubscribes from all swap events by stopping all swap background tasks.
-    pub fn unsubscribe_all_swaps(&mut self) {
-        for (pool_address, task) in self.swaps_tasks.drain() {
-            task.abort();
-            tracing::debug!("Unsubscribed from swaps for pool: {pool_address}");
+        if let Some(to_block) = to_block
+            && let Some(obj) = query_value.as_object_mut()
+        {
+            obj.insert("to_block".to_string(), serde_json::json!(to_block));
         }
-    }
 
-    /// Unsubscribes from liquidity update events for a specific pool address.
-    pub fn unsubscribe_pool_liquidity_updates(&mut self, pool_address: Address) {
-        if let Some(task) = self.liquidity_tasks.remove(&pool_address) {
-            task.abort();
-            tracing::debug!(
-                "Unsubscribed from liquidity updates for pool: {}",
-                pool_address
-            );
-        }
-    }
-
-    /// Unsubscribes from all liquidity update events by stopping all liquidity update background tasks.
-    pub fn unsubscribe_all_liquidity_updates(&mut self) {
-        for (pool_address, task) in self.liquidity_tasks.drain() {
-            task.abort();
-            tracing::debug!(
-                "Unsubscribed from liquidity updates for pool: {}",
-                pool_address
-            );
-        }
+        serde_json::from_value(query_value).unwrap()
     }
 
     /// Unsubscribes from new blocks by stopping the background watch task.

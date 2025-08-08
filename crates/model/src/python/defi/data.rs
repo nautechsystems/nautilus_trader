@@ -66,7 +66,7 @@ impl PoolSwap {
             transaction_hash,
             transaction_index,
             log_index,
-            timestamp.into(),
+            Some(timestamp.into()),
             sender,
             side,
             size,
@@ -148,14 +148,14 @@ impl PoolSwap {
 
     #[getter]
     #[pyo3(name = "timestamp")]
-    fn py_timestamp(&self) -> u64 {
-        self.timestamp.as_u64()
+    fn py_timestamp(&self) -> Option<u64> {
+        self.timestamp.map(|x| x.as_u64())
     }
 
     #[getter]
     #[pyo3(name = "ts_init")]
-    fn py_ts_init(&self) -> u64 {
-        self.ts_init.as_u64()
+    fn py_ts_init(&self) -> Option<u64> {
+        self.ts_init.map(|x| x.as_u64())
     }
 
     fn __str__(&self) -> String {
@@ -228,7 +228,7 @@ impl PoolLiquidityUpdate {
             amount1,
             tick_lower,
             tick_upper,
-            timestamp.into(),
+            Some(timestamp.into()),
         ))
     }
 
@@ -330,14 +330,14 @@ impl PoolLiquidityUpdate {
 
     #[getter]
     #[pyo3(name = "timestamp")]
-    fn py_timestamp(&self) -> u64 {
-        self.timestamp.as_u64()
+    fn py_timestamp(&self) -> Option<u64> {
+        self.timestamp.map(|x| x.as_u64())
     }
 
     #[getter]
     #[pyo3(name = "ts_init")]
-    fn py_ts_init(&self) -> u64 {
-        self.ts_init.as_u64()
+    fn py_ts_init(&self) -> Option<u64> {
+        self.ts_init.map(|x| x.as_u64())
     }
 
     fn __str__(&self) -> String {

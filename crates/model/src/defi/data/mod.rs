@@ -20,10 +20,9 @@
 
 use std::fmt::Display;
 
-use nautilus_core::UnixNanos;
 use serde::{Deserialize, Serialize};
 
-use crate::{data::HasTsInit, defi::Pool, identifiers::InstrumentId};
+use crate::{defi::Pool, identifiers::InstrumentId};
 
 pub mod block;
 pub mod liquidity;
@@ -78,17 +77,6 @@ impl Display for DefiData {
             Self::PoolSwap(s) => write!(f, "{s}"),
             Self::PoolLiquidityUpdate(u) => write!(f, "{u}"),
             Self::Pool(p) => write!(f, "{p}"),
-        }
-    }
-}
-
-impl HasTsInit for DefiData {
-    fn ts_init(&self) -> UnixNanos {
-        match self {
-            Self::Block(block) => block.timestamp, // TODO: TBD
-            Self::PoolSwap(swap) => swap.ts_init,
-            Self::PoolLiquidityUpdate(update) => update.ts_init,
-            Self::Pool(pool) => pool.ts_init,
         }
     }
 }
