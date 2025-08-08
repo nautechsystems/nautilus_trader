@@ -16,7 +16,7 @@
 use std::sync::Arc;
 
 use nautilus_infrastructure::sql::pg::PostgresConnectOptions;
-use nautilus_model::defi::Chain;
+use nautilus_model::defi::{Chain, DexType};
 
 /// Configuration for blockchain data clients.
 #[derive(Debug, Clone)]
@@ -28,7 +28,7 @@ pub struct BlockchainDataClientConfig {
     /// The blockchain chain configuration.
     pub chain: Arc<Chain>,
     /// List of decentralized exchange IDs to register and sync during connection.
-    pub dex_ids: Vec<String>,
+    pub dex_ids: Vec<DexType>,
     /// Determines if the client should use Hypersync for live data streaming.
     pub use_hypersync_for_live_data: bool,
     /// The HTTP URL for the blockchain RPC endpoint.
@@ -49,7 +49,7 @@ impl BlockchainDataClientConfig {
     #[must_use]
     pub const fn new(
         chain: Arc<Chain>,
-        dex_ids: Vec<String>,
+        dex_ids: Vec<DexType>,
         http_rpc_url: String,
         rpc_requests_per_second: Option<u32>,
         wss_rpc_url: Option<String>,

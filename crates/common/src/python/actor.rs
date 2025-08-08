@@ -2233,7 +2233,7 @@ mod tests {
             "0xabc123".to_string(),
             0,
             0,
-            UnixNanos::default(),
+            None,
             "0x742E4422b21FB8B4dF463F28689AC98bD56c39e0"
                 .parse()
                 .unwrap(),

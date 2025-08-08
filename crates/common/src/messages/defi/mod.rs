@@ -18,7 +18,10 @@
 use std::any::Any;
 
 use nautilus_core::{UUID4, UnixNanos};
-use nautilus_model::identifiers::{ClientId, Venue};
+use nautilus_model::{
+    defi::Blockchain,
+    identifiers::{ClientId, Venue},
+};
 
 pub mod subscribe;
 pub mod unsubscribe;
@@ -98,6 +101,23 @@ impl DefiSubscribeCommand {
         self
     }
 
+    /// Returns the blockchain associated with this command.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the instrument ID's venue cannot be parsed as a valid blockchain venue
+    /// for Pool, PoolSwaps, or PoolLiquidityUpdates commands.
+    pub fn blockchain(&self) -> Blockchain {
+        match self {
+            Self::Blocks(cmd) => cmd.chain,
+            Self::Pool(cmd) => cmd.instrument_id.blockchain().expect("Invalid venue"),
+            Self::PoolSwaps(cmd) => cmd.instrument_id.blockchain().expect("Invalid venue"),
+            Self::PoolLiquidityUpdates(cmd) => {
+                cmd.instrument_id.blockchain().expect("Invalid venue")
+            }
+        }
+    }
+
     pub fn command_id(&self) -> UUID4 {
         match self {
             Self::Blocks(cmd) => cmd.command_id,
@@ -154,6 +174,23 @@ impl DefiUnsubscribeCommand {
     /// Converts the command to a dyn Any trait object for messaging.
     pub fn as_any(&self) -> &dyn Any {
         self
+    }
+
+    /// Returns the blockchain associated with this command.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the instrument ID's venue cannot be parsed as a valid blockchain venue
+    /// for Pool, PoolSwaps, or PoolLiquidityUpdates commands.
+    pub fn blockchain(&self) -> Blockchain {
+        match self {
+            Self::Blocks(cmd) => cmd.chain,
+            Self::Pool(cmd) => cmd.instrument_id.blockchain().expect("Invalid venue"),
+            Self::PoolSwaps(cmd) => cmd.instrument_id.blockchain().expect("Invalid venue"),
+            Self::PoolLiquidityUpdates(cmd) => {
+                cmd.instrument_id.blockchain().expect("Invalid venue")
+            }
+        }
     }
 
     pub fn command_id(&self) -> UUID4 {

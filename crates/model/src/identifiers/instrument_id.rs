@@ -25,7 +25,7 @@ use nautilus_core::correctness::check_valid_string;
 use serde::{Deserialize, Deserializer, Serialize};
 
 #[cfg(feature = "defi")]
-use crate::defi::validation::validate_address;
+use crate::defi::{Blockchain, validation::validate_address};
 use crate::identifiers::{Symbol, Venue};
 
 /// Represents a valid instrument ID.
@@ -64,6 +64,16 @@ impl InstrumentId {
     pub fn from_as_ref<T: AsRef<str>>(value: T) -> anyhow::Result<Self> {
         Self::from_str(value.as_ref())
     }
+
+    /// Extracts the blockchain from the venue if it's a DEX venue.
+    #[cfg(feature = "defi")]
+    #[must_use]
+    pub fn blockchain(&self) -> Option<Blockchain> {
+        self.venue
+            .parse_dex()
+            .map(|(blockchain, _)| blockchain)
+            .ok()
+    }
 }
 
 impl FromStr for InstrumentId {
@@ -75,15 +85,21 @@ impl FromStr for InstrumentId {
                 check_valid_string(symbol_part, stringify!(value))?;
                 check_valid_string(venue_part, stringify!(value))?;
 
-                let symbol = Symbol::new(symbol_part);
                 let venue = Venue::new_checked(venue_part)?;
 
-                #[cfg(feature = "defi")]
-                if venue.is_dex()
-                    && let Err(e) = validate_address(symbol_part)
-                {
-                    anyhow::bail!(err_message(s, e.to_string()));
-                }
+                let symbol = {
+                    #[cfg(feature = "defi")]
+                    if venue.is_dex() {
+                        let validated_address = validate_address(symbol_part)
+                            .map_err(|e| anyhow::anyhow!(err_message(s, e.to_string())))?;
+                        Symbol::new(validated_address.to_string())
+                    } else {
+                        Symbol::new(symbol_part)
+                    }
+
+                    #[cfg(not(feature = "defi"))]
+                    Symbol::new(symbol_part)
+                };
 
                 Ok(Self { symbol, venue })
             }
@@ -220,7 +236,7 @@ mod tests {
     #[cfg(feature = "defi")]
     #[rstest]
     fn test_regular_venue_with_blockchain_like_name_but_without_dex() {
-        // Should work fine since it doesn't contain ':'
+        // Should work fine since it doesn't contain ':' (not a DEX venue)
         let id = InstrumentId::from("0xC31E54c7a869B9FcBEcc14363CF510d1c41fa443.Ethereum");
         assert_eq!(
             id.symbol.to_string(),
@@ -263,5 +279,23 @@ mod tests {
     )]
     fn test_blockchain_instrument_id_invalid_address_checksum() {
         let _ = InstrumentId::from("0xc31e54c7a869b9fcbecc14363cf510d1c41fa443.Ethereum:UniswapV3");
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn test_blockchain_extraction_valid_dex() {
+        let id =
+            InstrumentId::from("0xC31E54c7a869B9FcBEcc14363CF510d1c41fa443.Arbitrum:UniswapV3");
+        let blockchain = id.blockchain();
+        assert!(blockchain.is_some());
+        assert_eq!(blockchain.unwrap(), crate::defi::Blockchain::Arbitrum);
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn test_blockchain_extraction_tradifi_venue() {
+        let id = InstrumentId::from("ETH/USDT.BINANCE");
+        let blockchain = id.blockchain();
+        assert!(blockchain.is_none());
     }
 }

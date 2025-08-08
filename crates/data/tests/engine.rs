@@ -1680,7 +1680,7 @@ fn test_process_pool_swap(data_engine: Rc<RefCell<DataEngine>>, data_client: Dat
         "0x123".to_string(),
         0,
         0,
-        UnixNanos::from(1),
+        None,
         Address::from([0x12; 20]),
         OrderSide::Buy,
         Quantity::from("1000"),

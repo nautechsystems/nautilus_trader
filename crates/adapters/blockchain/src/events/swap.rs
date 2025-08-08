@@ -14,6 +14,13 @@
 // -------------------------------------------------------------------------------------------------
 
 use alloy::primitives::{Address, I256, U160};
+use nautilus_core::UnixNanos;
+use nautilus_model::{
+    defi::{PoolSwap, SharedChain, SharedDex},
+    enums::OrderSide,
+    identifiers::InstrumentId,
+    types::{Price, Quantity},
+};
 
 /// Represents a token swap event from liquidity pools emitted from smart contract.
 ///
@@ -21,6 +28,10 @@ use alloy::primitives::{Address, I256, U160};
 /// exchanges (DEXs) that use automated market maker (AMM) protocols.
 #[derive(Debug, Clone)]
 pub struct SwapEvent {
+    /// The decentralized exchange where the event happened.
+    pub dex: SharedDex,
+    /// The address of the smart contract which emitted the event.
+    pub pool_address: Address,
     /// The block number in which this swap transaction was included.
     pub block_number: u64,
     /// The unique hash identifier of the transaction containing this event.
@@ -49,6 +60,8 @@ impl SwapEvent {
     #[must_use]
     #[allow(clippy::too_many_arguments)]
     pub const fn new(
+        dex: SharedDex,
+        pool_address: Address,
         block_number: u64,
         transaction_hash: String,
         transaction_index: u32,
@@ -60,6 +73,8 @@ impl SwapEvent {
         sqrt_price_x96: U160,
     ) -> Self {
         Self {
+            dex,
+            pool_address,
             block_number,
             transaction_hash,
             transaction_index,
@@ -70,5 +85,34 @@ impl SwapEvent {
             amount1,
             sqrt_price_x96,
         }
+    }
+
+    /// Converts a swap event into a `PoolSwap`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn to_pool_swap(
+        &self,
+        chain: SharedChain,
+        instrument_id: InstrumentId,
+        pool_address: Address,
+        normalized_side: OrderSide,
+        normalized_quantity: Quantity,
+        normalized_price: Price,
+        timestamp: Option<UnixNanos>,
+    ) -> PoolSwap {
+        PoolSwap::new(
+            chain,
+            self.dex.clone(),
+            instrument_id,
+            pool_address,
+            self.block_number,
+            self.transaction_hash.clone(),
+            self.transaction_index,
+            self.log_index,
+            timestamp,
+            self.sender,
+            normalized_side,
+            normalized_quantity,
+            normalized_price,
+        )
     }
 }

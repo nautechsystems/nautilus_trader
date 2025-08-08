@@ -14,10 +14,20 @@
 // -------------------------------------------------------------------------------------------------
 
 use alloy::primitives::{Address, U256};
+use nautilus_core::UnixNanos;
+use nautilus_model::{
+    defi::{PoolLiquidityUpdate, PoolLiquidityUpdateType, SharedChain, SharedDex},
+    identifiers::InstrumentId,
+    types::Quantity,
+};
 
 /// Represents a burn event that occurs when liquidity is removed from a position in a liquidity pool.
 #[derive(Debug, Clone)]
 pub struct BurnEvent {
+    /// The decentralized exchange where the event happened.
+    pub dex: SharedDex,
+    /// The address of the smart contract which emitted the event.
+    pub pool_address: Address,
     /// The block number when the burn occurred.
     pub block_number: u64,
     /// The unique hash identifier of the transaction containing this event.
@@ -45,6 +55,8 @@ impl BurnEvent {
     #[must_use]
     #[allow(clippy::too_many_arguments)]
     pub const fn new(
+        dex: SharedDex,
+        pool_address: Address,
         block_number: u64,
         transaction_hash: String,
         transaction_index: u32,
@@ -57,6 +69,8 @@ impl BurnEvent {
         amount1: U256,
     ) -> Self {
         Self {
+            dex,
+            pool_address,
             block_number,
             transaction_hash,
             transaction_index,
@@ -68,5 +82,39 @@ impl BurnEvent {
             amount0,
             amount1,
         }
+    }
+
+    /// Converts a burn event into a `PoolLiquidityUpdate`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn to_pool_liquidity_update(
+        &self,
+        chain: SharedChain,
+        dex: SharedDex,
+        instrument_id: InstrumentId,
+        pool_address: Address,
+        liquidity: Quantity,
+        amount0: Quantity,
+        amount1: Quantity,
+        timestamp: Option<UnixNanos>,
+    ) -> PoolLiquidityUpdate {
+        PoolLiquidityUpdate::new(
+            chain,
+            dex,
+            instrument_id,
+            pool_address,
+            PoolLiquidityUpdateType::Burn,
+            self.block_number,
+            self.transaction_hash.clone(),
+            self.transaction_index,
+            self.log_index,
+            None,
+            self.owner,
+            liquidity,
+            amount0,
+            amount1,
+            self.tick_lower,
+            self.tick_upper,
+            timestamp,
+        )
     }
 }
