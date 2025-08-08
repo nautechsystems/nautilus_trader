@@ -17,9 +17,12 @@ use std::{
     fs::{File, OpenOptions},
     io::{BufReader, BufWriter, Read, copy},
     path::Path,
+    thread::sleep,
+    time::Duration,
 };
 
 use aws_lc_rs::digest::{self, Context};
+use rand::{Rng, rng};
 use reqwest::blocking::Client;
 use serde_json::Value;
 
@@ -61,6 +64,15 @@ pub fn ensure_file_exists_or_download_http(
         return Ok(());
     }
 
+    // Add a small random delay (100–600 ms) to avoid bursting the remote server when
+    // many tests start concurrently. A true random jitter is preferred over a
+    // deterministic hash to prevent synchronized traffic spikes.
+    let jitter_delay = {
+        let mut r = rng();
+        Duration::from_millis(r.random_range(100..=600))
+    };
+    sleep(jitter_delay);
+
     download_file(filepath, url)?;
 
     if let Some(checksums_file) = checksums {
@@ -72,22 +84,64 @@ pub fn ensure_file_exists_or_download_http(
 }
 
 fn download_file(filepath: &Path, url: &str) -> anyhow::Result<()> {
+    const MAX_RETRIES: usize = 3;
+    const BASE_DELAY_MS: u64 = 1000;
+    const TIMEOUT_SECONDS: u64 = 30;
+
     println!("Downloading file from {url} to {filepath:?}");
 
     if let Some(parent) = filepath.parent() {
         std::fs::create_dir_all(parent)?;
     }
 
-    let mut response = Client::new().get(url).send()?;
-    if !response.status().is_success() {
-        anyhow::bail!("Failed to download file: HTTP {}", response.status());
+    let client = Client::builder()
+        .timeout(Duration::from_secs(TIMEOUT_SECONDS))
+        .build()?;
+
+    let mut last_error = None;
+
+    for attempt in 0..MAX_RETRIES {
+        if attempt > 0 {
+            // Exponential backoff with additional random jitter up to BASE_DELAY_MS
+            let exponential_delay_ms = BASE_DELAY_MS * 2_u64.pow(attempt as u32 - 1);
+            let jitter_ms = rng().random_range(0..BASE_DELAY_MS);
+            let delay = Duration::from_millis(exponential_delay_ms + jitter_ms);
+            println!(
+                "Retrying download in {delay:?} (attempt {}/{MAX_RETRIES})",
+                attempt + 1
+            );
+            sleep(delay);
+        }
+
+        match client.get(url).send() {
+            Ok(mut response) => {
+                let status = response.status();
+                if status.is_success() {
+                    let mut out = File::create(filepath)?;
+                    // Stream the response body directly to disk to avoid large allocations
+                    copy(&mut response, &mut out)?;
+                    println!("File downloaded to {filepath:?}");
+                    return Ok(());
+                } else if status.is_server_error() {
+                    // Retry on 5xx server errors
+                    println!("Server error (HTTP {status}), retrying...");
+                    last_error = Some(anyhow::anyhow!("Server error: HTTP {status}"));
+                    continue;
+                } else {
+                    // 4xx errors are considered client side and not retried
+                    anyhow::bail!("Client error: HTTP {status}");
+                }
+            }
+            Err(e) => {
+                println!("Request failed: {e}");
+                last_error = Some(anyhow::anyhow!("Request failed: {e}"));
+                continue;
+            }
+        }
     }
 
-    let mut out = File::create(filepath)?;
-    copy(&mut response, &mut out)?;
-
-    println!("File downloaded to {filepath:?}");
-    Ok(())
+    Err(last_error
+        .unwrap_or_else(|| anyhow::anyhow!("Download failed after {MAX_RETRIES} attempts")))
 }
 
 fn calculate_sha256(filepath: &Path) -> anyhow::Result<String> {
@@ -272,7 +326,7 @@ mod tests {
         assert!(result.is_err());
         let err_msg = format!("{}", result.unwrap_err());
         assert!(
-            err_msg.contains("Failed to download file"),
+            err_msg.contains("Client error: HTTP"),
             "Unexpected error message: {err_msg}"
         );
     }

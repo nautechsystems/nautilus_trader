@@ -44,6 +44,7 @@ pyo3 = { workspace = true, optional = true }
 reqwest = { workspace = true }
 serde_json = { workspace = true }
 aws-lc-rs = { workspace = true }
+rand = { workspace = true }
 tokio = { workspace = true }
 
 [dev-dependencies]
