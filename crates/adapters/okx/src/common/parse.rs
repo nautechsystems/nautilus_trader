@@ -536,8 +536,7 @@ pub fn parse_position_status_report(
         .unwrap_or_default();
     let venue_position_id = None; // TODO: Only support netting for now
     // let venue_position_id = Some(PositionId::new(position.pos_id));
-    // TODO: Standardize timestamp parsing (deserialize model fields)
-    let ts_last = UnixNanos::from(position.u_time * NANOSECONDS_IN_MILLISECOND);
+    let ts_last = parse_millisecond_timestamp(position.u_time);
 
     PositionStatusReport::new(
         account_id,
@@ -1235,6 +1234,7 @@ pub fn parse_account_state(
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
+
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
