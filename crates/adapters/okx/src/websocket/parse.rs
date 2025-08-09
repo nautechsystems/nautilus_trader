@@ -787,7 +787,22 @@ mod tests {
         assert_eq!(deltas.sequence, 123456);
         assert_eq!(deltas.ts_event, UnixNanos::from(1597026383085000000));
         assert_eq!(deltas.ts_init, UnixNanos::default());
-        // TODO: Complete parsing testing of remaining fields
+
+        // Verify some individual deltas are parsed correctly
+        assert!(!deltas.deltas.is_empty());
+        // Snapshot should have both bid and ask deltas
+        let bid_deltas: Vec<_> = deltas
+            .deltas
+            .iter()
+            .filter(|d| d.order.side == OrderSide::Buy)
+            .collect();
+        let ask_deltas: Vec<_> = deltas
+            .deltas
+            .iter()
+            .filter(|d| d.order.side == OrderSide::Sell)
+            .collect();
+        assert!(!bid_deltas.is_empty());
+        assert!(!ask_deltas.is_empty());
     }
 
     #[rstest]
@@ -816,7 +831,22 @@ mod tests {
         assert_eq!(deltas.sequence, 123457);
         assert_eq!(deltas.ts_event, UnixNanos::from(1597026383085000000));
         assert_eq!(deltas.ts_init, UnixNanos::default());
-        // TODO: Complete parsing testing of remaining fields
+
+        // Verify some individual deltas are parsed correctly
+        assert!(!deltas.deltas.is_empty());
+        // Update should also have both bid and ask deltas
+        let bid_deltas: Vec<_> = deltas
+            .deltas
+            .iter()
+            .filter(|d| d.order.side == OrderSide::Buy)
+            .collect();
+        let ask_deltas: Vec<_> = deltas
+            .deltas
+            .iter()
+            .filter(|d| d.order.side == OrderSide::Sell)
+            .collect();
+        assert!(!bid_deltas.is_empty());
+        assert!(!ask_deltas.is_empty());
     }
 
     #[rstest]

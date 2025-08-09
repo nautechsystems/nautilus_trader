@@ -2002,7 +2002,7 @@ impl OKXWsMessageHandler {
                     match serde_json::from_value::<Vec<OKXAccount>>(data.clone()) {
                         Ok(accounts) => {
                             if let Some(account) = accounts.first() {
-                                // TODO: Parse account ID from somewhere (could be from credentials or config)
+                                // Account ID is provided from client configuration
                                 match parse_account_state(account, self.account_id, ts_init) {
                                     Ok(account_state) => {
                                         // TODO: Optimize this account state comparison
