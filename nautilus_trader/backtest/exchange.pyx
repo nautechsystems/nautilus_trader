@@ -88,7 +88,7 @@ cdef class SimulatedExchange:
         The account default leverage (for margin accounts).
     leverages : dict[InstrumentId, Decimal]
         The instrument specific leverage configuration (for margin accounts).
-    modules : list[SimulatedModule]
+    modules : list[SimulationModule]
         The simulation modules for the exchange.
     portfolio : PortfolioFacade
         The read-only portfolio for the exchange.
