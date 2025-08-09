@@ -207,7 +207,7 @@ class DataTester(Actor):
         Actions to be performed when the actor is running and receives historical data.
         """
         if self.config.log_data:
-            self.log.info(repr(data), LogColor.CYAN)
+            self.log.info("Historical " + repr(data), LogColor.CYAN)
 
     def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
         """
