@@ -120,6 +120,14 @@ pub fn get_index_price_topic(instrument_id: InstrumentId) -> MStr<Topic> {
 }
 
 #[must_use]
+pub fn get_funding_rate_topic(instrument_id: InstrumentId) -> MStr<Topic> {
+    get_message_bus()
+        .borrow_mut()
+        .switchboard
+        .get_funding_rate_topic(instrument_id)
+}
+
+#[must_use]
 pub fn get_instrument_status_topic(instrument_id: InstrumentId) -> MStr<Topic> {
     get_message_bus()
         .borrow_mut()
@@ -217,6 +225,7 @@ pub struct MessagingSwitchboard {
     bar_topics: AHashMap<BarType, MStr<Topic>>,
     mark_price_topics: AHashMap<InstrumentId, MStr<Topic>>,
     index_price_topics: AHashMap<InstrumentId, MStr<Topic>>,
+    funding_rate_topics: AHashMap<InstrumentId, MStr<Topic>>,
     instrument_status_topics: AHashMap<InstrumentId, MStr<Topic>>,
     instrument_close_topics: AHashMap<InstrumentId, MStr<Topic>>,
     event_orders_topics: AHashMap<StrategyId, MStr<Topic>>,
@@ -247,6 +256,7 @@ impl Default for MessagingSwitchboard {
             trade_topics: AHashMap::new(),
             mark_price_topics: AHashMap::new(),
             index_price_topics: AHashMap::new(),
+            funding_rate_topics: AHashMap::new(),
             bar_topics: AHashMap::new(),
             instrument_status_topics: AHashMap::new(),
             instrument_close_topics: AHashMap::new(),
@@ -425,6 +435,19 @@ impl MessagingSwitchboard {
             .or_insert_with(|| {
                 format!(
                     "data.index_prices.{}.{}",
+                    instrument_id.venue, instrument_id.symbol
+                )
+                .into()
+            })
+    }
+
+    pub fn get_funding_rate_topic(&mut self, instrument_id: InstrumentId) -> MStr<Topic> {
+        *self
+            .funding_rate_topics
+            .entry(instrument_id)
+            .or_insert_with(|| {
+                format!(
+                    "data.funding_rates.{}.{}",
                     instrument_id.venue, instrument_id.symbol
                 )
                 .into()

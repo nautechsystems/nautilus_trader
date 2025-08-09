@@ -5770,3 +5770,158 @@ cdef class IndexPriceUpdate(Data):
             self.ts_event,
             self.ts_init,
         )
+
+
+cdef class FundingRateUpdate(Data):
+    """
+    Represents a funding rate update for a perpetual swap instrument.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The instrument ID for the funding rate.
+    rate : Decimal
+        The current funding rate.
+    next_rate : Decimal or ``None``
+        The next funding rate (if available).
+    ts_next_funding : int or ``None``
+        UNIX timestamp (nanoseconds) of the next funding payment (if available).
+    ts_event : int
+        UNIX timestamp (nanoseconds) when the update occurred.
+    ts_init : int
+        UNIX timestamp (nanoseconds) when the data object was initialized.
+
+    """
+
+    def __init__(
+        self,
+        InstrumentId instrument_id not None,
+        rate not None,
+        uint64_t ts_event,
+        uint64_t ts_init,
+        next_rate = None,
+        ts_next_funding = None,
+    ) -> None:
+        self.instrument_id = instrument_id
+        self.rate = rate
+        self.next_rate = next_rate
+        self.ts_next_funding = ts_next_funding
+        self._ts_event = ts_event
+        self._ts_init = ts_init
+
+    def __eq__(self, FundingRateUpdate other) -> bool:
+        return (
+            self.instrument_id == other.instrument_id
+            and self.rate == other.rate
+            and self.next_rate == other.next_rate
+            and self.ts_next_funding == other.ts_next_funding
+            and self._ts_event == other._ts_event
+            and self._ts_init == other._ts_init
+        )
+
+    def __hash__(self) -> int:
+        return hash((
+            self.instrument_id,
+            self.rate,
+            self.next_rate,
+            self.ts_next_funding,
+            self._ts_event,
+            self._ts_init,
+        ))
+
+    def __str__(self) -> str:
+        next_rate_str = f",next_rate={self.next_rate}" if self.next_rate is not None else ""
+        next_funding_str = f",ts_next_funding={self.ts_next_funding}" if self.ts_next_funding is not None else ""
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id},"
+            f"rate={self.rate}"
+            f"{next_rate_str}"
+            f"{next_funding_str},"
+            f"ts_event={self._ts_event},"
+            f"ts_init={self._ts_init})"
+        )
+
+    def __repr__(self) -> str:
+        return str(self)
+
+    @property
+    def ts_event(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the data event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_event
+
+    @property
+    def ts_init(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_init
+
+    @staticmethod
+    cdef FundingRateUpdate from_dict_c(dict values):
+        Condition.not_none(values, "values")
+        return FundingRateUpdate(
+            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
+            rate=values["rate"],
+            ts_event=values["ts_event"],
+            ts_init=values["ts_init"],
+            next_rate=values.get("next_rate"),
+            ts_next_funding=values.get("ts_next_funding"),
+        )
+
+    @staticmethod
+    cdef dict to_dict_c(FundingRateUpdate obj):
+        Condition.not_none(obj, "obj")
+        result = {
+            "type": type(obj).__name__,
+            "instrument_id": str(obj.instrument_id),
+            "rate": obj.rate,
+            "ts_event": obj.ts_event,
+            "ts_init": obj.ts_init,
+        }
+        if obj.next_rate is not None:
+            result["next_rate"] = obj.next_rate
+        if obj.ts_next_funding is not None:
+            result["ts_next_funding"] = obj.ts_next_funding
+        return result
+
+    @staticmethod
+    def from_dict(dict values) -> FundingRateUpdate:
+        """
+        Return a funding rate update from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        FundingRateUpdate
+
+        """
+        return FundingRateUpdate.from_dict_c(values)
+
+    @staticmethod
+    def to_dict(FundingRateUpdate obj) -> dict[str, object]:
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return FundingRateUpdate.to_dict_c(obj)
