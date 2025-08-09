@@ -54,6 +54,7 @@ from nautilus_trader.model.functions import order_side_to_pyo3
 from nautilus_trader.model.functions import order_type_to_pyo3
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.orders import Order
 
 
@@ -601,6 +602,9 @@ class OKXExecutionClient(LiveExecutionClient):
 
     # -- WEBSOCKET HANDLERS -----------------------------------------------------------------------
 
+    def _is_external_order(self, client_order_id: ClientOrderId) -> bool:
+        return not client_order_id or not self._cache.strategy_id_for_order(client_order_id)
+
     def _handle_msg(self, msg: Any) -> None:
         if isinstance(msg, nautilus_pyo3.OKXWebSocketError):
             self._log.error(repr(msg))
@@ -662,6 +666,10 @@ class OKXExecutionClient(LiveExecutionClient):
 
     def _handle_order_status_report_pyo3(self, msg: nautilus_pyo3.OrderStatusReport) -> None:
         report = OrderStatusReport.from_pyo3(msg)
+
+        if self._is_external_order(report.client_order_id):
+            self._send_order_status_report(report)
+            return
 
         order = self._cache.order(report.client_order_id)
         if order is None:
@@ -731,8 +739,9 @@ class OKXExecutionClient(LiveExecutionClient):
         Handle PyO3 FillReport (both fills channel and order status derived).
         """
         report = FillReport.from_pyo3(msg)
-        if report.client_order_id is None:
-            self._log.warning(f"No ClientOrderId to process {report}")
+
+        if self._is_external_order(report.client_order_id):
+            self._send_order_status_report(report)
             return
 
         order = self._cache.order(report.client_order_id)
