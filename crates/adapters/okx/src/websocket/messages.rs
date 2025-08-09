@@ -485,7 +485,7 @@ pub struct OKXOrderMsg {
     /// Order ID.
     pub ord_id: Ustr,
     /// Order type.
-    pub ord_type: String,
+    pub ord_type: OKXOrderType,
     /// Profit and loss.
     pub pnl: String,
     /// Position side.
