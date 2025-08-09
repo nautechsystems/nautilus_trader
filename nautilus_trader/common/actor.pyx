@@ -2629,7 +2629,7 @@ cdef class Actor(Component):
             end=end,
             client_id=client_id,
             venue=instrument_id.venue,
-            callback=self._handle_instrument_response,
+            callback=self._handle_instruments_response,
             request_id=request_id,
             ts_init=self._clock.timestamp_ns(),
             params=params,
@@ -3836,10 +3836,6 @@ cdef class Actor(Component):
         else:
             self.handle_historical_data(response.data)
 
-        self._finish_response(response.correlation_id)
-
-    cpdef void _handle_instrument_response(self, DataResponse response):
-        self.handle_instrument(response.data)
         self._finish_response(response.correlation_id)
 
     cpdef void _handle_instruments_response(self, DataResponse response):
