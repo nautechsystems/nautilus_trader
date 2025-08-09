@@ -276,10 +276,6 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
         if self.data_cls is Bar:
             used_bar_types = []
 
-            if self.bar_types is None and self.instrument_ids is None:
-                assert self.instrument_id, "No `instrument_id` for Bar data config"
-                assert self.bar_spec, "No `bar_spec` for Bar data config"
-
             if self.instrument_id is not None and self.bar_spec is not None:
                 bar_type = f"{self.instrument_id}-{self.bar_spec}-EXTERNAL"
                 used_bar_types = [bar_type]
@@ -292,8 +288,8 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
             if len(used_bar_types) > 0:
                 filter_expr = f'(field("bar_type") == "{used_bar_types[0]}")'
 
-            for bar_type in used_bar_types[1:]:
-                filter_expr = f'{filter_expr} | (field("bar_type") == "{bar_type}")'
+                for bar_type in used_bar_types[1:]:
+                    filter_expr = f'{filter_expr} | (field("bar_type") == "{bar_type}")'
         else:
             filter_expr = self.filter_expr
 
