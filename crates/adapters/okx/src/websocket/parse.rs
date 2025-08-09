@@ -525,26 +525,9 @@ pub fn parse_order_status_report(
     let venue_order_id = VenueOrderId::new(msg.ord_id);
     let order_side = parse_order_side(&Some(msg.side.clone()));
 
-    let okx_order_type = match msg.ord_type.as_str() {
-        "market" => OKXOrderType::Market,
-        "limit" => OKXOrderType::Limit,
-        "post_only" => OKXOrderType::PostOnly,
-        "fok" => OKXOrderType::Fok,
-        "ioc" => OKXOrderType::Ioc,
-        "optimal_limit_ioc" => OKXOrderType::OptimalLimitIoc,
-        "mmp" => OKXOrderType::Mmp,
-        "mmp_and_post_only" => OKXOrderType::MmpAndPostOnly,
-        _ => OKXOrderType::Limit, // Default fallback
-    };
-    let order_type: OrderType = okx_order_type.clone().into();
-
-    let size_precision = instrument.size_precision();
-    let quantity = parse_quantity(&msg.sz, size_precision)?;
-    let filled_qty = parse_quantity(&msg.acc_fill_sz.clone().unwrap_or_default(), size_precision)?;
+    let okx_order_type = msg.ord_type.clone();
+    let order_type: OrderType = msg.ord_type.clone().into();
     let order_status: OrderStatus = msg.state.clone().into();
-
-    let ts_accepted = parse_millisecond_timestamp(msg.c_time);
-    let ts_last = parse_millisecond_timestamp(msg.u_time);
 
     let time_in_force = match okx_order_type {
         OKXOrderType::Fok => TimeInForce::Fok,
@@ -552,7 +535,14 @@ pub fn parse_order_status_report(
         _ => TimeInForce::Gtc,
     };
 
-    let report = OrderStatusReport::new(
+    let size_precision = instrument.size_precision();
+    let quantity = parse_quantity(&msg.sz, size_precision)?;
+    let filled_qty = parse_quantity(&msg.acc_fill_sz.clone().unwrap_or_default(), size_precision)?;
+
+    let ts_accepted = parse_millisecond_timestamp(msg.c_time);
+    let ts_last = parse_millisecond_timestamp(msg.u_time);
+
+    let mut report = OrderStatusReport::new(
         account_id,
         instrument.id(),
         client_order_id,
@@ -568,6 +558,31 @@ pub fn parse_order_status_report(
         ts_last,
         None, // Generate UUID4 automatically
     );
+
+    if !msg.px.is_empty() {
+        let price_precision = instrument.price_precision();
+        if let Ok(price) = parse_price(&msg.px, price_precision) {
+            report = report.with_price(price);
+        }
+    }
+
+    if !msg.avg_px.is_empty() {
+        report = report.with_avg_px(msg.avg_px.parse::<f64>()?);
+    }
+
+    if msg.ord_type == OKXOrderType::PostOnly {
+        report = report.with_post_only(true);
+    }
+
+    if msg.reduce_only == "true" {
+        report = report.with_reduce_only(true);
+    }
+
+    if let Some(reason) = &msg.cancel_source_reason
+        && !reason.is_empty()
+    {
+        report = report.with_cancel_reason(reason.clone());
+    }
 
     Ok(report)
 }
@@ -1464,7 +1479,7 @@ mod tests {
             inst_type: crate::common::enums::OKXInstrumentType::Swap,
             lever: "2.0".to_string(),
             ord_id: Ustr::from("1234567890"),
-            ord_type: "market".to_string(),
+            ord_type: OKXOrderType::Market,
             pnl: "0".to_string(),
             pos_side: "long".to_string(),
             px: "".to_string(),
@@ -1511,7 +1526,7 @@ mod tests {
             inst_type: crate::common::enums::OKXInstrumentType::Swap,
             lever: "2.0".to_string(),
             ord_id: Ustr::from("1234567890"),
-            ord_type: "market".to_string(),
+            ord_type: OKXOrderType::Market,
             pnl: "0".to_string(),
             pos_side: "long".to_string(),
             px: "".to_string(),
