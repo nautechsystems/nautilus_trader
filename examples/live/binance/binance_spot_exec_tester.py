@@ -22,19 +22,15 @@ from nautilus_trader.adapters.binance import BinanceDataClientConfig
 from nautilus_trader.adapters.binance import BinanceExecClientConfig
 from nautilus_trader.adapters.binance import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.binance import BinanceLiveExecClientFactory
-from nautilus_trader.config import CacheConfig
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMaker
-from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMakerConfig
-from nautilus_trader.live.config import LiveDataEngineConfig
 from nautilus_trader.live.node import TradingNode
-from nautilus_trader.model.data import BarType
-from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.test_kit.strategies.tester_exec import ExecTester
+from nautilus_trader.test_kit.strategies.tester_exec import ExecTesterConfig
 
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
@@ -48,30 +44,30 @@ config_node = TradingNodeConfig(
         log_level="INFO",
         # log_level_file="DEBUG",
         # log_file_format="json",
-        log_colors=True,
         use_pyo3=True,
-    ),
-    data_engine=LiveDataEngineConfig(
-        external_clients=[ClientId(BINANCE)],
     ),
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,
         # snapshot_orders=True,
         # snapshot_positions=True,
         # snapshot_positions_interval_secs=5.0,
+        open_check_interval_secs=5.0,
+        # manage_own_order_books=True,
     ),
-    cache=CacheConfig(
-        # database=DatabaseConfig(),
-        timestamps_as_iso8601=True,
-        flush_on_start=False,
-    ),
-    # message_bus=MessageBusConfig(
-    #     database=DatabaseConfig(timeout=2),
+    # cache=CacheConfig(
+    #     # database=DatabaseConfig(),
     #     timestamps_as_iso8601=True,
+    #     buffer_interval_ms=100,
+    #     flush_on_start=False,
+    # ),
+    # message_bus=MessageBusConfig(
+    #     database=DatabaseConfig(),
+    #     encoding="json",
+    #     timestamps_as_iso8601=True,
+    #     buffer_interval_ms=100,
+    #     streams_prefix="quoters",
     #     use_instance_id=False,
-    #     # types_filter=[QuoteTick],
-    #     stream_per_topic=False,
-    #     external_streams=["bybit"],
+    #     types_filter=[QuoteTick],
     #     autotrim_mins=30,
     #     heartbeat_interval_secs=1,
     # ),
@@ -80,11 +76,12 @@ config_node = TradingNodeConfig(
         BINANCE: BinanceDataClientConfig(
             api_key=None,  # 'BINANCE_API_KEY' env var
             api_secret=None,  # 'BINANCE_API_SECRET' env var
-            account_type=BinanceAccountType.USDT_FUTURE,
+            # key_type=BinanceKeyType.ED25519,
+            account_type=BinanceAccountType.SPOT,
             base_url_http=None,  # Override with custom endpoint
             base_url_ws=None,  # Override with custom endpoint
             us=False,  # If client is for Binance US
-            testnet=True,  # If client uses the testnet
+            testnet=False,  # If client uses the testnet
             instrument_provider=InstrumentProviderConfig(load_all=True),
         ),
     },
@@ -92,11 +89,12 @@ config_node = TradingNodeConfig(
         BINANCE: BinanceExecClientConfig(
             api_key=None,  # 'BINANCE_API_KEY' env var
             api_secret=None,  # 'BINANCE_API_SECRET' env var
-            account_type=BinanceAccountType.USDT_FUTURE,
+            # key_type=BinanceKeyType.ED25519,
+            account_type=BinanceAccountType.SPOT,
             base_url_http=None,  # Override with custom endpoint
             base_url_ws=None,  # Override with custom endpoint
             us=False,  # If client is for Binance US
-            testnet=True,  # If client uses the testnet
+            testnet=False,  # If client uses the testnet
             instrument_provider=InstrumentProviderConfig(load_all=True),
             max_retries=3,
             retry_delay_initial_ms=1_000,
@@ -114,17 +112,14 @@ config_node = TradingNodeConfig(
 node = TradingNode(config=config_node)
 
 # Configure your strategy
-strat_config = VolatilityMarketMakerConfig(
-    instrument_id=InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
-    external_order_claims=[InstrumentId.from_str("ETHUSDT-PERP.BINANCE")],
-    bar_type=BarType.from_str("ETHUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL"),
-    atr_period=20,
-    atr_multiple=6.0,
-    trade_size=Decimal("0.020"),
-    # manage_gtd_expiry=True,
+strat_config = ExecTesterConfig(
+    instrument_id=InstrumentId.from_str("ETHUSDT.BINANCE"),
+    external_order_claims=[InstrumentId.from_str("ETHUSDT.BINANCE")],
+    order_qty=Decimal("0.010"),
 )
+
 # Instantiate your strategy
-strategy = VolatilityMarketMaker(config=strat_config)
+strategy = ExecTester(config=strat_config)
 
 # Add your strategies and modules
 node.trader.add_strategy(strategy)

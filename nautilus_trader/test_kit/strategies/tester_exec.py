@@ -68,6 +68,8 @@ class ExecTesterConfig(StrategyConfig, frozen=True):
     cancel_orders_on_stop: bool = True
     close_positions_on_stop: bool = True
     reduce_only_on_stop: bool = True
+    use_individual_cancels_on_stop: bool = False
+    use_batch_cancel_on_stop: bool = False
     dry_run: bool = False
     log_data: bool = True
 
@@ -301,7 +303,7 @@ class ExecTester(Strategy):
             params=self.config.order_params,
         )
 
-    def on_stop(self) -> None:
+    def on_stop(self) -> None:  # noqa: C901 (too complex)
         """
         Actions to be performed when the strategy is stopped.
         """
@@ -310,16 +312,15 @@ class ExecTester(Strategy):
             return
 
         if self.config.cancel_orders_on_stop:
-            self.cancel_all_orders(self.config.instrument_id, client_id=self.client_id)
-
-        # # Uncomment to test individual cancels
-        # for order in self.cache.orders_open(instrument_id=self.config.instrument_id):
-        #     self.cancel_order(order)
-
-        # # Uncomment to test batch cancel
-        # open_orders = self.cache.orders_open(instrument_id=self.config.instrument_id)
-        # if open_orders:
-        #     self.cancel_orders(open_orders, client_id=self.client_id)
+            if self.config.use_individual_cancels_on_stop:
+                for order in self.cache.orders_open(instrument_id=self.config.instrument_id):
+                    self.cancel_order(order)
+            elif self.config.use_batch_cancel_on_stop:
+                open_orders = self.cache.orders_open(instrument_id=self.config.instrument_id)
+                if open_orders:
+                    self.cancel_orders(open_orders, client_id=self.client_id)
+            else:
+                self.cancel_all_orders(self.config.instrument_id, client_id=self.client_id)
 
         if self.config.close_positions_on_stop:
             self.close_all_positions(
