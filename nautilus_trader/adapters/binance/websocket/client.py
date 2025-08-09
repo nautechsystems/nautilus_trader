@@ -307,6 +307,11 @@ class BinanceWebSocketClient:
         if client is None:
             return
 
+        # Check Rust-level state to make this idempotent
+        if client.is_disconnecting() or client.is_closed():
+            self._log.debug(f"ws-client {client_id}: Already disconnecting/closed, skipping")
+            return
+
         self._log.debug(f"ws-client {client_id}: Disconnecting...")
         try:
             await client.disconnect()

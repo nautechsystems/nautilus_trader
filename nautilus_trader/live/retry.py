@@ -90,6 +90,8 @@ class RetryManager(Generic[T]):
     retry_check : Callable[[BaseException], None], optional
         A function that performs additional checks on the exception.
         If the function returns `False`, a retry will not be attempted.
+    error_logger : Callable[[str, BaseException | None], None], optional
+        A custom error logging function to use instead of the default logger.error.
 
     """
 
@@ -102,6 +104,7 @@ class RetryManager(Generic[T]):
         logger: Logger,
         exc_types: tuple[type[BaseException], ...],
         retry_check: Callable[[BaseException], bool] | None = None,
+        error_logger: Callable[[str, BaseException | None], None] | None = None,
     ) -> None:
         self.max_retries = max_retries
         self.delay_initial_ms = delay_initial_ms
@@ -110,6 +113,7 @@ class RetryManager(Generic[T]):
         self.retries = 0
         self.exc_types = exc_types
         self.retry_check = retry_check
+        self.error_logger = error_logger
         self.cancel_event = asyncio.Event()
         self.log = logger
 
@@ -118,6 +122,7 @@ class RetryManager(Generic[T]):
         self.details_str: str | None = None
         self.result: bool = False
         self.message: str | None = None
+        self.last_exception: BaseException | None = None
 
     def __repr__(self) -> str:
         return f"<{type(self).__name__}(name='{self.name}', details={self.details}) at {hex(id(self))}>"
@@ -170,6 +175,7 @@ class RetryManager(Generic[T]):
                     return response  # Successful request
                 except self.exc_types as e:
                     self.log.warning(repr(e))
+                    self.last_exception = e
                     if (
                         (self.retry_check and not self.retry_check(e))
                         or not self.max_retries
@@ -211,6 +217,7 @@ class RetryManager(Generic[T]):
         self.details_str = None
         self.result = False
         self.message = None
+        self.last_exception = None
 
     def _cancel(self) -> None:
         self.log.warning(f"Canceled retry for '{self.name}'")
@@ -224,9 +231,11 @@ class RetryManager(Generic[T]):
         )
 
     def _log_error(self) -> None:
-        self.log.error(
-            f"Failed on '{self.name}'{self._details_str()}",
-        )
+        message = f"Failed on '{self.name}'{self._details_str()}"
+        if self.error_logger:
+            self.error_logger(message, self.last_exception)
+        else:
+            self.log.error(message)
 
     def _details_str(self) -> str:
         if not self.details:
@@ -261,6 +270,8 @@ class RetryManagerPool(Generic[T]):
     retry_check : Callable[[BaseException], None], optional
         A function that performs additional checks on the exception.
         If the function returns `False`, a retry will not be attempted.
+    error_logger : Callable[[str, BaseException | None], None], optional
+        A custom error logging function to use instead of the default logger.error.
 
     """
 
@@ -274,6 +285,7 @@ class RetryManagerPool(Generic[T]):
         logger: Logger,
         exc_types: tuple[type[BaseException], ...],
         retry_check: Callable[[BaseException], bool] | None = None,
+        error_logger: Callable[[str, BaseException | None], None] | None = None,
     ) -> None:
         self.max_retries = max_retries
         self.delay_initial_ms = delay_initial_ms
@@ -282,6 +294,7 @@ class RetryManagerPool(Generic[T]):
         self.logger = logger
         self.exc_types = exc_types
         self.retry_check = retry_check
+        self.error_logger = error_logger
         self.pool_size = pool_size
         self._pool: list[RetryManager[T]] = [self._create_manager() for _ in range(pool_size)]
         self._lock = asyncio.Lock()
@@ -296,6 +309,7 @@ class RetryManagerPool(Generic[T]):
             logger=self.logger,
             exc_types=self.exc_types,
             retry_check=self.retry_check,
+            error_logger=self.error_logger,
         )
 
     def shutdown(self) -> None:
