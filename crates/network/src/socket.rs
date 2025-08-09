@@ -488,7 +488,11 @@ impl SocketClientInner {
 
                                 // Attempt to shutdown the writer gracefully before updating,
                                 // we ignore any error as the writer may already be closed.
-                                _ = active_writer.shutdown().await;
+                                _ = tokio::time::timeout(
+                                    Duration::from_secs(5),
+                                    active_writer.shutdown(),
+                                )
+                                .await;
 
                                 active_writer = new_writer;
                                 tracing::debug!("Updated writer");
@@ -526,7 +530,7 @@ impl SocketClientInner {
 
             // Attempt to shutdown the writer gracefully before exiting,
             // we ignore any error as the writer may already be closed.
-            _ = active_writer.shutdown().await;
+            _ = tokio::time::timeout(Duration::from_secs(5), active_writer.shutdown()).await;
 
             log_task_stopped("write");
         })
