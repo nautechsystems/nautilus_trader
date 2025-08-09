@@ -514,7 +514,8 @@ impl WebSocketClientInner {
                     ConnectionMode::Disconnect => {
                         // Attempt to close the writer gracefully before exiting,
                         // we ignore any error as the writer may already be closed.
-                        _ = active_writer.close().await;
+                        _ = tokio::time::timeout(Duration::from_secs(5), active_writer.close())
+                            .await;
                         break;
                     }
                     ConnectionMode::Closed => break,
@@ -538,7 +539,11 @@ impl WebSocketClientInner {
 
                                 // Attempt to close the writer gracefully on update,
                                 // we ignore any error as the writer may already be closed.
-                                _ = active_writer.close().await;
+                                _ = tokio::time::timeout(
+                                    Duration::from_secs(5),
+                                    active_writer.close(),
+                                )
+                                .await;
 
                                 active_writer = new_writer;
                                 tracing::debug!("Updated writer");
@@ -572,7 +577,7 @@ impl WebSocketClientInner {
 
             // Attempt to close the writer gracefully before exiting,
             // we ignore any error as the writer may already be closed.
-            _ = active_writer.close().await;
+            _ = tokio::time::timeout(Duration::from_secs(5), active_writer.close()).await;
 
             log_task_stopped("write");
         })
