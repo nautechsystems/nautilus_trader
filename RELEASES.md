@@ -52,6 +52,7 @@ Released on TBD (UTC).
 - Added integration test service management targets (#2765), thanks @stastnypremysl
 - Added integration tests for dYdX bar-partitioning and large-history handling (#2773), thanks @nicolad
 - Added make build-debug-pyo3 (#2802), thanks @faysou
+- Add pytest timer (#2834), thanks @faysou
 - Optimized identifiers hashing to avoid frequent recomputations using C strings
 - Optimized data engine topic string caching for message bus publishing to avoid frequent f-string constructions
 - Optimized Redis key scans to improve efficiency over a network
@@ -100,7 +101,7 @@ Released on TBD (UTC).
 - Fixed EOD bar for Interactive Brokers (#2764), thanks @faysou
 - Fixed dYdX Take Profit order type mapping error (#2758), thanks @nicolad
 - Fixed typo in logging for dYdX adapter (#2790), thanks @DeirhX
-- Fixed bars request pagination logic for OKX (#2798), thanks @nicolad
+- Fixed bars request pagination logic for OKX (#2798, #2825), thanks @nicolad
 - Fixed dYdX order and fill message schemas (#2824), thanks @davidsblom
 - Fixed Binance Spot testnet streaming URL, thanks for reporting @Frzgunr1
 - Fixed Binance Ed25519 key handling
