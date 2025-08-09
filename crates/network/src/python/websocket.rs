@@ -116,10 +116,10 @@ impl WebSocketClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             match ConnectionMode::from_atomic(&connection_mode) {
                 ConnectionMode::Closed => {
-                    tracing::warn!("WebSocket already closed");
+                    tracing::debug!("WebSocket already closed");
                 }
                 ConnectionMode::Disconnect => {
-                    tracing::warn!("WebSocket already disconnecting");
+                    tracing::debug!("WebSocket already disconnecting");
                 }
                 _ => {
                     connection_mode.store(ConnectionMode::Disconnect.as_u8(), Ordering::SeqCst);
