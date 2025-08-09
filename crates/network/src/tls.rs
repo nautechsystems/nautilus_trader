@@ -130,16 +130,19 @@ where
 
 /// Extracts the host name from the request URI.
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics if the request URI has no host component.
+/// Returns an error if the request URI has no host component.
 #[allow(clippy::result_large_err)]
 fn domain(request: &Request) -> Result<String, Error> {
     match request.uri().host() {
         // rustls expects IPv6 addresses without the surrounding [] brackets
         Some(d) if d.starts_with('[') && d.ends_with(']') => Ok(d[1..d.len() - 1].to_string()),
         Some(d) => Ok(d.to_string()),
-        None => panic!("No host name"),
+        None => Err(Error::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Request URI missing host component",
+        ))),
     }
 }
 
