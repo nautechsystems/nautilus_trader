@@ -20,12 +20,13 @@ from nautilus_trader.config import StrategyConfig
 from nautilus_trader.core.datetime import unix_nanos_to_dt
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.trading.strategy import Strategy
 
 
 class DemoStrategyConfig(StrategyConfig, frozen=True):
-    instrument: Instrument
+    instrument_id: InstrumentId
     bar_type: BarType
 
 
@@ -57,7 +58,16 @@ class DemoStrategy(Strategy):
         self.highest_price = float("-inf")
         self.lowest_price = float("inf")
 
+        # Get instrument from cache
+        self.instrument: Instrument | None = None
+
     def on_start(self):
+        # Get instrument from cache
+        self.instrument = self.cache.instrument(self.config.instrument_id)
+        if self.instrument is None:
+            self.log.error(f"Instrument {self.config.instrument_id} not found in cache")
+            return
+
         # Subscribe to market data
         self.subscribe_bars(self.config.bar_type)
         self.log.info(f"Subscribed to {self.config.bar_type}", color=LogColor.YELLOW)

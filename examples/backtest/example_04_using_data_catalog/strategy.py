@@ -16,22 +16,27 @@
 import datetime as dt
 
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.config import StrategyConfig
 from nautilus_trader.core.datetime import unix_nanos_to_dt
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.trading.strategy import Strategy
 
 
+class DemoStrategyConfig(StrategyConfig, frozen=True):
+    bar_type_1min: BarType
+
+
 class DemoStrategy(Strategy):
 
-    def __init__(self, bar_type_1min: BarType):
-        super().__init__()
+    def __init__(self, config: DemoStrategyConfig):
+        super().__init__(config)
 
         # Extract the trading instrument's ID from the 1-minute bar configuration
-        self.instrument_id = bar_type_1min.instrument_id
+        self.instrument_id = self.config.bar_type_1min.instrument_id
 
         # Save the 1-minute bar configuration and create a counter to track how many bars we receive
-        self.bar_type_1min = bar_type_1min
+        self.bar_type_1min = self.config.bar_type_1min
         self.count_1min_bars = 0  # This will increment each time we receive a 1-minute bar
 
         # Track when the strategy starts and ends

@@ -19,19 +19,24 @@ import pandas as pd
 
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.events import TimeEvent
+from nautilus_trader.config import StrategyConfig
 from nautilus_trader.core.datetime import unix_nanos_to_dt
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.trading.strategy import Strategy
 
 
+class SimpleTimerStrategyConfig(StrategyConfig, frozen=True):
+    primary_bar_type: BarType
+
+
 class SimpleTimerStrategy(Strategy):
     TIMER_NAME = "every_3_minutes"
     TIMER_INTERVAL = pd.Timedelta(minutes=3)
 
-    def __init__(self, primary_bar_type: BarType):
-        super().__init__()
-        self.primary_bar_type = primary_bar_type
+    def __init__(self, config: SimpleTimerStrategyConfig):
+        super().__init__(config)
+        self.primary_bar_type = self.config.primary_bar_type
         self.bars_processed = 0
         self.start_time = None
         self.end_time = None

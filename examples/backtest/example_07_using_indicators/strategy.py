@@ -17,11 +17,16 @@ import datetime as dt
 from collections import deque
 
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.config import StrategyConfig
 from nautilus_trader.indicators.average.ma_factory import MovingAverageFactory
 from nautilus_trader.indicators.average.ma_factory import MovingAverageType
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.trading.strategy import Strategy
+
+
+class DemoStrategyConfig(StrategyConfig, frozen=True):
+    bar_type: BarType
 
 
 class DemoStrategy(Strategy):
@@ -30,11 +35,11 @@ class DemoStrategy(Strategy):
     NautilusTrader.
     """
 
-    def __init__(self, bar_type: BarType):
-        super().__init__()
+    def __init__(self, config: DemoStrategyConfig):
+        super().__init__(config)
 
         # The bar_type parameter defines what market data we'll be working with
-        self.bar_type = bar_type
+        self.bar_type = self.config.bar_type
 
         # Simple counter to track how many bars we've processed
         self.bars_processed = 0

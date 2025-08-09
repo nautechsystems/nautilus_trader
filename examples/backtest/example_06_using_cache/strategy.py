@@ -17,6 +17,7 @@
 import pickle
 
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.config import StrategyConfig
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import OrderSide
@@ -40,12 +41,26 @@ class DataContainer:
         return f"Container({self.name}, xxx={self.xxx})"
 
 
+class CacheDemoStrategyConfig(StrategyConfig, frozen=True):
+    """
+    Configuration for ``CacheDemoStrategy`` instances.
+
+    Parameters
+    ----------
+    bar_type : BarType
+        The bar type for the strategy.
+
+    """
+
+    bar_type: BarType
+
+
 class CacheDemoStrategy(Strategy):
 
-    def __init__(self, bar_type: BarType):
-        super().__init__()
-        self.bar_type = bar_type
-        self.instrument_id = bar_type.instrument_id
+    def __init__(self, config: CacheDemoStrategyConfig):
+        super().__init__(config)
+        self.bar_type = self.config.bar_type
+        self.instrument_id = self.config.bar_type.instrument_id
 
         # Trading state
         self.bar_count = 0

@@ -18,6 +18,7 @@ from decimal import Decimal
 
 import pandas as pd
 from strategy import DemoStrategy
+from strategy import DemoStrategyConfig
 
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.config import BacktestEngineConfig
@@ -101,7 +102,8 @@ if __name__ == "__main__":
     # ==========================================================================================
 
     # Step 5: Create strategy and add it to the engine
-    strategy = DemoStrategy(primary_bar_type=EURUSD_FUTURES_1MIN_BARTYPE)
+    strategy_config = DemoStrategyConfig(primary_bar_type=EURUSD_FUTURES_1MIN_BARTYPE)
+    strategy = DemoStrategy(config=strategy_config)
     engine.add_strategy(strategy)
 
     # Step 6: Run engine = Run backtest

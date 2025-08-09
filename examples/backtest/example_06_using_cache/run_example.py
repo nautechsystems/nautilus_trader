@@ -17,6 +17,7 @@
 from decimal import Decimal
 
 from strategy import CacheDemoStrategy
+from strategy import CacheDemoStrategyConfig
 
 from examples.utils.data_provider import prepare_demo_data_eurusd_futures_1min
 from nautilus_trader.backtest.engine import BacktestEngine
@@ -86,7 +87,8 @@ if __name__ == "__main__":
     # ----------------------------------------------------------------------------------
 
     # Create and register the cache demonstration strategy
-    strategy = CacheDemoStrategy(bar_type=eurusd_1min_bartype)
+    strategy_config = CacheDemoStrategyConfig(bar_type=eurusd_1min_bartype)
+    strategy = CacheDemoStrategy(config=strategy_config)
     engine.add_strategy(strategy)
 
     # Execute the backtest

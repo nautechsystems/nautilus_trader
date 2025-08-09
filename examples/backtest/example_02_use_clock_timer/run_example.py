@@ -17,6 +17,7 @@
 from decimal import Decimal
 
 from strategy import SimpleTimerStrategy
+from strategy import SimpleTimerStrategyConfig
 
 from examples.utils.data_provider import prepare_demo_data_eurusd_futures_1min
 from nautilus_trader.backtest.engine import BacktestEngine
@@ -89,7 +90,8 @@ if __name__ == "__main__":
     # ----------------------------------------------------------------------------------
 
     # Create and register the timer strategy
-    strategy = SimpleTimerStrategy(primary_bar_type=eurusd_1min_bartype)
+    strategy_config = SimpleTimerStrategyConfig(primary_bar_type=eurusd_1min_bartype)
+    strategy = SimpleTimerStrategy(config=strategy_config)
     engine.add_strategy(strategy)
 
     # Execute the backtest

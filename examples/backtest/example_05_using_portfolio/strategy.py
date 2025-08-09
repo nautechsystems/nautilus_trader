@@ -20,6 +20,7 @@ from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events import PositionOpened
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.trading.config import StrategyConfig
 from nautilus_trader.trading.strategy import Strategy
@@ -27,7 +28,7 @@ from nautilus_trader.trading.strategy import Strategy
 
 class DemoStrategyConfig(StrategyConfig, frozen=True):
     bar_type: BarType
-    instrument: Instrument
+    instrument_id: InstrumentId
 
 
 class DemoStrategy(Strategy):
@@ -42,10 +43,19 @@ class DemoStrategy(Strategy):
         self.count_of_bars: int = 0
         self.show_portfolio_at_bar: int | None = 0
 
+        # Get instrument from cache
+        self.instrument: Instrument | None = None
+
     def on_start(self):
         """
         Handle strategy start event.
         """
+        # Get instrument from cache
+        self.instrument = self.cache.instrument(self.config.instrument_id)
+        if self.instrument is None:
+            self.log.error(f"Instrument {self.config.instrument_id} not found in cache")
+            return
+
         # Subscribe to market data
         self.subscribe_bars(self.config.bar_type)
 
@@ -67,15 +77,15 @@ class DemoStrategy(Strategy):
         if not self.order_placed:
             # Prepare values for order
             last_price = bar.close
-            tick_size = self.config.instrument.price_increment
-            profit_price = self.config.instrument.make_price(last_price + (10 * tick_size))
-            stoploss_price = self.config.instrument.make_price(last_price - (10 * tick_size))
+            tick_size = self.instrument.price_increment
+            profit_price = self.instrument.make_price(last_price + (10 * tick_size))
+            stoploss_price = self.instrument.make_price(last_price - (10 * tick_size))
 
             # Create BUY MARKET order with PT and SL (both 10 ticks)
             bracket_order_list = self.order_factory.bracket(
-                instrument_id=self.config.instrument.id,
+                instrument_id=self.instrument.id,
                 order_side=OrderSide.BUY,
-                quantity=self.config.instrument.make_qty(1),  # Trade size: 1 contract
+                quantity=self.instrument.make_qty(1),  # Trade size: 1 contract
                 time_in_force=TimeInForce.GTC,
                 tp_price=profit_price,
                 sl_trigger_price=stoploss_price,
@@ -115,13 +125,13 @@ class DemoStrategy(Strategy):
 
         # POSITION information
         self.log.info("Portfolio -> Position information:", color=LogColor.BLUE)
-        is_flat = self.portfolio.is_flat(self.config.instrument.id)
+        is_flat = self.portfolio.is_flat(self.instrument.id)
         self.log.info(f"Is flat: {is_flat}", color=LogColor.BLUE)
 
-        net_position = self.portfolio.net_position(self.config.instrument.id)
+        net_position = self.portfolio.net_position(self.instrument.id)
         self.log.info(f"Net position: {net_position} contract(s)", color=LogColor.BLUE)
 
-        net_exposure = self.portfolio.net_exposure(self.config.instrument.id)
+        net_exposure = self.portfolio.net_exposure(self.instrument.id)
         self.log.info(f"Net exposure: {net_exposure}", color=LogColor.BLUE)
 
         # -----------------------------------------------------
@@ -129,20 +139,20 @@ class DemoStrategy(Strategy):
         # P&L information
         self.log.info("Portfolio -> P&L information:", color=LogColor.YELLOW)
 
-        realized_pnl = self.portfolio.realized_pnl(self.config.instrument.id)
+        realized_pnl = self.portfolio.realized_pnl(self.instrument.id)
         self.log.info(f"Realized P&L: {realized_pnl}", color=LogColor.YELLOW)
 
-        unrealized_pnl = self.portfolio.unrealized_pnl(self.config.instrument.id)
+        unrealized_pnl = self.portfolio.unrealized_pnl(self.instrument.id)
         self.log.info(f"Unrealized P&L: {unrealized_pnl}", color=LogColor.YELLOW)
 
         # -----------------------------------------------------
 
         self.log.info("Portfolio -> Account information:", color=LogColor.CYAN)
-        margins_init = self.portfolio.margins_init(self.config.instrument.venue)
+        margins_init = self.portfolio.margins_init(self.instrument.venue)
         self.log.info(f"Initial margin: {margins_init}", color=LogColor.CYAN)
 
-        margins_maint = self.portfolio.margins_maint(self.config.instrument.venue)
+        margins_maint = self.portfolio.margins_maint(self.instrument.venue)
         self.log.info(f"Maintenance margin: {margins_maint}", color=LogColor.CYAN)
 
-        balances_locked = self.portfolio.balances_locked(self.config.instrument.venue)
+        balances_locked = self.portfolio.balances_locked(self.instrument.venue)
         self.log.info(f"Locked balance: {balances_locked}", color=LogColor.CYAN)

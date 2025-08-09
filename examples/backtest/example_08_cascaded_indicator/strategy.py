@@ -7,6 +7,7 @@ from nautilus_trader.indicators.average.ma_factory import MovingAverageFactory
 from nautilus_trader.indicators.average.ma_factory import MovingAverageType
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.trading.strategy import Strategy
 
@@ -16,7 +17,7 @@ class DemoStrategyConfig(StrategyConfig, frozen=True):
     Configuration for the demo strategy.
     """
 
-    instrument: Instrument
+    instrument_id: InstrumentId
     primary_bar_type: BarType
     primary_ema_period: int = 10  # Period for primary EMA indicator
     secondary_ema_period: int = 20  # Period for secondary cascaded EMA indicator
@@ -34,23 +35,32 @@ class DemoStrategy(Strategy):
         self.bars_processed = 0
 
         # Store bar type from config
-        self.bar_type = config.primary_bar_type
+        self.bar_type = self.config.primary_bar_type
+
+        # Get instrument from cache
+        self.instrument: Instrument | None = None
 
         # Primary indicator: EMA calculated on 1-min bars
         self.primary_ema = MovingAverageFactory.create(
-            config.primary_ema_period,  # Period for primary EMA indicator
+            self.config.primary_ema_period,  # Period for primary EMA indicator
             MovingAverageType.EXPONENTIAL,  # Type of moving average
         )
         self.primary_ema_history: deque[float] = deque()  # Store historical values here
 
         # Cascaded indicator: EMA calculated on primary EMA values
         self.secondary_ema = MovingAverageFactory.create(
-            config.secondary_ema_period,  # Period for secondary cascaded EMA indicator
+            self.config.secondary_ema_period,  # Period for secondary cascaded EMA indicator
             MovingAverageType.EXPONENTIAL,  # Type of moving average
         )
         self.secondary_ema_history: deque[float] = deque()  # Store historical values here
 
     def on_start(self):
+        # Get instrument from cache
+        self.instrument = self.cache.instrument(self.config.instrument_id)
+        if self.instrument is None:
+            self.log.error(f"Instrument {self.config.instrument_id} not found in cache")
+            return
+
         # Subscribe to bars
         self.subscribe_bars(self.bar_type)
 

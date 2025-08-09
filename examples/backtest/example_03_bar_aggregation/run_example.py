@@ -17,6 +17,7 @@
 from decimal import Decimal
 
 from strategy import DemoStrategy
+from strategy import DemoStrategyConfig
 
 from examples.utils.data_provider import prepare_demo_data_eurusd_futures_1min
 from nautilus_trader.backtest.engine import BacktestEngine
@@ -80,7 +81,8 @@ if __name__ == "__main__":
     # ----------------------------------------------------------------------------------
 
     # Create and register the bar aggregation strategy
-    strategy = DemoStrategy(bar_type_1min=eurusd_1min_bartype)
+    strategy_config = DemoStrategyConfig(bar_type_1min=eurusd_1min_bartype)
+    strategy = DemoStrategy(config=strategy_config)
     engine.add_strategy(strategy)
 
     # Execute the backtest

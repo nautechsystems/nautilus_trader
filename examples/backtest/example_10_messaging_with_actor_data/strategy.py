@@ -22,6 +22,7 @@ from nautilus_trader.model.custom import customdataclass
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import DataType
+from nautilus_trader.model.identifiers import InstrumentId as InstrumentIdType
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.trading.strategy import Strategy
 
@@ -77,7 +78,7 @@ class Last10BarsStatsSerializable(Data):
 
 
 class DemoStrategyConfig(StrategyConfig, frozen=True):
-    instrument: Instrument
+    instrument_id: InstrumentIdType
     bar_type: BarType
 
 
@@ -92,7 +93,16 @@ class DemoStrategy(Strategy):
         # Counter for processed bars
         self.bars_processed = 0
 
+        # Get instrument from cache
+        self.instrument: Instrument | None = None
+
     def on_start(self):
+        # Get instrument from cache
+        self.instrument = self.cache.instrument(self.config.instrument_id)
+        if self.instrument is None:
+            self.log.error(f"Instrument {self.config.instrument_id} not found in cache")
+            return
+
         # Subscribe to market data
         self.subscribe_bars(self.config.bar_type)
         self.log.info(f"Subscribed to {self.config.bar_type}", color=LogColor.YELLOW)

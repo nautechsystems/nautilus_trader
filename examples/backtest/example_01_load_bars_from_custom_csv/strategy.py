@@ -16,16 +16,21 @@
 import datetime as dt
 
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.config import StrategyConfig
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.trading.strategy import Strategy
 
 
+class DemoStrategyConfig(StrategyConfig, frozen=True):
+    primary_bar_type: BarType
+
+
 # This is a trivial demo strategy that simply counts all processed 1-minute bars.
 class DemoStrategy(Strategy):
-    def __init__(self, primary_bar_type: BarType):
-        super().__init__()
-        self.primary_bar_type = primary_bar_type
+    def __init__(self, config: DemoStrategyConfig):
+        super().__init__(config)
+        self.primary_bar_type = self.config.primary_bar_type
         self.bars_processed = 0
         self.start_time = None
         self.end_time = None
