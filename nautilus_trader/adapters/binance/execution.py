@@ -19,6 +19,7 @@ from decimal import Decimal
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_MAX_CALLBACK_RATE
 from nautilus_trader.adapters.binance.common.constants import BINANCE_MIN_CALLBACK_RATE
+from nautilus_trader.adapters.binance.common.constants import BINANCE_RETRY_WARNINGS
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceEnumParser
 from nautilus_trader.adapters.binance.common.enums import BinanceFuturesPositionSide
@@ -32,6 +33,7 @@ from nautilus_trader.adapters.binance.http.account import BinanceAccountHttpAPI
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceClientError
 from nautilus_trader.adapters.binance.http.error import BinanceError
+from nautilus_trader.adapters.binance.http.error import get_binance_error_code
 from nautilus_trader.adapters.binance.http.error import should_retry
 from nautilus_trader.adapters.binance.http.market import BinanceMarketHttpAPI
 from nautilus_trader.adapters.binance.http.user import BinanceUserDataHttpAPI
@@ -234,6 +236,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             logger=self._log,
             exc_types=(BinanceError,),
             retry_check=should_retry,
+            error_logger=self._log_retry_error,
         )
 
         self._log.info(f"Base url HTTP {self._http_client.base_url}", LogColor.BLUE)
@@ -266,6 +269,13 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
     def _stop(self) -> None:
         self._retry_manager_pool.shutdown()
+
+    def _log_retry_error(self, message: str, exception: BaseException | None) -> None:
+        error_code = get_binance_error_code(exception) if exception else None
+        if error_code and error_code in BINANCE_RETRY_WARNINGS:
+            self._log.warning(message)
+        else:
+            self._log.error(message)
 
     async def _connect(self) -> None:
         try:
@@ -347,7 +357,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                         )
                         await self._handle_listen_key_failure()
                         self._ping_consecutive_failures = 0  # Reset after handling
-
         except asyncio.CancelledError:
             self._log.debug("Canceled task 'ping_listen_keys'")
 
