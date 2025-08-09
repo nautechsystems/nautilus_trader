@@ -30,10 +30,6 @@ use nautilus_model::{
     defi::{DefiData, SharedChain, validation::validate_address},
     identifiers::{ClientId, Venue},
 };
-use tokio::sync::{
-    mpsc::{UnboundedReceiver, UnboundedSender},
-    oneshot,
-};
 
 use crate::{
     config::BlockchainDataClientConfig,
@@ -63,13 +59,13 @@ pub struct BlockchainDataClient {
     /// Channel receiver for messages from the HyperSync client.
     hypersync_rx: Option<tokio::sync::mpsc::UnboundedReceiver<BlockchainMessage>>,
     /// Channel sender for commands to be processed asynchronously.
-    command_tx: UnboundedSender<DefiDataCommand>,
+    command_tx: tokio::sync::mpsc::UnboundedSender<DefiDataCommand>,
     /// Channel receiver for commands to be processed asynchronously.
-    command_rx: Option<UnboundedReceiver<DefiDataCommand>>,
+    command_rx: Option<tokio::sync::mpsc::UnboundedReceiver<DefiDataCommand>>,
     /// Background task for processing messages.
     process_task: Option<tokio::task::JoinHandle<()>>,
     /// Oneshot channel sender for graceful shutdown signal.
-    shutdown_tx: Option<oneshot::Sender<()>>,
+    shutdown_tx: Option<tokio::sync::oneshot::Sender<()>>,
 }
 
 impl BlockchainDataClient {
@@ -122,7 +118,7 @@ impl BlockchainDataClient {
             return;
         };
 
-        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
         self.shutdown_tx = Some(shutdown_tx);
 
         let mut core_client = self.core_client.take().unwrap();
@@ -205,7 +201,6 @@ impl BlockchainDataClient {
                                                 Ok(swap) => Some(DataEvent::DeFi(DefiData::PoolSwap(swap))),
                                                 Err(e) => {
                                                     tracing::error!("Error processing pool swap event: {e}");
-                                                    println!("FAIL");
                                                     None
                                                 }
                                             }
@@ -217,7 +212,6 @@ impl BlockchainDataClient {
                                     }
                                 }
                                 BlockchainMessage::BurnEvent(burn_event) => {
-                                    println!("BURN EVENT-->>> {:?}", burn_event);
                                     match core_client.get_pool(&burn_event.pool_address) {
                                         Ok(pool) => {
                                             let dex_extended = get_dex_extended(core_client.chain.name, &pool.dex.name).expect("Failed to get dex extended");
@@ -240,7 +234,6 @@ impl BlockchainDataClient {
                                     }
                                 }
                                 BlockchainMessage::MintEvent(mint_event) => {
-                                    println!("MINT EVENT-->>> {:?}", mint_event);
                                     match core_client.get_pool(&mint_event.pool_address) {
                                         Ok(pool) => {
                                             let dex_extended = get_dex_extended(core_client.chain.name,&pool.dex.name).expect("Failed to get dex extended");
@@ -266,8 +259,6 @@ impl BlockchainDataClient {
 
                             if let Some(event) = data_event {
                                 core_client.send_data(event);
-                            }else{
-                                println!("NO EVENT");
                             }
                         } else {
                             tracing::debug!("HyperSync data channel closed");
@@ -496,7 +487,7 @@ impl BlockchainDataClient {
     pub async fn await_process_task_close(&mut self) {
         if let Some(handle) = self.process_task.take() {
             if let Err(e) = handle.await {
-                tracing::error!("Process task join error: {}", e);
+                tracing::error!("Process task join error: {e}");
             }
         }
     }
