@@ -63,6 +63,13 @@ use crate::{
     tls::{Connector, create_tls_config_from_certs_dir, tcp_tls},
 };
 
+// Connection timing constants
+const CONNECTION_STATE_CHECK_INTERVAL_MS: u64 = 10;
+const GRACEFUL_SHUTDOWN_DELAY_MS: u64 = 100;
+const GRACEFUL_SHUTDOWN_TIMEOUT_SECS: u64 = 5;
+const SEND_OPERATION_TIMEOUT_SECS: u64 = 2;
+const SEND_OPERATION_CHECK_INTERVAL_MS: u64 = 1;
+
 type TcpWriter = WriteHalf<MaybeTlsStream<TcpStream>>;
 type TcpReader = ReadHalf<MaybeTlsStream<TcpStream>>;
 pub type TcpMessageHandler = dyn Fn(&[u8]) + Send + Sync;
@@ -317,7 +324,7 @@ impl SocketClientInner {
             }
 
             // Delay before closing connection
-            tokio::time::sleep(Duration::from_millis(100)).await;
+            tokio::time::sleep(Duration::from_millis(GRACEFUL_SHUTDOWN_DELAY_MS)).await;
 
             if ConnectionMode::from_atomic(&self.connection_mode).is_disconnect() {
                 tracing::debug!("Reconnect aborted mid-flight (after delay)");
@@ -387,7 +394,7 @@ impl SocketClientInner {
         log_task_started("read");
 
         // Interval between checking the connection mode
-        let check_interval = Duration::from_millis(10);
+        let check_interval = Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS);
 
         tokio::task::spawn(async move {
             let mut buf = Vec::new();
@@ -458,7 +465,7 @@ impl SocketClientInner {
         log_task_started("write");
 
         // Interval between checking the connection mode
-        let check_interval = Duration::from_millis(10);
+        let check_interval = Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS);
 
         tokio::task::spawn(async move {
             let mut active_writer = writer;
@@ -489,7 +496,7 @@ impl SocketClientInner {
                                 // Attempt to shutdown the writer gracefully before updating,
                                 // we ignore any error as the writer may already be closed.
                                 _ = tokio::time::timeout(
-                                    Duration::from_secs(5),
+                                    Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS),
                                     active_writer.shutdown(),
                                 )
                                 .await;
@@ -530,7 +537,11 @@ impl SocketClientInner {
 
             // Attempt to shutdown the writer gracefully before exiting,
             // we ignore any error as the writer may already be closed.
-            _ = tokio::time::timeout(Duration::from_secs(5), active_writer.shutdown()).await;
+            _ = tokio::time::timeout(
+                Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS),
+                active_writer.shutdown(),
+            )
+            .await;
 
             log_task_stopped("write");
         })
@@ -716,9 +727,9 @@ impl SocketClient {
         self.connection_mode
             .store(ConnectionMode::Disconnect.as_u8(), Ordering::SeqCst);
 
-        match tokio::time::timeout(Duration::from_secs(5), async {
+        match tokio::time::timeout(Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS), async {
             while !self.is_closed() {
-                tokio::time::sleep(Duration::from_millis(10)).await;
+                tokio::time::sleep(Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS)).await;
             }
 
             if !self.controller_task.is_finished() {
@@ -747,8 +758,8 @@ impl SocketClient {
             return Err(SendError::Closed);
         }
 
-        let timeout = Duration::from_secs(2);
-        let check_interval = Duration::from_millis(1);
+        let timeout = Duration::from_secs(SEND_OPERATION_TIMEOUT_SECS);
+        let check_interval = Duration::from_millis(SEND_OPERATION_CHECK_INTERVAL_MS);
 
         if !self.is_active() {
             tracing::debug!("Waiting for client to become ACTIVE before sending...");
@@ -787,7 +798,7 @@ impl SocketClient {
         tokio::task::spawn(async move {
             log_task_started("controller");
 
-            let check_interval = Duration::from_millis(10);
+            let check_interval = Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS);
 
             loop {
                 tokio::time::sleep(check_interval).await;
@@ -796,10 +807,10 @@ impl SocketClient {
                 if mode.is_disconnect() {
                     tracing::debug!("Disconnecting");
 
-                    let timeout = Duration::from_secs(5);
+                    let timeout = Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS);
                     if tokio::time::timeout(timeout, async {
                         // Delay awaiting graceful shutdown
-                        tokio::time::sleep(Duration::from_millis(100)).await;
+                        tokio::time::sleep(Duration::from_millis(GRACEFUL_SHUTDOWN_DELAY_MS)).await;
 
                         if !inner.read_task.is_finished() {
                             inner.read_task.abort();
