@@ -32,7 +32,7 @@ free.
 
 When Rust code pushes a heap-allocated value into Python it **must** use
 `PyCapsule::new_with_destructor` so that Python knows how to free the allocation
-once the capsule becomes unreachable.  The closure/destructor is responsible
+once the capsule becomes unreachable. The closure/destructor is responsible
 for reconstructing the original `Box<T>` or `Vec<T>` and letting it drop.
 
 ```rust
@@ -50,7 +50,7 @@ Python::with_gil(|py| {
 
 Do **not** use `PyCapsule::new(…, None)`; that variant registers *no* destructor
 and will leak memory unless the recipient manually extracts and frees the
-pointer (something we never rely on).  The codebase has been updated to follow
+pointer (something we never rely on). The codebase has been updated to follow
 this rule everywhere – adding new FFI modules must follow the same pattern.
 
 ## Why there is no generic `cvec_drop` anymore
@@ -87,7 +87,7 @@ Memory-safety requirements are therefore:
 1.  Every constructor (`*_new`) **must** have a matching `*_drop` exported
     next to it.
 2.  The *Python/Cython* binding must guarantee that `*_drop` is invoked
-    exactly once.  Two approaches are accepted:
+    exactly once. Two approaches are accepted:
 
     • Wrap the pointer in a `PyCapsule` created with
       `PyCapsule::new_with_destructor`, passing a destructor that calls
@@ -96,14 +96,14 @@ Memory-safety requirements are therefore:
     • Call the helper explicitly in `__del__`/`__dealloc__` on the Python
       side.  This is the historical pattern for most v1 Cython modules:
 
-      ```cython
+      ```python
       cdef class OrderBook:
           cdef OrderBook_API _mem
 
           def __cinit__(self, ...):
               self._mem = orderbook_new(...)
 
-          def __dealloc__(self):
+          def __del__(self):
               if self._mem._0 != NULL:
                   orderbook_drop(self._mem)
       ```
