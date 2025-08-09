@@ -88,7 +88,7 @@ class VolatilityMarketMakerConfig(StrategyConfig, frozen=True):
 
 class VolatilityMarketMaker(Strategy):
     """
-    A very dumb market maker which brackets the current market based on volatility
+    A very basic market maker which brackets the top of book based on volatility
     measured by an ATR indicator.
 
     Cancels all orders and closes all positions on stop.
@@ -137,31 +137,6 @@ class VolatilityMarketMaker(Strategy):
         self.subscribe_bars(self.config.bar_type, client_id=self.client_id)
         self.subscribe_quote_ticks(self.config.instrument_id, client_id=self.client_id)
         self.subscribe_trade_ticks(self.config.instrument_id, client_id=self.client_id)
-        # self.subscribe_order_book_deltas(self.config.instrument_id, client_id=self.client_id)  # For debugging
-        # self.subscribe_order_book_at_interval(
-        #     self.config.instrument_id,
-        #     depth=20,
-        #     interval_ms=1000,
-        #     client_id=self.client_id,
-        # )  # For debugging
-        # self.subscribe_mark_prices(self.config.instrument_id, client_id=self.client_id)
-        # self.subscribe_index_prices(self.config.instrument_id, client_id=self.client_id)
-
-        # self.subscribe_data(
-        #     data_type=DataType(
-        #         BinanceTicker,
-        #         metadata={"instrument_id": self.instrument.id},
-        #     ),
-        #     client_id=self.client_id,
-        # )
-
-        # self.subscribe_data(
-        #     data_type=DataType(
-        #         BinanceFuturesMarkPriceUpdate,
-        #         metadata={"instrument_id": self.instrument.id},
-        #     ),
-        #     client_id=ClientId("BINANCE"),
-        # )
 
     def on_data(self, data: Data) -> None:
         """
@@ -228,12 +203,6 @@ class VolatilityMarketMaker(Strategy):
         """
         # For debugging (must add a subscription)
         self.log.info(repr(tick), LogColor.CYAN)
-
-        # own_book = self.cache.own_order_book(tick.instrument_id)
-        # if not own_book:
-        #     return
-        # self.log.info("\n" + repr(own_book), LogColor.MAGENTA)
-        # self.log.info("\n" + own_book.pprint(), LogColor.MAGENTA)
 
     def on_trade_tick(self, tick: TradeTick) -> None:
         """
@@ -307,23 +276,11 @@ class VolatilityMarketMaker(Strategy):
 
         # Maintain buy orders
         if self.buy_order and (self.buy_order.is_emulated or self.buy_order.is_open):
-            # price: Decimal = last.bid_price - (self.atr.value * self.config.atr_multiple)
-            # self.modify_order(
-            #     order=self.buy_order,
-            #     price=self.instrument.make_price(price),
-            # )
-            # return
             self.cancel_order(self.buy_order)
         self.create_buy_order(last)
 
         # Maintain sell orders
         if self.sell_order and (self.sell_order.is_emulated or self.sell_order.is_open):
-            # price = last.ask_price + (self.atr.value * self.config.atr_multiple)
-            # self.modify_order(
-            #     order=self.sell_order,
-            #     price=self.instrument.make_price(price),
-            # )
-            # return
             self.cancel_order(self.sell_order)
         self.create_sell_order(last)
 
@@ -344,14 +301,11 @@ class VolatilityMarketMaker(Strategy):
             time_in_force=TimeInForce.GTD,
             expire_time=self.clock.utc_now() + pd.Timedelta(minutes=10),
             post_only=True,  # default value is True
-            # display_qty=self.instrument.make_qty(self.config.trade_size / 2),  # iceberg
             emulation_trigger=TriggerType[self.config.emulation_trigger],
         )
 
         self.buy_order = order
         self.submit_order(order, client_id=self.client_id)
-        # order_list = self.order_factory.create_list([order])
-        # self.submit_order_list(order_list)
 
     def create_sell_order(self, last: QuoteTick) -> None:
         """
@@ -370,14 +324,11 @@ class VolatilityMarketMaker(Strategy):
             time_in_force=TimeInForce.GTD,
             expire_time=self.clock.utc_now() + pd.Timedelta(minutes=10),
             post_only=True,  # default value is True
-            # display_qty=self.instrument.make_qty(self.config.trade_size / 2),  # iceberg
             emulation_trigger=TriggerType[self.config.emulation_trigger],
         )
 
         self.sell_order = order
         self.submit_order(order, client_id=self.client_id)
-        # order_list = self.order_factory.create_list([order])
-        # self.submit_order_list(order_list, client_id=self.client_id)
 
     def on_event(self, event: Event) -> None:
         """
@@ -410,15 +361,6 @@ class VolatilityMarketMaker(Strategy):
         """
         self.cancel_all_orders(self.config.instrument_id, client_id=self.client_id)
 
-        # # Uncomment to test individual cancels
-        # for order in self.cache.orders_open(instrument_id=self.config.instrument_id):
-        #     self.cancel_order(order)
-
-        # # Uncomment to test batch cancel
-        # open_orders = self.cache.orders_open(instrument_id=self.config.instrument_id)
-        # if open_orders:
-        #     self.cancel_orders(open_orders, client_id=self.client_id)
-
         self.close_all_positions(
             instrument_id=self.config.instrument_id,
             client_id=self.client_id,
@@ -429,8 +371,6 @@ class VolatilityMarketMaker(Strategy):
         self.unsubscribe_bars(self.config.bar_type, client_id=self.client_id)
         self.unsubscribe_quote_ticks(self.config.instrument_id, client_id=self.client_id)
         self.unsubscribe_trade_ticks(self.config.instrument_id, client_id=self.client_id)
-        # self.unsubscribe_order_book_deltas(self.config.instrument_id, client_id=self.client_id)  # For debugging
-        # self.unsubscribe_order_book_at_interval(self.config.instrument_id, client_id=self.client_id)  # For debugging
 
     def on_reset(self) -> None:
         """
@@ -438,38 +378,3 @@ class VolatilityMarketMaker(Strategy):
         """
         # Reset indicators here
         self.atr.reset()
-
-    def on_save(self) -> dict[str, bytes]:
-        """
-        Actions to be performed when the strategy is saved.
-
-        Create and return a state dictionary of values to be saved.
-
-        Returns
-        -------
-        dict[str, bytes]
-            The strategy state dictionary.
-
-        """
-        return {}
-
-    def on_load(self, state: dict[str, bytes]) -> None:
-        """
-        Actions to be performed when the strategy is loaded.
-
-        Saved state values will be contained in the give state dictionary.
-
-        Parameters
-        ----------
-        state : dict[str, bytes]
-            The strategy state dictionary.
-
-        """
-
-    def on_dispose(self) -> None:
-        """
-        Actions to be performed when the strategy is disposed.
-
-        Cleanup any resources used by the strategy here.
-
-        """
