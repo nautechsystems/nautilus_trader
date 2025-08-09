@@ -13,9 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
-
-use ahash::{HashSet, HashSetExt};
+use ahash::{AHashMap, AHashSet};
 use alloy::primitives::{Address, keccak256};
 use nautilus_model::defi::DexType;
 
@@ -25,30 +23,30 @@ use nautilus_model::defi::DexType;
 /// and maintains the event signature encodings for efficient filtering.
 #[derive(Debug)]
 pub struct DefiDataSubscriptionManager {
-    subscribed_pool_swaps: HashMap<DexType, HashSet<Address>>,
-    pool_swap_event_encoded: HashMap<DexType, String>,
-    subscribed_pool_mints: HashMap<DexType, HashSet<Address>>,
-    pool_mint_event_encoded: HashMap<DexType, String>,
-    subscribed_pool_burns: HashMap<DexType, HashSet<Address>>,
-    pool_burn_event_encoded: HashMap<DexType, String>,
+    subscribed_pool_swaps: AHashMap<DexType, AHashSet<Address>>,
+    pool_swap_event_encoded: AHashMap<DexType, String>,
+    subscribed_pool_mints: AHashMap<DexType, AHashSet<Address>>,
+    pool_mint_event_encoded: AHashMap<DexType, String>,
+    subscribed_pool_burns: AHashMap<DexType, AHashSet<Address>>,
+    pool_burn_event_encoded: AHashMap<DexType, String>,
 }
 
 impl DefiDataSubscriptionManager {
     /// Creates a new [`DefiDataSubscriptionManager`] instance.
     pub fn new() -> Self {
         Self {
-            subscribed_pool_burns: HashMap::new(),
-            subscribed_pool_mints: HashMap::new(),
-            subscribed_pool_swaps: HashMap::new(),
-            pool_swap_event_encoded: HashMap::new(),
-            pool_burn_event_encoded: HashMap::new(),
-            pool_mint_event_encoded: HashMap::new(),
+            subscribed_pool_burns: AHashMap::new(),
+            subscribed_pool_mints: AHashMap::new(),
+            subscribed_pool_swaps: AHashMap::new(),
+            pool_swap_event_encoded: AHashMap::new(),
+            pool_burn_event_encoded: AHashMap::new(),
+            pool_mint_event_encoded: AHashMap::new(),
         }
     }
 
     /// Gets all unique contract addresses subscribed for any event type for a given DEX.
     pub fn get_subscribed_dex_contract_addresses(&self, dex: &DexType) -> Vec<Address> {
-        let mut unique_addresses = HashSet::new();
+        let mut unique_addresses = AHashSet::new();
 
         if let Some(addresses) = self.subscribed_pool_swaps.get(dex) {
             unique_addresses.extend(addresses.iter().cloned());
@@ -105,7 +103,7 @@ impl DefiDataSubscriptionManager {
         mint_event_signature: &str,
         burn_event_signature: &str,
     ) {
-        self.subscribed_pool_swaps.insert(dex, HashSet::new());
+        self.subscribed_pool_swaps.insert(dex, AHashSet::new());
         let swap_event_hash = keccak256(swap_event_signature.as_bytes());
         let encoded_swap_event = format!(
             "0x{encoded_hash}",
@@ -113,7 +111,7 @@ impl DefiDataSubscriptionManager {
         );
         self.pool_swap_event_encoded.insert(dex, encoded_swap_event);
 
-        self.subscribed_pool_mints.insert(dex, HashSet::new());
+        self.subscribed_pool_mints.insert(dex, AHashSet::new());
         let mint_event_hash = keccak256(mint_event_signature.as_bytes());
         let encoded_mint_event = format!(
             "0x{encoded_hash}",
@@ -121,7 +119,7 @@ impl DefiDataSubscriptionManager {
         );
         self.pool_mint_event_encoded.insert(dex, encoded_mint_event);
 
-        self.subscribed_pool_burns.insert(dex, HashSet::new());
+        self.subscribed_pool_burns.insert(dex, AHashSet::new());
         let burn_event_hash = keccak256(burn_event_signature.as_bytes());
         let encoded_burn_event = format!(
             "0x{encoded_hash}",
@@ -129,7 +127,7 @@ impl DefiDataSubscriptionManager {
         );
         self.pool_burn_event_encoded.insert(dex, encoded_burn_event);
 
-        tracing::info!("Registered dex for subscriptions: {:?}", dex);
+        tracing::info!("Registered DEX for subscriptions: {dex:?}");
     }
 
     /// Subscribes to swap events for a specific pool address on a DEX.
@@ -137,7 +135,7 @@ impl DefiDataSubscriptionManager {
         if let Some(pool_set) = self.subscribed_pool_swaps.get_mut(&dex) {
             pool_set.insert(address);
         } else {
-            tracing::error!("Dex not registered for swap subscriptions: {:?}", dex);
+            tracing::error!("DEX not registered for swap subscriptions: {dex:?}");
         }
     }
 
@@ -146,7 +144,7 @@ impl DefiDataSubscriptionManager {
         if let Some(pool_set) = self.subscribed_pool_mints.get_mut(&dex) {
             pool_set.insert(address);
         } else {
-            tracing::error!("Dex not registered for mint subscriptions: {:?}", dex);
+            tracing::error!("DEX not registered for mint subscriptions: {dex:?}");
         }
     }
 
@@ -155,7 +153,7 @@ impl DefiDataSubscriptionManager {
         if let Some(pool_set) = self.subscribed_pool_burns.get_mut(&dex) {
             pool_set.insert(address);
         } else {
-            tracing::warn!("Dex not registered for burn subscriptions: {:?}", dex);
+            tracing::warn!("DEX not registered for burn subscriptions: {dex:?}");
         }
     }
 
@@ -164,7 +162,7 @@ impl DefiDataSubscriptionManager {
         if let Some(pool_set) = self.subscribed_pool_swaps.get_mut(&dex) {
             pool_set.remove(&address);
         } else {
-            tracing::error!("Dex not registered for swap subscriptions: {:?}", dex);
+            tracing::error!("DEX not registered for swap subscriptions: {dex:?}");
         }
     }
 
@@ -173,7 +171,7 @@ impl DefiDataSubscriptionManager {
         if let Some(pool_set) = self.subscribed_pool_mints.get_mut(&dex) {
             pool_set.remove(&address);
         } else {
-            tracing::error!("Dex not registered for mint subscriptions: {:?}", dex);
+            tracing::error!("DEX not registered for mint subscriptions: {dex:?}");
         }
     }
 
@@ -182,10 +180,14 @@ impl DefiDataSubscriptionManager {
         if let Some(pool_set) = self.subscribed_pool_burns.get_mut(&dex) {
             pool_set.remove(&address);
         } else {
-            tracing::error!("Dex not registered for burn subscriptions: {:?}", dex);
+            tracing::error!("DEX not registered for burn subscriptions: {dex:?}");
         }
     }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {

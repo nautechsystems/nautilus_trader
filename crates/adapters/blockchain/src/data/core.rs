@@ -23,7 +23,6 @@ use nautilus_model::defi::{
     Block, Blockchain, DefiData, DexType, Pool, PoolLiquidityUpdate, PoolSwap, SharedChain,
     SharedDex, SharedPool, Token, validation::validate_address,
 };
-use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{
     cache::BlockchainCache,
@@ -63,7 +62,7 @@ pub struct BlockchainDataClientCore {
     /// Interface for interacting with ERC20 token contracts.
     tokens: Erc20Contract,
     /// Channel sender for publishing data events to the `AsyncRunner`.
-    data_sender: UnboundedSender<DataEvent>,
+    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     /// Client for the HyperSync data indexing service.
     pub hypersync_client: HyperSyncClient,
     /// Optional WebSocket RPC client for direct blockchain node communication.
@@ -77,7 +76,7 @@ impl BlockchainDataClientCore {
     pub fn new(
         chain: SharedChain,
         config: BlockchainDataClientConfig,
-        hypersync_tx: UnboundedSender<BlockchainMessage>,
+        hypersync_tx: tokio::sync::mpsc::UnboundedSender<BlockchainMessage>,
     ) -> Self {
         let cache = BlockchainCache::new(chain.clone());
         let rpc_client = if !config.use_hypersync_for_live_data && config.wss_rpc_url.is_some() {
