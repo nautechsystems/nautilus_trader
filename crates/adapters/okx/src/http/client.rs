@@ -685,74 +685,21 @@ impl OKXHttpClient {
     }
 
     /// Returns the cached instrument symbols.
+    #[must_use]
     /// Returns a snapshot of all instrument symbols currently held in the
     /// internal cache.
     ///
     /// # Panics
     ///
-    /// Panics if the instruments cache mutex is poisoned.
-    #[must_use]
+    /// Panics if the internal mutex guarding the instrument cache is poisoned
+    /// (which would indicate a previous panic while the lock was held).
     pub fn get_cached_symbols(&self) -> Vec<String> {
-        let guard = self.instruments_cache.lock().unwrap();
-
-        let mut syms: Vec<String> = guard.keys().map(|k| k.to_string()).collect();
-        if syms.is_empty() {
-            return syms;
-        }
-
-        const TOP: &[&str] = &[
-            "BTC-USDT", "ETH-USDT", "BTC-USD", "ETH-USD", "SOL-USDT", "SOL-USD", "BTC-USDC",
-            "ETH-USDC", "SOL-USDC",
-        ];
-
-        fn quote_rank(q: &str) -> u8 {
-            match q {
-                "USDT" => 0,
-                "USD" => 1,
-                "USDC" => 2,
-                "EUR" => 3,
-                _ => 4,
-            }
-        }
-        fn base_rank(b: &str) -> u8 {
-            match b {
-                "BTC" => 0,
-                "ETH" => 1,
-                "SOL" => 2,
-                "BNB" => 3,
-                "XRP" => 4,
-                "ADA" => 5,
-                "DOGE" => 6,
-                "TRX" => 7,
-                "LTC" => 8,
-                _ => 20,
-            }
-        }
-
-        syms.sort_by(|a, b| {
-            let a_exact = TOP.iter().position(|&t| t == a).map(|i| i as u16);
-            let b_exact = TOP.iter().position(|&t| t == b).map(|i| i as u16);
-            match (a_exact, b_exact) {
-                (Some(ia), Some(ib)) => return ia.cmp(&ib),
-                (Some(_), None) => return std::cmp::Ordering::Less,
-                (None, Some(_)) => return std::cmp::Ordering::Greater,
-                (None, None) => {}
-            }
-
-            let mut asplit = a.splitn(2, '-');
-            let abase = asplit.next().unwrap_or("");
-            let aquote = asplit.next().unwrap_or("");
-
-            let mut bsplit = b.splitn(2, '-');
-            let bbase = bsplit.next().unwrap_or("");
-            let bquote = bsplit.next().unwrap_or("");
-
-            (quote_rank(aquote), base_rank(abase))
-                .cmp(&(quote_rank(bquote), base_rank(bbase)))
-                .then_with(|| a.cmp(b))
-        });
-
-        syms
+        self.instruments_cache
+            .lock()
+            .unwrap()
+            .keys()
+            .map(std::string::ToString::to_string)
+            .collect()
     }
 
     /// Adds the `instruments` to the clients instrument cache.
