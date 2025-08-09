@@ -22,16 +22,15 @@ from nautilus_trader.adapters.binance import BinanceDataClientConfig
 from nautilus_trader.adapters.binance import BinanceExecClientConfig
 from nautilus_trader.adapters.binance import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.binance import BinanceLiveExecClientFactory
-from nautilus_trader.config import CacheConfig
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.examples.strategies.orderbook_imbalance_rust import OrderBookImbalance
-from nautilus_trader.examples.strategies.orderbook_imbalance_rust import OrderBookImbalanceConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.test_kit.strategies.tester_exec import ExecTester
+from nautilus_trader.test_kit.strategies.tester_exec import ExecTesterConfig
 
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
@@ -41,23 +40,10 @@ from nautilus_trader.model.identifiers import TraderId
 # Configure the trading node
 config_node = TradingNodeConfig(
     trader_id=TraderId("TESTER-001"),
-    logging=LoggingConfig(
-        log_level="INFO",
-        # log_level_file="DEBUG",
-        # log_file_format="json",
-    ),
+    logging=LoggingConfig(log_level="INFO"),
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,
         reconciliation_lookback_mins=1440,
-        filter_position_reports=True,
-        # snapshot_orders=True,
-        # snapshot_positions=True,
-        # snapshot_positions_interval_secs=5.0,
-    ),
-    cache=CacheConfig(
-        database=None,
-        timestamps_as_iso8601=True,
-        flush_on_start=False,
     ),
     data_clients={
         BINANCE: BinanceDataClientConfig(
@@ -67,7 +53,7 @@ config_node = TradingNodeConfig(
             base_url_http=None,  # Override with custom endpoint
             base_url_ws=None,  # Override with custom endpoint
             us=False,  # If client is for Binance US
-            testnet=False,  # If client uses the testnet
+            testnet=True,  # If client uses the testnet
             instrument_provider=InstrumentProviderConfig(load_all=True),
         ),
     },
@@ -79,7 +65,7 @@ config_node = TradingNodeConfig(
             base_url_http=None,  # Override with custom endpoint
             base_url_ws=None,  # Override with custom endpoint
             us=False,  # If client is for Binance US
-            testnet=False,  # If client uses the testnet
+            testnet=True,  # If client uses the testnet
             instrument_provider=InstrumentProviderConfig(load_all=True),
             max_retries=3,
             retry_delay_initial_ms=1_000,
@@ -97,14 +83,16 @@ config_node = TradingNodeConfig(
 node = TradingNode(config=config_node)
 
 # Configure your strategy
-strat_config = OrderBookImbalanceConfig(
+strat_config = ExecTesterConfig(
     instrument_id=InstrumentId.from_str("ETHUSDT.BINANCE"),
     external_order_claims=[InstrumentId.from_str("ETHUSDT.BINANCE")],
-    max_trade_size=Decimal("0.010"),
+    order_qty=Decimal("0.010"),
+    order_id_tag="001",
+    # use_batch_cancel_on_stop=True,
 )
 
 # Instantiate your strategy
-strategy = OrderBookImbalance(config=strat_config)
+strategy = ExecTester(config=strat_config)
 
 # Add your strategies and modules
 node.trader.add_strategy(strategy)

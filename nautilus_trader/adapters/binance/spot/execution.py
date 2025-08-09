@@ -205,8 +205,32 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
             return
 
     async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None:
-        self._log.error(
-            "Cannot batch cancel orders: not supported by the Binance Spot/Margin exchange",
+        self._log.warning(
+            "Batch cancel orders not supported by Binance Spot/Margin exchange, "
+            f"falling back to individual cancellation of {len(command.cancels)} orders",
+        )
+
+        # Fallback to individual order cancellation
+        successful_cancels = 0
+        for cancel_command in command.cancels:
+            try:
+                await self._cancel_order(cancel_command)
+                successful_cancels += 1
+            except Exception as e:
+                self._log.error(
+                    f"Failed to cancel individual order {cancel_command.client_order_id}: {e}",
+                )
+                self.generate_order_cancel_rejected(
+                    cancel_command.strategy_id,
+                    cancel_command.instrument_id,
+                    cancel_command.client_order_id,
+                    cancel_command.venue_order_id,
+                    f"Individual cancel fallback failed: {e}",
+                    self._clock.timestamp_ns(),
+                )
+
+        self._log.info(
+            f"Batch cancel fallback completed: {successful_cancels}/{len(command.cancels)} orders cancelled",
         )
 
     # -- WEBSOCKET EVENT HANDLERS --------------------------------------------------------------------
