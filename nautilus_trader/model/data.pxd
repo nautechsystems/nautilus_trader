@@ -495,3 +495,27 @@ cdef class IndexPriceUpdate(Data):
 
     @staticmethod
     cdef dict to_dict_c(IndexPriceUpdate obj)
+
+
+cdef class FundingRateUpdate(Data):
+    """
+    Represents a funding rate update for a perpetual swap instrument.
+    """
+    cdef readonly InstrumentId instrument_id
+    """The instrument ID for the funding rate."""
+    cdef readonly object rate
+    """The current funding rate."""
+    cdef readonly object next_rate
+    """The next funding rate (if available)."""
+    cdef readonly object ts_next_funding
+    """UNIX timestamp (nanoseconds) of the next funding payment (if available)."""
+    cdef readonly uint64_t _ts_event
+    """UNIX timestamp (nanoseconds) when the update occurred."""
+    cdef readonly uint64_t _ts_init
+    """UNIX timestamp (nanoseconds) when the data object was initialized."""
+
+    @staticmethod
+    cdef FundingRateUpdate from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(FundingRateUpdate obj)
