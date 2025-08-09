@@ -635,6 +635,32 @@ impl OKXHttpClient {
             .ok_or_else(|| anyhow::anyhow!("Instrument {symbol} not in cache"))
     }
 
+    async fn instrument_or_fetch(&self, symbol: Ustr) -> anyhow::Result<InstrumentAny> {
+        if let Ok(inst) = self.get_instrument_from_cache(symbol) {
+            return Ok(inst);
+        }
+
+        for group in [
+            OKXInstrumentType::Spot,
+            OKXInstrumentType::Margin,
+            OKXInstrumentType::Futures,
+        ] {
+            if let Ok(instruments) = self.request_instruments(group).await {
+                let mut guard = self.instruments_cache.lock().unwrap();
+                for inst in instruments {
+                    guard.insert(inst.raw_symbol().inner(), inst);
+                }
+                drop(guard);
+
+                if let Ok(inst) = self.get_instrument_from_cache(symbol) {
+                    return Ok(inst);
+                }
+            }
+        }
+
+        anyhow::bail!("Instrument {symbol} not in cache and fetch failed");
+    }
+
     /// Generates a timestamp for initialization.
     fn generate_ts_init(&self) -> UnixNanos {
         get_atomic_clock_realtime().get_time_ns()
@@ -647,7 +673,7 @@ impl OKXHttpClient {
 
     /// Returns the public API key being used by the client.
     pub fn api_key(&self) -> Option<&str> {
-        self.inner.credential.clone().map(|c| c.api_key.as_str())
+        self.inner.credential.as_ref().map(|c| c.api_key.as_str())
     }
 
     /// Checks if the client is initialized.
@@ -683,7 +709,7 @@ impl OKXHttpClient {
     ///
     /// # Panics
     ///
-    /// Panics if the mutex guarding the instrument cache is poisoned.
+    /// Panics if the instruments cache mutex is poisoned.
     pub fn add_instruments(&mut self, instruments: Vec<InstrumentAny>) {
         for inst in instruments {
             self.instruments_cache
@@ -701,7 +727,7 @@ impl OKXHttpClient {
     ///
     /// # Panics
     ///
-    /// Panics if the mutex guarding the instrument cache is poisoned.
+    /// Panics if the instruments cache mutex is poisoned.
     pub fn add_instrument(&mut self, instrument: InstrumentAny) {
         self.instruments_cache
             .lock()
@@ -793,10 +819,8 @@ impl OKXHttpClient {
         let ts_init = self.generate_ts_init();
 
         let mut instruments: Vec<InstrumentAny> = Vec::new();
-
         for inst in &resp {
-            let instrument_any = parse_instrument_any(inst, ts_init)?;
-            if let Some(instrument_any) = instrument_any {
+            if let Some(instrument_any) = parse_instrument_any(inst, ts_init)? {
                 instruments.push(instrument_any);
             }
         }
@@ -826,7 +850,9 @@ impl OKXHttpClient {
         let raw = resp
             .first()
             .ok_or_else(|| anyhow::anyhow!("No mark price returned from OKX"))?;
-        let inst = self.get_instrument_from_cache(instrument_id.symbol.inner())?;
+        let inst = self
+            .instrument_or_fetch(instrument_id.symbol.inner())
+            .await?;
         let ts_init = self.generate_ts_init();
 
         let mark_price =
@@ -857,7 +883,9 @@ impl OKXHttpClient {
         let raw = resp
             .first()
             .ok_or_else(|| anyhow::anyhow!("No index price returned from OKX"))?;
-        let inst = self.get_instrument_from_cache(instrument_id.symbol.inner())?;
+        let inst = self
+            .instrument_or_fetch(instrument_id.symbol.inner())
+            .await?;
         let ts_init = self.generate_ts_init();
 
         let index_price =
@@ -901,7 +929,9 @@ impl OKXHttpClient {
             .map_err(anyhow::Error::new)?;
 
         let ts_init = self.generate_ts_init();
-        let inst = self.get_instrument_from_cache(instrument_id.symbol.inner())?;
+        let inst = self
+            .instrument_or_fetch(instrument_id.symbol.inner())
+            .await?;
 
         let mut trades = Vec::with_capacity(raw_trades.len());
         for raw in raw_trades {
@@ -960,349 +990,500 @@ impl OKXHttpClient {
         &self,
         bar_type: BarType,
         start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        mut end: Option<DateTime<Utc>>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<Bar>> {
-        // Validate aggregation source
-        let source = bar_type.aggregation_source();
-        if source != AggregationSource::External {
-            anyhow::bail!("Invalid aggregation source: {source:?}");
+        const HISTORY_SPLIT_DAYS: i64 = 100;
+        const MAX_PAGES_SOFT: usize = 500;
+
+        let limit = if limit == Some(0) { None } else { limit };
+
+        anyhow::ensure!(
+            bar_type.aggregation_source() == AggregationSource::External,
+            "Only EXTERNAL aggregation is supported"
+        );
+        if let (Some(s), Some(e)) = (start, end) {
+            anyhow::ensure!(s < e, "Invalid time range: start={s:?} end={e:?}");
         }
 
-        // Validate time range consistency
-        if let (Some(start_time), Some(end_time)) = (start, end)
-            && start_time >= end_time
+        let now = Utc::now();
+        if let Some(s) = start
+            && s > now
         {
-            anyhow::bail!("Invalid time range: start={start_time:?} end={end_time:?}");
+            return Ok(Vec::new());
         }
-
-        let symbol = bar_type.instrument_id().symbol;
-
-        // Validate instrument is in cache
-        let inst = self.get_instrument_from_cache(symbol.inner())?;
+        if let Some(e) = end
+            && e > now
+        {
+            end = Some(now);
+        }
 
         let spec = bar_type.spec();
-
-        // Map aggregation to OKX bar parameter
-        let bar_str = match spec.aggregation {
-            BarAggregation::Second => {
-                let step = spec.step.get();
-                format!("{step}s")
-            }
-            BarAggregation::Minute => {
-                let step = spec.step.get();
-                format!("{step}m")
-            }
-            BarAggregation::Hour => {
-                let step = spec.step.get();
-                format!("{step}H")
-            }
-            BarAggregation::Day => {
-                let step = spec.step.get();
-                format!("{step}D")
-            }
-            BarAggregation::Week => {
-                let step = spec.step.get();
-                format!("{step}W")
-            }
-            BarAggregation::Month => {
-                let step = spec.step.get();
-                format!("{step}M")
-            }
-            agg => {
-                anyhow::bail!("OKX does not support {agg:?} aggregation");
-            }
+        let step = spec.step.get();
+        let bar_param = match spec.aggregation {
+            BarAggregation::Second => format!("{step}s"),
+            BarAggregation::Minute => format!("{step}m"),
+            BarAggregation::Hour => format!("{step}H"),
+            BarAggregation::Day => format!("{step}D"),
+            BarAggregation::Week => format!("{step}W"),
+            BarAggregation::Month => format!("{step}M"),
+            a => anyhow::bail!("OKX does not support {a:?} aggregation"),
         };
 
-        // Determine endpoint based on whether time range parameters are provided
-        // If start OR end is provided, use history endpoint (as per OKX API docs)
-        let use_history_endpoint = start.is_some() || end.is_some();
+        let slot_ms: i64 = match spec.aggregation {
+            BarAggregation::Second => (step as i64) * 1_000,
+            BarAggregation::Minute => (step as i64) * 60_000,
+            BarAggregation::Hour => (step as i64) * 3_600_000,
+            BarAggregation::Day => (step as i64) * 86_400_000,
+            BarAggregation::Week => (step as i64) * 7 * 86_400_000,
+            BarAggregation::Month => (step as i64) * 30 * 86_400_000,
+            _ => unreachable!("Unsupported aggregation should have been caught above"),
+        };
+        let slot_ns: i64 = slot_ms * 1_000_000;
 
-        let endpoint_max = if use_history_endpoint { 100 } else { 300 };
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        enum Mode {
+            Latest,
+            Forward,
+            Backward,
+            Range,
+        }
 
-        // Pre-allocate result vector
-        let mut all_bars = Vec::with_capacity(limit.unwrap_or_default() as usize);
-
-        // Determine cursor strategy based on OKX API semantics:
-        // - 'after' parameter = older bound (start time)
-        // - 'before' parameter = newer bound (end time)
-        // - OKX returns data in DESC order (newest first)
-        let (cursor_mode, mut cursor_value, end_boundary) = match (start, end) {
-            (Some(start_time), Some(end_time)) => {
-                // Both start & end provided - use history endpoint with both bounds
-                (
-                    "both",
-                    Some(start_time.timestamp_millis().to_string()),
-                    Some(end_time),
-                ) // Fixed time range with boundaries
-            }
-            (Some(start_time), None) => {
-                // Only start provided - forward pagination from start
-                (
-                    "after",
-                    Some(start_time.timestamp_millis().to_string()),
-                    None,
-                )
-            }
-            (None, Some(end_time)) => {
-                // Only end provided - backward pagination before end
-                (
-                    "before",
-                    Some(end_time.timestamp_millis().to_string()),
-                    None,
-                )
-            }
-            (None, None) => {
-                // No bounds - get most recent data
-                ("none", None, None)
-            }
+        let mode = match (start, end) {
+            (None, None) => Mode::Latest,
+            (Some(_), None) => Mode::Forward,
+            (None, Some(_)) => Mode::Backward,
+            (Some(_), Some(_)) => Mode::Range,
         };
 
-        // For backward pagination, we need to reverse the final result
-        // Don't reverse for "both" case as it's already been handled
-        let needs_final_reverse = matches!(cursor_mode, "before");
+        let start_ns = start.and_then(|s| s.timestamp_nanos_opt());
+        let end_ns = end.and_then(|e| e.timestamp_nanos_opt());
 
-        // Pagination loop
+        let start_ms = start.map(|s| s.timestamp_millis());
+        let end_ms = end.map(|e| e.timestamp_millis());
+        let now_ms = now.timestamp_millis();
+
+        let symbol = bar_type.instrument_id().symbol;
+        let inst = self.instrument_or_fetch(symbol.inner()).await?;
+
+        let mut out: Vec<Bar> = Vec::new();
+        let mut pages = 0usize;
+
+        let mut after_ms: Option<i64> = match mode {
+            Mode::Forward => start_ms.map(|v| v.saturating_add(1)),
+            Mode::Range => start_ms.map(|v| v.saturating_add(1)),
+            _ => None,
+        };
+        let mut before_ms: Option<i64> = match mode {
+            Mode::Backward => end_ms.map(|v| v.saturating_sub(1)),
+            Mode::Latest => None,
+            _ => None,
+        };
+
+        // If we ever need to backfill in Forward/Range, flip this on.
+        let mut forward_prepend_mode = false;
+
+        let mut have_latest_first_page = false;
+        let mut progressless_loops = 0u8;
+
         loop {
-            // Calculate effective limit for this page
-            let effective_limit = if let Some(l) = limit {
-                if l == 0 {
-                    // Zero limit treated as unbounded
-                    endpoint_max
-                } else {
-                    let remaining = l as usize - all_bars.len();
-                    if remaining == 0 {
-                        break; // Stop condition: limit reached
-                    }
-                    remaining.min(endpoint_max)
-                }
-            } else {
-                endpoint_max
-            };
-
-            // Build request parameters
-            let mut builder = GetCandlesticksParamsBuilder::default();
-            builder.inst_id(symbol.as_str());
-            builder.bar(&bar_str);
-            builder.limit(effective_limit as u32);
-
-            // Set cursor based on pagination mode
-            match cursor_mode {
-                "both" => {
-                    // WORKAROUND: OKX API doesn't support both 'after' and 'before' parameters together
-                    // Use 'after' only and filter results client-side
-                    if let Some(start_time) = start {
-                        builder.after_ms(start_time.timestamp_millis());
-                    }
-                    // Note: 'before' parameter omitted due to OKX API limitation
-                    // Client-side filtering will be applied below
-                }
-                "after" => {
-                    if let Some(ref cursor) = cursor_value
-                        && let Ok(cursor_i64) = cursor.parse::<i64>()
-                    {
-                        builder.after_ms(cursor_i64);
-                    }
-                }
-                "before" => {
-                    if let Some(ref cursor) = cursor_value
-                        && let Ok(cursor_i64) = cursor.parse::<i64>()
-                    {
-                        builder.before_ms(cursor_i64);
-                    }
-                }
-                "none" => {
-                    // No cursor for one-shot requests
-                }
-                _ => unreachable!(),
+            if let Some(lim) = limit
+                && out.len() >= lim as usize
+            {
+                break;
             }
-
-            let params = builder.build().map_err(anyhow::Error::new)?;
-
-            // Make HTTP request
-            let page = if use_history_endpoint {
-                self.inner
-                    .http_get_candlesticks_history(params)
-                    .await
-                    .map_err(anyhow::Error::new)?
-            } else {
-                self.inner
-                    .http_get_candlesticks(params)
-                    .await
-                    .map_err(anyhow::Error::new)?
-            };
-
-            // Logging
-            let endpoint = if use_history_endpoint {
-                "history"
-            } else {
-                "regular"
-            };
-            tracing::debug!(
-                "Requesting bars: endpoint={endpoint}, instId={symbol}, bar={bar_str}, effective_limit={effective_limit}, page_rows={page_rows}, accum_rows={accum_rows}, cursor={cursor_type}={cursor_value}",
-                page_rows = page.len(),
-                accum_rows = all_bars.len(),
-                cursor_type = cursor_mode,
-                cursor_value = cursor_value.as_deref().unwrap_or("none")
-            );
-
-            // Stop condition: API returns empty data
-            if page.is_empty() {
+            if pages >= MAX_PAGES_SOFT {
                 break;
             }
 
-            // Process page based on cursor mode
-            let mut page_bars = Vec::with_capacity(page.len());
-            let ts_init = self.generate_ts_init();
+            let pivot_ms = if let Some(a) = after_ms {
+                a
+            } else if let Some(b) = before_ms {
+                b
+            } else {
+                now_ms
+            };
+            let using_history =
+                (now_ms.saturating_sub(pivot_ms)) / (24 * 60 * 60 * 1000) > HISTORY_SPLIT_DAYS;
 
-            // IMPORTANT: Use the original bar_type parameter to ensure BarType identity
-            // matches what was registered with DataTester. Creating a new BarType here
-            // (even with identical fields) would cause hash lookup failures downstream.
-            for raw in &page {
-                let bar = parse_candlestick(
-                    raw,
-                    bar_type, // Use original BarType to maintain identity consistency
-                    inst.price_precision(),
-                    inst.size_precision(),
-                    ts_init,
-                )?;
-                page_bars.push(bar);
+            let page_ceiling = if using_history { 100 } else { 300 };
+            let remaining = limit
+                .map(|l| (l as usize).saturating_sub(out.len()))
+                .unwrap_or(page_ceiling);
+            let page_cap = remaining.min(page_ceiling);
+
+            let mut p = GetCandlesticksParamsBuilder::default();
+            p.inst_id(symbol.as_str())
+                .bar(&bar_param)
+                .limit(page_cap as u32);
+
+            // Track whether this planned request uses BEFORE or AFTER.
+            let mut req_used_before = false;
+
+            match mode {
+                Mode::Latest => {
+                    if have_latest_first_page && let Some(b) = before_ms {
+                        p.before_ms(b);
+                        req_used_before = true;
+                    }
+                }
+                Mode::Backward => {
+                    if let Some(b) = before_ms {
+                        p.before_ms(b);
+                        req_used_before = true;
+                    }
+                }
+                Mode::Forward | Mode::Range => {
+                    if forward_prepend_mode {
+                        if let Some(b) = before_ms {
+                            p.before_ms(b);
+                            req_used_before = true;
+                        }
+                    } else if let Some(a) = after_ms {
+                        p.after_ms(a);
+                    }
+                }
             }
 
-            // Handle ordering based on cursor mode
-            match cursor_mode {
-                "both" => {
-                    // Fixed time range: OKX returns desc order, reverse to get chronological
-                    page_bars.reverse();
-                }
-                "after" => {
-                    // Forward pagination: reverse each page, then append
-                    page_bars.reverse();
-                }
-                "before" => {
-                    // Backward pagination: keep API order (desc), append
-                    // No reversal needed here
-                }
-                "none" => {
-                    // One-shot: reverse to get oldest → newest
-                    page_bars.reverse();
-                }
-                _ => unreachable!(),
-            }
+            let params = p.build().map_err(anyhow::Error::new)?;
 
-            // Add to results with limit and boundary checking
-            for bar in page_bars {
-                // Apply client-side filtering for end time when both start and end are provided
-                if cursor_mode == "both"
-                    && let Some(end_time) = end
+            let mut raw = if using_history {
+                self.inner
+                    .http_get_candlesticks_history(params.clone())
+                    .await
+                    .map_err(anyhow::Error::new)?
+            } else {
+                self.inner
+                    .http_get_candlesticks(params.clone())
+                    .await
+                    .map_err(anyhow::Error::new)?
+            };
+
+            // --- Fallbacks on empty page ---
+            if raw.is_empty() {
+                // LATEST: retry same cursor via history, then step back a page-interval before giving up
+                if matches!(mode, Mode::Latest)
+                    && have_latest_first_page
+                    && !using_history
+                    && let Some(b) = before_ms
                 {
-                    let end_nanos = end_time.timestamp_nanos_opt().unwrap_or_default() as u64;
-                    if bar.ts_event > end_nanos {
-                        // Bar is after end time, skip it
+                    let mut p2 = GetCandlesticksParamsBuilder::default();
+                    p2.inst_id(symbol.as_str())
+                        .bar(&bar_param)
+                        .limit(page_cap as u32);
+                    p2.before_ms(b);
+                    let params2 = p2.build().map_err(anyhow::Error::new)?;
+                    let raw2 = self
+                        .inner
+                        .http_get_candlesticks_history(params2)
+                        .await
+                        .map_err(anyhow::Error::new)?;
+                    if !raw2.is_empty() {
+                        raw = raw2;
+                    } else {
+                        // Step back one page interval and retry loop
+                        let jump = (page_cap as i64).saturating_mul(slot_ms.max(1));
+                        before_ms = Some(b.saturating_sub(jump));
+                        progressless_loops = progressless_loops.saturating_add(1);
+                        if progressless_loops >= 3 {
+                            break;
+                        }
                         continue;
                     }
                 }
 
-                // Check end boundary when doing forward pagination with both start and end
-                if let Some(end_time) = end_boundary {
-                    let end_nanos = end_time.timestamp_nanos_opt().unwrap_or_default() as u64;
-                    if bar.ts_event > end_nanos {
-                        // We've exceeded the end boundary, stop processing
-                        break;
+                // Forward/Range first call: bootstrap from end/now using BEFORE
+                if raw.is_empty() && pages == 0 && matches!(mode, Mode::Forward | Mode::Range) {
+                    let bootstrap_before = end_ms.unwrap_or(now_ms.saturating_sub(1));
+                    let bootstrap_hist = (now_ms.saturating_sub(bootstrap_before))
+                        / (24 * 60 * 60 * 1000)
+                        > HISTORY_SPLIT_DAYS;
+
+                    let mut p2 = GetCandlesticksParamsBuilder::default();
+                    p2.inst_id(symbol.as_str())
+                        .bar(&bar_param)
+                        .limit(page_cap as u32)
+                        .before_ms(bootstrap_before);
+                    let params2 = p2.build().map_err(anyhow::Error::new)?;
+                    let raw2 = if bootstrap_hist {
+                        self.inner
+                            .http_get_candlesticks_history(params2)
+                            .await
+                            .map_err(anyhow::Error::new)?
+                    } else {
+                        self.inner
+                            .http_get_candlesticks(params2)
+                            .await
+                            .map_err(anyhow::Error::new)?
+                    };
+
+                    if !raw2.is_empty() {
+                        raw = raw2;
+                        // Switch forward into backfill mode after bootstrap.
+                        forward_prepend_mode = true;
+                        req_used_before = true;
                     }
                 }
 
-                if let Some(l) = limit
-                    && all_bars.len() >= l as usize
+                // If still empty: for Forward/Range after first page, try a single backstep window using BEFORE
+                if raw.is_empty() && matches!(mode, Mode::Forward | Mode::Range) && pages > 0 {
+                    let backstep_ms = (page_cap as i64).saturating_mul(slot_ms.max(1));
+                    let pivot_back = after_ms.unwrap_or(now_ms).saturating_sub(backstep_ms);
+
+                    let mut p2 = GetCandlesticksParamsBuilder::default();
+                    p2.inst_id(symbol.as_str())
+                        .bar(&bar_param)
+                        .limit(page_cap as u32)
+                        .before_ms(pivot_back);
+                    let params2 = p2.build().map_err(anyhow::Error::new)?;
+                    let raw2 = if (now_ms.saturating_sub(pivot_back)) / (24 * 60 * 60 * 1000)
+                        > HISTORY_SPLIT_DAYS
+                    {
+                        self.inner.http_get_candlesticks_history(params2).await
+                    } else {
+                        self.inner.http_get_candlesticks(params2).await
+                    }
+                    .map_err(anyhow::Error::new)?;
+                    if raw2.is_empty() {
+                        break;
+                    } else {
+                        raw = raw2;
+                        forward_prepend_mode = true;
+                        req_used_before = true;
+                    }
+                }
+
+                // First LATEST page empty: jump back >100d to force history, then continue loop
+                if raw.is_empty()
+                    && matches!(mode, Mode::Latest)
+                    && !have_latest_first_page
+                    && !using_history
                 {
-                    break; // Stop condition: limit reached
+                    let jump_days_ms = (HISTORY_SPLIT_DAYS + 1) * 86_400_000;
+                    before_ms = Some(now_ms.saturating_sub(jump_days_ms));
+                    have_latest_first_page = true;
+                    continue;
                 }
-                all_bars.push(bar);
-            }
 
-            // Stop condition: Hit end boundary during forward pagination
-            if let Some(end_time) = end_boundary
-                && let Some(last_bar) = all_bars.last()
-            {
-                let end_nanos = end_time.timestamp_nanos_opt().unwrap_or_default() as u64;
-                if last_bar.ts_event >= end_nanos {
-                    break; // We've reached the end boundary
-                }
-            }
-
-            // Stop condition: Time window fully covered
-            if let (Some(start_time), Some(end_time)) = (start, end)
-                && let (Some(first_bar), Some(last_bar)) = (all_bars.first(), all_bars.last())
-            {
-                let start_nanos = start_time.timestamp_nanos_opt().unwrap_or_default() as u64;
-                let end_nanos = end_time.timestamp_nanos_opt().unwrap_or_default() as u64;
-                if first_bar.ts_event <= start_nanos && last_bar.ts_event >= end_nanos {
+                // Still empty for any other case? Just break.
+                if raw.is_empty() {
                     break;
                 }
             }
+            // --- end fallbacks ---
 
-            // Check if we've reached the limit
-            if let Some(l) = limit
-                && all_bars.len() >= l as usize
-            {
-                break; // Stop condition: limit reached
+            pages += 1;
+
+            // Parse, oldest → newest
+            let ts_init = self.generate_ts_init();
+            let mut page: Vec<Bar> = Vec::with_capacity(raw.len());
+            for r in &raw {
+                page.push(parse_candlestick(
+                    r,
+                    bar_type,
+                    inst.price_precision(),
+                    inst.size_precision(),
+                    ts_init,
+                )?);
+            }
+            page.reverse();
+
+            let page_oldest_ms = page.first().map(|b| b.ts_event.as_i64() / 1_000_000);
+            let page_newest_ms = page.last().map(|b| b.ts_event.as_i64() / 1_000_000);
+
+            // Range filter (inclusive)
+            let mut filtered: Vec<Bar> = page
+                .clone()
+                .into_iter()
+                .filter(|b| {
+                    let ts = b.ts_event.as_i64();
+                    let ok_after = start_ns.is_none_or(|sns| ts >= sns);
+                    let ok_before = end_ns.is_none_or(|ens| ts <= ens);
+                    ok_after && ok_before
+                })
+                .collect();
+
+            // Track contribution for progress guard
+            let contribution;
+
+            if out.is_empty() {
+                contribution = filtered.len();
+                out = filtered;
+            } else {
+                match mode {
+                    Mode::Backward | Mode::Latest => {
+                        if let Some(first) = out.first() {
+                            filtered.retain(|b| b.ts_event < first.ts_event);
+                        }
+                        contribution = filtered.len();
+                        if contribution != 0 {
+                            let mut new_out = Vec::with_capacity(out.len() + filtered.len());
+                            new_out.extend_from_slice(&filtered);
+                            new_out.extend_from_slice(&out);
+                            out = new_out;
+                        }
+                    }
+                    Mode::Forward | Mode::Range => {
+                        if forward_prepend_mode || req_used_before {
+                            // We are backfilling older pages: prepend them.
+                            if let Some(first) = out.first() {
+                                filtered.retain(|b| b.ts_event < first.ts_event);
+                            }
+                            contribution = filtered.len();
+                            if contribution != 0 {
+                                let mut new_out = Vec::with_capacity(out.len() + filtered.len());
+                                new_out.extend_from_slice(&filtered);
+                                new_out.extend_from_slice(&out);
+                                out = new_out;
+                            }
+                        } else {
+                            // Normal forward: append newer pages.
+                            if let Some(last) = out.last() {
+                                filtered.retain(|b| b.ts_event > last.ts_event);
+                            }
+                            contribution = filtered.len();
+                            out.extend(filtered);
+                        }
+                    }
+                }
             }
 
-            // Update cursor for next page
-            match cursor_mode {
-                "both" => {
-                    // Time range mode: continue paginating with 'after' until we have enough data
-                    // or hit the end time boundary
-                    if let Some(last_raw) = page.last() {
-                        cursor_value = Some(last_raw.0.clone());
+            // Duplicate-window mitigation for Latest/Backward
+            if contribution == 0
+                && matches!(mode, Mode::Latest | Mode::Backward)
+                && let Some(b) = before_ms
+            {
+                let jump = (page_cap as i64).saturating_mul(slot_ms.max(1));
+                let new_b = b.saturating_sub(jump);
+                if new_b != b {
+                    before_ms = Some(new_b);
+                }
+            }
 
-                        // Check if we've passed the end time
-                        if let Some(end_time) = end {
-                            let end_millis = end_time.timestamp_millis();
-                            if let Ok(last_ts) = last_raw.0.parse::<i64>()
-                                && last_ts >= end_millis
-                            {
-                                // We've reached or passed the end time, stop
+            if contribution == 0 {
+                progressless_loops = progressless_loops.saturating_add(1);
+                if progressless_loops >= 3 {
+                    break;
+                }
+            } else {
+                progressless_loops = 0;
+
+                // Advance cursors only when we made progress
+                match mode {
+                    Mode::Latest | Mode::Backward => {
+                        if let Some(oldest) = page_oldest_ms {
+                            before_ms = Some(oldest.saturating_sub(1));
+                            have_latest_first_page = true;
+                        } else {
+                            break;
+                        }
+                    }
+                    Mode::Forward | Mode::Range => {
+                        if forward_prepend_mode || req_used_before {
+                            if let Some(oldest) = page_oldest_ms {
+                                before_ms = Some(oldest.saturating_sub(1));
+                                after_ms = None;
+                            } else {
                                 break;
                             }
+                        } else if let Some(newest) = page_newest_ms {
+                            after_ms = Some(newest.saturating_add(1));
+                            before_ms = None;
+                        } else {
+                            break;
                         }
-                    } else {
-                        break;
                     }
                 }
-                "after" => {
-                    // Forward pagination: use oldest timestamp from current page
-                    if let Some(last_raw) = page.last() {
-                        cursor_value = Some(last_raw.0.clone());
-                    } else {
-                        break;
-                    }
-                }
-                "before" => {
-                    // Backward pagination: use newest timestamp from current page
-                    if let Some(first_raw) = page.first() {
-                        cursor_value = Some(first_raw.0.clone());
-                    } else {
-                        break;
-                    }
-                }
-                "none" => {
-                    // One-shot: no pagination
-                    break;
-                }
-                _ => unreachable!(),
             }
 
-            // Rate limit safety
+            // Stop conditions
+            if let Some(lim) = limit
+                && out.len() >= lim as usize
+            {
+                break;
+            }
+            if let Some(ens) = end_ns
+                && let Some(last) = out.last()
+                && last.ts_event.as_i64() >= ens
+            {
+                break;
+            }
+            if let Some(sns) = start_ns
+                && let Some(first) = out.first()
+                && (matches!(mode, Mode::Backward) || forward_prepend_mode)
+                && first.ts_event.as_i64() <= sns
+            {
+                break;
+            }
+
             tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
         }
 
-        // Final processing based on cursor mode
-        if needs_final_reverse {
-            all_bars.reverse();
+        // Final rescue for FORWARD/RANGE when nothing gathered
+        if out.is_empty() && matches!(mode, Mode::Forward | Mode::Range) {
+            let pivot = end_ms.unwrap_or(now_ms.saturating_sub(1));
+            let hist = (now_ms.saturating_sub(pivot)) / (24 * 60 * 60 * 1000) > HISTORY_SPLIT_DAYS;
+            let mut p = GetCandlesticksParamsBuilder::default();
+            p.inst_id(symbol.as_str())
+                .bar(&bar_param)
+                .limit(300)
+                .before_ms(pivot);
+            let params = p.build().map_err(anyhow::Error::new)?;
+            let raw = if hist {
+                self.inner.http_get_candlesticks_history(params).await
+            } else {
+                self.inner.http_get_candlesticks(params).await
+            }
+            .map_err(anyhow::Error::new)?;
+            if !raw.is_empty() {
+                let ts_init = self.generate_ts_init();
+                let mut page: Vec<Bar> = Vec::with_capacity(raw.len());
+                for r in &raw {
+                    page.push(parse_candlestick(
+                        r,
+                        bar_type,
+                        inst.price_precision(),
+                        inst.size_precision(),
+                        ts_init,
+                    )?);
+                }
+                page.reverse();
+                out = page
+                    .into_iter()
+                    .filter(|b| {
+                        let ts = b.ts_event.as_i64();
+                        let ok_after = start_ns.is_none_or(|sns| ts >= sns);
+                        let ok_before = end_ns.is_none_or(|ens| ts <= ens);
+                        ok_after && ok_before
+                    })
+                    .collect();
+            }
         }
 
-        Ok(all_bars)
+        // Trim against end bound if needed (keep ≤ end)
+        if let Some(ens) = end_ns {
+            while out.last().is_some_and(|b| b.ts_event.as_i64() > ens) {
+                out.pop();
+            }
+        }
+
+        // Clamp first bar for Forward
+        if matches!(mode, Mode::Forward)
+            && let Some(sns) = start_ns
+        {
+            let lower = sns.saturating_sub(slot_ns);
+            while out.first().is_some_and(|b| b.ts_event.as_i64() < lower) {
+                out.remove(0);
+            }
+        }
+
+        if let Some(lim) = limit
+            && out.len() > lim as usize
+        {
+            out.truncate(lim as usize);
+        }
+
+        Ok(out)
     }
 
     /// Requests historical order status reports for the given parameters.
@@ -1331,7 +1512,9 @@ impl OKXHttpClient {
             let instrument_id = instrument_id.ok_or_else(|| {
                 anyhow::anyhow!("Instrument ID required if `instrument_type` not provided")
             })?;
-            let instrument = self.get_instrument_from_cache(instrument_id.symbol.inner())?;
+            let instrument = self
+                .instrument_or_fetch(instrument_id.symbol.inner())
+                .await?;
             okx_instrument_type(&instrument)?
         };
 
@@ -1395,10 +1578,9 @@ impl OKXHttpClient {
             if seen.contains(&order.cl_ord_id) {
                 continue; // Reserved pending already reported
             }
-
             seen.insert(order.cl_ord_id);
 
-            let inst = self.get_instrument_from_cache(order.inst_id)?;
+            let inst = self.instrument_or_fetch(order.inst_id).await?;
 
             let report = parse_order_status_report(
                 order,
@@ -1414,7 +1596,6 @@ impl OKXHttpClient {
             {
                 continue;
             }
-
             if let Some(end_ns) = end_ns
                 && report.ts_last > end_ns
             {
@@ -1449,14 +1630,18 @@ impl OKXHttpClient {
             let instrument_id = instrument_id.ok_or_else(|| {
                 anyhow::anyhow!("Instrument ID required if `instrument_type` not provided")
             })?;
-            let instrument = self.get_instrument_from_cache(instrument_id.symbol.inner())?;
+            let instrument = self
+                .instrument_or_fetch(instrument_id.symbol.inner())
+                .await?;
             okx_instrument_type(&instrument)?
         };
 
         params.inst_type(instrument_type);
 
         if let Some(instrument_id) = instrument_id {
-            let instrument = self.get_instrument_from_cache(instrument_id.symbol.inner())?;
+            let instrument = self
+                .instrument_or_fetch(instrument_id.symbol.inner())
+                .await?;
             let instrument_type = okx_instrument_type(&instrument)?;
             params.inst_type(instrument_type);
             params.inst_id(instrument_id.symbol.inner().to_string());
@@ -1482,7 +1667,7 @@ impl OKXHttpClient {
         let mut reports = Vec::with_capacity(resp.len());
 
         for detail in resp {
-            let inst = self.get_instrument_from_cache(detail.inst_id)?;
+            let inst = self.instrument_or_fetch(detail.inst_id).await?;
 
             let report = parse_fill_report(
                 detail,
@@ -1547,7 +1732,7 @@ impl OKXHttpClient {
             if position.pos_id.is_some() {
                 continue; // Skip hedge mode positions (not currently supported)
             }
-            let inst = self.get_instrument_from_cache(position.inst_id)?;
+            let inst = self.instrument_or_fetch(position.inst_id).await?;
 
             let report = parse_position_status_report(
                 position,
