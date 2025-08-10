@@ -161,23 +161,23 @@ The client uses a mixin-based architecture where each mixin handles a specific a
 
 #### Connection Management (`InteractiveBrokersClientConnectionMixin`)
 
-- Establishes and maintains socket connections to TWS/Gateway
-- Handles connection timeouts and reconnection logic
-- Manages connection state and health monitoring
-- Supports configurable reconnection attempts via `IB_MAX_CONNECTION_ATTEMPTS` environment variable
+- Establishes and maintains socket connections to TWS/Gateway.
+- Handles connection timeouts and reconnection logic.
+- Manages connection state and health monitoring.
+- Supports configurable reconnection attempts via `IB_MAX_CONNECTION_ATTEMPTS` environment variable.
 
 #### Error Handling (`InteractiveBrokersClientErrorMixin`)
 
-- Processes all API errors and warnings
-- Categorizes errors by type (client errors, connectivity issues, request errors)
-- Handles subscription and request-specific error scenarios
-- Provides comprehensive error logging and debugging information
+- Processes all API errors and warnings.
+- Categorizes errors by type (client errors, connectivity issues, request errors).
+- Handles subscription and request-specific error scenarios.
+- Provides comprehensive error logging and debugging information.
 
 #### Account Management (`InteractiveBrokersClientAccountMixin`)
 
-- Retrieves account information and balances
-- Manages position data and portfolio updates
-- Handles multi-account scenarios
+- Retrieves account information and balances.
+- Manages position data and portfolio updates.
+- Handles multi-account scenarios.
 - Processes account-related notifications
 
 #### Contract/Instrument Management (`InteractiveBrokersClientContractMixin`)
@@ -907,7 +907,7 @@ The adapter supports most Interactive Brokers order types:
 - **Market-on-Close**: `OrderType.MARKET` with `TimeInForce.AT_THE_CLOSE`
 - **Limit-on-Close**: `OrderType.LIMIT` with `TimeInForce.AT_THE_CLOSE`
 
-#### Time-in-Force Options
+#### Time in force options
 
 - **Day Orders**: `TimeInForce.DAY`
 - **Good-Till-Canceled**: `TimeInForce.GTC`
@@ -916,6 +916,41 @@ The adapter supports most Interactive Brokers order types:
 - **Good-Till-Date**: `TimeInForce.GTD`
 - **At-the-Open**: `TimeInForce.AT_THE_OPEN`
 - **At-the-Close**: `TimeInForce.AT_THE_CLOSE`
+
+#### Batch operations
+
+| Operation          | Supported | Notes                                        |
+|--------------------|-----------|----------------------------------------------|
+| Batch Submit       | ✓         | Submit multiple orders in single request.    |
+| Batch Modify       | ✓         | Modify multiple orders in single request.    |
+| Batch Cancel       | ✓         | Cancel multiple orders in single request.    |
+
+#### Position management
+
+| Feature              | Supported | Notes                                        |
+|--------------------|-----------|----------------------------------------------|
+| Query positions     | ✓         | Real-time position updates.                  |
+| Position mode       | ✓         | Net vs separate long/short positions.       |
+| Leverage control    | ✓         | Account-level margin requirements.          |
+| Margin mode         | ✓         | Portfolio vs individual margin.             |
+
+#### Order querying
+
+| Feature              | Supported | Notes                                        |
+|--------------------|-----------|----------------------------------------------|
+| Query open orders   | ✓         | List all active orders.                      |
+| Query order history | ✓         | Historical order data.                       |
+| Order status updates| ✓         | Real-time order state changes.              |
+| Trade history       | ✓         | Execution and fill reports.                 |
+
+#### Contingent orders
+
+| Feature              | Supported | Notes                                        |
+|--------------------|-----------|----------------------------------------------|
+| Order lists         | ✓         | Atomic multi-order submission.               |
+| OCO orders          | ✓         | One-Cancels-Other functionality.            |
+| Bracket orders      | ✓         | Parent-child order relationships.           |
+| Conditional orders  | ✓         | Advanced order conditions and triggers.     |
 
 #### Basic Execution Client Configuration
 

@@ -112,7 +112,7 @@ Only *limit* order types support `post_only`.
 
 ### Time in force
 
-| Time-in-Force | Spot | Margin | USDT Futures | Coin Futures | Notes                                           |
+| Time in force | Spot | Margin | USDT Futures | Coin Futures | Notes                                           |
 |---------------|------|--------|--------------|--------------|-------------------------------------------------|
 | `GTC`         | ✓    | ✓      | ✓            | ✓            | Good Till Canceled.                             |
 | `GTD`         | ✓*   | ✓*     | ✓            | ✓            | *Converted to GTC for Spot/Margin with warning. |
@@ -126,6 +126,41 @@ Only *limit* order types support `post_only`.
 | Order Modification | ✓    | ✓      | ✓            | ✓            | Price and quantity for `LIMIT` orders only.  |
 | Bracket/OCO Orders | ✓    | ✓      | ✓            | ✓            | One-Cancels-Other for stop loss/take profit. |
 | Iceberg Orders     | ✓    | ✓      | ✓            | ✓            | Large orders split into visible portions.    |
+
+### Batch operations
+
+| Operation          | Spot | Margin | USDT Futures | Coin Futures | Notes                                        |
+|--------------------|------|--------|--------------|--------------|----------------------------------------------|
+| Batch Submit       | ✓    | ✓      | ✓            | ✓            | Submit multiple orders in single request.    |
+| Batch Modify       | -    | -      | ✓            | ✓            | Modify multiple orders in single request. Futures only. |
+| Batch Cancel       | ✓    | ✓      | ✓            | ✓            | Cancel multiple orders in single request.    |
+
+### Position management
+
+| Feature              | Spot | Margin | USDT Futures | Coin Futures | Notes                                        |
+|---------------------|------|--------|--------------|--------------|----------------------------------------------|
+| Query positions     | -    | ✓      | ✓            | ✓            | Real-time position updates.                  |
+| Position mode       | -    | -      | ✓            | ✓            | One-Way vs Hedge mode (position IDs).       |
+| Leverage control    | -    | ✓      | ✓            | ✓            | Dynamic leverage adjustment per symbol.      |
+| Margin mode         | -    | ✓      | ✓            | ✓            | Cross vs Isolated margin per symbol.        |
+
+### Order querying
+
+| Feature              | Spot | Margin | USDT Futures | Coin Futures | Notes                                        |
+|---------------------|------|--------|--------------|--------------|----------------------------------------------|
+| Query open orders   | ✓    | ✓      | ✓            | ✓            | List all active orders.                      |
+| Query order history | ✓    | ✓      | ✓            | ✓            | Historical order data.                       |
+| Order status updates| ✓    | ✓      | ✓            | ✓            | Real-time order state changes.              |
+| Trade history       | ✓    | ✓      | ✓            | ✓            | Execution and fill reports.                 |
+
+### Contingent orders
+
+| Feature              | Spot | Margin | USDT Futures | Coin Futures | Notes                                        |
+|---------------------|------|--------|--------------|--------------|----------------------------------------------|
+| Order lists         | -    | -      | -            | -            | *Not supported*.                             |
+| OCO orders          | ✓    | ✓      | ✓            | ✓            | One-Cancels-Other for stop loss/take profit. |
+| Bracket orders      | ✓    | ✓      | ✓            | ✓            | Stop loss + take profit combinations.       |
+| Conditional orders  | ✓    | ✓      | ✓            | ✓            | Stop and market-if-touched orders.          |
 
 ### Configuration options
 
