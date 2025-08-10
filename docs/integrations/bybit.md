@@ -111,7 +111,7 @@ All the order types listed below can be used as *either* entries or exits, excep
 
 ### Time in force
 
-| Time-in-Force | Spot | Linear | Inverse | Notes                        |
+| Time in force | Spot | Linear | Inverse | Notes                        |
 |---------------|------|--------|---------|------------------------------|
 | `GTC`         | ✓    | ✓      | ✓       | Good Till Canceled.          |
 | `GTD`         | -    | -      | -       | *Not supported*.             |
@@ -125,6 +125,41 @@ All the order types listed below can be used as *either* entries or exits, excep
 | Order Modification | ✓    | ✓      | ✓       | Price and quantity modification.       |
 | Bracket/OCO Orders | ✓    | ✓      | ✓       | UI only; API users implement manually. |
 | Iceberg Orders     | ✓    | ✓      | ✓       | Max 10 per account, 1 per symbol.      |
+
+### Batch operations
+
+| Operation          | Spot | Linear | Inverse | Notes                                  |
+|--------------------|------|--------|---------|----------------------------------------|
+| Batch Submit       | ✓    | ✓      | ✓       | Submit multiple orders in single request. |
+| Batch Modify       | ✓    | ✓      | ✓       | Modify multiple orders in single request. |
+| Batch Cancel       | ✓    | ✓      | ✓       | Cancel multiple orders in single request. |
+
+### Position management
+
+| Feature              | Spot | Linear | Inverse | Notes                                    |
+|---------------------|------|--------|---------|------------------------------------------|
+| Query positions     | -    | ✓      | ✓       | Real-time position updates.              |
+| Position mode       | -    | ✓      | ✓       | One-Way vs Hedge mode.                   |
+| Leverage control    | -    | ✓      | ✓       | Dynamic leverage adjustment per symbol.  |
+| Margin mode         | -    | ✓      | ✓       | Cross vs Isolated margin.                |
+
+### Order querying
+
+| Feature              | Spot | Linear | Inverse | Notes                                    |
+|---------------------|------|--------|---------|------------------------------------------|
+| Query open orders   | ✓    | ✓      | ✓       | List all active orders.                  |
+| Query order history | ✓    | ✓      | ✓       | Historical order data.                   |
+| Order status updates| ✓    | ✓      | ✓       | Real-time order state changes.          |
+| Trade history       | ✓    | ✓      | ✓       | Execution and fill reports.             |
+
+### Contingent orders
+
+| Feature              | Spot | Linear | Inverse | Notes                                    |
+|---------------------|------|--------|---------|------------------------------------------|
+| Order lists         | -    | -      | -       | *Not supported*.                         |
+| OCO orders          | ✓    | ✓      | ✓       | UI only; API users implement manually.  |
+| Bracket orders      | ✓    | ✓      | ✓       | UI only; API users implement manually.  |
+| Conditional orders  | ✓    | ✓      | ✓       | Stop and limit-if-touched orders.       |
 
 ### Configuration options
 
@@ -161,9 +196,9 @@ This is because trailing stops are associated with a netted position for an inst
 Consider the following points when using trailing stops on Bybit:
 
 - `reduce_only` instruction is available
-- When the position associated with a trailing stop is closed, the trailing stop is automatically "deactivated" (closed) on the venue side
-- You cannot query trailing stop orders that are not already open (the `venue_order_id` is unknown until then)
-- You can manually adjust the trigger price in the GUI, which will update the Nautilus order
+- When the position associated with a trailing stop is closed, the trailing stop is automatically "deactivated" (closed) on the venue side.
+- You cannot query trailing stop orders that are not already open (the `venue_order_id` is unknown until then).
+- You can manually adjust the trigger price in the GUI, which will update the Nautilus order.
 
 ## Configuration
 

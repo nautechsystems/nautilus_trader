@@ -84,6 +84,41 @@ for linear perpetual swap products on OKX.
 | `FOK`         | ✓                     | Fill or Kill.        |
 | `IOC`         | ✓                     | Immediate or Cancel. |
 
+### Batch operations
+
+| Operation          | Linear Perpetual Swap | Notes                                        |
+|--------------------|-----------------------|----------------------------------------------|
+| Batch Submit       | ✓                     | Submit multiple orders in single request.    |
+| Batch Modify       | ✓                     | Modify multiple orders in single request.    |
+| Batch Cancel       | ✓                     | Cancel multiple orders in single request.    |
+
+### Position management
+
+| Feature           | Linear Perpetual Swap | Notes                                        |
+|-------------------|-----------------------|----------------------------------------------|
+| Query positions   | ✓                     | Real-time position updates.                  |
+| Position mode     | ✓                     | Net vs Long/Short mode.                      |
+| Leverage control  | ✓                     | Dynamic leverage adjustment per instrument.  |
+| Margin mode       | ✓                     | Cross vs Isolated margin.                    |
+
+### Order querying
+
+| Feature              | Linear Perpetual Swap | Notes                                     |
+|----------------------|-----------------------|-------------------------------------------|
+| Query open orders    | ✓                     | List all active orders.                   |
+| Query order history  | ✓                     | Historical order data.                    |
+| Order status updates | ✓                     | Real-time order state changes.            |
+| Trade history        | ✓                     | Execution and fill reports.               |
+
+### Contingent orders
+
+| Feature              | Linear Perpetual Swap | Notes                                     |
+|--------------------|-----------------------|---------------------------------------------|
+| Order lists         | -                     | *Not supported*.                           |
+| OCO orders          | ✓                     | One-Cancels-Other orders.                  |
+| Bracket orders      | ✓                     | Stop loss + take profit combinations.      |
+| Conditional orders  | ✓                     | Stop and limit-if-touched orders.          |
+
 ## Authentication
 
 To use the OKX adapter, you'll need to create API credentials in your OKX account:

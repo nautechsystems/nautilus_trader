@@ -65,46 +65,81 @@ Betfair operates as a betting exchange with unique characteristics compared to t
 
 ### Order Types
 
-| Order Type             | Betfair | Notes                               |
-|------------------------|---------|-------------------------------------|
-| `MARKET`               | -       | Not applicable to betting exchange. |
-| `LIMIT`                | ✓       | Orders placed at specific odds.     |
-| `STOP_MARKET`          | -       | *Not supported*.                    |
-| `STOP_LIMIT`           | -       | *Not supported*.                    |
-| `MARKET_IF_TOUCHED`    | -       | *Not supported*.                    |
-| `LIMIT_IF_TOUCHED`     | -       | *Not supported*.                    |
-| `TRAILING_STOP_MARKET` | -       | *Not supported*.                    |
+| Order Type             | Supported | Notes                               |
+|------------------------|-----------|-------------------------------------|
+| `MARKET`               | -         | Not applicable to betting exchange. |
+| `LIMIT`                | ✓         | Orders placed at specific odds.     |
+| `STOP_MARKET`          | -         | *Not supported*.                    |
+| `STOP_LIMIT`           | -         | *Not supported*.                    |
+| `MARKET_IF_TOUCHED`    | -         | *Not supported*.                    |
+| `LIMIT_IF_TOUCHED`     | -         | *Not supported*.                    |
+| `TRAILING_STOP_MARKET` | -         | *Not supported*.                    |
 
 ### Execution Instructions
 
-| Instruction   | Betfair | Notes                                   |
-|---------------|---------|-----------------------------------------|
-| `post_only`   | -       | Not applicable to betting exchange.     |
-| `reduce_only` | -       | Not applicable to betting exchange.     |
+| Instruction   | Supported | Notes                               |
+|---------------|-----------|-------------------------------------|
+| `post_only`   | -         | Not applicable to betting exchange. |
+| `reduce_only` | -         | Not applicable to betting exchange. |
 
-### Time-in-Force Options
+### Time in force options
 
-| Time-in-Force | Betfair | Notes                                   |
-|---------------|---------|-----------------------------------------|
-| `GTC`         | -       | Betting exchange uses different model.  |
-| `GTD`         | -       | Betting exchange uses different model.  |
-| `FOK`         | -       | Betting exchange uses different model.  |
-| `IOC`         | -       | Betting exchange uses different model.  |
+| Time in force | Supported | Notes                               |
+|---------------|-----------|-------------------------------------|
+| `GTC`         | -         | Betting exchange uses different model. |
+| `GTD`         | -         | Betting exchange uses different model. |
+| `FOK`         | -         | Betting exchange uses different model. |
+| `IOC`         | -         | Betting exchange uses different model. |
 
 ### Advanced Order Features
 
-| Feature            | Betfair | Notes                                    |
-|--------------------|---------|------------------------------------------|
-| Order Modification | ✓       | Limited to non-exposure changing fields. |
-| Bracket/OCO Orders | -       | *Not supported*.                         |
-| Iceberg Orders     | -       | *Not supported*.                         |
+| Feature            | Supported | Notes                                    |
+|--------------------|-----------|------------------------------------------|
+| Order Modification | ✓         | Limited to non-exposure changing fields. |
+| Bracket/OCO Orders | -         | *Not supported*.                         |
+| Iceberg Orders     | -         | *Not supported*.                         |
 
-### Configuration Options
+### Batch operations
+
+| Operation          | Supported | Notes                |
+|--------------------|-----------|----------------------|
+| Batch Submit       | -         | *Not supported*.     |
+| Batch Modify       | -         | *Not supported*.     |
+| Batch Cancel       | -         | *Not supported*.     |
+
+### Position management
+
+| Feature             | Supported | Notes                                   |
+|---------------------|-----------|-----------------------------------------|
+| Query positions     | -         | Betting exchange model differs.         |
+| Position mode       | -         | Not applicable to betting exchange.     |
+| Leverage control    | -         | No leverage in betting exchange.        |
+| Margin mode         | -         | No margin in betting exchange.          |
+
+### Order querying
+
+| Feature              | Supported | Notes                                   |
+|----------------------|-----------|-----------------------------------------|
+| Query open orders    | ✓         | List all active bets.                   |
+| Query order history  | ✓         | Historical betting data.                |
+| Order status updates | ✓         | Real-time bet state changes.            |
+| Trade history        | ✓         | Bet matching and settlement reports.    |
+
+### Contingent orders
+
+| Feature             | Supported | Notes                                  |
+|---------------------|-----------|------------------------------------------|
+| Order lists         | -         | *Not supported*.                        |
+| OCO orders          | -         | *Not supported*.                        |
+| Bracket orders      | -         | *Not supported*.                        |
+| Conditional orders  | -         | Basic bet conditions only.              |
+
+### Configuration options
 
 The following execution client configuration options affect order behavior:
 
-| Option                       | Default | Description                                          |
-|------------------------------|---------|------------------------------------------------------|
+| Option                       | Default | Description                                      |
+|------------------------------|---------|--------------------------------------------------|
 | `calculate_account_state`    | `True`  | If `True`, calculates account state from events. |
 | `request_account_state_secs` | `300`   | Interval for account state checks in seconds (0 disables). |
 | `reconcile_market_ids_only`  | `False` | If `True`, only reconciles orders for configured market IDs. |

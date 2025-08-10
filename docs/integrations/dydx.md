@@ -176,9 +176,9 @@ dYdX supports perpetual futures trading with a comprehensive set of order types 
 | `post_only`   | ✓          | Supported on all order types.  |
 | `reduce_only` | ✓          | Supported on all order types.  |
 
-### Time-in-Force Options
+### Time in force options
 
-| Time-in-Force| Perpetuals | Notes                |
+| Time in force| Perpetuals | Notes                |
 |--------------|------------|----------------------|
 | `GTC`        | ✓          | Good Till Canceled.  |
 | `GTD`        | ✓          | Good Till Date.      |
@@ -192,6 +192,41 @@ dYdX supports perpetual futures trading with a comprehensive set of order types 
 | Order Modification | ✓          | Short-term orders only; cancel-replace method. |
 | Bracket/OCO Orders | -          | *Not supported*.                               |
 | Iceberg Orders     | -          | *Not supported*.                               |
+
+### Batch operations
+
+| Operation          | Perpetuals | Notes                                          |
+|--------------------|------------|------------------------------------------------|
+| Batch Submit       | -          | *Not supported*.                               |
+| Batch Modify       | -          | *Not supported*.                               |
+| Batch Cancel       | -          | *Not supported*.                               |
+
+### Position management
+
+| Feature              | Perpetuals | Notes                                          |
+|--------------------|------------|------------------------------------------------|
+| Query positions     | ✓          | Real-time position updates.                    |
+| Position mode       | -          | Net position mode only.                       |
+| Leverage control    | ✓          | Per-market leverage settings.                 |
+| Margin mode         | -          | Cross margin only.                             |
+
+### Order querying
+
+| Feature              | Perpetuals | Notes                                          |
+|--------------------|------------|------------------------------------------------|
+| Query open orders   | ✓          | List all active orders.                        |
+| Query order history | ✓          | Historical order data.                         |
+| Order status updates| ✓          | Real-time order state changes.                |
+| Trade history       | ✓          | Execution and fill reports.                   |
+
+### Contingent orders
+
+| Feature              | Perpetuals | Notes                                          |
+|--------------------|------------|------------------------------------------------|
+| Order lists         | -          | *Not supported*.                               |
+| OCO orders          | -          | *Not supported*.                               |
+| Bracket orders      | -          | *Not supported*.                               |
+| Conditional orders  | ✓          | Stop market and stop limit orders.           |
 
 ### Configuration Options
 

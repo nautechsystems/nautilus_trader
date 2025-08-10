@@ -72,6 +72,7 @@ Released on TBD (UTC).
 - Refined Rust catalog path handling (#2743), thanks @faysou
 - Refined Rust `GreeksCalculator` (#2760), thanks @faysou
 - Refined Databento bars timestamp decoding and backtest execution usage (#2800), thanks @faysou
+- Refined allowed queries for bars from `BacktestDataConfig` (#2838), thanks @faysou
 - Refined `FillModel` (#2795), thanks @faysou and @stefansimik
 - Refined request of instruments (#2822), thanks @faysou
 - Updated `request_aggregated_bars` example (#2815), thanks @faysou
