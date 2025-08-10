@@ -5829,7 +5829,7 @@ cdef class FundingRateUpdate(Data):
             self._ts_init,
         ))
 
-    def __str__(self) -> str:
+    def __repr__(self) -> str:
         next_rate_str = f",next_rate={self.next_rate}" if self.next_rate is not None else ""
         next_funding_str = f",ts_next_funding={self.ts_next_funding}" if self.ts_next_funding is not None else ""
         return (
@@ -5841,9 +5841,6 @@ cdef class FundingRateUpdate(Data):
             f"ts_event={self._ts_event},"
             f"ts_init={self._ts_init})"
         )
-
-    def __repr__(self) -> str:
-        return str(self)
 
     @property
     def ts_event(self) -> int:

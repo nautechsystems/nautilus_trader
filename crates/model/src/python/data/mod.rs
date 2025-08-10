@@ -21,6 +21,7 @@ pub mod close;
 pub mod delta;
 pub mod deltas;
 pub mod depth;
+pub mod funding;
 pub mod greeks;
 pub mod order;
 pub mod prices;
@@ -34,8 +35,8 @@ use nautilus_core::ffi::cvec::CVec;
 use pyo3::{exceptions::PyValueError, prelude::*, types::PyCapsule};
 
 use crate::data::{
-    Bar, Data, DataType, IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta, QuoteTick, TradeTick,
-    close::InstrumentClose, is_monotonically_increasing_by_init,
+    Bar, Data, DataType, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta,
+    QuoteTick, TradeTick, close::InstrumentClose, is_monotonically_increasing_by_init,
 };
 
 const ERROR_MONOTONICITY: &str = "`data` was not monotonically increasing by the `ts_init` field";
@@ -268,4 +269,23 @@ pub fn pyobjects_to_instrument_closes(
     }
 
     Ok(closes)
+}
+
+/// Transforms the given Python objects into a vector of [`FundingRateUpdate`] objects.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if element conversion fails or the data is not monotonically increasing.
+pub fn pyobjects_to_funding_rates(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<FundingRateUpdate>> {
+    let funding_rates: Vec<FundingRateUpdate> = data
+        .into_iter()
+        .map(|obj| FundingRateUpdate::from_pyobject(&obj))
+        .collect::<PyResult<Vec<FundingRateUpdate>>>()?;
+
+    // Validate monotonically increasing
+    if !is_monotonically_increasing_by_init(&funding_rates) {
+        return Err(PyValueError::new_err(ERROR_MONOTONICITY));
+    }
+
+    Ok(funding_rates)
 }

@@ -134,6 +134,7 @@ impl HasTsInit for FundingRateUpdate {
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -150,7 +151,7 @@ mod tests {
 
     #[fixture]
     fn instrument_id() -> InstrumentId {
-        InstrumentId::from("BTC-USDT.OKX")
+        InstrumentId::from("BTCUSDT-PERP.BINANCE")
     }
 
     #[rstest]
@@ -213,7 +214,7 @@ mod tests {
 
         assert_eq!(
             format!("{funding_rate}"),
-            "BTC-USDT.OKX,0.0001,Some(0.0002),Some(1000),1,2"
+            "BTCUSDT-PERP.BINANCE,0.0001,Some(0.0002),Some(1000),1,2"
         );
     }
 

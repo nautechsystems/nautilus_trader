@@ -337,7 +337,7 @@ cdef class InstrumentStatus(Data):
     cdef readonly uint64_t ts_event
     """UNIX timestamp (nanoseconds) when the data event occurred.\n\n:returns: `uint64_t`"""
     cdef readonly uint64_t ts_init
-    """UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `uint64_t`"""
+    """UNIX timestamp (nanoseconds) when the instance was created.\n\n:returns: `uint64_t`"""
 
     @staticmethod
     cdef InstrumentStatus from_dict_c(dict values)
@@ -356,7 +356,7 @@ cdef class InstrumentClose(Data):
     cdef readonly uint64_t ts_event
     """UNIX timestamp (nanoseconds) when the data event occurred.\n\n:returns: `uint64_t`"""
     cdef readonly uint64_t ts_init
-    """UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `uint64_t`"""
+    """UNIX timestamp (nanoseconds) when the instance was created.\n\n:returns: `uint64_t`"""
 
     @staticmethod
     cdef InstrumentClose from_dict_c(dict values)
@@ -502,17 +502,17 @@ cdef class FundingRateUpdate(Data):
     Represents a funding rate update for a perpetual swap instrument.
     """
     cdef readonly InstrumentId instrument_id
-    """The instrument ID for the funding rate."""
+    """The instrument ID for the funding rate.\n\n:returns: `InstrumentId`"""
     cdef readonly object rate
-    """The current funding rate."""
+    """The current funding rate.\n\n:returns: `Decimal`"""
     cdef readonly object next_rate
-    """The next funding rate (if available)."""
+    """The next funding rate (if available).\n\n:returns: `Decimal` or ``None``"""
     cdef readonly object ts_next_funding
     """UNIX timestamp (nanoseconds) of the next funding payment (if available)."""
     cdef readonly uint64_t _ts_event
-    """UNIX timestamp (nanoseconds) when the update occurred."""
+    """UNIX timestamp (nanoseconds) when the data event occurred.\n\n:returns: `uint64_t`"""
     cdef readonly uint64_t _ts_init
-    """UNIX timestamp (nanoseconds) when the data object was initialized."""
+    """UNIX timestamp (nanoseconds) when the instance was created.\n\n:returns: `uint64_t`"""
 
     @staticmethod
     cdef FundingRateUpdate from_dict_c(dict values)

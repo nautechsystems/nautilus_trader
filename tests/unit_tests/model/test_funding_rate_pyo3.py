@@ -13,13 +13,16 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pickle
 from decimal import Decimal
 
-from nautilus_trader.model.data import FundingRateUpdate
-from nautilus_trader.test_kit.providers import TestInstrumentProvider
+from nautilus_trader.core.nautilus_pyo3 import FundingRateUpdate
+from nautilus_trader.core.nautilus_pyo3 import InstrumentId
+from nautilus_trader.core.nautilus_pyo3 import Symbol
+from nautilus_trader.core.nautilus_pyo3 import Venue
 
 
-BTCUSDT_PERP_BINANCE = TestInstrumentProvider.btcusdt_perp_binance()
+BTCUSDT_PERP_BINANCE = InstrumentId(Symbol("BTCUSDT-PERP"), Venue("BINANCE"))
 
 
 class TestFundingRateUpdate:
@@ -27,49 +30,49 @@ class TestFundingRateUpdate:
         # Arrange, Act, Assert
         assert (
             FundingRateUpdate.fully_qualified_name()
-            == "nautilus_trader.model.data:FundingRateUpdate"
+            == "nautilus_trader.core.nautilus_pyo3.model:FundingRateUpdate"
         )
 
-    def test_instantiation_with_required_fields_only(self):
+    def test_funding_rate_update_new_minimal(self):
         # Arrange, Act
         funding_rate = FundingRateUpdate(
-            instrument_id=BTCUSDT_PERP_BINANCE.id,
+            instrument_id=BTCUSDT_PERP_BINANCE,
             rate=Decimal("0.0001"),
             ts_event=1_640_000_000_000_000_000,
             ts_init=1_640_000_000_000_000_000,
         )
 
         # Assert
-        assert funding_rate.instrument_id == BTCUSDT_PERP_BINANCE.id
+        assert funding_rate.instrument_id == BTCUSDT_PERP_BINANCE
         assert funding_rate.rate == Decimal("0.0001")
         assert funding_rate.next_rate is None
         assert funding_rate.ts_next_funding is None
         assert funding_rate.ts_event == 1_640_000_000_000_000_000
         assert funding_rate.ts_init == 1_640_000_000_000_000_000
 
-    def test_instantiation_with_all_fields(self):
+    def test_funding_rate_update_new_complete(self):
         # Arrange, Act
         funding_rate = FundingRateUpdate(
-            instrument_id=BTCUSDT_PERP_BINANCE.id,
+            instrument_id=BTCUSDT_PERP_BINANCE,
             rate=Decimal("0.0001"),
-            next_rate=Decimal("0.0002"),
-            ts_next_funding=1_640_000_100_000_000_000,
             ts_event=1_640_000_000_000_000_000,
             ts_init=1_640_000_000_000_000_000,
+            next_rate=Decimal("0.0002"),
+            ts_next_funding=1_640_000_100_000_000_000,
         )
 
         # Assert
-        assert funding_rate.instrument_id == BTCUSDT_PERP_BINANCE.id
+        assert funding_rate.instrument_id == BTCUSDT_PERP_BINANCE
         assert funding_rate.rate == Decimal("0.0001")
         assert funding_rate.next_rate == Decimal("0.0002")
         assert funding_rate.ts_next_funding == 1_640_000_100_000_000_000
         assert funding_rate.ts_event == 1_640_000_000_000_000_000
         assert funding_rate.ts_init == 1_640_000_000_000_000_000
 
-    def test_hash_str_and_repr_minimal_fields(self):
+    def test_hash_str_and_repr(self):
         # Arrange
         funding_rate = FundingRateUpdate(
-            instrument_id=BTCUSDT_PERP_BINANCE.id,
+            instrument_id=BTCUSDT_PERP_BINANCE,
             rate=Decimal("0.0001"),
             ts_event=1_640_000_000_000_000_000,
             ts_init=1_640_000_000_000_000_000,
@@ -77,64 +80,29 @@ class TestFundingRateUpdate:
 
         # Act, Assert
         assert isinstance(hash(funding_rate), int)
-        expected_str = (
-            "FundingRateUpdate("
-            "instrument_id=BTCUSDT-PERP.BINANCE,"
-            "rate=0.0001,"
-            "ts_event=1640000000000000000,"
-            "ts_init=1640000000000000000)"
+        assert (
+            str(funding_rate)
+            == "BTCUSDT-PERP.BINANCE,0.0001,None,None,1640000000000000000,1640000000000000000"
         )
-        assert str(funding_rate) == expected_str
-        assert repr(funding_rate) == expected_str
-
-    def test_hash_str_and_repr_all_fields(self):
-        # Arrange
-        funding_rate = FundingRateUpdate(
-            instrument_id=BTCUSDT_PERP_BINANCE.id,
-            rate=Decimal("0.0001"),
-            next_rate=Decimal("0.0002"),
-            ts_next_funding=1_640_000_100_000_000_000,
-            ts_event=1_640_000_000_000_000_000,
-            ts_init=1_640_000_000_000_000_000,
-        )
-
-        # Act, Assert
-        assert isinstance(hash(funding_rate), int)
-        expected_str = (
-            "FundingRateUpdate("
-            "instrument_id=BTCUSDT-PERP.BINANCE,"
-            "rate=0.0001,"
-            "next_rate=0.0002,"
-            "ts_next_funding=1640000100000000000,"
-            "ts_event=1640000000000000000,"
-            "ts_init=1640000000000000000)"
-        )
-        assert str(funding_rate) == expected_str
-        assert repr(funding_rate) == expected_str
+        assert "FundingRateUpdate" in repr(funding_rate)
 
     def test_equality(self):
         # Arrange
         funding_rate1 = FundingRateUpdate(
-            instrument_id=BTCUSDT_PERP_BINANCE.id,
+            instrument_id=BTCUSDT_PERP_BINANCE,
             rate=Decimal("0.0001"),
-            next_rate=Decimal("0.0002"),
-            ts_next_funding=1_640_000_100_000_000_000,
             ts_event=1_640_000_000_000_000_000,
             ts_init=1_640_000_000_000_000_000,
         )
         funding_rate2 = FundingRateUpdate(
-            instrument_id=BTCUSDT_PERP_BINANCE.id,
+            instrument_id=BTCUSDT_PERP_BINANCE,
             rate=Decimal("0.0001"),
-            next_rate=Decimal("0.0002"),
-            ts_next_funding=1_640_000_100_000_000_000,
             ts_event=1_640_000_000_000_000_000,
             ts_init=1_640_000_000_000_000_000,
         )
         funding_rate3 = FundingRateUpdate(
-            instrument_id=BTCUSDT_PERP_BINANCE.id,
-            rate=Decimal("0.0003"),  # Different rate
-            next_rate=Decimal("0.0002"),
-            ts_next_funding=1_640_000_100_000_000_000,
+            instrument_id=BTCUSDT_PERP_BINANCE,
+            rate=Decimal("0.0002"),  # Different rate
             ts_event=1_640_000_000_000_000_000,
             ts_init=1_640_000_000_000_000_000,
         )
@@ -148,54 +116,62 @@ class TestFundingRateUpdate:
     def test_to_dict_minimal_fields(self):
         # Arrange
         funding_rate = FundingRateUpdate(
-            instrument_id=BTCUSDT_PERP_BINANCE.id,
+            instrument_id=BTCUSDT_PERP_BINANCE,
             rate=Decimal("0.0001"),
             ts_event=1_640_000_000_000_000_000,
             ts_init=1_640_000_000_000_000_000,
         )
 
         # Act
-        result = FundingRateUpdate.to_dict(funding_rate)
+        result = funding_rate.to_dict()
 
         # Assert
-        assert result == {
+        expected = {
             "type": "FundingRateUpdate",
             "instrument_id": "BTCUSDT-PERP.BINANCE",
-            "rate": Decimal("0.0001"),
+            "rate": "0.0001",
             "ts_event": 1_640_000_000_000_000_000,
             "ts_init": 1_640_000_000_000_000_000,
         }
+        # Check all expected keys exist and values match
+        for key, expected_value in expected.items():
+            assert key in result
+            assert result[key] == expected_value
 
     def test_to_dict_all_fields(self):
         # Arrange
         funding_rate = FundingRateUpdate(
-            instrument_id=BTCUSDT_PERP_BINANCE.id,
+            instrument_id=BTCUSDT_PERP_BINANCE,
             rate=Decimal("0.0001"),
-            next_rate=Decimal("0.0002"),
-            ts_next_funding=1_640_000_100_000_000_000,
             ts_event=1_640_000_000_000_000_000,
             ts_init=1_640_000_000_000_000_000,
+            next_rate=Decimal("0.0002"),
+            ts_next_funding=1_640_000_100_000_000_000,
         )
 
         # Act
-        result = FundingRateUpdate.to_dict(funding_rate)
+        result = funding_rate.to_dict()
 
         # Assert
-        assert result == {
+        expected = {
             "type": "FundingRateUpdate",
             "instrument_id": "BTCUSDT-PERP.BINANCE",
-            "rate": Decimal("0.0001"),
-            "next_rate": Decimal("0.0002"),
+            "rate": "0.0001",
+            "next_rate": "0.0002",
             "ts_next_funding": 1_640_000_100_000_000_000,
             "ts_event": 1_640_000_000_000_000_000,
             "ts_init": 1_640_000_000_000_000_000,
         }
+        # Check all expected keys exist and values match
+        for key, expected_value in expected.items():
+            assert key in result
+            assert result[key] == expected_value
 
     def test_from_dict_minimal_fields(self):
         # Arrange
         values = {
             "instrument_id": "BTCUSDT-PERP.BINANCE",
-            "rate": Decimal("0.0001"),
+            "rate": "0.0001",
             "ts_event": 1_640_000_000_000_000_000,
             "ts_init": 1_640_000_000_000_000_000,
         }
@@ -204,7 +180,7 @@ class TestFundingRateUpdate:
         result = FundingRateUpdate.from_dict(values)
 
         # Assert
-        assert result.instrument_id.value == "BTCUSDT-PERP.BINANCE"
+        assert result.instrument_id == BTCUSDT_PERP_BINANCE
         assert result.rate == Decimal("0.0001")
         assert result.next_rate is None
         assert result.ts_next_funding is None
@@ -215,8 +191,8 @@ class TestFundingRateUpdate:
         # Arrange
         values = {
             "instrument_id": "BTCUSDT-PERP.BINANCE",
-            "rate": Decimal("0.0001"),
-            "next_rate": Decimal("0.0002"),
+            "rate": "0.0001",
+            "next_rate": "0.0002",
             "ts_next_funding": 1_640_000_100_000_000_000,
             "ts_event": 1_640_000_000_000_000_000,
             "ts_init": 1_640_000_000_000_000_000,
@@ -226,7 +202,7 @@ class TestFundingRateUpdate:
         result = FundingRateUpdate.from_dict(values)
 
         # Assert
-        assert result.instrument_id.value == "BTCUSDT-PERP.BINANCE"
+        assert result.instrument_id == BTCUSDT_PERP_BINANCE
         assert result.rate == Decimal("0.0001")
         assert result.next_rate == Decimal("0.0002")
         assert result.ts_next_funding == 1_640_000_100_000_000_000
@@ -236,14 +212,14 @@ class TestFundingRateUpdate:
     def test_roundtrip_dict_conversion_minimal_fields(self):
         # Arrange
         original = FundingRateUpdate(
-            instrument_id=BTCUSDT_PERP_BINANCE.id,
+            instrument_id=BTCUSDT_PERP_BINANCE,
             rate=Decimal("0.0001"),
             ts_event=1_640_000_000_000_000_000,
             ts_init=1_640_000_000_000_000_000,
         )
 
         # Act
-        result = FundingRateUpdate.from_dict(FundingRateUpdate.to_dict(original))
+        result = FundingRateUpdate.from_dict(original.to_dict())
 
         # Assert
         assert result == original
@@ -251,87 +227,91 @@ class TestFundingRateUpdate:
     def test_roundtrip_dict_conversion_all_fields(self):
         # Arrange
         original = FundingRateUpdate(
-            instrument_id=BTCUSDT_PERP_BINANCE.id,
+            instrument_id=BTCUSDT_PERP_BINANCE,
             rate=Decimal("0.0001"),
-            next_rate=Decimal("0.0002"),
-            ts_next_funding=1_640_000_100_000_000_000,
             ts_event=1_640_000_000_000_000_000,
             ts_init=1_640_000_000_000_000_000,
+            next_rate=Decimal("0.0002"),
+            ts_next_funding=1_640_000_100_000_000_000,
         )
 
         # Act
-        result = FundingRateUpdate.from_dict(FundingRateUpdate.to_dict(original))
+        result = FundingRateUpdate.from_dict(original.to_dict())
 
         # Assert
         assert result == original
 
-    def test_different_rate_types(self):
-        # Arrange, Act
-        funding_rate_float = FundingRateUpdate(
-            instrument_id=BTCUSDT_PERP_BINANCE.id,
-            rate=0.0001,  # float
-            ts_event=1_640_000_000_000_000_000,
-            ts_init=1_640_000_000_000_000_000,
-        )
-        funding_rate_str = FundingRateUpdate(
-            instrument_id=BTCUSDT_PERP_BINANCE.id,
-            rate="0.0001",  # string
-            ts_event=1_640_000_000_000_000_000,
-            ts_init=1_640_000_000_000_000_000,
-        )
-        funding_rate_decimal = FundingRateUpdate(
-            instrument_id=BTCUSDT_PERP_BINANCE.id,
-            rate=Decimal("0.0001"),  # Decimal
-            ts_event=1_640_000_000_000_000_000,
-            ts_init=1_640_000_000_000_000_000,
-        )
-
-        # Assert - All should work and be comparable
-        assert funding_rate_float.rate == 0.0001
-        assert funding_rate_str.rate == "0.0001"
-        assert funding_rate_decimal.rate == Decimal("0.0001")
-
-    def test_negative_funding_rates(self):
-        # Arrange, Act
-        funding_rate = FundingRateUpdate(
-            instrument_id=BTCUSDT_PERP_BINANCE.id,
-            rate=Decimal("-0.0001"),  # Negative rate
-            next_rate=Decimal("-0.0002"),  # Negative next rate
-            ts_next_funding=1_640_000_100_000_000_000,
-            ts_event=1_640_000_000_000_000_000,
-            ts_init=1_640_000_000_000_000_000,
-        )
-
-        # Assert
-        assert funding_rate.rate == Decimal("-0.0001")
-        assert funding_rate.next_rate == Decimal("-0.0002")
-
-    def test_precision_handling(self):
-        # Arrange, Act
-        funding_rate = FundingRateUpdate(
-            instrument_id=BTCUSDT_PERP_BINANCE.id,
-            rate=Decimal("0.000012345678"),  # High precision rate
-            next_rate=Decimal("0.000098765432"),
-            ts_next_funding=1_640_000_100_000_000_000,
-            ts_event=1_640_000_000_000_000_000,
-            ts_init=1_640_000_000_000_000_000,
-        )
-
-        # Assert
-        assert funding_rate.rate == Decimal("0.000012345678")
-        assert funding_rate.next_rate == Decimal("0.000098765432")
-
-    def test_data_interface_compliance(self):
+    def test_pickling_round_trip(self):
         # Arrange
         funding_rate = FundingRateUpdate(
-            instrument_id=BTCUSDT_PERP_BINANCE.id,
+            instrument_id=BTCUSDT_PERP_BINANCE,
             rate=Decimal("0.0001"),
             ts_event=1_640_000_000_000_000_000,
             ts_init=1_640_000_000_000_000_000,
+            next_rate=Decimal("0.0002"),
+            ts_next_funding=1_640_000_100_000_000_000,
         )
 
-        # Act, Assert - Test that it properly implements Data interface
-        assert hasattr(funding_rate, "ts_event")
-        assert hasattr(funding_rate, "ts_init")
-        assert funding_rate.ts_event == 1_640_000_000_000_000_000
-        assert funding_rate.ts_init == 1_640_000_000_000_000_000
+        # Act
+        pickled = pickle.dumps(funding_rate)
+        unpickled = pickle.loads(pickled)  # noqa: S301 (pickle safe here)
+
+        # Assert
+        assert unpickled == funding_rate
+
+    def test_json_serialization_roundtrip(self):
+        # Arrange
+        funding_rate = FundingRateUpdate(
+            instrument_id=BTCUSDT_PERP_BINANCE,
+            rate=Decimal("0.0001"),
+            ts_event=1_640_000_000_000_000_000,
+            ts_init=1_640_000_000_000_000_000,
+            next_rate=Decimal("0.0002"),
+            ts_next_funding=1_640_000_100_000_000_000,
+        )
+
+        # Act
+        json_bytes = funding_rate.to_json()
+        result = FundingRateUpdate.from_json(json_bytes)
+
+        # Assert
+        assert result == funding_rate
+
+    def test_msgpack_serialization_roundtrip(self):
+        # Arrange
+        funding_rate = FundingRateUpdate(
+            instrument_id=BTCUSDT_PERP_BINANCE,
+            rate=Decimal("0.0001"),
+            ts_event=1_640_000_000_000_000_000,
+            ts_init=1_640_000_000_000_000_000,
+            next_rate=Decimal("0.0002"),
+            ts_next_funding=1_640_000_100_000_000_000,
+        )
+
+        # Act
+        msgpack_bytes = funding_rate.to_msgpack()
+        result = FundingRateUpdate.from_msgpack(msgpack_bytes)
+
+        # Assert
+        assert result == funding_rate
+
+    def test_get_metadata(self):
+        # Arrange, Act
+        metadata = FundingRateUpdate.get_metadata(BTCUSDT_PERP_BINANCE)
+
+        # Assert
+        assert metadata == {"instrument_id": "BTCUSDT-PERP.BINANCE"}
+
+    def test_get_fields(self):
+        # Arrange, Act
+        fields = FundingRateUpdate.get_fields()
+
+        # Assert
+        expected_fields = {
+            "rate": "Decimal128",
+            "next_rate": "Decimal128",
+            "ts_next_funding": "UInt64",
+            "ts_event": "UInt64",
+            "ts_init": "UInt64",
+        }
+        assert fields == expected_fields
