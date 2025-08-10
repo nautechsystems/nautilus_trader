@@ -50,6 +50,7 @@ pub use bar::{Bar, BarSpecification, BarType};
 pub use delta::OrderBookDelta;
 pub use deltas::{OrderBookDeltas, OrderBookDeltas_API};
 pub use depth::{DEPTH10_LEN, OrderBookDepth10};
+pub use funding::FundingRateUpdate;
 pub use greeks::{
     BlackScholesGreeksResult, GreeksData, PortfolioGreeks, YieldCurveData, black_scholes_greeks,
     imply_vol_and_greeks,

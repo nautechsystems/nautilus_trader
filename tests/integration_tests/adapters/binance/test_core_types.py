@@ -274,7 +274,7 @@ def test_binance_bar_pickling():
 def test_binance_mark_price_to_from_dict():
     # Arrange
     update = BinanceFuturesMarkPriceUpdate(
-        instrument_id=TestIdStubs.ethusdt_binance_id(),
+        instrument_id=TestIdStubs.ethusdt_perp_binance_id(),
         mark=Price.from_str("1642.28584467"),
         index=Price.from_str("1642.28316456"),
         estimated_settle=Price.from_str("1639.27811452"),
@@ -291,7 +291,7 @@ def test_binance_mark_price_to_from_dict():
     BinanceFuturesMarkPriceUpdate.from_dict(values)
     assert values == {
         "type": "BinanceFuturesMarkPriceUpdate",
-        "instrument_id": "ETHUSDT.BINANCE",
+        "instrument_id": "ETHUSDT-PERP.BINANCE",
         "mark": "1642.28584467",
         "index": "1642.28316456",
         "estimated_settle": "1639.27811452",
@@ -305,7 +305,7 @@ def test_binance_mark_price_to_from_dict():
 def test_binance_mark_price_pickling():
     # Arrange
     update = BinanceFuturesMarkPriceUpdate(
-        instrument_id=TestIdStubs.ethusdt_binance_id(),
+        instrument_id=TestIdStubs.ethusdt_perp_binance_id(),
         mark=Price.from_str("1642.28584467"),
         index=Price.from_str("1642.28316456"),
         estimated_settle=Price.from_str("1639.27811452"),
@@ -322,7 +322,7 @@ def test_binance_mark_price_pickling():
     # Assert
     assert unpickled.to_dict(unpickled) == {
         "type": "BinanceFuturesMarkPriceUpdate",
-        "instrument_id": "ETHUSDT.BINANCE",
+        "instrument_id": "ETHUSDT-PERP.BINANCE",
         "mark": "1642.28584467",
         "index": "1642.28316456",
         "estimated_settle": "1639.27811452",
