@@ -542,6 +542,68 @@ instrument_provider_config = InteractiveBrokersInstrumentProviderConfig(
 When using `build_options_chain=True` or `build_futures_chain=True`, the `secType` and `symbol` should be specified for the underlying contract. The adapter will automatically discover and load all related derivative contracts within the specified expiry range.
 :::
 
+## Option Spreads
+
+Interactive Brokers supports option spreads through BAG contracts, which combine multiple option legs into a single tradeable instrument. NautilusTrader provides comprehensive support for creating, loading, and trading option spreads.
+
+### Creating Option Spread Instrument IDs
+
+Option spreads are created using the `InstrumentId.new_spread()` method, which combines individual option legs with their respective ratios:
+
+```python
+from nautilus_trader.model.identifiers import InstrumentId
+
+# Create individual option instrument IDs
+call_leg = InstrumentId.from_str("SPY C400.SMART")
+put_leg = InstrumentId.from_str("SPY P390.SMART")
+
+# Create a 1:1 call spread (long call, short call)
+call_spread_id = InstrumentId.new_spread([
+    (call_leg, 1),   # Long 1 contract
+    (put_leg, -1),   # Short 1 contract
+])
+
+# Create a 1:2 ratio spread
+ratio_spread_id = InstrumentId.new_spread([
+    (call_leg, 1),   # Long 1 contract
+    (put_leg, 2),    # Long 2 contracts
+])
+```
+
+### Dynamic Spread Loading
+
+Option spreads must be requested before they can be traded or subscribed to for market data. Use the `request_instrument()` method to dynamically load spread instruments:
+
+```python
+# In your strategy's on_start method
+def on_start(self):
+    # Request the spread instrument
+    self.request_instrument(spread_id)
+
+def on_instrument(self, instrument):
+    # Handle the loaded spread instrument
+    self.log.info(f"Loaded spread: {instrument.id}")
+
+    # Now you can subscribe to market data
+    self.subscribe_quote_ticks(instrument.id)
+
+    # And place orders
+    order = self.order_factory.market(
+        instrument_id=instrument.id,
+        order_side=OrderSide.BUY,
+        quantity=instrument.make_qty(1),
+        time_in_force=TimeInForce.DAY,
+    )
+    self.submit_order(order)
+```
+
+### Spread Trading Requirements
+
+1. **Load Individual Legs First**: The individual option legs must be available before creating spreads
+2. **Request Spread Instrument**: Use `request_instrument()` to load the spread before trading
+3. **Market Data Subscription**: Subscribe to quote ticks after the spread is loaded
+4. **Order Placement**: Any order type can be used
+
 ## Historical Data & Backtesting
 
 The `HistoricInteractiveBrokersClient` provides comprehensive methods for retrieving historical data from Interactive Brokers for backtesting and research purposes.
@@ -573,6 +635,8 @@ await client.connect()
 
 ### Retrieving Instruments
 
+#### Basic Instrument Retrieval
+
 ```python
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 
@@ -585,6 +649,53 @@ contracts = [
 
 # Request instrument definitions
 instruments = await client.request_instruments(contracts=contracts)
+```
+
+#### Option Chain Retrieval with Catalog Storage
+
+You can download entire option chains using `request_instruments` in your strategy, with the added benefit of saving the data to the catalog using `update_catalog=True`:
+
+```python
+# In your strategy's on_start method
+def on_start(self):
+    self.request_instruments(
+        venue=IB_VENUE,
+        update_catalog=True,
+        params={
+            "update_catalog": True,
+            "ib_contracts": (
+                # SPY options
+                {
+                    "secType": "STK",
+                    "symbol": "SPY",
+                    "exchange": "SMART",
+                    "primaryExchange": "ARCA",
+                    "build_options_chain": True,
+                    "min_expiry_days": 7,
+                    "max_expiry_days": 30,
+                },
+                # QQQ options
+                {
+                    "secType": "STK",
+                    "symbol": "QQQ",
+                    "exchange": "SMART",
+                    "primaryExchange": "NASDAQ",
+                    "build_options_chain": True,
+                    "min_expiry_days": 7,
+                    "max_expiry_days": 30,
+                },
+                # ES futures options
+                {
+                    "secType": "CONTFUT",
+                    "exchange": "CME",
+                    "symbol": "ES",
+                    "build_options_chain": True,
+                    "min_expiry_days": 0,
+                    "max_expiry_days": 60,
+                },
+            ),
+        },
+    )
 ```
 
 ### Retrieving Historical Bars
