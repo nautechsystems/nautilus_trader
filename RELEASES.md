@@ -81,7 +81,7 @@ Released on TBD (UTC).
 - Upgraded `web3` for Polymarket allowances script (#2814), thanks @DeirhX
 - Upgraded `databento` crate to v0.30.0
 - Upgraded `datafusion` crate to v49.0.0
-- Upgraded `redis` crate to v0.32.4
+- Upgraded `redis` crate to v0.32.5
 - Upgraded `tokio` crate to v1.47.1
 
 ### Fixes
@@ -112,6 +112,7 @@ Released on TBD (UTC).
 - Added FFI Memory Contract developer guide
 - Added mixed debugging instructions and example (#2806), thanks @faysou
 - Improved dYdX integration guide (#2751), thanks @nicolad
+- Update IB documentation for option spreads (#2839), thanks @faysou
 
 ### Deprecations
 None
