@@ -89,7 +89,10 @@ impl BlockchainDataClientCore {
             config.http_rpc_url.clone(),
             config.rpc_requests_per_second,
         ));
-        let erc20_contract = Erc20Contract::new(http_rpc_client);
+        let erc20_contract = Erc20Contract::new(
+            http_rpc_client,
+            config.pools_filters.remove_pools_with_empty_erc20fields,
+        );
 
         let hypersync_client = HyperSyncClient::new(chain.clone(), hypersync_tx);
         let data_sender = get_data_event_sender();
@@ -637,11 +640,6 @@ impl BlockchainDataClientCore {
                 }
                 Err(token_info_error) => match token_info_error {
                     TokenInfoError::EmptyTokenField { .. } => {
-                        // Empty token name/symbol indicates non-standard implementations:
-                        // - Non-conforming ERC20 tokens (name/symbol are optional in the standard)
-                        // - Minimal proxy contracts without proper metadata forwarding
-                        // - Malicious or deprecated tokens
-                        // We skip these pools as they're not suitable for trading.
                         empty_tokens.insert(token_address);
                     }
                     _ => {
