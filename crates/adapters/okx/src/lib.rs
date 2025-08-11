@@ -15,7 +15,7 @@
 
 //! NautilusTrader adapter for the [OKX](https://www.okx.com) cryptocurrency exchange.
 //!
-//! This crate exposes strongly-typed client bindings (HTTP & WebSocket), data
+//! The `okx` crate provides strongly-typed client bindings (HTTP & WebSocket), data
 //! models and helper utilities that wrap the official **OKX v5 API**.
 //!
 //! The official OKX API reference can be found at <https://www.okx.com/docs-v5/en/>.
