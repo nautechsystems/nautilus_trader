@@ -6022,6 +6022,126 @@ class OKXPositionMode(Enum):
     NET_MODE = "NET_MODE"
     LONG_SHORT_MODE = "LONG_SHORT_MODE"
 
+# BitMEX
+
+class BitmexHttpClient:
+    def __init__(
+        self,
+        api_key: str | None = None,
+        api_secret: str | None = None,
+        base_url: str | None = None,
+        testnet: bool = False,
+    ) -> None: ...
+    @property
+    def base_url(self) -> str: ...
+    @property
+    def api_key(self) -> str | None: ...
+    @property
+    def api_secret(self) -> str | None: ...
+    async def request_instruments(
+        self,
+        symbol_status: BitmexSymbolStatus | None = None,
+    ) -> list[Instrument]: ...
+    async def request_account_state(
+        self,
+        account_id: AccountId,
+    ) -> AccountState: ...
+    async def request_trades(
+        self,
+        symbol: str,
+        count: int | None = None,
+        start: int | None = None,
+        reverse: bool = False,
+        start_time: dt.datetime | None = None,
+        end_time: dt.datetime | None = None,
+    ) -> list[TradeTick]: ...
+    async def request_bars(
+        self,
+        bar_type: BarType,
+        count: int | None = None,
+        start: dt.datetime | None = None,
+        end: dt.datetime | None = None,
+        partial: bool = False,
+    ) -> list[Bar]: ...
+    async def request_order_status_reports(
+        self,
+        account_id: AccountId,
+        symbol: str | None = None,
+        filter: dict[str, Any] | None = None,
+        count: int | None = None,
+        start: int | None = None,
+        reverse: bool = False,
+        start_time: dt.datetime | None = None,
+        end_time: dt.datetime | None = None,
+    ) -> list[OrderStatusReport]: ...
+    async def request_fill_reports(
+        self,
+        account_id: AccountId,
+        symbol: str | None = None,
+        filter: dict[str, Any] | None = None,
+        count: int | None = None,
+        start: int | None = None,
+        reverse: bool = False,
+        start_time: dt.datetime | None = None,
+        end_time: dt.datetime | None = None,
+    ) -> list[FillReport]: ...
+    async def request_position_status_reports(
+        self,
+        account_id: AccountId,
+        filter: dict[str, Any] | None = None,
+        columns: list[str] | None = None,
+        count: int | None = None,
+    ) -> list[PositionStatusReport]: ...
+
+class BitmexWebSocketClient:
+    def __init__(
+        self,
+        api_key: str | None = None,
+        api_secret: str | None = None,
+        base_url: str | None = None,
+        testnet: bool = False,
+    ) -> None: ...
+    @property
+    def url(self) -> str: ...
+    @property
+    def api_key(self) -> str | None: ...
+    @property
+    def api_secret(self) -> str | None: ...
+    def is_active(self) -> bool: ...
+    def is_closed(self) -> bool: ...
+    async def connect(self) -> None: ...
+    async def disconnect(self) -> None: ...
+    async def close(self) -> None: ...
+    async def subscribe_trade(self, symbol: str) -> None: ...
+    async def subscribe_quote(self, symbol: str) -> None: ...
+    async def subscribe_orderbook_l2(self, symbol: str) -> None: ...
+    async def subscribe_order(self) -> None: ...
+    async def subscribe_execution(self) -> None: ...
+    async def subscribe_position(self) -> None: ...
+    async def subscribe_margin(self) -> None: ...
+    async def unsubscribe_trade(self, symbol: str) -> None: ...
+    async def unsubscribe_quote(self, symbol: str) -> None: ...
+    async def unsubscribe_orderbook_l2(self, symbol: str) -> None: ...
+    async def unsubscribe_order(self) -> None: ...
+    async def unsubscribe_execution(self) -> None: ...
+    async def unsubscribe_position(self) -> None: ...
+    async def unsubscribe_margin(self) -> None: ...
+    async def submit_order(self, order: Order) -> None: ...
+    async def cancel_order(self, order_id: str) -> None: ...
+    async def cancel_all_orders(self, symbol: str | None = None) -> None: ...
+    async def amend_order(
+        self,
+        order_id: str,
+        quantity: int | None = None,
+        price: float | None = None,
+        stop_px: float | None = None,
+    ) -> None: ...
+
+class BitmexSymbolStatus(Enum):
+    OPEN = "OPEN"
+    CLOSED = "CLOSED"
+    UNLISTED = "UNLISTED"
+
 # Greeks
 
 class BlackScholesGreeksResult:

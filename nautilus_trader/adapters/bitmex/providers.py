@@ -15,29 +15,26 @@
 
 from typing import Any
 
-from nautilus_trader.adapters.okx.constants import OKX_VENUE
+from nautilus_trader.adapters.bitmex.constants import BITMEX_VENUE
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.core.nautilus_pyo3 import OKXContractType
-from nautilus_trader.core.nautilus_pyo3 import OKXInstrumentType
+from nautilus_trader.core.nautilus_pyo3 import BitmexSymbolStatus
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import instruments_from_pyo3
 
 
-class OKXInstrumentProvider(InstrumentProvider):
+class BitmexInstrumentProvider(InstrumentProvider):
     """
-    Provides Nautilus instrument definitions from OKX.
+    Provides Nautilus instrument definitions from BitMEX.
 
     Parameters
     ----------
-    client : nautilus_pyo3.OKXHttpClient
-        The OKX HTTP client.
-    instrument_types : tuple[OKXInstrumentType, ...]
-        The instrument types to load.
-    contract_types : tuple[OKXContractType, ...], optional
-        The contract types to load.
+    client : nautilus_pyo3.BitmexHttpClient
+        The BitMEX HTTP client.
+    symbol_status : BitmexSymbolStatus, optional
+        The symbol status to filter instruments.
     config : InstrumentProviderConfig, optional
         The instrument provider configuration, by default None.
 
@@ -45,46 +42,32 @@ class OKXInstrumentProvider(InstrumentProvider):
 
     def __init__(
         self,
-        client: nautilus_pyo3.OKXHttpClient,
-        instrument_types: tuple[OKXInstrumentType, ...],
-        contract_types: tuple[OKXContractType, ...] | None = None,
+        client: nautilus_pyo3.BitmexHttpClient,
+        symbol_status: BitmexSymbolStatus | None = None,
         config: InstrumentProviderConfig | None = None,
     ) -> None:
         super().__init__(config=config)
         self._client = client
-        self._instrument_types = instrument_types
-        self._contract_types = contract_types
+        self._symbol_status = symbol_status
         self._log_warnings = config.log_warnings if config else True
 
         self._instruments_pyo3: list[nautilus_pyo3.Instrument] = []
 
     @property
-    def instrument_types(self) -> tuple[OKXInstrumentType, ...]:
+    def symbol_status(self) -> BitmexSymbolStatus | None:
         """
-        Return the OKX instrument types configured for the provider.
+        Return the BitMEX symbol status filter for the provider.
 
         Returns
         -------
-        tuple[OKXInstrumentType, ...]
+        BitmexSymbolStatus | None
 
         """
-        return self._instrument_types
-
-    @property
-    def contract_types(self) -> tuple[OKXContractType, ...] | None:
-        """
-        Return the OKX contract types configured for the provider.
-
-        Returns
-        -------
-        tuple[OKXContractType, ...] | None
-
-        """
-        return self._contract_types
+        return self._symbol_status
 
     def instruments_pyo3(self) -> list[Any]:
         """
-        Return all OKX PyO3 instrument definitions held by the provider.
+        Return all BitMEX PyO3 instrument definitions held by the provider.
 
         Returns
         -------
@@ -97,13 +80,10 @@ class OKXInstrumentProvider(InstrumentProvider):
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading all instruments{filters_str}")
 
-        all_pyo3_instruments = []
-        for instrument_type in self._instrument_types:
-            pyo3_instruments = await self._client.request_instruments(instrument_type)
-            all_pyo3_instruments.extend(pyo3_instruments)
+        pyo3_instruments = await self._client.request_instruments(self._symbol_status)
 
-        self._instruments_pyo3 = all_pyo3_instruments
-        instruments = instruments_from_pyo3(all_pyo3_instruments)
+        self._instruments_pyo3 = pyo3_instruments
+        instruments = instruments_from_pyo3(pyo3_instruments)
         for instrument in instruments:
             self.add(instrument=instrument)
 
@@ -120,15 +100,12 @@ class OKXInstrumentProvider(InstrumentProvider):
 
         # Check all instrument IDs
         for instrument_id in instrument_ids:
-            PyCondition.equal(instrument_id.venue, OKX_VENUE, "instrument_id.venue", "OKX")
+            PyCondition.equal(instrument_id.venue, BITMEX_VENUE, "instrument_id.venue", "BITMEX")
 
-        all_pyo3_instruments = []
-        for instrument_type in self._instrument_types:
-            pyo3_instruments = await self._client.request_instruments(instrument_type)
-            all_pyo3_instruments.extend(pyo3_instruments)
+        pyo3_instruments = await self._client.request_instruments(self._symbol_status)
 
-        self._instruments_pyo3 = all_pyo3_instruments
-        instruments = instruments_from_pyo3(all_pyo3_instruments)
+        self._instruments_pyo3 = pyo3_instruments
+        instruments = instruments_from_pyo3(pyo3_instruments)
 
         for instrument in instruments:
             if instrument.id not in instrument_ids:

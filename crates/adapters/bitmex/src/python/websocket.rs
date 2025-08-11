@@ -14,9 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_core::python::to_pyvalue_err;
-use nautilus_model::{
-    data::bar::BarType, identifiers::InstrumentId,
-};
+use nautilus_model::{data::bar::BarType, identifiers::InstrumentId};
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
 use pyo3_async_runtimes::tokio::get_runtime;
 

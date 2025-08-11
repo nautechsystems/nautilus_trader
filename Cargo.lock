@@ -4986,6 +4986,7 @@ dependencies = [
 name = "nautilus-pyo3"
 version = "0.50.0"
 dependencies = [
+ "nautilus-bitmex",
  "nautilus-blockchain",
  "nautilus-coinbase-intx",
  "nautilus-common",

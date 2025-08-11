@@ -15,17 +15,17 @@
 
 //! Python bindings from `pyo3`.
 
+pub mod enums;
 pub mod http;
-// TODO: Re-enable once Python async patterns are fixed for PyO3 0.25+
-// pub mod websocket;
+pub mod websocket;
 
 use pyo3::prelude::*;
 
 /// Loaded as nautilus_pyo3.bitmex
 #[pymodule]
-pub fn bitmex(_: Python<'_>, _m: &Bound<'_, PyModule>) -> PyResult<()> {
-    // TODO: Re-enable once Python async patterns are fixed for PyO3 0.25+
-    // m.add_class::<super::websocket::BitmexWebSocketClient>()?;
-    tracing::warn!("BitMEX Python WebSocket integration temporarily disabled");
+pub fn bitmex(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_class::<crate::enums::BitmexSymbolStatus>()?;
+    m.add_class::<crate::http::client::BitmexHttpClient>()?;
+    m.add_class::<crate::websocket::BitmexWebSocketClient>()?;
     Ok(())
 }

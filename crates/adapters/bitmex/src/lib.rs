@@ -23,5 +23,7 @@ pub mod enums;
 pub mod http;
 pub mod websocket;
 
+pub use enums::BitmexSymbolStatus;
+
 #[cfg(feature = "python")]
 pub mod python;
