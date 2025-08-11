@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, str::FromStr, time::Instant};
+use std::{collections::HashMap, str::FromStr};
 
 use ahash::AHashMap;
 use bytes::Bytes;
@@ -92,43 +92,17 @@ impl DatabaseQueries {
         encoding: SerializationEncoding,
         payload: &[u8],
     ) -> anyhow::Result<T> {
-        let deser_start = Instant::now();
-        let payload_len = payload.len();
-
-        let decode_start = Instant::now();
         let mut value = match encoding {
-            SerializationEncoding::MsgPack => {
-                log::debug!("deserialize_payload: Decoding {payload_len} bytes from MsgPack");
-                rmp_serde::from_slice(payload)
-                    .map_err(|e| anyhow::anyhow!("Failed to deserialize msgpack `payload`: {e}"))?
-            }
-            SerializationEncoding::Json => {
-                log::debug!("deserialize_payload: Decoding {payload_len} bytes from JSON");
-                serde_json::from_slice(payload)
-                    .map_err(|e| anyhow::anyhow!("Failed to deserialize json `payload`: {e}"))?
-            }
+            SerializationEncoding::MsgPack => rmp_serde::from_slice(payload)
+                .map_err(|e| anyhow::anyhow!("Failed to deserialize msgpack `payload`: {e}"))?,
+            SerializationEncoding::Json => serde_json::from_slice(payload)
+                .map_err(|e| anyhow::anyhow!("Failed to deserialize json `payload`: {e}"))?,
         };
-        let decode_time = decode_start.elapsed();
 
-        let convert_start = Instant::now();
         convert_timestamp_strings(&mut value);
-        let convert_time = convert_start.elapsed();
 
-        let from_value_start = Instant::now();
-        let result = serde_json::from_value(value)
-            .map_err(|e| anyhow::anyhow!("Failed to convert value to target type: {e}"))?;
-        let from_value_time = from_value_start.elapsed();
-
-        let total_time = deser_start.elapsed();
-        log::debug!(
-            "deserialize_payload: COMPLETE - Total: {}ms, Decode: {}ms, Convert: {}ms, FromValue: {}ms",
-            total_time.as_millis(),
-            decode_time.as_millis(),
-            convert_time.as_millis(),
-            from_value_time.as_millis()
-        );
-
-        Ok(result)
+        serde_json::from_value(value)
+            .map_err(|e| anyhow::anyhow!("Failed to convert value to target type: {e}"))
     }
 
     /// Scans Redis for keys matching the given `pattern`.
@@ -140,22 +114,10 @@ impl DatabaseQueries {
         con: &mut ConnectionManager,
         pattern: String,
     ) -> anyhow::Result<Vec<String>> {
-        let start_time = Instant::now();
-        log::debug!("Redis scan_keys: Starting scan for pattern: {pattern}");
-
-        let scan_start = Instant::now();
-        log::debug!("Redis scan_keys: About to call SCAN with COUNT=5000...");
-
         let mut result = Vec::new();
         let mut cursor = 0u64;
-        let mut iteration = 0;
 
         loop {
-            iteration += 1;
-            let iter_start = Instant::now();
-
-            log::debug!("Redis scan_keys: SCAN iteration {iteration} with cursor {cursor}");
-
             let scan_result: (u64, Vec<String>) = redis::cmd("SCAN")
                 .arg(cursor)
                 .arg("MATCH")
@@ -165,38 +127,16 @@ impl DatabaseQueries {
                 .query_async(con)
                 .await?;
 
-            let iter_time = iter_start.elapsed();
-
             let (new_cursor, keys) = scan_result;
-            let keys_found = keys.len();
             result.extend(keys);
-
-            log::debug!(
-                "Redis scan_keys: Iteration {iteration} found {keys_found} keys in {}ms, new cursor: {new_cursor}",
-                iter_time.as_millis(),
-            );
 
             // If cursor is 0, we've completed the full scan
             if new_cursor == 0 {
-                log::debug!("Redis scan_keys: SCAN completed - cursor returned to 0");
                 break;
             }
 
             cursor = new_cursor;
         }
-
-        let scan_setup_time = scan_start.elapsed();
-        log::debug!(
-            "Redis scan_keys: SCAN completed in {}ms with {iteration} iterations",
-            scan_setup_time.as_millis(),
-        );
-
-        let total_time = start_time.elapsed();
-        log::debug!(
-            "Redis scan_keys: COMPLETE - Total time: {}ms, found {} keys",
-            total_time.as_millis(),
-            result.len()
-        );
 
         Ok(result)
     }
@@ -210,50 +150,21 @@ impl DatabaseQueries {
         con: &ConnectionManager,
         keys: &[String],
     ) -> anyhow::Result<Vec<Option<Bytes>>> {
-        let start_time = Instant::now();
-        log::debug!("read_bulk: Starting bulk read for {} keys", keys.len());
-
-        // Debug: Show first few keys to understand format
-        let sample_keys = if keys.len() <= 3 {
-            keys.to_vec()
-        } else {
-            keys[0..3].to_vec()
-        };
-        log::debug!("read_bulk: Sample keys: {sample_keys:?}");
-
         if keys.is_empty() {
             return Ok(vec![]);
         }
 
         let mut con = con.clone();
-        let mget_start = Instant::now();
 
         // Use MGET to fetch all keys in a single network operation
         let results: Vec<Option<Vec<u8>>> =
             redis::cmd("MGET").arg(keys).query_async(&mut con).await?;
-
-        let mget_time = mget_start.elapsed();
-        log::debug!(
-            "read_bulk: MGET completed in {}ms for {} keys, got {} results",
-            mget_time.as_millis(),
-            keys.len(),
-            results.len()
-        );
 
         // Convert Vec<u8> to Bytes
         let bytes_results: Vec<Option<Bytes>> = results
             .into_iter()
             .map(|opt| opt.map(Bytes::from))
             .collect();
-
-        let total_time = start_time.elapsed();
-        let non_null_count = bytes_results.iter().filter(|r| r.is_some()).count();
-        log::debug!(
-            "read_bulk: COMPLETE - Total time: {}ms, found {} non-null values out of {} keys",
-            total_time.as_millis(),
-            non_null_count,
-            keys.len()
-        );
 
         Ok(bytes_results)
     }
@@ -268,14 +179,12 @@ impl DatabaseQueries {
         trader_key: &str,
         key: &str,
     ) -> anyhow::Result<Vec<Bytes>> {
-        let read_start = Instant::now();
         let collection = Self::get_collection_key(key)?;
         let full_key = format!("{trader_key}{REDIS_DELIMITER}{key}");
-        log::debug!("read: Starting read for key: {full_key}");
 
         let mut con = con.clone();
 
-        let result = match collection {
+        match collection {
             INDEX => Self::read_index(&mut con, &full_key).await,
             GENERAL => Self::read_string(&mut con, &full_key).await,
             CURRENCIES => Self::read_string(&mut con, &full_key).await,
@@ -287,17 +196,7 @@ impl DatabaseQueries {
             ACTORS => Self::read_string(&mut con, &full_key).await,
             STRATEGIES => Self::read_string(&mut con, &full_key).await,
             _ => anyhow::bail!("Unsupported operation: `read` for collection '{collection}'"),
-        };
-
-        let read_time = read_start.elapsed();
-        log::debug!(
-            "read: Completed read for {} in {}ms, collection: {}",
-            full_key,
-            read_time.as_millis(),
-            collection
-        );
-
-        result
+        }
     }
 
     /// Loads all cache data (currencies, instruments, synthetics, accounts, orders, positions) for `trader_key`.
@@ -310,12 +209,6 @@ impl DatabaseQueries {
         encoding: SerializationEncoding,
         trader_key: &str,
     ) -> anyhow::Result<CacheMap> {
-        let load_start = Instant::now();
-        log::debug!("load_all: Starting cache loading for trader_key: {trader_key}");
-
-        let try_join_start = Instant::now();
-        log::debug!("load_all: Starting concurrent loading of all cache types");
-
         let (currencies, instruments, synthetics, accounts, orders, positions) = try_join!(
             Self::load_currencies(con, trader_key, encoding),
             Self::load_instruments(con, trader_key, encoding),
@@ -326,28 +219,10 @@ impl DatabaseQueries {
         )
         .map_err(|e| anyhow::anyhow!("Error loading cache data: {e}"))?;
 
-        let try_join_time = try_join_start.elapsed();
-        log::debug!(
-            "load_all: Concurrent loading completed in {}ms",
-            try_join_time.as_millis()
-        );
-
         // For now, we don't load greeks and yield curves from the database
         // This will be implemented in the future
         let greeks = AHashMap::new();
         let yield_curves = AHashMap::new();
-
-        let total_time = load_start.elapsed();
-        log::debug!(
-            "load_all: COMPLETE - Total: {}ms, Currencies: {}, Instruments: {}, Synthetics: {}, Accounts: {}, Orders: {}, Positions: {}",
-            total_time.as_millis(),
-            currencies.len(),
-            instruments.len(),
-            synthetics.len(),
-            accounts.len(),
-            orders.len(),
-            positions.len()
-        );
 
         Ok(CacheMap {
             currencies,
@@ -371,54 +246,26 @@ impl DatabaseQueries {
         trader_key: &str,
         encoding: SerializationEncoding,
     ) -> anyhow::Result<AHashMap<Ustr, Currency>> {
-        let load_start = Instant::now();
-        log::debug!("load_currencies: Starting currency loading for trader_key: {trader_key}");
-
         let mut currencies = AHashMap::new();
         let pattern = format!("{trader_key}{REDIS_DELIMITER}{CURRENCIES}*");
         tracing::debug!("Loading {pattern}");
-        log::debug!("load_currencies: Pattern: {pattern}");
 
         let mut con = con.clone();
-        let scan_start = Instant::now();
         let keys = Self::scan_keys(&mut con, pattern).await?;
-        let scan_time = scan_start.elapsed();
-        log::debug!(
-            "load_currencies: Scan completed in {}ms, found {} currency keys",
-            scan_time.as_millis(),
-            keys.len()
-        );
 
         if keys.is_empty() {
             return Ok(currencies);
         }
 
         // Use bulk loading with MGET for efficiency
-        let bulk_start = Instant::now();
-        log::info!(
-            "load_currencies: Starting bulk read of {} currency keys",
-            keys.len()
-        );
-
         let bulk_values = Self::read_bulk(&con, &keys).await?;
-        let bulk_time = bulk_start.elapsed();
-        log::info!(
-            "load_currencies: Bulk read completed in {}ms for {} keys",
-            bulk_time.as_millis(),
-            keys.len()
-        );
 
         // Process the bulk results
-        let process_start = Instant::now();
-        let mut successful_loads = 0;
-        let mut failed_loads = 0;
-
-        for (idx, (key, value_opt)) in keys.iter().zip(bulk_values.iter()).enumerate() {
+        for (key, value_opt) in keys.iter().zip(bulk_values.iter()) {
             let currency_code = if let Some(code) = key.as_str().rsplit(':').next() {
                 Ustr::from(code)
             } else {
                 log::error!("Invalid key format: {key}");
-                failed_loads += 1;
                 continue;
             };
 
@@ -426,42 +273,15 @@ impl DatabaseQueries {
                 match Self::deserialize_payload(encoding, value_bytes) {
                     Ok(currency) => {
                         currencies.insert(currency_code, currency);
-                        successful_loads += 1;
-
-                        // Log progress every 100 currencies
-                        if idx % 100 == 0 || idx == keys.len() - 1 {
-                            log::debug!(
-                                "load_currencies: Processed {} of {} currencies ({})",
-                                idx + 1,
-                                keys.len(),
-                                currency_code
-                            );
-                        }
                     }
                     Err(e) => {
                         log::error!("Failed to deserialize currency {currency_code}: {e}");
-                        failed_loads += 1;
                     }
                 }
             } else {
                 log::error!("Currency not found in Redis: {currency_code}");
-                failed_loads += 1;
             }
         }
-
-        let process_time = process_start.elapsed();
-        let total_time = load_start.elapsed();
-
-        log::info!(
-            "load_currencies: COMPLETE - Total: {}ms, Scan: {}ms, Bulk: {}ms, Process: {}ms",
-            total_time.as_millis(),
-            scan_time.as_millis(),
-            bulk_time.as_millis(),
-            process_time.as_millis()
-        );
-        log::info!(
-            "load_currencies: Loaded {successful_loads} currencies successfully, {failed_loads} failed"
-        );
 
         tracing::debug!("Loaded {} currencies(s)", currencies.len());
 
@@ -785,38 +605,14 @@ impl DatabaseQueries {
         code: &Ustr,
         encoding: SerializationEncoding,
     ) -> anyhow::Result<Option<Currency>> {
-        let load_start = Instant::now();
         let key = format!("{CURRENCIES}{REDIS_DELIMITER}{code}");
-        log::debug!("load_currency: Loading currency {code} with key: {key}");
-
-        let read_start = Instant::now();
         let result = Self::read(con, trader_key, &key).await?;
-        let read_time = read_start.elapsed();
-        log::debug!(
-            "load_currency: Read completed for {} in {}ms, got {} bytes",
-            code,
-            read_time.as_millis(),
-            result.len()
-        );
 
         if result.is_empty() {
-            log::debug!("load_currency: No data found for currency {code}");
             return Ok(None);
         }
 
-        let deserialize_start = Instant::now();
         let currency = Self::deserialize_payload(encoding, &result[0])?;
-        let deserialize_time = deserialize_start.elapsed();
-
-        let total_time = load_start.elapsed();
-        log::debug!(
-            "load_currency: Successfully loaded {} - Total: {}ms, Read: {}ms, Deserialize: {}ms",
-            code,
-            total_time.as_millis(),
-            read_time.as_millis(),
-            deserialize_time.as_millis()
-        );
-
         Ok(currency)
     }
 
@@ -952,18 +748,7 @@ impl DatabaseQueries {
     }
 
     async fn read_string(conn: &mut ConnectionManager, key: &str) -> anyhow::Result<Vec<Bytes>> {
-        let read_start = Instant::now();
-        log::debug!("read_string: Starting Redis GET for key: {key}");
-
         let result: Vec<u8> = conn.get(key).await?;
-
-        let read_time = read_start.elapsed();
-        log::debug!(
-            "read_string: Redis GET completed for {} in {}ms, got {} bytes",
-            key,
-            read_time.as_millis(),
-            result.len()
-        );
 
         if result.is_empty() {
             Ok(vec![])
