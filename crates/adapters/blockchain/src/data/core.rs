@@ -640,11 +640,6 @@ impl BlockchainDataClientCore {
                 }
                 Err(token_info_error) => match token_info_error {
                     TokenInfoError::EmptyTokenField { .. } => {
-                        // Empty token name/symbol indicates non-standard implementations:
-                        // - Non-conforming ERC20 tokens (name/symbol are optional in the standard)
-                        // - Minimal proxy contracts without proper metadata forwarding
-                        // - Malicious or deprecated tokens
-                        // We skip these pools as they're not suitable for trading.
                         empty_tokens.insert(token_address);
                     }
                     _ => {
