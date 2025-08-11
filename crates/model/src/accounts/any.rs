@@ -168,7 +168,7 @@ impl From<AccountState> for AccountAny {
     fn from(event: AccountState) -> Self {
         match event.account_type {
             AccountType::Margin => AccountAny::Margin(MarginAccount::new(event, false)),
-            AccountType::Cash => AccountAny::Cash(CashAccount::new(event, false)),
+            AccountType::Cash => AccountAny::Cash(CashAccount::new(event, false, false)),
             AccountType::Betting => todo!("Betting account not implemented"),
         }
     }

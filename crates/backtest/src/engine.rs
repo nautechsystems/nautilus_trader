@@ -136,7 +136,6 @@ impl BacktestEngine {
         fee_model: FeeModelAny,
         latency_model: Option<LatencyModel>,
         routing: Option<bool>,
-        frozen_account: Option<bool>,
         reject_stop_orders: Option<bool>,
         support_gtd_orders: Option<bool>,
         support_contingent_orders: Option<bool>,
@@ -147,6 +146,8 @@ impl BacktestEngine {
         bar_execution: Option<bool>,
         bar_adaptive_high_low_ordering: Option<bool>,
         trade_execution: Option<bool>,
+        allow_cash_borrowing: Option<bool>,
+        frozen_account: Option<bool>,
     ) -> anyhow::Result<()> {
         let default_leverage: Decimal = default_leverage.unwrap_or_else(|| {
             if account_type == AccountType::Margin {
@@ -171,7 +172,6 @@ impl BacktestEngine {
             fee_model,
             book_type,
             latency_model,
-            frozen_account,
             bar_execution,
             reject_stop_orders,
             support_gtd_orders,
@@ -180,6 +180,8 @@ impl BacktestEngine {
             use_random_ids,
             use_reduce_only,
             use_message_queue,
+            allow_cash_borrowing,
+            frozen_account,
         )?;
         let exchange = Rc::new(RefCell::new(exchange));
         self.venues.insert(venue, exchange.clone());
@@ -531,6 +533,7 @@ mod tests {
                 vec![],
                 FillModel::default(),
                 FeeModelAny::default(),
+                None,
                 None,
                 None,
                 None,

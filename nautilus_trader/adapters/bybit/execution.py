@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING
 
 import msgspec
 
+from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.adapters.bybit.common.constants import BYBIT_VENUE
 from nautilus_trader.adapters.bybit.common.credentials import get_api_key
 from nautilus_trader.adapters.bybit.common.credentials import get_api_secret
@@ -157,6 +158,8 @@ class BybitExecutionClient(LiveExecutionClient):
             if len(set(product_types)) > 1:
                 raise ValueError("Cannot configure SPOT with other product types")
             account_type = AccountType.CASH
+            # Bybit SPOT accounts support margin trading (borrowing)
+            AccountFactory.register_cash_borrowing(BYBIT_VENUE.value)
         else:
             account_type = AccountType.MARGIN
 

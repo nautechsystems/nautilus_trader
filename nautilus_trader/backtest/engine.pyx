@@ -417,7 +417,6 @@ cdef class BacktestEngine:
         latency_model: LatencyModel | None = None,
         book_type: BookType = BookType.L1_MBP,
         routing: bool = False,
-        frozen_account: bool = False,
         reject_stop_orders: bool = True,
         support_gtd_orders: bool = True,
         support_contingent_orders: bool = True,
@@ -428,6 +427,8 @@ cdef class BacktestEngine:
         bar_execution: bool = True,
         bar_adaptive_high_low_ordering: bool = False,
         trade_execution: bool = False,
+        allow_cash_borrowing: bool = False,
+        frozen_account: bool = False,
     ) -> None:
         """
         Add a `SimulatedExchange` with the given parameters to the backtest engine.
@@ -449,6 +450,8 @@ cdef class BacktestEngine:
             The account default leverage (for margin accounts).
         leverages : dict[InstrumentId, Decimal], optional
             The instrument specific leverage configuration (for margin accounts).
+        margin_model : MarginModelConfig, optional
+            The margin calculation model configuration. Default 'leveraged'.
         modules : list[SimulationModule], optional
             The simulation modules to load into the exchange.
         fill_model : FillModel, optional
@@ -461,8 +464,6 @@ cdef class BacktestEngine:
             The default order book type.
         routing : bool, default False
             If multi-venue routing should be enabled for the execution client.
-        frozen_account : bool, default False
-            If the account for this exchange is frozen (balances will not change).
         reject_stop_orders : bool, default True
             If stop orders are rejected on submission if trigger price is in the market.
         support_gtd_orders : bool, default True
@@ -492,6 +493,10 @@ cdef class BacktestEngine:
             - If Low is closer to Open than High then the processing order is Open, Low, High, Close.
         trade_execution : bool, default False
             If trades should be processed by the matching engine(s) (and move the market).
+        allow_cash_borrowing : bool, default False
+            If cash accounts should allow borrowing (negative balances).
+        frozen_account : bool, default False
+            If the account for this exchange is frozen (balances will not change).
 
         Raises
         ------
@@ -566,6 +571,7 @@ cdef class BacktestEngine:
             clock=self._kernel.clock,
             routing=routing,
             frozen_account=frozen_account,
+            allow_cash_borrowing=allow_cash_borrowing,
         )
 
         exchange.register_client(exec_client)
