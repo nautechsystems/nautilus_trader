@@ -29,8 +29,9 @@ use log::LevelFilter;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{
-        Bar, BarType, BookOrder, DataType, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate,
-        OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick, close::InstrumentClose, stubs::*,
+        Bar, BarType, BookOrder, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
+        MarkPriceUpdate, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick,
+        close::InstrumentClose, stubs::*,
     },
     enums::{BookAction, BookType, OrderSide},
     identifiers::{ClientId, TraderId, Venue},
@@ -63,9 +64,9 @@ use crate::{
         self, MessageBus, get_message_bus,
         switchboard::{
             MessagingSwitchboard, get_bars_topic, get_book_deltas_topic, get_book_snapshots_topic,
-            get_custom_topic, get_index_price_topic, get_instrument_close_topic,
-            get_instrument_status_topic, get_instrument_topic, get_instruments_topic,
-            get_mark_price_topic, get_quotes_topic, get_trades_topic,
+            get_custom_topic, get_funding_rate_topic, get_index_price_topic,
+            get_instrument_close_topic, get_instrument_status_topic, get_instrument_topic,
+            get_instruments_topic, get_mark_price_topic, get_quotes_topic, get_trades_topic,
         },
     },
     runner::{SyncDataCommandSender, set_data_cmd_sender},
@@ -86,6 +87,7 @@ struct TestDataActor {
     pub received_bars: Vec<Bar>,
     pub received_mark_prices: Vec<MarkPriceUpdate>,
     pub received_index_prices: Vec<IndexPriceUpdate>,
+    pub received_funding_rates: Vec<FundingRateUpdate>,
     pub received_status: Vec<InstrumentStatus>,
     pub received_closes: Vec<InstrumentClose>,
     #[cfg(feature = "defi")]
@@ -191,6 +193,11 @@ impl DataActor for TestDataActor {
         Ok(())
     }
 
+    fn on_funding_rate(&mut self, funding_rate: &FundingRateUpdate) -> anyhow::Result<()> {
+        self.received_funding_rates.push(*funding_rate);
+        Ok(())
+    }
+
     fn on_instrument_status(&mut self, status: &InstrumentStatus) -> anyhow::Result<()> {
         self.received_status.push(*status);
         Ok(())
@@ -241,6 +248,7 @@ impl TestDataActor {
             received_bars: Vec::new(),
             received_mark_prices: Vec::new(),
             received_index_prices: Vec::new(),
+            received_funding_rates: Vec::new(),
             received_status: Vec::new(),
             received_closes: Vec::new(),
             #[cfg(feature = "defi")]
@@ -1027,6 +1035,40 @@ fn test_subscribe_and_receive_index_prices(
 }
 
 #[rstest]
+fn test_subscribe_and_receive_funding_rates(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    actor.subscribe_funding_rates(audusd_sim.id, None, None);
+
+    let topic = get_funding_rate_topic(audusd_sim.id);
+    let fr1 = FundingRateUpdate::new(
+        audusd_sim.id,
+        "0.0001".parse().unwrap(),
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    msgbus::publish(topic, &fr1);
+    let fr2 = FundingRateUpdate::new(
+        audusd_sim.id,
+        "0.0002".parse().unwrap(),
+        UnixNanos::from(3),
+        UnixNanos::from(4),
+    );
+    msgbus::publish(topic, &fr2);
+
+    assert_eq!(actor.received_funding_rates.len(), 2);
+    assert_eq!(actor.received_funding_rates[0], fr1);
+    assert_eq!(actor.received_funding_rates[1], fr2);
+}
+
+#[rstest]
 fn test_subscribe_and_receive_instrument_status(
     clock: Rc<RefCell<TestClock>>,
     cache: Rc<RefCell<Cache>>,
@@ -1219,6 +1261,43 @@ fn test_unsubscribe_index_prices(
     msgbus::publish(topic, &ip2);
 
     assert_eq!(actor.received_index_prices.len(), 1);
+}
+
+#[rstest]
+fn test_unsubscribe_funding_rates(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    actor.subscribe_funding_rates(audusd_sim.id, None, None);
+
+    let topic = get_funding_rate_topic(audusd_sim.id);
+    let fr1 = FundingRateUpdate::new(
+        audusd_sim.id,
+        "0.0001".parse().unwrap(),
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    msgbus::publish(topic, &fr1);
+
+    assert_eq!(actor.received_funding_rates.len(), 1);
+
+    actor.unsubscribe_funding_rates(audusd_sim.id, None, None);
+
+    let fr2 = FundingRateUpdate::new(
+        audusd_sim.id,
+        "0.0002".parse().unwrap(),
+        UnixNanos::from(3),
+        UnixNanos::from(4),
+    );
+    msgbus::publish(topic, &fr2);
+
+    assert_eq!(actor.received_funding_rates.len(), 1);
 }
 
 #[rstest]

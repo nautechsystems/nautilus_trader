@@ -781,6 +781,69 @@ cdef class SubscribeIndexPrices(SubscribeData):
         )
 
 
+cdef class SubscribeFundingRates(SubscribeData):
+    """
+    Represents a command to subscribe to funding rates.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The instrument ID for the subscription.
+    client_id : ClientId or ``None``
+        The data client ID for the command.
+    venue : Venue or ``None``
+        The venue for the command.
+    command_id : UUID4
+        The command ID.
+    ts_init : uint64_t
+        UNIX timestamp (nanoseconds) when the object was initialized.
+    params : dict[str, object], optional
+        Additional parameters for the subscription.
+
+    Raises
+    ------
+    ValueError
+        If both `client_id` and `venue` are both ``None`` (not enough routing info).
+
+    """
+
+    def __init__(
+        self,
+        InstrumentId instrument_id not None,
+        ClientId client_id: ClientId | None,
+        Venue venue: Venue | None,
+        UUID4 command_id not None,
+        uint64_t ts_init,
+        dict[str, object] params: dict | None = None,
+    ) -> None:
+        super().__init__(
+            DataType(TradeTick),
+            instrument_id,
+            client_id,
+            venue,
+            command_id,
+            ts_init,
+            params,
+        )
+
+    def __str__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue})"
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue}, "
+            f"id={self.id}{form_params_str(self.params)})"
+        )
+
+
 cdef class SubscribeBars(SubscribeData):
     """
     Represents a command to subscribe to bars for an instrument.
@@ -1454,6 +1517,69 @@ cdef class UnsubscribeMarkPrices(UnsubscribeData):
 cdef class UnsubscribeIndexPrices(UnsubscribeData):
     """
     Represents a command to unsubscribe from index prices for an instrument.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The instrument ID for the subscription.
+    client_id : ClientId or ``None``
+        The data client ID for the command.
+    venue : Venue or ``None``
+        The venue for the command.
+    command_id : UUID4
+        The command ID.
+    ts_init : uint64_t
+        UNIX timestamp (nanoseconds) when the object was initialized.
+    params : dict[str, object], optional
+        Additional parameters for the subscription.
+
+    Raises
+    ------
+    ValueError
+        If both `client_id` and `venue` are both ``None`` (not enough routing info).
+
+    """
+
+    def __init__(
+        self,
+        InstrumentId instrument_id not None,
+        ClientId client_id: ClientId | None,
+        Venue venue: Venue | None,
+        UUID4 command_id not None,
+        uint64_t ts_init,
+        dict[str, object] params: dict | None = None,
+    ) -> None:
+        super().__init__(
+            DataType(TradeTick),
+            instrument_id,
+            client_id,
+            venue,
+            command_id,
+            ts_init,
+            params,
+        )
+
+    def __str__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue})"
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue}, "
+            f"id={self.id}{form_params_str(self.params)})"
+        )
+
+
+cdef class UnsubscribeFundingRates(UnsubscribeData):
+    """
+    Represents a command to unsubscribe from funding rates for an instrument.
 
     Parameters
     ----------

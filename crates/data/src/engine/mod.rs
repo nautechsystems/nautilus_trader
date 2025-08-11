@@ -78,6 +78,7 @@ use nautilus_model::{
         Bar, BarType, Data, DataType, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick,
         TradeTick,
         close::InstrumentClose,
+        funding::FundingRateUpdate,
         prices::{IndexPriceUpdate, MarkPriceUpdate},
     },
     enums::{AggregationSource, BarAggregation, BookType, PriceType, RecordFlag},
@@ -447,6 +448,12 @@ impl DataEngine {
     #[must_use]
     pub fn subscribed_index_prices(&self) -> Vec<InstrumentId> {
         self.collect_subscriptions(|client| &client.subscriptions_index_prices)
+    }
+
+    /// Returns all instrument IDs for which funding rate subscriptions exist.
+    #[must_use]
+    pub fn subscribed_funding_rates(&self) -> Vec<InstrumentId> {
+        self.collect_subscriptions(|client| &client.subscriptions_funding_rates)
     }
 
     /// Returns all instrument IDs for which status subscriptions exist.
@@ -929,6 +936,21 @@ impl DataEngine {
 
         let topic = switchboard::get_index_price_topic(index_price.instrument_id);
         msgbus::publish(topic, &index_price as &dyn Any);
+    }
+
+    /// Handles a funding rate update by adding it to the cache and publishing to the message bus.
+    pub fn handle_funding_rate(&mut self, funding_rate: FundingRateUpdate) {
+        if let Err(e) = self
+            .cache
+            .as_ref()
+            .borrow_mut()
+            .add_funding_rate(funding_rate)
+        {
+            log_error_on_cache_insert(&e);
+        }
+
+        let topic = switchboard::get_funding_rate_topic(funding_rate.instrument_id);
+        msgbus::publish(topic, &funding_rate as &dyn Any);
     }
 
     fn handle_instrument_close(&mut self, close: InstrumentClose) {

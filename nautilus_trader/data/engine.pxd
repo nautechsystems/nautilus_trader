@@ -38,6 +38,7 @@ from nautilus_trader.data.messages cimport RequestQuoteTicks
 from nautilus_trader.data.messages cimport RequestTradeTicks
 from nautilus_trader.data.messages cimport SubscribeBars
 from nautilus_trader.data.messages cimport SubscribeData
+from nautilus_trader.data.messages cimport SubscribeFundingRates
 from nautilus_trader.data.messages cimport SubscribeIndexPrices
 from nautilus_trader.data.messages cimport SubscribeInstrument
 from nautilus_trader.data.messages cimport SubscribeInstrumentClose
@@ -49,6 +50,7 @@ from nautilus_trader.data.messages cimport SubscribeQuoteTicks
 from nautilus_trader.data.messages cimport SubscribeTradeTicks
 from nautilus_trader.data.messages cimport UnsubscribeBars
 from nautilus_trader.data.messages cimport UnsubscribeData
+from nautilus_trader.data.messages cimport UnsubscribeFundingRates
 from nautilus_trader.data.messages cimport UnsubscribeIndexPrices
 from nautilus_trader.data.messages cimport UnsubscribeInstrument
 from nautilus_trader.data.messages cimport UnsubscribeInstrumentClose
@@ -63,6 +65,7 @@ from nautilus_trader.model.data cimport BarAggregation
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport CustomData
 from nautilus_trader.model.data cimport DataType
+from nautilus_trader.model.data cimport FundingRateUpdate
 from nautilus_trader.model.data cimport IndexPriceUpdate
 from nautilus_trader.model.data cimport InstrumentClose
 from nautilus_trader.model.data cimport InstrumentStatus
@@ -106,6 +109,7 @@ cdef class DataEngine(Component):
     cdef readonly dict[BarType, str] _topic_cache_bars
     cdef readonly dict[InstrumentId, str] _topic_cache_mark_prices
     cdef readonly dict[InstrumentId, str] _topic_cache_index_prices
+    cdef readonly dict[InstrumentId, str] _topic_cache_funding_rates
     cdef readonly dict[InstrumentId, str] _topic_cache_close_prices
     cdef readonly dict[tuple, str] _topic_cache_snapshots
     cdef readonly dict[tuple, str] _topic_cache_custom
@@ -159,6 +163,7 @@ cdef class DataEngine(Component):
     cpdef list subscribed_trade_ticks(self)
     cpdef list subscribed_mark_prices(self)
     cpdef list subscribed_index_prices(self)
+    cpdef list subscribed_funding_rates(self)
     cpdef list subscribed_bars(self)
     cpdef list subscribed_instrument_status(self)
     cpdef list subscribed_instrument_close(self)
@@ -190,6 +195,7 @@ cdef class DataEngine(Component):
     cpdef void _handle_subscribe_trade_ticks(self, MarketDataClient client, SubscribeTradeTicks command)
     cpdef void _handle_subscribe_mark_prices(self, MarketDataClient client, SubscribeMarkPrices command)
     cpdef void _handle_subscribe_index_prices(self, MarketDataClient client, SubscribeIndexPrices command)
+    cpdef void _handle_subscribe_funding_rates(self, MarketDataClient client, SubscribeFundingRates command)
     cpdef void _handle_subscribe_synthetic_trade_ticks(self, InstrumentId instrument_id)
     cpdef void _handle_subscribe_bars(self, MarketDataClient client, SubscribeBars command)
     cpdef void _handle_subscribe_data(self, DataClient client, SubscribeData command)
@@ -203,6 +209,7 @@ cdef class DataEngine(Component):
     cpdef void _handle_unsubscribe_trade_ticks(self, MarketDataClient client, UnsubscribeTradeTicks command)
     cpdef void _handle_unsubscribe_mark_prices(self, MarketDataClient client, UnsubscribeMarkPrices command)
     cpdef void _handle_unsubscribe_index_prices(self, MarketDataClient client, UnsubscribeIndexPrices command)
+    cpdef void _handle_unsubscribe_funding_rates(self, MarketDataClient client, UnsubscribeFundingRates command)
     cpdef void _handle_unsubscribe_bars(self, MarketDataClient client, UnsubscribeBars command)
     cpdef void _handle_unsubscribe_data(self, DataClient client, UnsubscribeData command)
     cpdef void _handle_unsubscribe_instrument_status(self, MarketDataClient client, UnsubscribeInstrumentStatus command)
@@ -233,6 +240,7 @@ cdef class DataEngine(Component):
     cpdef void _handle_trade_tick(self, TradeTick tick)
     cpdef void _handle_mark_price(self, MarkPriceUpdate mark_price)
     cpdef void _handle_index_price(self, IndexPriceUpdate index_price)
+    cpdef void _handle_funding_rate(self, FundingRateUpdate funding_rate)
     cpdef void _handle_bar(self, Bar bar)
     cpdef void _handle_custom_data(self, CustomData data)
     cpdef void _handle_instrument_status(self, InstrumentStatus data)
@@ -263,6 +271,7 @@ cdef class DataEngine(Component):
     cdef str _get_status_topic(self, InstrumentId instrument_id)
     cdef str _get_mark_prices_topic(self, InstrumentId instrument_id)
     cdef str _get_index_prices_topic(self, InstrumentId instrument_id)
+    cdef str _get_funding_rates_topic(self, InstrumentId instrument_id)
     cdef str _get_close_prices_topic(self, InstrumentId instrument_id)
     cdef str _get_snapshots_topic(self, InstrumentId instrument_id, int interval_ms)
     cdef str _get_custom_data_topic(self, DataType data_type, InstrumentId instrument_id = *)

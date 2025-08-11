@@ -67,6 +67,7 @@ from nautilus_trader.data.messages cimport RequestQuoteTicks
 from nautilus_trader.data.messages cimport RequestTradeTicks
 from nautilus_trader.data.messages cimport SubscribeBars
 from nautilus_trader.data.messages cimport SubscribeData
+from nautilus_trader.data.messages cimport SubscribeFundingRates
 from nautilus_trader.data.messages cimport SubscribeIndexPrices
 from nautilus_trader.data.messages cimport SubscribeInstrument
 from nautilus_trader.data.messages cimport SubscribeInstrumentClose
@@ -78,6 +79,7 @@ from nautilus_trader.data.messages cimport SubscribeQuoteTicks
 from nautilus_trader.data.messages cimport SubscribeTradeTicks
 from nautilus_trader.data.messages cimport UnsubscribeBars
 from nautilus_trader.data.messages cimport UnsubscribeData
+from nautilus_trader.data.messages cimport UnsubscribeFundingRates
 from nautilus_trader.data.messages cimport UnsubscribeIndexPrices
 from nautilus_trader.data.messages cimport UnsubscribeInstrument
 from nautilus_trader.data.messages cimport UnsubscribeInstruments
@@ -91,6 +93,7 @@ from nautilus_trader.model.book cimport OrderBook
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport DataType
+from nautilus_trader.model.data cimport FundingRateUpdate
 from nautilus_trader.model.data cimport IndexPriceUpdate
 from nautilus_trader.model.data cimport InstrumentClose
 from nautilus_trader.model.data cimport InstrumentStatus
@@ -495,6 +498,22 @@ cdef class Actor(Component):
         ----------
         index_price : IndexPriceUpdate
             The index price update received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_funding_rate(self, FundingRateUpdate funding_rate):
+        """
+        Actions to be performed when running and receives a funding rate update.
+
+        Parameters
+        ----------
+        funding_rate : FundingRateUpdate
+            The funding rate update received.
 
         Warnings
         --------
@@ -1708,6 +1727,48 @@ cdef class Actor(Component):
         )
         self._send_data_cmd(command)
 
+    cpdef void subscribe_funding_rates(
+        self,
+        InstrumentId instrument_id,
+        ClientId client_id = None,
+        dict[str, object] params = None,
+    ):
+        """
+        Subscribe to streaming `FundingRateUpdate` data for the given instrument ID.
+
+        Once subscribed, any matching funding rate updates published on the message bus are forwarded
+        to the `on_funding_rate` handler.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument to subscribe to.
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If ``None`` then will be inferred from the venue in the instrument ID.
+        params : dict[str, Any], optional
+            Additional parameters potentially used by a specific client.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
+
+        self._msgbus.subscribe(
+            topic=f"data.funding_rates"
+                  f".{instrument_id.venue}"
+                  f".{instrument_id.symbol.topic()}",
+            handler=self.handle_funding_rate,
+        )
+        cdef SubscribeFundingRates command = SubscribeFundingRates(
+            instrument_id=instrument_id,
+            client_id=client_id,
+            venue=instrument_id.venue,
+            command_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+            params=params,
+        )
+        self._send_data_cmd(command)
+
     cpdef void subscribe_bars(
         self,
         BarType bar_type,
@@ -2193,7 +2254,7 @@ cdef class Actor(Component):
         Condition.not_none(instrument_id, "instrument_id")
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
-        self._msgbus.subscribe(
+        self._msgbus.unsubscribe(
             topic=f"data.mark_prices"
                   f".{instrument_id.venue}"
                   f".{instrument_id.symbol.topic()}",
@@ -2232,13 +2293,52 @@ cdef class Actor(Component):
         Condition.not_none(instrument_id, "instrument_id")
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
-        self._msgbus.subscribe(
+        self._msgbus.unsubscribe(
             topic=f"data.index_prices"
                   f".{instrument_id.venue}"
                   f".{instrument_id.symbol.topic()}",
             handler=self.handle_index_price,
         )
         cdef UnsubscribeIndexPrices command = UnsubscribeIndexPrices(
+            instrument_id=instrument_id,
+            client_id=client_id,
+            venue=instrument_id.venue,
+            command_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+            params=params,
+        )
+        self._send_data_cmd(command)
+
+    cpdef void unsubscribe_funding_rates(
+        self,
+        InstrumentId instrument_id,
+        ClientId client_id = None,
+        dict[str, object] params = None,
+    ):
+        """
+        Unsubscribe from streaming `FundingRateUpdate` data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument to unsubscribe from.
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If ``None`` then will be inferred from the venue in the instrument ID.
+        params : dict[str, Any], optional
+            Additional parameters potentially used by a specific client.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
+
+        self._msgbus.unsubscribe(
+            topic=f"data.funding_rates"
+                  f".{instrument_id.venue}"
+                  f".{instrument_id.symbol.topic()}",
+            handler=self.handle_funding_rate,
+        )
+        cdef UnsubscribeFundingRates command = UnsubscribeFundingRates(
             instrument_id=instrument_id,
             client_id=client_id,
             venue=instrument_id.venue,
@@ -3557,6 +3657,31 @@ cdef class Actor(Component):
                 self.on_index_price(index_price)
             except Exception as e:
                 self.log.exception(f"Error on handling {repr(index_price)}", e)
+                raise
+
+    cpdef void handle_funding_rate(self, FundingRateUpdate funding_rate):
+        """
+        Handle the given funding rate update.
+
+        If state is ``RUNNING`` then passes to `on_funding_rate`.
+
+        Parameters
+        ----------
+        funding_rate : FundingRateUpdate
+            The funding rate update received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        Condition.not_none(funding_rate, "funding_rate")
+
+        if self._fsm.state == ComponentState.RUNNING:
+            try:
+                self.on_funding_rate(funding_rate)
+            except Exception as e:
+                self.log.exception(f"Error on handling {repr(funding_rate)}", e)
                 raise
 
     @cython.boundscheck(False)
