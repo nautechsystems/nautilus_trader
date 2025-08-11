@@ -35,6 +35,7 @@ from nautilus_trader.data.messages cimport RequestQuoteTicks
 from nautilus_trader.data.messages cimport RequestTradeTicks
 from nautilus_trader.data.messages cimport SubscribeBars
 from nautilus_trader.data.messages cimport SubscribeData
+from nautilus_trader.data.messages cimport SubscribeFundingRates
 from nautilus_trader.data.messages cimport SubscribeIndexPrices
 from nautilus_trader.data.messages cimport SubscribeInstrument
 from nautilus_trader.data.messages cimport SubscribeInstrumentClose
@@ -46,6 +47,7 @@ from nautilus_trader.data.messages cimport SubscribeQuoteTicks
 from nautilus_trader.data.messages cimport SubscribeTradeTicks
 from nautilus_trader.data.messages cimport UnsubscribeBars
 from nautilus_trader.data.messages cimport UnsubscribeData
+from nautilus_trader.data.messages cimport UnsubscribeFundingRates
 from nautilus_trader.data.messages cimport UnsubscribeIndexPrices
 from nautilus_trader.data.messages cimport UnsubscribeInstrument
 from nautilus_trader.data.messages cimport UnsubscribeInstrumentClose
@@ -298,6 +300,19 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         self._add_subscription_index_prices(command.instrument_id)
         # Do nothing else for backtest
 
+    cpdef void subscribe_funding_rates(self, SubscribeFundingRates command):
+        Condition.not_none(command.instrument_id, "instrument_id")
+
+        if not self._cache.instrument(command.instrument_id):
+            self._log.error(
+                f"Cannot find instrument {command.instrument_id} to subscribe for `FundingRateUpdate` data, "
+                "No data has been loaded for this instrument",
+            )
+            return
+
+        self._add_subscription_funding_rates(command.instrument_id)
+        # Do nothing else for backtest
+
     cpdef void subscribe_bars(self, SubscribeBars command):
         Condition.not_none(command.bar_type, "bar_type")
 
@@ -367,6 +382,12 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         Condition.not_none(command.instrument_id, "instrument_id")
 
         self._remove_subscription_index_prices(command.instrument_id)
+        # Do nothing else for backtest
+
+    cpdef void unsubscribe_funding_rates(self, UnsubscribeFundingRates command):
+        Condition.not_none(command.instrument_id, "instrument_id")
+
+        self._remove_subscription_funding_rates(command.instrument_id)
         # Do nothing else for backtest
 
     cpdef void unsubscribe_bars(self, UnsubscribeBars command):

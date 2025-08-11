@@ -146,6 +146,54 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
 
     async def _unsubscribe_order_book_deltas(self, instrument_id: InstrumentId) -> None:
         raise NotImplementedError("implement `_unsubscribe_order_book_deltas` in your adapter subclass")
+
+    async def _subscribe_quote_ticks(self, instrument_id: InstrumentId, kwargs: dict | None = None) -> None:
+        raise NotImplementedError("implement `_subscribe_quote_ticks` in your adapter subclass")
+
+    async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
+        raise NotImplementedError("implement `_unsubscribe_quote_ticks` in your adapter subclass")
+
+    async def _subscribe_trade_ticks(self, instrument_id: InstrumentId, kwargs: dict | None = None) -> None:
+        raise NotImplementedError("implement `_subscribe_trade_ticks` in your adapter subclass")
+
+    async def _unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+        raise NotImplementedError("implement `_unsubscribe_trade_ticks` in your adapter subclass")
+
+    async def _subscribe_mark_prices(self, instrument_id: InstrumentId, kwargs: dict | None = None) -> None:
+        raise NotImplementedError("implement `_subscribe_mark_prices` in your adapter subclass")
+
+    async def _unsubscribe_mark_prices(self, instrument_id: InstrumentId) -> None:
+        raise NotImplementedError("implement `_unsubscribe_mark_prices` in your adapter subclass")
+
+    async def _subscribe_index_prices(self, instrument_id: InstrumentId, kwargs: dict | None = None) -> None:
+        raise NotImplementedError("implement `_subscribe_index_prices` in your adapter subclass")
+
+    async def _unsubscribe_index_prices(self, instrument_id: InstrumentId) -> None:
+        raise NotImplementedError("implement `_unsubscribe_index_prices` in your adapter subclass")
+
+    async def _subscribe_funding_rates(self, instrument_id: InstrumentId, kwargs: dict | None = None) -> None:
+        raise NotImplementedError("implement `_subscribe_funding_rates` in your adapter subclass")
+
+    async def _unsubscribe_funding_rates(self, instrument_id: InstrumentId) -> None:
+        raise NotImplementedError("implement `_unsubscribe_funding_rates` in your adapter subclass")
+
+    async def _subscribe_bars(self, bar_type: BarType, kwargs: dict | None = None) -> None:
+        raise NotImplementedError("implement `_subscribe_bars` in your adapter subclass")
+
+    async def _unsubscribe_bars(self, bar_type: BarType) -> None:
+        raise NotImplementedError("implement `_unsubscribe_bars` in your adapter subclass")
+
+    async def _subscribe_instrument_status(self, instrument_id: InstrumentId, kwargs: dict | None = None) -> None:
+        raise NotImplementedError("implement `_subscribe_instrument_status` in your adapter subclass")
+
+    async def _unsubscribe_instrument_status(self, instrument_id: InstrumentId) -> None:
+        raise NotImplementedError("implement `_unsubscribe_instrument_status` in your adapter subclass")
+
+    async def _subscribe_instrument_close(self, instrument_id: InstrumentId, kwargs: dict | None = None) -> None:
+        raise NotImplementedError("implement `_subscribe_instrument_close` in your adapter subclass")
+
+    async def _unsubscribe_instrument_close(self, instrument_id: InstrumentId) -> None:
+        raise NotImplementedError("implement `_unsubscribe_instrument_close` in your adapter subclass")
 ```
 
 **Key Methods**:
@@ -158,6 +206,22 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
 - `_unsubscribe_instruments`: Unsubscribes from market data for multiple instruments.
 - `_subscribe_order_book_deltas`: Subscribes to order book delta updates.
 - `_unsubscribe_order_book_deltas`: Unsubscribes from order book delta updates.
+- `_subscribe_quote_ticks`: Subscribes to top-of-book quote updates.
+- `_unsubscribe_quote_ticks`: Unsubscribes from quote tick updates.
+- `_subscribe_trade_ticks`: Subscribes to trade tick updates.
+- `_unsubscribe_trade_ticks`: Unsubscribes from trade tick updates.
+- `_subscribe_mark_prices`: Subscribes to mark price updates.
+- `_unsubscribe_mark_prices`: Unsubscribes from mark price updates.
+- `_subscribe_index_prices`: Subscribes to index price updates.
+- `_unsubscribe_index_prices`: Unsubscribes from index price updates.
+- `_subscribe_funding_rates`: Subscribes to funding rate updates.
+- `_unsubscribe_funding_rates`: Unsubscribes from funding rate updates.
+- `_subscribe_bars`: Subscribes to bar/candlestick updates.
+- `_unsubscribe_bars`: Unsubscribes from bar updates.
+- `_subscribe_instrument_status`: Subscribes to instrument status updates.
+- `_unsubscribe_instrument_status`: Unsubscribes from instrument status updates.
+- `_subscribe_instrument_close`: Subscribes to instrument close price updates.
+- `_unsubscribe_instrument_close`: Unsubscribes from instrument close price updates.
 
 ---
 

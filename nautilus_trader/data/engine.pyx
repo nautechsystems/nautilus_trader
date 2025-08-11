@@ -103,6 +103,7 @@ from nautilus_trader.model.data cimport BarAggregation
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport CustomData
 from nautilus_trader.model.data cimport DataType
+from nautilus_trader.model.data cimport FundingRateUpdate
 from nautilus_trader.model.data cimport IndexPriceUpdate
 from nautilus_trader.model.data cimport InstrumentClose
 from nautilus_trader.model.data cimport InstrumentStatus
@@ -181,6 +182,7 @@ cdef class DataEngine(Component):
         self._topic_cache_status: dict[InstrumentId, str] = {}
         self._topic_cache_mark_prices: dict[InstrumentId, str] = {}
         self._topic_cache_index_prices: dict[InstrumentId, str] = {}
+        self._topic_cache_funding_rates: dict[InstrumentId, str] = {}
         self._topic_cache_close_prices: dict[InstrumentId, str] = {}
         self._topic_cache_snapshots: dict[tuple[InstrumentId, int], str] = {}
         self._topic_cache_custom: dict[tuple[DataType, InstrumentId], str] = {}
@@ -572,6 +574,23 @@ cdef class DataEngine(Component):
 
         return subscriptions
 
+    cpdef list subscribed_funding_rates(self):
+        """
+        Return the funding rate update instruments subscribed to.
+
+        Returns
+        -------
+        list[InstrumentId]
+
+        """
+        cdef list subscriptions = []
+
+        cdef MarketDataClient client
+        for client in [c for c in self._clients.values() if isinstance(c, MarketDataClient)]:
+            subscriptions += client.subscribed_funding_rates()
+
+        return subscriptions
+
     cpdef list subscribed_bars(self):
         """
         Return the bar types subscribed to.
@@ -834,6 +853,8 @@ cdef class DataEngine(Component):
             self._handle_subscribe_mark_prices(client, command)
         elif isinstance(command, SubscribeIndexPrices):
             self._handle_subscribe_index_prices(client, command)
+        elif isinstance(command, SubscribeFundingRates):
+            self._handle_subscribe_funding_rates(client, command)
         elif isinstance(command, SubscribeBars):
             self._handle_subscribe_bars(client, command)
         elif isinstance(command, SubscribeInstrumentStatus):
@@ -861,6 +882,8 @@ cdef class DataEngine(Component):
             self._handle_unsubscribe_mark_prices(client, command)
         elif isinstance(command, UnsubscribeIndexPrices):
             self._handle_unsubscribe_index_prices(client, command)
+        elif isinstance(command, UnsubscribeFundingRates):
+            self._handle_unsubscribe_funding_rates(client, command)
         elif isinstance(command, UnsubscribeBars):
             self._handle_unsubscribe_bars(client, command)
         elif isinstance(command, UnsubscribeInstrumentStatus):
@@ -1129,6 +1152,13 @@ cdef class DataEngine(Component):
         if command.instrument_id not in client.subscribed_index_prices():
             client.subscribe_index_prices(command)
 
+    cpdef void _handle_subscribe_funding_rates(self, MarketDataClient client, SubscribeFundingRates command):
+        Condition.not_none(client, "client")
+        Condition.not_none(command.instrument_id, "instrument_id")
+
+        if command.instrument_id not in client.subscribed_funding_rates():
+            client.subscribe_funding_rates(command)
+
     cpdef void _handle_subscribe_bars(self, MarketDataClient client, SubscribeBars command):
         Condition.not_none(client, "client")
 
@@ -1313,6 +1343,15 @@ cdef class DataEngine(Component):
         ):
             if command.instrument_id in client.subscribed_index_prices():
                 client.unsubscribe_index_prices(command)
+
+    cpdef void _handle_unsubscribe_funding_rates(self, MarketDataClient client, UnsubscribeFundingRates command):
+        Condition.not_none(client, "client")
+
+        if not self._msgbus.has_subscribers(
+            self._get_funding_rates_topic(command.instrument_id),
+        ):
+            if command.instrument_id in client.subscribed_funding_rates():
+                client.unsubscribe_funding_rates(command)
 
     cpdef void _handle_unsubscribe_bars(self, MarketDataClient client, UnsubscribeBars command):
         Condition.not_none(client, "client")
@@ -2241,6 +2280,13 @@ cdef class DataEngine(Component):
             self._topic_cache_index_prices[instrument_id] = topic
         return topic
 
+    cdef str _get_funding_rates_topic(self, InstrumentId instrument_id):
+        cdef str topic = self._topic_cache_funding_rates.get(instrument_id)
+        if topic is None:
+            topic = f"data.funding_rates.{instrument_id.venue}.{instrument_id.symbol}"
+            self._topic_cache_funding_rates[instrument_id] = topic
+        return topic
+
     cdef str _get_close_prices_topic(self, InstrumentId instrument_id):
         cdef str topic = self._topic_cache_close_prices.get(instrument_id)
         if topic is None:
@@ -2628,3 +2674,16 @@ cdef class DataEngine(Component):
             topic=self._get_trades_topic(synthetic_instrument_id),
             msg=synthetic_trade,
         )
+
+    cpdef void _handle_funding_rate(self, FundingRateUpdate funding_rate):
+        """
+        Handle a funding rate update.
+
+        Parameters
+        ----------
+        funding_rate : FundingRateUpdate
+            The funding rate update to handle.
+
+        """
+        cdef str topic = self._get_funding_rates_topic(funding_rate.instrument_id)
+        self._msgbus.publish_c(topic=topic, msg=funding_rate)

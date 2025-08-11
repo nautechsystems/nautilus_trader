@@ -41,6 +41,7 @@ from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.data.messages import SubscribeBars
 from nautilus_trader.data.messages import SubscribeData
+from nautilus_trader.data.messages import SubscribeFundingRates
 from nautilus_trader.data.messages import SubscribeIndexPrices
 from nautilus_trader.data.messages import SubscribeInstrument
 from nautilus_trader.data.messages import SubscribeInstruments
@@ -50,6 +51,7 @@ from nautilus_trader.data.messages import SubscribeQuoteTicks
 from nautilus_trader.data.messages import SubscribeTradeTicks
 from nautilus_trader.data.messages import UnsubscribeBars
 from nautilus_trader.data.messages import UnsubscribeData
+from nautilus_trader.data.messages import UnsubscribeFundingRates
 from nautilus_trader.data.messages import UnsubscribeIndexPrices
 from nautilus_trader.data.messages import UnsubscribeInstrument
 from nautilus_trader.data.messages import UnsubscribeInstruments
@@ -1580,6 +1582,60 @@ class TestDataEngine:
         # Assert
         assert self.data_engine.subscribed_index_prices() == []
         assert self.binance_client.subscribed_index_prices() == []
+
+    def test_subscribe_funding_rates_then_subscribes(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+
+        subscribe = SubscribeFundingRates(
+            client_id=None,  # Will route to the Binance venue
+            venue=BINANCE,
+            instrument_id=ETHUSDT_BINANCE.id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.data_engine.execute(subscribe)
+
+        # Assert
+        assert self.data_engine.subscribed_funding_rates() == [ETHUSDT_BINANCE.id]
+
+    def test_unsubscribe_funding_rates_then_unsubscribes(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+
+        handler = []
+        self.msgbus.subscribe(topic="data.funding_rates.BINANCE.ETH/USD", handler=handler.append)
+
+        subscribe = SubscribeFundingRates(
+            client_id=None,  # Will route to the Binance venue
+            venue=BINANCE,
+            instrument_id=ETHUSDT_BINANCE.id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.data_engine.execute(subscribe)
+
+        assert self.binance_client.subscribed_funding_rates() == [ETHUSDT_BINANCE.id]
+
+        unsubscribe = UnsubscribeFundingRates(
+            client_id=None,  # Will route to the Binance venue
+            venue=BINANCE,
+            instrument_id=ETHUSDT_BINANCE.id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.data_engine.execute(unsubscribe)
+
+        # Assert
+        assert self.data_engine.subscribed_funding_rates() == []
+        assert self.binance_client.subscribed_funding_rates() == []
 
     def test_subscribe_synthetic_quote_ticks_then_subscribes(self):
         # Arrange

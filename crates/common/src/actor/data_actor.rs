@@ -31,8 +31,8 @@ use nautilus_core::{UUID4, UnixNanos, correctness::check_predicate_true};
 use nautilus_model::defi::{Block, Blockchain, Pool, PoolLiquidityUpdate, PoolSwap};
 use nautilus_model::{
     data::{
-        Bar, BarType, DataType, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate,
-        OrderBookDeltas, QuoteTick, TradeTick, close::InstrumentClose,
+        Bar, BarType, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
+        MarkPriceUpdate, OrderBookDeltas, QuoteTick, TradeTick, close::InstrumentClose,
     },
     enums::BookType,
     identifiers::{ActorId, ClientId, ComponentId, InstrumentId, TraderId, Venue},
@@ -63,13 +63,13 @@ use crate::{
             InstrumentsResponse, QuotesResponse, RequestBars, RequestBookSnapshot, RequestCommand,
             RequestCustomData, RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades,
             SubscribeBars, SubscribeBookDeltas, SubscribeBookSnapshots, SubscribeCommand,
-            SubscribeCustomData, SubscribeIndexPrices, SubscribeInstrument,
+            SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
             SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments,
             SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars,
             UnsubscribeBookDeltas, UnsubscribeBookSnapshots, UnsubscribeCommand,
-            UnsubscribeCustomData, UnsubscribeIndexPrices, UnsubscribeInstrument,
-            UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
-            UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
+            UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
+            UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
+            UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
         },
         system::ShutdownSystem,
     },
@@ -78,9 +78,9 @@ use crate::{
         handler::{ShareableMessageHandler, TypedMessageHandler},
         switchboard::{
             MessagingSwitchboard, get_bars_topic, get_book_deltas_topic, get_book_snapshots_topic,
-            get_custom_topic, get_index_price_topic, get_instrument_close_topic,
-            get_instrument_status_topic, get_instrument_topic, get_instruments_topic,
-            get_mark_price_topic, get_quotes_topic, get_trades_topic,
+            get_custom_topic, get_funding_rate_topic, get_index_price_topic,
+            get_instrument_close_topic, get_instrument_status_topic, get_instrument_topic,
+            get_instruments_topic, get_mark_price_topic, get_quotes_topic, get_trades_topic,
         },
     },
     signal::Signal,
@@ -341,6 +341,16 @@ pub trait DataActor:
     /// Returns an error if handling the index price update fails.
     #[allow(unused_variables)]
     fn on_index_price(&mut self, index_price: &IndexPriceUpdate) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    /// Actions to be performed when receiving a funding rate update.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the funding rate update fails.
+    #[allow(unused_variables)]
+    fn on_funding_rate(&mut self, funding_rate: &FundingRateUpdate) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -616,6 +626,20 @@ pub trait DataActor:
         }
 
         if let Err(e) = self.on_index_price(index_price) {
+            log_error(&e);
+        }
+    }
+
+    /// Handles a received funding rate update.
+    fn handle_funding_rate(&mut self, funding_rate: &FundingRateUpdate) {
+        log_received(&funding_rate);
+
+        if self.not_running() {
+            log_not_running(&funding_rate);
+            return;
+        }
+
+        if let Err(e) = self.on_funding_rate(funding_rate) {
             log_error(&e);
         }
     }
@@ -1050,6 +1074,34 @@ pub trait DataActor:
         );
     }
 
+    /// Subscribe to streaming [`FundingRateUpdate`] data for the `instrument_id`.
+    fn subscribe_funding_rates(
+        &mut self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) where
+        Self: 'static + Debug + Sized,
+    {
+        let actor_id = self.actor_id().inner();
+        let topic = get_funding_rate_topic(instrument_id);
+
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |funding_rate: &FundingRateUpdate| {
+                get_actor_unchecked::<Self>(&actor_id).handle_funding_rate(funding_rate);
+            },
+        )));
+
+        DataActorCore::subscribe_funding_rates(
+            self,
+            topic,
+            handler,
+            instrument_id,
+            client_id,
+            params,
+        );
+    }
+
     /// Subscribe to streaming [`InstrumentStatus`] data for the `instrument_id`.
     fn subscribe_instrument_status(
         &mut self,
@@ -1324,6 +1376,18 @@ pub trait DataActor:
         Self: 'static + Debug + Sized,
     {
         DataActorCore::unsubscribe_index_prices(self, instrument_id, client_id, params);
+    }
+
+    /// Unsubscribe from streaming [`FundingRateUpdate`] data for the `instrument_id`.
+    fn unsubscribe_funding_rates(
+        &mut self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) where
+        Self: 'static + Debug + Sized,
+    {
+        DataActorCore::unsubscribe_funding_rates(self, instrument_id, client_id, params);
     }
 
     /// Unsubscribe from streaming [`InstrumentStatus`] data for the `instrument_id`.
@@ -2264,6 +2328,31 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
+    /// Helper method for registering funding rates subscriptions from the trait.
+    pub fn subscribe_funding_rates(
+        &mut self,
+        topic: MStr<Topic>,
+        handler: ShareableMessageHandler,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) {
+        self.check_registered();
+
+        self.add_subscription(topic, handler);
+
+        let command = SubscribeCommand::FundingRates(SubscribeFundingRates {
+            instrument_id,
+            client_id,
+            venue: Some(instrument_id.venue),
+            command_id: UUID4::new(),
+            ts_init: self.timestamp_ns(),
+            params,
+        });
+
+        self.send_data_cmd(DataCommand::Subscribe(command));
+    }
+
     /// Helper method for registering instrument status subscriptions from the trait.
     pub fn subscribe_instrument_status(
         &mut self,
@@ -2655,6 +2744,30 @@ impl DataActorCore {
         self.remove_subscription(topic);
 
         let command = UnsubscribeCommand::IndexPrices(UnsubscribeIndexPrices {
+            instrument_id,
+            client_id,
+            venue: Some(instrument_id.venue),
+            command_id: UUID4::new(),
+            ts_init: self.timestamp_ns(),
+            params,
+        });
+
+        self.send_data_cmd(DataCommand::Unsubscribe(command));
+    }
+
+    /// Helper method for unsubscribing from funding rates.
+    pub fn unsubscribe_funding_rates(
+        &mut self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) {
+        self.check_registered();
+
+        let topic = get_funding_rate_topic(instrument_id);
+        self.remove_subscription(topic);
+
+        let command = UnsubscribeCommand::FundingRates(UnsubscribeFundingRates {
             instrument_id,
             client_id,
             venue: Some(instrument_id.venue),

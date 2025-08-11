@@ -49,6 +49,7 @@ use nautilus_model::{
     accounts::{Account, AccountAny},
     data::{
         Bar, BarType, GreeksData, QuoteTick, TradeTick, YieldCurveData,
+        funding::FundingRateUpdate,
         prices::{IndexPriceUpdate, MarkPriceUpdate},
     },
     enums::{AggregationSource, OmsType, OrderSide, PositionSide, PriceType, TriggerType},
@@ -86,6 +87,7 @@ pub struct Cache {
     mark_xrates: AHashMap<(Currency, Currency), f64>,
     mark_prices: AHashMap<InstrumentId, VecDeque<MarkPriceUpdate>>,
     index_prices: AHashMap<InstrumentId, VecDeque<IndexPriceUpdate>>,
+    funding_rates: AHashMap<InstrumentId, VecDeque<FundingRateUpdate>>,
     bars: AHashMap<BarType, VecDeque<Bar>>,
     greeks: AHashMap<InstrumentId, GreeksData>,
     yield_curves: AHashMap<String, YieldCurveData>,
@@ -158,6 +160,7 @@ impl Cache {
             mark_xrates: AHashMap::new(),
             mark_prices: AHashMap::new(),
             index_prices: AHashMap::new(),
+            funding_rates: AHashMap::new(),
             bars: AHashMap::new(),
             greeks: AHashMap::new(),
             yield_curves: AHashMap::new(),
@@ -1242,6 +1245,29 @@ impl Cache {
             .entry(index_price.instrument_id)
             .or_insert_with(|| VecDeque::with_capacity(self.config.tick_capacity));
         index_prices_deque.push_front(index_price);
+        Ok(())
+    }
+
+    /// Adds the `funding_rate` update to the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if persisting the funding rate update to the backing database fails.
+    pub fn add_funding_rate(&mut self, funding_rate: FundingRateUpdate) -> anyhow::Result<()> {
+        log::debug!(
+            "Adding `FundingRateUpdate` for {}",
+            funding_rate.instrument_id
+        );
+
+        if self.config.save_market_data {
+            // TODO: Placeholder and return Result for consistency
+        }
+
+        let funding_rates_deque = self
+            .funding_rates
+            .entry(funding_rate.instrument_id)
+            .or_insert_with(|| VecDeque::with_capacity(self.config.tick_capacity));
+        funding_rates_deque.push_front(funding_rate);
         Ok(())
     }
 
@@ -2870,6 +2896,14 @@ impl Cache {
             .map(|index_prices| index_prices.iter().copied().collect())
     }
 
+    /// Gets all funding rate updates for the instrument ID.
+    #[must_use]
+    pub fn funding_rates(&self, instrument_id: &InstrumentId) -> Option<Vec<FundingRateUpdate>> {
+        self.funding_rates
+            .get(instrument_id)
+            .map(|funding_rates| funding_rates.iter().copied().collect())
+    }
+
     /// Gets all bars for the `bar_type`.
     #[must_use]
     pub fn bars(&self, bar_type: &BarType) -> Option<Vec<Bar>> {
@@ -2949,6 +2983,14 @@ impl Cache {
         self.index_prices
             .get(instrument_id)
             .and_then(|index_prices| index_prices.front())
+    }
+
+    /// Gets a reference to the latest funding rate update for the `instrument_id`.
+    #[must_use]
+    pub fn funding_rate(&self, instrument_id: &InstrumentId) -> Option<&FundingRateUpdate> {
+        self.funding_rates
+            .get(instrument_id)
+            .and_then(|funding_rates| funding_rates.front())
     }
 
     /// Gets a reference to the latest bar for the `bar_type`.

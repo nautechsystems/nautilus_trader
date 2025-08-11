@@ -950,6 +950,18 @@ fn test_index_prices_when_empty(cache: Cache, audusd_sim: CurrencyPair) {
 }
 
 #[rstest]
+fn test_funding_rate_when_empty(cache: Cache, audusd_sim: CurrencyPair) {
+    let result = cache.funding_rate(&audusd_sim.id);
+    assert!(result.is_none());
+}
+
+#[rstest]
+fn test_funding_rates_when_empty(cache: Cache, audusd_sim: CurrencyPair) {
+    let result = cache.funding_rates(&audusd_sim.id);
+    assert!(result.is_none());
+}
+
+#[rstest]
 fn test_bar_when_empty(cache: Cache) {
     let bar = Bar::default();
     let result = cache.bar(&bar.bar_type);

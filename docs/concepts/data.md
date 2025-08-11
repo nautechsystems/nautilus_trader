@@ -9,6 +9,9 @@ These data types include:
 - `QuoteTick`: Represents the best bid and ask prices along with their sizes at the top-of-book.
 - `TradeTick`: A single trade/match event between counterparties.
 - `Bar`: OHLCV (Open, High, Low, Close, Volume) bar/candle, aggregated using a specified *aggregation method*.
+- `MarkPriceUpdate`: The current mark price for an instrument (typically used in derivatives trading).
+- `IndexPriceUpdate`: The index price for an instrument (underlying price used for mark price calculations).
+- `FundingRateUpdate`: The funding rate for perpetual contracts (periodic payments between long and short positions).
 - `InstrumentStatus`: An instrument-level status event.
 - `InstrumentClose`: The closing price of an instrument.
 

@@ -28,13 +28,13 @@ use ahash::AHashSet;
 use nautilus_common::messages::data::{
     RequestBars, RequestBookSnapshot, RequestCustomData, RequestInstrument, RequestInstruments,
     RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
-    SubscribeBookSnapshots, SubscribeCommand, SubscribeCustomData, SubscribeIndexPrices,
-    SubscribeInstrument, SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments,
-    SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas,
-    UnsubscribeBookDepth10, UnsubscribeBookSnapshots, UnsubscribeCommand, UnsubscribeCustomData,
-    UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeInstrumentClose,
-    UnsubscribeInstrumentStatus, UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeQuotes,
-    UnsubscribeTrades,
+    SubscribeBookSnapshots, SubscribeCommand, SubscribeCustomData, SubscribeFundingRates,
+    SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose, SubscribeInstrumentStatus,
+    SubscribeInstruments, SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
+    UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots, UnsubscribeCommand,
+    UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
+    UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
+    UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
 };
 #[cfg(feature = "defi")]
 use nautilus_common::messages::defi::{
@@ -202,6 +202,16 @@ pub trait DataClient: Any + Sync + Send {
     ///
     /// Returns an error if the subscribe operation fails.
     fn subscribe_index_prices(&mut self, cmd: &SubscribeIndexPrices) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
+        Ok(())
+    }
+
+    /// Subscribes to funding rate updates for the specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscribe operation fails.
+    fn subscribe_funding_rates(&mut self, cmd: &SubscribeFundingRates) -> anyhow::Result<()> {
         log_not_implemented(&cmd);
         Ok(())
     }
@@ -386,6 +396,16 @@ pub trait DataClient: Any + Sync + Send {
         Ok(())
     }
 
+    /// Unsubscribes from funding rate updates for the specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscribe operation fails.
+    fn unsubscribe_funding_rates(&mut self, cmd: &UnsubscribeFundingRates) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
+        Ok(())
+    }
+
     /// Unsubscribes from bar updates of the specified bar type.
     ///
     /// # Errors
@@ -560,6 +580,7 @@ pub struct DataClientAdapter {
     pub subscriptions_instrument_venue: AHashSet<Venue>,
     pub subscriptions_mark_prices: AHashSet<InstrumentId>,
     pub subscriptions_index_prices: AHashSet<InstrumentId>,
+    pub subscriptions_funding_rates: AHashSet<InstrumentId>,
     #[cfg(feature = "defi")]
     pub subscriptions_blocks: AHashSet<Blockchain>,
     #[cfg(feature = "defi")]
@@ -633,6 +654,7 @@ impl DataClientAdapter {
             subscriptions_trades: AHashSet::new(),
             subscriptions_mark_prices: AHashSet::new(),
             subscriptions_index_prices: AHashSet::new(),
+            subscriptions_funding_rates: AHashSet::new(),
             subscriptions_bars: AHashSet::new(),
             subscriptions_instrument_status: AHashSet::new(),
             subscriptions_instrument_close: AHashSet::new(),
@@ -668,6 +690,7 @@ impl DataClientAdapter {
             SubscribeCommand::Trades(cmd) => self.subscribe_trades(cmd),
             SubscribeCommand::MarkPrices(cmd) => self.subscribe_mark_prices(cmd),
             SubscribeCommand::IndexPrices(cmd) => self.subscribe_index_prices(cmd),
+            SubscribeCommand::FundingRates(cmd) => self.subscribe_funding_rates(cmd),
             SubscribeCommand::Bars(cmd) => self.subscribe_bars(cmd),
             SubscribeCommand::InstrumentStatus(cmd) => self.subscribe_instrument_status(cmd),
             SubscribeCommand::InstrumentClose(cmd) => self.subscribe_instrument_close(cmd),
@@ -705,6 +728,7 @@ impl DataClientAdapter {
             UnsubscribeCommand::Bars(cmd) => self.unsubscribe_bars(cmd),
             UnsubscribeCommand::MarkPrices(cmd) => self.unsubscribe_mark_prices(cmd),
             UnsubscribeCommand::IndexPrices(cmd) => self.unsubscribe_index_prices(cmd),
+            UnsubscribeCommand::FundingRates(cmd) => self.unsubscribe_funding_rates(cmd),
             UnsubscribeCommand::InstrumentStatus(cmd) => self.unsubscribe_instrument_status(cmd),
             UnsubscribeCommand::InstrumentClose(cmd) => self.unsubscribe_instrument_close(cmd),
         } {
@@ -1027,6 +1051,38 @@ impl DataClientAdapter {
         if self.subscriptions_index_prices.contains(&cmd.instrument_id) {
             self.subscriptions_index_prices.remove(&cmd.instrument_id);
             self.client.unsubscribe_index_prices(cmd)?;
+        }
+        Ok(())
+    }
+
+    /// Subscribes to funding rate updates for an instrument, updating internal state and forwarding to the client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying client subscribe operation fails.
+    fn subscribe_funding_rates(&mut self, cmd: &SubscribeFundingRates) -> anyhow::Result<()> {
+        if !self
+            .subscriptions_funding_rates
+            .contains(&cmd.instrument_id)
+        {
+            self.subscriptions_funding_rates.insert(cmd.instrument_id);
+            self.client.subscribe_funding_rates(cmd)?;
+        }
+        Ok(())
+    }
+
+    /// Unsubscribes from funding rate updates for an instrument, updating internal state and forwarding to the client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying client unsubscribe operation fails.
+    fn unsubscribe_funding_rates(&mut self, cmd: &UnsubscribeFundingRates) -> anyhow::Result<()> {
+        if self
+            .subscriptions_funding_rates
+            .contains(&cmd.instrument_id)
+        {
+            self.subscriptions_funding_rates.remove(&cmd.instrument_id);
+            self.client.unsubscribe_funding_rates(cmd)?;
         }
         Ok(())
     }

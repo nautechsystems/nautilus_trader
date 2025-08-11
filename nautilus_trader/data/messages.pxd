@@ -79,6 +79,10 @@ cdef class SubscribeIndexPrices(SubscribeData):
     pass
 
 
+cdef class SubscribeFundingRates(SubscribeData):
+    pass
+
+
 cdef class SubscribeBars(SubscribeData):
     cdef readonly BarType bar_type
     """The bar type for the subscription."""
@@ -125,6 +129,10 @@ cdef class UnsubscribeMarkPrices(UnsubscribeData):
 
 
 cdef class UnsubscribeIndexPrices(UnsubscribeData):
+    pass
+
+
+cdef class UnsubscribeFundingRates(UnsubscribeData):
     pass
 
 

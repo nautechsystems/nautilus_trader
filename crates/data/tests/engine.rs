@@ -31,11 +31,11 @@ use nautilus_common::{
         DataCommand, RequestBars, RequestBookSnapshot, RequestCommand, RequestCustomData,
         RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars,
         SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots, SubscribeCommand,
-        SubscribeCustomData, SubscribeIndexPrices, SubscribeInstrument, SubscribeMarkPrices,
-        SubscribeQuotes, SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas,
-        UnsubscribeBookSnapshots, UnsubscribeCommand, UnsubscribeCustomData,
-        UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeMarkPrices, UnsubscribeQuotes,
-        UnsubscribeTrades,
+        SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
+        SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
+        UnsubscribeBookDeltas, UnsubscribeBookSnapshots, UnsubscribeCommand, UnsubscribeCustomData,
+        UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
+        UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
     },
     msgbus::{
         self, MessageBus,
@@ -50,6 +50,7 @@ use nautilus_model::{
     data::{
         Bar, BarType, Data, DataType, OrderBookDeltas, OrderBookDeltas_API, OrderBookDepth10,
         QuoteTick, TradeTick,
+        funding::FundingRateUpdate,
         prices::{IndexPriceUpdate, MarkPriceUpdate},
         stubs::{stub_delta, stub_deltas, stub_depth10},
     },
@@ -839,6 +840,66 @@ fn test_execute_subscribe_index_prices(
     }
 }
 
+#[rstest]
+fn test_execute_subscribe_funding_rates(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let sub = SubscribeFundingRates::new(
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    let sub_cmd = DataCommand::Subscribe(SubscribeCommand::FundingRates(sub));
+    data_engine.execute(&sub_cmd);
+
+    assert!(
+        data_engine
+            .subscribed_funding_rates()
+            .contains(&audusd_sim.id)
+    );
+    {
+        assert_eq!(recorder.borrow().as_slice(), &[sub_cmd.clone()]);
+    }
+
+    let unsub = UnsubscribeFundingRates::new(
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::FundingRates(unsub));
+    data_engine.execute(&unsub_cmd);
+
+    assert!(
+        !data_engine
+            .subscribed_funding_rates()
+            .contains(&audusd_sim.id)
+    );
+    assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
+}
+
 // ------------------------------------------------------------------------------------------------
 // Test execute request commands
 // ------------------------------------------------------------------------------------------------
@@ -1439,6 +1500,56 @@ fn test_process_index_price(
     );
     assert_eq!(messages.len(), 1);
     assert!(messages.contains(&index_price));
+}
+
+#[rstest]
+fn test_process_funding_rate(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    data_client: DataClientAdapter,
+) {
+    let client_id = data_client.client_id;
+    let venue = data_client.venue;
+    data_engine.borrow_mut().register_client(data_client, None);
+
+    let sub = SubscribeFundingRates::new(
+        audusd_sim.id,
+        Some(client_id),
+        venue,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    let cmd = DataCommand::Subscribe(SubscribeCommand::FundingRates(sub));
+
+    let endpoint = MessagingSwitchboard::data_engine_execute();
+    msgbus::send_any(endpoint, &cmd as &dyn Any);
+
+    let funding_rate = FundingRateUpdate::new(
+        audusd_sim.id,
+        "0.0001".parse().unwrap(),
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    let handler = get_message_saving_handler::<FundingRateUpdate>(None);
+    let topic = switchboard::get_funding_rate_topic(funding_rate.instrument_id);
+    msgbus::subscribe_topic(topic, handler.clone(), None);
+
+    let mut data_engine = data_engine.borrow_mut();
+    data_engine.handle_funding_rate(funding_rate);
+    let cache = &data_engine.get_cache();
+    let messages = get_saved_messages::<FundingRateUpdate>(handler);
+
+    assert_eq!(
+        cache.funding_rate(&funding_rate.instrument_id),
+        Some(&funding_rate)
+    );
+    assert_eq!(
+        cache.funding_rates(&funding_rate.instrument_id),
+        Some(vec![funding_rate])
+    );
+    assert_eq!(messages.len(), 1);
+    assert!(messages.contains(&funding_rate));
 }
 
 #[rstest]
