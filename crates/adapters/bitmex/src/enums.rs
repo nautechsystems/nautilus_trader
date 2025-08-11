@@ -16,6 +16,34 @@
 use serde::{Deserialize, Deserializer, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
 
+/// Represents the status of a BitMEX symbol.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
+#[serde(rename_all = "PascalCase")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bitmex", eq, eq_int)
+)]
+pub enum BitmexSymbolStatus {
+    /// Symbol is open for trading.
+    Open,
+    /// Symbol is closed for trading.
+    Closed,
+    /// Symbol is unlisted.
+    Unlisted,
+}
+
 /// Represents the side of an order or trade (Buy/Sell).
 #[derive(
     Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,

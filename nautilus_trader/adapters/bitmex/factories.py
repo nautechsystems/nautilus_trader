@@ -14,154 +14,149 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import os
 from functools import lru_cache
 
-from nautilus_trader.adapters.okx.config import OKXDataClientConfig
-from nautilus_trader.adapters.okx.config import OKXExecClientConfig
-from nautilus_trader.adapters.okx.data import OKXDataClient
-from nautilus_trader.adapters.okx.execution import OKXExecutionClient
-from nautilus_trader.adapters.okx.providers import OKXInstrumentProvider
+from nautilus_trader.adapters.bitmex.config import BitmexDataClientConfig
+from nautilus_trader.adapters.bitmex.data import BitmexDataClient
+from nautilus_trader.adapters.bitmex.execution import BitmexExecClientConfig
+from nautilus_trader.adapters.bitmex.execution import BitmexExecutionClient
+from nautilus_trader.adapters.bitmex.providers import BitmexInstrumentProvider
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core import nautilus_pyo3
-from nautilus_trader.core.nautilus_pyo3 import OKXContractType
-from nautilus_trader.core.nautilus_pyo3 import OKXInstrumentType
+from nautilus_trader.core.nautilus_pyo3 import BitmexSymbolStatus
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
 
 
-@lru_cache(1)
-def get_cached_okx_http_client(
+@lru_cache(maxsize=1)
+def get_bitmex_http_client(
     api_key: str | None = None,
     api_secret: str | None = None,
-    api_passphrase: str | None = None,
     base_url: str | None = None,
-    timeout_secs: int = 60,
-    is_demo: bool = False,
-) -> nautilus_pyo3.OKXHttpClient:
+    testnet: bool = False,
+) -> nautilus_pyo3.BitmexHttpClient:
     """
-    Cache and return a OKX HTTP client with the given key and secret.
+    Cache and return a BitMEX HTTP client with the given key and secret.
 
-    If a cached client with matching parameters already exists, the cached client will be returned.
+    If ``api_key`` and ``api_secret`` are ``None``, then they will be sourced from the
+    environment variables ``BITMEX_API_KEY`` and ``BITMEX_API_SECRET``.
 
     Parameters
     ----------
     api_key : str, optional
-        The API key for the client.
+        The BitMEX API key for the client.
     api_secret : str, optional
-        The API secret for the client.
-    api_passphrase : str, optional
-        The passphrase used to create the API key.
+        The BitMEX API secret for the client.
     base_url : str, optional
-        The base URL for the API endpoints.
-    timeout_secs : int, default 60
-        The timeout (seconds) for HTTP requests to OKX.
-    is_demo : bool, default False
-        If the client is connecting to the demo API.
+        The base URL for the BitMEX API.
+    testnet : bool, default False
+        If the client should connect to the testnet.
 
     Returns
     -------
-    OKXHttpClient
+    nautilus_pyo3.BitmexHttpClient
 
     """
-    return nautilus_pyo3.OKXHttpClient(
+    if api_key is None:
+        api_key = os.environ.get("BITMEX_API_KEY")
+    if api_secret is None:
+        api_secret = os.environ.get("BITMEX_API_SECRET")
+
+    return nautilus_pyo3.BitmexHttpClient(
         api_key=api_key,
         api_secret=api_secret,
-        api_passphrase=api_passphrase,
         base_url=base_url,
-        timeout_secs=timeout_secs,
+        testnet=testnet,
     )
 
 
-@lru_cache(1)
-def get_cached_okx_instrument_provider(
-    client: nautilus_pyo3.OKXHttpClient,
-    instrument_types: tuple[OKXInstrumentType, ...],
-    contract_types: tuple[OKXContractType, ...] | None = None,
-    config: InstrumentProviderConfig | None = None,
-) -> OKXInstrumentProvider:
+@lru_cache(maxsize=1)
+def get_bitmex_instrument_provider(
+    client: nautilus_pyo3.BitmexHttpClient,
+    symbol_status: BitmexSymbolStatus | None,
+    config: InstrumentProviderConfig,
+) -> BitmexInstrumentProvider:
     """
-    Cache and return a OKX instrument provider.
-
-    If a cached provider already exists, then that provider will be returned.
+    Cache and return a BitMEX instrument provider.
 
     Parameters
     ----------
-    client : OKXHttpClient
-        The OKX HTTP client.
-    instrument_types : tuple[OKXInstrumentType, ...]
-        The product types to load.
-    contract_types : tuple[OKXInstrumentType, ...], optional
-        The contract types of instruments to load.
-    config : InstrumentProviderConfig, optional
-        The instrument provider configuration, by default None.
+    client : nautilus_pyo3.BitmexHttpClient
+        The BitMEX HTTP client.
+    symbol_status : BitmexSymbolStatus | None
+        The symbol status to filter instruments.
+    config : InstrumentProviderConfig
+        The instrument provider configuration.
 
     Returns
     -------
-    OKXInstrumentProvider
+    BitmexInstrumentProvider
 
     """
-    return OKXInstrumentProvider(
+    from nautilus_trader.adapters.bitmex.providers import BitmexInstrumentProvider
+
+    return BitmexInstrumentProvider(
         client=client,
-        instrument_types=instrument_types,
-        contract_types=contract_types,
+        symbol_status=symbol_status,
         config=config,
     )
 
 
-class OKXLiveDataClientFactory(LiveDataClientFactory):
+class BitmexLiveDataClientFactory(LiveDataClientFactory):
     """
-    Provides a OKX live data client factory.
+    Provides a BitMEX live data client factory.
     """
 
     @staticmethod
     def create(  # type: ignore
         loop: asyncio.AbstractEventLoop,
-        name: str,
-        config: OKXDataClientConfig,
+        name: str | None,
+        config: BitmexDataClientConfig,
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-    ) -> OKXDataClient:
+    ) -> BitmexDataClient:
         """
-        Create a new OKX data client.
+        Create a new BitMEX data client.
 
         Parameters
         ----------
         loop : asyncio.AbstractEventLoop
             The event loop for the client.
-        name : str
+        name : str, optional
             The custom client ID.
-        config : OKXDataClientConfig
+        config : BitmexDataClientConfig
             The client configuration.
         msgbus : MessageBus
             The message bus for the client.
         cache : Cache
             The cache for the client.
-        clock: LiveClock
-            The clock for the instrument provider.
+        clock : LiveClock
+            The clock for the client.
 
         Returns
         -------
-        OKXDataClient
+        BitmexDataClient
 
         """
-        client: nautilus_pyo3.OKXHttpClient = get_cached_okx_http_client(
+        client = get_bitmex_http_client(
             api_key=config.api_key,
             api_secret=config.api_secret,
-            api_passphrase=config.api_passphrase,
             base_url=config.base_url_http,
-            is_demo=config.is_demo,
+            testnet=config.testnet,
         )
-        provider = get_cached_okx_instrument_provider(
+
+        provider = get_bitmex_instrument_provider(
             client=client,
-            instrument_types=config.instrument_types,
-            contract_types=config.contract_types,
+            symbol_status=config.symbol_status,
             config=config.instrument_provider,
         )
-        return OKXDataClient(
+
+        return BitmexDataClient(
             loop=loop,
             client=client,
             msgbus=msgbus,
@@ -173,30 +168,30 @@ class OKXLiveDataClientFactory(LiveDataClientFactory):
         )
 
 
-class OKXLiveExecClientFactory(LiveExecClientFactory):
+class BitmexLiveExecClientFactory(LiveExecClientFactory):
     """
-    Provides a OKX live execution client factory.
+    Provides a BitMEX live execution client factory.
     """
 
     @staticmethod
     def create(  # type: ignore
         loop: asyncio.AbstractEventLoop,
-        name: str,
-        config: OKXExecClientConfig,
+        name: str | None,
+        config: BitmexExecClientConfig,
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-    ) -> OKXExecutionClient:
+    ) -> BitmexExecutionClient:
         """
-        Create a new OKX execution client.
+        Create a new BitMEX execution client.
 
         Parameters
         ----------
         loop : asyncio.AbstractEventLoop
             The event loop for the client.
-        name : str
+        name : str, optional
             The custom client ID.
-        config : OKXExecClientConfig
+        config : BitmexExecClientConfig
             The client configuration.
         msgbus : MessageBus
             The message bus for the client.
@@ -207,24 +202,24 @@ class OKXLiveExecClientFactory(LiveExecClientFactory):
 
         Returns
         -------
-        OKXExecutionClient
+        BitmexExecutionClient
 
         """
-        client: nautilus_pyo3.OKXHttpClient = get_cached_okx_http_client(
+        client = get_bitmex_http_client(
+            clock=clock,
             api_key=config.api_key,
             api_secret=config.api_secret,
-            api_passphrase=config.api_passphrase,
             base_url=config.base_url_http,
-            is_demo=config.is_demo,
+            testnet=config.testnet,
         )
-        provider = get_cached_okx_instrument_provider(
+
+        provider = get_bitmex_instrument_provider(
             client=client,
-            clock=clock,
-            instrument_types=config.instrument_types,
-            contract_types=config.contract_types,
+            symbol_status=config.symbol_status,
             config=config.instrument_provider,
         )
-        return OKXExecutionClient(
+
+        return BitmexExecutionClient(
             loop=loop,
             client=client,
             msgbus=msgbus,

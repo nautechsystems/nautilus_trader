@@ -14,7 +14,9 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_core::{
-    consts::NAUTILUS_TRADER, python::to_pyvalue_err, time::get_atomic_clock_realtime,
+    consts::NAUTILUS_TRADER,
+    python::{IntoPyObjectNautilusExt, to_pyvalue_err},
+    time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
     data::trade::TradeTick,
@@ -23,7 +25,7 @@ use nautilus_model::{
     reports::{fill::FillReport, order::OrderStatusReport, position::PositionStatusReport},
     types::{price::Price, quantity::Quantity},
 };
-use pyo3::prelude::*;
+use pyo3::{prelude::*, types::PyList};
 
 use crate::http::{
     client::BitmexHttpClient,
@@ -94,11 +96,13 @@ impl BitmexHttpClient {
                 }
             }
 
-            Python::with_gil(|_py| {
-                // TODO: Fix PyO3 patterns for current version
-                // let pylist = PyList::new_bound(py, trades.into_iter().map(|t| t.into_py(py)));
-                // Ok(pylist.into_py(py))
-                Ok(trades.len())
+            Python::with_gil(|py| {
+                let py_trades: PyResult<Vec<_>> = trades
+                    .into_iter()
+                    .map(|trade| Ok(trade.into_py_any_unwrap(py)))
+                    .collect();
+                let pylist = PyList::new(py, py_trades?).unwrap().into_any().unbind();
+                Ok(pylist)
             })
         })
     }
@@ -129,11 +133,13 @@ impl BitmexHttpClient {
                 }
             }
 
-            // TODO: Fix PyO3 patterns for current version
-            Python::with_gil(|_py| {
-                // let pylist = PyList::new_bound(py, reports.into_iter().map(|t| t.into_py(py)));
-                // Ok(pylist.into_py(py))
-                Ok(reports.len()) // Temporary - return count
+            Python::with_gil(|py| {
+                let py_reports: PyResult<Vec<_>> = reports
+                    .into_iter()
+                    .map(|report| Ok(report.into_py_any_unwrap(py)))
+                    .collect();
+                let pylist = PyList::new(py, py_reports?).unwrap().into_any().unbind();
+                Ok(pylist)
             })
         })
     }
@@ -167,11 +173,13 @@ impl BitmexHttpClient {
                 }
             }
 
-            // TODO: Fix PyO3 patterns for current version
-            Python::with_gil(|_py| {
-                // let pylist = PyList::new_bound(py, reports.into_iter().map(|t| t.into_py(py)));
-                // Ok(pylist.into_py(py))
-                Ok(reports.len()) // Temporary - return count
+            Python::with_gil(|py| {
+                let py_reports: PyResult<Vec<_>> = reports
+                    .into_iter()
+                    .map(|report| Ok(report.into_py_any_unwrap(py)))
+                    .collect();
+                let pylist = PyList::new(py, py_reports?).unwrap().into_any().unbind();
+                Ok(pylist)
             })
         })
     }
@@ -193,11 +201,13 @@ impl BitmexHttpClient {
                 }
             }
 
-            // TODO: Fix PyO3 patterns for current version
-            Python::with_gil(|_py| {
-                // let pylist = PyList::new_bound(py, reports.into_iter().map(|t| t.into_py(py)));
-                // Ok(pylist.into_py(py))
-                Ok(reports.len()) // Temporary - return count
+            Python::with_gil(|py| {
+                let py_reports: PyResult<Vec<_>> = reports
+                    .into_iter()
+                    .map(|report| Ok(report.into_py_any_unwrap(py)))
+                    .collect();
+                let pylist = PyList::new(py, py_reports?).unwrap().into_any().unbind();
+                Ok(pylist)
             })
         })
     }
