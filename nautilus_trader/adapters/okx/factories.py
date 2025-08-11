@@ -219,7 +219,6 @@ class OKXLiveExecClientFactory(LiveExecClientFactory):
         )
         provider = get_cached_okx_instrument_provider(
             client=client,
-            clock=clock,
             instrument_types=config.instrument_types,
             contract_types=config.contract_types,
             config=config.instrument_provider,
