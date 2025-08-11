@@ -91,7 +91,7 @@ impl BlockchainDataClientCore {
         ));
         let erc20_contract = Erc20Contract::new(
             http_rpc_client,
-            config.pools_filters.remove_pools_with_empty_erc20fields,
+            config.pool_filters.remove_pools_with_empty_erc20fields,
         );
 
         let hypersync_client = HyperSyncClient::new(chain.clone(), hypersync_tx);

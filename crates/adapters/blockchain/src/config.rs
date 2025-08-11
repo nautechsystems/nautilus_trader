@@ -69,7 +69,7 @@ pub struct BlockchainDataClientConfig {
     /// The block from which to sync historical data.
     pub from_block: Option<u64>,
     /// Filtering criteria that define which DEX pools to include in the data universe.
-    pub pools_filters: DexPoolFilters,
+    pub pool_filters: DexPoolFilters,
     /// Optional configuration for data client's Postgres cache database
     pub postgres_cache_database_config: Option<PostgresConnectOptions>,
 }
@@ -97,7 +97,7 @@ impl BlockchainDataClientConfig {
             rpc_requests_per_second,
             wss_rpc_url,
             from_block,
-            pools_filters: pools_filters.unwrap_or_default(),
+            pool_filters: pools_filters.unwrap_or_default(),
             postgres_cache_database_config,
         }
     }
