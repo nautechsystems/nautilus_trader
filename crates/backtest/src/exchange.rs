@@ -125,7 +125,6 @@ pub struct SimulatedExchange {
     message_queue: VecDeque<TradingCommand>,
     inflight_queue: BinaryHeap<InflightCommand>,
     inflight_counter: HashMap<UnixNanos, u32>,
-    frozen_account: bool,
     bar_execution: bool,
     reject_stop_orders: bool,
     support_gtd_orders: bool,
@@ -134,6 +133,8 @@ pub struct SimulatedExchange {
     use_random_ids: bool,
     use_reduce_only: bool,
     use_message_queue: bool,
+    allow_cash_borrowing: bool,
+    frozen_account: bool,
 }
 
 impl Debug for SimulatedExchange {
@@ -169,7 +170,6 @@ impl SimulatedExchange {
         fee_model: FeeModelAny,
         book_type: BookType,
         latency_model: Option<LatencyModel>,
-        frozen_account: Option<bool>,
         bar_execution: Option<bool>,
         reject_stop_orders: Option<bool>,
         support_gtd_orders: Option<bool>,
@@ -178,6 +178,8 @@ impl SimulatedExchange {
         use_random_ids: Option<bool>,
         use_reduce_only: Option<bool>,
         use_message_queue: Option<bool>,
+        allow_cash_borrowing: Option<bool>,
+        frozen_account: Option<bool>,
     ) -> anyhow::Result<Self> {
         if starting_balances.is_empty() {
             anyhow::bail!("Starting balances must be provided")
@@ -207,7 +209,6 @@ impl SimulatedExchange {
             message_queue: VecDeque::new(),
             inflight_queue: BinaryHeap::new(),
             inflight_counter: HashMap::new(),
-            frozen_account: frozen_account.unwrap_or(false),
             bar_execution: bar_execution.unwrap_or(true),
             reject_stop_orders: reject_stop_orders.unwrap_or(true),
             support_gtd_orders: support_gtd_orders.unwrap_or(true),
@@ -216,6 +217,8 @@ impl SimulatedExchange {
             use_random_ids: use_random_ids.unwrap_or(false),
             use_reduce_only: use_reduce_only.unwrap_or(true),
             use_message_queue: use_message_queue.unwrap_or(true),
+            allow_cash_borrowing: allow_cash_borrowing.unwrap_or(false),
+            frozen_account: frozen_account.unwrap_or(false),
         })
     }
 
@@ -861,6 +864,7 @@ mod tests {
                 FillModel::default(),
                 FeeModelAny::MakerTaker(MakerTakerFeeModel),
                 book_type,
+                None,
                 None,
                 None,
                 None,

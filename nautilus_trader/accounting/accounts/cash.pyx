@@ -15,6 +15,7 @@
 
 from decimal import Decimal
 
+from nautilus_trader.accounting.error import AccountBalanceNegative
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport AccountType
 from nautilus_trader.core.rust.model cimport LiquiditySide
@@ -42,11 +43,14 @@ cdef class CashAccount(Account):
         The initial account state event.
     calculate_account_state : bool, optional
         If the account state should be calculated from order fills.
+    allow_borrowing : bool, optional
+        If borrowing is allowed (negative balances).
 
     Raises
     ------
     ValueError
         If `event.account_type` is not equal to ``CASH``.
+
     """
     ACCOUNT_TYPE = AccountType.CASH  # required for BettingAccount subclass
 
@@ -54,9 +58,12 @@ cdef class CashAccount(Account):
         self,
         AccountState event,
         bint calculate_account_state = False,
+        bint allow_borrowing = False,
     ):
         Condition.not_none(event, "event")
         Condition.equal(event.account_type, self.ACCOUNT_TYPE, "event.account_type", "account_type")
+
+        self.allow_borrowing = allow_borrowing
 
         super().__init__(event, calculate_account_state)
 
@@ -67,7 +74,8 @@ cdef class CashAccount(Account):
         Condition.not_none(obj, "obj")
         return {
             "type": "CashAccount",
-            "calculate_account_state":obj.calculate_account_state,
+            "calculate_account_state": obj.calculate_account_state,
+            "allow_borrowing": obj.allow_borrowing,
             "events": [AccountState.to_dict_c(event) for event in obj.events_c()]
         }
 
@@ -80,6 +88,7 @@ cdef class CashAccount(Account):
     cdef CashAccount from_dict_c(dict values):
         Condition.not_none(values, "values")
         calculate_account_state = values["calculate_account_state"]
+        allow_borrowing = values.get("allow_borrowing", False)
         events = values["events"]
         if len(events) == 0:
             return None
@@ -87,7 +96,8 @@ cdef class CashAccount(Account):
         other_events = events[1:]
         account = CashAccount(
             event=AccountState.from_dict_c(init_event),
-            calculate_account_state=calculate_account_state
+            calculate_account_state=calculate_account_state,
+            allow_borrowing=allow_borrowing
         )
         for event in other_events:
             account.apply(AccountState.from_dict_c(event))
@@ -96,6 +106,35 @@ cdef class CashAccount(Account):
     @staticmethod
     def from_dict(dict values):
         return CashAccount.from_dict_c(values)
+
+    cpdef void update_balances(self, list balances):
+        """
+        Update the account balances.
+
+        There is no guarantee that every account currency is included in the
+        given balances, therefore we only update included balances.
+
+        Parameters
+        ----------
+        balances : list[AccountBalance]
+            The balances for the update.
+
+        Raises
+        ------
+        ValueError
+            If `balances` is empty.
+        AccountBalanceNegative
+            If borrowing is not allowed and balance is negative.
+
+        """
+        Condition.not_empty(balances, "balances")
+
+        cdef AccountBalance balance
+        for balance in balances:
+            if not self.allow_borrowing and balance.total._mem.raw < 0:
+                raise AccountBalanceNegative(balance.total.as_decimal(), balance.currency)
+
+            self._balances[balance.currency] = balance
 
     cpdef void update_balance_locked(self, InstrumentId instrument_id, Money locked):
         """

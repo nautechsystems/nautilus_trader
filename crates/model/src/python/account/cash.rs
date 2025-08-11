@@ -31,8 +31,13 @@ use crate::{
 #[pymethods]
 impl CashAccount {
     #[new]
-    pub fn py_new(event: AccountState, calculate_account_state: bool) -> Self {
-        Self::new(event, calculate_account_state)
+    #[pyo3(signature = (event, calculate_account_state, allow_borrowing = false))]
+    pub fn py_new(
+        event: AccountState,
+        calculate_account_state: bool,
+        allow_borrowing: bool,
+    ) -> Self {
+        Self::new(event, calculate_account_state, allow_borrowing)
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
@@ -46,6 +51,11 @@ impl CashAccount {
     #[getter]
     fn id(&self) -> AccountId {
         self.id
+    }
+
+    #[getter]
+    fn allow_borrowing(&self) -> bool {
+        self.allow_borrowing
     }
 
     fn __repr__(&self) -> String {

@@ -832,3 +832,156 @@ class TestCashAccountPurge:
 
         # Verify account state reflects the latest event
         assert account.balance_total() == Money(2_000_000.00, USD)
+
+    def test_cash_account_borrowing_disabled_by_default(self):
+        # Arrange
+        event = AccountState(
+            account_id=AccountId("SIM-000"),
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(1_000_000, USD),
+                    Money(0, USD),
+                    Money(1_000_000, USD),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Act
+        account = CashAccount(event)
+
+        # Assert
+        assert account.allow_borrowing is False
+
+    def test_cash_account_with_borrowing_enabled(self):
+        # Arrange
+        event = AccountState(
+            account_id=AccountId("SIM-000"),
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(1_000_000, USD),
+                    Money(0, USD),
+                    Money(1_000_000, USD),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Act
+        account = CashAccount(event, allow_borrowing=True)
+
+        # Assert
+        assert account.allow_borrowing is True
+
+    def test_cash_account_rejects_negative_balance_when_borrowing_disabled(self):
+        # Arrange
+        event = AccountState(
+            account_id=AccountId("SIM-000"),
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(-100_000, USD),  # Negative balance
+                    Money(0, USD),
+                    Money(-100_000, USD),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Act & Assert
+        from nautilus_trader.accounting.error import AccountBalanceNegative
+
+        with pytest.raises(AccountBalanceNegative):
+            CashAccount(event, allow_borrowing=False)
+
+    def test_cash_account_accepts_negative_balance_when_borrowing_enabled(self):
+        # Arrange
+        event = AccountState(
+            account_id=AccountId("SIM-000"),
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(-100_000, USD),  # Negative balance
+                    Money(0, USD),
+                    Money(-100_000, USD),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Act
+        account = CashAccount(event, allow_borrowing=True)
+
+        # Assert
+        assert account.balance_total() == Money(-100_000, USD)
+        assert account.allow_borrowing is True
+
+    def test_cash_account_update_balances_respects_borrowing_setting(self):
+        # Arrange
+        initial_event = AccountState(
+            account_id=AccountId("SIM-000"),
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(1_000_000, USD),
+                    Money(0, USD),
+                    Money(1_000_000, USD),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Test with borrowing disabled
+        account_no_borrowing = CashAccount(initial_event, allow_borrowing=False)
+        negative_balance = AccountBalance(
+            Money(-500_000, USD),  # Negative balance
+            Money(0, USD),
+            Money(-500_000, USD),
+        )
+
+        # Act & Assert - Should raise exception
+        from nautilus_trader.accounting.error import AccountBalanceNegative
+
+        with pytest.raises(AccountBalanceNegative):
+            account_no_borrowing.update_balances([negative_balance])
+
+        # Test with borrowing enabled
+        account_with_borrowing = CashAccount(initial_event, allow_borrowing=True)
+
+        # Act - Should succeed
+        account_with_borrowing.update_balances([negative_balance])
+
+        # Assert
+        assert account_with_borrowing.balance_total() == Money(-500_000, USD)

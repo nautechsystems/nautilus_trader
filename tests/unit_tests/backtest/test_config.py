@@ -547,3 +547,34 @@ class TestParseFiltersExpr:
         """
         with pytest.raises(ValueError):
             parse_filters_expr(expr)
+
+    def test_backtest_venue_config_allow_cash_borrowing_default(self):
+        """
+        Test that allow_cash_borrowing defaults to False.
+        """
+        # Arrange & Act
+        config = BacktestVenueConfig(
+            name="SIM",
+            oms_type="NETTING",
+            account_type="CASH",
+            starting_balances=["1_000_000 USD"],
+        )
+
+        # Assert
+        assert config.allow_cash_borrowing is False
+
+    def test_backtest_venue_config_allow_cash_borrowing_enabled(self):
+        """
+        Test that allow_cash_borrowing can be enabled.
+        """
+        # Arrange & Act
+        config = BacktestVenueConfig(
+            name="SIM",
+            oms_type="NETTING",
+            account_type="CASH",
+            starting_balances=["1_000_000 USD"],
+            allow_cash_borrowing=True,
+        )
+
+        # Assert
+        assert config.allow_cash_borrowing is True

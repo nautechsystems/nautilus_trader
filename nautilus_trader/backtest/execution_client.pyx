@@ -21,6 +21,7 @@ from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport MessageBus
 from nautilus_trader.common.component cimport TestClock
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.rust.model cimport AccountType
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.messages cimport BatchCancelOrders
 from nautilus_trader.execution.messages cimport CancelAllOrders
@@ -52,6 +53,8 @@ cdef class BacktestExecClient(ExecutionClient):
         If multi-venue routing is enabled for the client.
     frozen_account : bool
         If the backtest run account is frozen.
+    allow_cash_borrowing : bool
+        If cash accounts should allow borrowing (negative balances).
     """
 
     def __init__(
@@ -62,6 +65,7 @@ cdef class BacktestExecClient(ExecutionClient):
         TestClock clock not None,
         bint routing=False,
         bint frozen_account=False,
+        bint allow_cash_borrowing=False,
     ) -> None:
         super().__init__(
             client_id=ClientId(exchange.id.value),
@@ -75,8 +79,12 @@ cdef class BacktestExecClient(ExecutionClient):
         )
 
         self._set_account_id(AccountId(f"{exchange.id.value}-001"))
+
         if not frozen_account:
             AccountFactory.register_calculated_account(exchange.id.value)
+
+        if exchange.account_type == AccountType.CASH and allow_cash_borrowing:
+            AccountFactory.register_cash_borrowing(exchange.id.value)
 
         self._exchange = exchange
         self.is_connected = False

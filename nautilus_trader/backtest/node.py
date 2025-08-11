@@ -401,6 +401,7 @@ class BacktestNode:
                 bar_execution=venue_config.bar_execution,
                 bar_adaptive_high_low_ordering=venue_config.bar_adaptive_high_low_ordering,
                 trade_execution=venue_config.trade_execution,
+                allow_cash_borrowing=venue_config.allow_cash_borrowing,
             )
 
         # Add instruments
