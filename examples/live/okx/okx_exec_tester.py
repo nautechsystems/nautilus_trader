@@ -90,7 +90,7 @@ config_node = TradingNodeConfig(
         graceful_shutdown_on_exception=True,
     ),
     # cache=CacheConfig(
-    #     # database=DatabaseConfig(),
+    #     database=DatabaseConfig(),
     #     timestamps_as_iso8601=True,
     #     buffer_interval_ms=100,
     # ),

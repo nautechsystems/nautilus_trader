@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import time
-
 import msgspec
 
 from nautilus_trader.cache.config import CacheConfig
@@ -256,60 +254,36 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
     cpdef dict load(self):
         """
-        Load all general objects from the database.
+        Load all general objects from the database using bulk loading for efficiency.
 
         Returns
         -------
         dict[str, bytes]
 
         """
-        cdef double ts_start = time.time()
-        cdef double ts_end
         cdef dict general = {}
-
-        # Time the keys() operation
-        ts_start = time.time()
         cdef list general_keys = self._backing.keys(f"{_GENERAL}:*")
-        ts_end = time.time()
-        self._log.debug(f"database.load: backing.keys() took {(ts_end - ts_start) * 1000:.2f}ms, found {len(general_keys)} keys")
 
         if not general_keys:
             return general
 
-        cdef:
-            str key
-            list result
-            bytes value_bytes
-            double ts_read_start
-            double ts_read_end
-            double total_read_time = 0.0
-            double ts_split_start
-            double ts_split_end
-            double total_split_time = 0.0
-            int read_count = 0
+        # Use bulk loading for efficiency
+        cdef list bulk_results = self._backing.read_bulk(general_keys)
 
-        for key in general_keys:
-            # Time the split operation
-            ts_split_start = time.time()
-            key = key.split(':', maxsplit=1)[1]
-            ts_split_end = time.time()
-            total_split_time += (ts_split_end - ts_split_start)
+        cdef bytes value_bytes
+        cdef str key
+        cdef str clean_key
+        cdef int idx
 
-            # Time the read operation
-            ts_read_start = time.time()
-            result = self._backing.read(key)
-            ts_read_end = time.time()
-            total_read_time += (ts_read_end - ts_read_start)
-            read_count += 1
+        for idx in range(len(general_keys)):
+            key = general_keys[idx]
+            # Extract the clean key (remove trader_key prefix and general prefix)
+            clean_key = key.split(':', maxsplit=1)[1]  # Remove trader_key prefix
+            clean_key = clean_key.split(':', maxsplit=1)[1]  # Remove general prefix
 
-            value_bytes = result[0]
-            if value_bytes is not None:
-                key = key.split(':', maxsplit=1)[1]
-                general[key] = value_bytes
-
-        self._log.debug(f"database.load: {read_count} read operations took {total_read_time * 1000:.2f}ms total")
-        self._log.debug(f"database.load: split operations took {total_split_time * 1000:.2f}ms total")
-        self._log.debug(f"database.load: average read time: {(total_read_time / read_count) * 1000:.2f}ms per read")
+            if idx < len(bulk_results) and bulk_results[idx] is not None:
+                value_bytes = bulk_results[idx]
+                general[clean_key] = value_bytes
 
         return general
 
@@ -322,21 +296,11 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         dict[str, Currency]
 
         """
-        cdef double ts_start = time.time()
-        cdef double ts_end
         cdef dict currencies = {}
-
-        # Time the keys() operation
-        ts_start = time.time()
         cdef list currency_keys = self._backing.keys(f"{_CURRENCIES}*")
-        ts_end = time.time()
-        self._log.debug(f"load_currencies: backing.keys() took {(ts_end - ts_start) * 1000:.2f}ms, found {len(currency_keys)} keys")
 
         if not currency_keys:
             return currencies
-
-        cdef double bulk_start = time.time()
-        self._log.debug(f"load_currencies: Starting bulk read of {len(currency_keys)} currency keys")
 
         cdef list currency_codes = []
         cdef str key
@@ -346,17 +310,8 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
             currency_code = key.rsplit(':', maxsplit=1)[1]
             currency_codes.append(currency_code)
 
-        self._log.debug(f"load_currencies: About to call read_bulk with {len(currency_keys)} keys")
-        if currency_keys:
-            self._log.debug(f"load_currencies: Sample keys: {currency_keys[:3]}")
         cdef list bulk_results = self._backing.read_bulk(currency_keys)
-        cdef double bulk_end = time.time()
-        self._log.debug(f"load_currencies: Bulk read completed in {(bulk_end - bulk_start) * 1000:.2f}ms for {len(currency_codes)} keys")
-        self._log.debug(f"load_currencies: Got {len(bulk_results)} bulk results back")
 
-        cdef double process_start = time.time()
-        cdef int successful_loads = 0
-        cdef int failed_loads = 0
         cdef bytes value_bytes
         cdef Currency currency
         cdef int idx
@@ -377,29 +332,14 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
                         currency_type=currency_type_from_str(c_map["currency_type"]),
                     )
                     currencies[currency.code] = currency
-                    successful_loads += 1
-
-                    if idx % 100 == 0 or idx == len(currency_codes) - 1:
-                        self._log.debug(f"load_currencies: Processed {idx + 1} of {len(currency_codes)} currencies ({currency_code})")
-
                 except Exception as e:
                     self._log.error(f"Failed to deserialize currency {currency_code}: {e}")
-                    failed_loads += 1
-            else:
-                self._log.error(f"Currency not found in bulk results: {currency_code}")
-                failed_loads += 1
-
-        cdef double process_end = time.time()
-        cdef double total_time = process_end - ts_start
-
-        self._log.debug(f"load_currencies: COMPLETE - Total: {total_time * 1000:.2f}ms, Bulk: {(bulk_end - bulk_start) * 1000:.2f}ms, Process: {(process_end - process_start) * 1000:.2f}ms")
-        self._log.debug(f"load_currencies: Loaded {successful_loads} currencies successfully, {failed_loads} failed")
 
         return currencies
 
     cpdef dict load_instruments(self):
         """
-        Load all instruments from the database.
+        Load all instruments from the database using bulk loading for efficiency.
 
         Returns
         -------
@@ -407,27 +347,38 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         """
         cdef dict instruments = {}
-
         cdef list instrument_keys = self._backing.keys(f"{_INSTRUMENTS}*")
+
         if not instrument_keys:
             return instruments
+
+        # Use bulk loading for efficiency
+        cdef list bulk_results = self._backing.read_bulk(instrument_keys)
 
         cdef:
             str key
             InstrumentId instrument_id
             Instrument instrument
-        for key in instrument_keys:
-            instrument_id = InstrumentId.from_str_c(key.rsplit(':', maxsplit=1)[1])
-            instrument = self.load_instrument(instrument_id)
+            bytes instrument_bytes
+            int idx
 
-            if instrument is not None:
-                instruments[instrument.id] = instrument
+        for idx in range(len(instrument_keys)):
+            key = instrument_keys[idx]
+            instrument_id = InstrumentId.from_str_c(key.rsplit(':', maxsplit=1)[1])
+
+            if idx < len(bulk_results) and bulk_results[idx] is not None:
+                instrument_bytes = bulk_results[idx]
+                try:
+                    instrument = self._serializer.deserialize(instrument_bytes)
+                    instruments[instrument.id] = instrument
+                except Exception as e:
+                    self._log.error(f"Failed to deserialize instrument {instrument_id}: {e}")
 
         return instruments
 
     cpdef dict load_synthetics(self):
         """
-        Load all synthetic instruments from the database.
+        Load all synthetic instruments from the database using bulk loading for efficiency.
 
         Returns
         -------
@@ -435,21 +386,32 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         """
         cdef dict synthetics = {}
-
         cdef list synthetic_keys = self._backing.keys(f"{_SYNTHETICS}*")
+
         if not synthetic_keys:
             return synthetics
+
+        # Use bulk loading for efficiency
+        cdef list bulk_results = self._backing.read_bulk(synthetic_keys)
 
         cdef:
             str key
             InstrumentId instrument_id
             SyntheticInstrument synthetic
-        for key in synthetic_keys:
-            instrument_id = InstrumentId.from_str_c(key.rsplit(':', maxsplit=1)[1])
-            synthetic = self.load_synthetic(instrument_id)
+            bytes synthetic_bytes
+            int idx
 
-            if synthetic is not None:
-                synthetics[synthetic.id] = synthetic
+        for idx in range(len(synthetic_keys)):
+            key = synthetic_keys[idx]
+            instrument_id = InstrumentId.from_str_c(key.rsplit(':', maxsplit=1)[1])
+
+            if idx < len(bulk_results) and bulk_results[idx] is not None:
+                synthetic_bytes = bulk_results[idx]
+                try:
+                    synthetic = self._serializer.deserialize(synthetic_bytes)
+                    synthetics[synthetic.id] = synthetic
+                except Exception as e:
+                    self._log.error(f"Failed to deserialize synthetic {instrument_id}: {e}")
 
         return synthetics
 
@@ -463,14 +425,13 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         """
         cdef dict accounts = {}
-
         cdef list account_keys = self._backing.keys(f"{_ACCOUNTS}*")
+
         if not account_keys:
             return accounts
 
         cdef:
             str key
-            str account_str
             AccountId account_id
             Account account
         for key in account_keys:
@@ -492,8 +453,8 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         """
         cdef dict orders = {}
-
         cdef list order_keys = self._backing.keys(f"{_ORDERS}*")
+
         if not order_keys:
             return orders
 
@@ -520,8 +481,8 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         """
         cdef dict positions = {}
-
         cdef list position_keys = self._backing.keys(f"{_POSITIONS}*")
+
         if not position_keys:
             return positions
 
@@ -831,7 +792,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         cdef str key = f"{_ACTORS}:{component_id.to_str()}:state"
         self._backing.delete(key)
 
-        self._log.info(f"Deleted {repr(component_id)}")
+        self._log.debug(f"Deleted {repr(component_id)}")
 
     cpdef dict load_strategy(self, StrategyId strategy_id):
         """
@@ -871,7 +832,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         cdef str key = f"{_STRATEGIES}:{strategy_id.to_str()}:state"
         self._backing.delete(key)
 
-        self._log.info(f"Deleted {repr(strategy_id)}")
+        self._log.debug(f"Deleted {repr(strategy_id)}")
 
     cpdef void delete_order(self, ClientOrderId client_order_id):
         """
@@ -887,7 +848,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         self._backing.delete_order(client_order_id.to_str())
 
-        self._log.info(f"Deleted order {repr(client_order_id)}")
+        self._log.debug(f"Deleted order {repr(client_order_id)}")
 
     cpdef void delete_position(self, PositionId position_id):
         """
@@ -903,7 +864,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         self._backing.delete_position(position_id.to_str())
 
-        self._log.info(f"Deleted position {repr(position_id)}")
+        self._log.debug(f"Deleted position {repr(position_id)}")
 
     cpdef void delete_account_event(self, AccountId account_id, str event_id):
         """
