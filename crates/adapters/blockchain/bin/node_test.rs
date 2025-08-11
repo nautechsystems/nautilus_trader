@@ -20,7 +20,8 @@ use std::{
 };
 
 use nautilus_blockchain::{
-    config::BlockchainDataClientConfig, factories::BlockchainDataClientFactory,
+    config::{BlockchainDataClientConfig, DexPoolFilters},
+    factories::BlockchainDataClientFactory,
 };
 use nautilus_common::{
     actor::{DataActor, DataActorCore, data_actor::DataActorConfig},
@@ -60,6 +61,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // let from_block = Some(348_860_000_u64); // Arbitrum
     let from_block = None; // No sync
 
+    let dex_pool_filter = DexPoolFilters::new(Some(true));
+
     let client_factory = BlockchainDataClientFactory::new();
     let client_config = BlockchainDataClientConfig::new(
         Arc::new(chain.clone()),
@@ -70,6 +73,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         true, // Use HyperSync for live data
         // Some(from_block), // from_block
         from_block,
+        Some(dex_pool_filter),
         Some(PostgresConnectOptions::default()),
     );
 

@@ -18,6 +18,35 @@ use std::sync::Arc;
 use nautilus_infrastructure::sql::pg::PostgresConnectOptions;
 use nautilus_model::defi::{Chain, DexType};
 
+/// Defines filtering criteria for the DEX pool universe that the data client will operate on.
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.blockchain")
+)]
+pub struct DexPoolFilters {
+    /// Whether to exclude pools containing tokens with empty name or symbol fields.
+    pub remove_pools_with_empty_erc20fields: bool,
+}
+
+impl DexPoolFilters {
+    /// Creates a new [`DexPoolFilters`] instance.
+    pub fn new(remove_pools_with_empty_erc20fields: Option<bool>) -> Self {
+        Self {
+            remove_pools_with_empty_erc20fields: remove_pools_with_empty_erc20fields
+                .unwrap_or(true),
+        }
+    }
+}
+
+impl Default for DexPoolFilters {
+    fn default() -> Self {
+        Self {
+            remove_pools_with_empty_erc20fields: true,
+        }
+    }
+}
+
 /// Configuration for blockchain data clients.
 #[derive(Debug, Clone)]
 #[cfg_attr(
@@ -39,6 +68,8 @@ pub struct BlockchainDataClientConfig {
     pub wss_rpc_url: Option<String>,
     /// The block from which to sync historical data.
     pub from_block: Option<u64>,
+    /// Filtering criteria that define which DEX pools to include in the data universe.
+    pub pools_filters: DexPoolFilters,
     /// Optional configuration for data client's Postgres cache database
     pub postgres_cache_database_config: Option<PostgresConnectOptions>,
 }
@@ -47,7 +78,7 @@ impl BlockchainDataClientConfig {
     /// Creates a new [`BlockchainDataClientConfig`] instance.
     #[allow(clippy::too_many_arguments)]
     #[must_use]
-    pub const fn new(
+    pub fn new(
         chain: Arc<Chain>,
         dex_ids: Vec<DexType>,
         http_rpc_url: String,
@@ -55,6 +86,7 @@ impl BlockchainDataClientConfig {
         wss_rpc_url: Option<String>,
         use_hypersync_for_live_data: bool,
         from_block: Option<u64>,
+        pools_filters: Option<DexPoolFilters>,
         postgres_cache_database_config: Option<PostgresConnectOptions>,
     ) -> Self {
         Self {
@@ -65,6 +97,7 @@ impl BlockchainDataClientConfig {
             rpc_requests_per_second,
             wss_rpc_url,
             from_block,
+            pools_filters: pools_filters.unwrap_or_default(),
             postgres_cache_database_config,
         }
     }

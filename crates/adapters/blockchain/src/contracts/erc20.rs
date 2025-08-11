@@ -74,14 +74,17 @@ pub enum TokenInfoError {
 pub struct Erc20Contract {
     /// The base contract providing common RPC execution functionality.
     base: BaseContract,
+    /// Whether to enforce that token name and symbol fields must be non-empty.
+    enforce_token_fields: bool,
 }
 
 impl Erc20Contract {
     /// Creates a new ERC20 contract interface with the specified RPC client.
     #[must_use]
-    pub fn new(client: Arc<BlockchainHttpRpcClient>) -> Self {
+    pub fn new(client: Arc<BlockchainHttpRpcClient>, enforce_token_fields: bool) -> Self {
         Self {
             base: BaseContract::new(client),
+            enforce_token_fields,
         }
     }
 
@@ -127,15 +130,14 @@ impl Erc20Contract {
         let symbol = parse_erc20_string_result(&results[1], Erc20Field::Symbol, token_address)?;
         let decimals = parse_erc20_decimals_result(&results[2], token_address)?;
 
-        // Validate that name and symbol are not empty strings.
-        if name.is_empty() {
+        if self.enforce_token_fields && name.is_empty() {
             return Err(TokenInfoError::EmptyTokenField {
                 field: Erc20Field::Name,
                 address: *token_address,
             });
         }
 
-        if symbol.is_empty() {
+        if self.enforce_token_fields && symbol.is_empty() {
             return Err(TokenInfoError::EmptyTokenField {
                 field: Erc20Field::Symbol,
                 address: *token_address,
