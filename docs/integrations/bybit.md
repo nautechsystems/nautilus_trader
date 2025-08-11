@@ -217,14 +217,14 @@ This means there is a limitation that you cannot specify SPOT with any of the ot
 - `MARGIN` account type will be used for all other derivative products.
 
 :::info
-**Cash Account Borrowing (Margin Trading)**
+**Cash account borrowing (margin trading)**
 
 For Bybit SPOT products, cash accounts **allow borrowing** (negative balances),
 enabling margin trading capabilities. This means you can:
 
-- Trade with leverage on SPOT pairs
-- Maintain short positions
-- Have negative balances in your account
+- Trade with leverage on SPOT pairs.
+- Maintain short positions.
+- Have negative balances in your account.
 
 This is automatically enabled for all Bybit SPOT accounts and does not require any additional configuration.
 :::
