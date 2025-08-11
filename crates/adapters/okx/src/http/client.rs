@@ -982,6 +982,10 @@ impl OKXHttpClient {
     /// - Stops when: limit reached, time window covered, or API returns empty
     /// - Rate limit safety: ≥ 50ms between requests
     ///
+    /// # Panics
+    ///
+    /// May panic if internal data structures are in an unexpected state.
+    ///
     /// # References
     ///
     /// - <https://tr.okx.com/docs-v5/en/#order-book-trading-market-data-get-candlesticks>
@@ -1044,14 +1048,13 @@ impl OKXHttpClient {
         #[derive(Clone, Copy, Debug, PartialEq, Eq)]
         enum Mode {
             Latest,
-            Forward,
             Backward,
             Range,
         }
 
         let mode = match (start, end) {
             (None, None) => Mode::Latest,
-            (Some(_), None) => Mode::Forward,
+            (Some(_), None) => Mode::Backward, // Changed: when only start is provided, work backward from now
             (None, Some(_)) => Mode::Backward,
             (Some(_), Some(_)) => Mode::Range,
         };
@@ -1059,8 +1062,23 @@ impl OKXHttpClient {
         let start_ns = start.and_then(|s| s.timestamp_nanos_opt());
         let end_ns = end.and_then(|e| e.timestamp_nanos_opt());
 
-        let start_ms = start.map(|s| s.timestamp_millis());
-        let end_ms = end.map(|e| e.timestamp_millis());
+        // Floor start and ceiling end to bar boundaries for cleaner API requests
+        let start_ms = start.map(|s| {
+            let ms = s.timestamp_millis();
+            if slot_ms > 0 {
+                (ms / slot_ms) * slot_ms // Floor to nearest bar boundary
+            } else {
+                ms
+            }
+        });
+        let end_ms = end.map(|e| {
+            let ms = e.timestamp_millis();
+            if slot_ms > 0 {
+                ((ms + slot_ms - 1) / slot_ms) * slot_ms // Ceiling to nearest bar boundary
+            } else {
+                ms
+            }
+        });
         let now_ms = now.timestamp_millis();
 
         let symbol = bar_type.instrument_id().symbol;
@@ -1069,25 +1087,46 @@ impl OKXHttpClient {
         let mut out: Vec<Bar> = Vec::new();
         let mut pages = 0usize;
 
-        let mut after_ms: Option<i64> = match mode {
-            Mode::Forward => start_ms.map(|v| v.saturating_add(1)),
-            Mode::Range => start_ms.map(|v| v.saturating_add(1)),
-            _ => None,
-        };
+        // IMPORTANT: OKX API behavior:
+        // - With 'after' parameter: returns bars with timestamp > after (going forward)
+        // - With 'before' parameter: returns bars with timestamp < before (going backward)
+        // For Range mode, we use 'before' starting from the end time to get bars before it
+        let mut after_ms: Option<i64> = None;
         let mut before_ms: Option<i64> = match mode {
             Mode::Backward => end_ms.map(|v| v.saturating_sub(1)),
+            Mode::Range => {
+                // For Range, start from the end time (or current time if no end specified)
+                // The API will return bars with timestamp < before_ms
+                Some(end_ms.unwrap_or(now_ms))
+            }
             Mode::Latest => None,
-            _ => None,
         };
 
-        // If we ever need to backfill in Forward/Range, flip this on.
-        let mut forward_prepend_mode = false;
+        // For Range mode, we'll paginate backwards like Backward mode
+        let mut forward_prepend_mode = matches!(mode, Mode::Range);
+
+        // Adjust before_ms to ensure we get data from the API
+        // OKX API might not have bars for the very recent past
+        // This handles both explicit end=now and the actor layer setting end=now when it's None
+        if matches!(mode, Mode::Backward | Mode::Range)
+            && let Some(b) = before_ms
+        {
+            // OKX endpoints have different data availability windows:
+            // - Regular endpoint: has most recent data but limited depth
+            // - History endpoint: has deep history but lags behind current time
+            // Use a small buffer to avoid the "dead zone"
+            let buffer_ms = slot_ms.max(60_000); // At least 1 minute or 1 bar
+            if b >= now_ms.saturating_sub(buffer_ms) {
+                before_ms = Some(now_ms.saturating_sub(buffer_ms));
+            }
+        }
 
         let mut have_latest_first_page = false;
         let mut progressless_loops = 0u8;
 
         loop {
             if let Some(lim) = limit
+                && lim > 0
                 && out.len() >= lim as usize
             {
                 break;
@@ -1103,11 +1142,18 @@ impl OKXHttpClient {
             } else {
                 now_ms
             };
-            let using_history =
-                (now_ms.saturating_sub(pivot_ms)) / (24 * 60 * 60 * 1000) > HISTORY_SPLIT_DAYS;
+            // Choose endpoint based on how old the data is:
+            // - Use regular endpoint for recent data (< 1 hour old)
+            // - Use history endpoint for older data (> 1 hour old)
+            // This avoids the "gap" where history endpoint has no recent data
+            // and regular endpoint has limited depth
+            let age_ms = now_ms.saturating_sub(pivot_ms);
+            let age_hours = age_ms / (60 * 60 * 1000);
+            let using_history = age_hours > 1; // Use history if data is > 1 hour old
 
             let page_ceiling = if using_history { 100 } else { 300 };
             let remaining = limit
+                .filter(|&l| l > 0) // Treat limit=0 as no limit
                 .map(|l| (l as usize).saturating_sub(out.len()))
                 .unwrap_or(page_ceiling);
             let page_cap = remaining.min(page_ceiling);
@@ -1133,8 +1179,13 @@ impl OKXHttpClient {
                         req_used_before = true;
                     }
                 }
-                Mode::Forward | Mode::Range => {
-                    if forward_prepend_mode {
+                Mode::Range => {
+                    // For first request with regular endpoint, try without parameters
+                    // to get the most recent bars, then filter
+                    if pages == 0 && !using_history {
+                        // Don't set any time parameters on first request
+                        // This gets the most recent bars available
+                    } else if forward_prepend_mode {
                         if let Some(b) = before_ms {
                             p.before_ms(b);
                             req_used_before = true;
@@ -1192,41 +1243,10 @@ impl OKXHttpClient {
                     }
                 }
 
-                // Forward/Range first call: bootstrap from end/now using BEFORE
-                if raw.is_empty() && pages == 0 && matches!(mode, Mode::Forward | Mode::Range) {
-                    let bootstrap_before = end_ms.unwrap_or(now_ms.saturating_sub(1));
-                    let bootstrap_hist = (now_ms.saturating_sub(bootstrap_before))
-                        / (24 * 60 * 60 * 1000)
-                        > HISTORY_SPLIT_DAYS;
+                // Range mode doesn't need special bootstrap - it uses the normal flow with before_ms set
 
-                    let mut p2 = GetCandlesticksParamsBuilder::default();
-                    p2.inst_id(symbol.as_str())
-                        .bar(&bar_param)
-                        .limit(page_cap as u32)
-                        .before_ms(bootstrap_before);
-                    let params2 = p2.build().map_err(anyhow::Error::new)?;
-                    let raw2 = if bootstrap_hist {
-                        self.inner
-                            .http_get_candlesticks_history(params2)
-                            .await
-                            .map_err(anyhow::Error::new)?
-                    } else {
-                        self.inner
-                            .http_get_candlesticks(params2)
-                            .await
-                            .map_err(anyhow::Error::new)?
-                    };
-
-                    if !raw2.is_empty() {
-                        raw = raw2;
-                        // Switch forward into backfill mode after bootstrap.
-                        forward_prepend_mode = true;
-                        req_used_before = true;
-                    }
-                }
-
-                // If still empty: for Forward/Range after first page, try a single backstep window using BEFORE
-                if raw.is_empty() && matches!(mode, Mode::Forward | Mode::Range) && pages > 0 {
+                // If still empty: for Range after first page, try a single backstep window using BEFORE
+                if raw.is_empty() && matches!(mode, Mode::Range) && pages > 0 {
                     let backstep_ms = (page_cap as i64).saturating_mul(slot_ms.max(1));
                     let pivot_back = after_ms.unwrap_or(now_ms).saturating_sub(backstep_ms);
 
@@ -1292,16 +1312,67 @@ impl OKXHttpClient {
             let page_newest_ms = page.last().map(|b| b.ts_event.as_i64() / 1_000_000);
 
             // Range filter (inclusive)
-            let mut filtered: Vec<Bar> = page
-                .clone()
-                .into_iter()
-                .filter(|b| {
-                    let ts = b.ts_event.as_i64();
-                    let ok_after = start_ns.is_none_or(|sns| ts >= sns);
-                    let ok_before = end_ns.is_none_or(|ens| ts <= ens);
-                    ok_after && ok_before
-                })
-                .collect();
+            // For Range mode, if we have no bars yet and this is an early page,
+            // be more tolerant with the start boundary to handle gaps in data
+            let mut filtered: Vec<Bar> = if matches!(mode, Mode::Range)
+                && out.is_empty()
+                && pages < 2
+            {
+                // On first pages of Range mode with no data yet, include the most recent bar
+                // even if it's slightly before our start time (within 2 bar periods)
+                // BUT we want ALL bars in the page that are within our range
+                let tolerance_ns = slot_ns * 2; // Allow up to 2 bar periods before start
+
+                // Debug: log the page range
+                if !page.is_empty() {
+                    tracing::debug!(
+                        "Range mode bootstrap page: {} bars from {} to {}, filtering with start={:?} end={:?}",
+                        page.len(),
+                        page.first().unwrap().ts_event.as_i64() / 1_000_000,
+                        page.last().unwrap().ts_event.as_i64() / 1_000_000,
+                        start_ms,
+                        end_ms
+                    );
+                }
+
+                let result: Vec<Bar> = page
+                    .clone()
+                    .into_iter()
+                    .filter(|b| {
+                        let ts = b.ts_event.as_i64();
+                        // Accept bars from (start - tolerance) to end
+                        let ok_after =
+                            start_ns.is_none_or(|sns| ts >= sns.saturating_sub(tolerance_ns));
+                        let ok_before = end_ns.is_none_or(|ens| ts <= ens);
+                        ok_after && ok_before
+                    })
+                    .collect();
+
+                result
+            } else {
+                // Normal filtering
+                page.clone()
+                    .into_iter()
+                    .filter(|b| {
+                        let ts = b.ts_event.as_i64();
+                        let ok_after = start_ns.is_none_or(|sns| ts >= sns);
+                        let ok_before = end_ns.is_none_or(|ens| ts <= ens);
+                        ok_after && ok_before
+                    })
+                    .collect()
+            };
+
+            if !page.is_empty() && filtered.is_empty() {
+                // For Range mode, if all bars are before our start time, there's no point continuing
+                if matches!(mode, Mode::Range)
+                    && !forward_prepend_mode
+                    && let (Some(newest_ms), Some(start_ms)) = (page_newest_ms, start_ms)
+                    && newest_ms < start_ms.saturating_sub(slot_ms * 2)
+                {
+                    // Bars are too old (more than 2 bar periods before start), stop
+                    break;
+                }
+            }
 
             // Track contribution for progress guard
             let contribution;
@@ -1323,7 +1394,7 @@ impl OKXHttpClient {
                             out = new_out;
                         }
                     }
-                    Mode::Forward | Mode::Range => {
+                    Mode::Range => {
                         if forward_prepend_mode || req_used_before {
                             // We are backfilling older pages: prepend them.
                             if let Some(first) = out.first() {
@@ -1378,10 +1449,12 @@ impl OKXHttpClient {
                             break;
                         }
                     }
-                    Mode::Forward | Mode::Range => {
+                    Mode::Range => {
                         if forward_prepend_mode || req_used_before {
                             if let Some(oldest) = page_oldest_ms {
-                                before_ms = Some(oldest.saturating_sub(1));
+                                // Move back by at least one bar period to avoid getting the same data
+                                let jump_back = slot_ms.max(60_000); // At least 1 minute
+                                before_ms = Some(oldest.saturating_sub(jump_back));
                                 after_ms = None;
                             } else {
                                 break;
@@ -1398,6 +1471,7 @@ impl OKXHttpClient {
 
             // Stop conditions
             if let Some(lim) = limit
+                && lim > 0
                 && out.len() >= lim as usize
             {
                 break;
@@ -1413,6 +1487,23 @@ impl OKXHttpClient {
                 && (matches!(mode, Mode::Backward) || forward_prepend_mode)
                 && first.ts_event.as_i64() <= sns
             {
+                // For Range mode, check if we have all bars up to the end time
+                if matches!(mode, Mode::Range) {
+                    // Don't stop if we haven't reached the end time yet
+                    if let Some(ens) = end_ns
+                        && let Some(last) = out.last()
+                    {
+                        let last_ts = last.ts_event.as_i64();
+                        if last_ts < ens {
+                            // We have bars before start but haven't reached end, need to continue forward
+                            // Switch from backward to forward pagination
+                            forward_prepend_mode = false;
+                            after_ms = Some((last_ts / 1_000_000).saturating_add(1));
+                            before_ms = None;
+                            continue;
+                        }
+                    }
+                }
                 break;
             }
 
@@ -1420,7 +1511,7 @@ impl OKXHttpClient {
         }
 
         // Final rescue for FORWARD/RANGE when nothing gathered
-        if out.is_empty() && matches!(mode, Mode::Forward | Mode::Range) {
+        if out.is_empty() && matches!(mode, Mode::Range) {
             let pivot = end_ms.unwrap_or(now_ms.saturating_sub(1));
             let hist = (now_ms.saturating_sub(pivot)) / (24 * 60 * 60 * 1000) > HISTORY_SPLIT_DAYS;
             let mut p = GetCandlesticksParamsBuilder::default();
@@ -1467,8 +1558,9 @@ impl OKXHttpClient {
             }
         }
 
-        // Clamp first bar for Forward
-        if matches!(mode, Mode::Forward)
+        // Clamp first bar for Range when using forward pagination
+        if matches!(mode, Mode::Range)
+            && !forward_prepend_mode
             && let Some(sns) = start_ns
         {
             let lower = sns.saturating_sub(slot_ns);
@@ -1478,6 +1570,7 @@ impl OKXHttpClient {
         }
 
         if let Some(lim) = limit
+            && lim > 0
             && out.len() > lim as usize
         {
             out.truncate(lim as usize);
