@@ -33,6 +33,10 @@ pub fn parse_instrument_id(symbol: &str) -> InstrumentId {
 
 /// Parses the given datetime (UTC) into a `UnixNanos` timestamp.
 /// If `value` is `None`, then defaults to the UNIX epoch (0 nanoseconds).
+///
+/// # Panics
+///
+/// Panics if the timestamp cannot be converted to nanoseconds (should never happen with valid timestamps).
 pub fn parse_optional_datetime_to_unix_nanos(
     value: &Option<DateTime<Utc>>,
     field: &str,
@@ -74,6 +78,11 @@ pub fn parse_position_side(current_qty: Option<i64>) -> nautilus_model::enums::P
     }
 }
 
+/// Parse a BitMEX time in force into a Nautilus time in force.
+///
+/// # Panics
+///
+/// Panics if an unsupported `TimeInForce` variant is encountered.
 pub fn parse_time_in_force(tif: &TimeInForce) -> nautilus_model::enums::TimeInForce {
     match tif {
         TimeInForce::Day => nautilus_model::enums::TimeInForce::Day,

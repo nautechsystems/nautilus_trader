@@ -51,6 +51,11 @@ pub fn parse_instrument_any(instrument: &Instrument, ts_init: UnixNanos) -> Opti
     }
 }
 
+/// Parse a BitMEX spot instrument into a Nautilus `InstrumentAny`.
+///
+/// # Panics
+///
+/// Panics if decimal values for fees cannot be parsed.
 #[must_use]
 pub fn parse_spot_instrument(definition: &Instrument, ts_init: UnixNanos) -> InstrumentAny {
     let instrument_id = parse_instrument_id(&definition.symbol);
@@ -114,6 +119,11 @@ pub fn parse_spot_instrument(definition: &Instrument, ts_init: UnixNanos) -> Ins
     InstrumentAny::CurrencyPair(instrument)
 }
 
+/// Parse a BitMEX perpetual instrument into a Nautilus `InstrumentAny`.
+///
+/// # Panics
+///
+/// Panics if decimal values for fees cannot be parsed.
 #[must_use]
 pub fn parse_perpetual_instrument(definition: &Instrument, ts_init: UnixNanos) -> InstrumentAny {
     let instrument_id = parse_instrument_id(&definition.symbol);
@@ -183,6 +193,11 @@ pub fn parse_perpetual_instrument(definition: &Instrument, ts_init: UnixNanos) -
     InstrumentAny::CryptoPerpetual(instrument)
 }
 
+/// Parse a BitMEX futures instrument into a Nautilus `InstrumentAny`.
+///
+/// # Panics
+///
+/// Panics if decimal values for fees cannot be parsed.
 #[must_use]
 pub fn parse_futures_instrument(definition: &Instrument, ts_init: UnixNanos) -> InstrumentAny {
     let instrument_id = parse_instrument_id(&definition.symbol);
@@ -257,6 +272,12 @@ pub fn parse_futures_instrument(definition: &Instrument, ts_init: UnixNanos) -> 
     InstrumentAny::CryptoFuture(instrument)
 }
 
+/// Parse a BitMEX trade into a Nautilus `TradeTick`.
+///
+/// # Errors
+///
+/// Currently this function does not return errors as all fields are handled gracefully,
+/// but returns `Result` for future error handling compatibility.
 pub fn parse_trade(
     trade: Trade,
     price_precision: u8,
@@ -285,6 +306,18 @@ pub fn parse_trade(
     ))
 }
 
+/// Parse a BitMEX order into a Nautilus `OrderStatusReport`.
+///
+/// # Errors
+///
+/// Currently this function does not return errors as all fields are handled gracefully,
+/// but returns `Result` for future error handling compatibility.
+///
+/// # Panics
+///
+/// Panics if:
+/// - Order is missing required fields: `symbol`, `ord_type`, `time_in_force`, `ord_status`, or `order_qty`
+/// - Unsupported `ExecInstruction` type is encountered (other than ParticipateDoNotInitiate or ReduceOnly)
 pub fn parse_order_status_report(
     order: Order,
     price_precision: u8,
@@ -364,6 +397,17 @@ pub fn parse_order_status_report(
     Ok(report)
 }
 
+/// Parse a BitMEX execution into a Nautilus `FillReport`.
+///
+/// # Errors
+///
+/// Currently this function does not return errors as all fields are handled gracefully,
+/// but returns `Result` for future error handling compatibility.
+///
+/// # Panics
+///
+/// Panics if:
+/// - Execution is missing required fields: `symbol`, `order_id`, `trd_match_id`, `last_qty`, `last_px`, or `transact_time`
 pub fn parse_fill_report(exec: Execution, price_precision: u8) -> anyhow::Result<FillReport> {
     let account_id = AccountId::new(exec.account.unwrap_or(0).to_string());
     let instrument_id = parse_instrument_id(&exec.symbol.expect("Fill should have a `symbol`"));
@@ -415,6 +459,12 @@ pub fn parse_fill_report(exec: Execution, price_precision: u8) -> anyhow::Result
     ))
 }
 
+/// Parse a BitMEX position into a Nautilus `PositionStatusReport`.
+///
+/// # Errors
+///
+/// Currently this function does not return errors as all fields are handled gracefully,
+/// but returns `Result` for future error handling compatibility.
 pub fn parse_position_report(position: Position) -> anyhow::Result<PositionStatusReport> {
     let account_id = AccountId::new(position.account.to_string());
     let instrument_id = parse_instrument_id(&position.symbol);

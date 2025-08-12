@@ -74,6 +74,10 @@ pub struct BitmexWebSocketClient {
 
 impl BitmexWebSocketClient {
     /// Creates a new [`BitmexWebSocketClient`] instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if only one of `api_key` or `api_secret` is provided (both or neither required).
     pub fn new(
         url: Option<&str>,
         api_key: Option<&str>,
@@ -100,6 +104,11 @@ impl BitmexWebSocketClient {
         })
     }
 
+    /// Connect to the WebSocket for market data streaming.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the WebSocket connection fails or authentication fails (if credentials provided).
     pub async fn connect_data(&mut self) -> Result<(), BitmexWsError> {
         let reader = self.connect().await?;
 
@@ -119,6 +128,11 @@ impl BitmexWebSocketClient {
         Ok(())
     }
 
+    /// Connect to the WebSocket for execution data streaming.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the WebSocket connection fails, authentication fails, or subscription fails.
     pub async fn connect_exec(&mut self) -> Result<(), BitmexWsError> {
         let reader = self.connect().await?;
 
@@ -148,6 +162,11 @@ impl BitmexWebSocketClient {
         Ok(())
     }
 
+    /// Connect to the WebSocket and return a message reader.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the WebSocket connection fails or if authentication fails (when credentials are provided).
     async fn connect(&mut self) -> Result<MessageReader, BitmexWsError> {
         let config = WebSocketConfig {
             url: self.url.clone(),
@@ -184,6 +203,15 @@ impl BitmexWebSocketClient {
         Ok(reader)
     }
 
+    /// Authenticate the WebSocket connection using the provided credentials.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the WebSocket is not connected or if authentication fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics if credentials are not available when this method is called.
     async fn authenticate(&mut self) -> Result<(), BitmexWsError> {
         let credential = match &self.credential {
             Some(credential) => credential,
@@ -252,6 +280,14 @@ impl BitmexWebSocketClient {
     }
 
     /// Closes the client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the WebSocket is not connected or if closing fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the task handle cannot be unwrapped (should never happen in normal usage).
     pub async fn close(&mut self) -> Result<(), BitmexWsError> {
         if let Some(inner) = &self.inner {
             inner.disconnect().await;
@@ -277,6 +313,11 @@ impl BitmexWebSocketClient {
         Ok(())
     }
 
+    /// Subscribe to the specified topics.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the WebSocket is not connected or if sending the subscription message fails.
     async fn subscribe(&self, topics: Vec<String>) -> Result<(), BitmexWsError> {
         // Track subscriptions
         for topic in &topics {
@@ -308,6 +349,11 @@ impl BitmexWebSocketClient {
         Ok(())
     }
 
+    /// Unsubscribe from the specified topics.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the WebSocket is not connected or if sending the unsubscription message fails.
     async fn unsubscribe(&self, topics: Vec<String>) -> Result<(), BitmexWsError> {
         // Remove from tracked subscriptions
         for topic in &topics {
@@ -351,6 +397,11 @@ impl BitmexWebSocketClient {
         self.message_count.load(Ordering::Relaxed)
     }
 
+    /// Subscribe to order book updates for the specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the WebSocket is not connected or if the subscription fails.
     pub async fn subscribe_order_book(
         &self,
         instrument_id: InstrumentId,
@@ -360,6 +411,11 @@ impl BitmexWebSocketClient {
         self.subscribe(vec![format!("{topic}:{symbol}")]).await
     }
 
+    /// Subscribe to order book L2 (25 levels) updates for the specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the WebSocket is not connected or if the subscription fails.
     pub async fn subscribe_order_book_25(
         &self,
         instrument_id: InstrumentId,
@@ -369,6 +425,11 @@ impl BitmexWebSocketClient {
         self.subscribe(vec![format!("{topic}:{symbol}")]).await
     }
 
+    /// Subscribe to order book depth 10 updates for the specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the WebSocket is not connected or if the subscription fails.
     pub async fn subscribe_order_book_depth10(
         &self,
         instrument_id: InstrumentId,
@@ -378,24 +439,44 @@ impl BitmexWebSocketClient {
         self.subscribe(vec![format!("{topic}:{symbol}")]).await
     }
 
+    /// Subscribe to quote updates for the specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the WebSocket is not connected or if the subscription fails.
     pub async fn subscribe_quotes(&self, instrument_id: InstrumentId) -> Result<(), BitmexWsError> {
         let topic = WsTopic::Quote;
         let symbol = instrument_id.symbol.as_str();
         self.subscribe(vec![format!("{topic}:{symbol}")]).await
     }
 
+    /// Subscribe to trade updates for the specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the WebSocket is not connected or if the subscription fails.
     pub async fn subscribe_trades(&self, instrument_id: InstrumentId) -> Result<(), BitmexWsError> {
         let topic = WsTopic::Trade;
         let symbol = instrument_id.symbol.as_str();
         self.subscribe(vec![format!("{topic}:{symbol}")]).await
     }
 
+    /// Subscribe to bar updates for the specified bar type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the WebSocket is not connected or if the subscription fails.
     pub async fn subscribe_bars(&self, bar_type: BarType) -> Result<(), BitmexWsError> {
         let topic = topic_from_bar_spec(bar_type.spec());
         let symbol = bar_type.instrument_id().symbol.to_string();
         self.subscribe(vec![format!("{topic}:{symbol}")]).await
     }
 
+    /// Unsubscribe from order book updates for the specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the WebSocket is not connected or if the unsubscription fails.
     pub async fn unsubscribe_order_book(
         &self,
         instrument_id: InstrumentId,
@@ -405,6 +486,11 @@ impl BitmexWebSocketClient {
         self.unsubscribe(vec![format!("{topic}:{symbol}")]).await
     }
 
+    /// Unsubscribe from order book L2 (25 levels) updates for the specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the WebSocket is not connected or if the unsubscription fails.
     pub async fn unsubscribe_order_book_25(
         &self,
         instrument_id: InstrumentId,
@@ -414,6 +500,11 @@ impl BitmexWebSocketClient {
         self.unsubscribe(vec![format!("{topic}:{symbol}")]).await
     }
 
+    /// Unsubscribe from order book depth 10 updates for the specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the WebSocket is not connected or if the unsubscription fails.
     pub async fn unsubscribe_order_book_depth10(
         &self,
         instrument_id: InstrumentId,
@@ -423,6 +514,11 @@ impl BitmexWebSocketClient {
         self.unsubscribe(vec![format!("{topic}:{symbol}")]).await
     }
 
+    /// Unsubscribe from quote updates for the specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the WebSocket is not connected or if the unsubscription fails.
     pub async fn unsubscribe_quotes(
         &self,
         instrument_id: InstrumentId,
@@ -432,6 +528,11 @@ impl BitmexWebSocketClient {
         self.unsubscribe(vec![format!("{topic}:{symbol}")]).await
     }
 
+    /// Unsubscribe from trade updates for the specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the WebSocket is not connected or if the unsubscription fails.
     pub async fn unsubscribe_trades(
         &self,
         instrument_id: InstrumentId,
@@ -441,6 +542,11 @@ impl BitmexWebSocketClient {
         self.unsubscribe(vec![format!("{topic}:{symbol}")]).await
     }
 
+    /// Unsubscribe from bar updates for the specified bar type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the WebSocket is not connected or if the unsubscription fails.
     pub async fn unsubscribe_bars(&self, bar_type: BarType) -> Result<(), BitmexWsError> {
         let topic = topic_from_bar_spec(bar_type.spec());
         let symbol = bar_type.instrument_id().symbol.to_string();

@@ -211,6 +211,10 @@ impl BitmexHttpInnerClient {
     // ========================================================================
 
     /// Get all instruments.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails, the response cannot be parsed, or the API returns an error.
     pub async fn http_get_instruments(
         &self,
         active_only: bool,
@@ -224,6 +228,10 @@ impl BitmexHttpInnerClient {
     }
 
     /// Get instrument by symbol.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails, the response cannot be parsed, or the API returns an error.
     pub async fn http_get_instrument(
         &self,
         symbol: &str,
@@ -233,12 +241,24 @@ impl BitmexHttpInnerClient {
     }
 
     /// Get user wallet information.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing, the request fails, or the API returns an error.
     pub async fn http_get_wallet(&self) -> Result<Wallet, BitmexHttpError> {
         let endpoint = "/user/wallet";
         self.send_request(Method::GET, endpoint, None, true).await
     }
 
     /// Get historical trades.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing, the request fails, or the API returns an error.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the parameters cannot be serialized (should never happen with valid builder-generated params).
     pub async fn http_get_trades(
         &self,
         params: GetTradeParams,
@@ -249,6 +269,14 @@ impl BitmexHttpInnerClient {
     }
 
     /// Get user orders.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing, the request fails, or the API returns an error.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the parameters cannot be serialized (should never happen with valid builder-generated params).
     pub async fn http_get_orders(
         &self,
         params: GetOrderParams,
@@ -259,6 +287,14 @@ impl BitmexHttpInnerClient {
     }
 
     /// Place a new order.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing, the request fails, order validation fails, or the API returns an error.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the parameters cannot be serialized (should never happen with valid builder-generated params).
     pub async fn http_place_order(
         &self,
         params: PostOrderParams,
@@ -269,6 +305,14 @@ impl BitmexHttpInnerClient {
     }
 
     /// Cancel user orders.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing, the request fails, the order doesn't exist, or the API returns an error.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the parameters cannot be serialized (should never happen with valid builder-generated params).
     pub async fn http_cancel_orders(
         &self,
         params: DeleteOrderParams,
@@ -279,6 +323,14 @@ impl BitmexHttpInnerClient {
     }
 
     /// Amend an existing order.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing, the request fails, the order doesn't exist, or the API returns an error.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the parameters cannot be serialized (should never happen with valid builder-generated params).
     pub async fn http_amend_order(&self, params: PutOrderParams) -> Result<Value, BitmexHttpError> {
         let query = serde_urlencoded::to_string(&params).expect("Invalid parameters");
         let path = format!("/order?{}", query);
@@ -286,6 +338,14 @@ impl BitmexHttpInnerClient {
     }
 
     /// Get user executions.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing, the request fails, or the API returns an error.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the parameters cannot be serialized (should never happen with valid builder-generated params).
     pub async fn http_get_executions(
         &self,
         params: GetExecutionParams,
@@ -296,6 +356,14 @@ impl BitmexHttpInnerClient {
     }
 
     /// Get user positions.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing, the request fails, or the API returns an error.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the parameters cannot be serialized (should never happen with valid builder-generated params).
     pub async fn http_get_positions(
         &self,
         params: GetPositionParams,
@@ -350,6 +418,14 @@ impl BitmexHttpClient {
     }
 
     /// Get all instruments.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails, the response cannot be parsed, or the API returns an error.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the inner mutex is poisoned.
     pub async fn get_instruments(
         &self,
         active_only: bool,
@@ -359,6 +435,14 @@ impl BitmexHttpClient {
     }
 
     /// Get instrument by symbol.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails, the response cannot be parsed, or the API returns an error.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the inner mutex is poisoned.
     pub async fn get_instrument(
         &self,
         symbol: &Symbol,
@@ -368,42 +452,98 @@ impl BitmexHttpClient {
     }
 
     /// Get user wallet information.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing, the request fails, or the API returns an error.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the inner mutex is poisoned.
     pub async fn get_wallet(&self) -> Result<Wallet, BitmexHttpError> {
         let inner = self.inner.lock().unwrap().clone();
         inner.http_get_wallet().await
     }
 
     /// Get historical trades.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing, the request fails, or the API returns an error.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the inner mutex is poisoned.
     pub async fn get_trades(&self, params: GetTradeParams) -> Result<Vec<Trade>, BitmexHttpError> {
         let inner = self.inner.lock().unwrap().clone();
         inner.http_get_trades(params).await
     }
 
     /// Get user orders.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing, the request fails, or the API returns an error.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the inner mutex is poisoned.
     pub async fn get_orders(&self, params: GetOrderParams) -> Result<Vec<Order>, BitmexHttpError> {
         let inner = self.inner.lock().unwrap().clone();
         inner.http_get_orders(params).await
     }
 
     /// Place a new order.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing, the request fails, order validation fails, or the API returns an error.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the inner mutex is poisoned.
     pub async fn place_order(&self, params: PostOrderParams) -> Result<Value, BitmexHttpError> {
         let inner = self.inner.lock().unwrap().clone();
         inner.http_place_order(params).await
     }
 
     /// Cancel user orders.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing, the request fails, the order doesn't exist, or the API returns an error.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the inner mutex is poisoned.
     pub async fn cancel_orders(&self, params: DeleteOrderParams) -> Result<Value, BitmexHttpError> {
         let inner = self.inner.lock().unwrap().clone();
         inner.http_cancel_orders(params).await
     }
 
     /// Amend an existing order.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing, the request fails, the order doesn't exist, or the API returns an error.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the inner mutex is poisoned.
     pub async fn amend_order(&self, params: PutOrderParams) -> Result<Value, BitmexHttpError> {
         let inner = self.inner.lock().unwrap().clone();
         inner.http_amend_order(params).await
     }
 
     /// Get user executions.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing, the request fails, or the API returns an error.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the inner mutex is poisoned.
     pub async fn get_executions(
         &self,
         params: GetExecutionParams,
@@ -413,6 +553,14 @@ impl BitmexHttpClient {
     }
 
     /// Get user positions.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing, the request fails, or the API returns an error.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the inner mutex is poisoned.
     pub async fn get_positions(
         &self,
         params: GetPositionParams,
