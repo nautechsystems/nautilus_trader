@@ -27,14 +27,6 @@ use crate::{
     timer::TimeEventHandlerV2,
 };
 
-// Represents different event types for the runner.
-#[allow(clippy::large_enum_variant)]
-#[derive(Debug)]
-pub enum RunnerEvent {
-    Time(TimeEventHandlerV2),
-    Data(DataEvent),
-}
-
 /// Trait for data command sending that can be implemented for both sync and async runners.
 pub trait DataCommandSender {
     /// Executes a data command.
