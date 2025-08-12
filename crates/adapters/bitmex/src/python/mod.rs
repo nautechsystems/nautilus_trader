@@ -21,25 +21,18 @@ pub mod websocket;
 
 use pyo3::prelude::*;
 
-/// Loaded as nautilus_pyo3.bitmex
+/// Loaded as `nautilus_pyo3.bitmex`.
 ///
 /// # Errors
 ///
 /// Returns an error if the module registration fails or if adding functions/classes fails.
 #[pymodule]
 pub fn bitmex(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
-    // Enums
-    m.add_class::<crate::enums::BitmexSymbolStatus>()?;
-
-    // HTTP client
-    m.add_class::<crate::http::client::BitmexHttpClient>()?;
-
-    // WebSocket client
-    m.add_class::<crate::websocket::BitmexWebSocketClient>()?;
-
-    // Add constants
     m.add("BITMEX_HTTP_URL", crate::consts::BITMEX_HTTP_URL)?;
     m.add("BITMEX_WS_URL", crate::consts::BITMEX_WS_URL)?;
+    m.add_class::<crate::enums::BitmexSymbolStatus>()?;
+    m.add_class::<crate::http::client::BitmexHttpClient>()?;
+    m.add_class::<crate::websocket::BitmexWebSocketClient>()?;
 
     Ok(())
 }
