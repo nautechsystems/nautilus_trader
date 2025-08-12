@@ -34,7 +34,6 @@ use nautilus_infrastructure::sql::pg::PostgresConnectOptions;
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
     defi::{Block, Blockchain, DexType, Pool, PoolLiquidityUpdate, PoolSwap, chain::chains},
-    enums::OrderSide,
     identifiers::{ClientId, InstrumentId, TraderId},
 };
 // Requires capnp installed on the machine
@@ -260,11 +259,7 @@ impl DataActor for BlockchainSubscriberActor {
     }
 
     fn on_pool_swap(&mut self, swap: &PoolSwap) -> anyhow::Result<()> {
-        if swap.side == OrderSide::Sell {
-            log_info!("️➡️  {swap}", color = LogColor::Red);
-        } else {
-            log_info!("➡️ {swap}", color = LogColor::Green);
-        }
+        log_info!("Received {swap}", color = LogColor::Cyan);
 
         self.received_pool_swaps.push(swap.clone());
         Ok(())
@@ -307,70 +302,5 @@ impl BlockchainSubscriberActor {
     #[must_use]
     pub const fn pool_liquidity_update_count(&self) -> usize {
         self.received_pool_liquidity_updates.len()
-    }
-}
-
-#[cfg(feature = "python")]
-#[pyo3::pymethods]
-impl BlockchainSubscriberActor {
-    /// Creates a new `BlockchainSubscriberActor` instance.
-    #[new]
-    fn py_new(config: BlockchainSubscriberActorConfig) -> Self {
-        Self::new(config)
-    }
-
-    /// Returns the number of blocks received by this actor.
-    const fn py_block_count(&self) -> usize {
-        self.block_count()
-    }
-
-    /// Returns the number of pools received by this actor.
-    const fn py_pool_count(&self) -> usize {
-        self.pool_count()
-    }
-
-    /// Returns the number of swaps received by this actor.
-    const fn py_pool_swap_count(&self) -> usize {
-        self.pool_swap_count()
-    }
-
-    /// Returns the number of liquidity updates received by this actor.
-    const fn py_pool_liquidity_update_count(&self) -> usize {
-        self.pool_liquidity_update_count()
-    }
-
-    /// Returns the received blocks.
-    #[getter]
-    fn received_blocks(&self) -> Vec<Block> {
-        self.received_blocks.clone()
-    }
-
-    /// Returns the received pool swaps.
-    #[getter]
-    fn received_pool_swaps(&self) -> Vec<PoolSwap> {
-        self.received_pool_swaps.clone()
-    }
-
-    /// Returns the received pool liquidity updates.
-    #[getter]
-    fn received_pool_liquidity_updates(&self) -> Vec<PoolLiquidityUpdate> {
-        self.received_pool_liquidity_updates.clone()
-    }
-
-    /// Returns the received pools.
-    #[getter]
-    fn received_pools(&self) -> Vec<Pool> {
-        self.received_pools.clone()
-    }
-
-    /// Returns a string representation of the actor.
-    fn __repr__(&self) -> String {
-        format!(
-            "BlockchainSubscriberActor(blocks={}, swaps={}, liquidity_updates={}, pools={})",
-            self.block_count(),
-            self.pool_swap_count(),
-            self.pool_liquidity_update_count(),
-            self.pool_count()
-        )
     }
 }
