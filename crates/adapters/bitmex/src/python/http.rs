@@ -46,13 +46,13 @@ impl BitmexHttpClient {
         api_secret: Option<&str>,
         base_url: Option<&str>,
     ) -> PyResult<Self> {
-        match (api_key, api_secret) {
-            (Some(api_key), Some(api_secret)) => Ok(BitmexHttpClient::with_credentials(
-                api_key, api_secret, base_url,
-            )),
-            (None, None) => Ok(BitmexHttpClient::new(base_url)),
-            _ => Err(to_pyvalue_err("Invalid credentials")),
-        }
+        Ok(BitmexHttpClient::new(
+            base_url.map(String::from),
+            api_key.map(String::from),
+            api_secret.map(String::from),
+            None,     // api_passphrase not used by BitMEX
+            Some(60), // Default timeout
+        ))
     }
 
     #[pyo3(name = "get_instruments")]

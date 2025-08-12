@@ -13,7 +13,31 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! The [BitMEX](https://bitmex.com) integration adapter.
+//! NautilusTrader adapter for the [BitMEX](https://bitmex.com) cryptocurrency derivatives exchange.
+//!
+//! The `bitmex` crate provides strongly-typed client bindings (HTTP & WebSocket), data
+//! models and helper utilities that wrap the official **BitMEX API**.
+//!
+//! The official BitMEX API reference can be found at <https://www.bitmex.com/app/apiOverview>.
+//! All public links inside this crate reference the official documentation.
+//!
+//! # Platform
+//!
+//! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
+//! algorithmic trading platform, providing quantitative traders with the ability to backtest
+//! portfolios of automated trading strategies on historical data with an event-driven engine,
+//! and also deploy those same strategies live, with no code changes.
+//!
+//! NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
+//! highest level, with the aim of supporting mission-critical, trading system backtesting and live deployment workloads.
+
+#![warn(rustc::all)]
+#![deny(unsafe_code)]
+#![deny(nonstandard_style)]
+#![deny(missing_debug_implementations)]
+// #![deny(clippy::missing_errors_doc)]
+// #![deny(clippy::missing_panics_doc)]  // TODO: Add panic documentation
+#![deny(rustdoc::broken_intra_doc_links)]
 
 pub mod common;
 pub mod config;

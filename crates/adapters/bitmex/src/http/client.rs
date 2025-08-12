@@ -13,14 +13,32 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
+//! Provides the HTTP client integration for the [BitMEX](https://bitmex.com) REST API.
+//!
+//! This module defines and implements a [`BitmexHttpClient`] for
+//! sending requests to various BitMEX endpoints. It handles request signing
+//! (when credentials are provided), constructs valid HTTP requests
+//! using the [`HttpClient`], and parses the responses back into structured data or a [`BitmexHttpError`].
+//!
+//! # Quick links to official docs
+//! | Domain                               | BitMEX reference                                                          |
+//! |--------------------------------------|---------------------------------------------------------------------------|
+//! | Market data                          | <https://www.bitmex.com/api/explorer/#/default>                          |
+//! | Account & positions                  | <https://www.bitmex.com/api/explorer/#/default>                          |
+//! | Order management                     | <https://www.bitmex.com/api/explorer/#/default>                          |
+
+use std::{
+    collections::HashMap,
+    num::NonZeroU32,
+    sync::{Arc, LazyLock, Mutex},
+};
 
 use chrono::Utc;
 use nautilus_core::consts::NAUTILUS_USER_AGENT;
 use nautilus_model::identifiers::Symbol;
-use nautilus_network::http::HttpClient;
+use nautilus_network::{http::HttpClient, ratelimiter::quota::Quota};
 use reqwest::{Method, StatusCode};
-use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
 
 use super::{
@@ -33,38 +51,82 @@ use super::{
 };
 use crate::{consts::BITMEX_HTTP_URL, credential::Credential};
 
-/// Provides a HTTP client for connecting to the [BitMEX](https://bitmex.com) Rest API.
-#[derive(Clone)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
-)]
-pub struct BitmexHttpClient {
+/// Default BitMEX REST API rate limit.
+///
+/// BitMEX rate limits are complex and vary by endpoint:
+/// - Public endpoints: 150 requests per 5 minutes
+/// - Private endpoints: 300 requests per 5 minutes
+/// - Order placement: 200 requests per minute
+///
+/// We use a conservative 10 requests per second as a general limit.
+pub static BITMEX_REST_QUOTA: LazyLock<Quota> =
+    LazyLock::new(|| Quota::per_second(NonZeroU32::new(10).unwrap()));
+
+/// Represents a BitMEX HTTP response.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BitmexResponse<T> {
+    /// The typed data returned by the BitMEX endpoint.
+    pub data: Vec<T>,
+}
+
+/// Provides a lower-level HTTP client for connecting to the [BitMEX](https://bitmex.com) REST API.
+///
+/// This client wraps the underlying [`HttpClient`] to handle functionality
+/// specific to BitMEX, such as request signing (for authenticated endpoints),
+/// forming request URLs, and deserializing responses into specific data models.
+#[derive(Debug, Clone)]
+pub struct BitmexHttpInnerClient {
     base_url: String,
     client: HttpClient,
     credential: Option<Credential>,
 }
 
-impl Default for BitmexHttpClient {
+impl Default for BitmexHttpInnerClient {
     fn default() -> Self {
-        Self::new(None)
+        Self::new(None, Some(60))
     }
 }
 
-impl BitmexHttpClient {
-    pub fn new(base_url: Option<&str>) -> Self {
+impl BitmexHttpInnerClient {
+    /// Creates a new [`BitmexHttpInnerClient`] using the default BitMEX HTTP URL,
+    /// optionally overridden with a custom base URL.
+    ///
+    /// This version of the client has **no credentials**, so it can only
+    /// call publicly accessible endpoints.
+    #[must_use]
+    pub fn new(base_url: Option<String>, timeout_secs: Option<u64>) -> Self {
         Self {
-            base_url: base_url.unwrap_or(BITMEX_HTTP_URL).to_string(),
-            client: HttpClient::new(Self::default_headers(), vec![], vec![], None, None), // TODO: Rate limits TBD
+            base_url: base_url.unwrap_or(BITMEX_HTTP_URL.to_string()),
+            client: HttpClient::new(
+                Self::default_headers(),
+                vec![],
+                vec![],
+                Some(*BITMEX_REST_QUOTA),
+                timeout_secs,
+            ),
             credential: None,
         }
     }
 
-    pub fn with_credentials(api_key: &str, api_secret: &str, base_url: Option<&str>) -> Self {
+    /// Creates a new [`BitmexHttpInnerClient`] configured with credentials
+    /// for authenticated requests, optionally using a custom base URL.
+    #[must_use]
+    pub fn with_credentials(
+        api_key: String,
+        api_secret: String,
+        base_url: String,
+        timeout_secs: Option<u64>,
+    ) -> Self {
         Self {
-            base_url: base_url.unwrap_or(BITMEX_HTTP_URL).to_string(),
-            client: HttpClient::new(Self::default_headers(), vec![], vec![], None, None), // TODO: Rate limits TBD
-            credential: Some(Credential::new(api_key.to_string(), api_secret.to_string())),
+            base_url,
+            client: HttpClient::new(
+                Self::default_headers(),
+                vec![],
+                vec![],
+                Some(*BITMEX_REST_QUOTA),
+                timeout_secs,
+            ),
+            credential: Some(Credential::new(api_key, api_secret)),
         }
     }
 
@@ -129,8 +191,6 @@ impl BitmexHttpClient {
             .request(method, url, headers, None, None, None)
             .await?;
 
-        tracing::trace!("{resp:?}"); // TODO: Remove after development
-
         if resp.status.is_success() {
             serde_json::from_slice(&resp.body).map_err(Into::into)
         } else {
@@ -146,8 +206,12 @@ impl BitmexHttpClient {
         }
     }
 
+    // ========================================================================
+    // Raw HTTP API methods
+    // ========================================================================
+
     /// Get all instruments.
-    pub async fn get_instruments(
+    pub async fn http_get_instruments(
         &self,
         active_only: bool,
     ) -> Result<Vec<Instrument>, BitmexHttpError> {
@@ -160,57 +224,69 @@ impl BitmexHttpClient {
     }
 
     /// Get instrument by symbol.
-    pub async fn get_instrument(
+    pub async fn http_get_instrument(
         &self,
-        symbol: &Symbol,
+        symbol: &str,
     ) -> Result<Vec<Instrument>, BitmexHttpError> {
         let endpoint = &format!("/instrument?symbol={}", symbol);
         self.send_request(Method::GET, endpoint, None, false).await
     }
 
     /// Get user wallet information.
-    pub async fn get_wallet(&self) -> Result<Wallet, BitmexHttpError> {
+    pub async fn http_get_wallet(&self) -> Result<Wallet, BitmexHttpError> {
         let endpoint = "/user/wallet";
         self.send_request(Method::GET, endpoint, None, true).await
     }
 
     /// Get historical trades.
-    pub async fn get_trades(&self, params: GetTradeParams) -> Result<Vec<Trade>, BitmexHttpError> {
+    pub async fn http_get_trades(
+        &self,
+        params: GetTradeParams,
+    ) -> Result<Vec<Trade>, BitmexHttpError> {
         let query = serde_urlencoded::to_string(&params).expect("Invalid parameters");
         let path = format!("/trade?{}", query);
         self.send_request(Method::GET, &path, None, true).await
     }
 
     /// Get user orders.
-    pub async fn get_orders(&self, params: GetOrderParams) -> Result<Vec<Order>, BitmexHttpError> {
+    pub async fn http_get_orders(
+        &self,
+        params: GetOrderParams,
+    ) -> Result<Vec<Order>, BitmexHttpError> {
         let query = serde_urlencoded::to_string(&params).expect("Invalid parameters");
         let path = format!("/order?{}", query);
         self.send_request(Method::GET, &path, None, true).await
     }
 
-    /// Get user orders.
-    pub async fn place_order(&self, params: PostOrderParams) -> Result<Value, BitmexHttpError> {
+    /// Place a new order.
+    pub async fn http_place_order(
+        &self,
+        params: PostOrderParams,
+    ) -> Result<Value, BitmexHttpError> {
         let query = serde_urlencoded::to_string(&params).expect("Invalid parameters");
         let path = format!("/order?{}", query);
         self.send_request(Method::POST, &path, None, true).await
     }
 
     /// Cancel user orders.
-    pub async fn cancel_orders(&self, params: DeleteOrderParams) -> Result<Value, BitmexHttpError> {
+    pub async fn http_cancel_orders(
+        &self,
+        params: DeleteOrderParams,
+    ) -> Result<Value, BitmexHttpError> {
         let query = serde_urlencoded::to_string(&params).expect("Invalid parameters");
         let path = format!("/order?{}", query);
         self.send_request(Method::DELETE, &path, None, true).await
     }
 
-    /// Cancel user orders.
-    pub async fn amend_order(&self, params: PutOrderParams) -> Result<Value, BitmexHttpError> {
+    /// Amend an existing order.
+    pub async fn http_amend_order(&self, params: PutOrderParams) -> Result<Value, BitmexHttpError> {
         let query = serde_urlencoded::to_string(&params).expect("Invalid parameters");
         let path = format!("/order?{}", query);
         self.send_request(Method::PUT, &path, None, true).await
     }
 
     /// Get user executions.
-    pub async fn get_executions(
+    pub async fn http_get_executions(
         &self,
         params: GetExecutionParams,
     ) -> Result<Vec<Execution>, BitmexHttpError> {
@@ -220,12 +296,128 @@ impl BitmexHttpClient {
     }
 
     /// Get user positions.
-    pub async fn get_positions(
+    pub async fn http_get_positions(
         &self,
         params: GetPositionParams,
     ) -> Result<Vec<Position>, BitmexHttpError> {
         let query = serde_urlencoded::to_string(&params).expect("Invalid parameters");
         let path = format!("/position?{}", query);
         self.send_request(Method::GET, &path, None, true).await
+    }
+}
+
+/// Provides a HTTP client for connecting to the [BitMEX](https://bitmex.com) REST API.
+///
+/// This is the high-level client that wraps the inner client and provides
+/// Nautilus-specific functionality for trading operations.
+#[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
+)]
+pub struct BitmexHttpClient {
+    inner: Arc<Mutex<BitmexHttpInnerClient>>,
+}
+
+impl Default for BitmexHttpClient {
+    fn default() -> Self {
+        Self::new(None, None, None, None, Some(60))
+    }
+}
+
+impl BitmexHttpClient {
+    /// Creates a new [`BitmexHttpClient`] instance.
+    pub fn new(
+        base_url: Option<String>,
+        api_key: Option<String>,
+        api_secret: Option<String>,
+        _api_passphrase: Option<String>, // Unused for BitMEX, kept for compatibility
+        timeout_secs: Option<u64>,
+    ) -> Self {
+        let inner = match (api_key, api_secret) {
+            (Some(key), Some(secret)) => BitmexHttpInnerClient::with_credentials(
+                key,
+                secret,
+                base_url.unwrap_or(BITMEX_HTTP_URL.to_string()),
+                timeout_secs,
+            ),
+            _ => BitmexHttpInnerClient::new(base_url, timeout_secs),
+        };
+
+        Self {
+            inner: Arc::new(Mutex::new(inner)),
+        }
+    }
+
+    /// Get all instruments.
+    pub async fn get_instruments(
+        &self,
+        active_only: bool,
+    ) -> Result<Vec<Instrument>, BitmexHttpError> {
+        let inner = self.inner.lock().unwrap().clone();
+        inner.http_get_instruments(active_only).await
+    }
+
+    /// Get instrument by symbol.
+    pub async fn get_instrument(
+        &self,
+        symbol: &Symbol,
+    ) -> Result<Vec<Instrument>, BitmexHttpError> {
+        let inner = self.inner.lock().unwrap().clone();
+        inner.http_get_instrument(symbol.as_ref()).await
+    }
+
+    /// Get user wallet information.
+    pub async fn get_wallet(&self) -> Result<Wallet, BitmexHttpError> {
+        let inner = self.inner.lock().unwrap().clone();
+        inner.http_get_wallet().await
+    }
+
+    /// Get historical trades.
+    pub async fn get_trades(&self, params: GetTradeParams) -> Result<Vec<Trade>, BitmexHttpError> {
+        let inner = self.inner.lock().unwrap().clone();
+        inner.http_get_trades(params).await
+    }
+
+    /// Get user orders.
+    pub async fn get_orders(&self, params: GetOrderParams) -> Result<Vec<Order>, BitmexHttpError> {
+        let inner = self.inner.lock().unwrap().clone();
+        inner.http_get_orders(params).await
+    }
+
+    /// Place a new order.
+    pub async fn place_order(&self, params: PostOrderParams) -> Result<Value, BitmexHttpError> {
+        let inner = self.inner.lock().unwrap().clone();
+        inner.http_place_order(params).await
+    }
+
+    /// Cancel user orders.
+    pub async fn cancel_orders(&self, params: DeleteOrderParams) -> Result<Value, BitmexHttpError> {
+        let inner = self.inner.lock().unwrap().clone();
+        inner.http_cancel_orders(params).await
+    }
+
+    /// Amend an existing order.
+    pub async fn amend_order(&self, params: PutOrderParams) -> Result<Value, BitmexHttpError> {
+        let inner = self.inner.lock().unwrap().clone();
+        inner.http_amend_order(params).await
+    }
+
+    /// Get user executions.
+    pub async fn get_executions(
+        &self,
+        params: GetExecutionParams,
+    ) -> Result<Vec<Execution>, BitmexHttpError> {
+        let inner = self.inner.lock().unwrap().clone();
+        inner.http_get_executions(params).await
+    }
+
+    /// Get user positions.
+    pub async fn get_positions(
+        &self,
+        params: GetPositionParams,
+    ) -> Result<Vec<Position>, BitmexHttpError> {
+        let inner = self.inner.lock().unwrap().clone();
+        inner.http_get_positions(params).await
     }
 }

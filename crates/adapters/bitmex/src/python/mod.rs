@@ -24,8 +24,18 @@ use pyo3::prelude::*;
 /// Loaded as nautilus_pyo3.bitmex
 #[pymodule]
 pub fn bitmex(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    // Enums
     m.add_class::<crate::enums::BitmexSymbolStatus>()?;
+
+    // HTTP client
     m.add_class::<crate::http::client::BitmexHttpClient>()?;
+
+    // WebSocket client
     m.add_class::<crate::websocket::BitmexWebSocketClient>()?;
+
+    // Add constants
+    m.add("BITMEX_HTTP_URL", crate::consts::BITMEX_HTTP_URL)?;
+    m.add("BITMEX_WS_URL", crate::consts::BITMEX_WS_URL)?;
+
     Ok(())
 }
