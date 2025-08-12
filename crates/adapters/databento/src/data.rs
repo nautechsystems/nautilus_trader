@@ -243,7 +243,7 @@ impl DatabentoDataClient {
                     }
                 }
                 () = cancellation_token.cancelled() => {
-                    tracing::info!("Feed handler cancelled");
+                    tracing::debug!("Feed handler cancelled");
                 }
             }
         });
@@ -295,7 +295,7 @@ impl DatabentoDataClient {
                         }
                     }
                     () = cancellation_token.cancelled() => {
-                        tracing::info!("Message processing cancelled");
+                        tracing::debug!("Message processing cancelled");
                         break;
                     }
                 }
@@ -323,12 +323,12 @@ impl DataClient for DatabentoDataClient {
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
-        tracing::debug!("Starting Databento data client");
+        tracing::debug!("Starting");
         Ok(())
     }
 
     fn stop(&mut self) -> anyhow::Result<()> {
-        tracing::debug!("Stopping Databento data client");
+        tracing::debug!("Stopping");
 
         // Signal cancellation to all running tasks
         self.cancellation_token.cancel();
@@ -346,29 +346,29 @@ impl DataClient for DatabentoDataClient {
     }
 
     fn reset(&mut self) -> anyhow::Result<()> {
-        tracing::debug!("Resetting Databento data client");
+        tracing::debug!("Resetting");
         self.is_connected.store(false, Ordering::Relaxed);
         Ok(())
     }
 
     fn dispose(&mut self) -> anyhow::Result<()> {
-        tracing::debug!("Disposing Databento data client");
+        tracing::debug!("Disposing");
         self.stop()
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
-        tracing::debug!("Connecting Databento data client");
+        tracing::debug!("Connecting...");
 
         // Connection will happen lazily when subscriptions are made
         // No need to create feed handlers upfront since we don't know which datasets will be needed
         self.is_connected.store(true, Ordering::Relaxed);
 
-        tracing::info!("Databento data client connected");
+        tracing::info!("Connected");
         Ok(())
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
-        tracing::debug!("Disconnecting Databento data client");
+        tracing::debug!("Disconnecting...");
 
         // Signal cancellation to all running tasks
         self.cancellation_token.cancel();
@@ -404,7 +404,7 @@ impl DataClient for DatabentoDataClient {
             channels.clear();
         }
 
-        tracing::info!("Databento data client disconnected");
+        tracing::info!("Disconnected");
         Ok(())
     }
 

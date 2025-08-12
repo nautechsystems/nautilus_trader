@@ -21,7 +21,8 @@ use std::{
 
 use nautilus_common::{
     actor::{DataActor, DataActorCore, data_actor::DataActorConfig},
-    enums::Environment,
+    enums::{Environment, LogColor},
+    log_info,
     timer::TimeEvent,
 };
 use nautilus_core::env::get_env_var;
@@ -70,7 +71,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create and register a Databento subscriber actor
     let client_id = ClientId::new("DATABENTO");
     let instrument_ids = vec![
-        InstrumentId::from("ESM5.XCME"),
+        InstrumentId::from("ESZ5.XCME"),
         // Add more instruments as needed
     ];
 
@@ -146,12 +147,8 @@ impl DataActor for DatabentoSubscriberActor {
         let instrument_ids = self.config.instrument_ids.clone();
         let client_id = self.config.client_id;
 
-        // Subscribe to quotes and trades for each instrument
         for instrument_id in instrument_ids {
-            log::info!("Subscribing to quotes for {instrument_id}");
             self.subscribe_quotes(instrument_id, Some(client_id), None);
-
-            log::info!("Subscribing to trades for {instrument_id}");
             self.subscribe_trades(instrument_id, Some(client_id), None);
         }
 
@@ -182,12 +179,8 @@ impl DataActor for DatabentoSubscriberActor {
         let instrument_ids = self.config.instrument_ids.clone();
         let client_id = self.config.client_id;
 
-        // Unsubscribe to quotes and trades for each instrument
         for instrument_id in instrument_ids {
-            log::info!("Unsubscribing from quotes for {instrument_id}");
             self.unsubscribe_quotes(instrument_id, Some(client_id), None);
-
-            log::info!("Unsubscribing from trades for {instrument_id}");
             self.unsubscribe_trades(instrument_id, Some(client_id), None);
         }
 
@@ -195,18 +188,18 @@ impl DataActor for DatabentoSubscriberActor {
     }
 
     fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
-        log::info!("Received time event: {event:?}");
+        log_info!("Received {event:?}", color = LogColor::Blue);
         Ok(())
     }
 
     fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
-        log::info!("Received quote: {quote:?}");
+        log_info!("Received {quote:?}", color = LogColor::Cyan);
         self.received_quotes.push(*quote);
         Ok(())
     }
 
     fn on_trade(&mut self, trade: &TradeTick) -> anyhow::Result<()> {
-        log::info!("Received trade: {trade:?}");
+        log_info!("Received {trade:?}", color = LogColor::Cyan);
         self.received_trades.push(*trade);
         Ok(())
     }
