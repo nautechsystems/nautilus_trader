@@ -170,13 +170,263 @@ impl AsyncRunner {
                         }
                         #[cfg(feature = "defi")]
                         DataEvent::DeFi(data) => msgbus::send_any(data_engine_process, &data),
-                        #[allow(unreachable_patterns)]
-                        _ => {
-                            log::warn!("Unhandled RunnerEvent variant");
-                        }
                     },
                 }
             }
         }
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+
+#[cfg(test)]
+mod tests {
+    use std::{rc::Rc, time::Duration};
+
+    use nautilus_common::{
+        messages::data::{SubscribeCommand, SubscribeCustomData},
+        timer::{TimeEvent, TimeEventCallback, TimeEventHandlerV2},
+    };
+    use nautilus_core::{UUID4, UnixNanos};
+    use nautilus_model::{
+        data::{Data, quote::QuoteTick},
+        identifiers::{ClientId, InstrumentId},
+        types::{Price, Quantity},
+    };
+    use rstest::rstest;
+    use tokio::sync::mpsc;
+    use ustr::Ustr;
+
+    use super::*;
+
+    // Test fixture for creating test quotes
+    fn test_quote() -> QuoteTick {
+        QuoteTick {
+            instrument_id: InstrumentId::from("EUR/USD.SIM"),
+            bid_price: Price::from("1.10000"),
+            ask_price: Price::from("1.10001"),
+            bid_size: Quantity::from(1_000_000),
+            ask_size: Quantity::from(1_000_000),
+            ts_event: UnixNanos::default(),
+            ts_init: UnixNanos::default(),
+        }
+    }
+
+    #[rstest]
+    fn test_async_data_command_sender_creation() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let sender = AsyncDataCommandSender::new(tx);
+        assert!(format!("{:?}", sender).contains("AsyncDataCommandSender"));
+    }
+
+    #[rstest]
+    fn test_async_time_event_sender_creation() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let sender = AsyncTimeEventSender::new(tx);
+        assert!(format!("{:?}", sender).contains("AsyncTimeEventSender"));
+    }
+
+    #[rstest]
+    fn test_async_time_event_sender_get_channel() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let sender = AsyncTimeEventSender::new(tx);
+        let channel = sender.get_channel_sender();
+
+        // Verify the channel is functional
+        let event = TimeEvent::new(
+            Ustr::from("test"),
+            UUID4::new(),
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+        );
+        let callback = TimeEventCallback::from(Rc::new(|_: TimeEvent| {}) as Rc<dyn Fn(TimeEvent)>);
+        let handler = TimeEventHandlerV2::new(event, callback);
+
+        assert!(channel.send(handler).is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_async_data_command_sender_execute() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let sender = AsyncDataCommandSender::new(tx);
+
+        let command = DataCommand::Subscribe(SubscribeCommand::Data(SubscribeCustomData {
+            client_id: Some(ClientId::from("TEST")),
+            venue: None,
+            data_type: nautilus_model::data::DataType::new("QuoteTick", None),
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            params: None,
+        }));
+
+        sender.execute(command.clone());
+
+        let received = rx.recv().await.unwrap();
+        match (received, command) {
+            (
+                DataCommand::Subscribe(SubscribeCommand::Data(r)),
+                DataCommand::Subscribe(SubscribeCommand::Data(c)),
+            ) => {
+                assert_eq!(r.client_id, c.client_id);
+                assert_eq!(r.data_type, c.data_type);
+            }
+            _ => panic!("Command mismatch"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_async_time_event_sender_send() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let sender = AsyncTimeEventSender::new(tx);
+
+        let event = TimeEvent::new(
+            Ustr::from("test"),
+            UUID4::new(),
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+        );
+        let callback = TimeEventCallback::from(Rc::new(|_: TimeEvent| {}) as Rc<dyn Fn(TimeEvent)>);
+        let handler = TimeEventHandlerV2::new(event, callback);
+
+        sender.send(handler);
+
+        assert!(rx.recv().await.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_runner_shutdown_signal() {
+        // Create runner with manual channels to avoid global state
+        let (_data_tx, data_rx) = mpsc::unbounded_channel::<DataEvent>();
+        let (_cmd_tx, cmd_rx) = mpsc::unbounded_channel::<DataCommand>();
+        let (_time_tx, time_rx) = mpsc::unbounded_channel::<TimeEventHandlerV2>();
+        let (signal_tx, signal_rx) = mpsc::unbounded_channel::<()>();
+
+        let mut runner = AsyncRunner {
+            data_rx,
+            cmd_rx,
+            time_rx,
+            signal_rx,
+            signal_tx: signal_tx.clone(),
+        };
+
+        // Start runner
+        let runner_handle = tokio::spawn(async move {
+            runner.run().await;
+        });
+
+        // Send shutdown signal
+        signal_tx.send(()).unwrap();
+
+        // Runner should stop quickly
+        let result = tokio::time::timeout(Duration::from_millis(100), runner_handle).await;
+        assert!(result.is_ok(), "Runner should stop on signal");
+    }
+
+    #[tokio::test]
+    async fn test_runner_closes_on_channel_drop() {
+        let (data_tx, data_rx) = mpsc::unbounded_channel::<DataEvent>();
+        let (_cmd_tx, cmd_rx) = mpsc::unbounded_channel::<DataCommand>();
+        let (_time_tx, time_rx) = mpsc::unbounded_channel::<TimeEventHandlerV2>();
+        let (signal_tx, signal_rx) = mpsc::unbounded_channel::<()>();
+
+        let mut runner = AsyncRunner {
+            data_rx,
+            cmd_rx,
+            time_rx,
+            signal_rx,
+            signal_tx: signal_tx.clone(),
+        };
+
+        // Start runner
+        let runner_handle = tokio::spawn(async move {
+            runner.run().await;
+        });
+
+        // Drop data sender to close channel - this should cause runner to exit
+        drop(data_tx);
+
+        // Send stop signal to ensure clean shutdown
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        signal_tx.send(()).ok();
+
+        // Runner should stop when channels close or on signal
+        let result = tokio::time::timeout(Duration::from_millis(200), runner_handle).await;
+        assert!(
+            result.is_ok(),
+            "Runner should stop when channels close or on signal"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_event_sending() {
+        let (data_tx, data_rx) = mpsc::unbounded_channel::<DataEvent>();
+        let (_cmd_tx, cmd_rx) = mpsc::unbounded_channel::<DataCommand>();
+        let (_time_tx, time_rx) = mpsc::unbounded_channel::<TimeEventHandlerV2>();
+        let (signal_tx, signal_rx) = mpsc::unbounded_channel::<()>();
+
+        // Setup runner
+        let mut runner = AsyncRunner {
+            data_rx,
+            cmd_rx,
+            time_rx,
+            signal_rx,
+            signal_tx: signal_tx.clone(),
+        };
+
+        // Spawn multiple concurrent senders
+        let mut handles = vec![];
+        for _ in 0..5 {
+            let tx_clone = data_tx.clone();
+            let handle = tokio::spawn(async move {
+                for _ in 0..20 {
+                    let quote = test_quote();
+                    tx_clone.send(DataEvent::Data(Data::Quote(quote))).unwrap();
+                    tokio::task::yield_now().await;
+                }
+            });
+            handles.push(handle);
+        }
+
+        // Start runner in background
+        let runner_handle = tokio::spawn(async move {
+            runner.run().await;
+        });
+
+        // Wait for all senders
+        for handle in handles {
+            handle.await.unwrap();
+        }
+
+        // Give runner time to process
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        // Stop runner
+        signal_tx.send(()).unwrap();
+
+        let _ = tokio::time::timeout(Duration::from_secs(1), runner_handle).await;
+    }
+
+    #[rstest]
+    #[case(10)]
+    #[case(100)]
+    #[case(1000)]
+    fn test_channel_send_performance(#[case] count: usize) {
+        let (tx, mut rx) = mpsc::unbounded_channel::<DataEvent>();
+        let quote = test_quote();
+
+        // Send events
+        for _ in 0..count {
+            tx.send(DataEvent::Data(Data::Quote(quote))).unwrap();
+        }
+
+        // Verify all received
+        let mut received = 0;
+        while rx.try_recv().is_ok() {
+            received += 1;
+        }
+
+        assert_eq!(received, count);
     }
 }

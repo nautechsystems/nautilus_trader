@@ -305,7 +305,7 @@ cargo-test-coverage-crate-%:  #-- Run Rust tests with coverage reporting for a s
 #------------------------------------------------------------------------------
 
 # List of crates whose criterion/iai benches run in the performance workflow
-CI_BENCH_CRATES := nautilus-core nautilus-model nautilus-common
+CI_BENCH_CRATES := nautilus-core nautilus-model nautilus-common nautilus-live
 
 # NOTE:
 # - We invoke `cargo bench` *once per crate* to avoid the well-known

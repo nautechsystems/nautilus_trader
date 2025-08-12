@@ -44,7 +44,6 @@ python = [
   "nautilus-risk/python",
   "nautilus-system/python",
   "pyo3",
-  "pyo3-async-runtimes",
 ]
 defi = ["nautilus-common/defi"]
 
@@ -68,7 +67,6 @@ async-trait = { workspace = true }
 futures = { workspace = true }
 log = { workspace = true }
 pyo3 = { workspace = true, optional = true }
-pyo3-async-runtimes = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
@@ -77,3 +75,9 @@ tracing = { workspace = true }
 [dev-dependencies]
 criterion = { workspace = true }
 rstest = { workspace = true }
+ustr = { workspace = true }
+
+# Run with `cargo bench -p nautilus-live --bench runner`
+[[bench]]
+name = "runner"
+harness = false

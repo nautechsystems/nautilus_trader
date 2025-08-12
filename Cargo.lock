@@ -4818,12 +4818,12 @@ dependencies = [
  "nautilus-risk",
  "nautilus-system",
  "pyo3",
- "pyo3-async-runtimes",
  "rstest",
  "serde",
  "serde_json",
  "tokio",
  "tracing",
+ "ustr",
 ]
 
 [[package]]
