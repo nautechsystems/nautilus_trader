@@ -32,8 +32,8 @@ use nautilus_common::runtime::get_runtime;
 use nautilus_core::{consts::NAUTILUS_USER_AGENT, time::get_atomic_clock_realtime};
 use nautilus_model::{
     data::{Data, bar::BarType},
-    events::OrderEventAny,
     identifiers::InstrumentId,
+    reports::{fill::FillReport, order::OrderStatusReport, position::PositionStatusReport},
 };
 use nautilus_network::websocket::{Consumer, MessageReader, WebSocketClient, WebSocketConfig};
 use reqwest::header::USER_AGENT;
@@ -47,11 +47,29 @@ use super::{
     error::BitmexWsError,
     messages::{TableMessage, WsMessage},
     parse::{
-        parse_book_msg_vec, parse_book10_msg_vec, parse_trade_bin_msg_vec, parse_trade_msg_vec,
-        topic_from_bar_spec,
+        self, parse_book_msg_vec, parse_book10_msg_vec, parse_trade_bin_msg_vec,
+        parse_trade_msg_vec, topic_from_bar_spec,
     },
 };
 use crate::{consts::BITMEX_WS_URL, credential::Credential};
+
+/// Represents execution stream messages from BitMEX WebSocket.
+#[derive(Clone, Debug)]
+pub enum BitmexExecutionMessage {
+    OrderStatusReport(Box<OrderStatusReport>),
+    FillReport(Box<FillReport>),
+    PositionStatusReport(Box<PositionStatusReport>),
+    WalletUpdate {
+        account_id: nautilus_model::identifiers::AccountId,
+        currency: nautilus_model::types::Currency,
+        amount: i64,
+    },
+    MarginUpdate {
+        account_id: nautilus_model::identifiers::AccountId,
+        currency: nautilus_model::types::Currency,
+        available_margin: i64,
+    },
+}
 
 /// Provides a WebSocket client for connecting to the [BitMEX](https://bitmex.com) real-time API.
 #[derive(Clone, Debug)]
@@ -65,7 +83,7 @@ pub struct BitmexWebSocketClient {
     heartbeat: Option<u64>,
     inner: Option<Arc<WebSocketClient>>,
     rx_data: Option<Arc<tokio::sync::mpsc::UnboundedReceiver<Vec<Data>>>>,
-    rx_exec: Option<Arc<tokio::sync::mpsc::UnboundedReceiver<OrderEventAny>>>,
+    rx_exec: Option<Arc<tokio::sync::mpsc::UnboundedReceiver<BitmexExecutionMessage>>>,
     signal: Arc<AtomicBool>,
     task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
     subscriptions: Arc<DashMap<String, AHashSet<Ustr>>>,
@@ -136,7 +154,7 @@ impl BitmexWebSocketClient {
     pub async fn connect_exec(&mut self) -> Result<(), BitmexWsError> {
         let reader = self.connect().await?;
 
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<OrderEventAny>();
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<BitmexExecutionMessage>();
         self.rx_exec = Some(Arc::new(rx));
         let signal = self.signal.clone();
         let message_count = self.message_count.clone();
@@ -266,7 +284,7 @@ impl BitmexWebSocketClient {
     /// This function panics:
     /// - If the websocket is not connected.
     /// - If `stream_exec` has already been called somewhere else (stream receiver is then taken).
-    pub fn stream_exec(&mut self) -> impl Stream<Item = OrderEventAny> + use<> {
+    pub fn stream_exec(&mut self) -> impl Stream<Item = BitmexExecutionMessage> + use<> {
         let rx = self
             .rx_exec
             .take()
@@ -744,7 +762,7 @@ impl BitmexDataFeedHandler {
 
 struct BitmexExecFeedHandler {
     handler: BitmexFeedHandler,
-    tx: tokio::sync::mpsc::UnboundedSender<OrderEventAny>,
+    tx: tokio::sync::mpsc::UnboundedSender<BitmexExecutionMessage>,
 }
 
 impl BitmexExecFeedHandler {
@@ -753,7 +771,7 @@ impl BitmexExecFeedHandler {
         reader: MessageReader,
         signal: Arc<AtomicBool>,
         message_count: Arc<AtomicU64>,
-        tx: tokio::sync::mpsc::UnboundedSender<OrderEventAny>,
+        tx: tokio::sync::mpsc::UnboundedSender<BitmexExecutionMessage>,
     ) -> Self {
         let handler = BitmexFeedHandler::new(reader, signal, message_count);
         Self { handler, tx }
@@ -768,12 +786,79 @@ impl BitmexExecFeedHandler {
         }
     }
 
-    async fn next(&mut self) -> Option<OrderEventAny> {
+    async fn next(&mut self) -> Option<BitmexExecutionMessage> {
         while let Some(msg) = self.handler.next().await {
-            tracing::debug!("{msg:?}");
-            // if let WsMessage::Error(msg) = msg {
-            //     let ts_init = UnixNanos::now();
-            // }
+            if let WsMessage::Table(table_msg) = msg {
+                // Get price precision - defaulting to 1 for now
+                // TODO: Get actual price precision from instrument
+                let price_precision = 1;
+
+                return match table_msg {
+                    TableMessage::Order { data, .. } => {
+                        // Process order updates
+                        if let Some(order_msg) = data.into_iter().next() {
+                            let report = parse::parse_order_msg(order_msg, price_precision);
+                            Some(BitmexExecutionMessage::OrderStatusReport(Box::new(report)))
+                        } else {
+                            continue;
+                        }
+                    }
+                    TableMessage::Execution { data, .. } => {
+                        // Process execution/fill updates
+                        for exec_msg in data {
+                            if let Some(fill) =
+                                parse::parse_execution_msg(exec_msg, price_precision)
+                            {
+                                return Some(BitmexExecutionMessage::FillReport(Box::new(fill)));
+                            }
+                        }
+                        continue;
+                    }
+                    TableMessage::Position { data, .. } => {
+                        // Process position updates
+                        if let Some(pos_msg) = data.into_iter().next() {
+                            let report = parse::parse_position_msg(pos_msg);
+                            Some(BitmexExecutionMessage::PositionStatusReport(Box::new(
+                                report,
+                            )))
+                        } else {
+                            continue;
+                        }
+                    }
+                    TableMessage::Wallet { data, .. } => {
+                        // Process wallet updates - we could emit a custom event here
+                        if let Some(wallet_msg) = data.into_iter().next() {
+                            let (account_id, currency, amount) =
+                                parse::parse_wallet_msg(wallet_msg);
+                            Some(BitmexExecutionMessage::WalletUpdate {
+                                account_id,
+                                currency,
+                                amount,
+                            })
+                        } else {
+                            continue;
+                        }
+                    }
+                    TableMessage::Margin { data, .. } => {
+                        // Process margin updates - we could emit a custom event here
+                        if let Some(margin_msg) = data.into_iter().next() {
+                            let (account_id, currency, available_margin) =
+                                parse::parse_margin_msg(margin_msg);
+                            Some(BitmexExecutionMessage::MarginUpdate {
+                                account_id,
+                                currency,
+                                available_margin,
+                            })
+                        } else {
+                            continue;
+                        }
+                    }
+                    _ => {
+                        // Other message types not relevant for execution stream
+                        continue;
+                    }
+                };
+            }
         }
         None // Connection closed
     }

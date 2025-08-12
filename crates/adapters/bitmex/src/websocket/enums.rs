@@ -45,6 +45,15 @@ impl Side {
     }
 }
 
+impl From<Side> for crate::enums::Side {
+    fn from(side: Side) -> Self {
+        match side {
+            Side::Buy => crate::enums::Side::Buy,
+            Side::Sell => crate::enums::Side::Sell,
+        }
+    }
+}
+
 /// Direction of price tick relative to previous trade.
 #[derive(
     Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,

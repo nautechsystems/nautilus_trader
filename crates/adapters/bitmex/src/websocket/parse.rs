@@ -15,7 +15,7 @@
 
 use std::num::NonZero;
 
-use nautilus_core::UnixNanos;
+use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime, uuid::UUID4};
 use nautilus_model::{
     data::{
         Data,
@@ -27,8 +27,11 @@ use nautilus_model::{
         trade::TradeTick,
     },
     enums::{AggregationSource, BarAggregation, OrderSide, PriceType, RecordFlag},
-    identifiers::TradeId,
+    identifiers::{AccountId, ClientOrderId, OrderListId, TradeId, VenueOrderId},
+    reports::{fill::FillReport, order::OrderStatusReport, position::PositionStatusReport},
     types::{
+        currency::Currency,
+        money::Money,
         price::Price,
         quantity::{QUANTITY_MAX, Quantity},
     },
@@ -37,9 +40,16 @@ use uuid::Uuid;
 
 use super::{
     enums::{Action, WsTopic},
-    messages::{OrderBook10Msg, OrderBookMsg, QuoteMsg, TradeBinMsg, TradeMsg},
+    messages::{
+        ExecutionMsg, MarginMsg, OrderBook10Msg, OrderBookMsg, OrderMsg, PositionMsg, QuoteMsg,
+        TradeBinMsg, TradeMsg, WalletMsg,
+    },
 };
-use crate::common::parse::parse_instrument_id;
+use crate::common::parse::{
+    parse_instrument_id, parse_liquidity_side, parse_optional_datetime_to_unix_nanos,
+    parse_order_side, parse_order_status, parse_order_type, parse_position_side,
+    parse_time_in_force,
+};
 
 const BAR_SPEC_1_MINUTE: BarSpecification = BarSpecification {
     step: NonZero::new(1).unwrap(),
@@ -354,6 +364,173 @@ pub fn parse_quantity(value: u64) -> Quantity {
     Quantity::new(size_workaround as f64, 0)
 }
 
+/// Parse a BitMEX WebSocket order message into a Nautilus `OrderStatusReport`.
+///
+/// # References
+/// <https://www.bitmex.com/app/wsAPI#Order>
+///
+/// # Panics
+///
+/// Panics if required fields are missing or invalid.
+pub fn parse_order_msg(msg: OrderMsg, price_precision: u8) -> OrderStatusReport {
+    let account_id = AccountId::new(format!("BITMEX-{}", msg.account));
+    let instrument_id = parse_instrument_id(&msg.symbol);
+    let venue_order_id = VenueOrderId::new(msg.order_id.to_string());
+    let order_side = parse_order_side(&Some(crate::enums::Side::from(msg.side)));
+    let order_type = parse_order_type(&msg.ord_type);
+    let time_in_force = parse_time_in_force(&msg.time_in_force);
+    let order_status = parse_order_status(&msg.ord_status);
+    let quantity = Quantity::from(msg.order_qty);
+    let filled_qty = Quantity::from(msg.cum_qty);
+    let report_id = UUID4::new();
+    let ts_accepted =
+        parse_optional_datetime_to_unix_nanos(&Some(msg.transact_time), "transact_time");
+    let ts_last = parse_optional_datetime_to_unix_nanos(&Some(msg.timestamp), "timestamp");
+    let ts_init = get_atomic_clock_realtime().get_time_ns();
+
+    let mut report = OrderStatusReport::new(
+        account_id,
+        instrument_id,
+        None, // client_order_id - will be set later if present
+        venue_order_id,
+        order_side,
+        order_type,
+        time_in_force,
+        order_status,
+        quantity,
+        filled_qty,
+        ts_accepted,
+        ts_last,
+        ts_init,
+        Some(report_id),
+    );
+
+    if let Some(cl_ord_id) = msg.cl_ord_id {
+        report = report.with_client_order_id(ClientOrderId::new(cl_ord_id));
+    }
+
+    if let Some(cl_ord_link_id) = msg.cl_ord_link_id {
+        report = report.with_order_list_id(OrderListId::new(cl_ord_link_id));
+    }
+
+    if let Some(price) = msg.price {
+        report = report.with_price(Price::new(price, price_precision));
+    }
+
+    if let Some(avg_px) = msg.avg_px {
+        report = report.with_avg_px(avg_px);
+    }
+
+    if let Some(trigger_price) = msg.stop_px {
+        report = report.with_trigger_price(Price::new(trigger_price, price_precision));
+    }
+
+    report
+}
+
+/// Parse a BitMEX WebSocket execution message into a Nautilus `FillReport`.
+///
+/// # References
+/// <https://www.bitmex.com/app/wsAPI#Execution>
+///
+/// # Panics
+///
+/// Panics if required fields are missing or invalid.
+pub fn parse_execution_msg(msg: ExecutionMsg, price_precision: u8) -> Option<FillReport> {
+    // Skip non-trade executions
+    if msg.exec_type != Some(crate::enums::ExecType::Trade) {
+        return None;
+    }
+
+    let account_id = AccountId::new(format!("BITMEX-{}", msg.account?));
+    let instrument_id = parse_instrument_id(&msg.symbol?);
+    let venue_order_id = VenueOrderId::new(msg.order_id?.to_string());
+    let trade_id = TradeId::new(msg.trd_match_id?.to_string());
+    let order_side = parse_order_side(&msg.side.map(crate::enums::Side::from));
+    let last_qty = Quantity::from(msg.last_qty?);
+    let last_px = Price::new(msg.last_px?, price_precision);
+    let settlement_currency = msg.settl_currency.unwrap_or("XBT".to_string());
+    let commission = Money::new(
+        msg.commission.unwrap_or(0.0),
+        Currency::from(settlement_currency),
+    );
+    let liquidity_side = parse_liquidity_side(&msg.last_liquidity_ind);
+    let client_order_id = msg.cl_ord_id.map(ClientOrderId::new);
+    let venue_position_id = None; // Not applicable on BitMEX
+    let ts_event = parse_optional_datetime_to_unix_nanos(&msg.transact_time, "transact_time");
+    let ts_init = get_atomic_clock_realtime().get_time_ns();
+
+    Some(FillReport::new(
+        account_id,
+        instrument_id,
+        venue_order_id,
+        trade_id,
+        order_side,
+        last_qty,
+        last_px,
+        commission,
+        liquidity_side,
+        client_order_id,
+        venue_position_id,
+        ts_event,
+        ts_init,
+        None,
+    ))
+}
+
+/// Parse a BitMEX WebSocket position message into a Nautilus `PositionStatusReport`.
+///
+/// # References
+/// <https://www.bitmex.com/app/wsAPI#Position>
+pub fn parse_position_msg(msg: PositionMsg) -> PositionStatusReport {
+    let account_id = AccountId::new(format!("BITMEX-{}", msg.account));
+    let instrument_id = parse_instrument_id(&msg.symbol);
+    let position_side = parse_position_side(msg.current_qty);
+    let quantity = Quantity::from(msg.current_qty.map(|qty| qty.abs()).unwrap_or(0));
+    let venue_position_id = None; // Not applicable on BitMEX
+    let ts_last = parse_optional_datetime_to_unix_nanos(&msg.timestamp, "timestamp");
+    let ts_init = get_atomic_clock_realtime().get_time_ns();
+
+    PositionStatusReport::new(
+        account_id,
+        instrument_id,
+        position_side,
+        quantity,
+        venue_position_id,
+        ts_last,
+        ts_init,
+        None,
+    )
+}
+
+/// Parse a BitMEX WebSocket wallet message.
+///
+/// # References
+/// <https://www.bitmex.com/app/wsAPI#Wallet>
+///
+/// Returns the wallet data as a tuple of (account_id, currency, amount).
+pub fn parse_wallet_msg(msg: WalletMsg) -> (AccountId, Currency, i64) {
+    let account_id = AccountId::new(format!("BITMEX-{}", msg.account));
+    let currency = Currency::from(msg.currency);
+    let amount = msg.amount.unwrap_or(0);
+
+    (account_id, currency, amount)
+}
+
+/// Parse a BitMEX WebSocket margin message.
+///
+/// # References
+/// <https://www.bitmex.com/app/wsAPI#Margin>
+///
+/// Returns the margin data as a tuple of (account_id, currency, available_margin).
+pub fn parse_margin_msg(msg: MarginMsg) -> (AccountId, Currency, i64) {
+    let account_id = AccountId::new(format!("BITMEX-{}", msg.account));
+    let currency = Currency::from(msg.currency);
+    let available_margin = msg.available_margin.unwrap_or(0);
+
+    (account_id, currency, available_margin)
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
@@ -362,7 +539,7 @@ pub fn parse_quantity(value: u64) -> Quantity {
 mod tests {
     use nautilus_model::{
         data::quote::QuoteTick,
-        enums::{AggressorSide, BookAction},
+        enums::{AggressorSide, BookAction, LiquiditySide, PositionSide},
         identifiers::InstrumentId,
     };
     use rstest::rstest;
@@ -494,5 +671,153 @@ mod tests {
         assert_eq!(bar.volume, Quantity::from(84_000));
         assert_eq!(bar.ts_event, 1732392420000000000); // 2024-11-23T20:07:00.000Z in nanos
         assert_eq!(bar.ts_init, 3);
+    }
+
+    #[rstest]
+    fn test_parse_order_msg() {
+        let json_data = load_test_json("ws_order.json");
+        let msg: OrderMsg = serde_json::from_str(&json_data).unwrap();
+        let report = parse_order_msg(msg, 1);
+
+        assert_eq!(report.account_id.to_string(), "BITMEX-1234567");
+        assert_eq!(report.instrument_id, InstrumentId::from("XBTUSD.BITMEX"));
+        assert_eq!(
+            report.venue_order_id.to_string(),
+            "550e8400-e29b-41d4-a716-446655440001"
+        );
+        assert_eq!(
+            report.client_order_id.unwrap().to_string(),
+            "mm_bitmex_1a/oemUeQ4CAJZgP3fjHsA"
+        );
+        assert_eq!(report.order_side, nautilus_model::enums::OrderSide::Buy);
+        assert_eq!(report.order_type, nautilus_model::enums::OrderType::Limit);
+        assert_eq!(
+            report.time_in_force,
+            nautilus_model::enums::TimeInForce::Gtc
+        );
+        assert_eq!(
+            report.order_status,
+            nautilus_model::enums::OrderStatus::Accepted
+        );
+        assert_eq!(report.quantity, Quantity::from(100));
+        assert_eq!(report.filled_qty, Quantity::from(0));
+        assert_eq!(report.price.unwrap(), Price::from("98000.0"));
+        assert_eq!(report.ts_accepted, 1732530600000000000); // 2024-11-25T10:30:00.000Z
+    }
+
+    #[rstest]
+    fn test_parse_execution_msg() {
+        let json_data = load_test_json("ws_execution.json");
+        let msg: ExecutionMsg = serde_json::from_str(&json_data).unwrap();
+        let fill = parse_execution_msg(msg, 1).unwrap();
+
+        assert_eq!(fill.account_id.to_string(), "BITMEX-1234567");
+        assert_eq!(fill.instrument_id, InstrumentId::from("XBTUSD.BITMEX"));
+        assert_eq!(
+            fill.venue_order_id.to_string(),
+            "550e8400-e29b-41d4-a716-446655440002"
+        );
+        assert_eq!(
+            fill.trade_id.to_string(),
+            "00000000-006d-1000-0000-000e8737d540"
+        );
+        assert_eq!(
+            fill.client_order_id.unwrap().to_string(),
+            "mm_bitmex_2b/oemUeQ4CAJZgP3fjHsB"
+        );
+        assert_eq!(fill.order_side, nautilus_model::enums::OrderSide::Sell);
+        assert_eq!(fill.last_qty, Quantity::from(100));
+        assert_eq!(fill.last_px, Price::from("98950.0"));
+        assert_eq!(fill.liquidity_side, LiquiditySide::Maker);
+        assert_eq!(fill.commission.raw, 7500000000000); // 0.00075 with proper precision
+        assert_eq!(fill.commission.currency.code.to_string(), "XBT");
+        assert_eq!(fill.ts_event, 1732530900789000000); // 2024-11-25T10:35:00.789Z
+    }
+
+    #[rstest]
+    fn test_parse_execution_msg_non_trade() {
+        // Test that non-trade executions return None
+        let mut msg: ExecutionMsg =
+            serde_json::from_str(&load_test_json("ws_execution.json")).unwrap();
+        msg.exec_type = Some(crate::enums::ExecType::Settlement);
+
+        let result = parse_execution_msg(msg, 1);
+        assert!(result.is_none());
+    }
+
+    #[rstest]
+    fn test_parse_position_msg() {
+        let json_data = load_test_json("ws_position.json");
+        let msg: PositionMsg = serde_json::from_str(&json_data).unwrap();
+        let report = parse_position_msg(msg);
+
+        assert_eq!(report.account_id.to_string(), "BITMEX-1234567");
+        assert_eq!(report.instrument_id, InstrumentId::from("XBTUSD.BITMEX"));
+        assert_eq!(report.position_side, PositionSide::Long);
+        assert_eq!(report.quantity, Quantity::from(1000));
+        assert!(report.venue_position_id.is_none());
+        assert_eq!(report.ts_last, 1732530900789000000); // 2024-11-25T10:35:00.789Z
+    }
+
+    #[rstest]
+    fn test_parse_position_msg_short() {
+        let mut msg: PositionMsg =
+            serde_json::from_str(&load_test_json("ws_position.json")).unwrap();
+        msg.current_qty = Some(-500);
+
+        let report = parse_position_msg(msg);
+        assert_eq!(report.position_side, PositionSide::Short);
+        assert_eq!(report.quantity, Quantity::from(500));
+    }
+
+    #[rstest]
+    fn test_parse_position_msg_flat() {
+        let mut msg: PositionMsg =
+            serde_json::from_str(&load_test_json("ws_position.json")).unwrap();
+        msg.current_qty = Some(0);
+
+        let report = parse_position_msg(msg);
+        assert_eq!(report.position_side, PositionSide::Flat);
+        assert_eq!(report.quantity, Quantity::from(0));
+    }
+
+    #[rstest]
+    fn test_parse_wallet_msg() {
+        let json_data = load_test_json("ws_wallet.json");
+        let msg: WalletMsg = serde_json::from_str(&json_data).unwrap();
+        let (account_id, currency, amount) = parse_wallet_msg(msg);
+
+        assert_eq!(account_id.to_string(), "BITMEX-1234567");
+        assert_eq!(currency.code.to_string(), "XBT");
+        assert_eq!(amount, 100005180);
+    }
+
+    #[rstest]
+    fn test_parse_wallet_msg_no_amount() {
+        let mut msg: WalletMsg = serde_json::from_str(&load_test_json("ws_wallet.json")).unwrap();
+        msg.amount = None;
+
+        let (_, _, amount) = parse_wallet_msg(msg);
+        assert_eq!(amount, 0);
+    }
+
+    #[rstest]
+    fn test_parse_margin_msg() {
+        let json_data = load_test_json("ws_margin.json");
+        let msg: MarginMsg = serde_json::from_str(&json_data).unwrap();
+        let (account_id, currency, available_margin) = parse_margin_msg(msg);
+
+        assert_eq!(account_id.to_string(), "BITMEX-1234567");
+        assert_eq!(currency.code.to_string(), "XBT");
+        assert_eq!(available_margin, 99994411);
+    }
+
+    #[rstest]
+    fn test_parse_margin_msg_no_available() {
+        let mut msg: MarginMsg = serde_json::from_str(&load_test_json("ws_margin.json")).unwrap();
+        msg.available_margin = None;
+
+        let (_, _, available_margin) = parse_margin_msg(msg);
+        assert_eq!(available_margin, 0);
     }
 }

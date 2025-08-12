@@ -19,7 +19,7 @@
     "pegOffsetValue": null,
     "pegPriceType": null,
     "currency": "USD",
-    "settlCurrency": "XBt",
+    "settlCurrency": "XBT",
     "execType": "Trade",
     "ordType": "Limit",
     "timeInForce": "GoodTillCancel",

@@ -22,8 +22,8 @@ use uuid::Uuid;
 
 use super::enums::{Action, Side, TickDirection};
 use crate::enums::{
-    ContingencyType, ExecInstruction, LiquidityIndicator, OrderStatus, OrderType, PegPriceType,
-    TimeInForce,
+    ContingencyType, ExecInstruction, ExecType, LiquidityIndicator, OrderStatus, OrderType,
+    PegPriceType, TimeInForce,
 };
 
 /// Represents all possible message types from the `BitMEX` WebSocket API.
@@ -353,7 +353,7 @@ pub struct ExecutionMsg {
     pub peg_price_type: Option<PegPriceType>,
     pub currency: Option<String>,
     pub settl_currency: Option<String>,
-    pub exec_type: Option<String>,
+    pub exec_type: Option<ExecType>,
     pub ord_type: Option<OrderType>,
     pub time_in_force: Option<TimeInForce>,
     pub exec_inst: Option<ExecInstruction>,
@@ -370,6 +370,7 @@ pub struct ExecutionMsg {
     pub trade_publish_indicator: Option<String>,
     pub multi_leg_reporting_type: Option<String>,
     pub text: Option<String>,
+    #[serde(rename = "trdMatchID")]
     pub trd_match_id: Option<Uuid>,
     pub exec_cost: Option<i64>,
     pub exec_comm: Option<i64>,
