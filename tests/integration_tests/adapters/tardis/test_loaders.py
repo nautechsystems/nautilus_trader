@@ -17,11 +17,13 @@ import os
 import sys
 import tempfile
 import time
+from decimal import Decimal
 
 import psutil
 import pytest
 
 from nautilus_trader.adapters.tardis.loaders import TardisCSVDataLoader
+from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import OrderSide
@@ -1353,6 +1355,352 @@ binance,BTCUSDT,1640995207000000,1640995207100000,false,ask,50004.0,3.5"""
         # Chunks: [3, 3, 2] = 8 total
         assert len(all_chunks_no_limit) == 3
         assert total_no_limit == 8
+
+    finally:
+        os.unlink(temp_file)
+
+
+def test_tardis_load_funding_rates_from_stub_data():
+    """
+    Test loading funding rates from test CSV data.
+    """
+    # Arrange
+    filepath = get_test_data_path("derivative_ticker_1.csv")
+    loader = TardisCSVDataLoader()
+
+    # Act
+    funding_rates = loader.load_funding_rates(filepath)
+
+    # Assert
+    assert len(funding_rates) == 2
+    assert isinstance(funding_rates[0], FundingRateUpdate)
+    assert funding_rates[0].instrument_id == InstrumentId.from_str("XBTUSD.BITMEX")
+    assert funding_rates[0].rate == Decimal("0.0001")
+    assert funding_rates[0].ts_event == 1583020803145000000
+    assert funding_rates[0].ts_init == 1583020803307160000
+
+    assert funding_rates[1].instrument_id == InstrumentId.from_str("XBTUSD.BITMEX")
+    assert funding_rates[1].rate == Decimal("0.00015")
+    assert funding_rates[1].ts_event == 1583020863145000000
+    assert funding_rates[1].ts_init == 1583020863307160000
+
+
+def test_tardis_stream_funding_rates_from_stub_data():
+    """
+    Test streaming funding rates from test CSV data.
+    """
+    # Arrange
+    filepath = get_test_data_path("derivative_ticker_1.csv")
+    loader = TardisCSVDataLoader()
+
+    # Act
+    stream = loader.stream_funding_rates(filepath, chunk_size=1)
+    chunks = list(stream)
+
+    # Assert
+    assert len(chunks) == 2
+    assert len(chunks[0]) == 1
+    assert chunks[0][0].instrument_id == InstrumentId.from_str("XBTUSD.BITMEX")
+    assert chunks[0][0].rate == Decimal("0.0001")
+    assert len(chunks[1]) == 1
+    assert chunks[1][0].rate == Decimal("0.00015")
+
+
+@pytest.mark.parametrize(
+    ("price_precision", "size_precision"),
+    [
+        [None, None],
+        [None, 8],
+        [8, None],
+        [8, 8],
+    ],
+)
+def test_tardis_load_funding_rates_with_precision(
+    price_precision: int | None,
+    size_precision: int | None,
+):
+    """
+    Test loading funding rates with different precision settings.
+    """
+    # Arrange
+    filepath = get_test_data_path("derivative_ticker_1.csv")
+    instrument_id = InstrumentId.from_str("XBTUSD.BITMEX")
+    loader = TardisCSVDataLoader(
+        price_precision=price_precision,
+        size_precision=size_precision,
+        instrument_id=instrument_id,
+    )
+
+    # Act
+    funding_rates = loader.load_funding_rates(filepath)
+
+    # Assert
+    assert len(funding_rates) == 2
+    assert funding_rates[0].instrument_id == instrument_id
+    assert funding_rates[0].rate == Decimal("0.0001")
+    assert funding_rates[1].rate == Decimal("0.00015")
+
+
+def test_tardis_load_funding_rates_with_limit():
+    """
+    Test load_funding_rates with limit parameter.
+    """
+    # Create synthetic CSV data with 5 records
+    csv_data = (
+        "exchange,symbol,timestamp,local_timestamp,funding_timestamp,"
+        "funding_rate,predicted_funding_rate,open_interest,last_price,index_price,mark_price\n"
+        "bitmex,XBTUSD,1583020803145000,1583020803307160,1583020800000000,0.0001,0.00012,1000000,9500.5,9500.0,9500.25\n"
+        "bitmex,XBTUSD,1583020863145000,1583020863307160,1583020860000000,0.00015,0.00018,1000500,9501.0,9500.5,9500.75\n"
+        "bitmex,XBTUSD,1583020923145000,1583020923307160,1583020920000000,0.0002,0.00022,1001000,9501.5,9501.0,9501.25\n"
+        "bitmex,XBTUSD,1583020983145000,1583020983307160,1583020980000000,0.00025,0.00028,1001500,9502.0,9501.5,9501.75\n"
+        "bitmex,XBTUSD,1583021043145000,1583021043307160,1583021040000000,0.0003,0.00032,1002000,9502.5,9502.0,9502.25"
+    )
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
+        f.write(csv_data)
+        temp_file = f.name
+
+    try:
+        loader = TardisCSVDataLoader()
+
+        # Test limit of 3 records
+        funding_rates = loader.load_funding_rates(temp_file, limit=3)
+        assert len(funding_rates) == 3
+
+        # Verify we get the first 3 records in order
+        assert funding_rates[0].rate == Decimal("0.0001")
+        assert funding_rates[1].rate == Decimal("0.00015")
+        assert funding_rates[2].rate == Decimal("0.0002")
+
+        # Test limit larger than available records
+        funding_rates_all = loader.load_funding_rates(temp_file, limit=10)
+        assert len(funding_rates_all) == 5  # Should return all 5 records
+
+        # Test limit of 1
+        funding_rates_one = loader.load_funding_rates(temp_file, limit=1)
+        assert len(funding_rates_one) == 1
+        assert funding_rates_one[0].rate == Decimal("0.0001")
+
+    finally:
+        os.unlink(temp_file)
+
+
+def test_tardis_stream_funding_rates_with_limit():
+    """
+    Test stream_funding_rates with limit parameter.
+    """
+    # Create synthetic CSV data with 8 records
+    csv_data = (
+        "exchange,symbol,timestamp,local_timestamp,funding_timestamp,"
+        "funding_rate,predicted_funding_rate,open_interest,last_price,index_price,mark_price\n"
+        "bitmex,XBTUSD,1583020803145000,1583020803307160,1583020800000000,0.0001,0.00012,1000000,9500.5,9500.0,9500.25\n"
+        "bitmex,XBTUSD,1583020863145000,1583020863307160,1583020860000000,0.00015,0.00018,1000500,9501.0,9500.5,9500.75\n"
+        "bitmex,XBTUSD,1583020923145000,1583020923307160,1583020920000000,0.0002,0.00022,1001000,9501.5,9501.0,9501.25\n"
+        "bitmex,XBTUSD,1583020983145000,1583020983307160,1583020980000000,0.00025,0.00028,1001500,9502.0,9501.5,9501.75\n"
+        "bitmex,XBTUSD,1583021043145000,1583021043307160,1583021040000000,0.0003,0.00032,1002000,9502.5,9502.0,9502.25\n"
+        "bitmex,XBTUSD,1583021103145000,1583021103307160,1583021100000000,0.00035,0.00038,1002500,9503.0,9502.5,9502.75\n"
+        "bitmex,XBTUSD,1583021163145000,1583021163307160,1583021160000000,0.0004,0.00042,1003000,9503.5,9503.0,9503.25\n"
+        "bitmex,XBTUSD,1583021223145000,1583021223307160,1583021220000000,0.00045,0.00048,1003500,9504.0,9503.5,9503.75"
+    )
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
+        f.write(csv_data)
+        temp_file = f.name
+
+    try:
+        loader = TardisCSVDataLoader()
+
+        # Test streaming with limit of 5 records, chunk size 3
+        limited_chunks = list(loader.stream_funding_rates(temp_file, chunk_size=3, limit=5))
+        total_limited = sum(len(chunk) for chunk in limited_chunks)
+
+        # Should only process 5 records due to limit
+        assert total_limited == 5
+
+        # Should have 2 chunks: [3, 2] = 5 records total (limited)
+        assert len(limited_chunks) == 2
+        assert len(limited_chunks[0]) == 3
+        assert len(limited_chunks[1]) == 2
+
+        # Test without limit should process all 8 records
+        all_chunks = list(loader.stream_funding_rates(temp_file, chunk_size=3))
+        total_from_streaming = sum(len(chunk) for chunk in all_chunks)
+
+        # Should be 3 chunks: [3, 3, 2] = 8 records total
+        assert len(all_chunks) == 3
+        assert total_from_streaming == 8
+
+        # Verify the limited data contains the first 5 records
+        all_limited_funding_rates = []
+        for chunk in limited_chunks:
+            all_limited_funding_rates.extend(chunk)
+
+        assert len(all_limited_funding_rates) == 5
+        assert all_limited_funding_rates[0].rate == Decimal("0.0001")
+        assert all_limited_funding_rates[1].rate == Decimal("0.00015")
+        assert all_limited_funding_rates[4].rate == Decimal("0.0003")  # 5th record
+
+    finally:
+        os.unlink(temp_file)
+
+
+def test_tardis_stream_funding_rates():
+    """
+    Test streaming functionality for funding rates.
+    """
+    # Create synthetic CSV data for funding rates
+    csv_data = (
+        "exchange,symbol,timestamp,local_timestamp,funding_timestamp,"
+        "funding_rate,predicted_funding_rate,open_interest,last_price,index_price,mark_price\n"
+        "bitmex,XBTUSD,1583020803145000,1583020803307160,1583020800000000,0.0001,0.00012,1000000,9500.5,9500.0,9500.25\n"
+        "bitmex,XBTUSD,1583020863145000,1583020863307160,1583020860000000,0.00015,0.00018,1000500,9501.0,9500.5,9500.75\n"
+        "bitmex,XBTUSD,1583020923145000,1583020923307160,1583020920000000,0.0002,0.00022,1001000,9501.5,9501.0,9501.25\n"
+        "bitmex,XBTUSD,1583020983145000,1583020983307160,1583020980000000,0.00025,0.00028,1001500,9502.0,9501.5,9501.75"
+    )
+
+    # Use a temporary file
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
+        f.write(csv_data)
+        temp_file = f.name
+
+    try:
+        # Create loader with precision inference
+        loader = TardisCSVDataLoader(
+            price_precision=None,  # Let it infer
+            size_precision=None,  # Let it infer
+            instrument_id=InstrumentId.from_str("XBTUSD.BITMEX"),
+        )
+
+        # Test streaming with chunk size of 2
+        chunks = []
+        chunk_count = 0
+
+        for chunk in loader.stream_funding_rates(temp_file, chunk_size=2):
+            chunks.append(chunk)
+            chunk_count += 1
+
+            # Verify chunk properties
+            assert isinstance(chunk, list)
+            assert len(chunk) <= 2  # Should not exceed chunk size
+            assert len(chunk) > 0  # Should not be empty
+
+            # Verify funding rate properties
+            for funding_rate in chunk:
+                assert funding_rate.instrument_id == InstrumentId.from_str("XBTUSD.BITMEX")
+                assert funding_rate.rate is not None
+                assert funding_rate.ts_event is not None
+                assert funding_rate.ts_init is not None
+
+        # Verify chunking worked correctly
+        assert chunk_count == 2  # 4 records / 2 per chunk = 2 chunks
+        assert len(chunks[0]) == 2  # First chunk: 2 records
+        assert len(chunks[1]) == 2  # Second chunk: 2 records
+
+        # Verify total records
+        total_funding_rates = sum(len(chunk) for chunk in chunks)
+        assert total_funding_rates == 4
+
+        print(
+            f"Funding rate streaming test: {chunk_count} chunks processed, {total_funding_rates} total funding rates",
+        )
+    finally:
+        os.unlink(temp_file)
+
+
+def test_tardis_stream_funding_rates_memory_efficient():
+    """
+    Test that funding rate streaming is memory efficient.
+    """
+    # Create larger synthetic dataset
+    csv_rows = [
+        "exchange,symbol,timestamp,local_timestamp,funding_timestamp,funding_rate,predicted_funding_rate,open_interest,last_price,index_price,mark_price",
+    ]
+
+    # Generate 100 records
+    for i in range(100):
+        timestamp = 1583020803145000 + i * 60000000  # 60 second intervals (microseconds)
+        local_timestamp = timestamp + 162000  # ~162ms delay
+        funding_rate = 0.0001 + (i % 50) * 0.00001
+        predicted_funding_rate = funding_rate + 0.00002
+        funding_timestamp = timestamp - 300000000  # 5 minutes earlier (microseconds)
+        open_interest = 1000000 + i * 500
+        last_price = 9500.5 + i * 0.5
+        index_price = last_price - 0.5
+        mark_price = last_price - 0.25
+
+        csv_rows.append(
+            f"bitmex,XBTUSD,{timestamp},{local_timestamp},{funding_timestamp},{funding_rate},{predicted_funding_rate},{open_interest},{last_price},{index_price},{mark_price}",
+        )
+
+    csv_data = "\n".join(csv_rows)
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
+        f.write(csv_data)
+        temp_file = f.name
+
+    try:
+        loader = TardisCSVDataLoader()
+
+        # Test that we can process large file in small chunks
+        process = psutil.Process(os.getpid())
+        initial_memory = process.memory_info().rss / 1024 / 1024  # MB
+
+        chunk_count = 0
+        total_processed = 0
+
+        # Process in very small chunks to test memory efficiency
+        for chunk in loader.stream_funding_rates(temp_file, chunk_size=10):
+            chunk_count += 1
+            total_processed += len(chunk)
+
+            # Memory check - should stay relatively stable
+            current_memory = process.memory_info().rss / 1024 / 1024
+            memory_increase = current_memory - initial_memory
+
+            # Should not use excessive memory even with 100 records
+            assert memory_increase < 100, f"Memory usage too high: {memory_increase:.2f} MB"
+
+        assert total_processed == 100
+        assert chunk_count == 10  # 100 / 10 = 10 chunks
+
+        print(
+            f"Funding rate memory efficiency test: {total_processed} records in {chunk_count} chunks",
+        )
+    finally:
+        os.unlink(temp_file)
+
+
+def test_precision_inference_funding_rates():
+    """
+    Test precision inference with funding rate data.
+    """
+    # Arrange
+    csv_data = (
+        "exchange,symbol,timestamp,local_timestamp,funding_timestamp,"
+        "funding_rate,predicted_funding_rate,open_interest,last_price,index_price,mark_price\n"
+        "bitmex,XBTUSD,1583020803145000,1583020803307160,1583020800000000,0.0001,0.00012,1000000,9500.5,9500.0,9500.25\n"
+        "bitmex,XBTUSD,1583020863145000,1583020863307160,1583020860000000,0.000123,0.000145,1000500,9501.0,9500.5,9500.75"
+    )
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
+        f.write(csv_data)
+        temp_file = f.name
+
+    try:
+        loader = TardisCSVDataLoader(
+            price_precision=None,  # Infer
+            size_precision=None,  # Infer
+        )
+
+        # Act
+        funding_rates = loader.load_funding_rates(temp_file)
+
+        # Assert
+        assert len(funding_rates) == 2
+
+        # Both funding rates should use the highest precision found (6 decimal places from 0.000123)
+        assert funding_rates[0].rate == Decimal("0.0001")
+        assert funding_rates[1].rate == Decimal("0.000123")
 
     finally:
         os.unlink(temp_file)

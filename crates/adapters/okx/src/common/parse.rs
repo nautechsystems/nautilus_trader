@@ -328,28 +328,12 @@ pub fn parse_funding_rate_msg(
         .parse::<Decimal>()
         .map_err(|e| anyhow::anyhow!("Invalid funding_rate value: {e}"))?;
 
-    let next_funding_rate = if msg.next_funding_rate.is_empty() {
-        None
-    } else {
-        Some(
-            msg.next_funding_rate
-                .parse::<Decimal>()
-                .map_err(|e| anyhow::anyhow!("Invalid next_funding_rate value: {e}"))?,
-        )
-    };
-
-    let funding_time = if next_funding_rate.is_some() {
-        Some(parse_millisecond_timestamp(msg.funding_time))
-    } else {
-        None
-    };
-
+    let funding_time = Some(parse_millisecond_timestamp(msg.funding_time));
     let ts_event = parse_millisecond_timestamp(msg.ts);
 
     Ok(FundingRateUpdate::new(
         instrument_id,
         funding_rate,
-        next_funding_rate,
         funding_time,
         ts_event,
         ts_init,

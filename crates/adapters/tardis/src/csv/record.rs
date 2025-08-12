@@ -280,3 +280,31 @@ pub struct TardisTradeRecord {
     /// The trade amount as provided by the exchange.
     pub amount: f64,
 }
+
+/// Represents a Tardis format derivative ticker record.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TardisDerivativeTickerRecord {
+    /// The exchange ID.
+    pub exchange: Exchange,
+    /// The instrument symbol as provided by the exchange.
+    #[serde(deserialize_with = "deserialize_uppercase")]
+    pub symbol: Ustr,
+    /// UNIX microseconds timestamp provided by the exchange.
+    pub timestamp: u64,
+    /// UNIX microseconds timestamp of message received.
+    pub local_timestamp: u64,
+    /// UNIX microseconds timestamp of the next funding event.
+    pub funding_timestamp: Option<u64>,
+    /// The current funding rate.
+    pub funding_rate: Option<f64>,
+    /// The predicted funding rate for the next period.
+    pub predicted_funding_rate: Option<f64>,
+    /// The open interest for the derivative.
+    pub open_interest: Option<f64>,
+    /// The last traded price.
+    pub last_price: Option<f64>,
+    /// The index price.
+    pub index_price: Option<f64>,
+    /// The mark price.
+    pub mark_price: Option<f64>,
+}

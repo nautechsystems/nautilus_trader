@@ -38,8 +38,6 @@ pub struct FundingRateUpdate {
     pub instrument_id: InstrumentId,
     /// The current funding rate.
     pub rate: Decimal,
-    /// The predicted next funding rate (optional).
-    pub next_rate: Option<Decimal>,
     /// UNIX timestamp (nanoseconds) for the next funding time.
     pub ts_next_funding: Option<UnixNanos>,
     /// UNIX timestamp (nanoseconds) when the funding rate event occurred.
@@ -54,7 +52,6 @@ impl FundingRateUpdate {
     pub fn new(
         instrument_id: InstrumentId,
         rate: Decimal,
-        next_rate: Option<Decimal>,
         ts_next_funding: Option<UnixNanos>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
@@ -62,7 +59,6 @@ impl FundingRateUpdate {
         Self {
             instrument_id,
             rate,
-            next_rate,
             ts_next_funding,
             ts_event,
             ts_init,
@@ -82,7 +78,6 @@ impl FundingRateUpdate {
     pub fn get_fields() -> IndexMap<String, String> {
         let mut metadata = IndexMap::new();
         metadata.insert("rate".to_string(), "Decimal128".to_string());
-        metadata.insert("next_rate".to_string(), "Decimal128".to_string());
         metadata.insert("ts_next_funding".to_string(), "UInt64".to_string());
         metadata.insert("ts_event".to_string(), "UInt64".to_string());
         metadata.insert("ts_init".to_string(), "UInt64".to_string());
@@ -94,10 +89,9 @@ impl Display for FundingRateUpdate {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{},{},{:?},{:?},{},{}",
+            "{},{},{:?},{},{}",
             self.instrument_id,
             self.rate,
-            self.next_rate,
             self.ts_next_funding.map(|ts| ts.as_u64()),
             self.ts_event,
             self.ts_init
@@ -142,12 +136,10 @@ mod tests {
         let ts_event = UnixNanos::from(1);
         let ts_init = UnixNanos::from(2);
 
-        let funding_rate =
-            FundingRateUpdate::new(instrument_id, rate, None, None, ts_event, ts_init);
+        let funding_rate = FundingRateUpdate::new(instrument_id, rate, None, ts_event, ts_init);
 
         assert_eq!(funding_rate.instrument_id, instrument_id);
         assert_eq!(funding_rate.rate, rate);
-        assert_eq!(funding_rate.next_rate, None);
         assert_eq!(funding_rate.ts_next_funding, None);
         assert_eq!(funding_rate.ts_event, ts_event);
         assert_eq!(funding_rate.ts_init, ts_init);
@@ -156,23 +148,15 @@ mod tests {
     #[rstest]
     fn test_funding_rate_update_new_with_optional_fields(instrument_id: InstrumentId) {
         let rate = Decimal::from_str("0.0001").unwrap();
-        let next_rate = Some(Decimal::from_str("0.0002").unwrap());
         let ts_next_funding = Some(UnixNanos::from(1000));
         let ts_event = UnixNanos::from(1);
         let ts_init = UnixNanos::from(2);
 
-        let funding_rate = FundingRateUpdate::new(
-            instrument_id,
-            rate,
-            next_rate,
-            ts_next_funding,
-            ts_event,
-            ts_init,
-        );
+        let funding_rate =
+            FundingRateUpdate::new(instrument_id, rate, ts_next_funding, ts_event, ts_init);
 
         assert_eq!(funding_rate.instrument_id, instrument_id);
         assert_eq!(funding_rate.rate, rate);
-        assert_eq!(funding_rate.next_rate, next_rate);
         assert_eq!(funding_rate.ts_next_funding, ts_next_funding);
         assert_eq!(funding_rate.ts_event, ts_event);
         assert_eq!(funding_rate.ts_init, ts_init);
@@ -181,23 +165,16 @@ mod tests {
     #[rstest]
     fn test_funding_rate_update_display(instrument_id: InstrumentId) {
         let rate = Decimal::from_str("0.0001").unwrap();
-        let next_rate = Some(Decimal::from_str("0.0002").unwrap());
         let ts_next_funding = Some(UnixNanos::from(1000));
         let ts_event = UnixNanos::from(1);
         let ts_init = UnixNanos::from(2);
 
-        let funding_rate = FundingRateUpdate::new(
-            instrument_id,
-            rate,
-            next_rate,
-            ts_next_funding,
-            ts_event,
-            ts_init,
-        );
+        let funding_rate =
+            FundingRateUpdate::new(instrument_id, rate, ts_next_funding, ts_event, ts_init);
 
         assert_eq!(
             format!("{funding_rate}"),
-            "BTCUSDT-PERP.BINANCE,0.0001,Some(0.0002),Some(1000),1,2"
+            "BTCUSDT-PERP.BINANCE,0.0001,Some(1000),1,2"
         );
     }
 
@@ -207,8 +184,7 @@ mod tests {
         let ts_event = UnixNanos::from(1);
         let ts_init = UnixNanos::from(2);
 
-        let funding_rate =
-            FundingRateUpdate::new(instrument_id, rate, None, None, ts_event, ts_init);
+        let funding_rate = FundingRateUpdate::new(instrument_id, rate, None, ts_event, ts_init);
 
         assert_eq!(funding_rate.ts_init(), ts_init);
     }
@@ -219,14 +195,11 @@ mod tests {
         let ts_event = UnixNanos::from(1);
         let ts_init = UnixNanos::from(2);
 
-        let funding_rate1 =
-            FundingRateUpdate::new(instrument_id, rate, None, None, ts_event, ts_init);
-        let funding_rate2 =
-            FundingRateUpdate::new(instrument_id, rate, None, None, ts_event, ts_init);
+        let funding_rate1 = FundingRateUpdate::new(instrument_id, rate, None, ts_event, ts_init);
+        let funding_rate2 = FundingRateUpdate::new(instrument_id, rate, None, ts_event, ts_init);
         let funding_rate3 = FundingRateUpdate::new(
             instrument_id,
             Decimal::from_str("0.0002").unwrap(),
-            None,
             None,
             ts_event,
             ts_init,
@@ -246,19 +219,12 @@ mod tests {
     #[rstest]
     fn test_funding_rate_update_json_serialization(instrument_id: InstrumentId) {
         let rate = Decimal::from_str("0.0001").unwrap();
-        let next_rate = Some(Decimal::from_str("0.0002").unwrap());
         let ts_next_funding = Some(UnixNanos::from(1000));
         let ts_event = UnixNanos::from(1);
         let ts_init = UnixNanos::from(2);
 
-        let funding_rate = FundingRateUpdate::new(
-            instrument_id,
-            rate,
-            next_rate,
-            ts_next_funding,
-            ts_event,
-            ts_init,
-        );
+        let funding_rate =
+            FundingRateUpdate::new(instrument_id, rate, ts_next_funding, ts_event, ts_init);
 
         let serialized = funding_rate.to_json_bytes().unwrap();
         let deserialized = FundingRateUpdate::from_json_bytes(&serialized).unwrap();
@@ -269,19 +235,12 @@ mod tests {
     #[rstest]
     fn test_funding_rate_update_msgpack_serialization(instrument_id: InstrumentId) {
         let rate = Decimal::from_str("0.0001").unwrap();
-        let next_rate = Some(Decimal::from_str("0.0002").unwrap());
         let ts_next_funding = Some(UnixNanos::from(1000));
         let ts_event = UnixNanos::from(1);
         let ts_init = UnixNanos::from(2);
 
-        let funding_rate = FundingRateUpdate::new(
-            instrument_id,
-            rate,
-            next_rate,
-            ts_next_funding,
-            ts_event,
-            ts_init,
-        );
+        let funding_rate =
+            FundingRateUpdate::new(instrument_id, rate, ts_next_funding, ts_event, ts_init);
 
         let serialized = funding_rate.to_msgpack_bytes().unwrap();
         let deserialized = FundingRateUpdate::from_msgpack_bytes(&serialized).unwrap();
@@ -292,19 +251,12 @@ mod tests {
     #[rstest]
     fn test_funding_rate_update_serde_json(instrument_id: InstrumentId) {
         let rate = Decimal::from_str("0.0001").unwrap();
-        let next_rate = Some(Decimal::from_str("0.0002").unwrap());
         let ts_next_funding = Some(UnixNanos::from(1000));
         let ts_event = UnixNanos::from(1);
         let ts_init = UnixNanos::from(2);
 
-        let funding_rate = FundingRateUpdate::new(
-            instrument_id,
-            rate,
-            next_rate,
-            ts_next_funding,
-            ts_event,
-            ts_init,
-        );
+        let funding_rate =
+            FundingRateUpdate::new(instrument_id, rate, ts_next_funding, ts_event, ts_init);
 
         let json_str = serde_json::to_string(&funding_rate).unwrap();
         let deserialized: FundingRateUpdate = serde_json::from_str(&json_str).unwrap();

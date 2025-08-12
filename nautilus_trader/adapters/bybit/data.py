@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 from collections import defaultdict
 from datetime import timedelta
+from decimal import Decimal
 from functools import partial
 from typing import TYPE_CHECKING, Any
 
@@ -38,6 +39,7 @@ from nautilus_trader.adapters.bybit.http.market import BybitMarketHttpAPI
 from nautilus_trader.adapters.bybit.schemas.common import BYBIT_PONG
 from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickerData
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsMessageGeneral
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTickerLinearMsg
 from nautilus_trader.adapters.bybit.schemas.ws import decoder_ws_kline
 from nautilus_trader.adapters.bybit.schemas.ws import decoder_ws_orderbook
 from nautilus_trader.adapters.bybit.schemas.ws import decoder_ws_trade
@@ -56,12 +58,14 @@ from nautilus_trader.data.messages import RequestInstruments
 from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.data.messages import SubscribeBars
+from nautilus_trader.data.messages import SubscribeFundingRates
 from nautilus_trader.data.messages import SubscribeInstrument
 from nautilus_trader.data.messages import SubscribeInstruments
 from nautilus_trader.data.messages import SubscribeOrderBook
 from nautilus_trader.data.messages import SubscribeQuoteTicks
 from nautilus_trader.data.messages import SubscribeTradeTicks
 from nautilus_trader.data.messages import UnsubscribeBars
+from nautilus_trader.data.messages import UnsubscribeFundingRates
 from nautilus_trader.data.messages import UnsubscribeInstrument
 from nautilus_trader.data.messages import UnsubscribeInstruments
 from nautilus_trader.data.messages import UnsubscribeOrderBook
@@ -72,6 +76,7 @@ from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import DataType
+from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
@@ -118,6 +123,12 @@ class BybitDataClient(LiveMarketDataClient):
         The configuration for the client.
     name : str, optional
         The custom client ID.
+
+    Notes
+    -----
+    Funding rate updates are automatically generated when subscribing to quote ticks
+    for LINEAR and INVERSE perpetual swap instruments. The ticker WebSocket stream
+    includes funding rate data which is parsed into FundingRateUpdate messages.
 
     """
 
@@ -178,11 +189,13 @@ class BybitDataClient(LiveMarketDataClient):
         self._decoder_ws_orderbook = decoder_ws_orderbook()
         self._decoder_ws_trade = decoder_ws_trade()
         self._decoder_ws_kline = decoder_ws_kline()
+        self._decoder_ws_ticker_linear = msgspec.json.Decoder(BybitWsTickerLinearMsg)
         self._decoder_ws_msg_general = msgspec.json.Decoder(BybitWsMessageGeneral)
 
         self._tob_quotes: set[InstrumentId] = set()
         self._depths: dict[InstrumentId, int] = {}
         self._topic_bar_type: dict[str, BarType] = {}
+        self._subscribed_tickers: set[InstrumentId] = set()
 
         self._update_instruments_interval_mins: int | None = config.update_instruments_interval_mins
         self._update_instruments_task: asyncio.Task | None = None
@@ -398,12 +411,34 @@ class BybitDataClient(LiveMarketDataClient):
             self._tob_quotes.add(command.instrument_id)
             await ws_client.subscribe_order_book(bybit_symbol.raw_symbol, depth=1)
         else:
-            await ws_client.subscribe_tickers(bybit_symbol.raw_symbol)
+            # Subscribe to tickers (includes funding rate for perpetual swaps)
+            # Note: For LINEAR and INVERSE perpetual swaps, this will also generate
+            # FundingRateUpdate messages in addition to QuoteTicks
+            if command.instrument_id not in self._subscribed_tickers:
+                await ws_client.subscribe_tickers(bybit_symbol.raw_symbol)
+                self._subscribed_tickers.add(command.instrument_id)
 
     async def _subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
         bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
         ws_client = self._ws_clients[bybit_symbol.product_type]
         await ws_client.subscribe_trades(bybit_symbol.raw_symbol)
+
+    async def _subscribe_funding_rates(self, command: SubscribeFundingRates) -> None:
+        bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
+
+        # Only perpetual swaps have funding rates
+        if bybit_symbol.product_type not in [BybitProductType.LINEAR, BybitProductType.INVERSE]:
+            self._log.warning(
+                f"Cannot subscribe to funding rates for {command.instrument_id} - "
+                f"only LINEAR and INVERSE perpetual swaps support funding rates",
+            )
+            return
+
+        # If we're not already subscribed to tickers, subscribe now
+        if command.instrument_id not in self._subscribed_tickers:
+            ws_client = self._ws_clients[bybit_symbol.product_type]
+            await ws_client.subscribe_tickers(bybit_symbol.raw_symbol)
+            self._subscribed_tickers.add(command.instrument_id)
 
     async def _subscribe_bars(self, command: SubscribeBars) -> None:
         bybit_symbol = BybitSymbol(command.bar_type.instrument_id.symbol.value)
@@ -412,6 +447,23 @@ class BybitDataClient(LiveMarketDataClient):
         topic = f"kline.{interval_str}.{bybit_symbol.raw_symbol}"
         self._topic_bar_type[topic] = command.bar_type
         await ws_client.subscribe_klines(bybit_symbol.raw_symbol, interval_str)
+
+    async def _unsubscribe_funding_rates(self, command: UnsubscribeFundingRates) -> None:
+        # Check if we can unsubscribe from tickers
+        # (only if no other subscription needs them)
+        # Need to check if quotes are subscribed via ticker (not TOB)
+        quotes_via_ticker = (
+            command.instrument_id in self._depths and command.instrument_id not in self._tob_quotes
+        )
+        if command.instrument_id in self._subscribed_tickers and not quotes_via_ticker:
+            bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
+            ws_client = self._ws_clients[bybit_symbol.product_type]
+            await ws_client.unsubscribe_tickers(bybit_symbol.raw_symbol)
+            self._subscribed_tickers.discard(command.instrument_id)
+            self._log.debug(
+                f"Unsubscribed from funding rates for {command.instrument_id}",
+                LogColor.MAGENTA,
+            )
 
     async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
         bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
@@ -434,7 +486,14 @@ class BybitDataClient(LiveMarketDataClient):
             await ws_client.unsubscribe_order_book(bybit_symbol.raw_symbol, depth=1)
             self._tob_quotes.discard(command.instrument_id)
         else:
-            await ws_client.unsubscribe_tickers(bybit_symbol.raw_symbol)
+            # Check if we can unsubscribe from tickers
+            # (only if funding rates are not also subscribed)
+            if (
+                command.instrument_id in self._subscribed_tickers
+                and command.instrument_id not in self._subscribed_funding_rates
+            ):
+                await ws_client.unsubscribe_tickers(bybit_symbol.raw_symbol)
+                self._subscribed_tickers.discard(command.instrument_id)
 
     async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
         bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
@@ -720,16 +779,35 @@ class BybitDataClient(LiveMarketDataClient):
         # Create quote tick
         quote_tick = self._create_quote_tick_from_ticker(ticker, product_type)
         if quote_tick:
-            self._handle_data([quote_tick])
+            self._handle_data(quote_tick)
+
+        # Create funding rate update for perpetual swaps (LINEAR and INVERSE only)
+        # The framework will handle routing to subscribers
+        if product_type in [BybitProductType.LINEAR, BybitProductType.INVERSE]:
+            funding_rate_update = self._create_funding_rate_update_from_ticker(ticker, product_type)
+            if funding_rate_update:
+                self._handle_data(funding_rate_update)
 
     def _parse_ticker_data(self, raw: bytes, product_type: BybitProductType) -> Any:
         """
         Parse ticker data from raw bytes.
         """
         try:
-            data = self._decoder_ws_msg_general.decode(raw)
-            # Use attribute access instead of get method
-            return getattr(data, "data", {})
+            # Use the appropriate decoder based on product type
+            if product_type == BybitProductType.LINEAR:
+                msg = self._decoder_ws_ticker_linear.decode(raw)
+                return msg.data
+            else:
+                # For INVERSE and OPTION, use general decoder
+                data = self._decoder_ws_msg_general.decode(raw)
+                ticker_data = getattr(data, "data", None)
+                if ticker_data is None:
+                    return None
+
+                # For ticker messages, the data field might be a list or single item
+                if isinstance(ticker_data, list) and len(ticker_data) > 0:
+                    return ticker_data[0]
+                return ticker_data
         except Exception as e:
             self._log.error(f"Error parsing ticker data: {e}")
             return None
@@ -743,23 +821,48 @@ class BybitDataClient(LiveMarketDataClient):
         Create QuoteTick from ticker data.
         """
         try:
-            # Extract price and size data based on product type
-            bid_price, ask_price, bid_size, ask_size = self._extract_ticker_prices_and_sizes(
-                ticker,
-                product_type,
-            )
-
-            if bid_price is None or ask_price is None:
+            # Get the symbol and instrument
+            symbol = getattr(ticker, "symbol", None)
+            if not symbol:
                 return None
+
+            instrument_id = self._get_cached_instrument_id(symbol, product_type)
+            instrument = self._cache.instrument(instrument_id)
+            if instrument is None:
+                self._log.error(f"Cannot create quote tick: no instrument for {instrument_id}")
+                return None
+
+            # Extract price and size data
+            bid_price_str = getattr(ticker, "bid1Price", None)
+            ask_price_str = getattr(ticker, "ask1Price", None)
+            bid_size_str = getattr(ticker, "bid1Size", None)
+            ask_size_str = getattr(ticker, "ask1Size", None)
+
+            if not bid_price_str or not ask_price_str:
+                return None
+
+            # Create Price and Quantity objects
+            from nautilus_trader.model.objects import Price
+            from nautilus_trader.model.objects import Quantity
+
+            bid_price = Price.from_str(bid_price_str)
+            ask_price = Price.from_str(ask_price_str)
+            bid_size = Quantity.from_str(bid_size_str) if bid_size_str else Quantity.from_int(0)
+            ask_size = Quantity.from_str(ask_size_str) if ask_size_str else Quantity.from_int(0)
+
+            # Get timestamp
+            ts_event = millis_to_nanos(int(getattr(ticker, "ts", 0)))
+            if ts_event == 0:
+                ts_event = self._clock.timestamp_ns()
 
             # Create QuoteTick
             return QuoteTick(
-                instrument_id=self._get_instrument_id_from_ticker(ticker),
+                instrument_id=instrument_id,
                 bid_price=bid_price,
                 ask_price=ask_price,
                 bid_size=bid_size,
                 ask_size=ask_size,
-                ts_event=self._get_timestamp_from_ticker(ticker),
+                ts_event=ts_event,
                 ts_init=self._clock.timestamp_ns(),
             )
         except Exception as e:
@@ -809,6 +912,56 @@ class BybitDataClient(LiveMarketDataClient):
         Get timestamp from ticker data.
         """
         return getattr(ticker, "ts", self._clock.timestamp_ns())
+
+    def _create_funding_rate_update_from_ticker(
+        self,
+        ticker: Any,
+        product_type: BybitProductType,
+    ) -> FundingRateUpdate | None:
+        """
+        Create FundingRateUpdate from ticker data for perpetual swaps.
+        """
+        try:
+            # Get funding rate
+            funding_rate_str = getattr(ticker, "fundingRate", None)
+            if not funding_rate_str:
+                return None
+
+            # Parse funding rate
+            funding_rate = Decimal(funding_rate_str)
+
+            # Get next funding time (milliseconds)
+            next_funding_time_str = getattr(ticker, "nextFundingTime", None)
+            ts_next_funding = None
+            if next_funding_time_str:
+                try:
+                    # Bybit provides next funding time as a millisecond timestamp string
+                    ts_next_funding = int(next_funding_time_str) * 1_000_000  # Convert ms to ns
+                except (ValueError, TypeError):
+                    self._log.warning(f"Failed to parse next funding time: {next_funding_time_str}")
+
+            # Get instrument ID
+            symbol = getattr(ticker, "symbol", None)
+            if not symbol:
+                return None
+
+            instrument_id = self._get_cached_instrument_id(symbol, product_type)
+
+            # Get timestamp from message
+            ts_event = millis_to_nanos(int(getattr(ticker, "ts", 0)))
+            if ts_event == 0:
+                ts_event = self._clock.timestamp_ns()
+
+            return FundingRateUpdate(
+                instrument_id=instrument_id,
+                rate=funding_rate,
+                ts_event=ts_event,
+                ts_init=self._clock.timestamp_ns(),
+                ts_next_funding=ts_next_funding,
+            )
+        except Exception as e:
+            self._log.error(f"Error creating FundingRateUpdate from ticker: {e}")
+            return None
 
     def _handle_trade(self, product_type: BybitProductType, raw: bytes) -> None:
         msg = self._decoder_ws_trade.decode(raw)

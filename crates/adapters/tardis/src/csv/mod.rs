@@ -28,22 +28,25 @@ use std::{
 use csv::{Reader, ReaderBuilder};
 use flate2::read::GzDecoder;
 pub use load::{
-    load_deltas, load_depth10_from_snapshot5, load_depth10_from_snapshot25, load_quotes,
-    load_trades,
+    load_deltas, load_depth10_from_snapshot5, load_depth10_from_snapshot25, load_funding_rates,
+    load_quotes, load_trades,
 };
 use nautilus_model::{
-    data::{BookOrder, NULL_ORDER, OrderBookDelta, QuoteTick, TradeTick},
+    data::{BookOrder, FundingRateUpdate, NULL_ORDER, OrderBookDelta, QuoteTick, TradeTick},
     enums::{BookAction, OrderSide},
     identifiers::{InstrumentId, TradeId},
     types::Quantity,
 };
+use rust_decimal::Decimal;
 pub use stream::{
-    stream_deltas, stream_depth10_from_snapshot5, stream_depth10_from_snapshot25, stream_quotes,
-    stream_trades,
+    stream_deltas, stream_depth10_from_snapshot5, stream_depth10_from_snapshot25,
+    stream_funding_rates, stream_quotes, stream_trades,
 };
 
 use super::{
-    csv::record::{TardisBookUpdateRecord, TardisQuoteRecord, TardisTradeRecord},
+    csv::record::{
+        TardisBookUpdateRecord, TardisDerivativeTickerRecord, TardisQuoteRecord, TardisTradeRecord,
+    },
     parse::{
         parse_aggressor_side, parse_book_action, parse_instrument_id, parse_order_side,
         parse_timestamp,
@@ -277,4 +280,34 @@ fn parse_trade_record(
         ts_event,
         ts_init,
     )
+}
+
+fn parse_derivative_ticker_record(
+    data: &TardisDerivativeTickerRecord,
+    instrument_id: Option<InstrumentId>,
+) -> Option<FundingRateUpdate> {
+    // Only create funding rate update if we have funding rate data
+    let funding_rate = data.funding_rate?;
+
+    let instrument_id = match instrument_id {
+        Some(id) => id,
+        None => parse_instrument_id(&data.exchange, data.symbol),
+    };
+
+    let rate = Decimal::try_from(funding_rate).ok()?;
+    let ts_next_funding = if data.predicted_funding_rate.is_some() {
+        data.funding_timestamp.map(parse_timestamp)
+    } else {
+        None
+    };
+    let ts_event = parse_timestamp(data.timestamp);
+    let ts_init = parse_timestamp(data.local_timestamp);
+
+    Some(FundingRateUpdate::new(
+        instrument_id,
+        rate,
+        ts_next_funding,
+        ts_event,
+        ts_init,
+    ))
 }

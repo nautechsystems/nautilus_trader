@@ -18,6 +18,7 @@ from os import PathLike
 from pathlib import Path
 
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import OrderBookDepth10
@@ -278,6 +279,51 @@ class TardisCSVDataLoader:
             return TradeTick.from_pyo3_list(pyo3_trades)
 
         return pyo3_trades
+
+    def load_funding_rates(
+        self,
+        filepath: PathLike[str] | str,
+        as_legacy_cython: bool = True,
+        limit: int | None = None,
+    ) -> list[FundingRateUpdate] | list[nautilus_pyo3.FundingRateUpdate]:
+        """
+        Load funding rate updates from Tardis derivative ticker CSV data.
+
+        CSV file must be Tardis derivative_ticker format with funding_rate data.
+
+        Parameters
+        ----------
+        filepath : PathLike[str] | str
+            The path for the CSV data file (must be Tardis derivative_ticker format).
+        as_legacy_cython : bool, True
+            If data should be converted to 'legacy Cython' objects.
+            You would typically only set this False if passing the objects
+            directly to a data catalog for the data to then be written in Nautilus Parquet format.
+        limit : int, optional
+            The limit for the number of records to read.
+
+        Returns
+        -------
+        list[FundingRateUpdate] | list[nautilus_pyo3.FundingRateUpdate]
+
+        References
+        ----------
+        https://docs.tardis.dev/downloadable-csv-files#derivative_ticker
+
+        """
+        if isinstance(filepath, Path):
+            filepath = str(filepath.resolve())
+
+        pyo3_funding_rates = nautilus_pyo3.tardis.load_tardis_funding_rates(  # type: ignore[attr-defined]
+            filepath=str(filepath),
+            instrument_id=self._instrument_id,
+            limit=limit,
+        )
+
+        if as_legacy_cython:
+            return FundingRateUpdate.from_pyo3_list(pyo3_funding_rates)
+
+        return pyo3_funding_rates
 
     def stream_deltas(
         self,
@@ -568,3 +614,52 @@ class TardisCSVDataLoader:
                 raise ValueError(
                     "invalid `levels`, use either 5 or 25 corresponding to number of levels in the CSV data",
                 )
+
+    def stream_funding_rates(
+        self,
+        filepath: PathLike[str] | str,
+        chunk_size: int = 100_000,
+        as_legacy_cython: bool = True,
+        limit: int | None = None,
+    ) -> Generator[list[FundingRateUpdate] | list[nautilus_pyo3.FundingRateUpdate], None, None]:
+        """
+        Stream funding rate updates from Tardis derivative ticker CSV data in chunks.
+
+        CSV file must be Tardis derivative_ticker format with funding_rate data.
+
+        Parameters
+        ----------
+        filepath : PathLike[str] | str
+            The path for the CSV data file (must be Tardis derivative_ticker format).
+        chunk_size : int, default 100_000
+            The number of records to read per chunk.
+        as_legacy_cython : bool, True
+            If data should be converted to 'legacy Cython' objects.
+        limit : int | None, default None
+            The maximum number of records to process. If None, all records are processed.
+
+        Yields
+        ------
+        Generator[list[FundingRateUpdate] | list[nautilus_pyo3.FundingRateUpdate], None, None]
+            Yields lists of `chunk_size` elements of funding rate updates.
+
+        References
+        ----------
+        https://docs.tardis.dev/downloadable-csv-files#derivative_ticker
+
+        """
+        if isinstance(filepath, Path):
+            filepath = str(filepath.resolve())
+
+        stream_iter = nautilus_pyo3.tardis.stream_tardis_funding_rates(  # type: ignore[attr-defined]
+            filepath=str(filepath),
+            chunk_size=chunk_size,
+            instrument_id=self._instrument_id,
+            limit=limit,
+        )
+
+        for chunk in stream_iter:
+            if as_legacy_cython:
+                yield FundingRateUpdate.from_pyo3_list(chunk)
+            else:
+                yield chunk

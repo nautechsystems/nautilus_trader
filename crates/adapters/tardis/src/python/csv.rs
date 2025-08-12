@@ -17,19 +17,19 @@ use std::{fmt::Debug, path::PathBuf};
 
 use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
-    data::{OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick},
+    data::{FundingRateUpdate, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick},
     identifiers::InstrumentId,
 };
 use pyo3::prelude::*;
 
 use crate::csv::{
     load::{
-        load_deltas, load_depth10_from_snapshot5, load_depth10_from_snapshot25, load_quotes,
-        load_trades,
+        load_deltas, load_depth10_from_snapshot5, load_depth10_from_snapshot25, load_funding_rates,
+        load_quotes, load_trades,
     },
     stream::{
         stream_batched_deltas, stream_deltas, stream_depth10_from_snapshot5,
-        stream_depth10_from_snapshot25, stream_quotes, stream_trades,
+        stream_depth10_from_snapshot25, stream_funding_rates, stream_quotes, stream_trades,
     },
 };
 
@@ -171,6 +171,19 @@ pub fn py_load_tardis_trades(
         limit,
     )
     .map_err(to_pyvalue_err)
+}
+
+/// # Errors
+///
+/// Returns a Python error if loading or parsing the CSV file fails.
+#[pyfunction(name = "load_tardis_funding_rates")]
+#[pyo3(signature = (filepath, instrument_id=None, limit=None))]
+pub fn py_load_tardis_funding_rates(
+    filepath: PathBuf,
+    instrument_id: Option<InstrumentId>,
+    limit: Option<usize>,
+) -> PyResult<Vec<FundingRateUpdate>> {
+    load_funding_rates(filepath, instrument_id, limit).map_err(to_pyvalue_err)
 }
 
 impl_tardis_stream_iterator!(
@@ -399,6 +412,33 @@ pub fn py_stream_tardis_depth10_from_snapshot25(
     .map_err(to_pyvalue_err)?;
 
     Ok(TardisDepth10StreamIterator {
+        stream: Box::new(stream),
+    })
+}
+
+impl_tardis_stream_iterator!(
+    TardisFundingRateStreamIterator,
+    FundingRateUpdate,
+    "TardisFundingRateStreamIterator"
+);
+
+/// Streams funding rate updates from a Tardis derivative ticker CSV file.
+///
+/// # Errors
+///
+/// Returns a Python error if loading or parsing the CSV file fails.
+#[pyfunction(name = "stream_tardis_funding_rates")]
+#[pyo3(signature = (filepath, chunk_size=100_000, instrument_id=None, limit=None))]
+pub fn py_stream_tardis_funding_rates(
+    filepath: PathBuf,
+    chunk_size: usize,
+    instrument_id: Option<InstrumentId>,
+    limit: Option<usize>,
+) -> PyResult<TardisFundingRateStreamIterator> {
+    let stream =
+        stream_funding_rates(filepath, chunk_size, instrument_id, limit).map_err(to_pyvalue_err)?;
+
+    Ok(TardisFundingRateStreamIterator {
         stream: Box::new(stream),
     })
 }
