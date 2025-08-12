@@ -19,8 +19,8 @@ use nautilus_common::{
     messages::{DataEvent, data::DataCommand},
     msgbus::{self, switchboard::MessagingSwitchboard},
     runner::{
-        DataCommandSender, RunnerEvent, TimeEventSender, set_data_cmd_sender,
-        set_data_event_sender, set_time_event_sender,
+        DataCommandSender, TimeEventSender, set_data_cmd_sender, set_data_event_sender,
+        set_time_event_sender,
     },
     timer::TimeEventHandlerV2,
 };
@@ -143,13 +143,22 @@ impl AsyncRunner {
         let data_engine_execute = MessagingSwitchboard::data_engine_execute();
 
         loop {
-            // Collect the next message to process, including signal events
-            let next_msg = tokio::select! {
-                Some(resp) = self.data_rx.recv() => Some(RunnerEvent::Data(resp)),
-                Some(handler) = self.time_rx.recv() => Some(RunnerEvent::Time(handler)),
+            tokio::select! {
+                Some(event) = self.data_rx.recv() => {
+                    match event {
+                        DataEvent::Data(data) => msgbus::send_any(data_engine_process, &data),
+                        DataEvent::Response(resp) => {
+                            msgbus::send_any(data_engine_response, &resp);
+                        }
+                        #[cfg(feature = "defi")]
+                        DataEvent::DeFi(data) => msgbus::send_any(data_engine_process, &data),
+                    }
+                },
+                Some(handler) = self.time_rx.recv() => {
+                    handler.run();
+                },
                 Some(cmd) = self.cmd_rx.recv() => {
                     msgbus::send_any(data_engine_execute, &cmd);
-                    None // TODO: Refactor this
                 },
                 Some(()) = self.signal_rx.recv() => {
                     tracing::info!("AsyncRunner received signal, shutting down");
@@ -157,22 +166,6 @@ impl AsyncRunner {
                 },
                 else => return, // Sentinel event ends run
             };
-
-            tracing::trace!("Received {next_msg:?}");
-
-            if let Some(msg) = next_msg {
-                match msg {
-                    RunnerEvent::Time(handler) => handler.run(),
-                    RunnerEvent::Data(event) => match event {
-                        DataEvent::Data(data) => msgbus::send_any(data_engine_process, &data),
-                        DataEvent::Response(resp) => {
-                            msgbus::send_any(data_engine_response, &resp);
-                        }
-                        #[cfg(feature = "defi")]
-                        DataEvent::DeFi(data) => msgbus::send_any(data_engine_process, &data),
-                    },
-                }
-            }
         }
     }
 }
