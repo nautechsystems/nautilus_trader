@@ -23,7 +23,8 @@ use nautilus_core::{
 use nautilus_model::{
     currencies::CURRENCY_MAP,
     data::{
-        Bar, BarSpecification, BarType, Data, IndexPriceUpdate, MarkPriceUpdate, TradeTick,
+        Bar, BarSpecification, BarType, Data, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate,
+        TradeTick,
         bar::{
             BAR_SPEC_1_DAY_LAST, BAR_SPEC_1_HOUR_LAST, BAR_SPEC_1_MINUTE_LAST,
             BAR_SPEC_1_MONTH_LAST, BAR_SPEC_1_SECOND_LAST, BAR_SPEC_1_WEEK_LAST,
@@ -311,61 +312,48 @@ pub fn parse_index_price_update(
     ))
 }
 
-/// Represents a funding rate update for a perpetual swap instrument.
-///
-/// This is an **adapter-local** struct – it deliberately does *not* live in
-/// `nautilus_model` because a cross-platform funding event type has not yet been
-/// finalised.  It exists solely so the OKX adapter can parse and unit-test the
-/// raw WebSocket payload in a strongly-typed manner.
-#[derive(Debug, Clone, PartialEq)]
-pub struct FundingRate {
-    /// Instrument to which the funding rate applies.
-    pub instrument_id: InstrumentId,
-    /// Current funding rate expressed as a decimal (e.g. `0.0001` for 0.01 %).
-    pub funding_rate: Decimal,
-    /// Next predicted funding rate.
-    pub next_funding_rate: Decimal,
-    /// Timestamp at which the next funding payment will occur.
-    pub funding_time: UnixNanos,
-    /// Exchange timestamp when the message was generated.
-    pub ts_event: UnixNanos,
-    /// Timestamp when the parser was initialised (provided by caller).
-    pub ts_init: UnixNanos,
-}
-
-/// Parses an [`OKXFundingRateMsg`] into a [`FundingRate`].
+/// Parses an [`OKXFundingRateMsg`] into a [`FundingRateUpdate`].
 ///
 /// # Errors
 ///
 /// Returns an error if the `funding_rate` or `next_funding_rate` fields fail
-/// to parse into `f64` values.
+/// to parse into Decimal values.
 pub fn parse_funding_rate_msg(
     msg: &OKXFundingRateMsg,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
-) -> anyhow::Result<FundingRate> {
-    // Parse numeric fields
+) -> anyhow::Result<FundingRateUpdate> {
     let funding_rate = msg
         .funding_rate
         .parse::<Decimal>()
         .map_err(|e| anyhow::anyhow!("Invalid funding_rate value: {e}"))?;
-    let next_funding_rate = msg
-        .next_funding_rate
-        .parse::<Decimal>()
-        .map_err(|e| anyhow::anyhow!("Invalid next_funding_rate value: {e}"))?;
 
-    // Convert timestamps
-    let funding_time = parse_millisecond_timestamp(msg.funding_time);
+    let next_funding_rate = if msg.next_funding_rate.is_empty() {
+        None
+    } else {
+        Some(
+            msg.next_funding_rate
+                .parse::<Decimal>()
+                .map_err(|e| anyhow::anyhow!("Invalid next_funding_rate value: {e}"))?,
+        )
+    };
+
+    let funding_time = if next_funding_rate.is_some() {
+        Some(parse_millisecond_timestamp(msg.funding_time))
+    } else {
+        None
+    };
+
     let ts_event = parse_millisecond_timestamp(msg.ts);
 
-    Ok(FundingRate {
+    Ok(FundingRateUpdate::new(
         instrument_id,
         funding_rate,
         next_funding_rate,
         funding_time,
         ts_event,
         ts_init,
-    })
+    ))
 }
 
 /// Parses an OKX trade record into a Nautilus [`TradeTick`].

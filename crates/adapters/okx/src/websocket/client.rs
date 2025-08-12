@@ -797,6 +797,19 @@ impl OKXWebSocketClient {
         self.subscribe(vec![arg]).await
     }
 
+    pub async fn subscribe_funding_rates(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> Result<(), OKXWsError> {
+        let arg = OKXSubscriptionArg {
+            channel: OKXWsChannel::FundingRate,
+            inst_type: None,
+            inst_family: None,
+            inst_id: Some(instrument_id.symbol.inner()),
+        };
+        self.subscribe(vec![arg]).await
+    }
+
     pub async fn subscribe_bars(&self, bar_type: BarType) -> Result<(), OKXWsError> {
         // Use regular trade-price candlesticks which work for all instrument types
         let channel = bar_spec_as_okx_channel(bar_type.spec())
@@ -889,6 +902,19 @@ impl OKXWebSocketClient {
     ) -> Result<(), OKXWsError> {
         let arg = OKXSubscriptionArg {
             channel: OKXWsChannel::IndexTickers,
+            inst_type: None,
+            inst_family: None,
+            inst_id: Some(instrument_id.symbol.inner()),
+        };
+        self.unsubscribe(vec![arg]).await
+    }
+
+    pub async fn unsubscribe_funding_rates(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> Result<(), OKXWsError> {
+        let arg = OKXSubscriptionArg {
+            channel: OKXWsChannel::FundingRate,
             inst_type: None,
             inst_family: None,
             inst_id: Some(instrument_id.symbol.inner()),

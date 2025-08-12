@@ -48,9 +48,8 @@ use nautilus_model::defi::Pool;
 use nautilus_model::{
     accounts::{Account, AccountAny},
     data::{
-        Bar, BarType, GreeksData, QuoteTick, TradeTick, YieldCurveData,
-        funding::FundingRateUpdate,
-        prices::{IndexPriceUpdate, MarkPriceUpdate},
+        Bar, BarType, FundingRateUpdate, GreeksData, IndexPriceUpdate, MarkPriceUpdate, QuoteTick,
+        TradeTick, YieldCurveData,
     },
     enums::{AggregationSource, OmsType, OrderSide, PositionSide, PriceType, TriggerType},
     identifiers::{

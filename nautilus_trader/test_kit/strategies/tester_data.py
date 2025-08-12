@@ -26,6 +26,9 @@ from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import FundingRateUpdate
+from nautilus_trader.model.data import IndexPriceUpdate
+from nautilus_trader.model.data import MarkPriceUpdate
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
@@ -50,6 +53,7 @@ class DataTesterConfig(ActorConfig, frozen=True):
     subscribe_trades: bool = False
     subscribe_mark_prices: bool = False
     subscribe_index_prices: bool = False
+    subscribe_funding_rates: bool = False
     subscribe_bars: bool = False
     subscribe_instrument_status: bool = False
     subscribe_instrument_close: bool = False
@@ -133,6 +137,15 @@ class DataTester(Actor):
             if self.config.subscribe_trades:
                 self.subscribe_trade_ticks(instrument_id, client_id=client_id)
 
+            if self.config.subscribe_mark_prices:
+                self.subscribe_mark_prices(instrument_id, client_id=client_id)
+
+            if self.config.subscribe_index_prices:
+                self.subscribe_index_prices(instrument_id, client_id=client_id)
+
+            if self.config.subscribe_funding_rates:
+                self.subscribe_funding_rates(instrument_id, client_id=client_id)
+
             if self.config.subscribe_instrument_status:
                 self.subscribe_instrument_status(instrument_id, client_id=client_id)
 
@@ -192,6 +205,15 @@ class DataTester(Actor):
             if self.config.subscribe_trades:
                 self.unsubscribe_trade_ticks(instrument_id, client_id=client_id)
 
+            if self.config.subscribe_mark_prices:
+                self.unsubscribe_mark_prices(instrument_id, client_id=client_id)
+
+            if self.config.subscribe_index_prices:
+                self.unsubscribe_index_prices(instrument_id, client_id=client_id)
+
+            if self.config.subscribe_funding_rates:
+                self.unsubscribe_funding_rates(instrument_id, client_id=client_id)
+
             if self.config.subscribe_instrument_status:
                 self.unsubscribe_instrument_status(instrument_id, client_id=client_id)
 
@@ -246,19 +268,43 @@ class DataTester(Actor):
                 LogColor.CYAN,
             )
 
-    def on_quote_tick(self, tick: QuoteTick) -> None:
+    def on_quote_tick(self, quote: QuoteTick) -> None:
         """
         Actions to be performed when the actor is running and receives a quote.
         """
         if self.config.log_data:
-            self.log.info(repr(tick), LogColor.CYAN)
+            self.log.info(repr(quote), LogColor.CYAN)
 
-    def on_trade_tick(self, tick: TradeTick) -> None:
+    def on_trade_tick(self, trade: TradeTick) -> None:
         """
         Actions to be performed when the actor is running and receives a trade.
         """
         if self.config.log_data:
-            self.log.info(repr(tick), LogColor.CYAN)
+            self.log.info(repr(trade), LogColor.CYAN)
+
+    def on_mark_price(self, mark_price: MarkPriceUpdate) -> None:
+        """
+        Actions to be performed when the actor is running and receives a mark price
+        update.
+        """
+        if self.config.log_data:
+            self.log.info(repr(mark_price), LogColor.CYAN)
+
+    def on_index_price(self, index_price: IndexPriceUpdate) -> None:
+        """
+        Actions to be performed when the actor is running and receives a index price
+        update.
+        """
+        if self.config.log_data:
+            self.log.info(repr(index_price), LogColor.CYAN)
+
+    def on_funding_rate(self, funding_rate: FundingRateUpdate) -> None:
+        """
+        Actions to be performed when the actor is running and receives a funding rate
+        update.
+        """
+        if self.config.log_data:
+            self.log.info(repr(funding_rate), LogColor.CYAN)
 
     def on_bar(self, bar: Bar) -> None:
         """

@@ -52,25 +52,14 @@ impl FundingRateUpdate {
         let ts_init_nanos = UnixNanos::from(ts_init);
         let ts_next_funding_nanos = ts_next_funding.map(UnixNanos::from);
 
-        match (next_rate, ts_next_funding_nanos) {
-            (None, None) => Self::new(instrument_id, rate, ts_event_nanos, ts_init_nanos),
-            (Some(next_rate), ts_next_funding_nanos) => Self::new_with_next(
-                instrument_id,
-                rate,
-                Some(next_rate),
-                ts_next_funding_nanos,
-                ts_event_nanos,
-                ts_init_nanos,
-            ),
-            (None, ts_next_funding_nanos) => Self::new_with_next(
-                instrument_id,
-                rate,
-                None,
-                ts_next_funding_nanos,
-                ts_event_nanos,
-                ts_init_nanos,
-            ),
-        }
+        Self::new(
+            instrument_id,
+            rate,
+            next_rate,
+            ts_next_funding_nanos,
+            ts_event_nanos,
+            ts_init_nanos,
+        )
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
@@ -227,7 +216,7 @@ impl FundingRateUpdate {
             .flatten()
             .and_then(|v| v.extract().ok());
 
-        Ok(Self::new_with_next(
+        Ok(Self::new(
             instrument_id,
             rate,
             next_rate,
@@ -325,6 +314,8 @@ impl FundingRateUpdate {
         Self::new(
             InstrumentId::from("NULL.NULL"),
             Decimal::ZERO,
+            None,
+            None,
             UnixNanos::default(),
             UnixNanos::default(),
         )
@@ -354,7 +345,7 @@ impl FundingRateUpdate {
             .ok()
             .and_then(|x| x.extract().ok());
 
-        Ok(Self::new_with_next(
+        Ok(Self::new(
             instrument_id,
             rate,
             next_rate,

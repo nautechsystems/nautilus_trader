@@ -178,6 +178,11 @@ impl OKXWebSocketClient {
                             call_python(py, &callback, py_obj);
                         }
                     }),
+                    NautilusWsMessage::FundingRates(msg) => {
+                        for data in msg {
+                            call_python_with_data(&callback, |py| data.into_py_any(py));
+                        }
+                    }
                     NautilusWsMessage::OrderRejected(msg) => {
                         call_python_with_data(&callback, |py| msg.into_py_any(py))
                     }
@@ -484,6 +489,38 @@ impl OKXWebSocketClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             if let Err(e) = client.unsubscribe_index_prices(instrument_id).await {
                 log::error!("Failed to unsubscribe from index prices: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "subscribe_funding_rates")]
+    fn py_subscribe_funding_rates<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.subscribe_funding_rates(instrument_id).await {
+                log::error!("Failed to subscribe to funding rates: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "unsubscribe_funding_rates")]
+    fn py_unsubscribe_funding_rates<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.unsubscribe_funding_rates(instrument_id).await {
+                log::error!("Failed to unsubscribe from funding rates: {e}");
             }
             Ok(())
         })
