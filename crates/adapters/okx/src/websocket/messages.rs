@@ -15,7 +15,7 @@
 
 use derive_builder::Builder;
 use nautilus_model::{
-    data::{Data, OrderBookDeltas},
+    data::{Data, FundingRateUpdate, OrderBookDeltas},
     events::{AccountState, OrderCancelRejected, OrderModifyRejected, OrderRejected},
     instruments::InstrumentAny,
     reports::{FillReport, OrderStatusReport},
@@ -39,6 +39,7 @@ use crate::{
 pub enum NautilusWsMessage {
     Data(Vec<Data>),
     Deltas(OrderBookDeltas),
+    FundingRates(Vec<FundingRateUpdate>),
     Instrument(Box<InstrumentAny>),
     AccountUpdate(AccountState),
     OrderRejected(OrderRejected),
@@ -268,6 +269,19 @@ pub struct OKXFundingRateMsg {
     pub ts: u64,
 }
 
+/// Mark price data for perpetual swaps.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OKXMarkPriceMsg {
+    /// Instrument ID.
+    pub inst_id: Ustr,
+    /// Current mark price.
+    pub mark_px: String,
+    /// Timestamp of the data generation, Unix timestamp format in milliseconds.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
+    pub ts: u64,
+}
+
 /// Index price data.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -286,19 +300,6 @@ pub struct OKXIndexPriceMsg {
     pub sod_utc0: String,
     /// The opening price of the day (UTC 8).
     pub sod_utc8: String,
-    /// Timestamp of the data generation, Unix timestamp format in milliseconds.
-    #[serde(deserialize_with = "deserialize_string_to_u64")]
-    pub ts: u64,
-}
-
-/// Mark price data for perpetual swaps.
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct OKXMarkPriceMsg {
-    /// Instrument ID.
-    pub inst_id: Ustr,
-    /// Current mark price.
-    pub mark_px: String,
     /// Timestamp of the data generation, Unix timestamp format in milliseconds.
     #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub ts: u64,

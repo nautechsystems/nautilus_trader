@@ -508,7 +508,7 @@ cdef class FundingRateUpdate(Data):
     cdef readonly object next_rate
     """The next funding rate (if available).\n\n:returns: `Decimal` or ``None``"""
     cdef readonly object ts_next_funding
-    """UNIX timestamp (nanoseconds) of the next funding payment (if available)."""
+    """UNIX timestamp (nanoseconds) of the next funding payment (if available, otherwise zero).\n\n:returns: `uint64_t`"""
     cdef readonly uint64_t _ts_event
     """UNIX timestamp (nanoseconds) when the data event occurred.\n\n:returns: `uint64_t`"""
     cdef readonly uint64_t _ts_init

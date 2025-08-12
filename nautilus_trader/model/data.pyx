@@ -5922,3 +5922,49 @@ cdef class FundingRateUpdate(Data):
 
         """
         return FundingRateUpdate.to_dict_c(obj)
+
+    @staticmethod
+    def from_pyo3_list(list pyo3_funding_rates) -> list[FundingRateUpdate]:
+        """
+        Return legacy Cython funding rate updates converted from the given pyo3 Rust objects.
+
+        Parameters
+        ----------
+        pyo3_funding_rates : list[nautilus_pyo3.FundingRateUpdate]
+            The pyo3 Rust funding rate updates to convert from.
+
+        Returns
+        -------
+        list[FundingRateUpdate]
+
+        """
+        cdef list[FundingRateUpdate] output = []
+
+        for pyo3_funding_rate in pyo3_funding_rates:
+            output.append(FundingRateUpdate.from_pyo3(pyo3_funding_rate))
+
+        return output
+
+    @staticmethod
+    def from_pyo3(pyo3_funding_rate) -> FundingRateUpdate:
+        """
+        Return a legacy Cython funding rate update converted from the given pyo3 Rust object.
+
+        Parameters
+        ----------
+        pyo3_funding_rate : nautilus_pyo3.FundingRateUpdate
+            The pyo3 Rust funding rate update to convert from.
+
+        Returns
+        -------
+        FundingRateUpdate
+
+        """
+        return FundingRateUpdate(
+            instrument_id=InstrumentId.from_str(pyo3_funding_rate.instrument_id.value),
+            rate=pyo3_funding_rate.rate,
+            next_rate=pyo3_funding_rate.next_rate,
+            ts_next_funding=pyo3_funding_rate.ts_next_funding,
+            ts_event=pyo3_funding_rate.ts_event,
+            ts_init=pyo3_funding_rate.ts_init,
+        )

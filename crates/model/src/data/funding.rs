@@ -54,24 +54,6 @@ impl FundingRateUpdate {
     pub fn new(
         instrument_id: InstrumentId,
         rate: Decimal,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
-    ) -> Self {
-        Self {
-            instrument_id,
-            rate,
-            next_rate: None,
-            ts_next_funding: None,
-            ts_event,
-            ts_init,
-        }
-    }
-
-    /// Creates a new [`FundingRateUpdate`] instance with all fields.
-    #[must_use]
-    pub fn new_with_next(
-        instrument_id: InstrumentId,
-        rate: Decimal,
         next_rate: Option<Decimal>,
         ts_next_funding: Option<UnixNanos>,
         ts_event: UnixNanos,
@@ -160,7 +142,8 @@ mod tests {
         let ts_event = UnixNanos::from(1);
         let ts_init = UnixNanos::from(2);
 
-        let funding_rate = FundingRateUpdate::new(instrument_id, rate, ts_event, ts_init);
+        let funding_rate =
+            FundingRateUpdate::new(instrument_id, rate, None, None, ts_event, ts_init);
 
         assert_eq!(funding_rate.instrument_id, instrument_id);
         assert_eq!(funding_rate.rate, rate);
@@ -171,14 +154,14 @@ mod tests {
     }
 
     #[rstest]
-    fn test_funding_rate_update_new_with_next(instrument_id: InstrumentId) {
+    fn test_funding_rate_update_new_with_optional_fields(instrument_id: InstrumentId) {
         let rate = Decimal::from_str("0.0001").unwrap();
         let next_rate = Some(Decimal::from_str("0.0002").unwrap());
         let ts_next_funding = Some(UnixNanos::from(1000));
         let ts_event = UnixNanos::from(1);
         let ts_init = UnixNanos::from(2);
 
-        let funding_rate = FundingRateUpdate::new_with_next(
+        let funding_rate = FundingRateUpdate::new(
             instrument_id,
             rate,
             next_rate,
@@ -203,7 +186,7 @@ mod tests {
         let ts_event = UnixNanos::from(1);
         let ts_init = UnixNanos::from(2);
 
-        let funding_rate = FundingRateUpdate::new_with_next(
+        let funding_rate = FundingRateUpdate::new(
             instrument_id,
             rate,
             next_rate,
@@ -224,7 +207,8 @@ mod tests {
         let ts_event = UnixNanos::from(1);
         let ts_init = UnixNanos::from(2);
 
-        let funding_rate = FundingRateUpdate::new(instrument_id, rate, ts_event, ts_init);
+        let funding_rate =
+            FundingRateUpdate::new(instrument_id, rate, None, None, ts_event, ts_init);
 
         assert_eq!(funding_rate.ts_init(), ts_init);
     }
@@ -235,11 +219,15 @@ mod tests {
         let ts_event = UnixNanos::from(1);
         let ts_init = UnixNanos::from(2);
 
-        let funding_rate1 = FundingRateUpdate::new(instrument_id, rate, ts_event, ts_init);
-        let funding_rate2 = FundingRateUpdate::new(instrument_id, rate, ts_event, ts_init);
+        let funding_rate1 =
+            FundingRateUpdate::new(instrument_id, rate, None, None, ts_event, ts_init);
+        let funding_rate2 =
+            FundingRateUpdate::new(instrument_id, rate, None, None, ts_event, ts_init);
         let funding_rate3 = FundingRateUpdate::new(
             instrument_id,
             Decimal::from_str("0.0002").unwrap(),
+            None,
+            None,
             ts_event,
             ts_init,
         );
@@ -263,7 +251,7 @@ mod tests {
         let ts_event = UnixNanos::from(1);
         let ts_init = UnixNanos::from(2);
 
-        let funding_rate = FundingRateUpdate::new_with_next(
+        let funding_rate = FundingRateUpdate::new(
             instrument_id,
             rate,
             next_rate,
@@ -286,7 +274,7 @@ mod tests {
         let ts_event = UnixNanos::from(1);
         let ts_init = UnixNanos::from(2);
 
-        let funding_rate = FundingRateUpdate::new_with_next(
+        let funding_rate = FundingRateUpdate::new(
             instrument_id,
             rate,
             next_rate,
@@ -309,7 +297,7 @@ mod tests {
         let ts_event = UnixNanos::from(1);
         let ts_init = UnixNanos::from(2);
 
-        let funding_rate = FundingRateUpdate::new_with_next(
+        let funding_rate = FundingRateUpdate::new(
             instrument_id,
             rate,
             next_rate,

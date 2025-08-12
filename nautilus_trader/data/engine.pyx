@@ -1723,6 +1723,8 @@ cdef class DataEngine(Component):
             self._handle_mark_price(data)
         elif isinstance(data, IndexPriceUpdate):
             self._handle_index_price(data)
+        elif isinstance(data, FundingRateUpdate):
+            self._handle_funding_rate(data)
         elif isinstance(data, Bar):
             self._handle_bar(data)
         elif isinstance(data, Instrument):
@@ -1874,6 +1876,12 @@ cdef class DataEngine(Component):
         self._msgbus.publish_c(
             topic=self._get_index_prices_topic(index_price.instrument_id),
             msg=index_price,
+        )
+
+    cpdef void _handle_funding_rate(self, FundingRateUpdate funding_rate):
+        self._msgbus.publish_c(
+            topic=self._get_funding_rates_topic(funding_rate.instrument_id),
+            msg=funding_rate,
         )
 
     cpdef void _handle_bar(self, Bar bar):
@@ -2674,16 +2682,3 @@ cdef class DataEngine(Component):
             topic=self._get_trades_topic(synthetic_instrument_id),
             msg=synthetic_trade,
         )
-
-    cpdef void _handle_funding_rate(self, FundingRateUpdate funding_rate):
-        """
-        Handle a funding rate update.
-
-        Parameters
-        ----------
-        funding_rate : FundingRateUpdate
-            The funding rate update to handle.
-
-        """
-        cdef str topic = self._get_funding_rates_topic(funding_rate.instrument_id)
-        self._msgbus.publish_c(topic=topic, msg=funding_rate)

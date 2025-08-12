@@ -99,6 +99,7 @@ config_tester = DataTesterConfig(
     # subscribe_trades=True,
     # subscribe_mark_prices=True,
     # subscribe_index_prices=True if instrument_type == OKXInstrumentType.SPOT else False,
+    # subscribe_funding_rates=True,
     # subscribe_bars=True,
     # subscribe_instrument_status=False,
     # subscribe_instrument_close=False,

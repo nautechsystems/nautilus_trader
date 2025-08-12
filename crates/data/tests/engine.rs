@@ -48,10 +48,8 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_data::{client::DataClientAdapter, engine::DataEngine};
 use nautilus_model::{
     data::{
-        Bar, BarType, Data, DataType, OrderBookDeltas, OrderBookDeltas_API, OrderBookDepth10,
-        QuoteTick, TradeTick,
-        funding::FundingRateUpdate,
-        prices::{IndexPriceUpdate, MarkPriceUpdate},
+        Bar, BarType, Data, DataType, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate,
+        OrderBookDeltas, OrderBookDeltas_API, OrderBookDepth10, QuoteTick, TradeTick,
         stubs::{stub_delta, stub_deltas, stub_depth10},
     },
     defi::{AmmType, Dex, DexType, chain::chains},
@@ -1528,6 +1526,8 @@ fn test_process_funding_rate(
     let funding_rate = FundingRateUpdate::new(
         audusd_sim.id,
         "0.0001".parse().unwrap(),
+        None,
+        None,
         UnixNanos::from(1),
         UnixNanos::from(2),
     );

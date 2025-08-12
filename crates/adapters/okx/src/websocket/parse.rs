@@ -17,9 +17,9 @@ use ahash::AHashMap;
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
     data::{
-        Bar, BarSpecification, BarType, BookOrder, Data, IndexPriceUpdate, MarkPriceUpdate,
-        OrderBookDelta, OrderBookDeltas, OrderBookDeltas_API, OrderBookDepth10, QuoteTick,
-        TradeTick, depth::DEPTH10_LEN,
+        Bar, BarSpecification, BarType, BookOrder, Data, FundingRateUpdate, IndexPriceUpdate,
+        MarkPriceUpdate, OrderBookDelta, OrderBookDeltas, OrderBookDeltas_API, OrderBookDepth10,
+        QuoteTick, TradeTick, depth::DEPTH10_LEN,
     },
     enums::{
         AggregationSource, AggressorSide, BookAction, LiquiditySide, OrderSide, OrderStatus,
@@ -44,12 +44,12 @@ use crate::{
         enums::{OKXBookAction, OKXCandleConfirm, OKXOrderStatus, OKXOrderType},
         models::OKXInstrument,
         parse::{
-            okx_channel_to_bar_spec, parse_client_order_id, parse_fee, parse_instrument_any,
-            parse_message_vec, parse_millisecond_timestamp, parse_order_side, parse_price,
-            parse_quantity,
+            okx_channel_to_bar_spec, parse_client_order_id, parse_fee, parse_funding_rate_msg,
+            parse_instrument_any, parse_message_vec, parse_millisecond_timestamp, parse_order_side,
+            parse_price, parse_quantity,
         },
     },
-    websocket::messages::{ExecutionReport, NautilusWsMessage},
+    websocket::messages::{ExecutionReport, NautilusWsMessage, OKXFundingRateMsg},
 };
 
 /// Parses vector of OKX book messages into Nautilus order book deltas.
@@ -173,6 +173,23 @@ pub fn parse_index_price_msg_vec(
         |msg| parse_index_price_msg(msg, *instrument_id, price_precision, ts_init),
         Data::IndexPriceUpdate,
     )
+}
+
+/// Parses vector of OKX funding rate messages into Nautilus funding rate updates.
+pub fn parse_funding_rate_msg_vec(
+    data: serde_json::Value,
+    instrument_id: &InstrumentId,
+    ts_init: UnixNanos,
+) -> anyhow::Result<Vec<FundingRateUpdate>> {
+    let msgs: Vec<OKXFundingRateMsg> = serde_json::from_value(data)?;
+
+    let mut result = Vec::with_capacity(msgs.len());
+    for msg in &msgs {
+        let funding_rate = parse_funding_rate_msg(msg, *instrument_id, ts_init)?;
+        result.push(funding_rate);
+    }
+
+    Ok(result)
 }
 
 /// Parses vector of OKX candle messages into Nautilus bars.
@@ -704,6 +721,10 @@ pub fn parse_ws_message_data(
                 parse_index_price_msg_vec(data, instrument_id, price_precision, ts_init)?;
             Ok(Some(NautilusWsMessage::Data(data_vec)))
         }
+        OKXWsChannel::FundingRate => {
+            let data_vec = parse_funding_rate_msg_vec(data, instrument_id, ts_init)?;
+            Ok(Some(NautilusWsMessage::FundingRates(data_vec)))
+        }
         channel if okx_channel_to_bar_spec(channel).is_some() => {
             let bar_spec = okx_channel_to_bar_spec(channel).expect("bar_spec checked above");
             let data_vec = parse_candle_msg_vec(
@@ -953,19 +974,16 @@ mod tests {
         };
 
         let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
-        let funding_rate = crate::common::parse::parse_funding_rate_msg(
-            &okx_funding_rates[0],
-            instrument_id,
-            UnixNanos::default(),
-        )
-        .unwrap();
+        let funding_rate =
+            parse_funding_rate_msg(&okx_funding_rates[0], instrument_id, UnixNanos::default())
+                .unwrap();
 
         assert_eq!(funding_rate.instrument_id, instrument_id);
-        assert_eq!(funding_rate.funding_rate, Decimal::new(1, 4));
-        assert_eq!(funding_rate.next_funding_rate, Decimal::new(2, 4));
+        assert_eq!(funding_rate.rate, Decimal::new(1, 4));
+        assert_eq!(funding_rate.next_rate, Some(Decimal::new(2, 4)));
         assert_eq!(
-            funding_rate.funding_time,
-            UnixNanos::from(1744590349506000000)
+            funding_rate.ts_next_funding,
+            Some(UnixNanos::from(1744590349506000000))
         );
         assert_eq!(funding_rate.ts_event, UnixNanos::from(1744590349506000000));
         assert_eq!(funding_rate.ts_init, UnixNanos::default());

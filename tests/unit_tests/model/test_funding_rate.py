@@ -15,6 +15,7 @@
 
 from decimal import Decimal
 
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
@@ -335,3 +336,76 @@ class TestFundingRateUpdate:
         assert hasattr(funding_rate, "ts_init")
         assert funding_rate.ts_event == 1_640_000_000_000_000_000
         assert funding_rate.ts_init == 1_640_000_000_000_000_000
+
+    def test_from_pyo3_minimal_fields(self):
+        # Arrange
+        pyo3_funding_rate = nautilus_pyo3.FundingRateUpdate(
+            instrument_id=nautilus_pyo3.InstrumentId.from_str("BTCUSDT-PERP.BINANCE"),
+            rate="0.0001",
+            ts_event=1_640_000_000_000_000_000,
+            ts_init=1_640_000_000_000_000_000,
+        )
+
+        # Act
+        result = FundingRateUpdate.from_pyo3(pyo3_funding_rate)
+
+        # Assert
+        assert result.instrument_id.value == "BTCUSDT-PERP.BINANCE"
+        assert result.rate == Decimal("0.0001")
+        assert result.next_rate is None
+        assert result.ts_next_funding is None
+        assert result.ts_event == 1_640_000_000_000_000_000
+        assert result.ts_init == 1_640_000_000_000_000_000
+
+    def test_from_pyo3_all_fields(self):
+        # Arrange
+        pyo3_funding_rate = nautilus_pyo3.FundingRateUpdate(
+            instrument_id=nautilus_pyo3.InstrumentId.from_str("BTCUSDT-PERP.BINANCE"),
+            rate="0.0001",
+            next_rate="0.0002",
+            ts_next_funding=1_640_000_100_000_000_000,
+            ts_event=1_640_000_000_000_000_000,
+            ts_init=1_640_000_000_000_000_000,
+        )
+
+        # Act
+        result = FundingRateUpdate.from_pyo3(pyo3_funding_rate)
+
+        # Assert
+        assert result.instrument_id.value == "BTCUSDT-PERP.BINANCE"
+        assert result.rate == Decimal("0.0001")
+        assert result.next_rate == Decimal("0.0002")
+        assert result.ts_next_funding == 1_640_000_100_000_000_000
+        assert result.ts_event == 1_640_000_000_000_000_000
+        assert result.ts_init == 1_640_000_000_000_000_000
+
+    def test_from_pyo3_list(self):
+        # Arrange
+        pyo3_funding_rates = [
+            nautilus_pyo3.FundingRateUpdate(
+                instrument_id=nautilus_pyo3.InstrumentId.from_str("BTCUSDT-PERP.BINANCE"),
+                rate="0.0001",
+                ts_event=1_640_000_000_000_000_000,
+                ts_init=1_640_000_000_000_000_000,
+            ),
+            nautilus_pyo3.FundingRateUpdate(
+                instrument_id=nautilus_pyo3.InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
+                rate="0.0002",
+                next_rate="0.0003",
+                ts_next_funding=1_640_000_100_000_000_000,
+                ts_event=1_640_000_001_000_000_000,
+                ts_init=1_640_000_001_000_000_000,
+            ),
+        ]
+
+        # Act
+        result = FundingRateUpdate.from_pyo3_list(pyo3_funding_rates)
+
+        # Assert
+        assert len(result) == 2
+        assert result[0].instrument_id.value == "BTCUSDT-PERP.BINANCE"
+        assert result[0].rate == Decimal("0.0001")
+        assert result[0].next_rate is None
+        assert result[1].instrument_id.value == "ETHUSDT-PERP.BINANCE"
+        assert result[1].rate == Decimal("0.0002")
+        assert result[1].next_rate == Decimal("0.0003")
