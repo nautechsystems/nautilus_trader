@@ -138,7 +138,7 @@ index 62b78cd8d0..beb0800211 100644
  opt-level = 3
 ```
 
-Pass `RUSTUP_TOOLCHAIN=nightly` when running `make build-debug` like commands and include it in in all [rust analyzer settings](#rust-analyzer-settings) for faster builds and IDE checks.
+Pass `RUSTUP_TOOLCHAIN=nightly` when running `make build-debug` like commands and include it in all [rust analyzer settings](#rust-analyzer-settings) for faster builds and IDE checks.
 
 ## Services
 
