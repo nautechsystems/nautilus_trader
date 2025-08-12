@@ -56,11 +56,16 @@ pub enum Side {
 }
 
 impl Side {
+    /// Converts a Nautilus order side to a BitMEX side.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the order side is not Buy or Sell.
     pub fn from_nautilus_order_side(value: nautilus_model::enums::OrderSide) -> Self {
         match value {
             nautilus_model::enums::OrderSide::Buy => Side::Buy,
             nautilus_model::enums::OrderSide::Sell => Side::Sell,
-            _ => panic!("Invalid order side"), // TODO: Result type?
+            _ => panic!("Invalid order side: {value:?}"),
         }
     }
 }

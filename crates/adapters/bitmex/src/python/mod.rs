@@ -22,6 +22,10 @@ pub mod websocket;
 use pyo3::prelude::*;
 
 /// Loaded as nautilus_pyo3.bitmex
+///
+/// # Errors
+///
+/// Returns an error if the module registration fails or if adding functions/classes fails.
 #[pymodule]
 pub fn bitmex(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Enums

@@ -165,6 +165,11 @@ pub fn parse_book_msg(
     )
 }
 
+/// Parses an OrderBook10 message into an OrderBookDepth10 object.
+///
+/// # Panics
+///
+/// Panics if the bid or ask arrays cannot be converted to exactly 10 elements.
 #[allow(clippy::too_many_arguments)]
 #[must_use]
 pub fn parse_book10_msg(
@@ -311,6 +316,11 @@ pub fn parse_trade_bin_msg(
 }
 
 #[must_use]
+/// Converts a WebSocket topic to a bar specification.
+///
+/// # Panics
+///
+/// Panics if the topic is not a valid bar topic (TradeBin1m, TradeBin5m, TradeBin1h, or TradeBin1d).
 pub fn bar_spec_from_topic(topic: &WsTopic) -> BarSpecification {
     match topic {
         WsTopic::TradeBin1m => BAR_SPEC_1_MINUTE,
@@ -321,6 +331,11 @@ pub fn bar_spec_from_topic(topic: &WsTopic) -> BarSpecification {
     }
 }
 
+/// Converts a bar specification to a WebSocket topic.
+///
+/// # Panics
+///
+/// Panics if the specification is not one of the supported values (1m, 5m, 1h, or 1d).
 #[must_use]
 pub fn topic_from_bar_spec(spec: BarSpecification) -> WsTopic {
     match spec {

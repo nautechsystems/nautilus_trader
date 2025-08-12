@@ -13,6 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+/// Load a test JSON file from the test_data directory.
+///
+/// # Panics
+///
+/// Panics if the test file cannot be read (should only happen if test data is missing).
 #[cfg(test)]
 #[must_use]
 pub fn load_test_json(file_name: &str) -> String {

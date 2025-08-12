@@ -246,6 +246,11 @@ impl BitmexWebSocketClient {
 }
 
 // TODO: Probably move this into common
+/// Call a Python callback with the given object.
+///
+/// # Errors
+///
+/// Returns an error if the Python callback fails.
 pub fn call_python(py: Python, callback: &PyObject, py_obj: PyObject) -> PyResult<()> {
     callback.call1(py, (py_obj,)).map_err(|e| {
         tracing::error!("Error calling Python: {e}");
