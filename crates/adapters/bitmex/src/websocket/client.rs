@@ -13,11 +13,20 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Provides the WebSocket client integration for the [BitMEX](https://bitmex.com) WebSocket API.
+//!
+//! This module defines and implements a strongly-typed [`BitmexWebSocketClient`] for
+//! connecting to BitMEX WebSocket streams. It handles authentication (when credentials
+//! are provided), manages subscriptions to market data and account update channels,
+//! and parses incoming messages into structured Nautilus domain objects.
+
 use std::sync::{
     Arc,
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
 };
 
+use ahash::AHashSet;
+use dashmap::DashMap;
 use futures_util::{Stream, StreamExt};
 use nautilus_common::runtime::get_runtime;
 use nautilus_core::{consts::NAUTILUS_USER_AGENT, time::get_atomic_clock_realtime};
@@ -30,6 +39,7 @@ use nautilus_network::websocket::{Consumer, MessageReader, WebSocketClient, WebS
 use reqwest::header::USER_AGENT;
 use tokio::time::Duration;
 use tokio_tungstenite::tungstenite::Message;
+use ustr::Ustr;
 
 use super::{
     cache::QuoteCache,
@@ -44,7 +54,7 @@ use super::{
 use crate::{consts::BITMEX_WS_URL, credential::Credential};
 
 /// Provides a WebSocket client for connecting to the [BitMEX](https://bitmex.com) real-time API.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
@@ -58,6 +68,8 @@ pub struct BitmexWebSocketClient {
     rx_exec: Option<Arc<tokio::sync::mpsc::UnboundedReceiver<OrderEventAny>>>,
     signal: Arc<AtomicBool>,
     task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
+    subscriptions: Arc<DashMap<String, AHashSet<Ustr>>>,
+    message_count: Arc<AtomicU64>,
 }
 
 impl BitmexWebSocketClient {
@@ -83,6 +95,8 @@ impl BitmexWebSocketClient {
             rx_exec: None,
             signal: Arc::new(AtomicBool::new(false)),
             task_handle: None,
+            subscriptions: Arc::new(DashMap::new()),
+            message_count: Arc::new(AtomicU64::new(0)),
         })
     }
 
@@ -92,9 +106,12 @@ impl BitmexWebSocketClient {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<Vec<Data>>();
         self.rx_data = Some(Arc::new(rx));
         let signal = self.signal.clone();
+        let message_count = self.message_count.clone();
 
         let stream_handle = get_runtime().spawn(async move {
-            BitmexDataFeedHandler::new(reader, signal, tx).run().await;
+            BitmexDataFeedHandler::new(reader, signal, message_count, tx)
+                .run()
+                .await;
         });
 
         self.task_handle = Some(Arc::new(stream_handle));
@@ -108,9 +125,12 @@ impl BitmexWebSocketClient {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<OrderEventAny>();
         self.rx_exec = Some(Arc::new(rx));
         let signal = self.signal.clone();
+        let message_count = self.message_count.clone();
 
         let stream_handle = get_runtime().spawn(async move {
-            BitmexExecFeedHandler::new(reader, signal, tx).run().await;
+            BitmexExecFeedHandler::new(reader, signal, message_count, tx)
+                .run()
+                .await;
         });
 
         self.task_handle = Some(Arc::new(stream_handle));
@@ -258,6 +278,19 @@ impl BitmexWebSocketClient {
     }
 
     async fn subscribe(&self, topics: Vec<String>) -> Result<(), BitmexWsError> {
+        // Track subscriptions
+        for topic in &topics {
+            if let Some((channel, symbol)) = topic.split_once(':') {
+                self.subscriptions
+                    .entry(channel.to_string())
+                    .or_default()
+                    .insert(Ustr::from(symbol));
+            } else {
+                // Topic without symbol (e.g., "execution", "order")
+                self.subscriptions.entry(topic.clone()).or_default();
+            }
+        }
+
         let message = serde_json::json!({
             "op": "subscribe",
             "args": topics
@@ -276,6 +309,21 @@ impl BitmexWebSocketClient {
     }
 
     async fn unsubscribe(&self, topics: Vec<String>) -> Result<(), BitmexWsError> {
+        // Remove from tracked subscriptions
+        for topic in &topics {
+            if let Some((channel, symbol)) = topic.split_once(':') {
+                if let Some(mut entry) = self.subscriptions.get_mut(channel) {
+                    entry.remove(&Ustr::from(symbol));
+                    if entry.is_empty() {
+                        self.subscriptions.remove(channel);
+                    }
+                }
+            } else {
+                // Topic without symbol
+                self.subscriptions.remove(topic);
+            }
+        }
+
         let message = serde_json::json!({
             "op": "unsubscribe",
             "args": topics
@@ -291,6 +339,16 @@ impl BitmexWebSocketClient {
         }
 
         Ok(())
+    }
+
+    /// Get the current number of active subscriptions.
+    pub fn subscription_count(&self) -> usize {
+        self.subscriptions.len()
+    }
+
+    /// Get the total number of messages received.
+    pub fn message_count(&self) -> u64 {
+        self.message_count.load(Ordering::Relaxed)
     }
 
     pub async fn subscribe_order_book(
@@ -393,12 +451,21 @@ impl BitmexWebSocketClient {
 struct BitmexFeedHandler {
     reader: MessageReader,
     signal: Arc<AtomicBool>,
+    message_count: Arc<AtomicU64>,
 }
 
 impl BitmexFeedHandler {
     /// Creates a new [`BitmexFeedHandler`] instance.
-    pub const fn new(reader: MessageReader, signal: Arc<AtomicBool>) -> Self {
-        Self { reader, signal }
+    pub const fn new(
+        reader: MessageReader,
+        signal: Arc<AtomicBool>,
+        message_count: Arc<AtomicU64>,
+    ) -> Self {
+        Self {
+            reader,
+            signal,
+            message_count,
+        }
     }
 
     /// Get the next message from the WebSocket stream.
@@ -415,6 +482,7 @@ impl BitmexFeedHandler {
             match tokio::time::timeout(timeout_duration, self.reader.next()).await {
                 Ok(Some(msg)) => match msg {
                     Ok(Message::Text(text)) => {
+                        self.message_count.fetch_add(1, Ordering::Relaxed);
                         // tracing::debug!(text); // TODO: Temporary for development
                         match serde_json::from_str(&text) {
                             Ok(msg) => match &msg {
@@ -490,13 +558,14 @@ struct BitmexDataFeedHandler {
 }
 
 impl BitmexDataFeedHandler {
-    /// Creates a new [`BitmexFeedHandler`] instance.
+    /// Creates a new [`BitmexDataFeedHandler`] instance.
     pub const fn new(
         reader: MessageReader,
         signal: Arc<AtomicBool>,
+        message_count: Arc<AtomicU64>,
         tx: tokio::sync::mpsc::UnboundedSender<Vec<Data>>,
     ) -> Self {
-        let handler = BitmexFeedHandler::new(reader, signal);
+        let handler = BitmexFeedHandler::new(reader, signal, message_count);
         Self { handler, tx }
     }
 
@@ -573,13 +642,14 @@ struct BitmexExecFeedHandler {
 }
 
 impl BitmexExecFeedHandler {
-    /// Creates a new [`BitmexFeedHandler`] instance.
+    /// Creates a new [`BitmexExecFeedHandler`] instance.
     pub const fn new(
         reader: MessageReader,
         signal: Arc<AtomicBool>,
+        message_count: Arc<AtomicU64>,
         tx: tokio::sync::mpsc::UnboundedSender<OrderEventAny>,
     ) -> Self {
-        let handler = BitmexFeedHandler::new(reader, signal);
+        let handler = BitmexFeedHandler::new(reader, signal, message_count);
         Self { handler, tx }
     }
 
