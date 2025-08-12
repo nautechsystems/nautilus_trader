@@ -3,6 +3,9 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added `FundingRateUpdate` data type
+- Added `subscribe_funding_rates` and `unsubscribe_funding_rates` methods for actors
+- Added `on_funding_rate` handler for actors
 - Added support for option combos for Interactive Brokers (#2812), thanks @faysou
 - Added loading of options chain from `request_instruments` for Interactive Brokers (#2809), thanks @faysou
 - Added `MarginModel` concept, base models, config, and factory for backtesting (#2794), thanks @faysou and @stefansimik
