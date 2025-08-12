@@ -20,6 +20,7 @@ import msgspec
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
@@ -121,6 +122,8 @@ def convert_nautilus_data_type_to_tardis_data_type(data_type: type) -> str:
         return "quote"
     elif data_type is TradeTick:
         return "trade"
+    elif data_type is FundingRateUpdate:
+        return "derivative_ticker"
     else:
         raise ValueError(f"Invalid `data_type` to convert, was {data_type}")
 

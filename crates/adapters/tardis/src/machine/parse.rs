@@ -20,8 +20,8 @@ use chrono::{DateTime, Utc};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{
-        Bar, BarType, BookOrder, Data, OrderBookDelta, OrderBookDeltas, OrderBookDeltas_API,
-        QuoteTick, TradeTick,
+        Bar, BarType, BookOrder, Data, FundingRateUpdate, OrderBookDelta, OrderBookDeltas,
+        OrderBookDeltas_API, QuoteTick, TradeTick,
     },
     enums::{AggregationSource, BookAction, OrderSide, RecordFlag},
     identifiers::{InstrumentId, TradeId},
@@ -30,7 +30,9 @@ use nautilus_model::{
 use uuid::Uuid;
 
 use super::{
-    message::{BarMsg, BookChangeMsg, BookLevel, BookSnapshotMsg, TradeMsg, WsMessage},
+    message::{
+        BarMsg, BookChangeMsg, BookLevel, BookSnapshotMsg, DerivativeTickerMsg, TradeMsg, WsMessage,
+    },
     types::InstrumentMiniInfo,
 };
 use crate::parse::{normalize_amount, parse_aggressor_side, parse_bar_spec, parse_book_action};
@@ -111,8 +113,33 @@ pub fn parse_tardis_ws_message(msg: WsMessage, info: Arc<InstrumentMiniInfo>) ->
             info.size_precision,
             info.instrument_id,
         ))),
+        // Derivative ticker messages are handled through a separate callback path
+        // for FundingRateUpdate since they're not part of the Data enum.
         WsMessage::DerivativeTicker(_) => None,
         WsMessage::Disconnect(_) => None,
+    }
+}
+
+/// Parse a Tardis WebSocket message specifically for funding rate updates.
+/// Returns `Some(FundingRateUpdate)` if the message contains funding rate data, `None` otherwise.
+#[must_use]
+pub fn parse_tardis_ws_message_funding_rate(
+    msg: WsMessage,
+    info: Arc<InstrumentMiniInfo>,
+) -> Option<FundingRateUpdate> {
+    match msg {
+        WsMessage::DerivativeTicker(msg) => {
+            match parse_derivative_ticker_msg(msg, info.instrument_id) {
+                Ok(funding_rate) => funding_rate,
+                Err(e) => {
+                    tracing::error!(
+                        "Failed to parse derivative ticker message for funding rate: {e}"
+                    );
+                    None
+                }
+            }
+        }
+        _ => None, // Only derivative ticker messages can contain funding rates
     }
 }
 
@@ -369,9 +396,52 @@ pub fn parse_bar_msg(
     Bar::new(bar_type, open, high, low, close, volume, ts_event, ts_init)
 }
 
+/// Parse a derivative ticker message into a funding rate update.
+///
+/// # Errors
+///
+/// Returns an error if timestamp fields cannot be converted to nanoseconds or decimal conversion fails.
+pub fn parse_derivative_ticker_msg(
+    msg: DerivativeTickerMsg,
+    instrument_id: InstrumentId,
+) -> anyhow::Result<Option<FundingRateUpdate>> {
+    // Only process if we have funding rate data
+    let funding_rate = match msg.funding_rate {
+        Some(rate) => rate,
+        None => return Ok(None), // No funding rate data
+    };
+
+    let ts_event = msg
+        .timestamp
+        .timestamp_nanos_opt()
+        .context("invalid timestamp: cannot extract event nanoseconds")?;
+    let ts_event = UnixNanos::from(ts_event as u64);
+
+    let ts_init = msg
+        .local_timestamp
+        .timestamp_nanos_opt()
+        .context("invalid timestamp: cannot extract init nanoseconds")?;
+    let ts_init = UnixNanos::from(ts_init as u64);
+
+    let rate = rust_decimal::Decimal::try_from(funding_rate)
+        .with_context(|| format!("Failed to convert funding rate {funding_rate} to Decimal"))?;
+
+    // For live data, we don't typically have funding timestamp info from derivative ticker
+    let ts_next_funding = None;
+
+    Ok(Some(FundingRateUpdate::new(
+        instrument_id,
+        rate,
+        ts_next_funding,
+        ts_event,
+        ts_init,
+    )))
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
+
 #[cfg(test)]
 mod tests {
     use nautilus_model::enums::{AggressorSide, BookAction};

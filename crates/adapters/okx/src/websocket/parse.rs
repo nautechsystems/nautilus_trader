@@ -980,7 +980,6 @@ mod tests {
 
         assert_eq!(funding_rate.instrument_id, instrument_id);
         assert_eq!(funding_rate.rate, Decimal::new(1, 4));
-        assert_eq!(funding_rate.next_rate, Some(Decimal::new(2, 4)));
         assert_eq!(
             funding_rate.ts_next_funding,
             Some(UnixNanos::from(1744590349506000000))

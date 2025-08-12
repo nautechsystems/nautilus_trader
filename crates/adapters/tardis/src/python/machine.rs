@@ -28,7 +28,7 @@ use crate::{
         Error,
         client::{TardisMachineClient, determine_instrument_info},
         message::WsMessage,
-        parse::parse_tardis_ws_message,
+        parse::{parse_tardis_ws_message, parse_tardis_ws_message_funding_rate},
         replay_normalized, stream_normalized,
         types::{
             InstrumentMiniInfo, ReplayNormalizedRequestOptions, StreamNormalizedRequestOptions,
@@ -252,13 +252,20 @@ async fn handle_python_stream<S>(
                         .and_then(|map| determine_instrument_info(&msg, map))
                 });
 
-                if let Some(info) = info
-                    && let Some(data) = parse_tardis_ws_message(msg, info)
-                {
-                    Python::with_gil(|py| {
-                        let py_obj = data_to_pycapsule(py, data);
-                        call_python(py, &callback, py_obj);
-                    });
+                if let Some(info) = info.clone() {
+                    if let Some(data) = parse_tardis_ws_message(msg.clone(), info.clone()) {
+                        Python::with_gil(|py| {
+                            let py_obj = data_to_pycapsule(py, data);
+                            call_python(py, &callback, py_obj);
+                        });
+                    } else if let Some(funding_rate) =
+                        parse_tardis_ws_message_funding_rate(msg, info)
+                    {
+                        Python::with_gil(|py| {
+                            let py_obj = funding_rate.into_py_any_unwrap(py);
+                            call_python(py, &callback, py_obj);
+                        });
+                    }
                 }
             }
             Err(e) => {

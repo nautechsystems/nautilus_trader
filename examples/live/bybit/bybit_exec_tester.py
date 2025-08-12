@@ -22,8 +22,6 @@ from nautilus_trader.adapters.bybit import BybitExecClientConfig
 from nautilus_trader.adapters.bybit import BybitLiveDataClientFactory
 from nautilus_trader.adapters.bybit import BybitLiveExecClientFactory
 from nautilus_trader.adapters.bybit import BybitProductType
-from nautilus_trader.cache.config import CacheConfig
-from nautilus_trader.common.config import DatabaseConfig
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
@@ -79,12 +77,12 @@ config_node = TradingNodeConfig(
         purge_from_database=True,  # Set True with caution
         graceful_shutdown_on_exception=True,
     ),
-    cache=CacheConfig(
-        database=DatabaseConfig(),
-        timestamps_as_iso8601=True,
-        persist_account_events=False,  # Useful for HFT ops where this can quickly accumulate
-        buffer_interval_ms=100,
-    ),
+    # cache=CacheConfig(
+    #     database=DatabaseConfig(),
+    #     timestamps_as_iso8601=True,
+    #     persist_account_events=False,  # Useful for HFT ops where this can quickly accumulate
+    #     buffer_interval_ms=100,
+    # ),
     portfolio=PortfolioConfig(min_account_state_logging_interval_ms=1_000),
     # message_bus=MessageBusConfig(
     #     database=DatabaseConfig(),
@@ -142,7 +140,6 @@ node = TradingNode(config=config_node)
 config_strat = ExecTesterConfig(
     instrument_id=InstrumentId.from_str(f"{symbol}.{BYBIT}"),
     external_order_claims=[InstrumentId.from_str(f"{symbol}.{BYBIT}")],
-    use_hyphens_in_client_order_ids=False,  # OKX doesn't allow hyphens in client order IDs
     # subscribe_quotes=False,
     # subscribe_trades=False,
     # subscribe_book=True,

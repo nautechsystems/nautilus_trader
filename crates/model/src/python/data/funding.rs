@@ -39,13 +39,12 @@ use crate::{data::FundingRateUpdate, identifiers::InstrumentId, python::common::
 #[pymethods]
 impl FundingRateUpdate {
     #[new]
-    #[pyo3(signature = (instrument_id, rate, ts_event, ts_init, next_rate=None, ts_next_funding=None))]
+    #[pyo3(signature = (instrument_id, rate, ts_event, ts_init, ts_next_funding=None))]
     fn py_new(
         instrument_id: InstrumentId,
         rate: Decimal,
         ts_event: u64,
         ts_init: u64,
-        next_rate: Option<Decimal>,
         ts_next_funding: Option<u64>,
     ) -> Self {
         let ts_event_nanos = UnixNanos::from(ts_event);
@@ -55,7 +54,6 @@ impl FundingRateUpdate {
         Self::new(
             instrument_id,
             rate,
-            next_rate,
             ts_next_funding_nanos,
             ts_event_nanos,
             ts_init_nanos,
@@ -94,12 +92,6 @@ impl FundingRateUpdate {
     #[pyo3(name = "rate")]
     fn py_rate(&self) -> Decimal {
         self.rate
-    }
-
-    #[getter]
-    #[pyo3(name = "next_rate")]
-    fn py_next_rate(&self) -> Option<Decimal> {
-        self.next_rate
     }
 
     #[getter]
@@ -153,12 +145,6 @@ impl FundingRateUpdate {
             "rate".to_string(),
             self.rate.to_string().into_py_any_unwrap(py),
         );
-        if let Some(next_rate) = self.next_rate {
-            dict.insert(
-                "next_rate".to_string(),
-                next_rate.to_string().into_py_any_unwrap(py),
-            );
-        }
         if let Some(ts_next_funding) = self.ts_next_funding {
             dict.insert(
                 "ts_next_funding".to_string(),
@@ -203,13 +189,6 @@ impl FundingRateUpdate {
             .ok_or_else(|| PyErr::new::<PyKeyError, _>("Missing 'ts_init' field"))?
             .extract()?;
 
-        let next_rate: Option<Decimal> = dict
-            .get_item("next_rate")
-            .ok()
-            .flatten()
-            .and_then(|v| v.extract::<String>().ok())
-            .and_then(|s| Decimal::from_str(&s).ok());
-
         let ts_next_funding: Option<u64> = dict
             .get_item("ts_next_funding")
             .ok()
@@ -219,7 +198,6 @@ impl FundingRateUpdate {
         Ok(Self::new(
             instrument_id,
             rate,
-            next_rate,
             ts_next_funding.map(UnixNanos::from),
             UnixNanos::from(ts_event),
             UnixNanos::from(ts_init),
@@ -261,28 +239,18 @@ impl FundingRateUpdate {
         let item1 = py_tuple.get_item(1)?;
         let rate_str: String = item1.downcast::<PyString>()?.extract()?;
 
-        let next_rate_str: Option<String> = py_tuple.get_item(2).ok().and_then(|item| {
-            if item.is_none() {
-                None
-            } else {
-                item.downcast::<PyString>()
-                    .ok()
-                    .and_then(|s| s.extract().ok())
-            }
-        });
-        let ts_next_funding: Option<u64> = py_tuple.get_item(3).ok().and_then(|item| {
+        let ts_next_funding: Option<u64> = py_tuple.get_item(2).ok().and_then(|item| {
             if item.is_none() {
                 None
             } else {
                 item.extract().ok()
             }
         });
-        let ts_event: u64 = py_tuple.get_item(4)?.extract()?;
-        let ts_init: u64 = py_tuple.get_item(5)?.extract()?;
+        let ts_event: u64 = py_tuple.get_item(3)?.extract()?;
+        let ts_init: u64 = py_tuple.get_item(4)?.extract()?;
 
         self.instrument_id = InstrumentId::from_str(&instrument_id_str).map_err(to_pyvalue_err)?;
         self.rate = Decimal::from_str(&rate_str).map_err(to_pyvalue_err)?;
-        self.next_rate = next_rate_str.and_then(|s| Decimal::from_str(&s).ok());
         self.ts_next_funding = ts_next_funding.map(UnixNanos::from);
         self.ts_event = UnixNanos::from(ts_event);
         self.ts_init = UnixNanos::from(ts_init);
@@ -294,7 +262,6 @@ impl FundingRateUpdate {
         Ok((
             self.instrument_id.to_string(),
             self.rate.to_string(),
-            self.next_rate.map(|r| r.to_string()),
             self.ts_next_funding.map(|ts| ts.as_u64()),
             self.ts_event.as_u64(),
             self.ts_init.as_u64(),
@@ -314,7 +281,6 @@ impl FundingRateUpdate {
         Self::new(
             InstrumentId::from("NULL.NULL"),
             Decimal::ZERO,
-            None,
             None,
             UnixNanos::default(),
             UnixNanos::default(),
@@ -338,8 +304,6 @@ impl FundingRateUpdate {
         let ts_event: u64 = obj.getattr("ts_event")?.extract()?;
         let ts_init: u64 = obj.getattr("ts_init")?.extract()?;
 
-        let next_rate: Option<Decimal> =
-            obj.getattr("next_rate").ok().and_then(|x| x.extract().ok());
         let ts_next_funding: Option<u64> = obj
             .getattr("ts_next_funding")
             .ok()
@@ -348,7 +312,6 @@ impl FundingRateUpdate {
         Ok(Self::new(
             instrument_id,
             rate,
-            next_rate,
             ts_next_funding.map(UnixNanos::from),
             UnixNanos::from(ts_event),
             UnixNanos::from(ts_init),
@@ -382,12 +345,10 @@ mod tests {
                 ts_event.as_u64(),
                 ts_init.as_u64(),
                 None,
-                None,
             );
 
             assert_eq!(funding_rate.instrument_id, instrument_id);
             assert_eq!(funding_rate.rate, rate);
-            assert_eq!(funding_rate.next_rate, None);
             assert_eq!(funding_rate.ts_next_funding, None);
             assert_eq!(funding_rate.ts_event, ts_event);
             assert_eq!(funding_rate.ts_init, ts_init);

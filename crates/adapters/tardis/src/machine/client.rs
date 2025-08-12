@@ -188,7 +188,9 @@ pub fn determine_instrument_info(
         WsMessage::TradeBar(msg) => {
             TardisInstrumentKey::new(Ustr::from(&msg.symbol), msg.exchange.clone())
         }
-        WsMessage::DerivativeTicker(_) => return None,
+        WsMessage::DerivativeTicker(msg) => {
+            TardisInstrumentKey::new(Ustr::from(&msg.symbol), msg.exchange.clone())
+        }
         WsMessage::Disconnect(_) => return None,
     };
     if let Some(inst) = instrument_map.get(&key) {

@@ -103,9 +103,10 @@ config_tester = DataTesterConfig(
     instrument_ids=instrument_ids,
     # subscribe_book_deltas=True,
     # subscribe_book_depth=True,
-    subscribe_book_at_interval=True,
+    # subscribe_book_at_interval=True,
     subscribe_quotes=True,
     subscribe_trades=True,
+    # subscribe_funding_rates=True,
     # subscribe_bars=True,
 )
 tester = DataTester(config=config_tester)

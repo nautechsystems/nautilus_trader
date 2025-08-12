@@ -1527,7 +1527,6 @@ fn test_process_funding_rate(
         audusd_sim.id,
         "0.0001".parse().unwrap(),
         None,
-        None,
         UnixNanos::from(1),
         UnixNanos::from(2),
     );

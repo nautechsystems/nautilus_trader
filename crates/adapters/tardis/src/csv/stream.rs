@@ -34,7 +34,7 @@ use pyo3::{PyObject, Python};
 use crate::{
     csv::{
         create_book_order, create_csv_reader, infer_precision, parse_delta_record,
-        parse_quote_record, parse_trade_record,
+        parse_derivative_ticker_record, parse_quote_record, parse_trade_record,
         record::{
             TardisBookUpdateRecord, TardisOrderBookSnapshot5Record,
             TardisOrderBookSnapshot25Record, TardisQuoteRecord, TardisTradeRecord,
@@ -1244,6 +1244,139 @@ pub fn stream_depth10_from_snapshot25<P: AsRef<Path>>(
         instrument_id,
         limit,
     )
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// FundingRateUpdate Streaming
+////////////////////////////////////////////////////////////////////////////////
+
+use nautilus_model::data::FundingRateUpdate;
+
+use crate::csv::record::TardisDerivativeTickerRecord;
+
+/// An iterator for streaming [`FundingRateUpdate`]s from a Tardis CSV file in chunks.
+struct FundingRateStreamIterator {
+    reader: Reader<Box<dyn Read>>,
+    record: StringRecord,
+    buffer: Vec<FundingRateUpdate>,
+    chunk_size: usize,
+    instrument_id: Option<InstrumentId>,
+    limit: Option<usize>,
+    records_processed: usize,
+}
+
+impl FundingRateStreamIterator {
+    /// Creates a new [`FundingRateStreamIterator`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file cannot be opened or read.
+    fn new<P: AsRef<Path>>(
+        filepath: P,
+        chunk_size: usize,
+        instrument_id: Option<InstrumentId>,
+        limit: Option<usize>,
+    ) -> anyhow::Result<Self> {
+        let reader = create_csv_reader(filepath)?;
+
+        Ok(Self {
+            reader,
+            record: StringRecord::new(),
+            buffer: Vec::with_capacity(chunk_size),
+            chunk_size,
+            instrument_id,
+            limit,
+            records_processed: 0,
+        })
+    }
+}
+
+impl Iterator for FundingRateStreamIterator {
+    type Item = anyhow::Result<Vec<FundingRateUpdate>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(limit) = self.limit
+            && self.records_processed >= limit
+        {
+            return None;
+        }
+
+        if !self.buffer.is_empty() {
+            let chunk = self.buffer.split_off(0);
+            return Some(Ok(chunk));
+        }
+
+        self.buffer.clear();
+        let mut records_read = 0;
+
+        while records_read < self.chunk_size {
+            match self.reader.read_record(&mut self.record) {
+                Ok(true) => {
+                    let result = self
+                        .record
+                        .deserialize::<TardisDerivativeTickerRecord>(None)
+                        .map_err(anyhow::Error::from)
+                        .map(|data| parse_derivative_ticker_record(&data, self.instrument_id));
+
+                    match result {
+                        Ok(Some(funding_rate)) => {
+                            self.buffer.push(funding_rate);
+                            records_read += 1;
+                            self.records_processed += 1;
+
+                            if let Some(limit) = self.limit
+                                && self.records_processed >= limit
+                            {
+                                break;
+                            }
+                        }
+                        Ok(None) => {
+                            // Skip this record as it has no funding data
+                            self.records_processed += 1;
+                        }
+                        Err(e) => {
+                            return Some(Err(anyhow::anyhow!(
+                                "Failed to parse funding rate record: {e}"
+                            )));
+                        }
+                    }
+                }
+                Ok(false) => {
+                    if self.buffer.is_empty() {
+                        return None;
+                    }
+                    let chunk = self.buffer.split_off(0);
+                    return Some(Ok(chunk));
+                }
+                Err(e) => return Some(Err(anyhow::anyhow!("Failed to read record: {e}"))),
+            }
+        }
+
+        if self.buffer.is_empty() {
+            None
+        } else {
+            let chunk = self.buffer.split_off(0);
+            Some(Ok(chunk))
+        }
+    }
+}
+
+/// Streams [`FundingRateUpdate`]s from a Tardis derivative ticker CSV file,
+/// yielding chunks of the specified size.
+///
+/// This function parses the `funding_rate`, `predicted_funding_rate`, and `funding_timestamp`
+/// fields from derivative ticker data to create funding rate updates.
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be opened, read, or parsed as CSV.
+pub fn stream_funding_rates<P: AsRef<Path>>(
+    filepath: P,
+    chunk_size: usize,
+    instrument_id: Option<InstrumentId>,
+    limit: Option<usize>,
+) -> anyhow::Result<impl Iterator<Item = anyhow::Result<Vec<FundingRateUpdate>>>> {
+    FundingRateStreamIterator::new(filepath, chunk_size, instrument_id, limit)
 }
 
 ////////////////////////////////////////////////////////////////////////////////

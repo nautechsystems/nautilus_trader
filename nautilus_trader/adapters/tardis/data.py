@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from typing import Any
 
 from nautilus_trader.adapters.tardis.common import convert_nautilus_bar_type_to_tardis_data_type
 from nautilus_trader.adapters.tardis.common import convert_nautilus_data_type_to_tardis_data_type
@@ -36,15 +37,18 @@ from nautilus_trader.data.messages import RequestInstruments
 from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.data.messages import SubscribeBars
+from nautilus_trader.data.messages import SubscribeFundingRates
 from nautilus_trader.data.messages import SubscribeOrderBook
 from nautilus_trader.data.messages import SubscribeQuoteTicks
 from nautilus_trader.data.messages import SubscribeTradeTicks
 from nautilus_trader.data.messages import UnsubscribeBars
+from nautilus_trader.data.messages import UnsubscribeFundingRates
 from nautilus_trader.data.messages import UnsubscribeOrderBook
 from nautilus_trader.data.messages import UnsubscribeQuoteTicks
 from nautilus_trader.data.messages import UnsubscribeTradeTicks
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
@@ -288,6 +292,11 @@ class TardisDataClient(LiveMarketDataClient):
         tardis_data_type = convert_nautilus_data_type_to_tardis_data_type(TradeTick)
         self._subscribe_stream(command.instrument_id, tardis_data_type, "trades")
 
+    async def _subscribe_funding_rates(self, command: SubscribeFundingRates) -> None:
+        # For Tardis, funding rates come from derivative_ticker messages
+        tardis_data_type = convert_nautilus_data_type_to_tardis_data_type(FundingRateUpdate)
+        self._subscribe_stream(command.instrument_id, tardis_data_type, "funding rates")
+
     async def _subscribe_bars(self, command: SubscribeBars) -> None:
         tardis_data_type = convert_nautilus_bar_type_to_tardis_data_type(command.bar_type)
         self._subscribe_stream(command.bar_type.instrument_id, tardis_data_type, "bars")
@@ -310,6 +319,11 @@ class TardisDataClient(LiveMarketDataClient):
 
     async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
         tardis_data_type = convert_nautilus_data_type_to_tardis_data_type(TradeTick)
+        ws_client_key = get_ws_client_key(command.instrument_id, tardis_data_type)
+        self._dispose_websocket_client_by_key(ws_client_key)
+
+    async def _unsubscribe_funding_rates(self, command: UnsubscribeFundingRates) -> None:
+        tardis_data_type = convert_nautilus_data_type_to_tardis_data_type(FundingRateUpdate)
         ws_client_key = get_ws_client_key(command.instrument_id, tardis_data_type)
         self._dispose_websocket_client_by_key(ws_client_key)
 
@@ -474,12 +488,15 @@ class TardisDataClient(LiveMarketDataClient):
             request.params,
         )
 
-    def _handle_msg(
-        self,
-        pycapsule: object,
-    ) -> None:
+    def _handle_msg(self, msg: Any) -> None:
+        print(msg)
+        if isinstance(msg, nautilus_pyo3.FundingRateUpdate):
+            funding_rate = FundingRateUpdate.from_pyo3(msg)
+            self._handle_data(funding_rate)
+            return
+
         # The capsule will fall out of scope at the end of this method,
         # and eventually be garbage collected. The contained pointer
         # to `Data` is still owned and managed by Rust.
-        data = capsule_to_data(pycapsule)
+        data = capsule_to_data(msg)
         self._handle_data(data)

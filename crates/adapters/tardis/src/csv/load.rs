@@ -18,7 +18,10 @@ use std::{error::Error, path::Path};
 use csv::StringRecord;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    data::{DEPTH10_LEN, NULL_ORDER, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick},
+    data::{
+        DEPTH10_LEN, FundingRateUpdate, NULL_ORDER, OrderBookDelta, OrderBookDepth10, QuoteTick,
+        TradeTick,
+    },
     enums::{OrderSide, RecordFlag},
     identifiers::InstrumentId,
     types::{Quantity, fixed::FIXED_PRECISION},
@@ -27,9 +30,9 @@ use nautilus_model::{
 use crate::{
     csv::{
         create_book_order, create_csv_reader, infer_precision, parse_delta_record,
-        parse_quote_record, parse_trade_record,
+        parse_derivative_ticker_record, parse_quote_record, parse_trade_record,
         record::{
-            TardisBookUpdateRecord, TardisOrderBookSnapshot5Record,
+            TardisBookUpdateRecord, TardisDerivativeTickerRecord, TardisOrderBookSnapshot5Record,
             TardisOrderBookSnapshot25Record, TardisQuoteRecord, TardisTradeRecord,
         },
     },
@@ -690,6 +693,45 @@ pub fn load_trades<P: AsRef<Path>>(
     }
 
     Ok(trades)
+}
+
+/// Loads [`FundingRateUpdate`]s from a Tardis format derivative ticker CSV at the given `filepath`,
+/// automatically applying `GZip` decompression for files ending in ".gz".
+///
+/// This function parses the `funding_rate`, `predicted_funding_rate`, and `funding_timestamp`
+/// fields from derivative ticker data to create funding rate updates.
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be opened, read, or parsed as CSV.
+pub fn load_funding_rates<P: AsRef<Path>>(
+    filepath: P,
+    instrument_id: Option<InstrumentId>,
+    limit: Option<usize>,
+) -> Result<Vec<FundingRateUpdate>, Box<dyn Error>> {
+    // Estimate capacity for Vec pre-allocation
+    let estimated_capacity = limit.unwrap_or(100_000).min(1_000_000);
+    let mut funding_rates: Vec<FundingRateUpdate> = Vec::with_capacity(estimated_capacity);
+
+    let mut reader = create_csv_reader(filepath)?;
+    let mut record = StringRecord::new();
+
+    while reader.read_record(&mut record)? {
+        let data: TardisDerivativeTickerRecord = record.deserialize(None)?;
+
+        // Parse to funding rate update (returns None if no funding data)
+        if let Some(funding_rate) = parse_derivative_ticker_record(&data, instrument_id) {
+            funding_rates.push(funding_rate);
+
+            if let Some(limit) = limit
+                && funding_rates.len() >= limit
+            {
+                break;
+            }
+        }
+    }
+
+    Ok(funding_rates)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
