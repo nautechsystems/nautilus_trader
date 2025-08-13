@@ -932,11 +932,11 @@ class BybitDataClient(LiveMarketDataClient):
 
             # Get next funding time (milliseconds)
             next_funding_time_str = getattr(ticker, "nextFundingTime", None)
-            ts_next_funding = None
+            next_funding_ns = None
             if next_funding_time_str:
                 try:
                     # Bybit provides next funding time as a millisecond timestamp string
-                    ts_next_funding = int(next_funding_time_str) * 1_000_000  # Convert ms to ns
+                    next_funding_ns = int(next_funding_time_str) * 1_000_000  # Convert ms to ns
                 except (ValueError, TypeError):
                     self._log.warning(f"Failed to parse next funding time: {next_funding_time_str}")
 
@@ -957,7 +957,7 @@ class BybitDataClient(LiveMarketDataClient):
                 rate=funding_rate,
                 ts_event=ts_event,
                 ts_init=self._clock.timestamp_ns(),
-                ts_next_funding=ts_next_funding,
+                next_funding_ns=next_funding_ns,
             )
         except Exception as e:
             self._log.error(f"Error creating FundingRateUpdate from ticker: {e}")
