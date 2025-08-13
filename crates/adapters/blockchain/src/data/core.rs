@@ -626,6 +626,9 @@ impl BlockchainDataClientCore {
         let token_infos = self.tokens.batch_fetch_token_info(&batch_addresses).await?;
 
         let mut empty_tokens = HashSet::new();
+        // We cache both the multicall failed and decoding errors here to skip the pools.
+        let mut decoding_errors_tokens = HashSet::new();
+
         for (token_address, token_info) in token_infos {
             match token_info {
                 Ok(token) => {
@@ -642,6 +645,12 @@ impl BlockchainDataClientCore {
                     TokenInfoError::EmptyTokenField { .. } => {
                         empty_tokens.insert(token_address);
                     }
+                    TokenInfoError::DecodingError { .. } => {
+                        decoding_errors_tokens.insert(token_address);
+                    }
+                    TokenInfoError::CallFailed { .. } => {
+                        decoding_errors_tokens.insert(token_address);
+                    }
                     _ => {
                         tracing::error!(
                             "Error fetching token info: {}",
@@ -653,8 +662,12 @@ impl BlockchainDataClientCore {
         }
 
         for pool in &mut *pool_buffer {
-            // We skip the pool that contains one of the tokens that is flagged as empty
-            if empty_tokens.contains(&pool.token0) || empty_tokens.contains(&pool.token1) {
+            // We skip the pool that contains one of the tokens that is flagged as empty or decoding error.
+            if empty_tokens.contains(&pool.token0)
+                || empty_tokens.contains(&pool.token1)
+                || decoding_errors_tokens.contains(&pool.token0)
+                || decoding_errors_tokens.contains(&pool.token1)
+            {
                 continue;
             }
 

@@ -403,7 +403,10 @@ mod tests {
         // Returns raw string bytes without ABI encoding - "Rico" as raw bytes
         Multicall3::Result {
             success: true,
-            returnData: Bytes::from(hex::decode("5269636f00000000000000000000000000000000000000000000000000000000").unwrap()),
+            returnData: Bytes::from(
+                hex::decode("5269636f00000000000000000000000000000000000000000000000000000000")
+                    .unwrap(),
+            ),
         }
     }
 
@@ -417,7 +420,10 @@ mod tests {
         // Returns function selector instead of actual data
         Multicall3::Result {
             success: true,
-            returnData: Bytes::from(hex::decode("06fdde0300000000000000000000000000000000000000000000000000000000").unwrap()),
+            returnData: Bytes::from(
+                hex::decode("06fdde0300000000000000000000000000000000000000000000000000000000")
+                    .unwrap(),
+            ),
         }
     }
 
@@ -426,7 +432,10 @@ mod tests {
         // Returns raw string bytes without ABI encoding - longer string example
         Multicall3::Result {
             success: true,
-            returnData: Bytes::from(hex::decode("5269636f62616e6b205269736b20536861726500000000000000000000000000").unwrap()),
+            returnData: Bytes::from(
+                hex::decode("5269636f62616e6b205269736b20536861726500000000000000000000000000")
+                    .unwrap(),
+            ),
         }
     }
 
@@ -535,7 +544,10 @@ mod tests {
                 assert_eq!(field, "Name");
                 assert_eq!(address, non_abi_encoded_token_address);
                 assert!(reason.contains("type check failed"));
-                assert_eq!(raw_data, "0x5269636f00000000000000000000000000000000000000000000000000000000");
+                assert_eq!(
+                    raw_data,
+                    "0x5269636f00000000000000000000000000000000000000000000000000000000"
+                );
                 // Raw bytes "Rico" without ABI encoding
             }
             _ => panic!("Expected DecodingError"),
@@ -563,7 +575,10 @@ mod tests {
                 assert_eq!(field, "Name");
                 assert_eq!(address, token_address);
                 assert!(reason.contains("type check failed"));
-                assert_eq!(raw_data, "0x06fdde0300000000000000000000000000000000000000000000000000000000");
+                assert_eq!(
+                    raw_data,
+                    "0x06fdde0300000000000000000000000000000000000000000000000000000000"
+                );
             }
             _ => panic!("Expected DecodingError"),
         }
@@ -590,7 +605,10 @@ mod tests {
                 assert_eq!(field, "Name");
                 assert_eq!(address, token_address);
                 assert!(reason.contains("type check failed"));
-                assert_eq!(raw_data, "0x5269636f62616e6b205269736b20536861726500000000000000000000000000");
+                assert_eq!(
+                    raw_data,
+                    "0x5269636f62616e6b205269736b20536861726500000000000000000000000000"
+                );
                 // Example of longer non-ABI encoded string
             }
             _ => panic!("Expected DecodingError"),
