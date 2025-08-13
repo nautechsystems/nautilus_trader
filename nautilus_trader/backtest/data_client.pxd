@@ -15,6 +15,8 @@
 
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.client cimport MarketDataClient
+from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.instruments.base cimport Instrument
 
 
 cdef class BacktestDataClient(DataClient):
@@ -22,4 +24,4 @@ cdef class BacktestDataClient(DataClient):
 
 
 cdef class BacktestMarketDataClient(MarketDataClient):
-    pass
+    cdef Instrument _create_option_spread_from_components(self, InstrumentId spread_instrument_id)

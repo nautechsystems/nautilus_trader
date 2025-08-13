@@ -132,8 +132,10 @@ cdef class OptionSpread(Instrument):
         dict info = None,
     ) -> None:
         Condition.valid_string(strategy_type, "strategy_type")
+
         if exchange is not None:
             Condition.valid_string(exchange, "exchange")
+
         super().__init__(
             instrument_id=instrument_id,
             raw_symbol=raw_symbol,
