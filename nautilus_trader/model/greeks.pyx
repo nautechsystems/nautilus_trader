@@ -98,7 +98,7 @@ cdef class GreeksCalculator:
         index_instrument_id: InstrumentId | None = None,
         beta_weights: dict[InstrumentId, float] | None = None,
         vega_time_weight_base: int | None = None,
-    ) -> GreeksData:
+    ) -> GreeksData | None:
         """
         Calculate option or underlying greeks for a given instrument and a quantity of 1.
 
@@ -205,8 +205,19 @@ cdef class GreeksCalculator:
             is_call = instrument.option_kind is OptionKind.CALL
             strike = float(instrument.strike_price)
 
-            option_mid_price = float(self._cache.price(instrument_id, PriceType.MID))
-            underlying_price = float(self._cache.price(underlying_instrument_id, PriceType.LAST))
+            option_mid_price_obj = self._cache.price(instrument_id, PriceType.MID)
+            underlying_price_obj = self._cache.price(underlying_instrument_id, PriceType.LAST)
+
+            if option_mid_price_obj is None:
+                self._log.error(f"No mid price available for option {instrument_id}")
+                return
+
+            if underlying_price_obj is None:
+                self._log.error(f"No last price available for underlying {underlying_instrument_id}")
+                return
+
+            option_mid_price = float(option_mid_price_obj)
+            underlying_price = float(underlying_price_obj)
 
             greeks = imply_vol_and_greeks(underlying_price, interest_rate, cost_of_carry, is_call, strike,
                                           expiry_in_years, option_mid_price, multiplier)
@@ -377,7 +388,7 @@ cdef class GreeksCalculator:
         beta_weights: dict[InstrumentId, float] | None = None,
         greeks_filter: callable | None = None,
         vega_time_weight_base: int | None = None,
-    ) -> PortfolioGreeks:
+    ) -> PortfolioGreeks | None:
         """
         Calculate the portfolio Greeks for a given set of positions.
 
@@ -484,6 +495,11 @@ cdef class GreeksCalculator:
                 beta_weights,
                 vega_time_weight_base,
             )
+
+            if instrument_greeks is None:
+                self._log.error(f"No greeks available for underlying {position_instrument_id}")
+                return
+
             position_greeks = quantity * instrument_greeks
 
             if greeks_filter is None or greeks_filter(position_greeks):

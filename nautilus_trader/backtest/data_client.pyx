@@ -17,13 +17,14 @@
 This module provides a data client for backtesting.
 """
 
+from libc.stdint cimport uint64_t
+
 from nautilus_trader.common.config import NautilusConfig
 
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport MessageBus
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.client cimport MarketDataClient
 from nautilus_trader.data.messages cimport RequestBars
@@ -58,8 +59,14 @@ from nautilus_trader.data.messages cimport UnsubscribeOrderBook
 from nautilus_trader.data.messages cimport UnsubscribeQuoteTicks
 from nautilus_trader.data.messages cimport UnsubscribeTradeTicks
 from nautilus_trader.model.identifiers cimport ClientId
+from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.instruments.option_spread cimport OptionSpread
+from nautilus_trader.model.objects cimport Currency
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class BacktestDataClient(DataClient):
@@ -414,10 +421,77 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         cdef Instrument instrument = self._cache.instrument(request.instrument_id)
 
         if instrument is None:
-            self._log.error(f"Cannot find instrument for {request.instrument_id}")
-            return
+            # Check if this is a spread instrument - we're already in backtest context
+            if request.instrument_id.is_spread():
+                # Create OptionSpread from component instruments
+                instrument = self._create_option_spread_from_components(request.instrument_id)
+
+                if instrument is not None:
+                    self._cache.add_instrument(instrument)
+                    self._log.info(f"Created OptionSpread instrument {request.instrument_id} from components")
+                else:
+                    self._log.error(f"Failed to create OptionSpread instrument {request.instrument_id} from components")
+                    return
+            else:
+                self._log.error(f"Cannot find instrument for {request.instrument_id}")
+                return
 
         self._handle_instrument(instrument, request.id, request.start, request.end, request.params)
+
+    cdef Instrument _create_option_spread_from_components(self, InstrumentId spread_instrument_id):
+        try:
+            # Parse component instruments from spread ID
+            components = spread_instrument_id.to_list()
+
+            if not components:
+                self._log.error(f"No components found in spread instrument ID {spread_instrument_id}")
+                return None
+
+            # Get the first component instrument to use as template
+            first_component_id = components[0][0]
+            first_component = self._cache.instrument(first_component_id)
+
+            if first_component is None:
+                self._log.error(f"Cannot find first component instrument {first_component_id} for spread {spread_instrument_id}")
+                return None
+
+            # Validate all components exist
+            for component_id, ratio in components:
+                component = self._cache.instrument(component_id)
+
+                if component is None:
+                    self._log.error(f"Cannot find component instrument {component_id} for spread {spread_instrument_id}")
+                    return None
+
+            # Create timestamp
+            ts_event = self._clock.timestamp_ns()
+
+            # Create the OptionSpread instrument
+            return OptionSpread(
+                instrument_id=spread_instrument_id,
+                raw_symbol=Symbol(spread_instrument_id.symbol.value),
+                asset_class=first_component.asset_class,
+                currency=first_component.quote_currency,
+                price_precision=first_component.price_precision,
+                price_increment=first_component.price_increment,
+                multiplier=first_component.multiplier,
+                lot_size=first_component.lot_size,
+                underlying="",
+                strategy_type="SPREAD",
+                activation_ns=0,
+                expiration_ns=0,
+                ts_event=ts_event,
+                ts_init=ts_event,
+                margin_init=first_component.margin_init,
+                margin_maint=first_component.margin_maint,
+                maker_fee=first_component.maker_fee,
+                taker_fee=first_component.taker_fee,
+                exchange=first_component.exchange,
+                tick_scheme_name=first_component.tick_scheme_name,
+            )
+        except Exception as e:
+            self._log.error(f"Failed to create OptionSpread from components: {e}")
+            return
 
     cpdef void request_instruments(self, RequestInstruments request):
         cdef list instruments = self._cache.instruments(request.venue)

@@ -437,7 +437,9 @@ class BacktestNode:
                 builder.add_data_client_factory(name, factory)
 
             builder.build_data_clients(config.data_clients)
-            engine.set_default_market_data_client()
+
+        # We always want a default client so the data engine can know if it is in a backtest
+        engine.set_default_market_data_client()
 
     def run(self) -> list[BacktestResult]:
         """
