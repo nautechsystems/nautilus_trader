@@ -480,7 +480,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
     ) -> OrderStatusReport | None:
         await self._maintain_active_market(command.instrument_id)
 
-        if command.venue_order_id is None:
+        venue_order_id = command.venue_order_id
+        if venue_order_id is None:
             venue_order_id = self._cache.venue_order_id(command.client_order_id)
             if venue_order_id is None:
                 self._log.error(
@@ -498,10 +499,10 @@ class PolymarketExecutionClient(LiveExecutionClient):
         try:
             response: JSON | None = await retry_manager.run(
                 "generate_order_status_report",
-                [command.client_order_id, command.venue_order_id],
+                [command.client_order_id, venue_order_id],
                 asyncio.to_thread,
                 self._http_client.get_order,
-                order_id=command.venue_order_id.value,
+                order_id=venue_order_id.value,
             )
             if not response:
                 return None
