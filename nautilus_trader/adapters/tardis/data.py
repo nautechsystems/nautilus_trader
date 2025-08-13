@@ -489,7 +489,6 @@ class TardisDataClient(LiveMarketDataClient):
         )
 
     def _handle_msg(self, msg: Any) -> None:
-        print(msg)
         if isinstance(msg, nautilus_pyo3.FundingRateUpdate):
             funding_rate = FundingRateUpdate.from_pyo3(msg)
             self._handle_data(funding_rate)
