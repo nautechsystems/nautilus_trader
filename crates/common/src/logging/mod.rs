@@ -14,6 +14,22 @@
 // -------------------------------------------------------------------------------------------------
 
 //! The logging framework for Nautilus systems.
+//!
+//! This module implements a high-performance logging subsystem that operates in a separate thread
+//! using an MPSC channel for log message delivery. The system uses reference counting to track
+//! active `LogGuard` instances, ensuring the logging thread completes all pending writes before
+//! termination.
+//!
+//! # LogGuard Reference Counting
+//!
+//! The logging system maintains a global count of active `LogGuard` instances using an atomic
+//! counter (`LOGGING_GUARDS_ACTIVE`). When a `LogGuard` is created, the counter is incremented,
+//! and when dropped, it's decremented. When the last `LogGuard` is dropped (counter reaches zero),
+//! the logging thread is properly joined to ensure all buffered log messages are written to their
+//! destinations before the process terminates.
+//!
+//! The system supports a maximum of 255 concurrent `LogGuard` instances. Attempting to create
+//! more will cause a panic.
 
 pub mod headers;
 pub mod logger;
@@ -24,7 +40,7 @@ use std::{
     collections::HashMap,
     env,
     str::FromStr,
-    sync::atomic::{AtomicBool, Ordering},
+    sync::atomic::{AtomicBool, AtomicU8, Ordering},
 };
 
 use log::LevelFilter;
@@ -54,6 +70,7 @@ static LOGGING_INITIALIZED: AtomicBool = AtomicBool::new(false);
 static LOGGING_BYPASSED: AtomicBool = AtomicBool::new(false);
 static LOGGING_REALTIME: AtomicBool = AtomicBool::new(true);
 static LOGGING_COLORED: AtomicBool = AtomicBool::new(true);
+static LOGGING_GUARDS_ACTIVE: AtomicU8 = AtomicU8::new(0);
 
 /// Returns whether the core logger is enabled.
 pub fn logging_is_initialized() -> bool {
@@ -133,7 +150,6 @@ pub fn init_tracing() -> anyhow::Result<()> {
 ///
 /// Should only be called once during an applications run, ideally at the
 /// beginning of the run.
-/// Initialize logging.
 ///
 /// Logging should be used for Python and sync Rust logic which is most of
 /// the components in the `nautilus_trader` package.
@@ -148,9 +164,15 @@ pub fn init_logging(
     config: LoggerConfig,
     file_config: FileWriterConfig,
 ) -> anyhow::Result<LogGuard> {
+    // Only set these after successful initialization
+    let is_colored = config.is_colored;
+    let guard = Logger::init_with_config(trader_id, instance_id, config, file_config)?;
+
+    // Set flags only after successful initialization
     LOGGING_INITIALIZED.store(true, Ordering::Relaxed);
-    LOGGING_COLORED.store(config.is_colored, Ordering::Relaxed);
-    Logger::init_with_config(trader_id, instance_id, config, file_config)
+    LOGGING_COLORED.store(is_colored, Ordering::Relaxed);
+
+    Ok(guard)
 }
 
 #[must_use]
