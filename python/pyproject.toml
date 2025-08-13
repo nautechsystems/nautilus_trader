@@ -39,7 +39,7 @@ docs = "https://nautilustrader.io/docs"
 
 [build-system]
 requires = [
-    "maturin>=1.9.2",
+    "maturin>=1.9.3",
     "patchelf",
 ]
 build-backend = "maturin"
@@ -50,7 +50,7 @@ pre-build = "python generate_stubs.py"
 [tool.maturin]
 manifest-path = "../crates/pyo3/Cargo.toml"
 module-name = "nautilus_trader._libnautilus"
-features = ["python", "extension-module", "high-precision", "redis", "postgres", "hypersync"]
+features = ["extension-module", "high-precision", "redis", "postgres", "hypersync"]
 strip = false
 
 include = [
@@ -59,10 +59,10 @@ include = [
 
 [dependency-groups]
 dev = [
-    "maturin>=1.9.2",
-    "ruff>=0.12.7,<1.0.0",
+    "maturin>=1.9.3",
+    "ruff>=0.12.8,<1.0.0",
     "mypy>=1.17.1,<2.0.0",
-    "pre-commit>=4.2.0,<5.0.0",
+    "pre-commit>=4.3.0,<5.0.0",
 ]
 test = [
     "pytest>=7.4.4,<8.0.0",
