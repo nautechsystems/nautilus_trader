@@ -369,6 +369,19 @@ mod tests {
         address!("00000000049084A92F8964B76845ab6DE54EB229")
     }
 
+    #[fixture]
+    fn success_but_empty_result() -> Multicall3::Result {
+        Multicall3::Result {
+            success: true,
+            returnData: Bytes::from(vec![]),
+        }
+    }
+
+    #[fixture]
+    fn empty_token_address() -> Address {
+        address!("a5b00cEc63694319495d605AA414203F9714F47E")
+    }
+
     #[rstest]
     fn test_parse_erc20_string_result_name_success(
         successful_name_result: Multicall3::Result,
@@ -415,6 +428,45 @@ mod tests {
                 assert_eq!(reason, "Call failed without revert data");
             }
             _ => panic!("Expected DecodingError"),
+        }
+    }
+
+    #[rstest]
+    fn test_parse_erc20_string_result_success_but_empty_name(
+        success_but_empty_result: Multicall3::Result,
+        empty_token_address: Address,
+    ) {
+        let result = parse_erc20_string_result(
+            &success_but_empty_result,
+            Erc20Field::Name,
+            &empty_token_address,
+        );
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            TokenInfoError::EmptyTokenField { field, address } => {
+                assert!(matches!(field, Erc20Field::Name));
+                assert_eq!(address, empty_token_address);
+            }
+            _ => panic!("Expected EmptyTokenField error"),
+        }
+    }
+
+    #[rstest]
+    fn test_parse_erc20_decimals_result_success_but_empty(
+        success_but_empty_result: Multicall3::Result,
+        empty_token_address: Address,
+    ) {
+        let result = parse_erc20_decimals_result(
+            &success_but_empty_result,
+            &empty_token_address,
+        );
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            TokenInfoError::EmptyTokenField { field, address } => {
+                assert!(matches!(field, Erc20Field::Decimals));
+                assert_eq!(address, empty_token_address);
+            }
+            _ => panic!("Expected EmptyTokenField error"),
         }
     }
 }
