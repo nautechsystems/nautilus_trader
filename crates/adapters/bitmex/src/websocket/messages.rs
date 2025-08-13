@@ -16,6 +16,10 @@
 use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
+use nautilus_model::{
+    data::Data,
+    reports::{FillReport, OrderStatusReport, PositionStatusReport},
+};
 use serde::Deserialize;
 use strum::Display;
 use uuid::Uuid;
@@ -25,6 +29,25 @@ use crate::enums::{
     ContingencyType, ExecInstruction, ExecType, LiquidityIndicator, OrderStatus, OrderType,
     PegPriceType, TimeInForce,
 };
+
+/// Unified WebSocket message type for BitMEX.
+#[derive(Clone, Debug)]
+pub enum BitmexWsMessage {
+    Data(Vec<Data>),
+    OrderStatusReport(Box<OrderStatusReport>),
+    FillReports(Vec<FillReport>),
+    PositionStatusReport(Box<PositionStatusReport>),
+    WalletUpdate {
+        account_id: nautilus_model::identifiers::AccountId,
+        currency: nautilus_model::types::Currency,
+        amount: i64,
+    },
+    MarginUpdate {
+        account_id: nautilus_model::identifiers::AccountId,
+        currency: nautilus_model::types::Currency,
+        available_margin: i64,
+    },
+}
 
 /// Represents all possible message types from the `BitMEX` WebSocket API.
 #[derive(Debug, Display, Deserialize)]

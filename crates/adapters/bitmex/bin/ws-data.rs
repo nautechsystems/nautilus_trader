@@ -29,8 +29,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_max_level(LevelFilter::TRACE)
         .init();
 
-    // aws_lc_rs::default_provider().install_default().unwrap(); // TODO: Check if needed
-
     let url = None;
     // let url = Some(BITMEX_WS_TESTNET_URL);
 
@@ -58,7 +56,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //     // "liquidation".to_string(),
     // ];
 
-    client.connect_data().await?;
+    client.connect().await?;
 
     let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
 
@@ -75,7 +73,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sigint = signal::ctrl_c();
     pin!(sigint);
 
-    let stream = client.stream_data();
+    let stream = client.stream();
     tokio::pin!(stream); // Pin the stream to allow polling in the loop
 
     // Use a flag to track if we should close
@@ -83,10 +81,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     loop {
         tokio::select! {
-            Some(data) = stream.next() => {
-                for item in data {
-                    tracing::debug!("{item:?}");
-                }
+            Some(msg) = stream.next() => {
+                tracing::debug!("{msg:?}");
             }
             _ = &mut sigint => {
                 tracing::info!("Received SIGINT, closing connection...");

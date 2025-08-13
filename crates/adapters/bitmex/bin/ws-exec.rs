@@ -17,8 +17,6 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use std::env;
-
 use futures_util::StreamExt;
 use nautilus_bitmex::websocket::client::BitmexWebSocketClient;
 use tokio::{pin, signal};
@@ -30,25 +28,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_max_level(LevelFilter::TRACE)
         .init();
 
-    // aws_lc_rs::default_provider().install_default().unwrap(); // TODO: Check if needed
-
-    let api_key = env::var("BITMEX_API_KEY").expect("environment variable should be set");
-    let api_secret = env::var("BITMEX_API_SECRET").expect("environment variable should be set");
     let mut client = BitmexWebSocketClient::new(
         None, // url: defaults to wss://ws.bitmex.com/realtime
-        Some(&api_key),
-        Some(&api_secret),
+        None,
+        None,
         Some(5), // 5 second heartbeat
     )
     .unwrap();
 
-    client.connect_exec().await?;
+    client.connect().await?;
+
+    // Subscribe for all execution related topics
+    client
+        .subscribe(vec![
+            "execution".to_string(),
+            "order".to_string(),
+            "margin".to_string(),
+            "position".to_string(),
+            "wallet".to_string(),
+        ])
+        .await?;
 
     // Create a future that completes on CTRL+C
     let sigint = signal::ctrl_c();
     pin!(sigint);
 
-    let stream = client.stream_exec();
+    let stream = client.stream();
     tokio::pin!(stream); // Pin the stream to allow polling in the loop
 
     // Use a flag to track if we should close

@@ -35,7 +35,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let api_key = env::var("BITMEX_API_KEY").expect("environment variable should be set");
     let api_secret = env::var("BITMEX_API_SECRET").expect("environment variable should be set");
-    let client = BitmexHttpClient::new(None, Some(api_key), Some(api_secret), None, None);
+    let client = BitmexHttpClient::new(None, Some(api_key), Some(api_secret), false, None);
 
     match client.get_instruments(false).await {
         Ok(resp) => {

@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import os
 from functools import lru_cache
 
 from nautilus_trader.adapters.bitmex.config import BitmexDataClientConfig
@@ -61,11 +60,6 @@ def get_bitmex_http_client(
     nautilus_pyo3.BitmexHttpClient
 
     """
-    if api_key is None:
-        api_key = os.environ.get("BITMEX_API_KEY")
-    if api_secret is None:
-        api_secret = os.environ.get("BITMEX_API_SECRET")
-
     return nautilus_pyo3.BitmexHttpClient(
         api_key=api_key,
         api_secret=api_secret,
@@ -97,8 +91,6 @@ def get_bitmex_instrument_provider(
     BitmexInstrumentProvider
 
     """
-    from nautilus_trader.adapters.bitmex.providers import BitmexInstrumentProvider
-
     return BitmexInstrumentProvider(
         client=client,
         symbol_status=symbol_status,
@@ -206,7 +198,6 @@ class BitmexLiveExecClientFactory(LiveExecClientFactory):
 
         """
         client = get_bitmex_http_client(
-            clock=clock,
             api_key=config.api_key,
             api_secret=config.api_secret,
             base_url=config.base_url_http,
