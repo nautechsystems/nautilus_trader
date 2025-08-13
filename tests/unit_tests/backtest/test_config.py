@@ -35,15 +35,21 @@ from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.config import ImportableActorConfig
 from nautilus_trader.config import NautilusConfig
+from nautilus_trader.config import msgspec_decoding_hook
 from nautilus_trader.config import msgspec_encoding_hook
 from nautilus_trader.config import tokenize_config
+from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import Money
 from nautilus_trader.test_kit.mocks.data import NewsEventData
 from nautilus_trader.test_kit.mocks.data import load_catalog_with_stub_quote_ticks_audusd
 from nautilus_trader.test_kit.mocks.data import setup_catalog
@@ -255,6 +261,27 @@ class TestBacktestConfigParsing:
         json = msgspec.json.encode(run_config)
         result = len(msgspec.json.encode(json))
         assert result > 0
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="redundant to also test Windows")
+    def test_backtest_obj_data_config_to_dict(self) -> None:
+        run_config = TestConfigStubs.backtest_run_config(
+            catalog=self.catalog,
+            instrument_ids=[self.instrument.id.value],
+            data_types=(TradeTick, QuoteTick, OrderBookDelta),
+            venues=[
+                BacktestVenueConfig(
+                    name="BETFAIR",
+                    oms_type=OmsType.NETTING,
+                    account_type=AccountType.BETTING,
+                    base_currency=GBP,
+                    starting_balances=[Money(10000, GBP)],
+                    book_type=BookType.L2_MBP,
+                ),
+            ],
+        )
+        json = msgspec.json.encode(run_config, enc_hook=msgspec_encoding_hook)
+        obj = msgspec.json.decode(json, type=BacktestRunConfig, dec_hook=msgspec_decoding_hook)
+        assert len(msgspec.json.encode(json)) > 0 and obj
 
     @pytest.mark.skipif(sys.platform == "win32", reason="redundant to also test Windows")
     def test_backtest_run_config_id(self) -> None:
