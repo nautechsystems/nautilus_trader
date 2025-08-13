@@ -15,7 +15,11 @@
 
 use std::{collections::HashMap, sync::Arc};
 
-use alloy::{primitives::Address, sol, sol_types::SolCall};
+use alloy::{
+    primitives::{Address, Bytes},
+    sol,
+    sol_types::SolCall,
+};
 use strum::Display;
 use thiserror::Error;
 
@@ -58,11 +62,19 @@ pub enum TokenInfoError {
     EmptyTokenField { field: Erc20Field, address: Address },
     #[error("Multicall returned unexpected number of results: expected {expected}, got {actual}")]
     UnexpectedResultCount { expected: usize, actual: usize },
-    #[error("Failed to decode {field} for address {address}: {reason}")]
+    #[error("Call failed for {field} at address {address}: {reason} (raw data: {raw_data})")]
+    CallFailed {
+        field: String,
+        address: Address,
+        reason: String,
+        raw_data: String,
+    },
+    #[error("Failed to decode {field} for address {address}: {reason} (raw data: {raw_data})")]
     DecodingError {
         field: String,
         address: Address,
         reason: String,
+        raw_data: String,
     },
 }
 
@@ -102,17 +114,17 @@ impl Erc20Contract {
         let calls = vec![
             ContractCall {
                 target: *token_address,
-                allow_failure: false,
+                allow_failure: true,
                 call_data: ERC20::nameCall.abi_encode(),
             },
             ContractCall {
                 target: *token_address,
-                allow_failure: false,
+                allow_failure: true,
                 call_data: ERC20::symbolCall.abi_encode(),
             },
             ContractCall {
                 target: *token_address,
-                allow_failure: false,
+                allow_failure: true,
                 call_data: ERC20::decimalsCall.abi_encode(),
             },
         ];
@@ -212,6 +224,18 @@ impl Erc20Contract {
     }
 }
 
+/// Attempts to decode a revert reason from failed call data.
+/// Returns a human-readable error message.
+fn decode_revert_reason(data: &Bytes) -> String {
+    // For now, just return a simple description
+    // Could be enhanced to decode actual revert reasons in the future
+    if data.is_empty() {
+        "Call failed without revert data".to_string()
+    } else {
+        format!("Call failed with data: {}", data)
+    }
+}
+
 /// Generic parser for ERC20 string results (name, symbol)
 fn parse_erc20_string_result(
     result: &Multicall3::Result,
@@ -220,10 +244,18 @@ fn parse_erc20_string_result(
 ) -> Result<String, TokenInfoError> {
     // Common validation
     if !result.success {
-        return Err(TokenInfoError::DecodingError {
+        let reason = if result.returnData.is_empty() {
+            "Call failed without revert data".to_string()
+        } else {
+            // Try to decode revert reason if present
+            decode_revert_reason(&result.returnData)
+        };
+
+        return Err(TokenInfoError::CallFailed {
             field: field_name.to_string(),
             address: *token_address,
-            reason: "Multicall failed".to_string(),
+            reason,
+            raw_data: result.returnData.to_string(),
         });
     }
 
@@ -243,6 +275,7 @@ fn parse_erc20_string_result(
         field: field_name.to_string(),
         address: *token_address,
         reason: e.to_string(),
+        raw_data: result.returnData.to_string(),
     })
 }
 
@@ -253,10 +286,17 @@ fn parse_erc20_decimals_result(
 ) -> Result<u8, TokenInfoError> {
     // Common validation
     if !result.success {
-        return Err(TokenInfoError::DecodingError {
+        let reason = if result.returnData.is_empty() {
+            "Call failed without revert data".to_string()
+        } else {
+            decode_revert_reason(&result.returnData)
+        };
+
+        return Err(TokenInfoError::CallFailed {
             field: "decimals".to_string(),
             address: *token_address,
-            reason: "Multicall failed".to_string(),
+            reason,
+            raw_data: result.returnData.to_string(),
         });
     }
 
@@ -272,6 +312,7 @@ fn parse_erc20_decimals_result(
             field: "decimals".to_string(),
             address: *token_address,
             reason: e.to_string(),
+            raw_data: result.returnData.to_string(),
         }
     })
 }
@@ -301,4 +342,276 @@ fn parse_batch_token_results(
         symbol,
         decimals,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use alloy::primitives::{Bytes, address};
+    use rstest::{fixture, rstest};
+
+    use super::*;
+
+    #[fixture]
+    fn token_address() -> Address {
+        address!("25b76A90E389bD644a29db919b136Dc63B174Ec7")
+    }
+
+    #[fixture]
+    fn successful_name_result() -> Multicall3::Result {
+        Multicall3::Result {
+            success: true,
+            returnData: Bytes::from(hex::decode("00000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000007546f6b656e204100000000000000000000000000000000000000000000000000").unwrap()),
+        }
+    }
+
+    #[fixture]
+    fn successful_symbol_result() -> Multicall3::Result {
+        Multicall3::Result {
+            success: true,
+            returnData: Bytes::from(hex::decode("0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000776546f6b656e4100000000000000000000000000000000000000000000000000").unwrap()),
+        }
+    }
+
+    #[fixture]
+    fn failed_name_result() -> Multicall3::Result {
+        Multicall3::Result {
+            success: false,
+            returnData: Bytes::from(vec![]),
+        }
+    }
+
+    #[fixture]
+    fn failed_token_address() -> Address {
+        address!("00000000049084A92F8964B76845ab6DE54EB229")
+    }
+
+    #[fixture]
+    fn success_but_empty_result() -> Multicall3::Result {
+        Multicall3::Result {
+            success: true,
+            returnData: Bytes::from(vec![]),
+        }
+    }
+
+    #[fixture]
+    fn empty_token_address() -> Address {
+        address!("a5b00cEc63694319495d605AA414203F9714F47E")
+    }
+
+    #[fixture]
+    fn non_abi_encoded_string_result() -> Multicall3::Result {
+        // Returns raw string bytes without ABI encoding - "Rico" as raw bytes
+        Multicall3::Result {
+            success: true,
+            returnData: Bytes::from(
+                hex::decode("5269636f00000000000000000000000000000000000000000000000000000000")
+                    .unwrap(),
+            ),
+        }
+    }
+
+    #[fixture]
+    fn non_abi_encoded_token_address() -> Address {
+        address!("5374EcC160A4bd68446B43B5A6B132F9c001C54C")
+    }
+
+    #[fixture]
+    fn non_standard_selector_result() -> Multicall3::Result {
+        // Returns function selector instead of actual data
+        Multicall3::Result {
+            success: true,
+            returnData: Bytes::from(
+                hex::decode("06fdde0300000000000000000000000000000000000000000000000000000000")
+                    .unwrap(),
+            ),
+        }
+    }
+
+    #[fixture]
+    fn non_abi_encoded_long_string_result() -> Multicall3::Result {
+        // Returns raw string bytes without ABI encoding - longer string example
+        Multicall3::Result {
+            success: true,
+            returnData: Bytes::from(
+                hex::decode("5269636f62616e6b205269736b20536861726500000000000000000000000000")
+                    .unwrap(),
+            ),
+        }
+    }
+
+    #[rstest]
+    fn test_parse_erc20_string_result_name_success(
+        successful_name_result: Multicall3::Result,
+        token_address: Address,
+    ) {
+        let result =
+            parse_erc20_string_result(&successful_name_result, Erc20Field::Name, &token_address);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "Token A");
+    }
+
+    #[rstest]
+    fn test_parse_erc20_string_result_symbol_success(
+        successful_symbol_result: Multicall3::Result,
+        token_address: Address,
+    ) {
+        let result = parse_erc20_string_result(
+            &successful_symbol_result,
+            Erc20Field::Symbol,
+            &token_address,
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "vTokenA");
+    }
+
+    #[rstest]
+    fn test_parse_erc20_string_result_name_failed_with_specific_address(
+        failed_name_result: Multicall3::Result,
+        failed_token_address: Address,
+    ) {
+        let result =
+            parse_erc20_string_result(&failed_name_result, Erc20Field::Name, &failed_token_address);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            TokenInfoError::CallFailed {
+                field,
+                address,
+                reason,
+                raw_data: _,
+            } => {
+                assert_eq!(field, "Name");
+                assert_eq!(address, failed_token_address);
+                assert_eq!(reason, "Call failed without revert data");
+            }
+            _ => panic!("Expected DecodingError"),
+        }
+    }
+
+    #[rstest]
+    fn test_parse_erc20_string_result_success_but_empty_name(
+        success_but_empty_result: Multicall3::Result,
+        empty_token_address: Address,
+    ) {
+        let result = parse_erc20_string_result(
+            &success_but_empty_result,
+            Erc20Field::Name,
+            &empty_token_address,
+        );
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            TokenInfoError::EmptyTokenField { field, address } => {
+                assert!(matches!(field, Erc20Field::Name));
+                assert_eq!(address, empty_token_address);
+            }
+            _ => panic!("Expected EmptyTokenField error"),
+        }
+    }
+
+    #[rstest]
+    fn test_parse_erc20_decimals_result_success_but_empty(
+        success_but_empty_result: Multicall3::Result,
+        empty_token_address: Address,
+    ) {
+        let result = parse_erc20_decimals_result(&success_but_empty_result, &empty_token_address);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            TokenInfoError::EmptyTokenField { field, address } => {
+                assert!(matches!(field, Erc20Field::Decimals));
+                assert_eq!(address, empty_token_address);
+            }
+            _ => panic!("Expected EmptyTokenField error"),
+        }
+    }
+
+    #[rstest]
+    fn test_parse_non_abi_encoded_string(
+        non_abi_encoded_string_result: Multicall3::Result,
+        non_abi_encoded_token_address: Address,
+    ) {
+        let result = parse_erc20_string_result(
+            &non_abi_encoded_string_result,
+            Erc20Field::Name,
+            &non_abi_encoded_token_address,
+        );
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            TokenInfoError::DecodingError {
+                field,
+                address,
+                reason,
+                raw_data,
+            } => {
+                assert_eq!(field, "Name");
+                assert_eq!(address, non_abi_encoded_token_address);
+                assert!(reason.contains("type check failed"));
+                assert_eq!(
+                    raw_data,
+                    "0x5269636f00000000000000000000000000000000000000000000000000000000"
+                );
+                // Raw bytes "Rico" without ABI encoding
+            }
+            _ => panic!("Expected DecodingError"),
+        }
+    }
+
+    #[rstest]
+    fn test_parse_non_standard_selector_return(
+        non_standard_selector_result: Multicall3::Result,
+        token_address: Address,
+    ) {
+        let result = parse_erc20_string_result(
+            &non_standard_selector_result,
+            Erc20Field::Name,
+            &token_address,
+        );
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            TokenInfoError::DecodingError {
+                field,
+                address,
+                reason,
+                raw_data,
+            } => {
+                assert_eq!(field, "Name");
+                assert_eq!(address, token_address);
+                assert!(reason.contains("type check failed"));
+                assert_eq!(
+                    raw_data,
+                    "0x06fdde0300000000000000000000000000000000000000000000000000000000"
+                );
+            }
+            _ => panic!("Expected DecodingError"),
+        }
+    }
+
+    #[rstest]
+    fn test_parse_non_abi_encoded_long_string(
+        non_abi_encoded_long_string_result: Multicall3::Result,
+        token_address: Address,
+    ) {
+        let result = parse_erc20_string_result(
+            &non_abi_encoded_long_string_result,
+            Erc20Field::Name,
+            &token_address,
+        );
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            TokenInfoError::DecodingError {
+                field,
+                address,
+                reason,
+                raw_data,
+            } => {
+                assert_eq!(field, "Name");
+                assert_eq!(address, token_address);
+                assert!(reason.contains("type check failed"));
+                assert_eq!(
+                    raw_data,
+                    "0x5269636f62616e6b205269736b20536861726500000000000000000000000000"
+                );
+                // Example of longer non-ABI encoded string
+            }
+            _ => panic!("Expected DecodingError"),
+        }
+    }
 }
