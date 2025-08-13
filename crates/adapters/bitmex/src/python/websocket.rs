@@ -13,44 +13,114 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use futures_util::StreamExt;
 use nautilus_core::python::to_pyvalue_err;
-use nautilus_model::{data::bar::BarType, identifiers::InstrumentId};
-use pyo3::{exceptions::PyRuntimeError, prelude::*};
+use nautilus_model::{
+    data::bar::BarType, identifiers::InstrumentId, python::data::data_to_pycapsule,
+};
+use pyo3::{IntoPyObjectExt, exceptions::PyRuntimeError, prelude::*};
 use pyo3_async_runtimes::tokio::get_runtime;
 
-use crate::websocket::BitmexWebSocketClient;
+use crate::websocket::{BitmexWebSocketClient, messages::BitmexWsMessage};
 
 #[pymethods]
 impl BitmexWebSocketClient {
     #[new]
     #[pyo3(signature = (url=None, api_key=None, api_secret=None, heartbeat=None))]
     fn py_new(
-        url: Option<&str>,
-        api_key: Option<&str>,
-        api_secret: Option<&str>,
+        url: Option<String>,
+        api_key: Option<String>,
+        api_secret: Option<String>,
         heartbeat: Option<u64>,
     ) -> PyResult<Self> {
         Self::new(url, api_key, api_secret, heartbeat).map_err(to_pyvalue_err)
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "from_env")]
+    fn py_from_env() -> PyResult<Self> {
+        Self::from_env().map_err(to_pyvalue_err)
+    }
+
+    #[getter]
+    #[pyo3(name = "url")]
+    #[must_use]
+    pub fn py_url(&self) -> &str {
+        self.url()
+    }
+
+    #[getter]
+    #[pyo3(name = "api_key")]
+    #[must_use]
+    pub fn py_api_key(&self) -> Option<&str> {
+        self.api_key()
+    }
+
+    #[pyo3(name = "is_active")]
+    fn py_is_active(&mut self) -> bool {
+        self.is_active()
+    }
+
+    #[pyo3(name = "is_closed")]
+    fn py_is_closed(&mut self) -> bool {
+        self.is_closed()
     }
 
     #[pyo3(name = "connect")]
     fn py_connect<'py>(
         &mut self,
         py: Python<'py>,
-        _callback: PyObject,
+        callback: PyObject,
     ) -> PyResult<Bound<'py, PyAny>> {
         get_runtime().block_on(async {
-            self.connect_data()
+            self.connect()
                 .await
                 .map_err(|e| PyRuntimeError::new_err(e.to_string()))
         })?;
 
-        // TODO: Fix WebSocket stream lifetime issues
-        // let stream = self.stream_data();
-        // pyo3_async_runtimes::tokio::future_into_py(py, async move { ... })
+        let stream = self.stream();
 
-        tracing::warn!("BitMEX WebSocket Python integration not yet implemented");
-        Ok(py.None().into_bound(py))
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            tokio::pin!(stream);
+
+            while let Some(msg) = stream.next().await {
+                Python::with_gil(|py| {
+                    match msg {
+                        BitmexWsMessage::Data(data_vec) => {
+                            for data in data_vec {
+                                let py_obj = data_to_pycapsule(py, data);
+                                call_python(py, &callback, py_obj);
+                            }
+                        }
+                        BitmexWsMessage::OrderStatusReport(report) => {
+                            if let Ok(py_obj) = (*report).into_py_any(py) {
+                                call_python(py, &callback, py_obj);
+                            }
+                        }
+                        BitmexWsMessage::FillReports(reports) => {
+                            for report in reports {
+                                if let Ok(py_obj) = report.into_py_any(py) {
+                                    call_python(py, &callback, py_obj);
+                                }
+                            }
+                        }
+                        BitmexWsMessage::PositionStatusReport(report) => {
+                            if let Ok(py_obj) = (*report).into_py_any(py) {
+                                call_python(py, &callback, py_obj);
+                            }
+                        }
+                        BitmexWsMessage::WalletUpdate { .. } => {
+                            // TODO: Convert to appropriate Python object
+                        }
+                        BitmexWsMessage::MarginUpdate { .. } => {
+                            // TODO: Convert to appropriate Python object
+                        }
+                    }
+                });
+            }
+
+            Ok(())
+        })
     }
 
     #[pyo3(name = "close")]
@@ -245,16 +315,8 @@ impl BitmexWebSocketClient {
     }
 }
 
-// TODO: Probably move this into common
-/// Call a Python callback with the given object.
-///
-/// # Errors
-///
-/// Returns an error if the Python callback fails.
-pub fn call_python(py: Python, callback: &PyObject, py_obj: PyObject) -> PyResult<()> {
-    callback.call1(py, (py_obj,)).map_err(|e| {
+pub fn call_python(py: Python, callback: &PyObject, py_obj: PyObject) {
+    if let Err(e) = callback.call1(py, (py_obj,)) {
         tracing::error!("Error calling Python: {e}");
-        e
-    })?;
-    Ok(())
+    }
 }

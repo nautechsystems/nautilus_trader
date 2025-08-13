@@ -14,8 +14,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
-
 from nautilus_trader.adapters.bitmex import BITMEX
 from nautilus_trader.adapters.bitmex import BitmexDataClientConfig
 from nautilus_trader.adapters.bitmex import BitmexLiveDataClientFactory
@@ -40,7 +38,6 @@ from nautilus_trader.test_kit.strategies.tester_data import DataTesterConfig
 # Alt perpetuals: ETHUSD, SOLUSD, etc.
 
 symbol = "XBTUSD"  # Bitcoin perpetual swap
-trade_size = Decimal("100")  # Contract size in USD
 
 # Configure the trading node
 config_node = TradingNodeConfig(
@@ -65,16 +62,19 @@ config_node = TradingNodeConfig(
     timeout_disconnection=10.0,
 )
 
-# Configure the data tester strategy
-strat_config = DataTesterConfig(
-    instrument_ids=[InstrumentId.from_str(f"{symbol}.BITMEX")],
+# Configure the data tester actor
+config_tester = DataTesterConfig(
+    instrument_ids=[InstrumentId.from_str(f"{symbol}.{BITMEX}")],
+    # subscribe_book_at_interval=True,
+    subscribe_quotes=True,
+    subscribe_trades=True,
 )
 
 # Setup and run the trading node
 node = TradingNode(config=config_node)
 
 # Add the strategy to the node
-node.trader.add_actor(DataTester(config=strat_config))
+node.trader.add_actor(DataTester(config=config_tester))
 
 # Register the data client factory
 node.add_data_client_factory(BITMEX, BitmexLiveDataClientFactory)

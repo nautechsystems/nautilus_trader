@@ -145,7 +145,7 @@ config_node = TradingNodeConfig(
 node = TradingNode(config=config_node)
 
 # Configure your strategy
-config_strat = ExecTesterConfig(
+config_tester = ExecTesterConfig(
     instrument_id=InstrumentId.from_str(f"{symbol}.OKX"),
     external_order_claims=[InstrumentId.from_str(f"{symbol}.OKX")],
     use_hyphens_in_client_order_ids=False,  # OKX doesn't allow hyphens in client order IDs
@@ -162,7 +162,7 @@ config_strat = ExecTesterConfig(
 )
 
 # Instantiate your strategy
-strategy = ExecTester(config=config_strat)
+strategy = ExecTester(config=config_tester)
 
 # Add your strategies and modules
 node.trader.add_strategy(strategy)

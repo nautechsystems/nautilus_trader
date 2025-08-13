@@ -40,19 +40,63 @@ use crate::http::{
 #[pymethods]
 impl BitmexHttpClient {
     #[new]
-    #[pyo3(signature = (api_key=None, api_secret=None, base_url=None))]
+    #[pyo3(signature = (api_key=None, api_secret=None, base_url=None, testnet=false))]
     fn py_new(
         api_key: Option<&str>,
         api_secret: Option<&str>,
         base_url: Option<&str>,
+        testnet: bool,
     ) -> PyResult<Self> {
-        Ok(BitmexHttpClient::new(
-            base_url.map(String::from),
-            api_key.map(String::from),
-            api_secret.map(String::from),
-            None,     // api_passphrase not used by BitMEX
-            Some(60), // Default timeout
-        ))
+        // Try to use with_credentials if we have any credentials or need env vars
+        if api_key.is_none() && api_secret.is_none() && !testnet && base_url.is_none() {
+            // Try to load from environment
+            match BitmexHttpClient::with_credentials(
+                None,
+                None,
+                base_url.map(String::from),
+                Some(60),
+            ) {
+                Ok(client) => Ok(client),
+                Err(_) => {
+                    // Fall back to unauthenticated client
+                    Ok(BitmexHttpClient::new(
+                        base_url.map(String::from),
+                        None,
+                        None,
+                        testnet,
+                        Some(60),
+                    ))
+                }
+            }
+        } else {
+            Ok(BitmexHttpClient::new(
+                base_url.map(String::from),
+                api_key.map(String::from),
+                api_secret.map(String::from),
+                testnet,
+                Some(60),
+            ))
+        }
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "from_env")]
+    fn py_from_env() -> PyResult<Self> {
+        Self::from_env().map_err(to_pyvalue_err)
+    }
+
+    #[getter]
+    #[pyo3(name = "base_url")]
+    #[must_use]
+    pub fn py_base_url(&self) -> &str {
+        self.base_url()
+    }
+
+    #[getter]
+    #[pyo3(name = "api_key")]
+    #[must_use]
+    pub fn py_api_key(&self) -> Option<&str> {
+        self.api_key()
     }
 
     #[pyo3(name = "get_instruments")]

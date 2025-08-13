@@ -60,6 +60,8 @@ def get_cached_okx_http_client(
         The timeout (seconds) for HTTP requests to OKX.
     is_demo : bool, default False
         If the client is connecting to the demo API.
+        Note: Currently only affects WebSocket URLs, HTTP requests to demo
+        require the x-simulated-trading header which is not yet implemented.
 
     Returns
     -------

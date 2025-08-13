@@ -30,11 +30,11 @@
 use std::{
     collections::HashMap,
     num::NonZeroU32,
-    sync::{Arc, LazyLock, Mutex},
+    sync::{Arc, LazyLock},
 };
 
 use chrono::Utc;
-use nautilus_core::consts::NAUTILUS_USER_AGENT;
+use nautilus_core::{consts::NAUTILUS_USER_AGENT, env::get_env_var};
 use nautilus_model::identifiers::Symbol;
 use nautilus_network::{http::HttpClient, ratelimiter::quota::Quota};
 use reqwest::{Method, StatusCode};
@@ -49,7 +49,10 @@ use super::{
         PostOrderParams, PutOrderParams,
     },
 };
-use crate::{consts::BITMEX_HTTP_URL, credential::Credential};
+use crate::{
+    consts::{BITMEX_HTTP_TESTNET_URL, BITMEX_HTTP_URL},
+    credential::Credential,
+};
 
 /// Default BitMEX REST API rate limit.
 ///
@@ -219,12 +222,12 @@ impl BitmexHttpInnerClient {
         &self,
         active_only: bool,
     ) -> Result<Vec<Instrument>, BitmexHttpError> {
-        let endpoint = if active_only {
+        let path = if active_only {
             "/instrument/active"
         } else {
             "/instrument"
         };
-        self.send_request(Method::GET, endpoint, None, false).await
+        self.send_request(Method::GET, path, None, false).await
     }
 
     /// Get instrument by symbol.
@@ -236,8 +239,8 @@ impl BitmexHttpInnerClient {
         &self,
         symbol: &str,
     ) -> Result<Vec<Instrument>, BitmexHttpError> {
-        let endpoint = &format!("/instrument?symbol={}", symbol);
-        self.send_request(Method::GET, endpoint, None, false).await
+        let path = &format!("/instrument?symbol={symbol}");
+        self.send_request(Method::GET, path, None, false).await
     }
 
     /// Get user wallet information.
@@ -264,7 +267,7 @@ impl BitmexHttpInnerClient {
         params: GetTradeParams,
     ) -> Result<Vec<Trade>, BitmexHttpError> {
         let query = serde_urlencoded::to_string(&params).expect("Invalid parameters");
-        let path = format!("/trade?{}", query);
+        let path = format!("/trade?{query}");
         self.send_request(Method::GET, &path, None, true).await
     }
 
@@ -282,7 +285,7 @@ impl BitmexHttpInnerClient {
         params: GetOrderParams,
     ) -> Result<Vec<Order>, BitmexHttpError> {
         let query = serde_urlencoded::to_string(&params).expect("Invalid parameters");
-        let path = format!("/order?{}", query);
+        let path = format!("/order?{query}");
         self.send_request(Method::GET, &path, None, true).await
     }
 
@@ -300,7 +303,7 @@ impl BitmexHttpInnerClient {
         params: PostOrderParams,
     ) -> Result<Value, BitmexHttpError> {
         let query = serde_urlencoded::to_string(&params).expect("Invalid parameters");
-        let path = format!("/order?{}", query);
+        let path = format!("/order?{query}");
         self.send_request(Method::POST, &path, None, true).await
     }
 
@@ -318,7 +321,7 @@ impl BitmexHttpInnerClient {
         params: DeleteOrderParams,
     ) -> Result<Value, BitmexHttpError> {
         let query = serde_urlencoded::to_string(&params).expect("Invalid parameters");
-        let path = format!("/order?{}", query);
+        let path = format!("/order?{query}");
         self.send_request(Method::DELETE, &path, None, true).await
     }
 
@@ -333,7 +336,7 @@ impl BitmexHttpInnerClient {
     /// Panics if the parameters cannot be serialized (should never happen with valid builder-generated params).
     pub async fn http_amend_order(&self, params: PutOrderParams) -> Result<Value, BitmexHttpError> {
         let query = serde_urlencoded::to_string(&params).expect("Invalid parameters");
-        let path = format!("/order?{}", query);
+        let path = format!("/order?{query}");
         self.send_request(Method::PUT, &path, None, true).await
     }
 
@@ -351,7 +354,7 @@ impl BitmexHttpInnerClient {
         params: GetExecutionParams,
     ) -> Result<Vec<Execution>, BitmexHttpError> {
         let query = serde_urlencoded::to_string(&params).expect("Invalid parameters");
-        let path = format!("/execution/tradeHistory?{}", query);
+        let path = format!("/execution/tradeHistory?{query}");
         self.send_request(Method::GET, &path, None, true).await
     }
 
@@ -369,7 +372,7 @@ impl BitmexHttpInnerClient {
         params: GetPositionParams,
     ) -> Result<Vec<Position>, BitmexHttpError> {
         let query = serde_urlencoded::to_string(&params).expect("Invalid parameters");
-        let path = format!("/position?{}", query);
+        let path = format!("/position?{query}");
         self.send_request(Method::GET, &path, None, true).await
     }
 }
@@ -384,12 +387,12 @@ impl BitmexHttpInnerClient {
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
 )]
 pub struct BitmexHttpClient {
-    inner: Arc<Mutex<BitmexHttpInnerClient>>,
+    inner: Arc<BitmexHttpInnerClient>,
 }
 
 impl Default for BitmexHttpClient {
     fn default() -> Self {
-        Self::new(None, None, None, None, Some(60))
+        Self::new(None, None, None, false, Some(60))
     }
 }
 
@@ -399,22 +402,89 @@ impl BitmexHttpClient {
         base_url: Option<String>,
         api_key: Option<String>,
         api_secret: Option<String>,
-        _api_passphrase: Option<String>, // Unused for BitMEX, kept for compatibility
+        testnet: bool,
         timeout_secs: Option<u64>,
     ) -> Self {
+        // Determine the base URL
+        let url = base_url.unwrap_or_else(|| {
+            if testnet {
+                BITMEX_HTTP_TESTNET_URL.to_string()
+            } else {
+                BITMEX_HTTP_URL.to_string()
+            }
+        });
+
         let inner = match (api_key, api_secret) {
-            (Some(key), Some(secret)) => BitmexHttpInnerClient::with_credentials(
-                key,
-                secret,
-                base_url.unwrap_or(BITMEX_HTTP_URL.to_string()),
-                timeout_secs,
-            ),
-            _ => BitmexHttpInnerClient::new(base_url, timeout_secs),
+            (Some(key), Some(secret)) => {
+                BitmexHttpInnerClient::with_credentials(key, secret, url, timeout_secs)
+            }
+            _ => BitmexHttpInnerClient::new(Some(url), timeout_secs),
         };
 
         Self {
-            inner: Arc::new(Mutex::new(inner)),
+            inner: Arc::new(inner),
         }
+    }
+
+    /// Creates a new [`BitmexHttpClient`] instance using environment variables and
+    /// the default BitMEX HTTP base URL.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if required environment variables are not set or invalid.
+    pub fn from_env() -> anyhow::Result<Self> {
+        Self::with_credentials(None, None, None, None)
+    }
+
+    /// Creates a new [`BitmexHttpClient`] configured with credentials
+    /// for authenticated requests.
+    ///
+    /// If `api_key` or `api_secret` are `None`, they will be sourced from the
+    /// `BITMEX_API_KEY` and `BITMEX_API_SECRET` environment variables.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if one credential is provided without the other.
+    pub fn with_credentials(
+        api_key: Option<String>,
+        api_secret: Option<String>,
+        base_url: Option<String>,
+        timeout_secs: Option<u64>,
+    ) -> anyhow::Result<Self> {
+        let api_key = api_key.or_else(|| get_env_var("BITMEX_API_KEY").ok());
+        let api_secret = api_secret.or_else(|| get_env_var("BITMEX_API_SECRET").ok());
+
+        // Determine testnet from URL if provided
+        let testnet = base_url
+            .as_ref()
+            .map(|url| url.contains("testnet"))
+            .unwrap_or(false);
+
+        // If we're trying to create an authenticated client, we need both key and secret
+        if api_key.is_some() && api_secret.is_none() {
+            anyhow::bail!("BITMEX_API_SECRET is required when BITMEX_API_KEY is provided");
+        }
+        if api_key.is_none() && api_secret.is_some() {
+            anyhow::bail!("BITMEX_API_KEY is required when BITMEX_API_SECRET is provided");
+        }
+
+        Ok(Self::new(
+            base_url,
+            api_key,
+            api_secret,
+            testnet,
+            timeout_secs,
+        ))
+    }
+
+    /// Returns the base url being used by the client.
+    pub fn base_url(&self) -> &str {
+        self.inner.base_url.as_str()
+    }
+
+    /// Returns the public API key being used by the client.
+    pub fn api_key(&self) -> Option<&str> {
+        self.inner.credential.as_ref().map(|c| c.api_key.as_str())
     }
 
     /// Get all instruments.
@@ -430,7 +500,7 @@ impl BitmexHttpClient {
         &self,
         active_only: bool,
     ) -> Result<Vec<Instrument>, BitmexHttpError> {
-        let inner = self.inner.lock().unwrap().clone();
+        let inner = self.inner.clone();
         inner.http_get_instruments(active_only).await
     }
 
@@ -447,7 +517,7 @@ impl BitmexHttpClient {
         &self,
         symbol: &Symbol,
     ) -> Result<Vec<Instrument>, BitmexHttpError> {
-        let inner = self.inner.lock().unwrap().clone();
+        let inner = self.inner.clone();
         inner.http_get_instrument(symbol.as_ref()).await
     }
 
@@ -461,7 +531,7 @@ impl BitmexHttpClient {
     ///
     /// Panics if the inner mutex is poisoned.
     pub async fn get_wallet(&self) -> Result<Wallet, BitmexHttpError> {
-        let inner = self.inner.lock().unwrap().clone();
+        let inner = self.inner.clone();
         inner.http_get_wallet().await
     }
 
@@ -475,7 +545,7 @@ impl BitmexHttpClient {
     ///
     /// Panics if the inner mutex is poisoned.
     pub async fn get_trades(&self, params: GetTradeParams) -> Result<Vec<Trade>, BitmexHttpError> {
-        let inner = self.inner.lock().unwrap().clone();
+        let inner = self.inner.clone();
         inner.http_get_trades(params).await
     }
 
@@ -489,7 +559,7 @@ impl BitmexHttpClient {
     ///
     /// Panics if the inner mutex is poisoned.
     pub async fn get_orders(&self, params: GetOrderParams) -> Result<Vec<Order>, BitmexHttpError> {
-        let inner = self.inner.lock().unwrap().clone();
+        let inner = self.inner.clone();
         inner.http_get_orders(params).await
     }
 
@@ -503,7 +573,7 @@ impl BitmexHttpClient {
     ///
     /// Panics if the inner mutex is poisoned.
     pub async fn place_order(&self, params: PostOrderParams) -> Result<Value, BitmexHttpError> {
-        let inner = self.inner.lock().unwrap().clone();
+        let inner = self.inner.clone();
         inner.http_place_order(params).await
     }
 
@@ -517,7 +587,7 @@ impl BitmexHttpClient {
     ///
     /// Panics if the inner mutex is poisoned.
     pub async fn cancel_orders(&self, params: DeleteOrderParams) -> Result<Value, BitmexHttpError> {
-        let inner = self.inner.lock().unwrap().clone();
+        let inner = self.inner.clone();
         inner.http_cancel_orders(params).await
     }
 
@@ -531,7 +601,7 @@ impl BitmexHttpClient {
     ///
     /// Panics if the inner mutex is poisoned.
     pub async fn amend_order(&self, params: PutOrderParams) -> Result<Value, BitmexHttpError> {
-        let inner = self.inner.lock().unwrap().clone();
+        let inner = self.inner.clone();
         inner.http_amend_order(params).await
     }
 
@@ -548,7 +618,7 @@ impl BitmexHttpClient {
         &self,
         params: GetExecutionParams,
     ) -> Result<Vec<Execution>, BitmexHttpError> {
-        let inner = self.inner.lock().unwrap().clone();
+        let inner = self.inner.clone();
         inner.http_get_executions(params).await
     }
 
@@ -565,7 +635,7 @@ impl BitmexHttpClient {
         &self,
         params: GetPositionParams,
     ) -> Result<Vec<Position>, BitmexHttpError> {
-        let inner = self.inner.lock().unwrap().clone();
+        let inner = self.inner.clone();
         inner.http_get_positions(params).await
     }
 }

@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from typing import Any
 
 from nautilus_trader.adapters.bitmex.config import BitmexDataClientConfig
 from nautilus_trader.adapters.bitmex.constants import BITMEX_VENUE
@@ -37,6 +38,8 @@ from nautilus_trader.data.messages import UnsubscribeOrderBook
 from nautilus_trader.data.messages import UnsubscribeQuoteTicks
 from nautilus_trader.data.messages import UnsubscribeTradeTicks
 from nautilus_trader.live.data_client import LiveMarketDataClient
+from nautilus_trader.model.data import capsule_to_data
+from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import ClientId
 
 
@@ -88,64 +91,120 @@ class BitmexDataClient(LiveMarketDataClient):
 
         # Configuration
         self._config = config
-        self._base_url_ws = config.base_url_ws
-        self._http_client = client
-        self._ws_client: nautilus_pyo3.BitmexWebSocketClient | None = None
         self._symbol_status = config.symbol_status
+        self._log.info(f"config.symbol_status={config.symbol_status}", LogColor.BLUE)
+        self._log.info(f"config.testnet={config.testnet}", LogColor.BLUE)
+        self._log.info(f"config.http_timeout_secs={config.http_timeout_secs}", LogColor.BLUE)
 
-    def _log_runtime_error(self, message: str) -> None:
-        self._log.error(message, LogColor.RED)
-        raise RuntimeError(message)
+        # HTTP API
+        self._http_client = client
+        self._log.info(f"REST API key {self._http_client.api_key}", LogColor.BLUE)
+
+        # WebSocket API
+        ws_url = self._determine_ws_url(config)
+        self._ws_client = nautilus_pyo3.BitmexWebSocketClient(
+            url=ws_url,
+            api_key=config.api_key,
+            api_secret=config.api_secret,
+            heartbeat=30,  # 30 second heartbeat
+        )
+        self._ws_client_futures: set[asyncio.Future] = set()
+        self._log.info(f"WebSocket URL {ws_url}", LogColor.BLUE)
 
     @property
     def instrument_provider(self) -> BitmexInstrumentProvider:
         return self._instrument_provider  # type: ignore
 
     async def _connect(self) -> None:
-        pass  # TODO: Implement
+        # Connect WebSocket client (non-blocking)
+        future = asyncio.ensure_future(
+            self._ws_client.connect(
+                self._handle_msg,
+            ),
+        )
+        self._ws_client_futures.add(future)
+        self._log.info(f"Connected to WebSocket {self._ws_client.url}", LogColor.BLUE)
 
     async def _disconnect(self) -> None:
-        if self._ws_client:
-            await self._ws_client.close()
-            self._ws_client = None
+        # Delay to allow websocket to send any unsubscribe messages
+        await asyncio.sleep(1.0)
 
-    def _create_websocket_client(self) -> nautilus_pyo3.BitmexWebSocketClient:
+        # Cancel any pending futures
+        for future in self._ws_client_futures:
+            if not future.done():
+                future.cancel()
+
+        # Shutdown websocket
+        if self._ws_client is not None and not self._ws_client.is_closed():
+            self._log.info("Disconnecting WebSocket")
+            close_result = self._ws_client.close()
+            if close_result is not None:
+                await close_result
+            self._log.info(
+                f"Disconnected from WebSocket {self._ws_client.url}",
+                LogColor.BLUE,
+            )
+
+    def _determine_ws_url(self, config: BitmexDataClientConfig) -> str:
         """
-        Create a BitMEX WebSocket client.
+        Determine the WebSocket URL based on configuration.
         """
-        raise NotImplementedError("BitMEX WebSocket integration temporarily disabled")
+        if config.base_url_ws:
+            return config.base_url_ws
+        elif config.testnet:
+            return "wss://testnet.bitmex.com/realtime"
+        else:
+            return "wss://ws.bitmex.com/realtime"
 
     async def _subscribe_order_book(self, command: SubscribeOrderBook) -> None:
-        # TODO: Implement
-        self._log.warning("Order book subscription not yet implemented")
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+
+        # BitMEX has different order book depths
+        if command.book_type == BookType.L2_MBP:
+            if command.depth == 10:
+                await self._ws_client.subscribe_order_book_depth10(pyo3_instrument_id)
+            elif command.depth == 25:
+                await self._ws_client.subscribe_order_book_25(pyo3_instrument_id)
+            else:
+                await self._ws_client.subscribe_order_book(pyo3_instrument_id)
+        else:
+            self._log.warning(f"Book type {command.book_type} not supported by BitMEX")
 
     async def _subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
-        # TODO: Implement
-        self._log.warning("Trade ticks subscription not yet implemented")
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        await self._ws_client.subscribe_trades(pyo3_instrument_id)
 
     async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
-        # TODO: Implement
-        self._log.warning("Quote ticks subscription not yet implemented")
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        await self._ws_client.subscribe_quotes(pyo3_instrument_id)
 
     async def _subscribe_bars(self, command: SubscribeBars) -> None:
-        # TODO: Implement
-        self._log.warning("Bars subscription not yet implemented")
+        pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(command.bar_type))
+        await self._ws_client.subscribe_bars(pyo3_bar_type)
 
     async def _unsubscribe_order_book(self, command: UnsubscribeOrderBook) -> None:
-        # TODO: Implement
-        self._log.warning("Order book unsubscription not yet implemented")
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+
+        # BitMEX has different order book depths - unsubscribe from all
+        if command.book_type == BookType.L2_MBP:
+            if command.depth == 10:
+                await self._ws_client.unsubscribe_order_book_depth10(pyo3_instrument_id)
+            elif command.depth == 25:
+                await self._ws_client.unsubscribe_order_book_25(pyo3_instrument_id)
+            else:
+                await self._ws_client.unsubscribe_order_book(pyo3_instrument_id)
 
     async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
-        # TODO: Implement
-        self._log.warning("Trade ticks unsubscription not yet implemented")
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        await self._ws_client.unsubscribe_trades(pyo3_instrument_id)
 
     async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
-        # TODO: Implement
-        self._log.warning("Quote ticks unsubscription not yet implemented")
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        await self._ws_client.unsubscribe_quotes(pyo3_instrument_id)
 
     async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
-        # TODO: Implement
-        self._log.warning("Bars unsubscription not yet implemented")
+        pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(command.bar_type))
+        await self._ws_client.unsubscribe_bars(pyo3_bar_type)
 
     async def _request_instruments(self, request: RequestInstruments) -> None:
         instruments = await self._http_client.request_instruments(self._symbol_status)
@@ -179,3 +238,16 @@ class BitmexDataClient(LiveMarketDataClient):
     async def _request_bars(self, request: RequestBars) -> None:
         # TODO: Implement
         self._log.warning("Bars request not yet implemented")
+
+    def _handle_msg(self, msg: Any) -> None:
+        try:
+            if nautilus_pyo3.is_pycapsule(msg):
+                # The capsule will fall out of scope at the end of this method,
+                # and eventually be garbage collected. The contained pointer
+                # to `Data` is still owned and managed by Rust.
+                data = capsule_to_data(msg)
+                self._handle_data(data)
+            else:
+                self._log.warning(f"Cannot handle message {msg}, not implemented")
+        except Exception as e:
+            self._log.exception("Error handling websocket message", e)

@@ -82,7 +82,7 @@ config_node = TradingNodeConfig(
 )
 
 # Configure the execution tester strategy
-strat_config = ExecTesterConfig(
+config_tester = ExecTesterConfig(
     instrument_id=InstrumentId.from_str(f"{symbol}.BITMEX"),
     order_qty=order_qty,
 )
@@ -91,7 +91,7 @@ strat_config = ExecTesterConfig(
 node = TradingNode(config=config_node)
 
 # Add the strategy to the node
-node.trader.add_strategy(ExecTester(config=strat_config))
+node.trader.add_strategy(ExecTester(config=config_tester))
 
 # Register the client factories
 node.add_data_client_factory(BITMEX, BitmexLiveDataClientFactory)
