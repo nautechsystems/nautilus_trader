@@ -8,6 +8,7 @@ Released on TBD (UTC).
 - Added `on_funding_rate` handler for actors
 - Added support for option combos for Interactive Brokers (#2812), thanks @faysou
 - Added loading of options chain from `request_instruments` for Interactive Brokers (#2809), thanks @faysou
+- Added support for option spread quotes in backtest (#2845), thanks @faysou
 - Added `MarginModel` concept, base models, config, and factory for backtesting (#2794), thanks @faysou and @stefansimik
 - Added additional built-in backtest fill models (#2795), thanks @faysou and @stefansimik
 - Added `OrderBookDepth10DataWrangler` (#2801), thanks @trylovetom
@@ -76,6 +77,8 @@ Released on TBD (UTC).
 - Improved zero-sized trades handling for Tardis CSV loader (will log a warning)
 - Improved ergonomics of `TardisInstrumentProvider` datetime filter params (can be either `pd.Timestamp` or Unix nanos `int`)
 - Improved handling of Tardis Machine websocket connection errors
+- Improved positions report to mark snapshots (#2840), thanks @stastnypremysl
+- Improved ERC20 token metadata handling and error recovery (#2847), thanks @filipmacek
 - Refined Rust catalog path handling (#2743), thanks @faysou
 - Refined Rust `GreeksCalculator` (#2760), thanks @faysou
 - Refined Databento bars timestamp decoding and backtest execution usage (#2800), thanks @faysou
