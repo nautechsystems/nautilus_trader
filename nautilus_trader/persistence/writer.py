@@ -112,9 +112,11 @@ class StreamingFeatherWriter:
             self.fs.makedirs(self.path, exist_ok=True)  # Create directory if it doesn't exist
 
         self.include_types = include_types
+
         if self.fs.exists(self.path) and replace:
             for fn in self.fs.ls(self.path):
                 self.fs.rm(fn)
+
             self.fs.rmdir(self.path)
 
         self._schemas = list_schemas()
@@ -152,6 +154,7 @@ class StreamingFeatherWriter:
         mode and clock.
         """
         now = self.clock.utc_now()
+
         if self.rotation_mode == RotationMode.INTERVAL:
             self._next_rotation_times[table_name] = now + self.rotation_interval
         elif self.rotation_mode == RotationMode.SCHEDULED_DATES:
@@ -164,8 +167,10 @@ class StreamingFeatherWriter:
                     user_rotation_time,
                     tz=self.rotation_timezone,
                 ).tz_convert("UTC")
+
                 while next_rotation_time <= now:
                     next_rotation_time += self.rotation_interval
+
                 self._next_rotation_times[table_name] = next_rotation_time
             else:
                 self._next_rotation_times[table_name] = now + self.rotation_interval
@@ -194,12 +199,14 @@ class StreamingFeatherWriter:
         elif self.rotation_mode in (RotationMode.INTERVAL, RotationMode.SCHEDULED_DATES):
             now = self.clock.utc_now()
             next_rotation_time = self._next_rotation_times.get(table_name)
+
             if next_rotation_time is None:
                 self._update_next_rotation_time(table_name)
                 return False
             elif now >= next_rotation_time:
                 self._update_next_rotation_time(table_name)
                 return True
+
         return False
 
     def _rotate_regular_file(self, table_name: str, cls: type) -> None:
@@ -240,6 +247,7 @@ class StreamingFeatherWriter:
         """
         table_name = class_to_filename(cls)
         key = (table_name, obj.instrument_id.value)
+
         if key in self._instrument_writers:
             self._files[key].flush()
             self._instrument_writers[key].close()
@@ -264,6 +272,7 @@ class StreamingFeatherWriter:
 
         if table_name in self._writers:
             return
+
         if table_name in self._per_instrument_writers:
             return
 
@@ -315,6 +324,7 @@ class StreamingFeatherWriter:
     ) -> dict[bytes, bytes]:
         instrument = self.cache.instrument(obj.instrument_id)
         metadata = {b"instrument_id": obj.instrument_id.value.encode()}
+
         if (
             isinstance(obj, OrderBookDelta)
             or isinstance(obj, OrderBookDeltas)
@@ -369,12 +379,14 @@ class StreamingFeatherWriter:
             cls = obj.data_type.type
 
         table = class_to_filename(cls)
+
         if isinstance(obj, Bar):
             bar: Bar = obj
             table += f"_{str(bar.bar_type).lower()}"
 
         if table not in self._writers:
             self.logger.debug(f"Writer not setup for table '{table}'")
+
             if table.startswith("custom_signal"):
                 self._create_writer(cls=cls)
             elif table.startswith(("bar", "binance_bar")):
@@ -382,6 +394,7 @@ class StreamingFeatherWriter:
             elif table in self._per_instrument_writers:
                 key = (table, obj.instrument_id.value)  # type: ignore
                 instrument = self.cache.instrument(obj.instrument_id)  # type: ignore
+
                 if key not in self._instrument_writers and instrument is not None:
                     self._create_instrument_writer(cls=cls, obj=obj)
             elif cls not in self.missing_writers:
@@ -393,6 +406,7 @@ class StreamingFeatherWriter:
 
         if table in self._per_instrument_writers:
             key = (table, obj.instrument_id.value)  # type: ignore
+
             if key in self._instrument_writers:
                 writer: RecordBatchStreamWriter = self._instrument_writers[key]
             else:
@@ -401,12 +415,15 @@ class StreamingFeatherWriter:
             writer: RecordBatchStreamWriter = self._writers[table]  # type: ignore
 
         serialized = ArrowSerializer.serialize_batch([obj], data_cls=cls)
+
         if not serialized:
             return
+
         try:
             writer.write_table(serialized)
             self._file_sizes[table] = self._file_sizes.get(table, 0) + serialized.nbytes
             self.check_flush()
+
             if self._check_file_rotation(table):
                 if table in self._per_instrument_writers:
                     self._rotate_per_instrument_file(cls=cls, obj=obj)
@@ -422,6 +439,7 @@ class StreamingFeatherWriter:
         Flush all stream writers if current time greater than the next flush interval.
         """
         now = self.clock.utc_now()
+
         if (now - self._last_flush).total_seconds() * 1000 > self.flush_interval_ms:
             self.flush()
             self._last_flush = now
@@ -439,9 +457,11 @@ class StreamingFeatherWriter:
         Flush and close all stream writers.
         """
         self.flush()
+
         for wcls in tuple(self._writers):
             self._writers[wcls].close()
             del self._writers[wcls]
+
         for fcls in self._files:
             self._files[fcls].close()
 

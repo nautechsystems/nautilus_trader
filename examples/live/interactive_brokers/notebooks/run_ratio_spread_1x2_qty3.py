@@ -14,6 +14,9 @@
 # ---
 
 # %%
+# Note: Use the jupytext python extension to be able to open this python file in jupyter as a notebook
+
+# %%
 """
 Test 1x2 Ratio Spread with Quantity 3.
 
