@@ -18,7 +18,7 @@ use std::{
     env,
     fmt::Display,
     str::FromStr,
-    sync::{OnceLock, atomic::Ordering, mpsc::SendError},
+    sync::{Mutex, OnceLock, atomic::Ordering, mpsc::SendError},
 };
 
 use indexmap::IndexMap;
@@ -43,13 +43,14 @@ use crate::{
 };
 
 const LOGGING: &str = "logging";
+const KV_COLOR: &str = "color";
+const KV_COMPONENT: &str = "component";
 
 /// Global log sender which allows multiple log guards per process.
 static LOGGER_TX: OnceLock<std::sync::mpsc::Sender<LogEvent>> = OnceLock::new();
 
 /// Global handle to the logging thread - only one thread exists per process.
-static LOGGER_HANDLE: std::sync::Mutex<Option<std::thread::JoinHandle<()>>> =
-    std::sync::Mutex::new(None);
+static LOGGER_HANDLE: Mutex<Option<std::thread::JoinHandle<()>>> = Mutex::new(None);
 
 #[cfg_attr(
     feature = "python",
@@ -312,10 +313,10 @@ impl Log for Logger {
             let level = record.level();
             let key_values = record.key_values();
             let color: LogColor = key_values
-                .get("color".into())
+                .get(KV_COLOR.into())
                 .and_then(|v| v.to_u64().map(|v| (v as u8).into()))
                 .unwrap_or(level.into());
-            let component = key_values.get("component".into()).map_or_else(
+            let component = key_values.get(KV_COMPONENT.into()).map_or_else(
                 || Ustr::from(record.metadata().target()),
                 |v| Ustr::from(&v.to_string()),
             );
@@ -574,7 +575,7 @@ pub fn log<T: AsRef<str>>(level: LogLevel, color: LogColor, component: Ustr, mes
 )]
 #[derive(Debug)]
 pub struct LogGuard {
-    tx: Option<std::sync::mpsc::Sender<LogEvent>>,
+    tx: std::sync::mpsc::Sender<LogEvent>,
 }
 
 impl LogGuard {
@@ -598,9 +599,7 @@ impl LogGuard {
                 })
                 .expect("Maximum number of active LogGuards (255) exceeded");
 
-            Self {
-                tx: Some(tx.clone()),
-            }
+            Self { tx: tx.clone() }
         })
     }
 }
@@ -620,9 +619,7 @@ impl Drop for LogGuard {
         if previous_count == 1 && LOGGING_GUARDS_ACTIVE.load(Ordering::SeqCst) == 0 {
             // This is truly the last LogGuard, so we should close the logger and join the thread
             // to ensure all log messages are written before the process terminates.
-            if let Some(tx) = self.tx.take() {
-                let _ = tx.send(LogEvent::Close);
-            }
+            let _ = self.tx.send(LogEvent::Close);
 
             // Join the logging thread to ensure all pending logs are written
             if let Ok(mut handle_guard) = LOGGER_HANDLE.lock()
@@ -638,9 +635,7 @@ impl Drop for LogGuard {
             LOGGING_INITIALIZED.store(false, Ordering::SeqCst);
         } else {
             // Other LogGuards are still active, just flush our logs
-            if let Some(tx) = self.tx.take() {
-                let _ = tx.send(LogEvent::Flush);
-            }
+            let _ = self.tx.send(LogEvent::Flush);
         }
     }
 }
