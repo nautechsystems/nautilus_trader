@@ -16,10 +16,10 @@
 import pytest
 
 from nautilus_trader.model.objects import Price
-from nautilus_trader.model.tick_scheme.base import get_tick_scheme
+from nautilus_trader.model.tick_scheme import FixedTickScheme
+from nautilus_trader.model.tick_scheme import get_tick_scheme
 from nautilus_trader.model.tick_scheme.base import round_down
 from nautilus_trader.model.tick_scheme.base import round_up
-from nautilus_trader.model.tick_scheme.implementations.fixed import FixedTickScheme
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 

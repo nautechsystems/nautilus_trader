@@ -18,9 +18,9 @@ from decimal import Decimal
 import pytest
 
 from nautilus_trader.model.objects import Price
-from nautilus_trader.model.tick_scheme.base import get_tick_scheme
-from nautilus_trader.model.tick_scheme.implementations.fixed import FixedTickScheme
-from nautilus_trader.model.tick_scheme.implementations.tiered import TieredTickScheme
+from nautilus_trader.model.tick_scheme import FixedTickScheme
+from nautilus_trader.model.tick_scheme import TieredTickScheme
+from nautilus_trader.model.tick_scheme import get_tick_scheme
 from tests.integration_tests.adapters.betfair.test_kit import betting_instrument
 
 
