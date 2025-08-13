@@ -21,21 +21,19 @@ crate-type = ["rlib", "cdylib"]
 [features]
 default = []
 extension-module = [
-  "pyo3/extension-module",
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
-  "nautilus-execution/extension-module",
   "nautilus-model/extension-module",
   "nautilus-network/extension-module",
+  "pyo3/extension-module",
 ]
 python = [
-  "pyo3",
-  "pyo3-async-runtimes",
   "nautilus-common/python",
   "nautilus-core/python",
-  "nautilus-execution/python",
   "nautilus-model/python",
   "nautilus-network/python",
+  "pyo3",
+  "pyo3-async-runtimes",
 ]
 
 [package.metadata.docs.rs]
@@ -45,10 +43,8 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 nautilus-common = { workspace = true }
 nautilus-core = { workspace = true }
-nautilus-execution = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
-nautilus-serialization = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
@@ -65,7 +61,6 @@ pyo3-async-runtimes = { workspace = true, optional = true }
 reqwest = { workspace = true }
 aws-lc-rs = { workspace = true }
 rust_decimal = { workspace = true }
-rust_decimal_macros = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_urlencoded = { workspace = true }
@@ -76,7 +71,6 @@ tokio-tungstenite = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }  # Needed for example binaries
 ustr = { workspace = true }
-uuid = { workspace = true }
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }

@@ -22,25 +22,25 @@ crate-type = ["cdylib", "rlib"]
 default = []
 cython-compat = []
 extension-module = [
-  "pyo3/extension-module",
-  "nautilus-common/extension-module",
-  "nautilus-core/extension-module",
-  "nautilus-cryptography/extension-module",
-  "nautilus-execution/extension-module",
-  "nautilus-indicators/extension-module",
-  "nautilus-infrastructure/extension-module",
-  "nautilus-model/extension-module",
-  "nautilus-persistence/extension-module",
-  "nautilus-serialization/extension-module",
-  "nautilus-testkit/extension-module",
-  "nautilus-trading/extension-module",
-  "nautilus-live/extension-module",
   "nautilus-bitmex/extension-module",
   "nautilus-blockchain/extension-module",
   "nautilus-coinbase-intx/extension-module",
+  "nautilus-common/extension-module",
+  "nautilus-core/extension-module",
+  "nautilus-cryptography/extension-module",
   "nautilus-databento/extension-module",
+  "nautilus-execution/extension-module",
+  "nautilus-indicators/extension-module",
+  "nautilus-infrastructure/extension-module",
+  "nautilus-live/extension-module",
+  "nautilus-model/extension-module",
   "nautilus-okx/extension-module",
+  "nautilus-persistence/extension-module",
+  "nautilus-serialization/extension-module",
   "nautilus-tardis/extension-module",
+  "nautilus-testkit/extension-module",
+  "nautilus-trading/extension-module",
+  "pyo3/extension-module",
 ]
 ffi = [
   "nautilus-common/ffi",
@@ -55,7 +55,6 @@ high-precision = [
 redis = ["nautilus-infrastructure/redis"]
 postgres = ["nautilus-infrastructure/postgres"]
 hypersync = ["nautilus-blockchain/hypersync"]
-python = []
 
 [package.metadata.docs.rs]
 all-features = true

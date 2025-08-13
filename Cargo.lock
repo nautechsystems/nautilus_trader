@@ -4806,7 +4806,6 @@ dependencies = [
  "anyhow",
  "async-trait",
  "criterion",
- "futures",
  "log",
  "nautilus-common",
  "nautilus-core",
@@ -4869,7 +4868,6 @@ dependencies = [
  "futures",
  "futures-util",
  "http",
- "log",
  "memchr",
  "nautilus-common",
  "nautilus-core",
@@ -4913,17 +4911,14 @@ dependencies = [
  "log",
  "nautilus-common",
  "nautilus-core",
- "nautilus-execution",
  "nautilus-model",
  "nautilus-network",
- "nautilus-serialization",
  "nautilus-testkit",
  "pyo3",
  "pyo3-async-runtimes",
  "reqwest",
  "rstest",
  "rust_decimal",
- "rust_decimal_macros",
  "serde",
  "serde_json",
  "serde_urlencoded",
@@ -4936,7 +4931,6 @@ dependencies = [
  "tracing-test",
  "url",
  "ustr",
- "uuid",
 ]
 
 [[package]]
@@ -5042,19 +5036,16 @@ dependencies = [
 name = "nautilus-serialization"
 version = "0.50.0"
 dependencies = [
- "anyhow",
  "arrow",
  "nautilus-core",
  "nautilus-model",
  "nautilus-testkit",
- "parquet",
  "pretty_assertions",
  "pyo3",
  "rstest",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
- "strum",
  "thiserror 2.0.14",
 ]
 

@@ -20,17 +20,17 @@ crate-type = ["rlib", "cdylib"]
 [features]
 default = ["replay"]
 extension-module = [
-  "pyo3/extension-module",
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
   "nautilus-serialization/extension-module",
+  "pyo3/extension-module",
 ]
 python = [
-  "pyo3",
-  "pyo3-async-runtimes",
   "nautilus-core/python",
   "nautilus-model/python",
   "nautilus-serialization/python",
+  "pyo3",
+  "pyo3-async-runtimes",
 ]
 replay = []
 

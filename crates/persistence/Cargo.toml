@@ -20,25 +20,25 @@ crate-type = ["rlib", "staticlib", "cdylib"]
 [features]
 default = []
 extension-module = [
-  "pyo3/extension-module",
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
   "nautilus-serialization/extension-module",
+  "pyo3/extension-module",
 ]
 ffi = [
   "nautilus-core/ffi",
   "nautilus-model/ffi",
 ]
 python = [
-  "pyo3",
   "nautilus-core/ffi",
   "nautilus-core/python",
   "nautilus-model/python",
   "nautilus-serialization/python",
+  "pyo3",
 ]
 high-precision = [
-  "nautilus-serialization/high-precision",
   "nautilus-model/high-precision",
+  "nautilus-serialization/high-precision",
 ]
 
 [package.metadata.docs.rs]
@@ -49,7 +49,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 nautilus-common = { workspace = true }
 nautilus-core = { workspace = true, features = ["ffi"] }
 nautilus-model = { workspace = true, features = ["stubs"] }
-nautilus-serialization = { workspace = true, features = ["python"] }
+nautilus-serialization = { workspace = true }
 
 anyhow = { workspace = true }
 arrow = { workspace = true }
