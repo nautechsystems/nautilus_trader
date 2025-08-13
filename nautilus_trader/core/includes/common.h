@@ -204,6 +204,26 @@ typedef enum LogLevel {
  */
 typedef struct LiveClock LiveClock;
 
+/**
+ * A guard that manages the lifecycle of the logging subsystem.
+ *
+ * `LogGuard` ensures the logging thread remains active while instances exist and properly
+ * terminates when all guards are dropped. The system uses reference counting to track active
+ * guards - when the last `LogGuard` is dropped, the logging thread is joined to ensure all
+ * pending log messages are written before the process terminates.
+ *
+ * # Reference Counting
+ *
+ * The logging system maintains a global atomic counter of active `LogGuard` instances. This
+ * ensures that:
+ * - The logging thread remains active as long as at least one `LogGuard` exists.
+ * - All log messages are properly flushed when intermediate guards are dropped.
+ * - The logging thread is cleanly terminated and joined when the last guard is dropped.
+ *
+ * # Limits
+ *
+ * The system supports a maximum of 255 concurrent `LogGuard` instances.
+ */
 typedef struct LogGuard LogGuard;
 
 /**
