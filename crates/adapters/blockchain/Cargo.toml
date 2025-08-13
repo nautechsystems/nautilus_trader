@@ -21,15 +21,15 @@ crate-type = ["rlib", "cdylib"]
 [features]
 default = []
 extension-module = [
-  "pyo3/extension-module",
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
   "nautilus-data/extension-module",
   "nautilus-model/extension-module",
   "nautilus-network/extension-module",
+  "pyo3/extension-module",
 ]
 hypersync = ["hypersync-client", "hypersync-schema"]
-python = ["pyo3", "nautilus-network/python"]
+python = ["nautilus-network/python", "pyo3"]
 
 [package.metadata.docs.rs]
 features = ["python"]

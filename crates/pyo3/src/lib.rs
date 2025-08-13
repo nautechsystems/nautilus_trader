@@ -24,7 +24,6 @@
 //! [maturin](https://github.com/PyO3/maturin) and therefore provides a broad set of feature flags
 //! to toggle bindings and optional dependencies:
 //!
-//! - `python`: Enables the base PyO3 binding support.
 //! - `extension-module`: Builds the crate as a Python extension module (automatically enabled by `maturin`).
 //! - `ffi`: Enables the C foreign function interface (FFI) support in dependent crates.
 //! - `high-precision`: Uses 128-bit value types throughout the workspace.

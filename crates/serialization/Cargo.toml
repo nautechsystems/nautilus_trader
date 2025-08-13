@@ -20,11 +20,11 @@ crate-type = ["rlib", "staticlib", "cdylib"]
 [features]
 default = []
 extension-module = [
-  "pyo3/extension-module",
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
+  "pyo3/extension-module",
 ]
-python = ["pyo3", "nautilus-core/python", "nautilus-model/python"]
+python = ["nautilus-core/python", "nautilus-model/python", "pyo3"]
 high-precision = ["nautilus-model/high-precision"]
 
 [package.metadata.docs.rs]
@@ -35,14 +35,11 @@ rustdoc-args = ["--cfg", "docsrs"]
 nautilus-core = { workspace = true }
 nautilus-model = { workspace = true, features = ["stubs"] }
 
-anyhow = { workspace = true }
 arrow = { workspace = true }
-parquet = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
 serde = { workspace = true }
-strum = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]

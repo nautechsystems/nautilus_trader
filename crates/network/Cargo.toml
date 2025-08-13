@@ -20,10 +20,10 @@ crate-type = ["rlib", "staticlib", "cdylib"]
 [features]
 default = []
 extension-module = [
-  "pyo3/extension-module",
   "nautilus-core/extension-module",
+  "pyo3/extension-module",
 ]
-python = ["pyo3", "pyo3-async-runtimes", "nautilus-core/python"]
+python = ["nautilus-core/python", "pyo3", "pyo3-async-runtimes"]
 std = []
 
 [package.metadata.docs.rs]
@@ -40,7 +40,6 @@ dashmap = { workspace = true }
 futures = { workspace = true }
 futures-util = { workspace = true }
 http = { workspace = true }
-log = { workspace = true }
 memchr = { workspace = true }
 nonzero_ext = { workspace = true }
 pyo3 = { workspace = true, optional = true }
