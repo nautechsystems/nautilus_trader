@@ -102,17 +102,17 @@ impl Erc20Contract {
         let calls = vec![
             ContractCall {
                 target: *token_address,
-                allow_failure: false,
+                allow_failure: true,
                 call_data: ERC20::nameCall.abi_encode(),
             },
             ContractCall {
                 target: *token_address,
-                allow_failure: false,
+                allow_failure: true,
                 call_data: ERC20::symbolCall.abi_encode(),
             },
             ContractCall {
                 target: *token_address,
-                allow_failure: false,
+                allow_failure: true,
                 call_data: ERC20::decimalsCall.abi_encode(),
             },
         ];
