@@ -48,8 +48,9 @@ Released on TBD (UTC).
 ### Internal Improvements
 - Refactored OKX adapter to Rust API clients
 - Refactored `BacktestDataIterator` (#2791) to consolidate data generator usage, thanks @faysou
+- Implemented `LogGuard` reference counting for proper thread lifecycle management, ensuring all logs flushed before termination
 - Introduced `SharedCell` / `WeakCell` wrappers for ergonomic and safer handling of `Rc<RefCell<T>>` / `Weak<RefCell<T>>` pairs
-- Implement live subscriptions for blockchain data client (#2832), thanks @filipmacek
+- Implemented live subscriptions for blockchain data client (#2832), thanks @filipmacek
 - Added stream iterators support `BacktestDataIterator`
 - Added serialization support for execution reports
 - Added serialization support for execution report commands
