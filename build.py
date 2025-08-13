@@ -16,6 +16,7 @@ from Cython.Build import build_ext
 from Cython.Build import cythonize
 from Cython.Compiler import Options
 from Cython.Compiler.Version import version as cython_compiler_version
+from packaging.version import Version
 from setuptools import Distribution
 from setuptools import Extension
 
@@ -216,7 +217,7 @@ CYTHON_COMPILER_DIRECTIVES = {
 }
 
 # TODO: Temporarily separate Cython configuration while we require v3.0.11 for coverage
-if cython_compiler_version == "3.1.2":
+if Version(cython_compiler_version) >= Version("3.1.2"):
     Options.warning_errors = True  # Treat compiler warnings as errors
     Options.extra_warnings = True
     CYTHON_COMPILER_DIRECTIVES["warn.deprecated.IF"] = False
