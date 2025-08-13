@@ -295,7 +295,7 @@ fn parse_derivative_ticker_record(
     };
 
     let rate = Decimal::try_from(funding_rate).ok()?;
-    let ts_next_funding = if data.predicted_funding_rate.is_some() {
+    let next_funding_ns = if data.predicted_funding_rate.is_some() {
         data.funding_timestamp.map(parse_timestamp)
     } else {
         None
@@ -306,7 +306,7 @@ fn parse_derivative_ticker_record(
     Some(FundingRateUpdate::new(
         instrument_id,
         rate,
-        ts_next_funding,
+        next_funding_ns,
         ts_event,
         ts_init,
     ))

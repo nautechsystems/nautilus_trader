@@ -427,12 +427,12 @@ pub fn parse_derivative_ticker_msg(
         .with_context(|| format!("Failed to convert funding rate {funding_rate} to Decimal"))?;
 
     // For live data, we don't typically have funding timestamp info from derivative ticker
-    let ts_next_funding = None;
+    let next_funding_ns = None;
 
     Ok(Some(FundingRateUpdate::new(
         instrument_id,
         rate,
-        ts_next_funding,
+        next_funding_ns,
         ts_event,
         ts_init,
     )))

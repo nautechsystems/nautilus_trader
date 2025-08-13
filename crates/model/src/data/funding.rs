@@ -39,7 +39,7 @@ pub struct FundingRateUpdate {
     /// The current funding rate.
     pub rate: Decimal,
     /// UNIX timestamp (nanoseconds) for the next funding time.
-    pub ts_next_funding: Option<UnixNanos>,
+    pub next_funding_ns: Option<UnixNanos>,
     /// UNIX timestamp (nanoseconds) when the funding rate event occurred.
     pub ts_event: UnixNanos,
     /// UNIX timestamp (nanoseconds) when the instance was created.
@@ -52,14 +52,14 @@ impl FundingRateUpdate {
     pub fn new(
         instrument_id: InstrumentId,
         rate: Decimal,
-        ts_next_funding: Option<UnixNanos>,
+        next_funding_ns: Option<UnixNanos>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> Self {
         Self {
             instrument_id,
             rate,
-            ts_next_funding,
+            next_funding_ns,
             ts_event,
             ts_init,
         }
@@ -78,7 +78,7 @@ impl FundingRateUpdate {
     pub fn get_fields() -> IndexMap<String, String> {
         let mut metadata = IndexMap::new();
         metadata.insert("rate".to_string(), "Decimal128".to_string());
-        metadata.insert("ts_next_funding".to_string(), "UInt64".to_string());
+        metadata.insert("next_funding_ns".to_string(), "UInt64".to_string());
         metadata.insert("ts_event".to_string(), "UInt64".to_string());
         metadata.insert("ts_init".to_string(), "UInt64".to_string());
         metadata
@@ -92,7 +92,7 @@ impl Display for FundingRateUpdate {
             "{},{},{:?},{},{}",
             self.instrument_id,
             self.rate,
-            self.ts_next_funding.map(|ts| ts.as_u64()),
+            self.next_funding_ns.map(|ts| ts.as_u64()),
             self.ts_event,
             self.ts_init
         )
@@ -140,7 +140,7 @@ mod tests {
 
         assert_eq!(funding_rate.instrument_id, instrument_id);
         assert_eq!(funding_rate.rate, rate);
-        assert_eq!(funding_rate.ts_next_funding, None);
+        assert_eq!(funding_rate.next_funding_ns, None);
         assert_eq!(funding_rate.ts_event, ts_event);
         assert_eq!(funding_rate.ts_init, ts_init);
     }
@@ -148,16 +148,16 @@ mod tests {
     #[rstest]
     fn test_funding_rate_update_new_with_optional_fields(instrument_id: InstrumentId) {
         let rate = Decimal::from_str("0.0001").unwrap();
-        let ts_next_funding = Some(UnixNanos::from(1000));
+        let next_funding_ns = Some(UnixNanos::from(1000));
         let ts_event = UnixNanos::from(1);
         let ts_init = UnixNanos::from(2);
 
         let funding_rate =
-            FundingRateUpdate::new(instrument_id, rate, ts_next_funding, ts_event, ts_init);
+            FundingRateUpdate::new(instrument_id, rate, next_funding_ns, ts_event, ts_init);
 
         assert_eq!(funding_rate.instrument_id, instrument_id);
         assert_eq!(funding_rate.rate, rate);
-        assert_eq!(funding_rate.ts_next_funding, ts_next_funding);
+        assert_eq!(funding_rate.next_funding_ns, next_funding_ns);
         assert_eq!(funding_rate.ts_event, ts_event);
         assert_eq!(funding_rate.ts_init, ts_init);
     }
@@ -165,12 +165,12 @@ mod tests {
     #[rstest]
     fn test_funding_rate_update_display(instrument_id: InstrumentId) {
         let rate = Decimal::from_str("0.0001").unwrap();
-        let ts_next_funding = Some(UnixNanos::from(1000));
+        let next_funding_ns = Some(UnixNanos::from(1000));
         let ts_event = UnixNanos::from(1);
         let ts_init = UnixNanos::from(2);
 
         let funding_rate =
-            FundingRateUpdate::new(instrument_id, rate, ts_next_funding, ts_event, ts_init);
+            FundingRateUpdate::new(instrument_id, rate, next_funding_ns, ts_event, ts_init);
 
         assert_eq!(
             format!("{funding_rate}"),
@@ -219,12 +219,12 @@ mod tests {
     #[rstest]
     fn test_funding_rate_update_json_serialization(instrument_id: InstrumentId) {
         let rate = Decimal::from_str("0.0001").unwrap();
-        let ts_next_funding = Some(UnixNanos::from(1000));
+        let next_funding_ns = Some(UnixNanos::from(1000));
         let ts_event = UnixNanos::from(1);
         let ts_init = UnixNanos::from(2);
 
         let funding_rate =
-            FundingRateUpdate::new(instrument_id, rate, ts_next_funding, ts_event, ts_init);
+            FundingRateUpdate::new(instrument_id, rate, next_funding_ns, ts_event, ts_init);
 
         let serialized = funding_rate.to_json_bytes().unwrap();
         let deserialized = FundingRateUpdate::from_json_bytes(&serialized).unwrap();
@@ -235,12 +235,12 @@ mod tests {
     #[rstest]
     fn test_funding_rate_update_msgpack_serialization(instrument_id: InstrumentId) {
         let rate = Decimal::from_str("0.0001").unwrap();
-        let ts_next_funding = Some(UnixNanos::from(1000));
+        let next_funding_ns = Some(UnixNanos::from(1000));
         let ts_event = UnixNanos::from(1);
         let ts_init = UnixNanos::from(2);
 
         let funding_rate =
-            FundingRateUpdate::new(instrument_id, rate, ts_next_funding, ts_event, ts_init);
+            FundingRateUpdate::new(instrument_id, rate, next_funding_ns, ts_event, ts_init);
 
         let serialized = funding_rate.to_msgpack_bytes().unwrap();
         let deserialized = FundingRateUpdate::from_msgpack_bytes(&serialized).unwrap();
@@ -251,12 +251,12 @@ mod tests {
     #[rstest]
     fn test_funding_rate_update_serde_json(instrument_id: InstrumentId) {
         let rate = Decimal::from_str("0.0001").unwrap();
-        let ts_next_funding = Some(UnixNanos::from(1000));
+        let next_funding_ns = Some(UnixNanos::from(1000));
         let ts_event = UnixNanos::from(1);
         let ts_init = UnixNanos::from(2);
 
         let funding_rate =
-            FundingRateUpdate::new(instrument_id, rate, ts_next_funding, ts_event, ts_init);
+            FundingRateUpdate::new(instrument_id, rate, next_funding_ns, ts_event, ts_init);
 
         let json_str = serde_json::to_string(&funding_rate).unwrap();
         let deserialized: FundingRateUpdate = serde_json::from_str(&json_str).unwrap();

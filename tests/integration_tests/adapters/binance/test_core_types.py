@@ -279,7 +279,7 @@ def test_binance_mark_price_to_from_dict():
         index=Price.from_str("1642.28316456"),
         estimated_settle=Price.from_str("1639.27811452"),
         funding_rate=Decimal("0.00081453"),
-        ts_next_funding=1650000000000000002,
+        next_funding_ns=1650000000000000002,
         ts_event=1650000000000000001,
         ts_init=1650000000000000000,
     )
@@ -296,7 +296,7 @@ def test_binance_mark_price_to_from_dict():
         "index": "1642.28316456",
         "estimated_settle": "1639.27811452",
         "funding_rate": "0.00081453",
-        "ts_next_funding": 1650000000000000002,
+        "next_funding_ns": 1650000000000000002,
         "ts_event": 1650000000000000001,
         "ts_init": 1650000000000000000,
     }
@@ -310,7 +310,7 @@ def test_binance_mark_price_pickling():
         index=Price.from_str("1642.28316456"),
         estimated_settle=Price.from_str("1639.27811452"),
         funding_rate=Decimal("0.00081453"),
-        ts_next_funding=1650000000000000002,
+        next_funding_ns=1650000000000000002,
         ts_event=1650000000000000001,
         ts_init=1650000000000000000,
     )
@@ -327,7 +327,7 @@ def test_binance_mark_price_pickling():
         "index": "1642.28316456",
         "estimated_settle": "1639.27811452",
         "funding_rate": "0.00081453",
-        "ts_next_funding": 1650000000000000002,
+        "next_funding_ns": 1650000000000000002,
         "ts_event": 1650000000000000001,
         "ts_init": 1650000000000000000,
     }

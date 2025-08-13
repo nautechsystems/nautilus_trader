@@ -61,12 +61,12 @@ class TestBybitFundingRateParsing:
             rate=Decimal(ticker_data.fundingRate),
             ts_event=ts_event,
             ts_init=ts_init,
-            ts_next_funding=int(ticker_data.nextFundingTime) * 1_000_000,
+            next_funding_ns=int(ticker_data.nextFundingTime) * 1_000_000,
         )
 
         assert funding_rate.instrument_id == instrument_id
         assert funding_rate.rate == Decimal("0.0001")
-        assert funding_rate.ts_next_funding == 1640007200000 * 1_000_000
+        assert funding_rate.next_funding_ns == 1640007200000 * 1_000_000
 
     def test_parse_ticker_negative_funding_rate(self):
         """
@@ -90,7 +90,7 @@ class TestBybitFundingRateParsing:
             rate=Decimal(ticker_data.fundingRate),
             ts_event=ts_event,
             ts_init=ts_init,
-            ts_next_funding=int(ticker_data.nextFundingTime) * 1_000_000,
+            next_funding_ns=int(ticker_data.nextFundingTime) * 1_000_000,
         )
 
         # Assert
@@ -119,12 +119,12 @@ class TestBybitFundingRateParsing:
             rate=Decimal(ticker_data.fundingRate),
             ts_event=ts_event,
             ts_init=ts_init,
-            ts_next_funding=None,
+            next_funding_ns=None,
         )
 
         # Assert
         assert funding_rate.rate == Decimal("0.0001")
-        assert funding_rate.ts_next_funding is None
+        assert funding_rate.next_funding_ns is None
 
     def test_ticker_without_funding_rate_should_not_create_update(self):
         """
@@ -164,7 +164,7 @@ class TestBybitFundingRateParsing:
             rate=Decimal(ticker_data.fundingRate),
             ts_event=ts_event,
             ts_init=ts_init,
-            ts_next_funding=int(ticker_data.nextFundingTime) * 1_000_000,
+            next_funding_ns=int(ticker_data.nextFundingTime) * 1_000_000,
         )
 
         # Assert

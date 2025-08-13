@@ -5782,7 +5782,7 @@ cdef class FundingRateUpdate(Data):
         The instrument ID for the funding rate.
     rate : Decimal
         The current funding rate.
-    ts_next_funding : int or ``None``
+    next_funding_ns : int, optional
         UNIX timestamp (nanoseconds) of the next funding payment (if available).
     ts_event : int
         UNIX timestamp (nanoseconds) when the update occurred.
@@ -5797,11 +5797,11 @@ cdef class FundingRateUpdate(Data):
         rate not None,
         uint64_t ts_event,
         uint64_t ts_init,
-        ts_next_funding = None,
+        next_funding_ns = None,
     ) -> None:
         self.instrument_id = instrument_id
         self.rate = rate
-        self.ts_next_funding = ts_next_funding
+        self.next_funding_ns = next_funding_ns
         self._ts_event = ts_event
         self._ts_init = ts_init
 
@@ -5809,7 +5809,7 @@ cdef class FundingRateUpdate(Data):
         return (
             self.instrument_id == other.instrument_id
             and self.rate == other.rate
-            and self.ts_next_funding == other.ts_next_funding
+            and self.next_funding_ns == other.next_funding_ns
             and self._ts_event == other._ts_event
             and self._ts_init == other._ts_init
         )
@@ -5818,19 +5818,18 @@ cdef class FundingRateUpdate(Data):
         return hash((
             self.instrument_id,
             self.rate,
-            self.ts_next_funding,
+            self.next_funding_ns,
             self._ts_event,
             self._ts_init,
         ))
 
     def __repr__(self) -> str:
-        next_funding_str = f",ts_next_funding={self.ts_next_funding}" if self.ts_next_funding is not None else ""
         return (
             f"{type(self).__name__}("
-            f"instrument_id={self.instrument_id},"
-            f"rate={self.rate}"
-            f"{next_funding_str},"
-            f"ts_event={self._ts_event},"
+            f"instrument_id={self.instrument_id}, "
+            f"rate={self.rate}, "
+            f"next_funding_ns={self.next_funding_ns}, "
+            f"ts_event={self._ts_event}, "
             f"ts_init={self._ts_init})"
         )
 
@@ -5866,7 +5865,7 @@ cdef class FundingRateUpdate(Data):
             rate=values["rate"],
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
-            ts_next_funding=values.get("ts_next_funding"),
+            next_funding_ns=values.get("next_funding_ns"),
         )
 
     @staticmethod
@@ -5879,8 +5878,8 @@ cdef class FundingRateUpdate(Data):
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
-        if obj.ts_next_funding is not None:
-            result["ts_next_funding"] = obj.ts_next_funding
+        if obj.next_funding_ns is not None:
+            result["next_funding_ns"] = obj.next_funding_ns
         return result
 
     @staticmethod
@@ -5952,7 +5951,7 @@ cdef class FundingRateUpdate(Data):
         return FundingRateUpdate(
             instrument_id=InstrumentId.from_str(pyo3_funding_rate.instrument_id.value),
             rate=pyo3_funding_rate.rate,
-            ts_next_funding=pyo3_funding_rate.ts_next_funding,
+            next_funding_ns=pyo3_funding_rate.next_funding_ns,
             ts_event=pyo3_funding_rate.ts_event,
             ts_init=pyo3_funding_rate.ts_init,
         )

@@ -498,15 +498,12 @@ cdef class IndexPriceUpdate(Data):
 
 
 cdef class FundingRateUpdate(Data):
-    """
-    Represents a funding rate update for a perpetual swap instrument.
-    """
     cdef readonly InstrumentId instrument_id
     """The instrument ID for the funding rate.\n\n:returns: `InstrumentId`"""
     cdef readonly object rate
     """The current funding rate.\n\n:returns: `Decimal`"""
-    cdef readonly object ts_next_funding
-    """UNIX timestamp (nanoseconds) of the next funding payment (if available, otherwise zero).\n\n:returns: `uint64_t`"""
+    cdef readonly object next_funding_ns
+    """UNIX timestamp (nanoseconds) of the next funding payment (if available, otherwise zero).\n\n:returns: `int` or ``None``"""
     cdef readonly uint64_t _ts_event
     """UNIX timestamp (nanoseconds) when the data event occurred.\n\n:returns: `uint64_t`"""
     cdef readonly uint64_t _ts_init

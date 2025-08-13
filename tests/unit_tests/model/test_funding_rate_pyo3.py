@@ -45,7 +45,7 @@ class TestFundingRateUpdate:
         # Assert
         assert funding_rate.instrument_id == BTCUSDT_PERP_BINANCE
         assert funding_rate.rate == Decimal("0.0001")
-        assert funding_rate.ts_next_funding is None
+        assert funding_rate.next_funding_ns is None
         assert funding_rate.ts_event == 1_640_000_000_000_000_000
         assert funding_rate.ts_init == 1_640_000_000_000_000_000
 
@@ -56,13 +56,13 @@ class TestFundingRateUpdate:
             rate=Decimal("0.0001"),
             ts_event=1_640_000_000_000_000_000,
             ts_init=1_640_000_000_000_000_000,
-            ts_next_funding=1_640_000_100_000_000_000,
+            next_funding_ns=1_640_000_100_000_000_000,
         )
 
         # Assert
         assert funding_rate.instrument_id == BTCUSDT_PERP_BINANCE
         assert funding_rate.rate == Decimal("0.0001")
-        assert funding_rate.ts_next_funding == 1_640_000_100_000_000_000
+        assert funding_rate.next_funding_ns == 1_640_000_100_000_000_000
         assert funding_rate.ts_event == 1_640_000_000_000_000_000
         assert funding_rate.ts_init == 1_640_000_000_000_000_000
 
@@ -81,7 +81,10 @@ class TestFundingRateUpdate:
             str(funding_rate)
             == "BTCUSDT-PERP.BINANCE,0.0001,None,1640000000000000000,1640000000000000000"
         )
-        assert "FundingRateUpdate" in repr(funding_rate)
+        assert (
+            repr(funding_rate)
+            == 'FundingRateUpdate { instrument_id: "BTCUSDT-PERP.BINANCE", rate: 0.0001, next_funding_ns: None, ts_event: UnixNanos(1640000000000000000), ts_init: UnixNanos(1640000000000000000) }'  # noqa: E501
+        )
 
     def test_equality(self):
         # Arrange
@@ -142,7 +145,7 @@ class TestFundingRateUpdate:
             rate=Decimal("0.0001"),
             ts_event=1_640_000_000_000_000_000,
             ts_init=1_640_000_000_000_000_000,
-            ts_next_funding=1_640_000_100_000_000_000,
+            next_funding_ns=1_640_000_100_000_000_000,
         )
 
         # Act
@@ -153,7 +156,7 @@ class TestFundingRateUpdate:
             "type": "FundingRateUpdate",
             "instrument_id": "BTCUSDT-PERP.BINANCE",
             "rate": "0.0001",
-            "ts_next_funding": 1_640_000_100_000_000_000,
+            "next_funding_ns": 1_640_000_100_000_000_000,
             "ts_event": 1_640_000_000_000_000_000,
             "ts_init": 1_640_000_000_000_000_000,
         }
@@ -177,7 +180,7 @@ class TestFundingRateUpdate:
         # Assert
         assert result.instrument_id == BTCUSDT_PERP_BINANCE
         assert result.rate == Decimal("0.0001")
-        assert result.ts_next_funding is None
+        assert result.next_funding_ns is None
         assert result.ts_event == 1_640_000_000_000_000_000
         assert result.ts_init == 1_640_000_000_000_000_000
 
@@ -186,7 +189,7 @@ class TestFundingRateUpdate:
         values = {
             "instrument_id": "BTCUSDT-PERP.BINANCE",
             "rate": "0.0001",
-            "ts_next_funding": 1_640_000_100_000_000_000,
+            "next_funding_ns": 1_640_000_100_000_000_000,
             "ts_event": 1_640_000_000_000_000_000,
             "ts_init": 1_640_000_000_000_000_000,
         }
@@ -197,7 +200,7 @@ class TestFundingRateUpdate:
         # Assert
         assert result.instrument_id == BTCUSDT_PERP_BINANCE
         assert result.rate == Decimal("0.0001")
-        assert result.ts_next_funding == 1_640_000_100_000_000_000
+        assert result.next_funding_ns == 1_640_000_100_000_000_000
         assert result.ts_event == 1_640_000_000_000_000_000
         assert result.ts_init == 1_640_000_000_000_000_000
 
@@ -223,7 +226,7 @@ class TestFundingRateUpdate:
             rate=Decimal("0.0001"),
             ts_event=1_640_000_000_000_000_000,
             ts_init=1_640_000_000_000_000_000,
-            ts_next_funding=1_640_000_100_000_000_000,
+            next_funding_ns=1_640_000_100_000_000_000,
         )
 
         # Act
@@ -239,7 +242,7 @@ class TestFundingRateUpdate:
             rate=Decimal("0.0001"),
             ts_event=1_640_000_000_000_000_000,
             ts_init=1_640_000_000_000_000_000,
-            ts_next_funding=1_640_000_100_000_000_000,
+            next_funding_ns=1_640_000_100_000_000_000,
         )
 
         # Act
@@ -256,7 +259,7 @@ class TestFundingRateUpdate:
             rate=Decimal("0.0001"),
             ts_event=1_640_000_000_000_000_000,
             ts_init=1_640_000_000_000_000_000,
-            ts_next_funding=1_640_000_100_000_000_000,
+            next_funding_ns=1_640_000_100_000_000_000,
         )
 
         # Act
@@ -273,7 +276,7 @@ class TestFundingRateUpdate:
             rate=Decimal("0.0001"),
             ts_event=1_640_000_000_000_000_000,
             ts_init=1_640_000_000_000_000_000,
-            ts_next_funding=1_640_000_100_000_000_000,
+            next_funding_ns=1_640_000_100_000_000_000,
         )
 
         # Act
@@ -297,7 +300,7 @@ class TestFundingRateUpdate:
         # Assert
         expected_fields = {
             "rate": "Decimal128",
-            "ts_next_funding": "UInt64",
+            "next_funding_ns": "UInt64",
             "ts_event": "UInt64",
             "ts_init": "UInt64",
         }

@@ -33,8 +33,8 @@ use nautilus_core::{
 use nautilus_model::defi::{Block, Blockchain, Pool, PoolLiquidityUpdate, PoolSwap};
 use nautilus_model::{
     data::{
-        Bar, BarType, DataType, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate,
-        OrderBookDeltas, QuoteTick, TradeTick, close::InstrumentClose,
+        Bar, BarType, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
+        MarkPriceUpdate, OrderBookDeltas, QuoteTick, TradeTick, close::InstrumentClose,
     },
     enums::BookType,
     identifiers::{ActorId, ClientId, InstrumentId, TraderId, Venue},
@@ -344,6 +344,11 @@ impl DataActor for PyDataActor {
     fn on_index_price(&mut self, index_price: &IndexPriceUpdate) -> anyhow::Result<()> {
         self.py_on_index_price(*index_price)
             .map_err(|e| anyhow::anyhow!("Python on_index_price failed: {e}"))
+    }
+
+    fn on_funding_rate(&mut self, funding_rate: &FundingRateUpdate) -> anyhow::Result<()> {
+        self.py_on_funding_rate(*funding_rate)
+            .map_err(|e| anyhow::anyhow!("Python on_funding_rate failed: {e}"))
     }
 
     fn on_instrument_status(&mut self, data: &InstrumentStatus) -> anyhow::Result<()> {
@@ -709,13 +714,29 @@ impl PyDataActor {
         Ok(())
     }
 
-    #[allow(unused_variables)] // TODO: Wire up call_method1
+    #[allow(unused_variables)]
     #[pyo3(name = "on_index_price")]
     fn py_on_index_price(&mut self, index_price: IndexPriceUpdate) -> PyResult<()> {
         // Dispatch to Python instance's on_index_price method if available
         if let Some(ref py_self) = self.py_self {
             Python::with_gil(|py| {
                 py_self.call_method1(py, "on_index_price", (index_price.into_py_any_unwrap(py),))
+            })?;
+        }
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
+    #[pyo3(name = "on_funding_rate")]
+    fn py_on_funding_rate(&mut self, funding_rate: FundingRateUpdate) -> PyResult<()> {
+        // Dispatch to Python instance's on_index_price method if available
+        if let Some(ref py_self) = self.py_self {
+            Python::with_gil(|py| {
+                py_self.call_method1(
+                    py,
+                    "on_funding_rate",
+                    (funding_rate.into_py_any_unwrap(py),),
+                )
             })?;
         }
         Ok(())
