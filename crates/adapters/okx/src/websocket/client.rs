@@ -478,7 +478,7 @@ impl OKXWebSocketClient {
                     }
                 }
                 Err(arc_handle) => {
-                    log::warn!(
+                    log::debug!(
                         "Cannot take ownership of stream handle - other references exist, aborting task"
                     );
                     arc_handle.abort();

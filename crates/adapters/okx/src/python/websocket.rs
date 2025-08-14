@@ -226,14 +226,15 @@ impl OKXWebSocketClient {
     }
 
     #[pyo3(name = "close")]
-    fn py_close(&mut self) -> PyResult<()> {
-        get_runtime().block_on(async {
-            if let Err(e) = self.close().await {
+    fn py_close<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let mut client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.close().await {
                 log::error!("Error on close: {e}");
             }
-        });
-
-        Ok(())
+            Ok(())
+        })
     }
 
     #[pyo3(name = "subscribe_instruments")]
