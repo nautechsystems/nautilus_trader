@@ -153,7 +153,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         super().__init__(
             loop=loop,
             client_id=ClientId(name or f"{IB_VENUE.value}"),
-            venue=IB_VENUE,
+            venue=config.venue,
             oms_type=OmsType.NETTING,
             instrument_provider=instrument_provider,
             account_type=AccountType.MARGIN,

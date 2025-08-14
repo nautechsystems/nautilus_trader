@@ -19,7 +19,6 @@ from functools import lru_cache
 
 # fmt: off
 from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
-from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.config import DockerizedIBGatewayConfig
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
@@ -284,7 +283,7 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
             ib_account
         ), f"Must pass `{config.__class__.__name__}.account_id` or set `TWS_ACCOUNT` env var."
 
-        account_id = AccountId(f"{name or IB_VENUE.value}-{ib_account}")
+        account_id = AccountId(f"{name or config.venue.value}-{ib_account}")
 
         # Create client
         exec_client = InteractiveBrokersExecutionClient(

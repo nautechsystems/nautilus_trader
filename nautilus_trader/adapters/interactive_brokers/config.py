@@ -20,11 +20,13 @@ from typing import Literal
 
 from ibapi.common import MarketDataTypeEnum as IBMarketDataTypeEnum
 
+from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
 from nautilus_trader.config import NautilusConfig
+from nautilus_trader.model.identifiers import Venue
 
 
 class SymbologyMethod(Enum):
@@ -178,6 +180,8 @@ class InteractiveBrokersDataClientConfig(LiveDataClientConfig, frozen=True):
 
     Parameters
     ----------
+    venue : Venue, default IB_VENUE
+        The venue for the client.
     ibg_host : str, default "127.0.0.1"
         The hostname or ip address for the IB Gateway (IBG) or Trader Workstation (TWS).
     ibg_port : int, default None
@@ -208,6 +212,7 @@ class InteractiveBrokersDataClientConfig(LiveDataClientConfig, frozen=True):
         InteractiveBrokersInstrumentProviderConfig()
     )
 
+    venue: Venue = IB_VENUE
     ibg_host: str = "127.0.0.1"
     ibg_port: int | None = None
     ibg_client_id: int = 1
@@ -225,6 +230,8 @@ class InteractiveBrokersExecClientConfig(LiveExecClientConfig, frozen=True):
 
     Parameters
     ----------
+    venue : Venue, default IB_VENUE
+        The venue for the client.
     ibg_host : str, default "127.0.0.1"
         The hostname or ip address for the IB Gateway (IBG) or Trader Workstation (TWS).
     ibg_port : int
@@ -245,6 +252,8 @@ class InteractiveBrokersExecClientConfig(LiveExecClientConfig, frozen=True):
     instrument_provider: InteractiveBrokersInstrumentProviderConfig = (
         InteractiveBrokersInstrumentProviderConfig()
     )
+
+    venue: Venue = IB_VENUE
     ibg_host: str = "127.0.0.1"
     ibg_port: int | None = None
     ibg_client_id: int = 1
