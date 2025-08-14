@@ -21,10 +21,7 @@ use databento::{
     live::Subscription,
 };
 use indexmap::IndexMap;
-use nautilus_core::{
-    UnixNanos, consts::NAUTILUS_USER_AGENT, python::to_pyruntime_err,
-    time::get_atomic_clock_realtime,
-};
+use nautilus_core::{UnixNanos, consts::NAUTILUS_USER_AGENT, time::get_atomic_clock_realtime};
 use nautilus_model::{
     data::{Data, InstrumentStatus, OrderBookDelta, OrderBookDeltas, OrderBookDeltas_API},
     enums::RecordFlag,
@@ -167,7 +164,7 @@ impl DatabentoFeedHandler {
                             if !self.replay & sub.start.is_some() {
                                 self.replay = true;
                             }
-                            client.subscribe(sub).await.map_err(to_pyruntime_err)?;
+                            client.subscribe(sub).await?;
                         }
                         LiveCommand::Start => {
                             buffering_start = if self.replay {
@@ -175,14 +172,14 @@ impl DatabentoFeedHandler {
                             } else {
                                 None
                             };
-                            client.start().await.map_err(to_pyruntime_err)?;
+                            client.start().await?;
                             running = true;
                             tracing::debug!("Started");
                         }
                         LiveCommand::Close => {
                             self.msg_tx.send(LiveMessage::Close).await?;
                             if running {
-                                client.close().await.map_err(to_pyruntime_err)?;
+                                client.close().await?;
                                 tracing::debug!("Closed inner client");
                             }
                             break;
