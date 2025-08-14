@@ -1779,6 +1779,7 @@ struct OKXWsMessageHandler {
     instruments: AHashMap<Ustr, InstrumentAny>,
     last_account_state: Option<AccountState>,
     fee_cache: AHashMap<Ustr, Money>, // Key is order ID
+    funding_rate_cache: AHashMap<Ustr, (Ustr, u64)>, // Cache (funding_rate, funding_time) by inst_id
     auth_state: Arc<tokio::sync::watch::Sender<bool>>,
 }
 
@@ -1806,6 +1807,7 @@ impl OKXWsMessageHandler {
             instruments,
             last_account_state: None,
             fee_cache: AHashMap::new(),
+            funding_rate_cache: AHashMap::new(),
             auth_state,
         }
     }
@@ -2137,6 +2139,7 @@ impl OKXWsMessageHandler {
                     price_precision,
                     size_precision,
                     ts_init,
+                    &mut self.funding_rate_cache,
                 ) {
                     Ok(Some(msg)) => return Some(msg),
                     Ok(None) => {

@@ -5075,6 +5075,7 @@ dependencies = [
 name = "nautilus-tardis"
 version = "0.50.0"
 dependencies = [
+ "ahash 0.8.12",
  "anyhow",
  "arrow",
  "async-stream",
