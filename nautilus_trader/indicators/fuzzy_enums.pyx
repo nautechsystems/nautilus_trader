@@ -13,18 +13,16 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.indicators.base cimport Indicator
-from nautilus_trader.model.identifiers cimport InstrumentId
+"""
+This module exports the fuzzy candle enums for use from Python.
 
+The enums are defined in the .pxd file for use in Cython code,
+and this .pyx file makes them available to Python code.
+"""
 
-cdef class SpreadAnalyzer(Indicator):
-    cdef object _spreads
-
-    cdef readonly InstrumentId instrument_id
-    """The indicators instrument ID.\n\n:returns: `InstrumentId`"""
-    cdef readonly int capacity
-    """The indicators spread capacity.\n\n:returns: `int`"""
-    cdef readonly double current
-    """The current spread.\n\n:returns: `double`"""
-    cdef readonly double average
-    """The current average spread.\n\n:returns: `double`"""
+__all__ = [
+    "CandleDirection",
+    "CandleSize",
+    "CandleBodySize",
+    "CandleWickSize",
+]

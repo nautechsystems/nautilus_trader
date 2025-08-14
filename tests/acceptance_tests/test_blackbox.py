@@ -22,7 +22,7 @@ from nautilus_trader.core.message import Event
 from nautilus_trader.core.rust.common import LogColor
 from nautilus_trader.core.rust.model import TimeInForce
 from nautilus_trader.core.rust.model import TriggerType
-from nautilus_trader.indicators.macd import MovingAverageConvergenceDivergence
+from nautilus_trader.indicators import MovingAverageConvergenceDivergence
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import Position
 from nautilus_trader.model import TradeTick
