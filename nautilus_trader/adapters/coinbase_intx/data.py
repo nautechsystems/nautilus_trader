@@ -151,13 +151,26 @@ class CoinbaseIntxDataClient(LiveMarketDataClient):
         # Shutdown websockets
         if not self._ws_client.is_closed():
             self._log.info("Disconnecting websocket")
+
             await self._ws_client.close()
+
             self._log.info(f"Disconnected from {self._ws_client.url}", LogColor.BLUE)
 
-        # Cancel all client futures
+        # Cancel any pending futures
         for future in self._ws_client_futures:
             if not future.done():
                 future.cancel()
+
+        if self._ws_client_futures:
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*self._ws_client_futures, return_exceptions=True),
+                    timeout=2.0,
+                )
+            except TimeoutError:
+                self._log.warning("Timeout while waiting for websockets shutdown to complete")
+
+        self._ws_client_futures.clear()
 
     def _cache_instruments(self) -> None:
         # Ensures instrument definitions are available for correct

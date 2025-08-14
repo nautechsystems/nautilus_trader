@@ -176,14 +176,27 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
             await asyncio.sleep(0.01)
 
     async def _disconnect(self) -> None:
+        # Shutdown FIX client
         if not self._fix_client.is_logged_on():
             self._log.info("Disconnecting FIX client")
             await self._fix_client.close()
             self._log.info("Disconnected from FIX Drop Copy server", LogColor.BLUE)
 
+        # Cancel any pending futures
         for future in self._fix_client_futures:
             if not future.done():
                 future.cancel()
+
+        if self._fix_client_futures:
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*self._fix_client_futures, return_exceptions=True),
+                    timeout=2.0,
+                )
+            except TimeoutError:
+                self._log.warning("Timeout while waiting for FIX client shutdown to complete")
+
+        self._fix_client_futures.clear()
 
     async def _cache_instruments(self) -> None:
         # Ensures instrument definitions are available for correct

@@ -224,7 +224,10 @@ class DatabentoDataClient(LiveMarketDataClient):
             self._update_dataset_ranges_task.cancel()
             self._update_dataset_ranges_task = None
 
-        # Close all live clients
+        await self._close_live_clients()
+        await self._cancel_pending_futures()
+
+    async def _close_live_clients(self) -> None:
         for dataset, live_client in self._live_clients.items():
             if not live_client.is_running():
                 continue
@@ -239,10 +242,21 @@ class DatabentoDataClient(LiveMarketDataClient):
             self._log.info(f"Stopping {dataset} MBO/L3 live feed", LogColor.BLUE)
             live_client.close()
 
-        try:
-            await asyncio.gather(*self._live_client_futures)
-        except asyncio.CancelledError:
-            pass  # Expected
+    async def _cancel_pending_futures(self) -> None:
+        for future in self._live_client_futures:
+            if not future.done():
+                future.cancel()
+
+        if self._live_client_futures:
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*self._live_client_futures, return_exceptions=True),
+                    timeout=2.0,
+                )
+            except TimeoutError:
+                self._log.warning("Timeout while waiting for live clients shutdown to complete")
+
+        self._live_client_futures.clear()
 
     async def _update_dataset_ranges(self) -> None:
         while True:

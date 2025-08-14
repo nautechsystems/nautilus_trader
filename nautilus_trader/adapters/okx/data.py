@@ -179,29 +179,28 @@ class OKXDataClient(LiveMarketDataClient):
         await asyncio.sleep(1.0)
 
         # Shutdown public websocket
-        if self._ws_client is not None and not self._ws_client.is_closed():
+        if not self._ws_client.is_closed():
             self._log.info("Disconnecting public websocket")
-            close_result = self._ws_client.close()
-            if close_result is not None:
-                await close_result
+
+            await self._ws_client.close()
+
             self._log.info(
-                f"Disconnected from public websocket {self._ws_client.url}",
+                f"Disconnected from {self._ws_client.url}",
                 LogColor.BLUE,
             )
 
         # Shutdown business websocket
-        if self._ws_business_client is not None and not self._ws_business_client.is_closed():
+        if not self._ws_business_client.is_closed():
             self._log.info("Disconnecting business websocket")
-            close_result = self._ws_business_client.close()
-            if close_result is not None:
-                await close_result
+
+            await self._ws_business_client.close()
+
             self._log.info(
-                f"Disconnected from business websocket {self._ws_business_client.url}",
+                f"Disconnected from {self._ws_business_client.url}",
                 LogColor.BLUE,
             )
 
-        # Cancel and await all outstanding client futures so any pending
-        # exceptions are surfaced and the event loop can cleanly shut down.
+        # Cancel any pending futures
         for future in self._ws_client_futures:
             if not future.done():
                 future.cancel()
@@ -211,11 +210,20 @@ class OKXDataClient(LiveMarketDataClient):
                 future.cancel()
 
         if self._ws_client_futures or self._ws_business_client_futures:
-            await asyncio.gather(
-                *self._ws_client_futures,
-                *self._ws_business_client_futures,
-                return_exceptions=True,
-            )
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(
+                        *self._ws_client_futures,
+                        *self._ws_business_client_futures,
+                        return_exceptions=True,
+                    ),
+                    timeout=2.0,
+                )
+            except TimeoutError:
+                self._log.warning("Timeout while waiting for websockets shutdown to complete")
+
+        self._ws_client_futures.clear()
+        self._ws_business_client_futures.clear()
 
     def _cache_instruments(self) -> None:
         # Ensures instrument definitions are available for correct

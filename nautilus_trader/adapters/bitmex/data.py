@@ -106,7 +106,7 @@ class BitmexDataClient(LiveMarketDataClient):
             url=ws_url,
             api_key=config.api_key,
             api_secret=config.api_secret,
-            heartbeat=30,  # 30 second heartbeat
+            heartbeat=30,
         )
         self._ws_client_futures: set[asyncio.Future] = set()
         self._log.info(f"WebSocket URL {ws_url}", LogColor.BLUE)
@@ -129,21 +129,32 @@ class BitmexDataClient(LiveMarketDataClient):
         # Delay to allow websocket to send any unsubscribe messages
         await asyncio.sleep(1.0)
 
+        # Shutdown websocket
+        if not self._ws_client.is_closed():
+            self._log.info("Disconnecting websocket")
+
+            await self._ws_client.close()
+
+            self._log.info(
+                f"Disconnected from {self._ws_client.url}",
+                LogColor.BLUE,
+            )
+
         # Cancel any pending futures
         for future in self._ws_client_futures:
             if not future.done():
                 future.cancel()
 
-        # Shutdown websocket
-        if self._ws_client is not None and not self._ws_client.is_closed():
-            self._log.info("Disconnecting WebSocket")
-            close_result = self._ws_client.close()
-            if close_result is not None:
-                await close_result
-            self._log.info(
-                f"Disconnected from WebSocket {self._ws_client.url}",
-                LogColor.BLUE,
-            )
+        if self._ws_client_futures:
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*self._ws_client_futures, return_exceptions=True),
+                    timeout=2.0,
+                )
+            except TimeoutError:
+                self._log.warning("Timeout while waiting for websockets shutdown to complete")
+
+        self._ws_client_futures.clear()
 
     def _determine_ws_url(self, config: BitmexDataClientConfig) -> str:
         """
