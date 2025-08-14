@@ -325,8 +325,10 @@ pub fn parse_funding_rate_msg(
 ) -> anyhow::Result<FundingRateUpdate> {
     let funding_rate = msg
         .funding_rate
+        .as_str()
         .parse::<Decimal>()
-        .map_err(|e| anyhow::anyhow!("Invalid funding_rate value: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("Invalid funding_rate value: {e}"))?
+        .normalize();
 
     let funding_time = Some(parse_millisecond_timestamp(msg.funding_time));
     let ts_event = parse_millisecond_timestamp(msg.ts);

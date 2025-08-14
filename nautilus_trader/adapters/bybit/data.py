@@ -196,6 +196,7 @@ class BybitDataClient(LiveMarketDataClient):
         self._depths: dict[InstrumentId, int] = {}
         self._topic_bar_type: dict[str, BarType] = {}
         self._subscribed_tickers: set[InstrumentId] = set()
+        self._funding_rate_cache: dict[InstrumentId, FundingRateUpdate] = {}
 
         self._update_instruments_interval_mins: int | None = config.update_instruments_interval_mins
         self._update_instruments_task: asyncio.Task | None = None
@@ -264,6 +265,9 @@ class BybitDataClient(LiveMarketDataClient):
             await ws_client.connect()
 
     async def _disconnect(self) -> None:
+        # Delay to allow websocket to send any unsubscribe messages
+        await asyncio.sleep(1.0)
+
         if self._update_instruments_task:
             self._log.debug("Canceling task 'update_instruments'")
             self._update_instruments_task.cancel()
@@ -786,7 +790,15 @@ class BybitDataClient(LiveMarketDataClient):
         if product_type in [BybitProductType.LINEAR, BybitProductType.INVERSE]:
             funding_rate_update = self._create_funding_rate_update_from_ticker(ticker, product_type)
             if funding_rate_update:
-                self._handle_data(funding_rate_update)
+                # Check if we have a cached rate for this instrument
+                cached_rate = self._funding_rate_cache.get(funding_rate_update.instrument_id)
+
+                # Only emit if this is new or changed (uses custom __eq__ comparing rate and next_funding_ns)
+                if cached_rate is None or cached_rate != funding_rate_update:
+                    self._funding_rate_cache[funding_rate_update.instrument_id] = (
+                        funding_rate_update
+                    )
+                    self._handle_data(funding_rate_update)
 
     def _parse_ticker_data(self, raw: bytes, product_type: BybitProductType) -> Any:
         """
@@ -927,8 +939,8 @@ class BybitDataClient(LiveMarketDataClient):
             if not funding_rate_str:
                 return None
 
-            # Parse funding rate
-            funding_rate = Decimal(funding_rate_str)
+            # Parse funding rate and normalize to remove trailing zeros
+            funding_rate = Decimal(funding_rate_str).normalize()
 
             # Get next funding time (milliseconds)
             next_funding_time_str = getattr(ticker, "nextFundingTime", None)

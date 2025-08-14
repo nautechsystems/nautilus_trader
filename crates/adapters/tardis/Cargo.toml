@@ -43,6 +43,7 @@ nautilus-core = { workspace = true }
 nautilus-model = { workspace = true, features = ["python"] }
 nautilus-serialization = { workspace = true }
 
+ahash = { workspace = true }
 anyhow = { workspace = true }
 arrow = { workspace = true }
 async-stream = { workspace = true }
