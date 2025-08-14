@@ -1302,7 +1302,7 @@ class BybitExecutionClient(LiveExecutionClient):
                 trigger_direction,
             )
             if strategy_id is None:
-                self._log.warning(
+                self._log.debug(
                     f"Cannot process order execution for {client_order_id!r}: no strategy ID found (most likely due to being an external order)",
                 )
                 return
