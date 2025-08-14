@@ -49,12 +49,17 @@ use crate::{decode::decode_instrument_def_msg, symbology::MetadataCache};
 ///  - `MBP_10` -> `OrderBookDepth10`
 ///  - `BBO_1S` -> `QuoteTick`
 ///  - `BBO_1M` -> `QuoteTick`
+///  - `CMBP_1` -> `(QuoteTick, Option<TradeTick>)`
+///  - `CBBO_1S` -> `QuoteTick`
+///  - `CBBO_1M` -> `QuoteTick`
+///  - `TCBBO` -> `(QuoteTick, TradeTick)`
 ///  - `TBBO` -> `(QuoteTick, TradeTick)`
 ///  - `TRADES` -> `TradeTick`
 ///  - `OHLCV_1S` -> `Bar`
 ///  - `OHLCV_1M` -> `Bar`
 ///  - `OHLCV_1H` -> `Bar`
 ///  - `OHLCV_1D` -> `Bar`
+///  - `OHLCV_EOD` -> `Bar`
 ///  - `DEFINITION` -> `Instrument`
 ///  - `IMBALANCE` -> `DatabentoImbalance`
 ///  - `STATISTICS` -> `DatabentoStatistics`
@@ -453,6 +458,29 @@ impl DatabentoDataLoader {
 
     /// # Errors
     ///
+    /// Returns an error if loading TCBBO trades fails.
+    pub fn load_tcbbo_trades(
+        &self,
+        filepath: &Path,
+        instrument_id: Option<InstrumentId>,
+        price_precision: Option<u8>,
+    ) -> anyhow::Result<Vec<TradeTick>> {
+        self.read_records::<dbn::CbboMsg>(filepath, instrument_id, price_precision, false, None)?
+            .filter_map(|result| match result {
+                Ok((_, maybe_item2)) => {
+                    if let Some(Data::Trade(trade)) = maybe_item2 {
+                        Some(Ok(trade))
+                    } else {
+                        None
+                    }
+                }
+                Err(e) => Some(Err(e)),
+            })
+            .collect()
+    }
+
+    /// # Errors
+    ///
     /// Returns an error if loading trades fails.
     pub fn load_trades(
         &self,
@@ -770,6 +798,25 @@ mod tests {
             .unwrap();
 
         // assert_eq!(trades.len(), 2);  TODO: No records?
+    }
+
+    // TODO: Re-enable this test once proper TCBBO/CBBO test data is available
+    #[rstest]
+    #[ignore]
+    fn test_load_tcbbo_trades(loader: DatabentoDataLoader) {
+        // Since we don't have dedicated TCBBO test data, we'll use CBBO data
+        // In practice, TCBBO would be CBBO messages with trade data
+        let path = test_data_path().join("test_data.cbbo.dbn.zst");
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+
+        let result = loader.load_tcbbo_trades(&path, Some(instrument_id), None);
+
+        // This should work without error even if no trades are found
+        assert!(result.is_ok());
+        let trades = result.unwrap();
+        // The test data might not have trade messages, so we just verify it loads without error
+        // The actual count doesn't matter for this test
+        let _ = trades.len();
     }
 
     #[rstest]

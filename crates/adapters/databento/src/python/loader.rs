@@ -261,6 +261,34 @@ impl DatabentoDataLoader {
         exhaust_data_iter_to_pycapsule(py, iter).map_err(to_pyvalue_err)
     }
 
+    #[pyo3(name = "load_tcbbo_trades")]
+    #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
+    fn py_load_tcbbo_trades(
+        &self,
+        filepath: PathBuf,
+        instrument_id: Option<InstrumentId>,
+        price_precision: Option<u8>,
+    ) -> PyResult<Vec<TradeTick>> {
+        self.load_tcbbo_trades(&filepath, instrument_id, price_precision)
+            .map_err(to_pyvalue_err)
+    }
+
+    #[pyo3(name = "load_tcbbo_trades_as_pycapsule")]
+    #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
+    fn py_load_tcbbo_trades_as_pycapsule(
+        &self,
+        py: Python,
+        filepath: PathBuf,
+        instrument_id: Option<InstrumentId>,
+        price_precision: Option<u8>,
+    ) -> PyResult<PyObject> {
+        let iter = self
+            .read_records::<dbn::CbboMsg>(&filepath, instrument_id, price_precision, false, None)
+            .map_err(to_pyvalue_err)?;
+
+        exhaust_data_iter_to_pycapsule(py, iter).map_err(to_pyvalue_err)
+    }
+
     #[pyo3(name = "load_trades")]
     #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
     fn py_load_trades(

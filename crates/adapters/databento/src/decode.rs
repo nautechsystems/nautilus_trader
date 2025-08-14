@@ -541,6 +541,109 @@ pub fn decode_mbp10_msg(
 
 /// # Errors
 ///
+/// Returns an error if decoding the CMBP1 message fails.
+pub fn decode_cmbp1_msg(
+    msg: &dbn::Cmbp1Msg,
+    instrument_id: InstrumentId,
+    price_precision: u8,
+    ts_init: Option<UnixNanos>,
+    include_trades: bool,
+) -> anyhow::Result<(QuoteTick, Option<TradeTick>)> {
+    let top_level = &msg.levels[0];
+    let ts_event = msg.ts_recv.into();
+    let ts_init = ts_init.unwrap_or(ts_event);
+
+    let quote = QuoteTick::new(
+        instrument_id,
+        Price::from_raw(decode_raw_price_i64(top_level.bid_px), price_precision),
+        Price::from_raw(decode_raw_price_i64(top_level.ask_px), price_precision),
+        Quantity::from(top_level.bid_sz),
+        Quantity::from(top_level.ask_sz),
+        ts_event,
+        ts_init,
+    );
+
+    let maybe_trade = if include_trades && msg.action as u8 as char == 'T' {
+        Some(TradeTick::new(
+            instrument_id,
+            Price::from_raw(decode_raw_price_i64(msg.price), price_precision),
+            Quantity::from(msg.size),
+            parse_aggressor_side(msg.side),
+            TradeId::new(itoa::Buffer::new().format(msg.hd.ts_event)),
+            ts_event,
+            ts_init,
+        ))
+    } else {
+        None
+    };
+
+    Ok((quote, maybe_trade))
+}
+
+/// # Errors
+///
+/// Returns an error if decoding the CBBO message fails.
+pub fn decode_cbbo_msg(
+    msg: &dbn::CbboMsg,
+    instrument_id: InstrumentId,
+    price_precision: u8,
+    ts_init: Option<UnixNanos>,
+) -> anyhow::Result<QuoteTick> {
+    let top_level = &msg.levels[0];
+    let ts_event = msg.ts_recv.into();
+    let ts_init = ts_init.unwrap_or(ts_event);
+
+    let quote = QuoteTick::new(
+        instrument_id,
+        Price::from_raw(decode_raw_price_i64(top_level.bid_px), price_precision),
+        Price::from_raw(decode_raw_price_i64(top_level.ask_px), price_precision),
+        Quantity::from(top_level.bid_sz),
+        Quantity::from(top_level.ask_sz),
+        ts_event,
+        ts_init,
+    );
+
+    Ok(quote)
+}
+
+/// # Errors
+///
+/// Returns an error if decoding the TCBBO message fails.
+pub fn decode_tcbbo_msg(
+    msg: &dbn::CbboMsg,
+    instrument_id: InstrumentId,
+    price_precision: u8,
+    ts_init: Option<UnixNanos>,
+) -> anyhow::Result<(QuoteTick, TradeTick)> {
+    let top_level = &msg.levels[0];
+    let ts_event = msg.ts_recv.into();
+    let ts_init = ts_init.unwrap_or(ts_event);
+
+    let quote = QuoteTick::new(
+        instrument_id,
+        Price::from_raw(decode_raw_price_i64(top_level.bid_px), price_precision),
+        Price::from_raw(decode_raw_price_i64(top_level.ask_px), price_precision),
+        Quantity::from(top_level.bid_sz),
+        Quantity::from(top_level.ask_sz),
+        ts_event,
+        ts_init,
+    );
+
+    let trade = TradeTick::new(
+        instrument_id,
+        Price::from_raw(decode_raw_price_i64(msg.price), price_precision),
+        Quantity::from(msg.size),
+        parse_aggressor_side(msg.side),
+        TradeId::new(itoa::Buffer::new().format(msg.hd.ts_event)),
+        ts_event,
+        ts_init,
+    );
+
+    Ok((quote, trade))
+}
+
+/// # Errors
+///
 /// Returns an error if `rtype` is not a supported bar aggregation.
 pub fn decode_bar_type(
     msg: &dbn::OhlcvMsg,
@@ -552,7 +655,7 @@ pub fn decode_bar_type(
             BarType::new(instrument_id, BAR_SPEC_1S, AggregationSource::External)
         }
         33 => {
-            //  ohlcv-1m
+            // ohlcv-1m
             BarType::new(instrument_id, BAR_SPEC_1M, AggregationSource::External)
         }
         34 => {
@@ -561,6 +664,10 @@ pub fn decode_bar_type(
         }
         35 => {
             // ohlcv-1d
+            BarType::new(instrument_id, BAR_SPEC_1D, AggregationSource::External)
+        }
+        36 => {
+            // ohlcv-eod
             BarType::new(instrument_id, BAR_SPEC_1D, AggregationSource::External)
         }
         _ => anyhow::bail!(
@@ -582,15 +689,15 @@ pub fn decode_ts_event_adjustment(msg: &dbn::OhlcvMsg) -> anyhow::Result<UnixNan
             BAR_CLOSE_ADJUSTMENT_1S
         }
         33 => {
-            //  ohlcv-1m
+            // ohlcv-1m
             BAR_CLOSE_ADJUSTMENT_1M
         }
         34 => {
-            //  ohlcv-1h
+            // ohlcv-1h
             BAR_CLOSE_ADJUSTMENT_1H
         }
-        35 => {
-            // ohlcv-1d
+        35 | 36 => {
+            // ohlcv-1d and ohlcv-eod
             BAR_CLOSE_ADJUSTMENT_1D
         }
         _ => anyhow::bail!(
@@ -680,9 +787,9 @@ pub fn decode_record(
     include_trades: bool,
     bars_timestamp_on_close: bool,
 ) -> anyhow::Result<(Option<Data>, Option<Data>)> {
-    // We don't handle `TbboMsg` here as Nautilus separates this schema
-    // into quotes and trades when loading, and the live client will
-    // never subscribe to `tbbo`.
+    // Note: TBBO and TCBBO messages provide both quotes and trades.
+    // TBBO is handled explicitly below, while TCBBO is handled by
+    // the CbboMsg branch based on whether it has trade data.
     let result = if let Some(msg) = record.get::<dbn::MboMsg>() {
         let ts_init = determine_timestamp(ts_init, msg.ts_recv.into());
         let result = decode_mbo_msg(
@@ -738,6 +845,38 @@ pub fn decode_record(
             bars_timestamp_on_close,
         )?;
         (Some(Data::Bar(bar)), None)
+    } else if let Some(msg) = record.get::<dbn::Cmbp1Msg>() {
+        let ts_init = determine_timestamp(ts_init, msg.ts_recv.into());
+        let result = decode_cmbp1_msg(
+            msg,
+            instrument_id,
+            price_precision,
+            Some(ts_init),
+            include_trades,
+        )?;
+        match result {
+            (quote, None) => (Some(Data::Quote(quote)), None),
+            (quote, Some(trade)) => (Some(Data::Quote(quote)), Some(Data::Trade(trade))),
+        }
+    } else if let Some(msg) = record.get::<dbn::TbboMsg>() {
+        // TBBO always has both quote and trade
+        let ts_init = determine_timestamp(ts_init, msg.ts_recv.into());
+        let (quote, trade) = decode_tbbo_msg(msg, instrument_id, price_precision, Some(ts_init))?;
+        (Some(Data::Quote(quote)), Some(Data::Trade(trade)))
+    } else if let Some(msg) = record.get::<dbn::CbboMsg>() {
+        // Check if this is a TCBBO or regular CBBO based on whether it has trade data
+        if msg.price != i64::MAX && msg.size > 0 {
+            // TCBBO - has both quote and trade
+            let ts_init = determine_timestamp(ts_init, msg.ts_recv.into());
+            let (quote, trade) =
+                decode_tcbbo_msg(msg, instrument_id, price_precision, Some(ts_init))?;
+            (Some(Data::Quote(quote)), Some(Data::Trade(trade)))
+        } else {
+            // Regular CBBO - quote only
+            let ts_init = determine_timestamp(ts_init, msg.ts_recv.into());
+            let quote = decode_cbbo_msg(msg, instrument_id, price_precision, Some(ts_init))?;
+            (Some(Data::Quote(quote)), None)
+        }
     } else {
         anyhow::bail!("DBN message type is not currently supported")
     };
@@ -1499,5 +1638,113 @@ mod tests {
         assert_eq!(statistics.ts_event, msg.hd.ts_event);
         assert_eq!(statistics.ts_recv, msg.ts_recv);
         assert_eq!(statistics.ts_init, 0);
+    }
+
+    #[rstest]
+    fn test_decode_cmbp1_msg() {
+        let path = test_data_path().join("test_data.cmbp-1.dbn.zst");
+        let mut dbn_stream = Decoder::from_zstd_file(path)
+            .unwrap()
+            .decode_stream::<dbn::Cmbp1Msg>();
+        let msg = dbn_stream.next().unwrap().unwrap();
+
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let (quote, trade) = decode_cmbp1_msg(msg, instrument_id, 2, Some(0.into()), true).unwrap();
+
+        assert_eq!(quote.instrument_id, instrument_id);
+        assert!(quote.bid_price.raw > 0);
+        assert!(quote.ask_price.raw > 0);
+        assert!(quote.bid_size.raw > 0);
+        assert!(quote.ask_size.raw > 0);
+        assert_eq!(quote.ts_event, msg.ts_recv);
+        assert_eq!(quote.ts_init, 0);
+
+        // Check if trade is present based on action
+        if msg.action as u8 as char == 'T' {
+            assert!(trade.is_some());
+            let trade = trade.unwrap();
+            assert_eq!(trade.instrument_id, instrument_id);
+        } else {
+            assert!(trade.is_none());
+        }
+    }
+
+    // TODO: Re-enable these tests once proper CBBO test data is available
+    // The current test_data.cbbo.dbn.zst files contain invalid/placeholder data
+    #[rstest]
+    #[ignore]
+    fn test_decode_cbbo_msg() {
+        let path = test_data_path().join("test_data.cbbo.dbn.zst");
+        let mut dbn_stream = Decoder::from_zstd_file(path)
+            .unwrap()
+            .decode_stream::<dbn::CbboMsg>();
+        let msg = dbn_stream.next().unwrap().unwrap();
+
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let quote = decode_cbbo_msg(msg, instrument_id, 2, Some(0.into())).unwrap();
+
+        assert_eq!(quote.instrument_id, instrument_id);
+        assert!(quote.bid_price.raw > 0);
+        assert!(quote.ask_price.raw > 0);
+        assert!(quote.bid_size.raw > 0);
+        assert!(quote.ask_size.raw > 0);
+        assert_eq!(quote.ts_event, msg.ts_recv);
+        assert_eq!(quote.ts_init, 0);
+    }
+
+    #[rstest]
+    #[ignore]
+    fn test_decode_cbbo_1s_msg() {
+        let path = test_data_path().join("test_data.cbbo-1s.dbn.zst");
+        let mut dbn_stream = Decoder::from_zstd_file(path)
+            .unwrap()
+            .decode_stream::<dbn::CbboMsg>();
+        let msg = dbn_stream.next().unwrap().unwrap();
+
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let quote = decode_cbbo_msg(msg, instrument_id, 2, Some(0.into())).unwrap();
+
+        assert_eq!(quote.instrument_id, instrument_id);
+        assert!(quote.bid_price.raw > 0);
+        assert!(quote.ask_price.raw > 0);
+        assert!(quote.bid_size.raw > 0);
+        assert!(quote.ask_size.raw > 0);
+        assert_eq!(quote.ts_event, msg.ts_recv);
+        assert_eq!(quote.ts_init, 0);
+    }
+
+    // TODO: Re-enable this test once proper CBBO test data is available
+    #[rstest]
+    #[ignore]
+    fn test_decode_tcbbo_msg() {
+        // Use the CBBO test data and create a message with trade data
+        let path = test_data_path().join("test_data.cbbo.dbn.zst");
+        let mut dbn_stream = Decoder::from_zstd_file(path)
+            .unwrap()
+            .decode_stream::<dbn::CbboMsg>();
+        let msg = dbn_stream.next().unwrap().unwrap();
+
+        // Create a new message with trade data to simulate TCBBO
+        let mut tcbbo_msg = msg.clone();
+        tcbbo_msg.price = 372025; // Example trade price in fixed point
+        tcbbo_msg.size = 10;
+
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let (quote, trade) =
+            decode_tcbbo_msg(&tcbbo_msg, instrument_id, 2, Some(0.into())).unwrap();
+
+        assert_eq!(quote.instrument_id, instrument_id);
+        assert!(quote.bid_price.raw > 0);
+        assert!(quote.ask_price.raw > 0);
+        assert!(quote.bid_size.raw > 0);
+        assert!(quote.ask_size.raw > 0);
+        assert_eq!(quote.ts_event, tcbbo_msg.ts_recv);
+        assert_eq!(quote.ts_init, 0);
+
+        assert_eq!(trade.instrument_id, instrument_id);
+        assert_eq!(trade.price, Price::from_raw(372025, 2));
+        assert_eq!(trade.size, Quantity::from(10));
+        assert_eq!(trade.ts_event, tcbbo_msg.ts_recv);
+        assert_eq!(trade.ts_init, 0);
     }
 }

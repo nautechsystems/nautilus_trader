@@ -62,6 +62,32 @@ The same Rust implemented Nautilus decoder is used for:
 - Loading and decoding DBN files from disk
 - Decoding historical and live data in real time
 
+## Schema selection for live subscriptions
+
+When subscribing to live data, you can specify a `schema` parameter to choose the most appropriate data format:
+
+### Quote subscriptions
+
+- **Default**: `mbp-1` (market by price level 1)
+- **Allowed schemas**: `mbp-1`, `bbo-1s`, `bbo-1m`, `cmbp-1`, `cbbo-1s`, `cbbo-1m`, `tbbo`, `tcbbo`
+- **Note**: TBBO and TCBBO schemas will provide both quotes AND trades in a single subscription
+
+### Trade subscriptions
+
+- **Default**: `trades`
+- **Allowed schemas**: `trades`, `tbbo`, `tcbbo`, `mbp-1`, `cmbp-1`
+- **Note**: MBP-1 and CMBP-1 only emit trades when the message represents a trade event
+
+Example of subscribing with a specific schema:
+
+```python
+# Subscribe to quotes and trades using TBBO (more efficient than separate subscriptions)
+self.subscribe_quote_ticks(
+    instrument_id=instrument_id,
+    params={"schema": "tbbo"}  # Will receive both quotes and trades
+)
+```
+
 ## Supported schemas
 
 The following Databento schemas are supported by NautilusTrader:
@@ -73,12 +99,17 @@ The following Databento schemas are supported by NautilusTrader:
 | MBP_10           | `OrderBookDepth10`                |
 | BBO_1S           | `QuoteTick`                       |
 | BBO_1M           | `QuoteTick`                       |
+| CMBP_1           | `(QuoteTick, Option<TradeTick>)`  |
+| CBBO_1S          | `QuoteTick`                       |
+| CBBO_1M          | `QuoteTick`                       |
+| TCBBO            | `(QuoteTick, TradeTick)`          |
 | TBBO             | `(QuoteTick, TradeTick)`          |
 | TRADES           | `TradeTick`                       |
 | OHLCV_1S         | `Bar`                             |
 | OHLCV_1M         | `Bar`                             |
 | OHLCV_1H         | `Bar`                             |
 | OHLCV_1D         | `Bar`                             |
+| OHLCV_EOD        | `Bar`                             |
 | DEFINITION       | `Instrument` (various types)      |
 | IMBALANCE        | `DatabentoImbalance`              |
 | STATISTICS       | `DatabentoStatistics`             |
@@ -196,6 +227,13 @@ object, which occurs during the replay startup sequence.
 This schema represents the top-of-book only (quotes *and* trades). Like with MBO messages, some
 messages carry trade information, and so when decoding MBP-1 messages Nautilus
 will produce a `QuoteTick` and *also* a `TradeTick` if the message is a trade.
+
+### TBBO and TCBBO (top-of-book with trades)
+
+The TBBO (Top Book with Trades) and TCBBO (Top Consolidated Book with Trades) schemas provide
+both quote and trade data in each message. When subscribing to quotes using these schemas,
+you'll automatically receive both `QuoteTick` and `TradeTick` data, making them more efficient
+than subscribing to quotes and trades separately. TCBBO provides consolidated data across venues.
 
 ### OHLCV (bar aggregates)
 
