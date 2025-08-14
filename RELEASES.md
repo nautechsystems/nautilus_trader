@@ -49,6 +49,7 @@ Released on TBD (UTC).
 - Simplified Binance environment variables for API credentials: removed separate variables for RSA/Ed25519 keys and consolidated mainnet spot/futures credentials
 - Consolidated ~40 individual indicator modules into 6 files to reduce binary size
 - Changed indicator imports from nested modules to flat structure (e.g., `from nautilus_trader.indicators.atr import AverageTrueRange` becomes `from nautilus_trader.indicators import AverageTrueRange`)
+- Changed `NAUTILUS_CATALOG_PATH` to `NAUTILUS_PATH` for Tardis adapter (#2850), thanks @nicolad
 - Moved `Indicator` base class from `nautilus_trader.indicators.base.indicator` to `nautilus_trader.indicators.base`
 
 ### Internal Improvements
@@ -72,6 +73,7 @@ Released on TBD (UTC).
 - Completed bar request implementation for OKX (#2789), thanks @nicolad
 - Enabled parallel pytest tests with `pytest-xdist` (#2808), thanks @stastnypremysl
 - Standardized DeFi chain name validation for `InstrumentId` (#2826), thanks @filipmacek
+- Standardized `NAUTILUS_PATH` env var across Tardis integration (#2850), thanks @nicolad
 - Support several instrument versions with `request_instrument` (#2835), thanks @faysou
 - Improved typing for all the DEX IDs with `DexType` and add validation (#2827), thanks @filipmacek
 - Improved reconciliation handling of internally generated orders to align positions (now uses the `INTERNAL-DIFF` strategy ID)
@@ -123,6 +125,7 @@ Released on TBD (UTC).
 - Fixed Binance Spot testnet streaming URL, thanks for reporting @Frzgunr1
 - Fixed Binance Ed25519 key handling
 - Fixed RPC client content type header (#2828), thanks @filipmacek
+- Fixed `venue_order_id` handling for Polymarket order status request (#2848), thanks @DeirhX
 
 ### Documentation Updates
 - Added FFI Memory Contract developer guide
