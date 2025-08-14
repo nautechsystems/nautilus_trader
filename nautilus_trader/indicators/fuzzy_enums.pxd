@@ -13,18 +13,34 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.indicators.base cimport Indicator
-from nautilus_trader.model.identifiers cimport InstrumentId
+# Consolidated fuzzy enums from fuzzy_enums/ subdirectory
+
+cpdef enum CandleDirection:
+    DIRECTION_BEAR = -1
+    DIRECTION_NONE = 0  # Doji
+    DIRECTION_BULL = 1
 
 
-cdef class SpreadAnalyzer(Indicator):
-    cdef object _spreads
+cpdef enum CandleSize:
+    SIZE_NONE = 0  # Doji
+    SIZE_VERY_SMALL = 1
+    SIZE_SMALL = 2
+    SIZE_MEDIUM = 3
+    SIZE_LARGE = 4
+    SIZE_VERY_LARGE = 5
+    SIZE_EXTREMELY_LARGE = 6
 
-    cdef readonly InstrumentId instrument_id
-    """The indicators instrument ID.\n\n:returns: `InstrumentId`"""
-    cdef readonly int capacity
-    """The indicators spread capacity.\n\n:returns: `int`"""
-    cdef readonly double current
-    """The current spread.\n\n:returns: `double`"""
-    cdef readonly double average
-    """The current average spread.\n\n:returns: `double`"""
+
+cpdef enum CandleBodySize:
+    BODY_NONE = 0  # Doji
+    BODY_SMALL = 1
+    BODY_MEDIUM = 2
+    BODY_LARGE = 3
+    BODY_TREND = 4
+
+
+cpdef enum CandleWickSize:
+    WICK_NONE = 0  # No candle wick
+    WICK_SMALL = 1
+    WICK_MEDIUM = 2
+    WICK_LARGE = 3

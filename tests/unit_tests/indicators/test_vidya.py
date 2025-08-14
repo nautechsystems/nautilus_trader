@@ -15,8 +15,8 @@
 
 import pytest
 
-from nautilus_trader.indicators.average.moving_average import MovingAverageType
-from nautilus_trader.indicators.average.vidya import VariableIndexDynamicAverage
+from nautilus_trader.indicators import MovingAverageType
+from nautilus_trader.indicators import VariableIndexDynamicAverage
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
