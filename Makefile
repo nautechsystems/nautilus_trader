@@ -103,17 +103,18 @@ clean-builds:  #-- Clean distribution and target directories
 	$Q rm -rf dist target 2>/dev/null || true
 
 .PHONY: clean-build-artifacts
-clean-build-artifacts:  #-- Clean compiled artifacts (.so, .dll, .pyc files)
+clean-build-artifacts:  #-- Clean compiled artifacts (.so, .dll, .pyc, .c files)
 	@echo "Cleaning build artifacts..."
 	# Clean Rust build artifacts (keep final libraries)
 	find target -name "*.rlib" -delete 2>/dev/null || true
 	find target -name "*.rmeta" -delete 2>/dev/null || true
 	rm -rf target/*/build target/*/deps 2>/dev/null || true
 	# Clean Python build artifacts
-	rm -rf build/ 2>/dev/null || true
-	find . -type d -name "__pycache__" -not -path "./.venv*" -print0 | xargs -0 rm -rf
-	find . -type f -a \( -name "*.pyc" -o -name "*.pyo" \) -not -path "./.venv*" -print0 | xargs -0 rm -f
-	find . -type f -a \( -name "*.so" -o -name "*.dll" -o -name "*.dylib" \) -not -path "./.venv*" -print0 | xargs -0 rm -f
+	find . -type d -name "__pycache__" -not -path "./.venv*" -print0 | xargs -0 -r rm -rf
+	find . -type f -name "*.c" -not -path "./.venv*" -not -path "./target/*" -print0 | xargs -0 -r rm -f
+	find . -type f -a \( -name "*.pyc" -o -name "*.pyo" \) -not -path "./.venv*" -print0 | xargs -0 -r rm -f
+	find . -type f -a \( -name "*.so" -o -name "*.dll" -o -name "*.dylib" \) -not -path "./.venv*" -print0 | xargs -0 -r rm -f
+	rm -rf build/ cython_debug/ 2>/dev/null || true
 	# Clean test artifacts
 	rm -rf .coverage .benchmarks 2>/dev/null || true
 
