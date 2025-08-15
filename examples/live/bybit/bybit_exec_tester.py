@@ -145,8 +145,8 @@ config_strat = ExecTesterConfig(
     # subscribe_book=True,
     order_qty=order_qty,
     use_post_only=True,
-    log_data=True,
-    dry_run=False,
+    log_data=False,
+    log_rejected_due_post_only_as_warning=False,
 )
 
 # Instantiate your strategy

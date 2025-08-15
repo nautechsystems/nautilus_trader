@@ -2009,6 +2009,7 @@ cdef class OrderRejected(OrderEvent):
             f"client_order_id={self.client_order_id}, "
             f"account_id={self.account_id}, "
             f"reason='{self.reason}', "
+            f"due_post_only={self.due_post_only}, "
             f"ts_event={self.ts_event})"
         )
 
@@ -2021,6 +2022,7 @@ cdef class OrderRejected(OrderEvent):
             f"client_order_id={self.client_order_id}, "
             f"account_id={self.account_id}, "
             f"reason='{self.reason}', "
+            f"due_post_only={self.due_post_only}, "
             f"event_id={self.id}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"

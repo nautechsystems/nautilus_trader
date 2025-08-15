@@ -1942,6 +1942,7 @@ impl OKXWsMessageHandler {
                                         ts_event,
                                         ts_init,
                                         false, // Not from reconciliation
+                                        false, // Not due to post-only (TODO: parse error_msg)
                                     );
 
                                     return Some(NautilusWsMessage::OrderRejected(rejected));
