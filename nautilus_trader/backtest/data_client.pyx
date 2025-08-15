@@ -439,6 +439,8 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         self._handle_instrument(instrument, request.id, request.start, request.end, request.params)
 
     cdef Instrument _create_option_spread_from_components(self, InstrumentId spread_instrument_id):
+        min_expiration_ns = 0
+
         try:
             # Parse component instruments from spread ID
             components = spread_instrument_id.to_list()
@@ -455,13 +457,16 @@ cdef class BacktestMarketDataClient(MarketDataClient):
                 self._log.error(f"Cannot find first component instrument {first_component_id} for spread {spread_instrument_id}")
                 return None
 
-            # Validate all components exist
+            # Validate all components exist and find minimum expiration
             for component_id, ratio in components:
                 component = self._cache.instrument(component_id)
 
                 if component is None:
                     self._log.error(f"Cannot find component instrument {component_id} for spread {spread_instrument_id}")
                     return None
+
+                if min_expiration_ns == 0 or component.expiration_ns < min_expiration_ns:
+                    min_expiration_ns = component.expiration_ns
 
             # Create timestamp
             ts_event = self._clock.timestamp_ns()
@@ -479,7 +484,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
                 underlying="",
                 strategy_type="SPREAD",
                 activation_ns=0,
-                expiration_ns=0,
+                expiration_ns=min_expiration_ns,
                 ts_event=ts_event,
                 ts_init=ts_event,
                 margin_init=first_component.margin_init,

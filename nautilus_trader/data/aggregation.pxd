@@ -128,25 +128,3 @@ cdef class TimeBarAggregator(BarAggregator):
     cdef void _batch_pre_update(self, uint64_t time_ns)
     cdef void _batch_post_update(self, uint64_t time_ns)
     cpdef void _build_bar(self, TimeEvent event)
-
-
-cdef class SpreadQuoteAggregator(Component):
-    cdef readonly InstrumentId _spread_instrument_id
-    cdef readonly object _handler
-    cdef readonly CacheFacade _cache
-    cdef readonly list _components
-    cdef readonly GreeksCalculator _greeks_calculator
-    cdef readonly double _vega_multiplier
-    cdef readonly int _update_interval_seconds
-    cdef readonly str _timer_name
-    cdef readonly list _component_ids
-    cdef readonly object _ratios
-    cdef readonly object _mid_prices
-    cdef readonly object _vegas
-    cdef readonly object _deltas
-    cdef readonly object _bid_ask_spreads
-    cdef readonly object _bid_sizes
-    cdef readonly object _ask_sizes
-
-    cdef void _set_build_timer(self)
-    cdef void _build_quote(self, TimeEvent event)

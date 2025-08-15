@@ -22,7 +22,6 @@ from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport Logger
 from nautilus_trader.common.component cimport MessageBus
-from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.model cimport AccountType
 from nautilus_trader.core.rust.model cimport AggressorSide
 from nautilus_trader.core.rust.model cimport BookType
@@ -68,8 +67,6 @@ from nautilus_trader.model.orders.market_if_touched cimport MarketIfTouchedOrder
 from nautilus_trader.model.orders.market_to_limit cimport MarketToLimitOrder
 from nautilus_trader.model.orders.stop_limit cimport StopLimitOrder
 from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
-from nautilus_trader.model.orders.trailing_stop_limit cimport TrailingStopLimitOrder
-from nautilus_trader.model.orders.trailing_stop_market cimport TrailingStopMarketOrder
 from nautilus_trader.model.position cimport Position
 
 
@@ -213,6 +210,19 @@ cdef class OrderMatchingEngine:
         PositionId venue_position_id=*,
         Position position=*,
     )
+    cdef void _generate_spread_leg_fills(
+        self,
+        Order order,
+        list fills,
+        LiquiditySide liquidity_side,
+    )
+    cdef dict _calculate_leg_execution_prices(
+        self,
+        list leg_tuples,
+        Price spread_execution_price,
+        Quantity spread_quantity,
+    )
+
     cpdef void fill_order(
         self,
         Order order,

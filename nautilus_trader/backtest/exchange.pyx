@@ -254,6 +254,11 @@ cdef class SimulatedExchange:
         self._inflight_queue: list[tuple[(uint64_t, uint64_t), TradingCommand]] = []
         self._inflight_counter: dict[uint64_t, uint64_t] = {}
 
+        # For direct communication from SpreadQuoteAggregator
+        spread_quote_endpoint = f"SimulatedExchange.spread_quote.{venue}"
+        if spread_quote_endpoint not in self.msgbus._endpoints:
+            self.msgbus.register(endpoint=spread_quote_endpoint, handler=self.process_quote_tick)
+
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
