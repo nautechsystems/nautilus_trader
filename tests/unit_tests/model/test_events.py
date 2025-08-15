@@ -331,6 +331,56 @@ class TestModelEvents:
             == f"OrderRejected(trader_id=TRADER-001, strategy_id=SCALPER-001, instrument_id=BTCUSDT.BINANCE, client_order_id=O-2020872378423, account_id=SIM-000, reason='INSUFFICIENT_MARGIN', event_id={uuid}, ts_event=0, ts_init=0)"  # noqa
         )
 
+    def test_order_rejected_with_due_post_only(self):
+        # Arrange
+        uuid = UUID4()
+        event = OrderRejected(
+            trader_id=TraderId("TRADER-001"),
+            strategy_id=StrategyId("SCALPER-001"),
+            instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
+            client_order_id=ClientOrderId("O-2020872378423"),
+            account_id=AccountId("SIM-000"),
+            reason="POST_ONLY_WOULD_EXECUTE",
+            ts_event=0,
+            event_id=uuid,
+            ts_init=0,
+            due_post_only=True,
+        )
+
+        # Act
+        assert event.due_post_only is True
+
+        # Test serialization
+        event_dict = OrderRejected.to_dict(event)
+        assert event_dict["due_post_only"] is True
+
+        # Test deserialization
+        event_from_dict = OrderRejected.from_dict(event_dict)
+        assert event_from_dict.due_post_only is True
+        assert event_from_dict == event
+
+    def test_order_rejected_default_due_post_only(self):
+        # Arrange
+        uuid = UUID4()
+        event = OrderRejected(
+            trader_id=TraderId("TRADER-001"),
+            strategy_id=StrategyId("SCALPER-001"),
+            instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
+            client_order_id=ClientOrderId("O-2020872378423"),
+            account_id=AccountId("SIM-000"),
+            reason="INSUFFICIENT_MARGIN",
+            ts_event=0,
+            event_id=uuid,
+            ts_init=0,
+        )
+
+        # Act, Assert
+        assert event.due_post_only is False
+
+        # Test serialization
+        event_dict = OrderRejected.to_dict(event)
+        assert event_dict["due_post_only"] is False
+
     def test_order_canceled_event_to_from_dict_and_str_repr(self):
         # Arrange
         uuid = UUID4()

@@ -1050,6 +1050,30 @@ class TestMsgSpecSerializer:
 
         # Assert
         assert deserialized == event
+        assert deserialized.due_post_only is False
+
+    def test_serialize_and_deserialize_order_rejected_with_due_post_only(self):
+        # Arrange
+        event = OrderRejected(
+            self.trader_id,
+            self.strategy_id,
+            AUDUSD_SIM.id,
+            ClientOrderId("O-123456"),
+            self.account_id,
+            "POST_ONLY_WOULD_EXECUTE",
+            UUID4(),
+            0,
+            0,
+            due_post_only=True,
+        )
+
+        # Act
+        serialized = self.serializer.serialize(event)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        assert deserialized == event
+        assert deserialized.due_post_only is True
 
     def test_serialize_and_deserialize_order_pending_cancel_events(self):
         # Arrange
