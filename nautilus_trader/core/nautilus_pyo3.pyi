@@ -3174,6 +3174,7 @@ class OrderRejected:
         ts_event: int,
         ts_init: int,
         reconciliation: bool,
+        due_post_only: bool = False,
     ) -> None: ...
     @classmethod
     def from_dict(cls, values: dict[str, str]) -> OrderRejected: ...

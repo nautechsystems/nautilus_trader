@@ -161,6 +161,7 @@ pub unsafe extern "C" fn order_rejected_new(
     ts_event: UnixNanos,
     ts_init: UnixNanos,
     reconciliation: u8,
+    due_post_only: u8,
 ) -> OrderRejected {
     OrderRejected {
         trader_id,
@@ -173,5 +174,6 @@ pub unsafe extern "C" fn order_rejected_new(
         ts_event,
         ts_init,
         reconciliation,
+        due_post_only,
     }
 }
