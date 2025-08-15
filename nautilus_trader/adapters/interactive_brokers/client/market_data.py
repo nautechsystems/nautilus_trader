@@ -143,6 +143,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
                 f"Creating and registering a new Subscription instance for {name}",
             )
             req_id = self._next_req_id()
+
             if subscription_method == self.subscribe_historical_bars:
                 handle_func = functools.partial(
                     subscription_method,
@@ -418,6 +419,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         contract: IBContract,
         use_rth: bool,
         handle_revised_bars: bool,
+        start: pd.Timestamp | None = None,
     ) -> None:
         """
         Subscribe to historical bar data for a specified bar type and contract. It
@@ -433,6 +435,8 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             Whether to use regular trading hours (RTH) only.
         handle_revised_bars : bool
             Whether to handle revised bars or not.
+        start : pd.Timestamp, optional
+            The timestamp in ns of the last available bar in a used catalog.
 
         """
         name = str(bar_type)
@@ -446,20 +450,19 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             handle_revised_bars=handle_revised_bars,
         )
 
-        # Check and download the gaps or approx 300 bars whichever is less
-        last_bar: Bar = self._cache.bar(bar_type)
-
-        if last_bar is None:
-            duration = pd.Timedelta(bar_type.spec.timedelta.total_seconds() * 300, "sec")
+        if start is not None:
+            duration_str = timedelta_to_duration_str(
+                pd.Timedelta(self._clock.timestamp_ns() - start.value, "ns"),
+            )
         else:
-            duration = pd.Timedelta(self._clock.timestamp_ns() - last_bar.ts_event, "ns")
+            duration_str = "0 S"
 
         bar_size_setting: str = bar_spec_to_bar_size(bar_type.spec)
         self._eclient.reqHistoricalData(
             reqId=subscription.req_id,
             contract=contract,
             endDateTime="",
-            durationStr=timedelta_to_duration_str(duration),
+            durationStr=duration_str,
             barSizeSetting=bar_size_setting,
             whatToShow=what_to_show(bar_type),
             useRTH=use_rth,
@@ -522,7 +525,6 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         end_date_time_str = (
             end_date_time.strftime("%Y%m%d %H:%M:%S %Z") if contract.secType != "CONTFUT" else ""
         )
-
         name = (bar_type, end_date_time_str)
 
         if not (request := self._requests.get(name=name)):
@@ -556,7 +558,6 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             return await self._await_request(request, timeout, default_value=[])
         else:
             self._log.info(f"Request already exist for {request}")
-
             return []
 
     async def get_historical_ticks(
@@ -841,6 +842,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         """
         if not (subscription := self._subscriptions.get(req_id=req_id)):
             return
+
         bar_type = BarType.from_str(subscription.name)
         instrument = self._cache.instrument(bar_type.instrument_id)
 
@@ -944,7 +946,6 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         if request := self._requests.get(req_id=req_id):
             instrument_id = InstrumentId.from_str(request.name[0])
             instrument = self._cache.instrument(instrument_id)
-
             price_magnifier = (
                 self._instrument_provider.get_price_magnifier(instrument_id)
                 if self._instrument_provider
@@ -1064,6 +1065,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
 
                 # Check if this bar is still the current bar (hasn't been superseded)
                 current_bar = self._bar_type_to_last_bar.get(bar_type_str)
+
                 if current_bar and int(current_bar.date) == int(bar.date):
                     self._log.debug(f"Publishing bar after period completion for {bar_type_str}")
                     ts_init = self._clock.timestamp_ns()
@@ -1441,6 +1443,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
 
         # Update order book based on operation type
         action = MKT_DEPTH_OPERATIONS[operation]
+
         if action in (BookAction.ADD, BookAction.UPDATE):
             levels[position] = IBKRBookLevel(
                 price=price,
@@ -1546,6 +1549,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
 
         for side, order_side in [("bids", OrderSide.BUY), ("asks", OrderSide.SELL)]:
             price_aggregates: dict[float, Decimal] = defaultdict(Decimal)
+
             for level in book[side].values():
                 price_aggregates[level.price] += level.size
 

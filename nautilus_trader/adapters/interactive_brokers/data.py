@@ -261,11 +261,13 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
                 use_rth=self._use_regular_trading_hours,
             )
         else:
+            start = command.params.get("start")
             await self._client.subscribe_historical_bars(
                 bar_type=command.bar_type,
                 contract=contract,
                 use_rth=self._use_regular_trading_hours,
                 handle_revised_bars=self._handle_revised_bars,
+                start=(pd.Timestamp(start) if start is not None else None),
             )
 
     async def _subscribe_instrument_status(self, command: SubscribeInstrumentStatus) -> None:
