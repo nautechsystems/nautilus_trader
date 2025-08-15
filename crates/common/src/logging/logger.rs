@@ -335,8 +335,13 @@ impl Log for Logger {
     }
 
     fn flush(&self) {
+        // Don't attempt to flush if we're already bypassed/shutdown
+        if LOGGING_BYPASSED.load(Ordering::Relaxed) {
+            return;
+        }
+
         if let Err(e) = self.tx.send(LogEvent::Flush) {
-            eprintln!("Error sending flush log event (receiver closed): {e}");
+            eprintln!("Error sending flush log event: {e}");
         }
     }
 }
@@ -466,14 +471,16 @@ impl Logger {
             )
         };
 
-        // Continue to receive and handle log events until channel is hung up
-        while let Ok(event) = rx.recv() {
+        let process_event = |event: LogEvent,
+                             stdout_writer: &mut StdoutWriter,
+                             stderr_writer: &mut StderrWriter,
+                             file_writer_opt: &mut Option<FileWriter>| {
             match event {
                 LogEvent::Log(line) => {
                     if let Some(&filter_level) = component_level.get(&line.component)
                         && line.level > filter_level
                     {
-                        continue;
+                        return;
                     }
 
                     let mut wrapper = LogLineWrapper::new(line, trader_id_cache);
@@ -494,7 +501,7 @@ impl Logger {
                         }
                     }
 
-                    if let Some(ref mut file_writer) = file_writer_opt
+                    if let Some(file_writer) = file_writer_opt
                         && file_writer.enabled(&wrapper.line)
                     {
                         if file_writer.json_format {
@@ -508,12 +515,49 @@ impl Logger {
                     stdout_writer.flush();
                     stderr_writer.flush();
 
-                    if let Some(ref mut file_writer) = file_writer_opt {
+                    if let Some(file_writer) = file_writer_opt {
                         file_writer.flush();
                     }
                 }
                 LogEvent::Close => {
-                    // Final flush
+                    // Close handled in the main loop; ignore here.
+                }
+            }
+        };
+
+        // Continue to receive and handle log events until channel is hung up
+        while let Ok(event) = rx.recv() {
+            match event {
+                LogEvent::Log(_) | LogEvent::Flush => process_event(
+                    event,
+                    &mut stdout_writer,
+                    &mut stderr_writer,
+                    &mut file_writer_opt,
+                ),
+                LogEvent::Close => {
+                    // First flush what's been written so far
+                    stdout_writer.flush();
+                    stderr_writer.flush();
+
+                    if let Some(ref mut file_writer) = file_writer_opt {
+                        file_writer.flush();
+                    }
+
+                    // Drain any remaining events that may have raced with shutdown
+                    // This ensures logs enqueued just before/around shutdown aren't lost.
+                    while let Ok(evt) = rx.try_recv() {
+                        match evt {
+                            LogEvent::Close => (), // ignore extra Close events
+                            _ => process_event(
+                                evt,
+                                &mut stdout_writer,
+                                &mut stderr_writer,
+                                &mut file_writer_opt,
+                            ),
+                        }
+                    }
+
+                    // Final flush after draining
                     stdout_writer.flush();
                     stderr_writer.flush();
 
@@ -526,6 +570,29 @@ impl Logger {
             }
         }
     }
+}
+
+/// Gracefully shuts down the logging subsystem by preventing new log events,
+/// signaling the logging thread to close, draining pending messages, and joining
+/// the logging thread.
+pub(crate) fn shutdown_graceful() {
+    // Prevent further logging
+    LOGGING_BYPASSED.store(true, Ordering::SeqCst);
+    log::set_max_level(log::LevelFilter::Off);
+
+    // Signal Close if the sender exists
+    if let Some(tx) = LOGGER_TX.get() {
+        let _ = tx.send(LogEvent::Close);
+    }
+
+    if let Ok(mut handle_guard) = LOGGER_HANDLE.lock()
+        && let Some(handle) = handle_guard.take()
+        && handle.thread().id() != std::thread::current().id()
+    {
+        let _ = handle.join();
+    }
+
+    LOGGING_INITIALIZED.store(false, Ordering::SeqCst);
 }
 
 pub fn log<T: AsRef<str>>(level: LogLevel, color: LogColor, component: Ustr, message: T) {
@@ -619,6 +686,13 @@ impl Drop for LogGuard {
         if previous_count == 1 && LOGGING_GUARDS_ACTIVE.load(Ordering::SeqCst) == 0 {
             // This is truly the last LogGuard, so we should close the logger and join the thread
             // to ensure all log messages are written before the process terminates.
+            // Prevent any new log events from being accepted while shutting down.
+            LOGGING_BYPASSED.store(true, Ordering::SeqCst);
+
+            // Disable all log levels to reduce overhead on late calls
+            log::set_max_level(log::LevelFilter::Off);
+
+            // Ensure Close is delivered before joining (critical for shutdown)
             let _ = self.tx.send(LogEvent::Close);
 
             // Join the logging thread to ensure all pending logs are written
@@ -781,6 +855,71 @@ mod tests {
                 log_contents,
                 "1970-01-20T02:20:00.000000000Z [INFO] TRADER-001.RiskEngine: This is a test.\n"
             );
+        }
+
+        #[rstest]
+        fn test_shutdown_drains_backlog_tail() {
+            // Configure file logging at Info level
+            let config = LoggerConfig {
+                stdout_level: LevelFilter::Off,
+                fileout_level: LevelFilter::Info,
+                ..Default::default()
+            };
+
+            let temp_dir = tempdir().expect("Failed to create temporary directory");
+            let file_config = FileWriterConfig {
+                directory: Some(temp_dir.path().to_str().unwrap().to_string()),
+                ..Default::default()
+            };
+
+            let log_guard = Logger::init_with_config(
+                TraderId::from("TRADER-TAIL"),
+                UUID4::new(),
+                config,
+                file_config,
+            )
+            .expect("Failed to initialize logger");
+
+            // Use static time for reproducibility
+            logging_clock_set_static_mode();
+            logging_clock_set_static_time(1_700_000_000_000_000);
+
+            // Enqueue a known number of messages synchronously
+            const N: usize = 1000;
+            for i in 0..N {
+                log::info!(component = "TailDrain"; "BacklogTest {i}");
+            }
+
+            // Drop guard to trigger shutdown (bypass + close + drain)
+            drop(log_guard);
+
+            // Wait until the file exists and contains at least N lines with our marker
+            let mut count = 0usize;
+            wait_until(
+                || {
+                    if let Some(log_file) = std::fs::read_dir(&temp_dir)
+                        .expect("Failed to read directory")
+                        .filter_map(Result::ok)
+                        .find(|entry| entry.path().is_file())
+                    {
+                        let log_file_path = log_file.path();
+                        if let Ok(contents) = std::fs::read_to_string(log_file_path) {
+                            count = contents
+                                .lines()
+                                .filter(|l| l.contains("BacklogTest "))
+                                .count();
+                            count >= N
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                },
+                Duration::from_secs(5),
+            );
+
+            assert_eq!(count, N, "Expected all pre-shutdown messages to be written");
         }
 
         #[rstest]

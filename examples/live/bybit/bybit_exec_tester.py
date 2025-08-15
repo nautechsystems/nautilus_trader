@@ -145,6 +145,7 @@ config_strat = ExecTesterConfig(
     # subscribe_book=True,
     order_qty=order_qty,
     use_post_only=True,
+    reduce_only_on_stop=False,
     log_data=False,
     log_rejected_due_post_only_as_warning=False,
 )

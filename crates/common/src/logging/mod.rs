@@ -84,9 +84,9 @@ pub fn logging_set_bypass() {
 
 /// Shuts down the logging subsystem.
 pub fn logging_shutdown() {
-    // Flush any buffered logs and mark logging as uninitialized
-    log::logger().flush();
-    LOGGING_INITIALIZED.store(false, Ordering::Relaxed);
+    // Perform a graceful shutdown: prevent new logs, signal Close, drain and join.
+    // Delegates to logger implementation which has access to the internals.
+    crate::logging::logger::shutdown_graceful();
 }
 
 /// Returns whether the core logger is using ANSI colors.
