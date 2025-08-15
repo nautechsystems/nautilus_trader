@@ -22,12 +22,14 @@ use nautilus_model::{
         bar::{Bar, BarSpecification, BarType},
         delta::OrderBookDelta,
         depth::{DEPTH10_LEN, OrderBookDepth10},
+        funding::FundingRateUpdate,
         order::BookOrder,
+        prices::{IndexPriceUpdate, MarkPriceUpdate},
         quote::QuoteTick,
         trade::TradeTick,
     },
     enums::{AggregationSource, BarAggregation, OrderSide, PriceType, RecordFlag},
-    identifiers::{AccountId, ClientOrderId, OrderListId, TradeId, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, OrderListId, TradeId, VenueOrderId},
     reports::{fill::FillReport, order::OrderStatusReport, position::PositionStatusReport},
     types::{
         currency::Currency,
@@ -41,8 +43,8 @@ use uuid::Uuid;
 use super::{
     enums::{Action, WsTopic},
     messages::{
-        ExecutionMsg, MarginMsg, OrderBook10Msg, OrderBookMsg, OrderMsg, PositionMsg, QuoteMsg,
-        TradeBinMsg, TradeMsg, WalletMsg,
+        ExecutionMsg, FundingMsg, InstrumentMsg, MarginMsg, OrderBook10Msg, OrderBookMsg, OrderMsg,
+        PositionMsg, QuoteMsg, TradeBinMsg, TradeMsg, WalletMsg,
     },
 };
 use crate::common::parse::{
@@ -531,6 +533,80 @@ pub fn parse_margin_msg(msg: MarginMsg) -> (AccountId, Currency, i64) {
     (account_id, currency, available_margin)
 }
 
+/// Parse a BitMEX WebSocket instrument message for mark and index prices.
+///
+/// Returns a Vec of Data containing mark and/or index price updates.
+/// Returns an empty Vec if neither price is present.
+pub fn parse_instrument_msg(msg: InstrumentMsg) -> Vec<Data> {
+    let mut updates = Vec::new();
+
+    // Return early if no mark or index price present
+    // (Funding rates come through a separate Funding channel)
+    if msg.mark_price.is_none() && msg.index_price.is_none() {
+        return updates;
+    }
+
+    let instrument_id = InstrumentId::from(format!("{}.BITMEX", msg.symbol).as_str());
+    let ts_event = parse_optional_datetime_to_unix_nanos(&Some(msg.timestamp), "");
+    let ts_init = get_atomic_clock_realtime().get_time_ns();
+
+    // Add mark price update if present
+    if let Some(mark_price) = msg.mark_price {
+        let price = Price::from(mark_price.to_string().as_str());
+        updates.push(Data::MarkPriceUpdate(MarkPriceUpdate::new(
+            instrument_id,
+            price,
+            ts_event,
+            ts_init,
+        )));
+    }
+
+    // Add index price update if present
+    if let Some(index_price) = msg.index_price {
+        let price = Price::from(index_price.to_string().as_str());
+        updates.push(Data::IndexPriceUpdate(IndexPriceUpdate::new(
+            instrument_id,
+            price,
+            ts_event,
+            ts_init,
+        )));
+    }
+
+    updates
+}
+
+/// Parse a BitMEX WebSocket funding message.
+///
+/// Returns `Some(FundingRateUpdate)` containing funding rate information.
+/// Note: This returns FundingRateUpdate directly, not wrapped in Data enum,
+/// to keep it separate from the FFI layer.
+pub fn parse_funding_msg(msg: FundingMsg) -> Option<FundingRateUpdate> {
+    use std::str::FromStr;
+
+    use rust_decimal::Decimal;
+
+    let instrument_id = InstrumentId::from(format!("{}.BITMEX", msg.symbol).as_str());
+    let ts_event = parse_optional_datetime_to_unix_nanos(&Some(msg.timestamp), "");
+    let ts_init = get_atomic_clock_realtime().get_time_ns();
+
+    // Convert funding rate to Decimal
+    let rate = match Decimal::from_str(&msg.funding_rate.to_string()) {
+        Ok(rate) => rate,
+        Err(e) => {
+            tracing::error!("Failed to parse funding rate: {}", e);
+            return None;
+        }
+    };
+
+    Some(FundingRateUpdate::new(
+        instrument_id,
+        rate,
+        None, // Next funding time not provided in this message
+        ts_event,
+        ts_init,
+    ))
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
@@ -819,5 +895,93 @@ mod tests {
 
         let (_, _, available_margin) = parse_margin_msg(msg);
         assert_eq!(available_margin, 0);
+    }
+
+    #[rstest]
+    fn test_parse_instrument_msg_both_prices() {
+        let json_data = load_test_json("ws_instrument.json");
+        let msg: InstrumentMsg = serde_json::from_str(&json_data).unwrap();
+        let updates = parse_instrument_msg(msg);
+
+        assert_eq!(updates.len(), 2);
+
+        // Check mark price update
+        match &updates[0] {
+            Data::MarkPriceUpdate(update) => {
+                assert_eq!(update.instrument_id.to_string(), "XBTUSD.BITMEX");
+                assert_eq!(update.value.as_f64(), 95125.7);
+            }
+            _ => panic!("Expected MarkPriceUpdate at index 0"),
+        }
+
+        // Check index price update
+        match &updates[1] {
+            Data::IndexPriceUpdate(update) => {
+                assert_eq!(update.instrument_id.to_string(), "XBTUSD.BITMEX");
+                assert_eq!(update.value.as_f64(), 95124.3);
+            }
+            _ => panic!("Expected IndexPriceUpdate at index 1"),
+        }
+    }
+
+    #[rstest]
+    fn test_parse_instrument_msg_mark_price_only() {
+        let mut msg: InstrumentMsg =
+            serde_json::from_str(&load_test_json("ws_instrument.json")).unwrap();
+        msg.index_price = None;
+
+        let updates = parse_instrument_msg(msg);
+
+        assert_eq!(updates.len(), 1);
+        match &updates[0] {
+            Data::MarkPriceUpdate(update) => {
+                assert_eq!(update.instrument_id.to_string(), "XBTUSD.BITMEX");
+                assert_eq!(update.value.as_f64(), 95125.7);
+            }
+            _ => panic!("Expected MarkPriceUpdate"),
+        }
+    }
+
+    #[rstest]
+    fn test_parse_instrument_msg_index_price_only() {
+        let mut msg: InstrumentMsg =
+            serde_json::from_str(&load_test_json("ws_instrument.json")).unwrap();
+        msg.mark_price = None;
+
+        let updates = parse_instrument_msg(msg);
+
+        assert_eq!(updates.len(), 1);
+        match &updates[0] {
+            Data::IndexPriceUpdate(update) => {
+                assert_eq!(update.instrument_id.to_string(), "XBTUSD.BITMEX");
+                assert_eq!(update.value.as_f64(), 95124.3);
+            }
+            _ => panic!("Expected IndexPriceUpdate"),
+        }
+    }
+
+    #[rstest]
+    fn test_parse_instrument_msg_no_prices() {
+        let mut msg: InstrumentMsg =
+            serde_json::from_str(&load_test_json("ws_instrument.json")).unwrap();
+        msg.mark_price = None;
+        msg.index_price = None;
+
+        let updates = parse_instrument_msg(msg);
+        assert_eq!(updates.len(), 0);
+    }
+
+    #[rstest]
+    fn test_parse_funding_msg() {
+        let json_data = load_test_json("ws_funding_rate.json");
+        let msg: FundingMsg = serde_json::from_str(&json_data).unwrap();
+        let update = parse_funding_msg(msg);
+
+        assert!(update.is_some());
+        let update = update.unwrap();
+
+        assert_eq!(update.instrument_id.to_string(), "XBTUSD.BITMEX");
+        assert_eq!(update.rate.to_string(), "0.0001");
+        assert!(update.next_funding_ns.is_none());
     }
 }

@@ -21,7 +21,7 @@ use nautilus_model::{
 use pyo3::{IntoPyObjectExt, exceptions::PyRuntimeError, prelude::*};
 use pyo3_async_runtimes::tokio::get_runtime;
 
-use crate::websocket::{BitmexWebSocketClient, messages::BitmexWsMessage};
+use crate::websocket::{BitmexWebSocketClient, messages::NautilusWsMessage};
 
 #[pymethods]
 impl BitmexWebSocketClient {
@@ -84,36 +84,35 @@ impl BitmexWebSocketClient {
             tokio::pin!(stream);
 
             while let Some(msg) = stream.next().await {
-                Python::with_gil(|py| {
-                    match msg {
-                        BitmexWsMessage::Data(data_vec) => {
-                            for data in data_vec {
-                                let py_obj = data_to_pycapsule(py, data);
+                Python::with_gil(|py| match msg {
+                    NautilusWsMessage::Data(data_vec) => {
+                        for data in data_vec {
+                            let py_obj = data_to_pycapsule(py, data);
+                            call_python(py, &callback, py_obj);
+                        }
+                    }
+                    NautilusWsMessage::OrderStatusReport(report) => {
+                        if let Ok(py_obj) = (*report).into_py_any(py) {
+                            call_python(py, &callback, py_obj);
+                        }
+                    }
+                    NautilusWsMessage::FillReports(reports) => {
+                        for report in reports {
+                            if let Ok(py_obj) = report.into_py_any(py) {
                                 call_python(py, &callback, py_obj);
                             }
                         }
-                        BitmexWsMessage::OrderStatusReport(report) => {
-                            if let Ok(py_obj) = (*report).into_py_any(py) {
+                    }
+                    NautilusWsMessage::PositionStatusReport(report) => {
+                        if let Ok(py_obj) = (*report).into_py_any(py) {
+                            call_python(py, &callback, py_obj);
+                        }
+                    }
+                    NautilusWsMessage::FundingRateUpdates(updates) => {
+                        for update in updates {
+                            if let Ok(py_obj) = update.into_py_any(py) {
                                 call_python(py, &callback, py_obj);
                             }
-                        }
-                        BitmexWsMessage::FillReports(reports) => {
-                            for report in reports {
-                                if let Ok(py_obj) = report.into_py_any(py) {
-                                    call_python(py, &callback, py_obj);
-                                }
-                            }
-                        }
-                        BitmexWsMessage::PositionStatusReport(report) => {
-                            if let Ok(py_obj) = (*report).into_py_any(py) {
-                                call_python(py, &callback, py_obj);
-                            }
-                        }
-                        BitmexWsMessage::WalletUpdate { .. } => {
-                            // TODO: Convert to appropriate Python object
-                        }
-                        BitmexWsMessage::MarginUpdate { .. } => {
-                            // TODO: Convert to appropriate Python object
                         }
                     }
                 });
@@ -135,6 +134,22 @@ impl BitmexWebSocketClient {
         })
     }
 
+    #[pyo3(name = "subscribe_instrument")]
+    fn py_subscribe_instrument<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.subscribe_instrument(instrument_id).await {
+                log::error!("Failed to subscribe to instrument: {e}");
+            }
+            Ok(())
+        })
+    }
+
     #[pyo3(name = "subscribe_order_book")]
     fn py_subscribe_order_book<'py>(
         &self,
@@ -142,6 +157,7 @@ impl BitmexWebSocketClient {
         instrument_id: InstrumentId,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
+
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             if let Err(e) = client.subscribe_order_book(instrument_id).await {
                 log::error!("Failed to subscribe to order book: {e}");
@@ -157,6 +173,7 @@ impl BitmexWebSocketClient {
         instrument_id: InstrumentId,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
+
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             if let Err(e) = client.subscribe_order_book_25(instrument_id).await {
                 log::error!("Failed to subscribe to order book 25: {e}");
@@ -172,6 +189,7 @@ impl BitmexWebSocketClient {
         instrument_id: InstrumentId,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
+
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             if let Err(e) = client.subscribe_order_book_depth10(instrument_id).await {
                 log::error!("Failed to subscribe to order book depth 10: {e}");
@@ -187,6 +205,7 @@ impl BitmexWebSocketClient {
         instrument_id: InstrumentId,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
+
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             if let Err(e) = client.subscribe_quotes(instrument_id).await {
                 log::error!("Failed to subscribe to quotes: {e}");
@@ -202,9 +221,58 @@ impl BitmexWebSocketClient {
         instrument_id: InstrumentId,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
+
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             if let Err(e) = client.subscribe_trades(instrument_id).await {
                 log::error!("Failed to subscribe to trades: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "subscribe_mark_prices")]
+    fn py_subscribe_mark_prices<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.subscribe_mark_prices(instrument_id).await {
+                log::error!("Failed to subscribe to mark prices: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "subscribe_index_prices")]
+    fn py_subscribe_index_prices<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.subscribe_index_prices(instrument_id).await {
+                log::error!("Failed to subscribe to index prices: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "subscribe_funding_rates")]
+    fn py_subscribe_funding_rates<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.subscribe_funding_rates(instrument_id).await {
+                log::error!("Failed to subscribe to funding: {e}");
             }
             Ok(())
         })
@@ -217,9 +285,26 @@ impl BitmexWebSocketClient {
         bar_type: BarType,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
+
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             if let Err(e) = client.subscribe_bars(bar_type).await {
                 log::error!("Failed to subscribe to bars: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "unsubscribe_instrument")]
+    fn py_unsubscribe_instrument<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.unsubscribe_instrument(instrument_id).await {
+                log::error!("Failed to unsubscribe from instrument: {e}");
             }
             Ok(())
         })
@@ -232,6 +317,7 @@ impl BitmexWebSocketClient {
         instrument_id: InstrumentId,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
+
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             if let Err(e) = client.unsubscribe_order_book(instrument_id).await {
                 log::error!("Failed to unsubscribe from order book: {e}");
@@ -247,6 +333,7 @@ impl BitmexWebSocketClient {
         instrument_id: InstrumentId,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
+
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             if let Err(e) = client.unsubscribe_order_book_25(instrument_id).await {
                 log::error!("Failed to unsubscribe from order book 25: {e}");
@@ -262,6 +349,7 @@ impl BitmexWebSocketClient {
         instrument_id: InstrumentId,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
+
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             if let Err(e) = client.unsubscribe_order_book_depth10(instrument_id).await {
                 log::error!("Failed to unsubscribe from order book depth 10: {e}");
@@ -277,6 +365,7 @@ impl BitmexWebSocketClient {
         instrument_id: InstrumentId,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
+
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             if let Err(e) = client.unsubscribe_quotes(instrument_id).await {
                 log::error!("Failed to unsubscribe from quotes: {e}");
@@ -292,9 +381,57 @@ impl BitmexWebSocketClient {
         instrument_id: InstrumentId,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
+
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             if let Err(e) = client.unsubscribe_trades(instrument_id).await {
                 log::error!("Failed to unsubscribe from trades: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "unsubscribe_mark_prices")]
+    fn py_unsubscribe_mark_prices<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.unsubscribe_mark_prices(instrument_id).await {
+                log::error!("Failed to unsubscribe from mark prices: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "unsubscribe_index_prices")]
+    fn py_unsubscribe_index_prices<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.unsubscribe_index_prices(instrument_id).await {
+                log::error!("Failed to unsubscribe from index prices: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "unsubscribe_funding_rates")]
+    fn py_unsubscribe_funding_rates<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.unsubscribe_funding_rates(instrument_id).await {
+                log::error!("Failed to unsubscribe from funding rates: {e}");
             }
             Ok(())
         })
@@ -307,6 +444,7 @@ impl BitmexWebSocketClient {
         bar_type: BarType,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
+
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             if let Err(e) = client.unsubscribe_bars(bar_type).await {
                 log::error!("Failed to unsubscribe from bars: {e}");

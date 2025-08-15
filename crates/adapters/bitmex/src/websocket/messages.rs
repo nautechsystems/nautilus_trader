@@ -17,7 +17,7 @@ use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
 use nautilus_model::{
-    data::Data,
+    data::{Data, funding::FundingRateUpdate},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
 };
 use serde::Deserialize;
@@ -32,21 +32,12 @@ use crate::enums::{
 
 /// Unified WebSocket message type for BitMEX.
 #[derive(Clone, Debug)]
-pub enum BitmexWsMessage {
+pub enum NautilusWsMessage {
     Data(Vec<Data>),
     OrderStatusReport(Box<OrderStatusReport>),
     FillReports(Vec<FillReport>),
     PositionStatusReport(Box<PositionStatusReport>),
-    WalletUpdate {
-        account_id: nautilus_model::identifiers::AccountId,
-        currency: nautilus_model::types::Currency,
-        amount: i64,
-    },
-    MarginUpdate {
-        account_id: nautilus_model::identifiers::AccountId,
-        currency: nautilus_model::types::Currency,
-        available_margin: i64,
-    },
+    FundingRateUpdates(Vec<FundingRateUpdate>),
 }
 
 /// Represents all possible message types from the `BitMEX` WebSocket API.
@@ -303,10 +294,26 @@ pub struct InstrumentMsg {
     pub last_price: Option<f64>,
     /// Last tick direction for the instrument.
     pub last_tick_direction: Option<TickDirection>,
+    /// Mark price.
+    pub mark_price: Option<f64>,
+    /// Index price.
+    pub index_price: Option<f64>,
+    /// Indicative settlement price.
+    pub indicative_settle_price: Option<f64>,
     /// Open interest for the instrument.
     pub open_interest: Option<i64>,
     /// Open value for the instrument.
     pub open_value: Option<i64>,
+    /// Fair basis.
+    pub fair_basis: Option<f64>,
+    /// Fair basis rate.
+    pub fair_basis_rate: Option<f64>,
+    /// Fair price.
+    pub fair_price: Option<f64>,
+    /// Mark method.
+    pub mark_method: Option<String>,
+    /// Indicative tax rate.
+    pub indicative_tax_rate: Option<f64>,
     /// Timestamp of the update.
     pub timestamp: DateTime<Utc>,
 }

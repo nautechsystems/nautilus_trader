@@ -38,6 +38,7 @@ from nautilus_trader.data.messages import UnsubscribeOrderBook
 from nautilus_trader.data.messages import UnsubscribeQuoteTicks
 from nautilus_trader.data.messages import UnsubscribeTradeTicks
 from nautilus_trader.live.data_client import LiveMarketDataClient
+from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import ClientId
@@ -167,6 +168,11 @@ class BitmexDataClient(LiveMarketDataClient):
         else:
             return "wss://ws.bitmex.com/realtime"
 
+    async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
+        # Order book deltas use the same subscription as regular order book
+        # The difference is handled by the data engine at a higher level
+        await self._subscribe_order_book(command)
+
     async def _subscribe_order_book(self, command: SubscribeOrderBook) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
 
@@ -181,41 +187,64 @@ class BitmexDataClient(LiveMarketDataClient):
         else:
             self._log.warning(f"Book type {command.book_type} not supported by BitMEX")
 
+    async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        await self._ws_client.subscribe_quotes(pyo3_instrument_id)
+
     async def _subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.subscribe_trades(pyo3_instrument_id)
 
-    async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
+    async def _subscribe_mark_prices(self, command) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        await self._ws_client.subscribe_quotes(pyo3_instrument_id)
+        await self._ws_client.subscribe_mark_prices(pyo3_instrument_id)
+
+    async def _subscribe_index_prices(self, command) -> None:
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        await self._ws_client.subscribe_index_prices(pyo3_instrument_id)
+
+    async def _subscribe_funding_rates(self, command) -> None:
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        await self._ws_client.subscribe_funding_rates(pyo3_instrument_id)
 
     async def _subscribe_bars(self, command: SubscribeBars) -> None:
         pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(command.bar_type))
         await self._ws_client.subscribe_bars(pyo3_bar_type)
 
+    async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
+        # Order book deltas use the same unsubscription as regular order book
+        # The difference is handled by the data engine at a higher level
+        await self._unsubscribe_order_book(command)
+
     async def _unsubscribe_order_book(self, command: UnsubscribeOrderBook) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-
-        # BitMEX has different order book depths - unsubscribe from all
-        if command.book_type == BookType.L2_MBP:
-            if command.depth == 10:
-                await self._ws_client.unsubscribe_order_book_depth10(pyo3_instrument_id)
-            elif command.depth == 25:
-                await self._ws_client.unsubscribe_order_book_25(pyo3_instrument_id)
-            else:
-                await self._ws_client.unsubscribe_order_book(pyo3_instrument_id)
-
-    async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
-        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        await self._ws_client.unsubscribe_trades(pyo3_instrument_id)
+        await self._ws_client.unsubscribe_order_book(pyo3_instrument_id)
+        await self._ws_client.unsubscribe_order_book_25(pyo3_instrument_id)
+        await self._ws_client.unsubscribe_order_book_depth10(pyo3_instrument_id)
 
     async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.unsubscribe_quotes(pyo3_instrument_id)
 
+    async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        await self._ws_client.unsubscribe_trades(pyo3_instrument_id)
+
     async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
         pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(command.bar_type))
         await self._ws_client.unsubscribe_bars(pyo3_bar_type)
+
+    async def _unsubscribe_mark_prices(self, command) -> None:
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        await self._ws_client.unsubscribe_mark_prices(pyo3_instrument_id)
+
+    async def _unsubscribe_index_prices(self, command) -> None:
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        await self._ws_client.unsubscribe_index_prices(pyo3_instrument_id)
+
+    async def _unsubscribe_funding_rates(self, command) -> None:
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        await self._ws_client.unsubscribe_funding_rates(pyo3_instrument_id)
 
     async def _request_instruments(self, request: RequestInstruments) -> None:
         instruments = await self._http_client.request_instruments(self._symbol_status)
@@ -258,6 +287,8 @@ class BitmexDataClient(LiveMarketDataClient):
                 # to `Data` is still owned and managed by Rust.
                 data = capsule_to_data(msg)
                 self._handle_data(data)
+            elif isinstance(msg, nautilus_pyo3.FundingRateUpdate):
+                self._handle_data(FundingRateUpdate.from_pyo3(msg))
             else:
                 self._log.warning(f"Cannot handle message {msg}, not implemented")
         except Exception as e:
