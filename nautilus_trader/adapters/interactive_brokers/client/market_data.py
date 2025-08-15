@@ -419,6 +419,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         contract: IBContract,
         use_rth: bool,
         handle_revised_bars: bool,
+        start: pd.Timestamp | None = None,
     ) -> None:
         """
         Subscribe to historical bar data for a specified bar type and contract. It
@@ -434,6 +435,8 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             Whether to use regular trading hours (RTH) only.
         handle_revised_bars : bool
             Whether to handle revised bars or not.
+        start : pd.Timestamp, optional
+            The timestamp in ns of the last available bar in a used catalog.
 
         """
         name = str(bar_type)
@@ -447,20 +450,19 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             handle_revised_bars=handle_revised_bars,
         )
 
-        # Check and download the gaps or approx 300 bars whichever is less
-        last_bar: Bar = self._cache.bar(bar_type)
-
-        if last_bar is None:
-            duration = pd.Timedelta(bar_type.spec.timedelta.total_seconds() * 300, "sec")
+        if start is not None:
+            duration_str = timedelta_to_duration_str(
+                pd.Timedelta(self._clock.timestamp_ns() - start.value, "ns"),
+            )
         else:
-            duration = pd.Timedelta(self._clock.timestamp_ns() - last_bar.ts_event, "ns")
+            duration_str = "0 S"
 
         bar_size_setting: str = bar_spec_to_bar_size(bar_type.spec)
         self._eclient.reqHistoricalData(
             reqId=subscription.req_id,
             contract=contract,
             endDateTime="",
-            durationStr=timedelta_to_duration_str(duration),
+            durationStr=duration_str,
             barSizeSetting=bar_size_setting,
             whatToShow=what_to_show(bar_type),
             useRTH=use_rth,

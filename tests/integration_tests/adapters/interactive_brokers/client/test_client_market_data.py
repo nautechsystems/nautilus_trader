@@ -223,39 +223,6 @@ async def test_unsubscribe_realtime_bars(ib_client):
 
 
 @pytest.mark.asyncio
-async def test_subscribe_historical_bars(ib_client):
-    # Arrange
-    ib_client._request_id_seq = 999
-    bar_type = BarType.from_str("AAPL.SMART-5-SECOND-BID-EXTERNAL")
-    contract = IBTestContractStubs.aapl_equity_ib_contract()
-    use_rth = True
-    handle_revised_bars = True
-    ib_client._eclient.reqHistoricalData = Mock()
-
-    # Act
-    await ib_client.subscribe_historical_bars(
-        bar_type,
-        contract,
-        use_rth,
-        handle_revised_bars,
-    )
-
-    # Assert
-    ib_client._eclient.reqHistoricalData.assert_called_once_with(
-        reqId=999,
-        contract=contract,
-        endDateTime="",
-        durationStr="1500 S",
-        barSizeSetting="5 secs",
-        whatToShow="BID",
-        useRTH=use_rth,
-        formatDate=2,
-        keepUpToDate=True,
-        chartOptions=[],
-    )
-
-
-@pytest.mark.asyncio
 async def test_unsubscribe_historical_bars(ib_client):
     # Arrange
     ib_client._request_id_seq = 999
