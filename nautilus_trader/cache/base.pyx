@@ -18,6 +18,7 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarType
+from nautilus_trader.model.data cimport FundingRateUpdate
 from nautilus_trader.model.data cimport IndexPriceUpdate
 from nautilus_trader.model.data cimport MarkPriceUpdate
 from nautilus_trader.model.data cimport QuoteTick
@@ -114,6 +115,10 @@ cdef class CacheFacade:
     cpdef IndexPriceUpdate index_price(self, InstrumentId instrument_id, int index=0):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `index_price` must be implemented in the subclass")  # pragma: no cover
+
+    cpdef FundingRateUpdate funding_rate(self, InstrumentId instrument_id):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method `funding_rate` must be implemented in the subclass")  # pragma: no cover
 
     cpdef Bar bar(self, BarType bar_type, int index=0):
         """Abstract method (implement in subclass)."""

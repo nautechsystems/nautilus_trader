@@ -3,9 +3,10 @@
 Released on TBD (UTC).
 
 ### Enhancements
-- Added `FundingRateUpdate` data type
-- Added `subscribe_funding_rates` and `unsubscribe_funding_rates` methods for actors
-- Added `on_funding_rate` handler for actors
+- Added `FundingRateUpdate` data type with caching support through data engine
+- Added `subscribe_funding_rates(...)` and `unsubscribe_funding_rates(...)` methods for actors
+- Added `on_funding_rate(...)` handler for actors
+- Added `funding_rate(...)` and `add_funding_rate(...)` for `Cache`
 - Added support for additional Databento schemas: `OHLCV_EOD`, `CMBP_1`, `CBBO_1S`, `CBBO_1M`, and `TCBBO`
 - Added configurable schema parameters for Databento quote and trade subscriptions, allowing `TBBO`/`TCBBO` for efficient combined data feeds
 - Added support for option combos for Interactive Brokers (#2812), thanks @faysou

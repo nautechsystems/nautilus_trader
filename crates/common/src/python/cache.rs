@@ -18,7 +18,7 @@
 use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
     data::{
-        Bar, BarType, QuoteTick, TradeTick,
+        Bar, BarType, FundingRateUpdate, QuoteTick, TradeTick,
         prices::{IndexPriceUpdate, MarkPriceUpdate},
     },
     enums::{OmsType, OrderSide, PositionSide},
@@ -468,6 +468,11 @@ impl Cache {
     #[pyo3(name = "index_prices")]
     fn py_index_prices(&self, instrument_id: InstrumentId) -> Option<Vec<IndexPriceUpdate>> {
         self.index_prices(&instrument_id)
+    }
+
+    #[pyo3(name = "funding_rate")]
+    fn py_funding_rate(&self, instrument_id: InstrumentId) -> Option<FundingRateUpdate> {
+        self.funding_rate(&instrument_id).cloned()
     }
 
     #[pyo3(name = "order_book")]

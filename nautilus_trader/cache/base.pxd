@@ -22,6 +22,7 @@ from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.model.book cimport OrderBook
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarType
+from nautilus_trader.model.data cimport FundingRateUpdate
 from nautilus_trader.model.data cimport IndexPriceUpdate
 from nautilus_trader.model.data cimport MarkPriceUpdate
 from nautilus_trader.model.data cimport QuoteTick
@@ -70,6 +71,7 @@ cdef class CacheFacade:
     cpdef TradeTick trade_tick(self, InstrumentId instrument_id, int index=*)
     cpdef MarkPriceUpdate mark_price(self, InstrumentId instrument_id, int index=*)
     cpdef IndexPriceUpdate index_price(self, InstrumentId instrument_id, int index=*)
+    cpdef FundingRateUpdate funding_rate(self, InstrumentId instrument_id)
     cpdef Bar bar(self, BarType bar_type, int index=*)
     cpdef int book_update_count(self, InstrumentId instrument_id)
     cpdef int quote_tick_count(self, InstrumentId instrument_id)

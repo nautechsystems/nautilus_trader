@@ -30,6 +30,7 @@ from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.model.book cimport OrderBook
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarType
+from nautilus_trader.model.data cimport FundingRateUpdate
 from nautilus_trader.model.data cimport IndexPriceUpdate
 from nautilus_trader.model.data cimport MarkPriceUpdate
 from nautilus_trader.model.data cimport QuoteTick
@@ -68,6 +69,7 @@ cdef class Cache(CacheFacade):
     cdef dict _xrate_symbols
     cdef dict _mark_prices
     cdef dict _index_prices
+    cdef dict _funding_rates
     cdef dict _bars
     cdef dict _bars_bid
     cdef dict _bars_ask
@@ -170,6 +172,7 @@ cdef class Cache(CacheFacade):
     cpdef void add_trade_tick(self, TradeTick tick)
     cpdef void add_mark_price(self, MarkPriceUpdate mark_price)
     cpdef void add_index_price(self, IndexPriceUpdate index_price)
+    cpdef void add_funding_rate(self, FundingRateUpdate funding_rate)
     cpdef void add_bar(self, Bar bar)
     cpdef void add_quote_ticks(self, list ticks)
     cpdef void add_trade_ticks(self, list ticks)
