@@ -54,6 +54,7 @@ impl OrderRejected {
             ts_event.into(),
             ts_init.into(),
             reconciliation,
+            false, // due_post_only defaults to false for Python constructor
         ))
     }
 

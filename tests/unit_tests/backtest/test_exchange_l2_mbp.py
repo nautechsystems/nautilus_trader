@@ -234,6 +234,41 @@ class TestL2OrderBookExchange:
         # Assert
         assert order.status == OrderStatus.ACCEPTED
 
+    def test_post_only_reject_would_take(self):
+        # Arrange: Prepare market
+        self.cache.add_instrument(_USDJPY_SIM)
+        # Market is at 100.000 @ 101.000
+        snapshot = TestDataStubs.order_book_snapshot(
+            instrument=_USDJPY_SIM,
+            bid_size=100_000,
+            ask_size=100_000,
+        )
+        self.data_engine.process(snapshot)
+        self.exchange.process_order_book_deltas(snapshot)
+
+        # Act: Submit a post-only BUY order at 101.000 (would cross the spread and take)
+        order = self.strategy.order_factory.limit(
+            instrument_id=_USDJPY_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(2_000),
+            price=_USDJPY_SIM.make_price(101.000),  # At ask price - would be a taker
+            post_only=True,
+        )
+        self.strategy.submit_order(order)
+        self.exchange.process(0)
+
+        # Assert: Order should be rejected
+        assert order.status == OrderStatus.REJECTED
+        assert len(order.events) == 3  # Initialized, Submitted, and Rejected
+
+        # Check the rejection event has due_post_only flag set
+        rejected_event = order.events[-1]
+        from nautilus_trader.model.events import OrderRejected
+
+        assert isinstance(rejected_event, OrderRejected)
+        assert rejected_event.due_post_only is True
+        assert "POST_ONLY" in rejected_event.reason
+
     def test_passive_partial_fill_sell(self):
         # Arrange: Prepare market
         self.cache.add_instrument(_USDJPY_SIM)

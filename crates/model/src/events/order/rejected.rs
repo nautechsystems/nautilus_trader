@@ -84,35 +84,6 @@ impl OrderRejected {
         ts_event: UnixNanos,
         ts_init: UnixNanos,
         reconciliation: bool,
-    ) -> Self {
-        Self::new_with_due_post_only(
-            trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
-            account_id,
-            reason,
-            event_id,
-            ts_event,
-            ts_init,
-            reconciliation,
-            false,
-        )
-    }
-
-    /// Creates a new [`OrderRejected`] instance with `due_post_only` field.
-    #[allow(clippy::too_many_arguments)]
-    pub fn new_with_due_post_only(
-        trader_id: TraderId,
-        strategy_id: StrategyId,
-        instrument_id: InstrumentId,
-        client_order_id: ClientOrderId,
-        account_id: AccountId,
-        reason: Ustr,
-        event_id: UUID4,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
-        reconciliation: bool,
         due_post_only: bool,
     ) -> Self {
         Self {
@@ -362,6 +333,7 @@ mod tests {
             UnixNanos::from(1_000_000_000),
             UnixNanos::from(2_000_000_000),
             false,
+            false,
         )
     }
 
@@ -400,6 +372,7 @@ mod tests {
             UnixNanos::from(1_000_000_000),
             UnixNanos::from(2_000_000_000),
             true,
+            false,
         );
 
         assert_eq!(order_rejected.reconciliation, 1);
@@ -577,7 +550,7 @@ mod tests {
 
     #[rstest]
     fn test_order_rejected_with_due_post_only() {
-        let order_rejected = OrderRejected::new_with_due_post_only(
+        let order_rejected = OrderRejected::new(
             TraderId::from("TRADER-001"),
             StrategyId::from("EMA-CROSS"),
             InstrumentId::from("EURUSD.SIM"),

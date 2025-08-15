@@ -2246,6 +2246,9 @@ impl OrderMatchingEngine {
             .account_id()
             .unwrap_or(self.account_ids.get(&order.trader_id()).unwrap().to_owned());
 
+        // Check if rejection is due to post-only
+        let due_post_only = reason.as_str().starts_with("POST_ONLY");
+
         let event = OrderEventAny::Rejected(OrderRejected::new(
             order.trader_id(),
             order.strategy_id(),
@@ -2257,6 +2260,7 @@ impl OrderMatchingEngine {
             ts_now,
             ts_now,
             false,
+            due_post_only,
         ));
         msgbus::send_any("ExecEngine.process".into(), &event as &dyn Any);
     }

@@ -324,11 +324,11 @@ class TestModelEvents:
         assert OrderRejected.from_dict(OrderRejected.to_dict(event)) == event
         assert (
             str(event)
-            == "OrderRejected(instrument_id=BTCUSDT.BINANCE, client_order_id=O-2020872378423, account_id=SIM-000, reason='INSUFFICIENT_MARGIN', ts_event=0)"  # noqa
+            == "OrderRejected(instrument_id=BTCUSDT.BINANCE, client_order_id=O-2020872378423, account_id=SIM-000, reason='INSUFFICIENT_MARGIN', due_post_only=False, ts_event=0)"  # noqa
         )
         assert (
             repr(event)
-            == f"OrderRejected(trader_id=TRADER-001, strategy_id=SCALPER-001, instrument_id=BTCUSDT.BINANCE, client_order_id=O-2020872378423, account_id=SIM-000, reason='INSUFFICIENT_MARGIN', event_id={uuid}, ts_event=0, ts_init=0)"  # noqa
+            == f"OrderRejected(trader_id=TRADER-001, strategy_id=SCALPER-001, instrument_id=BTCUSDT.BINANCE, client_order_id=O-2020872378423, account_id=SIM-000, reason='INSUFFICIENT_MARGIN', due_post_only=False, event_id={uuid}, ts_event=0, ts_init=0)"  # noqa
         )
 
     def test_order_rejected_with_due_post_only(self):

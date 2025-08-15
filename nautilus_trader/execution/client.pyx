@@ -375,6 +375,7 @@ cdef class ExecutionClient(Component):
         ClientOrderId client_order_id,
         str reason,
         uint64_t ts_event,
+        bint due_post_only=False,
     ):
         """
         Generate an `OrderRejected` event and send it to the `ExecutionEngine`.
@@ -391,6 +392,8 @@ cdef class ExecutionClient(Component):
             The order rejected reason.
         ts_event : uint64_t
             UNIX timestamp (nanoseconds) when the order rejected event occurred.
+        due_post_only : bool, default False
+            If the order was rejected because it was post-only and would execute immediately as a taker.
 
         """
         # Generate event
@@ -404,6 +407,7 @@ cdef class ExecutionClient(Component):
             event_id=UUID4(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
+            due_post_only=due_post_only,
         )
 
         self._send_order_event(rejected)

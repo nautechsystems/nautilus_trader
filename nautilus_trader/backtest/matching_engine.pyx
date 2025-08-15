@@ -1179,6 +1179,7 @@ cdef class OrderMatchingEngine:
                 f"limit px of {order.price} would have been a TAKER: "
                 f"bid={self._core.bid}, "
                 f"ask={self._core.ask}",
+                True,  # due_post_only
             )
             return  # Invalid price
 
@@ -2655,6 +2656,7 @@ cdef class OrderMatchingEngine:
                     f"limit px of {order.price} would have been a TAKER: "
                     f"bid={self._core.bid}, "
                     f"ask={self._core.ask}",
+                    True,  # due_post_only
                 )
                 return
 
@@ -2702,7 +2704,7 @@ cdef class OrderMatchingEngine:
 
 # -- EVENT GENERATORS -----------------------------------------------------------------------------
 
-    cdef void _generate_order_rejected(self, Order order, str reason):
+    cdef void _generate_order_rejected(self, Order order, str reason, bint due_post_only=False):
         # Generate event
         cdef uint64_t ts_now = self._clock.timestamp_ns()
         cdef OrderRejected event = OrderRejected(
@@ -2715,6 +2717,7 @@ cdef class OrderMatchingEngine:
             event_id=UUID4(),
             ts_event=ts_now,
             ts_init=ts_now,
+            due_post_only=due_post_only,
         )
         self.msgbus.send(endpoint="ExecEngine.process", msg=event)
 
