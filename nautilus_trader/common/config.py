@@ -31,6 +31,9 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers import Identifier
 from nautilus_trader.model.identifiers import InstrumentId
@@ -113,6 +116,8 @@ def msgspec_encoding_hook(obj: Any) -> Any:  # noqa: C901 (too complex)
         return str(obj)
     if isinstance(obj, (Price | Quantity | Money | Currency)):
         return str(obj)
+    if isinstance(obj, (OmsType | AccountType | BookType)):
+        return obj.name
     if isinstance(obj, (pd.Timestamp | pd.Timedelta)):
         return obj.isoformat()
     if isinstance(obj, Environment):
@@ -147,6 +152,12 @@ def msgspec_decoding_hook(obj_type: type, obj: Any) -> Any:  # noqa: C901 (too c
         return Money.from_str(obj)
     if obj_type == Currency:
         return Currency.from_str(obj)
+    if obj_type == OmsType:
+        return OmsType[obj]
+    if obj_type == AccountType:
+        return AccountType[obj]
+    if obj_type == BookType:
+        return BookType[obj]
     if obj_type == Environment:
         return obj_type(obj)
     if obj_type in CUSTOM_DECODINGS:
