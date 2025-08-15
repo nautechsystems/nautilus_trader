@@ -65,7 +65,7 @@ class DataTesterConfig(ActorConfig, frozen=True):
     requests_start_delta: pd.Timedelta | None = None
     book_type: BookType = BookType.L2_MBP
     book_depth: PositiveInt | None = None
-    book_group_size: Decimal | None = None
+    book_group_size: Decimal | None = None  # TODO: Repair group size for book pprint
     book_interval_ms: PositiveInt = 1000
     book_levels_to_print: PositiveInt = 10
     manage_book: bool = False
@@ -242,9 +242,8 @@ class DataTester(Actor):
 
             if self.config.log_data:
                 num_levels = self.config.book_levels_to_print
-                group_size = self.config.book_group_size
                 self.log.info(
-                    f"\n{book.instrument_id}\n{book.pprint(num_levels, group_size)}",
+                    f"\n{book.instrument_id}\n{book.pprint(num_levels)}",
                     LogColor.CYAN,
                 )
         elif self.config.log_data:

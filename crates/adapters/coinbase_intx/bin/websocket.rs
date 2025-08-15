@@ -37,7 +37,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // client.subscribe_instruments(vec![instrument_id]).await?;
     // client.subscribe_risk(vec![instrument_id]).await?;
-    // client.subscribe_funding(vec![instrument_id]).await?;
+    // client.subscribe_funding_rates(vec![instrument_id]).await?;
     // client.subscribe_trades(vec![instrument_id]).await?;
     // client.subscribe_quotes(vec![instrument_id]).await?;
     client.subscribe_order_book(vec![instrument_id]).await?;

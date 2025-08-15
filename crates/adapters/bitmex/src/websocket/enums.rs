@@ -152,6 +152,8 @@ pub enum WsTopic {
     Connected,
     /// Updates of swap funding rates.
     Funding,
+    /// Instrument updates including mark and index prices.
+    Instrument,
     /// Daily insurance fund updates.
     Insurance,
     /// Liquidation orders as they're entered into the book.
