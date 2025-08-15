@@ -180,8 +180,6 @@ class InteractiveBrokersDataClientConfig(LiveDataClientConfig, frozen=True):
 
     Parameters
     ----------
-    venue : Venue, default IB_VENUE
-        The venue for the client.
     ibg_host : str, default "127.0.0.1"
         The hostname or ip address for the IB Gateway (IBG) or Trader Workstation (TWS).
     ibg_port : int, default None
@@ -212,7 +210,6 @@ class InteractiveBrokersDataClientConfig(LiveDataClientConfig, frozen=True):
         InteractiveBrokersInstrumentProviderConfig()
     )
 
-    venue: Venue = IB_VENUE
     ibg_host: str = "127.0.0.1"
     ibg_port: int | None = None
     ibg_client_id: int = 1
