@@ -1637,6 +1637,89 @@ class TestDataEngine:
         assert self.data_engine.subscribed_funding_rates() == []
         assert self.binance_client.subscribed_funding_rates() == []
 
+    def test_process_funding_rate_when_subscriber_then_sends_to_registered_handler(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+
+        handler = []
+        self.msgbus.subscribe(topic="data.funding_rates.BINANCE.ETHUSDT", handler=handler.append)
+
+        subscribe = SubscribeFundingRates(
+            client_id=None,  # Will route to the Binance venue
+            venue=BINANCE,
+            instrument_id=ETHUSDT_BINANCE.id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.data_engine.execute(subscribe)
+
+        from decimal import Decimal
+
+        from nautilus_trader.model.data import FundingRateUpdate
+
+        funding_rate = FundingRateUpdate(
+            instrument_id=ETHUSDT_BINANCE.id,
+            rate=Decimal("0.0001"),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Act
+        self.data_engine.process(funding_rate)
+
+        # Assert
+        assert handler == [funding_rate]
+        assert self.cache.funding_rate(ETHUSDT_BINANCE.id) == funding_rate
+
+    def test_process_funding_rate_when_subscribers_then_sends_to_registered_handlers(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+
+        handler1 = []
+        handler2 = []
+        self.msgbus.subscribe(topic="data.funding_rates.BINANCE.ETHUSDT", handler=handler1.append)
+        self.msgbus.subscribe(topic="data.funding_rates.BINANCE.ETHUSDT", handler=handler2.append)
+
+        subscribe1 = SubscribeFundingRates(
+            client_id=None,  # Will route to the Binance venue
+            venue=BINANCE,
+            instrument_id=ETHUSDT_BINANCE.id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        subscribe2 = SubscribeFundingRates(
+            client_id=None,  # Will route to the Binance venue
+            venue=BINANCE,
+            instrument_id=ETHUSDT_BINANCE.id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.data_engine.execute(subscribe1)
+        self.data_engine.execute(subscribe2)
+
+        from decimal import Decimal
+
+        from nautilus_trader.model.data import FundingRateUpdate
+
+        funding_rate = FundingRateUpdate(
+            instrument_id=ETHUSDT_BINANCE.id,
+            rate=Decimal("0.0001"),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Act
+        self.data_engine.process(funding_rate)
+
+        # Assert
+        assert handler1 == [funding_rate]
+        assert handler2 == [funding_rate]
+
     def test_subscribe_synthetic_quote_ticks_then_subscribes(self):
         # Arrange
         self.data_engine.register_client(self.binance_client)

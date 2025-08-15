@@ -24,7 +24,7 @@ use nautilus_core::UnixNanos;
 use nautilus_model::defi::{AmmType, Dex, DexType, Pool, Token, chain::chains};
 use nautilus_model::{
     accounts::AccountAny,
-    data::{Bar, MarkPriceUpdate, QuoteTick, TradeTick},
+    data::{Bar, FundingRateUpdate, MarkPriceUpdate, QuoteTick, TradeTick},
     enums::{BookType, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, PriceType},
     events::{OrderAccepted, OrderEventAny, OrderRejected, OrderSubmitted},
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, Symbol, Venue},
@@ -956,9 +956,44 @@ fn test_funding_rate_when_empty(cache: Cache, audusd_sim: CurrencyPair) {
 }
 
 #[rstest]
-fn test_funding_rates_when_empty(cache: Cache, audusd_sim: CurrencyPair) {
-    let result = cache.funding_rates(&audusd_sim.id);
-    assert!(result.is_none());
+fn test_add_funding_rate(mut cache: Cache, audusd_sim: CurrencyPair) {
+    let funding_rate = FundingRateUpdate::new(
+        audusd_sim.id,
+        "0.0001".parse().unwrap(),
+        None,
+        UnixNanos::from(5),
+        UnixNanos::from(10),
+    );
+
+    cache.add_funding_rate(funding_rate).unwrap();
+
+    let result = cache.funding_rate(&audusd_sim.id);
+    assert_eq!(result, Some(&funding_rate));
+}
+
+#[rstest]
+fn test_add_funding_rate_updates_existing(mut cache: Cache, audusd_sim: CurrencyPair) {
+    let funding_rate1 = FundingRateUpdate::new(
+        audusd_sim.id,
+        "0.0001".parse().unwrap(),
+        None,
+        UnixNanos::from(5),
+        UnixNanos::from(10),
+    );
+
+    let funding_rate2 = FundingRateUpdate::new(
+        audusd_sim.id,
+        "0.0002".parse().unwrap(),
+        None,
+        UnixNanos::from(15),
+        UnixNanos::from(20),
+    );
+
+    cache.add_funding_rate(funding_rate1).unwrap();
+    cache.add_funding_rate(funding_rate2).unwrap();
+
+    let result = cache.funding_rate(&audusd_sim.id);
+    assert_eq!(result, Some(&funding_rate2));
 }
 
 #[rstest]

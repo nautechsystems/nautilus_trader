@@ -46,6 +46,7 @@ from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarAggregation
 from nautilus_trader.model.data cimport BarSpecification
 from nautilus_trader.model.data cimport BarType
+from nautilus_trader.model.data cimport FundingRateUpdate
 from nautilus_trader.model.data cimport IndexPriceUpdate
 from nautilus_trader.model.data cimport MarkPriceUpdate
 from nautilus_trader.model.data cimport QuoteTick
@@ -125,8 +126,9 @@ cdef class Cache(CacheFacade):
         self._trade_ticks: dict[InstrumentId, deque[TradeTick]] = {}
         self._xrate_symbols: dict[InstrumentId, str] = {}
         self._mark_xrates: dict[tuple[Currency, Currency], double] = {}
-        self._mark_prices: dict[InstrumentId, MarkPriceUpdate] = {}
-        self._index_prices: dict[InstrumentId, IndexPriceUpdate] = {}
+        self._mark_prices: dict[InstrumentId, deque[MarkPriceUpdate]] = {}
+        self._index_prices: dict[InstrumentId, deque[IndexPriceUpdate]] = {}
+        self._funding_rates: dict[InstrumentId, FundingRateUpdate] = {}
         self._bars: dict[BarType, deque[Bar]] = {}
         self._bars_bid: dict[InstrumentId, Bar] = {}
         self._bars_ask: dict[InstrumentId, Bar] = {}
@@ -1064,6 +1066,7 @@ cdef class Cache(CacheFacade):
         self._mark_xrates.clear()
         self._mark_prices.clear()
         self._index_prices.clear()
+        self._funding_rates.clear()
         self._bars.clear()
         self._bars_bid.clear()
         self._bars_ask.clear()
@@ -1583,6 +1586,20 @@ cdef class Cache(CacheFacade):
             self._index_prices[index_price.instrument_id] = index_prices
 
         index_prices.appendleft(index_price)
+
+    cpdef void add_funding_rate(self, FundingRateUpdate funding_rate):
+        """
+        Add the given funding rate update to the cache.
+
+        Parameters
+        ----------
+        funding_rate : FundingRateUpdate
+            The funding rate update to add.
+
+        """
+        Condition.not_none(funding_rate, "funding_rate")
+
+        self._funding_rates[funding_rate.instrument_id] = funding_rate
 
     cpdef void add_bar(self, Bar bar):
         """
@@ -2993,6 +3010,25 @@ cdef class Cache(CacheFacade):
             return index_prices[index]
         except IndexError:
             return None
+
+    cpdef FundingRateUpdate funding_rate(self, InstrumentId instrument_id):
+        """
+        Return the funding rate for the given instrument ID (if found).
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the funding rate to get.
+
+        Returns
+        -------
+        FundingRateUpdate or ``None``
+            If no funding rate then returns ``None``.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        return self._funding_rates.get(instrument_id)
 
     cpdef Bar bar(self, BarType bar_type, int index = 0):
         """
