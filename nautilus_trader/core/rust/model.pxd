@@ -950,6 +950,8 @@ cdef extern from "../includes/model.h":
         uint64_t ts_init;
         # If the event was generated during reconciliation.
         uint8_t reconciliation;
+        # If the order was rejected because it was post-only and would execute immediately as a taker.
+        uint8_t due_post_only;
 
     # Represents a system client ID.
     cdef struct ClientId_t:
@@ -1726,7 +1728,8 @@ cdef extern from "../includes/model.h":
                                        UUID4_t event_id,
                                        uint64_t ts_event,
                                        uint64_t ts_init,
-                                       uint8_t reconciliation);
+                                       uint8_t reconciliation,
+                                       uint8_t due_post_only);
 
     # FFI wrapper for interned string statistics.
     void interned_string_stats();

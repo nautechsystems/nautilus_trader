@@ -5810,8 +5810,6 @@ cdef class FundingRateUpdate(Data):
             self.instrument_id == other.instrument_id
             and self.rate == other.rate
             and self.next_funding_ns == other.next_funding_ns
-            and self._ts_event == other._ts_event
-            and self._ts_init == other._ts_init
         )
 
     def __hash__(self) -> int:
@@ -5819,8 +5817,6 @@ cdef class FundingRateUpdate(Data):
             self.instrument_id,
             self.rate,
             self.next_funding_ns,
-            self._ts_event,
-            self._ts_init,
         ))
 
     def __repr__(self) -> str:

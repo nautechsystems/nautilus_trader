@@ -36,6 +36,9 @@ from nautilus_trader.execution.config import ExecEngineConfig
 from nautilus_trader.live.config import LiveDataClientConfig
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.risk.config import RiskEngineConfig
@@ -110,10 +113,10 @@ class BacktestVenueConfig(NautilusConfig, frozen=True):
     ----------
     name : str
         The name of the venue.
-    oms_type : str
+    oms_type : OmsType | str
         The order management system type for the exchange. If ``HEDGING`` will
         generate new position IDs.
-    account_type : str
+    account_type : AccountType | str
         The account type for the exchange.
     starting_balances : list[Money | str]
         The starting account balances (specify one for a single asset account).
@@ -169,8 +172,8 @@ class BacktestVenueConfig(NautilusConfig, frozen=True):
     """
 
     name: str
-    oms_type: str
-    account_type: str
+    oms_type: OmsType | str
+    account_type: AccountType | str
     starting_balances: list[str]
     base_currency: str | None = None
     default_leverage: float = 1.0
@@ -180,7 +183,7 @@ class BacktestVenueConfig(NautilusConfig, frozen=True):
     fill_model: ImportableFillModelConfig | None = None
     latency_model: ImportableLatencyModelConfig | None = None
     fee_model: ImportableFeeModelConfig | None = None
-    book_type: str = "L1_MBP"
+    book_type: BookType | str = "L1_MBP"
     routing: bool = False
     reject_stop_orders: bool = True
     support_gtd_orders: bool = True

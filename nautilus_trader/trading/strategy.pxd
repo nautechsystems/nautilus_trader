@@ -64,6 +64,9 @@ from nautilus_trader.portfolio.base cimport PortfolioFacade
 
 cdef class Strategy(Actor):
     cdef OrderManager _manager
+    cdef bint _log_events
+    cdef bint _log_commands
+    cdef bint _log_rejected_due_post_only_as_warning
 
     cdef readonly OrderFactory order_factory
     """The order factory for the strategy.\n\n:returns: `OrderFactory`"""

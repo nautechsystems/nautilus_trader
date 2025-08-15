@@ -945,6 +945,7 @@ class BybitExecutionClient(LiveExecutionClient):
                     client_order_id=order.client_order_id,
                     reason=retry_manager.message,
                     ts_event=self._clock.timestamp_ns(),
+                    due_post_only=_is_post_only_rejection(retry_manager.message),
                 )
         finally:
             await self._retry_manager_pool.release(retry_manager)
@@ -1008,6 +1009,7 @@ class BybitExecutionClient(LiveExecutionClient):
                             client_order_id=order.client_order_id,
                             reason=retry_manager.message,
                             ts_event=self._clock.timestamp_ns(),
+                            due_post_only=_is_post_only_rejection(retry_manager.message),
                         )
 
                 if response:
@@ -1028,6 +1030,7 @@ class BybitExecutionClient(LiveExecutionClient):
                                 client_order_id=order.client_order_id,
                                 reason=ret_info.msg,
                                 ts_event=self._clock.timestamp_ns(),
+                                due_post_only=_is_post_only_rejection(ret_info.msg),
                             )
             finally:
                 await self._retry_manager_pool.release(retry_manager)
@@ -1302,7 +1305,7 @@ class BybitExecutionClient(LiveExecutionClient):
                 trigger_direction,
             )
             if strategy_id is None:
-                self._log.warning(
+                self._log.debug(
                     f"Cannot process order execution for {client_order_id!r}: no strategy ID found (most likely due to being an external order)",
                 )
                 return
@@ -1426,6 +1429,7 @@ class BybitExecutionClient(LiveExecutionClient):
                         client_order_id=report.client_order_id,
                         reason=bybit_order.rejectReason,
                         ts_event=report.ts_last,
+                        due_post_only=_is_post_only_rejection(bybit_order.rejectReason),
                     )
                 elif bybit_order.orderStatus == BybitOrderStatus.NEW:
                     if order.status == OrderStatus.PENDING_UPDATE:
@@ -1629,3 +1633,10 @@ class BybitExecutionClient(LiveExecutionClient):
             slTriggerBy=trigger_type if product_type != BybitProductType.SPOT else None,
             slOrderType=BybitOrderType.MARKET,
         )
+
+
+def _is_post_only_rejection(reason: str | None) -> bool:
+    if not reason:
+        return False
+
+    return "EC_PostOnlyWillTakeLiquidity" in reason

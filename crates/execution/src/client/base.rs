@@ -165,6 +165,7 @@ impl BaseExecutionClient {
         client_order_id: ClientOrderId,
         reason: &str,
         ts_event: UnixNanos,
+        due_post_only: bool,
     ) {
         let event = OrderRejected::new(
             self.trader_id,
@@ -177,6 +178,7 @@ impl BaseExecutionClient {
             ts_event,
             self.clock.borrow().timestamp_ns(),
             false,
+            due_post_only,
         );
         self.send_order_event(OrderEventAny::Rejected(event));
     }

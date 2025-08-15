@@ -27,7 +27,7 @@ use crate::identifiers::InstrumentId;
 
 /// Represents a funding rate update for perpetual swap instruments.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, Serialize, Deserialize)]
 #[serde(tag = "type")]
 #[cfg_attr(
     feature = "python",
@@ -44,6 +44,23 @@ pub struct FundingRateUpdate {
     pub ts_event: UnixNanos,
     /// UNIX timestamp (nanoseconds) when the instance was created.
     pub ts_init: UnixNanos,
+}
+
+impl PartialEq for FundingRateUpdate {
+    fn eq(&self, other: &Self) -> bool {
+        self.instrument_id == other.instrument_id
+            && self.rate == other.rate
+            && self.next_funding_ns == other.next_funding_ns
+    }
+}
+
+impl std::hash::Hash for FundingRateUpdate {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        // Hash only the fields used in PartialEq to maintain consistency
+        self.instrument_id.hash(state);
+        self.rate.hash(state);
+        self.next_funding_ns.hash(state);
+    }
 }
 
 impl FundingRateUpdate {

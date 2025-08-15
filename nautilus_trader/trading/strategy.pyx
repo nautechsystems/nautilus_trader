@@ -157,6 +157,7 @@ cdef class Strategy(Actor):
         # Configuration
         self._log_events = config.log_events
         self._log_commands = config.log_commands
+        self._log_rejected_due_post_only_as_warning = config.log_rejected_due_post_only_as_warning
         self.config = config
         self.oms_type = <OmsType>oms_type
         self.external_order_claims = self._parse_external_order_claims(config.external_order_claims)
@@ -1629,7 +1630,9 @@ cdef class Strategy(Actor):
         """
         Condition.not_none(event, "event")
 
-        if type(event) in self._warning_events:
+        if type(event) in self._warning_events and not (
+            isinstance(event, OrderRejected) and not self._log_rejected_due_post_only_as_warning
+        ):
             self.log.warning(f"{RECV}{EVT} {event}")
         elif self._log_events:
             self.log.info(f"{RECV}{EVT} {event}")

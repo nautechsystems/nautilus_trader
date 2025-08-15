@@ -244,7 +244,7 @@ cdef class OrderMatchingEngine:
 
 # -- EVENT GENERATORS -----------------------------------------------------------------------------
 
-    cdef void _generate_order_rejected(self, Order order, str reason)
+    cdef void _generate_order_rejected(self, Order order, str reason, bint due_post_only=*)
     cdef void _generate_order_accepted(self, Order order, VenueOrderId venue_order_id)
     cdef void _generate_order_modify_rejected(
         self,

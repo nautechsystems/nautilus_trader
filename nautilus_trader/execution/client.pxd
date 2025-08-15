@@ -103,6 +103,7 @@ cdef class ExecutionClient(Component):
         ClientOrderId client_order_id,
         str reason,
         uint64_t ts_event,
+        bint due_post_only=*,
     )
     cpdef void generate_order_accepted(
         self,

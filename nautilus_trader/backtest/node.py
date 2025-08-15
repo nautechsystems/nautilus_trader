@@ -58,7 +58,9 @@ from nautilus_trader.model.data import capsule_to_list
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.enums import account_type_from_str
 from nautilus_trader.model.enums import book_type_from_str
+from nautilus_trader.model.enums import oms_type_from_str
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
@@ -378,14 +380,14 @@ class BacktestNode:
         for venue_config in venue_configs:
             engine.add_venue(
                 venue=Venue(venue_config.name),
-                oms_type=OmsType[venue_config.oms_type],
-                account_type=AccountType[venue_config.account_type],
+                oms_type=get_oms_type(venue_config),
+                account_type=get_account_type(venue_config),
                 base_currency=get_base_currency(venue_config),
                 starting_balances=get_starting_balances(venue_config),
                 default_leverage=Decimal(venue_config.default_leverage),
                 leverages=get_leverages(venue_config),
                 margin_model=get_margin_model(venue_config),
-                book_type=book_type_from_str(venue_config.book_type),
+                book_type=get_book_type(venue_config),
                 routing=venue_config.routing,
                 modules=[ActorFactory.create(module) for module in (venue_config.modules or [])],
                 fill_model=get_fill_model(venue_config),
@@ -730,6 +732,24 @@ def get_instrument_ids(config: BacktestDataConfig) -> list[InstrumentId]:
         instrument_ids = [bar_type.instrument_id for bar_type in bar_types]
 
     return instrument_ids
+
+
+def get_oms_type(config: BacktestVenueConfig) -> OmsType:
+    oms_type = config.oms_type
+
+    return oms_type_from_str(oms_type) if type(oms_type) is str else oms_type
+
+
+def get_account_type(config: BacktestVenueConfig) -> AccountType:
+    account_type = config.account_type
+
+    return account_type_from_str(account_type) if type(account_type) is str else account_type
+
+
+def get_book_type(config: BacktestVenueConfig) -> BookType | None:
+    book_type = config.book_type
+
+    return book_type_from_str(book_type) if type(book_type) is str else book_type
 
 
 def get_starting_balances(config: BacktestVenueConfig) -> list[Money]:

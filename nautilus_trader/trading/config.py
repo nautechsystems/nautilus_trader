@@ -60,6 +60,8 @@ class StrategyConfig(NautilusConfig, kw_only=True, frozen=True):
         If False, then only warning events and above are logged.
     log_commands : bool, default True
         If commands should be logged by the strategy.
+    log_rejected_due_post_only_as_warning : bool, default True
+        If order rejected events where `due_post_only` is True should be logged as warnings.
 
     """
 
@@ -73,6 +75,7 @@ class StrategyConfig(NautilusConfig, kw_only=True, frozen=True):
     manage_gtd_expiry: bool = False
     log_events: bool = True
     log_commands: bool = True
+    log_rejected_due_post_only_as_warning: bool = True
 
 
 class ImportableStrategyConfig(NautilusConfig, frozen=True):

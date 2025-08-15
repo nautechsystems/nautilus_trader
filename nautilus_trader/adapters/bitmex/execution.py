@@ -92,7 +92,18 @@ class BitmexExecutionClient(LiveExecutionClient):
         self._config = config
         self._base_url_ws = config.base_url_ws
         self._http_client = client
-        self._ws_client: nautilus_pyo3.BitmexWebSocketClient | None = None
+
+        # WebSocket API
+        ws_url = self._determine_ws_url(config)
+        self._ws_client = nautilus_pyo3.BitmexWebSocketClient(
+            url=ws_url,
+            api_key=config.api_key,
+            api_secret=config.api_secret,
+            heartbeat=30,
+        )
+        self._ws_client_futures: set[asyncio.Future] = set()
+        self._log.info(f"WebSocket URL {ws_url}", LogColor.BLUE)
+
         self._symbol_status = config.symbol_status
 
         # Hot caches
@@ -111,15 +122,32 @@ class BitmexExecutionClient(LiveExecutionClient):
         pass  # TODO: Implement
 
     async def _disconnect(self) -> None:
-        if self._ws_client:
-            await self._ws_client.close()
-            self._ws_client = None
+        # Shutdown websocket
+        if not self._ws_client.is_closed():
+            self._log.info("Disconnecting websocket")
 
-    # def _create_websocket_client(self) -> nautilus_pyo3.BitmexWebSocketClient:
-    #     """
-    #     Create a BitMEX WebSocket client.
-    #     """
-    #     # TODO: Implement
+            await self._ws_client.close()
+
+            self._log.info(
+                f"Disconnected from {self._ws_client.url}",
+                LogColor.BLUE,
+            )
+
+        # Cancel any pending futures
+        for future in self._ws_client_futures:
+            if not future.done():
+                future.cancel()
+
+        if self._ws_client_futures:
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*self._ws_client_futures, return_exceptions=True),
+                    timeout=2.0,
+                )
+            except TimeoutError:
+                self._log.warning("Timeout while waiting for websockets shutdown to complete")
+
+        self._ws_client_futures.clear()
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         self._log.warning("Order submission not yet implemented")

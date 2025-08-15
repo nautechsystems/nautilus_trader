@@ -100,6 +100,7 @@ config_node = TradingNodeConfig(
             max_retries=3,
             retry_delay_initial_ms=1_000,
             retry_delay_max_ms=10_000,
+            log_rejected_due_post_only_as_warning=False,
         ),
     },
     timeout_connection=30.0,
@@ -119,6 +120,10 @@ strat_config = ExecTesterConfig(
     order_qty=Decimal("0.020"),
     # use_batch_cancel_on_stop=True,
     # use_individual_cancels_on_stop=True,
+    use_post_only=True,
+    log_data=False,
+    log_rejected_due_post_only_as_warning=False,
+    test_reject_post_only=False,
 )
 
 # Instantiate your strategy

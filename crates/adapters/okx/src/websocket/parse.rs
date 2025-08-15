@@ -176,15 +176,27 @@ pub fn parse_index_price_msg_vec(
 }
 
 /// Parses vector of OKX funding rate messages into Nautilus funding rate updates.
+/// Includes caching to filter out duplicate funding rates.
 pub fn parse_funding_rate_msg_vec(
     data: serde_json::Value,
     instrument_id: &InstrumentId,
     ts_init: UnixNanos,
+    funding_cache: &mut AHashMap<Ustr, (Ustr, u64)>,
 ) -> anyhow::Result<Vec<FundingRateUpdate>> {
     let msgs: Vec<OKXFundingRateMsg> = serde_json::from_value(data)?;
 
     let mut result = Vec::with_capacity(msgs.len());
     for msg in &msgs {
+        let cache_key = (msg.funding_rate, msg.funding_time);
+
+        if let Some(cached) = funding_cache.get(&msg.inst_id)
+            && *cached == cache_key
+        {
+            continue; // Skip duplicate
+        }
+
+        // New or changed funding rate, update cache and parse
+        funding_cache.insert(msg.inst_id, cache_key);
         let funding_rate = parse_funding_rate_msg(msg, *instrument_id, ts_init)?;
         result.push(funding_rate);
     }
@@ -667,6 +679,7 @@ pub fn parse_ws_message_data(
     price_precision: u8,
     size_precision: u8,
     ts_init: UnixNanos,
+    funding_cache: &mut AHashMap<Ustr, (Ustr, u64)>,
 ) -> anyhow::Result<Option<NautilusWsMessage>> {
     match channel {
         OKXWsChannel::Instruments => {
@@ -722,7 +735,7 @@ pub fn parse_ws_message_data(
             Ok(Some(NautilusWsMessage::Data(data_vec)))
         }
         OKXWsChannel::FundingRate => {
-            let data_vec = parse_funding_rate_msg_vec(data, instrument_id, ts_init)?;
+            let data_vec = parse_funding_rate_msg_vec(data, instrument_id, ts_init, funding_cache)?;
             Ok(Some(NautilusWsMessage::FundingRates(data_vec)))
         }
         channel if okx_channel_to_bar_spec(channel).is_some() => {

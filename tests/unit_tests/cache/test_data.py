@@ -26,6 +26,7 @@ from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import MarkPriceUpdate
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import PriceType
@@ -306,6 +307,79 @@ class TestCache:
 
         # Assert
         assert result == {instrument_id: value}
+
+    def test_add_funding_rate(self):
+        # Arrange
+        instrument_id = InstrumentId.from_str("ETH-USD-SWAP.OKX")
+        rate = Decimal("0.0001")  # 0.01% funding rate
+        funding_rate = FundingRateUpdate(
+            instrument_id=instrument_id,
+            rate=rate,
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.cache.add_funding_rate(funding_rate)
+
+        # Act
+        result = self.cache.funding_rate(instrument_id)
+
+        # Assert
+        assert result == funding_rate
+
+    def test_funding_rate_when_no_funding_rate_returns_none(self):
+        # Arrange
+        instrument_id = InstrumentId.from_str("ETH-USD-SWAP.OKX")
+
+        # Act
+        result = self.cache.funding_rate(instrument_id)
+
+        # Assert
+        assert result is None
+
+    def test_add_funding_rate_updates_existing(self):
+        # Arrange
+        instrument_id = InstrumentId.from_str("ETH-USD-SWAP.OKX")
+
+        funding_rate1 = FundingRateUpdate(
+            instrument_id=instrument_id,
+            rate=Decimal("0.0001"),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        funding_rate2 = FundingRateUpdate(
+            instrument_id=instrument_id,
+            rate=Decimal("0.0002"),
+            ts_event=1,
+            ts_init=1,
+        )
+
+        # Act
+        self.cache.add_funding_rate(funding_rate1)
+        self.cache.add_funding_rate(funding_rate2)
+        result = self.cache.funding_rate(instrument_id)
+
+        # Assert
+        assert result == funding_rate2
+        assert result.rate == Decimal("0.0002")
+
+    def test_reset_clears_funding_rates(self):
+        # Arrange
+        instrument_id = InstrumentId.from_str("ETH-USD-SWAP.OKX")
+        funding_rate = FundingRateUpdate(
+            instrument_id=instrument_id,
+            rate=Decimal("0.0001"),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.cache.add_funding_rate(funding_rate)
+
+        # Act
+        self.cache.reset()
+
+        # Assert
+        assert self.cache.funding_rate(instrument_id) is None
 
     def test_quote_ticks_when_one_tick_returns_expected_list(self):
         # Arrange

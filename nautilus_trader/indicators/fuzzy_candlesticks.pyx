@@ -13,22 +13,21 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.math cimport fabs
-
 from collections import deque
 
 import numpy as np
 
 cimport numpy as np
+from libc.math cimport fabs
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.stats cimport fast_mean
 from nautilus_trader.core.stats cimport fast_std_with_mean
-from nautilus_trader.indicators.base.indicator cimport Indicator
-from nautilus_trader.indicators.fuzzy_enums.candle_body cimport CandleBodySize
-from nautilus_trader.indicators.fuzzy_enums.candle_direction cimport CandleDirection
-from nautilus_trader.indicators.fuzzy_enums.candle_size cimport CandleSize
-from nautilus_trader.indicators.fuzzy_enums.candle_wick cimport CandleWickSize
+from nautilus_trader.indicators.base cimport Indicator
+from nautilus_trader.indicators.fuzzy_enums cimport CandleBodySize
+from nautilus_trader.indicators.fuzzy_enums cimport CandleDirection
+from nautilus_trader.indicators.fuzzy_enums cimport CandleSize
+from nautilus_trader.indicators.fuzzy_enums cimport CandleWickSize
 from nautilus_trader.model.data cimport Bar
 
 
@@ -257,11 +256,11 @@ cdef class FuzzyCandlesticks(Indicator):
     cdef CandleDirection _fuzzify_direction(self, double open, double close):
         # Fuzzify the candle entry from the given inputs
         if close > open:
-            return CandleDirection.BULL
+            return CandleDirection.DIRECTION_BULL
         if close < open:
-            return CandleDirection.BEAR
+            return CandleDirection.DIRECTION_BEAR
         else:
-            return CandleDirection.NONE
+            return CandleDirection.DIRECTION_NONE
 
     cdef CandleSize _fuzzify_size(
             self,
@@ -270,7 +269,7 @@ cdef class FuzzyCandlesticks(Indicator):
             double sd_lengths):
         # Fuzzify the candle size from the given inputs
         if length == 0:
-            return CandleSize.NONE
+            return CandleSize.SIZE_NONE
 
         cdef double x
 
@@ -279,29 +278,29 @@ cdef class FuzzyCandlesticks(Indicator):
         # CandleSize.VERY_SMALL
         x = mean_length - (sd_lengths * self._threshold2)
         if length <= x:
-            return CandleSize.VERY_SMALL
+            return CandleSize.SIZE_VERY_SMALL
 
         # CandleSize.SMALL
         x = mean_length + (sd_lengths * self._threshold1)
         if length <= x:
-            return CandleSize.SMALL
+            return CandleSize.SIZE_SMALL
 
         # CandleSize.MEDIUM
         x = sd_lengths * self._threshold2
         if length <= x:
-            return CandleSize.MEDIUM
+            return CandleSize.SIZE_MEDIUM
 
         # CandleSize.LARGE
         x = mean_length + (sd_lengths * self._threshold3)
         if length <= x:
-            return CandleSize.LARGE
+            return CandleSize.SIZE_LARGE
 
         # CandleSize.VERY_LARGE
         x = mean_length + (sd_lengths * self._threshold4)
         if length <= x:
-            return CandleSize.VERY_LARGE
+            return CandleSize.SIZE_VERY_LARGE
 
-        return CandleSize.EXTREMELY_LARGE
+        return CandleSize.SIZE_EXTREMELY_LARGE
 
     cdef CandleBodySize _fuzzify_body_size(
             self,
@@ -310,7 +309,7 @@ cdef class FuzzyCandlesticks(Indicator):
             double sd_body_percents):
         # Fuzzify the candle body size from the given inputs
         if body_percent == 0:
-            return CandleBodySize.NONE
+            return CandleBodySize.BODY_NONE
 
         cdef double x
 
@@ -319,19 +318,19 @@ cdef class FuzzyCandlesticks(Indicator):
         # CandleBodySize.SMALL
         x = mean_body_percent - (sd_body_percents * self._threshold1)
         if body_percent <= x:
-            return CandleBodySize.SMALL
+            return CandleBodySize.BODY_SMALL
 
         # CandleBodySize.MEDIUM
         x = mean_body_percent + (sd_body_percents * self._threshold1)
         if body_percent <= x:
-            return CandleBodySize.MEDIUM
+            return CandleBodySize.BODY_MEDIUM
 
         # CandleBodySize.LARGE
         x = mean_body_percent + (sd_body_percents * self._threshold2)
         if body_percent <= x:
-            return CandleBodySize.LARGE
+            return CandleBodySize.BODY_LARGE
 
-        return CandleBodySize.TREND
+        return CandleBodySize.BODY_TREND
 
     cdef CandleWickSize _fuzzify_wick_size(
             self,
@@ -340,7 +339,7 @@ cdef class FuzzyCandlesticks(Indicator):
             double sd_wick_percents):
         # Fuzzify the candle wick size from the given inputs
         if wick_percent == 0:
-            return CandleWickSize.NONE
+            return CandleWickSize.WICK_NONE
 
         cdef double x
 
@@ -349,14 +348,14 @@ cdef class FuzzyCandlesticks(Indicator):
         # CandleWickSize.SMALL
         x = mean_wick_percent - (sd_wick_percents * self._threshold1)
         if wick_percent <= x:
-            return CandleWickSize.SMALL
+            return CandleWickSize.WICK_SMALL
 
         # CandleWickSize.MEDIUM
         x = mean_wick_percent + (sd_wick_percents * self._threshold2)
         if wick_percent <= x:
-            return CandleWickSize.MEDIUM
+            return CandleWickSize.WICK_MEDIUM
 
-        return CandleWickSize.LARGE
+        return CandleWickSize.WICK_LARGE
 
     cpdef void _reset(self):
         self._lengths.clear()

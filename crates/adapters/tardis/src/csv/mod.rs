@@ -294,7 +294,7 @@ fn parse_derivative_ticker_record(
         None => parse_instrument_id(&data.exchange, data.symbol),
     };
 
-    let rate = Decimal::try_from(funding_rate).ok()?;
+    let rate = Decimal::try_from(funding_rate).ok()?.normalize();
     let next_funding_ns = if data.predicted_funding_rate.is_some() {
         data.funding_timestamp.map(parse_timestamp)
     } else {

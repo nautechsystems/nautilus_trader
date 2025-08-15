@@ -22,6 +22,7 @@ from nautilus_trader.adapters.binance.common.constants import BINANCE_MIN_CALLBA
 from nautilus_trader.adapters.binance.common.constants import BINANCE_RETRY_WARNINGS
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceEnumParser
+from nautilus_trader.adapters.binance.common.enums import BinanceErrorCode
 from nautilus_trader.adapters.binance.common.enums import BinanceFuturesPositionSide
 from nautilus_trader.adapters.binance.common.enums import BinanceTimeInForce
 from nautilus_trader.adapters.binance.common.schemas.account import BinanceOrder
@@ -167,6 +168,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._use_reduce_only: bool = config.use_reduce_only
         self._use_position_ids: bool = config.use_position_ids
         self._treat_expired_as_canceled: bool = config.treat_expired_as_canceled
+        self._log_rejected_due_post_only_as_warning: bool = (
+            config.log_rejected_due_post_only_as_warning
+        )
         self._recv_window = config.recv_window_ms
         self._max_retries = config.max_retries or 3
         self._log.info(f"Key type: {config.key_type.value}", LogColor.BLUE)
@@ -180,6 +184,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._log.info(f"{config.retry_delay_initial_ms=}", LogColor.BLUE)
         self._log.info(f"{config.retry_delay_max_ms=}", LogColor.BLUE)
         self._log.info(f"{config.listen_key_ping_max_failures=}", LogColor.BLUE)
+        self._log.info(f"{config.log_rejected_due_post_only_as_warning=}", LogColor.BLUE)
 
         self._is_dual_side_position: bool | None = None  # Initialized on connection
         self._set_account_id(
@@ -272,10 +277,16 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
     def _log_retry_error(self, message: str, exception: BaseException | None) -> None:
         error_code = get_binance_error_code(exception) if exception else None
-        if error_code and error_code in BINANCE_RETRY_WARNINGS:
-            self._log.warning(message)
-        else:
-            self._log.error(message)
+
+        match error_code:
+            case (
+                BinanceErrorCode.GTX_ORDER_REJECT
+            ) if not self._log_rejected_due_post_only_as_warning:
+                self._log.info(message)
+            case code if code in BINANCE_RETRY_WARNINGS:
+                self._log.warning(message)
+            case _:
+                self._log.error(message)
 
     async def _connect(self) -> None:
         try:
@@ -476,20 +487,23 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                     return None  # Nothing else to do
 
                 if retries >= self._max_retries:
-                    # Clean up retry counter when order is finally rejected
                     if (
                         command.client_order_id
                         and command.client_order_id in self._generate_order_status_retries
                     ):
                         del self._generate_order_status_retries[command.client_order_id]
 
-                    # Order will no longer be considered in-flight once this event is applied.
+                    # Determine if the rejection was specifically due to a POST-ONLY order
+                    # that would have executed immediately as a taker (GTX_ORDER_REJECT -5022).
+                    due_post_only = _is_post_only_rejection(e)
+
                     self.generate_order_rejected(
                         strategy_id=order.strategy_id,
                         instrument_id=command.instrument_id,
                         client_order_id=command.client_order_id,
                         reason=str(e.message),
                         ts_event=self._clock.timestamp_ns(),
+                        due_post_only=due_post_only,
                     )
             return None  # Error now handled
 
@@ -821,12 +835,20 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 position_side,
             )
             if not retry_manager.result:
+                # Determine if the rejection was specifically due to a POST-ONLY order
+                # that would have executed immediately as a taker (GTX_ORDER_REJECT -5022).
+                exc = retry_manager.last_exception
+                due_post_only = (
+                    _is_post_only_rejection(exc) if isinstance(exc, BinanceError) else False
+                )
+
                 self.generate_order_rejected(
                     strategy_id=order.strategy_id,
                     instrument_id=order.instrument_id,
                     client_order_id=order.client_order_id,
                     reason=retry_manager.message,
                     ts_event=self._clock.timestamp_ns(),
+                    due_post_only=due_post_only,
                 )
         finally:
             await self._retry_manager_pool.release(retry_manager)
@@ -1219,3 +1241,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
     def _handle_user_ws_message(self, raw: bytes) -> None:
         # Implement in child class
         raise NotImplementedError
+
+
+def _is_post_only_rejection(error: BinanceError) -> bool:
+    error_code = get_binance_error_code(error)
+    return error_code == BinanceErrorCode.GTX_ORDER_REJECT

@@ -156,10 +156,19 @@ class TardisDataClient(LiveMarketDataClient):
                 ws_client.close()
         self._ws_clients.clear()
 
-        try:
-            await asyncio.wait_for(asyncio.gather(*self._ws_client_futures), timeout=2.0)
-        except TimeoutError:
-            self._log.warning("Timeout while waiting for websockets shutdown to complete")
+        # Cancel any pending futures
+        for future in self._ws_client_futures:
+            if not future.done():
+                future.cancel()
+
+        if self._ws_client_futures:
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*self._ws_client_futures, return_exceptions=True),
+                    timeout=2.0,
+                )
+            except TimeoutError:
+                self._log.warning("Timeout while waiting for websockets shutdown to complete")
 
         self._ws_client_futures.clear()
 

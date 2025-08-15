@@ -128,9 +128,9 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
         .map(Path::new)
         .map(Path::to_path_buf)
         .or_else(|| {
-            std::env::var("NAUTILUS_CATALOG_PATH")
+            std::env::var("NAUTILUS_PATH")
                 .ok()
-                .map(|env_path| PathBuf::from(env_path).join("data"))
+                .map(|env_path| PathBuf::from(env_path).join("catalog").join("data"))
         })
         .unwrap_or_else(|| std::env::current_dir().expect("Failed to get current directory"));
 

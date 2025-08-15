@@ -1899,6 +1899,8 @@ cdef class DataEngine(Component):
         )
 
     cpdef void _handle_funding_rate(self, FundingRateUpdate funding_rate):
+        self._cache.add_funding_rate(funding_rate)
+
         self._msgbus.publish_c(
             topic=self._get_funding_rates_topic(funding_rate.instrument_id),
             msg=funding_rate,

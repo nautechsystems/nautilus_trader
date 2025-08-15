@@ -424,7 +424,8 @@ pub fn parse_derivative_ticker_msg(
     let ts_init = UnixNanos::from(ts_init as u64);
 
     let rate = rust_decimal::Decimal::try_from(funding_rate)
-        .with_context(|| format!("Failed to convert funding rate {funding_rate} to Decimal"))?;
+        .with_context(|| format!("Failed to convert funding rate {funding_rate} to Decimal"))?
+        .normalize();
 
     // For live data, we don't typically have funding timestamp info from derivative ticker
     let next_funding_ns = None;

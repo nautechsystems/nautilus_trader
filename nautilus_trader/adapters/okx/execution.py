@@ -192,24 +192,29 @@ class OKXExecutionClient(LiveExecutionClient):
         await self._ws_client.subscribe_account()
 
     async def _disconnect(self) -> None:
-        # Delay to allow websocket to send any unsubscribe messages
-        await asyncio.sleep(1.0)
-
-        # Shutdown websockets
-        if self._ws_client is not None and not self._ws_client.is_closed():
+        # Shutdown websocket
+        if not self._ws_client.is_closed():
             self._log.info("Disconnecting websocket")
-            close_result = self._ws_client.close()
-            if close_result is not None:
-                await close_result
+
+            await self._ws_client.close()
+
             self._log.info(f"Disconnected from {self._ws_client.url}", LogColor.BLUE)
 
-        # Cancel and await any outstanding client futures so the loop cleans up
+        # Cancel any pending futures
         for future in self._ws_client_futures:
             if not future.done():
                 future.cancel()
 
         if self._ws_client_futures:
-            await asyncio.gather(*self._ws_client_futures, return_exceptions=True)
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*self._ws_client_futures, return_exceptions=True),
+                    timeout=2.0,
+                )
+            except TimeoutError:
+                self._log.warning("Timeout while waiting for websockets shutdown to complete")
+
+        self._ws_client_futures.clear()
 
     async def _cache_instruments(self) -> None:
         # Ensures instrument definitions are available for correct

@@ -72,6 +72,7 @@ class ExecTesterConfig(StrategyConfig, frozen=True):
     use_batch_cancel_on_stop: bool = False
     dry_run: bool = False
     log_data: bool = True
+    test_reject_post_only: bool = False
 
 
 class ExecTester(Strategy):
@@ -186,13 +187,20 @@ class ExecTester(Strategy):
             self.log.info(repr(bar), LogColor.CYAN)
 
     def maintain_orders(self, best_bid: Price, best_ask: Price) -> None:
-        if self.config.dry_run:
+        if self.instrument is None or self.config.dry_run:
             return
 
         # Maintain BUY orders
         if self.config.enable_buys:
             if not self.buy_order or not self.is_order_active(self.buy_order):
-                self.submit_buy_limit_order(best_bid)
+                market_offset = self.get_price_offset(self.instrument)
+
+                if self.config.use_post_only and self.config.test_reject_post_only:
+                    price = self.instrument.make_price(best_ask + market_offset)
+                else:
+                    price = self.instrument.make_price(best_bid - market_offset)
+
+                self.submit_buy_limit_order(price)
             # elif self.buy_order.price != best_bid:
             #     self.cancel_order(self.buy_order)
             #     self.create_buy_order(best_bid)
@@ -200,6 +208,13 @@ class ExecTester(Strategy):
         # Maintain SELL orders
         if self.config.enable_sells:
             if not self.sell_order or not self.is_order_active(self.sell_order):
+                market_offset = self.get_price_offset(self.instrument)
+
+                if self.config.use_post_only and self.config.test_reject_post_only:
+                    price = self.instrument.make_price(best_bid - market_offset)
+                else:
+                    price = self.instrument.make_price(best_ask + market_offset)
+
                 self.submit_sell_limit_order(best_ask)
             # elif self.sell_order.price != best_ask:
             #     self.cancel_order(self.sell_order)
@@ -246,9 +261,6 @@ class ExecTester(Strategy):
             self.log.warning("BUY orders not enabled, skipping")
             return
 
-        market_offset = self.get_price_offset(self.instrument)
-        price = self.instrument.make_price(price - market_offset)
-
         order: LimitOrder = self.order_factory.limit(
             instrument_id=self.config.instrument_id,
             order_side=OrderSide.BUY,
@@ -280,9 +292,6 @@ class ExecTester(Strategy):
         if not self.config.enable_sells:
             self.log.warning("SELL orders not enabled, skipping")
             return
-
-        market_offset = self.get_price_offset(self.instrument)
-        price = self.instrument.make_price(price + market_offset)
 
         order: LimitOrder = self.order_factory.limit(
             instrument_id=self.config.instrument_id,

@@ -65,6 +65,9 @@ pub struct OrderRejected {
     /// If the event was generated during reconciliation.
     #[serde(deserialize_with = "from_bool_as_u8")]
     pub reconciliation: u8, // TODO: Change to bool once Cython removed
+    /// If the order was rejected because it was post-only and would execute immediately as a taker.
+    #[serde(default, deserialize_with = "from_bool_as_u8")]
+    pub due_post_only: u8, // TODO: Change to bool once Cython removed
 }
 
 impl OrderRejected {
@@ -81,6 +84,7 @@ impl OrderRejected {
         ts_event: UnixNanos,
         ts_init: UnixNanos,
         reconciliation: bool,
+        due_post_only: bool,
     ) -> Self {
         Self {
             trader_id,
@@ -93,6 +97,7 @@ impl OrderRejected {
             ts_event,
             ts_init,
             reconciliation: u8::from(reconciliation),
+            due_post_only: u8::from(due_post_only),
         }
     }
 }
@@ -328,6 +333,7 @@ mod tests {
             UnixNanos::from(1_000_000_000),
             UnixNanos::from(2_000_000_000),
             false,
+            false,
         )
     }
 
@@ -350,6 +356,7 @@ mod tests {
         assert_eq!(order_rejected.ts_event, UnixNanos::from(1_000_000_000));
         assert_eq!(order_rejected.ts_init, UnixNanos::from(2_000_000_000));
         assert_eq!(order_rejected.reconciliation, 0);
+        assert_eq!(order_rejected.due_post_only, 0);
     }
 
     #[rstest]
@@ -365,6 +372,7 @@ mod tests {
             UnixNanos::from(1_000_000_000),
             UnixNanos::from(2_000_000_000),
             true,
+            false,
         );
 
         assert_eq!(order_rejected.reconciliation, 1);
@@ -423,6 +431,7 @@ mod tests {
         assert_eq!(order_rejected.client_order_id, ClientOrderId::default());
         assert_eq!(order_rejected.account_id, AccountId::default());
         assert_eq!(order_rejected.reconciliation, 0);
+        assert_eq!(order_rejected.due_post_only, 0);
     }
 
     #[rstest]
@@ -537,5 +546,25 @@ mod tests {
             eth_order.instrument_id,
             InstrumentId::from("ETHUSD.COINBASE")
         );
+    }
+
+    #[rstest]
+    fn test_order_rejected_with_due_post_only() {
+        let order_rejected = OrderRejected::new(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("EMA-CROSS"),
+            InstrumentId::from("EURUSD.SIM"),
+            ClientOrderId::from("O-19700101-000000-001-001-1"),
+            AccountId::from("SIM-001"),
+            Ustr::from("POST_ONLY_WOULD_EXECUTE"),
+            Default::default(),
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::from(2_000_000_000),
+            false,
+            true,
+        );
+
+        assert_eq!(order_rejected.due_post_only, 1);
+        assert_eq!(order_rejected.reason, Ustr::from("POST_ONLY_WOULD_EXECUTE"));
     }
 }

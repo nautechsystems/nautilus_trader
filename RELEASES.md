@@ -3,11 +3,18 @@
 Released on TBD (UTC).
 
 ### Enhancements
-- Added `FundingRateUpdate` data type
-- Added `subscribe_funding_rates` and `unsubscribe_funding_rates` methods for actors
-- Added `on_funding_rate` handler for actors
+- Added `FundingRateUpdate` data type with caching support through data engine
+- Added `subscribe_funding_rates(...)` and `unsubscribe_funding_rates(...)` methods for actors
+- Added `on_funding_rate(...)` handler for actors
+- Added `funding_rate(...)` and `add_funding_rate(...)` for `Cache`
+- Added `due_post_only` field for `OrderRejected` event, only properly populated for Binance and Bybit for now
+- Added `log_rejected_due_post_only_as_warning` config option for `StrategyConfig` (default `True` to retain current behavior)
+- Added `log_rejected_due_post_only_as_warning` config option for `BinanceExecClientConfig` (default `True` to retain current behavior)
+- Added support for additional Databento schemas: `OHLCV_EOD`, `CMBP_1`, `CBBO_1S`, `CBBO_1M`, and `TCBBO`
+- Added configurable schema parameters for Databento quote and trade subscriptions, allowing `TBBO`/`TCBBO` for efficient combined data feeds
 - Added support for option combos for Interactive Brokers (#2812), thanks @faysou
 - Added loading of options chain from `request_instruments` for Interactive Brokers (#2809), thanks @faysou
+- Added support for option spread quotes in backtest (#2845), thanks @faysou
 - Added `MarginModel` concept, base models, config, and factory for backtesting (#2794), thanks @faysou and @stefansimik
 - Added additional built-in backtest fill models (#2795), thanks @faysou and @stefansimik
 - Added `OrderBookDepth10DataWrangler` (#2801), thanks @trylovetom
@@ -44,6 +51,10 @@ Released on TBD (UTC).
 - Removed the generic `cvec_drop` FFI function, as it was unused and prone to misuse, potentially causing memory leaks
 - Consolidated `OwnBook` `group_bids` and `group_asks` methods into `bid_quantity` and `ask_quantity` with optional `depth` and `group_size` parameters
 - Simplified Binance environment variables for API credentials: removed separate variables for RSA/Ed25519 keys and consolidated mainnet spot/futures credentials
+- Consolidated ~40 individual indicator modules into 6 files to reduce binary size
+- Changed indicator imports from nested modules to flat structure (e.g., `from nautilus_trader.indicators.atr import AverageTrueRange` becomes `from nautilus_trader.indicators import AverageTrueRange`)
+- Changed `NAUTILUS_CATALOG_PATH` to `NAUTILUS_PATH` for Tardis adapter (#2850), thanks @nicolad
+- Moved `Indicator` base class from `nautilus_trader.indicators.base.indicator` to `nautilus_trader.indicators.base`
 
 ### Internal Improvements
 - Refactored OKX adapter to Rust API clients
@@ -66,6 +77,7 @@ Released on TBD (UTC).
 - Completed bar request implementation for OKX (#2789), thanks @nicolad
 - Enabled parallel pytest tests with `pytest-xdist` (#2808), thanks @stastnypremysl
 - Standardized DeFi chain name validation for `InstrumentId` (#2826), thanks @filipmacek
+- Standardized `NAUTILUS_PATH` env var across Tardis integration (#2850), thanks @nicolad
 - Support several instrument versions with `request_instrument` (#2835), thanks @faysou
 - Improved typing for all the DEX IDs with `DexType` and add validation (#2827), thanks @filipmacek
 - Improved reconciliation handling of internally generated orders to align positions (now uses the `INTERNAL-DIFF` strategy ID)
@@ -76,6 +88,8 @@ Released on TBD (UTC).
 - Improved zero-sized trades handling for Tardis CSV loader (will log a warning)
 - Improved ergonomics of `TardisInstrumentProvider` datetime filter params (can be either `pd.Timestamp` or Unix nanos `int`)
 - Improved handling of Tardis Machine websocket connection errors
+- Improved positions report to mark snapshots (#2840), thanks @stastnypremysl
+- Improved ERC20 token metadata handling and error recovery (#2847), thanks @filipmacek
 - Refined Rust catalog path handling (#2743), thanks @faysou
 - Refined Rust `GreeksCalculator` (#2760), thanks @faysou
 - Refined Databento bars timestamp decoding and backtest execution usage (#2800), thanks @faysou
@@ -115,6 +129,7 @@ Released on TBD (UTC).
 - Fixed Binance Spot testnet streaming URL, thanks for reporting @Frzgunr1
 - Fixed Binance Ed25519 key handling
 - Fixed RPC client content type header (#2828), thanks @filipmacek
+- Fixed `venue_order_id` handling for Polymarket order status request (#2848), thanks @DeirhX
 
 ### Documentation Updates
 - Added FFI Memory Contract developer guide

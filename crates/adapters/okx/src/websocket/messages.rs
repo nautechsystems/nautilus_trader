@@ -258,9 +258,9 @@ pub struct OKXFundingRateMsg {
     /// Instrument ID.
     pub inst_id: Ustr,
     /// Current funding rate.
-    pub funding_rate: String,
+    pub funding_rate: Ustr,
     /// Predicted next funding rate.
-    pub next_funding_rate: String,
+    pub next_funding_rate: Ustr,
     /// Next funding time, Unix timestamp format in milliseconds.
     #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub funding_time: u64,

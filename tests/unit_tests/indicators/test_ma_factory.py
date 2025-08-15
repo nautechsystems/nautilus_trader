@@ -13,15 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.indicators.average.dema import DoubleExponentialMovingAverage
-from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
-from nautilus_trader.indicators.average.hma import HullMovingAverage
-from nautilus_trader.indicators.average.ma_factory import MovingAverageFactory
-from nautilus_trader.indicators.average.moving_average import MovingAverageType
-from nautilus_trader.indicators.average.rma import WilderMovingAverage
-from nautilus_trader.indicators.average.sma import SimpleMovingAverage
-from nautilus_trader.indicators.average.vidya import VariableIndexDynamicAverage
-from nautilus_trader.indicators.average.wma import WeightedMovingAverage
+from nautilus_trader.indicators import DoubleExponentialMovingAverage
+from nautilus_trader.indicators import ExponentialMovingAverage
+from nautilus_trader.indicators import HullMovingAverage
+from nautilus_trader.indicators import MovingAverageFactory
+from nautilus_trader.indicators import MovingAverageType
+from nautilus_trader.indicators import SimpleMovingAverage
+from nautilus_trader.indicators import VariableIndexDynamicAverage
+from nautilus_trader.indicators import WeightedMovingAverage
+from nautilus_trader.indicators import WilderMovingAverage
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 

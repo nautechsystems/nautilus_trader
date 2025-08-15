@@ -132,6 +132,8 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
         Margin type (isolated or cross) to be used for each symbol. It's applicable to futures only.
     listen_key_ping_max_failures : PositiveInt, default 3
         The maximum number of consecutive listen key ping failures before triggering recovery.
+    log_rejected_due_post_only_as_warning : bool, default True
+        If order rejected events where `due_post_only` is True should be logged as warnings.
 
     Warnings
     --------
@@ -160,3 +162,4 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
     futures_leverages: dict[BinanceSymbol, PositiveInt] | None = None
     futures_margin_types: dict[BinanceSymbol, BinanceFuturesMarginType] | None = None
     listen_key_ping_max_failures: PositiveInt = 3
+    log_rejected_due_post_only_as_warning: bool = True

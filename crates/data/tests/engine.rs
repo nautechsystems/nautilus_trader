@@ -1501,6 +1501,54 @@ fn test_process_index_price(
 }
 
 #[rstest]
+fn test_process_funding_rate_through_any(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    data_client: DataClientAdapter,
+) {
+    let client_id = data_client.client_id;
+    let venue = data_client.venue;
+    data_engine.borrow_mut().register_client(data_client, None);
+
+    let sub = SubscribeFundingRates::new(
+        audusd_sim.id,
+        Some(client_id),
+        venue,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    let cmd = DataCommand::Subscribe(SubscribeCommand::FundingRates(sub));
+
+    let endpoint = MessagingSwitchboard::data_engine_execute();
+    msgbus::send_any(endpoint, &cmd as &dyn Any);
+
+    let funding_rate = FundingRateUpdate::new(
+        audusd_sim.id,
+        "0.0001".parse().unwrap(),
+        None,
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    let handler = get_message_saving_handler::<FundingRateUpdate>(None);
+    let topic = switchboard::get_funding_rate_topic(funding_rate.instrument_id);
+    msgbus::subscribe_topic(topic, handler.clone(), None);
+
+    let mut data_engine = data_engine.borrow_mut();
+    // Test through the process() method with &dyn Any
+    data_engine.process(&funding_rate as &dyn Any);
+    let cache = &data_engine.get_cache();
+    let messages = get_saved_messages::<FundingRateUpdate>(handler);
+
+    assert_eq!(
+        cache.funding_rate(&funding_rate.instrument_id),
+        Some(&funding_rate)
+    );
+    assert_eq!(messages.len(), 1);
+    assert!(messages.contains(&funding_rate));
+}
+
+#[rstest]
 fn test_process_funding_rate(
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
@@ -1543,12 +1591,59 @@ fn test_process_funding_rate(
         cache.funding_rate(&funding_rate.instrument_id),
         Some(&funding_rate)
     );
-    assert_eq!(
-        cache.funding_rates(&funding_rate.instrument_id),
-        Some(vec![funding_rate])
-    );
     assert_eq!(messages.len(), 1);
     assert!(messages.contains(&funding_rate));
+}
+
+#[rstest]
+fn test_process_funding_rate_updates_existing(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    data_client: DataClientAdapter,
+) {
+    let client_id = data_client.client_id;
+    let venue = data_client.venue;
+    data_engine.borrow_mut().register_client(data_client, None);
+
+    let sub = SubscribeFundingRates::new(
+        audusd_sim.id,
+        Some(client_id),
+        venue,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    let cmd = DataCommand::Subscribe(SubscribeCommand::FundingRates(sub));
+
+    let endpoint = MessagingSwitchboard::data_engine_execute();
+    msgbus::send_any(endpoint, &cmd as &dyn Any);
+
+    let funding_rate1 = FundingRateUpdate::new(
+        audusd_sim.id,
+        "0.0001".parse().unwrap(),
+        None,
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+
+    let funding_rate2 = FundingRateUpdate::new(
+        audusd_sim.id,
+        "0.0002".parse().unwrap(),
+        None,
+        UnixNanos::from(3),
+        UnixNanos::from(4),
+    );
+
+    let mut data_engine = data_engine.borrow_mut();
+    data_engine.handle_funding_rate(funding_rate1);
+    data_engine.handle_funding_rate(funding_rate2);
+    let cache = &data_engine.get_cache();
+
+    // Should only have the latest funding rate
+    assert_eq!(
+        cache.funding_rate(&funding_rate2.instrument_id),
+        Some(&funding_rate2)
+    );
 }
 
 #[rstest]

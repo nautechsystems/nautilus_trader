@@ -67,7 +67,7 @@ config_node = TradingNodeConfig(
     timeout_reconciliation=10.0,
     timeout_portfolio=10.0,
     timeout_disconnection=10.0,
-    timeout_post_stop=5.0,
+    timeout_post_stop=0.0,  # No stop delay needed for data testing
 )
 
 # Instantiate the node with a configuration

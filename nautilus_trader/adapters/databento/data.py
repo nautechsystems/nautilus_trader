@@ -224,7 +224,10 @@ class DatabentoDataClient(LiveMarketDataClient):
             self._update_dataset_ranges_task.cancel()
             self._update_dataset_ranges_task = None
 
-        # Close all live clients
+        await self._close_live_clients()
+        await self._cancel_pending_futures()
+
+    async def _close_live_clients(self) -> None:
         for dataset, live_client in self._live_clients.items():
             if not live_client.is_running():
                 continue
@@ -239,10 +242,21 @@ class DatabentoDataClient(LiveMarketDataClient):
             self._log.info(f"Stopping {dataset} MBO/L3 live feed", LogColor.BLUE)
             live_client.close()
 
-        try:
-            await asyncio.gather(*self._live_client_futures)
-        except asyncio.CancelledError:
-            pass  # Expected
+    async def _cancel_pending_futures(self) -> None:
+        for future in self._live_client_futures:
+            if not future.done():
+                future.cancel()
+
+        if self._live_client_futures:
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*self._live_client_futures, return_exceptions=True),
+                    timeout=2.0,
+                )
+            except TimeoutError:
+                self._log.warning("Timeout while waiting for live clients shutdown to complete")
+
+        self._live_client_futures.clear()
 
     async def _update_dataset_ranges(self) -> None:
         while True:
@@ -620,12 +634,17 @@ class DatabentoDataClient(LiveMarketDataClient):
         try:
             await self._ensure_subscribed_for_instrument(command.instrument_id)
 
-            # allowed schema values: mbp-1, bbo-1s, bbo-1m
+            # allowed schema values: mbp-1, bbo-1s, bbo-1m, cmbp-1, cbbo-1s, cbbo-1m, tbbo, tcbbo
             schema: str | None = command.params.get("schema")
             if schema is None or schema not in [
                 DatabentoSchema.MBP_1.value,
                 DatabentoSchema.BBO_1S.value,
                 DatabentoSchema.BBO_1M.value,
+                DatabentoSchema.CMBP_1.value,
+                DatabentoSchema.CBBO_1S.value,
+                DatabentoSchema.CBBO_1M.value,
+                DatabentoSchema.TBBO.value,
+                DatabentoSchema.TCBBO.value,
             ]:
                 schema = DatabentoSchema.MBP_1.value
 
@@ -652,11 +671,22 @@ class DatabentoDataClient(LiveMarketDataClient):
 
             await self._ensure_subscribed_for_instrument(command.instrument_id)
 
+            # allowed schema values: trades, tbbo, tcbbo, mbp-1, cmbp-1
+            schema: str | None = command.params.get("schema")
+            if schema is None or schema not in [
+                DatabentoSchema.TRADES.value,
+                DatabentoSchema.TBBO.value,
+                DatabentoSchema.TCBBO.value,
+                DatabentoSchema.MBP_1.value,  # MBP-1 can also emit trades
+                DatabentoSchema.CMBP_1.value,  # CMBP-1 can also emit trades
+            ]:
+                schema = DatabentoSchema.TRADES.value
+
             start: int | None = command.params.get("start")
             dataset: Dataset = self._loader.get_dataset_for_venue(command.instrument_id.venue)
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
-                schema=DatabentoSchema.TRADES.value,
+                schema=schema,
                 instrument_ids=[instrument_id_to_pyo3(command.instrument_id)],
                 start=start,
             )
@@ -983,13 +1013,18 @@ class DatabentoDataClient(LiveMarketDataClient):
             LogColor.BLUE,
         )
 
-        # allowed schema values: mbp-1, bbo-1s, bbo-1m
+        # allowed schema values: mbp-1, bbo-1s, bbo-1m, cmbp-1, cbbo-1s, cbbo-1m, tbbo, tcbbo
         schema: str | None = request.params.get("schema")
 
         if schema is None or schema not in [
             DatabentoSchema.MBP_1.value,
             DatabentoSchema.BBO_1S.value,
             DatabentoSchema.BBO_1M.value,
+            DatabentoSchema.CMBP_1.value,
+            DatabentoSchema.CBBO_1S.value,
+            DatabentoSchema.CBBO_1M.value,
+            DatabentoSchema.TBBO.value,
+            DatabentoSchema.TCBBO.value,
         ]:
             schema = DatabentoSchema.MBP_1.value
 
