@@ -451,6 +451,14 @@ class OrderStatusReport(ExecutionReport):
                 if pyo3_report.trigger_price
                 else None
             ),
+            trigger_type=(
+                TriggerType(pyo3_report.trigger_type.value)
+                if pyo3_report.trigger_type
+                else TriggerType.NO_TRIGGER
+            ),
+            limit_offset=pyo3_report.limit_offset,
+            trailing_offset=pyo3_report.trailing_offset,
+            trailing_offset_type=TrailingOffsetType(pyo3_report.trailing_offset_type.value),
             avg_px=pyo3_report.avg_px,
             display_qty=(
                 Quantity.from_str(str(pyo3_report.display_qty)) if pyo3_report.display_qty else None
@@ -658,7 +666,9 @@ class FillReport(ExecutionReport):
                 else None
             ),
             venue_position_id=(
-                PositionId(pyo3_report.venue_position_id) if pyo3_report.venue_position_id else None
+                PositionId(pyo3_report.venue_position_id.value)
+                if pyo3_report.venue_position_id
+                else None
             ),
         )
 
