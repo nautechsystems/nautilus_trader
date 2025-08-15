@@ -70,7 +70,7 @@ Released on TBD (UTC).
 - Added integration test service management targets (#2765), thanks @stastnypremysl
 - Added integration tests for dYdX bar-partitioning and large-history handling (#2773), thanks @nicolad
 - Added make build-debug-pyo3 (#2802), thanks @faysou
-- Add pytest timer (#2834), thanks @faysou
+- Added pytest timer (#2834), thanks @faysou
 - Optimized identifiers hashing to avoid frequent recomputations using C strings
 - Optimized data engine topic string caching for message bus publishing to avoid frequent f-string constructions
 - Optimized Redis key scans to improve efficiency over a network
@@ -96,6 +96,7 @@ Released on TBD (UTC).
 - Refined allowed queries for bars from `BacktestDataConfig` (#2838), thanks @faysou
 - Refined `FillModel` (#2795), thanks @faysou and @stefansimik
 - Refined request of instruments (#2822), thanks @faysou
+- Refined `subscribe_bars` in IB adapter (#2852), thanks @faysou
 - Updated `request_aggregated_bars` example (#2815), thanks @faysou
 - Updated PostgreSQL connection parameters to use 'nautilus' user (#2805), thanks @stastnypremysl
 - Upgraded Rust (MSRV) to 1.89.0
