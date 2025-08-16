@@ -13,8 +13,9 @@ Released on TBD (UTC).
 - Added support for additional Databento schemas: `OHLCV_EOD`, `CMBP_1`, `CBBO_1S`, `CBBO_1M`, and `TCBBO`
 - Added configurable schema parameters for Databento quote and trade subscriptions, allowing `TBBO`/`TCBBO` for efficient combined data feeds
 - Added support for option combos for Interactive Brokers (#2812), thanks @faysou
-- Added loading of options chain from `request_instruments` for Interactive Brokers (#2809), thanks @faysou
+- Added support for execution of option spreads in backtesting (#2853), thanks @faysou
 - Added support for option spread quotes in backtest (#2845), thanks @faysou
+- Added loading of options chain from `request_instruments` for Interactive Brokers (#2809), thanks @faysou
 - Added `MarginModel` concept, base models, config, and factory for backtesting (#2794), thanks @faysou and @stefansimik
 - Added additional built-in backtest fill models (#2795), thanks @faysou and @stefansimik
 - Added `OrderBookDepth10DataWrangler` (#2801), thanks @trylovetom

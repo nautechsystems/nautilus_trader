@@ -194,7 +194,7 @@ sqlx = { version = "0.8.6", default-features = false, features = [
 strum = { version = "0.27.2", features = ["derive"] }
 sysinfo = { version = "0.37.0", default-features = false, features = ["system"] }
 tabled = { version = "0.20.0", default-features = false, features = ["std", "derive"] }
-thiserror = "2.0.14"
+thiserror = "2.0.15"
 thousands = "0.2.0"
 time = { version = "0.3.41", default-features = false, features = [
   "macros",
