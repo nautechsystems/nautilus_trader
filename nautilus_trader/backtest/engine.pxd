@@ -29,9 +29,6 @@ from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.data.messages cimport RequestData
 from nautilus_trader.data.messages cimport SubscribeData
 from nautilus_trader.data.messages cimport UnsubscribeData
-from nautilus_trader.model.data cimport Bar
-from nautilus_trader.model.data cimport QuoteTick
-from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 

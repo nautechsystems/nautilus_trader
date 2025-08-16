@@ -2286,6 +2286,188 @@ cdef class OrderMatchingEngine:
                 position=position,
             )
 
+        # Generate leg fills for spread orders after normal combo fill processing
+        if order.instrument_id.is_spread() and order.is_closed_c():
+            self._generate_spread_leg_fills(order, fills, liquidity_side)
+
+    cdef void _generate_spread_leg_fills(
+        self,
+        Order order,
+        list fills,
+        LiquiditySide liquidity_side,
+    ):
+        """
+        Generate individual leg fills for position tracking after spread order is filled.
+
+        This method generates synthetic leg fills with "-LEG-" identifiers that will be
+        handled by the ExecutionEngine for position tracking, following the IB pattern.
+        """
+        if not fills:
+            return
+
+        # Parse spread legs from instrument ID
+        leg_tuples = order.instrument_id.to_list()
+        spread_instrument_ids = [leg[0] for leg in leg_tuples]
+
+        spread_fill_px = fills[0][0]
+        spread_fill_qty = fills[0][1]
+
+        # Calculate leg execution prices
+        leg_prices = self._calculate_leg_execution_prices(
+            leg_tuples=leg_tuples,
+            spread_execution_price=spread_fill_px,
+            spread_quantity=spread_fill_qty,
+        )
+
+        if not leg_prices:
+            self._log.warning(f"Could not calculate leg prices for spread {order.instrument_id}")
+            return
+
+        # Generate fills for each leg
+        for leg_instrument_id, ratio in leg_tuples:
+            if leg_instrument_id not in leg_prices:
+                continue
+
+            leg_price = leg_prices[leg_instrument_id]
+
+            # Calculate leg quantity: spread_quantity * abs(ratio)
+            leg_quantity = Quantity(
+                spread_fill_qty.as_double() * abs(ratio),
+                precision=spread_fill_qty.precision,
+            )
+
+            # Get leg instrument for precision validation
+            leg_instrument = self.cache.instrument(leg_instrument_id)
+
+            if leg_instrument is None:
+                self._log.warning(f"Leg instrument not found in cache: {leg_instrument_id}")
+                continue
+
+            # Generate synthetic leg fill directly
+            # Adjust price precision to match leg instrument
+            adjusted_leg_price = Price(
+                leg_price.as_double(),
+                precision=leg_instrument.price_precision,
+            )
+
+            # Adjust quantity precision to match leg instrument
+            adjusted_leg_quantity = Quantity(
+                leg_quantity.as_double(),
+                precision=leg_instrument.size_precision,
+            )
+
+            # Calculate commission for the leg
+            commission = self._fee_model.get_commission(
+                order=order,  # Use spread order for fee calculation context
+                fill_qty=adjusted_leg_quantity,
+                fill_px=adjusted_leg_price,
+                instrument=leg_instrument,
+            )
+
+            # Generate unique IDs for the leg fill (following IB adapter pattern)
+            # Get leg position in spread for unique identification
+            leg_position = spread_instrument_ids.index(leg_instrument_id) if leg_instrument_id in spread_instrument_ids else 0
+
+            # Generate unique client order ID for leg fill (avoids order state conflicts)
+            leg_client_order_id = ClientOrderId(f"{order.client_order_id.value}-LEG-{leg_instrument_id.symbol.value}")
+
+            # Generate unique venue order ID for leg fill
+            leg_venue_order_id = VenueOrderId(f"{order.venue_order_id.value}-LEG-{leg_position}")
+
+            # Generate unique trade ID for the leg fill (matching IB pattern: {execution.execId}-{leg_position})
+            # Use the same base execution ID format as combo fills but append leg position
+            leg_trade_id = TradeId(f"{self.venue.to_str()}-{self.raw_id}-{self._execution_count:03d}-{leg_position}")
+
+            # Create OrderFilled event for the leg
+            ts_now = self._clock.timestamp_ns()
+            leg_fill = OrderFilled(
+                trader_id=order.trader_id,
+                strategy_id=order.strategy_id,
+                instrument_id=leg_instrument_id,
+                client_order_id=leg_client_order_id,  # Use unique leg client order ID
+                venue_order_id=leg_venue_order_id,  # Use unique leg venue order ID
+                account_id=order.account_id,
+                trade_id=leg_trade_id,
+                order_side=OrderSide.BUY if ratio > 0 else OrderSide.SELL,
+                order_type=order.order_type,
+                last_qty=adjusted_leg_quantity,
+                last_px=adjusted_leg_price,
+                currency=leg_instrument.quote_currency,
+                liquidity_side=liquidity_side,
+                event_id=UUID4(),
+                ts_event=ts_now,
+                ts_init=ts_now,
+                reconciliation=False,
+                position_id=None,
+                commission=commission,
+            )
+
+            # Publish the leg fill event (same as regular order fills)
+            self.msgbus.send(endpoint="ExecEngine.process", msg=leg_fill)
+
+    cdef dict _calculate_leg_execution_prices(
+        self,
+        list leg_tuples,
+        Price spread_execution_price,
+        Quantity spread_quantity,
+    ):
+        """
+        Calculate leg execution prices using mid-prices with adjustment.
+
+        Uses mid-price for all legs except the highest-priced one, which is
+        adjusted to satisfy: Σ(leg_price × ratio) = spread_execution_price
+        """
+        cdef dict leg_mid_prices = {}
+        cdef dict leg_prices = {}
+        cdef double highest_mid_price = 0.0
+        cdef InstrumentId highest_price_leg_id = None
+
+        # Get mid-prices for all legs
+        for leg_instrument_id, ratio in leg_tuples:
+            leg_quote = self.cache.quote_tick(leg_instrument_id)
+
+            if leg_quote is None:
+                self._log.warning(f"No quote available for leg {leg_instrument_id}")
+                return {}
+
+            mid_price = (leg_quote.bid_price.as_double() + leg_quote.ask_price.as_double()) * 0.5
+            leg_mid_prices[leg_instrument_id] = mid_price
+
+            # Track the leg with highest mid-price (this will be adjusted)
+            if mid_price > highest_mid_price:
+                highest_mid_price = mid_price
+                highest_price_leg_id = leg_instrument_id
+
+        if highest_price_leg_id is None:
+            return {}
+
+        # Calculate weighted sum using mid-prices for all legs except the highest
+        cdef double weighted_sum = 0.0
+        cdef double adjustment_ratio = 0.0
+
+        for leg_instrument_id, ratio in leg_tuples:
+            if leg_instrument_id != highest_price_leg_id:
+                weighted_sum += leg_mid_prices[leg_instrument_id] * ratio
+                leg_prices[leg_instrument_id] = Price(
+                    leg_mid_prices[leg_instrument_id],
+                    precision=2,  # Default precision, will be adjusted by instrument
+                )
+            else:
+                # Store the ratio for the highest-priced leg for adjustment calculation
+                adjustment_ratio = ratio
+
+        # Calculate adjusted price for the highest-priced leg
+        # spread_execution_price = Σ(leg_price × ratio)
+        # adjusted_price = (spread_execution_price - weighted_sum) / adjustment_ratio
+        cdef double adjusted_price = (spread_execution_price.as_double() - weighted_sum) / adjustment_ratio
+
+        leg_prices[highest_price_leg_id] = Price(
+            adjusted_price,
+            precision=9,  # High precision, will be adjusted by instrument
+        )
+
+        return leg_prices
+
     cpdef void fill_order(
         self,
         Order order,

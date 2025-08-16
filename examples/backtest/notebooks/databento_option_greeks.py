@@ -49,8 +49,8 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.tick_scheme.base import register_tick_scheme
-from nautilus_trader.model.tick_scheme.implementations.tiered import TieredTickScheme
+from nautilus_trader.model.tick_scheme import TieredTickScheme
+from nautilus_trader.model.tick_scheme import register_tick_scheme
 from nautilus_trader.persistence.config import DataCatalogConfig
 from nautilus_trader.persistence.loaders import InterestRateProvider
 from nautilus_trader.persistence.loaders import InterestRateProviderConfig
@@ -60,13 +60,13 @@ from nautilus_trader.trading.strategy import Strategy
 # %%
 # Configure ES Options tick scheme based on CME specifications
 # ES options have different tick sizes based on price level:
-# - Below $3.00: $0.05 increments
-# - $3.00 and above: $0.25 increments
+# - Below $10.00: $0.05 increments
+# - $10.00 and above: $0.25 increments
 ES_OPTIONS_TICK_SCHEME = TieredTickScheme(
     name="ES_OPTIONS",
     tiers=[
         (0.05, 10.00, 0.05),  # Below $10.00: $0.05 increments
-        (10.00, np.inf, 0.25),  # $3.00 and above: $0.25 increments
+        (10.00, np.inf, 0.25),  # $10.00 and above: $0.25 increments
     ],
     price_precision=2,
     max_ticks_per_tier=1000,
@@ -145,6 +145,7 @@ class OptionStrategy(Strategy):
     def __init__(self, config: OptionConfig):
         super().__init__(config=config)
         self.start_orders_done = False
+        self.spread_order_submitted = False
         self.spread_quotes_received = 0
 
     def on_start(self):
@@ -190,15 +191,22 @@ class OptionStrategy(Strategy):
     def on_instrument(self, instrument):
         self.user_log(f"Received instrument: {instrument}")
 
-    def on_quote_tick(self, tick: QuoteTick):
-        self.user_log(f"{tick}")
-
     def init_portfolio(self):
         self.submit_market_order(instrument_id=self.config.option_id, quantity=-10)
         self.submit_market_order(instrument_id=self.config.option_id2, quantity=10)
         self.submit_market_order(instrument_id=self.config.future_id, quantity=1)
 
         self.start_orders_done = True
+
+    def on_quote_tick(self, tick):
+        # Submit spread order when we have spread quotes available
+        if tick.instrument_id == self.config.spread_id and not self.spread_order_submitted:
+            self.user_log(f"Spread quote received: {tick}")
+
+            # Try submitting order immediately - the exchange should have processed the quote by now
+            self.user_log(f"Submitting spread order for {self.config.spread_id}")
+            self.submit_market_order(instrument_id=self.config.spread_id, quantity=5)
+            self.spread_order_submitted = True
 
     # def on_data(self, greeks):
     #     self.log.warning(f"{greeks=}")
@@ -311,16 +319,16 @@ streaming = StreamingConfig(
 )
 
 logging = LoggingConfig(
-    bypass_logging=False,
-    log_colors=True,
     log_level="WARNING",
     log_level_file="WARNING",
     log_directory=".",
-    log_file_format=None,  # "json" or None
     log_file_name="databento_option_greeks",
-    clear_log_file=True,
+    log_file_format=None,  # "json" or None
+    # log_component_levels={"SpreadQuoteAggregator": "WARNING"},
+    bypass_logging=False,
     print_config=False,
     use_pyo3=False,
+    clear_log_file=True,
 )
 
 catalogs = [

@@ -41,6 +41,8 @@ from nautilus_trader.persistence.catalog import ParquetDataCatalog
 from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
 
+from nautilus_trader.backtest.models cimport SpreadQuoteAggregator
+from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport CMD
 from nautilus_trader.common.component cimport RECV
 from nautilus_trader.common.component cimport REQ
@@ -60,13 +62,13 @@ from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.aggregation cimport BarAggregator
-from nautilus_trader.data.aggregation cimport SpreadQuoteAggregator
 from nautilus_trader.data.aggregation cimport TickBarAggregator
 from nautilus_trader.data.aggregation cimport TimeBarAggregator
 from nautilus_trader.data.aggregation cimport ValueBarAggregator
 from nautilus_trader.data.aggregation cimport VolumeBarAggregator
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.client cimport MarketDataClient
+from nautilus_trader.data.engine cimport SnapshotInfo
 from nautilus_trader.data.messages cimport DataCommand
 from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.data.messages cimport RequestBars
@@ -117,6 +119,7 @@ from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
 from nautilus_trader.model.objects cimport Price
