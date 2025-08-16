@@ -53,6 +53,18 @@ use crate::common::parse::{
     parse_time_in_force,
 };
 
+/// Check if a symbol is an index symbol (starts with '.').
+///
+/// Index symbols in BitMEX represent indices like `.BXBT` and have different
+/// behavior from regular instruments:
+/// - They only have a single price value (no bid/ask spread).
+/// - They don't have trades or quotes.
+/// - Their price is delivered via the `lastPrice` field.
+#[inline]
+pub fn is_index_symbol(symbol: &str) -> bool {
+    symbol.starts_with('.')
+}
+
 const BAR_SPEC_1_MINUTE: BarSpecification = BarSpecification {
     step: NonZero::new(1).unwrap(),
     aggregation: BarAggregation::Minute,
@@ -535,14 +547,32 @@ pub fn parse_margin_msg(msg: MarginMsg) -> (AccountId, Currency, i64) {
 
 /// Parse a BitMEX WebSocket instrument message for mark and index prices.
 ///
+/// For index symbols (e.g., `.BXBT`):
+/// - Uses the `lastPrice` field as the index price.
+/// - Also emits the `markPrice` field (which equals `lastPrice` for indices).
+///
+/// For regular instruments:
+/// - Uses the `index_price` field for index price updates.
+/// - Uses the `mark_price` field for mark price updates.
+///
 /// Returns a Vec of Data containing mark and/or index price updates.
-/// Returns an empty Vec if neither price is present.
+/// Returns an empty Vec if no relevant price is present.
 pub fn parse_instrument_msg(msg: InstrumentMsg) -> Vec<Data> {
     let mut updates = Vec::new();
+    let is_index = is_index_symbol(&msg.symbol);
 
-    // Return early if no mark or index price present
+    // For index symbols (like .BXBT), the lastPrice field contains the index price
+    // For regular instruments, use the explicit index_price field if present
+    let effective_index_price = if is_index {
+        msg.last_price
+    } else {
+        msg.index_price
+    };
+
+    // Return early if no relevant prices present (mark_price or effective_index_price)
+    // Note: effective_index_price uses lastPrice for index symbols, index_price for others
     // (Funding rates come through a separate Funding channel)
-    if msg.mark_price.is_none() && msg.index_price.is_none() {
+    if msg.mark_price.is_none() && effective_index_price.is_none() {
         return updates;
     }
 
@@ -551,6 +581,7 @@ pub fn parse_instrument_msg(msg: InstrumentMsg) -> Vec<Data> {
     let ts_init = get_atomic_clock_realtime().get_time_ns();
 
     // Add mark price update if present
+    // For index symbols, markPrice equals lastPrice and is valid to emit
     if let Some(mark_price) = msg.mark_price {
         let price = Price::from(mark_price.to_string().as_str());
         updates.push(Data::MarkPriceUpdate(MarkPriceUpdate::new(
@@ -562,7 +593,7 @@ pub fn parse_instrument_msg(msg: InstrumentMsg) -> Vec<Data> {
     }
 
     // Add index price update if present
-    if let Some(index_price) = msg.index_price {
+    if let Some(index_price) = effective_index_price {
         let price = Price::from(index_price.to_string().as_str());
         updates.push(Data::IndexPriceUpdate(IndexPriceUpdate::new(
             instrument_id,
@@ -801,11 +832,11 @@ mod tests {
             fill.client_order_id.unwrap().to_string(),
             "mm_bitmex_2b/oemUeQ4CAJZgP3fjHsB"
         );
-        assert_eq!(fill.order_side, nautilus_model::enums::OrderSide::Sell);
+        assert_eq!(fill.order_side, OrderSide::Sell);
         assert_eq!(fill.last_qty, Quantity::from(100));
         assert_eq!(fill.last_px, Price::from("98950.0"));
         assert_eq!(fill.liquidity_side, LiquiditySide::Maker);
-        assert_eq!(fill.commission.raw, 7500000000000); // 0.00075 with proper precision
+        assert_eq!(fill.commission, Money::new(0.00075, Currency::from("XBT")));
         assert_eq!(fill.commission.currency.code.to_string(), "XBT");
         assert_eq!(fill.ts_event, 1732530900789000000); // 2024-11-25T10:35:00.789Z
     }
@@ -903,6 +934,7 @@ mod tests {
         let msg: InstrumentMsg = serde_json::from_str(&json_data).unwrap();
         let updates = parse_instrument_msg(msg);
 
+        // XBTUSD is not an index symbol, so it should have both mark and index prices
         assert_eq!(updates.len(), 2);
 
         // Check mark price update
@@ -966,9 +998,44 @@ mod tests {
             serde_json::from_str(&load_test_json("ws_instrument.json")).unwrap();
         msg.mark_price = None;
         msg.index_price = None;
+        msg.last_price = None;
 
         let updates = parse_instrument_msg(msg);
         assert_eq!(updates.len(), 0);
+    }
+
+    #[rstest]
+    fn test_parse_instrument_msg_index_symbol() {
+        // Test for index symbols like .BXBT where lastPrice is the index price
+        // and markPrice equals lastPrice
+        let mut msg: InstrumentMsg =
+            serde_json::from_str(&load_test_json("ws_instrument.json")).unwrap();
+        msg.symbol = ".BXBT".to_string();
+        msg.last_price = Some(119163.05);
+        msg.mark_price = Some(119163.05); // Index symbols have mark price equal to last price
+        msg.index_price = None;
+
+        let updates = parse_instrument_msg(msg);
+
+        assert_eq!(updates.len(), 2);
+
+        // Check mark price update
+        match &updates[0] {
+            Data::MarkPriceUpdate(update) => {
+                assert_eq!(update.instrument_id.to_string(), ".BXBT.BITMEX");
+                assert_eq!(update.value, Price::from("119163.05"));
+            }
+            _ => panic!("Expected MarkPriceUpdate for index symbol"),
+        }
+
+        // Check index price update
+        match &updates[1] {
+            Data::IndexPriceUpdate(update) => {
+                assert_eq!(update.instrument_id.to_string(), ".BXBT.BITMEX");
+                assert_eq!(update.value, Price::from("119163.05"));
+            }
+            _ => panic!("Expected IndexPriceUpdate for index symbol"),
+        }
     }
 
     #[rstest]

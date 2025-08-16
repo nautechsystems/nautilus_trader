@@ -48,7 +48,7 @@ use super::{
     error::BitmexWsError,
     messages::{NautilusWsMessage, TableMessage, WsMessage},
     parse::{
-        self, parse_book_msg_vec, parse_book10_msg_vec, parse_trade_bin_msg_vec,
+        self, is_index_symbol, parse_book_msg_vec, parse_book10_msg_vec, parse_trade_bin_msg_vec,
         parse_trade_msg_vec, topic_from_bar_spec,
     },
 };
@@ -463,23 +463,41 @@ impl BitmexWebSocketClient {
 
     /// Subscribe to quote updates for the specified instrument.
     ///
+    /// Note: Index symbols (starting with '.') do not have quotes and will be silently ignored.
+    ///
     /// # Errors
     ///
     /// Returns an error if the WebSocket is not connected or if the subscription fails.
     pub async fn subscribe_quotes(&self, instrument_id: InstrumentId) -> Result<(), BitmexWsError> {
-        let topic = WsTopic::Quote;
         let symbol = instrument_id.symbol.as_str();
+
+        // Index symbols don't have quotes (bid/ask), only a single price
+        if is_index_symbol(symbol) {
+            tracing::warn!("Ignoring quote subscription for index symbol: {symbol}");
+            return Ok(());
+        }
+
+        let topic = WsTopic::Quote;
         self.subscribe(vec![format!("{topic}:{symbol}")]).await
     }
 
     /// Subscribe to trade updates for the specified instrument.
     ///
+    /// Note: Index symbols (starting with '.') do not have trades and will be silently ignored.
+    ///
     /// # Errors
     ///
     /// Returns an error if the WebSocket is not connected or if the subscription fails.
     pub async fn subscribe_trades(&self, instrument_id: InstrumentId) -> Result<(), BitmexWsError> {
-        let topic = WsTopic::Trade;
         let symbol = instrument_id.symbol.as_str();
+
+        // Index symbols don't have trades
+        if is_index_symbol(symbol) {
+            tracing::warn!("Ignoring trade subscription for index symbol: {symbol}");
+            return Ok(());
+        }
+
+        let topic = WsTopic::Trade;
         self.subscribe(vec![format!("{topic}:{symbol}")]).await
     }
 
@@ -623,8 +641,14 @@ impl BitmexWebSocketClient {
         &self,
         instrument_id: InstrumentId,
     ) -> Result<(), BitmexWsError> {
-        let topic = WsTopic::Quote;
         let symbol = instrument_id.symbol.as_str();
+
+        // Index symbols don't have quotes
+        if is_index_symbol(symbol) {
+            return Ok(());
+        }
+
+        let topic = WsTopic::Quote;
         self.unsubscribe(vec![format!("{topic}:{symbol}")]).await
     }
 
@@ -637,8 +661,14 @@ impl BitmexWebSocketClient {
         &self,
         instrument_id: InstrumentId,
     ) -> Result<(), BitmexWsError> {
-        let topic = WsTopic::Trade;
         let symbol = instrument_id.symbol.as_str();
+
+        // Index symbols don't have trades
+        if is_index_symbol(symbol) {
+            return Ok(());
+        }
+
+        let topic = WsTopic::Trade;
         self.unsubscribe(vec![format!("{topic}:{symbol}")]).await
     }
 
@@ -888,6 +918,10 @@ impl BitmexUnifiedFeedHandler {
                         NautilusWsMessage::Data(data)
                     }
                     TableMessage::Quote { mut data, .. } => {
+                        // Index symbols may return empty quote data
+                        if data.is_empty() {
+                            continue;
+                        }
                         let msg = data.remove(0);
                         if let Some(quote) = quote_cache.process(msg, 1) {
                             NautilusWsMessage::Data(vec![Data::Quote(quote)])
