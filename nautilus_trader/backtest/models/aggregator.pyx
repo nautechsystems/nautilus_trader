@@ -36,6 +36,9 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 
 
+# Constants for thresholds
+cdef double SPREAD_VEGA_EPS = 1e-10  # Minimum spread vega to generate quote
+
 cdef class SpreadQuoteAggregator(Component):
     """
     Provides a spread quote generator for creating synthetic quotes from component instruments.
@@ -108,15 +111,17 @@ cdef class SpreadQuoteAggregator(Component):
             self._log.error(f"Cannot find spread instrument {self._spread_instrument_id}")
             return
 
+        # Track missing components for better error reporting
+        cdef list missing_quotes = []
+        cdef list missing_greeks = []
+
         # Calculate component values
         for i, component_id in enumerate(self._component_ids):
             component_quote = self._cache.quote_tick(component_id)
 
             if component_quote is None:
-                self._log.debug(
-                    f"No quote available for component {component_id}, cannot generate spread quote"
-                )
-                return
+                missing_quotes.append(str(component_id))
+                continue
 
             greeks_data = self._greeks_calculator.instrument_greeks(
                 component_id,
@@ -126,10 +131,8 @@ cdef class SpreadQuoteAggregator(Component):
             )
 
             if greeks_data is None:
-                self._log.debug(
-                    f"No mid price available for component {component_id}, cannot generate spread quote"
-                )
-                return
+                missing_greeks.append(str(component_id))
+                continue
 
             ask_price = component_quote.ask_price.as_double()
             bid_price = component_quote.bid_price.as_double()
@@ -140,10 +143,46 @@ cdef class SpreadQuoteAggregator(Component):
             self._bid_sizes[i] = component_quote.bid_size.as_double()
             self._ask_sizes[i] = component_quote.ask_size.as_double()
 
+        # Check if we have all required data (use debug for timer-driven recurring conditions)
+        if missing_quotes:
+            self._log.debug(
+                f"Missing quotes for spread {self._spread_instrument_id} components: {', '.join(missing_quotes)}"
+            )
+            return
+
+        if missing_greeks:
+            self._log.debug(
+                f"Missing greeks for spread {self._spread_instrument_id} components: {', '.join(missing_greeks)}"
+            )
+            return
+
         # Calculate bid ask spread of option spread
-        vega_multipliers = np.abs(self._bid_ask_spreads / self._vegas)
-        vega_multiplier = vega_multipliers.mean()
+        # Use np.divide with where clause to handle zero vegas safely
+        vega_multipliers = np.divide(
+            self._bid_ask_spreads,
+            self._vegas,
+            out=np.zeros_like(self._vegas),
+            where=self._vegas != 0
+        )
+
+        # Filter out zero multipliers before taking mean
+        non_zero_multipliers = vega_multipliers[vega_multipliers != 0]
+        if len(non_zero_multipliers) == 0:
+            self._log.debug(
+                f"All vegas are zero for spread {self._spread_instrument_id}, cannot generate spread quote"
+            )
+            return
+
+        vega_multiplier = np.abs(non_zero_multipliers).mean()
         spread_vega = abs(np.dot(self._vegas, self._ratios))
+
+        # Check if spread vega is too small to avoid numerical issues
+        if spread_vega < SPREAD_VEGA_EPS:
+            self._log.debug(
+                f"Spread vega is too small ({spread_vega}) for {self._spread_instrument_id}, cannot generate spread quote"
+            )
+            return
+
         bid_ask_spread = spread_vega * vega_multiplier
         self._log.debug(f"{self._bid_ask_spreads=}, {self._vegas=}, {vega_multipliers=}, "
                           f"{spread_vega=}, {vega_multiplier=}, {bid_ask_spread=}")

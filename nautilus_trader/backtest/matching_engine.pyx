@@ -16,6 +16,7 @@
 import uuid
 
 from cpython.datetime cimport timedelta
+from libc.math cimport fabs
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.backtest.models cimport FeeModel
@@ -2344,16 +2345,12 @@ cdef class OrderMatchingEngine:
                 continue
 
             # Generate synthetic leg fill directly
-            # Adjust price precision to match leg instrument
-            adjusted_leg_price = Price(
-                leg_price.as_double(),
-                precision=leg_instrument.price_precision,
-            )
+            adjusted_leg_price = leg_price
 
-            # Adjust quantity precision to match leg instrument
-            adjusted_leg_quantity = Quantity(
+            # Use make_qty for proper size increment rounding
+            adjusted_leg_quantity = leg_instrument.make_qty(
                 leg_quantity.as_double(),
-                precision=leg_instrument.size_precision,
+                round_down=True,  # Round down to ensure valid size
             )
 
             # Calculate commission for the leg
@@ -2388,7 +2385,10 @@ cdef class OrderMatchingEngine:
                 venue_order_id=leg_venue_order_id,  # Use unique leg venue order ID
                 account_id=order.account_id,
                 trade_id=leg_trade_id,
-                order_side=OrderSide.BUY if ratio > 0 else OrderSide.SELL,
+                # Leg side mapping based on spread order direction
+                # If spread BUY: positive ratio = BUY leg, negative = SELL leg
+                # If spread SELL: positive ratio = SELL leg, negative = BUY leg
+                order_side=order.side if ratio > 0 else (OrderSide.SELL if order.side == OrderSide.BUY else OrderSide.BUY),
                 order_type=order.order_type,
                 last_qty=adjusted_leg_quantity,
                 last_px=adjusted_leg_price,
@@ -2444,27 +2444,53 @@ cdef class OrderMatchingEngine:
         # Calculate weighted sum using mid-prices for all legs except the highest
         cdef double weighted_sum = 0.0
         cdef double adjustment_ratio = 0.0
+        cdef double adjustment_ratio_eps = 1e-12  # Epsilon for near-zero check
 
         for leg_instrument_id, ratio in leg_tuples:
             if leg_instrument_id != highest_price_leg_id:
                 weighted_sum += leg_mid_prices[leg_instrument_id] * ratio
-                leg_prices[leg_instrument_id] = Price(
-                    leg_mid_prices[leg_instrument_id],
-                    precision=2,  # Default precision, will be adjusted by instrument
-                )
+
+                # Get actual instrument to use its make_price method for proper tick rounding
+                leg_instrument = self.cache.instrument(leg_instrument_id)
+                if leg_instrument is not None:
+                    leg_prices[leg_instrument_id] = leg_instrument.make_price(
+                        leg_mid_prices[leg_instrument_id]
+                    )
+                else:
+                    # If instrument not found, log warning and abort
+                    self._log.warning(
+                        f"Cannot find leg instrument {leg_instrument_id} in cache, "
+                        f"aborting leg price calculation for spread"
+                    )
+                    return {}
             else:
                 # Store the ratio for the highest-priced leg for adjustment calculation
                 adjustment_ratio = ratio
+
+        # Check for zero or tiny adjustment ratio to prevent division by zero
+        if fabs(adjustment_ratio) < adjustment_ratio_eps:
+            self._log.warning(
+                f"Cannot calculate leg prices for spread {spread_execution_price}: "
+                f"adjustment_ratio ({adjustment_ratio}) is too small for highest-priced leg {highest_price_leg_id}"
+            )
+            return {}
 
         # Calculate adjusted price for the highest-priced leg
         # spread_execution_price = Σ(leg_price × ratio)
         # adjusted_price = (spread_execution_price - weighted_sum) / adjustment_ratio
         cdef double adjusted_price = (spread_execution_price.as_double() - weighted_sum) / adjustment_ratio
 
-        leg_prices[highest_price_leg_id] = Price(
-            adjusted_price,
-            precision=9,  # High precision, will be adjusted by instrument
-        )
+        # Get actual instrument for highest-priced leg to use its make_price method
+        highest_leg_instrument = self.cache.instrument(highest_price_leg_id)
+        if highest_leg_instrument is not None:
+            leg_prices[highest_price_leg_id] = highest_leg_instrument.make_price(adjusted_price)
+        else:
+            # If instrument not found, log warning and abort
+            self._log.warning(
+                f"Cannot find highest-priced leg instrument {highest_price_leg_id} in cache, "
+                f"aborting leg price calculation for spread"
+            )
+            return {}
 
         return leg_prices
 

@@ -910,7 +910,7 @@ class TestBacktestNodeWithBacktestDataIterator:
         # Now includes both individual leg orders and spread orders
         last_greeks = portfolio_greeks_messages[-1]
         assert (
-            "portfolio_greeks=PortfolioGreeks(pnl=-347.50, price=7,937.50" in last_greeks
+            "portfolio_greeks=PortfolioGreeks(pnl=-350.00, price=7,937.50" in last_greeks
         ), f"Unexpected portfolio greeks: {last_greeks}"
         assert messages_with_data == messages_without_data
 
