@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use derive_builder::Builder;
+use regex::Regex;
 use sqlx::{ConnectOptions, PgPool, postgres::PgConnectOptions};
 
 #[derive(Debug, Clone, Builder)]
@@ -213,20 +214,18 @@ pub async fn init_postgres(
     let schema_dir = schema_dir.unwrap_or_else(|| get_schema_dir().unwrap());
     let mut sql_files =
         std::fs::read_dir(schema_dir)?.collect::<Result<Vec<_>, std::io::Error>>()?;
+    let plpgsql_regex = Regex::new(r"\$\$ LANGUAGE plpgsql(?:\s+SECURITY\s+DEFINER)?;")?;
     for file in &mut sql_files {
         let file_name = file.file_name();
         log::info!("Executing schema file: {file_name:?}");
         let file_path = file.path();
         let sql_content = std::fs::read_to_string(file_path.clone())?;
-        // if filename is functions.sql, split by plpgsql endings; if not then by ;
         let sql_statements: Vec<String> = match file_name.to_str() {
             Some("functions.sql") => {
-                use regex::Regex;
-                let re = Regex::new(r"\$\$ LANGUAGE plpgsql(?:\s+SECURITY\s+DEFINER)?;").unwrap();
                 let mut statements = Vec::new();
                 let mut last_end = 0;
 
-                for mat in re.find_iter(&sql_content) {
+                for mat in plpgsql_regex.find_iter(&sql_content) {
                     let statement = sql_content[last_end..mat.end()].to_string();
                     if !statement.trim().is_empty() {
                         statements.push(statement);

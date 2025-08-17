@@ -94,6 +94,9 @@ pub enum BlockchainCommand {
         /// Starting block number to sync from (optional)
         #[arg(long)]
         from_block: Option<u64>,
+        /// Ending block number to sync to (optional, defaults to current chain head)
+        #[arg(long)]
+        to_block: Option<u64>,
         /// Database configuration options
         #[clap(flatten)]
         database: DatabaseConfig,

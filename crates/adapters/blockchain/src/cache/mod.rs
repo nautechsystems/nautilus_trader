@@ -31,8 +31,10 @@ use nautilus_model::defi::{
 };
 use sqlx::postgres::PgConnectOptions;
 
-use crate::cache::database::BlockchainCacheDatabase;
+use crate::cache::{consistency::CachedBlocksConsistencyStatus, database::BlockchainCacheDatabase};
 
+pub mod consistency;
+pub mod copy;
 pub mod database;
 pub mod rows;
 
@@ -68,9 +70,17 @@ impl BlockchainCache {
     }
 
     /// Returns the highest continuous block number currently cached, if any.
-    pub async fn last_cached_block_number(&self) -> Option<u64> {
+    pub async fn get_cache_block_consistency_status(
+        &self,
+    ) -> Option<CachedBlocksConsistencyStatus> {
         match &self.database {
-            Some(database) => database.get_last_continuous_block(&self.chain).await.ok(),
+            Some(database) => match database.get_block_consistency_status(&self.chain).await {
+                Ok(blocks_status) => Some(blocks_status),
+                Err(e) => {
+                    tracing::error!("Error getting block consistency status: {e}");
+                    return None;
+                }
+            },
             None => None,
         }
     }
@@ -94,6 +104,21 @@ impl BlockchainCache {
     pub async fn initialize_database(&mut self, pg_connect_options: PgConnectOptions) {
         let database = BlockchainCacheDatabase::init(pg_connect_options).await;
         self.database = Some(database);
+    }
+
+    /// Toggles performance optimization settings in the database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database is not initialized or the operation fails.
+    pub async fn toggle_performance_settings(&self, enable: bool) -> anyhow::Result<()> {
+        match &self.database {
+            Some(database) => database.toggle_perf_sync_settings(enable).await,
+            None => {
+                tracing::warn!("Database not initialized, skipping performance settings toggle");
+                Ok(())
+            }
+        }
     }
 
     pub async fn initialize_chain(&self) {
@@ -270,16 +295,25 @@ impl BlockchainCache {
     /// # Errors
     ///
     /// Returns an error if adding the blocks to the database fails.
-    pub async fn add_blocks_batch(&mut self, blocks: Vec<Block>) -> anyhow::Result<()> {
+    pub async fn add_blocks_batch(
+        &mut self,
+        blocks: Vec<Block>,
+        use_copy_command: bool,
+    ) -> anyhow::Result<()> {
         if blocks.is_empty() {
             return Ok(());
         }
 
-        // Batch insert to database if available
         if let Some(database) = &self.database {
-            database
-                .add_blocks_batch(self.chain.chain_id, &blocks)
-                .await?;
+            if use_copy_command {
+                database
+                    .add_blocks_copy(self.chain.chain_id, &blocks)
+                    .await?;
+            } else {
+                database
+                    .add_blocks_batch(self.chain.chain_id, &blocks)
+                    .await?;
+            }
         }
 
         // Update in-memory cache

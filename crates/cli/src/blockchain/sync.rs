@@ -33,6 +33,7 @@ pub async fn run_blockchain_command(opt: BlockchainOpt) -> anyhow::Result<()> {
         BlockchainCommand::SyncBlocks {
             chain,
             from_block,
+            to_block,
             database,
         } => {
             let chain = Chain::from_chain_name(&chain)
@@ -63,7 +64,7 @@ pub async fn run_blockchain_command(opt: BlockchainOpt) -> anyhow::Result<()> {
 
             data_client.cache.initialize_chain().await;
             data_client
-                .sync_blocks(from_block, None)
+                .sync_blocks_checked(from_block, to_block)
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to sync blocks: {}", e))?;
         }

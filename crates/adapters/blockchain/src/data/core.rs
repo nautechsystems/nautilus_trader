@@ -171,17 +171,63 @@ impl BlockchainDataClientCore {
         Ok(())
     }
 
+    pub async fn sync_blocks_checked(
+        &mut self,
+        from_block: u64,
+        to_block: Option<u64>,
+    ) -> anyhow::Result<()> {
+        if let Some(blocks_status) = self.cache.get_cache_block_consistency_status().await {
+            // If blocks are consistent proceed with copy command.
+            if blocks_status.is_consistent() {
+                tracing::info!(
+                    "Cache is consistent: no gaps detected (last continuous block: {})",
+                    blocks_status.last_continuous_block
+                );
+                let target_block = max(blocks_status.max_block + 1, from_block);
+                tracing::info!("Starting fast sync with COPY from block {}", target_block);
+                self.sync_blocks(target_block, to_block, true).await?;
+            } else {
+                let gap_size = blocks_status.max_block - blocks_status.last_continuous_block;
+                tracing::info!(
+                    "Cache inconsistency detected: {} blocks missing between {} and {}",
+                    gap_size,
+                    blocks_status.last_continuous_block + 1,
+                    blocks_status.max_block
+                );
+
+                tracing::info!(
+                    "Block syncing Phase 1: Filling gaps with INSERT (blocks {} to {})",
+                    blocks_status.last_continuous_block + 1,
+                    blocks_status.max_block
+                );
+                self.sync_blocks(
+                    blocks_status.last_continuous_block + 1,
+                    Some(blocks_status.max_block),
+                    false,
+                )
+                .await?;
+
+                tracing::info!(
+                    "Block syncing Phase 2: Continuing with fast COPY from block {}",
+                    blocks_status.max_block + 1
+                );
+                self.sync_blocks(blocks_status.max_block + 1, to_block, true)
+                    .await?;
+            }
+        } else {
+            self.sync_blocks(from_block, to_block, true).await?;
+        }
+
+        Ok(())
+    }
+
     /// Synchronizes blockchain data by fetching and caching all blocks from the starting block to the current chain head.
     pub async fn sync_blocks(
         &mut self,
         from_block: u64,
         to_block: Option<u64>,
+        use_copy_command: bool,
     ) -> anyhow::Result<()> {
-        let last_cached_block_number = self.cache.last_cached_block_number().await.unwrap_or(0);
-        tracing::info!("Last cached block is {}", last_cached_block_number);
-
-        let from_block = max(from_block, last_cached_block_number + 1);
-
         let to_block = if let Some(block) = to_block {
             block
         } else {
@@ -191,6 +237,11 @@ impl BlockchainDataClientCore {
         tracing::info!(
             "Syncing blocks from {from_block} to {to_block} (total: {total_blocks} blocks)"
         );
+
+        // Enable performance settings for sync operations
+        if let Err(e) = self.cache.toggle_performance_settings(true).await {
+            tracing::warn!("Failed to enable performance settings: {e}");
+        }
 
         let blocks_stream = self
             .hypersync_client
@@ -221,7 +272,7 @@ impl BlockchainDataClientCore {
             if batch.len() >= BATCH_SIZE || block_number >= to_block {
                 let batch_size = batch.len();
 
-                self.cache.add_blocks_batch(batch).await?;
+                self.cache.add_blocks_batch(batch, use_copy_command).await?;
                 metrics.update(batch_size);
 
                 // Re-initialize batch vector
@@ -237,11 +288,17 @@ impl BlockchainDataClientCore {
         // Process any remaining blocks
         if !batch.is_empty() {
             let batch_size = batch.len();
-            self.cache.add_blocks_batch(batch).await?;
+            self.cache.add_blocks_batch(batch, use_copy_command).await?;
             metrics.update(batch_size);
         }
 
         metrics.log_final_stats();
+
+        // Restore default safe settings after sync completion
+        if let Err(e) = self.cache.toggle_performance_settings(false).await {
+            tracing::warn!("Failed to restore default settings: {e}");
+        }
+
         Ok(())
     }
 
