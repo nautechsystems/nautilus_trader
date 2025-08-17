@@ -38,10 +38,10 @@ from nautilus_trader.test_kit.strategies.tester_exec import ExecTesterConfig
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 # SPOT/LINEAR
-product_type = BybitProductType.SPOT
+product_type = BybitProductType.LINEAR
 symbol = f"ETHUSDT-{product_type.value.upper()}"
 instrument_id = InstrumentId.from_str(f"{symbol}.{BYBIT}")
-order_qty = Decimal("0.010")
+order_qty = Decimal("0.01")
 order_params = {"is_leverage": False}
 
 # INVERSE
@@ -140,12 +140,17 @@ node = TradingNode(config=config_node)
 config_strat = ExecTesterConfig(
     instrument_id=InstrumentId.from_str(f"{symbol}.{BYBIT}"),
     external_order_claims=[InstrumentId.from_str(f"{symbol}.{BYBIT}")],
-    # subscribe_quotes=False,
-    # subscribe_trades=False,
+    subscribe_quotes=True,
+    subscribe_trades=True,
     # subscribe_book=True,
+    # enable_sells=False,
     order_qty=order_qty,
+    # open_position_on_start_qty=order_qty,
     use_post_only=True,
-    reduce_only_on_stop=False,
+    # test_reject_post_only=True,
+    reduce_only_on_stop=False,  # Not supported for Bybit spot
+    cancel_orders_on_stop=True,
+    close_positions_on_stop=True,
     log_data=False,
     log_rejected_due_post_only_as_warning=False,
 )
