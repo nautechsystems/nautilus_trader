@@ -67,10 +67,12 @@ impl BlockchainCache {
         }
     }
 
-    /// Returns the highest block number currently cached, if any.
-    #[must_use]
-    pub fn last_cached_block_number(&self) -> Option<u64> {
-        self.block_timestamps.last_key_value().map(|(k, _)| *k)
+    /// Returns the highest continuous block number currently cached, if any.
+    pub async fn last_cached_block_number(&self) -> Option<u64> {
+        match &self.database {
+            Some(database) => database.get_last_continuous_block(&self.chain).await.ok(),
+            None => None,
+        }
     }
 
     /// Returns the earliest block number where any DEX in the cache was created on the blockchain.

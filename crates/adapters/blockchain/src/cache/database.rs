@@ -89,6 +89,61 @@ impl BlockchainCacheDatabase {
         Ok(result.0)
     }
 
+    /// Returns the highest block number that maintains data continuity in the database.
+    ///
+    /// This function ensures we don't skip blocks during synchronization by finding the last
+    /// block number before any gap in the sequence. This is critical for maintaining data
+    /// integrity in blockchain applications where missing blocks could lead to incomplete
+    /// transaction history or incorrect state calculations.
+    ///
+    /// The function works by:
+    /// 1. Finding the first gap in the block sequence (where block N exists but N+1 doesn't)
+    /// 2. Returning the block number just before that gap
+    /// 3. If no gaps exist, returns the maximum block number
+    /// 4. If the table is empty, returns 0
+    ///
+    /// # Arguments
+    ///
+    /// * `chain` - The blockchain chain to check for continuous blocks
+    ///
+    /// # Returns
+    ///
+    /// The highest continuous block number, ensuring no blocks are skipped in the sequence.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database query fails.
+    pub async fn get_last_continuous_block(&self, chain: &Chain) -> anyhow::Result<u64> {
+        let result: (i64,) = sqlx::query_as(
+            r#"
+             SELECT COALESCE(
+                -- Find the last block before the first gap
+                ( SELECT b1.number FROM block b1 WHERE b1.chain_id = $1
+                    AND NOT EXISTS (
+                    SELECT 1
+                    FROM block b2
+                    WHERE b2.chain_id = $1
+                    AND b2.number = b1.number + 1
+                ) ORDER BY b1.number LIMIT 1),
+                -- If no gaps, return the max block
+                (SELECT MAX(number) FROM block WHERE chain_id = $1),
+                -- If the table is empty, return 0
+                0)"#,
+        )
+        .bind(chain.chain_id as i32)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to get last continuous block for chain {}: {}",
+                chain.chain_id,
+                e
+            )
+        })?;
+
+        Ok(result.0 as u64)
+    }
+
     /// Inserts or updates a block record in the database.
     ///
     /// # Errors

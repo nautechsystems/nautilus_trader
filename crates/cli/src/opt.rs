@@ -91,6 +91,9 @@ pub enum BlockchainCommand {
         /// The blockchain chain name (case-insensitive). Examples: ethereum, arbitrum, base, polygon, bsc
         #[arg(long)]
         chain: String,
+        /// Starting block number to sync from (optional)
+        #[arg(long)]
+        from_block: Option<u64>,
         /// Database configuration options
         #[clap(flatten)]
         database: DatabaseConfig,

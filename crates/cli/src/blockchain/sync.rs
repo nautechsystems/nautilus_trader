@@ -30,10 +30,15 @@ use crate::opt::{BlockchainCommand, BlockchainOpt};
 /// Returns an error if execution of the specified blockchain command fails.
 pub async fn run_blockchain_command(opt: BlockchainOpt) -> anyhow::Result<()> {
     match opt.command {
-        BlockchainCommand::SyncBlocks { chain, database } => {
+        BlockchainCommand::SyncBlocks {
+            chain,
+            from_block,
+            database,
+        } => {
             let chain = Chain::from_chain_name(&chain)
                 .ok_or_else(|| anyhow::anyhow!("Invalid chain name: {}", chain))?;
             let chain = Arc::new(chain.to_owned());
+            let from_block = from_block.unwrap_or(0);
 
             let postgres_connect_options = get_postgres_connect_options(
                 database.host,
@@ -57,11 +62,10 @@ pub async fn run_blockchain_command(opt: BlockchainOpt) -> anyhow::Result<()> {
             data_client.initialize_cache_database().await;
 
             data_client.cache.initialize_chain().await;
-            log::info!(
-                "Syncing blocks for chain: {} (ID: {})",
-                chain.name,
-                chain.chain_id
-            );
+            data_client
+                .sync_blocks(from_block, None)
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to sync blocks: {}", e))?;
         }
     }
     Ok(())

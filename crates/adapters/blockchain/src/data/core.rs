@@ -174,20 +174,13 @@ impl BlockchainDataClientCore {
     /// Synchronizes blockchain data by fetching and caching all blocks from the starting block to the current chain head.
     pub async fn sync_blocks(
         &mut self,
-        from_block: Option<u64>,
+        from_block: u64,
         to_block: Option<u64>,
     ) -> anyhow::Result<()> {
-        let from_block = if let Some(b) = from_block {
-            b
-        } else {
-            tracing::warn!("Skipping blocks sync: `from_block` not supplied");
-            return Ok(());
-        };
+        let last_cached_block_number = self.cache.last_cached_block_number().await.unwrap_or(0);
+        tracing::info!("Last cached block is {}", last_cached_block_number);
 
-        let from_block = match self.cache.last_cached_block_number() {
-            None => from_block,
-            Some(cached_block_number) => max(from_block, cached_block_number + 1),
-        };
+        let from_block = max(from_block, last_cached_block_number + 1);
 
         let to_block = if let Some(block) = to_block {
             block
