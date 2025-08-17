@@ -225,10 +225,14 @@ pub enum ExecType {
 )]
 pub enum LiquidityIndicator {
     /// Provided liquidity to the order book (maker).
+    /// BitMEX returns "Added" in REST API responses and "AddedLiquidity" in WebSocket messages.
     #[serde(rename = "Added")]
+    #[serde(alias = "AddedLiquidity")]
     Maker,
     /// Took liquidity from the order book (taker).
+    /// BitMEX returns "Removed" in REST API responses and "RemovedLiquidity" in WebSocket messages.
     #[serde(rename = "Removed")]
+    #[serde(alias = "RemovedLiquidity")]
     Taker,
 }
 

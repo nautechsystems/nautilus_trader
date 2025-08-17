@@ -41,6 +41,7 @@ from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import book_type_to_str
 from nautilus_trader.model.identifiers import ClientId
 
 
@@ -185,7 +186,9 @@ class BitmexDataClient(LiveMarketDataClient):
             else:
                 await self._ws_client.subscribe_order_book(pyo3_instrument_id)
         else:
-            self._log.warning(f"Book type {command.book_type} not supported by BitMEX")
+            self._log.warning(
+                f"Book type {book_type_to_str(command.book_type)} not supported by BitMEX, skipping subscription",
+            )
 
     async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)

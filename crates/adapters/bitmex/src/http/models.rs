@@ -22,6 +22,44 @@ use crate::enums::{
     PegPriceType, Side, TimeInForce,
 };
 
+/// Custom deserializer for comma-separated ExecInstruction values
+fn deserialize_exec_instructions<'de, D>(
+    deserializer: D,
+) -> Result<Option<Vec<ExecInstruction>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s: Option<String> = Option::deserialize(deserializer)?;
+    match s {
+        None => Ok(None),
+        Some(ref s) if s.is_empty() => Ok(None),
+        Some(s) => {
+            let instructions: Result<Vec<ExecInstruction>, _> = s
+                .split(',')
+                .map(|inst| {
+                    let trimmed = inst.trim();
+                    match trimmed {
+                        "ParticipateDoNotInitiate" => Ok(ExecInstruction::ParticipateDoNotInitiate),
+                        "AllOrNone" => Ok(ExecInstruction::AllOrNone),
+                        "MarkPrice" => Ok(ExecInstruction::MarkPrice),
+                        "IndexPrice" => Ok(ExecInstruction::IndexPrice),
+                        "LastPrice" => Ok(ExecInstruction::LastPrice),
+                        "Close" => Ok(ExecInstruction::Close),
+                        "ReduceOnly" => Ok(ExecInstruction::ReduceOnly),
+                        "Fixed" => Ok(ExecInstruction::Fixed),
+                        "" => Ok(ExecInstruction::Unknown),
+                        _ => Err(serde::de::Error::custom(format!(
+                            "Unknown ExecInstruction: {}",
+                            trimmed
+                        ))),
+                    }
+                })
+                .collect();
+            instructions.map(Some)
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Instrument {
@@ -120,7 +158,7 @@ pub struct Instrument {
 }
 
 /// Raw Order and Balance Data.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Execution {
     #[serde(rename = "execID")]
@@ -150,7 +188,8 @@ pub struct Execution {
     pub exec_type: Option<String>,
     pub ord_type: Option<OrderType>,
     pub time_in_force: Option<TimeInForce>,
-    pub exec_inst: Option<ExecInstruction>,
+    #[serde(default, deserialize_with = "deserialize_exec_instructions")]
+    pub exec_inst: Option<Vec<ExecInstruction>>,
     pub contingency_type: Option<ContingencyType>,
     pub ex_destination: Option<String>,
     pub ord_status: Option<String>,
@@ -225,7 +264,7 @@ pub struct Liquidation {
 }
 
 /// Placement, Cancellation, Amending, and History.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Order {
     #[serde(rename = "orderID")]
@@ -247,7 +286,8 @@ pub struct Order {
     pub settl_currency: Option<String>,
     pub ord_type: Option<OrderType>,
     pub time_in_force: Option<TimeInForce>,
-    pub exec_inst: Option<ExecInstruction>,
+    #[serde(default, deserialize_with = "deserialize_exec_instructions")]
+    pub exec_inst: Option<Vec<ExecInstruction>>,
     pub contingency_type: Option<ContingencyType>,
     pub ex_destination: Option<String>,
     pub ord_status: Option<OrderStatus>,
@@ -274,7 +314,7 @@ pub struct OrderBookL2 {
 }
 
 /// Position status.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Position {
     pub account: i64,
@@ -719,3 +759,99 @@ pub struct UserPreferences {
 #[derive(Clone, Debug, Deserialize, Default)]
 #[allow(dead_code)]
 pub struct OrderBookBinningOrderBookBinning(serde_json::Value);
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+    use serde_json::json;
+
+    use super::*;
+
+    #[rstest]
+    #[case(json!(null), None)]
+    #[case(json!(""), None)]
+    #[case(json!("ParticipateDoNotInitiate"), Some(vec![ExecInstruction::ParticipateDoNotInitiate]))]
+    #[case(json!("ReduceOnly"), Some(vec![ExecInstruction::ReduceOnly]))]
+    #[case(json!("LastPrice,Close"), Some(vec![ExecInstruction::LastPrice, ExecInstruction::Close]))]
+    #[case(
+        json!("ParticipateDoNotInitiate,ReduceOnly"),
+        Some(vec![ExecInstruction::ParticipateDoNotInitiate, ExecInstruction::ReduceOnly])
+    )]
+    #[case(
+        json!("MarkPrice,IndexPrice,AllOrNone"),
+        Some(vec![ExecInstruction::MarkPrice, ExecInstruction::IndexPrice, ExecInstruction::AllOrNone])
+    )]
+    #[case(json!("Fixed"), Some(vec![ExecInstruction::Fixed]))]
+    fn test_deserialize_exec_instructions(
+        #[case] input: serde_json::Value,
+        #[case] expected: Option<Vec<ExecInstruction>>,
+    ) {
+        #[derive(Deserialize)]
+        struct TestStruct {
+            #[serde(default, deserialize_with = "deserialize_exec_instructions")]
+            exec_inst: Option<Vec<ExecInstruction>>,
+        }
+
+        let test_json = json!({
+            "exec_inst": input
+        });
+
+        let result: TestStruct = serde_json::from_value(test_json).unwrap();
+        assert_eq!(result.exec_inst, expected);
+    }
+
+    #[rstest]
+    fn test_deserialize_exec_instructions_with_spaces() {
+        #[derive(Deserialize)]
+        struct TestStruct {
+            #[serde(default, deserialize_with = "deserialize_exec_instructions")]
+            exec_inst: Option<Vec<ExecInstruction>>,
+        }
+
+        let test_json = json!({
+            "exec_inst": "LastPrice , Close , ReduceOnly"
+        });
+
+        let result: TestStruct = serde_json::from_value(test_json).unwrap();
+        assert_eq!(
+            result.exec_inst,
+            Some(vec![
+                ExecInstruction::LastPrice,
+                ExecInstruction::Close,
+                ExecInstruction::ReduceOnly,
+            ])
+        );
+    }
+
+    #[rstest]
+    fn test_deserialize_order_with_exec_instructions() {
+        let order_json = json!({
+            "account": 123456,
+            "symbol": "XBTUSD",
+            "orderID": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+            "side": "Buy",
+            "ordType": "Limit",
+            "timeInForce": "GoodTillCancel",
+            "ordStatus": "New",
+            "orderQty": 100,
+            "cumQty": 0,
+            "price": 50000.0,
+            "execInst": "ParticipateDoNotInitiate,ReduceOnly",
+            "transactTime": "2024-01-01T00:00:00.000Z",
+            "timestamp": "2024-01-01T00:00:00.000Z"
+        });
+
+        let order: Order = serde_json::from_value(order_json).unwrap();
+        assert_eq!(
+            order.exec_inst,
+            Some(vec![
+                ExecInstruction::ParticipateDoNotInitiate,
+                ExecInstruction::ReduceOnly,
+            ])
+        );
+    }
+}

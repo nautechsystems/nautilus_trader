@@ -159,11 +159,13 @@ impl BitmexHttpClient {
         symbol: Option<String>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
-        let mut params = GetOrderParamsBuilder::default();
+        let mut params_builder = GetOrderParamsBuilder::default();
+        params_builder.count(500); // Set a default count to avoid empty query
+        params_builder.reverse(true); // Get newest orders first
         if let Some(symbol) = symbol {
-            params.symbol(symbol);
+            params_builder.symbol(symbol);
         }
-        let params = params.build().map_err(to_pyvalue_err)?;
+        let params = params_builder.build().map_err(to_pyvalue_err)?;
         let price_precision = 1; // TBD
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
@@ -196,11 +198,13 @@ impl BitmexHttpClient {
         symbol: Option<String>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
-        let mut params = GetExecutionParamsBuilder::default();
+        let mut params_builder = GetExecutionParamsBuilder::default();
+        params_builder.count(500); // Set a default count to avoid empty query
+        params_builder.reverse(true); // Get newest fills first
         if let Some(symbol) = symbol {
-            params.symbol(symbol);
+            params_builder.symbol(symbol);
         }
-        let params = params.build().map_err(to_pyvalue_err)?;
+        let params = params_builder.build().map_err(to_pyvalue_err)?;
         let price_precision = 1; // TBD
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
@@ -231,8 +235,10 @@ impl BitmexHttpClient {
     #[pyo3(name = "get_position_reports")]
     fn py_get_position_reports<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
-        let params = GetPositionParamsBuilder::default();
-        let params = params.build().map_err(to_pyvalue_err)?;
+        let params = GetPositionParamsBuilder::default()
+            .count(500) // Set a default count to avoid empty query
+            .build()
+            .map_err(to_pyvalue_err)?;
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let resp = client.get_positions(params).await.map_err(to_pyvalue_err)?;
