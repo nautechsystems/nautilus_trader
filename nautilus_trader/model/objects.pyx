@@ -991,7 +991,8 @@ cdef class Money:
 
     def __eq__(self, Money other) -> bool:
         Condition.not_none(other, "other")
-        Condition.is_true(self._mem.currency.code == other._mem.currency.code, "currency != other.currency")
+        if self._mem.currency.code != other._mem.currency.code:
+            Condition.is_true(self._mem.currency.code == other._mem.currency.code, f"currency {self.currency.code} != other.currency {other.currency.code}")
         return self._mem.raw == other._mem.raw
 
     def __lt__(self, Money other) -> bool:
