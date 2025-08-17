@@ -30,6 +30,7 @@ pub struct NautilusCli {
 #[derive(Parser, Debug)]
 pub enum Commands {
     Database(DatabaseOpt),
+    Blockchain(BlockchainOpt),
 }
 
 /// Database management options and subcommands.
@@ -71,4 +72,20 @@ pub enum DatabaseCommand {
     Init(DatabaseConfig),
     /// Drops roles, privileges and deletes all data from the database.
     Drop(DatabaseConfig),
+}
+
+/// Blockchain management options and subcommands.
+#[derive(Parser, Debug)]
+#[command(about = "Blockchain operations", long_about = None)]
+pub struct BlockchainOpt {
+    #[clap(subcommand)]
+    pub command: BlockchainCommand,
+}
+
+/// Available blockchain management commands.
+#[derive(Parser, Debug, Clone)]
+#[command(about = "Blockchain operations", long_about = None)]
+pub enum BlockchainCommand {
+    /// Initializes and syncs blockchain blocks.
+    InitBlocks,
 }

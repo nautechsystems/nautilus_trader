@@ -42,10 +42,12 @@
 #![deny(clippy::missing_panics_doc)]
 #![deny(rustdoc::broken_intra_doc_links)]
 
+mod blockchain;
 mod database;
 pub mod opt;
 
 use crate::{
+    blockchain::sync::run_blockchain_command,
     database::postgres::run_database_command,
     opt::{Commands, NautilusCli},
 };
@@ -58,6 +60,7 @@ use crate::{
 pub async fn run(opt: NautilusCli) -> anyhow::Result<()> {
     match opt.command {
         Commands::Database(database_opt) => run_database_command(database_opt).await?,
+        Commands::Blockchain(blockchain_opt) => run_blockchain_command(blockchain_opt).await?,
     }
     Ok(())
 }
