@@ -316,7 +316,8 @@ CREATE TABLE IF NOT EXISTS "block" (
     l1_gas_used BIGINT,
     l1_fee_scalar BIGINT,
     PRIMARY KEY (chain_id, number)
-);
+) PARTITION BY LIST (chain_id);
+CREATE TABLE IF NOT EXISTS "block_default" PARTITION OF "block" DEFAULT;
 
 CREATE TABLE IF NOT EXISTS "token"(
     chain_id INTEGER NOT NULL REFERENCES chain(chain_id) ON DELETE CASCADE,
