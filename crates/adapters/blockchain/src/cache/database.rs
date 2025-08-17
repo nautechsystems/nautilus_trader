@@ -265,6 +265,10 @@ impl BlockchainCacheDatabase {
     ///
     /// This method is significantly faster than INSERT for bulk operations as it bypasses
     /// SQL parsing and uses PostgreSQL's native binary protocol.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the COPY operation fails.
     pub async fn add_blocks_copy(&self, chain_id: u32, blocks: &[Block]) -> anyhow::Result<()> {
         let copy_handler = PostgresCopyHandler::new(&self.pool);
         copy_handler.copy_blocks(chain_id, blocks).await
@@ -496,6 +500,11 @@ impl BlockchainCacheDatabase {
             .map_err(|e| anyhow::anyhow!("Failed to load tokens: {e}"))
     }
 
+    /// Loads pool data from the database for the specified chain and DEX.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database query fails, the connection to the database is lost, or the query parameters are invalid.
     pub async fn load_pools(
         &self,
         chain: SharedChain,
@@ -528,7 +537,7 @@ impl BlockchainCacheDatabase {
     /// Toggles performance optimization settings for sync operations.
     ///
     /// When enabled (true), applies settings for maximum write performance:
-    /// - synchronous_commit = OFF (2-3x performance improvement)
+    /// - synchronous_commit = OFF
     /// - work_mem increased for bulk operations
     ///
     /// When disabled (false), restores default safe settings:

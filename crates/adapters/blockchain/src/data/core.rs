@@ -71,6 +71,10 @@ pub struct BlockchainDataClientCore {
 
 impl BlockchainDataClientCore {
     /// Creates a new instance of [`BlockchainDataClientCore`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if `use_hypersync_for_live_data` is false but `wss_rpc_url` is None.
     pub fn new(
         config: BlockchainDataClientConfig,
         hypersync_tx: Option<tokio::sync::mpsc::UnboundedSender<BlockchainMessage>>,
@@ -138,6 +142,10 @@ impl BlockchainDataClientCore {
     }
 
     /// Establishes connections to all configured data sources and initializes the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if cache initialization or connection setup fails.
     pub async fn connect(&mut self) -> anyhow::Result<()> {
         tracing::info!(
             "Connecting blockchain data client for '{}'",
@@ -171,6 +179,11 @@ impl BlockchainDataClientCore {
         Ok(())
     }
 
+    /// Syncs blocks with consistency checks to ensure data integrity.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if block syncing fails or if consistency checks fail.
     pub async fn sync_blocks_checked(
         &mut self,
         from_block: u64,
@@ -222,6 +235,10 @@ impl BlockchainDataClientCore {
     }
 
     /// Synchronizes blockchain data by fetching and caching all blocks from the starting block to the current chain head.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if block fetching, caching, or database operations fail.
     pub async fn sync_blocks(
         &mut self,
         from_block: u64,
@@ -304,6 +321,10 @@ impl BlockchainDataClientCore {
 
     /// Fetches and caches all swap events for a specific liquidity pool within the given block range.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if fetching swap events fails or if caching operations fail.
+    ///
     /// # Panics
     ///
     /// Panics if swap event conversion to trade data fails.
@@ -345,7 +366,7 @@ impl BlockchainDataClientCore {
         while let Some(log) = stream.next().await {
             let swap_event = dex_extended.parse_swap_event(log)?;
             let swap = self
-                .process_pool_swap_event(&swap_event, &pool, dex_extended)
+                .process_pool_swap_event(&swap_event, pool, dex_extended)
                 .await?;
 
             let data = DataEvent::DeFi(DefiData::PoolSwap(swap));
@@ -357,6 +378,14 @@ impl BlockchainDataClientCore {
     }
 
     /// Processes a swap event from a liquidity pool and converts it to a `PoolSwap` data structure.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if swap event processing fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics if swap event conversion to trade data fails.
     pub async fn process_pool_swap_event(
         &self,
         swap_event: &SwapEvent,
@@ -369,7 +398,7 @@ impl BlockchainDataClientCore {
             .copied();
 
         let (side, size, price) = dex_extended
-            .convert_to_trade_data(&pool.token0, &pool.token1, &swap_event)
+            .convert_to_trade_data(&pool.token0, &pool.token1, swap_event)
             .expect("Failed to convert swap event to trade data");
         let swap = swap_event.to_pool_swap(
             self.chain.clone(),
@@ -388,6 +417,10 @@ impl BlockchainDataClientCore {
     }
 
     /// Fetches and caches all mint events for a specific liquidity pool within the given block range.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if fetching mint events fails or if caching operations fail.
     pub async fn sync_pool_mints(
         &self,
         dex_id: &DexType,
@@ -437,6 +470,10 @@ impl BlockchainDataClientCore {
     }
 
     /// Processes a mint event (liquidity addition) and converts it to a `PoolLiquidityUpdate`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if mint event processing fails or if the liquidity update creation fails.
     pub async fn process_pool_mint_event(
         &self,
         mint_event: &MintEvent,
@@ -471,6 +508,10 @@ impl BlockchainDataClientCore {
     }
 
     /// Fetches and caches all burn events for a specific liquidity pool within the given block range.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if fetching burn events fails or if caching operations fail.
     pub async fn sync_pool_burns(
         &self,
         dex_id: &DexType,
@@ -520,6 +561,11 @@ impl BlockchainDataClientCore {
     }
 
     /// Processes a burn event (liquidity removal) and converts it to a `PoolLiquidityUpdate`.
+    /// Processes a pool burn event and converts it to a liquidity update.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the burn event processing fails or if the liquidity update creation fails.
     pub async fn process_pool_burn_event(
         &self,
         burn_event: &BurnEvent,
@@ -559,6 +605,10 @@ impl BlockchainDataClientCore {
     /// 1. Pool creation events from the DEX factory
     /// 2. Token metadata for all tokens in discovered pools
     /// 3. Pool entities with proper token associations
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if syncing pools, tokens, or DEX operations fail.
     pub async fn sync_exchange_pools(
         &mut self,
         dex: &DexType,
@@ -783,6 +833,10 @@ impl BlockchainDataClientCore {
     /// 1. Adding the DEX to the cache
     /// 2. Loading existing pools for the DEX
     /// 3. Configuring event signatures for subscriptions
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if DEX registration, cache operations, or pool loading fails.
     pub async fn register_dex_exchange(&mut self, dex_id: DexType) -> anyhow::Result<()> {
         if let Some(dex_extended) = get_dex_extended(self.chain.name, &dex_id) {
             tracing::info!("Registering DEX {dex_id} on chain {}", self.chain.name);
@@ -822,6 +876,10 @@ impl BlockchainDataClientCore {
     }
 
     /// Retrieves a pool from the cache by its address.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the pool is not registered in the cache.
     pub fn get_pool(&self, pool_address: &Address) -> anyhow::Result<&SharedPool> {
         match self.cache.get_pool(pool_address) {
             Some(pool) => Ok(pool),

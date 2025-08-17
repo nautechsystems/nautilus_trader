@@ -22,6 +22,7 @@ use nautilus_model::defi::Block;
 use sqlx::{PgPool, postgres::PgPoolCopyExt};
 
 /// Handles PostgreSQL COPY BINARY operations for blockchain data.
+#[derive(Debug)]
 pub struct PostgresCopyHandler<'a> {
     pool: &'a PgPool,
 }

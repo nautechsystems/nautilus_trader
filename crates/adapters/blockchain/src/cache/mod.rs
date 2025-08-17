@@ -73,16 +73,12 @@ impl BlockchainCache {
     pub async fn get_cache_block_consistency_status(
         &self,
     ) -> Option<CachedBlocksConsistencyStatus> {
-        match &self.database {
-            Some(database) => match database.get_block_consistency_status(&self.chain).await {
-                Ok(blocks_status) => Some(blocks_status),
-                Err(e) => {
-                    tracing::error!("Error getting block consistency status: {e}");
-                    return None;
-                }
-            },
-            None => None,
-        }
+        let database = self.database.as_ref()?;
+        database
+            .get_block_consistency_status(&self.chain)
+            .await
+            .map_err(|e| tracing::error!("Error getting block consistency status: {e}"))
+            .ok()
     }
 
     /// Returns the earliest block number where any DEX in the cache was created on the blockchain.
@@ -177,11 +173,15 @@ impl BlockchainCache {
     }
 
     /// Loads DEX exchange pools from the database into the in-memory cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the DEX has not been registered or if database operations fail.
     pub async fn load_pools(&mut self, dex_id: &DexType) -> anyhow::Result<()> {
         if let Some(database) = &self.database {
             let dex = self
                 .get_dex(dex_id)
-                .expect("Dex should have been registered.");
+                .ok_or_else(|| anyhow::anyhow!("DEX {:?} has not been registered", dex_id))?;
             let pool_rows = database
                 .load_pools(self.chain.clone(), &dex_id.to_string())
                 .await?;
@@ -402,7 +402,7 @@ impl BlockchainCache {
     /// Returns a reference to the `DexExtended` associated with the given name.
     #[must_use]
     pub fn get_dex(&self, dex_id: &DexType) -> Option<SharedDex> {
-        self.dexes.get(&dex_id).cloned()
+        self.dexes.get(dex_id).cloned()
     }
 
     /// Returns a list of registered `DexType` in the cache.

@@ -84,6 +84,11 @@ impl HyperSyncClient {
         self.pool_addresses.get(&instrument_id)
     }
 
+    /// Processes DEX contract events for a specific block.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the DEX extended configuration cannot be retrieved or if stream creation fails.
     pub async fn process_block_dex_contract_events(
         &self,
         dex: &DexType,
@@ -125,7 +130,7 @@ impl HyperSyncClient {
 
                 for batch in response.data.logs {
                     for log in batch {
-                        let event_signature = match log.topics.get(0).and_then(|t| t.as_ref()) {
+                        let event_signature = match log.topics.first().and_then(|t| t.as_ref()) {
                             Some(log_argument) => {
                                 format!("0x{}", hex::encode(log_argument.as_ref()))
                             }
@@ -196,6 +201,10 @@ impl HyperSyncClient {
     }
 
     /// Creates a stream of contract event logs matching the specified criteria.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the contract address cannot be parsed as a valid Ethereum address.
     pub async fn request_contract_events_stream(
         &self,
         from_block: u64,

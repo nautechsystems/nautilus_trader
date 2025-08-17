@@ -159,7 +159,7 @@ impl BlockchainDataClient {
                                     // Fetch and process all subscribed events per DEX
                                     for dex in core_client.cache.get_registered_dexes(){
                                         let addresses = core_client.subscription_manager.get_subscribed_dex_contract_addresses(&dex);
-                                        if addresses.len() > 0 {
+                                        if !addresses.is_empty() {
                                             core_client.hypersync_client.process_block_dex_contract_events(
                                                 &dex,
                                                 block.number,
@@ -469,10 +469,10 @@ impl BlockchainDataClient {
     /// This method blocks until the spawned process task finishes execution,
     /// which typically happens after a shutdown signal is sent.
     pub async fn await_process_task_close(&mut self) {
-        if let Some(handle) = self.process_task.take() {
-            if let Err(e) = handle.await {
-                tracing::error!("Process task join error: {e}");
-            }
+        if let Some(handle) = self.process_task.take()
+            && let Err(e) = handle.await
+        {
+            tracing::error!("Process task join error: {e}");
         }
     }
 }
