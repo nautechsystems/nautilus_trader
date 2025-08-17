@@ -61,8 +61,6 @@ pub struct BlockchainDataClientCore {
     pub cache: BlockchainCache,
     /// Interface for interacting with ERC20 token contracts.
     tokens: Erc20Contract,
-    /// Channel sender for publishing data events to the `AsyncRunner`.
-    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     /// Client for the HyperSync data indexing service.
     pub hypersync_client: HyperSyncClient,
     /// Optional WebSocket RPC client for direct blockchain node communication.
@@ -74,10 +72,10 @@ pub struct BlockchainDataClientCore {
 impl BlockchainDataClientCore {
     /// Creates a new instance of [`BlockchainDataClientCore`].
     pub fn new(
-        chain: SharedChain,
         config: BlockchainDataClientConfig,
-        hypersync_tx: tokio::sync::mpsc::UnboundedSender<BlockchainMessage>,
+        hypersync_tx: Option<tokio::sync::mpsc::UnboundedSender<BlockchainMessage>>,
     ) -> Self {
+        let chain = config.chain.clone();
         let cache = BlockchainCache::new(chain.clone());
         let rpc_client = if !config.use_hypersync_for_live_data && config.wss_rpc_url.is_some() {
             let wss_rpc_url = config.wss_rpc_url.clone().expect("wss_rpc_url is required");
@@ -95,13 +93,11 @@ impl BlockchainDataClientCore {
         );
 
         let hypersync_client = HyperSyncClient::new(chain.clone(), hypersync_tx);
-        let data_sender = get_data_event_sender();
         Self {
             chain,
             config,
             rpc_client,
             tokens: erc20_contract,
-            data_sender,
             cache,
             hypersync_client,
             subscription_manager: DefiDataSubscriptionManager::new(),
@@ -774,7 +770,8 @@ impl BlockchainDataClientCore {
     pub fn send_data(&self, data: DataEvent) {
         tracing::debug!("Sending {data}");
 
-        if let Err(e) = self.data_sender.send(data) {
+        let data_sender = get_data_event_sender();
+        if let Err(e) = data_sender.send(data) {
             tracing::error!("Failed to send data: {e}");
         }
     }

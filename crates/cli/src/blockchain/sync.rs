@@ -13,6 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::sync::Arc;
+
+use nautilus_blockchain::{
+    config::BlockchainDataClientConfig, data::core::BlockchainDataClientCore,
+};
+use nautilus_infrastructure::sql::pg::get_postgres_connect_options;
+use nautilus_model::defi::chain::Chain;
+
 use crate::opt::{BlockchainCommand, BlockchainOpt};
 
 /// Runs blockchain commands based on the provided options.
@@ -22,8 +30,36 @@ use crate::opt::{BlockchainCommand, BlockchainOpt};
 /// Returns an error if execution of the specified blockchain command fails.
 pub async fn run_blockchain_command(opt: BlockchainOpt) -> anyhow::Result<()> {
     match opt.command {
-        BlockchainCommand::InitBlocks => {
-            log::info!("Syncing blocks");
+        BlockchainCommand::SyncBlocks { chain, database } => {
+            let chain = Chain::from_chain_name(&chain)
+                .ok_or_else(|| anyhow::anyhow!("Invalid chain name: {}", chain))?;
+            let chain = Arc::new(chain.to_owned());
+
+            let postgres_connect_options = get_postgres_connect_options(
+                database.host,
+                database.port,
+                database.username,
+                database.password,
+                database.database,
+            );
+            let config = BlockchainDataClientConfig::new(
+                chain.clone(),
+                vec![],
+                "".to_string(), // we dont need to http rpc url for block syncing
+                None,
+                None,
+                true,
+                None,
+                None,
+                Some(postgres_connect_options),
+            );
+            let data_client = BlockchainDataClientCore::new(config, None);
+
+            log::info!(
+                "Syncing blocks for chain: {} (ID: {})",
+                chain.name,
+                chain.chain_id
+            );
         }
     }
     Ok(())

@@ -48,7 +48,7 @@ pub struct HyperSyncClient {
     /// Background task handle for the block subscription task.
     blocks_task: Option<tokio::task::JoinHandle<()>>,
     /// Channel for sending blockchain messages to the adapter data client.
-    tx: tokio::sync::mpsc::UnboundedSender<BlockchainMessage>,
+    tx: Option<tokio::sync::mpsc::UnboundedSender<BlockchainMessage>>,
     /// Index of pool addressed keyed by instrument ID.
     pool_addresses: AHashMap<InstrumentId, Address>,
 }
@@ -62,7 +62,7 @@ impl HyperSyncClient {
     #[must_use]
     pub fn new(
         chain: SharedChain,
-        tx: tokio::sync::mpsc::UnboundedSender<BlockchainMessage>,
+        tx: Option<tokio::sync::mpsc::UnboundedSender<BlockchainMessage>>,
     ) -> Self {
         let mut config = hypersync_client::ClientConfig::default();
         let hypersync_url =
@@ -104,7 +104,12 @@ impl HyperSyncClient {
             contract_addresses,
             vec![topics],
         );
-        let tx = self.tx.clone();
+        let tx = if let Some(tx) = &self.tx {
+            tx.clone()
+        } else {
+            tracing::error!("Hypersync client channel should have been initialized");
+            return;
+        };
         let client = self.client.clone();
         let dex_extended =
             get_dex_extended(self.chain.name, dex).expect("Failed to get dex extended");
@@ -294,7 +299,12 @@ impl HyperSyncClient {
 
         let chain = self.chain.name;
         let client = self.client.clone();
-        let tx = self.tx.clone();
+        let tx = if let Some(tx) = &self.tx {
+            tx.clone()
+        } else {
+            tracing::error!("Hypersync client channel should have been initialized");
+            return;
+        };
 
         let task = get_runtime().spawn(async move {
             tracing::debug!("Starting task 'blocks_feed");

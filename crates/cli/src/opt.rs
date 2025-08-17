@@ -86,6 +86,13 @@ pub struct BlockchainOpt {
 #[derive(Parser, Debug, Clone)]
 #[command(about = "Blockchain operations", long_about = None)]
 pub enum BlockchainCommand {
-    /// Initializes and syncs blockchain blocks.
-    InitBlocks,
+    /// Syncs blockchain blocks.
+    SyncBlocks {
+        /// The blockchain chain name (case-insensitive). Examples: ethereum, arbitrum, base, polygon, bsc
+        #[arg(long)]
+        chain: String,
+        /// Database configuration options
+        #[clap(flatten)]
+        database: DatabaseConfig,
+    },
 }

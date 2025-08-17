@@ -75,8 +75,7 @@ impl BlockchainDataClient {
         let chain = config.chain.clone();
         let (command_tx, command_rx) = tokio::sync::mpsc::unbounded_channel();
         let (hypersync_tx, hypersync_rx) = tokio::sync::mpsc::unbounded_channel();
-        let core_client =
-            BlockchainDataClientCore::new(chain.clone(), config.clone(), hypersync_tx);
+        let core_client = BlockchainDataClientCore::new(config.clone(), Some(hypersync_tx));
         Self {
             chain,
             core_client: Some(core_client),
