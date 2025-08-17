@@ -1325,11 +1325,21 @@ class LiveExecutionEngine(ExecutionEngine):
         return None
 
     def _fill_reports_equal(self, cached_fill: OrderFilled, report: FillReport) -> bool:
+        # Commission can be missing on reports from some venues/paths; compare safely
+        if cached_fill.commission is None and report.commission is None:
+            commissions_equal = True
+        elif cached_fill.commission is None or report.commission is None:
+            commissions_equal = False
+        else:
+            commissions_equal = (
+                cached_fill.commission.currency == report.commission.currency
+                and cached_fill.commission == report.commission
+            )
+
         return (
             cached_fill.last_qty == report.last_qty
             and cached_fill.last_px == report.last_px
-            and cached_fill.commission.currency == report.commission.currency
-            and cached_fill.commission == report.commission
+            and commissions_equal
             and cached_fill.liquidity_side == report.liquidity_side
             and cached_fill.ts_event == report.ts_event
         )
