@@ -169,7 +169,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self.inflight_check_max_retries: int = config.inflight_check_retries
         self.own_books_audit_interval_secs: float | None = config.own_books_audit_interval_secs
         self.open_check_interval_secs: float | None = config.open_check_interval_secs
-        self.open_check_open_only: float | None = config.open_check_open_only
+        self.open_check_open_only: bool = config.open_check_open_only
         self.purge_closed_orders_interval_mins = config.purge_closed_orders_interval_mins
         self.purge_closed_orders_buffer_mins = config.purge_closed_orders_buffer_mins
         self.purge_closed_positions_interval_mins = config.purge_closed_positions_interval_mins
@@ -656,12 +656,14 @@ class LiveExecutionEngine(ExecutionEngine):
             open_len = len(open_orders)
             self._log.debug(f"Found {open_len} order{'' if open_len == 1 else 's'} open")
 
+            check_open_only = self.open_check_open_only
+
             # In full-history mode, if there are no cached open orders, skip the venue check
             # In open-only mode, the venue is always queried regardless of cache state
-            if not open_orders and not self.open_check_open_only:
+            if not open_orders and not check_open_only:
                 return  # Nothing further to check
 
-            if self.open_check_open_only:
+            if check_open_only:
                 clients = self._clients.values()
             else:
                 clients = self.get_clients_for_orders(open_orders)
@@ -672,7 +674,7 @@ class LiveExecutionEngine(ExecutionEngine):
                         instrument_id=None,
                         start=None,
                         end=None,
-                        open_only=self.open_check_open_only,
+                        open_only=check_open_only,
                         command_id=UUID4(),
                         ts_init=self._clock.timestamp_ns(),
                         log_receipt_level=LogLevel.DEBUG,
@@ -1048,7 +1050,8 @@ class LiveExecutionEngine(ExecutionEngine):
                 result = False
 
             results.append(result)
-            reconciled_orders.add(order_report.client_order_id)
+            if order_report.client_order_id is not None:
+                reconciled_orders.add(order_report.client_order_id)
 
         if not self.filter_position_reports:
             position_reports: list[PositionStatusReport]
@@ -1192,7 +1195,11 @@ class LiveExecutionEngine(ExecutionEngine):
             fill: OrderFilled = self._generate_inferred_fill(order, report, instrument)
             self._handle_event(fill)
 
-            if report.avg_px is not None and not math.isclose(report.avg_px, order.avg_px):
+            if (
+                report.avg_px is not None
+                and order.avg_px is not None
+                and not math.isclose(float(report.avg_px), float(order.avg_px))
+            ):
                 self._log.warning(
                     f"report.avg_px {report.avg_px} != order.avg_px {order.avg_px}, "
                     "this could potentially be caused by information loss due to inferred fills",
@@ -1249,32 +1256,46 @@ class LiveExecutionEngine(ExecutionEngine):
 
             if existing_fill:
                 if not self._fill_reports_equal(existing_fill, report):
-                    differences = []
+                    differences: list[str] = []
+
+                    # Last quantity
                     if existing_fill.last_qty != report.last_qty:
-                        differences.append(f"qty: {existing_fill.last_qty} → {report.last_qty}")
+                        differences.append(f"qty: {existing_fill.last_qty} vs {report.last_qty}")
 
+                    # Last price
                     if existing_fill.last_px != report.last_px:
-                        differences.append(f"px: {existing_fill.last_px} → {report.last_px}")
+                        differences.append(f"px: {existing_fill.last_px} vs {report.last_px}")
 
-                    if existing_fill.commission != report.commission:
-                        differences.append(
-                            f"commission: {existing_fill.commission} → {report.commission}",
-                        )
+                    # Commission
+                    if existing_fill.commission is None and report.commission is not None:
+                        differences.append(f"commission: None vs {report.commission}")
+                    elif existing_fill.commission is not None and report.commission is None:
+                        differences.append(f"commission: {existing_fill.commission} vs None")
+                    elif existing_fill.commission is not None and report.commission is not None:
+                        if existing_fill.commission.currency != report.commission.currency:
+                            differences.append(
+                                f"commission currency: {existing_fill.commission.currency} vs {report.commission.currency}",
+                            )
+                        elif existing_fill.commission != report.commission:
+                            differences.append(
+                                f"commission: {existing_fill.commission} vs {report.commission}",
+                            )
 
+                    # Liquidity side
                     if existing_fill.liquidity_side != report.liquidity_side:
                         differences.append(
-                            f"liquidity: {existing_fill.liquidity_side} → {report.liquidity_side}",
+                            f"liquidity: {existing_fill.liquidity_side} vs {report.liquidity_side}",
                         )
 
+                    # Timestamp
                     if existing_fill.ts_event != report.ts_event:
                         differences.append(
-                            f"ts_event: {existing_fill.ts_event} → {report.ts_event}",
+                            f"ts_event: {existing_fill.ts_event} vs {report.ts_event}",
                         )
 
                     self._log.warning(
                         f"Fill report data differs from existing data for trade_id {report.trade_id}, "
-                        f"differences: {', '.join(differences)}. "
-                        f"Continuing with existing cached data to maintain consistency",
+                        f"differences: {', '.join(differences)}; retaining cached data for consistency",
                     )
 
             return True  # Fill already applied, continue with existing data
@@ -1307,6 +1328,7 @@ class LiveExecutionEngine(ExecutionEngine):
         return (
             cached_fill.last_qty == report.last_qty
             and cached_fill.last_px == report.last_px
+            and cached_fill.commission.currency == report.commission.currency
             and cached_fill.commission == report.commission
             and cached_fill.liquidity_side == report.liquidity_side
             and cached_fill.ts_event == report.ts_event
@@ -1538,7 +1560,7 @@ class LiveExecutionEngine(ExecutionEngine):
             order_side=report.order_side,
             order_type=report.order_type,
             quantity=report.quantity,
-            time_in_force=report.time_in_force if report.expire_time else TimeInForce.GTC,
+            time_in_force=report.time_in_force,
             post_only=report.post_only,
             reduce_only=report.reduce_only,
             quote_quantity=False,
@@ -1623,7 +1645,7 @@ class LiveExecutionEngine(ExecutionEngine):
             price=report.price,
             trigger_price=report.trigger_price,
             event_id=UUID4(),
-            ts_event=report.ts_accepted,
+            ts_event=report.ts_last,
             ts_init=self._clock.timestamp_ns(),
             reconciliation=True,
         )

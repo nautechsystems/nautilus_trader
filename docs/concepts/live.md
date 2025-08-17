@@ -327,6 +327,36 @@ The system state is then reconciled with the reports, which represent external "
 
 If reconciliation fails, the system will not continue to start, and an error will be logged.
 
+### Common reconciliation scenarios
+
+The scenarios below are split between startup reconciliation (mass status) and runtime/continuous checks (in-flight order checks, open-order polls, and own-books audits).
+
+#### Startup reconciliation
+
+| Scenario                               | Description                                                                                       | System behavior                                                                          | Test coverage                                                               |
+|----------------------------------------|---------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------|
+| **Order state discrepancy**            | Local order state differs from venue (e.g., local shows `SUBMITTED`, venue shows `REJECTED`).     | Updates local order to match venue state and emits missing events.                       | `test_order_state_discrepancy_reconciliation`                               |
+| **Missed fills**                       | Venue fills an order but the engine misses the fill event.                                        | Generates missing `OrderFilled` events.                                                  | `test_missed_fill_reconciliation_scenario`                                  |
+| **Multiple fills**                     | Order has multiple partial fills, some missed by the engine.                                      | Reconstructs complete fill history from venue reports.                                   | `test_multiple_fills_reconciliation`                                        |
+| **External orders**                    | Orders exist on venue but not in local cache (placed externally or from another system).          | Creates orders from venue reports; tags them `EXTERNAL`.                                 | `test_external_order_reconciliation`                                        |
+| **Partially filled then canceled**     | Order partially filled then canceled by venue.                                                    | Updates order state to `CANCELED` while preserving fill history.                         | `test_reconcile_state_no_cached_with_partially_filled_order_and_canceled`   |
+| **Different fill data**                | Venue reports different fill price/commission than cached.                                        | Preserves cached fill data; logs discrepancies from reports.                             | `test_reconcile_state_with_cached_order_and_different_fill_data`            |
+| **Filtered orders**                    | Orders marked for filtering via configuration.                                                    | Skips reconciliation based on `filtered_client_order_ids` or instrument filters.         | `test_filtered_client_order_ids_filters_reports`                            |
+| **Duplicate client order IDs**         | Multiple orders with same client order ID in venue reports.                                       | Reconciliation fails to prevent state corruption.                                        | `test_duplicate_client_order_id_fails_validation`                           |
+| **Position quantity mismatch (long)**  | Internal long position differs from external (e.g., internal: 100, external: 150).                | Generates BUY order for difference when `generate_missing_orders=True`.                  | `test_long_position_reconciliation_quantity_mismatch`                       |
+| **Position quantity mismatch (short)** | Internal short position differs from external (e.g., internal: -100, external: -150).             | Generates SELL order for difference when `generate_missing_orders=True`.                 | `test_short_position_reconciliation_quantity_mismatch`                      |
+| **Position reduction**                 | External position smaller than internal (e.g., internal: 150 long, external: 100 long).           | Generates opposite side order to reduce position.                                        | `test_long_position_reconciliation_external_smaller`                        |
+| **Position side flip**                 | Internal position opposite of external (e.g., internal: 100 long, external: 50 short).            | Generates order to close internal and open external position.                            | `test_position_reconciliation_cross_side_long_to_short`                     |
+| **INTERNAL-DIFF orders**               | Position reconciliation orders with strategy ID "INTERNAL-DIFF".                                  | Never filtered, regardless of `filter_unclaimed_external_orders`.                        | `test_internal_diff_order_not_filtered_when_filter_unclaimed_external_orders_enabled` |
+
+#### Runtime/continuous checks
+
+| Scenario                               | Description                                                                 | System behavior                                                                                                        | Test coverage                                |
+|----------------------------------------|-----------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------|----------------------------------------------|
+| **In-flight order timeout**            | In-flight order remains unconfirmed beyond threshold.                       | After `inflight_check_retries`, resolves to `REJECTED` to maintain consistent state.                                   | `test_inflight_order_timeout_reconciliation` |
+| **Open orders check discrepancy**      | Periodic open-orders poll detects a state change at the venue.              | At `open_check_interval_secs`, confirms status (respecting `open_check_open_only`) and applies transitions if changed. | —                                            |
+| **Own books audit mismatch**           | Own order books diverge from venue public books.                            | At `own_books_audit_interval_secs`, audits and logs inconsistencies for investigation.                                 | —                                            |
+
 ### Common reconciliation issues
 
 - **Missing trade reports**: Some venues filter out older trades, causing incomplete reconciliation. Increase `reconciliation_lookback_mins` or ensure all events are cached locally.
