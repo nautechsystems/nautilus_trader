@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 from asyncio import TaskGroup
+from decimal import Decimal
 from typing import TYPE_CHECKING
 
 import msgspec
@@ -68,6 +69,8 @@ from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.instruments import Instrument
+from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -137,6 +140,14 @@ class BybitExecutionClient(LiveExecutionClient):
         The configuration for the client.
     name : str, optional
         The custom client ID.
+
+    Notes
+    -----
+    Time-In-Force (TIF) handling:
+    - GTD (Good-Till-Date) orders are converted to GTC (Good-Till-Cancel) when
+      `use_gtd` is False in the configuration, as Bybit does not support GTD.
+    - This conversion is logged for transparency and preserves the venue's TIF
+      value when possible rather than masking inconsistencies.
 
     """
 
@@ -563,7 +574,11 @@ class BybitExecutionClient(LiveExecutionClient):
         return active_symbols
 
     def _determine_time_in_force(self, order: Order) -> BybitTimeInForce:
+        # GTD orders are converted to GTC if `use_gtd` is False (default),
+        # since Bybit does not natively support GTD. This conversion is logged
+        # for transparency.
         time_in_force: TimeInForce = order.time_in_force
+
         if order.time_in_force == TimeInForce.GTD:
             if not self._use_gtd:
                 time_in_force = TimeInForce.GTC
@@ -576,6 +591,7 @@ class BybitExecutionClient(LiveExecutionClient):
 
         if order.is_post_only:
             return BybitTimeInForce.POST_ONLY
+
         return self._enum_parser.parse_nautilus_time_in_force(time_in_force)
 
     async def _get_active_position_symbols(self, symbol: str | None) -> set[str]:
@@ -593,9 +609,11 @@ class BybitExecutionClient(LiveExecutionClient):
     async def _update_account_state(self) -> None:
         # positions = await self._http_account.query_position_info()
         (balances, ts_event) = await self._http_account.query_wallet_balance()
+
         if balances:
             self._log.info("Bybit API key authenticated", LogColor.GREEN)
             self._log.info(f"API key {self._http_account.client.api_key} has trading permissions")
+
         for balance in balances:
             balances = balance.parse_to_account_balance()
             margins = balance.parse_to_margin_balance()
@@ -757,6 +775,7 @@ class BybitExecutionClient(LiveExecutionClient):
 
         # Filter orders that are actually open
         valid_cancels: list[(CancelOrder)] = []
+
         for cancel in command.cancels:
             if cancel.client_order_id in open_order_ids:
                 valid_cancels.append(cancel)
@@ -1268,6 +1287,33 @@ class BybitExecutionClient(LiveExecutionClient):
         except Exception as e:
             self._log.exception(f"Failed to handle account execution update: {e}", e)
 
+    def _determine_fee_currency(
+        self,
+        product_type: BybitProductType,
+        instrument: Instrument,
+        order_side: OrderSide,
+    ) -> Currency:
+        # SPOT: Buy orders pay fees in base currency, Sell orders in quote currency
+        # LINEAR: Fees in settlement currency (typically USDT)
+        # INVERSE: Fees in settlement currency (base coin, e.g., BTC for BTCUSD)
+        # OPTION: Fees in settlement currency (USDC for legacy, USDT for new contracts post Feb 2025)
+        if product_type == BybitProductType.SPOT:
+            return (
+                instrument.base_currency
+                if order_side == OrderSide.BUY
+                else instrument.quote_currency
+            )
+        elif product_type in (
+            BybitProductType.LINEAR,
+            BybitProductType.INVERSE,
+            BybitProductType.OPTION,
+        ):
+            # All derivatives use their settlement currency for fees
+            return instrument.settlement_currency
+
+        # Unreachable unless new product_type added
+        raise NotImplementedError(f"Unsupported product type {product_type}")
+
     def _process_execution(
         self,
         execution: BybitWsAccountExecution | BybitWsAccountExecutionFast,
@@ -1319,14 +1365,20 @@ class BybitExecutionClient(LiveExecutionClient):
                 f"Cannot handle trade event: instrument {instrument_id} not found",
             )
 
-        quote_currency = instrument.quote_currency
-        is_maker = execution.isMaker
-        fee = instrument.maker_fee if is_maker else instrument.taker_fee
-
         last_qty: Quantity = instrument.make_qty(execution.execQty)
         last_px: Price = instrument.make_price(execution.execPrice)
-        notional_value: Money = instrument.notional_value(last_qty, last_px)
-        commission: Money = Money(notional_value * fee, quote_currency)
+        quote_currency = instrument.quote_currency
+
+        is_maker = execution.isMaker
+        fee_currency = self._determine_fee_currency(execution.category, instrument, order_side)
+
+        # Use actual fee from execution if available, otherwise calculate
+        if isinstance(execution, BybitWsAccountExecution) and execution.execFee:
+            commission: Money = Money(Decimal(execution.execFee), fee_currency)
+        else:
+            fee_rate = instrument.maker_fee if is_maker else instrument.taker_fee
+            notional_value: Money = instrument.notional_value(last_qty, last_px)
+            commission = Money(notional_value * fee_rate, fee_currency)
 
         self.generate_order_filled(
             strategy_id=strategy_id,
