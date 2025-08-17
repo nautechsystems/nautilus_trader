@@ -101,8 +101,17 @@ impl BlockchainCache {
                 tracing::error!(
                     "Error seeding chain in database: {e}. Continuing without database cache functionality"
                 );
+                return;
             } else {
-                tracing::info!("Chain seeded in database");
+                tracing::info!("Chain seeded in the database");
+            }
+
+            match database.create_block_partition(&self.chain).await {
+                Ok(message) => tracing::info!("Executing block partition creation: {}", message),
+                Err(e) => tracing::error!(
+                    "Error creating block partition for chain {}: {e}. Continuing without partition creation...",
+                    self.chain.chain_id
+                ),
             }
         }
     }

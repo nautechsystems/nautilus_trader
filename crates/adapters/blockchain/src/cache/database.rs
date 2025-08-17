@@ -68,6 +68,27 @@ impl BlockchainCacheDatabase {
         .map_err(|e| anyhow::anyhow!("Failed to seed chain table: {e}"))
     }
 
+    /// Creates a table partition for the block table specific to the given chain
+    /// by calling the existing PostgreSQL function create_block_partition.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operation fails.
+    pub async fn create_block_partition(&self, chain: &Chain) -> anyhow::Result<String> {
+        let result: (String,) = sqlx::query_as("SELECT create_block_partition($1)")
+            .bind(chain.chain_id as i32)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to call create_block_partition for chain {}: {e}",
+                    chain.chain_id
+                )
+            })?;
+
+        Ok(result.0)
+    }
+
     /// Inserts or updates a block record in the database.
     ///
     /// # Errors

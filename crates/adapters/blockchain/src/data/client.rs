@@ -25,7 +25,6 @@ use nautilus_common::{
     runtime::get_runtime,
 };
 use nautilus_data::client::DataClient;
-use nautilus_infrastructure::sql::pg::PostgresConnectOptions;
 use nautilus_model::{
     defi::{DefiData, SharedChain, validation::validate_address},
     identifiers::{ClientId, Venue},
@@ -85,20 +84,6 @@ impl BlockchainDataClient {
             command_rx: Some(command_rx),
             process_task: None,
             shutdown_tx: None,
-        }
-    }
-
-    /// Initializes the database connection for the blockchain cache.
-    pub async fn initialize_cache_database(&mut self, pg_connect_options: PostgresConnectOptions) {
-        tracing::info!(
-            "Initializing blockchain cache on database '{}'",
-            pg_connect_options.database
-        );
-        if let Some(core_client) = &mut self.core_client {
-            core_client
-                .cache
-                .initialize_database(pg_connect_options.clone().into())
-                .await;
         }
     }
 
@@ -542,12 +527,9 @@ impl DataClient for BlockchainDataClient {
             self.chain.name
         );
 
-        if let Some(pg_connect_options) = self.config.postgres_cache_database_config.clone() {
-            self.initialize_cache_database(pg_connect_options).await;
-        }
-
         if let Some(core_client) = &mut self.core_client {
             core_client.connect().await?;
+            core_client.initialize_cache_database().await;
         }
 
         if self.process_task.is_none() {

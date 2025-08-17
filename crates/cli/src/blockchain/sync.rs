@@ -53,8 +53,10 @@ pub async fn run_blockchain_command(opt: BlockchainOpt) -> anyhow::Result<()> {
                 None,
                 Some(postgres_connect_options),
             );
-            let data_client = BlockchainDataClientCore::new(config, None);
+            let mut data_client = BlockchainDataClientCore::new(config, None);
+            data_client.initialize_cache_database().await;
 
+            data_client.cache.initialize_chain().await;
             log::info!(
                 "Syncing blocks for chain: {} (ID: {})",
                 chain.name,

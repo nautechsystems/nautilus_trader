@@ -104,6 +104,19 @@ impl BlockchainDataClientCore {
         }
     }
 
+    /// Initializes the database connection for the blockchain cache.
+    pub async fn initialize_cache_database(&mut self) {
+        if let Some(pg_connect_options) = &self.config.postgres_cache_database_config {
+            tracing::info!(
+                "Initializing blockchain cache on database '{}'",
+                pg_connect_options.database
+            );
+            self.cache
+                .initialize_database(pg_connect_options.clone().into())
+                .await;
+        }
+    }
+
     /// Creates an appropriate blockchain RPC client for the specified blockchain.
     fn initialize_rpc_client(
         blockchain: Blockchain,
