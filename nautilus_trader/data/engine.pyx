@@ -847,12 +847,7 @@ cdef class DataEngine(Component):
         elif isinstance(command, SubscribeInstrument):
             self._handle_subscribe_instrument(client, command)
         elif isinstance(command, SubscribeOrderBook):
-            if command.data_type.type == OrderBookDelta:
-                self._handle_subscribe_order_book_deltas(client, command)
-            elif command.data_type.type == OrderBookDepth10:
-                self._handle_subscribe_order_book_depth(client, command)
-            else:
-                self._handle_subscribe_order_book_snapshots(client, command)
+            self._handle_subscribe_order_book(client, command)
         elif isinstance(command, SubscribeQuoteTicks):
             self._handle_subscribe_quote_ticks(client, command)
         elif isinstance(command, SubscribeTradeTicks):
@@ -878,10 +873,7 @@ cdef class DataEngine(Component):
         elif isinstance(command, UnsubscribeInstrument):
             self._handle_unsubscribe_instrument(client, command)
         elif isinstance(command, UnsubscribeOrderBook):
-            if command.data_type.type == OrderBookDelta:
-                self._handle_unsubscribe_order_book_deltas(client, command)
-            else:
-                self._handle_unsubscribe_order_book_snapshots(client, command)
+            self._handle_unsubscribe_order_book(client, command)
         elif isinstance(command, UnsubscribeQuoteTicks):
             self._handle_unsubscribe_quote_ticks(client, command)
         elif isinstance(command, UnsubscribeTradeTicks):
@@ -916,82 +908,59 @@ cdef class DataEngine(Component):
         if command.instrument_id not in client.subscribed_instruments():
             client.subscribe_instrument(command)
 
-    cpdef void _handle_subscribe_order_book_deltas(self, MarketDataClient client, SubscribeOrderBook command):
+    cpdef void _handle_subscribe_order_book(self, MarketDataClient client, SubscribeOrderBook command):
         Condition.not_none(client, "client")
-        Condition.not_none(command.instrument_id, "instrument_id")
-        Condition.not_none(command.params, "params")
-
-        if command.instrument_id.is_synthetic():
-            self._log.error("Cannot subscribe for synthetic instrument `OrderBookDelta` data")
-            return
-
-        self._setup_order_book(client, command)
-
-    cpdef void _handle_subscribe_order_book_depth(self, MarketDataClient client, SubscribeOrderBook command):
-        Condition.not_none(client, "client")
-        Condition.not_none(command.instrument_id, "instrument_id")
-        Condition.not_none(command.params, "params")
-
-        self._setup_order_book(client, command)
-
-
-    cpdef void _handle_subscribe_order_book_snapshots(self, MarketDataClient client, SubscribeOrderBook command):
-        Condition.not_none(client, "client")
-        Condition.not_none(command.instrument_id, "instrument_id")
-        Condition.positive_int(command.interval_ms, "interval_ms")
-        Condition.not_none(command.params, "params")
 
         if command.instrument_id.is_synthetic():
             self._log.error("Cannot subscribe for synthetic instrument `OrderBook` data")
             return
 
-        cdef tuple[InstrumentId, int] key = (command.instrument_id, command.interval_ms)
         cdef:
             str topic
             uint64_t interval_ns
             uint64_t timestamp_ns
             SnapshotInfo snap_info
+            tuple[InstrumentId, int] key
 
-        if key not in self._order_book_intervals:
-            self._order_book_intervals[key] = []
+        if command.interval_ms > 0:
+            key = (command.instrument_id, command.interval_ms)
 
-            timer_name = f"OrderBook|{command.instrument_id}|{command.interval_ms}"
-            interval_ns = millis_to_nanos(command.interval_ms)
-            timestamp_ns = self._clock.timestamp_ns()
-            start_time_ns = timestamp_ns - (timestamp_ns % interval_ns)
+            if key not in self._order_book_intervals:
+                self._order_book_intervals[key] = []
 
-            topic = self._get_snapshots_topic(command.instrument_id, command.interval_ms)
+                timer_name = f"OrderBook|{command.instrument_id}|{command.interval_ms}"
+                interval_ns = millis_to_nanos(command.interval_ms)
+                timestamp_ns = self._clock.timestamp_ns()
+                start_time_ns = timestamp_ns - (timestamp_ns % interval_ns)
 
-            # Cache snapshot event info
-            snap_info = SnapshotInfo.__new__(SnapshotInfo)
-            snap_info.instrument_id = command.instrument_id
-            snap_info.venue = command.instrument_id.venue
-            snap_info.is_composite = command.instrument_id.symbol.is_composite()
-            snap_info.root = command.instrument_id.symbol.root()
-            snap_info.topic = topic
-            snap_info.interval_ms = command.interval_ms
+                topic = self._get_snapshots_topic(command.instrument_id, command.interval_ms)
 
-            self._snapshot_info[timer_name] = snap_info
+                # Cache snapshot event info
+                snap_info = SnapshotInfo.__new__(SnapshotInfo)
+                snap_info.instrument_id = command.instrument_id
+                snap_info.venue = command.instrument_id.venue
+                snap_info.is_composite = command.instrument_id.symbol.is_composite()
+                snap_info.root = command.instrument_id.symbol.root()
+                snap_info.topic = topic
+                snap_info.interval_ms = command.interval_ms
 
-            if start_time_ns - NANOSECONDS_IN_MILLISECOND <= self._clock.timestamp_ns():
-                start_time_ns += NANOSECONDS_IN_SECOND  # Add one second
+                self._snapshot_info[timer_name] = snap_info
 
-            self._clock.set_timer_ns(
-                name=timer_name,
-                interval_ns=interval_ns,
-                start_time_ns=start_time_ns,
-                stop_time_ns=0,  # No stop
-                callback=self._snapshot_order_book,
-            )
-            self._log.debug(f"Set timer {timer_name}")
+                if start_time_ns - NANOSECONDS_IN_MILLISECOND <= self._clock.timestamp_ns():
+                    start_time_ns += NANOSECONDS_IN_SECOND  # Add one second
+
+                self._clock.set_timer_ns(
+                    name=timer_name,
+                    interval_ns=interval_ns,
+                    start_time_ns=start_time_ns,
+                    stop_time_ns=0,  # No stop
+                    callback=self._snapshot_order_book,
+                )
+                self._log.debug(f"Set timer {timer_name}")
 
         self._setup_order_book(client, command)
 
     cpdef void _setup_order_book(self, MarketDataClient client, SubscribeOrderBook command):
-        Condition.not_none(client, "client")
-        Condition.not_none(command.instrument_id, "instrument_id")
-        Condition.not_none(command.params, "params")
-
         cdef Instrument instrument = self._cache.instrument(command.instrument_id)
 
         if instrument is None:
@@ -1257,38 +1226,17 @@ cdef class DataEngine(Component):
             if command.instrument_id in client.subscribed_instruments():
                 client.unsubscribe_instrument(command)
 
-    cpdef void _handle_unsubscribe_order_book_deltas(self, MarketDataClient client, UnsubscribeOrderBook command):
+    cpdef void _handle_unsubscribe_order_book(self, MarketDataClient client, UnsubscribeOrderBook command):
         Condition.not_none(client, "client")
         Condition.not_none(command.params, "params")
 
-        if command.instrument_id.is_synthetic():
-            self._log.error("Cannot unsubscribe from synthetic instrument `OrderBookDelta` data")
-            return
-
-        cdef str topic = f"data.book.deltas.{command.instrument_id.venue}.{command.instrument_id.symbol.topic()}"
-        cdef int num_subscribers = len(self._msgbus.subscriptions(pattern=topic))
-        cdef bint is_internal_book_subscriber = self._msgbus.is_subscribed(
-            topic=topic,
-            handler=self._update_order_book,
-        )
-
-        # Remove the subscription for the internal order book if it is the last subscription
-        if num_subscribers == 1 and is_internal_book_subscriber:
-            self._msgbus.unsubscribe(
-                topic=topic,
-                handler=self._update_order_book,
-            )
-
-        if not self._msgbus.has_subscribers(topic):
-            if command.instrument_id in client.subscribed_order_book_deltas():
-                client.unsubscribe_order_book_deltas(command)
-
-    cpdef void _handle_unsubscribe_order_book_snapshots(self, MarketDataClient client, UnsubscribeOrderBook command):
-        Condition.not_none(client, "client")
-        Condition.not_none(command.params, "params")
+        cdef bint is_deltas_only = command.data_type.type == OrderBookDelta
 
         if command.instrument_id.is_synthetic():
-            self._log.error("Cannot unsubscribe from synthetic instrument `OrderBook` data")
+            if is_deltas_only:
+                self._log.error("Cannot unsubscribe from synthetic instrument `OrderBookDelta` data")
+            else:
+                self._log.error("Cannot unsubscribe from synthetic instrument `OrderBook` data")
             return
 
         # Set up topics
@@ -1296,11 +1244,19 @@ cdef class DataEngine(Component):
         cdef str depth_topic = f"data.book.depth.{command.instrument_id.venue}.{command.instrument_id.symbol.topic()}"
         cdef str snapshots_topic = f"data.book.snapshots.{command.instrument_id.venue}.{command.instrument_id.symbol.topic()}"
 
-        # Check the deltas and the depth subscription
-        cdef list[str] topics = [deltas_topic, depth_topic]
+        cdef list[str] topics
         cdef int num_subscribers = 0
         cdef bint is_internal_book_subscriber = False
 
+        # Determine which topics to handle
+        if is_deltas_only:
+            # Only handle deltas topic for OrderBookDelta
+            topics = [deltas_topic]
+        else:
+            # Handle both deltas and depth topics for snapshots
+            topics = [deltas_topic, depth_topic]
+
+        # Check and unsubscribe from internal order book handlers
         for topic in topics:
             num_subscribers = len(self._msgbus.subscriptions(pattern=topic))
             is_internal_book_subscriber = self._msgbus.is_subscribed(
@@ -1315,13 +1271,16 @@ cdef class DataEngine(Component):
                     handler=self._update_order_book,
                 )
 
+        # Unsubscribe from client deltas if no more subscribers
         if not self._msgbus.has_subscribers(deltas_topic):
             if command.instrument_id in client.subscribed_order_book_deltas():
                 client.unsubscribe_order_book_deltas(command)
 
-        if not self._msgbus.has_subscribers(snapshots_topic):
-            if command.instrument_id in client.subscribed_order_book_snapshots():
-                client.unsubscribe_order_book_snapshots(command)
+        # For snapshots, also handle the snapshots topic
+        if not is_deltas_only:
+            if not self._msgbus.has_subscribers(snapshots_topic):
+                if command.instrument_id in client.subscribed_order_book_snapshots():
+                    client.unsubscribe_order_book_snapshots(command)
 
     cpdef void _handle_unsubscribe_quote_ticks(self, MarketDataClient client, UnsubscribeQuoteTicks command):
         Condition.not_none(command.instrument_id, "instrument_id")
