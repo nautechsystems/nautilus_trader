@@ -72,6 +72,15 @@ pub static UNISWAP_V3: LazyLock<DexExtended> = LazyLock::new(|| {
     dex
 });
 
+/// Parses a pool creation event from a Uniswap V3 log.
+///
+/// # Errors
+///
+/// Returns an error if the log parsing fails or if the event data is invalid.
+///
+/// # Panics
+///
+/// Panics if the block number is not set in the log.
 pub fn parse_pool_created_event(log: Log) -> anyhow::Result<PoolCreatedEvent> {
     validate_event_signature_hash("PoolCreatedEvent", POOL_CREATED_EVENT_SIGNATURE_HASH, &log)?;
 
@@ -136,6 +145,15 @@ sol! {
     }
 }
 
+/// Parses a swap event from a Uniswap V3 log.
+///
+/// # Errors
+///
+/// Returns an error if the log parsing fails or if the event data is invalid.
+///
+/// # Panics
+///
+/// Panics if the contract address is not set in the log.
 pub fn parse_swap_event(dex: SharedDex, log: Log) -> anyhow::Result<SwapEvent> {
     validate_event_signature_hash("SwapEvent", SWAP_EVENT_SIGNATURE_HASH, &log)?;
 
@@ -218,6 +236,11 @@ fn calculate_price_from_sqrt_price(
     price_raw * decimal_adjustment
 }
 
+/// Converts a Uniswap V3 swap event to trade data.
+///
+/// # Errors
+///
+/// Returns an error if price or quantity calculations fail or if values are invalid.
 pub fn convert_to_trade_data(
     token0: &Token,
     token1: &Token,
@@ -239,7 +262,7 @@ pub fn convert_to_trade_data(
     }
 
     // Additional validation for extremely small or large prices
-    if price_f64 < 1e-18 || price_f64 > 1e18 {
+    if !(1e-18..=1e18).contains(&price_f64) {
         anyhow::bail!(
             "Price outside reasonable bounds: {} (sqrt_price_x96: {})",
             price_f64,
@@ -291,6 +314,15 @@ sol! {
     }
 }
 
+/// Parses a mint event from a Uniswap V3 log.
+///
+/// # Errors
+///
+/// Returns an error if the log parsing fails or if the event data is invalid.
+///
+/// # Panics
+///
+/// Panics if the contract address is not set in the log.
 pub fn parse_mint_event(dex: SharedDex, log: Log) -> anyhow::Result<MintEvent> {
     validate_event_signature_hash("Mint", MINT_EVENT_SIGNATURE_HASH, &log)?;
 
@@ -368,6 +400,15 @@ sol! {
     }
 }
 
+/// Parses a burn event from a Uniswap V3 log.
+///
+/// # Errors
+///
+/// Returns an error if the log parsing fails or if the event data is invalid.
+///
+/// # Panics
+///
+/// Panics if the contract address is not set in the log.
 pub fn parse_burn_event(dex: SharedDex, log: Log) -> anyhow::Result<BurnEvent> {
     validate_event_signature_hash("Burn", BURN_EVENT_SIGNATURE_HASH, &log)?;
 
