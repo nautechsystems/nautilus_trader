@@ -31,8 +31,10 @@ use nautilus_model::defi::{
 };
 use sqlx::postgres::PgConnectOptions;
 
-use crate::cache::database::BlockchainCacheDatabase;
+use crate::cache::{consistency::CachedBlocksConsistencyStatus, database::BlockchainCacheDatabase};
 
+pub mod consistency;
+pub mod copy;
 pub mod database;
 pub mod rows;
 
@@ -67,10 +69,16 @@ impl BlockchainCache {
         }
     }
 
-    /// Returns the highest block number currently cached, if any.
-    #[must_use]
-    pub fn last_cached_block_number(&self) -> Option<u64> {
-        self.block_timestamps.last_key_value().map(|(k, _)| *k)
+    /// Returns the highest continuous block number currently cached, if any.
+    pub async fn get_cache_block_consistency_status(
+        &self,
+    ) -> Option<CachedBlocksConsistencyStatus> {
+        let database = self.database.as_ref()?;
+        database
+            .get_block_consistency_status(&self.chain)
+            .await
+            .map_err(|e| tracing::error!("Error getting block consistency status: {e}"))
+            .ok()
     }
 
     /// Returns the earliest block number where any DEX in the cache was created on the blockchain.
@@ -94,6 +102,21 @@ impl BlockchainCache {
         self.database = Some(database);
     }
 
+    /// Toggles performance optimization settings in the database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database is not initialized or the operation fails.
+    pub async fn toggle_performance_settings(&self, enable: bool) -> anyhow::Result<()> {
+        match &self.database {
+            Some(database) => database.toggle_perf_sync_settings(enable).await,
+            None => {
+                tracing::warn!("Database not initialized, skipping performance settings toggle");
+                Ok(())
+            }
+        }
+    }
+
     pub async fn initialize_chain(&self) {
         // Seed target adapter chain in database
         if let Some(database) = &self.database {
@@ -101,8 +124,17 @@ impl BlockchainCache {
                 tracing::error!(
                     "Error seeding chain in database: {e}. Continuing without database cache functionality"
                 );
+                return;
             } else {
-                tracing::info!("Chain seeded in database");
+                tracing::info!("Chain seeded in the database");
+            }
+
+            match database.create_block_partition(&self.chain).await {
+                Ok(message) => tracing::info!("Executing block partition creation: {}", message),
+                Err(e) => tracing::error!(
+                    "Error creating block partition for chain {}: {e}. Continuing without partition creation...",
+                    self.chain.chain_id
+                ),
             }
         }
     }
@@ -141,11 +173,15 @@ impl BlockchainCache {
     }
 
     /// Loads DEX exchange pools from the database into the in-memory cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the DEX has not been registered or if database operations fail.
     pub async fn load_pools(&mut self, dex_id: &DexType) -> anyhow::Result<()> {
         if let Some(database) = &self.database {
             let dex = self
                 .get_dex(dex_id)
-                .expect("Dex should have been registered.");
+                .ok_or_else(|| anyhow::anyhow!("DEX {:?} has not been registered", dex_id))?;
             let pool_rows = database
                 .load_pools(self.chain.clone(), &dex_id.to_string())
                 .await?;
@@ -259,16 +295,25 @@ impl BlockchainCache {
     /// # Errors
     ///
     /// Returns an error if adding the blocks to the database fails.
-    pub async fn add_blocks_batch(&mut self, blocks: Vec<Block>) -> anyhow::Result<()> {
+    pub async fn add_blocks_batch(
+        &mut self,
+        blocks: Vec<Block>,
+        use_copy_command: bool,
+    ) -> anyhow::Result<()> {
         if blocks.is_empty() {
             return Ok(());
         }
 
-        // Batch insert to database if available
         if let Some(database) = &self.database {
-            database
-                .add_blocks_batch(self.chain.chain_id, &blocks)
-                .await?;
+            if use_copy_command {
+                database
+                    .add_blocks_copy(self.chain.chain_id, &blocks)
+                    .await?;
+            } else {
+                database
+                    .add_blocks_batch(self.chain.chain_id, &blocks)
+                    .await?;
+            }
         }
 
         // Update in-memory cache
@@ -357,7 +402,7 @@ impl BlockchainCache {
     /// Returns a reference to the `DexExtended` associated with the given name.
     #[must_use]
     pub fn get_dex(&self, dex_id: &DexType) -> Option<SharedDex> {
-        self.dexes.get(&dex_id).cloned()
+        self.dexes.get(dex_id).cloned()
     }
 
     /// Returns a list of registered `DexType` in the cache.

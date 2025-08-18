@@ -19,7 +19,11 @@ use nautilus_model::defi::{
 };
 use sqlx::{PgPool, postgres::PgConnectOptions};
 
-use crate::cache::rows::{BlockTimestampRow, PoolRow, TokenRow};
+use crate::cache::{
+    consistency::CachedBlocksConsistencyStatus,
+    copy::PostgresCopyHandler,
+    rows::{BlockTimestampRow, PoolRow, TokenRow},
+};
 
 /// Database interface for persisting and retrieving blockchain entities and domain objects.
 #[derive(Debug)]
@@ -66,6 +70,62 @@ impl BlockchainCacheDatabase {
         .await
         .map(|_| ())
         .map_err(|e| anyhow::anyhow!("Failed to seed chain table: {e}"))
+    }
+
+    /// Creates a table partition for the block table specific to the given chain
+    /// by calling the existing PostgreSQL function create_block_partition.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operation fails.
+    pub async fn create_block_partition(&self, chain: &Chain) -> anyhow::Result<String> {
+        let result: (String,) = sqlx::query_as("SELECT create_block_partition($1)")
+            .bind(chain.chain_id as i32)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to call create_block_partition for chain {}: {e}",
+                    chain.chain_id
+                )
+            })?;
+
+        Ok(result.0)
+    }
+
+    /// Returns the highest block number that maintains data continuity in the database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database query fails.
+    pub async fn get_block_consistency_status(
+        &self,
+        chain: &Chain,
+    ) -> anyhow::Result<CachedBlocksConsistencyStatus> {
+        tracing::info!("Fetching block consistency status");
+
+        let result: (i64, i64) = sqlx::query_as(
+            r#"
+            SELECT
+                COALESCE((SELECT number FROM block WHERE chain_id = $1 ORDER BY number DESC LIMIT 1), 0) as max_block,
+                get_last_continuous_block($1) as last_continuous_block
+            "#
+        )
+        .bind(chain.chain_id as i32)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to get block info for chain {}: {}",
+                chain.chain_id,
+                e
+            )
+        })?;
+
+        Ok(CachedBlocksConsistencyStatus::new(
+            result.0 as u64,
+            result.1 as u64,
+        ))
     }
 
     /// Inserts or updates a block record in the database.
@@ -178,21 +238,8 @@ impl BlockchainCacheDatabase {
                 $9::text[], $10::text[], $11::text[],
                 $12::text[], $13::int8[], $14::int8[]
             )
-            ON CONFLICT (chain_id, number)
-            DO UPDATE SET
-                hash = EXCLUDED.hash,
-                parent_hash = EXCLUDED.parent_hash,
-                miner = EXCLUDED.miner,
-                gas_limit = EXCLUDED.gas_limit,
-                gas_used = EXCLUDED.gas_used,
-                timestamp = EXCLUDED.timestamp,
-                base_fee_per_gas = EXCLUDED.base_fee_per_gas,
-                blob_gas_used = EXCLUDED.blob_gas_used,
-                excess_blob_gas = EXCLUDED.excess_blob_gas,
-                l1_gas_price = EXCLUDED.l1_gas_price,
-                l1_gas_used = EXCLUDED.l1_gas_used,
-                l1_fee_scalar = EXCLUDED.l1_fee_scalar
-            ",
+            ON CONFLICT (chain_id, number) DO NOTHING
+           ",
         )
         .bind(chain_id as i32)
         .bind(&numbers[..])
@@ -212,6 +259,19 @@ impl BlockchainCacheDatabase {
         .await
         .map(|_| ())
         .map_err(|e| anyhow::anyhow!("Failed to batch insert into block table: {e}"))
+    }
+
+    /// Inserts blocks using PostgreSQL COPY BINARY for maximum performance.
+    ///
+    /// This method is significantly faster than INSERT for bulk operations as it bypasses
+    /// SQL parsing and uses PostgreSQL's native binary protocol.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the COPY operation fails.
+    pub async fn add_blocks_copy(&self, chain_id: u32, blocks: &[Block]) -> anyhow::Result<()> {
+        let copy_handler = PostgresCopyHandler::new(&self.pool);
+        copy_handler.copy_blocks(chain_id, blocks).await
     }
 
     /// Retrieves block timestamps for a given chain starting from a specific block number.
@@ -440,6 +500,11 @@ impl BlockchainCacheDatabase {
             .map_err(|e| anyhow::anyhow!("Failed to load tokens: {e}"))
     }
 
+    /// Loads pool data from the database for the specified chain and DEX.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database query fails, the connection to the database is lost, or the query parameters are invalid.
     pub async fn load_pools(
         &self,
         chain: SharedChain,
@@ -467,5 +532,54 @@ impl BlockchainCacheDatabase {
         .fetch_all(&self.pool)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to load pools: {e}"))
+    }
+
+    /// Toggles performance optimization settings for sync operations.
+    ///
+    /// When enabled (true), applies settings for maximum write performance:
+    /// - synchronous_commit = OFF
+    /// - work_mem increased for bulk operations
+    ///
+    /// When disabled (false), restores default safe settings:
+    /// - synchronous_commit = ON (data safety)
+    /// - work_mem back to default
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operations fail.
+    pub async fn toggle_perf_sync_settings(&self, enable: bool) -> anyhow::Result<()> {
+        if enable {
+            tracing::info!("Enabling performance sync settings for bulk operations");
+
+            // Set synchronous_commit to OFF for maximum write performance
+            sqlx::query("SET synchronous_commit = OFF")
+                .execute(&self.pool)
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to set synchronous_commit OFF: {e}"))?;
+
+            // Increase work_mem for bulk operations
+            sqlx::query("SET work_mem = '256MB'")
+                .execute(&self.pool)
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to set work_mem: {e}"))?;
+
+            tracing::debug!("Performance settings enabled: synchronous_commit=OFF, work_mem=256MB");
+        } else {
+            tracing::info!("Restoring default safe database performance settings");
+
+            // Restore synchronous_commit to ON for data safety
+            sqlx::query("SET synchronous_commit = ON")
+                .execute(&self.pool)
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to set synchronous_commit ON: {e}"))?;
+
+            // Reset work_mem to default
+            sqlx::query("RESET work_mem")
+                .execute(&self.pool)
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to reset work_mem: {e}"))?;
+        }
+
+        Ok(())
     }
 }

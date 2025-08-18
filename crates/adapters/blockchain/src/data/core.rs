@@ -61,8 +61,6 @@ pub struct BlockchainDataClientCore {
     pub cache: BlockchainCache,
     /// Interface for interacting with ERC20 token contracts.
     tokens: Erc20Contract,
-    /// Channel sender for publishing data events to the `AsyncRunner`.
-    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     /// Client for the HyperSync data indexing service.
     pub hypersync_client: HyperSyncClient,
     /// Optional WebSocket RPC client for direct blockchain node communication.
@@ -73,11 +71,15 @@ pub struct BlockchainDataClientCore {
 
 impl BlockchainDataClientCore {
     /// Creates a new instance of [`BlockchainDataClientCore`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if `use_hypersync_for_live_data` is false but `wss_rpc_url` is None.
     pub fn new(
-        chain: SharedChain,
         config: BlockchainDataClientConfig,
-        hypersync_tx: tokio::sync::mpsc::UnboundedSender<BlockchainMessage>,
+        hypersync_tx: Option<tokio::sync::mpsc::UnboundedSender<BlockchainMessage>>,
     ) -> Self {
+        let chain = config.chain.clone();
         let cache = BlockchainCache::new(chain.clone());
         let rpc_client = if !config.use_hypersync_for_live_data && config.wss_rpc_url.is_some() {
             let wss_rpc_url = config.wss_rpc_url.clone().expect("wss_rpc_url is required");
@@ -95,16 +97,27 @@ impl BlockchainDataClientCore {
         );
 
         let hypersync_client = HyperSyncClient::new(chain.clone(), hypersync_tx);
-        let data_sender = get_data_event_sender();
         Self {
             chain,
             config,
             rpc_client,
             tokens: erc20_contract,
-            data_sender,
             cache,
             hypersync_client,
             subscription_manager: DefiDataSubscriptionManager::new(),
+        }
+    }
+
+    /// Initializes the database connection for the blockchain cache.
+    pub async fn initialize_cache_database(&mut self) {
+        if let Some(pg_connect_options) = &self.config.postgres_cache_database_config {
+            tracing::info!(
+                "Initializing blockchain cache on database '{}'",
+                pg_connect_options.database
+            );
+            self.cache
+                .initialize_database(pg_connect_options.clone().into())
+                .await;
         }
     }
 
@@ -129,6 +142,10 @@ impl BlockchainDataClientCore {
     }
 
     /// Establishes connections to all configured data sources and initializes the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if cache initialization or connection setup fails.
     pub async fn connect(&mut self) -> anyhow::Result<()> {
         tracing::info!(
             "Connecting blockchain data client for '{}'",
@@ -162,24 +179,72 @@ impl BlockchainDataClientCore {
         Ok(())
     }
 
-    /// Synchronizes blockchain data by fetching and caching all blocks from the starting block to the current chain head.
-    pub async fn sync_blocks(
+    /// Syncs blocks with consistency checks to ensure data integrity.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if block syncing fails or if consistency checks fail.
+    pub async fn sync_blocks_checked(
         &mut self,
-        from_block: Option<u64>,
+        from_block: u64,
         to_block: Option<u64>,
     ) -> anyhow::Result<()> {
-        let from_block = if let Some(b) = from_block {
-            b
+        if let Some(blocks_status) = self.cache.get_cache_block_consistency_status().await {
+            // If blocks are consistent proceed with copy command.
+            if blocks_status.is_consistent() {
+                tracing::info!(
+                    "Cache is consistent: no gaps detected (last continuous block: {})",
+                    blocks_status.last_continuous_block
+                );
+                let target_block = max(blocks_status.max_block + 1, from_block);
+                tracing::info!("Starting fast sync with COPY from block {}", target_block);
+                self.sync_blocks(target_block, to_block, true).await?;
+            } else {
+                let gap_size = blocks_status.max_block - blocks_status.last_continuous_block;
+                tracing::info!(
+                    "Cache inconsistency detected: {} blocks missing between {} and {}",
+                    gap_size,
+                    blocks_status.last_continuous_block + 1,
+                    blocks_status.max_block
+                );
+
+                tracing::info!(
+                    "Block syncing Phase 1: Filling gaps with INSERT (blocks {} to {})",
+                    blocks_status.last_continuous_block + 1,
+                    blocks_status.max_block
+                );
+                self.sync_blocks(
+                    blocks_status.last_continuous_block + 1,
+                    Some(blocks_status.max_block),
+                    false,
+                )
+                .await?;
+
+                tracing::info!(
+                    "Block syncing Phase 2: Continuing with fast COPY from block {}",
+                    blocks_status.max_block + 1
+                );
+                self.sync_blocks(blocks_status.max_block + 1, to_block, true)
+                    .await?;
+            }
         } else {
-            tracing::warn!("Skipping blocks sync: `from_block` not supplied");
-            return Ok(());
-        };
+            self.sync_blocks(from_block, to_block, true).await?;
+        }
 
-        let from_block = match self.cache.last_cached_block_number() {
-            None => from_block,
-            Some(cached_block_number) => max(from_block, cached_block_number + 1),
-        };
+        Ok(())
+    }
 
+    /// Synchronizes blockchain data by fetching and caching all blocks from the starting block to the current chain head.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if block fetching, caching, or database operations fail.
+    pub async fn sync_blocks(
+        &mut self,
+        from_block: u64,
+        to_block: Option<u64>,
+        use_copy_command: bool,
+    ) -> anyhow::Result<()> {
         let to_block = if let Some(block) = to_block {
             block
         } else {
@@ -189,6 +254,11 @@ impl BlockchainDataClientCore {
         tracing::info!(
             "Syncing blocks from {from_block} to {to_block} (total: {total_blocks} blocks)"
         );
+
+        // Enable performance settings for sync operations
+        if let Err(e) = self.cache.toggle_performance_settings(true).await {
+            tracing::warn!("Failed to enable performance settings: {e}");
+        }
 
         let blocks_stream = self
             .hypersync_client
@@ -219,7 +289,7 @@ impl BlockchainDataClientCore {
             if batch.len() >= BATCH_SIZE || block_number >= to_block {
                 let batch_size = batch.len();
 
-                self.cache.add_blocks_batch(batch).await?;
+                self.cache.add_blocks_batch(batch, use_copy_command).await?;
                 metrics.update(batch_size);
 
                 // Re-initialize batch vector
@@ -235,15 +305,25 @@ impl BlockchainDataClientCore {
         // Process any remaining blocks
         if !batch.is_empty() {
             let batch_size = batch.len();
-            self.cache.add_blocks_batch(batch).await?;
+            self.cache.add_blocks_batch(batch, use_copy_command).await?;
             metrics.update(batch_size);
         }
 
         metrics.log_final_stats();
+
+        // Restore default safe settings after sync completion
+        if let Err(e) = self.cache.toggle_performance_settings(false).await {
+            tracing::warn!("Failed to restore default settings: {e}");
+        }
+
         Ok(())
     }
 
     /// Fetches and caches all swap events for a specific liquidity pool within the given block range.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if fetching swap events fails or if caching operations fail.
     ///
     /// # Panics
     ///
@@ -286,7 +366,7 @@ impl BlockchainDataClientCore {
         while let Some(log) = stream.next().await {
             let swap_event = dex_extended.parse_swap_event(log)?;
             let swap = self
-                .process_pool_swap_event(&swap_event, &pool, dex_extended)
+                .process_pool_swap_event(&swap_event, pool, dex_extended)
                 .await?;
 
             let data = DataEvent::DeFi(DefiData::PoolSwap(swap));
@@ -298,6 +378,14 @@ impl BlockchainDataClientCore {
     }
 
     /// Processes a swap event from a liquidity pool and converts it to a `PoolSwap` data structure.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if swap event processing fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics if swap event conversion to trade data fails.
     pub async fn process_pool_swap_event(
         &self,
         swap_event: &SwapEvent,
@@ -310,7 +398,7 @@ impl BlockchainDataClientCore {
             .copied();
 
         let (side, size, price) = dex_extended
-            .convert_to_trade_data(&pool.token0, &pool.token1, &swap_event)
+            .convert_to_trade_data(&pool.token0, &pool.token1, swap_event)
             .expect("Failed to convert swap event to trade data");
         let swap = swap_event.to_pool_swap(
             self.chain.clone(),
@@ -329,6 +417,10 @@ impl BlockchainDataClientCore {
     }
 
     /// Fetches and caches all mint events for a specific liquidity pool within the given block range.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if fetching mint events fails or if caching operations fail.
     pub async fn sync_pool_mints(
         &self,
         dex_id: &DexType,
@@ -378,6 +470,10 @@ impl BlockchainDataClientCore {
     }
 
     /// Processes a mint event (liquidity addition) and converts it to a `PoolLiquidityUpdate`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if mint event processing fails or if the liquidity update creation fails.
     pub async fn process_pool_mint_event(
         &self,
         mint_event: &MintEvent,
@@ -412,6 +508,10 @@ impl BlockchainDataClientCore {
     }
 
     /// Fetches and caches all burn events for a specific liquidity pool within the given block range.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if fetching burn events fails or if caching operations fail.
     pub async fn sync_pool_burns(
         &self,
         dex_id: &DexType,
@@ -461,6 +561,11 @@ impl BlockchainDataClientCore {
     }
 
     /// Processes a burn event (liquidity removal) and converts it to a `PoolLiquidityUpdate`.
+    /// Processes a pool burn event and converts it to a liquidity update.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the burn event processing fails or if the liquidity update creation fails.
     pub async fn process_pool_burn_event(
         &self,
         burn_event: &BurnEvent,
@@ -500,6 +605,10 @@ impl BlockchainDataClientCore {
     /// 1. Pool creation events from the DEX factory
     /// 2. Token metadata for all tokens in discovered pools
     /// 3. Pool entities with proper token associations
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if syncing pools, tokens, or DEX operations fail.
     pub async fn sync_exchange_pools(
         &mut self,
         dex: &DexType,
@@ -724,6 +833,10 @@ impl BlockchainDataClientCore {
     /// 1. Adding the DEX to the cache
     /// 2. Loading existing pools for the DEX
     /// 3. Configuring event signatures for subscriptions
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if DEX registration, cache operations, or pool loading fails.
     pub async fn register_dex_exchange(&mut self, dex_id: DexType) -> anyhow::Result<()> {
         if let Some(dex_extended) = get_dex_extended(self.chain.name, &dex_id) {
             tracing::info!("Registering DEX {dex_id} on chain {}", self.chain.name);
@@ -763,6 +876,10 @@ impl BlockchainDataClientCore {
     }
 
     /// Retrieves a pool from the cache by its address.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the pool is not registered in the cache.
     pub fn get_pool(&self, pool_address: &Address) -> anyhow::Result<&SharedPool> {
         match self.cache.get_pool(pool_address) {
             Some(pool) => Ok(pool),
@@ -774,7 +891,8 @@ impl BlockchainDataClientCore {
     pub fn send_data(&self, data: DataEvent) {
         tracing::debug!("Sending {data}");
 
-        if let Err(e) = self.data_sender.send(data) {
+        let data_sender = get_data_event_sender();
+        if let Err(e) = data_sender.send(data) {
             tracing::error!("Failed to send data: {e}");
         }
     }
