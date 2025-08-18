@@ -2187,7 +2187,7 @@ cdef class DataEngine(Component):
                     )
                     continue
 
-                aggregator = self._create_bar_aggregator(instrument, bar_type)
+                aggregator = self._create_bar_aggregator(instrument, bar_type, params)
 
                 if params["update_subscriptions"]:
                     self._bar_aggregators[bar_type.standard()] = aggregator
@@ -2418,7 +2418,7 @@ cdef class DataEngine(Component):
         aggregator = self._bar_aggregators.get(command.bar_type.standard())
 
         if aggregator is None:
-            aggregator = self._create_bar_aggregator(instrument, command.bar_type)
+            aggregator = self._create_bar_aggregator(instrument, command.bar_type, command.params)
 
         # Set if awaiting initial partial bar
         aggregator.set_await_partial(command.await_partial)
@@ -2478,10 +2478,11 @@ cdef class DataEngine(Component):
 
         aggregator.is_running = True
 
-    cpdef object _create_bar_aggregator(self, Instrument instrument, BarType bar_type):
+    cpdef object _create_bar_aggregator(self, Instrument instrument, BarType bar_type, dict params):
         if bar_type.spec.is_time_aggregated():
             # Use configured bar_build_delay, with special handling for composite bars
             bar_build_delay = self._time_bars_build_delay
+            time_bars_origin_offset = self._time_bars_origin_offset.get(bar_type.spec.aggregation) or params.get("time_bars_origin_offset")
 
             if bar_type.is_composite() and bar_type.composite().is_internally_aggregated() and bar_build_delay == 0:
                 bar_build_delay = 15  # Default for composite bars when config is 0
@@ -2495,7 +2496,7 @@ cdef class DataEngine(Component):
                 timestamp_on_close=self._time_bars_timestamp_on_close,
                 skip_first_non_full_bar=self._time_bars_skip_first_non_full_bar,
                 build_with_no_updates=self._time_bars_build_with_no_updates,
-                time_bars_origin_offset=self._time_bars_origin_offset.get(bar_type.spec.aggregation),
+                time_bars_origin_offset=time_bars_origin_offset,
                 bar_build_delay=bar_build_delay,
             )
         elif bar_type.spec.aggregation == BarAggregation.TICK:
