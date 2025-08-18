@@ -376,7 +376,7 @@ cdef class SubscribeOrderBook(SubscribeData):
         The maximum depth for the subscription.
     managed: bool, optional, default True
         If an order book should be managed by the data engine based on the subscribed feed.
-    interval_ms : int, optional, default 1000
+    interval_ms : int, default 0 (no interval snapshots)
         The interval (milliseconds) between snapshots.
     only_deltas : bool, optional, default True
         If the subscription is for OrderBookDeltas or OrderBook snapshots.
@@ -388,7 +388,7 @@ cdef class SubscribeOrderBook(SubscribeData):
     ValueError
         If both `client_id` and `venue` are both ``None`` (not enough routing info).
     ValueError
-        If `interval_ms` is not positive (> 0).
+        If `interval_ms` is negative (< 0).
     """
 
     def __init__(
@@ -401,11 +401,11 @@ cdef class SubscribeOrderBook(SubscribeData):
         uint64_t ts_init,
         int depth = 0,
         bint managed = True,
-        int interval_ms = 1000,
+        int interval_ms = 0,
         bint only_deltas = True,
         dict[str, object] params: dict | None = None,
     ) -> None:
-        Condition.positive_int(interval_ms, "interval_ms")
+        Condition.not_negative_int(interval_ms, "interval_ms")
         super().__init__(
             DataType(OrderBookDelta) if only_deltas else DataType(OrderBook),
             instrument_id,
