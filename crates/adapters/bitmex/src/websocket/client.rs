@@ -405,6 +405,16 @@ impl BitmexWebSocketClient {
         self.message_count.load(Ordering::Relaxed)
     }
 
+    /// Subscribe to instrument updates for all instruments on the venue.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the WebSocket is not connected or if the subscription fails.
+    pub async fn subscribe_instruments(&self) -> Result<(), BitmexWsError> {
+        let topic = WsTopic::Instrument;
+        self.subscribe(vec![topic.to_string()]).await
+    }
+
     /// Subscribe to instrument updates (mark/index prices) for the specified instrument.
     ///
     /// # Errors
@@ -574,6 +584,16 @@ impl BitmexWebSocketClient {
         let topic = topic_from_bar_spec(bar_type.spec());
         let symbol = bar_type.instrument_id().symbol.to_string();
         self.subscribe(vec![format!("{topic}:{symbol}")]).await
+    }
+
+    /// Unsubscribe from instrument updates for all instruments on the venue.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the WebSocket is not connected or if the unsubscription fails.
+    pub async fn unsubscribe_instruments(&self) -> Result<(), BitmexWsError> {
+        let topic = WsTopic::Instrument;
+        self.unsubscribe(vec![topic.to_string()]).await
     }
 
     /// Unsubscribe from instrument updates (mark/index prices) for the specified instrument.

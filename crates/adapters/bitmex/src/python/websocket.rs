@@ -134,6 +134,18 @@ impl BitmexWebSocketClient {
         })
     }
 
+    #[pyo3(name = "subscribe_instruments")]
+    fn py_subscribe_instruments<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.subscribe_instruments().await {
+                log::error!("Failed to subscribe to instruments: {e}");
+            }
+            Ok(())
+        })
+    }
+
     #[pyo3(name = "subscribe_instrument")]
     fn py_subscribe_instrument<'py>(
         &self,
@@ -289,6 +301,18 @@ impl BitmexWebSocketClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             if let Err(e) = client.subscribe_bars(bar_type).await {
                 log::error!("Failed to subscribe to bars: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "unsubscribe_instruments")]
+    fn py_unsubscribe_instruments<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.unsubscribe_instruments().await {
+                log::error!("Failed to unsubscribe from instruments: {e}");
             }
             Ok(())
         })
