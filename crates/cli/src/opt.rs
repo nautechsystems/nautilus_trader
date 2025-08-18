@@ -30,6 +30,7 @@ pub struct NautilusCli {
 #[derive(Parser, Debug)]
 pub enum Commands {
     Database(DatabaseOpt),
+    #[cfg(feature = "hypersync")]
     Blockchain(BlockchainOpt),
 }
 
@@ -74,6 +75,7 @@ pub enum DatabaseCommand {
     Drop(DatabaseConfig),
 }
 
+#[cfg(feature = "hypersync")]
 /// Blockchain management options and subcommands.
 #[derive(Parser, Debug)]
 #[command(about = "Blockchain operations", long_about = None)]
@@ -82,6 +84,7 @@ pub struct BlockchainOpt {
     pub command: BlockchainCommand,
 }
 
+#[cfg(feature = "hypersync")]
 /// Available blockchain management commands.
 #[derive(Parser, Debug, Clone)]
 #[command(about = "Blockchain operations", long_about = None)]
