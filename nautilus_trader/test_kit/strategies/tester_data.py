@@ -55,6 +55,7 @@ class DataTesterConfig(ActorConfig, frozen=True):
     subscribe_index_prices: bool = False
     subscribe_funding_rates: bool = False
     subscribe_bars: bool = False
+    subscribe_instrument: bool = False
     subscribe_instrument_status: bool = False
     subscribe_instrument_close: bool = False
     can_unsubscribe: bool = True
@@ -100,6 +101,9 @@ class DataTester(Actor):
         client_id = self.config.client_id
 
         for instrument_id in self.config.instrument_ids or []:
+            if self.config.subscribe_instrument:
+                self.subscribe_instrument(instrument_id)
+
             if self.config.subscribe_book_deltas:
                 self.subscribe_order_book_deltas(
                     instrument_id=instrument_id,
@@ -180,6 +184,9 @@ class DataTester(Actor):
         client_id = self.config.client_id
 
         for instrument_id in self.config.instrument_ids or []:
+            if self.config.subscribe_instrument:
+                self.unsubscribe_instrument(instrument_id)
+
             if self.config.subscribe_book_deltas:
                 self.unsubscribe_order_book_deltas(
                     instrument_id=instrument_id,

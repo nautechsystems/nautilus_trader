@@ -68,8 +68,9 @@ config_node = TradingNodeConfig(
 # Configure the data tester actor
 config_tester = DataTesterConfig(
     instrument_ids=[InstrumentId.from_str(f"{symbol}.{BITMEX}")],
-    # subscribe_quotes=True,
-    # subscribe_trades=True,
+    subscribe_instrument=True,
+    subscribe_quotes=True,
+    subscribe_trades=True,
     # subscribe_mark_prices=True,
     # subscribe_index_prices=True,
     # subscribe_funding_rates=True,

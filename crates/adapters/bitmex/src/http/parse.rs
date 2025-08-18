@@ -44,20 +44,49 @@ use crate::{
 #[must_use]
 pub fn parse_instrument_any(instrument: &Instrument, ts_init: UnixNanos) -> Option<InstrumentAny> {
     match instrument.instrument_type {
-        InstrumentType::Spot => Some(parse_spot_instrument(instrument, ts_init)),
-        InstrumentType::PerpetualContract => Some(parse_perpetual_instrument(instrument, ts_init)),
-        InstrumentType::Futures => Some(parse_futures_instrument(instrument, ts_init)),
+        InstrumentType::Spot => parse_spot_instrument(instrument, ts_init)
+            .map_err(|e| {
+                tracing::warn!(
+                    "Failed to parse spot instrument {}: {}",
+                    instrument.symbol,
+                    e
+                );
+                e
+            })
+            .ok(),
+        InstrumentType::PerpetualContract => parse_perpetual_instrument(instrument, ts_init)
+            .map_err(|e| {
+                tracing::warn!(
+                    "Failed to parse perpetual instrument {}: {}",
+                    instrument.symbol,
+                    e
+                );
+                e
+            })
+            .ok(),
+        InstrumentType::Futures => parse_futures_instrument(instrument, ts_init)
+            .map_err(|e| {
+                tracing::warn!(
+                    "Failed to parse futures instrument {}: {}",
+                    instrument.symbol,
+                    e
+                );
+                e
+            })
+            .ok(),
         _ => None,
     }
 }
 
 /// Parse a BitMEX spot instrument into a Nautilus `InstrumentAny`.
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics if decimal values for fees cannot be parsed.
-#[must_use]
-pub fn parse_spot_instrument(definition: &Instrument, ts_init: UnixNanos) -> InstrumentAny {
+/// Returns an error if values are out of valid range or cannot be parsed.
+pub fn parse_spot_instrument(
+    definition: &Instrument,
+    ts_init: UnixNanos,
+) -> anyhow::Result<InstrumentAny> {
     let instrument_id = parse_instrument_id(&definition.symbol);
     let raw_symbol = Symbol::new(&definition.symbol);
     let base_currency = get_currency(definition.underlying.to_uppercase());
@@ -66,10 +95,14 @@ pub fn parse_spot_instrument(definition: &Instrument, ts_init: UnixNanos) -> Ins
     let price_increment = Price::from(definition.tick_size.to_string());
     let size_increment = Quantity::from(1);
 
-    let taker_fee = Decimal::from_str(definition.taker_fee.to_string().as_str())
-        .expect("Invalid decimal value");
-    let maker_fee = Decimal::from_str(definition.maker_fee.to_string().as_str())
-        .expect("Invalid decimal value");
+    let taker_fee = definition
+        .taker_fee
+        .and_then(|fee| Decimal::from_str(&fee.to_string()).ok())
+        .unwrap_or(Decimal::ZERO);
+    let maker_fee = definition
+        .maker_fee
+        .and_then(|fee| Decimal::from_str(&fee.to_string()).ok())
+        .unwrap_or(Decimal::ZERO);
 
     let margin_init = definition
         .init_margin
@@ -82,12 +115,23 @@ pub fn parse_spot_instrument(definition: &Instrument, ts_init: UnixNanos) -> Ins
         .and_then(|margin| Decimal::from_str(&margin.to_string()).ok())
         .unwrap_or(Decimal::ZERO);
 
-    let lot_size = Some(Quantity::from(definition.lot_size.to_string()));
-    let max_quantity = Some(Quantity::from(definition.max_order_qty.to_string()));
-    let min_quantity = Some(Quantity::from(definition.lot_size.to_string()));
+    let lot_size = definition
+        .lot_size
+        .map(|size| Quantity::new_checked(size, 0))
+        .transpose()?;
+    let max_quantity = definition
+        .max_order_qty
+        .map(|qty| Quantity::new_checked(qty, 0))
+        .transpose()?;
+    let min_quantity = definition
+        .lot_size
+        .map(|size| Quantity::new_checked(size, 0))
+        .transpose()?;
     let max_notional: Option<Money> = None;
     let min_notional: Option<Money> = None;
-    let max_price = Some(Price::from(definition.max_price.to_string()));
+    let max_price = definition
+        .max_price
+        .map(|price| Price::from(price.to_string()));
     let min_price = None;
     let ts_event = UnixNanos::from(definition.timestamp);
 
@@ -116,30 +160,42 @@ pub fn parse_spot_instrument(definition: &Instrument, ts_init: UnixNanos) -> Ins
         ts_init,
     );
 
-    InstrumentAny::CurrencyPair(instrument)
+    Ok(InstrumentAny::CurrencyPair(instrument))
 }
 
 /// Parse a BitMEX perpetual instrument into a Nautilus `InstrumentAny`.
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics if decimal values for fees cannot be parsed.
-#[must_use]
-pub fn parse_perpetual_instrument(definition: &Instrument, ts_init: UnixNanos) -> InstrumentAny {
+/// Returns an error if values are out of valid range or cannot be parsed.
+pub fn parse_perpetual_instrument(
+    definition: &Instrument,
+    ts_init: UnixNanos,
+) -> anyhow::Result<InstrumentAny> {
     let instrument_id = parse_instrument_id(&definition.symbol);
     let raw_symbol = Symbol::new(&definition.symbol);
     let base_currency = get_currency(definition.underlying.to_uppercase());
     let quote_currency = get_currency(definition.quote_currency.to_uppercase());
-    let settlement_currency = get_currency(definition.settl_currency.to_uppercase());
+    let settlement_currency = get_currency(
+        definition
+            .settl_currency
+            .as_ref()
+            .map(|s| s.to_uppercase())
+            .unwrap_or_else(|| definition.quote_currency.to_uppercase()),
+    );
     let is_inverse = definition.is_inverse;
 
     let price_increment = Price::from(definition.tick_size.to_string());
     let size_increment = Quantity::from(1);
 
-    let taker_fee = Decimal::from_str(definition.taker_fee.to_string().as_str())
-        .expect("Invalid decimal value");
-    let maker_fee = Decimal::from_str(definition.maker_fee.to_string().as_str())
-        .expect("Invalid decimal value");
+    let taker_fee = definition
+        .taker_fee
+        .and_then(|fee| Decimal::from_str(&fee.to_string()).ok())
+        .unwrap_or(Decimal::ZERO);
+    let maker_fee = definition
+        .maker_fee
+        .and_then(|fee| Decimal::from_str(&fee.to_string()).ok())
+        .unwrap_or(Decimal::ZERO);
 
     let margin_init = definition
         .init_margin
@@ -153,13 +209,24 @@ pub fn parse_perpetual_instrument(definition: &Instrument, ts_init: UnixNanos) -
         .unwrap_or(Decimal::ZERO);
 
     // TODO: How to handle negative multipliers?
-    let multiplier = Some(Quantity::from(definition.multiplier.abs().to_string()));
-    let lot_size = Some(Quantity::from(definition.lot_size.to_string()));
-    let max_quantity = Some(Quantity::from(definition.max_order_qty.to_string()));
-    let min_quantity = Some(Quantity::from(definition.lot_size.to_string()));
+    let multiplier = Some(Quantity::new_checked(definition.multiplier.abs(), 0)?);
+    let lot_size = definition
+        .lot_size
+        .map(|size| Quantity::new_checked(size, 0))
+        .transpose()?;
+    let max_quantity = definition
+        .max_order_qty
+        .map(|qty| Quantity::new_checked(qty, 0))
+        .transpose()?;
+    let min_quantity = definition
+        .lot_size
+        .map(|size| Quantity::new_checked(size, 0))
+        .transpose()?;
     let max_notional: Option<Money> = None;
     let min_notional: Option<Money> = None;
-    let max_price = Some(Price::from(definition.max_price.to_string()));
+    let max_price = definition
+        .max_price
+        .map(|price| Price::from(price.to_string()));
     let min_price = None;
     let ts_event = UnixNanos::from(definition.timestamp);
 
@@ -190,21 +257,29 @@ pub fn parse_perpetual_instrument(definition: &Instrument, ts_init: UnixNanos) -
         ts_init,
     );
 
-    InstrumentAny::CryptoPerpetual(instrument)
+    Ok(InstrumentAny::CryptoPerpetual(instrument))
 }
 
 /// Parse a BitMEX futures instrument into a Nautilus `InstrumentAny`.
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics if decimal values for fees cannot be parsed.
-#[must_use]
-pub fn parse_futures_instrument(definition: &Instrument, ts_init: UnixNanos) -> InstrumentAny {
+/// Returns an error if values are out of valid range or cannot be parsed.
+pub fn parse_futures_instrument(
+    definition: &Instrument,
+    ts_init: UnixNanos,
+) -> anyhow::Result<InstrumentAny> {
     let instrument_id = parse_instrument_id(&definition.symbol);
     let raw_symbol = Symbol::new(&definition.symbol);
     let underlying = get_currency(definition.underlying.to_uppercase());
     let quote_currency = get_currency(definition.quote_currency.to_uppercase());
-    let settlement_currency = get_currency(definition.settl_currency.to_uppercase());
+    let settlement_currency = get_currency(
+        definition
+            .settl_currency
+            .as_ref()
+            .map(|s| s.to_uppercase())
+            .unwrap_or_else(|| definition.quote_currency.to_uppercase()),
+    );
     let is_inverse = definition.is_inverse;
 
     let activation_ns = UnixNanos::from(definition.listing);
@@ -212,10 +287,14 @@ pub fn parse_futures_instrument(definition: &Instrument, ts_init: UnixNanos) -> 
     let price_increment = Price::from(definition.tick_size.to_string());
     let size_increment = Quantity::from(1);
 
-    let taker_fee = Decimal::from_str(definition.taker_fee.to_string().as_str())
-        .expect("Invalid decimal value");
-    let maker_fee = Decimal::from_str(definition.maker_fee.to_string().as_str())
-        .expect("Invalid decimal value");
+    let taker_fee = definition
+        .taker_fee
+        .and_then(|fee| Decimal::from_str(&fee.to_string()).ok())
+        .unwrap_or(Decimal::ZERO);
+    let maker_fee = definition
+        .maker_fee
+        .and_then(|fee| Decimal::from_str(&fee.to_string()).ok())
+        .unwrap_or(Decimal::ZERO);
 
     let margin_init = definition
         .init_margin
@@ -229,14 +308,25 @@ pub fn parse_futures_instrument(definition: &Instrument, ts_init: UnixNanos) -> 
         .unwrap_or(Decimal::ZERO);
 
     // TODO: How to handle negative multipliers?
-    let multiplier = Some(Quantity::from(definition.multiplier.abs().to_string()));
+    let multiplier = Some(Quantity::new_checked(definition.multiplier.abs(), 0)?);
 
-    let lot_size = Some(Quantity::from(definition.lot_size.to_string()));
-    let max_quantity = Some(Quantity::from(definition.max_order_qty.to_string()));
-    let min_quantity = Some(Quantity::from(definition.lot_size.to_string()));
+    let lot_size = definition
+        .lot_size
+        .map(|size| Quantity::new_checked(size, 0))
+        .transpose()?;
+    let max_quantity = definition
+        .max_order_qty
+        .map(|qty| Quantity::new_checked(qty, 0))
+        .transpose()?;
+    let min_quantity = definition
+        .lot_size
+        .map(|size| Quantity::new_checked(size, 0))
+        .transpose()?;
     let max_notional: Option<Money> = None;
     let min_notional: Option<Money> = None;
-    let max_price = Some(Price::from(definition.max_price.to_string()));
+    let max_price = definition
+        .max_price
+        .map(|price| Price::from(price.to_string()));
     let min_price = None;
     let ts_event = UnixNanos::from(definition.timestamp);
 
@@ -269,7 +359,7 @@ pub fn parse_futures_instrument(definition: &Instrument, ts_init: UnixNanos) -> 
         ts_init,
     );
 
-    InstrumentAny::CryptoFuture(instrument)
+    Ok(InstrumentAny::CryptoFuture(instrument))
 }
 
 /// Parse a BitMEX trade into a Nautilus `TradeTick`.
@@ -579,7 +669,7 @@ mod tests {
         assert_eq!(instrument.root_symbol, "XBT");
         assert_eq!(instrument.state, "Open");
         assert!(instrument.is_inverse);
-        assert_eq!(instrument.maker_fee, 0.0005);
+        assert_eq!(instrument.maker_fee, Some(0.0005));
         assert_eq!(
             instrument.timestamp.to_rfc3339(),
             "2024-11-24T23:33:19.034+00:00"
@@ -981,9 +1071,11 @@ mod tests {
             listing: DateTime::parse_from_rfc3339("2016-05-13T12:00:00.000Z")
                 .unwrap()
                 .with_timezone(&Utc),
-            front: DateTime::parse_from_rfc3339("2016-05-13T12:00:00.000Z")
-                .unwrap()
-                .with_timezone(&Utc),
+            front: Some(
+                DateTime::parse_from_rfc3339("2016-05-13T12:00:00.000Z")
+                    .unwrap()
+                    .with_timezone(&Utc),
+            ),
             expiry: None,
             settle: None,
             listed_settle: None,
@@ -993,34 +1085,34 @@ mod tests {
             underlying_symbol: Some("XBT=".to_string()),
             reference: Some("BMEX".to_string()),
             reference_symbol: Some(".BXBT".to_string()),
-            lot_size: 1.0,
+            lot_size: Some(1.0),
             tick_size: 0.01,
             multiplier: 1.0,
-            settl_currency: "USD".to_string(),
+            settl_currency: Some("USD".to_string()),
             is_quanto: false,
             is_inverse: false,
-            maker_fee: -0.00025,
-            taker_fee: 0.00075,
+            maker_fee: Some(-0.00025),
+            taker_fee: Some(0.00075),
             timestamp: DateTime::parse_from_rfc3339("2024-01-01T00:00:00.000Z")
                 .unwrap()
                 .with_timezone(&Utc),
             // Set other fields to reasonable defaults
-            max_order_qty: 10000000.0,
-            max_price: 1000000.0,
-            settlement_fee: 0.0,
-            mark_price: 50500.0,
+            max_order_qty: Some(10000000.0),
+            max_price: Some(1000000.0),
+            settlement_fee: Some(0.0),
+            mark_price: Some(50500.0),
             last_price: Some(50500.0),
             bid_price: Some(50499.5),
             ask_price: Some(50500.5),
-            open_interest: 0.0,
-            open_value: 0.0,
-            total_volume: 1000000.0,
-            volume: 50000.0,
-            volume_24h: 75000.0,
-            total_turnover: 150000000.0,
-            turnover: 5000000.0,
-            turnover_24h: 7500000.0,
-            has_liquidity: true,
+            open_interest: Some(0.0),
+            open_value: Some(0.0),
+            total_volume: Some(1000000.0),
+            volume: Some(50000.0),
+            volume_24h: Some(75000.0),
+            total_turnover: Some(150000000.0),
+            turnover: Some(5000000.0),
+            turnover_24h: Some(7500000.0),
+            has_liquidity: Some(true),
             // Set remaining fields to None/defaults
             calc_interval: None,
             publish_interval: None,
@@ -1033,8 +1125,8 @@ mod tests {
             risk_limit: Some(20000000000.0),
             risk_step: Some(10000000000.0),
             limit: None,
-            taxed: true,
-            deleverage: true,
+            taxed: Some(true),
+            deleverage: Some(true),
             funding_base_symbol: None,
             funding_quote_symbol: None,
             funding_premium_symbol: None,
@@ -1047,9 +1139,9 @@ mod tests {
             prev_close_price: Some(50000.0),
             limit_down_price: None,
             limit_up_price: None,
-            prev_total_turnover: 100000000.0,
-            home_notional_24h: 1.5,
-            foreign_notional_24h: 75000.0,
+            prev_total_turnover: Some(100000000.0),
+            home_notional_24h: Some(1.5),
+            foreign_notional_24h: Some(75000.0),
             prev_price_24h: Some(49500.0),
             vwap: Some(50100.0),
             high_price: Some(51000.0),
@@ -1085,9 +1177,11 @@ mod tests {
             listing: DateTime::parse_from_rfc3339("2016-05-13T12:00:00.000Z")
                 .unwrap()
                 .with_timezone(&Utc),
-            front: DateTime::parse_from_rfc3339("2016-05-13T12:00:00.000Z")
-                .unwrap()
-                .with_timezone(&Utc),
+            front: Some(
+                DateTime::parse_from_rfc3339("2016-05-13T12:00:00.000Z")
+                    .unwrap()
+                    .with_timezone(&Utc),
+            ),
             expiry: None,
             settle: None,
             listed_settle: None,
@@ -1097,34 +1191,34 @@ mod tests {
             underlying_symbol: Some("XBT=".to_string()),
             reference: Some("BMEX".to_string()),
             reference_symbol: Some(".BXBT".to_string()),
-            lot_size: 1.0,
+            lot_size: Some(1.0),
             tick_size: 0.5,
             multiplier: -1.0,
-            settl_currency: "XBT".to_string(),
+            settl_currency: Some("XBT".to_string()),
             is_quanto: false,
             is_inverse: true,
-            maker_fee: -0.00025,
-            taker_fee: 0.00075,
+            maker_fee: Some(-0.00025),
+            taker_fee: Some(0.00075),
             timestamp: DateTime::parse_from_rfc3339("2024-01-01T00:00:00.000Z")
                 .unwrap()
                 .with_timezone(&Utc),
             // Set other fields
-            max_order_qty: 10000000.0,
-            max_price: 1000000.0,
-            settlement_fee: 0.0,
-            mark_price: 50500.01,
+            max_order_qty: Some(10000000.0),
+            max_price: Some(1000000.0),
+            settlement_fee: Some(0.0),
+            mark_price: Some(50500.01),
             last_price: Some(50500.0),
             bid_price: Some(50499.5),
             ask_price: Some(50500.5),
-            open_interest: 500000000.0,
-            open_value: 990099009900.0,
-            total_volume: 12345678900000.0,
-            volume: 5000000.0,
-            volume_24h: 75000000.0,
-            total_turnover: 150000000000000.0,
-            turnover: 5000000000.0,
-            turnover_24h: 7500000000.0,
-            has_liquidity: true,
+            open_interest: Some(500000000.0),
+            open_value: Some(990099009900.0),
+            total_volume: Some(12345678900000.0),
+            volume: Some(5000000.0),
+            volume_24h: Some(75000000.0),
+            total_turnover: Some(150000000000000.0),
+            turnover: Some(5000000000.0),
+            turnover_24h: Some(7500000000.0),
+            has_liquidity: Some(true),
             // Perpetual specific fields
             funding_base_symbol: Some(".XBTBON8H".to_string()),
             funding_quote_symbol: Some(".USDBON8H".to_string()),
@@ -1155,16 +1249,16 @@ mod tests {
             risk_limit: Some(20000000000.0),
             risk_step: Some(10000000000.0),
             limit: None,
-            taxed: true,
-            deleverage: true,
+            taxed: Some(true),
+            deleverage: Some(true),
             rebalance_timestamp: None,
             rebalance_interval: None,
             prev_close_price: Some(50000.0),
             limit_down_price: None,
             limit_up_price: None,
-            prev_total_turnover: 100000000000000.0,
-            home_notional_24h: 1500.0,
-            foreign_notional_24h: 75000000.0,
+            prev_total_turnover: Some(100000000000000.0),
+            home_notional_24h: Some(1500.0),
+            foreign_notional_24h: Some(75000000.0),
             prev_price_24h: Some(49500.0),
             vwap: Some(50100.0),
             high_price: Some(51000.0),
@@ -1198,9 +1292,11 @@ mod tests {
             listing: DateTime::parse_from_rfc3339("2024-09-27T12:00:00.000Z")
                 .unwrap()
                 .with_timezone(&Utc),
-            front: DateTime::parse_from_rfc3339("2024-12-27T12:00:00.000Z")
-                .unwrap()
-                .with_timezone(&Utc),
+            front: Some(
+                DateTime::parse_from_rfc3339("2024-12-27T12:00:00.000Z")
+                    .unwrap()
+                    .with_timezone(&Utc),
+            ),
             expiry: Some(
                 DateTime::parse_from_rfc3339("2025-03-28T12:00:00.000Z")
                     .unwrap()
@@ -1218,34 +1314,34 @@ mod tests {
             underlying_symbol: Some("XBT=".to_string()),
             reference: Some("BMEX".to_string()),
             reference_symbol: Some(".BXBT30M".to_string()),
-            lot_size: 1.0,
+            lot_size: Some(1.0),
             tick_size: 0.5,
             multiplier: -1.0,
-            settl_currency: "XBT".to_string(),
+            settl_currency: Some("XBT".to_string()),
             is_quanto: false,
             is_inverse: true,
-            maker_fee: -0.00025,
-            taker_fee: 0.00075,
-            settlement_fee: 0.0005,
+            maker_fee: Some(-0.00025),
+            taker_fee: Some(0.00075),
+            settlement_fee: Some(0.0005),
             timestamp: DateTime::parse_from_rfc3339("2024-01-01T00:00:00.000Z")
                 .unwrap()
                 .with_timezone(&Utc),
             // Set other fields
-            max_order_qty: 10000000.0,
-            max_price: 1000000.0,
-            mark_price: 55500.0,
+            max_order_qty: Some(10000000.0),
+            max_price: Some(1000000.0),
+            mark_price: Some(55500.0),
             last_price: Some(55500.0),
             bid_price: Some(55499.5),
             ask_price: Some(55500.5),
-            open_interest: 50000000.0,
-            open_value: 90090090090.0,
-            total_volume: 1000000000.0,
-            volume: 500000.0,
-            volume_24h: 7500000.0,
-            total_turnover: 15000000000000.0,
-            turnover: 500000000.0,
-            turnover_24h: 750000000.0,
-            has_liquidity: true,
+            open_interest: Some(50000000.0),
+            open_value: Some(90090090090.0),
+            total_volume: Some(1000000000.0),
+            volume: Some(500000.0),
+            volume_24h: Some(7500000.0),
+            total_turnover: Some(15000000000000.0),
+            turnover: Some(500000000.0),
+            turnover_24h: Some(750000000.0),
+            has_liquidity: Some(true),
             // Futures specific fields
             funding_base_symbol: None,
             funding_quote_symbol: None,
@@ -1268,16 +1364,16 @@ mod tests {
             risk_limit: Some(20000000000.0),
             risk_step: Some(10000000000.0),
             limit: None,
-            taxed: true,
-            deleverage: true,
+            taxed: Some(true),
+            deleverage: Some(true),
             rebalance_timestamp: None,
             rebalance_interval: None,
             prev_close_price: Some(55000.0),
             limit_down_price: None,
             limit_up_price: None,
-            prev_total_turnover: 10000000000000.0,
-            home_notional_24h: 150.0,
-            foreign_notional_24h: 7500000.0,
+            prev_total_turnover: Some(10000000000000.0),
+            home_notional_24h: Some(150.0),
+            foreign_notional_24h: Some(7500000.0),
             prev_price_24h: Some(54500.0),
             vwap: Some(55100.0),
             high_price: Some(56000.0),
@@ -1310,9 +1406,8 @@ mod tests {
     fn test_parse_spot_instrument() {
         let instrument = create_test_spot_instrument();
         let ts_init = UnixNanos::default();
-        let result = parse_spot_instrument(&instrument, ts_init);
+        let result = parse_spot_instrument(&instrument, ts_init).unwrap();
 
-        // parse_spot_instrument returns InstrumentAny directly, not a Result
         // Check it's a CurrencyPair variant
         match result {
             nautilus_model::instruments::InstrumentAny::CurrencyPair(spot) => {
@@ -1334,9 +1429,8 @@ mod tests {
     fn test_parse_perpetual_instrument() {
         let instrument = create_test_perpetual_instrument();
         let ts_init = UnixNanos::default();
-        let result = parse_perpetual_instrument(&instrument, ts_init);
+        let result = parse_perpetual_instrument(&instrument, ts_init).unwrap();
 
-        // parse_perpetual_instrument returns InstrumentAny directly, not a Result
         // Check it's a CryptoPerpetual variant
         match result {
             nautilus_model::instruments::InstrumentAny::CryptoPerpetual(perp) => {
@@ -1359,9 +1453,8 @@ mod tests {
     fn test_parse_futures_instrument() {
         let instrument = create_test_futures_instrument();
         let ts_init = UnixNanos::default();
-        let result = parse_futures_instrument(&instrument, ts_init);
+        let result = parse_futures_instrument(&instrument, ts_init).unwrap();
 
-        // parse_futures_instrument returns InstrumentAny directly, not a Result
         // Check it's a CryptoFuture variant
         match result {
             nautilus_model::instruments::InstrumentAny::CryptoFuture(instrument) => {

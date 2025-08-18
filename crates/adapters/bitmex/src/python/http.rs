@@ -22,18 +22,26 @@ use nautilus_model::{
     data::trade::TradeTick,
     enums::{OrderSide, OrderType},
     identifiers::{ClientOrderId, Symbol, VenueOrderId},
+    instruments::InstrumentAny,
+    python::instruments::instrument_any_to_pyobject,
     reports::{fill::FillReport, order::OrderStatusReport, position::PositionStatusReport},
     types::{price::Price, quantity::Quantity},
 };
 use pyo3::{prelude::*, types::PyList};
 
-use crate::http::{
-    client::BitmexHttpClient,
-    parse::{parse_fill_report, parse_order_status_report, parse_position_report, parse_trade},
-    query::{
-        DeleteOrderParamsBuilder, GetExecutionParamsBuilder, GetOrderParamsBuilder,
-        GetPositionParamsBuilder, GetTradeParamsBuilder, PostOrderParamsBuilder,
-        PutOrderParamsBuilder,
+use crate::{
+    enums::BitmexSymbolStatus,
+    http::{
+        client::BitmexHttpClient,
+        parse::{
+            parse_fill_report, parse_instrument_any, parse_order_status_report,
+            parse_position_report, parse_trade,
+        },
+        query::{
+            DeleteOrderParamsBuilder, GetExecutionParamsBuilder, GetOrderParamsBuilder,
+            GetPositionParamsBuilder, GetTradeParamsBuilder, PostOrderParamsBuilder,
+            PutOrderParamsBuilder,
+        },
     },
 };
 
@@ -99,18 +107,39 @@ impl BitmexHttpClient {
         self.api_key()
     }
 
-    #[pyo3(name = "get_instruments")]
-    fn py_get_instruments<'py>(&self, _py: Python<'py>, _active_only: bool) -> PyResult<usize> {
-        // TODO: Implement proper Python async pattern for PyO3 0.25+
-        tracing::warn!("BitMEX get_instruments Python method not yet implemented");
-        Ok(0)
-    }
+    #[pyo3(name = "request_instruments")]
+    fn py_request_instruments<'py>(
+        &self,
+        py: Python<'py>,
+        symbol_status: BitmexSymbolStatus,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        let active_only = symbol_status == BitmexSymbolStatus::Open;
+        let ts_init = get_atomic_clock_realtime().get_time_ns();
 
-    #[pyo3(name = "get_instrument")]
-    fn py_get_instrument<'py>(&self, _py: Python<'py>, _symbol: &Symbol) -> PyResult<usize> {
-        // TODO: Implement proper Python async pattern for PyO3 0.25+
-        tracing::warn!("BitMEX get_instrument Python method not yet implemented");
-        Ok(0)
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let instruments = client
+                .get_instruments(active_only)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            let pyo3_instruments: Vec<InstrumentAny> = instruments
+                .into_iter()
+                .filter_map(|inst| parse_instrument_any(&inst, ts_init))
+                .collect();
+
+            Python::with_gil(|py| {
+                let py_instruments: PyResult<Vec<_>> = pyo3_instruments
+                    .into_iter()
+                    .map(|inst| instrument_any_to_pyobject(py, inst))
+                    .collect();
+                let pylist = PyList::new(py, py_instruments?)
+                    .unwrap()
+                    .into_any()
+                    .unbind();
+                Ok(pylist)
+            })
+        })
     }
 
     #[pyo3(name = "get_trades")]
