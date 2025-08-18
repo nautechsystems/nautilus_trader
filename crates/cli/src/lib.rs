@@ -42,12 +42,14 @@
 #![deny(clippy::missing_panics_doc)]
 #![deny(rustdoc::broken_intra_doc_links)]
 
+#[cfg(feature = "hypersync")]
 mod blockchain;
 mod database;
 pub mod opt;
 
+#[cfg(feature = "hypersync")]
+use crate::blockchain::sync::run_blockchain_command;
 use crate::{
-    blockchain::sync::run_blockchain_command,
     database::postgres::run_database_command,
     opt::{Commands, NautilusCli},
 };
@@ -60,6 +62,7 @@ use crate::{
 pub async fn run(opt: NautilusCli) -> anyhow::Result<()> {
     match opt.command {
         Commands::Database(database_opt) => run_database_command(database_opt).await?,
+        #[cfg(feature = "hypersync")]
         Commands::Blockchain(blockchain_opt) => run_blockchain_command(blockchain_opt).await?,
     }
     Ok(())
