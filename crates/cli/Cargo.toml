@@ -17,9 +17,13 @@ homepage.workspace = true
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
+[features]
+default = []
+hypersync = ["nautilus-blockchain"]
+
 [dependencies]
 nautilus-infrastructure = { workspace = true, features = ["postgres"] }
-nautilus-blockchain = {workspace = true, features = ["hypersync"]}
+nautilus-blockchain = { workspace = true, features = ["hypersync"], optional = true }
 nautilus-model = { workspace = true, features = ["defi"] }
 
 anyhow = { workspace = true }
