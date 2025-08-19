@@ -86,7 +86,7 @@ cdef class DataClient(Component):
 # -- DATA HANDLERS --------------------------------------------------------------------------------
 
     cpdef void _handle_data(self, Data data)
-    cpdef void _handle_data_response(self, DataType data_type, data, UUID4 correlation_id, dict params)
+    cpdef void _handle_data_response(self, DataType data_type, data, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params)
 
 
 cdef class MarketDataClient(DataClient):
