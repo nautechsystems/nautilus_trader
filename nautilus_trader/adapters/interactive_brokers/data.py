@@ -149,7 +149,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             self._handle_data(instrument)
 
     async def _disconnect(self):
-        self._client.registered_nautilus_clients.remove(self.id)
+        self._client.registered_nautilus_clients.discard(self.id)
 
         if self._client.is_running and self._client.registered_nautilus_clients == set():
             self._client.stop()
