@@ -173,7 +173,6 @@ cdef class Actor(Component):
         int depth=*,
         int interval_ms=*,
         ClientId client_id=*,
-        bint managed=*,
         dict[str, object] params=*,
     )
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id, ClientId client_id=*, bint update_catalog=*, dict[str, object] params=*)

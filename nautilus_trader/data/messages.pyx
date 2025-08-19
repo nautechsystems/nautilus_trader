@@ -25,10 +25,14 @@ from nautilus_trader.model.book cimport OrderBook
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport DataType
+from nautilus_trader.model.data cimport FundingRateUpdate
+from nautilus_trader.model.data cimport IndexPriceUpdate
 from nautilus_trader.model.data cimport InstrumentClose
 from nautilus_trader.model.data cimport InstrumentStatus
+from nautilus_trader.model.data cimport MarkPriceUpdate
 from nautilus_trader.model.data cimport OrderBookDelta
 from nautilus_trader.model.data cimport OrderBookDeltas
+from nautilus_trader.model.data cimport OrderBookDepth10
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -362,6 +366,8 @@ cdef class SubscribeOrderBook(SubscribeData):
     ----------
     instrument_id : InstrumentId
         The instrument ID for the subscription.
+    data_type : DataType, {``OrderBookDeltas``, ``OrderBookDepth10``}
+        The data type for book updates.
     book_type : BookType
         The order book type.
     client_id : ClientId or ``None``
@@ -378,8 +384,6 @@ cdef class SubscribeOrderBook(SubscribeData):
         If an order book should be managed by the data engine based on the subscribed feed.
     interval_ms : int, default 0 (no interval snapshots)
         The interval (milliseconds) between snapshots.
-    only_deltas : bool, optional, default True
-        If the subscription is for OrderBookDeltas or OrderBook snapshots.
     params : dict[str, object], optional
         Additional parameters for the subscription.
 
@@ -394,6 +398,7 @@ cdef class SubscribeOrderBook(SubscribeData):
     def __init__(
         self,
         InstrumentId instrument_id not None,
+        type book_data_type,
         BookType book_type,
         ClientId client_id: ClientId | None,
         Venue venue: Venue | None,
@@ -402,12 +407,15 @@ cdef class SubscribeOrderBook(SubscribeData):
         int depth = 0,
         bint managed = True,
         int interval_ms = 0,
-        bint only_deltas = True,
         dict[str, object] params: dict | None = None,
     ) -> None:
+        Condition.is_true(
+            book_data_type in (OrderBookDelta, OrderBookDepth10),
+            f"`book_data_type` must be `OrderBookDelta` or `OrderBookDepth10`, was {book_data_type}",
+        )
         Condition.not_negative_int(interval_ms, "interval_ms")
         super().__init__(
-            DataType(OrderBookDelta) if only_deltas else DataType(OrderBook),
+            DataType(book_data_type),
             instrument_id,
             client_id,
             venue,
@@ -419,17 +427,16 @@ cdef class SubscribeOrderBook(SubscribeData):
         self.depth = depth
         self.managed = managed
         self.interval_ms = interval_ms
-        self.only_deltas = only_deltas
 
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
             f"instrument_id={self.instrument_id}, "
+            f"data_type={self.data_type}, "
             f"book_type={self.book_type}, "
             f"depth={self.depth}, "
             f"managed={self.managed}, "
             f"interval_ms={self.interval_ms}, "
-            f"only_deltas={self.only_deltas}, "
             f"client_id={self.client_id}, "
             f"venue={self.venue})"
         )
@@ -438,11 +445,11 @@ cdef class SubscribeOrderBook(SubscribeData):
         return (
             f"{type(self).__name__}("
             f"instrument_id={self.instrument_id}, "
+            f"data_type={self.data_type}, "
             f"book_type={self.book_type}, "
             f"depth={self.depth}, "
             f"managed={self.managed}, "
             f"interval_ms={self.interval_ms}, "
-            f"only_deltas={self.only_deltas}, "
             f"client_id={self.client_id}, "
             f"venue={self.venue}, "
             f"id={self.id}{form_params_str(self.params)})"
@@ -588,7 +595,7 @@ cdef class SubscribeTradeTicks(SubscribeData):
         dict[str, object] params: dict | None = None,
     ) -> None:
         super().__init__(
-            DataType(TradeTick),
+            DataType(MarkPriceUpdate),
             instrument_id,
             client_id,
             venue,
@@ -691,7 +698,7 @@ cdef class SubscribeMarkPrices(SubscribeData):
         dict[str, object] params: dict | None = None,
     ) -> None:
         super().__init__(
-            DataType(TradeTick),
+            DataType(IndexPriceUpdate),
             instrument_id,
             client_id,
             venue,
@@ -754,7 +761,7 @@ cdef class SubscribeIndexPrices(SubscribeData):
         dict[str, object] params: dict | None = None,
     ) -> None:
         super().__init__(
-            DataType(TradeTick),
+            DataType(FundingRateUpdate),
             instrument_id,
             client_id,
             venue,
@@ -817,7 +824,7 @@ cdef class SubscribeFundingRates(SubscribeData):
         dict[str, object] params: dict | None = None,
     ) -> None:
         super().__init__(
-            DataType(TradeTick),
+            DataType(MarkPriceUpdate),
             instrument_id,
             client_id,
             venue,
@@ -1238,22 +1245,22 @@ cdef class UnsubscribeInstrument(UnsubscribeData):
             params,
         )
 
-        def __str__(self) -> str:
-            return (
-                f"{type(self).__name__}("
-                f"instrument_id={self.instrument_id}, "
-                f"client_id={self.client_id}, "
-                f"venue={self.venue})"
-            )
+    def __str__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue})"
+        )
 
-        def __repr__(self) -> str:
-            return (
-                f"{type(self).__name__}("
-                f"instrument_id={self.instrument_id}, "
-                f"client_id={self.client_id}, "
-                f"venue={self.venue}, "
-                f"id={self.id}{form_params_str(self.params)})"
-            )
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue}, "
+            f"id={self.id}{form_params_str(self.params)})"
+        )
 
 
 cdef class UnsubscribeOrderBook(UnsubscribeData):
@@ -1264,8 +1271,8 @@ cdef class UnsubscribeOrderBook(UnsubscribeData):
     ----------
     instrument_id : InstrumentId
         The instrument ID for the subscription.
-    only_deltas: bool
-        If the subscription is for OrderBookDeltas or OrderBook snapshots.
+    book_data_type : type, {``OrderBookDelta``, ``OrderBookDepth10``}
+        The data type for book updates.
     client_id : ClientId or ``None``
         The data client ID for the command.
     venue : Venue or ``None``
@@ -1287,15 +1294,19 @@ cdef class UnsubscribeOrderBook(UnsubscribeData):
     def __init__(
         self,
         InstrumentId instrument_id not None,
-        only_deltas: bool,
+        type book_data_type,
         ClientId client_id: ClientId | None,
         Venue venue: Venue | None,
         UUID4 command_id not None,
         uint64_t ts_init,
         dict[str, object] params: dict | None = None,
     ) -> None:
+        Condition.is_true(
+            book_data_type in (OrderBookDelta, OrderBookDepth10),
+            f"`book_data_type` must be `OrderBookDelta` or `OrderBookDepth10`, was {book_data_type}",
+        )
         super().__init__(
-            DataType(OrderBookDelta) if only_deltas else DataType(OrderBook),
+            DataType(book_data_type),
             instrument_id,
             client_id,
             venue,
@@ -1303,13 +1314,12 @@ cdef class UnsubscribeOrderBook(UnsubscribeData):
             ts_init,
             params,
         )
-        self.only_deltas = only_deltas
 
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
             f"instrument_id={self.instrument_id}, "
-            f"only_deltas={self.only_deltas}, "
+            f"data_type={self.data_type}, "
             f"client_id={self.client_id}, "
             f"venue={self.venue})"
         )
@@ -1318,7 +1328,7 @@ cdef class UnsubscribeOrderBook(UnsubscribeData):
         return (
             f"{type(self).__name__}("
             f"instrument_id={self.instrument_id}, "
-            f"only_deltas={self.only_deltas}, "
+            f"data_type={self.data_type}, "
             f"client_id={self.client_id}, "
             f"venue={self.venue}, "
             f"id={self.id}{form_params_str(self.params)})"
@@ -1424,7 +1434,7 @@ cdef class UnsubscribeTradeTicks(UnsubscribeData):
         dict[str, object] params: dict | None = None,
     ) -> None:
         super().__init__(
-            DataType(TradeTick),
+            DataType(IndexPriceUpdate),
             instrument_id,
             client_id,
             venue,
@@ -1487,7 +1497,7 @@ cdef class UnsubscribeMarkPrices(UnsubscribeData):
         dict[str, object] params: dict | None = None,
     ) -> None:
         super().__init__(
-            DataType(TradeTick),
+            DataType(FundingRateUpdate),
             instrument_id,
             client_id,
             venue,

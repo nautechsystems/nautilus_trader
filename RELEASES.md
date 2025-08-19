@@ -50,6 +50,7 @@ Released on TBD (UTC).
 - Reverted implementation of `delete_account_event` from cache database that was too inefficient and is now a no-op pending redesign
 - Renamed `ParquetDataCatalog.reset_catalog_file_names` to `reset_all_file_names`
 - Removed the generic `cvec_drop` FFI function, as it was unused and prone to misuse, potentially causing memory leaks
+- Removed redundant `managed` parameter for `Actor.subscribe_book_at_interval` (the book *must* be managed by the `DataEngine` to provide snapshots at intervals)
 - Consolidated `OwnBook` `group_bids` and `group_asks` methods into `bid_quantity` and `ask_quantity` with optional `depth` and `group_size` parameters
 - Simplified Binance environment variables for API credentials: removed separate variables for RSA/Ed25519 keys and consolidated mainnet spot/futures credentials
 - Consolidated ~40 individual indicator modules into 6 files to reduce binary size

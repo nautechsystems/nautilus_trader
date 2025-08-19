@@ -265,6 +265,7 @@ cdef class DataEngine(Component):
 # -- INTERNAL -------------------------------------------------------------------------------------
 
     cdef str _get_instruments_topic(self, InstrumentId instrument_id)
+    cdef str _get_book_topic(self, type book_data_type, InstrumentId instrument_id)
     cdef str _get_deltas_topic(self, InstrumentId instrument_id)
     cdef str _get_depth_topic(self, InstrumentId instrument_id)
     cdef str _get_quotes_topic(self, InstrumentId instrument_id)

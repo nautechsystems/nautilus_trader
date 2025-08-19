@@ -98,6 +98,7 @@ from nautilus_trader.model.data cimport IndexPriceUpdate
 from nautilus_trader.model.data cimport InstrumentClose
 from nautilus_trader.model.data cimport InstrumentStatus
 from nautilus_trader.model.data cimport MarkPriceUpdate
+from nautilus_trader.model.data cimport OrderBookDelta
 from nautilus_trader.model.data cimport OrderBookDeltas
 from nautilus_trader.model.data cimport OrderBookDepth10
 from nautilus_trader.model.data cimport QuoteTick
@@ -1385,11 +1386,11 @@ cdef class Actor(Component):
         )
         cdef SubscribeOrderBook command = SubscribeOrderBook(
             instrument_id=instrument_id,
+            book_data_type=OrderBookDelta,
             book_type=book_type,
             depth=depth,
             managed=managed,
             interval_ms=0,
-            only_deltas=True,
             client_id=client_id,
             venue=instrument_id.venue,
             command_id=UUID4(),
@@ -1446,11 +1447,11 @@ cdef class Actor(Component):
         )
         cdef SubscribeOrderBook command = SubscribeOrderBook(
             instrument_id=instrument_id,
+            book_data_type=OrderBookDepth10,
             book_type=book_type,
             depth=depth,
             managed=managed,
             interval_ms=0,
-            only_deltas=False,
             client_id=client_id,
             venue=instrument_id.venue,
             command_id=UUID4(),
@@ -1466,7 +1467,6 @@ cdef class Actor(Component):
         int depth = 0,
         int interval_ms = 1000,
         ClientId client_id = None,
-        bint managed = True,
         dict[str, object] params = None,
     ):
         """
@@ -1492,8 +1492,6 @@ cdef class Actor(Component):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
-        managed : bool, default True
-            If an order book should be managed by the data engine based on the subscribed feed.
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -1530,11 +1528,11 @@ cdef class Actor(Component):
         )
         cdef SubscribeOrderBook command = SubscribeOrderBook(
             instrument_id=instrument_id,
+            book_data_type=OrderBookDelta,
             book_type=book_type,
             depth=depth,
-            managed=managed,
+            managed=True,  # Must be managed by DataEngine to provide snapshots at interval
             interval_ms=interval_ms,
-            only_deltas=False,
             client_id=client_id,
             venue=instrument_id.venue,
             command_id=UUID4(),
@@ -2058,7 +2056,7 @@ cdef class Actor(Component):
         )
         cdef UnsubscribeOrderBook command = UnsubscribeOrderBook(
             instrument_id=instrument_id,
-            only_deltas=True,
+            book_data_type=OrderBookDelta,
             client_id=client_id,
             venue=instrument_id.venue,
             command_id=UUID4(),
@@ -2098,7 +2096,7 @@ cdef class Actor(Component):
         )
         cdef UnsubscribeOrderBook command = UnsubscribeOrderBook(
             instrument_id=instrument_id,
-            only_deltas=True,
+            book_data_type=OrderBookDepth10,
             client_id=client_id,
             venue=instrument_id.venue,
             command_id=UUID4(),
@@ -2144,7 +2142,7 @@ cdef class Actor(Component):
         )
         cdef UnsubscribeOrderBook command = UnsubscribeOrderBook(
             instrument_id=instrument_id,
-            only_deltas=False,
+            book_data_type=OrderBookDelta,
             client_id=client_id,
             venue=instrument_id.venue,
             command_id=UUID4(),
