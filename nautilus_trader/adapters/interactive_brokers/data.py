@@ -519,9 +519,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
 
         duration = request.end - request.start
         duration_str = timedelta_to_duration_str(duration)
-
         bars: list[Bar] = []
-
         bars = await self._client.get_historical_bars(
             bar_type=request.bar_type,
             contract=contract,

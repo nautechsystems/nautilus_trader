@@ -468,8 +468,8 @@ cdef class InstrumentId(Identifier):
         ((2))AAPL_(1)MSFT
 
         """
-        if not instrument_ratios:
-            raise ValueError("instrument_ratios list cannot be empty")
+        if len(instrument_ratios) <= 1:
+            raise ValueError("instrument_ratios list needs to have at least 2 legs")
 
         # Validate all ratios are non-zero and venues match
         first_venue = instrument_ratios[0][0].venue
@@ -558,6 +558,12 @@ cdef class InstrumentId(Identifier):
         result.sort(key=lambda x: x[0].symbol.value)
 
         return result
+
+    def n_legs(self):
+        if not self.is_spread():
+            return 1
+
+        return sum([abs(component[1]) for component in self.to_list()])
 
 
 cdef class ComponentId(Identifier):

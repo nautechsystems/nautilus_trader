@@ -19,7 +19,6 @@ import numpy as np
 
 cimport numpy as np
 from cpython.datetime cimport timedelta
-from libc.stdint cimport uint64_t
 
 from datetime import timedelta
 
@@ -35,9 +34,6 @@ from nautilus_trader.model.greeks cimport GreeksCalculator
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 
-
-# Constants for thresholds
-cdef double SPREAD_VEGA_EPS = 1e-10  # Minimum spread vega to generate quote
 
 cdef class SpreadQuoteAggregator(Component):
     """
@@ -167,6 +163,7 @@ cdef class SpreadQuoteAggregator(Component):
 
         # Filter out zero multipliers before taking mean
         non_zero_multipliers = vega_multipliers[vega_multipliers != 0]
+
         if len(non_zero_multipliers) == 0:
             self._log.debug(
                 f"All vegas are zero for spread {self._spread_instrument_id}, cannot generate spread quote"
@@ -175,13 +172,6 @@ cdef class SpreadQuoteAggregator(Component):
 
         vega_multiplier = np.abs(non_zero_multipliers).mean()
         spread_vega = abs(np.dot(self._vegas, self._ratios))
-
-        # Check if spread vega is too small to avoid numerical issues
-        if spread_vega < SPREAD_VEGA_EPS:
-            self._log.debug(
-                f"Spread vega is too small ({spread_vega}) for {self._spread_instrument_id}, cannot generate spread quote"
-            )
-            return
 
         bid_ask_spread = spread_vega * vega_multiplier
         self._log.debug(f"{self._bid_ask_spreads=}, {self._vegas=}, {vega_multipliers=}, "
