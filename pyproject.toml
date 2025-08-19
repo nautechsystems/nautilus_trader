@@ -107,7 +107,7 @@ dev = [
     "mypy>=1.17.1,<2.0.0",
     "pandas-stubs>=2.3.0,<3.0.0",
     "pre-commit>=4.3.0,<5.0.0",
-    "requests>=2.32.4,<3.0.0",
+    "requests>=2.32.5,<3.0.0",
     "ruff>=0.12.9,<1.0.0",
     "types-pytz>=2024.2,<2025.0",
     "types-requests>=2.32,<3.0",
@@ -115,7 +115,7 @@ dev = [
 ]
 test = [
     "aiohttp==3.11.18,<4.0.0",  # Pinned to 3.11.8 for wheel compatibility on supported platforms
-    "coverage>=7.10.3,<8.0.0",
+    "coverage>=7.10.4,<8.0.0",
     "pytest>=7.4.4,<8.0.0",
     "pytest-aiohttp>=1.1.0,<2.0.0",
     "pytest-asyncio==0.21.1",
