@@ -62,6 +62,7 @@ Released on TBD (UTC).
 - Refactored `BacktestDataIterator` (#2791) to consolidate data generator usage, thanks @faysou
 - Implemented `LogGuard` reference counting for proper thread lifecycle management, ensuring all logs flushed before termination
 - Introduced `SharedCell` / `WeakCell` wrappers for ergonomic and safer handling of `Rc<RefCell<T>>` / `Weak<RefCell<T>>` pairs
+- Introduced efficient block syncing command in the `nautilus-cli` (#2861), thanks @filipmacek
 - Implemented live subscriptions for blockchain data client (#2832), thanks @filipmacek
 - Added stream iterators support `BacktestDataIterator`
 - Added serialization support for execution reports
@@ -91,6 +92,7 @@ Released on TBD (UTC).
 - Improved handling of Tardis Machine websocket connection errors
 - Improved positions report to mark snapshots (#2840), thanks @stastnypremysl
 - Improved ERC20 token metadata handling and error recovery (#2847), thanks @filipmacek
+- Improved Docker configuration (#2868), thanks @nicolad
 - Refined Rust catalog path handling (#2743), thanks @faysou
 - Refined Rust `GreeksCalculator` (#2760), thanks @faysou
 - Refined Databento bars timestamp decoding and backtest execution usage (#2800), thanks @faysou
@@ -98,13 +100,14 @@ Released on TBD (UTC).
 - Refined `FillModel` (#2795), thanks @faysou and @stefansimik
 - Refined request of instruments (#2822), thanks @faysou
 - Refined `subscribe_bars` in IB adapter (#2852), thanks @faysou
+- Refined `get_start_time` in `TimeBarAggregator` (#2866), thanks @faysou
 - Updated `request_aggregated_bars` example (#2815), thanks @faysou
 - Updated PostgreSQL connection parameters to use 'nautilus' user (#2805), thanks @stastnypremysl
 - Upgraded Rust (MSRV) to 1.89.0
 - Upgraded Cython to v3.1.3
 - Upgraded `web3` for Polymarket allowances script (#2814), thanks @DeirhX
 - Upgraded `databento` crate to v0.32.0
-- Upgraded `datafusion` crate to v49.0.0
+- Upgraded `datafusion` crate to v49.0.1
 - Upgraded `redis` crate to v0.32.5
 - Upgraded `tokio` crate to v1.47.1
 
@@ -134,6 +137,7 @@ Released on TBD (UTC).
 - Fixed Bybit execution fee handling where the `execFee` field was not used when available as well as incorrect fee currency
 - Fixed RPC client content type header (#2828), thanks @filipmacek
 - Fixed `venue_order_id` handling for Polymarket order status request (#2848), thanks @DeirhX
+- Fixed race-condition on node shutdown in async `InteractiveBrokersDataClient._disconnect()` (#2865), thanks @ruvr
 
 ### Documentation Updates
 - Added FFI Memory Contract developer guide
