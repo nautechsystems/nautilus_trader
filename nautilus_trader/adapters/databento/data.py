@@ -832,6 +832,8 @@ class DatabentoDataClient(LiveMarketDataClient):
             data_type=data_type,
             data=status,
             correlation_id=correlation_id,
+            start=None,
+            end=None,
             params=None,
         )
 
@@ -869,6 +871,8 @@ class DatabentoDataClient(LiveMarketDataClient):
             data_type=data_type,
             data=pyo3_imbalances,
             correlation_id=correlation_id,
+            start=None,
+            end=None,
             params=None,
         )
 
@@ -906,6 +910,8 @@ class DatabentoDataClient(LiveMarketDataClient):
             data_type=data_type,
             data=pyo3_statistics,
             correlation_id=correlation_id,
+            start=None,
+            end=None,
             params=None,
         )
 

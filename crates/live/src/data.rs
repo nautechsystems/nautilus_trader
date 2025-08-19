@@ -89,8 +89,8 @@ pub trait LiveDataClient: DataClient {
         &self,
         instrument: InstrumentAny,
         correlation_id: UUID4,
-        start: UnixNanos,
-        end: UnixNanos,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
     ) {
         let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
             correlation_id,
@@ -111,8 +111,8 @@ pub trait LiveDataClient: DataClient {
         venue: Venue,
         instruments: Vec<InstrumentAny>,
         correlation_id: UUID4,
-        start: UnixNanos,
-        end: UnixNanos,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
     ) {
         let response = DataResponse::Instruments(InstrumentsResponse::new(
             correlation_id,
@@ -132,8 +132,8 @@ pub trait LiveDataClient: DataClient {
         &self,
         book: OrderBook,
         correlation_id: UUID4,
-        start: UnixNanos,
-        end: UnixNanos,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
     ) {
         let response = DataResponse::Book(BookResponse::new(
             correlation_id,
@@ -154,8 +154,8 @@ pub trait LiveDataClient: DataClient {
         instrument_id: InstrumentId,
         quotes: Vec<QuoteTick>,
         correlation_id: UUID4,
-        start: UnixNanos,
-        end: UnixNanos,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
     ) {
         let response = DataResponse::Quotes(QuotesResponse::new(
             correlation_id,
@@ -176,8 +176,8 @@ pub trait LiveDataClient: DataClient {
         instrument_id: InstrumentId,
         trades: Vec<TradeTick>,
         correlation_id: UUID4,
-        start: UnixNanos,
-        end: UnixNanos,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
     ) {
         let response = DataResponse::Trades(TradesResponse::new(
             correlation_id,
@@ -198,8 +198,8 @@ pub trait LiveDataClient: DataClient {
         bar_type: BarType,
         bars: Vec<Bar>,
         correlation_id: UUID4,
-        start: UnixNanos,
-        end: UnixNanos,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
     ) {
         let response = DataResponse::Bars(BarsResponse::new(
             correlation_id,
