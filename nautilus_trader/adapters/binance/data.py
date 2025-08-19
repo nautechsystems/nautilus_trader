@@ -399,7 +399,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                 self._log.error(
                     "Cannot subscribe to order book snapshots: "
                     f"invalid `depth`, was {depth}. "
-                    "Valid depths are 5, 10 or 20",
+                    "Valid depths are 5, 10, or 20",
                 )
                 return
             await self._ws_client.subscribe_partial_book_depth(
