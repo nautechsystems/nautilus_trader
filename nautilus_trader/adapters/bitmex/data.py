@@ -202,34 +202,45 @@ class BitmexDataClient(LiveMarketDataClient):
             return "wss://ws.bitmex.com/realtime"
 
     async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
-        await self._subscribe_order_book(command)
-
-    async def _subscribe_order_book_snapshots(self, command: SubscribeOrderBook) -> None:
-        await self._subscribe_order_book(command)
-
-    async def _subscribe_order_book(self, command: SubscribeOrderBook) -> None:
         if command.book_type != BookType.L2_MBP:
             self._log.warning(
                 f"Book type {book_type_to_str(command.book_type)} not supported by BitMEX, skipping subscription",
             )
             return
 
-        if command.depth not in (0, 10, 25):
+        if command.depth not in (0, 25):
             self._log.error(
-                "Cannot subscribe to order book snapshots: "
+                "Cannot subscribe to order book deltas: "
                 f"invalid `depth`, was {command.depth}; "
-                "valid depths are None (full book), 10 (depth 10 snapshots), or 25",
+                "valid depths are 0 (default full book), or 25",
             )
             return
 
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
 
-        if not command.only_deltas and command.depth == 10:
-            await self._ws_client.subscribe_order_book_depth10(pyo3_instrument_id)
-        elif command.depth == 25:
+        if command.depth == 25:
             await self._ws_client.subscribe_order_book_25(pyo3_instrument_id)
         else:
             await self._ws_client.subscribe_order_book(pyo3_instrument_id)
+
+    async def _subscribe_order_book_snapshots(self, command: SubscribeOrderBook) -> None:
+        if command.book_type != BookType.L2_MBP:
+            self._log.warning(
+                f"Book type {book_type_to_str(command.book_type)} not supported by BitMEX, skipping subscription",
+            )
+            return
+
+        if command.depth not in (0, 10):
+            self._log.error(
+                "Cannot subscribe to order book snapshots: "
+                f"invalid `depth`, was {command.depth}; "
+                "valid depths are 0 (default 10), or 10",
+            )
+            return
+
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+
+        await self._ws_client.subscribe_order_book_depth10(pyo3_instrument_id)
 
     async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
@@ -265,14 +276,12 @@ class BitmexDataClient(LiveMarketDataClient):
         await self._ws_client.subscribe_bars(pyo3_bar_type)
 
     async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
-        # Order book deltas use the same unsubscription as regular order book
-        # The difference is handled by the data engine at a higher level
-        await self._unsubscribe_order_book(command)
-
-    async def _unsubscribe_order_book(self, command: UnsubscribeOrderBook) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.unsubscribe_order_book(pyo3_instrument_id)
         await self._ws_client.unsubscribe_order_book_25(pyo3_instrument_id)
+
+    async def _unsubscribe_order_book_snapshots(self, command: UnsubscribeOrderBook) -> None:
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.unsubscribe_order_book_depth10(pyo3_instrument_id)
 
     async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
@@ -327,6 +336,7 @@ class BitmexDataClient(LiveMarketDataClient):
                     correlation_id=request.id,
                 )
                 return
+
         self._log.warning(f"Instrument {request.instrument_id} not found")
 
     async def _request_quote_ticks(self, request: RequestQuoteTicks) -> None:
