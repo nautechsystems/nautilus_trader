@@ -59,6 +59,7 @@ from nautilus_trader.data.messages import SubscribeTradeTicks
 from nautilus_trader.data.messages import UnsubscribeBars
 from nautilus_trader.data.messages import UnsubscribeData
 from nautilus_trader.data.messages import UnsubscribeFundingRates
+from nautilus_trader.data.messages import UnsubscribeIndexPrices
 from nautilus_trader.data.messages import UnsubscribeInstrument
 from nautilus_trader.data.messages import UnsubscribeInstrumentClose
 from nautilus_trader.data.messages import UnsubscribeInstruments
@@ -563,7 +564,7 @@ class LiveMarketDataClient(MarketDataClient):
         self.create_task(
             self._subscribe_order_book_deltas(command),
             log_msg=f"subscribe: order_book_deltas {command.instrument_id}",
-            success_msg=f"Subscribed {command.instrument_id} order book deltas depth={command.depth}",
+            success_msg=f"Subscribed {command.instrument_id} order book deltas; depth={command.depth}",
             success_color=LogColor.BLUE,
         )
 
@@ -572,7 +573,7 @@ class LiveMarketDataClient(MarketDataClient):
         self.create_task(
             self._subscribe_order_book_snapshots(command),
             log_msg=f"subscribe: order_book_snapshots {command.instrument_id}",
-            success_msg=f"Subscribed {command.instrument_id} order book snapshots depth={command.depth}",
+            success_msg=f"Subscribed {command.instrument_id} order book snapshots; depth={command.depth}",
             success_color=LogColor.BLUE,
         )
 
@@ -718,18 +719,18 @@ class LiveMarketDataClient(MarketDataClient):
         )
 
     def unsubscribe_mark_prices(self, command: UnsubscribeMarkPrices) -> None:
-        self._remove_subscription_trade_ticks(command.instrument_id)
+        self._remove_subscription_mark_prices(command.instrument_id)
         self.create_task(
-            self._unsubscribe_trade_ticks(command),
+            self._unsubscribe_mark_prices(command),
             log_msg=f"unsubscribe: mark_prices {command.instrument_id}",
             success_msg=f"Unsubscribed {command.instrument_id} mark prices",
             success_color=LogColor.BLUE,
         )
 
-    def unsubscribe_index_prices(self, command: UnsubscribeMarkPrices) -> None:
-        self._remove_subscription_trade_ticks(command.instrument_id)
+    def unsubscribe_index_prices(self, command: UnsubscribeIndexPrices) -> None:
+        self._remove_subscription_index_prices(command.instrument_id)
         self.create_task(
-            self._unsubscribe_trade_ticks(command),
+            self._unsubscribe_index_prices(command),
             log_msg=f"unsubscribe: index_prices {command.instrument_id}",
             success_msg=f"Unsubscribed {command.instrument_id} index prices",
             success_color=LogColor.BLUE,
@@ -956,12 +957,12 @@ class LiveMarketDataClient(MarketDataClient):
             "implement the `_unsubscribe_trade_ticks` coroutine",  # pragma: no cover
         )
 
-    async def _unsubscribe_mark_prices(self, command: SubscribeMarkPrices) -> None:
+    async def _unsubscribe_mark_prices(self, command: UnsubscribeMarkPrices) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_unsubscribe_mark_prices` coroutine",  # pragma: no cover
         )
 
-    async def _unsubscribe_index_prices(self, command: SubscribeIndexPrices) -> None:
+    async def _unsubscribe_index_prices(self, command: UnsubscribeIndexPrices) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_unsubscribe_index_prices` coroutine",  # pragma: no cover
         )
