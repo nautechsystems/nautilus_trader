@@ -51,6 +51,7 @@ from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import book_type_to_str
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.instruments import Instrument
 
@@ -171,7 +172,7 @@ class OKXDataClient(LiveMarketDataClient):
         self._log.info("OKX API key authenticated", LogColor.GREEN)
 
         # Subscribe to instruments for updates
-        for instrument_type in self._instrument_provider._instrument_types:
+        for instrument_type in self._instrument_provider.instrument_types:
             await self._ws_client.subscribe_instruments(instrument_type)
 
     async def _disconnect(self) -> None:
@@ -248,20 +249,52 @@ class OKXDataClient(LiveMarketDataClient):
             self._handle_data(instrument)
 
     async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
-        if command.book_type == BookType.L3_MBO:
+        if command.book_type != BookType.L2_MBP:
+            self._log.warning(
+                f"Book type {book_type_to_str(command.book_type)} not supported by OKX, skipping subscription",
+            )
+            return
+
+        if command.depth not in (0, 50, 400):
             self._log.error(
                 "Cannot subscribe to order book deltas: "
-                "L3_MBO data is not published by OKX. "
-                "Valid book types are L1_MBP, L2_MBP",
+                f"invalid `depth`, was {command.depth}; "
+                "valid depths are 0 (default 400), 50, or 400",
             )
             return
 
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        await self._ws_client.subscribe_order_book(pyo3_instrument_id)
+        vip_level = self._config.vip_level or 0
+
+        if command.depth == 50:
+            if vip_level >= 4:
+                await self._ws_client.subscribe_book50_l2_tbt(pyo3_instrument_id)
+            else:
+                self._log.error(f"Insufficient VIP level {vip_level} for depth {command.depth}")
+        else:
+            if vip_level >= 5:
+                await self._ws_client.subscribe_book_l2_tbt(pyo3_instrument_id)
+            else:
+                await self._ws_client.subscribe_book(pyo3_instrument_id)
 
     async def _subscribe_order_book_snapshots(self, command: SubscribeOrderBook) -> None:
-        # Same logic as deltas
-        await self._subscribe_order_book_deltas(command)
+        if command.book_type != BookType.L2_MBP:
+            self._log.warning(
+                f"Book type {book_type_to_str(command.book_type)} not supported by OKX, skipping subscription",
+            )
+            return
+
+        if command.depth not in (0, 5):
+            self._log.error(
+                "Cannot subscribe to order book snapshots: "
+                f"invalid `depth`, was {command.depth}; "
+                "valid depths are 0 (default 5), or 5",
+            )
+            return
+
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+
+        await self._ws_client.subscribe_depth5(pyo3_instrument_id)
 
     async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
@@ -289,11 +322,18 @@ class OKXDataClient(LiveMarketDataClient):
 
     async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        await self._ws_client.unsubscribe_order_book(pyo3_instrument_id)
+
+        if self._config.vip_level and self._config.vip_level >= 5:
+            await self._ws_client.unsubscribe_book_l2_tbt(pyo3_instrument_id)
+        elif self._config.vip_level and self._config.vip_level >= 4:
+            await self._ws_client.unsubscribe_book_l2_tbt(pyo3_instrument_id)
+            await self._ws_client.unsubscribe_book50_l2_tbt(pyo3_instrument_id)
+        else:
+            await self._ws_client.unsubscribe_book(pyo3_instrument_id)
 
     async def _unsubscribe_order_book_snapshots(self, command: UnsubscribeOrderBook) -> None:
-        # Same logic as deltas
-        await self._unsubscribe_order_book_deltas(command)
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        await self._ws_client.unsubscribe_depth5(pyo3_instrument_id)
 
     async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
@@ -419,15 +459,6 @@ class OKXDataClient(LiveMarketDataClient):
         )
         bars = Bar.from_pyo3_list(pyo3_bars)
 
-        now = self._clock.utc_now()
-        chosen_endpoint = (
-            "history" if request.start and (now - request.start).days > 100 else "regular"
-        )
-        self._log.debug(
-            f"Bars request completed: bar_type={request.bar_type}, start={request.start}, "
-            f"end={request.end}, limit={request.limit}, endpoint={chosen_endpoint}, rows={len(bars)}",
-        )
-
         self._handle_bars(
             request.bar_type,
             bars,
@@ -455,7 +486,5 @@ class OKXDataClient(LiveMarketDataClient):
                 self._handle_data(FundingRateUpdate.from_pyo3(msg))
             else:
                 self._log.error(f"Cannot handle message {msg}, not implemented")
-                return
-
         except Exception as e:
             self._log.exception("Error handling websocket message", e)
