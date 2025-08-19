@@ -44,7 +44,6 @@ from nautilus_trader.adapters.bybit.schemas.ws import decoder_ws_orderbook
 from nautilus_trader.adapters.bybit.schemas.ws import decoder_ws_trade
 from nautilus_trader.adapters.bybit.websocket.client import BybitWebSocketClient
 from nautilus_trader.common.enums import LogColor
-from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.datetime import secs_to_millis
 from nautilus_trader.core.nautilus_pyo3 import Symbol
@@ -580,16 +579,14 @@ class BybitDataClient(LiveMarketDataClient):
         if limit == 0 or limit > 1000:
             limit = 1000
 
-        # Check if request is for trades older than one day
-        now = self._clock.utc_now()
-        now_ns = dt_to_unix_nanos(now)
-        start_ns = dt_to_unix_nanos(request.start)
-        end_ns = dt_to_unix_nanos(request.end)
-        one_day_ns = 86_400_000_000_000  # One day in nanoseconds
-
-        if (now_ns - start_ns) > one_day_ns:
+        if request.start is not None:
             self._log.error(
-                "Cannot specify `start` older then 1 day for historical trades: Bybit only provides '1 day old trades'",
+                "Cannot specify `start` for historical trades: Bybit only provides 'recent trades'",
+            )
+
+        if request.end is not None:
+            self._log.error(
+                "Cannot specify `end` for historical trades: Bybit only provides 'recent trades'",
             )
 
         trades = await self._http_market.request_bybit_trades(
@@ -598,12 +595,9 @@ class BybitDataClient(LiveMarketDataClient):
             ts_init=self._clock.timestamp_ns(),
         )
 
-        # Filter trades to only include those within the requested time range
-        filtered_trades = [trade for trade in trades if start_ns <= trade.ts_init <= end_ns]
-
         self._handle_trade_ticks(
             request.instrument_id,
-            filtered_trades,
+            trades,
             request.id,
             request.start,
             request.end,
@@ -632,8 +626,13 @@ class BybitDataClient(LiveMarketDataClient):
             return
 
         bybit_interval = self._enum_parser.parse_bybit_kline(request.bar_type)
-        start_time_ms = secs_to_millis(request.start.timestamp())
-        end_time_ms = secs_to_millis(request.end.timestamp())
+        start_time_ms = None
+        if request.start is not None:
+            start_time_ms = secs_to_millis(request.start.timestamp())
+
+        end_time_ms = None
+        if request.end is not None:
+            end_time_ms = secs_to_millis(request.end.timestamp())
 
         self._log.debug(f"Requesting klines {start_time_ms=}, {end_time_ms=}, {request.limit=}")
 
@@ -656,6 +655,7 @@ class BybitDataClient(LiveMarketDataClient):
             request.end,
             request.params,
         )
+        self._handle_bars(request.bar_type, bars, None, request.id, request.params)
 
     async def _handle_ticker_data_request(self, symbol: Symbol, correlation_id: UUID4) -> None:
         bybit_symbol = BybitSymbol(symbol.value)
