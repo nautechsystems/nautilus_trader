@@ -107,7 +107,7 @@ Released on TBD (UTC).
 - Upgraded Rust (MSRV) to 1.89.0
 - Upgraded Cython to v3.1.3
 - Upgraded `web3` for Polymarket allowances script (#2814), thanks @DeirhX
-- Upgraded `databento` crate to v0.32.0
+- Upgraded `databento` crate to v0.33.0
 - Upgraded `datafusion` crate to v49.0.1
 - Upgraded `redis` crate to v0.32.5
 - Upgraded `tokio` crate to v1.47.1
