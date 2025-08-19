@@ -130,7 +130,7 @@ curl -s https://packages.nautechsystems.io/simple/nautilus-trader/index.html | g
 ### Retention policies
 
 - `develop` branch wheels (`.dev`): We retain only the most recent wheel build.
-- `nightly` branch wheels (`a`): We retain only the 10 most recent wheel builds.
+- `nightly` branch wheels (`a`): We retain only the 30 most recent wheel builds.
 
 ## From source
 
