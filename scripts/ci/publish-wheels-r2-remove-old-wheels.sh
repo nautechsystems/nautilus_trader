@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Number of wheel versions to retain on nightly branch
-NIGHTLY_LOOKBACK=10
+NIGHTLY_LOOKBACK=30
 
 echo "Cleaning up old wheels in Cloudflare R2..."
 
