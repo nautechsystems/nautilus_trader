@@ -52,6 +52,10 @@ class OKXDataClientConfig(LiveDataClientConfig, frozen=True):
         If the client is connecting to the OKX demo API.
     update_instruments_interval_mins: PositiveInt or None, default 60
         The interval (minutes) between reloading instruments from the venue.
+    vip_level : int, optional
+        The account VIP level to determine book subscriptions.
+        - Only VIP4 and above in trading fee tier are allowed to subscribe to "books50-l2-tbt" 50 depth channels (10 ms updates)
+        - Only VIP5 and above in trading fee tier are allowed to subscribe to "books-l2-tbt" 400 depth channels (10 ms updates)
 
     """
 
@@ -65,6 +69,7 @@ class OKXDataClientConfig(LiveDataClientConfig, frozen=True):
     is_demo: bool = False
     http_timeout_secs: PositiveInt | None = 60
     update_instruments_interval_mins: PositiveInt | None = 60
+    vip_level: PositiveInt | None = None  # TODO: OKXVipLevel enum
 
 
 class OKXExecClientConfig(LiveExecClientConfig, frozen=True):

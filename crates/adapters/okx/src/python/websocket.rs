@@ -269,8 +269,8 @@ impl OKXWebSocketClient {
         })
     }
 
-    #[pyo3(name = "subscribe_order_book")]
-    fn py_subscribe_order_book<'py>(
+    #[pyo3(name = "subscribe_book")]
+    fn py_subscribe_book<'py>(
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
@@ -278,8 +278,56 @@ impl OKXWebSocketClient {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            if let Err(e) = client.subscribe_order_book(instrument_id).await {
+            if let Err(e) = client.subscribe_book(instrument_id).await {
                 log::error!("Failed to subscribe to order book: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "subscribe_book50_l2_tbt")]
+    fn py_subscribe_book50_l2_tbt<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.subscribe_books50_l2_tbt(instrument_id).await {
+                log::error!("Failed to subscribe to books50_tbt: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "subscribe_book_l2_tbt")]
+    fn py_subscribe_book_l2_tbt<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.subscribe_book_l2_tbt(instrument_id).await {
+                log::error!("Failed to subscribe to books_l2_tbt: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "subscribe_depth5")]
+    fn py_subscribe_depth5<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.subscribe_depth5(instrument_id).await {
+                log::error!("Failed to subscribe to books5: {e}");
             }
             Ok(())
         })
@@ -334,8 +382,8 @@ impl OKXWebSocketClient {
         })
     }
 
-    #[pyo3(name = "unsubscribe_order_book")]
-    fn py_unsubscribe_order_book<'py>(
+    #[pyo3(name = "unsubscribe_book")]
+    fn py_unsubscribe_book<'py>(
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
@@ -343,8 +391,56 @@ impl OKXWebSocketClient {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            if let Err(e) = client.unsubscribe_order_book(instrument_id).await {
+            if let Err(e) = client.unsubscribe_book(instrument_id).await {
                 log::error!("Failed to unsubscribe from order book: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "unsubscribe_depth5")]
+    fn py_unsubscribe_depth5<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.unsubscribe_depth5(instrument_id).await {
+                log::error!("Failed to unsubscribe from books5: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "unsubscribe_book50_l2_tbt")]
+    fn py_unsubscribe_book50_l2_tbt<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.unsubscribe_book50_l2_tbt(instrument_id).await {
+                log::error!("Failed to unsubscribe from books50_l2_tbt: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "unsubscribe_book_l2_tbt")]
+    fn py_unsubscribe_book_l2_tbt<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.unsubscribe_book_l2_tbt(instrument_id).await {
+                log::error!("Failed to unsubscribe from books_l2_tbt: {e}");
             }
             Ok(())
         })

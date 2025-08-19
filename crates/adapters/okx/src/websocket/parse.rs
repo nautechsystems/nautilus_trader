@@ -28,7 +28,7 @@ use nautilus_model::{
     identifiers::{AccountId, InstrumentId, TradeId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     reports::{FillReport, OrderStatusReport},
-    types::{Currency, Money},
+    types::{Currency, Money, Price, Quantity},
 };
 use ustr::Ustr;
 
@@ -359,13 +359,14 @@ pub fn parse_book10_msg(
     size_precision: u8,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderBookDepth10> {
-    // Initialize arrays with default empty orders
+    // Initialize arrays - need to fill all 10 levels even if we have fewer
     let mut bids: [BookOrder; DEPTH10_LEN] = [BookOrder::default(); DEPTH10_LEN];
     let mut asks: [BookOrder; DEPTH10_LEN] = [BookOrder::default(); DEPTH10_LEN];
     let mut bid_counts: [u32; DEPTH10_LEN] = [0; DEPTH10_LEN];
     let mut ask_counts: [u32; DEPTH10_LEN] = [0; DEPTH10_LEN];
 
     // Parse available bid levels (up to 10)
+    let bid_len = msg.bids.len().min(DEPTH10_LEN);
     for (i, level) in msg.bids.iter().take(DEPTH10_LEN).enumerate() {
         let price = parse_price(&level.price, price_precision)?;
         let size = parse_quantity(&level.size, size_precision)?;
@@ -376,7 +377,19 @@ pub fn parse_book10_msg(
         bid_counts[i] = orders_count;
     }
 
+    // Fill remaining bid slots with empty Buy orders (not NULL orders)
+    for i in bid_len..DEPTH10_LEN {
+        bids[i] = BookOrder::new(
+            OrderSide::Buy,
+            Price::zero(price_precision),
+            Quantity::zero(size_precision),
+            0,
+        );
+        bid_counts[i] = 0;
+    }
+
     // Parse available ask levels (up to 10)
+    let ask_len = msg.asks.len().min(DEPTH10_LEN);
     for (i, level) in msg.asks.iter().take(DEPTH10_LEN).enumerate() {
         let price = parse_price(&level.price, price_precision)?;
         let size = parse_quantity(&level.size, size_precision)?;
@@ -387,7 +400,16 @@ pub fn parse_book10_msg(
         ask_counts[i] = orders_count;
     }
 
-    // Arrays are already fixed size, no conversion needed
+    // Fill remaining ask slots with empty Sell orders (not NULL orders)
+    for i in ask_len..DEPTH10_LEN {
+        asks[i] = BookOrder::new(
+            OrderSide::Sell,
+            Price::zero(price_precision),
+            Quantity::zero(size_precision),
+            0,
+        );
+        ask_counts[i] = 0;
+    }
 
     let ts_event = parse_millisecond_timestamp(msg.ts);
 
