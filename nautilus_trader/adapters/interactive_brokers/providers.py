@@ -695,8 +695,10 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         processed_instrument_ids = []
 
         for details in copy.deepcopy(contract_details):
-            details.contract = IBContract(**details.contract.__dict__)
-            details = IBContractDetails(**details.__dict__)
+            if not isinstance(details.contract, IBContract):
+                details.contract = IBContract(**details.contract.__dict__)
+            if not isinstance(details, IBContractDetails):
+                details = IBContractDetails(**details.__dict__)
             self._log.debug(f"Attempting to create instrument from {details}")
 
             try:
