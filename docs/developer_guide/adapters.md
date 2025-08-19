@@ -159,22 +159,22 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     async def _unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
         raise NotImplementedError("implement `_unsubscribe_trade_ticks` in your adapter subclass")
 
-    async def _subscribe_mark_prices(self, instrument_id: InstrumentId, kwargs: dict | None = None) -> None:
+    async def _subscribe_mark_prices(self, command: SubscribeMarkPrices) -> None:
         raise NotImplementedError("implement `_subscribe_mark_prices` in your adapter subclass")
 
-    async def _unsubscribe_mark_prices(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_mark_prices(self, command: UnsubscribeMarkPrices) -> None:
         raise NotImplementedError("implement `_unsubscribe_mark_prices` in your adapter subclass")
 
-    async def _subscribe_index_prices(self, instrument_id: InstrumentId, kwargs: dict | None = None) -> None:
+    async def _subscribe_index_prices(self, command: SubscribeIndexPrices) -> None:
         raise NotImplementedError("implement `_subscribe_index_prices` in your adapter subclass")
 
-    async def _unsubscribe_index_prices(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_index_prices(self, command: UnsubscribeIndexPrices) -> None:
         raise NotImplementedError("implement `_unsubscribe_index_prices` in your adapter subclass")
 
-    async def _subscribe_funding_rates(self, instrument_id: InstrumentId, kwargs: dict | None = None) -> None:
+    async def _subscribe_funding_rates(self, command: SubscribeFundingRates) -> None:
         raise NotImplementedError("implement `_subscribe_funding_rates` in your adapter subclass")
 
-    async def _unsubscribe_funding_rates(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_funding_rates(self, command: UnsubscribeFundingRates) -> None:
         raise NotImplementedError("implement `_unsubscribe_funding_rates` in your adapter subclass")
 
     async def _subscribe_bars(self, bar_type: BarType, kwargs: dict | None = None) -> None:
