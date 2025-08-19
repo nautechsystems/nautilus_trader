@@ -7,6 +7,12 @@ key differences to be aware of between backtesting and live trading.
 
 This guide provides an overview of the key aspects of live trading.
 
+:::info Platform differences
+Windows signal handling differs from Unix-like systems. If you are running on Windows, please read
+the note on [Windows signal handling](#windows-signal-handling) for guidance on graceful shutdown
+behavior and Ctrl+C (SIGINT) support.
+:::
+
 ## Configuration
 
 When operating a live trading system, configuring your execution engine and strategies properly is
@@ -252,6 +258,48 @@ For a complete parameter list see the `StrategyConfig` [API Reference](../api_re
 | `external_order_claims`     | None    | Lists instrument IDs for external orders the strategy should claim, aiding accurate order management. |
 | `manage_contingent_orders`  | False   | If enabled, the strategy automatically manages contingent orders, reducing manual intervention. |
 | `manage_gtd_expiry`         | False   | If enabled, the strategy manages GTD expirations, ensuring orders remain active as intended. |
+
+### Windows signal handling
+
+:::warning
+Windows: asyncio event loops do not implement `loop.add_signal_handler`. As a result, the legacy
+`TradingNode` does not receive OS signals via asyncio on Windows. Use Ctrl+C (SIGINT) handling or
+programmatic shutdown; SIGTERM parity is not expected on Windows.
+:::
+
+On Windows, asyncio event loops do not implement `loop.add_signal_handler`, so Unix-style signal
+integration is unavailable. As a result, `TradingNode` does not receive OS signals via asyncio on
+Windows and will not gracefully stop unless you intervene.
+
+Recommended approaches on Windows:
+
+- Wrap `run` with a `try/except KeyboardInterrupt` and call `node.stop()` then `node.dispose()`.
+  Ctrl+C on Windows raises `KeyboardInterrupt` in the main thread, providing a clean teardown path.
+- Alternatively, publish a `ShutdownSystem` command programmatically (or call `shutdown_system(...)`
+  from an actor/component) to trigger the same shutdown path.
+
+The “inflight check loop task still pending” message is consistent with the lack of asyncio signal
+handling on Windows, i.e., the normal graceful shutdown path isn’t being triggered.
+
+This is tracked as an enhancement request to support Ctrl+C (SIGINT) for Windows in the legacy path.
+<https://github.com/nautechsystems/nautilus_trader/issues/2785>.
+
+For the new v2 system, `LiveNode` already supports Ctrl+C cleanly via `tokio::signal::ctrl_c()` and a
+Python SIGINT bridge, so the runner stops and tasks are shut down cleanly.
+
+Example pattern for Windows:
+
+```python
+try:
+    node.run()
+except KeyboardInterrupt:
+    pass
+finally:
+    try:
+        node.stop()
+    finally:
+        node.dispose()
+```
 
 ## Execution reconciliation
 
