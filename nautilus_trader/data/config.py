@@ -52,6 +52,10 @@ class DataEngineConfig(NautilusConfig, frozen=True):
         the data engine will not attempt to forward them to a local `DataClient`.
     debug : bool, default False
         If debug mode is active (will provide extra debug logging).
+    allow_immediate_execution: bool, default False
+        Allows the data engine and a strategy to receive data and pass orders before the data is
+        processed by the execution engine. Only relevant in backtesting.
+        Can be useful for back of the envelope studies with infrequent data.
 
     """
 
@@ -65,3 +69,4 @@ class DataEngineConfig(NautilusConfig, frozen=True):
     buffer_deltas: bool = False
     external_clients: list[ClientId] | None = None
     debug: bool = False
+    allow_immediate_execution: bool = False

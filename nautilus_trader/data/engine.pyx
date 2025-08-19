@@ -205,6 +205,7 @@ cdef class DataEngine(Component):
         self._time_bars_build_delay = config.time_bars_build_delay
         self._validate_data_sequence = config.validate_data_sequence
         self._buffer_deltas = config.buffer_deltas
+        self._allow_immediate_execution = config.allow_immediate_execution
 
         if config.external_clients:
             self._external_clients = set(config.external_clients)
@@ -2587,6 +2588,7 @@ cdef class DataEngine(Component):
             cache=self._cache,
             clock=self._clock,
             update_interval_seconds=60,  # Update every 60 seconds
+            allow_immediate_execution=self._allow_immediate_execution,
         )
         self._spread_quote_aggregators[spread_instrument_id] = aggregator
 

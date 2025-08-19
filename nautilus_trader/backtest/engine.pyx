@@ -133,8 +133,8 @@ cdef class BacktestEngine:
     def __init__(self, config: BacktestEngineConfig | None = None) -> None:
         if config is None:
             config = BacktestEngineConfig()
-        Condition.type(config, BacktestEngineConfig, "config")
 
+        Condition.type(config, BacktestEngineConfig, "config")
         self._config: BacktestEngineConfig  = config
 
         # Set up components
@@ -1366,6 +1366,7 @@ cdef class BacktestEngine:
         cdef uint64_t raw_handlers_count = 0
         cdef Data data = self._data_iterator.next()
         cdef CVec raw_handlers
+        cdef bint allow_immediate_execution = self._config.data_engine.allow_immediate_execution
         try:
             while data is not None:
                 if data.ts_init > end_ns:
@@ -1377,6 +1378,9 @@ cdef class BacktestEngine:
                     self._last_ns = data.ts_init
                     raw_handlers = self._advance_time(data.ts_init)
                     raw_handlers_count = raw_handlers.len
+
+                if allow_immediate_execution:
+                    self._data_engine.process(data)
 
                 # Process data through exchange
                 if isinstance(data, Instrument):
@@ -1407,7 +1411,8 @@ cdef class BacktestEngine:
                     exchange = self._venues[data.instrument_id.venue]
                     exchange.process_instrument_status(data)
 
-                self._data_engine.process(data)
+                if not allow_immediate_execution:
+                    self._data_engine.process(data)
 
                 # Process all exchange messages
                 for exchange in self._venues.values():
@@ -1431,6 +1436,7 @@ cdef class BacktestEngine:
         except AccountError as e:
             set_backtest_force_stop(True)
             self._log.error(f"Stopping backtest from {e}")
+
             if streaming:
                 # Reraise exception to interrupt batch streaming
                 raise

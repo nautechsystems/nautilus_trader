@@ -60,6 +60,7 @@ cdef class SpreadQuoteAggregator(Component):
         CacheFacade cache not None,
         Clock clock not None,
         int update_interval_seconds = 60,
+        bint allow_immediate_execution = False,
     ):
         Condition.is_true(spread_instrument_id.is_spread(), "instrument_id must be a spread")
 
@@ -71,6 +72,7 @@ cdef class SpreadQuoteAggregator(Component):
         self._spread_instrument_id = spread_instrument_id
         self._components = spread_instrument_id.to_list()
         self._greeks_calculator = GreeksCalculator(msgbus, cache, clock)
+        self._allow_immediate_execution = allow_immediate_execution
 
         self._component_ids = [component[0] for component in self._components]
         self._ratios = np.array([component[1] for component in self._components])
@@ -214,9 +216,13 @@ cdef class SpreadQuoteAggregator(Component):
             ts_init=event.ts_event,
         )
 
+        if self._allow_immediate_execution:
+            self._handler(spread_quote)
+
         # Send quote to the backtest engine so it reaches a venue and a matching engine
         self._msgbus.send(endpoint=f"SimulatedExchange.spread_quote.{self._spread_instrument_id.venue}", msg=spread_quote)
 
-        # Send the spread quote to the data engine *after* it's possibly processed by a matching engine
-        # like in the main backtesting loop in the backtest engine
-        self._handler(spread_quote)
+        if not self._allow_immediate_execution:
+            # Send the spread quote to the data engine *after* it's possibly processed by a matching engine like in
+            # the main backtesting loop in the backtest engine (in most cases, unless using allow_immediate_execution)
+            self._handler(spread_quote)

@@ -26,7 +26,7 @@ cdef class SpreadQuoteAggregator(Component):
     cdef readonly CacheFacade _cache
     cdef readonly list _components
     cdef readonly GreeksCalculator _greeks_calculator
-    cdef readonly double _vega_multiplier
+    cdef readonly bint _allow_immediate_execution
     cdef readonly int _update_interval_seconds
     cdef readonly str _timer_name
     cdef readonly list _component_ids
