@@ -141,6 +141,7 @@ Released on TBD (UTC).
 - Fixed `venue_order_id` handling for Polymarket order status request (#2848), thanks @DeirhX
 - Fixed race-condition on node shutdown in async `InteractiveBrokersDataClient._disconnect()` (#2865), thanks @ruvr
 - Fixed `AttributeError` when loading cached `IBContract` objects (#2862), thanks @ruvr
+- Fixed `PolymarketUserTrade.bucket_index` field type that changed from `str` to `int` (#2872), thanks for reporting @thefabus
 
 ### Documentation Updates
 - Added FFI Memory Contract developer guide
