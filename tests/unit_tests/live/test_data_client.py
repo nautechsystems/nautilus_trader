@@ -15,6 +15,8 @@
 
 import asyncio
 
+import pytest
+
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.providers import InstrumentProvider
@@ -34,6 +36,138 @@ BINANCE = Venue("BINANCE")
 XBTUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
+
+
+class TestDataClientImpl(LiveDataClient):
+    """
+    Test implementation of LiveDataClient for testing task tracking.
+    """
+
+    async def _connect(self):
+        await asyncio.sleep(0.01)
+
+    async def _disconnect(self):
+        await asyncio.sleep(0.01)
+
+    async def _subscribe(self, command):
+        await asyncio.sleep(0.01)
+
+    async def _unsubscribe(self, command):
+        await asyncio.sleep(0.01)
+
+    async def _request(self, request):
+        await asyncio.sleep(0.01)
+
+
+class TestMarketDataClientImpl(LiveMarketDataClient):
+    """
+    Test implementation of LiveMarketDataClient for testing task tracking.
+    """
+
+    async def _connect(self):
+        await asyncio.sleep(0.01)
+
+    async def _disconnect(self):
+        await asyncio.sleep(0.01)
+
+    async def _subscribe(self, command):
+        await asyncio.sleep(0.01)
+
+    async def _unsubscribe(self, command):
+        await asyncio.sleep(0.01)
+
+    async def _subscribe_instruments(self, command):
+        await asyncio.sleep(0.01)
+
+    async def _subscribe_instrument(self, command):
+        await asyncio.sleep(0.01)
+
+    async def _subscribe_order_book_deltas(self, command):
+        await asyncio.sleep(0.01)
+
+    async def _subscribe_order_book_snapshots(self, command):
+        await asyncio.sleep(0.01)
+
+    async def _subscribe_quote_ticks(self, command):
+        await asyncio.sleep(0.01)
+
+    async def _subscribe_trade_ticks(self, command):
+        await asyncio.sleep(0.01)
+
+    async def _subscribe_mark_prices(self, command):
+        await asyncio.sleep(0.01)
+
+    async def _subscribe_index_prices(self, command):
+        await asyncio.sleep(0.01)
+
+    async def _subscribe_funding_rates(self, command):
+        await asyncio.sleep(0.01)
+
+    async def _subscribe_bars(self, command):
+        await asyncio.sleep(0.01)
+
+    async def _subscribe_instrument_status(self, command):
+        await asyncio.sleep(0.01)
+
+    async def _subscribe_instrument_close(self, command):
+        await asyncio.sleep(0.01)
+
+    async def _unsubscribe_instruments(self, command):
+        await asyncio.sleep(0.01)
+
+    async def _unsubscribe_instrument(self, command):
+        await asyncio.sleep(0.01)
+
+    async def _unsubscribe_order_book_deltas(self, command):
+        await asyncio.sleep(0.01)
+
+    async def _unsubscribe_order_book_snapshots(self, command):
+        await asyncio.sleep(0.01)
+
+    async def _unsubscribe_quote_ticks(self, command):
+        await asyncio.sleep(0.01)
+
+    async def _unsubscribe_trade_ticks(self, command):
+        await asyncio.sleep(0.01)
+
+    async def _unsubscribe_mark_prices(self, command):
+        await asyncio.sleep(0.01)
+
+    async def _unsubscribe_index_prices(self, command):
+        await asyncio.sleep(0.01)
+
+    async def _unsubscribe_funding_rates(self, command):
+        await asyncio.sleep(0.01)
+
+    async def _unsubscribe_bars(self, command):
+        await asyncio.sleep(0.01)
+
+    async def _unsubscribe_instrument_status(self, command):
+        await asyncio.sleep(0.01)
+
+    async def _unsubscribe_instrument_close(self, command):
+        await asyncio.sleep(0.01)
+
+    async def _request(self, request):
+        await asyncio.sleep(0.01)
+
+    async def _request_instrument(self, request):
+        await asyncio.sleep(0.01)
+
+    async def _request_instruments(self, request):
+        await asyncio.sleep(0.01)
+
+    async def _request_quote_ticks(self, request):
+        await asyncio.sleep(0.01)
+
+    async def _request_trade_ticks(self, request):
+        await asyncio.sleep(0.01)
+
+    async def _request_bars(self, request):
+        await asyncio.sleep(0.01)
+
+    async def _request_order_book_snapshot(self, request):
+        await asyncio.sleep(0.01)
 
 
 class TestLiveDataClientTests:
@@ -74,6 +208,100 @@ class TestLiveDataClientTests:
     def test_dummy_test(self):
         # Arrange, Act, Assert
         assert True  # No exception raised
+
+    @pytest.mark.asyncio
+    async def test_tracks_created_tasks(self):
+        # Arrange
+        client = TestDataClientImpl(
+            loop=self.loop,
+            client_id=ClientId("TEST-DATA"),
+            venue=BINANCE,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Act - Create some tasks
+        async def long_task():
+            await asyncio.sleep(10)
+
+        task1 = client.create_task(long_task(), log_msg="task1")
+        task2 = client.create_task(long_task(), log_msg="task2")
+        task3 = client.create_task(long_task(), log_msg="task3")
+
+        await asyncio.sleep(0.01)  # Let tasks start
+
+        # Assert - Tasks are tracked
+        assert task1 in client._tasks
+        assert task2 in client._tasks
+        assert task3 in client._tasks
+        assert len([t for t in client._tasks if not t.done()]) == 3
+
+        # Cleanup
+        await client.cancel_pending_tasks(timeout_secs=1.0)
+
+    @pytest.mark.asyncio
+    async def test_cancel_pending_tasks_cancels_all_tasks(self):
+        # Arrange
+        client = TestDataClientImpl(
+            loop=self.loop,
+            client_id=ClientId("TEST-DATA"),
+            venue=BINANCE,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        async def long_task():
+            await asyncio.sleep(10)
+
+        task1 = client.create_task(long_task(), log_msg="task1")
+        task2 = client.create_task(long_task(), log_msg="task2")
+        task3 = client.create_task(long_task(), log_msg="task3")
+
+        await asyncio.sleep(0.01)  # Let tasks start
+
+        # Act - Cancel tasks
+        await client.cancel_pending_tasks(timeout_secs=1.0)
+
+        # Assert - Tasks are cancelled
+        assert task1.cancelled()
+        assert task2.cancelled()
+        assert task3.cancelled()
+
+    @pytest.mark.asyncio
+    async def test_disconnect_cancels_pending_tasks(self):
+        # Arrange
+        client = TestDataClientImpl(
+            loop=self.loop,
+            client_id=ClientId("TEST-DATA"),
+            venue=BINANCE,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Act - Create some long-running tasks
+        async def long_task():
+            await asyncio.sleep(10)
+
+        for i in range(5):
+            client.create_task(long_task(), log_msg=f"task_{i}")
+
+        await asyncio.sleep(0.01)  # Let tasks start
+
+        # Assert - Tasks are active
+        active_before = [t for t in client._tasks if not t.done()]
+        assert len(active_before) == 5
+
+        # Act - Disconnect (should cancel tasks)
+        client.disconnect()
+        await asyncio.sleep(0.5)  # Wait for disconnect and cleanup
+
+        # Assert - Tasks should be cancelled after disconnect
+        active_after = [t for t in client._tasks if not t.done()]
+        # The disconnect task itself might still be running, but the long tasks should be cancelled
+        assert len(active_after) <= 1  # Only disconnect task might remain
 
 
 class TestLiveMarketDataClientTests:

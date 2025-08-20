@@ -83,7 +83,7 @@ config_node = TradingNodeConfig(
     },
     timeout_connection=20.0,
     timeout_disconnection=5.0,
-    timeout_post_stop=0.0,  # No stop delay needed for data testing
+    timeout_post_stop=1.0,
 )
 
 # Instantiate the node with a configuration
