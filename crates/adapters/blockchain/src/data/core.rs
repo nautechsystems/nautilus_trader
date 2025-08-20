@@ -172,8 +172,7 @@ impl BlockchainDataClientCore {
         // self.sync_blocks(Some(from_block), None).await?;
         for dex in self.config.dex_ids.clone() {
             self.register_dex_exchange(dex).await?;
-            self.sync_exchange_pools(&dex, Some(from_block), None)
-                .await?;
+            self.sync_exchange_pools(&dex, from_block, None).await?;
         }
 
         Ok(())
@@ -612,23 +611,50 @@ impl BlockchainDataClientCore {
     pub async fn sync_exchange_pools(
         &mut self,
         dex: &DexType,
-        from_block: Option<u64>,
+        from_block: u64,
         to_block: Option<u64>,
     ) -> anyhow::Result<()> {
-        let from_block = from_block.unwrap_or(0);
-        let to_block = if let Some(block) = to_block {
-            block
-        } else {
-            self.hypersync_client.current_block().await
+        // Check for last synced block and use it as starting point if higher
+        let last_synced_block = self
+            .cache
+            .get_dex_last_synced_block(&dex.to_string())
+            .await?;
+
+        let effective_from_block =
+            last_synced_block.map_or(from_block, |last_synced| max(from_block, last_synced + 1));
+
+        let to_block = match to_block {
+            Some(block) => block,
+            None => self.hypersync_client.current_block().await,
         };
-        let total_blocks = to_block.saturating_sub(from_block) + 1;
+
+        // Skip sync if we're already up to date
+        if effective_from_block > to_block {
+            tracing::info!(
+                "DEX {} already synced to block {} (current: {}), skipping sync",
+                dex,
+                last_synced_block.unwrap_or(0),
+                to_block
+            );
+            return Ok(());
+        }
+
+        let total_blocks = to_block.saturating_sub(effective_from_block) + 1;
         tracing::info!(
-            "Syncing DEX exchange pools from {from_block} to {to_block} (total: {total_blocks} blocks)"
+            "Syncing DEX exchange pools from {} to {} (total: {} blocks){}",
+            effective_from_block,
+            to_block,
+            total_blocks,
+            if let Some(last_synced) = last_synced_block {
+                format!(" - resuming from last synced block {}", last_synced)
+            } else {
+                String::new()
+            }
         );
 
         let mut metrics = BlockchainSyncReporter::new(
             BlockchainItem::PoolCreatedEvents,
-            from_block,
+            effective_from_block,
             total_blocks,
             BLOCKS_PROCESS_IN_SYNC_REPORT,
         );
@@ -639,7 +665,7 @@ impl BlockchainDataClientCore {
         let pools_stream = self
             .hypersync_client
             .request_contract_events_stream(
-                from_block,
+                effective_from_block,
                 Some(to_block),
                 factory_address,
                 pair_created_event_signature,
@@ -652,7 +678,7 @@ impl BlockchainDataClientCore {
         const TOKEN_BATCH_SIZE: usize = 100;
         let mut token_buffer: HashSet<Address> = HashSet::new();
         let mut pool_buffer: Vec<PoolCreatedEvent> = Vec::new();
-        let mut last_block_saved = from_block;
+        let mut last_block_saved = effective_from_block;
         let mut blocks_processed = 0;
 
         while let Some(log) = pools_stream.next().await {
@@ -663,6 +689,13 @@ impl BlockchainDataClientCore {
             let pool = dex.parse_pool_created_event(log)?;
             if self.cache.get_pool(&pool.pool_address).is_some() {
                 // Pool is already initialized and cached.
+                continue;
+            }
+
+            if self.cache.is_invalid_token(&pool.token0)
+                || self.cache.is_invalid_token(&pool.token1)
+            {
+                // Any of the tokens is invalid, so we just skip as we are not interested in that pool.
                 continue;
             }
 
@@ -712,6 +745,18 @@ impl BlockchainDataClientCore {
         }
 
         metrics.log_final_stats();
+
+        // Update the last synced block after successful completion
+        self.cache
+            .update_dex_last_synced_block(&dex.dex.name.to_string(), to_block)
+            .await?;
+
+        tracing::info!(
+            "Successfully synced DEX {} pools up to block {}",
+            dex.dex.name,
+            to_block
+        );
+
         Ok(())
     }
 
@@ -753,12 +798,21 @@ impl BlockchainDataClientCore {
                 Err(token_info_error) => match token_info_error {
                     TokenInfoError::EmptyTokenField { .. } => {
                         empty_tokens.insert(token_address);
+                        self.cache
+                            .add_invalid_token(token_address, &token_info_error.to_string())
+                            .await?;
                     }
                     TokenInfoError::DecodingError { .. } => {
                         decoding_errors_tokens.insert(token_address);
+                        self.cache
+                            .add_invalid_token(token_address, &token_info_error.to_string())
+                            .await?;
                     }
                     TokenInfoError::CallFailed { .. } => {
                         decoding_errors_tokens.insert(token_address);
+                        self.cache
+                            .add_invalid_token(token_address, &token_info_error.to_string())
+                            .await?;
                     }
                     _ => {
                         tracing::error!(
