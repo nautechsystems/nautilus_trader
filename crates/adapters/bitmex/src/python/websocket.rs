@@ -162,8 +162,8 @@ impl BitmexWebSocketClient {
         })
     }
 
-    #[pyo3(name = "subscribe_order_book")]
-    fn py_subscribe_order_book<'py>(
+    #[pyo3(name = "subscribe_book")]
+    fn py_subscribe_book<'py>(
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
@@ -171,15 +171,15 @@ impl BitmexWebSocketClient {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            if let Err(e) = client.subscribe_order_book(instrument_id).await {
+            if let Err(e) = client.subscribe_book(instrument_id).await {
                 log::error!("Failed to subscribe to order book: {e}");
             }
             Ok(())
         })
     }
 
-    #[pyo3(name = "subscribe_order_book_25")]
-    fn py_subscribe_order_book_25<'py>(
+    #[pyo3(name = "subscribe_book_25")]
+    fn py_subscribe_book_25<'py>(
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
@@ -187,15 +187,15 @@ impl BitmexWebSocketClient {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            if let Err(e) = client.subscribe_order_book_25(instrument_id).await {
+            if let Err(e) = client.subscribe_book_25(instrument_id).await {
                 log::error!("Failed to subscribe to order book 25: {e}");
             }
             Ok(())
         })
     }
 
-    #[pyo3(name = "subscribe_order_book_depth10")]
-    fn py_subscribe_order_book_depth10<'py>(
+    #[pyo3(name = "subscribe_book_depth10")]
+    fn py_subscribe_book_depth10<'py>(
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
@@ -203,7 +203,7 @@ impl BitmexWebSocketClient {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            if let Err(e) = client.subscribe_order_book_depth10(instrument_id).await {
+            if let Err(e) = client.subscribe_book_depth10(instrument_id).await {
                 log::error!("Failed to subscribe to order book depth 10: {e}");
             }
             Ok(())
@@ -334,8 +334,8 @@ impl BitmexWebSocketClient {
         })
     }
 
-    #[pyo3(name = "unsubscribe_order_book")]
-    fn py_unsubscribe_order_book<'py>(
+    #[pyo3(name = "unsubscribe_book")]
+    fn py_unsubscribe_book<'py>(
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
@@ -343,15 +343,15 @@ impl BitmexWebSocketClient {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            if let Err(e) = client.unsubscribe_order_book(instrument_id).await {
+            if let Err(e) = client.unsubscribe_book(instrument_id).await {
                 log::error!("Failed to unsubscribe from order book: {e}");
             }
             Ok(())
         })
     }
 
-    #[pyo3(name = "unsubscribe_order_book_25")]
-    fn py_unsubscribe_order_book_25<'py>(
+    #[pyo3(name = "unsubscribe_book_25")]
+    fn py_unsubscribe_book_25<'py>(
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
@@ -359,15 +359,15 @@ impl BitmexWebSocketClient {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            if let Err(e) = client.unsubscribe_order_book_25(instrument_id).await {
+            if let Err(e) = client.unsubscribe_book_25(instrument_id).await {
                 log::error!("Failed to unsubscribe from order book 25: {e}");
             }
             Ok(())
         })
     }
 
-    #[pyo3(name = "unsubscribe_order_book_depth10")]
-    fn py_unsubscribe_order_book_depth10<'py>(
+    #[pyo3(name = "unsubscribe_book_depth10")]
+    fn py_unsubscribe_book_depth10<'py>(
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
@@ -375,7 +375,7 @@ impl BitmexWebSocketClient {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            if let Err(e) = client.unsubscribe_order_book_depth10(instrument_id).await {
+            if let Err(e) = client.unsubscribe_book_depth10(instrument_id).await {
                 log::error!("Failed to unsubscribe from order book depth 10: {e}");
             }
             Ok(())

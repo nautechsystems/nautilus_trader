@@ -735,7 +735,10 @@ impl OKXWebSocketClient {
     /// Updates every 100ms when there are changes.
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-market-data-ws-order-book-5-depth-channel>.
-    pub async fn subscribe_depth5(&self, instrument_id: InstrumentId) -> Result<(), OKXWsError> {
+    pub async fn subscribe_book_depth5(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> Result<(), OKXWsError> {
         let arg = OKXSubscriptionArg {
             channel: OKXWsChannel::Books5,
             inst_type: None,
@@ -940,7 +943,10 @@ impl OKXWebSocketClient {
     }
 
     /// Unsubscribe from 5-level order book snapshot data for an instrument.
-    pub async fn unsubscribe_depth5(&self, instrument_id: InstrumentId) -> Result<(), OKXWsError> {
+    pub async fn unsubscribe_book_depth5(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> Result<(), OKXWsError> {
         let arg = OKXSubscriptionArg {
             channel: OKXWsChannel::Books5,
             inst_type: None,

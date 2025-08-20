@@ -82,15 +82,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         "orderbook" | "book" => {
             tracing::info!("Subscribing to order book L2 for {instrument_id}");
-            client.subscribe_order_book(instrument_id).await?;
+            client.subscribe_book(instrument_id).await?;
         }
         "orderbook25" | "book25" => {
             tracing::info!("Subscribing to order book L2_25 for {instrument_id}");
-            client.subscribe_order_book_25(instrument_id).await?;
+            client.subscribe_book_25(instrument_id).await?;
         }
         "depth10" | "book10" => {
             tracing::info!("Subscribing to order book depth 10 for {instrument_id}");
-            client.subscribe_order_book_depth10(instrument_id).await?;
+            client.subscribe_book_depth10(instrument_id).await?;
         }
         "bars" => {
             let bar_type =
@@ -130,7 +130,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             sleep(Duration::from_millis(100)).await;
 
             tracing::info!("- Subscribing to order book L2");
-            if let Err(e) = client.subscribe_order_book(instrument_id).await {
+            if let Err(e) = client.subscribe_book(instrument_id).await {
                 tracing::error!("Failed to subscribe to order book: {e}");
             } else {
                 tracing::info!("  ✓ Order book L2 subscription successful");
@@ -139,7 +139,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             sleep(Duration::from_millis(100)).await;
 
             tracing::info!("- Subscribing to order book L2_25");
-            if let Err(e) = client.subscribe_order_book_25(instrument_id).await {
+            if let Err(e) = client.subscribe_book_25(instrument_id).await {
                 tracing::error!("Failed to subscribe to order book 25: {e}");
             } else {
                 tracing::info!("  ✓ Order book L2_25 subscription successful");
@@ -148,7 +148,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             sleep(Duration::from_millis(100)).await;
 
             tracing::info!("- Subscribing to order book depth 10");
-            if let Err(e) = client.subscribe_order_book_depth10(instrument_id).await {
+            if let Err(e) = client.subscribe_book_depth10(instrument_id).await {
                 tracing::error!("Failed to subscribe to depth 10: {e}");
             } else {
                 tracing::info!("  ✓ Order book depth 10 subscription successful");
