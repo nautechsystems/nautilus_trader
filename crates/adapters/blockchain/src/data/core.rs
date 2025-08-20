@@ -695,15 +695,7 @@ impl BlockchainDataClientCore {
             if self.cache.is_invalid_token(&pool.token0)
                 || self.cache.is_invalid_token(&pool.token1)
             {
-                // Any of the tokens is invalid, so we just skip as we are not interested in that pool.
-                continue;
-            }
-
-            // If we have both tokens cached, we can process the pool immediately.
-            if self.cache.get_token(&pool.token0).is_some()
-                && self.cache.get_token(&pool.token1).is_some()
-            {
-                self.process_pool(dex.dex.clone(), &pool).await?;
+                // Skip pools with invalid tokens as they cannot be properly processed or traded.
                 continue;
             }
 
@@ -746,7 +738,7 @@ impl BlockchainDataClientCore {
 
         metrics.log_final_stats();
 
-        // Update the last synced block after successful completion
+        // Update the last synced block after successful completion.
         self.cache
             .update_dex_last_synced_block(&dex.dex.name.to_string(), to_block)
             .await?;
@@ -823,35 +815,45 @@ impl BlockchainDataClientCore {
                 },
             }
         }
-
-        for pool in &mut *pool_buffer {
+        let mut pools = Vec::new();
+        for pool_event in &mut *pool_buffer {
             // We skip the pool that contains one of the tokens that is flagged as empty or decoding error.
-            if empty_tokens.contains(&pool.token0)
-                || empty_tokens.contains(&pool.token1)
-                || decoding_errors_tokens.contains(&pool.token0)
-                || decoding_errors_tokens.contains(&pool.token1)
+            if empty_tokens.contains(&pool_event.token0)
+                || empty_tokens.contains(&pool_event.token1)
+                || decoding_errors_tokens.contains(&pool_event.token0)
+                || decoding_errors_tokens.contains(&pool_event.token1)
             {
                 continue;
             }
 
-            if let Err(e) = self.process_pool(dex.clone(), pool).await {
-                tracing::error!("Failed to process {} with error {}", pool.pool_address, e);
+            match self.construct_pool(dex.clone(), pool_event).await {
+                Ok(pool) => pools.push(pool),
+                Err(e) => tracing::error!(
+                    "Failed to process {} with error {}",
+                    pool_event.pool_address,
+                    e
+                ),
             }
         }
-        pool_buffer.clear();
 
+        self.cache.add_pools_batch(pools).await?;
+        pool_buffer.clear();
         Ok(())
     }
 
-    /// Creates and caches a new `Pool` entity from a pool creation event.
+    /// Constructs a new `Pool` entity from a pool creation event with full token validation.
     ///
-    /// This method validates that both tokens exist in the cache before creating
-    /// the pool entity. The pool is then added to the cache for future reference.
-    async fn process_pool(
+    /// Validates that both tokens are present in the cache and creates a properly
+    /// initialized pool entity with all required metadata including DEX, tokens, fees, and block information.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if either token is not found in the cache, indicating incomplete token synchronization.
+    async fn construct_pool(
         &mut self,
         dex: SharedDex,
         event: &PoolCreatedEvent,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Pool> {
         let token0 = match self.cache.get_token(&event.token0) {
             Some(token) => token.clone(),
             None => {
@@ -865,7 +867,7 @@ impl BlockchainDataClientCore {
             }
         };
 
-        let pool = Pool::new(
+        Ok(Pool::new(
             self.chain.clone(),
             dex,
             event.pool_address,
@@ -875,10 +877,7 @@ impl BlockchainDataClientCore {
             event.fee,
             event.tick_spacing,
             UnixNanos::default(), // TODO: Use default timestamp for now
-        );
-        self.cache.add_pool(pool.clone()).await?;
-
-        Ok(())
+        ))
     }
 
     /// Registers a decentralized exchange for data collection and event monitoring.

@@ -394,6 +394,76 @@ impl BlockchainCacheDatabase {
         .map_err(|e| anyhow::anyhow!("Failed to insert into pool table: {e}"))
     }
 
+    /// Inserts multiple pools in a single database operation using UNNEST for optimal performance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operation fails.
+    pub async fn add_pools_batch(&self, pools: &[Pool]) -> anyhow::Result<()> {
+        if pools.is_empty() {
+            return Ok(());
+        }
+
+        // Prepare vectors for each column
+        let mut addresses: Vec<String> = Vec::with_capacity(pools.len());
+        let mut dex_names: Vec<String> = Vec::with_capacity(pools.len());
+        let mut creation_blocks: Vec<i64> = Vec::with_capacity(pools.len());
+        let mut token0_chains: Vec<i32> = Vec::with_capacity(pools.len());
+        let mut token0_addresses: Vec<String> = Vec::with_capacity(pools.len());
+        let mut token1_chains: Vec<i32> = Vec::with_capacity(pools.len());
+        let mut token1_addresses: Vec<String> = Vec::with_capacity(pools.len());
+        let mut fees: Vec<i32> = Vec::with_capacity(pools.len());
+        let mut tick_spacings: Vec<i32> = Vec::with_capacity(pools.len());
+        let mut chain_ids: Vec<i32> = Vec::with_capacity(pools.len());
+
+        // Fill vectors from pools
+        for pool in pools {
+            chain_ids.push(pool.chain.chain_id as i32);
+            addresses.push(pool.address.to_string());
+            dex_names.push(pool.dex.name.to_string());
+            creation_blocks.push(pool.creation_block as i64);
+            token0_chains.push(pool.token0.chain.chain_id as i32);
+            token0_addresses.push(pool.token0.address.to_string());
+            token1_chains.push(pool.token1.chain.chain_id as i32);
+            token1_addresses.push(pool.token1.address.to_string());
+            fees.push(pool.fee as i32);
+            tick_spacings.push(pool.tick_spacing as i32);
+        }
+
+        // Execute batch insert with UNNEST
+        sqlx::query(
+            r"
+            INSERT INTO pool (
+                chain_id, address, dex_name, creation_block,
+                token0_chain, token0_address,
+                token1_chain, token1_address,
+                fee, tick_spacing
+            )
+            SELECT *
+            FROM UNNEST(
+                $1::int4[], $2::text[], $3::text[], $4::int8[],
+                $5::int4[], $6::text[], $7::int4[], $8::text[],
+                $9::int4[], $10::int4[]
+            )
+            ON CONFLICT (chain_id, address) DO NOTHING
+           ",
+        )
+        .bind(&chain_ids[..])
+        .bind(&addresses[..])
+        .bind(&dex_names[..])
+        .bind(&creation_blocks[..])
+        .bind(&token0_chains[..])
+        .bind(&token0_addresses[..])
+        .bind(&token1_chains[..])
+        .bind(&token1_addresses[..])
+        .bind(&fees[..])
+        .bind(&tick_spacings[..])
+        .execute(&self.pool)
+        .await
+        .map(|_| ())
+        .map_err(|e| anyhow::anyhow!("Failed to batch insert into pool table: {e}"))
+    }
+
     /// Adds or updates a token record in the database.
     ///
     /// # Errors
