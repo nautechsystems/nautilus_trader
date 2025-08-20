@@ -104,4 +104,19 @@ pub enum BlockchainCommand {
         #[clap(flatten)]
         database: DatabaseConfig,
     },
+    /// Syncs exchange pools for a specific DEX.
+    SyncPools {
+        /// The blockchain chain name (case-insensitive). Examples: ethereum, arbitrum, base, polygon, bsc
+        #[arg(long)]
+        chain: String,
+        /// The DEX name (case-insensitive). Examples: UniswapV3, uniswapv3, SushiSwapV2, PancakeSwapV3
+        #[arg(long)]
+        dex: String,
+        /// RPC HTTP URL for blockchain calls (optional, falls back to RPC_HTTP_URL env var)
+        #[arg(long)]
+        rpc_url: Option<String>,
+        /// Database configuration options
+        #[clap(flatten)]
+        database: DatabaseConfig,
+    },
 }
