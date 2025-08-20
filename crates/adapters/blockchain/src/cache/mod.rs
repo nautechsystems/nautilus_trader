@@ -49,6 +49,8 @@ pub struct BlockchainCache {
     dexes: HashMap<DexType, SharedDex>,
     /// Map of token addresses to their corresponding `Token` objects.
     tokens: HashMap<Address, Token>,
+    /// Cached set of invalid token addresses that failed validation or processing.
+    invalid_tokens: HashSet<Address>,
     /// Map of pool addresses to their corresponding `Pool` objects.
     pools: HashMap<Address, SharedPool>,
     /// Optional database connection for persistent storage.
@@ -63,6 +65,7 @@ impl BlockchainCache {
             chain,
             dexes: HashMap::new(),
             tokens: HashMap::new(),
+            invalid_tokens: HashSet::new(),
             pools: HashMap::new(),
             block_timestamps: BTreeMap::new(),
             database: None,
@@ -117,7 +120,11 @@ impl BlockchainCache {
         }
     }
 
-    pub async fn initialize_chain(&self) {
+    /// Initializes the chain by seeding it in the database and creating necessary partitions.
+    ///
+    /// This method sets up the blockchain chain in the database, creates block and token
+    /// partitions for optimal performance, and loads existing tokens into the cache.
+    pub async fn initialize_chain(&mut self) {
         // Seed target adapter chain in database
         if let Some(database) = &self.database {
             if let Err(e) = database.seed_chain(&self.chain).await {
@@ -136,6 +143,18 @@ impl BlockchainCache {
                     self.chain.chain_id
                 ),
             }
+
+            match database.create_token_partition(&self.chain).await {
+                Ok(message) => tracing::info!("Executing token partition creation: {}", message),
+                Err(e) => tracing::error!(
+                    "Error creating token partition for chain {}: {e}. Continuing without partition creation...",
+                    self.chain.chain_id
+                ),
+            }
+        }
+
+        if let Err(e) = self.load_tokens().await {
+            tracing::error!("Error loading tokens from the database: {e}");
         }
     }
 
@@ -162,12 +181,20 @@ impl BlockchainCache {
     /// Loads tokens from the database into the in-memory cache.
     async fn load_tokens(&mut self) -> anyhow::Result<()> {
         if let Some(database) = &self.database {
-            let tokens = database.load_tokens(self.chain.clone()).await?;
-            tracing::info!("Loading {} tokens from cache database", tokens.len());
+            let (tokens, invalid_tokens) = tokio::try_join!(
+                database.load_tokens(self.chain.clone()),
+                database.load_invalid_token_addresses(self.chain.chain_id)
+            )?;
 
-            for token in tokens {
-                self.tokens.insert(token.address, token);
-            }
+            tracing::info!(
+                "Loading {} valid tokens and {} invalid tokens from cache database",
+                tokens.len(),
+                invalid_tokens.len()
+            );
+
+            self.tokens
+                .extend(tokens.into_iter().map(|token| (token.address, token)));
+            self.invalid_tokens.extend(invalid_tokens);
         }
         Ok(())
     }
@@ -355,6 +382,23 @@ impl BlockchainCache {
         Ok(())
     }
 
+    /// Adds multiple pools to the cache and persists them to the database in batch if available.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if adding the pools to the database fails.
+    pub async fn add_pools_batch(&mut self, pools: Vec<Pool>) -> anyhow::Result<()> {
+        if pools.is_empty() {
+            return Ok(());
+        }
+
+        if let Some(database) = &self.database {
+            database.add_pools_batch(&pools).await?;
+        }
+
+        Ok(())
+    }
+
     /// Adds a [`Token`] to the cache.
     ///
     /// # Errors
@@ -365,6 +409,25 @@ impl BlockchainCache {
             database.add_token(&token).await?;
         }
         self.tokens.insert(token.address, token);
+        Ok(())
+    }
+
+    /// Adds an invalid token address with associated error information to the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if adding the invalid token to the database fails.
+    pub async fn add_invalid_token(
+        &mut self,
+        address: Address,
+        error_string: &str,
+    ) -> anyhow::Result<()> {
+        if let Some(database) = &self.database {
+            database
+                .add_invalid_token(self.chain.chain_id, &address, error_string)
+                .await?;
+        }
+        self.invalid_tokens.insert(address);
         Ok(())
     }
 
@@ -421,5 +484,48 @@ impl BlockchainCache {
     #[must_use]
     pub fn get_token(&self, address: &Address) -> Option<&Token> {
         self.tokens.get(address)
+    }
+
+    /// Checks if a token address is marked as invalid in the cache.
+    ///
+    /// Returns `true` if the address was previously recorded as invalid due to
+    /// validation or processing failures.
+    #[must_use]
+    pub fn is_invalid_token(&self, address: &Address) -> bool {
+        self.invalid_tokens.contains(address)
+    }
+
+    /// Saves the checkpoint block number indicating the last completed pool synchronization for a specific DEX.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operation fails.
+    pub async fn update_dex_last_synced_block(
+        &self,
+        dex_name: &str,
+        block_number: u64,
+    ) -> anyhow::Result<()> {
+        if let Some(database) = &self.database {
+            database
+                .update_dex_last_synced_block(self.chain.chain_id, dex_name, block_number)
+                .await
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Retrieves the saved checkpoint block number from the last completed pool synchronization for a specific DEX.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database query fails.
+    pub async fn get_dex_last_synced_block(&self, dex_name: &str) -> anyhow::Result<Option<u64>> {
+        if let Some(database) = &self.database {
+            database
+                .get_dex_last_synced_block(self.chain.chain_id, dex_name)
+                .await
+        } else {
+            Ok(None)
+        }
     }
 }

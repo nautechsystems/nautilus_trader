@@ -172,8 +172,7 @@ impl BlockchainDataClientCore {
         // self.sync_blocks(Some(from_block), None).await?;
         for dex in self.config.dex_ids.clone() {
             self.register_dex_exchange(dex).await?;
-            self.sync_exchange_pools(&dex, Some(from_block), None)
-                .await?;
+            self.sync_exchange_pools(&dex, from_block, None).await?;
         }
 
         Ok(())
@@ -612,23 +611,50 @@ impl BlockchainDataClientCore {
     pub async fn sync_exchange_pools(
         &mut self,
         dex: &DexType,
-        from_block: Option<u64>,
+        from_block: u64,
         to_block: Option<u64>,
     ) -> anyhow::Result<()> {
-        let from_block = from_block.unwrap_or(0);
-        let to_block = if let Some(block) = to_block {
-            block
-        } else {
-            self.hypersync_client.current_block().await
+        // Check for last synced block and use it as starting point if higher
+        let last_synced_block = self
+            .cache
+            .get_dex_last_synced_block(&dex.to_string())
+            .await?;
+
+        let effective_from_block =
+            last_synced_block.map_or(from_block, |last_synced| max(from_block, last_synced + 1));
+
+        let to_block = match to_block {
+            Some(block) => block,
+            None => self.hypersync_client.current_block().await,
         };
-        let total_blocks = to_block.saturating_sub(from_block) + 1;
+
+        // Skip sync if we're already up to date
+        if effective_from_block > to_block {
+            tracing::info!(
+                "DEX {} already synced to block {} (current: {}), skipping sync",
+                dex,
+                last_synced_block.unwrap_or(0),
+                to_block
+            );
+            return Ok(());
+        }
+
+        let total_blocks = to_block.saturating_sub(effective_from_block) + 1;
         tracing::info!(
-            "Syncing DEX exchange pools from {from_block} to {to_block} (total: {total_blocks} blocks)"
+            "Syncing DEX exchange pools from {} to {} (total: {} blocks){}",
+            effective_from_block,
+            to_block,
+            total_blocks,
+            if let Some(last_synced) = last_synced_block {
+                format!(" - resuming from last synced block {}", last_synced)
+            } else {
+                String::new()
+            }
         );
 
         let mut metrics = BlockchainSyncReporter::new(
             BlockchainItem::PoolCreatedEvents,
-            from_block,
+            effective_from_block,
             total_blocks,
             BLOCKS_PROCESS_IN_SYNC_REPORT,
         );
@@ -639,7 +665,7 @@ impl BlockchainDataClientCore {
         let pools_stream = self
             .hypersync_client
             .request_contract_events_stream(
-                from_block,
+                effective_from_block,
                 Some(to_block),
                 factory_address,
                 pair_created_event_signature,
@@ -652,7 +678,7 @@ impl BlockchainDataClientCore {
         const TOKEN_BATCH_SIZE: usize = 100;
         let mut token_buffer: HashSet<Address> = HashSet::new();
         let mut pool_buffer: Vec<PoolCreatedEvent> = Vec::new();
-        let mut last_block_saved = from_block;
+        let mut last_block_saved = effective_from_block;
         let mut blocks_processed = 0;
 
         while let Some(log) = pools_stream.next().await {
@@ -666,11 +692,10 @@ impl BlockchainDataClientCore {
                 continue;
             }
 
-            // If we have both tokens cached, we can process the pool immediately.
-            if self.cache.get_token(&pool.token0).is_some()
-                && self.cache.get_token(&pool.token1).is_some()
+            if self.cache.is_invalid_token(&pool.token0)
+                || self.cache.is_invalid_token(&pool.token1)
             {
-                self.process_pool(dex.dex.clone(), &pool).await?;
+                // Skip pools with invalid tokens as they cannot be properly processed or traded.
                 continue;
             }
 
@@ -712,6 +737,18 @@ impl BlockchainDataClientCore {
         }
 
         metrics.log_final_stats();
+
+        // Update the last synced block after successful completion.
+        self.cache
+            .update_dex_last_synced_block(&dex.dex.name.to_string(), to_block)
+            .await?;
+
+        tracing::info!(
+            "Successfully synced DEX {} pools up to block {}",
+            dex.dex.name,
+            to_block
+        );
+
         Ok(())
     }
 
@@ -753,12 +790,21 @@ impl BlockchainDataClientCore {
                 Err(token_info_error) => match token_info_error {
                     TokenInfoError::EmptyTokenField { .. } => {
                         empty_tokens.insert(token_address);
+                        self.cache
+                            .add_invalid_token(token_address, &token_info_error.to_string())
+                            .await?;
                     }
                     TokenInfoError::DecodingError { .. } => {
                         decoding_errors_tokens.insert(token_address);
+                        self.cache
+                            .add_invalid_token(token_address, &token_info_error.to_string())
+                            .await?;
                     }
                     TokenInfoError::CallFailed { .. } => {
                         decoding_errors_tokens.insert(token_address);
+                        self.cache
+                            .add_invalid_token(token_address, &token_info_error.to_string())
+                            .await?;
                     }
                     _ => {
                         tracing::error!(
@@ -769,35 +815,45 @@ impl BlockchainDataClientCore {
                 },
             }
         }
-
-        for pool in &mut *pool_buffer {
+        let mut pools = Vec::new();
+        for pool_event in &mut *pool_buffer {
             // We skip the pool that contains one of the tokens that is flagged as empty or decoding error.
-            if empty_tokens.contains(&pool.token0)
-                || empty_tokens.contains(&pool.token1)
-                || decoding_errors_tokens.contains(&pool.token0)
-                || decoding_errors_tokens.contains(&pool.token1)
+            if empty_tokens.contains(&pool_event.token0)
+                || empty_tokens.contains(&pool_event.token1)
+                || decoding_errors_tokens.contains(&pool_event.token0)
+                || decoding_errors_tokens.contains(&pool_event.token1)
             {
                 continue;
             }
 
-            if let Err(e) = self.process_pool(dex.clone(), pool).await {
-                tracing::error!("Failed to process {} with error {}", pool.pool_address, e);
+            match self.construct_pool(dex.clone(), pool_event).await {
+                Ok(pool) => pools.push(pool),
+                Err(e) => tracing::error!(
+                    "Failed to process {} with error {}",
+                    pool_event.pool_address,
+                    e
+                ),
             }
         }
-        pool_buffer.clear();
 
+        self.cache.add_pools_batch(pools).await?;
+        pool_buffer.clear();
         Ok(())
     }
 
-    /// Creates and caches a new `Pool` entity from a pool creation event.
+    /// Constructs a new `Pool` entity from a pool creation event with full token validation.
     ///
-    /// This method validates that both tokens exist in the cache before creating
-    /// the pool entity. The pool is then added to the cache for future reference.
-    async fn process_pool(
+    /// Validates that both tokens are present in the cache and creates a properly
+    /// initialized pool entity with all required metadata including DEX, tokens, fees, and block information.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if either token is not found in the cache, indicating incomplete token synchronization.
+    async fn construct_pool(
         &mut self,
         dex: SharedDex,
         event: &PoolCreatedEvent,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Pool> {
         let token0 = match self.cache.get_token(&event.token0) {
             Some(token) => token.clone(),
             None => {
@@ -811,7 +867,7 @@ impl BlockchainDataClientCore {
             }
         };
 
-        let pool = Pool::new(
+        Ok(Pool::new(
             self.chain.clone(),
             dex,
             event.pool_address,
@@ -821,10 +877,7 @@ impl BlockchainDataClientCore {
             event.fee,
             event.tick_spacing,
             UnixNanos::default(), // TODO: Use default timestamp for now
-        );
-        self.cache.add_pool(pool.clone()).await?;
-
-        Ok(())
+        ))
     }
 
     /// Registers a decentralized exchange for data collection and event monitoring.

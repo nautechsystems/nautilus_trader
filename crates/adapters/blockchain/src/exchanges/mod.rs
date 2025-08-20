@@ -38,3 +38,19 @@ pub fn get_dex_extended(
         _ => None,
     }
 }
+
+/// Returns the supported DEX names for a given blockchain.
+#[must_use]
+pub fn get_supported_dexes_for_chain(blockchain: Blockchain) -> Vec<String> {
+    let dex_types: Vec<DexType> = match blockchain {
+        Blockchain::Ethereum => ETHEREUM_DEX_EXTENDED_MAP.keys().copied().collect(),
+        Blockchain::Base => BASE_DEX_EXTENDED_MAP.keys().copied().collect(),
+        Blockchain::Arbitrum => ARBITRUM_DEX_EXTENDED_MAP.keys().copied().collect(),
+        _ => vec![],
+    };
+
+    dex_types
+        .into_iter()
+        .map(|dex_type| format!("{}", dex_type))
+        .collect()
+}
