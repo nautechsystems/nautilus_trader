@@ -66,9 +66,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // tokio::time::sleep(Duration::from_secs(1)).await;
 
-    // client.subscribe_order_book(instrument_id).await?;
-    // client.subscribe_order_book_25(instrument_id).await?;
-    // client.subscribe_order_book_depth10(instrument_id).await?;
+    // client.subscribe_book(instrument_id).await?;
+    // client.subscribe_book_depth5(instrument_id).await?;
     // client.subscribe_quotes(instrument_id).await?;
     // client.subscribe_trades(instrument_id).await?;
 

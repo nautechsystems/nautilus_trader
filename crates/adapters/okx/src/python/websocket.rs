@@ -317,8 +317,8 @@ impl OKXWebSocketClient {
         })
     }
 
-    #[pyo3(name = "subscribe_depth5")]
-    fn py_subscribe_depth5<'py>(
+    #[pyo3(name = "subscribe_book_depth5")]
+    fn py_subscribe_book_depth5<'py>(
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
@@ -326,7 +326,7 @@ impl OKXWebSocketClient {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            if let Err(e) = client.subscribe_depth5(instrument_id).await {
+            if let Err(e) = client.subscribe_book_depth5(instrument_id).await {
                 log::error!("Failed to subscribe to books5: {e}");
             }
             Ok(())
@@ -398,8 +398,8 @@ impl OKXWebSocketClient {
         })
     }
 
-    #[pyo3(name = "unsubscribe_depth5")]
-    fn py_unsubscribe_depth5<'py>(
+    #[pyo3(name = "unsubscribe_book_depth5")]
+    fn py_unsubscribe_book_depth5<'py>(
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
@@ -407,7 +407,7 @@ impl OKXWebSocketClient {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            if let Err(e) = client.unsubscribe_depth5(instrument_id).await {
+            if let Err(e) = client.unsubscribe_book_depth5(instrument_id).await {
                 log::error!("Failed to unsubscribe from books5: {e}");
             }
             Ok(())

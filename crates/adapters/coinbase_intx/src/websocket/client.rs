@@ -432,7 +432,7 @@ impl CoinbaseIntxWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if the subscription fails.
-    pub async fn subscribe_order_book(
+    pub async fn subscribe_book(
         &self,
         instrument_ids: Vec<InstrumentId>,
     ) -> Result<(), CoinbaseIntxWsError> {
@@ -565,7 +565,7 @@ impl CoinbaseIntxWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if the unsubscription fails.
-    pub async fn unsubscribe_order_book(
+    pub async fn unsubscribe_book(
         &self,
         instrument_ids: Vec<InstrumentId>,
     ) -> Result<(), CoinbaseIntxWsError> {

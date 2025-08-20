@@ -165,8 +165,8 @@ impl CoinbaseIntxWebSocketClient {
         })
     }
 
-    #[pyo3(name = "subscribe_order_book")]
-    fn py_subscribe_order_book<'py>(
+    #[pyo3(name = "subscribe_book")]
+    fn py_subscribe_book<'py>(
         &self,
         py: Python<'py>,
         instrument_ids: Vec<InstrumentId>,
@@ -174,7 +174,7 @@ impl CoinbaseIntxWebSocketClient {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            if let Err(e) = client.subscribe_order_book(instrument_ids).await {
+            if let Err(e) = client.subscribe_book(instrument_ids).await {
                 log::error!("Failed to subscribe to order book: {e}");
             }
             Ok(())
@@ -277,8 +277,8 @@ impl CoinbaseIntxWebSocketClient {
         })
     }
 
-    #[pyo3(name = "unsubscribe_order_book")]
-    fn py_unsubscribe_order_book<'py>(
+    #[pyo3(name = "unsubscribe_book")]
+    fn py_unsubscribe_book<'py>(
         &self,
         py: Python<'py>,
         instrument_ids: Vec<InstrumentId>,
@@ -286,7 +286,7 @@ impl CoinbaseIntxWebSocketClient {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            if let Err(e) = client.unsubscribe_order_book(instrument_ids).await {
+            if let Err(e) = client.unsubscribe_book(instrument_ids).await {
                 log::error!("Failed to unsubscribe from order book: {e}");
             }
             Ok(())
