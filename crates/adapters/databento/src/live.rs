@@ -122,6 +122,7 @@ impl DatabentoFeedHandler {
         let mut buffering_start = None;
         let mut buffered_deltas: AHashMap<InstrumentId, Vec<OrderBookDelta>> = AHashMap::new();
         let mut deltas_count = 0_u64;
+        let mut initialized_books = HashSet::new();
         let timeout = Duration::from_secs(5); // Hard-coded timeout for now
 
         let result = tokio::time::timeout(
@@ -161,7 +162,7 @@ impl DatabentoFeedHandler {
                     tracing::debug!("Received command: {cmd:?}");
                     match cmd {
                         LiveCommand::Subscribe(sub) => {
-                            if !self.replay & sub.start.is_some() {
+                            if !self.replay && sub.start.is_some() {
                                 self.replay = true;
                             }
                             client.subscribe(sub).await?;
@@ -216,7 +217,6 @@ impl DatabentoFeedHandler {
             };
 
             let ts_init = clock.get_time_ns();
-            let mut initialized_books = HashSet::new();
 
             // Decode record
             if let Some(msg) = record.get::<dbn::ErrorMsg>() {
@@ -441,7 +441,8 @@ fn update_instrument_id_map_with_exchange(
         anyhow::anyhow!("Cannot resolve raw_symbol for instrument_id {raw_instrument_id}")
     })?;
     let symbol = Symbol::from(raw_symbol.as_str());
-    let venue = Venue::from(exchange);
+    let venue = Venue::from_code(exchange)
+        .map_err(|e| anyhow::anyhow!("Invalid venue code '{exchange}': {e}"))?;
     let instrument_id = InstrumentId::new(symbol, venue);
     let mut map = symbol_venue_map
         .write()
@@ -588,7 +589,17 @@ fn handle_record(
     );
 
     let price_precision = 2; // Hard-coded for now
-    let include_trades = initialized_books.contains(&instrument_id);
+
+    // For MBP-1 and quote-based schemas, always include trades since they're integral to the data
+    // For MBO, only include trades after the book is initialized to maintain consistency
+    let include_trades = if record.get::<dbn::Mbp1Msg>().is_some()
+        || record.get::<dbn::TbboMsg>().is_some()
+        || record.get::<dbn::Cmbp1Msg>().is_some()
+    {
+        true // These schemas include trade information directly
+    } else {
+        initialized_books.contains(&instrument_id) // MBO requires initialized book
+    };
 
     decode_record(
         &record,

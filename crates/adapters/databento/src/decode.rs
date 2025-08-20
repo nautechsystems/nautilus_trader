@@ -16,7 +16,7 @@
 use std::{ffi::c_char, num::NonZeroUsize};
 
 use databento::dbn::{self};
-use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_SECOND};
+use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_SECOND, uuid::UUID4};
 use nautilus_model::{
     data::{
         Bar, BarSpecification, BarType, BookOrder, DEPTH10_LEN, Data, InstrumentStatus,
@@ -564,12 +564,13 @@ pub fn decode_cmbp1_msg(
     );
 
     let maybe_trade = if include_trades && msg.action as u8 as char == 'T' {
+        // Use UUID4 for trade ID as CMBP1 doesn't have a sequence field
         Some(TradeTick::new(
             instrument_id,
             Price::from_raw(decode_raw_price_i64(msg.price), price_precision),
             Quantity::from(msg.size),
             parse_aggressor_side(msg.side),
-            TradeId::new(itoa::Buffer::new().format(msg.hd.ts_event)),
+            TradeId::new(UUID4::new().to_string()),
             ts_event,
             ts_init,
         ))
@@ -629,12 +630,13 @@ pub fn decode_tcbbo_msg(
         ts_init,
     );
 
+    // Use UUID4 for trade ID as TCBBO doesn't have a sequence field
     let trade = TradeTick::new(
         instrument_id,
         Price::from_raw(decode_raw_price_i64(msg.price), price_precision),
         Quantity::from(msg.size),
         parse_aggressor_side(msg.side),
-        TradeId::new(itoa::Buffer::new().format(msg.hd.ts_event)),
+        TradeId::new(UUID4::new().to_string()),
         ts_event,
         ts_init,
     );
