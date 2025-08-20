@@ -62,7 +62,7 @@ config_node = TradingNodeConfig(
     timeout_connection=30.0,
     timeout_reconciliation=10.0,
     timeout_disconnection=10.0,
-    timeout_post_stop=0.0,  # No stop delay needed for data testing
+    timeout_post_stop=1.0,
 )
 
 # Configure the data tester actor

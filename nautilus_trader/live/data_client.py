@@ -26,9 +26,11 @@ import traceback
 from asyncio import Task
 from collections.abc import Callable
 from collections.abc import Coroutine
+from weakref import WeakSet
 
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
+from nautilus_trader.common.component import Logger
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.config import NautilusConfig
 from nautilus_trader.common.enums import LogColor
@@ -119,6 +121,7 @@ class LiveDataClient(DataClient):
         )
 
         self._loop = loop
+        self._tasks: WeakSet[asyncio.Task] = WeakSet()
 
     async def run_after_delay(
         self,
@@ -169,11 +172,11 @@ class LiveDataClient(DataClient):
         asyncio.Task
 
         """
-        log_msg = log_msg or coro.__name__
-        self._log.debug(f"Creating task '{log_msg}'")
+        task_name = log_msg or getattr(coro, "__name__", None) or coro.__class__.__name__
+        self._log.debug(f"Creating task '{task_name}'")
         task = self._loop.create_task(
             coro,
-            name=coro.__name__,
+            name=task_name,
         )
         task.add_done_callback(
             functools.partial(
@@ -183,6 +186,7 @@ class LiveDataClient(DataClient):
                 success_color,
             ),
         )
+        self._tasks.add(task)
         return task
 
     def _on_task_completed(
@@ -192,7 +196,12 @@ class LiveDataClient(DataClient):
         success_color: LogColor,
         task: Task,
     ) -> None:
-        e: BaseException | None = task.exception()
+        try:
+            e: BaseException | None = task.exception()
+        except asyncio.CancelledError:
+            self._log.warning(f"Task '{task.get_name()}' was cancelled")
+            return
+
         if e:
             tb_str = "".join(traceback.format_exception(type(e), e, e.__traceback__))
             self._log.error(
@@ -227,12 +236,14 @@ class LiveDataClient(DataClient):
         Disconnect the client.
         """
         self._log.info("Disconnecting...")
-        self.create_task(
-            self._disconnect(),
-            actions=lambda: self._set_connected(False),
-            success_msg="Disconnected",
-            success_color=LogColor.GREEN,
-        )
+
+        async def _disconnect_with_cleanup():
+            await self._disconnect()
+            await self.cancel_pending_tasks()
+            self._set_connected(False)
+            self._log.info("Disconnected", LogColor.GREEN)
+
+        self._loop.create_task(_disconnect_with_cleanup())
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
@@ -291,6 +302,18 @@ class LiveDataClient(DataClient):
             "implement the `_request` coroutine",  # pragma: no cover
         )
 
+    async def cancel_pending_tasks(self, timeout_secs: float = 5.0) -> None:
+        """
+        Cancel all pending tasks and await their cancellation.
+
+        Parameters
+        ----------
+        timeout_secs : float, default 5.0
+            The timeout in seconds to wait for tasks to cancel.
+
+        """
+        await _cancel_pending_tasks_impl(self._tasks, self._log, timeout_secs)
+
 
 class LiveMarketDataClient(MarketDataClient):
     """
@@ -343,9 +366,12 @@ class LiveMarketDataClient(MarketDataClient):
             clock=clock,
             config=config,
         )
+
         self._loop = loop
         self._instrument_provider = instrument_provider
         self._is_sync = is_sync
+        self._tasks: WeakSet[asyncio.Task] = WeakSet()
+        self._disconnect_task: asyncio.Task | None = None
 
         if self._is_sync:
             self._log.warning(
@@ -447,6 +473,7 @@ class LiveMarketDataClient(MarketDataClient):
             ),
         )
 
+        self._tasks.add(task)
         return task
 
     def _on_task_completed(
@@ -462,7 +489,7 @@ class LiveMarketDataClient(MarketDataClient):
         try:
             task.result()
         except asyncio.CancelledError:
-            self._log.warning(f"Task '{coro_name}' was cancelled.")
+            self._log.warning(f"Task '{coro_name}' was cancelled")
             return
         except Exception as e:
             exception = e
@@ -522,12 +549,16 @@ class LiveMarketDataClient(MarketDataClient):
         Disconnect the client.
         """
         self._log.info("Disconnecting...")
-        self.create_task(
-            self._disconnect(),
-            actions=lambda: self._set_connected(False),
-            success_msg="Disconnected",
-            success_color=LogColor.GREEN,
-        )
+
+        async def _disconnect_with_cleanup():
+            await self._disconnect()
+            await self.cancel_pending_tasks()
+            self._set_connected(False)
+            self._log.info("Disconnected", LogColor.GREEN)
+
+        # Create disconnect task directly without using create_task helper
+        # so it won't be cancelled by cancel_pending_tasks()
+        self._loop.create_task(_disconnect_with_cleanup())
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
@@ -1021,3 +1052,63 @@ class LiveMarketDataClient(MarketDataClient):
         raise NotImplementedError(
             "implement the `_request_order_book_snapshot` coroutine",  # pragma: no cover
         )
+
+    async def cancel_pending_tasks(self, timeout_secs: float = 5.0) -> None:
+        """
+        Cancel all pending tasks and await their cancellation.
+
+        Parameters
+        ----------
+        timeout_secs : float, default 5.0
+            The timeout in seconds to wait for tasks to cancel.
+
+        """
+        await _cancel_pending_tasks_impl(self._tasks, self._log, timeout_secs)
+
+
+def _log_task_exceptions(done_tasks: set[asyncio.Task], log: Logger | None) -> None:
+    if not log:
+        return
+
+    for task in done_tasks:
+        try:
+            exc = task.exception()
+            if exc and not isinstance(exc, asyncio.CancelledError):
+                log.error(f"Task '{task.get_name()}' raised: {exc}")
+        except asyncio.CancelledError:
+            pass  # Expected for cancelled tasks
+
+
+async def _cancel_pending_tasks_impl(
+    tasks: WeakSet[asyncio.Task],
+    log: Logger | None,
+    timeout_secs: float = 5.0,
+) -> None:
+    pending_tasks = [task for task in tasks if not task.done()]
+    if not pending_tasks:
+        return
+
+    # Cancel all tasks
+    for task in pending_tasks:
+        task.cancel()
+
+    if log:
+        log.debug(f"Canceling {len(pending_tasks)} pending tasks")
+
+    # Wait for tasks to complete with timeout
+    try:
+        done, still_pending = await asyncio.wait(
+            pending_tasks,
+            timeout=timeout_secs,
+            return_when=asyncio.ALL_COMPLETED,
+        )
+
+        if still_pending and log:
+            log.warning(
+                f"{len(still_pending)} tasks still pending after {timeout_secs}s timeout",
+            )
+
+        _log_task_exceptions(done, log)
+    except Exception as e:
+        if log:
+            log.exception("Error during task cleanup", e)

@@ -17,6 +17,7 @@ import asyncio
 from collections.abc import Awaitable
 from collections.abc import Callable
 from typing import Any
+from weakref import WeakSet
 
 import msgspec
 
@@ -73,6 +74,7 @@ class BinanceWebSocketClient:
         self._handler: Callable[[bytes], None] = handler
         self._handler_reconnect: Callable[..., Awaitable[None]] | None = handler_reconnect
         self._loop = loop
+        self._tasks: WeakSet[asyncio.Task] = WeakSet()
 
         self._streams: list[str] = []
         self._clients: dict[int, WebSocketClient | None] = {}  # Client ID -> WebSocket client
@@ -244,7 +246,8 @@ class BinanceWebSocketClient:
             )
 
     def _handle_ping(self, client_id: int, raw: bytes) -> None:
-        self._loop.create_task(self.send_pong(client_id, raw))
+        task = self._loop.create_task(self.send_pong(client_id, raw))
+        self._tasks.add(task)
 
     async def send_pong(self, client_id: int, raw: bytes) -> None:
         """
@@ -271,10 +274,12 @@ class BinanceWebSocketClient:
 
         # Re-subscribe to all streams for this client
         streams = self._client_streams[client_id]
-        self._loop.create_task(self._resubscribe_client(client_id, streams))
+        task = self._loop.create_task(self._resubscribe_client(client_id, streams))
+        self._tasks.add(task)
 
         if self._handler_reconnect:
-            self._loop.create_task(self._handler_reconnect())  # type: ignore
+            task = self._loop.create_task(self._handler_reconnect())  # type: ignore
+            self._tasks.add(task)
 
     async def _resubscribe_client(self, client_id: int, streams: list[str]) -> None:
         """
@@ -291,6 +296,9 @@ class BinanceWebSocketClient:
         """
         Disconnect all clients from the server.
         """
+        # Cancel pending background tasks first
+        await self._cancel_pending_tasks()
+
         tasks = []
         for client_id in list(self._clients.keys()):
             tasks.append(self._disconnect_client(client_id))
@@ -298,6 +306,33 @@ class BinanceWebSocketClient:
         if tasks:
             await asyncio.gather(*tasks)
             self._log.info(f"Disconnected all clients from {self._base_url}", LogColor.BLUE)
+
+    async def _cancel_pending_tasks(self, timeout_secs: float = 5.0) -> None:
+        pending_tasks = [task for task in self._tasks if not task.done()]
+
+        if not pending_tasks:
+            return
+
+        self._log.debug(f"Canceling {len(pending_tasks)} pending background tasks")
+
+        # Cancel all tasks
+        for task in pending_tasks:
+            task.cancel()
+
+        # Wait for tasks to complete with timeout
+        try:
+            _done, still_pending = await asyncio.wait(
+                pending_tasks,
+                timeout=timeout_secs,
+                return_when=asyncio.ALL_COMPLETED,
+            )
+
+            if still_pending:
+                self._log.warning(
+                    f"{len(still_pending)} tasks still pending after {timeout_secs}s timeout",
+                )
+        except Exception as e:
+            self._log.exception("Error during task cleanup", e)
 
     async def _disconnect_client(self, client_id: int) -> None:
         """
