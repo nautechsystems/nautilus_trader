@@ -13,7 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! The *blockchain* crate provides a high-performance, universal, extensible adapter for ingesting
+//! Blockchain data adapter for [NautilusTrader](http://nautilustrader.io).
+//!
+//! The `nautilus-blockchain` crate provides a high-performance, universal, extensible adapter for ingesting
 //! DeFi data from decentralized exchanges (DEXs), liquidity pools, and on-chain events.
 //! It enables you to power analytics pipelines and trading strategies with real-time and historical
 //! on-chain data.

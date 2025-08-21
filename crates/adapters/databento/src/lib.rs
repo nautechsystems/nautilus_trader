@@ -13,12 +13,20 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! NautilusTrader adapter for the [Databento](https://databento.com) market data provider.
+//!
+//! The `nautilus-databento` crate provides a complete integration with the Databento API for
+//! accessing institutional-grade market data feeds across multiple venues and asset classes.
+//!
+//! # Platform
+//!
 //! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
 //! algorithmic trading platform, providing quantitative traders with the ability to backtest
 //! portfolios of automated trading strategies on historical data with an event-driven engine,
 //! and also deploy those same strategies live, with no code changes.
 //!
-//! This crate provides a [Databento](https://databento.com) integration adapter.
+//! NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
+//! highest level, with the aim of supporting mission-critical, trading system backtesting and live deployment workloads.
 //!
 //! # Feature flags
 //!

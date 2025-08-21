@@ -15,7 +15,7 @@
 
 //! Trading strategy machinery and orchestration [NautilusTrader](http://nautilustrader.io).
 //!
-//! The *trading* crate provides core trading capabilities including:
+//! The `nautilus-trading` crate provides core trading capabilities including:
 //!
 //! - **Forex sessions**: Market session time calculations and timezone handling.
 //!
