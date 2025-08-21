@@ -8,7 +8,7 @@
 
 Trading domain model for [NautilusTrader](http://nautilustrader.io).
 
-The *model* crate provides a type-safe domain model that forms the backbone of NautilusTrader
+The `nautilus-model` crate provides a type-safe domain model that forms the backbone of NautilusTrader
 and can serve as the foundation for other algorithmic trading systems.
 
 ## Platform

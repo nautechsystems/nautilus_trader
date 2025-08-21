@@ -7,7 +7,7 @@
 
 Portfolio analysis and performance metrics for [NautilusTrader](http://nautilustrader.io).
 
-The *analysis* crate provides a comprehensive suite of portfolio analysis tools and performance
+The `nautilus-analysis` crate provides a comprehensive suite of portfolio analysis tools and performance
 statistics for evaluating trading strategies and portfolios. This includes return-based metrics,
 PnL-based statistics, and risk measurements commonly used in quantitative finance:
 

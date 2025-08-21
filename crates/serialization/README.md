@@ -8,7 +8,7 @@
 
 Data serialization and format conversion for [NautilusTrader](http://nautilustrader.io).
 
-The *serialization* crate provides comprehensive data serialization capabilities for converting
+The `nautilus-serialization` crate provides comprehensive data serialization capabilities for converting
 trading data between different formats including Apache Arrow, Parquet, and custom schemas.
 This enables efficient data storage, retrieval, and interoperability across different systems:
 
