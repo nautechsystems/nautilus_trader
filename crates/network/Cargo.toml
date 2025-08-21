@@ -24,7 +24,6 @@ extension-module = [
   "pyo3/extension-module",
 ]
 python = ["nautilus-core/python", "pyo3", "pyo3-async-runtimes"]
-std = []
 
 [package.metadata.docs.rs]
 all-features = true
