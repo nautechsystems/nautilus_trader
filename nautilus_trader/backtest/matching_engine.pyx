@@ -2375,6 +2375,11 @@ cdef class OrderMatchingEngine:
             # Use the same base execution ID format as combo fills but append leg position
             leg_trade_id = TradeId(f"{self.venue.to_str()}-{self.raw_id}-{self._execution_count:03d}-{leg_position}")
 
+            # Leg side mapping based on spread order direction
+            # If spread BUY: positive ratio = BUY leg, negative = SELL leg
+            # If spread SELL: positive ratio = SELL leg, negative = BUY leg
+            order_side = order.side if ratio > 0 else (OrderSide.SELL if order.side == OrderSide.BUY else OrderSide.BUY)
+
             # Create OrderFilled event for the leg
             ts_now = self._clock.timestamp_ns()
             leg_fill = OrderFilled(
@@ -2385,10 +2390,7 @@ cdef class OrderMatchingEngine:
                 venue_order_id=leg_venue_order_id,  # Use unique leg venue order ID
                 account_id=order.account_id,
                 trade_id=leg_trade_id,
-                # Leg side mapping based on spread order direction
-                # If spread BUY: positive ratio = BUY leg, negative = SELL leg
-                # If spread SELL: positive ratio = SELL leg, negative = BUY leg
-                order_side=order.side if ratio > 0 else (OrderSide.SELL if order.side == OrderSide.BUY else OrderSide.BUY),
+                order_side=order_side,
                 order_type=order.order_type,
                 last_qty=adjusted_leg_quantity,
                 last_px=adjusted_leg_price,
@@ -2443,8 +2445,7 @@ cdef class OrderMatchingEngine:
 
         # Calculate weighted sum using mid-prices for all legs except the highest
         cdef double weighted_sum = 0.0
-        cdef double adjustment_ratio = 0.0
-        cdef double adjustment_ratio_eps = 1e-12  # Epsilon for near-zero check
+        cdef int highest_price_ratio = 1
 
         for leg_instrument_id, ratio in leg_tuples:
             if leg_instrument_id != highest_price_leg_id:
@@ -2452,6 +2453,7 @@ cdef class OrderMatchingEngine:
 
                 # Get actual instrument to use its make_price method for proper tick rounding
                 leg_instrument = self.cache.instrument(leg_instrument_id)
+
                 if leg_instrument is not None:
                     leg_prices[leg_instrument_id] = leg_instrument.make_price(
                         leg_mid_prices[leg_instrument_id]
@@ -2465,23 +2467,16 @@ cdef class OrderMatchingEngine:
                     return {}
             else:
                 # Store the ratio for the highest-priced leg for adjustment calculation
-                adjustment_ratio = ratio
-
-        # Check for zero or tiny adjustment ratio to prevent division by zero
-        if fabs(adjustment_ratio) < adjustment_ratio_eps:
-            self._log.warning(
-                f"Cannot calculate leg prices for spread {spread_execution_price}: "
-                f"adjustment_ratio ({adjustment_ratio}) is too small for highest-priced leg {highest_price_leg_id}"
-            )
-            return {}
+                highest_price_ratio = ratio
 
         # Calculate adjusted price for the highest-priced leg
         # spread_execution_price = Σ(leg_price × ratio)
-        # adjusted_price = (spread_execution_price - weighted_sum) / adjustment_ratio
-        cdef double adjusted_price = (spread_execution_price.as_double() - weighted_sum) / adjustment_ratio
+        # adjusted_price = (spread_execution_price - weighted_sum) / highest_price_ratio
+        cdef double adjusted_price = (spread_execution_price.as_double() - weighted_sum) / highest_price_ratio
 
         # Get actual instrument for highest-priced leg to use its make_price method
         highest_leg_instrument = self.cache.instrument(highest_price_leg_id)
+
         if highest_leg_instrument is not None:
             leg_prices[highest_price_leg_id] = highest_leg_instrument.make_price(adjusted_price)
         else:

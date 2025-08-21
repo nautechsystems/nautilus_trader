@@ -952,7 +952,6 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 execution,
                 contract,
                 commission_report,
-                instrument,
             )
             return
 
@@ -970,6 +969,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             instrument_id=nautilus_order.instrument_id,
             client_order_id=nautilus_order.client_order_id,
             venue_order_id=VenueOrderId(str(execution.orderId)),
+            venue_position_id=None,
             trade_id=TradeId(execution.execId),
             order_side=OrderSide[ORDER_SIDE_TO_ORDER_ACTION[execution.side]],
             order_type=nautilus_order.order_type,
@@ -986,22 +986,19 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
     def _handle_spread_execution(
         self,
-        nautilus_order,
-        execution,
+        nautilus_order: Order,
+        execution: Execution,
         contract: IBContract,
-        commission_report,
-        instrument,
+        commission_report: CommissionReport,
     ) -> None:
         """
         Handle spread execution by translating leg fills to combo progress and
         individual leg fills.
         """
         try:
-            # Check for duplicate fills
             trade_id = TradeId(execution.execId)
             fill_id = str(trade_id)
             client_order_id = nautilus_order.client_order_id
-
             self._log.info(
                 f"Handling spread execution: client_order_id={client_order_id}, trade_id={trade_id}",
             )
@@ -1016,89 +1013,79 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             self._spread_fill_tracking[client_order_id].add(fill_id)
 
             if len(self._spread_fill_tracking[client_order_id]) == 1:
-                # Generate combo fill for order management FIRST
-                # This ensures the spread order gets filled with correct combo quantities
+                # Combo fill for order management, generated only once per combo
                 self._generate_combo_fill(
                     nautilus_order,
                     execution,
                     contract,
                     commission_report,
-                    instrument,
                 )
 
-            # Always generate leg fill for portfolio updates
-            # This creates positions for individual legs without affecting the spread order
+            # Leg fill to update leg position in nautilus
             self._generate_leg_fill(
                 nautilus_order,
                 execution,
                 contract,
                 commission_report,
-                instrument,
             )
-
         except Exception as e:
             self._log.error(f"Error handling spread execution: {e}")
-            # Fallback to sending original fill
-            price_magnifier = self.instrument_provider.get_price_magnifier(
-                nautilus_order.instrument_id,
-            )
-            converted_execution_price = ib_price_to_nautilus_price(execution.price, price_magnifier)
-
-            self.generate_order_filled(
-                strategy_id=nautilus_order.strategy_id,
-                instrument_id=nautilus_order.instrument_id,
-                client_order_id=nautilus_order.client_order_id,
-                venue_order_id=VenueOrderId(str(execution.orderId)),
-                venue_position_id=None,
-                trade_id=TradeId(execution.execId),
-                order_side=OrderSide[ORDER_SIDE_TO_ORDER_ACTION[execution.side]],
-                order_type=nautilus_order.order_type,
-                last_qty=Quantity(execution.shares, precision=instrument.size_precision),
-                last_px=Price(converted_execution_price, precision=instrument.price_precision),
-                quote_currency=instrument.quote_currency,
-                commission=Money(
-                    commission_report.commission,
-                    Currency.from_str(commission_report.currency),
-                ),
-                liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
-                ts_event=timestring_to_timestamp(execution.time).value,
-            )
 
     def _generate_combo_fill(
         self,
-        nautilus_order,
-        execution,
+        nautilus_order: Order,
+        execution: Execution,
         contract: IBContract,
-        commission_report,
-        instrument,
+        commission_report: CommissionReport,
     ) -> None:
         """
         Generate combo fill from leg fill for order management.
         """
         try:
+            spread_instrument = self._cache.instrument(nautilus_order.instrument_id)
+
             # Extract leg instrument ID and ratio to calculate proper combo quantity
-            leg_instrument_id, ratio = self._extract_leg_instrument_id(
+            leg_instrument_id, ratio = self._get_leg_instrument_id_and_ratio(
                 nautilus_order.instrument_id,
                 contract,
             )
 
-            # Prepare execution data
+            # Price
             price_magnifier = self.instrument_provider.get_price_magnifier(
                 nautilus_order.instrument_id,
             )
             converted_execution_price = ib_price_to_nautilus_price(execution.price, price_magnifier)
-            last_qty = Quantity(execution.shares, precision=instrument.size_precision)
-
-            # Calculate combo quantity: last_qty / abs(ratio)
-            # This gives us the number of combo units executed
-            combo_quantity_value = (
-                last_qty.as_double() / abs(ratio) if ratio != 0 else last_qty.as_double()
+            combo_price = Price(
+                converted_execution_price,
+                precision=spread_instrument.price_precision,
             )
-            combo_quantity = Quantity(combo_quantity_value, precision=last_qty.precision)
+
+            # Combo quantity
+            combo_quantity_value = execution.shares / abs(ratio)
+            combo_quantity = Quantity(
+                combo_quantity_value,
+                precision=spread_instrument.size_precision,
+            )
+
+            # Order side based on execution side and ratio
+            execution_side_numeric = (
+                1 if ORDER_SIDE_TO_ORDER_ACTION[execution.side] == "BUY" else -1
+            )
+            leg_side_numeric = 1 if ratio >= 0 else -1
+            combo_order_side = (
+                OrderSide.BUY if execution_side_numeric == leg_side_numeric else OrderSide.SELL
+            )
+
+            # Combo commission scaled to the number of legs of the combo
+            combo_commission = (
+                commission_report.commission * nautilus_order.instrument_id.n_legs() / abs(ratio)
+            )
+            commission = Money(combo_commission, Currency.from_str(commission_report.currency))
 
             # Generate combo fill with spread instrument ID
             self._log.info(
-                f"Generating combo fill: instrument_id={nautilus_order.instrument_id}, client_order_id={nautilus_order.client_order_id}",
+                f"Generating combo fill: instrument_id={nautilus_order.instrument_id}, client_order_id={nautilus_order.client_order_id}, "
+                f"execution_side={execution.side}, ratio={ratio}, combo_side={combo_order_side}",
             )
 
             self.generate_order_filled(
@@ -1108,15 +1095,12 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 venue_order_id=VenueOrderId(str(execution.orderId)),
                 venue_position_id=None,
                 trade_id=TradeId(execution.execId),
-                order_side=OrderSide.BUY,  # Normalize to BUY for combo tracking
+                order_side=combo_order_side,
                 order_type=nautilus_order.order_type,
                 last_qty=combo_quantity,
-                last_px=Price(converted_execution_price, precision=instrument.price_precision),
-                quote_currency=instrument.quote_currency,
-                commission=Money(
-                    commission_report.commission,
-                    Currency.from_str(commission_report.currency),
-                ),
+                last_px=combo_price,
+                quote_currency=spread_instrument.quote_currency,
+                commission=commission,
                 liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
                 ts_event=timestring_to_timestamp(execution.time).value,
             )
@@ -1125,18 +1109,16 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
     def _generate_leg_fill(
         self,
-        nautilus_order,
-        execution,
+        nautilus_order: Order,
+        execution: Execution,
         contract: IBContract,
-        commission_report,
-        instrument,
+        commission_report: CommissionReport,
     ) -> None:
         """
         Generate individual leg fill for portfolio updates.
         """
         try:
-            # Extract individual leg instrument ID from spread ID
-            leg_instrument_id, ratio = self._extract_leg_instrument_id(
+            leg_instrument_id, ratio = self._get_leg_instrument_id_and_ratio(
                 nautilus_order.instrument_id,
                 contract,
             )
@@ -1145,31 +1127,20 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 self._log.warning(f"No leg instrument ID found for contract {contract}")
                 return
 
-            # Get the leg instrument to access its precision
             leg_instrument = self._cache.instrument(leg_instrument_id)
 
             if not leg_instrument:
                 self._log.warning(f"Leg instrument not found in cache: {leg_instrument_id}")
                 return
 
-            # Prepare execution data
-            price_magnifier = self.instrument_provider.get_price_magnifier(leg_instrument_id)
-            converted_execution_price = ib_price_to_nautilus_price(execution.price, price_magnifier)
-
-            # Generate leg fill with individual instrument ID
-            # Use a unique client_order_id for leg fills so they don't conflict with spread order
+            # Unique client_order_id for leg fill so it doesn't conflict with spread order
             leg_client_order_id = ClientOrderId(
                 f"{nautilus_order.client_order_id.value}-LEG-{leg_instrument_id.symbol}",
             )
 
-            # Use a unique trade ID for leg fills to avoid conflicts with combo fills
-            # Use the position of the leg in the spread instrument ID list
-            spread_legs = (
-                nautilus_order.instrument_id.to_list()
-            )  # Returns [(instrument_id, ratio), ...]
-            spread_instrument_ids = [
-                leg[0] for leg in spread_legs
-            ]  # Extract just the instrument IDs
+            # Unique trade ID for leg fills to avoid conflicts with combo fills
+            spread_legs = nautilus_order.instrument_id.to_list()  # [(instrument_id, ratio), ...]
+            spread_instrument_ids = [leg[0] for leg in spread_legs]
             leg_position = (
                 spread_instrument_ids.index(leg_instrument_id)
                 if leg_instrument_id in spread_instrument_ids
@@ -1178,16 +1149,21 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             leg_trade_id_str = f"{execution.execId}-{leg_position}"
             leg_trade_id = TradeId(leg_trade_id_str)
 
-            # Convert to int if it's a float to avoid precision issues
-            leg_quantity = (
-                int(execution.shares) if isinstance(execution.shares, float) else execution.shares
-            )
-            quantity_obj = Quantity(leg_quantity, precision=leg_instrument.size_precision)
-
-            # Generate leg fill with unique client_order_id and venue_order_id
-            # so it gets handled as a leg fill without order
-            # This will trigger the _handle_leg_fill_without_order method in the execution engine
+            # Unique venue_order_id
             leg_venue_order_id = VenueOrderId(f"{execution.orderId}-LEG-{leg_position}")
+
+            price_magnifier = self.instrument_provider.get_price_magnifier(leg_instrument_id)
+            converted_execution_price = ib_price_to_nautilus_price(execution.price, price_magnifier)
+            price = Price(converted_execution_price, precision=leg_instrument.price_precision)
+
+            quantity = Quantity(execution.shares, precision=leg_instrument.size_precision)
+
+            order_side = order_side = OrderSide[ORDER_SIDE_TO_ORDER_ACTION[execution.side]]
+
+            commission = Money(
+                commission_report.commission,
+                Currency.from_str(commission_report.currency),
+            )
 
             self.generate_order_filled(
                 strategy_id=nautilus_order.strategy_id,
@@ -1196,44 +1172,32 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 venue_order_id=leg_venue_order_id,
                 venue_position_id=None,
                 trade_id=leg_trade_id,
-                order_side=OrderSide[
-                    ORDER_SIDE_TO_ORDER_ACTION[execution.side]
-                ],  # Keep original side
+                order_side=order_side,
                 order_type=nautilus_order.order_type,
-                last_qty=quantity_obj,  # Use the validated quantity object
-                last_px=Price(converted_execution_price, precision=leg_instrument.price_precision),
+                last_qty=quantity,
+                last_px=price,
                 quote_currency=leg_instrument.quote_currency,
-                commission=Money(
-                    commission_report.commission,
-                    Currency.from_str(commission_report.currency),
-                ),
+                commission=commission,
                 liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
                 ts_event=timestring_to_timestamp(execution.time).value,
             )
         except Exception as e:
             self._log.error(f"Error generating leg fill: {e}")
 
-    def _extract_leg_instrument_id(
+    def _get_leg_instrument_id_and_ratio(
         self,
         spread_instrument_id: InstrumentId,
         contract: IBContract,
     ) -> tuple[InstrumentId | None, int]:
-        """
-        Extract individual leg instrument ID and ratio from spread instrument ID.
-        """
-        # If we have contract information with ConId, use it for precise identification
-        if contract:
-            # Try to find the leg instrument using ConId
-            leg_instrument_id = self.instrument_provider.contract_id_to_instrument_id.get(
-                contract.conId,
-            )
+        leg_instrument_id = self.instrument_provider.contract_id_to_instrument_id.get(
+            contract.conId,
+        )
 
-            if leg_instrument_id:
-                # Get the ratio for this specific leg
-                leg_tuples = spread_instrument_id.to_list()
+        if leg_instrument_id:
+            leg_tuples = spread_instrument_id.to_list()
 
-                for leg_id, ratio in leg_tuples:
-                    if leg_id == leg_instrument_id:
-                        return leg_instrument_id, ratio
+            for leg_id, ratio in leg_tuples:
+                if leg_id == leg_instrument_id:
+                    return leg_instrument_id, ratio
 
         return None, 1
