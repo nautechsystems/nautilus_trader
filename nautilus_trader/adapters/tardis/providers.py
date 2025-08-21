@@ -85,9 +85,10 @@ class TardisInstrumentProvider(InstrumentProvider):
         for venue in venues:
             venue = venue.upper().replace("-", "_")
             for exchange in nautilus_pyo3.tardis_exchange_from_venue_str(venue):
+                exchange = exchange.lower().replace("_", "-")
                 self._log.info(f"Requesting instruments for {exchange=}")
                 pyo3_instruments = await self._client.instruments(
-                    exchange=exchange.lower(),
+                    exchange=exchange,
                     base_currency=list(base_currency) if base_currency else None,
                     quote_currency=list(quote_currency) if quote_currency else None,
                     instrument_type=list(instrument_type) if instrument_type else None,
@@ -147,9 +148,10 @@ class TardisInstrumentProvider(InstrumentProvider):
             available_offset_ns = available_offset
 
         for exchange, symbols in venue_instruments.items():
+            exchange = exchange.lower().replace("_", "-")
             self._log.info(f"Requesting instruments for {exchange=}")
             pyo3_instruments = await self._client.instruments(
-                exchange=exchange.lower(),
+                exchange=exchange,
                 base_currency=list(base_currency) if base_currency else None,
                 quote_currency=list(quote_currency) if quote_currency else None,
                 instrument_type=list(instrument_type) if instrument_type else None,
