@@ -15,7 +15,7 @@
 
 //! Python bindings aggregator crate for [NautilusTrader](http://nautilustrader.io).
 //!
-//! The *pyo3* crate collects the Python bindings generated across the NautilusTrader workspace
+//! The `nautilus-pyo3` crate collects the Python bindings generated across the NautilusTrader workspace
 //! and re-exports them through a single shared library that can be included in binary wheels.
 //!
 //! # Feature flags

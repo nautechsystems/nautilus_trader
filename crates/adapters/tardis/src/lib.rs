@@ -13,12 +13,20 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! NautilusTrader adapter for the [Tardis](https://tardis.dev) market data provider.
+//!
+//! The `nautilus-tardis` crate provides integration with the Tardis API for accessing
+//! normalized historical and real-time market data across multiple exchanges.
+//!
+//! # Platform
+//!
 //! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
 //! algorithmic trading platform, providing quantitative traders with the ability to backtest
 //! portfolios of automated trading strategies on historical data with an event-driven engine,
 //! and also deploy those same strategies live, with no code changes.
 //!
-//! This crate provides a [Tardis](https://tardis.dev) integration adapter.
+//! NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
+//! highest level, with the aim of supporting mission-critical, trading system backtesting and live deployment workloads.
 //!
 //! # Feature flags
 //!
