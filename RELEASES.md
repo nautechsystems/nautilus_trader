@@ -103,6 +103,8 @@ Released on TBD (UTC).
 - Refined request of instruments (#2822), thanks @faysou
 - Refined `subscribe_bars` in IB adapter (#2852), thanks @faysou
 - Refined `get_start_time` in `TimeBarAggregator` (#2866), thanks @faysou
+- Refined option spread execution (#2859), thanks @faysou
+- Relaxed conditions on `start` and `end` of instrument requests in adapters (#2867), thanks @faysou
 - Updated `request_aggregated_bars` example (#2815), thanks @faysou
 - Updated PostgreSQL connection parameters to use 'nautilus' user (#2805), thanks @stastnypremysl
 - Upgraded Rust (MSRV) to 1.89.0
