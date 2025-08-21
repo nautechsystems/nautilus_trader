@@ -245,7 +245,7 @@ cdef class Actor(Component):
     cpdef UUID4 request_quote_ticks(
         self,
         InstrumentId instrument_id,
-        datetime start=*,
+        datetime start,
         datetime end=*,
         int limit=*,
         ClientId client_id=*,
@@ -256,7 +256,7 @@ cdef class Actor(Component):
     cpdef UUID4 request_trade_ticks(
         self,
         InstrumentId instrument_id,
-        datetime start=*,
+        datetime start,
         datetime end=*,
         int limit=*,
         ClientId client_id=*,
@@ -267,7 +267,7 @@ cdef class Actor(Component):
     cpdef UUID4 request_bars(
         self,
         BarType bar_type,
-        datetime start=*,
+        datetime start,
         datetime end=*,
         int limit=*,
         ClientId client_id=*,
@@ -278,7 +278,7 @@ cdef class Actor(Component):
     cpdef UUID4 request_aggregated_bars(
         self,
         list bar_types,
-        datetime start=*,
+        datetime start,
         datetime end=*,
         int limit=*,
         ClientId client_id=*,
