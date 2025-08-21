@@ -28,6 +28,7 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.nautilus_pyo3 import WebSocketClient
 from nautilus_trader.core.nautilus_pyo3 import WebSocketClientError
 from nautilus_trader.core.nautilus_pyo3 import WebSocketConfig
+from nautilus_trader.live.cancellation import cancel_tasks_with_timeout
 
 
 class BinanceWebSocketClient:
@@ -296,8 +297,7 @@ class BinanceWebSocketClient:
         """
         Disconnect all clients from the server.
         """
-        # Cancel pending background tasks first
-        await self._cancel_pending_tasks()
+        await cancel_tasks_with_timeout(self._tasks, self._log)
 
         tasks = []
         for client_id in list(self._clients.keys()):
@@ -306,33 +306,6 @@ class BinanceWebSocketClient:
         if tasks:
             await asyncio.gather(*tasks)
             self._log.info(f"Disconnected all clients from {self._base_url}", LogColor.BLUE)
-
-    async def _cancel_pending_tasks(self, timeout_secs: float = 5.0) -> None:
-        pending_tasks = [task for task in self._tasks if not task.done()]
-
-        if not pending_tasks:
-            return
-
-        self._log.debug(f"Canceling {len(pending_tasks)} pending background tasks")
-
-        # Cancel all tasks
-        for task in pending_tasks:
-            task.cancel()
-
-        # Wait for tasks to complete with timeout
-        try:
-            _done, still_pending = await asyncio.wait(
-                pending_tasks,
-                timeout=timeout_secs,
-                return_when=asyncio.ALL_COMPLETED,
-            )
-
-            if still_pending:
-                self._log.warning(
-                    f"{len(still_pending)} tasks still pending after {timeout_secs}s timeout",
-                )
-        except Exception as e:
-            self._log.exception("Error during task cleanup", e)
 
     async def _disconnect_client(self, client_id: int) -> None:
         """

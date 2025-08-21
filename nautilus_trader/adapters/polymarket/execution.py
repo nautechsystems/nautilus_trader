@@ -1034,7 +1034,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             return
 
         if wait_for_ack:
-            self._loop.create_task(self._wait_for_ack_order(msg, venue_order_id))
+            self.create_task(self._wait_for_ack_order(msg, venue_order_id))
             return
 
         client_order_id = self._cache.client_order_id(venue_order_id)
@@ -1116,7 +1116,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             return
 
         if wait_for_ack:
-            self._loop.create_task(self._wait_for_ack_trade(msg, venue_order_id))
+            self.create_task(self._wait_for_ack_trade(msg, venue_order_id))
             return
 
         client_order_id = self._cache.client_order_id(venue_order_id)
@@ -1176,4 +1176,4 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
         self._processed_trades.add(trade_id)
 
-        self._loop.create_task(self._update_account_state())
+        self.create_task(self._update_account_state())

@@ -60,6 +60,8 @@ from nautilus_trader.data.messages import UnsubscribeInstrumentStatus
 from nautilus_trader.data.messages import UnsubscribeOrderBook
 from nautilus_trader.data.messages import UnsubscribeQuoteTicks
 from nautilus_trader.data.messages import UnsubscribeTradeTicks
+from nautilus_trader.live.cancellation import DEFAULT_FUTURE_CANCELLATION_TIMEOUT
+from nautilus_trader.live.cancellation import cancel_tasks_with_timeout
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import DataType
@@ -243,19 +245,11 @@ class DatabentoDataClient(LiveMarketDataClient):
             live_client.close()
 
     async def _cancel_pending_futures(self) -> None:
-        for future in self._live_client_futures:
-            if not future.done():
-                future.cancel()
-
-        if self._live_client_futures:
-            try:
-                await asyncio.wait_for(
-                    asyncio.gather(*self._live_client_futures, return_exceptions=True),
-                    timeout=2.0,
-                )
-            except TimeoutError:
-                self._log.warning("Timeout while waiting for live clients shutdown to complete")
-
+        await cancel_tasks_with_timeout(
+            self._live_client_futures,
+            self._log,
+            timeout_secs=DEFAULT_FUTURE_CANCELLATION_TIMEOUT,
+        )
         self._live_client_futures.clear()
 
     async def _update_dataset_ranges(self) -> None:
@@ -294,6 +288,14 @@ class DatabentoDataClient(LiveMarketDataClient):
             await asyncio.gather(*coros)
         except asyncio.CancelledError:
             self._log.debug("Canceled task 'buffer_mbo_subscriptions'")
+
+    def _log_future_exception_callback(self, future: asyncio.Future) -> None:
+        if future.cancelled():
+            return  # Normal cancellation
+
+        exc = future.exception()
+        if exc:
+            self._log.error(f"Future raised: {exc}")
 
     def _get_live_client(self, dataset: Dataset) -> nautilus_pyo3.DatabentoLiveClient:
         # Retrieve or initialize the 'general' live client for the specified dataset
@@ -340,6 +342,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                     callback_pyo3=self._handle_msg_pyo3,  # Imbalance and Statistics messages
                 ),
             )
+            future.add_done_callback(self._log_future_exception_callback)
             self._live_client_futures.add(future)
             self._has_subscribed[dataset] = True
             self._log.info(f"Started {dataset} live feed", LogColor.BLUE)
@@ -599,6 +602,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                     callback_pyo3=self._handle_msg_pyo3,  # Imbalance and Statistics messages
                 ),
             )
+            future.add_done_callback(self._log_future_exception_callback)
             self._live_client_futures.add(future)
         except asyncio.CancelledError:
             self._log.warning(

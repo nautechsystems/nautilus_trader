@@ -45,6 +45,8 @@ from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
+from nautilus_trader.live.cancellation import DEFAULT_FUTURE_CANCELLATION_TIMEOUT
+from nautilus_trader.live.cancellation import cancel_tasks_with_timeout
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
@@ -183,19 +185,11 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
             self._log.info("Disconnected from FIX Drop Copy server", LogColor.BLUE)
 
         # Cancel any pending futures
-        for future in self._fix_client_futures:
-            if not future.done():
-                future.cancel()
-
-        if self._fix_client_futures:
-            try:
-                await asyncio.wait_for(
-                    asyncio.gather(*self._fix_client_futures, return_exceptions=True),
-                    timeout=2.0,
-                )
-            except TimeoutError:
-                self._log.warning("Timeout while waiting for FIX client shutdown to complete")
-
+        await cancel_tasks_with_timeout(
+            self._fix_client_futures,
+            self._log,
+            timeout_secs=DEFAULT_FUTURE_CANCELLATION_TIMEOUT,
+        )
         self._fix_client_futures.clear()
 
     async def _cache_instruments(self) -> None:
