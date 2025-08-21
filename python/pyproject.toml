@@ -60,7 +60,7 @@ include = [
 [dependency-groups]
 dev = [
     "maturin>=1.9.3",
-    "ruff>=0.12.8,<1.0.0",
+    "ruff>=0.12.10,<1.0.0",
     "mypy>=1.17.1,<2.0.0",
     "pre-commit>=4.3.0,<5.0.0",
 ]
