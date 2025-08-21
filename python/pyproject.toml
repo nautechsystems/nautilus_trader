@@ -50,7 +50,7 @@ pre-build = "python generate_stubs.py"
 [tool.maturin]
 manifest-path = "../crates/pyo3/Cargo.toml"
 module-name = "nautilus_trader._libnautilus"
-features = ["extension-module", "high-precision", "redis", "postgres", "hypersync"]
+features = ["extension-module", "high-precision", "redis", "postgres", "defi", "hypersync"]
 strip = false
 
 include = [
