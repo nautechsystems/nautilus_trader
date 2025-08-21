@@ -375,8 +375,8 @@ class LiveMarketDataClient(MarketDataClient):
 
         if self._is_sync:
             self._log.warning(
-                "Client initialized in synchronous mode. "
-                "Ensure nest_asyncio.apply() is called if running in an async environment like a jupyter notebook.",
+                "Client initialized in synchronous mode; "
+                "ensure nest_asyncio.apply() is called if running in an async environment like a jupyter notebook",
             )
 
     async def run_after_delay(
@@ -449,7 +449,7 @@ class LiveMarketDataClient(MarketDataClient):
             )
 
             if exception:
-                self._log.error(f"Synchronous execution of '{task_name}' failed.")
+                self._log.error(f"Synchronous execution of '{task_name}' failed")
                 return None
             else:
                 return result
@@ -457,7 +457,7 @@ class LiveMarketDataClient(MarketDataClient):
         self._log.debug(f"Creating async task '{task_name}'")
 
         if not self._loop or not self._loop.is_running():
-            self._log.error(f"Async task '{task_name}' created but event loop is not running.")
+            self._log.error(f"Async task '{task_name}' created but event loop is not running")
             return None
 
         task = self._loop.create_task(
@@ -518,7 +518,7 @@ class LiveMarketDataClient(MarketDataClient):
                 f"Error running '{coro_name}': {exception!r}\n{tb_str}",
             )
         else:
-            self._log.debug(f"Coroutine '{coro_name}' completed successfully.")
+            self._log.debug(f"Coroutine '{coro_name}' completed successfully")
 
             if actions:
                 try:
