@@ -2896,7 +2896,7 @@ cdef class Actor(Component):
     cpdef UUID4 request_quote_ticks(
         self,
         InstrumentId instrument_id,
-        datetime start = None,
+        datetime start,
         datetime end = None,
         int limit = 0,
         ClientId client_id = None,
@@ -2920,7 +2920,6 @@ cdef class Actor(Component):
             The tick instrument ID for the request.
         start : datetime
             The start datetime (UTC) of request time range.
-            Cannot be `None`.
             Should be left-inclusive (start <= value), but inclusiveness is not currently guaranteed.
         end : datetime, optional
             The end datetime (UTC) of request time range.
@@ -2958,7 +2957,6 @@ cdef class Actor(Component):
             If `callback` is not `None` and not of type `Callable`.
 
         """
-        # TODO: Default start value assignment based on requested type of data
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
         Condition.not_none(instrument_id, "instrument_id")
         Condition.callable_or_none(callback, "callback")
@@ -2989,7 +2987,7 @@ cdef class Actor(Component):
     cpdef UUID4 request_trade_ticks(
         self,
         InstrumentId instrument_id,
-        datetime start = None,
+        datetime start,
         datetime end = None,
         int limit = 0,
         ClientId client_id = None,
@@ -3013,7 +3011,6 @@ cdef class Actor(Component):
             The tick instrument ID for the request.
         start : datetime
             The start datetime (UTC) of request time range.
-            Cannot be `None`.
             Should be left-inclusive (start <= value), but inclusiveness is not currently guaranteed.
         end : datetime, optional
             The end datetime (UTC) of request time range.
@@ -3051,7 +3048,6 @@ cdef class Actor(Component):
             If `callback` is not `None` and not of type `Callable`.
 
         """
-        # TODO: Default start value assignment based on requested type of data
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
         Condition.not_none(instrument_id, "instrument_id")
         Condition.callable_or_none(callback, "callback")
@@ -3082,7 +3078,7 @@ cdef class Actor(Component):
     cpdef UUID4 request_bars(
         self,
         BarType bar_type,
-        datetime start = None,
+        datetime start,
         datetime end = None,
         int limit = 0,
         ClientId client_id = None,
@@ -3106,7 +3102,6 @@ cdef class Actor(Component):
             The bar type for the request.
         start : datetime
             The start datetime (UTC) of request time range.
-            Cannot be `None`.
             Should be left-inclusive (start <= value), but inclusiveness is not currently guaranteed.
         end : datetime, optional
             The end datetime (UTC) of request time range.
@@ -3144,7 +3139,6 @@ cdef class Actor(Component):
             If `callback` is not `None` and not of type `Callable`.
 
         """
-        # TODO: Default start value assignment based on requested type of data
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
         Condition.not_none(bar_type, "bar_type")
         Condition.callable_or_none(callback, "callback")
@@ -3175,7 +3169,7 @@ cdef class Actor(Component):
     cpdef UUID4 request_aggregated_bars(
         self,
         list bar_types,
-        datetime start = None,
+        datetime start,
         datetime end = None,
         int limit = 0,
         ClientId client_id = None,
@@ -3207,7 +3201,6 @@ cdef class Actor(Component):
             figure in the list after a BarType on which it depends.
         start : datetime
             The start datetime (UTC) of request time range.
-            Cannot be `None`.
             Should be left-inclusive (start <= value), but inclusiveness is not currently guaranteed.
         end : datetime, optional
             The end datetime (UTC) of request time range.
@@ -3253,7 +3246,6 @@ cdef class Actor(Component):
             If `bar_types` is empty or contains elements not of type `BarType`.
 
         """
-        # TODO: Default start value assignment based on requested type of data
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
         Condition.not_empty(bar_types, "bar_types")
         Condition.list_type(bar_types, BarType, "bar_types")
