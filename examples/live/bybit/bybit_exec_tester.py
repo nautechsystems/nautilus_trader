@@ -137,7 +137,7 @@ config_node = TradingNodeConfig(
 node = TradingNode(config=config_node)
 
 # Configure your strategy
-config_strat = ExecTesterConfig(
+config_tester = ExecTesterConfig(
     instrument_id=InstrumentId.from_str(f"{symbol}.{BYBIT}"),
     external_order_claims=[InstrumentId.from_str(f"{symbol}.{BYBIT}")],
     subscribe_quotes=True,
@@ -156,10 +156,10 @@ config_strat = ExecTesterConfig(
 )
 
 # Instantiate your strategy
-strategy = ExecTester(config=config_strat)
+tester = ExecTester(config=config_tester)
 
 # Add your strategies and modules
-node.trader.add_strategy(strategy)
+node.trader.add_strategy(tester)
 
 # Register your client factories with the node (can take user-defined factories)
 node.add_data_client_factory(BYBIT, BybitLiveDataClientFactory)
