@@ -27,6 +27,7 @@ from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -49,7 +50,7 @@ class ExecTesterConfig(StrategyConfig, frozen=True):
 
     instrument_id: InstrumentId
     order_qty: Decimal
-    order_params: list[Any] | None = None
+    order_params: dict[str, Any] | None = None
     client_id: ClientId | None = None
     subscribe_quotes: bool = True
     subscribe_trades: bool = True
@@ -67,6 +68,7 @@ class ExecTesterConfig(StrategyConfig, frozen=True):
     emulation_trigger: str = "NO_TRIGGER"
     cancel_orders_on_stop: bool = True
     close_positions_on_stop: bool = True
+    close_positions_time_in_force: TimeInForce | None = None
     reduce_only_on_stop: bool = True
     use_individual_cancels_on_stop: bool = False
     use_batch_cancel_on_stop: bool = False
@@ -335,6 +337,7 @@ class ExecTester(Strategy):
             self.close_all_positions(
                 instrument_id=self.config.instrument_id,
                 client_id=self.client_id,
+                time_in_force=self.config.close_positions_time_in_force or TimeInForce.GTC,
                 reduce_only=self.config.reduce_only_on_stop,
             )
 
