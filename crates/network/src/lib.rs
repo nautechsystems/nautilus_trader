@@ -38,7 +38,6 @@
 //!
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 //! - `extension-module`: Builds the crate as a Python extension module.
-//! - `std`: Enables linking to the Rust standard library (disables `#![no_std]` environments).
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]

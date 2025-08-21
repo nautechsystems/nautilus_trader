@@ -37,8 +37,6 @@ impl Nanos {
     }
 }
 
-/// Nanos as used by Jitter and other std-only features.
-#[cfg(feature = "std")]
 impl Nanos {
     pub const fn new(u: u64) -> Self {
         Self(u)
@@ -136,7 +134,7 @@ impl Add<Duration> for Nanos {
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
-#[cfg(all(feature = "std", test))]
+#[cfg(test)]
 mod test {
     use std::time::Duration;
 
