@@ -8,7 +8,7 @@
 
 Command-line interface and tools for [NautilusTrader](http://nautilustrader.io).
 
-The *cli* crate provides a comprehensive command-line interface for managing and
+The `nautilus-cli` crate provides a comprehensive command-line interface for managing and
 operating NautilusTrader installations. It includes tools for database management,
 system configuration, and operational utilities:
 

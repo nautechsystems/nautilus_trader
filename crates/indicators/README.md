@@ -8,7 +8,7 @@
 
 Technical analysis indicators for [NautilusTrader](http://nautilustrader.io).
 
-The *indicators* crate provides a comprehensive collection of technical analysis indicators
+The `nautilus-indicators` crate provides a comprehensive collection of technical analysis indicators
 for quantitative trading and market research. This includes a wide variety of indicators
 organized by category, with a unified trait-based architecture for consistent usage:
 
