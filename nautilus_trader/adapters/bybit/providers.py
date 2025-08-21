@@ -66,11 +66,15 @@ class BybitInstrumentProvider(InstrumentProvider):
         clock: LiveClock,
         product_types: list[BybitProductType],
         config: InstrumentProviderConfig | None = None,
+        use_spot_maker_rebates: bool = False,
+        use_perp_maker_rebates: bool = False,
     ) -> None:
         super().__init__(config=config)
         self._clock = clock
         self._client = client
         self._product_types = product_types
+        self._use_spot_maker_rebates = use_spot_maker_rebates
+        self._use_perp_maker_rebates = use_perp_maker_rebates
 
         self._http_asset = BybitAssetHttpAPI(
             client=client,
@@ -133,6 +137,10 @@ class BybitInstrumentProvider(InstrumentProvider):
                     None,
                 )
                 if target_fee_rate:
+                    self._log.debug(
+                        f"{instrument.symbol}-{product_type.value.upper()}: "
+                        f"maker={target_fee_rate.makerFeeRate}, taker={target_fee_rate.takerFeeRate}",
+                    )
                     self._parse_instrument(instrument, target_fee_rate)
                 else:
                     self._log.warning(
@@ -237,6 +245,26 @@ class BybitInstrumentProvider(InstrumentProvider):
                 # Options only need quote_currency
                 parsed_instrument = instrument.parse_to_instrument(
                     quote_currency=quote_currency,
+                )
+            elif isinstance(instrument, BybitInstrumentSpot):
+                # Spot instruments may have maker rebates
+                parsed_instrument = instrument.parse_to_instrument(
+                    base_currency=base_currency,
+                    quote_currency=quote_currency,
+                    fee_rate=fee_rate,
+                    ts_event=ts_event,
+                    ts_init=ts_init,
+                    use_spot_maker_rebates=self._use_spot_maker_rebates,
+                )
+            elif isinstance(instrument, BybitInstrumentLinear | BybitInstrumentInverse):
+                # Perpetual/Linear instruments may have maker rebates
+                parsed_instrument = instrument.parse_to_instrument(
+                    base_currency=base_currency,
+                    quote_currency=quote_currency,
+                    fee_rate=fee_rate,
+                    ts_event=ts_event,
+                    ts_init=ts_init,
+                    use_perp_maker_rebates=self._use_perp_maker_rebates,
                 )
             else:
                 # Other instrument types need all parameters

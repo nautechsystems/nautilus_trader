@@ -58,6 +58,12 @@ class BybitDataClientConfig(LiveDataClientConfig, frozen=True):
     bars_timestamp_on_close : bool, default True
         If the ts_event timestamp for bars should be on the open or close or the bar.
         If True, then ts_event will be on the close of the bar.
+    use_spot_maker_rebates : bool, default False
+        If True, spot maker fees will be negated to represent rebates.
+        Enable this if your account qualifies for maker rebates in spot markets.
+    use_perp_maker_rebates : bool, default False
+        If True, perpetual/linear maker fees will be negated to represent rebates.
+        Enable this if your account qualifies for maker rebates in perpetual markets.
 
     """
 
@@ -70,6 +76,8 @@ class BybitDataClientConfig(LiveDataClientConfig, frozen=True):
     update_instruments_interval_mins: PositiveInt | None = 60
     recv_window_ms: PositiveInt = 5_000
     bars_timestamp_on_close: bool = True
+    use_spot_maker_rebates: bool = False  # If True, spot maker fees will be negated
+    use_perp_maker_rebates: bool = False  # If True, perpetual maker fees will be negated
 
 
 class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
@@ -127,6 +135,12 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
         The position mode for `USDT perpetual` and `Inverse futures`.
     margin_mode : BybitMarginMode, optional
         Set Margin Mode.
+    use_spot_maker_rebates : bool, default False
+        If True, spot maker fees will be negated to represent rebates.
+        Enable this if your account qualifies for maker rebates in spot markets.
+    use_perp_maker_rebates : bool, default False
+        If True, perpetual/linear maker fees will be negated to represent rebates.
+        Enable this if your account qualifies for maker rebates in perpetual markets.
 
     Warnings
     --------
@@ -155,3 +169,5 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
     futures_leverages: dict[BybitSymbol, PositiveInt] | None = None
     position_mode: dict[BybitSymbol, BybitPositionMode] | None = None
     margin_mode: BybitMarginMode | None = None
+    use_spot_maker_rebates: bool = False  # If True, spot maker fees will be negated
+    use_perp_maker_rebates: bool = False  # If True, perpetual maker fees will be negated
