@@ -59,7 +59,6 @@ class BybitInstrumentSpot(msgspec.Struct):
         fee_rate: BybitFeeRate,
         ts_event: int,
         ts_init: int,
-        use_spot_maker_rebates: bool = False,
     ) -> CurrencyPair:
         assert base_currency.code == self.baseCoin
         assert quote_currency.code == self.quoteCoin
@@ -70,13 +69,6 @@ class BybitInstrumentSpot(msgspec.Struct):
         lot_size = Quantity.from_str(self.lotSizeFilter.basePrecision)
         max_quantity = Quantity.from_str(self.lotSizeFilter.maxOrderQty)
         min_quantity = Quantity.from_str(self.lotSizeFilter.minOrderQty)
-
-        maker_fee = Decimal(fee_rate.makerFeeRate)
-        taker_fee = Decimal(fee_rate.takerFeeRate)
-
-        # Apply maker rebate for spot markets if configured
-        if use_spot_maker_rebates and maker_fee > 0:
-            maker_fee = -maker_fee
 
         return CurrencyPair(
             instrument_id=instrument_id,
@@ -89,8 +81,8 @@ class BybitInstrumentSpot(msgspec.Struct):
             size_increment=size_increment,
             margin_init=Decimal("0.1"),
             margin_maint=Decimal("0.1"),
-            maker_fee=maker_fee,
-            taker_fee=taker_fee,
+            maker_fee=Decimal(fee_rate.makerFeeRate),
+            taker_fee=Decimal(fee_rate.takerFeeRate),
             ts_event=ts_event,
             ts_init=ts_init,
             lot_size=lot_size,
@@ -162,7 +154,6 @@ class BybitInstrumentLinear(msgspec.Struct):
         fee_rate: BybitFeeRate,
         ts_event: int,
         ts_init: int,
-        use_perp_maker_rebates: bool = False,
     ) -> CryptoPerpetual:
         assert base_currency.code == self.baseCoin
         assert quote_currency.code == self.quoteCoin
@@ -181,12 +172,8 @@ class BybitInstrumentLinear(msgspec.Struct):
         min_quantity = Quantity.from_str(self.lotSizeFilter.minOrderQty)
         max_price = Price.from_str(self.priceFilter.maxPrice)
         min_price = Price.from_str(self.priceFilter.minPrice)
-        maker_fee = Decimal(fee_rate.makerFeeRate)
-        taker_fee = Decimal(fee_rate.takerFeeRate)
-
-        # Apply maker rebate for perpetual markets if configured
-        if use_perp_maker_rebates and maker_fee > 0:
-            maker_fee = -maker_fee
+        maker_fee = fee_rate.makerFeeRate
+        taker_fee = fee_rate.takerFeeRate
 
         if self.contractType == BybitContractType.LINEAR_PERPETUAL:
             instrument = CryptoPerpetual(
@@ -208,8 +195,8 @@ class BybitInstrumentLinear(msgspec.Struct):
                 min_price=min_price,
                 margin_init=Decimal("0.1"),
                 margin_maint=Decimal("0.1"),
-                maker_fee=maker_fee,
-                taker_fee=taker_fee,
+                maker_fee=Decimal(maker_fee),
+                taker_fee=Decimal(taker_fee),
                 ts_event=ts_event,
                 ts_init=ts_init,
                 info=msgspec.json.Decoder().decode(msgspec.json.Encoder().encode(self)),
@@ -236,8 +223,8 @@ class BybitInstrumentLinear(msgspec.Struct):
                 min_price=min_price,
                 margin_init=Decimal("0.1"),
                 margin_maint=Decimal("0.1"),
-                maker_fee=maker_fee,
-                taker_fee=taker_fee,
+                maker_fee=Decimal(maker_fee),
+                taker_fee=Decimal(taker_fee),
                 ts_event=ts_event,
                 ts_init=ts_init,
                 info=msgspec.json.Decoder().decode(msgspec.json.Encoder().encode(self)),
@@ -272,7 +259,6 @@ class BybitInstrumentInverse(msgspec.Struct):
         fee_rate: BybitFeeRate,
         ts_event: int,
         ts_init: int,
-        use_perp_maker_rebates: bool = False,
     ) -> CryptoPerpetual:
         assert base_currency.code == self.baseCoin
         assert quote_currency.code == self.quoteCoin
@@ -291,12 +277,8 @@ class BybitInstrumentInverse(msgspec.Struct):
         min_quantity = Quantity.from_str(self.lotSizeFilter.minOrderQty)
         max_price = Price.from_str(self.priceFilter.maxPrice)
         min_price = Price.from_str(self.priceFilter.minPrice)
-        maker_fee = Decimal(fee_rate.makerFeeRate)
-        taker_fee = Decimal(fee_rate.takerFeeRate)
-
-        # Apply maker rebate for perpetual markets if configured
-        if use_perp_maker_rebates and maker_fee > 0:
-            maker_fee = -maker_fee
+        maker_fee = fee_rate.makerFeeRate
+        taker_fee = fee_rate.takerFeeRate
 
         if self.contractType == BybitContractType.INVERSE_PERPETUAL:
             instrument = CryptoPerpetual(
@@ -318,8 +300,8 @@ class BybitInstrumentInverse(msgspec.Struct):
                 min_price=min_price,
                 margin_init=Decimal("0.1"),
                 margin_maint=Decimal("0.1"),
-                maker_fee=maker_fee,
-                taker_fee=taker_fee,
+                maker_fee=Decimal(maker_fee),
+                taker_fee=Decimal(taker_fee),
                 ts_event=ts_event,
                 ts_init=ts_init,
                 info=msgspec.json.Decoder().decode(msgspec.json.Encoder().encode(self)),
@@ -346,8 +328,8 @@ class BybitInstrumentInverse(msgspec.Struct):
                 min_price=min_price,
                 margin_init=Decimal("0.1"),
                 margin_maint=Decimal("0.1"),
-                maker_fee=maker_fee,
-                taker_fee=taker_fee,
+                maker_fee=Decimal(maker_fee),
+                taker_fee=Decimal(taker_fee),
                 ts_event=ts_event,
                 ts_init=ts_init,
                 info=msgspec.json.Decoder().decode(msgspec.json.Encoder().encode(self)),
