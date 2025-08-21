@@ -64,6 +64,7 @@ class DataTesterConfig(ActorConfig, frozen=True):
     request_quotes: bool = False
     request_trades: bool = False
     request_bars: bool = False
+    request_params: dict[str, Any] | None = None
     requests_start_delta: pd.Timedelta | None = None
     book_type: BookType = BookType.L2_MBP
     book_depth: PositiveInt | None = None
@@ -100,6 +101,19 @@ class DataTester(Actor):
         requests_start = self.clock.utc_now() - requests_start_delta
 
         client_id = self.config.client_id
+
+        if self.config.request_instruments:
+            venues = set()
+
+            for instrument_id in self.config.instrument_ids or []:
+                venues.add(instrument_id.venue)
+
+            for venue in venues:
+                self.request_instruments(
+                    venue=venue,
+                    client_id=client_id,
+                    params=self.config.request_params,
+                )
 
         for instrument_id in self.config.instrument_ids or []:
             if self.config.subscribe_instrument:
@@ -187,11 +201,20 @@ class DataTester(Actor):
                     params=self.config.subscribe_params,
                 )
 
+            if self.config.request_quotes:
+                self.request_quote_ticks(
+                    instrument_id=instrument_id,
+                    start=requests_start,
+                    client_id=client_id,
+                    params=self.config.request_params,
+                )
+
             if self.config.request_trades:
                 self.request_trade_ticks(
                     instrument_id=instrument_id,
                     start=requests_start,
                     client_id=client_id,
+                    params=self.config.request_params,
                 )
 
         for bar_type in self.config.bar_types or []:
@@ -203,7 +226,12 @@ class DataTester(Actor):
                 )
 
             if self.config.request_bars:
-                self.request_bars(bar_type, start=requests_start, client_id=client_id)
+                self.request_bars(
+                    bar_type,
+                    start=requests_start,
+                    client_id=client_id,
+                    params=self.config.request_params,
+                )
 
     def setup_book(self, instrument_id: InstrumentId) -> None:
         self._books[instrument_id] = OrderBook(instrument_id, self.config.book_type)
