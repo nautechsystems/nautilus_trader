@@ -1,6 +1,6 @@
 # Installation
 
-NautilusTrader is officially supported for Python 3.11-3.13* on the following 64-bit platforms:
+NautilusTrader is officially supported for Python 3.11-3.13 on the following 64-bit platforms:
 
 | Operating System       | Supported Versions    | CPU Architecture  |
 |------------------------|-----------------------|-------------------|
@@ -8,12 +8,6 @@ NautilusTrader is officially supported for Python 3.11-3.13* on the following 64
 | Linux (Ubuntu)         | 22.04 and later       | ARM64             |
 | macOS                  | 14.7 and later        | ARM64             |
 | Windows Server         | 2022 and later        | x86_64            |
-
-\* Windows builds are currently pinned to CPython 3.13.2 because later
-3.13.x Windows binaries were produced with the per-interpreter GIL enabled
-but without exporting a handful of private C-API symbols. These missing
-exports break linking of our Cython extensions. The pin can be removed
-if/when an upstream CPython release restores the exports.
 
 :::note
 NautilusTrader may work on other platforms, but only those listed above are regularly used by developers and tested in CI.

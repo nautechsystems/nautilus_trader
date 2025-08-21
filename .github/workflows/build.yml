@@ -274,16 +274,15 @@ jobs:
         python-version:
           - "3.11"
           - "3.12"
-          - "3.13.2" # pinned to 3.13.2, see https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/getting_started/installation.md
+          - "3.13"
     defaults:
       run:
         shell: bash
     name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     # Pause job on develop branch for now (takes ~1 hr)
-    # TODO: Pause on nightly branch to investigate new build failures
     if: >
-      !( (github.event_name == 'push' && (github.ref_name == 'develop' || github.ref_name == 'nightly'))
+      !( (github.event_name == 'push' && github.ref_name == 'develop')
       || (github.event_name == 'pull_request' && github.base_ref == 'develop') )
     needs:
       - pre-commit
@@ -374,7 +373,7 @@ jobs:
       - build-linux-x86
       - build-linux-arm
       - build-macos
-      # - build-windows
+      - build-windows
     if: >
       github.event_name == 'push' && github.ref == 'refs/heads/nightly'
     env:

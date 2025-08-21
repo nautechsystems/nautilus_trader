@@ -158,13 +158,6 @@ fn _libnautilus(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     #[cfg(feature = "cython-compat")]
     re_export_module_attributes(m, n)?;
 
-    let n = "blockchain";
-    let submodule = pyo3::wrap_pymodule!(nautilus_blockchain::python::blockchain);
-    m.add_wrapped(submodule)?;
-    sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
-    #[cfg(feature = "cython-compat")]
-    re_export_module_attributes(m, n)?;
-
     let n = "coinbase_intx";
     let submodule = pyo3::wrap_pymodule!(nautilus_coinbase_intx::python::coinbase_intx);
     m.add_wrapped(submodule)?;
@@ -199,6 +192,16 @@ fn _libnautilus(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
     #[cfg(feature = "cython-compat")]
     re_export_module_attributes(m, n)?;
+
+    #[cfg(feature = "defi")]
+    {
+        let n = "blockchain";
+        let submodule = pyo3::wrap_pymodule!(nautilus_blockchain::python::blockchain);
+        m.add_wrapped(submodule)?;
+        sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
+        #[cfg(feature = "cython-compat")]
+        re_export_module_attributes(m, n)?;
+    }
 
     Ok(())
 }
