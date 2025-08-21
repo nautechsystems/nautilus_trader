@@ -111,8 +111,6 @@ def get_bybit_instrument_provider(
     clock: LiveClock,
     product_types: frozenset[BybitProductType],
     config: InstrumentProviderConfig,
-    use_spot_maker_rebates: bool = False,
-    use_perp_maker_rebates: bool = False,
 ) -> BybitInstrumentProvider:
     """
     Cache and return a Bybit instrument provider.
@@ -131,10 +129,6 @@ def get_bybit_instrument_provider(
         If the provider is for the Spot testnet.
     config : InstrumentProviderConfig
         The configuration for the instrument provider.
-    use_spot_maker_rebates : bool, default False
-        If True, spot maker fees will be negated to represent rebates.
-    use_perp_maker_rebates : bool, default False
-        If True, perpetual/linear maker fees will be negated to represent rebates.
 
     Returns
     -------
@@ -146,8 +140,6 @@ def get_bybit_instrument_provider(
         config=config,
         clock=clock,
         product_types=list(product_types),
-        use_spot_maker_rebates=use_spot_maker_rebates,
-        use_perp_maker_rebates=use_perp_maker_rebates,
     )
 
 
@@ -203,8 +195,6 @@ class BybitLiveDataClientFactory(LiveDataClientFactory):
             clock=clock,
             product_types=frozenset(product_types),
             config=config.instrument_provider,
-            use_spot_maker_rebates=config.use_spot_maker_rebates,
-            use_perp_maker_rebates=config.use_perp_maker_rebates,
         )
         ws_base_urls: dict[BybitProductType, str] = {}
         for product_type in product_types:
@@ -278,8 +268,6 @@ class BybitLiveExecClientFactory(LiveExecClientFactory):
             clock=clock,
             product_types=frozenset(config.product_types or BYBIT_ALL_PRODUCTS),
             config=config.instrument_provider,
-            use_spot_maker_rebates=config.use_spot_maker_rebates,
-            use_perp_maker_rebates=config.use_perp_maker_rebates,
         )
 
         base_url_ws_private: str = get_ws_base_url_private(config.testnet)
