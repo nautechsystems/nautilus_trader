@@ -46,6 +46,8 @@ from nautilus_trader.data.messages import UnsubscribeMarkPrices
 from nautilus_trader.data.messages import UnsubscribeOrderBook
 from nautilus_trader.data.messages import UnsubscribeQuoteTicks
 from nautilus_trader.data.messages import UnsubscribeTradeTicks
+from nautilus_trader.live.cancellation import DEFAULT_FUTURE_CANCELLATION_TIMEOUT
+from nautilus_trader.live.cancellation import cancel_tasks_with_timeout
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import FundingRateUpdate
@@ -202,26 +204,12 @@ class OKXDataClient(LiveMarketDataClient):
             )
 
         # Cancel any pending futures
-        for future in self._ws_client_futures:
-            if not future.done():
-                future.cancel()
-
-        for future in self._ws_business_client_futures:
-            if not future.done():
-                future.cancel()
-
-        if self._ws_client_futures or self._ws_business_client_futures:
-            try:
-                await asyncio.wait_for(
-                    asyncio.gather(
-                        *self._ws_client_futures,
-                        *self._ws_business_client_futures,
-                        return_exceptions=True,
-                    ),
-                    timeout=2.0,
-                )
-            except TimeoutError:
-                self._log.warning("Timeout while waiting for websockets shutdown to complete")
+        all_futures = self._ws_client_futures | self._ws_business_client_futures
+        await cancel_tasks_with_timeout(
+            all_futures,
+            self._log,
+            timeout_secs=DEFAULT_FUTURE_CANCELLATION_TIMEOUT,
+        )
 
         self._ws_client_futures.clear()
         self._ws_business_client_futures.clear()

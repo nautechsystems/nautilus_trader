@@ -199,12 +199,12 @@ class DYDXDataClient(LiveMarketDataClient):
 
     async def _disconnect(self) -> None:
         if self._update_instruments_task:
-            self._log.debug("Cancelling 'update_instruments' task")
+            self._log.debug("Canceling 'update_instruments' task")
             self._update_instruments_task.cancel()
             self._update_instruments_task = None
 
         if self._fetch_orderbook_task:
-            self._log.debug("Cancelling 'fetch_orderbook' task")
+            self._log.debug("Canceling 'fetch_orderbook' task")
             self._fetch_orderbook_task.cancel()
             self._fetch_orderbook_task = None
 

@@ -282,7 +282,7 @@ impl DataEngine {
         }
     }
 
-    /// Disposes the engine, stopping all clients and cancelling any timers.
+    /// Disposes the engine, stopping all clients and canceling any timers.
     pub fn dispose(&mut self) {
         for client in self.get_clients_mut() {
             if let Err(e) = client.dispose() {

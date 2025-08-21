@@ -244,7 +244,7 @@ class BybitDataClient(LiveMarketDataClient):
                 f"Parameter symbol in request metadata object is not of type Symbol, got {type(symbol)}",
             )
         bybit_symbol = BybitSymbol(symbol.value)
-        self._loop.create_task(
+        self.create_task(
             self.fetch_send_tickers(
                 request.id,
                 bybit_symbol.product_type,

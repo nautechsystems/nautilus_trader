@@ -53,6 +53,7 @@ from nautilus_trader.execution.reports import ExecutionMassStatus
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
+from nautilus_trader.live.cancellation import cancel_tasks_with_timeout
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import order_side_to_str
@@ -265,43 +266,7 @@ class LiveExecutionClient(ExecutionClient):
             The timeout in seconds to wait for tasks to cancel.
 
         """
-        pending_tasks = [task for task in self._tasks if not task.done()]
-
-        if not pending_tasks:
-            return
-
-        self._log.debug(f"Canceling {len(pending_tasks)} pending tasks")
-
-        # Cancel all pending tasks
-        for task in pending_tasks:
-            self._log.debug(f"Canceling task '{task.get_name()}'")
-            task.cancel()
-
-        # Wait for tasks to complete with timeout
-        try:
-            done, still_pending = await asyncio.wait(
-                pending_tasks,
-                timeout=timeout_secs,
-                return_when=asyncio.ALL_COMPLETED,
-            )
-
-            if still_pending:
-                self._log.warning(
-                    f"{len(still_pending)} tasks still pending after {timeout_secs}s timeout",
-                )
-                for task in still_pending:
-                    self._log.warning(f"Task '{task.get_name()}' still pending")
-
-            # Log any exceptions from completed tasks
-            for task in done:
-                try:
-                    exc = task.exception()
-                    if exc and not isinstance(exc, asyncio.CancelledError):
-                        self._log.error(f"Task '{task.get_name()}' raised: {exc}")
-                except asyncio.CancelledError:
-                    pass  # Expected for cancelled tasks
-        except Exception as e:
-            self._log.exception("Error during task cleanup", e)
+        await cancel_tasks_with_timeout(self._tasks, self._log, timeout_secs)
 
     def submit_order(self, command: SubmitOrder) -> None:
         self._log.info(f"Submit {command.order}", LogColor.BLUE)

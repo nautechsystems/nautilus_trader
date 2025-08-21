@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import TYPE_CHECKING
+from weakref import WeakSet
 
 from msgspec import json as msgspec_json
 
@@ -60,6 +61,7 @@ from nautilus_trader.core.nautilus_pyo3 import WebSocketClientError
 from nautilus_trader.core.nautilus_pyo3 import WebSocketConfig
 from nautilus_trader.core.nautilus_pyo3 import hmac_signature
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.live.cancellation import cancel_tasks_with_timeout
 
 
 if TYPE_CHECKING:
@@ -148,7 +150,7 @@ class BybitWebSocketClient:
         self._is_authenticated = False
         self._ws_auth_timeout_secs = ws_auth_timeout_secs
 
-        self._reconnect_task: asyncio.Task | None = None
+        self._tasks: WeakSet[asyncio.Task] = WeakSet()
         self._auth_event = asyncio.Event()
 
         self._pending_order_requests: dict[str, WsOrderResponseMsgFuture] = {}
@@ -227,7 +229,8 @@ class BybitWebSocketClient:
 
         self._log.warning(f"Trying to reconnect to {self._base_url}")
         self._reconnecting = True
-        self._reconnect_task = self._loop.create_task(self._reconnect_wrapper())
+        task = self._loop.create_task(self._reconnect_wrapper())
+        self._tasks.add(task)
 
     async def _reconnect_wrapper(self) -> None:
         try:
@@ -254,6 +257,8 @@ class BybitWebSocketClient:
     async def disconnect(self) -> None:
         self._is_running = False
         self._reconnecting = False
+
+        await cancel_tasks_with_timeout(self._tasks, self._log)
 
         if self._client is None:
             self._log.warning("Cannot disconnect: not connected")

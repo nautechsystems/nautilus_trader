@@ -30,7 +30,6 @@ from weakref import WeakSet
 
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
-from nautilus_trader.common.component import Logger
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.config import NautilusConfig
 from nautilus_trader.common.enums import LogColor
@@ -70,6 +69,7 @@ from nautilus_trader.data.messages import UnsubscribeMarkPrices
 from nautilus_trader.data.messages import UnsubscribeOrderBook
 from nautilus_trader.data.messages import UnsubscribeQuoteTicks
 from nautilus_trader.data.messages import UnsubscribeTradeTicks
+from nautilus_trader.live.cancellation import cancel_tasks_with_timeout
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
 
@@ -199,7 +199,7 @@ class LiveDataClient(DataClient):
         try:
             e: BaseException | None = task.exception()
         except asyncio.CancelledError:
-            self._log.warning(f"Task '{task.get_name()}' was cancelled")
+            self._log.warning(f"Task '{task.get_name()}' was canceled")
             return
 
         if e:
@@ -312,7 +312,7 @@ class LiveDataClient(DataClient):
             The timeout in seconds to wait for tasks to cancel.
 
         """
-        await _cancel_pending_tasks_impl(self._tasks, self._log, timeout_secs)
+        await cancel_tasks_with_timeout(self._tasks, self._log, timeout_secs)
 
 
 class LiveMarketDataClient(MarketDataClient):
@@ -1063,52 +1063,4 @@ class LiveMarketDataClient(MarketDataClient):
             The timeout in seconds to wait for tasks to cancel.
 
         """
-        await _cancel_pending_tasks_impl(self._tasks, self._log, timeout_secs)
-
-
-def _log_task_exceptions(done_tasks: set[asyncio.Task], log: Logger | None) -> None:
-    if not log:
-        return
-
-    for task in done_tasks:
-        try:
-            exc = task.exception()
-            if exc and not isinstance(exc, asyncio.CancelledError):
-                log.error(f"Task '{task.get_name()}' raised: {exc}")
-        except asyncio.CancelledError:
-            pass  # Expected for cancelled tasks
-
-
-async def _cancel_pending_tasks_impl(
-    tasks: WeakSet[asyncio.Task],
-    log: Logger | None,
-    timeout_secs: float = 5.0,
-) -> None:
-    pending_tasks = [task for task in tasks if not task.done()]
-    if not pending_tasks:
-        return
-
-    # Cancel all tasks
-    for task in pending_tasks:
-        task.cancel()
-
-    if log:
-        log.debug(f"Canceling {len(pending_tasks)} pending tasks")
-
-    # Wait for tasks to complete with timeout
-    try:
-        done, still_pending = await asyncio.wait(
-            pending_tasks,
-            timeout=timeout_secs,
-            return_when=asyncio.ALL_COMPLETED,
-        )
-
-        if still_pending and log:
-            log.warning(
-                f"{len(still_pending)} tasks still pending after {timeout_secs}s timeout",
-            )
-
-        _log_task_exceptions(done, log)
-    except Exception as e:
-        if log:
-            log.exception("Error during task cleanup", e)
+        await cancel_tasks_with_timeout(self._tasks, self._log, timeout_secs)
