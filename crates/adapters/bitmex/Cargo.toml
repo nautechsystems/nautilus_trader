@@ -53,7 +53,6 @@ nautilus-serialization = { workspace = true }
 ahash = { workspace = true }
 anyhow = { workspace = true }
 async-stream = { workspace = true }
-base64 = { workspace = true }
 chrono = { workspace = true }
 dashmap = { workspace = true }
 derive_builder = { workspace = true }

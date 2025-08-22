@@ -4420,7 +4420,6 @@ dependencies = [
  "anyhow",
  "async-stream",
  "aws-lc-rs",
- "base64",
  "chrono",
  "criterion",
  "dashmap",
