@@ -12,12 +12,12 @@ The `nautilus-data` crate provides a comprehensive framework for handling market
 processing, and aggregation within the NautilusTrader ecosystem. This includes real-time
 data streaming, historical data management, and various aggregation methodologies:
 
-- High-performance data engine for orchestrating data operations
-- Data client infrastructure for connecting to market data providers
-- Bar aggregation machinery supporting tick, volume, value, and time-based aggregation
-- Order book management and delta processing capabilities
-- Subscription management and data request handling
-- Configurable data routing and processing pipelines
+- High-performance data engine for orchestrating data operations.
+- Data client infrastructure for connecting to market data providers.
+- Bar aggregation machinery supporting tick, volume, value, and time-based aggregation.
+- Order book management and delta processing capabilities.
+- Subscription management and data request handling.
+- Configurable data routing and processing pipelines.
 
 ## Platform
 
