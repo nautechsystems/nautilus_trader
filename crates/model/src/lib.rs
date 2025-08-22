@@ -15,8 +15,8 @@
 
 //! Trading domain model for [NautilusTrader](http://nautilustrader.io).
 //!
-//! The `nautilus-model` crate provides a type-safe domain model that forms the backbone of NautilusTrader
-//! and can serve as the foundation for other algorithmic trading systems.
+//! The `nautilus-model` crate provides a type-safe domain model that forms the backbone of the
+//! framework and can serve as the foundation for building algorithmic trading systems.
 //!
 //! # Platform
 //!

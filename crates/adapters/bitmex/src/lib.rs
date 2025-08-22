@@ -13,22 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! NautilusTrader adapter for the [BitMEX](https://bitmex.com) cryptocurrency derivatives exchange.
+//! [NautilusTrader](http://nautilustrader.io) adapter for the [BitMEX](https://bitmex.com) cryptocurrency exchange.
 //!
 //! The `nautilus-bitmex` crate provides strongly-typed client bindings (HTTP & WebSocket), data
 //! models and helper utilities that wrap the official **BitMEX API**.
 //!
 //! The official BitMEX API reference can be found at <https://www.bitmex.com/app/apiOverview>.
 //! All public links inside this crate reference the official documentation.
-//!
-//! # Feature flags
-//!
-//! This crate provides feature flags to control source code inclusion during compilation,
-//! depending on the intended use case, i.e. whether to provide Python bindings
-//! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
-//! or as part of a Rust only build.
-//!
-//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 //!
 //! # Platform
 //!
@@ -39,6 +30,16 @@
 //!
 //! NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
 //! highest level, with the aim of supporting mission-critical, trading system backtesting and live deployment workloads.
+//!
+//! # Feature flags
+//!
+//! This crate provides feature flags to control source code inclusion during compilation,
+//! depending on the intended use case, i.e. whether to provide Python bindings
+//! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
+//! or as part of a Rust only build.
+//!
+//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//! - `extension-module`: Builds as a Python extension module (used with `python`).
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]

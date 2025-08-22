@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! NautilusTrader adapter for the [Hyperliquid](https://hyperliquid.gitbook.io/hyperliquid-docs) decentralized exchange.
+//! [NautilusTrader](http://nautilustrader.io) adapter for the [Hyperliquid](https://hyperliquid.gitbook.io/hyperliquid-docs) decentralized exchange.
 //!
 //! The `nautilus-hyperliquid` crate provides integration with the Hyperliquid API for
 //! trading perpetual futures on a decentralized exchange.
@@ -36,6 +36,7 @@
 //! or as part of a Rust only build.
 //!
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//! - `extension-module`: Builds as a Python extension module (used with `python`).
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]

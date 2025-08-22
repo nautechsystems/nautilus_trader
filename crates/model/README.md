@@ -8,8 +8,8 @@
 
 Trading domain model for [NautilusTrader](http://nautilustrader.io).
 
-The `nautilus-model` crate provides a type-safe domain model that forms the backbone of NautilusTrader
-and can serve as the foundation for other algorithmic trading systems.
+The `nautilus-model` crate provides a type-safe domain model that forms the backbone of the framework
+and can serve as the foundation for building algorithmic trading systems.
 
 ## Platform
 
@@ -33,6 +33,7 @@ or as part of a Rust only build.
 - `stubs`: Enables type stubs for use in testing scenarios.
 - `high-precision`: Enables [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) to use 128-bit value types.
 - `defi`: Enables the DeFi (Decentralized Finance) domain model.
+- `extension-module`: Builds as a Python extension module (used with `python`).
 
 ## Documentation
 

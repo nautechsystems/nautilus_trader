@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! NautilusTrader adapter for [Coinbase International](https://www.coinbase.com/en/international-exchange) exchange.
+//! [NautilusTrader](http://nautilustrader.io) adapter for [Coinbase International](https://www.coinbase.com/en/international-exchange) exchange.
 //!
 //! The `nautilus-coinbase-intx` crate provides integration with the Coinbase International API for
 //! institutional trading on their derivatives exchange.
@@ -36,6 +36,7 @@
 //! or as part of a Rust only build.
 //!
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//! - `extension-module`: Builds as a Python extension module (used with `python`).
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]

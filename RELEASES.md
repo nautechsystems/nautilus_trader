@@ -106,6 +106,7 @@ Released on TBD (UTC).
 - Refined `subscribe_bars` in IB adapter (#2852), thanks @faysou
 - Refined `get_start_time` in `TimeBarAggregator` (#2866), thanks @faysou
 - Refined option spread execution (#2859), thanks @faysou
+- Refined `subscribe_historical_bars` in IB adapter (#2870), thanks @faysou
 - Relaxed conditions on `start` and `end` of instrument requests in adapters (#2867), thanks @faysou
 - Updated `request_aggregated_bars` example (#2815), thanks @faysou
 - Updated PostgreSQL connection parameters to use 'nautilus' user (#2805), thanks @stastnypremysl

@@ -41,6 +41,7 @@ or as part of a Rust only build.
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 - `redis`: Enables the Redis cache database and message bus backing implementations.
 - `sql`: Enables the SQL models and cache database.
+- `extension-module`: Builds as a Python extension module (used with `python`).
 
 ## Documentation
 
