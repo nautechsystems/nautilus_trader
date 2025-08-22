@@ -25,7 +25,11 @@ pub mod live;
 
 use pyo3::prelude::*;
 
-/// Loaded as `nautilus_pyo3.databento`.
+/// Databento Python module.
+///
+/// The module is exposed under different paths depending on the build configuration:
+/// - With `cython-compat` feature: `nautilus_trader.core.nautilus_pyo3.databento`
+/// - Without `cython-compat`: `nautilus_trader.databento` (via re-export)
 ///
 /// # Errors
 ///
