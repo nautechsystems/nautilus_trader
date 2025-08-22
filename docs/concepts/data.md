@@ -543,6 +543,17 @@ The current plan is to eventually phase out the Python schemas module, so that a
 
 The data catalog can be initialized from a `NAUTILUS_PATH` environment variable, or by explicitly passing in a path like object.
 
+:::note NAUTILUS_PATH Environment Variable
+The `NAUTILUS_PATH` environment variable should point to the **root** directory containing your Nautilus data. The catalog will automatically append `/catalog` to this path.
+
+For example:
+
+- If `NAUTILUS_PATH=/home/user/trading_data`
+- Then the catalog will be located at `/home/user/trading_data/catalog`
+
+This is a common pattern when using `ParquetDataCatalog.from_env()` - make sure your `NAUTILUS_PATH` points to the parent directory, not the catalog directory itself.
+:::
+
 The following example shows how to initialize a data catalog where there is pre-existing data already written to disk at the given path.
 
 ```python
