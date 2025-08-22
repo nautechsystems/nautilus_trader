@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! NautilusTrader adapter for the [OKX](https://www.okx.com) cryptocurrency exchange.
+//! [NautilusTrader](http://nautilustrader.io) adapter for the [OKX](https://www.okx.com) cryptocurrency exchange.
 //!
 //! The `nautilus-okx` crate provides strongly-typed client bindings (HTTP & WebSocket), data
 //! models and helper utilities that wrap the official **OKX v5 API**.
@@ -39,6 +39,7 @@
 //! or as part of a Rust only build.
 //!
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//! - `extension-module`: Builds as a Python extension module (used with `python`).
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]

@@ -6,6 +6,11 @@
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
 
+[NautilusTrader](http://nautilustrader.io) adapter for [Databento](https://databento.com).
+
+The `nautilus-databento` crate provides a complete integration with the Databento API for
+accessing institutional-grade market data feeds across multiple venues and asset classes.
+
 ## Platform
 
 [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade

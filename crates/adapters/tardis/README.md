@@ -16,6 +16,15 @@ and also deploy those same strategies live, with no code changes.
 NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
 highest level, with the aim of supporting mission-critical, trading system backtesting and live deployment workloads.
 
+## Feature flags
+
+This crate provides feature flags to control source code inclusion during compilation,
+depending on the intended use case:
+
+- `replay`: Enables market data replay functionality (enabled by default).
+- `extension-module`: Builds the crate as a Python extension module.
+- `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+
 ## Documentation
 
 See [the docs](https://docs.rs/nautilus-tardis) for more detailed usage.

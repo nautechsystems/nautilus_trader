@@ -21,6 +21,13 @@ and also deploy those same strategies live, with no code changes.
 NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
 highest level, with the aim of supporting mission-critical, trading system backtesting and live deployment workloads.
 
+## Feature Flags
+
+This crate provides feature flags to control source code inclusion during compilation:
+
+- `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+- `extension-module`: Builds as a Python extension module (used with `python`).
+
 ## Documentation
 
 See [the docs](https://docs.rs/nautilus-okx) for more detailed usage.

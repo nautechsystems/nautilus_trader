@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! NautilusTrader adapter for the [Databento](https://databento.com) market data provider.
+//! [NautilusTrader](http://nautilustrader.io) adapter for [Databento](https://databento.com).
 //!
 //! The `nautilus-databento` crate provides a complete integration with the Databento API for
 //! accessing institutional-grade market data feeds across multiple venues and asset classes.

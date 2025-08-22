@@ -33,6 +33,13 @@
 //!
 //! NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
 //! highest level, with the aim of supporting mission-critical, trading system backtesting and live deployment workloads.
+//!
+//! # Feature flags
+//!
+//! This crate provides feature flags to control source code inclusion during compilation,
+//! depending on the intended use case:
+//!
+//! - `hypersync`: Enables Hypersync blockchain functionality for high-performance blockchain data access.
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]

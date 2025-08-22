@@ -258,6 +258,7 @@ For modules with feature flags, document them clearly:
 //!
 //! - `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//! - `extension-module`: Builds as a Python extension module (used with `python`).
 //! - `stubs`: Enables type stubs for use in testing scenarios.
 ```
 

@@ -12,10 +12,10 @@ The `nautilus-cli` crate provides a comprehensive command-line interface for man
 operating NautilusTrader installations. It includes tools for database management,
 system configuration, and operational utilities:
 
-- Database initialization and management commands
-- PostgreSQL schema setup and maintenance
-- Configuration validation and setup utilities
-- System administration and operational tools
+- Database initialization and management commands.
+- PostgreSQL schema setup and maintenance.
+- Configuration validation and setup utilities.
+- System administration and operational tools.
 
 ## Platform
 
@@ -26,6 +26,13 @@ and also deploy those same strategies live, with no code changes.
 
 NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
 highest level, with the aim of supporting mission-critical, trading system backtesting and live deployment workloads.
+
+## Feature flags
+
+This crate provides feature flags to control source code inclusion during compilation,
+depending on the intended use case:
+
+- `hypersync`: Enables Hypersync blockchain functionality for high-performance blockchain data access.
 
 ## Documentation
 
