@@ -83,8 +83,8 @@ The handlers are called in sequence from the most specific to the most general.
 
 These handlers are triggered by lifecycle state changes of the `Strategy`. It's recommended to:
 
-- Use the `on_start` method to initialize your strategy (e.g., fetch instruments, subscribe to data)
-- Use the `on_stop` method for cleanup tasks (e.g., cancel open orders, close open positions, unsubscribe from data)
+- Use the `on_start` method to initialize your strategy (e.g., fetch instruments, subscribe to data).
+- Use the `on_stop` method for cleanup tasks (e.g., cancel open orders, close open positions, unsubscribe from data).
 
 ```python
 def on_start(self) -> None:
@@ -405,9 +405,9 @@ can still be initialized directly with the `Order.__init__(...)` constructor if 
 
 The component a `SubmitOrder` or `SubmitOrderList` command will flow to for execution depends on the following:
 
-- If an `emulation_trigger` is specified, the command will *firstly* be sent to the `OrderEmulator`
-- If an `exec_algorithm_id` is specified (with no `emulation_trigger`), the command will *firstly* be sent to the relevant `ExecAlgorithm`
-- Otherwise, the command will *firstly* be sent to the `RiskEngine`
+- If an `emulation_trigger` is specified, the command will *firstly* be sent to the `OrderEmulator`.
+- If an `exec_algorithm_id` is specified (with no `emulation_trigger`), the command will *firstly* be sent to the relevant `ExecAlgorithm`.
+- Otherwise, the command will *firstly* be sent to the `RiskEngine`.
 
 This example submits a `LIMIT` BUY order for emulation (see [OrderEmulator](advanced/emulated_orders.md)):
 

@@ -11,10 +11,10 @@ The `nautilus-analysis` crate provides a comprehensive suite of portfolio analys
 statistics for evaluating trading strategies and portfolios. This includes return-based metrics,
 PnL-based statistics, and risk measurements commonly used in quantitative finance:
 
-- Portfolio analyzer for tracking account states and positions
-- Extensive collection of performance statistics and risk metrics
-- Flexible statistic calculation framework supporting different data sources
-- Support for multi-currency portfolios and unrealized PnL calculations
+- Portfolio analyzer for tracking account states and positions.
+- Extensive collection of performance statistics and risk metrics.
+- Flexible statistic calculation framework supporting different data sources.
+- Support for multi-currency portfolios and unrealized PnL calculations.
 
 ## Platform
 
