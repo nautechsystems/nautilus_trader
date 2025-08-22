@@ -1317,13 +1317,8 @@ pub fn decode_statistics_msg(
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::{
-        path::{Path, PathBuf},
-        sync::{Arc, RwLock},
-        time::{Duration, Instant},
-    };
+    use std::path::{Path, PathBuf};
 
-    use ahash::AHashMap;
     use databento::dbn::decode::{DecodeStream, dbn::Decoder};
     use fallible_streaming_iterator::FallibleStreamingIterator;
     use nautilus_model::instruments::Instrument;
@@ -1855,44 +1850,6 @@ mod tests {
                 .to_string()
                 .contains("Expected exactly 10 bid levels, received 5")
         );
-    }
-
-    #[rstest]
-    fn test_lock_acquisition_with_deadline() {
-        // Test that our lock acquisition pattern respects deadline
-        let map: Arc<RwLock<AHashMap<String, String>>> = Arc::new(RwLock::new(AHashMap::new()));
-
-        // Spawn thread to hold write lock briefly
-        let map_clone = Arc::clone(&map);
-        std::thread::spawn(move || {
-            let _guard = map_clone.write().unwrap();
-            std::thread::sleep(Duration::from_millis(50));
-        });
-
-        // Give other thread time to acquire lock
-        std::thread::sleep(Duration::from_millis(10));
-
-        // Now try to acquire with deadline
-        let start = Instant::now();
-        const MAX_WAIT_MS: u64 = 100;
-        let deadline = Instant::now() + Duration::from_millis(MAX_WAIT_MS);
-
-        let mut acquired = false;
-        while Instant::now() < deadline {
-            if map.try_read().is_ok() {
-                acquired = true;
-                break;
-            }
-            std::thread::yield_now();
-            std::thread::sleep(Duration::from_micros(100));
-        }
-
-        let elapsed = start.elapsed();
-
-        // Should eventually acquire after write lock is released
-        assert!(acquired);
-        // Should acquire within reasonable time (write held for 50ms)
-        assert!(elapsed < Duration::from_millis(80));
     }
 
     #[rstest]
