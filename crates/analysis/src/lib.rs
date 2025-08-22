@@ -42,7 +42,6 @@
 //! or as part of a Rust only build.
 //!
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
-//! - `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
 //! - `extension-module`: Builds the crate as a Python extension module.
 
 #![warn(rustc::all)]
