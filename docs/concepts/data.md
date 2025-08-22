@@ -551,7 +551,7 @@ For example:
 - If `NAUTILUS_PATH=/home/user/trading_data`
 - Then the catalog will be located at `/home/user/trading_data/catalog`
 
-This is a common gotcha when using `ParquetDataCatalog.from_env()` - make sure your `NAUTILUS_PATH` points to the parent directory, not the catalog directory itself.
+This is a common pattern when using `ParquetDataCatalog.from_env()` - make sure your `NAUTILUS_PATH` points to the parent directory, not the catalog directory itself.
 :::
 
 The following example shows how to initialize a data catalog where there is pre-existing data already written to disk at the given path.
