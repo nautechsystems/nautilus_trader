@@ -156,6 +156,15 @@ class InteractiveBrokersInstrumentProviderConfig(InstrumentProviderConfig, froze
                 self.build_futures_chain,
                 self.min_expiry_days,
                 self.max_expiry_days,
+                self.symbology_method,
+                self.convert_exchange_to_mic_venue,
+                (
+                    tuple(sorted(self.symbol_to_mic_venue.items()))
+                    if self.symbol_to_mic_venue
+                    else None
+                ),
+                self.cache_validity_days,
+                self.pickle_path,
             ),
         )
 
