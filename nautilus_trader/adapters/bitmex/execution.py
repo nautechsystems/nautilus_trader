@@ -130,9 +130,6 @@ class BitmexExecutionClient(LiveExecutionClient):
         return self._instrument_provider  # type: ignore
 
     def _determine_ws_url(self, config: BitmexExecClientConfig) -> str:
-        """
-        Determine the WebSocket URL based on configuration.
-        """
         if config.base_url_ws:
             return config.base_url_ws
         elif config.testnet:
@@ -140,10 +137,26 @@ class BitmexExecutionClient(LiveExecutionClient):
         else:
             return "wss://ws.bitmex.com/realtime"
 
+    def _cache_instruments(self) -> None:
+        # Ensures instrument definitions are available for correct
+        # price and size precisions when parsing responses
+        instruments_pyo3 = self._instrument_provider.instruments_pyo3()  # type: ignore
+
+        for inst in instruments_pyo3:
+            self._http_client.add_instrument(inst)
+
+        self._log.debug("Cached instruments", LogColor.MAGENTA)
+
     async def _connect(self) -> None:
+        await self._instrument_provider.initialize()
+        self._cache_instruments()
+
+        instruments = self._instrument_provider.instruments_pyo3()  # type: ignore
+
         # Connect WebSocket client (non-blocking)
         future = asyncio.ensure_future(
             self._ws_client.connect(
+                instruments,
                 self._handle_msg,
             ),
         )

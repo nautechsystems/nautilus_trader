@@ -15,6 +15,7 @@
 
 use std::num::NonZero;
 
+use ahash::AHashMap;
 use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime, uuid::UUID4};
 use nautilus_model::{
     data::{
@@ -30,6 +31,7 @@ use nautilus_model::{
     },
     enums::{AggregationSource, BarAggregation, OrderSide, PriceType, RecordFlag},
     identifiers::{AccountId, ClientOrderId, InstrumentId, OrderListId, TradeId, VenueOrderId},
+    instruments::{Instrument, InstrumentAny},
     reports::{fill::FillReport, order::OrderStatusReport, position::PositionStatusReport},
     types::{
         currency::Currency,
@@ -38,6 +40,7 @@ use nautilus_model::{
         quantity::{QUANTITY_MAX, Quantity},
     },
 };
+use ustr::Ustr;
 use uuid::Uuid;
 
 use super::{
@@ -557,7 +560,10 @@ pub fn parse_margin_msg(msg: MarginMsg) -> (AccountId, Currency, i64) {
 ///
 /// Returns a Vec of Data containing mark and/or index price updates.
 /// Returns an empty Vec if no relevant price is present.
-pub fn parse_instrument_msg(msg: InstrumentMsg) -> Vec<Data> {
+pub fn parse_instrument_msg(
+    msg: InstrumentMsg,
+    instruments_cache: &AHashMap<Ustr, InstrumentAny>,
+) -> Vec<Data> {
     let mut updates = Vec::new();
     let is_index = is_index_symbol(&msg.symbol);
 
@@ -580,10 +586,16 @@ pub fn parse_instrument_msg(msg: InstrumentMsg) -> Vec<Data> {
     let ts_event = parse_optional_datetime_to_unix_nanos(&Some(msg.timestamp), "");
     let ts_init = get_atomic_clock_realtime().get_time_ns();
 
+    // Look up instrument for proper precision
+    let price_precision = instruments_cache
+        .get(&Ustr::from(&msg.symbol))
+        .map(|inst| inst.price_precision())
+        .unwrap_or(1); // Default to 1 if instrument not found
+
     // Add mark price update if present
     // For index symbols, markPrice equals lastPrice and is valid to emit
     if let Some(mark_price) = msg.mark_price {
-        let price = Price::from(mark_price.to_string().as_str());
+        let price = Price::new(mark_price, price_precision);
         updates.push(Data::MarkPriceUpdate(MarkPriceUpdate::new(
             instrument_id,
             price,
@@ -594,7 +606,7 @@ pub fn parse_instrument_msg(msg: InstrumentMsg) -> Vec<Data> {
 
     // Add index price update if present
     if let Some(index_price) = effective_index_price {
-        let price = Price::from(index_price.to_string().as_str());
+        let price = Price::new(index_price, price_precision);
         updates.push(Data::IndexPriceUpdate(IndexPriceUpdate::new(
             instrument_id,
             price,
@@ -647,7 +659,9 @@ mod tests {
     use nautilus_model::{
         data::quote::QuoteTick,
         enums::{AggressorSide, BookAction, LiquiditySide, PositionSide},
-        identifiers::InstrumentId,
+        identifiers::{InstrumentId, Symbol},
+        instruments::CryptoPerpetual,
+        types::Currency,
     };
     use rstest::rstest;
 
@@ -932,7 +946,8 @@ mod tests {
     fn test_parse_instrument_msg_both_prices() {
         let json_data = load_test_json("ws_instrument.json");
         let msg: InstrumentMsg = serde_json::from_str(&json_data).unwrap();
-        let updates = parse_instrument_msg(msg);
+        let instruments_cache = AHashMap::new();
+        let updates = parse_instrument_msg(msg, &instruments_cache);
 
         // XBTUSD is not an index symbol, so it should have both mark and index prices
         assert_eq!(updates.len(), 2);
@@ -962,7 +977,8 @@ mod tests {
             serde_json::from_str(&load_test_json("ws_instrument.json")).unwrap();
         msg.index_price = None;
 
-        let updates = parse_instrument_msg(msg);
+        let instruments_cache = AHashMap::new();
+        let updates = parse_instrument_msg(msg, &instruments_cache);
 
         assert_eq!(updates.len(), 1);
         match &updates[0] {
@@ -980,7 +996,8 @@ mod tests {
             serde_json::from_str(&load_test_json("ws_instrument.json")).unwrap();
         msg.mark_price = None;
 
-        let updates = parse_instrument_msg(msg);
+        let instruments_cache = AHashMap::new();
+        let updates = parse_instrument_msg(msg, &instruments_cache);
 
         assert_eq!(updates.len(), 1);
         match &updates[0] {
@@ -1000,7 +1017,8 @@ mod tests {
         msg.index_price = None;
         msg.last_price = None;
 
-        let updates = parse_instrument_msg(msg);
+        let instruments_cache = AHashMap::new();
+        let updates = parse_instrument_msg(msg, &instruments_cache);
         assert_eq!(updates.len(), 0);
     }
 
@@ -1015,7 +1033,41 @@ mod tests {
         msg.mark_price = Some(119163.05); // Index symbols have mark price equal to last price
         msg.index_price = None;
 
-        let updates = parse_instrument_msg(msg);
+        // Create instruments cache with proper precision for .BXBT
+        let mut instruments_cache = AHashMap::new();
+        let instrument_id = InstrumentId::from(".BXBT.BITMEX");
+        let instrument = CryptoPerpetual::new(
+            instrument_id,
+            Symbol::from(".BXBT"),
+            Currency::BTC(),
+            Currency::USD(),
+            Currency::USD(),
+            false, // is_inverse
+            2,     // price_precision (for 119163.05)
+            8,     // size_precision
+            Price::from("0.01"),
+            Quantity::from("0.00000001"),
+            None,                 // multiplier
+            None,                 // lot_size
+            None,                 // max_quantity
+            None,                 // min_quantity
+            None,                 // max_notional
+            None,                 // min_notional
+            None,                 // max_price
+            None,                 // min_price
+            None,                 // margin_init
+            None,                 // margin_maint
+            None,                 // maker_fee
+            None,                 // taker_fee
+            UnixNanos::default(), // ts_event
+            UnixNanos::default(), // ts_init
+        );
+        instruments_cache.insert(
+            Ustr::from(".BXBT"),
+            InstrumentAny::CryptoPerpetual(instrument),
+        );
+
+        let updates = parse_instrument_msg(msg, &instruments_cache);
 
         assert_eq!(updates.len(), 2);
 

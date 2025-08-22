@@ -132,18 +132,21 @@ class BitmexDataClient(LiveMarketDataClient):
         return self._instrument_provider  # type: ignore
 
     async def _connect(self) -> None:
-        # Initialize instruments
         await self._instrument_provider.initialize()
+        self._cache_instruments()
         self._send_all_instruments_to_data_engine()
+
+        instruments = self.instrument_provider.instruments_pyo3()
 
         # Connect WebSocket client (non-blocking)
         future = asyncio.ensure_future(
             self._ws_client.connect(
+                instruments,
                 self._handle_msg,
             ),
         )
         self._ws_client_futures.add(future)
-        self._log.info(f"Connected to WebSocket {self._ws_client.url}", LogColor.BLUE)
+        self._log.info(f"Connected to websocket {self._ws_client.url}", LogColor.BLUE)
 
         # Start periodic instrument updates if configured
         if self._update_instruments_interval_mins:
@@ -185,9 +188,6 @@ class BitmexDataClient(LiveMarketDataClient):
         self._ws_client_futures.clear()
 
     def _determine_ws_url(self, config: BitmexDataClientConfig) -> str:
-        """
-        Determine the WebSocket URL based on configuration.
-        """
         if config.base_url_ws:
             return config.base_url_ws
         elif config.testnet:
@@ -362,6 +362,16 @@ class BitmexDataClient(LiveMarketDataClient):
                 return
             except Exception as e:
                 self._log.error(f"Error updating instruments: {e}")
+
+    def _cache_instruments(self) -> None:
+        # Ensures instrument definitions are available for correct
+        # price and size precisions when parsing responses
+        instruments_pyo3 = self._instrument_provider.instruments_pyo3()  # type: ignore
+
+        for inst in instruments_pyo3:
+            self._http_client.add_instrument(inst)
+
+        self._log.debug("Cached instruments", LogColor.MAGENTA)
 
     def _send_all_instruments_to_data_engine(self) -> None:
         """

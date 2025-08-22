@@ -44,7 +44,7 @@ symbol = "XBTUSD"  # Bitcoin perpetual swap
 # Configure the trading node
 config_node = TradingNodeConfig(
     trader_id=TraderId("TESTER-001"),
-    logging=LoggingConfig(log_level="INFO", use_pyo3=True),
+    logging=LoggingConfig(log_level="DEBUG", use_pyo3=True),
     exec_engine=LiveExecEngineConfig(
         reconciliation=False,  # Not applicable
     ),
@@ -76,7 +76,7 @@ config_tester = DataTesterConfig(
     # subscribe_funding_rates=True,
     # subscribe_book_deltas=True,
     # subscribe_book_depth=True,
-    subscribe_book_at_interval=True,
+    # subscribe_book_at_interval=True,
     book_type=BookType.L2_MBP,
     book_depth=25,
     book_interval_ms=100,

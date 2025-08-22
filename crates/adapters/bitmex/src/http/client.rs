@@ -30,16 +30,20 @@
 use std::{
     collections::HashMap,
     num::NonZeroU32,
-    sync::{Arc, LazyLock},
+    sync::{Arc, LazyLock, Mutex},
 };
 
 use chrono::Utc;
 use nautilus_core::{consts::NAUTILUS_USER_AGENT, env::get_env_var};
-use nautilus_model::identifiers::Symbol;
+use nautilus_model::{
+    identifiers::Symbol,
+    instruments::{Instrument as InstrumentTrait, InstrumentAny},
+};
 use nautilus_network::{http::HttpClient, ratelimiter::quota::Quota};
 use reqwest::{Method, StatusCode};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
+use ustr::Ustr;
 
 use super::{
     error::{BitmexErrorResponse, BitmexHttpError},
@@ -388,6 +392,7 @@ impl BitmexHttpInnerClient {
 )]
 pub struct BitmexHttpClient {
     inner: Arc<BitmexHttpInnerClient>,
+    instruments_cache: Arc<Mutex<HashMap<Ustr, InstrumentAny>>>,
 }
 
 impl Default for BitmexHttpClient {
@@ -423,6 +428,7 @@ impl BitmexHttpClient {
 
         Self {
             inner: Arc::new(inner),
+            instruments_cache: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -637,5 +643,17 @@ impl BitmexHttpClient {
     ) -> Result<Vec<Position>, BitmexHttpError> {
         let inner = self.inner.clone();
         inner.http_get_positions(params).await
+    }
+
+    /// Add an instrument to the cache for precision lookups.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the instruments cache mutex is poisoned.
+    pub fn add_instrument(&mut self, instrument: InstrumentAny) {
+        self.instruments_cache
+            .lock()
+            .unwrap()
+            .insert(instrument.raw_symbol().inner(), instrument);
     }
 }

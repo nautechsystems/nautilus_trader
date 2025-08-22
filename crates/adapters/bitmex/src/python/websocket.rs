@@ -16,7 +16,9 @@
 use futures_util::StreamExt;
 use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
-    data::bar::BarType, identifiers::InstrumentId, python::data::data_to_pycapsule,
+    data::bar::BarType,
+    identifiers::InstrumentId,
+    python::{data::data_to_pycapsule, instruments::pyobject_to_instrument_any},
 };
 use pyo3::{IntoPyObjectExt, exceptions::PyRuntimeError, prelude::*};
 use pyo3_async_runtimes::tokio::get_runtime;
@@ -70,10 +72,18 @@ impl BitmexWebSocketClient {
     fn py_connect<'py>(
         &mut self,
         py: Python<'py>,
+        instruments: Vec<PyObject>,
         callback: PyObject,
     ) -> PyResult<Bound<'py, PyAny>> {
+        let mut rust_instruments = Vec::new();
+
+        for inst in instruments {
+            let inst_any = pyobject_to_instrument_any(py, inst)?;
+            rust_instruments.push(inst_any);
+        }
+
         get_runtime().block_on(async {
-            self.connect()
+            self.connect(rust_instruments)
                 .await
                 .map_err(|e| PyRuntimeError::new_err(e.to_string()))
         })?;

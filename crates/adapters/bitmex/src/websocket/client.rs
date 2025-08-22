@@ -22,10 +22,10 @@
 
 use std::sync::{
     Arc,
-    atomic::{AtomicBool, AtomicU64, Ordering},
+    atomic::{AtomicBool, Ordering},
 };
 
-use ahash::AHashSet;
+use ahash::{AHashMap, AHashSet};
 use dashmap::DashMap;
 use futures_util::{Stream, StreamExt};
 use nautilus_common::runtime::get_runtime;
@@ -34,7 +34,8 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::{Data, bar::BarType},
-    identifiers::{InstrumentId, Symbol},
+    identifiers::InstrumentId,
+    instruments::{Instrument, InstrumentAny},
 };
 use nautilus_network::websocket::{Consumer, MessageReader, WebSocketClient, WebSocketConfig};
 use reqwest::header::USER_AGENT;
@@ -54,12 +55,6 @@ use super::{
 };
 use crate::{consts::BITMEX_WS_URL, credential::Credential};
 
-#[derive(Debug, Clone, Default)]
-struct InstrumentSubscriptionFlags {
-    mark_prices: bool,
-    index_prices: bool,
-}
-
 /// Provides a WebSocket client for connecting to the [BitMEX](https://bitmex.com) real-time API.
 #[derive(Clone, Debug)]
 #[cfg_attr(
@@ -75,8 +70,7 @@ pub struct BitmexWebSocketClient {
     signal: Arc<AtomicBool>,
     task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
     subscriptions: Arc<DashMap<String, AHashSet<Ustr>>>,
-    instrument_subscriptions: Arc<DashMap<Symbol, InstrumentSubscriptionFlags>>,
-    message_count: Arc<AtomicU64>,
+    instruments_cache: Arc<AHashMap<Ustr, InstrumentAny>>,
 }
 
 impl BitmexWebSocketClient {
@@ -106,8 +100,7 @@ impl BitmexWebSocketClient {
             signal: Arc::new(AtomicBool::new(false)),
             task_handle: None,
             subscriptions: Arc::new(DashMap::new()),
-            instrument_subscriptions: Arc::new(DashMap::new()),
-            message_count: Arc::new(AtomicU64::new(0)),
+            instruments_cache: Arc::new(AHashMap::new()),
         })
     }
 
@@ -155,21 +148,40 @@ impl BitmexWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if the WebSocket connection fails or authentication fails (if credentials provided).
-    pub async fn connect(&mut self) -> Result<(), BitmexWsError> {
+    pub async fn connect(&mut self, instruments: Vec<InstrumentAny>) -> Result<(), BitmexWsError> {
         let reader = self.connect_inner().await?;
+
+        let mut instruments_map: AHashMap<Ustr, InstrumentAny> = AHashMap::new();
+        for inst in instruments {
+            instruments_map.insert(inst.symbol().inner(), inst.clone());
+        }
+        self.instruments_cache = Arc::new(instruments_map.clone());
 
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
         self.rx = Some(Arc::new(rx));
         let signal = self.signal.clone();
-        let message_count = self.message_count.clone();
+        let instruments_cache = self.instruments_cache.clone();
 
         let stream_handle = get_runtime().spawn(async move {
-            BitmexUnifiedFeedHandler::new(reader, signal, message_count, tx)
+            BitmexUnifiedFeedHandler::new(reader, signal, tx, instruments_cache)
                 .run()
                 .await;
         });
 
         self.task_handle = Some(Arc::new(stream_handle));
+
+        if let Some(inner) = &self.inner {
+            let subscribe_msg = serde_json::json!({
+                "op": "subscribe",
+                "args": ["instrument"]
+            });
+
+            if let Err(e) = inner.send_text(subscribe_msg.to_string(), None).await {
+                log::error!("Failed to subscribe to instruments: {e}");
+            } else {
+                log::debug!("Subscribed to all instruments");
+            }
+        }
 
         Ok(())
     }
@@ -281,13 +293,22 @@ impl BitmexWebSocketClient {
     ///
     /// Panics if the task handle cannot be unwrapped (should never happen in normal usage).
     pub async fn close(&mut self) -> Result<(), BitmexWsError> {
-        if let Some(inner) = &self.inner {
-            inner.disconnect().await;
-        } else {
-            log::error!("Error on close: not connected");
-        }
+        log::debug!("Starting close process");
 
         self.signal.store(true, Ordering::Relaxed);
+
+        if let Some(inner) = &self.inner {
+            log::debug!("Disconnecting websocket");
+
+            match tokio::time::timeout(Duration::from_secs(3), inner.disconnect()).await {
+                Ok(()) => log::debug!("Websocket disconnected successfully"),
+                Err(_) => {
+                    log::warn!("Timeout waiting for websocket disconnect, continuing with cleanup")
+                }
+            }
+        } else {
+            log::debug!("No active connection to disconnect");
+        }
 
         // Clean up stream handle with timeout
         if let Some(stream_handle) = self.task_handle.take() {
@@ -327,6 +348,7 @@ impl BitmexWebSocketClient {
     ///
     /// Returns an error if the WebSocket is not connected or if sending the subscription message fails.
     pub async fn subscribe(&self, topics: Vec<String>) -> Result<(), BitmexWsError> {
+        log::debug!("Subscribing to topics: {:?}", topics);
         // Track subscriptions
         for topic in &topics {
             if let Some((channel, symbol)) = topic.split_once(':') {
@@ -363,7 +385,13 @@ impl BitmexWebSocketClient {
     ///
     /// Returns an error if the WebSocket is not connected or if sending the unsubscription message fails.
     async fn unsubscribe(&self, topics: Vec<String>) -> Result<(), BitmexWsError> {
-        // Remove from tracked subscriptions
+        log::debug!("Attempting to unsubscribe from topics: {:?}", topics);
+
+        if self.signal.load(Ordering::Relaxed) {
+            log::debug!("Shutdown signal detected, skipping unsubscribe");
+            return Ok(());
+        }
+
         for topic in &topics {
             if let Some((channel, symbol)) = topic.split_once(':') {
                 if let Some(mut entry) = self.subscriptions.get_mut(channel) {
@@ -373,7 +401,6 @@ impl BitmexWebSocketClient {
                     }
                 }
             } else {
-                // Topic without symbol
                 self.subscriptions.remove(topic);
             }
         }
@@ -384,12 +411,11 @@ impl BitmexWebSocketClient {
         });
 
         if let Some(inner) = &self.inner {
-            inner
-                .send_text(message.to_string(), None)
-                .await
-                .map_err(|e| BitmexWsError::SubscriptionError(e.to_string()))?;
+            if let Err(e) = inner.send_text(message.to_string(), None).await {
+                log::debug!("Error sending unsubscribe message: {e}");
+            }
         } else {
-            log::error!("Cannot send message: not connected");
+            log::debug!("Cannot send unsubscribe message: not connected");
         }
 
         Ok(())
@@ -400,19 +426,15 @@ impl BitmexWebSocketClient {
         self.subscriptions.len()
     }
 
-    /// Get the total number of messages received.
-    pub fn message_count(&self) -> u64 {
-        self.message_count.load(Ordering::Relaxed)
-    }
-
     /// Subscribe to instrument updates for all instruments on the venue.
     ///
     /// # Errors
     ///
     /// Returns an error if the WebSocket is not connected or if the subscription fails.
     pub async fn subscribe_instruments(&self) -> Result<(), BitmexWsError> {
-        let topic = WsTopic::Instrument;
-        self.subscribe(vec![topic.to_string()]).await
+        // Already subscribed automatically on connection
+        log::debug!("Already subscribed to all instruments on connection, skipping");
+        Ok(())
     }
 
     /// Subscribe to instrument updates (mark/index prices) for the specified instrument.
@@ -424,9 +446,11 @@ impl BitmexWebSocketClient {
         &self,
         instrument_id: InstrumentId,
     ) -> Result<(), BitmexWsError> {
-        let topic = WsTopic::Instrument;
-        let symbol = instrument_id.symbol.as_str();
-        self.subscribe(vec![format!("{topic}:{symbol}")]).await
+        // Already subscribed to all instruments on connection
+        log::debug!(
+            "Already subscribed to all instruments on connection (includes {instrument_id}), skipping"
+        );
+        Ok(())
     }
 
     /// Subscribe to order book updates for the specified instrument.
@@ -517,20 +541,7 @@ impl BitmexWebSocketClient {
         &self,
         instrument_id: InstrumentId,
     ) -> Result<(), BitmexWsError> {
-        let symbol = instrument_id.symbol;
-        let mut entry = self.instrument_subscriptions.entry(symbol).or_default();
-
-        if !entry.mark_prices {
-            entry.mark_prices = true;
-            let needs_subscription = !entry.index_prices;
-            drop(entry);
-
-            if needs_subscription {
-                self.subscribe_instrument(instrument_id).await?;
-            }
-        }
-
-        Ok(())
+        self.subscribe_instrument(instrument_id).await
     }
 
     /// Subscribe to index price updates for the specified instrument.
@@ -542,20 +553,7 @@ impl BitmexWebSocketClient {
         &self,
         instrument_id: InstrumentId,
     ) -> Result<(), BitmexWsError> {
-        let symbol = instrument_id.symbol;
-        let mut entry = self.instrument_subscriptions.entry(symbol).or_default();
-
-        if !entry.index_prices {
-            entry.index_prices = true;
-            let needs_subscription = !entry.mark_prices;
-            drop(entry);
-
-            if needs_subscription {
-                self.subscribe_instrument(instrument_id).await?;
-            }
-        }
-
-        Ok(())
+        self.subscribe_instrument(instrument_id).await
     }
 
     /// Subscribe to funding rate updates for the specified instrument.
@@ -589,8 +587,11 @@ impl BitmexWebSocketClient {
     ///
     /// Returns an error if the WebSocket is not connected or if the unsubscription fails.
     pub async fn unsubscribe_instruments(&self) -> Result<(), BitmexWsError> {
-        let topic = WsTopic::Instrument;
-        self.unsubscribe(vec![topic.to_string()]).await
+        // No-op: instruments are required for proper operation
+        log::debug!(
+            "Instruments subscription maintained for proper operation, skipping unsubscribe"
+        );
+        Ok(())
     }
 
     /// Unsubscribe from instrument updates (mark/index prices) for the specified instrument.
@@ -602,9 +603,11 @@ impl BitmexWebSocketClient {
         &self,
         instrument_id: InstrumentId,
     ) -> Result<(), BitmexWsError> {
-        let topic = WsTopic::Instrument;
-        let symbol = instrument_id.symbol.as_str();
-        self.unsubscribe(vec![format!("{topic}:{symbol}")]).await
+        // No-op: instruments are required for proper operation
+        log::debug!(
+            "Instruments subscription maintained for proper operation (includes {instrument_id}), skipping unsubscribe"
+        );
+        Ok(())
     }
 
     /// Unsubscribe from order book updates for the specified instrument.
@@ -695,21 +698,10 @@ impl BitmexWebSocketClient {
         &self,
         instrument_id: InstrumentId,
     ) -> Result<(), BitmexWsError> {
-        let symbol = instrument_id.symbol;
-
-        if let Some(mut entry) = self.instrument_subscriptions.get_mut(&symbol)
-            && entry.mark_prices
-        {
-            entry.mark_prices = false;
-            let should_unsubscribe = !entry.index_prices;
-            drop(entry);
-
-            if should_unsubscribe {
-                self.unsubscribe_instrument(instrument_id).await?;
-                self.instrument_subscriptions.remove(&symbol);
-            }
-        }
-
+        // No-op: instrument channel shared with index prices
+        log::debug!(
+            "Mark prices for {instrument_id} uses shared instrument channel, skipping unsubscribe"
+        );
         Ok(())
     }
 
@@ -722,21 +714,10 @@ impl BitmexWebSocketClient {
         &self,
         instrument_id: InstrumentId,
     ) -> Result<(), BitmexWsError> {
-        let symbol = instrument_id.symbol;
-
-        if let Some(mut entry) = self.instrument_subscriptions.get_mut(&symbol)
-            && entry.index_prices
-        {
-            entry.index_prices = false;
-            let should_unsubscribe = !entry.mark_prices;
-            drop(entry);
-
-            if should_unsubscribe {
-                self.unsubscribe_instrument(instrument_id).await?;
-                self.instrument_subscriptions.remove(&symbol);
-            }
-        }
-
+        // No-op: instrument channel shared with mark prices
+        log::debug!(
+            "Index prices for {instrument_id} uses shared instrument channel, skipping unsubscribe"
+        );
         Ok(())
     }
 
@@ -749,10 +730,11 @@ impl BitmexWebSocketClient {
         &self,
         instrument_id: InstrumentId,
     ) -> Result<(), BitmexWsError> {
-        let topic = WsTopic::Funding;
-        let symbol = instrument_id.symbol.as_str();
-        let topic_str = format!("{topic}:{symbol}");
-        self.unsubscribe(vec![topic_str]).await
+        // No-op: unsubscribing during shutdown causes race conditions
+        log::debug!(
+            "Funding rates for {instrument_id}, skipping unsubscribe to avoid shutdown race"
+        );
+        Ok(())
     }
 
     /// Unsubscribe from bar updates for the specified bar type.
@@ -770,21 +752,12 @@ impl BitmexWebSocketClient {
 struct BitmexFeedHandler {
     reader: MessageReader,
     signal: Arc<AtomicBool>,
-    message_count: Arc<AtomicU64>,
 }
 
 impl BitmexFeedHandler {
     /// Creates a new [`BitmexFeedHandler`] instance.
-    pub const fn new(
-        reader: MessageReader,
-        signal: Arc<AtomicBool>,
-        message_count: Arc<AtomicU64>,
-    ) -> Self {
-        Self {
-            reader,
-            signal,
-            message_count,
-        }
+    pub const fn new(reader: MessageReader, signal: Arc<AtomicBool>) -> Self {
+        Self { reader, signal }
     }
 
     /// Get the next message from the WebSocket stream.
@@ -801,7 +774,6 @@ impl BitmexFeedHandler {
             match tokio::time::timeout(timeout_duration, self.reader.next()).await {
                 Ok(Some(msg)) => match msg {
                     Ok(Message::Text(text)) => {
-                        self.message_count.fetch_add(1, Ordering::Relaxed);
                         tracing::trace!("Raw websocket message: {text}");
 
                         match serde_json::from_str(&text) {
@@ -886,18 +858,23 @@ impl BitmexFeedHandler {
 struct BitmexUnifiedFeedHandler {
     handler: BitmexFeedHandler,
     tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
+    instruments_cache: Arc<AHashMap<Ustr, InstrumentAny>>,
 }
 
 impl BitmexUnifiedFeedHandler {
     /// Creates a new [`BitmexUnifiedFeedHandler`] instance.
-    pub const fn new(
+    pub fn new(
         reader: MessageReader,
         signal: Arc<AtomicBool>,
-        message_count: Arc<AtomicU64>,
         tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
+        instruments_cache: Arc<AHashMap<Ustr, InstrumentAny>>,
     ) -> Self {
-        let handler = BitmexFeedHandler::new(reader, signal, message_count);
-        Self { handler, tx }
+        let handler = BitmexFeedHandler::new(reader, signal);
+        Self {
+            handler,
+            tx,
+            instruments_cache,
+        }
     }
 
     async fn run(&mut self) {
@@ -1038,7 +1015,7 @@ impl BitmexUnifiedFeedHandler {
                     TableMessage::Instrument { data, .. } => {
                         let mut data_msgs = Vec::new();
                         for msg in data {
-                            let parsed = parse::parse_instrument_msg(msg);
+                            let parsed = parse::parse_instrument_msg(msg, &self.instruments_cache);
                             data_msgs.extend(parsed);
                         }
                         if !data_msgs.is_empty() {
