@@ -140,7 +140,7 @@ class OKXDataClient(LiveMarketDataClient):
         self._ws_business_client_futures: set[asyncio.Future] = set()
 
     @property
-    def okx_instrument_provider(self) -> OKXInstrumentProvider:
+    def instrument_provider(self) -> OKXInstrumentProvider:
         return self._instrument_provider
 
     async def _connect(self) -> None:
@@ -148,10 +148,12 @@ class OKXDataClient(LiveMarketDataClient):
         self._cache_instruments()
         self._send_all_instruments_to_data_engine()
 
-        # Connect public WebSocket client
+        instruments = self.instrument_provider.instruments_pyo3()
+
+        # Connect public WebSocket client (non-blocking)
         future = asyncio.ensure_future(
             self._ws_client.connect(
-                instruments=self.okx_instrument_provider.instruments_pyo3(),
+                instruments=instruments,
                 callback=self._handle_msg,
             ),
         )
@@ -161,7 +163,7 @@ class OKXDataClient(LiveMarketDataClient):
         # Connect business WebSocket client
         business_future = asyncio.ensure_future(
             self._ws_business_client.connect(
-                instruments=self.okx_instrument_provider.instruments_pyo3(),
+                instruments=instruments,
                 callback=self._handle_msg,
             ),
         )
@@ -216,7 +218,7 @@ class OKXDataClient(LiveMarketDataClient):
     def _cache_instruments(self) -> None:
         # Ensures instrument definitions are available for correct
         # price and size precisions when parsing responses
-        instruments_pyo3 = self.okx_instrument_provider.instruments_pyo3()
+        instruments_pyo3 = self.instrument_provider.instruments_pyo3()
         for inst in instruments_pyo3:
             self._http_client.add_instrument(inst)
 
