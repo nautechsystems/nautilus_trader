@@ -59,7 +59,7 @@ class MACDStrategyConfig(StrategyConfig):
     fast_period: int = 12
     slow_period: int = 26
     trade_size: float = 0.05
-    entry_threshold: float = 0.00010
+    entry_threshold: float = 0.00008
 
 
 class MACDStrategy(Strategy):
@@ -280,13 +280,13 @@ def test_cash_account_trades_macd_event_sequencing() -> None:
     # Assert
     assert engine.iteration == 2_123
     assert engine.cache.orders_open_count() == 0
-    assert engine.cache.orders_closed_count() == 138
-    assert engine.cache.orders_total_count() == 138
+    assert engine.cache.orders_closed_count() == 92
+    assert engine.cache.orders_total_count() == 92
     assert engine.cache.positions_open_count() == 0
     assert engine.cache.positions_closed_count() == 1  # Netting
     assert engine.cache.positions_total_count() == 1  # Netting
 
-    assert len(strategy.events) == 769
+    assert len(strategy.events) == 766
 
     # -- First entry sequence
     assert isinstance(strategy.events[0], OrderInitialized)
