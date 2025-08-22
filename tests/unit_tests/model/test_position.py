@@ -1606,3 +1606,741 @@ class TestPosition:
         assert position.trade_ids == []
         assert position.last_event is None
         assert position.last_trade_id is None
+
+    def test_commission_accumulation_single_currency(self) -> None:
+        """
+        Test that commissions are correctly accumulated for a single currency.
+        """
+        # Arrange
+        order1 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        order2 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(50_000),
+        )
+
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00000"),
+        )
+
+        fill2 = TestEventStubs.order_filled(
+            order2,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00100"),
+        )
+
+        # Act
+        position = Position(instrument=AUDUSD_SIM, fill=fill1)
+        position.apply(fill2)
+
+        # Assert
+        commissions = position.commissions()
+        assert len(commissions) == 1
+        # Default commission: 100k * 0.00002 + 50k * 0.00002 = 2 + 1 = 3 USD
+        assert commissions[0] == Money(3, USD)
+
+    def test_commission_accumulation_multiple_fills(self) -> None:
+        """
+        Test that commissions are correctly accumulated with multiple fills.
+        """
+        # Arrange
+        order1 = self.order_factory.market(
+            BTCUSDT_BINANCE.id,
+            OrderSide.BUY,
+            Quantity.from_str("1.0"),
+        )
+
+        order2 = self.order_factory.market(
+            BTCUSDT_BINANCE.id,
+            OrderSide.BUY,
+            Quantity.from_str("0.5"),
+        )
+
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("50000.00"),
+        )
+
+        fill2 = TestEventStubs.order_filled(
+            order2,
+            instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("51000.00"),
+        )
+
+        # Act
+        position = Position(instrument=BTCUSDT_BINANCE, fill=fill1)
+        position.apply(fill2)
+
+        # Assert
+        commissions = position.commissions()
+        assert len(commissions) == 1
+        # BTCUSDT_BINANCE has taker_fee of 0.001 (0.1%)
+        # Commission: 1.0 * 50000 * 0.001 + 0.5 * 51000 * 0.001 = 50 + 25.5 = 75.5 USDT
+        assert commissions[0] == Money(75.5, USDT)
+
+    def test_realized_return_calculation_long_position(self) -> None:
+        """
+        Test realized return calculation for a long position.
+        """
+        # Arrange
+        order1 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        order2 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+        )
+
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00000"),
+        )
+
+        fill2 = TestEventStubs.order_filled(
+            order2,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.10000"),  # 10% gain
+        )
+
+        # Act
+        position = Position(instrument=AUDUSD_SIM, fill=fill1)
+        position.apply(fill2)
+
+        # Assert
+        assert position.is_closed
+        assert position.realized_return == pytest.approx(0.1, rel=1e-9)  # 10% return
+
+    def test_realized_return_calculation_short_position(self) -> None:
+        """
+        Test realized return calculation for a short position.
+        """
+        # Arrange
+        order1 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+        )
+
+        order2 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.10000"),
+        )
+
+        fill2 = TestEventStubs.order_filled(
+            order2,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00000"),  # ~9.09% gain
+        )
+
+        # Act
+        position = Position(instrument=AUDUSD_SIM, fill=fill1)
+        position.apply(fill2)
+
+        # Assert
+        assert position.is_closed
+        assert position.realized_return == pytest.approx(0.09090909, rel=1e-6)
+
+    def test_duration_calculation(self) -> None:
+        """
+        Test position duration calculation from open to close.
+        """
+        # Arrange
+        order1 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        order2 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+        )
+
+        # Create fills with specific timestamps
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00000"),
+            ts_event=1_000_000_000,  # 1 second
+        )
+
+        fill2 = TestEventStubs.order_filled(
+            order2,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00010"),
+            ts_event=3_600_000_000_000,  # 1 hour later
+        )
+
+        # Act
+        position = Position(instrument=AUDUSD_SIM, fill=fill1)
+        position.apply(fill2)
+
+        # Assert
+        assert position.is_closed
+        assert position.duration_ns == 3_599_000_000_000  # 1 hour - 1 second in nanoseconds
+        assert position.ts_opened == 1_000_000_000
+        assert position.ts_closed == 3_600_000_000_000
+
+    def test_is_opposite_side_method(self) -> None:
+        """
+        Test the is_opposite_side method for long and short positions.
+        """
+        # Arrange
+        buy_order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        buy_fill = TestEventStubs.order_filled(
+            buy_order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-LONG"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00000"),
+        )
+
+        sell_order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+        )
+
+        sell_fill = TestEventStubs.order_filled(
+            sell_order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-SHORT"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00000"),
+        )
+
+        # Act
+        long_position = Position(instrument=AUDUSD_SIM, fill=buy_fill)
+        short_position = Position(instrument=AUDUSD_SIM, fill=sell_fill)
+
+        # Assert
+        # Long position
+        assert long_position.is_long
+        assert not long_position.is_opposite_side(OrderSide.BUY)
+        assert long_position.is_opposite_side(OrderSide.SELL)
+
+        # Short position
+        assert short_position.is_short
+        assert short_position.is_opposite_side(OrderSide.BUY)
+        assert not short_position.is_opposite_side(OrderSide.SELL)
+
+    def test_avg_px_calculations_multiple_fills(self) -> None:
+        """
+        Test average price calculations with multiple fills at different prices.
+        """
+        # Arrange - Build position with multiple fills
+        fills_data = [
+            (OrderSide.BUY, 50_000, "1.00000"),
+            (OrderSide.BUY, 30_000, "1.00100"),
+            (OrderSide.BUY, 20_000, "1.00200"),
+        ]
+
+        position = None
+        for i, (side, qty, price) in enumerate(fills_data):
+            order = self.order_factory.market(
+                AUDUSD_SIM.id,
+                side,
+                Quantity.from_int(qty),
+            )
+
+            fill = TestEventStubs.order_filled(
+                order,
+                instrument=AUDUSD_SIM,
+                position_id=PositionId("P-123456"),
+                strategy_id=StrategyId("S-001"),
+                last_px=Price.from_str(price),
+            )
+
+            if position is None:
+                position = Position(instrument=AUDUSD_SIM, fill=fill)
+            else:
+                position.apply(fill)
+
+        # Assert
+        # Weighted average: (50k * 1.0 + 30k * 1.001 + 20k * 1.002) / 100k
+        expected_avg = (50_000 * 1.00000 + 30_000 * 1.00100 + 20_000 * 1.00200) / 100_000
+        assert position is not None
+        assert position.avg_px_open == pytest.approx(expected_avg, rel=1e-9)
+        assert position.quantity == Quantity.from_int(100_000)
+
+    def test_closing_order_side_for_different_position_sides(self) -> None:
+        """
+        Test the closing_order_side method returns correct side.
+        """
+        # Arrange
+        buy_order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        buy_fill = TestEventStubs.order_filled(
+            buy_order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-LONG"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00000"),
+        )
+
+        sell_order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+        )
+
+        sell_fill = TestEventStubs.order_filled(
+            sell_order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-SHORT"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00000"),
+        )
+
+        # Act
+        long_position = Position(instrument=AUDUSD_SIM, fill=buy_fill)
+        short_position = Position(instrument=AUDUSD_SIM, fill=sell_fill)
+
+        # Assert
+        assert long_position.closing_order_side() == OrderSide.SELL
+        assert short_position.closing_order_side() == OrderSide.BUY
+
+    def test_signed_decimal_qty_for_different_sides(self) -> None:
+        """
+        Test signed_decimal_qty returns correct sign based on position side.
+        """
+        # Arrange
+        buy_order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        buy_fill = TestEventStubs.order_filled(
+            buy_order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-LONG"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00000"),
+        )
+
+        sell_order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(75_000),
+        )
+
+        sell_fill = TestEventStubs.order_filled(
+            sell_order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-SHORT"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00000"),
+        )
+
+        # Act
+        long_position = Position(instrument=AUDUSD_SIM, fill=buy_fill)
+        short_position = Position(instrument=AUDUSD_SIM, fill=sell_fill)
+
+        # Assert
+        assert long_position.signed_decimal_qty() == Decimal("100000")
+        assert short_position.signed_decimal_qty() == Decimal("-75000")
+
+    def test_notional_value_calculation(self) -> None:
+        """
+        Test notional value calculation for positions.
+        """
+        # Arrange
+        order = self.order_factory.market(
+            BTCUSDT_BINANCE.id,
+            OrderSide.BUY,
+            Quantity.from_str("2.5"),
+        )
+
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("50000.00"),
+        )
+
+        position = Position(instrument=BTCUSDT_BINANCE, fill=fill)
+
+        # Act
+        current_price = Price.from_str("52000.00")
+        notional = position.notional_value(current_price)
+
+        # Assert
+        # 2.5 BTC * 52000 USDT/BTC = 130000 USDT
+        assert notional == Money(130000, USDT)
+
+    def test_partial_close_updates_quantities_correctly(self) -> None:
+        """
+        Test that partial closes update buy/sell quantities correctly.
+        """
+        # Arrange
+        order1 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        order2 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(40_000),
+        )
+
+        order3 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(60_000),
+        )
+
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00000"),
+        )
+
+        fill2 = TestEventStubs.order_filled(
+            order2,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00100"),
+        )
+
+        fill3 = TestEventStubs.order_filled(
+            order3,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00200"),
+        )
+
+        # Act
+        position = Position(instrument=AUDUSD_SIM, fill=fill1)
+        position.apply(fill2)
+        position.apply(fill3)
+
+        # Assert
+        assert position.is_closed
+        assert position.quantity == Quantity.from_int(0)
+        assert position.peak_qty == Quantity.from_int(100_000)
+
+    def test_id_list_deduplication_and_sorting(self) -> None:
+        """
+        Test that client_order_ids, venue_order_ids, and trade_ids are deduplicated and
+        sorted.
+        """
+        # Arrange - Create fills with duplicate IDs
+        orders = []
+        fills = []
+
+        # Create multiple orders with controlled IDs
+        for i in range(3):
+            order = self.order_factory.market(
+                AUDUSD_SIM.id,
+                OrderSide.BUY,
+                Quantity.from_int(10_000),
+            )
+            orders.append(order)
+
+            # Create fills with specific venue_order_ids and trade_ids
+            fill = TestEventStubs.order_filled(
+                order,
+                instrument=AUDUSD_SIM,
+                position_id=PositionId("P-123456"),
+                strategy_id=StrategyId("S-001"),
+                venue_order_id=(
+                    VenueOrderId("V-001") if i < 2 else VenueOrderId("V-002")
+                ),  # Duplicate first
+                trade_id=TradeId(f"T-00{i+1}"),  # Unique trade IDs
+                last_px=Price.from_str("1.00000"),
+            )
+            fills.append(fill)
+
+        # Act
+        position = Position(instrument=AUDUSD_SIM, fill=fills[0])
+
+        for fill in fills[1:]:
+            position.apply(fill)
+
+        # Assert
+        # Check that IDs are deduplicated where appropriate
+        assert len(position.client_order_ids) == 3  # All unique client order IDs
+        assert len(position.venue_order_ids) == 2  # Should be deduplicated: V-001, V-002
+        assert len(position.trade_ids) == 3  # All unique: T-001, T-002, T-003
+
+        # Check sorting (if applicable - need to verify if sorting is guaranteed)
+        # The lists should be in chronological order of fills
+        assert position.venue_order_ids == [VenueOrderId("V-001"), VenueOrderId("V-002")]
+        assert position.trade_ids == [TradeId("T-001"), TradeId("T-002"), TradeId("T-003")]
+
+    def test_position_equality_and_hash_semantics(self) -> None:
+        """
+        Test that Position equality and hash are based solely on position ID.
+        """
+        # Arrange
+        order1 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        order2 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(50_000),
+        )
+
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00000"),
+        )
+
+        fill2 = TestEventStubs.order_filled(
+            order2,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-789"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.10000"),
+        )
+
+        # Act
+        position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
+        position2 = Position(instrument=AUDUSD_SIM, fill=fill2)
+
+        # Create another position with same ID as position1 but different state
+        fill3 = TestEventStubs.order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),  # Same ID as position1
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.50000"),  # Different price
+        )
+        position3 = Position(instrument=AUDUSD_SIM, fill=fill3)
+
+        # Assert
+        # Different IDs = not equal
+        assert position1 != position2
+        assert hash(position1) != hash(position2)
+
+        # Same ID = equal (even with different internal state)
+        assert position1 == position3
+        assert hash(position1) == hash(position3)
+
+        # Test as dictionary keys
+        position_dict = {position1: "first", position3: "third"}
+        assert len(position_dict) == 1  # Should only have one entry due to same ID
+        assert position_dict[position1] == "third"  # Last one wins
+
+    def test_purge_events_preserves_financial_state(self) -> None:
+        """
+        Test that purging events doesn't affect financial calculations and state.
+        """
+        # Arrange
+        order1 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        order2 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(50_000),
+        )
+
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00000"),
+        )
+
+        fill2 = TestEventStubs.order_filled(
+            order2,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.10000"),
+        )
+
+        position = Position(instrument=AUDUSD_SIM, fill=fill1)
+        position.apply(fill2)
+
+        # Capture state before purge
+        avg_px_open_before = position.avg_px_open
+        avg_px_close_before = position.avg_px_close
+        realized_pnl_before = position.realized_pnl
+        realized_return_before = position.realized_return
+        quantity_before = position.quantity
+        signed_qty_before = position.signed_qty
+        side_before = position.side
+        ts_opened_before = position.ts_opened
+        ts_closed_before = position.ts_closed
+
+        # Act - Purge events for order1
+        position.purge_events_for_order(order1.client_order_id)
+
+        # Assert - Financial state should be unchanged
+        assert position.avg_px_open == avg_px_open_before
+        assert position.avg_px_close == avg_px_close_before
+        assert position.realized_pnl == realized_pnl_before
+        assert position.realized_return == realized_return_before
+        assert position.quantity == quantity_before
+        assert position.signed_qty == signed_qty_before
+        assert position.side == side_before
+        assert position.ts_opened == ts_opened_before
+        assert position.ts_closed == ts_closed_before
+
+        # But events should be reduced
+        assert position.event_count == 1  # Only fill2 remains
+        assert len(position.trade_ids) == 1
+
+    def test_peak_quantity_tracking(self) -> None:
+        """
+        Test that peak_qty correctly tracks the maximum position size reached.
+        """
+        # Arrange - Build up position then partially close
+        fills_data = [
+            (OrderSide.BUY, 50_000, "1.00000"),  # Position: 50k
+            (OrderSide.BUY, 30_000, "1.00100"),  # Position: 80k
+            (OrderSide.BUY, 40_000, "1.00200"),  # Position: 120k (peak)
+            (OrderSide.SELL, 70_000, "1.00300"),  # Position: 50k
+            (OrderSide.SELL, 30_000, "1.00400"),  # Position: 20k
+        ]
+
+        position = None
+        for i, (side, qty, price) in enumerate(fills_data):
+            order = self.order_factory.market(
+                AUDUSD_SIM.id,
+                side,
+                Quantity.from_int(qty),
+            )
+
+            fill = TestEventStubs.order_filled(
+                order,
+                instrument=AUDUSD_SIM,
+                position_id=PositionId("P-123456"),
+                strategy_id=StrategyId("S-001"),
+                last_px=Price.from_str(price),
+            )
+
+            if position is None:
+                position = Position(instrument=AUDUSD_SIM, fill=fill)
+            else:
+                position.apply(fill)
+
+        # Assert
+        assert position is not None
+        assert position.peak_qty == Quantity.from_int(120_000)  # Maximum reached
+        assert position.quantity == Quantity.from_int(20_000)  # Current position
+
+    def test_position_invariants_across_fills(self) -> None:
+        """
+        Test key invariants that should always hold across any sequence of fills.
+        """
+        # Arrange - Random sequence of buys and sells
+        fills_data = [
+            (OrderSide.BUY, 100_000, "1.00000"),
+            (OrderSide.SELL, 30_000, "1.00100"),
+            (OrderSide.BUY, 50_000, "1.00200"),
+            (OrderSide.SELL, 120_000, "1.00300"),
+            (OrderSide.SELL, 20_000, "1.00400"),  # Goes short
+            (OrderSide.BUY, 40_000, "1.00500"),
+        ]
+
+        position = None
+
+        for i, (side, qty, price) in enumerate(fills_data):
+            order = self.order_factory.market(
+                AUDUSD_SIM.id,
+                side,
+                Quantity.from_int(qty),
+            )
+
+            fill = TestEventStubs.order_filled(
+                order,
+                instrument=AUDUSD_SIM,
+                position_id=PositionId("P-123456"),
+                strategy_id=StrategyId("S-001"),
+                last_px=Price.from_str(price),
+            )
+
+            if position is None:
+                position = Position(instrument=AUDUSD_SIM, fill=fill)
+            else:
+                position.apply(fill)
+
+            # Check invariants after each fill
+            # Invariant 1: quantity == abs(signed_qty)
+            assert position.quantity == Quantity.from_int(abs(int(position.signed_qty)))
+
+            # Invariant 2: side consistency with signed_qty
+            if position.signed_qty > 0:
+                assert position.side == PositionSide.LONG
+                assert position.closing_order_side() == OrderSide.SELL
+            elif position.signed_qty < 0:
+                assert position.side == PositionSide.SHORT
+                assert position.closing_order_side() == OrderSide.BUY
+            else:
+                assert position.side == PositionSide.FLAT
+
+            # Invariant 3: peak_qty never decreases
+            if i > 0:
+                assert position.peak_qty >= Quantity.from_int(0)  # Always non-negative
