@@ -43,6 +43,7 @@ Released on TBD (UTC).
 - Added `allow_cash_borrowing` config option for `BacktestVenueConfig` to enable negative balances in cash accounts
 - Added borrowing support for Bybit SPOT accounts, enabling margin trading with negative balances
 - Added initial DEX Pool filtering configuration (#2842), thanks @filipmacek
+- Added a complete `.env.example` template to guide environment configuration (#2877), thanks @nicolad
 
 ### Breaking Changes
 - Added `multiplier` field for `CurrencyPair` Arrow schema
@@ -82,6 +83,7 @@ Released on TBD (UTC).
 - Enabled parallel pytest tests with `pytest-xdist` (#2808), thanks @stastnypremysl
 - Standardized DeFi chain name validation for `InstrumentId` (#2826), thanks @filipmacek
 - Standardized `NAUTILUS_PATH` env var across Tardis integration (#2850), thanks @nicolad
+- Standardized zero PnL as Money instead of None when exchange rate missing (#2880), thanks @nicolad
 - Support several instrument versions with `request_instrument` (#2835), thanks @faysou
 - Improved typing for all the DEX IDs with `DexType` and add validation (#2827), thanks @filipmacek
 - Improved reconciliation handling of internally generated orders to align positions (now uses the `INTERNAL-DIFF` strategy ID)
