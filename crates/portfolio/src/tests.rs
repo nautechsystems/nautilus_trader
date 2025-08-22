@@ -27,7 +27,7 @@ use nautilus_model::{
         order::stubs::{order_accepted, order_filled, order_submitted},
     },
     identifiers::{
-        AccountId, ClientOrderId, PositionId, StrategyId, Symbol, TradeId, VenueOrderId,
+        AccountId, ClientOrderId, PositionId, StrategyId, Symbol, TradeId, TraderId, VenueOrderId,
         stubs::{account_id, uuid4},
     },
     instruments::{
@@ -1898,4 +1898,73 @@ fn test_several_positions_with_different_instruments_updates_portfolio(
     );
     // FIX: TODO: should not be empty
     assert_eq!(portfolio.margins_maint(&Venue::from("SIM")), HashMap::new());
+}
+
+#[rstest]
+fn test_realized_pnl_with_missing_exchange_rate_returns_zero_instead_of_panic(
+    mut portfolio: Portfolio,
+    instrument_audusd: InstrumentAny,
+) {
+    let mut cache = portfolio.cache.borrow_mut();
+    cache.add_instrument(instrument_audusd.clone()).unwrap();
+
+    let account_id = AccountId::new("SIM-001");
+    let account_state = AccountState::new(
+        account_id,
+        AccountType::Cash,
+        vec![AccountBalance::new(
+            Money::new(100000.0, Currency::EUR()),
+            Money::new(0.0, Currency::EUR()),
+            Money::new(100000.0, Currency::EUR()),
+        )],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        Some(Currency::EUR()),
+    );
+    cache.add_account(account_state.into()).unwrap();
+
+    let position_id = PositionId::new("P-001");
+
+    let filled = OrderFilled::new(
+        TraderId::new("TRADER-001"),
+        StrategyId::new("S-001"),
+        instrument_audusd.id(),
+        ClientOrderId::new("O-001"),
+        VenueOrderId::new("V-001"),
+        account_id,
+        TradeId::new("T-001"),
+        OrderSide::Buy,
+        OrderType::Market,
+        Quantity::new(10000.0, 0),
+        Price::new(0.6789, 4),
+        Currency::AUD(),
+        LiquiditySide::Taker,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+        Some(position_id),
+        Some(Money::new(1000.0, Currency::AUD())),
+    );
+
+    let position = Position::new(&instrument_audusd, filled);
+    cache.add_position(position, OmsType::Netting).unwrap();
+    drop(cache);
+
+    let result = portfolio.realized_pnl(&instrument_audusd.id());
+
+    assert!(result.is_some());
+
+    let pnl = result.unwrap();
+    assert_eq!(pnl.currency, Currency::EUR());
+    assert_eq!(pnl.as_f64(), 0.0);
+
+    let safe_calculation = result.unwrap().as_f64() * 1.5;
+    assert_eq!(safe_calculation, 0.0);
+
+    let result2 = portfolio.realized_pnl(&instrument_audusd.id());
+    assert_eq!(result2, result);
 }
