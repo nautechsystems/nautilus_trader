@@ -85,6 +85,7 @@ config_tester = DataTesterConfig(
     can_unsubscribe=False,  # Unsubscribing not supported by Databento
     # request_bars=True,  # Requires knowing the available time range `end`
     book_type=BookType.L3_MBO,
+    # book_interval_ms=100,
 )
 tester = DataTester(config=config_tester)
 
