@@ -73,6 +73,7 @@ class MACDStrategy(Strategy):
 
         self._position: Position | None = None
         self._closing = False
+        self._limit_order = None
 
         self.events: list[Event] = []
 
@@ -280,8 +281,8 @@ def test_cash_account_trades_macd_event_sequencing() -> None:
     # Assert
     assert engine.iteration == 2_123
     assert engine.cache.orders_open_count() == 0
-    assert engine.cache.orders_closed_count() == 92
-    assert engine.cache.orders_total_count() == 92
+    assert engine.cache.orders_closed_count() == 138
+    assert engine.cache.orders_total_count() == 138
     assert engine.cache.positions_open_count() == 0
     assert engine.cache.positions_closed_count() == 1  # Netting
     assert engine.cache.positions_total_count() == 1  # Netting
