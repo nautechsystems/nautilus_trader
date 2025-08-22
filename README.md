@@ -374,6 +374,22 @@ It's possible to install from source using pip if you first install the build de
 
 See the [Installation Guide](https://nautilustrader.io/docs/latest/getting_started/installation) for other options and further details.
 
+## Configuration
+
+### Environment Variables
+
+NautilusTrader uses environment variables for API credentials and configuration settings. To get started:
+
+1. Copy the example environment file:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Edit the `.env` file and update the values with your actual API credentials and configuration settings.
+
+The `.env.example` file contains all available environment variables organized by category (exchange APIs, database settings, build configuration, etc.).
+
 ## Redis
 
 Using [Redis](https://redis.io) with NautilusTrader is **optional** and only required if configured as the backend for a
