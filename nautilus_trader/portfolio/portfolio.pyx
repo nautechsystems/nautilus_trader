@@ -144,8 +144,9 @@ cdef class Portfolio(PortfolioFacade):
             interval_ns = config.min_account_state_logging_interval_ms * NANOSECONDS_IN_MILLISECOND
             self._min_account_state_logging_interval_ns = interval_ns
 
-        self._realized_pnls: dict[InstrumentId, Money] = {}
         self._unrealized_pnls: dict[InstrumentId, Money] = {}
+        self._realized_pnls: dict[InstrumentId, Money] = {}
+        self._snapshot_realized_pnls: dict[InstrumentId, Money] = {}
         self._net_positions: dict[InstrumentId, Decimal] = {}
         self._bet_positions: dict[InstrumentId, object] = {}
         self._index_bet_positions: dict[InstrumentId, set[PositionId]] = defaultdict(set)
@@ -681,6 +682,7 @@ cdef class Portfolio(PortfolioFacade):
         self._realized_pnls.clear()
         self._unrealized_pnls.clear()
         self._pending_calcs.clear()
+        self._snapshot_realized_pnls.clear()
         self.analyzer.reset()
 
         self.initialized = False
@@ -706,6 +708,45 @@ cdef class Portfolio(PortfolioFacade):
         self._log.debug(f"DISPOSING")
         self._reset()
         self._log.info("DISPOSED")
+
+    cdef void _ensure_snapshot_pnls_cached(self):
+        if self._snapshot_realized_pnls:
+            return  # Already cached
+
+        cdef list[Position] all_snapshots = self._cache.position_snapshots()
+        cdef Position snapshot
+        cdef InstrumentId instrument_id
+        cdef Money existing_pnl
+
+        for snapshot in all_snapshots:
+            if snapshot.realized_pnl is None:
+                continue
+
+            instrument_id = snapshot.instrument_id
+            existing_pnl = self._snapshot_realized_pnls.get(instrument_id)
+
+            if existing_pnl is not None:
+                if existing_pnl.currency == snapshot.realized_pnl.currency:
+                    # Same currency, add the amounts
+                    self._snapshot_realized_pnls[instrument_id] = Money(
+                        existing_pnl.as_double() + snapshot.realized_pnl.as_double(),
+                        existing_pnl.currency,
+                    )
+                else:
+                    # Different currencies - log warning
+                    self._log.warning(
+                        f"Cannot aggregate snapshot PnLs with different currencies for {instrument_id}: "
+                        f"{existing_pnl.currency} vs {snapshot.realized_pnl.currency}",
+                    )
+            else:
+                # First snapshot for this instrument
+                self._snapshot_realized_pnls[instrument_id] = Money(
+                    snapshot.realized_pnl.as_double(),
+                    snapshot.realized_pnl.currency,
+                )
+
+        if self._debug and self._snapshot_realized_pnls:
+            self._log.debug(f"Cached snapshot realized PnLs for {len(self._snapshot_realized_pnls)} instruments")
 
 # -- QUERIES --------------------------------------------------------------------------------------
 
@@ -1492,20 +1533,64 @@ cdef class Portfolio(PortfolioFacade):
         else:
             currency = instrument.get_cost_currency()
 
-        cdef list[Position] positions = self._cache.positions(
+        # Ensure snapshot PnLs are cached (one-time cost)
+        self._ensure_snapshot_pnls_cached()
+
+        cdef:
+            list[Position] positions
+            Money cached_snapshot_pnl
+            Money cached_snapshot_pnl_for_instrument
+            double total_pnl = 0.0
+            double xrate
+            double snapshot_xrate
+            Position position
+            double pnl
+
+        positions = self._cache.positions(
             venue=None,  # Faster query filtering
             instrument_id=instrument_id,
         )
 
         if not positions:
-            return Money(0, currency)
+            # Check if we have cached snapshot PnL for this instrument
+            cached_snapshot_pnl = self._snapshot_realized_pnls.get(instrument_id)
 
-        cdef double total_pnl = 0.0
+            if cached_snapshot_pnl is None:
+                return Money(0, currency)
 
-        cdef:
-            Position position
-            double pnl
-            double xrate
+            if cached_snapshot_pnl.currency == currency:
+                return cached_snapshot_pnl
+
+            xrate = self._cache.get_xrate(
+                venue=account.id.get_issuer(),
+                from_currency=cached_snapshot_pnl.currency,
+                to_currency=currency,
+                price_type=PriceType.MID,
+            )
+            if xrate == 0:
+                return None  # Cannot convert currency
+
+            return Money(cached_snapshot_pnl.as_double() * xrate, currency)
+
+        # Add cached snapshot PnL if available
+        cached_snapshot_pnl_for_instrument = self._snapshot_realized_pnls.get(instrument_id)
+
+        if cached_snapshot_pnl_for_instrument is None:
+            pass  # No snapshot PnL to add
+        elif cached_snapshot_pnl_for_instrument.currency == currency:
+            total_pnl += cached_snapshot_pnl_for_instrument.as_double()
+        else:
+            snapshot_xrate = self._cache.get_xrate(
+                venue=account.id.get_issuer(),
+                from_currency=cached_snapshot_pnl_for_instrument.currency,
+                to_currency=currency,
+                price_type=PriceType.MID,
+            )
+            if snapshot_xrate == 0:
+                return None  # Cannot convert currency
+
+            total_pnl += cached_snapshot_pnl_for_instrument.as_double() * snapshot_xrate
+
         for position in positions:
             if position.instrument_id != instrument_id:
                 continue  # Nothing to calculate
