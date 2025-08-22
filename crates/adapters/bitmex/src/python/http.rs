@@ -23,7 +23,7 @@ use nautilus_model::{
     enums::{OrderSide, OrderType},
     identifiers::{ClientOrderId, Symbol, VenueOrderId},
     instruments::InstrumentAny,
-    python::instruments::instrument_any_to_pyobject,
+    python::instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
     reports::{fill::FillReport, order::OrderStatusReport, position::PositionStatusReport},
     types::{price::Price, quantity::Quantity},
 };
@@ -433,5 +433,12 @@ impl BitmexHttpClient {
             // TODO: Logging and error handling
             Ok(())
         })
+    }
+
+    #[pyo3(name = "add_instrument")]
+    fn py_add_instrument(&mut self, py: Python, instrument: PyObject) -> PyResult<()> {
+        let inst_any = pyobject_to_instrument_any(py, instrument)?;
+        self.add_instrument(inst_any);
+        Ok(())
     }
 }

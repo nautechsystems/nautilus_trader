@@ -18,7 +18,11 @@
 #![allow(unused_variables)]
 
 use futures_util::StreamExt;
-use nautilus_bitmex::websocket::client::BitmexWebSocketClient;
+use nautilus_bitmex::{
+    http::{client::BitmexHttpClient, parse::parse_instrument_any},
+    websocket::client::BitmexWebSocketClient,
+};
+use nautilus_core::time::get_atomic_clock_realtime;
 use tokio::{pin, signal};
 use tracing::level_filters::LevelFilter;
 
@@ -28,6 +32,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_max_level(LevelFilter::TRACE)
         .init();
 
+    tracing::info!("Fetching instruments from HTTP API...");
+    let http_client = BitmexHttpClient::new(
+        None,     // base_url: defaults to production
+        None,     // api_key
+        None,     // api_secret
+        false,    // testnet
+        Some(60), // timeout_secs
+    );
+
+    let instruments_result = http_client
+        .get_instruments(true) // active_only
+        .await?;
+
+    let ts_init = get_atomic_clock_realtime().get_time_ns();
+    let instruments: Vec<_> = instruments_result
+        .iter()
+        .filter_map(|inst| parse_instrument_any(inst, ts_init))
+        .collect();
+    tracing::info!("Fetched {} instruments", instruments.len());
+
     let mut client = BitmexWebSocketClient::new(
         None, // url: defaults to wss://ws.bitmex.com/realtime
         None,
@@ -36,7 +60,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .unwrap();
 
-    client.connect().await?;
+    client.connect(instruments).await?;
 
     // Subscribe for all execution related topics
     client

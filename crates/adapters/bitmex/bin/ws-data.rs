@@ -13,12 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-// Enhanced WebSocket data testing script for debugging
-
 use std::env;
 
 use futures_util::StreamExt;
-use nautilus_bitmex::websocket::client::BitmexWebSocketClient;
+use nautilus_bitmex::{
+    http::{client::BitmexHttpClient, parse::parse_instrument_any},
+    websocket::client::BitmexWebSocketClient,
+};
+use nautilus_core::time::get_atomic_clock_realtime;
 use nautilus_model::{data::bar::BarType, identifiers::InstrumentId};
 use tokio::{
     pin, signal,
@@ -45,16 +47,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("Symbol: {symbol}");
     tracing::info!("Testnet: {testnet}");
 
-    // Configure URL
-    let url = if testnet {
-        Some("wss://ws.testnet.bitmex.com/realtime".to_string())
+    // Configure URLs
+    let (http_url, ws_url) = if testnet {
+        (
+            Some("https://testnet.bitmex.com".to_string()),
+            Some("wss://ws.testnet.bitmex.com/realtime".to_string()),
+        )
     } else {
-        None // Use default production URL
+        (None, None) // Use default production URLs
     };
 
-    // Create client
+    tracing::info!("Fetching instruments from HTTP API...");
+    let http_client = BitmexHttpClient::new(
+        http_url, // base_url
+        None,     // api_key
+        None,     // api_secret
+        testnet,  // testnet
+        Some(60), // timeout_secs
+    );
+
+    let instruments_result = http_client
+        .get_instruments(true) // active_only
+        .await?;
+
+    let ts_init = get_atomic_clock_realtime().get_time_ns();
+    let instruments: Vec<_> = instruments_result
+        .iter()
+        .filter_map(|inst| parse_instrument_any(inst, ts_init))
+        .collect();
+    tracing::info!("Fetched {} instruments", instruments.len());
+
+    // Create WebSocket client
     let mut client = BitmexWebSocketClient::new(
-        url,     // url: defaults to wss://ws.bitmex.com/realtime
+        ws_url,  // url: defaults to wss://ws.bitmex.com/realtime
         None,    // No API key for public feeds
         None,    // No API secret
         Some(5), // 5 second heartbeat
@@ -62,7 +87,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .unwrap();
 
     tracing::info!("Connecting to WebSocket...");
-    client.connect().await?;
+    client.connect(instruments).await?;
     tracing::info!("Connected successfully");
 
     // Give the connection a moment to stabilize
