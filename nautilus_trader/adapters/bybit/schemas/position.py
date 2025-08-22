@@ -16,7 +16,7 @@
 import msgspec
 
 from nautilus_trader.adapters.bybit.common.enums import BybitPositionSide
-from nautilus_trader.adapters.bybit.schemas.common import BybitListResult
+from nautilus_trader.adapters.bybit.schemas.common import BybitListResultWithCursor
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.model.identifiers import AccountId
@@ -76,5 +76,5 @@ class BybitPositionStruct(msgspec.Struct):
 class BybitPositionResponseStruct(msgspec.Struct):
     retCode: int
     retMsg: str
-    result: BybitListResult[BybitPositionStruct]
+    result: BybitListResultWithCursor[BybitPositionStruct]
     time: int
