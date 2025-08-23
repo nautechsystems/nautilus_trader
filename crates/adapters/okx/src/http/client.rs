@@ -1676,7 +1676,7 @@ impl OKXHttpClient {
             let inst = self.instrument_or_fetch(order.inst_id).await?;
 
             let report = parse_order_status_report(
-                order,
+                &order,
                 account_id,
                 inst.id(),
                 inst.price_precision(),
