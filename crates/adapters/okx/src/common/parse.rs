@@ -57,7 +57,8 @@ use crate::{
         models::OKXInstrument,
     },
     http::models::{
-        OKXAccount, OKXCandlestick, OKXOrderHistory, OKXPosition, OKXTrade, OKXTransactionDetail,
+        OKXAccount, OKXCandlestick, OKXIndexTicker, OKXMarkPrice, OKXOrderHistory, OKXPosition,
+        OKXTrade, OKXTransactionDetail,
     },
     websocket::{enums::OKXWsChannel, messages::OKXFundingRateMsg},
 };
@@ -275,7 +276,7 @@ pub fn parse_order_side(order_side: &Option<OKXSide>) -> OrderSide {
 /// Returns an error if `raw.mark_px` cannot be parsed into a [`Price`] with
 /// the specified precision.
 pub fn parse_mark_price_update(
-    raw: &crate::http::models::OKXMarkPrice,
+    raw: &OKXMarkPrice,
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: UnixNanos,
@@ -297,7 +298,7 @@ pub fn parse_mark_price_update(
 /// Returns an error if `raw.idx_px` cannot be parsed into a [`Price`] with the
 /// specified precision.
 pub fn parse_index_price_update(
-    raw: &crate::http::models::OKXIndexTicker,
+    raw: &OKXIndexTicker,
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: UnixNanos,
@@ -401,7 +402,7 @@ pub fn parse_candlestick(
 /// Parses an OKX order history record into a Nautilus [`OrderStatusReport`].
 #[allow(clippy::too_many_lines)]
 pub fn parse_order_status_report(
-    order: OKXOrderHistory,
+    order: &OKXOrderHistory,
     account_id: AccountId,
     instrument_id: InstrumentId,
     price_precision: u8,
@@ -420,7 +421,7 @@ pub fn parse_order_status_report(
         .ok()
         .map(|v| Quantity::new(v, size_precision))
         .unwrap_or_default();
-    let order_side: OrderSide = order.side.into();
+    let order_side: OrderSide = order.side.clone().into();
     let okx_status: OKXOrderStatus = match order.state.as_str() {
         "live" => OKXOrderStatus::Live,
         "partially_filled" => OKXOrderStatus::PartiallyFilled,
@@ -1385,7 +1386,7 @@ mod tests {
         let account_id = AccountId::new("OKX-001");
         let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
         let order_report = parse_order_status_report(
-            okx_order,
+            &okx_order,
             account_id,
             instrument_id,
             2,
