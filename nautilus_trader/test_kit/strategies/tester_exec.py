@@ -16,6 +16,8 @@
 from decimal import Decimal
 from typing import Any
 
+import pandas as pd
+
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import PositiveInt
 from nautilus_trader.config import StrategyConfig
@@ -50,6 +52,7 @@ class ExecTesterConfig(StrategyConfig, frozen=True):
 
     instrument_id: InstrumentId
     order_qty: Decimal
+    order_expire_time_delta_mins: PositiveInt | None = None
     order_params: dict[str, Any] | None = None
     client_id: ClientId | None = None
     subscribe_quotes: bool = True
@@ -263,13 +266,22 @@ class ExecTester(Strategy):
             self.log.warning("BUY orders not enabled, skipping")
             return
 
+        if self.config.order_expire_time_delta_mins is not None:
+            time_in_force = TimeInForce.GTD
+            expire_time = self.clock.utc_now() + pd.Timedelta(
+                minutes=self.config.order_expire_time_delta_mins,
+            )
+        else:
+            time_in_force = TimeInForce.GTC
+            expire_time = None
+
         order: LimitOrder = self.order_factory.limit(
             instrument_id=self.config.instrument_id,
             order_side=OrderSide.BUY,
             quantity=self.instrument.make_qty(self.config.order_qty),
             price=price,
-            # time_in_force=TimeInForce.GTD,
-            # expire_time=self.clock.utc_now() + pd.Timedelta(minutes=10),
+            time_in_force=time_in_force,
+            expire_time=expire_time,
             post_only=self.config.use_post_only,
             quote_quantity=self.config.use_quote_quantity,
             emulation_trigger=TriggerType[self.config.emulation_trigger],
@@ -295,13 +307,22 @@ class ExecTester(Strategy):
             self.log.warning("SELL orders not enabled, skipping")
             return
 
+        if self.config.order_expire_time_delta_mins is not None:
+            time_in_force = TimeInForce.GTD
+            expire_time = self.clock.utc_now() + pd.Timedelta(
+                minutes=self.config.order_expire_time_delta_mins,
+            )
+        else:
+            time_in_force = TimeInForce.GTC
+            expire_time = None
+
         order: LimitOrder = self.order_factory.limit(
             instrument_id=self.config.instrument_id,
             order_side=OrderSide.SELL,
             quantity=self.instrument.make_qty(self.config.order_qty),
             price=price,
-            # time_in_force=TimeInForce.GTD,
-            # expire_time=self.clock.utc_now() + pd.Timedelta(minutes=10),
+            time_in_force=time_in_force,
+            expire_time=expire_time,
             post_only=self.config.use_post_only,
             quote_quantity=self.config.use_quote_quantity,
             emulation_trigger=TriggerType[self.config.emulation_trigger],
