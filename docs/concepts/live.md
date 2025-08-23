@@ -117,7 +117,7 @@ config = TradingNodeConfig(
             testnet=False,
         ),
         "BINANCE_FUTURES": BinanceDataClientConfig(
-            account_type=BinanceAccountType.USDT_FUTURE,
+            account_type=BinanceAccountType.USDT_FUTURES,
             testnet=False,
         ),
     },
@@ -129,7 +129,7 @@ config = TradingNodeConfig(
             testnet=False,
         ),
         "BINANCE_FUTURES": BinanceExecClientConfig(
-            account_type=BinanceAccountType.USDT_FUTURE,
+            account_type=BinanceAccountType.USDT_FUTURES,
             testnet=False,
         ),
     },

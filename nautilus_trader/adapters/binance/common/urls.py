@@ -22,8 +22,8 @@ def get_http_base_url(account_type: BinanceAccountType, is_testnet: bool, is_us:
         if account_type.is_spot_or_margin:
             return "https://testnet.binance.vision"
         elif (
-            account_type == BinanceAccountType.USDT_FUTURE
-            or account_type == BinanceAccountType.COIN_FUTURE
+            account_type == BinanceAccountType.USDT_FUTURES
+            or account_type == BinanceAccountType.COIN_FUTURES
         ):
             return "https://testnet.binancefuture.com"
         else:
@@ -37,9 +37,9 @@ def get_http_base_url(account_type: BinanceAccountType, is_testnet: bool, is_us:
         return f"https://api.binance.{top_level_domain}"
     elif account_type.is_margin:
         return f"https://sapi.binance.{top_level_domain}"
-    elif account_type == BinanceAccountType.USDT_FUTURE:
+    elif account_type == BinanceAccountType.USDT_FUTURES:
         return f"https://fapi.binance.{top_level_domain}"
-    elif account_type == BinanceAccountType.COIN_FUTURE:
+    elif account_type == BinanceAccountType.COIN_FUTURES:
         return f"https://dapi.binance.{top_level_domain}"
     else:
         raise RuntimeError(  # pragma: no cover (design-time error)
@@ -52,9 +52,9 @@ def get_ws_base_url(account_type: BinanceAccountType, is_testnet: bool, is_us: b
     if is_testnet:
         if account_type.is_spot_or_margin:
             return "wss://stream.testnet.binance.vision"
-        elif account_type == BinanceAccountType.USDT_FUTURE:
+        elif account_type == BinanceAccountType.USDT_FUTURES:
             return "wss://stream.binancefuture.com"
-        elif account_type == BinanceAccountType.COIN_FUTURE:
+        elif account_type == BinanceAccountType.COIN_FUTURES:
             raise ValueError("no testnet for COIN-M futures")
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
@@ -65,9 +65,9 @@ def get_ws_base_url(account_type: BinanceAccountType, is_testnet: bool, is_us: b
     top_level_domain: str = "us" if is_us else "com"
     if account_type.is_spot_or_margin:
         return f"wss://stream.binance.{top_level_domain}:9443"
-    elif account_type == BinanceAccountType.USDT_FUTURE:
+    elif account_type == BinanceAccountType.USDT_FUTURES:
         return f"wss://fstream.binance.{top_level_domain}"
-    elif account_type == BinanceAccountType.COIN_FUTURE:
+    elif account_type == BinanceAccountType.COIN_FUTURES:
         return f"wss://dstream.binance.{top_level_domain}"
     else:
         raise RuntimeError(

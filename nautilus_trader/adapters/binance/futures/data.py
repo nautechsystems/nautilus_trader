@@ -64,7 +64,7 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
         The base URL for the WebSocket client.
     config : BinanceDataClientConfig
         The configuration for the client.
-    account_type : BinanceAccountType, default 'USDT_FUTURE'
+    account_type : BinanceAccountType, default 'USDT_FUTURES'
         The account type for the client.
     name : str, optional
         The custom client ID.
@@ -81,12 +81,12 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
         instrument_provider: InstrumentProvider,
         base_url_ws: str,
         config: BinanceDataClientConfig,
-        account_type: BinanceAccountType = BinanceAccountType.USDT_FUTURE,
+        account_type: BinanceAccountType = BinanceAccountType.USDT_FUTURES,
         name: str | None = None,
     ) -> None:
         PyCondition.is_true(
             account_type.is_futures,
-            "account_type was not USDT_FUTURE or COIN_FUTURE",
+            "account_type was not USDT_FUTURES or COIN_FUTURES",
         )
 
         # Futures HTTP API

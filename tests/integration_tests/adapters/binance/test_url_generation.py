@@ -28,16 +28,16 @@ from nautilus_trader.adapters.binance.common.urls import get_ws_base_url
         (BinanceAccountType.SPOT, False, True, "https://api.binance.us"),
         (BinanceAccountType.MARGIN, False, False, "https://sapi.binance.com"),
         (BinanceAccountType.MARGIN, False, True, "https://sapi.binance.us"),
-        (BinanceAccountType.USDT_FUTURE, False, False, "https://fapi.binance.com"),
-        (BinanceAccountType.USDT_FUTURE, False, True, "https://fapi.binance.us"),
-        (BinanceAccountType.COIN_FUTURE, False, False, "https://dapi.binance.com"),
-        (BinanceAccountType.COIN_FUTURE, False, True, "https://dapi.binance.us"),
+        (BinanceAccountType.USDT_FUTURES, False, False, "https://fapi.binance.com"),
+        (BinanceAccountType.USDT_FUTURES, False, True, "https://fapi.binance.us"),
+        (BinanceAccountType.COIN_FUTURES, False, False, "https://dapi.binance.com"),
+        (BinanceAccountType.COIN_FUTURES, False, True, "https://dapi.binance.us"),
         # Testnet URLs (US flag ignored)
         (BinanceAccountType.SPOT, True, False, "https://testnet.binance.vision"),
         (BinanceAccountType.SPOT, True, True, "https://testnet.binance.vision"),
         (BinanceAccountType.MARGIN, True, False, "https://testnet.binance.vision"),
-        (BinanceAccountType.USDT_FUTURE, True, False, "https://testnet.binancefuture.com"),
-        (BinanceAccountType.COIN_FUTURE, True, False, "https://testnet.binancefuture.com"),
+        (BinanceAccountType.USDT_FUTURES, True, False, "https://testnet.binancefuture.com"),
+        (BinanceAccountType.COIN_FUTURES, True, False, "https://testnet.binancefuture.com"),
     ],
 )
 def test_get_http_base_url(account_type, is_testnet, is_us, expected):
@@ -53,15 +53,15 @@ def test_get_http_base_url(account_type, is_testnet, is_us, expected):
         (BinanceAccountType.SPOT, False, True, "wss://stream.binance.us:9443"),
         (BinanceAccountType.MARGIN, False, False, "wss://stream.binance.com:9443"),
         (BinanceAccountType.MARGIN, False, True, "wss://stream.binance.us:9443"),
-        (BinanceAccountType.USDT_FUTURE, False, False, "wss://fstream.binance.com"),
-        (BinanceAccountType.USDT_FUTURE, False, True, "wss://fstream.binance.us"),
-        (BinanceAccountType.COIN_FUTURE, False, False, "wss://dstream.binance.com"),
-        (BinanceAccountType.COIN_FUTURE, False, True, "wss://dstream.binance.us"),
+        (BinanceAccountType.USDT_FUTURES, False, False, "wss://fstream.binance.com"),
+        (BinanceAccountType.USDT_FUTURES, False, True, "wss://fstream.binance.us"),
+        (BinanceAccountType.COIN_FUTURES, False, False, "wss://dstream.binance.com"),
+        (BinanceAccountType.COIN_FUTURES, False, True, "wss://dstream.binance.us"),
         # Testnet URLs (US flag ignored)
         (BinanceAccountType.SPOT, True, False, "wss://stream.testnet.binance.vision"),
         (BinanceAccountType.SPOT, True, True, "wss://stream.testnet.binance.vision"),
         (BinanceAccountType.MARGIN, True, False, "wss://stream.testnet.binance.vision"),
-        (BinanceAccountType.USDT_FUTURE, True, False, "wss://stream.binancefuture.com"),
+        (BinanceAccountType.USDT_FUTURES, True, False, "wss://stream.binancefuture.com"),
     ],
 )
 def test_get_ws_base_url(account_type, is_testnet, is_us, expected):
@@ -71,4 +71,4 @@ def test_get_ws_base_url(account_type, is_testnet, is_us, expected):
 
 def test_get_ws_base_url_coin_futures_testnet_raises_error():
     with pytest.raises(ValueError, match="no testnet for COIN-M futures"):
-        get_ws_base_url(BinanceAccountType.COIN_FUTURE, is_testnet=True, is_us=False)
+        get_ws_base_url(BinanceAccountType.COIN_FUTURES, is_testnet=True, is_us=False)
