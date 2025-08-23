@@ -236,18 +236,18 @@ pub fn parse_fee(value: Option<&str>, currency: Currency) -> anyhow::Result<Mone
 /// Parses OKX side to Nautilus aggressor side.
 pub fn parse_aggressor_side(side: &Option<OKXSide>) -> AggressorSide {
     match side {
-        Some(OKXSide::Buy) => nautilus_model::enums::AggressorSide::Buyer,
-        Some(OKXSide::Sell) => nautilus_model::enums::AggressorSide::Seller,
-        None => nautilus_model::enums::AggressorSide::NoAggressor,
+        Some(OKXSide::Buy) => AggressorSide::Buyer,
+        Some(OKXSide::Sell) => AggressorSide::Seller,
+        None => AggressorSide::NoAggressor,
     }
 }
 
 /// Parses OKX execution type to Nautilus liquidity side.
 pub fn parse_execution_type(liquidity: &Option<OKXExecType>) -> LiquiditySide {
     match liquidity {
-        Some(OKXExecType::Maker) => nautilus_model::enums::LiquiditySide::Maker,
-        Some(OKXExecType::Taker) => nautilus_model::enums::LiquiditySide::Taker,
-        _ => nautilus_model::enums::LiquiditySide::NoLiquiditySide,
+        Some(OKXExecType::Maker) => LiquiditySide::Maker,
+        Some(OKXExecType::Taker) => LiquiditySide::Taker,
+        _ => LiquiditySide::NoLiquiditySide,
     }
 }
 
@@ -347,7 +347,6 @@ pub fn parse_trade_tick(
     size_precision: u8,
     ts_init: UnixNanos,
 ) -> anyhow::Result<TradeTick> {
-    // Parse event timestamp
     let ts_event = parse_millisecond_timestamp(raw.ts);
     let price = parse_price(&raw.px, price_precision)?;
     let size = parse_quantity(&raw.sz, size_precision)?;
