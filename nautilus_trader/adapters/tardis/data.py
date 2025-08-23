@@ -116,7 +116,7 @@ class TardisDataClient(LiveMarketDataClient):
         self._ws_base_url = self._config.base_url_ws
         self._ws_client: nautilus_pyo3.TardisMachineClient = self._create_websocket_client()
         self._ws_clients: dict[str, nautilus_pyo3.TardisMachineClient] = {}
-        self._ws_pending_infos: list[nautilus_pyo3.InstrumentMiniInfo] = []
+        self._ws_pending_infos: list[nautilus_pyo3.TardisInstrumentMiniInfo] = []
         self._ws_pending_streams: list[nautilus_pyo3.StreamNormalizedRequestOptions] = []
         self._ws_client_futures: set[asyncio.Future] = set()
 

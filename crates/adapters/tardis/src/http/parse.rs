@@ -30,36 +30,38 @@ use super::{
         create_crypto_future, create_crypto_option, create_crypto_perpetual, create_currency_pair,
         get_currency,
     },
-    models::InstrumentInfo,
+    models::TardisInstrumentInfo,
 };
 use crate::{
-    enums::InstrumentType,
+    enums::TardisInstrumentType,
     parse::{normalize_instrument_id, parse_instrument_id},
 };
 
 #[must_use]
 pub fn parse_instrument_any(
-    info: InstrumentInfo,
+    info: TardisInstrumentInfo,
     effective: Option<UnixNanos>,
     ts_init: Option<UnixNanos>,
     normalize_symbols: bool,
 ) -> Vec<InstrumentAny> {
     match info.instrument_type {
-        InstrumentType::Spot => parse_spot_instrument(info, effective, ts_init, normalize_symbols),
-        InstrumentType::Perpetual => {
+        TardisInstrumentType::Spot => {
+            parse_spot_instrument(info, effective, ts_init, normalize_symbols)
+        }
+        TardisInstrumentType::Perpetual => {
             parse_perp_instrument(info, effective, ts_init, normalize_symbols)
         }
-        InstrumentType::Future | InstrumentType::Combo => {
+        TardisInstrumentType::Future | TardisInstrumentType::Combo => {
             parse_future_instrument(info, effective, ts_init, normalize_symbols)
         }
-        InstrumentType::Option => {
+        TardisInstrumentType::Option => {
             parse_option_instrument(info, effective, ts_init, normalize_symbols)
         }
     }
 }
 
 fn parse_spot_instrument(
-    info: InstrumentInfo,
+    info: TardisInstrumentInfo,
     effective: Option<UnixNanos>,
     ts_init: Option<UnixNanos>,
     normalize_symbols: bool,
@@ -208,7 +210,7 @@ fn parse_spot_instrument(
 }
 
 fn parse_perp_instrument(
-    info: InstrumentInfo,
+    info: TardisInstrumentInfo,
     effective: Option<UnixNanos>,
     ts_init: Option<UnixNanos>,
     normalize_symbols: bool,
@@ -356,7 +358,7 @@ fn parse_perp_instrument(
 }
 
 fn parse_future_instrument(
-    info: InstrumentInfo,
+    info: TardisInstrumentInfo,
     effective: Option<UnixNanos>,
     ts_init: Option<UnixNanos>,
     normalize_symbols: bool,
@@ -512,7 +514,7 @@ fn parse_future_instrument(
 }
 
 fn parse_option_instrument(
-    info: InstrumentInfo,
+    info: TardisInstrumentInfo,
     effective: Option<UnixNanos>,
     ts_init: Option<UnixNanos>,
     normalize_symbols: bool,
@@ -707,7 +709,7 @@ fn parse_datetime_to_unix_nanos(value: Option<DateTime<Utc>>) -> UnixNanos {
 
 /// Parses the settlement currency for the given Tardis instrument definition.
 #[must_use]
-pub fn parse_settlement_currency(info: &InstrumentInfo, is_inverse: bool) -> String {
+pub fn parse_settlement_currency(info: &TardisInstrumentInfo, is_inverse: bool) -> String {
     info.settlement_currency
         .unwrap_or({
             if is_inverse {
@@ -733,7 +735,7 @@ mod tests {
     #[rstest]
     fn test_parse_instrument_spot() {
         let json_data = load_test_json("instrument_spot.json");
-        let info: InstrumentInfo = serde_json::from_str(&json_data).unwrap();
+        let info: TardisInstrumentInfo = serde_json::from_str(&json_data).unwrap();
 
         let instruments = parse_instrument_any(info, None, None, false);
         let inst0 = instruments[0].clone();
@@ -789,7 +791,7 @@ mod tests {
     #[rstest]
     fn test_parse_instrument_perpetual() {
         let json_data = load_test_json("instrument_perpetual.json");
-        let info: InstrumentInfo = serde_json::from_str(&json_data).unwrap();
+        let info: TardisInstrumentInfo = serde_json::from_str(&json_data).unwrap();
 
         let effective = UnixNanos::from("2020-08-01T08:00:00+00:00");
         let instrument =
@@ -823,7 +825,7 @@ mod tests {
     #[rstest]
     fn test_parse_instrument_future() {
         let json_data = load_test_json("instrument_future.json");
-        let info: InstrumentInfo = serde_json::from_str(&json_data).unwrap();
+        let info: TardisInstrumentInfo = serde_json::from_str(&json_data).unwrap();
 
         let instrument = parse_instrument_any(info, None, Some(UnixNanos::default()), false)
             .first()
@@ -861,7 +863,7 @@ mod tests {
     #[rstest]
     fn test_parse_instrument_combo() {
         let json_data = load_test_json("instrument_combo.json");
-        let info: InstrumentInfo = serde_json::from_str(&json_data).unwrap();
+        let info: TardisInstrumentInfo = serde_json::from_str(&json_data).unwrap();
 
         let instrument = parse_instrument_any(info, None, Some(UnixNanos::default()), false)
             .first()
@@ -902,7 +904,7 @@ mod tests {
     #[rstest]
     fn test_parse_instrument_option() {
         let json_data = load_test_json("instrument_option.json");
-        let info: InstrumentInfo = serde_json::from_str(&json_data).unwrap();
+        let info: TardisInstrumentInfo = serde_json::from_str(&json_data).unwrap();
 
         let instrument = parse_instrument_any(info, None, Some(UnixNanos::default()), false)
             .first()

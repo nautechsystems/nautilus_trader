@@ -50,8 +50,9 @@ Released on TBD (UTC).
 - Changed `start` parameter to required for `Actor` data request methods
 - Reverted implementation of `delete_account_event` from cache database that was too inefficient and is now a no-op pending redesign
 - Renamed `ParquetDataCatalog.reset_catalog_file_names` to `reset_all_file_names`
-- Renamed `BinanceAccountType.USDT_FUTURE` to `USDT_FUTURES` (more conventional terminology)
-- Renamed `BinanceAccountType.COIN_FUTURE` to `COIN_FUTURES` (more conventional terminology)
+- Renamed `BinanceAccountType.USDT_FUTURE` to `USDT_FUTURES` for more conventional terminology
+- Renamed `BinanceAccountType.COIN_FUTURE` to `COIN_FUTURES` for more conventional terminology
+- Renamed `InstrumentMiniInfo` to `TardisInstrumentMiniInfo` to standardize adapter naming conventions
 - Removed the generic `cvec_drop` FFI function, as it was unused and prone to misuse, potentially causing memory leaks
 - Removed redundant `managed` parameter for `Actor.subscribe_book_at_interval` (the book *must* be managed by the `DataEngine` to provide snapshots at intervals)
 - Consolidated `OwnBook` `group_bids` and `group_asks` methods into `bid_quantity` and `ask_quantity` with optional `depth` and `group_size` parameters
