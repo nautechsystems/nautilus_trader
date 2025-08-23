@@ -33,6 +33,7 @@ from nautilus_trader.adapters.bybit.common.enums import BybitStopOrderType
 from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
 from nautilus_trader.adapters.bybit.common.enums import BybitTpSlMode
 from nautilus_trader.adapters.bybit.common.enums import BybitTriggerDirection
+from nautilus_trader.adapters.bybit.common.fees import determine_fee_currency
 from nautilus_trader.adapters.bybit.common.symbol import BybitSymbol
 from nautilus_trader.adapters.bybit.endpoints.trade.batch_cancel_order import BybitBatchCancelOrder
 from nautilus_trader.adapters.bybit.endpoints.trade.batch_place_order import BybitBatchPlaceOrder
@@ -69,8 +70,6 @@ from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
-from nautilus_trader.model.instruments import Instrument
-from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -165,13 +164,12 @@ class BybitExecutionClient(LiveExecutionClient):
         config: BybitExecClientConfig,
         name: str | None,
     ) -> None:
-        if BybitProductType.SPOT in product_types:
-            if len(set(product_types)) > 1:
-                raise ValueError("Cannot configure SPOT with other product types")
+        if set(product_types) == {BybitProductType.SPOT}:
             account_type = AccountType.CASH
             # Bybit SPOT accounts support margin trading (borrowing)
             AccountFactory.register_cash_borrowing(BYBIT_VENUE.value)
         else:
+            # UTA (Unified Trading Account) for derivatives or mixed products
             account_type = AccountType.MARGIN
 
         super().__init__(
@@ -1287,33 +1285,6 @@ class BybitExecutionClient(LiveExecutionClient):
         except Exception as e:
             self._log.exception(f"Failed to handle account execution update: {e}", e)
 
-    def _determine_fee_currency(
-        self,
-        product_type: BybitProductType,
-        instrument: Instrument,
-        order_side: OrderSide,
-    ) -> Currency:
-        # SPOT: Buy orders pay fees in base currency, Sell orders in quote currency
-        # LINEAR: Fees in settlement currency (typically USDT)
-        # INVERSE: Fees in settlement currency (base coin, e.g., BTC for BTCUSD)
-        # OPTION: Fees in settlement currency (USDC for legacy, USDT for new contracts post Feb 2025)
-        if product_type == BybitProductType.SPOT:
-            return (
-                instrument.base_currency
-                if order_side == OrderSide.BUY
-                else instrument.quote_currency
-            )
-        elif product_type in (
-            BybitProductType.LINEAR,
-            BybitProductType.INVERSE,
-            BybitProductType.OPTION,
-        ):
-            # All derivatives use their settlement currency for fees
-            return instrument.settlement_currency
-
-        # Unreachable unless new product_type added
-        raise NotImplementedError(f"Unsupported product type {product_type}")
-
     def _process_execution(
         self,
         execution: BybitWsAccountExecution | BybitWsAccountExecutionFast,
@@ -1370,15 +1341,55 @@ class BybitExecutionClient(LiveExecutionClient):
         quote_currency = instrument.quote_currency
 
         is_maker = execution.isMaker
-        fee_currency = self._determine_fee_currency(execution.category, instrument, order_side)
+
+        # Check if we have the actual fee to determine if it's a rebate
+        exec_fee = (
+            Decimal(execution.execFee)
+            if isinstance(execution, BybitWsAccountExecution) and execution.execFee
+            else None
+        )
 
         # Use actual fee from execution if available, otherwise calculate
-        if isinstance(execution, BybitWsAccountExecution) and execution.execFee:
-            commission: Money = Money(Decimal(execution.execFee), fee_currency)
+        if exec_fee is not None:
+            # Determine fee currency based on whether this is a rebate
+            is_rebate = exec_fee < 0
+            fee_currency = determine_fee_currency(
+                execution.category,
+                instrument,
+                order_side,
+                is_maker,
+                is_rebate=is_rebate,
+            )
+            commission: Money = Money(exec_fee, fee_currency)
         else:
+            # Fallback calculation when exec_fee is not available
             fee_rate = instrument.maker_fee if is_maker else instrument.taker_fee
-            notional_value: Money = instrument.notional_value(last_qty, last_px)
-            commission = Money(notional_value * fee_rate, fee_currency)
+            is_rebate = is_maker and fee_rate < 0
+
+            # Determine fee currency based on rebate status
+            fee_currency = determine_fee_currency(
+                execution.category,
+                instrument,
+                order_side,
+                is_maker,
+                is_rebate=is_rebate,
+            )
+
+            # Calculate fee amount based on product type and order side
+            if execution.category == BybitProductType.SPOT:
+                if order_side == OrderSide.BUY:
+                    # SPOT BUY: fee is on base currency amount
+                    fee_amount = last_qty.as_decimal() * fee_rate
+                else:
+                    # SPOT SELL: fee is on quote currency amount (notional)
+                    notional_value = instrument.notional_value(last_qty, last_px)
+                    fee_amount = notional_value * fee_rate
+            else:
+                # Derivatives: fee is on notional value in settlement currency
+                notional_value = instrument.notional_value(last_qty, last_px)
+                fee_amount = notional_value * fee_rate
+
+            commission = Money(fee_amount, fee_currency)
 
         self.generate_order_filled(
             strategy_id=strategy_id,
