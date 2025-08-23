@@ -18,8 +18,8 @@ use strum::{AsRefStr, Display, EnumIter, EnumString};
 
 /// Represents the status of a BitMEX symbol.
 #[derive(
-    Clone,
     Copy,
+    Clone,
     Debug,
     Display,
     PartialEq,
@@ -46,7 +46,17 @@ pub enum BitmexSymbolStatus {
 
 /// Represents the side of an order or trade (Buy/Sell).
 #[derive(
-    Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
 )]
 pub enum Side {
     /// Buy side of a trade or order.
@@ -55,13 +65,8 @@ pub enum Side {
     Sell,
 }
 
-impl Side {
-    /// Converts a Nautilus order side to a BitMEX side.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the order side is not Buy or Sell.
-    pub fn from_nautilus_order_side(value: nautilus_model::enums::OrderSide) -> Self {
+impl From<nautilus_model::enums::OrderSide> for Side {
+    fn from(value: nautilus_model::enums::OrderSide) -> Self {
         match value {
             nautilus_model::enums::OrderSide::Buy => Side::Buy,
             nautilus_model::enums::OrderSide::Sell => Side::Sell,
@@ -70,9 +75,28 @@ impl Side {
     }
 }
 
+impl From<Side> for nautilus_model::enums::OrderSide {
+    fn from(side: Side) -> Self {
+        match side {
+            Side::Buy => Self::Buy,
+            Side::Sell => Self::Sell,
+        }
+    }
+}
+
 /// Represents the available order types on `BitMEX`.
 #[derive(
-    Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
 )]
 pub enum OrderType {
     /// Market order, executed immediately at current market price.
@@ -110,7 +134,17 @@ impl OrderType {
 
 /// Represents the possible states of an order throughout its lifecycle.
 #[derive(
-    Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
 )]
 pub enum OrderStatus {
     /// Order has been placed but not yet processed.
@@ -129,7 +163,17 @@ pub enum OrderStatus {
 
 /// Specifies how long an order should remain active.
 #[derive(
-    Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
 )]
 pub enum TimeInForce {
     Day,
@@ -146,7 +190,17 @@ pub enum TimeInForce {
 
 /// Represents the available contingency types on `BitMEX`.
 #[derive(
-    Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
 )]
 pub enum ContingencyType {
     OneCancelsTheOther,
@@ -159,7 +213,17 @@ pub enum ContingencyType {
 
 /// Represents the available peg price types on `BitMEX`.
 #[derive(
-    Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
 )]
 pub enum PegPriceType {
     LastPeg,
@@ -177,7 +241,17 @@ pub enum PegPriceType {
 
 /// Represents the available execution instruments on `BitMEX`.
 #[derive(
-    Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
 )]
 pub enum ExecInstruction {
     ParticipateDoNotInitiate,
@@ -204,7 +278,17 @@ impl ExecInstruction {
 
 /// Represents the type of execution that generated a trade.
 #[derive(
-    Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
 )]
 pub enum ExecType {
     /// Normal trade execution.
@@ -221,7 +305,17 @@ pub enum ExecType {
 
 /// Indicates whether the execution was maker or taker.
 #[derive(
-    Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
 )]
 pub enum LiquidityIndicator {
     /// Provided liquidity to the order book (maker).
@@ -238,7 +332,17 @@ pub enum LiquidityIndicator {
 
 /// Represents `BitMEX` instrument types.
 #[derive(
-    Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
 )]
 #[serde(rename_all = "UPPERCASE")]
 pub enum InstrumentType {

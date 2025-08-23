@@ -16,7 +16,7 @@
 use chrono::{DateTime, Utc};
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
-    enums::{OrderSide, PositionSide},
+    enums::PositionSide,
     identifiers::{InstrumentId, Symbol},
 };
 
@@ -93,14 +93,6 @@ pub fn parse_time_in_force(tif: &TimeInForce) -> nautilus_model::enums::TimeInFo
         TimeInForce::AtTheOpening => nautilus_model::enums::TimeInForce::AtTheOpen,
         TimeInForce::AtTheClose => nautilus_model::enums::TimeInForce::AtTheClose,
         _ => panic!("Unsupported `TimeInForce`, was {tif}"),
-    }
-}
-
-pub fn parse_order_side(order_side: &Option<Side>) -> OrderSide {
-    match order_side {
-        Some(Side::Buy) => OrderSide::Buy,
-        Some(Side::Sell) => OrderSide::Sell,
-        None => OrderSide::NoOrderSide,
     }
 }
 

@@ -77,13 +77,13 @@ async fn gather_instruments_info(
     http_client: &TardisHttpClient,
 ) -> HashMap<Exchange, Vec<InstrumentInfo>> {
     let futures = config.options.iter().map(|options| {
-        let exchange = options.exchange.clone();
+        let exchange = options.exchange;
         let client = &http_client;
 
         tracing::info!("Requesting instruments for {exchange}");
 
         async move {
-            match client.instruments_info(exchange.clone(), None, None).await {
+            match client.instruments_info(exchange, None, None).await {
                 Ok(instruments) => Some((exchange, instruments)),
                 Err(e) => {
                     tracing::error!("Error fetching instruments for {exchange}: {e}");
@@ -147,7 +147,7 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
 
     for (exchange, instruments) in &info_map {
         for inst in instruments {
-            let instrument_type = inst.instrument_type.clone();
+            let instrument_type = inst.instrument_type;
             let price_precision = precision_from_str(&inst.price_increment.to_string());
             let size_precision = precision_from_str(&inst.amount_increment.to_string());
 
@@ -160,7 +160,7 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
             let info = InstrumentMiniInfo::new(
                 instrument_id,
                 Some(Ustr::from(&inst.id)),
-                exchange.clone(),
+                *exchange,
                 price_precision,
                 size_precision,
             );

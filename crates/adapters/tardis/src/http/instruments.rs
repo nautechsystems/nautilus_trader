@@ -209,7 +209,6 @@ pub fn create_crypto_option(
         is_inverse,
         parse_option_kind(
             info.option_type
-                .clone()
                 .expect("CryptoOption should have `option_type` field"),
         ),
         Price::new(

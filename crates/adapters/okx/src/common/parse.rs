@@ -260,15 +260,6 @@ pub fn parse_position_side(current_qty: Option<i64>) -> PositionSide {
     }
 }
 
-/// Parses OKX side to Nautilus order side.
-pub fn parse_order_side(order_side: &Option<OKXSide>) -> OrderSide {
-    match order_side {
-        Some(OKXSide::Buy) => OrderSide::Buy,
-        Some(OKXSide::Sell) => OrderSide::Sell,
-        None => OrderSide::NoOrderSide,
-    }
-}
-
 /// Parses an OKX mark price record into a Nautilus [`MarkPriceUpdate`].
 ///
 /// # Errors
@@ -360,7 +351,7 @@ pub fn parse_trade_tick(
     let ts_event = parse_millisecond_timestamp(raw.ts);
     let price = parse_price(&raw.px, price_precision)?;
     let size = parse_quantity(&raw.sz, size_precision)?;
-    let aggressor = AggressorSide::from(raw.side.clone());
+    let aggressor: AggressorSide = raw.side.into();
     let trade_id = TradeId::new(raw.trade_id);
 
     TradeTick::new_checked(
@@ -421,7 +412,7 @@ pub fn parse_order_status_report(
         .ok()
         .map(|v| Quantity::new(v, size_precision))
         .unwrap_or_default();
-    let order_side: OrderSide = order.side.clone().into();
+    let order_side: OrderSide = order.side.into();
     let okx_status: OKXOrderStatus = match order.state.as_str() {
         "live" => OKXOrderStatus::Live,
         "partially_filled" => OKXOrderStatus::PartiallyFilled,
@@ -545,12 +536,12 @@ pub fn parse_fill_report(
     };
     let venue_order_id = VenueOrderId::new(detail.ord_id);
     let trade_id = TradeId::new(detail.trade_id);
-    let order_side = parse_order_side(&Some(detail.side.clone()));
+    let order_side: OrderSide = detail.side.into();
     let last_px = parse_price(&detail.fill_px, price_precision)?;
     let last_qty = parse_quantity(&detail.fill_sz, size_precision)?;
     let fee_f64 = detail.fee.as_deref().unwrap_or("0").parse::<f64>()?;
     let commission = Money::new(-fee_f64, Currency::from(&detail.fee_ccy));
-    let liquidity_side: LiquiditySide = LiquiditySide::from(detail.exec_type.clone());
+    let liquidity_side: LiquiditySide = detail.exec_type.into();
     let ts_event = parse_millisecond_timestamp(detail.ts);
 
     Ok(FillReport::new(
@@ -1113,7 +1104,7 @@ pub fn parse_option_instrument(
     let asset_class = AssetClass::Cryptocurrency;
     let exchange = Some(Ustr::from("OKX"));
     let underlying = Ustr::from(&definition.uly);
-    let option_kind: OptionKind = definition.opt_type.clone().into();
+    let option_kind: OptionKind = definition.opt_type.into();
     let strike_price = Price::from(&definition.stk);
     let currency = definition
         .uly
@@ -1596,13 +1587,6 @@ mod tests {
         assert_eq!(parse_position_side(Some(-100)), PositionSide::Short);
         assert_eq!(parse_position_side(Some(0)), PositionSide::Flat);
         assert_eq!(parse_position_side(None), PositionSide::Flat);
-    }
-
-    #[rstest]
-    fn test_parse_order_side() {
-        assert_eq!(parse_order_side(&Some(OKXSide::Buy)), OrderSide::Buy);
-        assert_eq!(parse_order_side(&Some(OKXSide::Sell)), OrderSide::Sell);
-        assert_eq!(parse_order_side(&None), OrderSide::NoOrderSide);
     }
 
     #[rstest]
