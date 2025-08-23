@@ -97,9 +97,10 @@ pub fn parse_book_msg_vec(
     ts_init: UnixNanos,
 ) -> Vec<Data> {
     let mut deltas = Vec::with_capacity(data.len());
+
     for msg in data {
         deltas.push(Data::Delta(parse_book_msg(
-            msg,
+            &msg,
             &action,
             price_precision,
             ts_init,
@@ -115,9 +116,10 @@ pub fn parse_book10_msg_vec(
     ts_init: UnixNanos,
 ) -> Vec<Data> {
     let mut depths = Vec::with_capacity(data.len());
+
     for msg in data {
         depths.push(Data::Depth10(Box::new(parse_book10_msg(
-            msg,
+            &msg,
             price_precision,
             ts_init,
         ))));
@@ -132,8 +134,9 @@ pub fn parse_trade_msg_vec(
     ts_init: UnixNanos,
 ) -> Vec<Data> {
     let mut trades = Vec::with_capacity(data.len());
+
     for msg in data {
-        trades.push(Data::Trade(parse_trade_msg(msg, price_precision, ts_init)));
+        trades.push(Data::Trade(parse_trade_msg(&msg, price_precision, ts_init)));
     }
     trades
 }
@@ -146,9 +149,10 @@ pub fn parse_trade_bin_msg_vec(
     ts_init: UnixNanos,
 ) -> Vec<Data> {
     let mut trades = Vec::with_capacity(data.len());
+
     for msg in data {
         trades.push(Data::Bar(parse_trade_bin_msg(
-            msg,
+            &msg,
             &topic,
             price_precision,
             ts_init,
@@ -160,7 +164,7 @@ pub fn parse_trade_bin_msg_vec(
 #[allow(clippy::too_many_arguments)]
 #[must_use]
 pub fn parse_book_msg(
-    msg: OrderBookMsg,
+    msg: &OrderBookMsg,
     action: &Action,
     price_precision: u8,
     ts_init: UnixNanos,
@@ -200,7 +204,7 @@ pub fn parse_book_msg(
 #[allow(clippy::too_many_arguments)]
 #[must_use]
 pub fn parse_book10_msg(
-    msg: OrderBook10Msg,
+    msg: &OrderBook10Msg,
     price_precision: u8,
     ts_init: UnixNanos,
 ) -> OrderBookDepth10 {
@@ -257,7 +261,7 @@ pub fn parse_book10_msg(
 
 #[must_use]
 pub fn parse_quote_msg(
-    msg: QuoteMsg,
+    msg: &QuoteMsg,
     last_quote: &QuoteTick,
     price_precision: u8,
     ts_init: UnixNanos,
@@ -298,7 +302,7 @@ pub fn parse_quote_msg(
 }
 
 #[must_use]
-pub fn parse_trade_msg(msg: TradeMsg, price_precision: u8, ts_init: UnixNanos) -> TradeTick {
+pub fn parse_trade_msg(msg: &TradeMsg, price_precision: u8, ts_init: UnixNanos) -> TradeTick {
     let instrument_id = parse_instrument_id(&msg.symbol);
     let price = Price::new(msg.price, price_precision);
     let size = parse_quantity(msg.size);
@@ -323,7 +327,7 @@ pub fn parse_trade_msg(msg: TradeMsg, price_precision: u8, ts_init: UnixNanos) -
 
 #[must_use]
 pub fn parse_trade_bin_msg(
-    msg: TradeBinMsg,
+    msg: &TradeBinMsg,
     topic: &WsTopic,
     price_precision: u8,
     ts_init: UnixNanos,
@@ -342,12 +346,12 @@ pub fn parse_trade_bin_msg(
     Bar::new(bar_type, open, high, low, close, volume, ts_event, ts_init)
 }
 
-#[must_use]
 /// Converts a WebSocket topic to a bar specification.
 ///
 /// # Panics
 ///
 /// Panics if the topic is not a valid bar topic (TradeBin1m, TradeBin5m, TradeBin1h, or TradeBin1d).
+#[must_use]
 pub fn bar_spec_from_topic(topic: &WsTopic) -> BarSpecification {
     match topic {
         WsTopic::TradeBin1m => BAR_SPEC_1_MINUTE,
@@ -374,7 +378,6 @@ pub fn topic_from_bar_spec(spec: BarSpecification) -> WsTopic {
     }
 }
 
-// TODO: Use high-precision when it lands
 #[must_use]
 pub fn parse_quantity(value: u64) -> Quantity {
     let size_workaround = std::cmp::min(QUANTITY_MAX as u64, value);
@@ -389,11 +392,11 @@ pub fn parse_quantity(value: u64) -> Quantity {
 /// # Panics
 ///
 /// Panics if required fields are missing or invalid.
-pub fn parse_order_msg(msg: OrderMsg, price_precision: u8) -> OrderStatusReport {
+pub fn parse_order_msg(msg: &OrderMsg, price_precision: u8) -> OrderStatusReport {
     let account_id = AccountId::new(format!("BITMEX-{}", msg.account));
     let instrument_id = parse_instrument_id(&msg.symbol);
     let venue_order_id = VenueOrderId::new(msg.order_id.to_string());
-    let order_side = parse_order_side(&Some(crate::enums::Side::from(msg.side)));
+    let order_side = parse_order_side(&Some(crate::enums::Side::from(msg.side.clone())));
     let order_type = parse_order_type(&msg.ord_type);
     let time_in_force = parse_time_in_force(&msg.time_in_force);
     let order_status = parse_order_status(&msg.ord_status);
@@ -422,11 +425,11 @@ pub fn parse_order_msg(msg: OrderMsg, price_precision: u8) -> OrderStatusReport 
         Some(report_id),
     );
 
-    if let Some(cl_ord_id) = msg.cl_ord_id {
+    if let Some(cl_ord_id) = &msg.cl_ord_id {
         report = report.with_client_order_id(ClientOrderId::new(cl_ord_id));
     }
 
-    if let Some(cl_ord_link_id) = msg.cl_ord_link_id {
+    if let Some(cl_ord_link_id) = &msg.cl_ord_link_id {
         report = report.with_order_list_id(OrderListId::new(cl_ord_link_id));
     }
 
@@ -676,7 +679,7 @@ mod tests {
         let msg: OrderBookMsg = serde_json::from_str(&json_data).unwrap();
 
         // Test Insert action
-        let delta = parse_book_msg(msg.clone(), &Action::Insert, 1, UnixNanos::from(3));
+        let delta = parse_book_msg(&msg, &Action::Insert, 1, UnixNanos::from(3));
         assert_eq!(delta.instrument_id, instrument_id);
         assert_eq!(delta.order.price, Price::from("98459.9"));
         assert_eq!(delta.order.size, Quantity::from(33000));
@@ -689,7 +692,7 @@ mod tests {
         assert_eq!(delta.ts_init, 3);
 
         // Test Update action (should have different flags)
-        let delta = parse_book_msg(msg, &Action::Update, 1, UnixNanos::from(3));
+        let delta = parse_book_msg(&msg, &Action::Update, 1, UnixNanos::from(3));
         assert_eq!(delta.flags, 0);
         assert_eq!(delta.action, BookAction::Update);
     }
@@ -699,7 +702,7 @@ mod tests {
         let json_data = load_test_json("ws_orderbook_10.json");
         let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
         let msg: OrderBook10Msg = serde_json::from_str(&json_data).unwrap();
-        let depth10 = parse_book10_msg(msg, 1, UnixNanos::from(3));
+        let depth10 = parse_book10_msg(&msg, 1, UnixNanos::from(3));
 
         assert_eq!(depth10.instrument_id, instrument_id);
 
@@ -739,7 +742,7 @@ mod tests {
             UnixNanos::from(2),
         );
         let msg: QuoteMsg = serde_json::from_str(&json_data).unwrap();
-        let quote = parse_quote_msg(msg, &last_quote, 2, UnixNanos::from(3));
+        let quote = parse_quote_msg(&msg, &last_quote, 2, UnixNanos::from(3));
 
         assert_eq!(quote.instrument_id, instrument_id);
         assert_eq!(quote.bid_price, Price::from("487.55"));
@@ -756,7 +759,7 @@ mod tests {
 
         let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
         let msg: TradeMsg = serde_json::from_str(&json_data).unwrap();
-        let trade = parse_trade_msg(msg, 1, UnixNanos::from(3));
+        let trade = parse_trade_msg(&msg, 1, UnixNanos::from(3));
 
         assert_eq!(trade.instrument_id, instrument_id);
         assert_eq!(trade.price, Price::from("98570.9"));
@@ -778,7 +781,7 @@ mod tests {
         let topic = WsTopic::TradeBin1m;
 
         let msg: TradeBinMsg = serde_json::from_str(&json_data).unwrap();
-        let bar = parse_trade_bin_msg(msg, &topic, 1, UnixNanos::from(3));
+        let bar = parse_trade_bin_msg(&msg, &topic, 1, UnixNanos::from(3));
 
         assert_eq!(bar.instrument_id(), instrument_id);
         assert_eq!(
@@ -798,7 +801,7 @@ mod tests {
     fn test_parse_order_msg() {
         let json_data = load_test_json("ws_order.json");
         let msg: OrderMsg = serde_json::from_str(&json_data).unwrap();
-        let report = parse_order_msg(msg, 1);
+        let report = parse_order_msg(&msg, 1);
 
         assert_eq!(report.account_id.to_string(), "BITMEX-1234567");
         assert_eq!(report.instrument_id, InstrumentId::from("XBTUSD.BITMEX"));

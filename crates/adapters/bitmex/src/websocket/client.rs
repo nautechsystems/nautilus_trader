@@ -163,7 +163,7 @@ impl BitmexWebSocketClient {
         let instruments_cache = self.instruments_cache.clone();
 
         let stream_handle = get_runtime().spawn(async move {
-            BitmexUnifiedFeedHandler::new(reader, signal, tx, instruments_cache)
+            BitmexWsMessageHandler::new(reader, signal, tx, instruments_cache)
                 .run()
                 .await;
         });
@@ -855,14 +855,14 @@ impl BitmexFeedHandler {
     }
 }
 
-struct BitmexUnifiedFeedHandler {
+struct BitmexWsMessageHandler {
     handler: BitmexFeedHandler,
     tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
     instruments_cache: Arc<AHashMap<Ustr, InstrumentAny>>,
 }
 
-impl BitmexUnifiedFeedHandler {
-    /// Creates a new [`BitmexUnifiedFeedHandler`] instance.
+impl BitmexWsMessageHandler {
+    /// Creates a new [`BitmexWsMessageHandler`] instance.
     pub fn new(
         reader: MessageReader,
         signal: Arc<AtomicBool>,
@@ -886,26 +886,53 @@ impl BitmexUnifiedFeedHandler {
         }
     }
 
+    /// Get price precision for a symbol from the instruments cache.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the instrument is not found in the cache.
+    #[inline]
+    fn get_price_precision(&self, symbol: &str) -> u8 {
+        self.instruments_cache
+            .get(&Ustr::from(symbol))
+            .map(|inst| inst.price_precision())
+            .unwrap_or_else(|| panic!("Instrument '{symbol}' not found in cache; ensure all instruments are loaded before starting websocket"))
+    }
+
     async fn next(&mut self) -> Option<NautilusWsMessage> {
         let mut quote_cache = QuoteCache::new();
+        let clock = get_atomic_clock_realtime();
 
         while let Some(msg) = self.handler.next().await {
             if let WsMessage::Table(table_msg) = msg {
-                let ts_init = get_atomic_clock_realtime().get_time_ns();
-                let price_precision = 1; // TODO: Get actual price precision from instrument
+                let ts_init = clock.get_time_ns();
 
                 return Some(match table_msg {
-                    // Market data messages
                     TableMessage::OrderBookL2 { action, data } => {
-                        let data = parse_book_msg_vec(data, action, 1, ts_init);
+                        if data.is_empty() {
+                            continue;
+                        }
+                        let price_precision = self.get_price_precision(&data[0].symbol);
+                        let data = parse_book_msg_vec(data, action, price_precision, ts_init);
+
                         NautilusWsMessage::Data(data)
                     }
                     TableMessage::OrderBookL2_25 { action, data } => {
-                        let data = parse_book_msg_vec(data, action, 1, ts_init);
+                        if data.is_empty() {
+                            continue;
+                        }
+                        let price_precision = self.get_price_precision(&data[0].symbol);
+                        let data = parse_book_msg_vec(data, action, price_precision, ts_init);
+
                         NautilusWsMessage::Data(data)
                     }
                     TableMessage::OrderBook10 { data, .. } => {
-                        let data = parse_book10_msg_vec(data, 1, ts_init);
+                        if data.is_empty() {
+                            continue;
+                        }
+                        let price_precision = self.get_price_precision(&data[0].symbol);
+                        let data = parse_book10_msg_vec(data, price_precision, ts_init);
+
                         NautilusWsMessage::Data(data)
                     }
                     TableMessage::Quote { mut data, .. } => {
@@ -913,49 +940,86 @@ impl BitmexUnifiedFeedHandler {
                         if data.is_empty() {
                             continue;
                         }
+
                         let msg = data.remove(0);
-                        if let Some(quote) = quote_cache.process(msg, 1) {
+                        let price_precision = self.get_price_precision(&msg.symbol);
+
+                        if let Some(quote) = quote_cache.process(&msg, price_precision, ts_init) {
                             NautilusWsMessage::Data(vec![Data::Quote(quote)])
                         } else {
                             continue;
                         }
                     }
                     TableMessage::Trade { data, .. } => {
-                        let data = parse_trade_msg_vec(data, 1, ts_init);
+                        if data.is_empty() {
+                            continue;
+                        }
+                        let price_precision = self.get_price_precision(&data[0].symbol);
+                        let data = parse_trade_msg_vec(data, price_precision, ts_init);
+
                         NautilusWsMessage::Data(data)
                     }
                     TableMessage::TradeBin1m { action, data } => {
-                        if action == Action::Partial {
+                        if action == Action::Partial || data.is_empty() {
                             continue;
                         }
-                        let data = parse_trade_bin_msg_vec(data, WsTopic::TradeBin1m, 1, ts_init);
+                        let price_precision = self.get_price_precision(&data[0].symbol);
+                        let data = parse_trade_bin_msg_vec(
+                            data,
+                            WsTopic::TradeBin1m,
+                            price_precision,
+                            ts_init,
+                        );
+
                         NautilusWsMessage::Data(data)
                     }
                     TableMessage::TradeBin5m { action, data } => {
-                        if action == Action::Partial {
+                        if action == Action::Partial || data.is_empty() {
                             continue;
                         }
-                        let data = parse_trade_bin_msg_vec(data, WsTopic::TradeBin5m, 1, ts_init);
+                        let price_precision = self.get_price_precision(&data[0].symbol);
+                        let data = parse_trade_bin_msg_vec(
+                            data,
+                            WsTopic::TradeBin5m,
+                            price_precision,
+                            ts_init,
+                        );
+
                         NautilusWsMessage::Data(data)
                     }
                     TableMessage::TradeBin1h { action, data } => {
-                        if action == Action::Partial {
+                        if action == Action::Partial || data.is_empty() {
                             continue;
                         }
-                        let data = parse_trade_bin_msg_vec(data, WsTopic::TradeBin1h, 1, ts_init);
+                        let price_precision = self.get_price_precision(&data[0].symbol);
+                        let data = parse_trade_bin_msg_vec(
+                            data,
+                            WsTopic::TradeBin1h,
+                            price_precision,
+                            ts_init,
+                        );
+
                         NautilusWsMessage::Data(data)
                     }
                     TableMessage::TradeBin1d { action, data } => {
-                        if action == Action::Partial {
+                        if action == Action::Partial || data.is_empty() {
                             continue;
                         }
-                        let data = parse_trade_bin_msg_vec(data, WsTopic::TradeBin1d, 1, ts_init);
+                        let price_precision = self.get_price_precision(&data[0].symbol);
+                        let data = parse_trade_bin_msg_vec(
+                            data,
+                            WsTopic::TradeBin1d,
+                            price_precision,
+                            ts_init,
+                        );
+
                         NautilusWsMessage::Data(data)
                     }
                     // Execution messages
                     TableMessage::Order { data, .. } => {
                         if let Some(order_msg) = data.into_iter().next() {
-                            let report = parse::parse_order_msg(order_msg, price_precision);
+                            let price_precision = self.get_price_precision(&order_msg.symbol);
+                            let report = parse::parse_order_msg(&order_msg, price_precision);
                             NautilusWsMessage::OrderStatusReport(Box::new(report))
                         } else {
                             continue;
@@ -963,13 +1027,25 @@ impl BitmexUnifiedFeedHandler {
                     }
                     TableMessage::Execution { data, .. } => {
                         let mut fills = Vec::new();
+
                         for exec_msg in data {
+                            // Skip if symbol is missing (shouldn't happen for valid trades)
+                            let Some(symbol) = &exec_msg.symbol else {
+                                tracing::warn!(
+                                    "Execution message missing symbol: {:?}",
+                                    exec_msg.exec_id
+                                );
+                                continue;
+                            };
+                            let price_precision = self.get_price_precision(symbol);
+
                             if let Some(fill) =
                                 parse::parse_execution_msg(exec_msg, price_precision)
                             {
                                 fills.push(fill);
                             }
                         }
+
                         if !fills.is_empty() {
                             NautilusWsMessage::FillReports(fills)
                         } else {
@@ -1014,10 +1090,12 @@ impl BitmexUnifiedFeedHandler {
                     }
                     TableMessage::Instrument { data, .. } => {
                         let mut data_msgs = Vec::new();
+
                         for msg in data {
                             let parsed = parse::parse_instrument_msg(msg, &self.instruments_cache);
                             data_msgs.extend(parsed);
                         }
+
                         if !data_msgs.is_empty() {
                             NautilusWsMessage::Data(data_msgs)
                         } else {
@@ -1026,11 +1104,13 @@ impl BitmexUnifiedFeedHandler {
                     }
                     TableMessage::Funding { data, .. } => {
                         let mut funding_updates = Vec::new();
+
                         for msg in data {
                             if let Some(parsed) = parse::parse_funding_msg(msg) {
                                 funding_updates.push(parsed);
                             }
                         }
+
                         if !funding_updates.is_empty() {
                             NautilusWsMessage::FundingRateUpdates(funding_updates)
                         } else {
