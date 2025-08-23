@@ -22,6 +22,7 @@ mod serial_tests {
     use bytes::Bytes;
     use nautilus_common::{
         cache::CacheConfig, enums::SerializationEncoding, msgbus::database::DatabaseConfig,
+        testing::wait_until_async,
     };
     use nautilus_core::UUID4;
     use nautilus_infrastructure::redis::{
@@ -311,7 +312,21 @@ mod serial_tests {
         }
 
         // Wait for data to be written
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        wait_until_async(
+            || async {
+                // Check if we can read back at least one currency
+                let test_result = DatabaseQueries::load_currency(
+                    &database.con,
+                    &trader_key,
+                    &Ustr::from("USD"),
+                    SerializationEncoding::MsgPack,
+                )
+                .await;
+                test_result.is_ok() && test_result.unwrap().is_some()
+            },
+            std::time::Duration::from_secs(2),
+        )
+        .await;
 
         // Load currencies using bulk loading
         let result = DatabaseQueries::load_currencies(
@@ -417,7 +432,21 @@ mod serial_tests {
             .unwrap();
 
         // Wait for data to be written
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        wait_until_async(
+            || async {
+                DatabaseQueries::load_currency(
+                    &database.con,
+                    &trader_key,
+                    &Ustr::from("USD"),
+                    SerializationEncoding::MsgPack,
+                )
+                .await
+                .unwrap_or(None)
+                .is_some()
+            },
+            std::time::Duration::from_secs(2),
+        )
+        .await;
 
         let result = DatabaseQueries::load_currency(
             &database.con,
