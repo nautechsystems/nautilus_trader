@@ -17,7 +17,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use crate::{enums::Exchange, parse::deserialize_uppercase};
+use crate::{enums::TardisExchange, parse::deserialize_uppercase};
 
 /// Represents a single level in the order book (bid or ask).
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -36,7 +36,7 @@ pub struct BookChangeMsg {
     #[serde(deserialize_with = "deserialize_uppercase")]
     pub symbol: Ustr,
     /// The exchange ID.
-    pub exchange: Exchange,
+    pub exchange: TardisExchange,
     /// Indicates whether this is an initial order book snapshot.
     pub is_snapshot: bool,
     /// Updated bids, with price and amount levels.
@@ -57,7 +57,7 @@ pub struct BookSnapshotMsg {
     #[serde(deserialize_with = "deserialize_uppercase")]
     pub symbol: Ustr,
     /// The exchange ID.
-    pub exchange: Exchange,
+    pub exchange: TardisExchange,
     /// The name of the snapshot, e.g., `book_snapshot_{depth}_{interval}{time_unit}`.
     pub name: String,
     /// The requested number of levels (top bids/asks).
@@ -83,7 +83,7 @@ pub struct TradeMsg {
     #[serde(deserialize_with = "deserialize_uppercase")]
     pub symbol: Ustr,
     /// The exchange ID.
-    pub exchange: Exchange,
+    pub exchange: TardisExchange,
     /// The trade ID provided by the exchange (optional).
     pub id: Option<String>,
     /// The trade price as provided by the exchange.
@@ -106,7 +106,7 @@ pub struct DerivativeTickerMsg {
     #[serde(deserialize_with = "deserialize_uppercase")]
     pub symbol: Ustr,
     /// The exchange ID.
-    pub exchange: Exchange,
+    pub exchange: TardisExchange,
     /// The last instrument price if provided by exchange.
     pub last_price: Option<f64>,
     /// The last open interest if provided by exchange.
@@ -133,7 +133,7 @@ pub struct BarMsg {
     #[serde(deserialize_with = "deserialize_uppercase")]
     pub symbol: Ustr,
     /// The exchange ID.
-    pub exchange: Exchange,
+    pub exchange: TardisExchange,
     /// name with format `trade_bar`_{interval}
     pub name: String,
     /// The requested trade bar interval.
@@ -172,7 +172,7 @@ pub struct BarMsg {
 #[serde(rename_all = "camelCase")]
 pub struct DisconnectMsg {
     /// The exchange ID.
-    pub exchange: Exchange,
+    pub exchange: TardisExchange,
     /// The message arrival timestamp that triggered given bar computation (ISO 8601 format).
     pub local_timestamp: DateTime<Utc>,
 }
@@ -207,7 +207,7 @@ mod tests {
         let message: BookChangeMsg = serde_json::from_str(&json_data).unwrap();
 
         assert_eq!(message.symbol, "XBTUSD");
-        assert_eq!(message.exchange, Exchange::Bitmex);
+        assert_eq!(message.exchange, TardisExchange::Bitmex);
         assert!(!message.is_snapshot);
         assert!(message.bids.is_empty());
         assert_eq!(message.asks.len(), 1);
@@ -229,7 +229,7 @@ mod tests {
         let message: BookSnapshotMsg = serde_json::from_str(&json_data).unwrap();
 
         assert_eq!(message.symbol, "XBTUSD");
-        assert_eq!(message.exchange, Exchange::Bitmex);
+        assert_eq!(message.exchange, TardisExchange::Bitmex);
         assert_eq!(message.name, "book_snapshot_2_50ms");
         assert_eq!(message.depth, 2);
         assert_eq!(message.interval, 50);
@@ -255,7 +255,7 @@ mod tests {
         let message: TradeMsg = serde_json::from_str(&json_data).unwrap();
 
         assert_eq!(message.symbol, "XBTUSD");
-        assert_eq!(message.exchange, Exchange::Bitmex);
+        assert_eq!(message.exchange, TardisExchange::Bitmex);
         assert_eq!(
             message.id,
             Some("282a0445-0e3a-abeb-f403-11003204ea1b".to_string())
@@ -279,7 +279,7 @@ mod tests {
         let message: DerivativeTickerMsg = serde_json::from_str(&json_data).unwrap();
 
         assert_eq!(message.symbol, "BTC-PERPETUAL");
-        assert_eq!(message.exchange, Exchange::Deribit);
+        assert_eq!(message.exchange, TardisExchange::Deribit);
         assert_eq!(message.last_price, Some(7_987.5));
         assert_eq!(message.open_interest, Some(84_129_491.0));
         assert_eq!(message.funding_rate, Some(-0.00001568));
@@ -301,7 +301,7 @@ mod tests {
         let message: BarMsg = serde_json::from_str(&json_data).unwrap();
 
         assert_eq!(message.symbol, "XBTUSD");
-        assert_eq!(message.exchange, Exchange::Bitmex);
+        assert_eq!(message.exchange, TardisExchange::Bitmex);
         assert_eq!(message.name, "trade_bar_10000ms");
         assert_eq!(message.interval, 10_000);
         assert_eq!(message.open, 7_623.5);
@@ -336,7 +336,7 @@ mod tests {
         let json_data = load_test_json("disconnect.json");
         let message: DisconnectMsg = serde_json::from_str(&json_data).unwrap();
 
-        assert_eq!(message.exchange, Exchange::Deribit);
+        assert_eq!(message.exchange, TardisExchange::Deribit);
         assert_eq!(
             message.local_timestamp,
             DateTime::parse_from_rfc3339("2019-10-23T11:34:29.416Z").unwrap()

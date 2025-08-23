@@ -37,7 +37,7 @@ use ustr::Ustr;
 #[strum(serialize_all = "lowercase")]
 #[serde(rename_all = "lowercase")]
 /// The instrument type for the symbol.
-pub enum InstrumentType {
+pub enum TardisInstrumentType {
     Spot,
     Perpetual,
     Future,
@@ -62,7 +62,7 @@ pub enum InstrumentType {
 )]
 #[serde(rename_all = "lowercase")]
 /// The type of option.
-pub enum OptionType {
+pub enum TardisOptionType {
     Call,
     Put,
 }
@@ -84,7 +84,7 @@ pub enum OptionType {
     FromRepr,
 )]
 #[serde(rename_all = "lowercase")]
-pub enum TradeSide {
+pub enum TardisTradeSide {
     Buy,
     Sell,
     Unknown,
@@ -108,7 +108,7 @@ pub enum TradeSide {
     FromRepr,
 )]
 #[serde(rename_all = "lowercase")]
-pub enum BarKind {
+pub enum TardisBarKind {
     Time,
     Volume,
     Tick,
@@ -134,7 +134,7 @@ pub enum BarKind {
 #[serde(rename_all = "kebab-case")]
 /// Represents a crypto exchange.
 /// See <https://api.tardis.dev/v1/exchanges> for all supported exchanges.
-pub enum Exchange {
+pub enum TardisExchange {
     Ascendex,
     Binance,
     BinanceDelivery,
@@ -196,7 +196,7 @@ pub enum Exchange {
     WooX,
 }
 
-impl Exchange {
+impl TardisExchange {
     #[must_use]
     pub fn from_venue_str(s: &str) -> Vec<Self> {
         let s = s.to_ascii_uppercase();
@@ -342,7 +342,7 @@ mod tests {
 
     #[rstest]
     fn test_exchange_to_venue_mapping() {
-        for exchange in Exchange::iter() {
+        for exchange in TardisExchange::iter() {
             let venue_str = exchange.as_venue_str();
             assert!(
                 Venue::new_checked(venue_str).is_ok(),
@@ -380,7 +380,7 @@ mod tests {
 
         for venue_str in test_venues {
             let venue = Venue::new(venue_str);
-            let exchanges = Exchange::from_venue_str(venue.as_str());
+            let exchanges = TardisExchange::from_venue_str(venue.as_str());
 
             for exchange in exchanges {
                 assert_eq!(

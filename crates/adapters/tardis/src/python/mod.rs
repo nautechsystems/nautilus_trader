@@ -25,7 +25,7 @@ use nautilus_core::python::enums::parse_enum;
 use pyo3::prelude::*;
 use ustr::Ustr;
 
-use super::enums::{Exchange, InstrumentType};
+use super::enums::{TardisExchange, TardisInstrumentType};
 use crate::parse::normalize_symbol_str;
 
 /// Normalize a symbol string for Tardis, returning a suffix-modified symbol.
@@ -42,8 +42,8 @@ pub fn py_tardis_normalize_symbol_str(
     is_inverse: Option<bool>,
 ) -> PyResult<String> {
     let symbol = Ustr::from(&symbol);
-    let exchange: Exchange = parse_enum(&exchange, stringify!(exchange))?;
-    let instrument_type: InstrumentType =
+    let exchange: TardisExchange = parse_enum(&exchange, stringify!(exchange))?;
+    let instrument_type: TardisInstrumentType =
         parse_enum(&instrument_type, stringify!(instrument_type))?;
 
     Ok(normalize_symbol_str(symbol, &exchange, &instrument_type, is_inverse).to_string())
@@ -56,7 +56,7 @@ pub fn py_tardis_normalize_symbol_str(
 /// Returns a `PyErr` if registering any module components fails.
 #[pymodule]
 pub fn tardis(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<super::machine::types::InstrumentMiniInfo>()?;
+    m.add_class::<super::machine::types::TardisInstrumentMiniInfo>()?;
     m.add_class::<super::machine::types::ReplayNormalizedRequestOptions>()?;
     m.add_class::<super::machine::types::StreamNormalizedRequestOptions>()?;
     m.add_class::<super::machine::TardisMachineClient>()?;

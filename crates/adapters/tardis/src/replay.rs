@@ -41,11 +41,11 @@ use parquet::{arrow::ArrowWriter, basic::Compression, file::properties::WriterPr
 use thousands::Separable;
 use ustr::Ustr;
 
-use super::{enums::Exchange, http::models::InstrumentInfo};
+use super::{enums::TardisExchange, http::models::TardisInstrumentInfo};
 use crate::{
     config::TardisReplayConfig,
     http::TardisHttpClient,
-    machine::{TardisMachineClient, types::InstrumentMiniInfo},
+    machine::{TardisMachineClient, types::TardisInstrumentMiniInfo},
     parse::{normalize_instrument_id, parse_instrument_id},
 };
 
@@ -75,7 +75,7 @@ impl DateCursor {
 async fn gather_instruments_info(
     config: &TardisReplayConfig,
     http_client: &TardisHttpClient,
-) -> HashMap<Exchange, Vec<InstrumentInfo>> {
+) -> HashMap<TardisExchange, Vec<TardisInstrumentInfo>> {
     let futures = config.options.iter().map(|options| {
         let exchange = options.exchange;
         let client = &http_client;
@@ -93,7 +93,7 @@ async fn gather_instruments_info(
         }
     });
 
-    let results: Vec<(Exchange, Vec<InstrumentInfo>)> =
+    let results: Vec<(TardisExchange, Vec<TardisInstrumentInfo>)> =
         join_all(futures).await.into_iter().flatten().collect();
 
     tracing::info!("Received all instruments");
@@ -157,7 +157,7 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
                 parse_instrument_id(exchange, inst.id)
             };
 
-            let info = InstrumentMiniInfo::new(
+            let info = TardisInstrumentMiniInfo::new(
                 instrument_id,
                 Some(Ustr::from(&inst.id)),
                 *exchange,
