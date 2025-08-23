@@ -77,13 +77,13 @@ class TestBinanceFactories:
                 "https://sapi.binance.com",
             ],
             [
-                BinanceAccountType.USDT_FUTURE,
+                BinanceAccountType.USDT_FUTURES,
                 False,
                 False,
                 "https://fapi.binance.com",
             ],
             [
-                BinanceAccountType.COIN_FUTURE,
+                BinanceAccountType.COIN_FUTURES,
                 False,
                 False,
                 "https://dapi.binance.com",
@@ -107,13 +107,13 @@ class TestBinanceFactories:
                 "https://sapi.binance.us",
             ],
             [
-                BinanceAccountType.USDT_FUTURE,
+                BinanceAccountType.USDT_FUTURES,
                 False,
                 True,
                 "https://fapi.binance.us",
             ],
             [
-                BinanceAccountType.COIN_FUTURE,
+                BinanceAccountType.COIN_FUTURES,
                 False,
                 True,
                 "https://dapi.binance.us",
@@ -137,7 +137,7 @@ class TestBinanceFactories:
                 "https://testnet.binance.vision",
             ],
             [
-                BinanceAccountType.USDT_FUTURE,
+                BinanceAccountType.USDT_FUTURES,
                 True,
                 False,
                 "https://testnet.binancefuture.com",
@@ -173,13 +173,13 @@ class TestBinanceFactories:
                 "wss://stream.binance.com:9443",
             ],
             [
-                BinanceAccountType.USDT_FUTURE,
+                BinanceAccountType.USDT_FUTURES,
                 False,
                 False,
                 "wss://fstream.binance.com",
             ],
             [
-                BinanceAccountType.COIN_FUTURE,
+                BinanceAccountType.COIN_FUTURES,
                 False,
                 False,
                 "wss://dstream.binance.com",
@@ -203,13 +203,13 @@ class TestBinanceFactories:
                 "wss://stream.binance.us:9443",
             ],
             [
-                BinanceAccountType.USDT_FUTURE,
+                BinanceAccountType.USDT_FUTURES,
                 False,
                 True,
                 "wss://fstream.binance.us",
             ],
             [
-                BinanceAccountType.COIN_FUTURE,
+                BinanceAccountType.COIN_FUTURES,
                 False,
                 True,
                 "wss://dstream.binance.us",
@@ -233,7 +233,7 @@ class TestBinanceFactories:
                 "wss://stream.testnet.binance.vision",
             ],
             [
-                BinanceAccountType.USDT_FUTURE,
+                BinanceAccountType.USDT_FUTURES,
                 True,
                 False,
                 "wss://stream.binancefuture.com",
@@ -272,7 +272,7 @@ class TestBinanceFactories:
             config=BinanceDataClientConfig(  # (S106 Possible hard-coded password)
                 api_key="SOME_BINANCE_API_KEY",  # Do not remove or will fail in CI
                 api_secret="SOME_BINANCE_API_SECRET",  # Do not remove or will fail in CI
-                account_type=BinanceAccountType.USDT_FUTURE,
+                account_type=BinanceAccountType.USDT_FUTURES,
             ),
             msgbus=self.msgbus,
             cache=self.cache,
@@ -306,7 +306,7 @@ class TestBinanceFactories:
             config=BinanceExecClientConfig(  # (S106 Possible hard-coded password)
                 api_key="SOME_BINANCE_API_KEY",
                 api_secret="SOME_BINANCE_API_SECRET",
-                account_type=BinanceAccountType.USDT_FUTURE,
+                account_type=BinanceAccountType.USDT_FUTURES,
             ),
             msgbus=self.msgbus,
             cache=self.cache,
