@@ -16,7 +16,7 @@
 use std::env;
 
 use nautilus_bitmex::{
-    enums::{ExecInstruction, OrderType, Side},
+    common::enums::{ExecInstruction, OrderType, Side},
     http::{
         client::BitmexHttpClient,
         query::{DeleteOrderParamsBuilder, GetOrderParamsBuilder, PostOrderParamsBuilder},

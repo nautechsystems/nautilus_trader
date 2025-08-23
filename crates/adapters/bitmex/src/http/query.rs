@@ -18,7 +18,9 @@ use derive_builder::Builder;
 use serde::{self, Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::enums::{ContingencyType, ExecInstruction, OrderType, PegPriceType, Side, TimeInForce};
+use crate::common::enums::{
+    ContingencyType, ExecInstruction, OrderType, PegPriceType, Side, TimeInForce,
+};
 
 fn serialize_string_vec<S>(values: &Option<Vec<String>>, serializer: S) -> Result<S::Ok, S::Error>
 where

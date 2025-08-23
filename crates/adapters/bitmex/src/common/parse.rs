@@ -20,7 +20,7 @@ use nautilus_model::{
     identifiers::{InstrumentId, Symbol},
 };
 
-use crate::{
+use crate::common::{
     consts::BITMEX_VENUE,
     enums::{ContingencyType, LiquidityIndicator, OrderStatus, OrderType, Side, TimeInForce},
 };

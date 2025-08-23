@@ -32,13 +32,13 @@ use rust_decimal::Decimal;
 use uuid::Uuid;
 
 use super::models::{Execution, Instrument, Order, Position, Trade};
-use crate::{
-    common::parse::{
+use crate::common::{
+    enums::{ExecInstruction, InstrumentType},
+    parse::{
         parse_aggressor_side, parse_contingency_type, parse_instrument_id, parse_liquidity_side,
         parse_optional_datetime_to_unix_nanos, parse_order_status, parse_order_type,
         parse_position_side, parse_time_in_force,
     },
-    enums::{ExecInstruction, InstrumentType},
 };
 
 #[must_use]
@@ -658,10 +658,12 @@ mod tests {
 
     use super::*;
     use crate::{
-        common::testing::load_test_json,
-        enums::{
-            ContingencyType, InstrumentType, LiquidityIndicator, OrderStatus, OrderType, Side,
-            TimeInForce,
+        common::{
+            enums::{
+                ContingencyType, InstrumentType, LiquidityIndicator, OrderStatus, OrderType, Side,
+                TimeInForce,
+            },
+            testing::load_test_json,
         },
         http::models::{Execution, Instrument, Order, Position, TradeBin, Wallet},
     };
