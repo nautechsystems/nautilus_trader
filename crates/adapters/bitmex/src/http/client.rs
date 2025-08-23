@@ -54,7 +54,7 @@ use super::{
         PostOrderParams, PutOrderParams,
     },
 };
-use crate::{
+use crate::common::{
     consts::{BITMEX_HTTP_TESTNET_URL, BITMEX_HTTP_URL},
     credential::Credential,
 };

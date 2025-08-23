@@ -53,7 +53,7 @@ use super::{
         parse_trade_msg_vec, topic_from_bar_spec,
     },
 };
-use crate::{consts::BITMEX_WS_URL, credential::Credential};
+use crate::common::{consts::BITMEX_WS_URL, credential::Credential};
 
 /// Provides a WebSocket client for connecting to the [BitMEX](https://bitmex.com) real-time API.
 #[derive(Clone, Debug)]

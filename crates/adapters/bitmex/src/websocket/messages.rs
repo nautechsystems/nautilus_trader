@@ -25,7 +25,7 @@ use strum::Display;
 use uuid::Uuid;
 
 use super::enums::{Action, Side, TickDirection};
-use crate::enums::{
+use crate::common::enums::{
     ContingencyType, ExecInstruction, ExecType, LiquidityIndicator, OrderStatus, OrderType,
     PegPriceType, TimeInForce,
 };

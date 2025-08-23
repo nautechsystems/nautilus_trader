@@ -17,7 +17,7 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::enums::{
+use crate::common::enums::{
     ContingencyType, ExecInstruction, InstrumentType, LiquidityIndicator, OrderStatus, OrderType,
     PegPriceType, Side, TimeInForce,
 };

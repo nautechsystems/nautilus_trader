@@ -30,7 +30,7 @@ use nautilus_model::{
 use pyo3::{prelude::*, types::PyList};
 
 use crate::{
-    enums::BitmexSymbolStatus,
+    common::enums::BitmexSymbolStatus,
     http::{
         client::BitmexHttpClient,
         parse::{
@@ -311,8 +311,8 @@ impl BitmexHttpClient {
         params.text(NAUTILUS_TRADER);
         params.symbol(symbol.to_string());
         params.cl_ord_id(client_order_id.to_string());
-        params.ord_type(crate::enums::OrderType::from_nautilus(order_type));
-        params.side(crate::enums::Side::from(order_side));
+        params.ord_type(crate::common::enums::OrderType::from_nautilus(order_type));
+        params.side(crate::common::enums::Side::from(order_side));
         params.order_qty(quantity.as_f64() as u32); // TODO: Improve Quantity
 
         if let Some(price) = price {
