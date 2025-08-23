@@ -22,7 +22,10 @@ use nautilus_model::{
 
 use crate::common::{
     consts::BITMEX_VENUE,
-    enums::{ContingencyType, LiquidityIndicator, OrderStatus, OrderType, Side, TimeInForce},
+    enums::{
+        BitmexContingencyType, BitmexLiquidityIndicator, BitmexOrderStatus, BitmexOrderType,
+        BitmexSide, BitmexTimeInForce,
+    },
 };
 
 /// Parses a Nautilus instrument ID from the given BitMEX `symbol` value.
@@ -52,22 +55,20 @@ pub fn parse_optional_datetime_to_unix_nanos(
         .unwrap_or_default()
 }
 
-pub fn parse_aggressor_side(side: &Option<Side>) -> nautilus_model::enums::AggressorSide {
+pub fn parse_aggressor_side(side: &Option<BitmexSide>) -> nautilus_model::enums::AggressorSide {
     match side {
-        Some(Side::Buy) => nautilus_model::enums::AggressorSide::Buyer,
-        Some(Side::Sell) => nautilus_model::enums::AggressorSide::Seller,
+        Some(BitmexSide::Buy) => nautilus_model::enums::AggressorSide::Buyer,
+        Some(BitmexSide::Sell) => nautilus_model::enums::AggressorSide::Seller,
         None => nautilus_model::enums::AggressorSide::NoAggressor,
     }
 }
 
 pub fn parse_liquidity_side(
-    liquidity: &Option<LiquidityIndicator>,
+    liquidity: &Option<BitmexLiquidityIndicator>,
 ) -> nautilus_model::enums::LiquiditySide {
-    match liquidity {
-        Some(LiquidityIndicator::Maker) => nautilus_model::enums::LiquiditySide::Maker,
-        Some(LiquidityIndicator::Taker) => nautilus_model::enums::LiquiditySide::Taker,
-        _ => nautilus_model::enums::LiquiditySide::NoLiquiditySide,
-    }
+    liquidity
+        .map(|l| l.into())
+        .unwrap_or(nautilus_model::enums::LiquiditySide::NoLiquiditySide)
 }
 
 pub fn parse_position_side(current_qty: Option<i64>) -> nautilus_model::enums::PositionSide {
@@ -83,52 +84,20 @@ pub fn parse_position_side(current_qty: Option<i64>) -> nautilus_model::enums::P
 /// # Panics
 ///
 /// Panics if an unsupported `TimeInForce` variant is encountered.
-pub fn parse_time_in_force(tif: &TimeInForce) -> nautilus_model::enums::TimeInForce {
-    match tif {
-        TimeInForce::Day => nautilus_model::enums::TimeInForce::Day,
-        TimeInForce::GoodTillCancel => nautilus_model::enums::TimeInForce::Gtc,
-        TimeInForce::GoodTillDate => nautilus_model::enums::TimeInForce::Gtd,
-        TimeInForce::ImmediateOrCancel => nautilus_model::enums::TimeInForce::Ioc,
-        TimeInForce::FillOrKill => nautilus_model::enums::TimeInForce::Fok,
-        TimeInForce::AtTheOpening => nautilus_model::enums::TimeInForce::AtTheOpen,
-        TimeInForce::AtTheClose => nautilus_model::enums::TimeInForce::AtTheClose,
-        _ => panic!("Unsupported `TimeInForce`, was {tif}"),
-    }
+pub fn parse_time_in_force(tif: &BitmexTimeInForce) -> nautilus_model::enums::TimeInForce {
+    (*tif).into()
 }
 
-pub fn parse_order_type(order_type: &OrderType) -> nautilus_model::enums::OrderType {
-    match order_type {
-        OrderType::Market => nautilus_model::enums::OrderType::Market,
-        OrderType::Limit => nautilus_model::enums::OrderType::Limit,
-        OrderType::Stop => nautilus_model::enums::OrderType::StopMarket,
-        OrderType::StopLimit => nautilus_model::enums::OrderType::StopLimit,
-        OrderType::MarketIfTouched => nautilus_model::enums::OrderType::MarketIfTouched,
-        OrderType::LimitIfTouched => nautilus_model::enums::OrderType::LimitIfTouched,
-        OrderType::Pegged => nautilus_model::enums::OrderType::Limit,
-    }
+pub fn parse_order_type(order_type: &BitmexOrderType) -> nautilus_model::enums::OrderType {
+    (*order_type).into()
 }
 
-pub fn parse_order_status(order_status: &OrderStatus) -> nautilus_model::enums::OrderStatus {
-    match order_status {
-        OrderStatus::New => nautilus_model::enums::OrderStatus::Accepted,
-        OrderStatus::PartiallyFilled => nautilus_model::enums::OrderStatus::PartiallyFilled,
-        OrderStatus::Filled => nautilus_model::enums::OrderStatus::Filled,
-        OrderStatus::Canceled => nautilus_model::enums::OrderStatus::Canceled,
-        OrderStatus::Rejected => nautilus_model::enums::OrderStatus::Rejected,
-        OrderStatus::Expired => nautilus_model::enums::OrderStatus::Expired,
-    }
+pub fn parse_order_status(order_status: &BitmexOrderStatus) -> nautilus_model::enums::OrderStatus {
+    (*order_status).into()
 }
 
 pub fn parse_contingency_type(
-    contingency_type: &ContingencyType,
+    contingency_type: &BitmexContingencyType,
 ) -> nautilus_model::enums::ContingencyType {
-    match contingency_type {
-        ContingencyType::OneCancelsTheOther => nautilus_model::enums::ContingencyType::Oco,
-        ContingencyType::OneTriggersTheOther => nautilus_model::enums::ContingencyType::Oto,
-        ContingencyType::OneUpdatesTheOtherProportional => {
-            nautilus_model::enums::ContingencyType::Ouo
-        }
-        ContingencyType::OneUpdatesTheOtherAbsolute => nautilus_model::enums::ContingencyType::Ouo,
-        ContingencyType::Unknown => nautilus_model::enums::ContingencyType::NoContingency,
-    }
+    (*contingency_type).into()
 }

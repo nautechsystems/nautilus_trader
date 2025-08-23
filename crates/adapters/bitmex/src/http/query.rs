@@ -19,7 +19,8 @@ use serde::{self, Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::common::enums::{
-    ContingencyType, ExecInstruction, OrderType, PegPriceType, Side, TimeInForce,
+    BitmexContingencyType, BitmexExecInstruction, BitmexOrderType, BitmexPegPriceType, BitmexSide,
+    BitmexTimeInForce,
 };
 
 fn serialize_string_vec<S>(values: &Option<Vec<String>>, serializer: S) -> Result<S::Ok, S::Error>
@@ -105,7 +106,7 @@ pub struct PostOrderParams {
     pub symbol: String,
     /// Order side. Valid options: Buy, Sell. Defaults to 'Buy' unless `orderQty` is negative.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub side: Option<Side>,
+    pub side: Option<BitmexSide>,
     /// Order quantity in units of the instrument (i.e. contracts).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub order_qty: Option<u32>,
@@ -131,29 +132,29 @@ pub struct PostOrderParams {
     pub peg_offset_value: Option<f64>,
     /// Optional peg price type. Valid options: LastPeg, MidPricePeg, MarketPeg, PrimaryPeg, TrailingStopPeg.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub peg_price_type: Option<PegPriceType>,
+    pub peg_price_type: Option<BitmexPegPriceType>,
     /// Order type. Valid options: Market, Limit, Stop, StopLimit, MarketIfTouched, LimitIfTouched, Pegged. Defaults to 'Limit' when `price` is specified. Defaults to 'Stop' when `stopPx` is specified. Defaults to 'StopLimit' when `price` and `stopPx` are specified.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub ord_type: Option<OrderType>,
+    pub ord_type: Option<BitmexOrderType>,
     /// Time in force. Valid options: Day, GoodTillCancel, ImmediateOrCancel, FillOrKill. Defaults to 'GoodTillCancel' for 'Limit', 'StopLimit', and 'LimitIfTouched' orders.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub time_in_force: Option<TimeInForce>,
+    pub time_in_force: Option<BitmexTimeInForce>,
     /// Optional execution instructions. Valid options: ParticipateDoNotInitiate, AllOrNone, MarkPrice, IndexPrice, LastPrice, Close, ReduceOnly, Fixed. 'AllOrNone' instruction requires `displayQty` to be 0. 'MarkPrice', 'IndexPrice' or 'LastPrice' instruction valid for 'Stop', 'StopLimit', 'MarketIfTouched', and 'LimitIfTouched' orders.
     #[serde(
         skip_serializing_if = "Option::is_none",
         serialize_with = "serialize_exec_instructions"
     )]
-    pub exec_inst: Option<Vec<ExecInstruction>>,
+    pub exec_inst: Option<Vec<BitmexExecInstruction>>,
     /// Deprecated: linked orders are not supported after 2018/11/10.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub contingency_type: Option<ContingencyType>,
+    pub contingency_type: Option<BitmexContingencyType>,
     /// Optional order annotation. e.g. 'Take profit'.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
 }
 
 fn serialize_exec_instructions<S>(
-    instructions: &Option<Vec<ExecInstruction>>,
+    instructions: &Option<Vec<BitmexExecInstruction>>,
     serializer: S,
 ) -> Result<S::Ok, S::Error>
 where
