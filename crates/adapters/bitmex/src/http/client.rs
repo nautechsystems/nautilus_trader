@@ -33,6 +33,7 @@ use std::{
     sync::{Arc, LazyLock, Mutex},
 };
 
+use ahash::AHashMap;
 use chrono::Utc;
 use nautilus_core::{consts::NAUTILUS_USER_AGENT, env::get_env_var};
 use nautilus_model::{
@@ -392,7 +393,7 @@ impl BitmexHttpInnerClient {
 )]
 pub struct BitmexHttpClient {
     inner: Arc<BitmexHttpInnerClient>,
-    instruments_cache: Arc<Mutex<HashMap<Ustr, InstrumentAny>>>,
+    instruments_cache: Arc<Mutex<AHashMap<Ustr, InstrumentAny>>>,
 }
 
 impl Default for BitmexHttpClient {
@@ -428,7 +429,7 @@ impl BitmexHttpClient {
 
         Self {
             inner: Arc::new(inner),
-            instruments_cache: Arc::new(Mutex::new(HashMap::new())),
+            instruments_cache: Arc::new(Mutex::new(AHashMap::new())),
         }
     }
 
