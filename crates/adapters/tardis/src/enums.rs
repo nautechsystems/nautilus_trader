@@ -19,8 +19,9 @@ use strum::{AsRefStr, Display, EnumIter, EnumString, FromRepr};
 use ustr::Ustr;
 
 #[derive(
-    Debug,
+    Copy,
     Clone,
+    Debug,
     PartialEq,
     Eq,
     Hash,
@@ -45,8 +46,9 @@ pub enum InstrumentType {
 }
 
 #[derive(
-    Debug,
+    Copy,
     Clone,
+    Debug,
     PartialEq,
     Eq,
     Hash,
@@ -67,8 +69,9 @@ pub enum OptionType {
 
 /// The aggressor side of the trade.
 #[derive(
-    Debug,
+    Copy,
     Clone,
+    Debug,
     PartialEq,
     Eq,
     Hash,
@@ -90,8 +93,9 @@ pub enum TradeSide {
 /// The bar kind.
 #[allow(missing_docs)]
 #[derive(
-    Debug,
+    Copy,
     Clone,
+    Debug,
     PartialEq,
     Eq,
     Hash,
@@ -111,8 +115,9 @@ pub enum BarKind {
 }
 
 #[derive(
-    Debug,
+    Copy,
     Clone,
+    Debug,
     PartialEq,
     Eq,
     Hash,

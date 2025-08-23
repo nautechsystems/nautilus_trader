@@ -312,7 +312,7 @@ impl BitmexHttpClient {
         params.symbol(symbol.to_string());
         params.cl_ord_id(client_order_id.to_string());
         params.ord_type(crate::enums::OrderType::from_nautilus(order_type));
-        params.side(crate::enums::Side::from_nautilus_order_side(order_side));
+        params.side(crate::enums::Side::from(order_side));
         params.order_qty(quantity.as_f64() as u32); // TODO: Improve Quantity
 
         if let Some(price) = price {

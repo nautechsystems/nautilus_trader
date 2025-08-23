@@ -177,19 +177,15 @@ pub fn determine_instrument_info(
 ) -> Option<Arc<InstrumentMiniInfo>> {
     let key = match msg {
         WsMessage::BookChange(msg) => {
-            TardisInstrumentKey::new(Ustr::from(&msg.symbol), msg.exchange.clone())
+            TardisInstrumentKey::new(Ustr::from(&msg.symbol), msg.exchange)
         }
         WsMessage::BookSnapshot(msg) => {
-            TardisInstrumentKey::new(Ustr::from(&msg.symbol), msg.exchange.clone())
+            TardisInstrumentKey::new(Ustr::from(&msg.symbol), msg.exchange)
         }
-        WsMessage::Trade(msg) => {
-            TardisInstrumentKey::new(Ustr::from(&msg.symbol), msg.exchange.clone())
-        }
-        WsMessage::TradeBar(msg) => {
-            TardisInstrumentKey::new(Ustr::from(&msg.symbol), msg.exchange.clone())
-        }
+        WsMessage::Trade(msg) => TardisInstrumentKey::new(Ustr::from(&msg.symbol), msg.exchange),
+        WsMessage::TradeBar(msg) => TardisInstrumentKey::new(Ustr::from(&msg.symbol), msg.exchange),
         WsMessage::DerivativeTicker(msg) => {
-            TardisInstrumentKey::new(Ustr::from(&msg.symbol), msg.exchange.clone())
+            TardisInstrumentKey::new(Ustr::from(&msg.symbol), msg.exchange)
         }
         WsMessage::Disconnect(_) => return None,
     };

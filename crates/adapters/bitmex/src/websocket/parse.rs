@@ -52,8 +52,7 @@ use super::{
 };
 use crate::common::parse::{
     parse_instrument_id, parse_liquidity_side, parse_optional_datetime_to_unix_nanos,
-    parse_order_side, parse_order_status, parse_order_type, parse_position_side,
-    parse_time_in_force,
+    parse_order_status, parse_order_type, parse_position_side, parse_time_in_force,
 };
 
 /// Check if a symbol is an index symbol (starts with '.').
@@ -396,7 +395,7 @@ pub fn parse_order_msg(msg: &OrderMsg, price_precision: u8) -> OrderStatusReport
     let account_id = AccountId::new(format!("BITMEX-{}", msg.account));
     let instrument_id = parse_instrument_id(&msg.symbol);
     let venue_order_id = VenueOrderId::new(msg.order_id.to_string());
-    let order_side = parse_order_side(&Some(crate::enums::Side::from(msg.side.clone())));
+    let order_side: OrderSide = crate::enums::Side::from(msg.side).into();
     let order_type = parse_order_type(&msg.ord_type);
     let time_in_force = parse_time_in_force(&msg.time_in_force);
     let order_status = parse_order_status(&msg.ord_status);
@@ -466,7 +465,10 @@ pub fn parse_execution_msg(msg: ExecutionMsg, price_precision: u8) -> Option<Fil
     let instrument_id = parse_instrument_id(&msg.symbol?);
     let venue_order_id = VenueOrderId::new(msg.order_id?.to_string());
     let trade_id = TradeId::new(msg.trd_match_id?.to_string());
-    let order_side = parse_order_side(&msg.side.map(crate::enums::Side::from));
+    let order_side: OrderSide = msg
+        .side
+        .map(crate::enums::Side::from)
+        .map_or(OrderSide::NoOrderSide, |s| s.into());
     let last_qty = Quantity::from(msg.last_qty?);
     let last_px = Price::new(msg.last_px?, price_precision);
     let settlement_currency = msg.settl_currency.unwrap_or("XBT".to_string());

@@ -45,8 +45,8 @@ use crate::{
         models::OKXInstrument,
         parse::{
             okx_channel_to_bar_spec, parse_client_order_id, parse_fee, parse_funding_rate_msg,
-            parse_instrument_any, parse_message_vec, parse_millisecond_timestamp, parse_order_side,
-            parse_price, parse_quantity,
+            parse_instrument_any, parse_message_vec, parse_millisecond_timestamp, parse_price,
+            parse_quantity,
         },
     },
     websocket::messages::{ExecutionReport, NautilusWsMessage, OKXFundingRateMsg},
@@ -461,7 +461,7 @@ pub fn parse_trade_msg(
 ) -> anyhow::Result<TradeTick> {
     let price = parse_price(&msg.px, price_precision)?;
     let size = parse_quantity(&msg.sz, size_precision)?;
-    let aggressor_side = AggressorSide::from(msg.side.clone());
+    let aggressor_side: AggressorSide = msg.side.into();
     let trade_id = TradeId::new(&msg.trade_id);
     let ts_event = parse_millisecond_timestamp(msg.ts);
 
@@ -574,11 +574,11 @@ pub fn parse_order_status_report(
 ) -> anyhow::Result<OrderStatusReport> {
     let client_order_id = parse_client_order_id(&msg.cl_ord_id);
     let venue_order_id = VenueOrderId::new(msg.ord_id);
-    let order_side = parse_order_side(&Some(msg.side.clone()));
+    let order_side: OrderSide = msg.side.into();
 
-    let okx_order_type = msg.ord_type.clone();
-    let order_type: OrderType = msg.ord_type.clone().into();
-    let order_status: OrderStatus = msg.state.clone().into();
+    let okx_order_type = msg.ord_type;
+    let order_type: OrderType = msg.ord_type.into();
+    let order_status: OrderStatus = msg.state.into();
 
     let time_in_force = match okx_order_type {
         OKXOrderType::Fok => TimeInForce::Fok,
@@ -649,7 +649,7 @@ pub fn parse_fill_report(
     let client_order_id = parse_client_order_id(&msg.cl_ord_id);
     let venue_order_id = VenueOrderId::new(msg.ord_id);
     let trade_id = TradeId::from(msg.trade_id.as_str());
-    let order_side = parse_order_side(&Some(msg.side.clone()));
+    let order_side: OrderSide = msg.side.into();
 
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
@@ -664,7 +664,7 @@ pub fn parse_fill_report(
         total_fee
     };
 
-    let liquidity_side: LiquiditySide = LiquiditySide::from(msg.exec_type.clone());
+    let liquidity_side: LiquiditySide = msg.exec_type.into();
     let ts_event = parse_millisecond_timestamp(msg.fill_time);
 
     let report = FillReport::new(

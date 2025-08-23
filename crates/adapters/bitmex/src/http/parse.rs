@@ -19,7 +19,7 @@ use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime, uuid::UUID4};
 use nautilus_model::{
     currencies::CURRENCY_MAP,
     data::trade::TradeTick,
-    enums::CurrencyType,
+    enums::{CurrencyType, OrderSide},
     identifiers::{AccountId, ClientOrderId, OrderListId, Symbol, TradeId, VenueOrderId},
     instruments::{
         any::InstrumentAny, crypto_future::CryptoFuture, crypto_perpetual::CryptoPerpetual,
@@ -35,8 +35,8 @@ use super::models::{Execution, Instrument, Order, Position, Trade};
 use crate::{
     common::parse::{
         parse_aggressor_side, parse_contingency_type, parse_instrument_id, parse_liquidity_side,
-        parse_optional_datetime_to_unix_nanos, parse_order_side, parse_order_status,
-        parse_order_type, parse_position_side, parse_time_in_force,
+        parse_optional_datetime_to_unix_nanos, parse_order_status, parse_order_type,
+        parse_position_side, parse_time_in_force,
     },
     enums::{ExecInstruction, InstrumentType},
 };
@@ -421,7 +421,10 @@ pub fn parse_order_status_report(
             .ok_or_else(|| anyhow::anyhow!("Order missing symbol"))?,
     );
     let venue_order_id = VenueOrderId::new(order.order_id.to_string());
-    let order_side = parse_order_side(&order.side);
+    let order_side: OrderSide = order
+        .side
+        .ok_or_else(|| anyhow::anyhow!("Order missing side"))?
+        .into();
     let order_type = parse_order_type(
         order
             .ord_type
@@ -556,7 +559,10 @@ pub fn parse_fill_report(exec: Execution, price_precision: u8) -> anyhow::Result
             .ok_or_else(|| anyhow::anyhow!("Fill missing both trd_match_id and exec_id"))?
             .to_string(),
     );
-    let order_side = parse_order_side(&exec.side);
+    let order_side: OrderSide = exec
+        .side
+        .ok_or_else(|| anyhow::anyhow!("Fill missing side"))?
+        .into();
     let last_qty = Quantity::from(
         exec.last_qty
             .ok_or_else(|| anyhow::anyhow!("Fill missing last_qty"))?,
