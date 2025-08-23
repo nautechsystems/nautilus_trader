@@ -1245,7 +1245,10 @@ class OptionStrategy(Strategy):
             self.config.option_id,
             params={"durations_seconds": (pd.Timedelta(minutes=2).seconds,)},
         )
-        self.subscribe_quote_ticks(self.config.option_id2)
+        self.subscribe_quote_ticks(
+            self.config.option_id2,
+            params={"point_data": True, "durations_seconds": (pd.Timedelta(minutes=1).seconds,)},
+        )
         self.subscribe_bars(self.bar_type)
 
         # Request and subscribe to spread instrument
