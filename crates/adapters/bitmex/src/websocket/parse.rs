@@ -395,7 +395,7 @@ pub fn parse_order_msg(msg: &OrderMsg, price_precision: u8) -> OrderStatusReport
     let account_id = AccountId::new(format!("BITMEX-{}", msg.account));
     let instrument_id = parse_instrument_id(&msg.symbol);
     let venue_order_id = VenueOrderId::new(msg.order_id.to_string());
-    let order_side: OrderSide = crate::common::enums::Side::from(msg.side).into();
+    let order_side: OrderSide = crate::common::enums::BitmexSide::from(msg.side).into();
     let order_type = parse_order_type(&msg.ord_type);
     let time_in_force = parse_time_in_force(&msg.time_in_force);
     let order_status = parse_order_status(&msg.ord_status);
@@ -457,7 +457,7 @@ pub fn parse_order_msg(msg: &OrderMsg, price_precision: u8) -> OrderStatusReport
 /// Panics if required fields are missing or invalid.
 pub fn parse_execution_msg(msg: ExecutionMsg, price_precision: u8) -> Option<FillReport> {
     // Skip non-trade executions
-    if msg.exec_type != Some(crate::common::enums::ExecType::Trade) {
+    if msg.exec_type != Some(crate::common::enums::BitmexExecType::Trade) {
         return None;
     }
 
@@ -467,7 +467,7 @@ pub fn parse_execution_msg(msg: ExecutionMsg, price_precision: u8) -> Option<Fil
     let trade_id = TradeId::new(msg.trd_match_id?.to_string());
     let order_side: OrderSide = msg
         .side
-        .map(crate::common::enums::Side::from)
+        .map(crate::common::enums::BitmexSide::from)
         .map_or(OrderSide::NoOrderSide, |s| s.into());
     let last_qty = Quantity::from(msg.last_qty?);
     let last_px = Price::new(msg.last_px?, price_precision);
@@ -663,7 +663,10 @@ pub fn parse_funding_msg(msg: FundingMsg) -> Option<FundingRateUpdate> {
 mod tests {
     use nautilus_model::{
         data::quote::QuoteTick,
-        enums::{AggressorSide, BookAction, LiquiditySide, PositionSide},
+        enums::{
+            AggressorSide, BookAction, LiquiditySide, OrderStatus, OrderType, PositionSide,
+            TimeInForce,
+        },
         identifiers::{InstrumentId, Symbol},
         instruments::CryptoPerpetual,
         types::Currency,
@@ -815,16 +818,10 @@ mod tests {
             report.client_order_id.unwrap().to_string(),
             "mm_bitmex_1a/oemUeQ4CAJZgP3fjHsA"
         );
-        assert_eq!(report.order_side, nautilus_model::enums::OrderSide::Buy);
-        assert_eq!(report.order_type, nautilus_model::enums::OrderType::Limit);
-        assert_eq!(
-            report.time_in_force,
-            nautilus_model::enums::TimeInForce::Gtc
-        );
-        assert_eq!(
-            report.order_status,
-            nautilus_model::enums::OrderStatus::Accepted
-        );
+        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.order_type, OrderType::Limit);
+        assert_eq!(report.time_in_force, TimeInForce::Gtc);
+        assert_eq!(report.order_status, OrderStatus::Accepted);
         assert_eq!(report.quantity, Quantity::from(100));
         assert_eq!(report.filled_qty, Quantity::from(0));
         assert_eq!(report.price.unwrap(), Price::from("98000.0"));
@@ -865,7 +862,7 @@ mod tests {
         // Test that non-trade executions return None
         let mut msg: ExecutionMsg =
             serde_json::from_str(&load_test_json("ws_execution.json")).unwrap();
-        msg.exec_type = Some(crate::common::enums::ExecType::Settlement);
+        msg.exec_type = Some(crate::common::enums::BitmexExecType::Settlement);
 
         let result = parse_execution_msg(msg, 1);
         assert!(result.is_none());
