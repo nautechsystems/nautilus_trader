@@ -143,6 +143,7 @@ Released on TBD (UTC).
 - Fixed Binance Ed25519 key handling
 - Fixed Bybit execution fee handling where the `execFee` field was not used when available as well as incorrect fee currency
 - Fixed Bybit instrument provider fee rate handling during parsing
+- Fixed Bybit SPOT commission currency for makers
 - Fixed RPC client content type header (#2828), thanks @filipmacek
 - Fixed `venue_order_id` handling for Polymarket order status request (#2848), thanks @DeirhX
 - Fixed race-condition on node shutdown in async `InteractiveBrokersDataClient._disconnect()` (#2865), thanks @ruvr
