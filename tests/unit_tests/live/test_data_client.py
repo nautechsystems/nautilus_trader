@@ -26,6 +26,7 @@ from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.portfolio.portfolio import Portfolio
+from nautilus_trader.test_kit.functions import eventually
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
@@ -229,7 +230,7 @@ class TestLiveDataClientTests:
         task2 = client.create_task(long_task(), log_msg="task2")
         task3 = client.create_task(long_task(), log_msg="task3")
 
-        await asyncio.sleep(0.01)  # Let tasks start
+        await eventually(lambda: all(t in client._tasks for t in [task1, task2, task3]))
 
         # Assert - Tasks are tracked
         assert task1 in client._tasks
@@ -259,7 +260,7 @@ class TestLiveDataClientTests:
         task2 = client.create_task(long_task(), log_msg="task2")
         task3 = client.create_task(long_task(), log_msg="task3")
 
-        await asyncio.sleep(0.01)  # Let tasks start
+        await eventually(lambda: all(t in client._tasks for t in [task1, task2, task3]))
 
         # Act - Cancel tasks
         await client.cancel_pending_tasks(timeout_secs=1.0)
@@ -288,7 +289,7 @@ class TestLiveDataClientTests:
         for i in range(5):
             client.create_task(long_task(), log_msg=f"task_{i}")
 
-        await asyncio.sleep(0.01)  # Let tasks start
+        await eventually(lambda: len([t for t in client._tasks if not t.done()]) == 5)
 
         # Assert - Tasks are active
         active_before = [t for t in client._tasks if not t.done()]
@@ -296,7 +297,10 @@ class TestLiveDataClientTests:
 
         # Act - Disconnect (should cancel tasks)
         client.disconnect()
-        await asyncio.sleep(0.5)  # Wait for disconnect and cleanup
+        await eventually(
+            lambda: len([t for t in client._tasks if not t.done()]) <= 1,
+            timeout=1.0,
+        )  # Only disconnect task might remain
 
         # Assert - Tasks should be cancelled after disconnect
         active_after = [t for t in client._tasks if not t.done()]
