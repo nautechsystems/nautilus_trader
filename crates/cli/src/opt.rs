@@ -104,8 +104,8 @@ pub enum BlockchainCommand {
         #[clap(flatten)]
         database: DatabaseConfig,
     },
-    /// Syncs exchange pools for a specific DEX.
-    SyncPools {
+    /// Sync DEX pools.
+    SyncDex {
         /// The blockchain chain name (case-insensitive). Examples: ethereum, arbitrum, base, polygon, bsc
         #[arg(long)]
         chain: String,
@@ -115,6 +115,9 @@ pub enum BlockchainCommand {
         /// RPC HTTP URL for blockchain calls (optional, falls back to RPC_HTTP_URL env var)
         #[arg(long)]
         rpc_url: Option<String>,
+        /// Reset sync progress and start from the beginning, ignoring last synced block
+        #[arg(long)]
+        reset: bool,
         /// Database configuration options
         #[clap(flatten)]
         database: DatabaseConfig,
