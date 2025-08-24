@@ -15,30 +15,43 @@
 
 use aws_lc_rs::hmac;
 use ustr::Ustr;
+use zeroize::ZeroizeOnDrop;
 
 /// BitMEX API credentials for signing requests.
 ///
 /// Uses HMAC SHA256 for request signing as per BitMEX API specifications.
-#[derive(Debug, Clone)]
+/// Secrets are automatically zeroized on drop for security.
+#[derive(Clone, ZeroizeOnDrop)]
 pub struct Credential {
+    #[zeroize(skip)]
     pub api_key: Ustr,
-    api_secret: Vec<u8>,
+    api_secret: Box<[u8]>,
+}
+impl core::fmt::Debug for Credential {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Credential")
+            .field("api_key", &self.api_key)
+            .field("api_secret", &"<redacted>")
+            .finish()
+    }
 }
 
 impl Credential {
     /// Creates a new [`Credential`] instance.
     #[must_use]
     pub fn new(api_key: String, api_secret: String) -> Self {
+        let boxed: Box<[u8]> = api_secret.into_bytes().into_boxed_slice();
         Self {
             api_key: api_key.into(),
-            api_secret: api_secret.into_bytes(),
+            api_secret: boxed,
         }
     }
 
     /// Signs a request message according to the BitMEX authentication scheme.
     pub fn sign(&self, verb: &str, endpoint: &str, expires: i64, data: &str) -> String {
         let sign_message = format!("{verb}{endpoint}{expires}{data}");
-        let key = hmac::Key::new(hmac::HMAC_SHA256, &self.api_secret);
+        // Access the boxed slice directly
+        let key = hmac::Key::new(hmac::HMAC_SHA256, &self.api_secret[..]);
         let signature = hmac::sign(&key, sign_message.as_bytes());
         hex::encode(signature.as_ref())
     }
@@ -94,6 +107,19 @@ mod tests {
         assert_eq!(
             signature,
             "1749cd2ccae4aa49048ae09f0b95110cee706e0944e6a14ad0b3a8cb45bd336b"
+        );
+    }
+
+    #[rstest]
+    fn test_debug_redacts_secret() {
+        let credential = Credential::new(API_KEY.to_string(), API_SECRET.to_string());
+        let dbg_out = format!("{:?}", credential);
+        assert!(dbg_out.contains("api_secret: \"<redacted>\""));
+        assert!(!dbg_out.contains("chNOO"));
+        let secret_bytes_dbg = format!("{:?}", API_SECRET.as_bytes());
+        assert!(
+            !dbg_out.contains(&secret_bytes_dbg),
+            "Debug output must not contain raw secret bytes"
         );
     }
 }
