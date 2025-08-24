@@ -1,15 +1,14 @@
+# Global flags that work across all platforms
 [target.'cfg(all())']
 rustflags = [
     # https://rust-lang.github.io/rust-clippy/master/index.html#drop_non_drop
     # Disable this lint as we explicitly drop even when `Drop` is not implemented
     "-Aclippy::drop_non_drop",
-    # Size optimization flags
-    "-C", "link-arg=-Wl,--gc-sections",
-    "-C", "link-arg=-Wl,--as-needed",
     "-C", "relocation-model=pic",
     "-C", "embed-bitcode=no",
 ]
 
+# macOS-specific configuration
 [target.x86_64-apple-darwin]
 rustflags = [
     "-C", "link-arg=-undefined",
@@ -22,6 +21,7 @@ rustflags = [
     "-C", "link-arg=dynamic_lookup",
 ]
 
+# Linux-specific configuration with size optimization
 [target.'cfg(target_os = "linux")']
 rustflags = [
     "-C", "link-arg=-Wl,--gc-sections",
@@ -30,6 +30,7 @@ rustflags = [
     "-C", "relocation-model=pic",
 ]
 
+# Windows-specific configuration
 [target.x86_64-pc-windows-msvc]
 rustflags = [
     "-C", "target-feature=+crt-static",
