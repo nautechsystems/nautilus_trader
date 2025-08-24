@@ -100,6 +100,7 @@ Released on TBD (UTC).
 - Improved positions report to mark snapshots (#2840), thanks @stastnypremysl
 - Improved ERC20 token metadata handling and error recovery (#2847), thanks @filipmacek
 - Improved Docker configuration (#2868), thanks @nicolad
+- Improved security for `Credential` struct (#2882), thanks @nicolad
 - Refined Rust catalog path handling (#2743), thanks @faysou
 - Refined Rust `GreeksCalculator` (#2760), thanks @faysou
 - Refined Databento bars timestamp decoding and backtest execution usage (#2800), thanks @faysou

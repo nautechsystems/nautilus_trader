@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::fmt::Debug;
+
 use aws_lc_rs::hmac;
 use ustr::Ustr;
 use zeroize::ZeroizeOnDrop;
@@ -27,8 +29,9 @@ pub struct Credential {
     pub api_key: Ustr,
     api_secret: Box<[u8]>,
 }
-impl core::fmt::Debug for Credential {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+
+impl Debug for Credential {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Credential")
             .field("api_key", &self.api_key)
             .field("api_secret", &"<redacted>")
@@ -41,6 +44,7 @@ impl Credential {
     #[must_use]
     pub fn new(api_key: String, api_secret: String) -> Self {
         let boxed: Box<[u8]> = api_secret.into_bytes().into_boxed_slice();
+
         Self {
             api_key: api_key.into(),
             api_secret: boxed,
@@ -50,12 +54,15 @@ impl Credential {
     /// Signs a request message according to the BitMEX authentication scheme.
     pub fn sign(&self, verb: &str, endpoint: &str, expires: i64, data: &str) -> String {
         let sign_message = format!("{verb}{endpoint}{expires}{data}");
-        // Access the boxed slice directly
         let key = hmac::Key::new(hmac::HMAC_SHA256, &self.api_secret[..]);
         let signature = hmac::sign(&key, sign_message.as_bytes());
         hex::encode(signature.as_ref())
     }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 
 /// Tests use examples from https://www.bitmex.com/app/apiKeysUsage.
 #[cfg(test)]
