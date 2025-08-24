@@ -7,7 +7,6 @@ rustflags = [
     "-C", "link-arg=-Wl,--gc-sections",
     "-C", "link-arg=-Wl,--as-needed",
     "-C", "relocation-model=pic",
-    "-C", "embed-bitcode=no",
 ]
 
 [target.x86_64-apple-darwin]
