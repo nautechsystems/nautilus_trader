@@ -19,7 +19,7 @@ use futures_util::StreamExt;
 use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
     data::{BarType, Data, OrderBookDeltas_API},
-    enums::{OrderSide, OrderType, PositionSide},
+    enums::{OrderSide, OrderType, PositionSide, TimeInForce},
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     python::{
         data::data_to_pycapsule,
@@ -722,6 +722,8 @@ impl OKXWebSocketClient {
         order_side,
         order_type,
         quantity,
+        time_in_force=None,
+        expire_time_ns=None,
         price=None,
         trigger_price=None,
         post_only=None,
@@ -741,6 +743,8 @@ impl OKXWebSocketClient {
         order_side: OrderSide,
         order_type: OrderType,
         quantity: Quantity,
+        time_in_force: Option<TimeInForce>,
+        expire_time_ns: Option<u64>,
         price: Option<Price>,
         trigger_price: Option<Price>,
         post_only: Option<bool>,
@@ -761,6 +765,8 @@ impl OKXWebSocketClient {
                     order_side,
                     order_type,
                     quantity,
+                    time_in_force,
+                    expire_time_ns,
                     price,
                     trigger_price,
                     post_only,

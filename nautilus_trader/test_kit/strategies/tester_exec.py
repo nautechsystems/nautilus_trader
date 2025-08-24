@@ -65,6 +65,7 @@ class ExecTesterConfig(StrategyConfig, frozen=True):
     enable_buys: bool = True
     enable_sells: bool = True
     open_position_on_start_qty: Decimal | None = None
+    open_position_time_in_force: TimeInForce = TimeInForce.GTC
     tob_offset_ticks: PositiveInt = 500  # Definitely out of the market
     use_post_only: bool = True
     use_quote_quantity: bool = False
@@ -238,6 +239,7 @@ class ExecTester(Strategy):
             instrument_id=self.config.instrument_id,
             order_side=OrderSide.BUY if net_qty > 0 else OrderSide.SELL,
             quantity=self.instrument.make_qty(self.config.order_qty),
+            time_in_force=self.config.open_position_time_in_force,
             quote_quantity=self.config.use_quote_quantity,
         )
 
