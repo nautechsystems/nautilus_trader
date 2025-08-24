@@ -115,6 +115,9 @@ pub enum BlockchainCommand {
         /// RPC HTTP URL for blockchain calls (optional, falls back to RPC_HTTP_URL env var)
         #[arg(long)]
         rpc_url: Option<String>,
+        /// Reset sync progress and start from the beginning, ignoring last synced block
+        #[arg(long)]
+        reset: bool,
         /// Database configuration options
         #[clap(flatten)]
         database: DatabaseConfig,
