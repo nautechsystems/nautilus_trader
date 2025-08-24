@@ -748,19 +748,28 @@ impl ExecutionEngine {
             return;
         };
 
-        let mut position = match self.cache.borrow().position(&position_id) {
-            Some(pos) if !pos.is_closed() => pos.clone(),
-            _ => self
-                .open_position(instrument.clone(), None, fill, oms_type)
-                .unwrap(),
+        let (mut position, position_just_opened) = {
+            let cache = self.cache.borrow();
+            match cache.position(&position_id) {
+                Some(pos) if !pos.is_closed() => (pos.clone(), false),
+                _ => {
+                    drop(cache); // Explicitly drop the borrow
+                    let new_position = self
+                        .open_position(instrument.clone(), None, fill, oms_type)
+                        .unwrap();
+                    (new_position, true)
+                }
+            }
         };
 
         if self.will_flip_position(&position, fill) {
             self.flip_position(instrument, &mut position, fill, oms_type);
-        } else {
+        } else if !position_just_opened {
+            // Only update position if it wasn't just opened (since open_position already applies the fill)
             self.update_position(&mut position, fill);
         }
 
+        // Handle contingent orders after position update
         if matches!(order.contingency_type(), Some(ContingencyType::Oto)) && position.is_open() {
             for client_order_id in order.linked_order_ids().unwrap_or_default() {
                 let mut cache = self.cache.borrow_mut();
@@ -817,21 +826,33 @@ impl ExecutionEngine {
     }
 
     fn update_position(&self, position: &mut Position, fill: OrderFilled) {
+        // Apply the fill to the position
         position.apply(&fill);
 
+        // Check if position is closed after applying the fill
+        let is_closed = position.is_closed();
+
+        // Update position in cache - this should handle the closed state tracking
         if let Err(e) = self.cache.borrow_mut().update_position(position) {
             log::error!("Failed to update position: {e:?}");
             return;
         }
 
+        // Verify cache state after update
+        let cache = self.cache.borrow();
+
+        drop(cache);
+
+        // Create position state snapshot if enabled
         if self.config.snapshot_positions {
             self.create_position_state_snapshot(position);
         }
 
+        // Create and publish appropriate position event
         let topic = switchboard::get_event_positions_topic(position.strategy_id);
         let ts_init = self.clock.borrow().timestamp_ns();
 
-        if position.is_closed() {
+        if is_closed {
             let event = PositionClosed::create(position, &fill, UUID4::new(), ts_init);
             msgbus::publish(topic, &event);
         } else {
@@ -857,7 +878,7 @@ impl ExecutionEngine {
                 position.size_precision,
             ),
             PositionSide::Short => Quantity::from_raw(
-                position.quantity.raw - fill.last_qty.raw,
+                position.quantity.raw.abs_diff(fill.last_qty.raw), // Equivalent to Python's abs(position.quantity - fill.last_qty)
                 position.size_precision,
             ),
             _ => fill.last_qty,
@@ -910,18 +931,14 @@ impl ExecutionEngine {
             return;
         }
 
-        let position_id_flip = if oms_type == OmsType::Hedging {
-            if let Some(position_id) = fill.position_id {
-                if position_id.is_virtual() {
-                    // Generate new position ID for flipped virtual position
-                    Some(self.pos_id_generator.generate(fill.strategy_id, true))
-                } else {
-                    Some(position_id)
-                }
-            } else {
-                None
-            }
+        let position_id_flip = if oms_type == OmsType::Hedging
+            && let Some(position_id) = fill.position_id
+            && position_id.is_virtual()
+        {
+            // Generate new position ID for flipped virtual position (Hedging OMS only)
+            Some(self.pos_id_generator.generate(fill.strategy_id, true))
         } else {
+            // Default: use the same position ID as the fill (Python behavior)
             fill.position_id
         };
 
@@ -954,7 +971,6 @@ impl ExecutionEngine {
             log::warn!("Closing position {fill_split1:?}");
             log::warn!("Flipping position {fill_split2:?}");
         }
-
         // Open flipped position
         if let Err(e) = self.open_position(instrument, None, fill_split2, oms_type) {
             log::error!("Failed to open flipped position: {e:?}");
@@ -1116,38 +1132,6 @@ impl ExecutionEngine {
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
+mod stubs;
 #[cfg(test)]
-mod tests {
-    use std::{cell::RefCell, rc::Rc};
-
-    use nautilus_common::{cache::Cache, clock::TestClock, msgbus::MessageBus};
-    use rstest::fixture;
-
-    use super::*;
-
-    #[fixture]
-    fn msgbus() -> MessageBus {
-        MessageBus::default()
-    }
-
-    #[fixture]
-    fn simple_cache() -> Cache {
-        Cache::new(None, None)
-    }
-
-    #[fixture]
-    fn clock() -> TestClock {
-        TestClock::new()
-    }
-
-    // Helpers
-    fn _get_exec_engine(
-        cache: Rc<RefCell<Cache>>,
-        clock: Rc<RefCell<TestClock>>,
-        config: Option<ExecutionEngineConfig>,
-    ) -> ExecutionEngine {
-        ExecutionEngine::new(clock, cache, config)
-    }
-
-    // TODO: After Implementing ExecutionClient & Strategy
-}
+mod tests;
