@@ -1027,9 +1027,9 @@ cdef class DataEngine(Component):
 
         Condition.not_none(client, "client")
 
-        if "start" not in command.params:
+        if "start_ns" not in command.params:
             last_timestamp: datetime | None = self._catalog_last_timestamp(QuoteTick, str(command.instrument_id))[0]
-            command.params["start"] = last_timestamp.value + 1 if last_timestamp else None
+            command.params["start_ns"] = last_timestamp.value + 1 if last_timestamp else None
 
         if command.instrument_id not in client.subscribed_quote_ticks():
             client.subscribe_quote_ticks(command)
@@ -1070,9 +1070,9 @@ cdef class DataEngine(Component):
 
         Condition.not_none(client, "client")
 
-        if "start" not in command.params:
+        if "start_ns" not in command.params:
             last_timestamp: datetime | None = self._catalog_last_timestamp(TradeTick, str(command.instrument_id))[0]
-            command.params["start"] = last_timestamp.value + 1 if last_timestamp else None
+            command.params["start_ns"] = last_timestamp.value + 1 if last_timestamp else None
 
         if command.instrument_id not in client.subscribed_trade_ticks():
             client.subscribe_trade_ticks(command)
@@ -1142,9 +1142,9 @@ cdef class DataEngine(Component):
                 )
                 return
 
-            if "start" not in command.params:
+            if "start_ns" not in command.params:
                 last_timestamp: datetime | None = self._catalog_last_timestamp(Bar, str(command.bar_type))[0]
-                command.params["start"] = last_timestamp.value + 1 if last_timestamp else None
+                command.params["start_ns"] = last_timestamp.value + 1 if last_timestamp else None
 
             if command.bar_type not in client.subscribed_bars():
                 client.subscribe_bars(command)
@@ -1154,9 +1154,9 @@ cdef class DataEngine(Component):
 
         try:
             if command.data_type not in client.subscribed_custom_data():
-                if "start" not in command.params:
+                if "start_ns" not in command.params:
                     last_timestamp: datetime | None = self._catalog_last_timestamp(command.data_type.type, str(command.instrument_id))[0]
-                    command.params["start"] = last_timestamp.value + 1 if last_timestamp else None
+                    command.params["start_ns"] = last_timestamp.value + 1 if last_timestamp else None
 
                 client.subscribe(command)
         except NotImplementedError:
@@ -2392,7 +2392,7 @@ cdef class DataEngine(Component):
         )
 
     cpdef void _start_bar_aggregator(self, MarketDataClient client, SubscribeBars command):
-        cdef Instrument instrument = self._cache.instrument(command.bar_type.instrument_id)
+        instrument = self._cache.instrument(command.bar_type.instrument_id)
 
         if instrument is None:
             self._log.error(
@@ -2514,7 +2514,7 @@ cdef class DataEngine(Component):
         return aggregator
 
     cpdef void _stop_bar_aggregator(self, MarketDataClient client, UnsubscribeBars command):
-        cdef aggregator = self._bar_aggregators.get(command.bar_type.standard())
+        aggregator = self._bar_aggregators.get(command.bar_type.standard())
 
         if aggregator is None:
             self._log.warning(
@@ -2575,23 +2575,24 @@ cdef class DataEngine(Component):
         del self._bar_aggregators[command.bar_type.standard()]
 
     cpdef void _start_spread_quote_aggregator(self, MarketDataClient client, SubscribeQuoteTicks command):
-        cdef InstrumentId spread_instrument_id = command.instrument_id
+        spread_instrument_id = command.instrument_id
 
         if spread_instrument_id in self._spread_quote_aggregators:
             return
 
-        cdef SpreadQuoteAggregator aggregator = SpreadQuoteAggregator(
+        update_interval_seconds = command.params.get("update_interval_seconds", 60)
+        aggregator = SpreadQuoteAggregator(
             spread_instrument_id=spread_instrument_id,
             handler=self.process,
             msgbus=self._msgbus,
             cache=self._cache,
             clock=self._clock,
-            update_interval_seconds=60,  # Update every 60 seconds
+            update_interval_seconds=update_interval_seconds,
         )
         self._spread_quote_aggregators[spread_instrument_id] = aggregator
 
         # Subscribe to quotes for component instruments
-        cdef list components = spread_instrument_id.to_list()
+        components = spread_instrument_id.to_list()
 
         for component_id, _ in components:
             subscribe = SubscribeQuoteTicks(
@@ -2605,8 +2606,8 @@ cdef class DataEngine(Component):
             self._handle_subscribe_quote_ticks(client, subscribe)
 
     cpdef void _stop_spread_quote_aggregator(self, MarketDataClient client, UnsubscribeQuoteTicks command):
-        cdef InstrumentId spread_instrument_id = command.instrument_id
-        cdef SpreadQuoteAggregator aggregator = self._spread_quote_aggregators.get(spread_instrument_id)
+        spread_instrument_id = command.instrument_id
+        aggregator = self._spread_quote_aggregators.get(spread_instrument_id)
 
         if aggregator is None:
             self._log.warning(
@@ -2617,7 +2618,7 @@ cdef class DataEngine(Component):
         aggregator.stop()
 
         # Unsubscribe from component instruments
-        cdef list components = spread_instrument_id.to_list()
+        components = spread_instrument_id.to_list()
 
         for component_id, _ in components:
             unsubscribe = UnsubscribeQuoteTicks(
