@@ -15,7 +15,7 @@
 
 //! Greeks calculator for options and futures.
 
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, fmt::Debug, rc::Rc};
 
 use anyhow;
 use derive_builder::Builder;
@@ -76,7 +76,7 @@ impl GreeksFilterCallback {
     }
 }
 
-impl std::fmt::Debug for GreeksFilterCallback {
+impl Debug for GreeksFilterCallback {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Function(_) => f.write_str("GreeksFilterCallback::Function"),

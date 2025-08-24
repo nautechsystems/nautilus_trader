@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::fmt::Debug;
+
 use aws_lc_rs::hmac;
 use base64::prelude::*;
 use ustr::Ustr;
@@ -31,8 +33,8 @@ pub struct Credential {
     api_secret: Box<[u8]>,
 }
 
-impl core::fmt::Debug for Credential {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+impl Debug for Credential {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Credential")
             .field("api_key", &self.api_key)
             .field("api_passphrase", &self.api_passphrase)
@@ -64,6 +66,7 @@ impl Credential {
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
