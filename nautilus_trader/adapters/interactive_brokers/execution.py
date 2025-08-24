@@ -163,6 +163,9 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             clock=clock,
             config=config,
         )
+
+        # Track known positions to detect external changes (like option exercises)
+        self._known_positions: dict[int, Decimal] = {}  # conId -> quantity
         self._connection_timeout = connection_timeout
         self._client: InteractiveBrokersClient = client
         self._set_account_id(account_id)
@@ -212,20 +215,46 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         self._client.subscribe_event(f"openOrder-{account}", self._on_open_order)
         self._client.subscribe_event(f"orderStatus-{account}", self._on_order_status)
         self._client.subscribe_event(f"execDetails-{account}", self._on_exec_details)
+        self._client.subscribe_event(f"positionUpdate-{account}", self._on_position_update)
 
         # Load account balance
         self._client.subscribe_account_summary()
         await self._account_summary_loaded.wait()
+
+        # Initialize known positions tracking to avoid duplicates from execDetails
+        await self._initialize_position_tracking()
+
+        # Subscribe to real-time position updates for external changes (option exercises)
+        self._client.subscribe_positions()
 
         self._set_connected(True)
 
     async def _disconnect(self):
         self._client.registered_nautilus_clients.discard(self.id)
 
+        # Unsubscribe from position updates when disconnecting
+        if self._client.is_running:
+            self._client.unsubscribe_positions()
+
         if self._client.is_running and self._client.registered_nautilus_clients == set():
             self._client.stop()
 
         self._set_connected(False)
+
+    async def _initialize_position_tracking(self) -> None:
+        """
+        Initialize position tracking to avoid processing duplicates from execDetails.
+        """
+        try:
+            positions = await self._client.get_positions(self.account_id.get_id())
+
+            if positions:
+                for position in positions:
+                    self._known_positions[position.contract.conId] = position.quantity
+
+                self._log.info(f"Initialized tracking for {len(positions)} existing positions")
+        except Exception as e:
+            self._log.warning(f"Failed to initialize position tracking: {e}")
 
     async def generate_order_status_report(
         self,
@@ -984,6 +1013,9 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             ts_event=timestring_to_timestamp(execution.time).value,
         )
 
+        # Update position tracking to avoid duplicate processing
+        self._update_position_tracking_from_execution(contract, execution)
+
     def _handle_spread_execution(
         self,
         nautilus_order: Order,
@@ -1181,6 +1213,9 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
                 ts_event=timestring_to_timestamp(execution.time).value,
             )
+
+            # Update position tracking to avoid duplicate processing
+            self._update_position_tracking_from_execution(contract, execution)
         except Exception as e:
             self._log.error(f"Error generating leg fill: {e}")
 
@@ -1201,3 +1236,101 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                     return leg_instrument_id, ratio
 
         return None, 1
+
+    def _update_position_tracking_from_execution(self, contract: IBContract, execution) -> None:
+        """
+        Update position tracking based on execution to avoid duplicate processing.
+        """
+        try:
+            contract_id = contract.conId
+
+            if contract_id in self._known_positions:
+                # Update the tracked quantity based on the execution
+                side_multiplier = 1 if execution.side == "BOT" else -1
+                quantity_change = Decimal(execution.shares) * side_multiplier
+                self._known_positions[contract_id] += quantity_change
+        except Exception as e:
+            self._log.warning(f"Failed to update position tracking: {e}")
+
+    def _on_position_update(self, ib_position) -> None:
+        """
+        Handle real-time position updates from IB.
+
+        This is triggered when positions change due to option exercises, assignments, or
+        other external events.
+
+        """
+        self.create_task(self._handle_position_update(ib_position))
+
+    async def _handle_position_update(self, ib_position) -> None:
+        """
+        Process position update and generate position status report only for external
+        changes.
+
+        This filters out position updates that result from normal trading (execDetails)
+        and only processes external position changes like option exercises.
+
+        """
+        try:
+            contract_id = ib_position.contract.conId
+            new_quantity = ib_position.quantity
+
+            # Skip zero positions (IB may send these for closed positions)
+            if new_quantity == 0:
+                # Remove from tracking if position is closed
+                self._known_positions.pop(contract_id, None)
+                return
+
+            # Check if this is an external position change
+            known_quantity = self._known_positions.get(contract_id, Decimal(0))
+
+            # If quantities match, this is likely from normal trading - skip
+            if known_quantity == new_quantity:
+                return
+
+            # This is an external position change (likely option exercise)
+            self._log.info(
+                f"External position change detected (likely option exercise): "
+                f"Contract {contract_id} ({ib_position.contract.secType}), quantity change: {known_quantity} -> {new_quantity}",
+                LogColor.YELLOW,
+            )
+
+            # Get instrument for this position
+            instrument = await self.instrument_provider.get_instrument(ib_position.contract)
+
+            if instrument is None:
+                self._log.warning(
+                    f"Cannot process position update: instrument not found for contract ID {contract_id}",
+                )
+                return
+
+            # Ensure instrument is in cache
+            if not self._cache.instrument(instrument.id):
+                self._handle_data(instrument)
+
+            # Determine position side
+            side = PositionSide.LONG if new_quantity > 0 else PositionSide.SHORT
+
+            # Create position status report
+            position_report = PositionStatusReport(
+                account_id=self.account_id,
+                instrument_id=instrument.id,
+                position_side=side,
+                quantity=instrument.make_qty(new_quantity),
+                report_id=UUID4(),
+                ts_last=self._clock.timestamp_ns(),
+                ts_init=self._clock.timestamp_ns(),
+            )
+
+            self._log.info(
+                f"Option exercise position created: {instrument.id} {side} {abs(new_quantity)} @ {ib_position.avg_cost}",
+                LogColor.CYAN,
+            )
+
+            # Send position status report to execution engine
+            self._send_position_status_report(position_report)
+
+            # Update tracking
+            self._known_positions[contract_id] = new_quantity
+        except Exception as e:
+            self._log.exception(f"Error handling position update: {e}")
