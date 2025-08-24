@@ -14,20 +14,18 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_core::{
-    consts::NAUTILUS_TRADER,
-    python::{IntoPyObjectNautilusExt, to_pyvalue_err},
-    time::get_atomic_clock_realtime,
+    consts::NAUTILUS_TRADER, python::to_pyvalue_err, time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
     data::trade::TradeTick,
     enums::{OrderSide, OrderType},
-    identifiers::{ClientOrderId, Symbol, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, Symbol, VenueOrderId},
     instruments::InstrumentAny,
     python::instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
     reports::{fill::FillReport, order::OrderStatusReport, position::PositionStatusReport},
     types::{price::Price, quantity::Quantity},
 };
-use pyo3::{prelude::*, types::PyList};
+use pyo3::{conversion::IntoPyObjectExt, prelude::*, types::PyList};
 
 use crate::{
     common::enums::{BitmexOrderType, BitmexSide, BitmexSymbolStatus},
@@ -172,7 +170,7 @@ impl BitmexHttpClient {
             Python::with_gil(|py| {
                 let py_trades: PyResult<Vec<_>> = trades
                     .into_iter()
-                    .map(|trade| Ok(trade.into_py_any_unwrap(py)))
+                    .map(|trade| trade.into_py_any(py))
                     .collect();
                 let pylist = PyList::new(py, py_trades?).unwrap().into_any().unbind();
                 Ok(pylist)
@@ -211,7 +209,7 @@ impl BitmexHttpClient {
             Python::with_gil(|py| {
                 let py_reports: PyResult<Vec<_>> = reports
                     .into_iter()
-                    .map(|report| Ok(report.into_py_any_unwrap(py)))
+                    .map(|report| report.into_py_any(py))
                     .collect();
                 let pylist = PyList::new(py, py_reports?).unwrap().into_any().unbind();
                 Ok(pylist)
@@ -253,7 +251,7 @@ impl BitmexHttpClient {
             Python::with_gil(|py| {
                 let py_reports: PyResult<Vec<_>> = reports
                     .into_iter()
-                    .map(|report| Ok(report.into_py_any_unwrap(py)))
+                    .map(|report| report.into_py_any(py))
                     .collect();
                 let pylist = PyList::new(py, py_reports?).unwrap().into_any().unbind();
                 Ok(pylist)
@@ -283,7 +281,7 @@ impl BitmexHttpClient {
             Python::with_gil(|py| {
                 let py_reports: PyResult<Vec<_>> = reports
                     .into_iter()
-                    .map(|report| Ok(report.into_py_any_unwrap(py)))
+                    .map(|report| report.into_py_any(py))
                     .collect();
                 let pylist = PyList::new(py, py_reports?).unwrap().into_any().unbind();
                 Ok(pylist)
@@ -440,5 +438,45 @@ impl BitmexHttpClient {
         let inst_any = pyobject_to_instrument_any(py, instrument)?;
         self.add_instrument(inst_any);
         Ok(())
+    }
+
+    #[pyo3(name = "http_get_margin")]
+    fn py_http_get_margin<'py>(
+        &self,
+        py: Python<'py>,
+        currency: String,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let margin = client
+                .http_get_margin(&currency)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::with_gil(|py| {
+                // Create a simple Python object with just the account field we need
+                // We can expand this if more fields are needed
+                let account = margin.account;
+                account.into_py_any(py)
+            })
+        })
+    }
+
+    #[pyo3(name = "request_account_state")]
+    fn py_request_account_state<'py>(
+        &self,
+        py: Python<'py>,
+        account_id: AccountId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let account_state = client
+                .request_account_state(account_id)
+                .await
+                .map_err(to_pyvalue_err)?;
+            Python::with_gil(|py| account_state.into_py_any(py).map_err(to_pyvalue_err))
+        })
     }
 }
