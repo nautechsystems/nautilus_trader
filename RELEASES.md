@@ -42,8 +42,9 @@ Released on TBD (UTC).
 - Added `PortfolioConfig.min_account_state_logging_interval_ms` config option for throttling account state logging
 - Added `allow_cash_borrowing` config option for `BacktestVenueConfig` to enable negative balances in cash accounts
 - Added borrowing support for Bybit SPOT accounts, enabling margin trading with negative balances
-- Added initial DEX Pool filtering configuration (#2842), thanks @filipmacek
+- Added initial DEX Pool filtering configuration (#2842, #2887), thanks @filipmacek
 - Added a complete `.env.example` template to guide environment configuration (#2877), thanks @nicolad
+- Added subscription for IB position updates (#2887), thanks @faysou
 
 ### Breaking Changes
 - Added `multiplier` field for `CurrencyPair` Arrow schema
