@@ -79,6 +79,7 @@ class ExecTesterConfig(StrategyConfig, frozen=True):
     dry_run: bool = False
     log_data: bool = True
     test_reject_post_only: bool = False
+    can_unsubscribe: bool = True
 
 
 class ExecTester(Strategy):
@@ -364,15 +365,16 @@ class ExecTester(Strategy):
                 reduce_only=self.config.reduce_only_on_stop,
             )
 
-        # Unsubscribe from data
-        if self.config.subscribe_quotes:
-            self.unsubscribe_quote_ticks(self.config.instrument_id, client_id=self.client_id)
+        # Unsubscribe from data (if supported)
+        if self.config.can_unsubscribe:
+            if self.config.subscribe_quotes:
+                self.unsubscribe_quote_ticks(self.config.instrument_id, client_id=self.client_id)
 
-        if self.config.subscribe_trades:
-            self.unsubscribe_trade_ticks(self.config.instrument_id, client_id=self.client_id)
+            if self.config.subscribe_trades:
+                self.unsubscribe_trade_ticks(self.config.instrument_id, client_id=self.client_id)
 
-        if self.config.subscribe_book:
-            self.unsubscribe_order_book_at_interval(
-                self.config.instrument_id,
-                client_id=self.client_id,
-            )
+            if self.config.subscribe_book:
+                self.unsubscribe_order_book_at_interval(
+                    self.config.instrument_id,
+                    client_id=self.client_id,
+                )

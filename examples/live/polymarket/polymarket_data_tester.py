@@ -33,13 +33,14 @@ from nautilus_trader.test_kit.strategies.tester_data import DataTesterConfig
 
 # To find active markets run `python nautilus_trader/adapters/polymarket/scripts/active_markets.py`
 
-# x-and-truth-social-merger-announced-before-august
+# Slug: fed-rate-hike-in-2025
 # Active: True
-# Condition ID: 0x79d3dd10febe982a33c279ef96ec5521bf73f0e54df3d332d46ebf7ce7221e3c
-# Token IDs: 4035065291772644731876334741178162861113899806117080318351467946714817079716, 8807253522691129263460582179245445512612974167513689659640198687172344193269  # noqa
-# Link: https://polymarket.com/event/x-and-truth-social-merger-announced-before-august
-condition_id = "0x79d3dd10febe982a33c279ef96ec5521bf73f0e54df3d332d46ebf7ce7221e3c"
-token_id = "4035065291772644731876334741178162861113899806117080318351467946714817079716"
+# Condition ID: 0x4319532e181605cb15b1bd677759a3bc7f7394b2fdf145195b700eeaedfd5221
+# Token IDs: 60487116984468020978247225474488676749601001829886755968952521846780452448915,
+# 81104637750588840860328515305303028259865221573278091453716127842023614249200
+# Link: https://polymarket.com/event/fed-rate-hike-in-2025
+condition_id = "0x4319532e181605cb15b1bd677759a3bc7f7394b2fdf145195b700eeaedfd5221"
+token_id = "60487116984468020978247225474488676749601001829886755968952521846780452448915"
 
 instrument_ids = [
     get_polymarket_instrument_id(condition_id, token_id),
@@ -67,6 +68,7 @@ config_node = TradingNodeConfig(
             api_key=None,  # 'POLYMARKET_API_KEY' env var
             api_secret=None,  # 'POLYMARKET_API_SECRET' env var
             passphrase=None,  # 'POLYMARKET_PASSPHRASE' env var
+            # signature_type=2,  # Uncomment if you're using the proxy wallet (Polymarket UI)
             instrument_provider=instrument_provider_config,
             compute_effective_deltas=True,
         ),
