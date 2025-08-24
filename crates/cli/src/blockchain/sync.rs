@@ -88,7 +88,7 @@ pub async fn run_blockchain_command(opt: BlockchainOpt) -> anyhow::Result<()> {
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to sync blocks: {}", e))?;
         }
-        BlockchainCommand::SyncPools {
+        BlockchainCommand::SyncDex {
             chain,
             dex,
             rpc_url,

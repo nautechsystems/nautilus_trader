@@ -104,8 +104,8 @@ pub enum BlockchainCommand {
         #[clap(flatten)]
         database: DatabaseConfig,
     },
-    /// Syncs exchange pools for a specific DEX.
-    SyncPools {
+    /// Sync DEX pools.
+    SyncDex {
         /// The blockchain chain name (case-insensitive). Examples: ethereum, arbitrum, base, polygon, bsc
         #[arg(long)]
         chain: String,
