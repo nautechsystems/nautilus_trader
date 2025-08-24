@@ -88,10 +88,11 @@ pub async fn run_blockchain_command(opt: BlockchainOpt) -> anyhow::Result<()> {
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to sync blocks: {}", e))?;
         }
-        BlockchainCommand::SyncPools {
+        BlockchainCommand::SyncDex {
             chain,
             dex,
             rpc_url,
+            reset,
             database,
         } => {
             let chain = Chain::from_chain_name(&chain)
@@ -156,7 +157,7 @@ pub async fn run_blockchain_command(opt: BlockchainOpt) -> anyhow::Result<()> {
                 .map_err(|e| anyhow::anyhow!("Failed to register DEX exchange: {}", e))?;
             // We want to have full pool sync, so from 0 to last.
             data_client
-                .sync_exchange_pools(&dex_type, 0, None)
+                .sync_exchange_pools(&dex_type, 0, None, reset)
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to sync pools: {}", e))?;
         }

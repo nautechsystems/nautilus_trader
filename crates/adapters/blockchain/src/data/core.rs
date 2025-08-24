@@ -172,7 +172,8 @@ impl BlockchainDataClientCore {
         // self.sync_blocks(Some(from_block), None).await?;
         for dex in self.config.dex_ids.clone() {
             self.register_dex_exchange(dex).await?;
-            self.sync_exchange_pools(&dex, from_block, None).await?;
+            self.sync_exchange_pools(&dex, from_block, None, false)
+                .await?;
         }
 
         Ok(())
@@ -613,15 +614,20 @@ impl BlockchainDataClientCore {
         dex: &DexType,
         from_block: u64,
         to_block: Option<u64>,
+        reset: bool,
     ) -> anyhow::Result<()> {
-        // Check for last synced block and use it as starting point if higher
-        let last_synced_block = self
-            .cache
-            .get_dex_last_synced_block(&dex.to_string())
-            .await?;
-
-        let effective_from_block =
-            last_synced_block.map_or(from_block, |last_synced| max(from_block, last_synced + 1));
+        // Check for last synced block and use it as starting point if higher (unless reset is true)
+        let (last_synced_block, effective_from_block) = if reset {
+            (None, from_block)
+        } else {
+            let last_synced_block = self
+                .cache
+                .get_dex_last_synced_block(&dex.to_string())
+                .await?;
+            let effective_from_block = last_synced_block
+                .map_or(from_block, |last_synced| max(from_block, last_synced + 1));
+            (last_synced_block, effective_from_block)
+        };
 
         let to_block = match to_block {
             Some(block) => block,
