@@ -703,7 +703,12 @@ impl ExecutionEngine {
                     log::warn!("InvalidStateTrigger: {e}, did not apply {event}");
                 }
                 _ => {
+                    // ValueError: Protection against invalid IDs
+                    // KeyError: Protection against duplicate fills
                     log::error!("Error applying event: {e}, did not apply {event}");
+                    if should_handle_own_book_order(order) {
+                        self.cache.borrow_mut().update_own_order_book(order);
+                    }
                 }
             }
             return;
@@ -741,52 +746,90 @@ impl ExecutionEngine {
             return;
         }
 
+        // Skip portfolio position updates for combo fills (spread instruments)
+        // Combo fills are only used for order management, not portfolio updates
+        let position = if !instrument.is_spread() {
+            self.handle_position_update(instrument.clone(), fill, oms_type);
+            let position_id = fill.position_id.unwrap();
+            self.cache.borrow().position(&position_id).cloned()
+        } else {
+            None
+        };
+
+        // Handle contingent orders for both spread and non-spread instruments
+        // For spread instruments, contingent orders work without position linkage
+        if matches!(order.contingency_type(), Some(ContingencyType::Oto)) {
+            // For non-spread instruments, link to position if available
+            if !instrument.is_spread()
+                && let Some(ref pos) = position
+                && pos.is_open()
+            {
+                let position_id = pos.id;
+                for client_order_id in order.linked_order_ids().unwrap_or_default() {
+                    let mut cache = self.cache.borrow_mut();
+                    let contingent_order = cache.mut_order(client_order_id);
+                    if let Some(contingent_order) = contingent_order
+                        && contingent_order.position_id().is_none()
+                    {
+                        contingent_order.set_position_id(Some(position_id));
+
+                        if let Err(e) = self.cache.borrow_mut().add_position_id(
+                            &position_id,
+                            &contingent_order.instrument_id().venue,
+                            &contingent_order.client_order_id(),
+                            &contingent_order.strategy_id(),
+                        ) {
+                            log::error!("Failed to add position ID: {e}");
+                        }
+                    }
+                }
+            }
+            // For spread instruments, contingent orders can still be triggered
+            // but without position linkage (since no position is created for spreads)
+        }
+    }
+
+    /// Handle position creation or update for a fill.
+    ///
+    /// This function mirrors the Python `_handle_position_update` method.
+    fn handle_position_update(
+        &mut self,
+        instrument: InstrumentAny,
+        fill: OrderFilled,
+        oms_type: OmsType,
+    ) {
         let position_id = if let Some(position_id) = fill.position_id {
             position_id
         } else {
-            log::error!("Cannot handle order fill: no position ID found for fill {fill}");
+            log::error!("Cannot handle position update: no position ID found for fill {fill}");
             return;
         };
 
-        let (mut position, position_just_opened) = {
-            let cache = self.cache.borrow();
-            match cache.position(&position_id) {
-                Some(pos) if !pos.is_closed() => (pos.clone(), false),
-                _ => {
-                    drop(cache); // Explicitly drop the borrow
-                    let new_position = self
-                        .open_position(instrument.clone(), None, fill, oms_type)
-                        .unwrap();
-                    (new_position, true)
+        let position_opt = self.cache.borrow().position(&position_id).cloned();
+
+        match position_opt {
+            None => {
+                // Position is None - open new position
+                if self.open_position(instrument, None, fill, oms_type).is_ok() {
+                    // Position opened successfully
                 }
             }
-        };
-
-        if self.will_flip_position(&position, fill) {
-            self.flip_position(instrument, &mut position, fill, oms_type);
-        } else if !position_just_opened {
-            // Only update position if it wasn't just opened (since open_position already applies the fill)
-            self.update_position(&mut position, fill);
-        }
-
-        // Handle contingent orders after position update
-        if matches!(order.contingency_type(), Some(ContingencyType::Oto)) && position.is_open() {
-            for client_order_id in order.linked_order_ids().unwrap_or_default() {
-                let mut cache = self.cache.borrow_mut();
-                let contingent_order = cache.mut_order(client_order_id);
-                if let Some(contingent_order) = contingent_order
-                    && contingent_order.position_id().is_none()
+            Some(pos) if pos.is_closed() => {
+                // Position is closed - open new position
+                if self
+                    .open_position(instrument, Some(&pos), fill, oms_type)
+                    .is_ok()
                 {
-                    contingent_order.set_position_id(Some(position_id));
-
-                    if let Err(e) = self.cache.borrow_mut().add_position_id(
-                        &position_id,
-                        &contingent_order.instrument_id().venue,
-                        &contingent_order.client_order_id(),
-                        &contingent_order.strategy_id(),
-                    ) {
-                        log::error!("Failed to add position ID: {e}");
-                    }
+                    // Position opened successfully
+                }
+            }
+            Some(mut pos) => {
+                if self.will_flip_position(&pos, fill) {
+                    // Position will flip
+                    self.flip_position(instrument, &mut pos, fill, oms_type);
+                } else {
+                    // Update existing position
+                    self.update_position(&mut pos, fill);
                 }
             }
         }
