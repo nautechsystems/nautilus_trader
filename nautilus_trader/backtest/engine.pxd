@@ -130,7 +130,7 @@ cdef class BacktestEngine:
 
     cpdef void _handle_data_command(self, DataCommand command)
     cdef void _handle_subscribe(self, SubscribeData command)
-    cpdef void _update_subscription_data(self, str subscription_name, object duration_seconds)
+    cpdef void _update_subscription_data(self, str subscription_name, object duration_seconds, int iteration_index, bint point_data)
     cpdef void _handle_data_response(self, DataResponse response)
     cpdef void _handle_unsubscribe(self, UnsubscribeData command)
 

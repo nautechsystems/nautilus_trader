@@ -218,6 +218,7 @@ cdef class BacktestEngine:
     def __init__(self, config: BacktestEngineConfig | None = None) -> None:
         if config is None:
             config = BacktestEngineConfig()
+
         Condition.type(config, BacktestEngineConfig, "config")
 
         self._config: BacktestEngineConfig  = config
@@ -899,11 +900,12 @@ cdef class BacktestEngine:
         self._log.debug(f"Subscribing to {subscription_name}, {command.params.get('durations_seconds')=}")
 
         self._data_requests[subscription_name] = request
-        self._last_subscription_ts[subscription_name] = self._last_ns - 1
+        self._last_subscription_ts[subscription_name] = self._last_ns
         cdef bint append_data = request.params.get("append_data", True)
-        self._data_iterator.init_data(subscription_name, self._subscription_generator(subscription_name), append_data)
+        cdef bint point_data = request.params.get("point_data", False)
+        self._data_iterator.init_data(subscription_name, self._subscription_generator(subscription_name, point_data), append_data)
 
-    def _subscription_generator(self, str subscription_name):
+    def _subscription_generator(self, str subscription_name, bint point_data):
         iteration_index = 0
         durations_seconds = self._data_requests[subscription_name].params.get("durations_seconds", [None])
         durations_ns = [duration_seconds * 1e9 if duration_seconds else None for duration_seconds in durations_seconds]
@@ -914,15 +916,10 @@ cdef class BacktestEngine:
 
             # Possibility to use durations of various lengths to take into account weekends or market breaks
             for duration_ns in durations_ns:
-                self._update_subscription_data(subscription_name, duration_ns)
+                self._update_subscription_data(subscription_name, duration_ns, iteration_index, point_data)
 
                 if self._response_data:
                     break
-
-            if iteration_index == 0:
-                # First iteration for [a, a + duration], then ]a + duration, a + 2 * duration]
-                durations_ns = [duration_ns - 1 if duration_ns else None
-                                for duration_ns in durations_ns]
 
             iteration_index += 1
 
@@ -931,21 +928,37 @@ cdef class BacktestEngine:
             else:
                 break  # No more data, end generator
 
-    cpdef void _update_subscription_data(self, str subscription_name, object duration_ns):
+    cpdef void _update_subscription_data(self, str subscription_name, object duration_ns, int iteration_index, bint point_data):
         if subscription_name == "backtest_data" or subscription_name not in self._data_requests:
             return
 
-        cdef uint64_t start_time = self._last_subscription_ts[subscription_name] + 1 # to avoid duplicate data
+        # First iteration for [a, a + duration], then ]a + duration, a + 2 * duration]
+        # When point_data we do a query for [start_time, start_time] only
+
+        cdef uint64_t offset = 1 if iteration_index > 0 and not point_data else 0
+        cdef uint64_t start_time = self._last_subscription_ts[subscription_name] + offset
 
         if start_time > self._end_ns:
             return
 
-        cdef uint64_t end_time = min(start_time + duration_ns, self._end_ns) if duration_ns else self._end_ns
+        cdef uint64_t end_time
+        if duration_ns:
+            end_time = min(start_time + duration_ns - offset, self._end_ns)
+        else:
+            end_time = self._end_ns
+
         self._last_subscription_ts[subscription_name] = end_time
 
+        if point_data:
+            end_time = start_time
+
         cdef RequestData request = self._data_requests[subscription_name]
+        cdef RequestData new_request = request.with_dates(
+            unix_nanos_to_dt(start_time),
+            unix_nanos_to_dt(end_time),
+            self._last_ns
+        )
         self._log.debug(f"Renewing {request.data_type.type.__name__} data from {unix_nanos_to_dt(start_time)} to {unix_nanos_to_dt(end_time)}, {duration_ns=}")
-        cdef RequestData new_request = request.with_dates(unix_nanos_to_dt(start_time), unix_nanos_to_dt(end_time), self._last_ns)
         self._kernel._msgbus.request(endpoint="DataEngine.request", request=new_request)
 
     cpdef void _handle_data_response(self, DataResponse response):

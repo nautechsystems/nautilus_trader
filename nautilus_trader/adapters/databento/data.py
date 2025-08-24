@@ -474,7 +474,7 @@ class DatabentoDataClient(LiveMarketDataClient):
     async def _subscribe_instrument(self, command: SubscribeInstrument) -> None:
         try:
             dataset: Dataset = self._loader.get_dataset_for_venue(command.instrument_id.venue)
-            start: int | None = command.params.get("start")
+            start: int | None = command.params.get("start_ns")
 
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
@@ -652,7 +652,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             ]:
                 schema = DatabentoSchema.MBP_1.value
 
-            start: int | None = command.params.get("start")
+            start: int | None = command.params.get("start_ns")
             dataset: Dataset = self._loader.get_dataset_for_venue(command.instrument_id.venue)
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
@@ -686,7 +686,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             ]:
                 schema = DatabentoSchema.TRADES.value
 
-            start: int | None = command.params.get("start")
+            start: int | None = command.params.get("start_ns")
             dataset: Dataset = self._loader.get_dataset_for_venue(command.instrument_id.venue)
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
@@ -710,7 +710,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                 self._log.error(f"Cannot subscribe: {e}")
                 return
 
-            start: int | None = command.params.get("start")
+            start: int | None = command.params.get("start_ns")
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
                 schema=schema.value,
@@ -1011,7 +1011,10 @@ class DatabentoDataClient(LiveMarketDataClient):
             end = available_end
 
         # NOTE: instruments are "published" every day at midnight
-        start = request.start or end - pd.Timedelta(days=1)
+        start = request.start
+
+        if start == end:
+            end += pd.Timedelta(1, "ns")
 
         if request.limit > 0:
             self._log.warning(
@@ -1066,7 +1069,10 @@ class DatabentoDataClient(LiveMarketDataClient):
             end = available_end
 
         # NOTE: instruments are "published" every day at midnight
-        start = request.start or end - pd.Timedelta(days=1)
+        start = request.start
+
+        if start == end:
+            end += pd.Timedelta(1, "ns")
 
         if request.limit > 0:
             self._log.warning(
@@ -1105,7 +1111,10 @@ class DatabentoDataClient(LiveMarketDataClient):
             end = available_end
 
         # NOTE: instruments are "published" every day at midnight
-        start = request.start or end - pd.Timedelta(days=1)
+        start = request.start
+
+        if start == end:
+            end += pd.Timedelta(1, "ns")
 
         if request.limit > 0:
             self._log.warning(
