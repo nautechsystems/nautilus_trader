@@ -35,11 +35,12 @@ use dashmap::DashMap;
 use futures_util::{Stream, StreamExt};
 use nautilus_common::runtime::get_runtime;
 use nautilus_core::{
-    UUID4, consts::NAUTILUS_USER_AGENT, env::get_env_var, time::get_atomic_clock_realtime,
+    UUID4, consts::NAUTILUS_USER_AGENT, datetime::nanos_to_millis, env::get_env_var,
+    time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
     data::BarType,
-    enums::{OrderSide, OrderStatus, OrderType, PositionSide},
+    enums::{OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce},
     events::{AccountState, OrderCancelRejected, OrderModifyRejected, OrderRejected},
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
@@ -68,7 +69,10 @@ use super::{
 };
 use crate::{
     common::{
-        consts::{OKX_NAUTILUS_BROKER_ID, OKX_WS_PUBLIC_URL},
+        consts::{
+            OKX_NAUTILUS_BROKER_ID, OKX_SUPPORTED_ORDER_TYPES, OKX_SUPPORTED_TIME_IN_FORCE,
+            OKX_WS_PUBLIC_URL,
+        },
         credential::Credential,
         enums::{OKXInstrumentType, OKXOrderType, OKXPositionSide, OKXSide, OKXTradeMode},
         parse::{bar_spec_as_okx_channel, okx_instrument_type, parse_account_state},
@@ -1344,6 +1348,8 @@ impl OKXWebSocketClient {
         order_side: OrderSide,
         order_type: OrderType,
         quantity: Quantity,
+        time_in_force: Option<TimeInForce>,
+        expire_time_ns: Option<u64>,
         price: Option<Price>,
         trigger_price: Option<Price>,
         post_only: Option<bool>,
@@ -1351,6 +1357,20 @@ impl OKXWebSocketClient {
         quote_quantity: Option<bool>,
         position_side: Option<PositionSide>,
     ) -> Result<(), OKXWsError> {
+        if !OKX_SUPPORTED_ORDER_TYPES.contains(&order_type) {
+            return Err(OKXWsError::ClientError(format!(
+                "Unsupported order type: {order_type:?}",
+            )));
+        }
+
+        if let Some(tif) = time_in_force
+            && !OKX_SUPPORTED_TIME_IN_FORCE.contains(&tif)
+        {
+            return Err(OKXWsError::ClientError(format!(
+                "Unsupported time in force: {tif:?}",
+            )));
+        }
+
         let mut builder = WsPostOrderParamsBuilder::default();
 
         builder.inst_id(instrument_id.symbol.as_str());
@@ -1414,11 +1434,20 @@ impl OKXWebSocketClient {
             builder.pos_side(pos_side);
         };
 
+        // Determine OKX order type based on order type and post_only
         let okx_ord_type = if post_only.unwrap_or(false) {
             OKXOrderType::PostOnly
         } else {
             OKXOrderType::from(order_type)
         };
+
+        log::debug!(
+            "Order type mapping: order_type={:?}, time_in_force={:?}, post_only={:?} -> okx_ord_type={:?}",
+            order_type,
+            time_in_force,
+            post_only,
+            okx_ord_type
+        );
 
         builder.ord_type(okx_ord_type);
         builder.sz(quantity.to_string());
@@ -1430,6 +1459,12 @@ impl OKXWebSocketClient {
         }
 
         builder.tag(OKX_NAUTILUS_BROKER_ID);
+
+        // Set expire time if provided
+        if let Some(exp_time_ns) = expire_time_ns {
+            let exp_time_ms = nanos_to_millis(exp_time_ns);
+            builder.exp_time(exp_time_ms.to_string());
+        }
 
         let params = builder
             .build()

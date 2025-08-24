@@ -558,6 +558,11 @@ pub struct WsPostOrderParams {
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
+    /// Order expiry time in milliseconds (for GTD orders).
+    #[builder(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "expTime")]
+    pub exp_time: Option<String>,
 }
 
 /// Parameters for WebSocket cancel order operation (instType not included).

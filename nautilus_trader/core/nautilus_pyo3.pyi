@@ -5938,6 +5938,8 @@ class OKXWebSocketClient:
         order_side: OrderSide,
         order_type: OrderType,
         quantity: Quantity,
+        time_in_force: TimeInForce | None = None,
+        expire_time_ns: int | None = None,
         price: Price | None = None,
         trigger_price: Price | None = None,
         post_only: bool | None = None,
