@@ -38,6 +38,7 @@ pub enum NautilusWsMessage {
     FillReports(Vec<FillReport>),
     PositionStatusReport(Box<PositionStatusReport>),
     FundingRateUpdates(Vec<FundingRateUpdate>),
+    AccountState(Box<nautilus_model::events::AccountState>),
 }
 
 /// Represents all possible message types from the `BitMEX` WebSocket API.

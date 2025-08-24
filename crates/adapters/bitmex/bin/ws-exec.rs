@@ -56,6 +56,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None, // url: defaults to wss://ws.bitmex.com/realtime
         None,
         None,
+        None,
         Some(5), // 5 second heartbeat
     )
     .unwrap();

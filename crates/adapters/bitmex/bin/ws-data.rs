@@ -82,6 +82,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ws_url,  // url: defaults to wss://ws.bitmex.com/realtime
         None,    // No API key for public feeds
         None,    // No API secret
+        None,    // Acount ID
         Some(5), // 5 second heartbeat
     )
     .unwrap();

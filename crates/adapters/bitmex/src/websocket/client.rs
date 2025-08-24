@@ -34,7 +34,7 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::{Data, bar::BarType},
-    identifiers::InstrumentId,
+    identifiers::{AccountId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
 };
 use nautilus_network::websocket::{Consumer, MessageReader, WebSocketClient, WebSocketConfig};
@@ -71,6 +71,7 @@ pub struct BitmexWebSocketClient {
     task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
     subscriptions: Arc<DashMap<String, AHashSet<Ustr>>>,
     instruments_cache: Arc<AHashMap<Ustr, InstrumentAny>>,
+    account_id: AccountId,
 }
 
 impl BitmexWebSocketClient {
@@ -83,6 +84,7 @@ impl BitmexWebSocketClient {
         url: Option<String>,
         api_key: Option<String>,
         api_secret: Option<String>,
+        account_id: Option<AccountId>,
         heartbeat: Option<u64>,
     ) -> anyhow::Result<Self> {
         let credential = match (api_key, api_secret) {
@@ -90,6 +92,8 @@ impl BitmexWebSocketClient {
             (None, None) => None,
             _ => anyhow::bail!("Both `api_key` and `api_secret` must be provided together"),
         };
+
+        let account_id = account_id.unwrap_or(AccountId::from("BITMEX-master"));
 
         Ok(Self {
             url: url.unwrap_or(BITMEX_WS_URL.to_string()).to_string(),
@@ -101,6 +105,7 @@ impl BitmexWebSocketClient {
             task_handle: None,
             subscriptions: Arc::new(DashMap::new()),
             instruments_cache: Arc::new(AHashMap::new()),
+            account_id,
         })
     }
 
@@ -114,7 +119,7 @@ impl BitmexWebSocketClient {
         let api_key = get_env_var("BITMEX_API_KEY")?;
         let api_secret = get_env_var("BITMEX_API_SECRET")?;
 
-        Self::new(Some(url), Some(api_key), Some(api_secret), None)
+        Self::new(Some(url), Some(api_key), Some(api_secret), None, None)
     }
 
     /// Returns the websocket url being used by the client.
@@ -162,8 +167,9 @@ impl BitmexWebSocketClient {
         let signal = self.signal.clone();
         let instruments_cache = self.instruments_cache.clone();
 
+        let account_id = self.account_id;
         let stream_handle = get_runtime().spawn(async move {
-            BitmexWsMessageHandler::new(reader, signal, tx, instruments_cache)
+            BitmexWsMessageHandler::new(reader, signal, tx, instruments_cache, account_id)
                 .run()
                 .await;
         });
@@ -859,6 +865,7 @@ struct BitmexWsMessageHandler {
     handler: BitmexFeedHandler,
     tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
     instruments_cache: Arc<AHashMap<Ustr, InstrumentAny>>,
+    account_id: AccountId,
 }
 
 impl BitmexWsMessageHandler {
@@ -868,12 +875,14 @@ impl BitmexWsMessageHandler {
         signal: Arc<AtomicBool>,
         tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
         instruments_cache: Arc<AHashMap<Ustr, InstrumentAny>>,
+        account_id: AccountId,
     ) -> Self {
         let handler = BitmexFeedHandler::new(reader, signal);
         Self {
             handler,
             tx,
             instruments_cache,
+            account_id,
         }
     }
 
@@ -1074,19 +1083,26 @@ impl BitmexWsMessageHandler {
                         //     continue;
                         // }
                     }
-                    TableMessage::Margin { .. } => {
-                        continue; // TODO: Parse to account state update
-                        // if let Some(margin_msg) = data.into_iter().next() {
-                        //     let (account_id, currency, available_margin) =
-                        //         parse::parse_margin_msg(margin_msg);
-                        //     NautilusWsMessage::MarginUpdate {
-                        //         account_id,
-                        //         currency,
-                        //         available_margin,
-                        //     }
-                        // } else {
-                        //     continue;
-                        // }
+                    TableMessage::Margin { data, .. } => {
+                        if let Some(margin_msg) = data.into_iter().next() {
+                            match crate::common::parse::parse_account_state(
+                                &margin_msg,
+                                self.account_id,
+                                ts_init,
+                            ) {
+                                Ok(account_state) => {
+                                    return Some(NautilusWsMessage::AccountState(Box::new(
+                                        account_state,
+                                    )));
+                                }
+                                Err(e) => {
+                                    tracing::error!("Failed to parse margin message: {e}");
+                                    continue;
+                                }
+                            }
+                        } else {
+                            continue;
+                        }
                     }
                     TableMessage::Instrument { data, .. } => {
                         let mut data_msgs = Vec::new();

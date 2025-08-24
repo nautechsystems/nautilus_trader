@@ -117,11 +117,13 @@ class BitmexDataClient(LiveMarketDataClient):
         self._log.info(f"REST API key {self._http_client.api_key}", LogColor.BLUE)
 
         # WebSocket API
-        ws_url = self._determine_ws_url(config)
+        ws_url = self._determine_ws_url(config)  # TODO: Move this to Rust
+
         self._ws_client = nautilus_pyo3.BitmexWebSocketClient(
             url=ws_url,
             api_key=config.api_key,
             api_secret=config.api_secret,
+            account_id=None,  # Not required for data
             heartbeat=30,
         )
         self._ws_client_futures: set[asyncio.Future] = set()

@@ -6151,6 +6151,7 @@ class BitmexWebSocketClient:
         url: str | None = None,
         api_key: str | None = None,
         api_secret: str | None = None,
+        account_id: AccountId | None = None,
         heartbeat: int | None = None,
     ) -> None: ...
     @property

@@ -17,10 +17,10 @@ use futures_util::StreamExt;
 use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
     data::bar::BarType,
-    identifiers::InstrumentId,
+    identifiers::{AccountId, InstrumentId},
     python::{data::data_to_pycapsule, instruments::pyobject_to_instrument_any},
 };
-use pyo3::{IntoPyObjectExt, exceptions::PyRuntimeError, prelude::*};
+use pyo3::{conversion::IntoPyObjectExt, exceptions::PyRuntimeError, prelude::*};
 use pyo3_async_runtimes::tokio::get_runtime;
 
 use crate::websocket::{BitmexWebSocketClient, messages::NautilusWsMessage};
@@ -28,14 +28,15 @@ use crate::websocket::{BitmexWebSocketClient, messages::NautilusWsMessage};
 #[pymethods]
 impl BitmexWebSocketClient {
     #[new]
-    #[pyo3(signature = (url=None, api_key=None, api_secret=None, heartbeat=None))]
+    #[pyo3(signature = (url=None, api_key=None, api_secret=None, account_id=None, heartbeat=None))]
     fn py_new(
         url: Option<String>,
         api_key: Option<String>,
         api_secret: Option<String>,
+        account_id: Option<AccountId>,
         heartbeat: Option<u64>,
     ) -> PyResult<Self> {
-        Self::new(url, api_key, api_secret, heartbeat).map_err(to_pyvalue_err)
+        Self::new(url, api_key, api_secret, account_id, heartbeat).map_err(to_pyvalue_err)
     }
 
     #[staticmethod]
@@ -123,6 +124,11 @@ impl BitmexWebSocketClient {
                             if let Ok(py_obj) = update.into_py_any(py) {
                                 call_python(py, &callback, py_obj);
                             }
+                        }
+                    }
+                    NautilusWsMessage::AccountState(account_state) => {
+                        if let Ok(py_obj) = (*account_state).into_py_any(py) {
+                            call_python(py, &callback, py_obj);
                         }
                     }
                 });
