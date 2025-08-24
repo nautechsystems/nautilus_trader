@@ -16,15 +16,29 @@
 use aws_lc_rs::hmac;
 use base64::prelude::*;
 use ustr::Ustr;
+use zeroize::ZeroizeOnDrop;
 
 /// Coinbase International API credentials for signing requests.
 ///
 /// Uses HMAC SHA256 for request signing as per API specifications.
-#[derive(Debug, Clone)]
+/// Secrets are automatically zeroized on drop for security.
+#[derive(Clone, ZeroizeOnDrop)]
 pub struct Credential {
+    #[zeroize(skip)]
     pub api_key: Ustr,
+    #[zeroize(skip)]
     pub api_passphrase: Ustr,
-    api_secret: Vec<u8>,
+    api_secret: Box<[u8]>,
+}
+
+impl core::fmt::Debug for Credential {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Credential")
+            .field("api_key", &self.api_key)
+            .field("api_passphrase", &self.api_passphrase)
+            .field("api_secret", &"<redacted>")
+            .finish()
+    }
 }
 
 impl Credential {
@@ -42,7 +56,7 @@ impl Credential {
         Self {
             api_key: api_key.into(),
             api_passphrase: api_passphrase.into(),
-            api_secret: decoded_secret,
+            api_secret: decoded_secret.into_boxed_slice(),
         }
     }
 
@@ -61,7 +75,7 @@ impl Credential {
         let message = format!("{timestamp}{method}{request_path}{body}");
         tracing::trace!("Signing message: {message}");
 
-        let key = hmac::Key::new(hmac::HMAC_SHA256, &self.api_secret);
+        let key = hmac::Key::new(hmac::HMAC_SHA256, &self.api_secret[..]);
         let tag = hmac::sign(&key, message.as_bytes());
         BASE64_STANDARD.encode(tag.as_ref())
     }
@@ -75,7 +89,7 @@ impl Credential {
         let message = format!("{timestamp}{}CBINTLMD{}", self.api_key, self.api_passphrase);
         tracing::trace!("Signing message: {message}");
 
-        let key = hmac::Key::new(hmac::HMAC_SHA256, &self.api_secret);
+        let key = hmac::Key::new(hmac::HMAC_SHA256, &self.api_secret[..]);
         let tag = hmac::sign(&key, message.as_bytes());
         BASE64_STANDARD.encode(tag.as_ref())
     }
@@ -102,5 +116,22 @@ mod tests {
         let signature = credential.sign(timestamp, "GET", "/api/v1/fee-rate-tiers", "");
 
         assert_eq!(signature, "h/9tnYzD/nsEbH1sV7dkB5uJ3Vygr4TjmOOxJNQB8ts=");
+    }
+
+    #[rstest]
+    fn test_debug_redacts_secret() {
+        let credential = Credential::new(
+            API_KEY.to_string(),
+            API_SECRET.to_string(),
+            API_PASSPHRASE.to_string(),
+        );
+        let dbg_out = format!("{:?}", credential);
+        assert!(dbg_out.contains("api_secret: \"<redacted>\""));
+        assert!(!dbg_out.contains("dGVz")); // base64 fragment
+        let secret_bytes_dbg = format!("{:?}", BASE64_STANDARD.decode(API_SECRET).unwrap());
+        assert!(
+            !dbg_out.contains(&secret_bytes_dbg),
+            "Debug output must not contain raw secret bytes"
+        );
     }
 }

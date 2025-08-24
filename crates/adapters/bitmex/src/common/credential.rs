@@ -115,7 +115,6 @@ mod tests {
         let credential = Credential::new(API_KEY.to_string(), API_SECRET.to_string());
         let dbg_out = format!("{:?}", credential);
         assert!(dbg_out.contains("api_secret: \"<redacted>\""));
-        // Should not contain obvious fragments of the secret or its byte dump.
         assert!(!dbg_out.contains("chNOO"));
         let secret_bytes_dbg = format!("{:?}", API_SECRET.as_bytes());
         assert!(

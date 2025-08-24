@@ -4454,6 +4454,7 @@ dependencies = [
  "url",
  "ustr",
  "uuid",
+ "zeroize",
 ]
 
 [[package]]
@@ -4545,6 +4546,7 @@ dependencies = [
  "tracing-test",
  "ustr",
  "uuid",
+ "zeroize",
 ]
 
 [[package]]
@@ -4932,6 +4934,7 @@ dependencies = [
  "tracing-test",
  "url",
  "ustr",
+ "zeroize",
 ]
 
 [[package]]
