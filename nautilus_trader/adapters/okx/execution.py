@@ -171,6 +171,9 @@ class OKXExecutionClient(LiveExecutionClient):
             ),
         )
         self._ws_client_futures.add(future)
+
+        # Wait for connection to be established
+        await self._ws_client.wait_until_active(timeout_secs=10.0)
         self._log.info(f"Connected to {self._ws_client.url}", LogColor.BLUE)
         self._log.info(f"Private websocket API key {self._ws_client.api_key}", LogColor.BLUE)
         self._log.info("OKX API key authenticated", LogColor.GREEN)

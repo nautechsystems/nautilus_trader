@@ -158,6 +158,9 @@ class OKXDataClient(LiveMarketDataClient):
             ),
         )
         self._ws_client_futures.add(future)
+
+        # Wait for connection to be established
+        await self._ws_client.wait_until_active(timeout_secs=10.0)
         self._log.info(f"Connected to public websocket {self._ws_client.url}", LogColor.BLUE)
 
         # Connect business WebSocket client
@@ -168,6 +171,9 @@ class OKXDataClient(LiveMarketDataClient):
             ),
         )
         self._ws_business_client_futures.add(business_future)
+
+        # Wait for connection to be established
+        await self._ws_client.wait_until_active(timeout_secs=10.0)
         self._log.info(
             f"Connected to business websocket {self._ws_business_client.url}",
             LogColor.BLUE,
