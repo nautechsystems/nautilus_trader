@@ -143,6 +143,22 @@ impl OKXWebSocketClient {
         self.is_closed()
     }
 
+    #[pyo3(name = "get_subscriptions")]
+    fn py_get_subscriptions(&self, instrument_id: InstrumentId) -> Vec<String> {
+        let channels = self.get_subscriptions(instrument_id);
+
+        // Convert to OKX channel names
+        channels
+            .iter()
+            .map(|c| {
+                serde_json::to_value(c)
+                    .ok()
+                    .and_then(|v| v.as_str().map(String::from))
+                    .unwrap_or_else(|| c.to_string())
+            })
+            .collect()
+    }
+
     #[pyo3(name = "connect")]
     fn py_connect<'py>(
         &mut self,
@@ -221,6 +237,23 @@ impl OKXWebSocketClient {
                 }
             }
 
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "wait_until_active")]
+    fn py_wait_until_active<'py>(
+        &self,
+        py: Python<'py>,
+        timeout_secs: f64,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .wait_until_active(timeout_secs)
+                .await
+                .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
             Ok(())
         })
     }
@@ -708,32 +741,6 @@ impl OKXWebSocketClient {
                 log::error!("Failed to unsubscribe from account: {e}");
             }
             Ok(())
-        })
-    }
-
-    /// Get active subscriptions for a specific instrument.
-    #[pyo3(name = "get_subscriptions")]
-    fn py_get_subscriptions<'py>(
-        &self,
-        py: Python<'py>,
-        instrument_id: InstrumentId,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
-
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let channels = client.get_subscriptions(instrument_id).await;
-
-            // Convert to OKX channel names
-            let channel_names: Vec<String> = channels
-                .iter()
-                .map(|c| {
-                    serde_json::to_value(c)
-                        .ok()
-                        .and_then(|v| v.as_str().map(String::from))
-                        .unwrap_or_else(|| c.to_string())
-                })
-                .collect();
-            Ok(channel_names)
         })
     }
 

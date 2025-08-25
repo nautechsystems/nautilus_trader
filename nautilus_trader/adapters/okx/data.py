@@ -305,7 +305,7 @@ class OKXDataClient(LiveMarketDataClient):
 
     async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        active_channels = await self._ws_client.get_subscriptions(pyo3_instrument_id)
+        active_channels = self._ws_client.get_subscriptions(pyo3_instrument_id)
 
         tasks = []
 
@@ -322,7 +322,7 @@ class OKXDataClient(LiveMarketDataClient):
 
     async def _unsubscribe_order_book_snapshots(self, command: UnsubscribeOrderBook) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        active_channels = await self._ws_client.get_subscriptions(pyo3_instrument_id)
+        active_channels = self._ws_client.get_subscriptions(pyo3_instrument_id)
 
         if "books5" in active_channels:
             await self._ws_client.unsubscribe_book_depth5(pyo3_instrument_id)
