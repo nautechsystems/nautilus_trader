@@ -2240,8 +2240,8 @@ mod tests {
             12345,
             token0,
             token1,
-            500,
-            10,
+            Some(500),
+            Some(10),
             UnixNanos::default(),
         ));
 

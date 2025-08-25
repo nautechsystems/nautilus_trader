@@ -1869,8 +1869,8 @@ fn test_process_pool_swap(data_engine: Rc<RefCell<DataEngine>>, data_client: Dat
         0u64,
         token0,
         token1,
-        500u32,
-        10u32,
+        Some(500u32),
+        Some(10u32),
         UnixNanos::from(1),
     );
 

@@ -253,8 +253,10 @@ impl BlockchainCache {
                     pool_row.creation_block as u64,
                     token0.clone(),
                     token1.clone(),
-                    pool_row.fee as u32,
-                    pool_row.tick_spacing as u32,
+                    pool_row.fee.map(|fee| fee as u32),
+                    pool_row
+                        .tick_spacing
+                        .map(|tick_spacing| tick_spacing as u32),
                     UnixNanos::default(), // TODO use default for now
                 );
 
