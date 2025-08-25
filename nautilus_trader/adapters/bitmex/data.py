@@ -148,6 +148,9 @@ class BitmexDataClient(LiveMarketDataClient):
             ),
         )
         self._ws_client_futures.add(future)
+
+        # Wait for connection to be established
+        await self._ws_client.wait_until_active(timeout_secs=10.0)  # type: ignore[attr-defined]
         self._log.info(f"Connected to websocket {self._ws_client.url}", LogColor.BLUE)
 
         # Start periodic instrument updates if configured
