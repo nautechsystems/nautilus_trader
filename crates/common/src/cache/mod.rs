@@ -1888,8 +1888,6 @@ impl Cache {
     pub fn update_position(&mut self, position: &Position) -> anyhow::Result<()> {
         // Update open/closed state
 
-        self.positions.insert(position.id, position.clone());
-
         if position.is_open() {
             self.index.positions_open.insert(position.id);
             self.index.positions_closed.remove(&position.id);
@@ -1905,6 +1903,9 @@ impl Cache {
             //     database.snapshot_order_state(order)?;
             // }
         }
+
+        self.positions.insert(position.id, position.clone());
+
         Ok(())
     }
 
