@@ -56,8 +56,8 @@ pub struct PoolRow {
     pub token0_address: Address,
     pub token1_chain: i32,
     pub token1_address: Address,
-    pub fee: i32,
-    pub tick_spacing: i32,
+    pub fee: Option<i32>,
+    pub tick_spacing: Option<i32>,
 }
 
 impl<'r> FromRow<'r, PgRow> for PoolRow {
@@ -71,8 +71,8 @@ impl<'r> FromRow<'r, PgRow> for PoolRow {
         let token1_chain = row.try_get::<i32, _>("token1_chain")?;
         let token1_address =
             validate_address(row.try_get::<String, _>("token1_address")?.as_str()).unwrap();
-        let fee = row.try_get::<i32, _>("fee")?;
-        let tick_spacing = row.try_get::<i32, _>("tick_spacing")?;
+        let fee = row.try_get::<Option<i32>, _>("fee")?;
+        let tick_spacing = row.try_get::<Option<i32>, _>("tick_spacing")?;
 
         Ok(Self {
             address,

@@ -1571,8 +1571,8 @@ fn test_subscribe_and_receive_pools(
         1000000,
         token0,
         token1,
-        3000,
-        60,
+        Some(3000),
+        Some(60),
         UnixNanos::from(1),
     );
 

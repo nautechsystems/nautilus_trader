@@ -306,8 +306,8 @@ impl Pool {
         creation_block: u64,
         token0: Token,
         token1: Token,
-        fee: u32,
-        tick_spacing: u32,
+        fee: Option<u32>,
+        tick_spacing: Option<u32>,
         ts_init: u64,
     ) -> PyResult<Self> {
         let address = address.parse().map_err(to_pyvalue_err)?;
@@ -368,13 +368,13 @@ impl Pool {
 
     #[getter]
     #[pyo3(name = "fee")]
-    fn py_fee(&self) -> u32 {
+    fn py_fee(&self) -> Option<u32> {
         self.fee
     }
 
     #[getter]
     #[pyo3(name = "tick_spacing")]
-    fn py_tick_spacing(&self) -> u32 {
+    fn py_tick_spacing(&self) -> Option<u32> {
         self.tick_spacing
     }
 

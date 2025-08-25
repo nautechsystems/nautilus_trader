@@ -26,12 +26,12 @@ pub struct PoolCreatedEvent {
     pub token0: Address,
     /// The blockchain address of the second token in the pair.
     pub token1: Address,
-    /// The fee tier of the pool, specified in basis points (e.g., 500 = 0.05%, 3000 = 0.3%).
-    pub fee: u32,
-    /// The tick spacing parameter that controls the granularity of price ranges.
-    pub tick_spacing: u32,
     /// The blockchain address of the created liquidity pool contract.
     pub pool_address: Address,
+    /// The fee tier of the pool, specified in basis points (e.g., 500 = 0.05%, 3000 = 0.3%).
+    pub fee: Option<u32>,
+    /// The tick spacing parameter that controls the granularity of price ranges.
+    pub tick_spacing: Option<u32>,
 }
 
 impl PoolCreatedEvent {
@@ -41,17 +41,17 @@ impl PoolCreatedEvent {
         block_number: u64,
         token0: Address,
         token1: Address,
-        fee: u32,
-        tick_spacing: u32,
         pool_address: Address,
+        fee: Option<u32>,
+        tick_spacing: Option<u32>,
     ) -> Self {
         Self {
             block_number,
             token0,
             token1,
+            pool_address,
             fee,
             tick_spacing,
-            pool_address,
         }
     }
 }

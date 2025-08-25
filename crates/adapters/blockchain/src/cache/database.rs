@@ -386,8 +386,8 @@ impl BlockchainCacheDatabase {
         .bind(pool.token0.address.to_string())
         .bind(pool.token1.chain.chain_id as i32)
         .bind(pool.token1.address.to_string())
-        .bind(pool.fee as i32)
-        .bind(pool.tick_spacing as i32)
+        .bind(pool.fee.map(|fee| fee as i32))
+        .bind(pool.tick_spacing.map(|tick_spacing| tick_spacing as i32))
         .execute(&self.pool)
         .await
         .map(|_| ())
@@ -412,8 +412,8 @@ impl BlockchainCacheDatabase {
         let mut token0_addresses: Vec<String> = Vec::with_capacity(pools.len());
         let mut token1_chains: Vec<i32> = Vec::with_capacity(pools.len());
         let mut token1_addresses: Vec<String> = Vec::with_capacity(pools.len());
-        let mut fees: Vec<i32> = Vec::with_capacity(pools.len());
-        let mut tick_spacings: Vec<i32> = Vec::with_capacity(pools.len());
+        let mut fees: Vec<Option<i32>> = Vec::with_capacity(pools.len());
+        let mut tick_spacings: Vec<Option<i32>> = Vec::with_capacity(pools.len());
         let mut chain_ids: Vec<i32> = Vec::with_capacity(pools.len());
 
         // Fill vectors from pools
@@ -426,8 +426,11 @@ impl BlockchainCacheDatabase {
             token0_addresses.push(pool.token0.address.to_string());
             token1_chains.push(pool.token1.chain.chain_id as i32);
             token1_addresses.push(pool.token1.address.to_string());
-            fees.push(pool.fee as i32);
-            tick_spacings.push(pool.tick_spacing as i32);
+            fees.push(pool.fee.map_or(None, |fee| Some(fee as i32)));
+            tick_spacings.push(
+                pool.tick_spacing
+                    .map_or(None, |tick_spacing| Some(tick_spacing as i32)),
+            );
         }
 
         // Execute batch insert with UNNEST
