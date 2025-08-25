@@ -43,14 +43,35 @@ jobs:
         # https://github.com/actions/checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
+      - name: Aggressive disk cleanup (pre-setup)
+        if: runner.os == 'Linux'
+        run: |
+          set -euxo pipefail
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost || true
+          sudo rm -rf /usr/local/lib/android /usr/lib/jvm /usr/lib/mono || true
+
+          if [ -n "${AGENT_TOOLSDIRECTORY:-}" ] && [ -d "$AGENT_TOOLSDIRECTORY" ]; then
+            # Remove big toolcache components but keep Python intact
+            sudo rm -rf "$AGENT_TOOLSDIRECTORY/CodeQL" \
+                        "$AGENT_TOOLSDIRECTORY/Go" \
+                        "$AGENT_TOOLSDIRECTORY/Node" \
+                        "$AGENT_TOOLSDIRECTORY/node" \
+                        "$AGENT_TOOLSDIRECTORY/Ruby" \
+                        "$AGENT_TOOLSDIRECTORY/PyPy" \
+                        "$AGENT_TOOLSDIRECTORY/R" \
+                        "$AGENT_TOOLSDIRECTORY"/Java* || true
+          fi
+
+          sudo apt-get clean
+          sudo apt-get autoremove -y
+          sudo rm -rf /var/lib/apt/lists/* /usr/share/man /usr/share/doc || true
+          df -h
+
       - name: Common setup
         uses: ./.github/actions/common-setup
         with:
           python-version: "3.12"
           free-disk-space: "true"
-
-      - name: Run pre-commit # Runs again here to check pre-commit with Python 3.12
-        run: make pre-commit
 
       - name: Install Nautilus CLI and run init postgres
         run: |
