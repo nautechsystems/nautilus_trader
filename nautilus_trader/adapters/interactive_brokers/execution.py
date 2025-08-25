@@ -445,7 +445,6 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         command: GenerateFillReports,
     ) -> list[FillReport]:
         self._log.warning("Cannot generate `list[FillReport]`: not yet implemented")
-
         return []  # TODO: Implement
 
     async def generate_position_status_reports(
@@ -620,13 +619,13 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                     if o == order:
                         self._handle_order_event(
                             status=OrderStatus.REJECTED,
-                            order=command.order,
+                            order=o,
                             reason=str(e),
                         )
                     else:
                         self._handle_order_event(
                             status=OrderStatus.REJECTED,
-                            order=command.order,
+                            order=o,
                             reason=f"The order has been rejected due to the rejection of the order with "
                             f"{order.client_order_id!r} in the list",
                         )
@@ -728,6 +727,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
     def _on_account_summary(self, tag: str, value: str, currency: str) -> None:
         if not self._account_summary.get(currency):
             self._account_summary[currency] = {}
+
         try:
             self._account_summary[currency][tag] = float(value)
         except ValueError:
