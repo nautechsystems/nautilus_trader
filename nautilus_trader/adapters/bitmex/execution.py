@@ -38,6 +38,8 @@ from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
+from nautilus_trader.live.cancellation import DEFAULT_FUTURE_CANCELLATION_TIMEOUT
+from nautilus_trader.live.cancellation import cancel_tasks_with_timeout
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
@@ -173,6 +175,9 @@ class BitmexExecutionClient(LiveExecutionClient):
             ),
         )
         self._ws_client_futures.add(future)
+
+        # Wait for connection to be established
+        await self._ws_client.wait_until_active(timeout_secs=10.0)  # type: ignore[attr-defined]
         self._log.info(f"Connected to WebSocket {self._ws_client.url}", LogColor.BLUE)
 
         # Update account state on connection
@@ -218,19 +223,11 @@ class BitmexExecutionClient(LiveExecutionClient):
             )
 
         # Cancel any pending futures
-        for future in self._ws_client_futures:
-            if not future.done():
-                future.cancel()
-
-        if self._ws_client_futures:
-            try:
-                await asyncio.wait_for(
-                    asyncio.gather(*self._ws_client_futures, return_exceptions=True),
-                    timeout=2.0,
-                )
-            except TimeoutError:
-                self._log.warning("Timeout while waiting for websockets shutdown to complete")
-
+        await cancel_tasks_with_timeout(
+            self._ws_client_futures,
+            self._log,
+            timeout_secs=DEFAULT_FUTURE_CANCELLATION_TIMEOUT,
+        )
         self._ws_client_futures.clear()
 
     async def _submit_order(self, command: SubmitOrder) -> None:

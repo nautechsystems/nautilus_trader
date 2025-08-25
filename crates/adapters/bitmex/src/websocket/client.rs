@@ -148,6 +148,27 @@ impl BitmexWebSocketClient {
         }
     }
 
+    /// Wait until the WebSocket connection is active.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the connection times out.
+    pub async fn wait_until_active(&self, timeout_secs: f64) -> Result<(), BitmexWsError> {
+        let timeout = tokio::time::Duration::from_secs_f64(timeout_secs);
+        let start = tokio::time::Instant::now();
+
+        while !self.is_active() {
+            if start.elapsed() > timeout {
+                return Err(BitmexWsError::ClientError(format!(
+                    "WebSocket connection timeout after {timeout_secs} seconds"
+                )));
+            }
+            tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+        }
+
+        Ok(())
+    }
+
     /// Connect to the WebSocket for streaming.
     ///
     /// # Errors
