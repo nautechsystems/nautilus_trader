@@ -424,6 +424,7 @@ impl BitmexWebSocketClient {
                 if let Some(mut entry) = self.subscriptions.get_mut(channel) {
                     entry.remove(&Ustr::from(symbol));
                     if entry.is_empty() {
+                        drop(entry);
                         self.subscriptions.remove(channel);
                     }
                 }
@@ -451,6 +452,25 @@ impl BitmexWebSocketClient {
     /// Get the current number of active subscriptions.
     pub fn subscription_count(&self) -> usize {
         self.subscriptions.len()
+    }
+
+    /// Get active subscriptions for a specific instrument.
+    pub fn get_subscriptions(&self, instrument_id: InstrumentId) -> Vec<String> {
+        let symbol = instrument_id.symbol.inner();
+        let mut channels = Vec::new();
+
+        for entry in self.subscriptions.iter() {
+            let (channel, symbols) = entry.pair();
+            if symbols.contains(&symbol) {
+                // Return the full topic string (e.g., "orderBookL2:XBTUSD")
+                channels.push(format!("{}:{}", channel, symbol));
+            } else if symbols.is_empty() && (channel == "execution" || channel == "order") {
+                // These are account-level subscriptions without symbols
+                channels.push(channel.clone());
+            }
+        }
+
+        channels
     }
 
     /// Subscribe to instrument updates for all instruments on the venue.

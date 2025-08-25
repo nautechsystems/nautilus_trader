@@ -177,7 +177,7 @@ class BitmexExecutionClient(LiveExecutionClient):
         self._ws_client_futures.add(future)
 
         # Wait for connection to be established
-        await self._ws_client.wait_until_active(timeout_secs=10.0)  # type: ignore[attr-defined]
+        await self._ws_client.wait_until_active(timeout_secs=10.0)
         self._log.info(f"Connected to WebSocket {self._ws_client.url}", LogColor.BLUE)
 
         # Update account state on connection

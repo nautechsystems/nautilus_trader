@@ -69,21 +69,9 @@ impl BitmexWebSocketClient {
         self.is_closed()
     }
 
-    #[pyo3(name = "wait_until_active")]
-    fn py_wait_until_active<'py>(
-        &self,
-        py: Python<'py>,
-        timeout_secs: f64,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
-
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            client
-                .wait_until_active(timeout_secs)
-                .await
-                .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
-            Ok(())
-        })
+    #[pyo3(name = "get_subscriptions")]
+    fn py_get_subscriptions(&self, instrument_id: InstrumentId) -> Vec<String> {
+        self.get_subscriptions(instrument_id)
     }
 
     #[pyo3(name = "connect")]
@@ -151,6 +139,23 @@ impl BitmexWebSocketClient {
                 });
             }
 
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "wait_until_active")]
+    fn py_wait_until_active<'py>(
+        &self,
+        py: Python<'py>,
+        timeout_secs: f64,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .wait_until_active(timeout_secs)
+                .await
+                .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
             Ok(())
         })
     }

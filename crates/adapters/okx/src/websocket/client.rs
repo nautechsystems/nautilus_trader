@@ -52,7 +52,6 @@ use nautilus_network::{
 };
 use reqwest::header::USER_AGENT;
 use serde_json::Value;
-use tokio::sync::Mutex;
 use tokio_tungstenite::tungstenite::{Error, Message};
 use ustr::Ustr;
 
@@ -131,9 +130,9 @@ pub struct OKXWebSocketClient {
     rx: Option<Arc<tokio::sync::mpsc::UnboundedReceiver<NautilusWsMessage>>>,
     signal: Arc<AtomicBool>,
     task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
-    subscriptions_inst_type: Arc<Mutex<AHashMap<OKXWsChannel, AHashSet<OKXInstrumentType>>>>,
-    subscriptions_inst_family: Arc<Mutex<AHashMap<OKXWsChannel, AHashSet<Ustr>>>>,
-    subscriptions_inst_id: Arc<Mutex<AHashMap<OKXWsChannel, AHashSet<Ustr>>>>,
+    subscriptions_inst_type: Arc<DashMap<OKXWsChannel, AHashSet<OKXInstrumentType>>>,
+    subscriptions_inst_family: Arc<DashMap<OKXWsChannel, AHashSet<Ustr>>>,
+    subscriptions_inst_id: Arc<DashMap<OKXWsChannel, AHashSet<Ustr>>>,
     request_id_counter: Arc<AtomicU64>,
     pending_place_requests: Arc<DashMap<String, PlaceRequestData>>,
     pending_cancel_requests: Arc<DashMap<String, CancelRequestData>>,
@@ -184,9 +183,9 @@ impl OKXWebSocketClient {
         };
 
         let signal = Arc::new(AtomicBool::new(false));
-        let subscriptions_inst_type = Arc::new(Mutex::new(AHashMap::new()));
-        let subscriptions_inst_family = Arc::new(Mutex::new(AHashMap::new()));
-        let subscriptions_inst_id = Arc::new(Mutex::new(AHashMap::new()));
+        let subscriptions_inst_type = Arc::new(DashMap::new());
+        let subscriptions_inst_family = Arc::new(DashMap::new());
+        let subscriptions_inst_id = Arc::new(DashMap::new());
         let (auth_tx, auth_rx) = tokio::sync::watch::channel(false);
 
         Ok(Self {
@@ -446,6 +445,27 @@ impl OKXWebSocketClient {
         }
     }
 
+    /// Wait until the WebSocket connection is active.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the connection times out.
+    pub async fn wait_until_active(&self, timeout_secs: f64) -> Result<(), OKXWsError> {
+        let timeout = tokio::time::Duration::from_secs_f64(timeout_secs);
+        let start = tokio::time::Instant::now();
+
+        while !self.is_active() {
+            if start.elapsed() > timeout {
+                return Err(OKXWsError::ClientError(format!(
+                    "WebSocket connection timeout after {timeout_secs} seconds"
+                )));
+            }
+            tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+        }
+
+        Ok(())
+    }
+
     /// Closes the client.
     pub async fn close(&mut self) -> Result<(), Error> {
         log::debug!("Starting close process");
@@ -497,54 +517,50 @@ impl OKXWebSocketClient {
         Ok(())
     }
 
+    /// Get active subscriptions for a specific instrument.
+    pub fn get_subscriptions(&self, instrument_id: InstrumentId) -> Vec<OKXWsChannel> {
+        let symbol = instrument_id.symbol.inner();
+        let mut channels = Vec::new();
+
+        for entry in self.subscriptions_inst_id.iter() {
+            let (channel, instruments) = entry.pair();
+            if instruments.contains(&symbol) {
+                channels.push(channel.clone());
+            }
+        }
+
+        channels
+    }
+
     fn generate_unique_request_id(&self) -> String {
         self.request_id_counter
             .fetch_add(1, Ordering::SeqCst)
             .to_string()
     }
 
-    /// Get active subscriptions for a specific instrument.
-    pub async fn get_subscriptions(&self, instrument_id: InstrumentId) -> Vec<OKXWsChannel> {
-        let subscriptions = self.subscriptions_inst_id.lock().await;
-
-        subscriptions
-            .iter()
-            .filter_map(|(channel, instruments)| {
-                if instruments.contains(&instrument_id.symbol.inner()) {
-                    Some(channel.clone())
-                } else {
-                    None
-                }
-            })
-            .collect()
-    }
-
     async fn subscribe(&self, args: Vec<OKXSubscriptionArg>) -> Result<(), OKXWsError> {
         for arg in &args {
             // Update instrument type subscriptions
             if let Some(inst_type) = &arg.inst_type {
-                let mut active_subs = self.subscriptions_inst_type.lock().await;
-                active_subs
+                self.subscriptions_inst_type
                     .entry(arg.channel.clone())
-                    .or_insert_with(AHashSet::new)
+                    .or_default()
                     .insert(*inst_type);
             }
 
             // Update instrument family subscriptions
             if let Some(inst_family) = &arg.inst_family {
-                let mut active_subs = self.subscriptions_inst_family.lock().await;
-                active_subs
+                self.subscriptions_inst_family
                     .entry(arg.channel.clone())
-                    .or_insert_with(AHashSet::new)
+                    .or_default()
                     .insert(*inst_family);
             }
 
             // Update instrument ID subscriptions
             if let Some(inst_id) = &arg.inst_id {
-                let mut active_subs = self.subscriptions_inst_id.lock().await;
-                active_subs
+                self.subscriptions_inst_id
                     .entry(arg.channel.clone())
-                    .or_insert_with(AHashSet::new)
+                    .or_default()
                     .insert(*inst_id);
             }
         }
@@ -573,33 +589,40 @@ impl OKXWebSocketClient {
         Ok(())
     }
 
+    #[allow(clippy::collapsible_if)]
     async fn unsubscribe(&self, args: Vec<OKXSubscriptionArg>) -> Result<(), OKXWsError> {
         for arg in &args {
             // Update instrument type subscriptions
             if let Some(inst_type) = &arg.inst_type {
-                let mut active_subs = self.subscriptions_inst_type.lock().await;
-                active_subs
-                    .entry(arg.channel.clone())
-                    .or_insert_with(AHashSet::new)
-                    .remove(inst_type);
+                if let Some(mut entry) = self.subscriptions_inst_type.get_mut(&arg.channel) {
+                    entry.remove(inst_type);
+                    if entry.is_empty() {
+                        drop(entry);
+                        self.subscriptions_inst_type.remove(&arg.channel);
+                    }
+                }
             }
 
             // Update instrument family subscriptions
             if let Some(inst_family) = &arg.inst_family {
-                let mut active_subs = self.subscriptions_inst_family.lock().await;
-                active_subs
-                    .entry(arg.channel.clone())
-                    .or_insert_with(AHashSet::new)
-                    .remove(inst_family);
+                if let Some(mut entry) = self.subscriptions_inst_family.get_mut(&arg.channel) {
+                    entry.remove(inst_family);
+                    if entry.is_empty() {
+                        drop(entry);
+                        self.subscriptions_inst_family.remove(&arg.channel);
+                    }
+                }
             }
 
             // Update instrument ID subscriptions
             if let Some(inst_id) = &arg.inst_id {
-                let mut active_subs = self.subscriptions_inst_id.lock().await;
-                active_subs
-                    .entry(arg.channel.clone())
-                    .or_insert_with(AHashSet::new)
-                    .remove(inst_id);
+                if let Some(mut entry) = self.subscriptions_inst_id.get_mut(&arg.channel) {
+                    entry.remove(inst_id);
+                    if entry.is_empty() {
+                        drop(entry);
+                        self.subscriptions_inst_id.remove(&arg.channel);
+                    }
+                }
             }
         }
 
@@ -625,9 +648,29 @@ impl OKXWebSocketClient {
     }
 
     async fn resubscribe_all(&self) {
-        let subs_inst_type = self.subscriptions_inst_type.lock().await.clone();
-        let subs_inst_family = self.subscriptions_inst_family.lock().await.clone();
-        let subs_inst_id = self.subscriptions_inst_id.lock().await.clone();
+        let mut subs_inst_type = Vec::new();
+        for entry in self.subscriptions_inst_type.iter() {
+            let (channel, inst_types) = entry.pair();
+            if !inst_types.is_empty() {
+                subs_inst_type.push((channel.clone(), inst_types.clone()));
+            }
+        }
+
+        let mut subs_inst_family = Vec::new();
+        for entry in self.subscriptions_inst_family.iter() {
+            let (channel, inst_families) = entry.pair();
+            if !inst_families.is_empty() {
+                subs_inst_family.push((channel.clone(), inst_families.clone()));
+            }
+        }
+
+        let mut subs_inst_id = Vec::new();
+        for entry in self.subscriptions_inst_id.iter() {
+            let (channel, inst_ids) = entry.pair();
+            if !inst_ids.is_empty() {
+                subs_inst_id.push((channel.clone(), inst_ids.clone()));
+            }
+        }
 
         // Process instrument type subscriptions
         for (channel, inst_types) in subs_inst_type {
