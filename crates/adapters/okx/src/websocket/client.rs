@@ -281,7 +281,18 @@ impl OKXWebSocketClient {
         let client = self.clone();
         let post_reconnect = Arc::new(move || {
             let client = client.clone();
-            tokio::spawn(async move { client.resubscribe_all().await });
+            tokio::spawn(async move {
+                // Re-authenticate first if we have credentials
+                if client.credential.is_some() {
+                    if let Err(e) = client.authenticate().await {
+                        tracing::error!("Failed to re-authenticate after reconnect: {e}");
+                        return;
+                    }
+                    tracing::info!("Successfully re-authenticated after reconnect");
+                }
+
+                client.resubscribe_all().await;
+            });
         });
 
         let config = WebSocketConfig {
@@ -368,7 +379,7 @@ impl OKXWebSocketClient {
     }
 
     /// Authenticates the WebSocket session with OKX.
-    async fn authenticate(&mut self) -> Result<(), Error> {
+    async fn authenticate(&self) -> Result<(), Error> {
         let credential = match &self.credential {
             Some(credential) => credential,
             None => {
@@ -452,16 +463,18 @@ impl OKXWebSocketClient {
     /// Returns an error if the connection times out.
     pub async fn wait_until_active(&self, timeout_secs: f64) -> Result<(), OKXWsError> {
         let timeout = tokio::time::Duration::from_secs_f64(timeout_secs);
-        let start = tokio::time::Instant::now();
 
-        while !self.is_active() {
-            if start.elapsed() > timeout {
-                return Err(OKXWsError::ClientError(format!(
-                    "WebSocket connection timeout after {timeout_secs} seconds"
-                )));
+        tokio::time::timeout(timeout, async {
+            while !self.is_active() {
+                tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
             }
-            tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-        }
+        })
+        .await
+        .map_err(|_| {
+            OKXWsError::ClientError(format!(
+                "WebSocket connection timeout after {timeout_secs} seconds"
+            ))
+        })?;
 
         Ok(())
     }
