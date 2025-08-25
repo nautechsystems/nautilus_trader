@@ -28,8 +28,7 @@ use zeroize::ZeroizeOnDrop;
 pub struct Credential {
     #[zeroize(skip)]
     pub api_key: Ustr,
-    #[zeroize(skip)]
-    pub api_passphrase: Ustr,
+    pub api_passphrase: String,
     api_secret: Box<[u8]>,
 }
 
@@ -49,7 +48,7 @@ impl Credential {
     pub fn new(api_key: String, api_secret: String, api_passphrase: String) -> Self {
         Self {
             api_key: api_key.into(),
-            api_passphrase: api_passphrase.into(),
+            api_passphrase,
             api_secret: api_secret.into_bytes().into_boxed_slice(),
         }
     }

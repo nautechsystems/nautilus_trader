@@ -129,7 +129,7 @@ impl BitmexWebSocketClient {
 
     /// Returns the public API key being used by the client.
     pub fn api_key(&self) -> Option<&str> {
-        self.credential.clone().map(|c| c.api_key.as_str())
+        self.credential.as_ref().map(|c| c.api_key.as_str())
     }
 
     /// Returns a value indicating whether the client is active.

@@ -230,7 +230,7 @@ impl OKXHttpInnerClient {
         tracing::debug!("{method} {path}");
 
         let api_key = credential.api_key.clone().to_string();
-        let api_passphrase = credential.api_passphrase.clone().to_string();
+        let api_passphrase = credential.api_passphrase.clone();
         let timestamp = Utc::now().format("%Y-%m-%dT%H:%M:%S.%3fZ").to_string();
         let signature = credential.sign(&timestamp, method.as_str(), path, &body_str);
 
