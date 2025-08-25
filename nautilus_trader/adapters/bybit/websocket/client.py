@@ -55,6 +55,7 @@ from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTradeAuthMsg
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import Logger
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.common.secure import SecureString
 from nautilus_trader.config import PositiveFloat
 from nautilus_trader.core.nautilus_pyo3 import WebSocketClient
 from nautilus_trader.core.nautilus_pyo3 import WebSocketClientError
@@ -136,7 +137,7 @@ class BybitWebSocketClient:
 
         self._client: WebSocketClient | None = None
         self._api_key = api_key
-        self._api_secret = api_secret
+        self._api_secret = SecureString(api_secret, name="api_secret")
         self._recv_window_ms: int = recv_window_ms
 
         self._is_running = False
@@ -454,7 +455,7 @@ class BybitWebSocketClient:
     def _get_signature(self):
         expires = self._clock.timestamp_ms() + 5_000
         sign = f"GET/realtime{expires}"
-        signature = hmac_signature(self._api_secret, sign)
+        signature = hmac_signature(self._api_secret.get_value(), sign)
         return {
             "op": "auth",
             "args": [self._api_key, expires, signature],
