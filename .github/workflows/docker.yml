@@ -69,8 +69,14 @@ jobs:
           file: ".docker/nautilus_trader.dockerfile"
           push: true
           tags: ghcr.io/${{ github.repository_owner }}/nautilus_trader:nightly
-          cache-from: type=gha
-          cache-to: type=gha
+          cache-from: |
+            type=gha,scope=nautilus-trader-nightly
+            type=gha,scope=nautilus-trader-shared
+          cache-to: |
+            type=gha,mode=max,scope=nautilus-trader-nightly
+            type=gha,mode=max,scope=nautilus-trader-shared
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
       - name: Digest nautilus_trader image
         run: echo ${{ steps.docker_build_trader_nightly.outputs.digest }}
 
@@ -83,8 +89,14 @@ jobs:
           file: ".docker/nautilus_trader.dockerfile"
           push: true
           tags: ghcr.io/${{ github.repository_owner }}/nautilus_trader:latest
-          cache-from: type=gha
-          cache-to: type=gha
+          cache-from: |
+            type=gha,scope=nautilus-trader-latest
+            type=gha,scope=nautilus-trader-shared
+          cache-to: |
+            type=gha,mode=max,scope=nautilus-trader-latest
+            type=gha,mode=max,scope=nautilus-trader-shared
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
       - name: Digest nautilus_trader image
         run: echo ${{ steps.docker_build_trader_latest.outputs.digest }}
 
@@ -97,10 +109,13 @@ jobs:
           file: ".docker/jupyterlab.dockerfile"
           push: true
           tags: ghcr.io/${{ github.repository_owner }}/jupyterlab:nightly
-          cache-from: type=gha
-          cache-to: type=gha
+          cache-from: |
+            type=gha,scope=jupyterlab-nightly
+          cache-to: |
+            type=gha,mode=max,scope=jupyterlab-nightly
           build-args: |
             GIT_TAG=${{ steps.branch-name.outputs.current_branch }}
+            BUILDKIT_INLINE_CACHE=1
       - name: Digest jupyterlab image
         run: echo ${{ steps.docker_build_jupyterlab_nightly.outputs.digest }}
 
@@ -113,10 +128,13 @@ jobs:
           file: ".docker/jupyterlab.dockerfile"
           push: true
           tags: ghcr.io/${{ github.repository_owner }}/jupyterlab:latest
-          cache-from: type=gha
-          cache-to: type=gha
+          cache-from: |
+            type=gha,scope=jupyterlab-latest
+          cache-to: |
+            type=gha,mode=max,scope=jupyterlab-latest
           build-args: |
             GIT_TAG=latest
+            BUILDKIT_INLINE_CACHE=1
 
       - name: Digest jupyterlab image
         run: echo ${{ steps.docker_build_jupyterlab_latest.outputs.digest }}

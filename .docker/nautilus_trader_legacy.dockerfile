@@ -47,20 +47,13 @@ RUN uv sync --no-install-package nautilus_trader
 COPY --from=planner /opt/pysetup/recipe.json recipe.json
 
 # Build dependencies - this layer will be cached as long as Cargo.toml/Cargo.lock don't change
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
-    --mount=type=cache,target=/opt/pysetup/target \
-    cargo chef cook --release --recipe-path recipe.json
+# Note: No cache mounts for legacy Docker builder compatibility
+RUN cargo chef cook --release --recipe-path recipe.json
 
 # Copy source code and build the application
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
-    --mount=type=cache,target=/opt/pysetup/target \
-    cargo build --lib --release --all-features
+RUN cargo build --lib --release --all-features
 
 # Build Python wheel
 COPY nautilus_trader ./nautilus_trader

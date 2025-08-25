@@ -396,6 +396,20 @@ test-performance:  #-- Run performance tests with codspeed benchmarking
 install-cli:  #-- Install Nautilus CLI tool from source
 	cargo install --path crates/cli --bin nautilus --force
 
+.PHONY: docker-build-cargo-chef
+docker-build-cargo-chef:  #-- Build Docker image with cargo-chef optimization
+	DOCKER_BUILDKIT=1 docker build -f .docker/nautilus_trader.dockerfile -t nautilus-trader .
+
+.PHONY: validate-cargo-chef
+validate-cargo-chef:  #-- Validate cargo-chef Docker setup configuration
+	@echo "Validating cargo-chef setup..."
+	bash scripts/validate-cargo-chef.sh
+
+.PHONY: test-cargo-chef
+test-cargo-chef:  #-- Test cargo-chef Docker build optimization performance
+	@echo "Testing cargo-chef optimization..."
+	bash scripts/test-cargo-chef.sh
+
 #== Internal
 
 .PHONY: help
