@@ -111,9 +111,9 @@ pub fn parse_pool_created_event(log: Log) -> anyhow::Result<PoolCreatedEvent> {
             block_number.into(),
             token,
             token1,
-            fee,
-            tick_spacing,
             pool_address,
+            Some(fee),
+            Some(tick_spacing),
         ))
     } else {
         Err(anyhow::anyhow!("Missing data in pool created event log"))
