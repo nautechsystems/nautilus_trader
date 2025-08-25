@@ -22,6 +22,7 @@ import nautilus_trader
 from nautilus_trader.adapters.bybit.http.errors import BybitError
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import Logger
+from nautilus_trader.common.secure import SecureString
 from nautilus_trader.core.nautilus_pyo3 import HttpClient
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 from nautilus_trader.core.nautilus_pyo3 import HttpResponse
@@ -73,14 +74,14 @@ class BybitHttpClient:
         self._clock: LiveClock = clock
         self._log: Logger = Logger(name=type(self).__name__)
         self._api_key: str = api_key
-        self._api_secret: str = api_secret
+        self._api_secret: SecureString = SecureString(api_secret, name="api_secret")
         self._recv_window_ms: int = recv_window_ms
 
         self._base_url: str = base_url
         self._headers: dict[str, Any] = {
             "Content-Type": "application/json",
             "User-Agent": nautilus_trader.NAUTILUS_USER_AGENT,
-            "X-BAPI-API-KEY": self._api_key,
+            "X-BAPI-API-KEY": api_key,
         }
         self._client = HttpClient(
             keyed_quotas=ratelimiter_quotas or [],
@@ -91,10 +92,6 @@ class BybitHttpClient:
     @property
     def api_key(self) -> str:
         return self._api_key
-
-    @property
-    def api_secret(self) -> str:
-        return self._api_secret
 
     async def send_request(
         self,
@@ -174,12 +171,12 @@ class BybitHttpClient:
         timestamp = str(self._clock.timestamp_ms())
         payload_str = msgspec.json.encode(payload).decode()
         result = timestamp + self._api_key + str(self._recv_window_ms) + payload_str
-        signature = hmac_signature(self._api_secret, result)
+        signature = hmac_signature(self._api_secret.get_value(), result)
         return [timestamp, signature]
 
     def _sign_get_request(self, payload: dict[str, Any]) -> list[str]:
         timestamp = str(self._clock.timestamp_ms())
         payload_str = parse.urlencode(payload)
         result = timestamp + self._api_key + str(self._recv_window_ms) + payload_str
-        signature = hmac_signature(self._api_secret, result)
+        signature = hmac_signature(self._api_secret.get_value(), result)
         return [timestamp, signature]
