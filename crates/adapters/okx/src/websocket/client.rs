@@ -503,6 +503,22 @@ impl OKXWebSocketClient {
             .to_string()
     }
 
+    /// Get active subscriptions for a specific instrument.
+    pub async fn get_subscriptions(&self, instrument_id: InstrumentId) -> Vec<OKXWsChannel> {
+        let subscriptions = self.subscriptions_inst_id.lock().await;
+
+        subscriptions
+            .iter()
+            .filter_map(|(channel, instruments)| {
+                if instruments.contains(&instrument_id.symbol.inner()) {
+                    Some(channel.clone())
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
     async fn subscribe(&self, args: Vec<OKXSubscriptionArg>) -> Result<(), OKXWsError> {
         for arg in &args {
             // Update instrument type subscriptions
@@ -525,7 +541,7 @@ impl OKXWebSocketClient {
 
             // Update instrument ID subscriptions
             if let Some(inst_id) = &arg.inst_id {
-                let mut active_subs = self.subscriptions_inst_family.lock().await;
+                let mut active_subs = self.subscriptions_inst_id.lock().await;
                 active_subs
                     .entry(arg.channel.clone())
                     .or_insert_with(AHashSet::new)
@@ -579,7 +595,7 @@ impl OKXWebSocketClient {
 
             // Update instrument ID subscriptions
             if let Some(inst_id) = &arg.inst_id {
-                let mut active_subs = self.subscriptions_inst_family.lock().await;
+                let mut active_subs = self.subscriptions_inst_id.lock().await;
                 active_subs
                     .entry(arg.channel.clone())
                     .or_insert_with(AHashSet::new)

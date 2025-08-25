@@ -53,7 +53,7 @@ async def main():
     end_time = pd.Timestamp("2025-07-27T00:00:00Z")  # noqa: F841 (never used)
 
     account_state = await http_client.request_account_state(
-        account_id=nautilus_pyo3.AccountId("OKX-001"),
+        account_id=okx_account_id,
     )
     logger.info(f"Received {account_state}")
 
