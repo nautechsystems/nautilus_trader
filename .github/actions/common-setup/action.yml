@@ -15,18 +15,18 @@ runs:
   steps:
     # > --------------------------------------------------
     # > OS
-    - name: Free disk space (Ubuntu)
-      if: inputs.free-disk-space == 'true' && runner.os == 'Linux'
+    - name: Free disk space (Ubuntu) - only for wheel builds
+      if: inputs.free-disk-space == 'true' && runner.os == 'Linux' && (contains(github.job, 'wheel') || contains(github.job, 'build'))
       # https://github.com/jlumbroso/free-disk-space
       uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
       with:
-        tool-cache: true
+        tool-cache: false  # Keep tool cache for faster builds
         android: true
         dotnet: true
         haskell: true
         large-packages: true
-        docker-images: true
-        swap-storage: true
+        docker-images: false  # Keep for potential Docker builds
+        swap-storage: false   # Keep swap for compilation
 
     - name: Free disk space (Windows)
       if: inputs.free-disk-space == 'true' && runner.os == 'Windows'
@@ -70,11 +70,11 @@ runs:
         components: clippy,rustfmt
         override: true
 
-    - name: Install cargo-nextest
+    - name: Install cargo tools
       # https://github.com/taiki-e/install-action # v2.53.2
       uses: taiki-e/install-action@d12e869b89167df346dd0ff65da342d1fb1202fb
       with:
-        tool: nextest
+        tool: nextest,cargo-chef
 
     # > --------------------------------------------------
     # > sccache
@@ -85,12 +85,15 @@ runs:
 
         # Based on GitHub Actions runner constraints
         # and Nautilus Trader uncompressed package final size (~1 GiB)
-        echo "SCCACHE_CACHE_SIZE=4G" >> $GITHUB_ENV
+        echo "SCCACHE_CACHE_SIZE=6G" >> $GITHUB_ENV
         echo "SCCACHE_IDLE_TIMEOUT=0" >> $GITHUB_ENV
         echo "SCCACHE_DIRECT=true" >> $GITHUB_ENV
         echo "SCCACHE_CACHE_MULTIARCH=1" >> $GITHUB_ENV
+        echo "SCCACHE_RECACHE=1" >> $GITHUB_ENV
 
         echo "CARGO_INCREMENTAL=0" >> $GITHUB_ENV
+        echo "CARGO_NET_RETRY=10" >> $GITHUB_ENV
+        echo "CARGO_NET_TIMEOUT=60" >> $GITHUB_ENV
 
     - name: Set sccache env vars (non-Windows)
       if: runner.os != 'Windows'
@@ -114,11 +117,11 @@ runs:
       uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
       with:
         path: ${{ env.SCCACHE_DIR }}
-        key: sccache-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-${{ hashFiles('**/Cargo.toml', '**/Cargo.lock', '**/uv.lock') }}
+        key: sccache-v2-${{ runner.os }}-${{ hashFiles('**/Cargo.toml', '**/Cargo.lock') }}-${{ github.sha }}
         restore-keys: |
-          sccache-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-
-          sccache-${{ runner.os }}-${{ github.workflow }}-
-          sccache-${{ runner.os }}-
+          sccache-v2-${{ runner.os }}-${{ hashFiles('**/Cargo.toml', '**/Cargo.lock') }}-
+          sccache-v2-${{ runner.os }}-
+          sccache-v1-${{ runner.os }}-
 
     - name: Run sccache
       # https://github.com/Mozilla-Actions/sccache-action
@@ -176,6 +179,18 @@ runs:
       with:
         path: ${{ env.UV_CACHE_DIR }}
         key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-uv-${{ hashFiles('**/uv.lock') }}
+
+    # > --------------------------------------------------
+    # > Cargo target directory cache
+    - name: Cached Cargo target directory
+      id: cached-cargo-target
+      # https://github.com/actions/cache
+      uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+      with:
+        path: target
+        key: ${{ runner.os }}-cargo-target-${{ hashFiles('**/Cargo.toml', '**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-target-
 
     # > --------------------------------------------------
     # > pre-commit

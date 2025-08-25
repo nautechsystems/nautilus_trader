@@ -31,8 +31,24 @@ jobs:
           python-version: "3.13"
           free-disk-space: "true"
 
-      - name: Run pre-commit
+      - name: Run pre-commit (all files on main/master)
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         run: pre-commit run --all-files
+
+      - name: Run pre-commit (changed files on PR)
+        if: github.event_name == 'pull_request'
+        run: |
+          # Get the list of changed files
+          git fetch origin ${{ github.base_ref }}
+          CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+
+          if [ -n "$CHANGED_FILES" ]; then
+            echo "Running pre-commit on changed files:"
+            echo "$CHANGED_FILES"
+            pre-commit run --files $CHANGED_FILES
+          else
+            echo "No files changed, skipping pre-commit"
+          fi
 
   build-linux-x86:
     strategy:
@@ -192,8 +208,11 @@ jobs:
       - name: Cached test data
         uses: ./.github/actions/common-test-data
 
+      - name: Pre-build Rust dependencies
+        uses: ./.github/actions/cargo-chef-deps
+
       - name: Run Rust tests
-        run: make cargo-test
+        run: make cargo-test-ci
 
       - name: Build and install wheel
         uses: ./.github/actions/common-wheel-build

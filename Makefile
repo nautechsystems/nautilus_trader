@@ -240,6 +240,15 @@ else
 	cargo nextest run --workspace --features "ffi,python,high-precision,defi" $(FAIL_FAST_FLAG) --cargo-profile nextest --status-level fail --final-status-level flaky
 endif
 
+.PHONY: cargo-test-ci
+cargo-test-ci: RUST_BACKTRACE=1
+cargo-test-ci: HIGH_PRECISION=true
+cargo-test-ci: check-nextest-installed
+cargo-test-ci:  #-- Run Rust tests optimized for CI (assumes dependencies pre-built)
+	$(info $(M) Running Rust tests in CI mode (optimized for pre-built dependencies)...)
+	# Use --no-deps to skip rebuilding dependencies if they're already cached
+	cargo nextest run --workspace --features "ffi,python,high-precision,defi" $(FAIL_FAST_FLAG) --cargo-profile nextest --status-level fail --final-status-level flaky
+
 .PHONY: cargo-test-lib
 cargo-test-lib: RUST_BACKTRACE=1
 cargo-test-lib: HIGH_PRECISION=true

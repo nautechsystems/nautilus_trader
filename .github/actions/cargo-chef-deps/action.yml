@@ -1,0 +1,54 @@
+name: cargo-chef-deps
+description: Pre-build Rust dependencies using cargo-chef for faster CI builds
+
+runs:
+  using: "composite"
+  steps:
+    - name: Generate cargo-chef recipe
+      shell: bash
+      run: |
+        echo "🍳 Generating cargo-chef recipe..."
+        cargo chef prepare --recipe-path recipe.json
+
+    - name: Cache cargo-chef dependencies
+      id: cached-chef-deps
+      # https://github.com/actions/cache
+      uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+      with:
+        path: |
+          target/release/deps
+          target/release/build
+          ~/.cargo/registry/index
+          ~/.cargo/registry/cache
+          ~/.cargo/git/db
+        key: ${{ runner.os }}-chef-deps-${{ hashFiles('recipe.json') }}
+        restore-keys: |
+          ${{ runner.os }}-chef-deps-
+
+    - name: Build dependencies with cargo-chef
+      if: steps.cached-chef-deps.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        echo "🔨 Building dependencies with cargo-chef..."
+        # Build dependencies in release mode with the same features as tests
+        cargo chef cook --release --features "ffi,python,high-precision,defi" --recipe-path recipe.json
+
+    - name: Cache compiled dependencies for tests
+      id: cached-test-deps
+      # https://github.com/actions/cache
+      uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+      with:
+        path: |
+          target/debug/deps
+          target/debug/build
+        key: ${{ runner.os }}-test-deps-${{ hashFiles('recipe.json') }}
+        restore-keys: |
+          ${{ runner.os }}-test-deps-
+
+    - name: Build test dependencies
+      if: steps.cached-test-deps.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        echo "🧪 Building test dependencies..."
+        # Build dependencies in debug mode for tests
+        cargo chef cook --features "ffi,python,high-precision,defi" --recipe-path recipe.json

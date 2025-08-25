@@ -87,8 +87,11 @@ jobs:
       - name: Cached test data
         uses: ./.github/actions/common-test-data
 
+      - name: Pre-build Rust dependencies
+        uses: ./.github/actions/cargo-chef-deps
+
       - name: Run Rust tests
-        run: make cargo-test
+        run: make cargo-test-ci
 
       # TODO: Add nautilus-persistence once required test data available
       - name: Run Rust benchmarks crate-by-crate

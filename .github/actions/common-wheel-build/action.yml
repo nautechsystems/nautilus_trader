@@ -32,6 +32,9 @@ runs:
       if: runner.os == 'Linux' && runner.arch != 'ARM64' && runner.arch != 'aarch64'
       shell: bash
       run: |
+        # Use all available cores for compilation
+        export CARGO_BUILD_JOBS=$(nproc)
+        export MAKEFLAGS="-j$(nproc)"
         uv build --wheel
         ls -lh dist/
 
