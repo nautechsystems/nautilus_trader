@@ -711,6 +711,32 @@ impl OKXWebSocketClient {
         })
     }
 
+    /// Get active subscriptions for a specific instrument.
+    #[pyo3(name = "get_subscriptions")]
+    fn py_get_subscriptions<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let channels = client.get_subscriptions(instrument_id).await;
+
+            // Convert to OKX channel names
+            let channel_names: Vec<String> = channels
+                .iter()
+                .map(|c| {
+                    serde_json::to_value(c)
+                        .ok()
+                        .and_then(|v| v.as_str().map(String::from))
+                        .unwrap_or_else(|| c.to_string())
+                })
+                .collect();
+            Ok(channel_names)
+        })
+    }
+
     /// Submits a new order via WebSocket.
     #[pyo3(name = "submit_order")]
     #[pyo3(signature = (

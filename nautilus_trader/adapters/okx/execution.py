@@ -751,7 +751,7 @@ class OKXExecutionClient(LiveExecutionClient):
         report = FillReport.from_pyo3(msg)
 
         if self._is_external_order(report.client_order_id):
-            self._send_order_status_report(report)
+            self._send_fill_report(report)
             return
 
         order = self._cache.order(report.client_order_id)

@@ -224,12 +224,6 @@ class OKXDataClient(LiveMarketDataClient):
 
         self._log.debug("Cached instruments", LogColor.MAGENTA)
 
-    def _cache_instrument(self, instrument: Instrument) -> None:
-        self._instrument_provider.add(instrument)
-        self._http_client.add_instrument(instrument)
-
-        self._log.debug(f"Cached instrument {instrument.id}", LogColor.MAGENTA)
-
     def _send_all_instruments_to_data_engine(self) -> None:
         for currency in self._instrument_provider.currencies().values():
             self._cache.add_currency(currency)
@@ -311,18 +305,27 @@ class OKXDataClient(LiveMarketDataClient):
 
     async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        active_channels = await self._ws_client.get_subscriptions(pyo3_instrument_id)
 
-        if self._config.vip_level and self._config.vip_level >= 5:
-            await self._ws_client.unsubscribe_book_l2_tbt(pyo3_instrument_id)
-        elif self._config.vip_level and self._config.vip_level >= 4:
-            await self._ws_client.unsubscribe_book_l2_tbt(pyo3_instrument_id)
-            await self._ws_client.unsubscribe_book50_l2_tbt(pyo3_instrument_id)
-        else:
-            await self._ws_client.unsubscribe_book(pyo3_instrument_id)
+        tasks = []
+
+        for channel in active_channels:
+            if channel == "books":
+                tasks.append(self._ws_client.unsubscribe_book(pyo3_instrument_id))
+            elif channel == "books50-l2-tbt":
+                tasks.append(self._ws_client.unsubscribe_book50_l2_tbt(pyo3_instrument_id))
+            elif channel == "books-l2-tbt":
+                tasks.append(self._ws_client.unsubscribe_book_l2_tbt(pyo3_instrument_id))
+
+        if tasks:
+            await asyncio.gather(*tasks)
 
     async def _unsubscribe_order_book_snapshots(self, command: UnsubscribeOrderBook) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        await self._ws_client.unsubscribe_book_depth5(pyo3_instrument_id)
+        active_channels = await self._ws_client.get_subscriptions(pyo3_instrument_id)
+
+        if "books5" in active_channels:
+            await self._ws_client.unsubscribe_book_depth5(pyo3_instrument_id)
 
     async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
