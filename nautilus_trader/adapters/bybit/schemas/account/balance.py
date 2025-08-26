@@ -51,14 +51,14 @@ class BybitCoinBalance(msgspec.Struct):
 
     def parse_to_account_balance(self) -> AccountBalance:
         currency = Currency.from_str(self.coin)
-        total = Decimal(self.walletBalance)
-        locked = Decimal(self.locked)  # TODO: Locked only valid for Spot
-        free = total - locked
+        total_money = Money(Decimal(self.walletBalance), currency)
+        locked_money = Money(Decimal(self.locked), currency)  # TODO: Locked only valid for Spot
+        free_money = Money.from_raw(total_money.raw - locked_money.raw, currency)
 
         return AccountBalance(
-            total=Money(total, currency),
-            locked=Money(locked, currency),
-            free=Money(free, currency),
+            total=total_money,
+            locked=locked_money,
+            free=free_money,
         )
 
     def parse_to_margin_balance(self) -> MarginBalance:
