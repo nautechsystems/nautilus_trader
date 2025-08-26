@@ -496,6 +496,41 @@ fn parquet_filepath_bars(bar_type: &BarType, date: NaiveDate) -> PathBuf {
         .join(format!("{date_str}.parquet"))
 }
 
+#[allow(dead_code)]
+fn parquet_filepath_with_part(
+    typename: &str,
+    instrument_id: &InstrumentId,
+    date: NaiveDate,
+    part: Option<usize>,
+) -> PathBuf {
+    let typename = typename.to_snake_case();
+    let instrument_id_str = instrument_id.to_string().replace('/', "");
+    let date_str = date.to_string().replace('-', "");
+    let filename = match part {
+        Some(p) => format!("{date_str}_part{p:05}.parquet"),
+        None => format!("{date_str}.parquet"),
+    };
+    PathBuf::new()
+        .join(typename)
+        .join(instrument_id_str)
+        .join(filename)
+}
+
+#[allow(dead_code)]
+fn parquet_filepath_bars_with_part(
+    bar_type: &BarType,
+    date: NaiveDate,
+    part: Option<usize>,
+) -> PathBuf {
+    let bar_type_str = bar_type.to_string().replace('/', "");
+    let date_str = date.to_string().replace('-', "");
+    let filename = match part {
+        Some(p) => format!("{date_str}_part{p:05}.parquet"),
+        None => format!("{date_str}.parquet"),
+    };
+    PathBuf::new().join("bar").join(bar_type_str).join(filename)
+}
+
 fn write_batch(
     batch: RecordBatch,
     typename: &str,
@@ -572,5 +607,138 @@ mod tests {
 
         assert_eq!(cursor.date_utc, expected_date);
         assert_eq!(cursor.end_ns, UnixNanos::from(expected_end_ns));
+    }
+
+    #[test]
+    fn test_date_cursor_edge_cases() {
+        // Test leap year boundary
+        let leap_day = Utc
+            .with_ymd_and_hms(2024, 2, 29, 12, 0, 0)
+            .unwrap()
+            .timestamp_nanos_opt()
+            .unwrap() as u64;
+        let cursor = DateCursor::new(UnixNanos::from(leap_day));
+        assert_eq!(
+            cursor.date_utc,
+            NaiveDate::from_ymd_opt(2024, 2, 29).unwrap()
+        );
+
+        // Test year boundary crossing
+        let new_year = Utc
+            .with_ymd_and_hms(2024, 1, 1, 0, 0, 0)
+            .unwrap()
+            .timestamp_nanos_opt()
+            .unwrap() as u64;
+        let cursor = DateCursor::new(UnixNanos::from(new_year));
+        assert_eq!(
+            cursor.date_utc,
+            NaiveDate::from_ymd_opt(2024, 1, 1).unwrap()
+        );
+
+        // Test nanosecond precision at day boundaries
+        let day_end_ns = Utc
+            .with_ymd_and_hms(2024, 1, 1, 23, 59, 59)
+            .unwrap()
+            .timestamp_nanos_opt()
+            .unwrap() as u64
+            + 999_999_999;
+        let cursor = DateCursor::new(UnixNanos::from(day_end_ns));
+        assert_eq!(
+            cursor.date_utc,
+            NaiveDate::from_ymd_opt(2024, 1, 1).unwrap()
+        );
+        assert_eq!(cursor.end_ns, UnixNanos::from(day_end_ns));
+    }
+
+    #[test]
+    fn test_date_cursor_next_part_initialization() {
+        let timestamp = Utc
+            .with_ymd_and_hms(2024, 1, 1, 12, 0, 0)
+            .unwrap()
+            .timestamp_nanos_opt()
+            .unwrap() as u64;
+        let cursor = DateCursor::new(UnixNanos::from(timestamp));
+
+        // Verify next_part is initialized to 0
+        assert_eq!(cursor.next_part, 0);
+
+        // Verify it can be incremented without panic
+        let mut cursor = cursor;
+        cursor.next_part += 1;
+        assert_eq!(cursor.next_part, 1);
+    }
+
+    #[rstest]
+    #[case("trade", "BTCUSDT.BINANCE", NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(), None, "trade/BTCUSDT.BINANCE/20240101.parquet")]
+    #[case("trade", "BTCUSDT.BINANCE", NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(), Some(0), "trade/BTCUSDT.BINANCE/20240101_part00000.parquet")]
+    #[case("trade", "BTCUSDT.BINANCE", NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(), Some(1), "trade/BTCUSDT.BINANCE/20240101_part00001.parquet")]
+    #[case("trade", "BTCUSDT.BINANCE", NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(), Some(99999), "trade/BTCUSDT.BINANCE/20240101_part99999.parquet")]
+    #[case("quote", "EUR/USD.FXCM", NaiveDate::from_ymd_opt(2024, 12, 31).unwrap(), Some(0), "quote/EURUSD.FXCM/20241231_part00000.parquet")]
+    fn test_parquet_filepath_with_part(
+        #[case] typename: &str,
+        #[case] instrument_id_str: &str,
+        #[case] date: NaiveDate,
+        #[case] part: Option<usize>,
+        #[case] expected_path: &str,
+    ) {
+        let instrument_id = InstrumentId::from(instrument_id_str);
+        let result = parquet_filepath_with_part(typename, &instrument_id, date, part);
+        assert_eq!(result.to_string_lossy(), expected_path);
+    }
+
+    #[rstest]
+    #[case("BTCUSDT.BINANCE-1-MINUTE-BID-EXTERNAL", NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(), None, "bar/BTCUSDT.BINANCE-1-MINUTE-BID-EXTERNAL/20240101.parquet")]
+    #[case("BTCUSDT.BINANCE-1-MINUTE-BID-EXTERNAL", NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(), Some(0), "bar/BTCUSDT.BINANCE-1-MINUTE-BID-EXTERNAL/20240101_part00000.parquet")]
+    #[case("BTCUSDT.BINANCE-1-MINUTE-BID-EXTERNAL", NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(), Some(1), "bar/BTCUSDT.BINANCE-1-MINUTE-BID-EXTERNAL/20240101_part00001.parquet")]
+    #[case("EUR/USD.FXCM-5-MINUTE-MID-EXTERNAL", NaiveDate::from_ymd_opt(2024, 12, 31).unwrap(), Some(0), "bar/EURUSD.FXCM-5-MINUTE-MID-EXTERNAL/20241231_part00000.parquet")]
+    fn test_parquet_filepath_bars_with_part(
+        #[case] bar_type_str: &str,
+        #[case] date: NaiveDate,
+        #[case] part: Option<usize>,
+        #[case] expected_path: &str,
+    ) {
+        let bar_type = BarType::from(bar_type_str);
+        let result = parquet_filepath_bars_with_part(&bar_type, date, part);
+        assert_eq!(result.to_string_lossy(), expected_path);
+    }
+
+    #[test]
+    fn test_parquet_io_smoke_test() {
+        // Test path generation doesn't panic and produces valid paths
+        let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
+        let date = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
+
+        // Test regular path generation
+        let path = parquet_filepath_with_part("trade", &instrument_id, date, None);
+        assert!(path.to_string_lossy().ends_with(".parquet"));
+
+        // Test partitioned path generation
+        let path_part = parquet_filepath_with_part("trade", &instrument_id, date, Some(0));
+        assert!(path_part.to_string_lossy().contains("part00000"));
+
+        // Test bar path generation
+        let bar_type = BarType::from("BTCUSDT.BINANCE-1-MINUTE-BID-EXTERNAL");
+        let bar_path = parquet_filepath_bars_with_part(&bar_type, date, Some(1));
+        assert!(bar_path.to_string_lossy().contains("part00001"));
+
+        // Test paths have expected structure
+        assert!(path.parent().is_some());
+        assert!(path_part.parent().is_some());
+        assert!(bar_path.parent().is_some());
+    }
+
+    #[test]
+    #[allow(clippy::assertions_on_constants)]
+    fn test_constants_are_reasonable() {
+        // Verify our memory reduction constants
+        assert_eq!(INIT_CAPACITY, 64_000); // 64K
+        assert_eq!(FLUSH_CHUNK_LEN, 200_000); // 200K
+
+        // Verify ratio makes sense (chunk should be larger than init)
+        assert!(FLUSH_CHUNK_LEN > INIT_CAPACITY);
+
+        // Verify they're not accidentally huge
+        assert!(INIT_CAPACITY < 1_000_000);
+        assert!(FLUSH_CHUNK_LEN < 10_000_000);
     }
 }
