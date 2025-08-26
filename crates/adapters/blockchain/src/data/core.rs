@@ -770,10 +770,6 @@ impl BlockchainDataClientCore {
         pool_buffer: &mut Vec<PoolCreatedEvent>,
         dex: SharedDex,
     ) -> anyhow::Result<()> {
-        if token_buffer.is_empty() {
-            return Ok(());
-        }
-
         let batch_addresses: Vec<Address> = token_buffer.drain().collect();
         let token_infos = self.tokens.batch_fetch_token_info(&batch_addresses).await?;
 
