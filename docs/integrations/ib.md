@@ -1059,8 +1059,8 @@ The adapter supports most Interactive Brokers order types:
 | Feature              | Supported | Notes                                        |
 |--------------------|-----------|----------------------------------------------|
 | Order lists         | ✓         | Atomic multi-order submission.               |
-| OCO orders          | ✓         | One-Cancels-Other functionality.            |
-| Bracket orders      | ✓         | Parent-child order relationships.           |
+| OCO orders          | ✓         | One-Cancels-Other with customizable OCA types (1, 2, 3). |
+| Bracket orders      | ✓         | Parent-child order relationships with automatic OCO. |
 | Conditional orders  | ✓         | Advanced order conditions and triggers.     |
 
 #### Basic Execution Client Configuration
@@ -1133,7 +1133,105 @@ order_tags = IBOrderTags(
     goodAfterTime="20240315 09:35:00 EST",    # Good after time
 )
 
+# Apply tags to an order
+order = order_factory.limit(
+    instrument_id=instrument.id,
+    order_side=OrderSide.BUY,
+    quantity=instrument.make_qty(100),
+    price=instrument.make_price(100.0),
+    tags=[order_tags.value],
+)
+```
+
+#### OCA (One-Cancels-All) Orders
+
+The adapter provides comprehensive support for OCA orders with both automatic detection and custom configuration:
+
+### Automatic OCO Detection
+
+Bracket orders automatically use OCA functionality with safe defaults:
+
+```python
+# Bracket orders automatically create OCA groups
+bracket_order = order_factory.bracket(
+    instrument_id=instrument.id,
+    order_side=OrderSide.BUY,
+    quantity=instrument.make_qty(100),
+    tp_price=instrument.make_price(110.0),
+    sl_trigger_price=instrument.make_price(90.0),
+    contingency_type=ContingencyType.OCO,  # Automatic OCA Type 1
+)
+```
+
+### Custom OCA Types
+
+You can specify custom OCA behavior using `IBOrderTags`:
+
+```python
+from nautilus_trader.adapters.interactive_brokers.common import IBOrderTags
+
+# Create custom OCA configuration
+custom_oca_tags = IBOrderTags(
+    ocaGroup="MY_CUSTOM_GROUP",
+    ocaType=2,  # Use Type 2: Reduce with Block
+)
+
+# Apply to individual orders
+order = order_factory.limit(
+    instrument_id=instrument.id,
+    order_side=OrderSide.BUY,
+    quantity=instrument.make_qty(100),
+    price=instrument.make_price(100.0),
+    tags=[custom_oca_tags.value],
+)
+```
+
+### OCA Types
+
+Interactive Brokers supports three OCA types:
+
+| Type | Name | Behavior | Use Case |
+|------|------|----------|----------|
+| **1** | Cancel All with Block | Cancel all remaining orders with block protection | **Default** - Safest option, prevents overfills |
+| **2** | Reduce with Block | Proportionally reduce remaining orders with block protection | Partial fills with overfill protection |
+| **3** | Reduce without Block | Proportionally reduce remaining orders without block protection | Fastest execution, higher overfill risk |
+
+#### Multiple Orders in Same OCA Group
+
+```python
+# Create multiple orders with the same OCA group
+oca_tags = IBOrderTags(
+    ocaGroup="MULTI_ORDER_GROUP",
+    ocaType=3,  # Use Type 3: Reduce without Block
+)
+
+order1 = order_factory.limit(
+    instrument_id=instrument.id,
+    order_side=OrderSide.BUY,
+    quantity=instrument.make_qty(50),
+    price=instrument.make_price(99.0),
+    tags=[oca_tags.value],
+)
+
+order2 = order_factory.limit(
+    instrument_id=instrument.id,
+    order_side=OrderSide.BUY,
+    quantity=instrument.make_qty(50),
+    price=instrument.make_price(101.0),
+    tags=[oca_tags.value],
+)
+```
+
+### Priority Order
+
+The adapter applies OCA settings in the following priority:
+
+1. **Custom IBOrderTags** (highest priority) - Explicit OCA settings in order tags
+2. **Automatic Detection** - OCO/OUO contingency types in bracket orders (uses Type 1)
+3. **No OCA** - Orders without contingency types or OCA tags
+
 # Apply tags to order (implementation depends on your strategy code)
+
 ```
 
 ### Complete Trading Node Configuration
@@ -1223,7 +1321,7 @@ if __name__ == "__main__":
         node.dispose()
 ```
 
-#### Live Trading with Dockerized Gateway
+## Live Trading with Dockerized Gateway
 
 ```python
 from nautilus_trader.adapters.interactive_brokers.config import DockerizedIBGatewayConfig
@@ -1268,7 +1366,7 @@ config_node = TradingNodeConfig(
 )
 ```
 
-#### Multi-Client Configuration
+### Multi-Client Configuration
 
 For advanced setups, you can configure multiple clients with different purposes:
 
