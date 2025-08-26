@@ -43,6 +43,8 @@ runs:
         sudo apt-get install -y curl clang git make pkg-config
         sudo apt-get install -y python3-dev libpython3-dev
         sudo apt-get install -y capnproto libcapnp-dev
+        sudo apt-get clean
+        sudo rm -rf /var/lib/apt/lists/*
 
     # > --------------------------------------------------
     # > Rust
@@ -83,12 +85,11 @@ runs:
       run: |
         echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
 
-        # Based on GitHub Actions runner constraints
-        # and Nautilus Trader uncompressed package final size (~1 GiB)
-        echo "SCCACHE_CACHE_SIZE=4G" >> $GITHUB_ENV
-        echo "SCCACHE_IDLE_TIMEOUT=0" >> $GITHUB_ENV
-        echo "SCCACHE_DIRECT=true" >> $GITHUB_ENV
-        echo "SCCACHE_CACHE_MULTIARCH=1" >> $GITHUB_ENV
+        # Respect pre-existing settings from the workflow env; otherwise set sane defaults
+        if [ -z "${SCCACHE_CACHE_SIZE:-}" ]; then echo "SCCACHE_CACHE_SIZE=4G" >> $GITHUB_ENV; fi
+        if [ -z "${SCCACHE_IDLE_TIMEOUT:-}" ]; then echo "SCCACHE_IDLE_TIMEOUT=0" >> $GITHUB_ENV; fi
+        if [ -z "${SCCACHE_DIRECT:-}" ]; then echo "SCCACHE_DIRECT=true" >> $GITHUB_ENV; fi
+        if [ -z "${SCCACHE_CACHE_MULTIARCH:-}" ]; then echo "SCCACHE_CACHE_MULTIARCH=1" >> $GITHUB_ENV; fi
 
         echo "CARGO_INCREMENTAL=0" >> $GITHUB_ENV
 
