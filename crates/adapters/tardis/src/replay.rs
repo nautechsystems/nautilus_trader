@@ -49,11 +49,18 @@ use crate::{
     parse::{normalize_instrument_id, parse_instrument_id},
 };
 
+const INIT_CAPACITY: usize = 64_000;
+#[allow(dead_code)]
+const FLUSH_CHUNK_LEN: usize = 200_000;
+
 struct DateCursor {
     /// Cursor date UTC.
     date_utc: NaiveDate,
     /// Cursor end timestamp UNIX nanoseconds.
     end_ns: UnixNanos,
+    /// Next part index for chunked writes for this (type × instrument × date).
+    #[allow(dead_code)]
+    next_part: usize,
 }
 
 impl DateCursor {
@@ -68,7 +75,11 @@ impl DateCursor {
             date_utc.and_hms_opt(23, 59, 59).unwrap() + Duration::nanoseconds(999_999_999);
         let end_ns = UnixNanos::from(end_utc.and_utc().timestamp_nanos_opt().unwrap() as u64);
 
-        Self { date_utc, end_ns }
+        Self {
+            date_utc,
+            end_ns,
+            next_part: 0,
+        }
     }
 }
 
@@ -199,8 +210,15 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
             Data::Quote(msg) => handle_quote_msg(msg, &mut quotes_map, &mut quotes_cursors, &path),
             Data::Trade(msg) => handle_trade_msg(msg, &mut trades_map, &mut trades_cursors, &path),
             Data::Bar(msg) => handle_bar_msg(msg, &mut bars_map, &mut bars_cursors, &path),
-            Data::Delta(_) => panic!("Individual delta message not implemented (or required)"),
-            _ => panic!("Not implemented"),
+            Data::Delta(m) => {
+                tracing::warn!(
+                    "Ignoring unsupported Data::Delta variant for {:?}",
+                    m.instrument_id
+                );
+            }
+            other => {
+                tracing::warn!("Unhandled message variant: {:?}", other);
+            }
         }
 
         msg_count += 1;
@@ -212,28 +230,51 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
     // Iterate through every remaining type and instrument sequentially
 
     for (instrument_id, deltas) in deltas_map {
-        let cursor = deltas_cursors.get(&instrument_id).expect("Expected cursor");
-        batch_and_write_deltas(deltas, &instrument_id, cursor.date_utc, &path);
+        if let Some(cursor) = deltas_cursors.get(&instrument_id) {
+            batch_and_write_deltas(deltas, &instrument_id, cursor.date_utc, &path);
+        } else {
+            tracing::error!(
+                "Missing cursor for deltas instrument_id: {instrument_id}, skipping batch"
+            );
+        }
     }
 
     for (instrument_id, depths) in depths_map {
-        let cursor = depths_cursors.get(&instrument_id).expect("Expected cursor");
-        batch_and_write_depths(depths, &instrument_id, cursor.date_utc, &path);
+        if let Some(cursor) = depths_cursors.get(&instrument_id) {
+            batch_and_write_depths(depths, &instrument_id, cursor.date_utc, &path);
+        } else {
+            tracing::error!(
+                "Missing cursor for depths instrument_id: {instrument_id}, skipping batch"
+            );
+        }
     }
 
     for (instrument_id, quotes) in quotes_map {
-        let cursor = quotes_cursors.get(&instrument_id).expect("Expected cursor");
-        batch_and_write_quotes(quotes, &instrument_id, cursor.date_utc, &path);
+        if let Some(cursor) = quotes_cursors.get(&instrument_id) {
+            batch_and_write_quotes(quotes, &instrument_id, cursor.date_utc, &path);
+        } else {
+            tracing::error!(
+                "Missing cursor for quotes instrument_id: {instrument_id}, skipping batch"
+            );
+        }
     }
 
     for (instrument_id, trades) in trades_map {
-        let cursor = trades_cursors.get(&instrument_id).expect("Expected cursor");
-        batch_and_write_trades(trades, &instrument_id, cursor.date_utc, &path);
+        if let Some(cursor) = trades_cursors.get(&instrument_id) {
+            batch_and_write_trades(trades, &instrument_id, cursor.date_utc, &path);
+        } else {
+            tracing::error!(
+                "Missing cursor for trades instrument_id: {instrument_id}, skipping batch"
+            );
+        }
     }
 
     for (bar_type, bars) in bars_map {
-        let cursor = bars_cursors.get(&bar_type).expect("Expected cursor");
-        batch_and_write_bars(bars, &bar_type, cursor.date_utc, &path);
+        if let Some(cursor) = bars_cursors.get(&bar_type) {
+            batch_and_write_bars(bars, &bar_type, cursor.date_utc, &path);
+        } else {
+            tracing::error!("Missing cursor for bars bar_type: {bar_type}, skipping batch");
+        }
     }
 
     tracing::info!(
@@ -262,7 +303,7 @@ fn handle_deltas_msg(
     }
 
     map.entry(deltas.instrument_id)
-        .or_insert_with(|| Vec::with_capacity(1_000_000))
+        .or_insert_with(|| Vec::with_capacity(INIT_CAPACITY))
         .extend(&*deltas.deltas);
 }
 
@@ -285,7 +326,7 @@ fn handle_depth10_msg(
     }
 
     map.entry(depth10.instrument_id)
-        .or_insert_with(|| Vec::with_capacity(1_000_000))
+        .or_insert_with(|| Vec::with_capacity(INIT_CAPACITY))
         .push(depth10);
 }
 
@@ -308,7 +349,7 @@ fn handle_quote_msg(
     }
 
     map.entry(quote.instrument_id)
-        .or_insert_with(|| Vec::with_capacity(1_000_000))
+        .or_insert_with(|| Vec::with_capacity(INIT_CAPACITY))
         .push(quote);
 }
 
@@ -331,7 +372,7 @@ fn handle_trade_msg(
     }
 
     map.entry(trade.instrument_id)
-        .or_insert_with(|| Vec::with_capacity(1_000_000))
+        .or_insert_with(|| Vec::with_capacity(INIT_CAPACITY))
         .push(trade);
 }
 
@@ -354,7 +395,7 @@ fn handle_bar_msg(
     }
 
     map.entry(bar.bar_type)
-        .or_insert_with(|| Vec::with_capacity(1_000_000))
+        .or_insert_with(|| Vec::with_capacity(INIT_CAPACITY))
         .push(bar);
 }
 
