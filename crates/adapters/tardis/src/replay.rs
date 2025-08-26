@@ -718,8 +718,8 @@ mod tests {
     ) {
         use std::str::FromStr;
 
-        let bar_type = BarType::from_str(bar_type_str)
-            .unwrap_or_else(|_| BarType::from(bar_type_str));
+        let bar_type =
+            BarType::from_str(bar_type_str).unwrap_or_else(|_| BarType::from(bar_type_str));
 
         let result = parquet_filepath_bars_with_part(&bar_type, date, part);
         let expected = PathBuf::from_iter(expected_components);
@@ -730,7 +730,7 @@ mod tests {
     fn test_path_generation_smoke() {
         // Test path generation doesn't panic and produces valid paths
         use std::str::FromStr;
-        
+
         let instrument_id = InstrumentId::from_str("BTCUSDT.BINANCE")
             .unwrap_or_else(|_| InstrumentId::from("BTCUSDT.BINANCE"));
         let date = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
@@ -773,7 +773,7 @@ mod tests {
     #[test]
     fn test_typename_snake_case_for_known_variants() {
         use heck::ToSnakeCase;
-        
+
         // Lock in snake_case for production typenames used in stringify!() calls
         assert_eq!("TradeTick".to_snake_case(), "trade_tick");
         assert_eq!("QuoteTick".to_snake_case(), "quote_tick");
