@@ -43,8 +43,10 @@ Released on TBD (UTC).
 - Added `allow_cash_borrowing` config option for `BacktestVenueConfig` to enable negative balances in cash accounts
 - Added borrowing support for Bybit SPOT accounts, enabling margin trading with negative balances
 - Added initial DEX Pool filtering configuration (#2842, #2887), thanks @filipmacek
+- Added Arbitrum FluidDEX pool parsing (#2897), thanks @filipmacek
 - Added a complete `.env.example` template to guide environment configuration (#2877), thanks @nicolad
-- Added subscription for IB position updates (#2887), thanks @faysou
+- Added Interactive Brokers OCA setting to order groups (#2899), thanks @faysou
+- Added Interactive Brokers subscriptions for position updates (#2887), thanks @faysou
 
 ### Breaking Changes
 - Added `multiplier` field for `CurrencyPair` Arrow schema
@@ -123,7 +125,7 @@ Released on TBD (UTC).
 - Upgraded Rust (MSRV) to 1.89.0
 - Upgraded Cython to v3.1.3
 - Upgraded `web3` for Polymarket allowances script (#2814), thanks @DeirhX
-- Upgraded `databento` crate to v0.33.0
+- Upgraded `databento` crate to v0.33.1
 - Upgraded `datafusion` crate to v49.0.1
 - Upgraded `redis` crate to v0.32.5
 - Upgraded `tokio` crate to v1.47.1
@@ -154,6 +156,8 @@ Released on TBD (UTC).
 - Fixed Bybit execution fee handling where the `execFee` field was not used when available as well as incorrect fee currency
 - Fixed Bybit instrument provider fee rate handling during parsing
 - Fixed Bybit SPOT commission currency for makers
+- Fixed Bybit positions pagination to handle more than 20 positions (#2879), thanks @scoriiu
+- Fixed Bybit balance precision errors for high-value tokens (#2898), thanks @scoriiu
 - Fixed RPC client content type header (#2828), thanks @filipmacek
 - Fixed `venue_order_id` handling for Polymarket order status request (#2848), thanks @DeirhX
 - Fixed race-condition on node shutdown in async `InteractiveBrokersDataClient._disconnect()` (#2865), thanks @ruvr
