@@ -106,6 +106,7 @@ Released on TBD (UTC).
 - Improved Docker configuration (#2868), thanks @nicolad
 - Improved security for `Credential` struct (#2882), thanks @nicolad
 - Improved DeFi pool event parsing and integrate Arbitrum Camelotv3 new pools signature (#2889), thanks @filipmacek
+- Improved Databento multiplier decoding to prevent precision loss (#2895), thanks @nicolad
 - Refined Rust catalog path handling (#2743), thanks @faysou
 - Refined Rust `GreeksCalculator` (#2760), thanks @faysou
 - Refined Databento bars timestamp decoding and backtest execution usage (#2800), thanks @faysou
