@@ -64,6 +64,7 @@ from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
@@ -559,6 +560,61 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         ib_order.account = self.account_id.get_id()
         ib_order.clearingAccount = self.account_id.get_id()
 
+        # Handle OCA (One-Cancels-All) settings - check order tags first, then contingency types
+        oca_group_from_tags = None
+        oca_type_from_tags = None
+
+        # Check if OCA settings are specified in order tags
+        if order.tags:
+            for tag in order.tags:
+                if tag.startswith("IBOrderTags:"):
+                    try:
+                        tags_dict = IBOrderTags.parse(tag.replace("IBOrderTags:", "")).dict()
+
+                        if tags_dict.get("ocaGroup"):
+                            oca_group_from_tags = tags_dict["ocaGroup"]
+
+                        # Get ocaType from tags, including 0 as a valid value
+                        if "ocaType" in tags_dict:
+                            oca_type_from_tags = tags_dict["ocaType"]
+                    except Exception as e:
+                        self._log.warning(f"Failed to parse IBOrderTags: {e}")
+
+        # Apply OCA settings from tags if specified
+        if oca_group_from_tags:
+            ib_order.ocaGroup = oca_group_from_tags
+
+            # If ocaType is explicitly set in tags (even to 0), use it; otherwise default to 1
+            if oca_type_from_tags is not None and oca_type_from_tags > 0:
+                ib_order.ocaType = oca_type_from_tags
+            else:
+                ib_order.ocaType = 1  # Default to type 1 for safety
+
+            self._log.info(
+                f"Setting OCA from tags - Group: {oca_group_from_tags}, Type: {ib_order.ocaType}",
+            )
+        # Otherwise, handle OCO/OUO contingency types automatically for bracket orders
+        elif (
+            order.contingency_type in (ContingencyType.OCO, ContingencyType.OUO)
+            and order.linked_order_ids
+            and order.parent_order_id
+        ):  # Child orders in bracket
+
+            # Generate unique OCA group identifier using order list ID
+            if order.order_list_id:
+                oca_group = f"OCA_{order.order_list_id.value}"
+            else:
+                # Fallback to using parent order ID for consistency
+                oca_group = f"OCA_{order.parent_order_id.value}"
+
+            ib_order.ocaGroup = oca_group
+            # Use OCA type 1 (cancel all remaining orders with block) for safety
+            ib_order.ocaType = 1
+
+            self._log.info(
+                f"Setting {order.contingency_type.name} order {order.client_order_id} to OCA group: {oca_group}",
+            )
+
         if order.tags:
             return self._attach_order_tags(ib_order, order)
         else:
@@ -576,6 +632,9 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             if tag == "conditions":
                 for condition in tags[tag]:
                     pass  # TODO:
+            elif tag in ("ocaGroup", "ocaType"):
+                # Skip OCA tags as they're handled in the main transformation logic
+                continue
             else:
                 setattr(ib_order, tag, tags[tag])
 
