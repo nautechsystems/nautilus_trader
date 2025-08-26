@@ -82,15 +82,16 @@ Released on TBD (UTC).
 - Added integration tests for dYdX bar-partitioning and large-history handling (#2773), thanks @nicolad
 - Added make build-debug-pyo3 (#2802), thanks @faysou
 - Added pytest timer (#2834), thanks @faysou
+- Added support for several instrument versions with `request_instrument` (#2835), thanks @faysou
 - Optimized identifiers hashing to avoid frequent recomputations using C strings
 - Optimized data engine topic string caching for message bus publishing to avoid frequent f-string constructions
 - Optimized Redis key scans to improve efficiency over a network
 - Completed bar request implementation for OKX (#2789), thanks @nicolad
+- Continued `ExecutionEngine` and testing in Rust (#2886), thanks @dakshbtc
 - Enabled parallel pytest tests with `pytest-xdist` (#2808), thanks @stastnypremysl
 - Standardized DeFi chain name validation for `InstrumentId` (#2826), thanks @filipmacek
 - Standardized `NAUTILUS_PATH` env var across Tardis integration (#2850), thanks @nicolad
 - Standardized zero PnL as Money instead of None when exchange rate missing (#2880), thanks @nicolad
-- Support several instrument versions with `request_instrument` (#2835), thanks @faysou
 - Improved typing for all the DEX IDs with `DexType` and add validation (#2827), thanks @filipmacek
 - Improved reconciliation handling of internally generated orders to align positions (now uses the `INTERNAL-DIFF` strategy ID)
 - Improved data client for blockchain adapter (#2787), thanks @filipmacek
@@ -104,6 +105,7 @@ Released on TBD (UTC).
 - Improved ERC20 token metadata handling and error recovery (#2847), thanks @filipmacek
 - Improved Docker configuration (#2868), thanks @nicolad
 - Improved security for `Credential` struct (#2882), thanks @nicolad
+- Improved DeFi pool event parsing and integrate Arbitrum Camelotv3 new pools signature (#2889), thanks @filipmacek
 - Refined Rust catalog path handling (#2743), thanks @faysou
 - Refined Rust `GreeksCalculator` (#2760), thanks @faysou
 - Refined Databento bars timestamp decoding and backtest execution usage (#2800), thanks @faysou
@@ -156,13 +158,15 @@ Released on TBD (UTC).
 - Fixed race-condition on node shutdown in async `InteractiveBrokersDataClient._disconnect()` (#2865), thanks @ruvr
 - Fixed `AttributeError` when loading cached `IBContract` objects (#2862), thanks @ruvr
 - Fixed `PolymarketUserTrade.bucket_index` field type that changed from `str` to `int` (#2872), thanks for reporting @thefabus
+- Fixed Interactive Brokers `submit_order_list` rejection (#2892), thanks @faysou
+- Fixed missing `funding_rates` for Cache Debug impl (#2894), thanks @MK27MK
 
 ### Documentation Updates
 - Added FFI Memory Contract developer guide
 - Added Windows signal handling guidance
 - Added mixed debugging instructions and example (#2806), thanks @faysou
 - Improved dYdX integration guide (#2751), thanks @nicolad
-- Update IB documentation for option spreads (#2839), thanks @faysou
+- Updated IB documentation for option spreads (#2839), thanks @faysou
 
 ### Deprecations
 None
@@ -368,6 +372,7 @@ Released on 31st May 2025 (UTC).
 - Upgraded Rust (MSRV) to 1.87.0
 - Upgraded Cython to v3.1.0 (now stable)
 - Upgraded `databento` crate to v0.26.0
+- Upgraded `datafusion` crate to v48.0.2
 - Upgraded `redis` crate to v0.31.0
 - Upgraded `sqlx` crate to v0.8.6
 - Upgraded `tokio` crate to v1.45.1
