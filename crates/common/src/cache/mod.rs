@@ -118,6 +118,7 @@ impl Debug for Cache {
             .field("mark_xrates", &self.mark_xrates)
             .field("mark_prices", &self.mark_prices)
             .field("index_prices", &self.index_prices)
+            .field("funding_rates", &self.funding_rates)
             .field("bars", &self.bars)
             .field("greeks", &self.greeks)
             .field("yield_curves", &self.yield_curves)
