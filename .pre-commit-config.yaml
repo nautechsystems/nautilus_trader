@@ -72,7 +72,7 @@ repos:
       - id: fmt
         name: cargo fmt
         description: Format files with cargo fmt.
-        entry: cargo fmt
+        entry: bash .pre-commit-hooks/cargo_fmt_stable.sh
         language: system
         args: ["--all", "--", "--check"]
         files: '\.(rs|toml)$'
