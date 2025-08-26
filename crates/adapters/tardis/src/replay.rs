@@ -669,43 +669,70 @@ mod tests {
     }
 
     #[rstest]
-    #[case("trade", "BTCUSDT.BINANCE", NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(), None, "trade/BTCUSDT.BINANCE/20240101.parquet")]
-    #[case("trade", "BTCUSDT.BINANCE", NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(), Some(0), "trade/BTCUSDT.BINANCE/20240101_part00000.parquet")]
-    #[case("trade", "BTCUSDT.BINANCE", NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(), Some(1), "trade/BTCUSDT.BINANCE/20240101_part00001.parquet")]
-    #[case("trade", "BTCUSDT.BINANCE", NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(), Some(99999), "trade/BTCUSDT.BINANCE/20240101_part99999.parquet")]
-    #[case("quote", "EUR/USD.FXCM", NaiveDate::from_ymd_opt(2024, 12, 31).unwrap(), Some(0), "quote/EURUSD.FXCM/20241231_part00000.parquet")]
+    #[case("trade", "BTCUSDT.BINANCE", NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(), None,
+           &["trade","BTCUSDT.BINANCE","20240101.parquet"])]
+    #[case("trade", "BTCUSDT.BINANCE", NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(), Some(0),
+           &["trade","BTCUSDT.BINANCE","20240101_part00000.parquet"])]
+    #[case("trade", "BTCUSDT.BINANCE", NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(), Some(1),
+           &["trade","BTCUSDT.BINANCE","20240101_part00001.parquet"])]
+    #[case("trade", "BTCUSDT.BINANCE", NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(), Some(99999),
+           &["trade","BTCUSDT.BINANCE","20240101_part99999.parquet"])]
+    #[case("quote", "EUR/USD.FXCM", NaiveDate::from_ymd_opt(2024, 12, 31).unwrap(), Some(0),
+           &["quote","EURUSD.FXCM","20241231_part00000.parquet"])]
     fn test_parquet_filepath_with_part(
         #[case] typename: &str,
         #[case] instrument_id_str: &str,
         #[case] date: NaiveDate,
         #[case] part: Option<usize>,
-        #[case] expected_path: &str,
+        #[case] expected_components: &[&str],
     ) {
-        let instrument_id = InstrumentId::from(instrument_id_str);
+        use std::str::FromStr;
+
+        // Prefer FromStr if available; else fall back to From<&str>
+        let instrument_id = InstrumentId::from_str(instrument_id_str)
+            .unwrap_or_else(|_| InstrumentId::from(instrument_id_str));
+
         let result = parquet_filepath_with_part(typename, &instrument_id, date, part);
-        assert_eq!(result.to_string_lossy(), expected_path);
+        let expected = PathBuf::from_iter(expected_components);
+        assert_eq!(result, expected);
     }
 
     #[rstest]
-    #[case("BTCUSDT.BINANCE-1-MINUTE-BID-EXTERNAL", NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(), None, "bar/BTCUSDT.BINANCE-1-MINUTE-BID-EXTERNAL/20240101.parquet")]
-    #[case("BTCUSDT.BINANCE-1-MINUTE-BID-EXTERNAL", NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(), Some(0), "bar/BTCUSDT.BINANCE-1-MINUTE-BID-EXTERNAL/20240101_part00000.parquet")]
-    #[case("BTCUSDT.BINANCE-1-MINUTE-BID-EXTERNAL", NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(), Some(1), "bar/BTCUSDT.BINANCE-1-MINUTE-BID-EXTERNAL/20240101_part00001.parquet")]
-    #[case("EUR/USD.FXCM-5-MINUTE-MID-EXTERNAL", NaiveDate::from_ymd_opt(2024, 12, 31).unwrap(), Some(0), "bar/EURUSD.FXCM-5-MINUTE-MID-EXTERNAL/20241231_part00000.parquet")]
+    #[case("BTCUSDT.BINANCE-1-MINUTE-BID-EXTERNAL",
+           NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(), None,
+           &["bar","BTCUSDT.BINANCE-1-MINUTE-BID-EXTERNAL","20240101.parquet"])]
+    #[case("BTCUSDT.BINANCE-1-MINUTE-BID-EXTERNAL",
+           NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(), Some(0),
+           &["bar","BTCUSDT.BINANCE-1-MINUTE-BID-EXTERNAL","20240101_part00000.parquet"])]
+    #[case("BTCUSDT.BINANCE-1-MINUTE-BID-EXTERNAL",
+           NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(), Some(1),
+           &["bar","BTCUSDT.BINANCE-1-MINUTE-BID-EXTERNAL","20240101_part00001.parquet"])]
+    #[case("EUR/USD.FXCM-5-MINUTE-MID-EXTERNAL",
+           NaiveDate::from_ymd_opt(2024, 12, 31).unwrap(), Some(0),
+           &["bar","EURUSD.FXCM-5-MINUTE-MID-EXTERNAL","20241231_part00000.parquet"])]
     fn test_parquet_filepath_bars_with_part(
         #[case] bar_type_str: &str,
         #[case] date: NaiveDate,
         #[case] part: Option<usize>,
-        #[case] expected_path: &str,
+        #[case] expected_components: &[&str],
     ) {
-        let bar_type = BarType::from(bar_type_str);
+        use std::str::FromStr;
+
+        let bar_type = BarType::from_str(bar_type_str)
+            .unwrap_or_else(|_| BarType::from(bar_type_str));
+
         let result = parquet_filepath_bars_with_part(&bar_type, date, part);
-        assert_eq!(result.to_string_lossy(), expected_path);
+        let expected = PathBuf::from_iter(expected_components);
+        assert_eq!(result, expected);
     }
 
     #[test]
-    fn test_parquet_io_smoke_test() {
+    fn test_path_generation_smoke() {
         // Test path generation doesn't panic and produces valid paths
-        let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
+        use std::str::FromStr;
+        
+        let instrument_id = InstrumentId::from_str("BTCUSDT.BINANCE")
+            .unwrap_or_else(|_| InstrumentId::from("BTCUSDT.BINANCE"));
         let date = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
 
         // Test regular path generation
@@ -717,7 +744,8 @@ mod tests {
         assert!(path_part.to_string_lossy().contains("part00000"));
 
         // Test bar path generation
-        let bar_type = BarType::from("BTCUSDT.BINANCE-1-MINUTE-BID-EXTERNAL");
+        let bar_type = BarType::from_str("BTCUSDT.BINANCE-1-MINUTE-BID-EXTERNAL")
+            .unwrap_or_else(|_| BarType::from("BTCUSDT.BINANCE-1-MINUTE-BID-EXTERNAL"));
         let bar_path = parquet_filepath_bars_with_part(&bar_type, date, Some(1));
         assert!(bar_path.to_string_lossy().contains("part00001"));
 
@@ -740,5 +768,17 @@ mod tests {
         // Verify they're not accidentally huge
         assert!(INIT_CAPACITY < 1_000_000);
         assert!(FLUSH_CHUNK_LEN < 10_000_000);
+    }
+
+    #[test]
+    fn test_typename_snake_case_for_known_variants() {
+        use heck::ToSnakeCase;
+        
+        // Lock in snake_case for production typenames used in stringify!() calls
+        assert_eq!("TradeTick".to_snake_case(), "trade_tick");
+        assert_eq!("QuoteTick".to_snake_case(), "quote_tick");
+        assert_eq!("OrderBookDeltas".to_snake_case(), "order_book_deltas");
+        assert_eq!("OrderBookDepth10".to_snake_case(), "order_book_depth10");
+        assert_eq!("Bar".to_snake_case(), "bar");
     }
 }
