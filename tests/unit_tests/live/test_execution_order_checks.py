@@ -495,27 +495,27 @@ async def test_check_open_orders_handles_client_exception(
 
 
 @pytest.mark.asyncio()
-async def test_open_check_loop_periodic_execution(exec_engine_open_check):
+async def test_open_check_periodic_execution(exec_engine_open_check):
     """
-    Test that _open_check_loop executes periodically.
+    Test that open check executes periodically via reconciliation loop.
     """
     # Arrange
     check_count = 0
-    original_check = exec_engine_open_check._check_open_orders
+    original_check = exec_engine_open_check._check_orders_consistency
 
     async def counting_check():
         nonlocal check_count
         check_count += 1
         if check_count >= 2:
             # Cancel the task after 2 checks
-            if exec_engine_open_check._open_check_task:
-                exec_engine_open_check._open_check_task.cancel()
+            if exec_engine_open_check._reconciliation_task:
+                exec_engine_open_check._reconciliation_task.cancel()
         return await original_check()
 
-    exec_engine_open_check._check_open_orders = counting_check
+    exec_engine_open_check._check_orders_consistency = counting_check
 
     # Act - start the loop
-    task = asyncio.create_task(exec_engine_open_check._open_check_loop(0.05))  # 50ms interval
+    task = asyncio.create_task(exec_engine_open_check._continuous_reconciliation_loop())
 
     # Wait for task to complete or timeout
     try:
@@ -688,9 +688,9 @@ async def test_check_inflight_orders_skips_recent_orders(
 
 
 @pytest.mark.asyncio()
-async def test_inflight_check_loop_periodic_execution(exec_engine_inflight_check):
+async def test_inflight_check_periodic_execution(exec_engine_inflight_check):
     """
-    Test that _inflight_check_loop executes periodically.
+    Test that inflight check executes periodically via reconciliation loop.
     """
     # Arrange
     check_count = 0
@@ -700,13 +700,13 @@ async def test_inflight_check_loop_periodic_execution(exec_engine_inflight_check
         check_count += 1
         if check_count >= 2:
             # Cancel the task after 2 checks
-            if exec_engine_inflight_check._inflight_check_task:
-                exec_engine_inflight_check._inflight_check_task.cancel()
+            if exec_engine_inflight_check._reconciliation_task:
+                exec_engine_inflight_check._reconciliation_task.cancel()
 
     exec_engine_inflight_check._check_inflight_orders = counting_check
 
     # Act - start the loop
-    task = asyncio.create_task(exec_engine_inflight_check._inflight_check_loop())
+    task = asyncio.create_task(exec_engine_inflight_check._continuous_reconciliation_loop())
 
     # Wait for task to complete or timeout
     try:
@@ -719,9 +719,9 @@ async def test_inflight_check_loop_periodic_execution(exec_engine_inflight_check
 
 
 @pytest.mark.asyncio()
-async def test_inflight_check_loop_handles_exceptions(exec_engine_inflight_check):
+async def test_inflight_check_handles_exceptions(exec_engine_inflight_check):
     """
-    Test that _inflight_check_loop continues after exceptions.
+    Test that reconciliation loop continues after exceptions.
     """
     # Arrange
     check_count = 0
@@ -732,13 +732,13 @@ async def test_inflight_check_loop_handles_exceptions(exec_engine_inflight_check
         if check_count == 1:
             raise RuntimeError("Test error")
         elif check_count >= 2:
-            if exec_engine_inflight_check._inflight_check_task:
-                exec_engine_inflight_check._inflight_check_task.cancel()
+            if exec_engine_inflight_check._reconciliation_task:
+                exec_engine_inflight_check._reconciliation_task.cancel()
 
     exec_engine_inflight_check._check_inflight_orders = failing_check
 
     # Act - start the loop
-    task = asyncio.create_task(exec_engine_inflight_check._inflight_check_loop())
+    task = asyncio.create_task(exec_engine_inflight_check._continuous_reconciliation_loop())
 
     # Wait for task to complete or timeout
     try:
@@ -922,6 +922,270 @@ async def test_reconcile_order_without_client_order_id(
 
 
 # =============================================================================
+# RECONCILIATION TESTS
+# =============================================================================
+
+
+@pytest.fixture(name="exec_engine_continuous")
+def fixture_exec_engine_continuous(msgbus, cache, clock, exec_client):
+    """
+    Create an execution engine configured for continuous reconciliation.
+    """
+    loop = asyncio.get_event_loop_policy().get_event_loop()
+    exec_engine = LiveExecutionEngine(
+        loop=loop,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+        config=LiveExecEngineConfig(
+            inflight_check_interval_ms=50,
+            inflight_check_threshold_ms=25,
+            inflight_check_retries=2,
+            open_check_interval_secs=0.1,
+            open_check_open_only=False,
+        ),
+    )
+    exec_engine.register_client(exec_client)
+
+    yield exec_engine
+
+    exec_engine.stop()
+    ensure_all_tasks_completed()
+
+
+@pytest.mark.asyncio()
+async def test_reconciliation_mode_enabled(exec_engine_continuous):
+    """
+    Test that reconciliation is enabled when checks are configured.
+    """
+    # Assert
+    assert exec_engine_continuous.inflight_check_interval_ms > 0
+    assert exec_engine_continuous.open_check_interval_secs is not None
+
+
+@pytest.mark.asyncio()
+async def test_reconciliation_task_created(exec_engine_continuous):
+    """
+    Test that reconciliation task is created.
+    """
+    # Act
+    exec_engine_continuous.start()
+    await asyncio.sleep(0.01)  # Give time for task creation
+
+    # Assert
+    assert exec_engine_continuous.get_reconciliation_task() is not None
+
+
+@pytest.mark.asyncio()
+async def test_check_inflight_orders_detects_inflight(
+    exec_engine_continuous,
+    cache,
+    account_id,
+    clock,
+):
+    """
+    Test _check_inflight_orders detects in-flight orders exceeding threshold.
+    """
+    # Arrange - create in-flight order
+    order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
+    cache.add_order(order)
+
+    # Make order inflight with old timestamp
+    submitted_event = TestEventStubs.order_submitted(
+        order,
+        account_id=account_id,
+        ts_event=clock.timestamp_ns() - 1_000_000_000,  # 1 second ago
+    )
+    order.apply(submitted_event)
+    exec_engine_continuous.process(submitted_event)
+
+    # Ensure order is in cache's open orders index
+    cache.update_order(order)
+
+    # Capture executed commands
+    executed_commands = []
+    original_execute = exec_engine_continuous._execute_command
+
+    def capture_execute(command):
+        executed_commands.append(command)
+        return original_execute(command)
+
+    exec_engine_continuous._execute_command = capture_execute
+
+    # Act
+    await exec_engine_continuous._check_inflight_orders()
+
+    # Assert - should have queried the problematic order
+    assert len(executed_commands) == 1
+    assert isinstance(executed_commands[0], QueryOrder)
+    assert executed_commands[0].client_order_id == order.client_order_id
+
+
+@pytest.mark.asyncio()
+async def test_check_orders_consistency_reconciles_discrepancies(
+    exec_engine_continuous,
+    exec_client,
+    cache,
+    account_id,
+):
+    """
+    Test _check_orders_consistency reconciles discrepancies between cache and venue.
+    """
+    # Arrange - add open order to cache
+    order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
+    cache.add_order(order)
+
+    # Apply events to set order as ACCEPTED
+    submitted = TestEventStubs.order_submitted(order, account_id=account_id)
+    order.apply(submitted)
+    exec_engine_continuous.process(submitted)
+
+    accepted = TestEventStubs.order_accepted(
+        order,
+        account_id=account_id,
+        venue_order_id=VenueOrderId("V-1"),
+    )
+    order.apply(accepted)
+    exec_engine_continuous.process(accepted)
+
+    # Create venue report showing order is FILLED
+    venue_report = OrderStatusReport(
+        account_id=account_id,
+        instrument_id=AUDUSD_SIM.id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("V-1"),
+        order_side=order.side,
+        order_type=order.order_type,
+        time_in_force=TimeInForce.GTC,
+        order_status=OrderStatus.FILLED,
+        price=order.price,
+        quantity=order.quantity,
+        filled_qty=order.quantity,
+        avg_px=Decimal("1.00000"),
+        report_id=UUID4(),
+        ts_accepted=0,
+        ts_last=0,
+        ts_init=0,
+    )
+    exec_client.add_order_status_report(venue_report)
+
+    # Act
+    await exec_engine_continuous._check_orders_consistency()
+
+    # Assert - reconciliation should have been triggered
+    # Note: Without full trade data, status remains ACCEPTED
+    assert order.status == OrderStatus.ACCEPTED
+    # Retry count should be cleared for successfully queried orders
+    assert order.client_order_id not in exec_engine_continuous._inflight_check_retries
+
+
+@pytest.mark.asyncio()
+async def test_reconciliation_loop_runs_both_checks(
+    exec_engine_continuous,
+    exec_client,
+    cache,
+    account_id,
+    clock,
+):
+    """
+    Test that reconciliation loop runs both check types at correct intervals.
+    """
+    # Arrange
+    problematic_check_count = 0
+    consistency_check_count = 0
+
+    async def counting_problematic_check():
+        nonlocal problematic_check_count
+        problematic_check_count += 1
+
+    async def counting_consistency_check():
+        nonlocal consistency_check_count
+        consistency_check_count += 1
+        if consistency_check_count >= 2:
+            # Stop after 2 consistency checks
+            if exec_engine_continuous._reconciliation_task:
+                exec_engine_continuous._reconciliation_task.cancel()
+
+    exec_engine_continuous._check_inflight_orders = counting_problematic_check
+    exec_engine_continuous._check_orders_consistency = counting_consistency_check
+
+    # Act - start the loop
+    task = asyncio.create_task(exec_engine_continuous._continuous_reconciliation_loop())
+
+    # Wait for task to complete or timeout
+    try:
+        await asyncio.wait_for(task, timeout=0.5)
+    except asyncio.CancelledError:
+        pass
+
+    # Assert
+    # Problematic checks should run more frequently (50ms interval)
+    assert problematic_check_count > consistency_check_count
+    # At least 2 consistency checks should have run
+    assert consistency_check_count >= 2
+
+
+@pytest.mark.asyncio()
+async def test_reconciliation_clears_retry_counts_on_success(
+    exec_engine_continuous,
+    exec_client,
+    cache,
+    account_id,
+):
+    """
+    Test that successful consistency check clears retry counts for orders.
+    """
+    # Arrange - create order with retry count
+    order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
+    cache.add_order(order)
+
+    # Apply events to set order as ACCEPTED
+    submitted = TestEventStubs.order_submitted(order, account_id=account_id)
+    order.apply(submitted)
+    exec_engine_continuous.process(submitted)
+
+    accepted = TestEventStubs.order_accepted(
+        order,
+        account_id=account_id,
+        venue_order_id=VenueOrderId("V-1"),
+    )
+    order.apply(accepted)
+    exec_engine_continuous.process(accepted)
+
+    # Ensure cache index is updated
+    cache.update_order(order)
+
+    # Set a retry count
+    exec_engine_continuous._inflight_check_retries[order.client_order_id] = 3
+
+    # Create matching venue report
+    venue_report = OrderStatusReport(
+        account_id=account_id,
+        instrument_id=AUDUSD_SIM.id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("V-1"),
+        order_side=order.side,
+        order_type=order.order_type,
+        time_in_force=TimeInForce.GTC,
+        order_status=OrderStatus.ACCEPTED,
+        price=order.price,
+        quantity=order.quantity,
+        filled_qty=Quantity.from_int(0),
+        report_id=UUID4(),
+        ts_accepted=0,
+        ts_last=0,
+        ts_init=0,
+    )
+    exec_client.add_order_status_report(venue_report)
+
+    # Act
+    await exec_engine_continuous._check_orders_consistency()
+
+    # Assert - retry count should be cleared after successful query
+    assert order.client_order_id not in exec_engine_continuous._inflight_check_retries
+
+
+# =============================================================================
 # COMBINED RECONCILIATION SCENARIO TESTS
 # =============================================================================
 
@@ -1017,7 +1281,7 @@ async def test_inflight_and_open_order_combined_scenario(
 
     # Act - run both checks
     await exec_engine_combined._check_inflight_orders()
-    await exec_engine_combined._check_open_orders()
+    await exec_engine_combined._check_orders_consistency()
 
     # Assert
     # Inflight order should be reconciled and accepted

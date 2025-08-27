@@ -113,14 +113,19 @@ config_node = TradingNodeConfig(
 # Instantiate the node with a configuration
 node = TradingNode(config=config_node)
 
+order_qty = Decimal("0.020")
+
 # Configure your strategy
 strat_config = ExecTesterConfig(
     instrument_id=InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
     external_order_claims=[InstrumentId.from_str("ETHUSDT-PERP.BINANCE")],
-    order_qty=Decimal("0.020"),
+    order_qty=order_qty,
+    # open_position_on_start_qty=order_qty,
+    # tob_offset_ticks=1,
     # use_batch_cancel_on_stop=True,
     # use_individual_cancels_on_stop=True,
     use_post_only=True,
+    # close_positions_on_stop=False,
     log_data=False,
     log_rejected_due_post_only_as_warning=False,
     test_reject_post_only=False,
