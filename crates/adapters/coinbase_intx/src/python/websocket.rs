@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use futures_util::StreamExt;
-use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyvalue_err};
+use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
     data::BarType,
     identifiers::InstrumentId,
@@ -99,7 +99,7 @@ impl CoinbaseIntxWebSocketClient {
         get_runtime().block_on(async {
             self.connect(instruments_any)
                 .await
-                .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+                .map_err(to_pyruntime_err)
         })?;
 
         let stream = self.stream();
