@@ -168,15 +168,15 @@ See [Execution reconciliation](../concepts/execution#execution-reconciliation) f
 | `filter_unclaimed_external_orders` | False   | Filters out unclaimed external orders to prevent irrelevant orders from impacting the strategy.            |
 | `filter_position_reports`          | False   | Filters out position status reports, useful when multiple nodes trade the same account to avoid conflicts. |
 
-#### Order checks
+#### Continuous reconciliation
 
-**Purpose**: Maintains accurate execution state by:
+**Purpose**: Maintains accurate execution state through a continuous reconciliation loop that:
 
-- (1) Monitoring in-flight orders.
-- (2) Reconciling open orders with the venue.
-- (3) Auditing internal *own* order books against the venue’s public books.
+- (1) Monitors in-flight orders for delays exceeding a configured threshold.
+- (2) Reconciles open orders with the venue at configurable intervals.
+- (3) Audits internal *own* order books against the venue's public books.
 
-If an order’s status cannot be reconciled after exhausting all retries, the engine resolves the order as follows:
+If an order's status cannot be reconciled after exhausting all retries, the engine resolves the order as follows:
 
 | Current status   | Resolved to | Rationale                                  |
 |------------------|-------------|--------------------------------------------|
@@ -188,10 +188,10 @@ This ensures the trading node maintains a consistent execution state even under 
 
 | Setting                         | Default   | Description                                                                                                                         |
 |---------------------------------|-----------|-------------------------------------------------------------------------------------------------------------------------------------|
-| `inflight_check_interval_ms`    | 2,000 ms  | Determines how frequently the system checks in-flight order status.                                                                 |
+| `inflight_check_interval_ms`    | 2,000 ms  | Determines how frequently the system checks in-flight order status. Set to 0 to disable.                                            |
 | `inflight_check_threshold_ms`   | 5,000 ms  | Sets the time threshold after which an in-flight order triggers a venue status check. Adjust if colocated to avoid race conditions. |
 | `inflight_check_retries`        | 5 retries | Specifies the number of retry attempts the engine will make to verify the status of an in-flight order with the venue, should the initial attempt fail. |
-| `open_check_interval_secs`      | None      | Determines how frequently (in seconds) open orders are checked at the venue. Recommended: 5-10 seconds, considering API rate limits. |
+| `open_check_interval_secs`      | None      | Determines how frequently (in seconds) open orders are checked at the venue. Set to None or 0.0 to disable. Recommended: 5-10 seconds, considering API rate limits. |
 | `open_check_open_only`          | True      | When enabled, only open orders are requested during checks; if disabled, full order history is fetched (resource-intensive).         |
 | `own_books_audit_interval_secs` | None      | Sets the interval (in seconds) between audits of own order books against public ones. Verifies synchronization and logs errors for inconsistencies. |
 
@@ -201,7 +201,7 @@ The following additional options provide further control over execution behavior
 
 | Setting                            | Default | Description                                                                                                |
 |------------------------------------|---------|------------------------------------------------------------------------------------------------------------|
-| `generate_missing_orders`          | True    | If `MARKET` order events will be generated during reconciliation to align position discrepancies. These orders use the strategy ID `INTERNAL-DIFF`.  |
+| `generate_missing_orders`          | True    | If `LIMIT` order events will be generated during reconciliation to align position discrepancies. These orders use the strategy ID `INTERNAL-DIFF` and calculate precise prices to achieve target average positions.  |
 | `snapshot_orders`                  | False   | If order snapshots should be taken on order events.                                                        |
 | `snapshot_positions`               | False   | If position snapshots should be taken on position events.                                                  |
 | `snapshot_positions_interval_secs` | None    | The interval (seconds) between position snapshots when enabled.                                            |
@@ -367,7 +367,14 @@ The system state is then reconciled with the reports, which represent external "
 - **Position Reconciliation**:
   - Ensure the net position per instrument matches the position reports returned from the venue using instrument precision handling.
   - If the position state resulting from order reconciliation does not match the external state, external order events will be generated to resolve discrepancies.
-  - When `generate_missing_orders` is enabled (default: True), `MARKET` orders are generated with strategy ID `INTERNAL-DIFF` to align position discrepancies discovered during reconciliation.
+  - When `generate_missing_orders` is enabled (default: True), orders are generated with strategy ID `INTERNAL-DIFF` to align position discrepancies discovered during reconciliation.
+  - A hierarchical price determination strategy ensures reconciliation can proceed even with limited data:
+    1. **Calculated reconciliation price** (preferred): Uses the reconciliation price function to achieve target average positions
+    2. **Market mid-price**: Falls back to current bid-ask midpoint if reconciliation price cannot be calculated
+    3. **Current position average**: Uses existing position average price if no market data is available
+    4. **MARKET order** (last resort): When no price information exists (no positions, no market data), a MARKET order is generated
+  - LIMIT orders are used when a price can be determined (cases 1-3), ensuring accurate PnL calculations
+  - MARKET orders are only used as a last resort when starting fresh with no available pricing data
   - Zero quantity differences after precision rounding are handled gracefully.
 - **Exception Handling**:
   - Individual adapter failures do not abort the entire reconciliation process.
@@ -391,10 +398,10 @@ The scenarios below are split between startup reconciliation (mass status) and r
 | **Different fill data**                | Venue reports different fill price/commission than cached.                                        | Preserves cached fill data; logs discrepancies from reports.                     |
 | **Filtered orders**                    | Orders marked for filtering via configuration.                                                    | Skips reconciliation based on `filtered_client_order_ids` or instrument filters. |
 | **Duplicate client order IDs**         | Multiple orders with same client order ID in venue reports.                                       | Reconciliation fails to prevent state corruption.                                |
-| **Position quantity mismatch (long)**  | Internal long position differs from external (e.g., internal: 100, external: 150).                | Generates BUY order for difference when `generate_missing_orders=True`.          |
-| **Position quantity mismatch (short)** | Internal short position differs from external (e.g., internal: -100, external: -150).             | Generates SELL order for difference when `generate_missing_orders=True`.         |
-| **Position reduction**                 | External position smaller than internal (e.g., internal: 150 long, external: 100 long).           | Generates opposite side order to reduce position.                                |
-| **Position side flip**                 | Internal position opposite of external (e.g., internal: 100 long, external: 50 short).            | Generates order to close internal and open external position.                    |
+| **Position quantity mismatch (long)**  | Internal long position differs from external (e.g., internal: 100, external: 150).                | Generates BUY LIMIT order with calculated price when `generate_missing_orders=True`.          |
+| **Position quantity mismatch (short)** | Internal short position differs from external (e.g., internal: -100, external: -150).             | Generates SELL LIMIT order with calculated price when `generate_missing_orders=True`.         |
+| **Position reduction**                 | External position smaller than internal (e.g., internal: 150 long, external: 100 long).           | Generates opposite side LIMIT order with calculated price to reduce position.                                |
+| **Position side flip**                 | Internal position opposite of external (e.g., internal: 100 long, external: 50 short).            | Generates LIMIT order with calculated price to close internal and open external position.                    |
 | **INTERNAL-DIFF orders**               | Position reconciliation orders with strategy ID "INTERNAL-DIFF".                                  | Never filtered, regardless of `filter_unclaimed_external_orders`.                |
 
 #### Runtime/continuous checks
