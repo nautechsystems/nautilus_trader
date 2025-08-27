@@ -74,7 +74,6 @@ Released on TBD (UTC).
 - Implemented live subscriptions for blockchain data client (#2832), thanks @filipmacek
 - Introduced `SharedCell` / `WeakCell` wrappers for ergonomic and safer handling of `Rc<RefCell<T>>` / `Weak<RefCell<T>>` pairs
 - Introduced efficient block syncing command in the `nautilus-cli` (#2861), thanks @filipmacek
-- Introduce efficient pool syncing command in the `nautilus-cli` (#2871), thanks @filipmacek
 - Added stream iterators support `BacktestDataIterator`
 - Added serialization support for execution reports
 - Added serialization support for execution report commands
@@ -94,6 +93,7 @@ Released on TBD (UTC).
 - Standardized DeFi chain name validation for `InstrumentId` (#2826), thanks @filipmacek
 - Standardized `NAUTILUS_PATH` env var across Tardis integration (#2850), thanks @nicolad
 - Standardized zero PnL as Money instead of None when exchange rate missing (#2880), thanks @nicolad
+- Refactored SpreadQuoteAggregator (#2905), thanks @faysou
 - Improved typing for all the DEX IDs with `DexType` and add validation (#2827), thanks @filipmacek
 - Improved reconciliation handling of internally generated orders to align positions (now uses the `INTERNAL-DIFF` strategy ID)
 - Improved data client for blockchain adapter (#2787), thanks @filipmacek
@@ -109,6 +109,7 @@ Released on TBD (UTC).
 - Improved security for `Credential` struct (#2882), thanks @nicolad
 - Improved DeFi pool event parsing and integrate Arbitrum Camelotv3 new pools signature (#2889), thanks @filipmacek
 - Improved Databento multiplier decoding to prevent precision loss (#2895), thanks @nicolad
+- Improved Bybit balance precision by avoiding float conversion (#2903), thanks @scoriiu
 - Refined Rust catalog path handling (#2743), thanks @faysou
 - Refined Rust `GreeksCalculator` (#2760), thanks @faysou
 - Refined Databento bars timestamp decoding and backtest execution usage (#2800), thanks @faysou
@@ -157,7 +158,8 @@ Released on TBD (UTC).
 - Fixed Bybit instrument provider fee rate handling during parsing
 - Fixed Bybit SPOT commission currency for makers
 - Fixed Bybit positions pagination to handle more than 20 positions (#2879), thanks @scoriiu
-- Fixed Bybit balance precision errors for high-value tokens (#2898), thanks @scoriiu
+- Fixed Bybit REST model parsing balance precision errors for high-value tokens (#2898), thanks @scoriiu
+- Fixed Bybit WebSocket message parsing balance precision errors for high-value tokens (#2904), thanks @scoriiu
 - Fixed RPC client content type header (#2828), thanks @filipmacek
 - Fixed `venue_order_id` handling for Polymarket order status request (#2848), thanks @DeirhX
 - Fixed race-condition on node shutdown in async `InteractiveBrokersDataClient._disconnect()` (#2865), thanks @ruvr
