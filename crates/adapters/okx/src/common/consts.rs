@@ -45,7 +45,6 @@ pub const OKX_SUPPORTED_TIME_IN_FORCE: &[TimeInForce] = &[
     TimeInForce::Gtc, // Good Till Cancel (default)
     TimeInForce::Ioc, // Immediate or Cancel (mapped to OKXOrderType::Ioc)
     TimeInForce::Fok, // Fill or Kill (mapped to OKXOrderType::Fok)
-    TimeInForce::Gtd, // Good Till Date
 ];
 
 /// OKX supported order types.

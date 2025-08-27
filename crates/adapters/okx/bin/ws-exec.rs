@@ -73,7 +73,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             order_type,
             quantity,
             None, // time_in_force
-            None, // expire_time
             None, // price
             None, // trigger_price
             None, // post_only
