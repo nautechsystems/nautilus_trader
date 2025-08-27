@@ -8,6 +8,16 @@
 [![Downloads](https://pepy.tech/badge/nautilus-trader)](https://pepy.tech/project/nautilus-trader)
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
 
+<!-- Keep these links. Translations will automatically update with the README. -->
+[Deutsch](https://zdoc.app/de/nautechsystems/nautilus_trader) | 
+[Español](https://zdoc.app/es/nautechsystems/nautilus_trader) | 
+[français](https://zdoc.app/fr/nautechsystems/nautilus_trader) | 
+[日本語](https://zdoc.app/ja/nautechsystems/nautilus_trader) | 
+[한국어](https://zdoc.app/ko/nautechsystems/nautilus_trader) | 
+[Português](https://zdoc.app/pt/nautechsystems/nautilus_trader) | 
+[Русский](https://zdoc.app/ru/nautechsystems/nautilus_trader) | 
+[中文](https://zdoc.app/zh/nautechsystems/nautilus_trader)
+
 | Branch    | Version                                                                                                                                                                                                                     | Status                                                                                                                                                                                            |
 | :-------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `master`  | [![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fmaster%2Fversion.json)](https://packages.nautechsystems.io/simple/nautilus-trader/index.html)  | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=nightly)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml) |
