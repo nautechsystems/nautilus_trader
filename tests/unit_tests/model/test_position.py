@@ -2344,3 +2344,250 @@ class TestPosition:
             # Invariant 3: peak_qty never decreases
             if i > 0:
                 assert position.peak_qty >= Quantity.from_int(0)  # Always non-negative
+
+    def test_position_multiple_cycles_pnl_tracking(self) -> None:
+        """
+        Test that each discrete position cycle tracks its own realized PnL.
+
+        This test validates that when positions are closed and reopened, each open-flat-
+        reopen cycle tracks its own realized PnL independently, not cumulatively. This
+        is the intended behavior for position PnL tracking in the platform.
+
+        """
+        # Arrange - Create test instruments
+        position_id = PositionId("P-CYCLE-001")
+
+        # Cycle 1: Open long, make profit, close
+        order1_open = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        fill1_open = TestEventStubs.order_filled(
+            order1_open,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("0.70000"),
+        )
+
+        position = Position(instrument=AUDUSD_SIM, fill=fill1_open)
+
+        # Close with profit (10 pips)
+        order1_close = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+        )
+
+        fill1_close = TestEventStubs.order_filled(
+            order1_close,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("0.70010"),
+        )
+
+        position.apply(fill1_close)
+
+        # Assert Cycle 1 results
+        assert position.is_closed
+        # 10 pips profit (10.00) - commission (2.80) = 7.20
+        assert position.realized_pnl == Money(7.20, USD)
+        cycle1_pnl = position.realized_pnl
+
+        # Cycle 2: Reopen same position ID, make loss, close
+        order2_open = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(150_000),
+        )
+
+        fill2_open = TestEventStubs.order_filled(
+            order2_open,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("0.70020"),
+        )
+
+        # Reopen position (simulating NETTING behavior)
+        position.apply(fill2_open)
+
+        assert position.is_open
+        assert position.quantity == Quantity.from_int(150_000)
+        # Commission from reopening
+        assert position.realized_pnl == Money(-2.10, USD)
+
+        # Close with loss (5 pips)
+        order2_close = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(150_000),
+        )
+
+        fill2_close = TestEventStubs.order_filled(
+            order2_close,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("0.70015"),
+        )
+
+        position.apply(fill2_close)
+
+        # Assert Cycle 2 results
+        assert position.is_closed
+        # 5 pips loss on 150k (7.50) + commissions (2.10 + 2.10) = -11.70
+        assert position.realized_pnl == Money(-11.70, USD)
+        cycle2_pnl = position.realized_pnl
+
+        # Cycle 3: Reopen short position, make profit, close
+        order3_open = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(200_000),
+        )
+
+        fill3_open = TestEventStubs.order_filled(
+            order3_open,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("0.70025"),
+        )
+
+        position.apply(fill3_open)
+
+        assert position.is_short
+        assert position.quantity == Quantity.from_int(200_000)
+        # Commission from reopening
+        assert position.realized_pnl == Money(-2.80, USD)
+
+        # Close short with profit (8 pips)
+        order3_close = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(200_000),
+        )
+
+        fill3_close = TestEventStubs.order_filled(
+            order3_close,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("0.70017"),
+        )
+
+        position.apply(fill3_close)
+
+        # Assert Cycle 3 results
+        assert position.is_closed
+        # 8 pips profit on 200k (16.00) - commissions (2.80 + 2.80) = 10.40
+        assert position.realized_pnl == Money(10.40, USD)
+        cycle3_pnl = position.realized_pnl
+
+        # Assert - each cycle's PnL is independent
+        # The position object only holds the LAST cycle's PnL
+        # Portfolio/Account aggregation should handle historical cycles
+        assert cycle1_pnl == Money(7.20, USD)
+        assert cycle2_pnl == Money(-11.70, USD)
+        assert cycle3_pnl == Money(10.40, USD)
+
+        # The current position only shows the last cycle
+        assert position.realized_pnl == cycle3_pnl
+
+    def test_position_flip_long_to_short_pnl_tracking(self) -> None:
+        """
+        Test PnL tracking when position flips from long to short.
+
+        This validates that when a position flips (e.g., selling 150k when long 100k),
+        the PnL for closing the long is calculated correctly, and the new short position
+        starts fresh.
+
+        """
+        # Arrange
+        position_id = PositionId("P-FLIP-001")
+
+        # Open long 100k
+        order_long = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        fill_long = TestEventStubs.order_filled(
+            order_long,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("0.75000"),
+        )
+
+        position = Position(instrument=AUDUSD_SIM, fill=fill_long)
+        assert position.is_long
+        assert position.quantity == Quantity.from_int(100_000)
+
+        # Flip to short by selling 150k (closes 100k long, opens 50k short)
+        # NOTE: The test expectations below rely on the current TestEventStubs.order_filled
+        # behavior which uses order.quantity (150k) for commission calculation on both fills.
+        # If the stub is changed to use last_qty for commission calculation, the expected
+        # PnL values would need to be updated accordingly.
+        order_flip = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(150_000),
+        )
+
+        # First part closes the long
+        fill_close_long = TestEventStubs.order_filled(
+            order_flip,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("0.75020"),  # 20 pips profit
+            last_qty=Quantity.from_int(100_000),
+        )
+
+        position.apply(fill_close_long)
+
+        # Position should be closed after matching quantity
+        assert position.is_closed
+        # 20 pips on 100k (20.00) - commissions (1.50 + 2.25) = 16.25
+        assert position.realized_pnl == Money(16.25, USD)
+        long_pnl = position.realized_pnl
+
+        # Second part opens new short
+        fill_open_short = TestEventStubs.order_filled(
+            order_flip,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("0.75020"),
+            last_qty=Quantity.from_int(50_000),
+        )
+
+        position.apply(fill_open_short)
+
+        # Now should be short
+        assert position.is_short
+        assert position.quantity == Quantity.from_int(50_000)
+        # Note: Commission from flip order carries over
+        assert position.realized_pnl == Money(-2.25, USD)
+
+        # Close the short with a loss
+        order_close_short = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(50_000),
+        )
+
+        fill_close_short = TestEventStubs.order_filled(
+            order_close_short,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("0.75030"),  # 10 pips loss
+        )
+
+        position.apply(fill_close_short)
+
+        assert position.is_closed
+        # 10 pips loss on 50k (5.00) + commissions (2.25 + 0.75) = -8.00
+        assert position.realized_pnl == Money(-8.00, USD)
+        short_pnl = position.realized_pnl
+
+        # Validate independent PnL tracking
+        assert long_pnl == Money(16.25, USD)
+        assert short_pnl == Money(-8.00, USD)

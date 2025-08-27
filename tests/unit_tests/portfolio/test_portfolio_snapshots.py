@@ -279,3 +279,192 @@ def test_netting_oms_position_lifecycle_with_snapshots(
     snapshots = cache.position_snapshots()
     assert len(snapshots) == 1
     assert snapshots[0].realized_pnl == Money(96.00, USD)  # 100 profit - 4 commission
+
+
+def test_pnl_aggregation_multiple_position_cycles(
+    portfolio,
+    cache,
+    exec_engine,
+    clock,
+    account_id,
+):
+    """
+    Test PnL aggregation across multiple position open-flat-reopen cycles.
+
+    This test validates that:
+    1. Each position cycle tracks its own realized PnL independently
+    2. Portfolio correctly aggregates PnL from all cycles using snapshots
+    3. Reports sum PnL correctly across all position cycles
+
+    This is the intended behavior for handling position cycles in NETTING OMS.
+
+    """
+    # Arrange
+    exec_engine.start()
+
+    account_state = AccountState(
+        account_id=account_id,
+        account_type=AccountType.CASH,
+        base_currency=USD,
+        reported=True,
+        balances=[AccountBalance(Money(1_000_000, USD), Money(0, USD), Money(1_000_000, USD))],
+        margins=[],
+        info={},
+        event_id=UUID4(),
+        ts_event=clock.timestamp_ns(),
+        ts_init=clock.timestamp_ns(),
+    )
+    account = TestExecStubs.cash_account()
+    cache.add_account(account)
+    portfolio.update_account(account_state)
+
+    position_id = PositionId("MULTI-CYCLE-001")
+    cycle_pnls = []
+
+    # Cycle 1: Long position with profit
+    order1_open = TestExecStubs.market_order(
+        instrument=AUDUSD_SIM,
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_int(100_000),
+    )
+
+    fill1_open = TestEventStubs.order_filled(
+        order=order1_open,
+        instrument=AUDUSD_SIM,
+        position_id=position_id,
+        last_px=Price.from_str("0.80000"),
+    )
+
+    position = Position(instrument=AUDUSD_SIM, fill=fill1_open)
+    cache.add_position(position, OmsType.NETTING)
+
+    # Close Cycle 1
+    order1_close = TestExecStubs.market_order(
+        instrument=AUDUSD_SIM,
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_int(100_000),
+    )
+
+    fill1_close = TestEventStubs.order_filled(
+        order=order1_close,
+        instrument=AUDUSD_SIM,
+        position_id=position_id,
+        last_px=Price.from_str("0.80020"),  # 20 pips profit
+    )
+
+    position.apply(fill1_close)
+    cycle_pnls.append(position.realized_pnl)
+
+    # Snapshot Cycle 1 (simulating NETTING OMS behavior)
+    cache.snapshot_position(position)
+
+    # Cycle 2: Reopen long position with loss
+    order2_open = TestExecStubs.market_order(
+        instrument=AUDUSD_SIM,
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_int(150_000),
+    )
+
+    fill2_open = TestEventStubs.order_filled(
+        order=order2_open,
+        instrument=AUDUSD_SIM,
+        position_id=position_id,
+        last_px=Price.from_str("0.80030"),
+    )
+
+    position2 = Position(instrument=AUDUSD_SIM, fill=fill2_open)
+    cache.add_position(position2, OmsType.NETTING)
+
+    # Close Cycle 2
+    order2_close = TestExecStubs.market_order(
+        instrument=AUDUSD_SIM,
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_int(150_000),
+    )
+
+    fill2_close = TestEventStubs.order_filled(
+        order=order2_close,
+        instrument=AUDUSD_SIM,
+        position_id=position_id,
+        last_px=Price.from_str("0.80020"),  # 10 pips loss
+    )
+
+    position2.apply(fill2_close)
+    cycle_pnls.append(position2.realized_pnl)
+
+    # Snapshot Cycle 2
+    cache.snapshot_position(position2)
+
+    # Cycle 3: Short position with profit
+    order3_open = TestExecStubs.market_order(
+        instrument=AUDUSD_SIM,
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_int(200_000),
+    )
+
+    fill3_open = TestEventStubs.order_filled(
+        order=order3_open,
+        instrument=AUDUSD_SIM,
+        position_id=position_id,
+        last_px=Price.from_str("0.80015"),
+    )
+
+    position3 = Position(instrument=AUDUSD_SIM, fill=fill3_open)
+    cache.add_position(position3, OmsType.NETTING)
+
+    # Close Cycle 3
+    order3_close = TestExecStubs.market_order(
+        instrument=AUDUSD_SIM,
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_int(200_000),
+    )
+
+    fill3_close = TestEventStubs.order_filled(
+        order=order3_close,
+        instrument=AUDUSD_SIM,
+        position_id=position_id,
+        last_px=Price.from_str("0.80005"),  # 10 pips profit
+    )
+
+    position3.apply(fill3_close)
+    cycle_pnls.append(position3.realized_pnl)
+
+    # Act
+    # Calculate total realized PnL from portfolio (should aggregate all snapshots)
+    total_realized_pnl = portfolio.realized_pnl(AUDUSD_SIM.id)
+
+    # Get all position snapshots
+    snapshots = cache.position_snapshots()
+
+    # Assert - each cycle's PnL is independent
+    assert cycle_pnls[0] == Money(16.80, USD)  # Cycle 1: 20 pips on 100k - 3.20 commission
+    assert cycle_pnls[1] == Money(-19.80, USD)  # Cycle 2: -15 pips on 150k - 4.80 commission
+    assert cycle_pnls[2] == Money(13.60, USD)  # Cycle 3: 10 pips on 200k - 6.40 commission
+
+    # Verify snapshots preserve each cycle
+    assert len(snapshots) == 2  # First 2 cycles are snapshotted
+    assert snapshots[0].realized_pnl == cycle_pnls[0]
+    assert snapshots[1].realized_pnl == cycle_pnls[1]
+
+    # Verify portfolio aggregates all cycles correctly
+    expected_total_pnl = Money(10.60, USD)  # 16.80 - 19.80 + 13.60 = 10.60
+    assert total_realized_pnl == expected_total_pnl
+
+    # Generate positions report to verify aggregation
+    from nautilus_trader.analysis.reporter import ReportProvider
+
+    positions = [position3]  # Current active or last closed position
+    report = ReportProvider.generate_positions_report(positions, snapshots)
+
+    # Verify report includes all cycles
+    assert len(report) == 3  # 2 snapshots + 1 current
+
+    # Sum realized PnL from report using Money objects for robust parsing
+    from decimal import Decimal
+
+    report_total_pnl = Decimal(0)
+    for pnl_str in report["realized_pnl"]:
+        pnl_money = Money.from_str(pnl_str)
+        report_total_pnl += pnl_money.as_decimal()
+
+    assert report_total_pnl == expected_total_pnl.as_decimal()
