@@ -92,7 +92,6 @@ cdef class DataEngine(Component):
     cdef readonly dict[Venue, DataClient] _routing_map
     cdef readonly dict _order_book_intervals
     cdef readonly dict[BarType, BarAggregator] _bar_aggregators
-    cdef readonly dict[InstrumentId, SpreadQuoteAggregator] _spread_quote_aggregators
     cdef readonly dict[InstrumentId, list[SyntheticInstrument]] _synthetic_quote_feeds
     cdef readonly dict[InstrumentId, list[SyntheticInstrument]] _synthetic_trade_feeds
     cdef readonly list[InstrumentId] _subscribed_synthetic_quotes
@@ -191,8 +190,6 @@ cdef class DataEngine(Component):
     cpdef void _create_new_book(self, InstrumentId instrument_id, BookType book_type)
     cpdef void _handle_subscribe_quote_ticks(self, MarketDataClient client, SubscribeQuoteTicks command)
     cpdef void _handle_subscribe_synthetic_quote_ticks(self, InstrumentId instrument_id)
-    cpdef void _start_spread_quote_aggregator(self, MarketDataClient client, SubscribeQuoteTicks command)
-    cpdef void _stop_spread_quote_aggregator(self, MarketDataClient client, UnsubscribeQuoteTicks command)
     cpdef void _handle_subscribe_trade_ticks(self, MarketDataClient client, SubscribeTradeTicks command)
     cpdef void _handle_subscribe_mark_prices(self, MarketDataClient client, SubscribeMarkPrices command)
     cpdef void _handle_subscribe_index_prices(self, MarketDataClient client, SubscribeIndexPrices command)
