@@ -18,6 +18,7 @@ from decimal import Decimal
 import msgspec
 
 from nautilus_trader.adapters.bybit.schemas.common import BybitListResult
+from nautilus_trader.model.objects import FIXED_SCALAR
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import MarginBalance
@@ -49,26 +50,34 @@ class BybitCoinBalance(msgspec.Struct):
     marginCollateral: bool
     coin: str
 
+    @staticmethod
+    def _str_to_raw(value: str) -> int:
+        if not value or value == "":
+            return 0
+        return int(Decimal(value) * Decimal(int(FIXED_SCALAR)))
+
     def parse_to_account_balance(self) -> AccountBalance:
         currency = Currency.from_str(self.coin)
-        total_money = Money(Decimal(self.walletBalance), currency)
-        locked_money = Money(Decimal(self.locked), currency)  # TODO: Locked only valid for Spot
-        free_money = Money.from_raw(total_money.raw - locked_money.raw, currency)
+
+        total_raw = self._str_to_raw(self.walletBalance)
+        locked_raw = self._str_to_raw(self.locked)  # TODO: Locked only valid for Spot
+        free_raw = total_raw - locked_raw
 
         return AccountBalance(
-            total=total_money,
-            locked=locked_money,
-            free=free_money,
+            total=Money.from_raw(total_raw, currency),
+            locked=Money.from_raw(locked_raw, currency),
+            free=Money.from_raw(free_raw, currency),
         )
 
     def parse_to_margin_balance(self) -> MarginBalance:
-        self.totalPositionIM = self.totalPositionIM if self.totalPositionIM != "" else "0"
-        self.totalPositionMM = self.totalPositionMM if self.totalPositionMM != "" else "0"
-        currency: Currency = Currency.from_str(self.coin)
+        currency = Currency.from_str(self.coin)
+
+        initial_raw = self._str_to_raw(self.totalPositionIM)
+        maintenance_raw = self._str_to_raw(self.totalPositionMM)
 
         return MarginBalance(
-            initial=Money(Decimal(self.totalPositionIM), currency),
-            maintenance=Money(Decimal(self.totalPositionMM), currency),
+            initial=Money.from_raw(initial_raw, currency),
+            maintenance=Money.from_raw(maintenance_raw, currency),
         )
 
 
