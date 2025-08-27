@@ -4155,8 +4155,9 @@ class TestDataEngine:
         self.data_engine.execute(subscribe)
 
         # Assert - Verify the command was processed without errors
-        assert self.data_engine.command_count == 1
-        # Note: The actual spread quote aggregator creation depends on the DataEngine implementation
+        # Command count is 3: 1 for spread + 2 for component instruments
+        assert self.data_engine.command_count == 3
+        # Note: The actual spread quote aggregator creation is now handled by the data client
         # This test verifies that the subscription command is processed correctly
 
     def test_unsubscribe_spread_quotes_removes_aggregator(self):
@@ -4230,7 +4231,8 @@ class TestDataEngine:
         self.data_engine.execute(subscribe)
 
         # Verify subscription was processed
-        assert self.data_engine.command_count == 1
+        # Command count is 3: 1 for spread + 2 for component instruments
+        assert self.data_engine.command_count == 3
 
         # Act - Unsubscribe
         unsubscribe = UnsubscribeQuoteTicks(
@@ -4243,7 +4245,9 @@ class TestDataEngine:
         self.data_engine.execute(unsubscribe)
 
         # Assert - Verify unsubscribe was processed
-        assert self.data_engine.command_count == 2
+        # Command count is 4: 3 for subscribe (spread + 2 components) + 1 for unsubscribe (spread only)
+        # Component instruments may not be unsubscribed if they have other subscribers
+        assert self.data_engine.command_count == 4
 
     def test_spread_quote_generation_and_distribution(self):
         # Arrange
@@ -4326,7 +4330,8 @@ class TestDataEngine:
         self.clock.advance_time(2_000_000_000)  # Advance 2 seconds
 
         # Assert - Verify the subscription was processed and handler is set up
-        assert self.data_engine.command_count == 1
+        # Command count is 3: 1 for spread + 2 for component instruments
+        assert self.data_engine.command_count == 3
         # The test verifies the infrastructure is in place for spread quote handling
 
 

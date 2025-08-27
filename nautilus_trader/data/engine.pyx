@@ -41,7 +41,6 @@ from nautilus_trader.persistence.catalog import ParquetDataCatalog
 from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
 
-from nautilus_trader.backtest.models cimport SpreadQuoteAggregator
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport CMD
 from nautilus_trader.common.component cimport RECV
@@ -169,7 +168,6 @@ cdef class DataEngine(Component):
         self._catalogs: dict[str, ParquetDataCatalog] = {}
         self._order_book_intervals: dict[tuple[InstrumentId, int], list[Callable[[OrderBook], None]]] = {}
         self._bar_aggregators: dict[BarType, BarAggregator] = {}
-        self._spread_quote_aggregators: dict[InstrumentId, SpreadQuoteAggregator] = {}
         self._synthetic_quote_feeds: dict[InstrumentId, list[SyntheticInstrument]] = {}
         self._synthetic_trade_feeds: dict[InstrumentId, list[SyntheticInstrument]] = {}
         self._subscribed_synthetic_quotes: list[InstrumentId] = []
@@ -694,9 +692,6 @@ cdef class DataEngine(Component):
             if isinstance(aggregator, TimeBarAggregator):
                 aggregator.stop()
 
-        for aggregator in self._spread_quote_aggregators.values():
-            aggregator.stop()
-
         self._on_stop()
 
     cpdef void _reset(self):
@@ -706,7 +701,6 @@ cdef class DataEngine(Component):
 
         self._order_book_intervals.clear()
         self._bar_aggregators.clear()
-        self._spread_quote_aggregators.clear()
         self._synthetic_quote_feeds.clear()
         self._synthetic_trade_feeds.clear()
         self._subscribed_synthetic_quotes.clear()
@@ -1020,11 +1014,6 @@ cdef class DataEngine(Component):
             self._handle_subscribe_synthetic_quote_ticks(command.instrument_id)
             return
 
-        # Handle spread instruments (like bar aggregators, work in any context)
-        if command.instrument_id.is_spread() and self._is_backtest_client(client):
-            self._start_spread_quote_aggregator(client, command)
-            return
-
         Condition.not_none(client, "client")
 
         if "start_ns" not in command.params:
@@ -1263,12 +1252,6 @@ cdef class DataEngine(Component):
 
     cpdef void _handle_unsubscribe_quote_ticks(self, MarketDataClient client, UnsubscribeQuoteTicks command):
         Condition.not_none(command.instrument_id, "instrument_id")
-
-        # Handle spread instruments (like bar aggregators, work in any context)
-        if command.instrument_id.is_spread() and self._is_backtest_client(client):
-            self._stop_spread_quote_aggregator(client, command)
-            return
-
         Condition.not_none(client, "client")
 
         if not self._msgbus.has_subscribers(
@@ -2573,65 +2556,6 @@ cdef class DataEngine(Component):
 
         # Remove from aggregators
         del self._bar_aggregators[command.bar_type.standard()]
-
-    cpdef void _start_spread_quote_aggregator(self, MarketDataClient client, SubscribeQuoteTicks command):
-        spread_instrument_id = command.instrument_id
-
-        if spread_instrument_id in self._spread_quote_aggregators:
-            return
-
-        update_interval_seconds = command.params.get("update_interval_seconds", 60)
-        aggregator = SpreadQuoteAggregator(
-            spread_instrument_id=spread_instrument_id,
-            handler=self.process,
-            msgbus=self._msgbus,
-            cache=self._cache,
-            clock=self._clock,
-            update_interval_seconds=update_interval_seconds,
-        )
-        self._spread_quote_aggregators[spread_instrument_id] = aggregator
-
-        # Subscribe to quotes for component instruments
-        components = spread_instrument_id.to_list()
-
-        for component_id, _ in components:
-            subscribe = SubscribeQuoteTicks(
-                instrument_id=component_id,
-                client_id=command.client_id,
-                venue=command.venue,
-                command_id=command.id,
-                ts_init=command.ts_init,
-                params=command.params,
-            )
-            self._handle_subscribe_quote_ticks(client, subscribe)
-
-    cpdef void _stop_spread_quote_aggregator(self, MarketDataClient client, UnsubscribeQuoteTicks command):
-        spread_instrument_id = command.instrument_id
-        aggregator = self._spread_quote_aggregators.get(spread_instrument_id)
-
-        if aggregator is None:
-            self._log.warning(
-                f"Cannot stop spread quote aggregator: no aggregator found for {spread_instrument_id}",
-            )
-            return
-
-        aggregator.stop()
-
-        # Unsubscribe from component instruments
-        components = spread_instrument_id.to_list()
-
-        for component_id, _ in components:
-            unsubscribe = UnsubscribeQuoteTicks(
-                instrument_id=component_id,
-                client_id=command.client_id,
-                venue=command.venue,
-                command_id=command.id,
-                ts_init=command.ts_init,
-                params=command.params,
-            )
-            self._handle_unsubscribe_quote_ticks(client, unsubscribe)
-
-        del self._spread_quote_aggregators[spread_instrument_id]
 
     cpdef void _update_synthetics_with_quote(self, list synthetics, QuoteTick update):
         cdef SyntheticInstrument synthetic

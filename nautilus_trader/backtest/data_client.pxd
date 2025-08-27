@@ -13,8 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.backtest.models cimport SpreadQuoteAggregator
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.client cimport MarketDataClient
+from nautilus_trader.data.messages cimport SubscribeQuoteTicks
+from nautilus_trader.data.messages cimport UnsubscribeQuoteTicks
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 
@@ -24,4 +27,9 @@ cdef class BacktestDataClient(DataClient):
 
 
 cdef class BacktestMarketDataClient(MarketDataClient):
+    cdef dict[InstrumentId, SpreadQuoteAggregator] _spread_quote_aggregators
+
     cdef Instrument _create_option_spread_from_components(self, InstrumentId spread_instrument_id)
+    cpdef void _start_spread_quote_aggregator(self, SubscribeQuoteTicks command)
+    cpdef void _stop_spread_quote_aggregator(self, UnsubscribeQuoteTicks command)
+    cdef void _handle_spread_quote(self, quote)
