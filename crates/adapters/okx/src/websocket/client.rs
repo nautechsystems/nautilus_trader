@@ -35,8 +35,7 @@ use dashmap::DashMap;
 use futures_util::{Stream, StreamExt};
 use nautilus_common::runtime::get_runtime;
 use nautilus_core::{
-    UUID4, consts::NAUTILUS_USER_AGENT, datetime::nanos_to_millis, env::get_env_var,
-    time::get_atomic_clock_realtime,
+    UUID4, consts::NAUTILUS_USER_AGENT, env::get_env_var, time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
     data::BarType,
@@ -1251,6 +1250,7 @@ impl OKXWebSocketClient {
             id: Some(request_id),
             op: OKXWsOperation::CancelOrder,
             args: vec![params],
+            exp_time: None,
         };
 
         let txt = serde_json::to_string(&req).map_err(|e| OKXWsError::JsonError(e.to_string()))?;
@@ -1282,6 +1282,7 @@ impl OKXWebSocketClient {
             id: Some(request_id),
             op: OKXWsOperation::MassCancel,
             args,
+            exp_time: None,
         };
 
         let txt = serde_json::to_string(&req).map_err(|e| OKXWsError::JsonError(e.to_string()))?;
@@ -1312,6 +1313,7 @@ impl OKXWebSocketClient {
             id: Some(request_id),
             op: OKXWsOperation::AmendOrder,
             args: vec![params],
+            exp_time: None,
         };
 
         let txt = serde_json::to_string(&req).map_err(|e| OKXWsError::JsonError(e.to_string()))?;
@@ -1338,6 +1340,7 @@ impl OKXWebSocketClient {
             id: Some(request_id),
             op: OKXWsOperation::BatchOrders,
             args,
+            exp_time: None,
         };
 
         let txt = serde_json::to_string(&req).map_err(|e| OKXWsError::JsonError(e.to_string()))?;
@@ -1364,6 +1367,7 @@ impl OKXWebSocketClient {
             id: Some(request_id),
             op: OKXWsOperation::BatchCancelOrders,
             args,
+            exp_time: None,
         };
 
         let txt = serde_json::to_string(&req).map_err(|e| OKXWsError::JsonError(e.to_string()))?;
@@ -1390,6 +1394,7 @@ impl OKXWebSocketClient {
             id: Some(request_id),
             op: OKXWsOperation::BatchAmendOrders,
             args,
+            exp_time: None,
         };
 
         let txt = serde_json::to_string(&req).map_err(|e| OKXWsError::JsonError(e.to_string()))?;
@@ -1421,7 +1426,6 @@ impl OKXWebSocketClient {
         order_type: OrderType,
         quantity: Quantity,
         time_in_force: Option<TimeInForce>,
-        expire_time_ns: Option<u64>,
         price: Option<Price>,
         trigger_price: Option<Price>,
         post_only: Option<bool>,
@@ -1532,15 +1536,12 @@ impl OKXWebSocketClient {
 
         builder.tag(OKX_NAUTILUS_BROKER_ID);
 
-        // Set expire time if provided
-        if let Some(exp_time_ns) = expire_time_ns {
-            let exp_time_ms = nanos_to_millis(exp_time_ns);
-            builder.exp_time(exp_time_ms.to_string());
-        }
-
         let params = builder
             .build()
             .map_err(|e| OKXWsError::ClientError(format!("Build order params error: {e}")))?;
+
+        // TODO: Log the full order parameters being sent (for development)
+        log::debug!("Sending order params to OKX: {:?}", params);
 
         let request_id = self.generate_unique_request_id();
 
@@ -1611,6 +1612,7 @@ impl OKXWebSocketClient {
         let req = OKXWsRequest {
             id: Some(request_id),
             op: OKXWsOperation::Order,
+            exp_time: None,
             args: vec![params],
         };
 

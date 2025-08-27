@@ -589,11 +589,6 @@ class OKXExecutionClient(LiveExecutionClient):
         pyo3_time_in_force = (
             time_in_force_to_pyo3(order.time_in_force) if order.time_in_force else None
         )
-        pyo3_expire_time = (
-            order.expire_time_ns
-            if hasattr(order, "expire_time_ns") and order.expire_time_ns != 0
-            else None
-        )
 
         await self._ws_client.submit_order(
             trader_id=pyo3_trader_id,
@@ -607,7 +602,6 @@ class OKXExecutionClient(LiveExecutionClient):
             price=pyo3_price,
             trigger_price=pyo3_trigger_price,
             time_in_force=pyo3_time_in_force,
-            expire_time_ns=pyo3_expire_time,
             post_only=order.is_post_only,
             reduce_only=order.is_reduce_only,
             quote_quantity=order.is_quote_quantity,

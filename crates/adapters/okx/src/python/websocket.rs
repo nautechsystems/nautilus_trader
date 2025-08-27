@@ -16,7 +16,7 @@
 use std::str::FromStr;
 
 use futures_util::StreamExt;
-use nautilus_core::python::to_pyvalue_err;
+use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
     data::{BarType, Data, OrderBookDeltas_API},
     enums::{OrderSide, OrderType, PositionSide, TimeInForce},
@@ -175,7 +175,7 @@ impl OKXWebSocketClient {
         get_runtime().block_on(async {
             self.connect(instruments_any)
                 .await
-                .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+                .map_err(to_pyruntime_err)
         })?;
 
         let stream = self.stream();
@@ -756,7 +756,6 @@ impl OKXWebSocketClient {
         order_type,
         quantity,
         time_in_force=None,
-        expire_time_ns=None,
         price=None,
         trigger_price=None,
         post_only=None,
@@ -777,7 +776,6 @@ impl OKXWebSocketClient {
         order_type: OrderType,
         quantity: Quantity,
         time_in_force: Option<TimeInForce>,
-        expire_time_ns: Option<u64>,
         price: Option<Price>,
         trigger_price: Option<Price>,
         post_only: Option<bool>,
@@ -799,7 +797,6 @@ impl OKXWebSocketClient {
                     order_type,
                     quantity,
                     time_in_force,
-                    expire_time_ns,
                     price,
                     trigger_price,
                     post_only,
