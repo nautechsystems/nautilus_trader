@@ -153,6 +153,7 @@ cdef class Cache(CacheFacade):
         self._index_position_orders: dict[PositionId, set[ClientOrderId]] = {}
         self._index_instrument_orders: dict[InstrumentId, set[ClientOrderId]] = {}
         self._index_instrument_positions: dict[InstrumentId, set[PositionId]] = {}
+        self._index_instrument_position_snapshots: dict[InstrumentId, set[PositionId]] = {}
         self._index_strategy_orders: dict[StrategyId, set[ClientOrderId]] = {}
         self._index_strategy_positions: dict[StrategyId, set[PositionId]] = {}
         self._index_exec_algorithm_orders: dict[ExecAlgorithmId, set[ClientOrderId]] = {}
@@ -959,6 +960,19 @@ cdef class Cache(CacheFacade):
         self._index_positions_open.discard(position_id)
         self._index_positions_closed.discard(position_id)
 
+        # Remove position snapshots and clean up index
+        cdef set[PositionId] snapshot_position_ids
+        cdef list[bytes] snapshots = self._position_snapshots.pop(position_id, None)
+
+        if snapshots is not None and position is not None:
+            snapshot_position_ids = self._index_instrument_position_snapshots.get(position.instrument_id)
+            if snapshot_position_ids:
+                snapshot_position_ids.discard(position_id)
+
+                # Clean up
+                if not snapshot_position_ids:
+                    self._index_instrument_position_snapshots.pop(position.instrument_id, None)
+
         # Delete from database if requested
         if purge_from_database and self._database is not None:
             self._database.delete_position(position_id)
@@ -1027,6 +1041,7 @@ cdef class Cache(CacheFacade):
         self._index_position_orders.clear()
         self._index_instrument_orders.clear()
         self._index_instrument_positions.clear()
+        self._index_instrument_position_snapshots.clear()
         self._index_strategy_orders.clear()
         self._index_strategy_positions.clear()
         self._index_exec_algorithm_orders.clear()
@@ -2225,6 +2240,14 @@ cdef class Cache(CacheFacade):
             snapshots.append(position_pickled)
         else:
             self._position_snapshots[position_id] = [position_pickled]
+
+        # Update snapshot index
+        cdef InstrumentId instrument_id = position.instrument_id
+        cdef set position_ids = self._index_instrument_position_snapshots.get(instrument_id)
+        if position_ids is not None:
+            position_ids.add(position_id)
+        else:
+            self._index_instrument_position_snapshots[instrument_id] = {position_id}
 
         self._log.debug(f"Snapshot {repr(copied_position)}")
 
@@ -4926,6 +4949,44 @@ cdef class Cache(CacheFacade):
         cdef bytes s
 
         return [pickle.loads(s) for s in snapshots]
+
+    cpdef set position_snapshot_ids(self, InstrumentId instrument_id = None):
+        """
+        Return all position IDs for position snapshots with the given instrument filter.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId, optional
+            The instrument ID query filter.
+
+        Returns
+        -------
+        set[PositionId]
+
+        """
+        if instrument_id is not None:
+            return self._index_instrument_position_snapshots.get(instrument_id, set())
+        else:
+            # Return all position IDs that have snapshots
+            return set(self._position_snapshots.keys())
+
+    cpdef list position_snapshot_bytes(self, PositionId position_id):
+        """
+        Return the raw pickled snapshot bytes for the given position ID.
+
+        Parameters
+        ----------
+        position_id : PositionId
+            The position ID to get snapshot bytes for.
+
+        Returns
+        -------
+        list[bytes]
+            The list of pickled snapshot bytes, or empty list if no snapshots exist.
+
+        """
+        Condition.not_none(position_id, "position_id")
+        return self._position_snapshots.get(position_id, [])
 
     cpdef list positions(
         self,

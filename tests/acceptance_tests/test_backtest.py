@@ -1716,18 +1716,16 @@ class TestBacktestPnLAlignmentAcceptance:
             position_pnl_sum_money == account_pnl_money
         ), f"Position PnL sum {position_pnl_sum_money} != Account PnL {account_pnl_money}"
 
-        # Validate that portfolio PnL is calculated and consistent
-        # Note: Portfolio PnL includes all realized PnL across position cycles
-        # The exact value depends on internal aggregation logic but should be non-zero
+        # Portfolio PnL should equal the position report sum (which includes snapshots)
+        assert (
+            portfolio_pnl_money == position_pnl_sum_money
+        ), f"Portfolio PnL {portfolio_pnl_money} != Position sum {position_pnl_sum_money}"
+
+        # Validate snapshots exist
         snapshots = engine.cache.position_snapshots()
         assert (
             len(snapshots) >= 2
         ), f"Should have multiple snapshots in NETTING mode, got {len(snapshots)}"
-
-        # Portfolio PnL should be greater than any individual component
-        assert (
-            portfolio_pnl_money.as_decimal() > 0
-        ), f"Portfolio PnL should be positive, got {portfolio_pnl_money}"
 
         # Additional validations
         assert (
@@ -1899,3 +1897,141 @@ class TestBacktestPnLAlignmentAcceptance:
         assert (
             len(positions_report) >= 1
         ), f"Should have positions from trades, got {len(positions_report)}"
+
+    def test_backtest_postrun_pnl_alignment(self):
+        """
+        Test that validates the specific alignment issue from GitHub issue #2856.
+
+        This test confirms that the sum of realized_pnl values in the positions report
+        equals the "PnL (total)" shown in backtest post-run logging.
+
+        The positions report sum should equal analyzer.total_pnl() which is used in the
+        backtest post-run output.
+
+        """
+        # Arrange
+        config = BacktestEngineConfig(
+            logging=LoggingConfig(bypass_logging=True),
+        )
+
+        engine = BacktestEngine(config=config)
+
+        starting_balance = Money(1_000_000, USD)
+        engine.add_venue(
+            venue=Venue("SIM"),
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            starting_balances=[starting_balance],
+        )
+
+        AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=Venue("SIM"))
+        engine.add_instrument(AUDUSD_SIM)
+
+        # Create strategy with multiple position cycles
+        class TestStrategy(Strategy):
+            def __init__(self):
+                super().__init__()
+                self.instrument_id = InstrumentId.from_str("AUD/USD.SIM")
+                self.trade_count = 0
+
+            def on_start(self):
+                self.instrument = self.cache.instrument(self.instrument_id)
+                self.subscribe_quote_ticks(self.instrument_id)
+
+            def on_quote_tick(self, tick: QuoteTick):
+                self.trade_count += 1
+
+                if self.trade_count == 10:
+                    # Cycle 1: Open long
+                    order = self.order_factory.market(
+                        instrument_id=self.instrument_id,
+                        order_side=OrderSide.BUY,
+                        quantity=Quantity.from_int(100_000),
+                    )
+                    self.submit_order(order)
+                elif self.trade_count == 20:
+                    # Cycle 1: Close long
+                    order = self.order_factory.market(
+                        instrument_id=self.instrument_id,
+                        order_side=OrderSide.SELL,
+                        quantity=Quantity.from_int(100_000),
+                    )
+                    self.submit_order(order)
+                elif self.trade_count == 30:
+                    # Cycle 2: Reopen long
+                    order = self.order_factory.market(
+                        instrument_id=self.instrument_id,
+                        order_side=OrderSide.BUY,
+                        quantity=Quantity.from_int(100_000),
+                    )
+                    self.submit_order(order)
+
+        # Add price data
+        timestamps = pd.date_range(start="2020-01-01", periods=35, freq="1min")
+        quotes = []
+
+        for i, ts in enumerate(timestamps):
+            # Rising prices for profit
+            bid_price = 0.70000 + (i * 0.00001)
+            ask_price = bid_price + 0.00002
+
+            quote = QuoteTick(
+                instrument_id=AUDUSD_SIM.id,
+                bid_price=Price.from_str(f"{bid_price:.5f}"),
+                ask_price=Price.from_str(f"{ask_price:.5f}"),
+                bid_size=Quantity.from_int(1_000_000),
+                ask_size=Quantity.from_int(1_000_000),
+                ts_event=pd.Timestamp(ts).value,
+                ts_init=pd.Timestamp(ts).value,
+            )
+            quotes.append(quote)
+
+        engine.add_data(quotes)
+        strategy = TestStrategy()
+        engine.add_strategy(strategy)
+
+        # Act
+        engine.run()
+
+        # Assert - This is the core validation from issue #2856
+        trader = engine.trader
+        portfolio = engine.portfolio
+        account = engine.cache.account_for_venue(Venue("SIM"))
+
+        # 1. Get positions report sum (what they expect)
+        positions_report = trader.generate_positions_report()
+        from decimal import Decimal
+
+        position_report_sum = Decimal(0)
+        if not positions_report.empty:
+            for pnl_str in positions_report["realized_pnl"]:
+                pnl_money = Money.from_str(pnl_str)
+                position_report_sum += pnl_money.as_decimal()
+        position_report_sum_money = Money(position_report_sum, USD)
+
+        # 2. Get backtest post-run value (analyzer.total_pnl)
+        analyzer = portfolio.analyzer
+        analyzer.calculate_statistics(account, engine.cache.positions())
+        backtest_postrun_pnl = analyzer.total_pnl(USD)
+        backtest_postrun_pnl_money = Money(Decimal(str(backtest_postrun_pnl)), USD)
+
+        # 3. This is the core assertion from the GitHub issue
+        # "We expect the sum of realized PnL values in the positions report
+        #  to equal the reported realized PnL in the BACKTEST POST-RUN"
+        assert (
+            position_report_sum_money == backtest_postrun_pnl_money
+        ), f"Positions report sum {position_report_sum_money} != Backtest post-run PnL {backtest_postrun_pnl_money}"
+
+        # 4. Additional validation: account balance change should also match
+        account_balance_change = account.balance_total(USD) - starting_balance
+        account_pnl_money = Money(account_balance_change, USD)
+
+        assert (
+            position_report_sum_money == account_pnl_money
+        ), f"Positions report sum {position_report_sum_money} != Account PnL {account_pnl_money}"
+
+        # 5. Document the portfolio.realized_pnl discrepancy (this is a separate issue)
+        # Note: portfolio.realized_pnl may differ due to internal aggregation logic
+        # portfolio_pnl = portfolio.realized_pnl(AUDUSD_SIM.id)
+        # We don't assert equality here since portfolio calculation has different behavior
