@@ -24,6 +24,7 @@ The portfolio can satisfy queries for account information, margin balances,
 total risk exposures and total net positions.
 """
 
+import pickle
 import warnings
 from collections import defaultdict
 from decimal import Decimal
@@ -147,6 +148,7 @@ cdef class Portfolio(PortfolioFacade):
         self._unrealized_pnls: dict[InstrumentId, Money] = {}
         self._realized_pnls: dict[InstrumentId, Money] = {}
         self._snapshot_realized_pnls: dict[InstrumentId, Money] = {}
+        self._snapshot_processed_counts: dict[PositionId, int] = {}
         self._net_positions: dict[InstrumentId, Decimal] = {}
         self._bet_positions: dict[InstrumentId, object] = {}
         self._index_bet_positions: dict[InstrumentId, set[PositionId]] = defaultdict(set)
@@ -683,6 +685,7 @@ cdef class Portfolio(PortfolioFacade):
         self._unrealized_pnls.clear()
         self._pending_calcs.clear()
         self._snapshot_realized_pnls.clear()
+        self._snapshot_processed_counts.clear()
         self.analyzer.reset()
 
         self.initialized = False
@@ -709,44 +712,120 @@ cdef class Portfolio(PortfolioFacade):
         self._reset()
         self._log.info("DISPOSED")
 
-    cdef void _ensure_snapshot_pnls_cached(self):
-        if self._snapshot_realized_pnls:
-            return  # Already cached
+    cdef void _ensure_snapshot_pnls_cached_for(self, InstrumentId instrument_id):
+        # Get all positions for this instrument (both open and closed)
+        cdef set[PositionId] instrument_position_ids = self._cache.position_ids(venue=None, instrument_id=instrument_id)
 
-        cdef list[Position] all_snapshots = self._cache.position_snapshots()
-        cdef Position snapshot
-        cdef InstrumentId instrument_id
-        cdef Money existing_pnl
+        # Get snapshot position IDs for this instrument from index
+        cdef set[PositionId] snapshot_position_ids = self._cache.position_snapshot_ids(instrument_id)
 
-        for snapshot in all_snapshots:
-            if snapshot.realized_pnl is None:
+        # Combine all position IDs (active and snapshot)
+        cdef set[PositionId] position_ids = set()
+
+        if instrument_position_ids:
+            position_ids.update(instrument_position_ids)
+
+        position_ids.update(snapshot_position_ids)
+
+        if not position_ids:
+            # Clear stale cached total when no positions or snapshots exist
+            self._snapshot_realized_pnls.pop(instrument_id, None)
+            return  # No positions or snapshots for this instrument
+
+        cdef bint rebuild = False
+
+        cdef:
+            PositionId position_id
+            list position_id_snapshots
+            int prev_count
+            int curr_count
+
+        # Detect purge/reset (count regression) to trigger full rebuild for this instrument
+        for position_id in position_ids:
+            position_id_snapshots = self._cache.position_snapshot_bytes(position_id)
+            curr_count = len(position_id_snapshots)
+            prev_count = self._snapshot_processed_counts.get(position_id, 0)
+            if prev_count > curr_count:
+                rebuild = True
+                break
+
+        cdef:
+            Money existing_pnl
+            Position snapshot
+
+        if rebuild:
+            # Rebuild from scratch for this instrument
+            self._snapshot_realized_pnls.pop(instrument_id, None)
+
+            for position_id in position_ids:
+                position_id_snapshots = self._cache.position_snapshot_bytes(position_id)
+                curr_count = len(position_id_snapshots)
+                if curr_count:
+                    for s in position_id_snapshots:
+                        snapshot = pickle.loads(s)
+                        if snapshot.realized_pnl is None:
+                            continue
+
+                        # Aggregate if same currency; otherwise log and keep existing
+                        existing_pnl = self._snapshot_realized_pnls.get(instrument_id)
+                        if existing_pnl is not None:
+                            if existing_pnl.currency == snapshot.realized_pnl.currency:
+                                self._snapshot_realized_pnls[instrument_id] = Money(
+                                    existing_pnl.as_double() + snapshot.realized_pnl.as_double(),
+                                    existing_pnl.currency,
+                                )
+                            else:
+                                self._log.warning(
+                                    f"Cannot aggregate snapshot PnLs with different currencies for {instrument_id}: "
+                                    f"{existing_pnl.currency} vs {snapshot.realized_pnl.currency}",
+                                )
+                        else:
+                            self._snapshot_realized_pnls[instrument_id] = snapshot.realized_pnl
+                self._snapshot_processed_counts[position_id] = curr_count
+            return
+
+        # Incremental path: only unpickle new entries
+        for position_id in position_ids:
+            position_id_snapshots = self._cache.position_snapshot_bytes(position_id)
+            curr_count = len(position_id_snapshots)
+            if curr_count == 0:
                 continue
-
-            instrument_id = snapshot.instrument_id
-            existing_pnl = self._snapshot_realized_pnls.get(instrument_id)
-
-            if existing_pnl is not None:
-                if existing_pnl.currency == snapshot.realized_pnl.currency:
-                    # Same currency, add the amounts
-                    self._snapshot_realized_pnls[instrument_id] = Money(
-                        existing_pnl.as_double() + snapshot.realized_pnl.as_double(),
-                        existing_pnl.currency,
-                    )
+            prev_count = self._snapshot_processed_counts.get(position_id, 0)
+            if prev_count >= curr_count:
+                continue
+            for idx in range(prev_count, curr_count):
+                snapshot = pickle.loads(position_id_snapshots[idx])
+                if snapshot.realized_pnl is None:
+                    continue
+                existing_pnl = self._snapshot_realized_pnls.get(instrument_id)
+                if existing_pnl is not None:
+                    if existing_pnl.currency == snapshot.realized_pnl.currency:
+                        self._snapshot_realized_pnls[instrument_id] = Money(
+                            existing_pnl.as_double() + snapshot.realized_pnl.as_double(),
+                            existing_pnl.currency,
+                        )
+                    else:
+                        self._log.warning(
+                            f"Cannot aggregate snapshot PnLs with different currencies for {instrument_id}: "
+                            f"{existing_pnl.currency} vs {snapshot.realized_pnl.currency}",
+                        )
                 else:
-                    # Different currencies - log warning
-                    self._log.warning(
-                        f"Cannot aggregate snapshot PnLs with different currencies for {instrument_id}: "
-                        f"{existing_pnl.currency} vs {snapshot.realized_pnl.currency}",
-                    )
-            else:
-                # First snapshot for this instrument
-                self._snapshot_realized_pnls[instrument_id] = Money(
-                    snapshot.realized_pnl.as_double(),
-                    snapshot.realized_pnl.currency,
-                )
+                    self._snapshot_realized_pnls[instrument_id] = snapshot.realized_pnl
+            self._snapshot_processed_counts[position_id] = curr_count
 
-        if self._debug and self._snapshot_realized_pnls:
-            self._log.debug(f"Cached snapshot realized PnLs for {len(self._snapshot_realized_pnls)} instruments")
+        # Prune stale entries from processed counts
+        cdef PositionId stale_position_id
+        cdef list[PositionId] stale_ids = []
+
+        for stale_position_id in self._snapshot_processed_counts:
+            if stale_position_id not in position_ids:
+                stale_ids.append(stale_position_id)
+
+        for stale_position_id in stale_ids:
+            self._snapshot_processed_counts.pop(stale_position_id, None)
+
+        if self._debug and self._snapshot_realized_pnls.get(instrument_id) is not None:
+            self._log.debug(f"Cached snapshot realized PnL for {instrument_id}")
 
 # -- QUERIES --------------------------------------------------------------------------------------
 
@@ -1533,8 +1612,8 @@ cdef class Portfolio(PortfolioFacade):
         else:
             currency = instrument.get_cost_currency()
 
-        # Ensure snapshot PnLs are cached (one-time cost)
-        self._ensure_snapshot_pnls_cached()
+        # Ensure snapshot PnLs for this instrument are cached (incremental)
+        self._ensure_snapshot_pnls_cached_for(instrument_id)
 
         cdef:
             list[Position] positions
@@ -1550,6 +1629,9 @@ cdef class Portfolio(PortfolioFacade):
             venue=None,  # Faster query filtering
             instrument_id=instrument_id,
         )
+
+        if self._debug:
+            self._log.debug(f"Found {len(positions)} positions for {instrument_id}")
 
         if not positions:
             # Check if we have cached snapshot PnL for this instrument
@@ -1578,6 +1660,8 @@ cdef class Portfolio(PortfolioFacade):
         if cached_snapshot_pnl_for_instrument is None:
             pass  # No snapshot PnL to add
         elif cached_snapshot_pnl_for_instrument.currency == currency:
+            if self._debug:
+                self._log.debug(f"Adding cached snapshot PnL: {cached_snapshot_pnl_for_instrument}")
             total_pnl += cached_snapshot_pnl_for_instrument.as_double()
         else:
             snapshot_xrate = self._cache.get_xrate(
