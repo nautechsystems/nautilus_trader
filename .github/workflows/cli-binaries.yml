@@ -8,7 +8,6 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - develop
       - nightly
 
 env:
@@ -172,7 +171,7 @@ jobs:
       - build-linux-arm64
       - build-macos-arm64
       - build-windows-x86_64
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/nightly')
+    if: github.event_name == 'push' && github.ref == 'refs/heads/nightly'
     permissions:
       actions: write
       contents: read
@@ -224,7 +223,7 @@ jobs:
         run: |
           bash ./scripts/ci/publish-cli-r2-upload.sh
 
-      - name: Prune old CLI versions (develop/nightly policies)
+      - name: Prune old CLI versions
         shell: bash
         run: |
           bash ./scripts/ci/publish-cli-r2-prune.sh
