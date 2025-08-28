@@ -46,6 +46,20 @@ runs:
         sudo apt-get clean
         sudo rm -rf /var/lib/apt/lists/*
 
+    - name: Install capnproto (macOS)
+      if: runner.os == 'macOS'
+      shell: bash
+      run: |
+        brew update
+        brew install capnp
+        brew cleanup
+
+    - name: Install capnproto (Windows)
+      if: runner.os == 'Windows'
+      shell: bash
+      run: |
+        choco install capnproto -y || echo "capnproto install via choco failed or unavailable"
+
     # > --------------------------------------------------
     # > Rust
     # GitHub runners come with a pre-installed Rust toolchain, this step forces an update
