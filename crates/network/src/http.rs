@@ -128,11 +128,11 @@ pub enum HttpMethod {
 impl From<HttpMethod> for Method {
     fn from(value: HttpMethod) -> Self {
         match value {
-            HttpMethod::GET => Method::GET,
-            HttpMethod::POST => Method::POST,
-            HttpMethod::PUT => Method::PUT,
-            HttpMethod::DELETE => Method::DELETE,
-            HttpMethod::PATCH => Method::PATCH,
+            HttpMethod::GET => Self::GET,
+            HttpMethod::POST => Self::POST,
+            HttpMethod::PUT => Self::PUT,
+            HttpMethod::DELETE => Self::DELETE,
+            HttpMethod::PATCH => Self::PATCH,
         }
     }
 }
