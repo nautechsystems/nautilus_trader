@@ -77,6 +77,7 @@ def test_pyo3_cython_conversion():
     option_contract_pyo3_dict = option_contract_pyo3.to_dict()
     option_contract_cython = OptionContract.from_pyo3(option_contract_pyo3)
     option_contract_cython_dict = OptionContract.to_dict(option_contract_cython)
+    del option_contract_cython_dict["tick_scheme_name"]  # TODO: Under development
     option_contract_pyo3_back = nautilus_pyo3.OptionContract.from_dict(
         option_contract_cython_dict,
     )

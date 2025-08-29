@@ -40,7 +40,7 @@ class BinanceFuturesMarkPriceUpdate(Data):
         (only useful in the last hour before the settlement starts).
     funding_rate : Decimal
         The current funding rate for the instrument.
-    ts_next_funding : uint64_t
+    next_funding_ns : uint64_t
         UNIX timestamp (nanoseconds) when next funding will occur.
     ts_event : uint64_t
         UNIX timestamp (nanoseconds) when the data event occurred.
@@ -60,7 +60,7 @@ class BinanceFuturesMarkPriceUpdate(Data):
         index: Price,
         estimated_settle: Price,
         funding_rate: Decimal,
-        ts_next_funding: int,
+        next_funding_ns: int,
         ts_event: int,
         ts_init: int,
     ):
@@ -69,7 +69,7 @@ class BinanceFuturesMarkPriceUpdate(Data):
         self.index = index
         self.estimated_settle = estimated_settle
         self.funding_rate = funding_rate
-        self.ts_next_funding = ts_next_funding
+        self.next_funding_ns = next_funding_ns
         self._ts_event = ts_event
         self._ts_init = ts_init
 
@@ -81,7 +81,7 @@ class BinanceFuturesMarkPriceUpdate(Data):
             f"index={self.index}, "
             f"estimated_settle={self.estimated_settle}, "
             f"funding_rate={self.funding_rate}, "
-            f"ts_next_funding={self.ts_next_funding}, "
+            f"next_funding_ns={self.next_funding_ns}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
@@ -131,7 +131,7 @@ class BinanceFuturesMarkPriceUpdate(Data):
             index=Price.from_str(values["index"]),
             estimated_settle=Price.from_str(values["estimated_settle"]),
             funding_rate=Decimal(values["funding_rate"]),
-            ts_next_funding=values["ts_next_funding"],
+            next_funding_ns=values["next_funding_ns"],
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
         )
@@ -153,7 +153,7 @@ class BinanceFuturesMarkPriceUpdate(Data):
             "index": str(obj.index),
             "estimated_settle": str(obj.estimated_settle),
             "funding_rate": str(obj.funding_rate),
-            "ts_next_funding": obj.ts_next_funding,
+            "next_funding_ns": obj.next_funding_ns,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }

@@ -64,6 +64,10 @@ pub fn extract_block_number(log: &hypersync_client::simple_types::Log) -> anyhow
 }
 
 /// Validates that a log entry corresponds to the expected event by comparing its topic0 with the provided event signature hash.
+///
+/// # Errors
+///
+/// Returns an error if the event signature doesn't match or if topic0 is missing.
 pub fn validate_event_signature_hash(
     event_name: &str,
     event_signature_hash: &str,

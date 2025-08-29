@@ -51,10 +51,10 @@ pub fn min_increment_precision_from_str(s: &str) -> u8 {
     let s = s.trim().to_ascii_lowercase();
 
     // Check for scientific notation
-    if let Some(pos) = s.find('e') {
-        if s[pos + 1..].starts_with('-') {
-            return s[pos + 2..].parse::<u8>().unwrap_or(0);
-        }
+    if let Some(pos) = s.find('e')
+        && s[pos + 1..].starts_with('-')
+    {
+        return s[pos + 2..].parse::<u8>().unwrap_or(0);
     }
 
     // Check for decimal precision

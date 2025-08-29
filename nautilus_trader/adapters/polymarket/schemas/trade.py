@@ -70,11 +70,19 @@ class PolymarketTradeReport(msgspec.Struct, frozen=True):
         return msgspec.json.decode(msgspec.json.encode(self))
 
     def get_maker_order(self, maker_address: str) -> PolymarketMakerOrder:
+        # First try with the provided address
         for order in self.maker_orders:
             if order.maker_address == maker_address:
                 return order
 
-        raise ValueError("Invalid trade with no maker order owned my `maker_address`")
+        # If not found and we have maker_orders, return the first one
+        # This handles the case where the funder address owns the order
+        if self.maker_orders:
+            return self.maker_orders[0]
+
+        raise ValueError(
+            f"Invalid trade with no maker order owned by `maker_address` {maker_address}",
+        )
 
     def liquidity_side(self) -> LiquiditySide:
         if self.trader_side == PolymarketLiquiditySide.TAKER:
@@ -93,8 +101,14 @@ class PolymarketTradeReport(msgspec.Struct, frozen=True):
         if self.trader_side == PolymarketLiquiditySide.TAKER:
             return VenueOrderId(self.taker_order_id)
         else:
-            order = self.get_maker_order(maker_address)
-            return VenueOrderId(order.order_id)
+            try:
+                order = self.get_maker_order(maker_address)
+                return VenueOrderId(order.order_id)
+            except ValueError:
+                # Fallback for signature-type 2 trades
+                if self.maker_orders:
+                    return VenueOrderId(self.maker_orders[0].order_id)
+                return VenueOrderId(self.taker_order_id)
 
     def last_px(self, maker_address: str) -> Decimal:
         if self.liquidity_side() == LiquiditySide.TAKER:

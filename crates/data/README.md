@@ -4,6 +4,7 @@
 [![Documentation](https://img.shields.io/docsrs/nautilus-data)](https://docs.rs/nautilus-data/latest/nautilus-data/)
 [![crates.io version](https://img.shields.io/crates/v/nautilus-data.svg)](https://crates.io/crates/nautilus-data)
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
+[![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
 
 Data engine and market data processing for [NautilusTrader](http://nautilustrader.io).
 
@@ -37,6 +38,8 @@ or as part of a Rust only build.
 
 - `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+- `high-precision`: Enables [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) to use 128-bit value types.
+- `defi`: Enables DeFi (Decentralized Finance) support.
 
 ## Documentation
 

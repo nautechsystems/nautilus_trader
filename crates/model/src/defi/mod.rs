@@ -33,6 +33,7 @@ pub mod hex;
 pub mod rpc;
 pub mod token;
 pub mod types;
+pub mod validation;
 
 // Re-exports
 pub use amm::{Pool, SharedPool};
@@ -44,7 +45,7 @@ pub use data::{
     swap::PoolSwap,
     transaction::Transaction,
 };
-pub use dex::{AmmType, Dex, SharedDex};
+pub use dex::{AmmType, Dex, DexType, SharedDex};
 pub use token::{SharedToken, Token};
 
 /// Number of decimal places used by the native Ether denomination.

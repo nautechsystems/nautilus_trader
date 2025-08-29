@@ -50,7 +50,7 @@ impl PortfolioStatistic for RiskReturnRatio {
 mod tests {
     use std::collections::BTreeMap;
 
-    use nautilus_core::UnixNanos;
+    use nautilus_core::{UnixNanos, approx_eq};
     use rstest::rstest;
 
     use super::*;
@@ -87,7 +87,12 @@ mod tests {
         let returns = create_returns(vec![0.1, -0.05, 0.2, -0.1, 0.15]);
         let result = ratio.calculate_from_returns(&returns);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), 0.46360044557175345);
+        assert!(approx_eq!(
+            f64,
+            result.unwrap(),
+            0.46360044557175345,
+            epsilon = 1e-9
+        ));
     }
 
     #[rstest]

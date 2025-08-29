@@ -4,6 +4,7 @@
 [![Documentation](https://img.shields.io/docsrs/nautilus-tardis)](https://docs.rs/nautilus-tardis/latest/nautilus-tardis/)
 [![crates.io version](https://img.shields.io/crates/v/nautilus-tardis.svg)](https://crates.io/crates/nautilus-tardis)
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
+[![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
 
 ## Platform
 

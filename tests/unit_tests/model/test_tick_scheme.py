@@ -16,10 +16,10 @@
 import pytest
 
 from nautilus_trader.model.objects import Price
-from nautilus_trader.model.tick_scheme.base import get_tick_scheme
+from nautilus_trader.model.tick_scheme import FixedTickScheme
+from nautilus_trader.model.tick_scheme import get_tick_scheme
 from nautilus_trader.model.tick_scheme.base import round_down
 from nautilus_trader.model.tick_scheme.base import round_up
-from nautilus_trader.model.tick_scheme.implementations.fixed import FixedTickScheme
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
@@ -51,7 +51,7 @@ class TestFixedTickScheme:
         ("value", "precision", "expected"),
         [
             (0.72775, 4, "0.7278"),
-            (0.7277, 4, "0.7278"),
+            (0.7277, 4, "0.7277"),  # Price-inclusive: already on boundary
             (0.727741111, 4, "0.7278"),
             (0.799999, 2, "0.80"),
         ],
@@ -69,7 +69,7 @@ class TestFixedTickScheme:
     @pytest.mark.parametrize(
         ("value", "expected"),
         [
-            (0.727, "0.728"),
+            (0.727, "0.727"),  # Price-inclusive: already on boundary
             (0.99999, "1.0000"),
             (0.72775, "0.728"),
             (10000, None),

@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.stdint cimport int64_t
+
 from nautilus_trader.core.rust.model cimport AccountId_t
 from nautilus_trader.core.rust.model cimport ClientId_t
 from nautilus_trader.core.rust.model cimport ClientOrderId_t
@@ -30,6 +32,7 @@ from nautilus_trader.core.rust.model cimport VenueOrderId_t
 
 
 cdef class Identifier:
+    cdef int64_t _hash
     cdef str to_str(self)
 
 
@@ -62,6 +65,7 @@ cdef class InstrumentId(Identifier):
     cdef InstrumentId from_str_c(str value)
     cpdef bint is_synthetic(self)
     cpdef object to_pyo3(self)
+    cpdef bint is_spread(self)
 
 
 cdef class ComponentId(Identifier):

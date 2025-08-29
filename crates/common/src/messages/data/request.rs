@@ -29,6 +29,9 @@ use super::check_client_id_or_venue;
 pub struct RequestCustomData {
     pub client_id: ClientId,
     pub data_type: DataType,
+    pub start: Option<DateTime<Utc>>,
+    pub end: Option<DateTime<Utc>>,
+    pub limit: Option<NonZeroUsize>,
     pub request_id: UUID4,
     pub ts_init: UnixNanos,
     pub params: Option<IndexMap<String, String>>,
@@ -36,9 +39,13 @@ pub struct RequestCustomData {
 
 impl RequestCustomData {
     /// Creates a new [`RequestCustomData`] instance.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         client_id: ClientId,
         data_type: DataType,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        limit: Option<NonZeroUsize>,
         request_id: UUID4,
         ts_init: UnixNanos,
         params: Option<IndexMap<String, String>>,
@@ -46,6 +53,9 @@ impl RequestCustomData {
         Self {
             client_id,
             data_type,
+            start,
+            end,
+            limit,
             request_id,
             ts_init,
             params,

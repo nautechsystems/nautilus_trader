@@ -196,15 +196,80 @@ impl HasTsInit for OrderBookDelta {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use std::{
+        collections::hash_map::DefaultHasher,
+        hash::{Hash, Hasher},
+    };
+
     use nautilus_core::{UnixNanos, serialization::Serializable};
     use rstest::rstest;
 
     use crate::{
-        data::{BookOrder, OrderBookDelta, stubs::*},
-        enums::{BookAction, OrderSide},
+        data::{BookOrder, HasTsInit, OrderBookDelta, stubs::*},
+        enums::{BookAction, OrderSide, RecordFlag},
         identifiers::InstrumentId,
         types::{Price, Quantity},
     };
+
+    fn create_test_delta() -> OrderBookDelta {
+        let order = BookOrder::new(
+            OrderSide::Buy,
+            Price::from("1.0500"),
+            Quantity::from("100000"),
+            12345,
+        );
+        OrderBookDelta::new(
+            InstrumentId::from("EURUSD.SIM"),
+            BookAction::Add,
+            order,
+            0,
+            123,
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::from(2_000_000_000),
+        )
+    }
+
+    #[rstest]
+    fn test_order_book_delta_new() {
+        let delta = create_test_delta();
+
+        assert_eq!(delta.instrument_id, InstrumentId::from("EURUSD.SIM"));
+        assert_eq!(delta.action, BookAction::Add);
+        assert_eq!(delta.order.side, OrderSide::Buy);
+        assert_eq!(delta.order.price, Price::from("1.0500"));
+        assert_eq!(delta.order.size, Quantity::from("100000"));
+        assert_eq!(delta.order.order_id, 12345);
+        assert_eq!(delta.flags, 0);
+        assert_eq!(delta.sequence, 123);
+        assert_eq!(delta.ts_event, UnixNanos::from(1_000_000_000));
+        assert_eq!(delta.ts_init, UnixNanos::from(2_000_000_000));
+    }
+
+    #[rstest]
+    fn test_order_book_delta_new_checked_valid() {
+        let order = BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1.0505"),
+            Quantity::from("50000"),
+            67890,
+        );
+        let result = OrderBookDelta::new_checked(
+            InstrumentId::from("GBPUSD.SIM"),
+            BookAction::Update,
+            order,
+            16,
+            456,
+            UnixNanos::from(500_000_000),
+            UnixNanos::from(1_500_000_000),
+        );
+
+        assert!(result.is_ok());
+        let delta = result.unwrap();
+        assert_eq!(delta.instrument_id, InstrumentId::from("GBPUSD.SIM"));
+        assert_eq!(delta.action, BookAction::Update);
+        assert_eq!(delta.order.side, OrderSide::Sell);
+        assert_eq!(delta.flags, 16);
+    }
 
     #[rstest]
     fn test_order_book_delta_new_with_zero_size_panics() {
@@ -261,6 +326,225 @@ mod tests {
         );
 
         assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("invalid `Quantity` for 'order.size' not positive")
+        );
+    }
+
+    #[rstest]
+    fn test_order_book_delta_new_checked_delete_with_zero_size_ok() {
+        let order = BookOrder::new(
+            OrderSide::Buy,
+            Price::from("100.00"),
+            Quantity::from(0),
+            123_456,
+        );
+        let result = OrderBookDelta::new_checked(
+            InstrumentId::from("TEST.SIM"),
+            BookAction::Delete,
+            order,
+            0,
+            1,
+            UnixNanos::from(0),
+            UnixNanos::from(1),
+        );
+
+        assert!(result.is_ok());
+    }
+
+    #[rstest]
+    fn test_order_book_delta_clear() {
+        let instrument_id = InstrumentId::from("BTCUSD.CRYPTO");
+        let sequence = 999;
+        let ts_event = UnixNanos::from(3_000_000_000);
+        let ts_init = UnixNanos::from(4_000_000_000);
+
+        let delta = OrderBookDelta::clear(instrument_id, sequence, ts_event, ts_init);
+
+        assert_eq!(delta.instrument_id, instrument_id);
+        assert_eq!(delta.action, BookAction::Clear);
+        assert!(delta.order.price.is_zero());
+        assert!(delta.order.size.is_zero());
+        assert_eq!(delta.order.side, OrderSide::NoOrderSide);
+        assert_eq!(delta.order.order_id, 0);
+        assert_eq!(delta.flags, RecordFlag::F_SNAPSHOT as u8);
+        assert_eq!(delta.sequence, sequence);
+        assert_eq!(delta.ts_event, ts_event);
+        assert_eq!(delta.ts_init, ts_init);
+    }
+
+    #[rstest]
+    fn test_get_metadata() {
+        let instrument_id = InstrumentId::from("EURUSD.SIM");
+        let metadata = OrderBookDelta::get_metadata(&instrument_id, 5, 8);
+
+        assert_eq!(metadata.len(), 3);
+        assert_eq!(
+            metadata.get("instrument_id"),
+            Some(&"EURUSD.SIM".to_string())
+        );
+        assert_eq!(metadata.get("price_precision"), Some(&"5".to_string()));
+        assert_eq!(metadata.get("size_precision"), Some(&"8".to_string()));
+    }
+
+    #[rstest]
+    fn test_get_fields() {
+        let fields = OrderBookDelta::get_fields();
+
+        assert_eq!(fields.len(), 9);
+        assert_eq!(fields.get("action"), Some(&"UInt8".to_string()));
+        assert_eq!(fields.get("side"), Some(&"UInt8".to_string()));
+
+        #[cfg(feature = "high-precision")]
+        {
+            assert_eq!(
+                fields.get("price"),
+                Some(&"FixedSizeBinary(16)".to_string())
+            );
+            assert_eq!(fields.get("size"), Some(&"FixedSizeBinary(16)".to_string()));
+        }
+        #[cfg(not(feature = "high-precision"))]
+        {
+            assert_eq!(fields.get("price"), Some(&"FixedSizeBinary(8)".to_string()));
+            assert_eq!(fields.get("size"), Some(&"FixedSizeBinary(8)".to_string()));
+        }
+
+        assert_eq!(fields.get("order_id"), Some(&"UInt64".to_string()));
+        assert_eq!(fields.get("flags"), Some(&"UInt8".to_string()));
+        assert_eq!(fields.get("sequence"), Some(&"UInt64".to_string()));
+        assert_eq!(fields.get("ts_event"), Some(&"UInt64".to_string()));
+        assert_eq!(fields.get("ts_init"), Some(&"UInt64".to_string()));
+    }
+
+    #[rstest]
+    #[case(BookAction::Add)]
+    #[case(BookAction::Update)]
+    #[case(BookAction::Delete)]
+    #[case(BookAction::Clear)]
+    fn test_order_book_delta_with_different_actions(#[case] action: BookAction) {
+        let order = BookOrder::new(
+            OrderSide::Buy,
+            Price::from("100.00"),
+            if matches!(action, BookAction::Delete | BookAction::Clear) {
+                Quantity::from(0)
+            } else {
+                Quantity::from("1000")
+            },
+            123_456,
+        );
+
+        let result = if matches!(action, BookAction::Clear) {
+            Ok(OrderBookDelta::clear(
+                InstrumentId::from("TEST.SIM"),
+                1,
+                UnixNanos::from(1_000_000_000),
+                UnixNanos::from(2_000_000_000),
+            ))
+        } else {
+            OrderBookDelta::new_checked(
+                InstrumentId::from("TEST.SIM"),
+                action,
+                order,
+                0,
+                1,
+                UnixNanos::from(1_000_000_000),
+                UnixNanos::from(2_000_000_000),
+            )
+        };
+
+        assert!(result.is_ok());
+        let delta = result.unwrap();
+        assert_eq!(delta.action, action);
+    }
+
+    #[rstest]
+    #[case(OrderSide::Buy)]
+    #[case(OrderSide::Sell)]
+    fn test_order_book_delta_with_different_sides(#[case] side: OrderSide) {
+        let order = BookOrder::new(side, Price::from("100.00"), Quantity::from("1000"), 123_456);
+
+        let delta = OrderBookDelta::new(
+            InstrumentId::from("TEST.SIM"),
+            BookAction::Add,
+            order,
+            0,
+            1,
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::from(2_000_000_000),
+        );
+
+        assert_eq!(delta.order.side, side);
+    }
+
+    #[rstest]
+    fn test_order_book_delta_has_ts_init() {
+        let delta = create_test_delta();
+        assert_eq!(delta.ts_init(), UnixNanos::from(2_000_000_000));
+    }
+
+    #[rstest]
+    fn test_order_book_delta_display() {
+        let delta = create_test_delta();
+        let display_str = format!("{delta}");
+
+        assert!(display_str.contains("EURUSD.SIM"));
+        assert!(display_str.contains("ADD"));
+        assert!(display_str.contains("BUY"));
+        assert!(display_str.contains("1.0500"));
+        assert!(display_str.contains("100000"));
+        assert!(display_str.contains("12345"));
+        assert!(display_str.contains("123"));
+    }
+
+    #[rstest]
+    fn test_order_book_delta_with_zero_timestamps() {
+        let order = BookOrder::new(
+            OrderSide::Buy,
+            Price::from("100.00"),
+            Quantity::from("1000"),
+            123_456,
+        );
+        let delta = OrderBookDelta::new(
+            InstrumentId::from("TEST.SIM"),
+            BookAction::Add,
+            order,
+            0,
+            0,
+            UnixNanos::from(0),
+            UnixNanos::from(0),
+        );
+
+        assert_eq!(delta.sequence, 0);
+        assert_eq!(delta.ts_event, UnixNanos::from(0));
+        assert_eq!(delta.ts_init, UnixNanos::from(0));
+    }
+
+    #[rstest]
+    fn test_order_book_delta_with_max_values() {
+        let order = BookOrder::new(
+            OrderSide::Sell,
+            Price::from("999999.9999"),
+            Quantity::from("999999999.9999"),
+            u64::MAX,
+        );
+        let delta = OrderBookDelta::new(
+            InstrumentId::from("TEST.SIM"),
+            BookAction::Update,
+            order,
+            u8::MAX,
+            u64::MAX,
+            UnixNanos::from(u64::MAX),
+            UnixNanos::from(u64::MAX),
+        );
+
+        assert_eq!(delta.flags, u8::MAX);
+        assert_eq!(delta.sequence, u64::MAX);
+        assert_eq!(delta.order.order_id, u64::MAX);
+        assert_eq!(delta.ts_event, UnixNanos::from(u64::MAX));
+        assert_eq!(delta.ts_init, UnixNanos::from(u64::MAX));
     }
 
     #[rstest]
@@ -322,12 +606,110 @@ mod tests {
     }
 
     #[rstest]
-    fn test_display(stub_delta: OrderBookDelta) {
-        let delta = stub_delta;
-        assert_eq!(
-            format!("{delta}"),
-            "AAPL.XNAS,ADD,BUY,100.00,10,123456,0,1,1,2".to_string()
+    fn test_order_book_delta_hash() {
+        let delta1 = create_test_delta();
+        let delta2 = create_test_delta();
+
+        let mut hasher1 = DefaultHasher::new();
+        let mut hasher2 = DefaultHasher::new();
+
+        delta1.hash(&mut hasher1);
+        delta2.hash(&mut hasher2);
+
+        assert_eq!(hasher1.finish(), hasher2.finish());
+    }
+
+    #[rstest]
+    fn test_order_book_delta_hash_different_deltas() {
+        let delta1 = create_test_delta();
+        let order2 = BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1.0505"),
+            Quantity::from("50000"),
+            67890,
         );
+        let delta2 = OrderBookDelta::new(
+            InstrumentId::from("EURUSD.SIM"),
+            BookAction::Add,
+            order2,
+            0,
+            123,
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::from(2_000_000_000),
+        );
+
+        let mut hasher1 = DefaultHasher::new();
+        let mut hasher2 = DefaultHasher::new();
+
+        delta1.hash(&mut hasher1);
+        delta2.hash(&mut hasher2);
+
+        assert_ne!(hasher1.finish(), hasher2.finish());
+    }
+
+    #[rstest]
+    fn test_order_book_delta_partial_eq() {
+        let delta1 = create_test_delta();
+        let delta2 = create_test_delta();
+
+        // Test equality
+        assert_eq!(delta1, delta2);
+
+        // Test inequality with different instrument
+        let order3 = BookOrder::new(
+            OrderSide::Buy,
+            Price::from("1.0500"),
+            Quantity::from("100000"),
+            12345,
+        );
+        let delta3 = OrderBookDelta::new(
+            InstrumentId::from("GBPUSD.SIM"),
+            BookAction::Add,
+            order3,
+            0,
+            123,
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::from(2_000_000_000),
+        );
+
+        assert_ne!(delta1, delta3);
+    }
+
+    #[rstest]
+    fn test_order_book_delta_clone() {
+        let delta1 = create_test_delta();
+        let delta2 = delta1;
+
+        assert_eq!(delta1, delta2);
+        assert_eq!(delta1.instrument_id, delta2.instrument_id);
+        assert_eq!(delta1.action, delta2.action);
+        assert_eq!(delta1.order, delta2.order);
+        assert_eq!(delta1.flags, delta2.flags);
+        assert_eq!(delta1.sequence, delta2.sequence);
+        assert_eq!(delta1.ts_event, delta2.ts_event);
+        assert_eq!(delta1.ts_init, delta2.ts_init);
+    }
+
+    #[rstest]
+    fn test_order_book_delta_debug() {
+        let delta = create_test_delta();
+        let debug_str = format!("{delta:?}");
+
+        assert!(debug_str.contains("OrderBookDelta"));
+        assert!(debug_str.contains("EURUSD.SIM"));
+        assert!(debug_str.contains("Add"));
+        assert!(debug_str.contains("BUY"));
+        assert!(debug_str.contains("1.0500"));
+    }
+
+    #[rstest]
+    fn test_order_book_delta_serialization() {
+        let delta = create_test_delta();
+
+        let json = serde_json::to_string(&delta).unwrap();
+        let deserialized: OrderBookDelta = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(delta, deserialized);
     }
 
     #[rstest]

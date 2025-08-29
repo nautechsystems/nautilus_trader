@@ -13,11 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
 import functools
+from collections import defaultdict
 from collections.abc import Callable
 from decimal import Decimal
 from inspect import iscoroutinefunction
-from typing import Any
+from typing import Any, ClassVar
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -30,8 +32,11 @@ from ibapi.common import TickAttribLast
 
 # fmt: off
 from nautilus_trader.adapters.interactive_brokers.client.common import BaseMixin
+from nautilus_trader.adapters.interactive_brokers.client.common import IBKRBookLevel
 from nautilus_trader.adapters.interactive_brokers.client.common import Subscription
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
+from nautilus_trader.adapters.interactive_brokers.parsing.data import IB_SIDE
+from nautilus_trader.adapters.interactive_brokers.parsing.data import MKT_DEPTH_OPERATIONS
 from nautilus_trader.adapters.interactive_brokers.parsing.data import bar_spec_to_bar_size
 from nautilus_trader.adapters.interactive_brokers.parsing.data import generate_trade_id
 from nautilus_trader.adapters.interactive_brokers.parsing.data import timedelta_to_duration_str
@@ -40,9 +45,14 @@ from nautilus_trader.adapters.interactive_brokers.parsing.price_conversion impor
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import BookOrder
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
+from nautilus_trader.model.enums import BookAction
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 
 
@@ -59,6 +69,27 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
     It processes and formats the received data to be compatible with the Nautilus
     Trader.
 
+    """
+
+    _order_book_depth: ClassVar[dict[int, int]] = {}  # reqId -> depth
+    _order_books_initialized: ClassVar[dict[int, bool]] = {}  # reqId -> initialized
+
+    # Instance variables that will be available when mixed into InteractiveBrokersClient
+    _subscription_tick_data: dict[int, dict[int, Any]]
+
+    _order_books: ClassVar[dict[int, dict[str, dict[int, IBKRBookLevel]]]] = {}
+    """
+    Example:
+    self._order_books: dict[int, dict[str, dict[int, IBKRBookLevel]]] = {
+        100: {
+            "bids": {
+                0: IBKRBookLevel(price=0, size=Decimal(0), market_maker="NSDQ"),
+            },
+            "asks": {
+                0: IBKRBookLevel(price=0, size=Decimal(0), market_maker="NSDQ"),
+            },
+        }
+    }
     """
 
     async def set_market_data_type(self, market_data_type: MarketDataTypeEnum) -> None:
@@ -121,6 +152,10 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             else:
                 handle_func = functools.partial(subscription_method, req_id, *args, **kwargs)
 
+                if subscription_method == self._eclient.reqMktDepth:
+                    self._order_book_depth[req_id] = args[1]
+                    self._order_books_initialized[req_id] = False
+
             # Add subscription
             subscription = self._subscriptions.add(
                 req_id=req_id,
@@ -144,6 +179,8 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         self,
         name: str | tuple,
         cancellation_method: Callable,
+        *args: Any,
+        **kwargs: Any,
     ) -> None:
         """
         Manage the unsubscription process for market data. This internal method is
@@ -157,11 +194,17 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             The method to call for unsubscribing from market data.
         name : Any
             A unique identifier for the subscription.
+        *args
+            Variable length argument list for the subscription method.
+        **kwargs
+            Arbitrary keyword arguments for the subscription method.
 
         """
         if subscription := self._subscriptions.get(name=name):
-            self._subscriptions.remove(subscription.req_id)
-            cancellation_method(reqId=subscription.req_id)
+            req_id = subscription.req_id
+            self._subscriptions.remove(req_id)
+            self._subscription_tick_data.pop(req_id, None)
+            cancellation_method(req_id, *args, **kwargs)
             self._log.debug(f"Unsubscribed from {subscription}")
         else:
             self._log.debug(f"Subscription doesn't exist for {name}")
@@ -214,6 +257,116 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         """
         name = (str(instrument_id), tick_type)
         await self._unsubscribe(name, self._eclient.cancelTickByTickData)
+
+    async def subscribe_market_data(
+        self,
+        instrument_id: InstrumentId,
+        contract: IBContract,
+        generic_tick_list: str = "",
+    ) -> None:
+        """
+        Subscribe to market data for a specified instrument using reqMktData. This
+        method is used for BAG (spread) contracts that don't support reqTickByTickData.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The identifier of the instrument for which to subscribe.
+        contract : IBContract
+            The contract details for the instrument.
+        generic_tick_list : str
+            A comma-separated list of generic tick types to request.
+            Empty string for basic bid/ask data.
+
+        """
+        name = (str(instrument_id), "market_data")
+        await self._subscribe(
+            name,
+            self._eclient.reqMktData,
+            self._eclient.cancelMktData,
+            contract,
+            generic_tick_list,
+            False,  # snapshot
+            False,  # regulatory_snapshot
+            [],  # mktDataOptions
+        )
+
+    async def unsubscribe_market_data(self, instrument_id: InstrumentId) -> None:
+        """
+        Unsubscribes from market data for a specified instrument.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The identifier of the instrument for which to unsubscribe.
+
+        """
+        name = (str(instrument_id), "market_data")
+        await self._unsubscribe(name, self._eclient.cancelMktData)
+
+    async def subscribe_order_book(
+        self,
+        instrument_id: InstrumentId,
+        contract: IBContract,
+        depth: int,
+        is_smart_depth: bool = True,
+    ) -> None:
+        """
+        Subscribe to order book data for a specified instrument.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The identifier of the instrument for which to subscribe.
+        contract : IBContract
+            The contract details for the instrument.
+        depth : int
+            The number of rows on each side of the order book.
+        is_smart_depth : bool
+            Flag indicates that this is smart depth request.
+            If the isSmartDepth boolean (available with API v974+) is True,
+            the marketMaker field will indicate the exchange from which the quote originates.
+            Otherwise it indicates the MPID of a market maker.
+
+        """
+        name = (str(instrument_id), "order_book")
+        await self._subscribe(
+            name,
+            self._eclient.reqMktDepth,
+            self._eclient.cancelMktDepth,
+            contract,
+            depth,
+            is_smart_depth,
+            [],  # IBKR: Internal use only. Leave an empty array.
+        )
+
+    async def unsubscribe_order_book(
+        self,
+        instrument_id: InstrumentId,
+        is_smart_depth: bool = True,
+    ) -> None:
+        """
+        Unsubscribes from order book data for a specified instrument.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The identifier of the instrument for which to unsubscribe.
+        depth : int
+            The number of rows on each side of the order book.
+        is_smart_depth : bool
+            Flag indicates that this is smart depth request.
+            If the isSmartDepth boolean (available with API v974+) is True,
+            the marketMaker field will indicate the exchange from which the quote originates.
+            Otherwise it indicates the MPID of a market maker.
+
+        """
+        name = (str(instrument_id), "order_book")
+        await self._unsubscribe(
+            name,
+            self._eclient.cancelMktDepth,
+            is_smart_depth,
+        )
 
     async def subscribe_realtime_bars(
         self,
@@ -348,8 +501,8 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             The Interactive Brokers contract details for the instrument.
         use_rth : bool
             Whether to use regular trading hours (RTH) only for the data.
-        end_date_time : str
-            The end time for the historical data request, formatted "%Y%m%d-%H:%M:%S".
+        end_date_time : pd.Timestamp
+            The end time for the historical data request as a pandas Timestamp.
         duration : str
             The duration for which historical data is requested, formatted as a string.
         timeout : int, optional
@@ -366,11 +519,11 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         else:
             end_date_time = end_date_time.astimezone(ZoneInfo("UTC"))
 
-        end_date_time = (
+        end_date_time_str = (
             end_date_time.strftime("%Y%m%d %H:%M:%S %Z") if contract.secType != "CONTFUT" else ""
         )
 
-        name = (bar_type, end_date_time)
+        name = (bar_type, end_date_time_str)
 
         if not (request := self._requests.get(name=name)):
             req_id = self._next_req_id()
@@ -382,7 +535,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
                     self._eclient.reqHistoricalData,
                     reqId=req_id,
                     contract=contract,
-                    endDateTime=end_date_time,
+                    endDateTime=end_date_time_str,
                     durationStr=duration,
                     barSizeSetting=bar_size_setting,
                     whatToShow=what_to_show(bar_type),
@@ -578,6 +731,97 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         )
 
         await self._handle_data(trade_tick)
+
+    async def process_tick_price(
+        self,
+        *,
+        req_id: int,
+        tick_type: int,
+        price: float,
+        attrib: Any,
+    ) -> None:
+        """
+        Process tick price data from reqMktData for spread instruments.
+        """
+        if not (subscription := self._subscriptions.get(req_id=req_id)):
+            return
+
+        # Store the price data for this subscription
+        if req_id not in self._subscription_tick_data:
+            self._subscription_tick_data[req_id] = {}
+
+        # IB tick types: 0=BID_SIZE, 1=BID_PRICE, 2=ASK_PRICE, 3=ASK_SIZE
+        self._subscription_tick_data[req_id][tick_type] = price
+
+        # Check if we have both bid and ask prices to create a quote tick
+        await self._try_create_quote_tick_from_market_data(subscription, req_id)
+
+    async def process_tick_size(
+        self,
+        *,
+        req_id: int,
+        tick_type: int,
+        size: Decimal,
+    ) -> None:
+        """
+        Process tick size data from reqMktData for spread instruments.
+        """
+        if not (subscription := self._subscriptions.get(req_id=req_id)):
+            return
+
+        # Store the size data for this subscription
+        if req_id not in self._subscription_tick_data:
+            self._subscription_tick_data[req_id] = {}
+
+        # IB tick types: 0=BID_SIZE, 1=BID_PRICE, 2=ASK_PRICE, 3=ASK_SIZE
+        self._subscription_tick_data[req_id][tick_type] = int(size)
+
+        # Check if we have both bid and ask data to create a quote tick
+        await self._try_create_quote_tick_from_market_data(subscription, req_id)
+
+    async def _try_create_quote_tick_from_market_data(
+        self,
+        subscription: Subscription,
+        req_id: int,
+    ) -> None:
+        """
+        Try to create a QuoteTick from accumulated market data.
+        """
+        if req_id not in self._subscription_tick_data:
+            return
+
+        tick_data = self._subscription_tick_data[req_id]
+
+        # IB tick types: 0=BID_SIZE, 1=BID_PRICE, 2=ASK_PRICE, 3=ASK_SIZE
+        bid_size = tick_data.get(0, 1)
+        bid_price = tick_data.get(1)
+        ask_price = tick_data.get(2)
+        ask_size = tick_data.get(3, 1)
+
+        if bid_price is not None and ask_price is not None:
+            # Create quote tick
+            instrument_id = InstrumentId.from_str(subscription.name[0])
+            instrument = self._cache.instrument(instrument_id)
+            ts_event = self._clock.timestamp_ns()
+            price_magnifier = (
+                self._instrument_provider.get_price_magnifier(instrument_id)
+                if self._instrument_provider
+                else 1
+            )
+            converted_bid_price = ib_price_to_nautilus_price(bid_price, price_magnifier)
+            converted_ask_price = ib_price_to_nautilus_price(ask_price, price_magnifier)
+
+            quote_tick = QuoteTick(
+                instrument_id=instrument_id,
+                bid_price=instrument.make_price(converted_bid_price),
+                ask_price=instrument.make_price(converted_ask_price),
+                bid_size=instrument.make_qty(bid_size),
+                ask_size=instrument.make_qty(ask_size),
+                ts_event=ts_event,
+                ts_init=ts_event,
+            )
+
+            await self._handle_data(quote_tick)
 
     async def process_realtime_bar(
         self,
@@ -787,6 +1031,68 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
 
         return await self._await_request(request, timeout=60)
 
+    async def _schedule_bar_completion_timeout(self, bar_type_str: str, bar: BarData) -> None:
+        """
+        Schedule a timeout to publish a bar after its period ends.
+
+        This ensures bars are published when their time period is complete,
+        rather than waiting for the next bar to arrive. This is especially
+        important for EOD bars and provides more timely bar delivery.
+
+        Parameters
+        ----------
+        bar_type_str : str
+            The string representation of the bar type.
+        bar : BarData
+            The bar data to potentially publish after timeout.
+
+        """
+        # Cancel any existing timeout task for this bar type
+        if bar_type_str in self._bar_timeout_tasks:
+            self._bar_timeout_tasks[bar_type_str].cancel()
+
+        # Calculate when this bar period should end
+        bar_type = BarType.from_str(bar_type_str)
+        bar_duration_seconds = bar_type.spec.timedelta.total_seconds()
+
+        # Add a small buffer (1 seconds) after the bar period ends to ensure it's complete
+        timeout_seconds = bar_duration_seconds + 1.0
+
+        async def completion_handler():
+            try:
+                await asyncio.sleep(timeout_seconds)
+
+                # Check if this bar is still the current bar (hasn't been superseded)
+                current_bar = self._bar_type_to_last_bar.get(bar_type_str)
+                if current_bar and int(current_bar.date) == int(bar.date):
+                    self._log.debug(f"Publishing bar after period completion for {bar_type_str}")
+                    ts_init = self._clock.timestamp_ns()
+
+                    # Convert the bar to Nautilus format
+                    nautilus_bar = await self._ib_bar_to_nautilus_bar(
+                        bar_type=bar_type,
+                        bar=current_bar,
+                        ts_init=ts_init,
+                        is_revision=False,
+                    )
+
+                    # Handle the bar
+                    if nautilus_bar and not (
+                        nautilus_bar.is_single_price() and nautilus_bar.open.as_double() == 0
+                    ):
+                        await self._handle_data(nautilus_bar)
+
+            except asyncio.CancelledError:
+                # Task was cancelled, which is expected when a new bar arrives
+                pass
+            finally:
+                # Clean up the task reference
+                self._bar_timeout_tasks.pop(bar_type_str, None)
+
+        # Create and store the timeout task
+        task = asyncio.create_task(completion_handler())
+        self._bar_timeout_tasks[bar_type_str] = task
+
     async def _process_bar_data(
         self,
         bar_type_str: str,
@@ -832,9 +1138,15 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
 
         if not handle_revised_bars:
             if previous_bar and is_new_bar:
+                # New bar arrived - publish the previous (completed) bar immediately
+                # and schedule completion timeout for the current bar
+                await self._schedule_bar_completion_timeout(bar_type_str, bar)
                 bar = previous_bar
             else:
-                return None  # Wait for bar to close
+                # First bar or same timestamp - schedule completion timeout
+                # but don't publish yet (wait for bar period to complete)
+                await self._schedule_bar_completion_timeout(bar_type_str, bar)
+                return None  # Wait for bar period to complete
 
             if historical:
                 ts_init = await self._ib_bar_to_ts_init(bar, bar_type)
@@ -1062,3 +1374,184 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             ts = pd.Timestamp.fromtimestamp(int(bar.date), tz=pytz.utc)
 
         return ts.value
+
+    async def process_update_mkt_depth_l2(
+        self,
+        *,
+        req_id: int,
+        position: int,
+        market_maker: str,
+        operation: int,
+        side: int,
+        price: float,
+        size: Decimal,
+        is_smart_depth: bool,
+    ) -> None:
+        """
+        Return Market Depth (L2) real-time data.
+
+        Note
+        ----
+        IBKR's L2 depth data is updated based on position,
+        so we need to maintain a local order book indexed by position,
+        and then aggregate this order book by price.
+
+        Parameters
+        ----------
+        req_id : TickerId
+            The request's identifier.
+        position : int
+            The order book's row being updated.
+        market_maker : str
+            The exchange holding the order if is_smart_depth is True,
+            otherwise the MPID of the market maker.
+        operation : int
+            How to refresh the row:
+            - 0: insert (insert this new order into the row identified by 'position')
+            - 1: update (update the existing order in the row identified by 'position')
+            - 2: delete (delete the existing order at the row identified by 'position')
+        side : int
+            0 for ask, 1 for bid.
+        price : float
+            The order's price.
+        size : Decimal
+            The order's size.
+        is_smart_depth : bool
+            Is SMART Depth request.
+
+        """
+        if not (subscription := self._subscriptions.get(req_id=req_id)):
+            return
+
+        instrument_id = InstrumentId.from_str(subscription.name[0])
+        instrument = self._cache.instrument(instrument_id)
+        ts_init = self._clock.timestamp_ns()
+
+        # Create new order book if it doesn't exist for this security
+        if req_id not in self._order_books:
+            self._order_books[req_id] = {"bids": {}, "asks": {}}
+
+        book: dict[str, dict[int, IBKRBookLevel]] = self._order_books[req_id]
+
+        # Select bid or ask side to update
+        order_side = IB_SIDE[side]
+        levels: dict[int, IBKRBookLevel] = (
+            book["bids"] if order_side == OrderSide.BUY else book["asks"]
+        )
+
+        # Update order book based on operation type
+        action = MKT_DEPTH_OPERATIONS[operation]
+        if action in (BookAction.ADD, BookAction.UPDATE):
+            levels[position] = IBKRBookLevel(
+                price=price,
+                size=size,
+                side=order_side,
+                market_maker=market_maker,
+            )
+        elif action == BookAction.DELETE:
+            levels.pop(position, None)
+
+        # Check if the order book is initialized
+        # For low-liquidity stocks, the set depth requirement may not be satisfied,
+        # so temporarily disable the initialization check handling
+        # if not self._order_books_initialized.get(req_id, False):
+        #     depth = self._order_book_depth[req_id]
+        #     if len(book["bids"]) == depth and len(book["asks"]) == depth:
+        #         self._order_books_initialized[req_id] = True
+        #     else:
+        #         return
+
+        # Convert to OrderBookDeltas
+        aggregated_book = self._aggregate_order_book_by_price(book)
+
+        price_magnifier = (
+            self._instrument_provider.get_price_magnifier(instrument_id)
+            if self._instrument_provider
+            else 1
+        )
+
+        deltas: list[OrderBookDelta] = [
+            OrderBookDelta.clear(
+                instrument_id,
+                sequence=0,
+                ts_event=ts_init,  # No event timestamp
+                ts_init=ts_init,
+            ),
+        ]
+
+        bids = [
+            BookOrder(
+                side=level.side,
+                price=instrument.make_price(
+                    ib_price_to_nautilus_price(
+                        level.price,
+                        price_magnifier,
+                    ),
+                ),
+                size=instrument.make_qty(level.size),
+                order_id=0,  # Not applicable for L2 data
+            )
+            for level in aggregated_book["bids"].values()
+        ]
+
+        asks = [
+            BookOrder(
+                side=level.side,
+                price=instrument.make_price(
+                    ib_price_to_nautilus_price(
+                        level.price,
+                        price_magnifier,
+                    ),
+                ),
+                size=instrument.make_qty(level.size),
+                order_id=0,  # Not applicable for L2 data
+            )
+            for level in aggregated_book["asks"].values()
+        ]
+
+        deltas += [
+            OrderBookDelta(
+                instrument_id,
+                BookAction.ADD,
+                o,
+                flags=0,
+                sequence=0,
+                ts_event=ts_init,  # No event timestamp
+                ts_init=ts_init,
+            )
+            for o in bids + asks
+        ]
+
+        await self._handle_data(OrderBookDeltas(instrument_id=instrument_id, deltas=deltas))
+
+    def _aggregate_order_book_by_price(
+        self,
+        book: dict[str, dict[int, IBKRBookLevel]],
+    ) -> dict[str, dict[float, IBKRBookLevel]]:
+        """
+        Aggregate order book by price.
+
+        Parameters
+        ----------
+        book : dict[str, dict[int, IBKRBookLevel]]
+            The order book to be aggregated.
+
+        Returns
+        -------
+        dict[str, dict[float, IBKRBookLevel]]
+            The aggregated order book.
+
+        """
+        aggregated_book: dict[str, dict[float, IBKRBookLevel]] = {}
+
+        for side, order_side in [("bids", OrderSide.BUY), ("asks", OrderSide.SELL)]:
+            price_aggregates: dict[float, Decimal] = defaultdict(Decimal)
+            for level in book[side].values():
+                price_aggregates[level.price] += level.size
+
+            aggregated_book[side] = {
+                price: IBKRBookLevel(price=price, size=size, side=order_side, market_maker="")
+                for price, size in price_aggregates.items()
+            }
+
+        return aggregated_book

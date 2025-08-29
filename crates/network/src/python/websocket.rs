@@ -13,10 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    sync::{Arc, atomic::Ordering},
-    time::Duration,
-};
+use std::{sync::atomic::Ordering, time::Duration};
 
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use pyo3::{create_exception, exceptions::PyException, prelude::*};
@@ -40,7 +37,7 @@ impl WebSocketConfig {
     #[new]
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (url, handler, headers, heartbeat=None, heartbeat_msg=None, ping_handler=None, reconnect_timeout_ms=10_000, reconnect_delay_initial_ms=2_000, reconnect_delay_max_ms=30_000, reconnect_backoff_factor=1.5, reconnect_jitter_ms=100))]
-    fn py_new(
+    const fn py_new(
         url: String,
         handler: PyObject,
         headers: Vec<(String, String)>,
@@ -55,11 +52,11 @@ impl WebSocketConfig {
     ) -> Self {
         Self {
             url,
-            handler: Consumer::Python(Some(Arc::new(handler))),
+            handler: Consumer::Python(Some(handler)),
             headers,
             heartbeat,
             heartbeat_msg,
-            ping_handler: ping_handler.map(Arc::new),
+            ping_handler,
             reconnect_timeout_ms,
             reconnect_delay_initial_ms,
             reconnect_delay_max_ms,
@@ -119,10 +116,10 @@ impl WebSocketClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             match ConnectionMode::from_atomic(&connection_mode) {
                 ConnectionMode::Closed => {
-                    tracing::warn!("WebSocket already closed");
+                    tracing::debug!("WebSocket already closed");
                 }
                 ConnectionMode::Disconnect => {
-                    tracing::warn!("WebSocket already disconnecting");
+                    tracing::debug!("WebSocket already disconnecting");
                 }
                 _ => {
                     connection_mode.store(ConnectionMode::Disconnect.as_u8(), Ordering::SeqCst);

@@ -4,6 +4,7 @@
 [![Documentation](https://img.shields.io/docsrs/nautilus-core)](https://docs.rs/nautilus-core/latest/nautilus-core/)
 [![crates.io version](https://img.shields.io/crates/v/nautilus-core.svg)](https://crates.io/crates/nautilus-core)
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
+[![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
 
 Core foundational types and utilities for [NautilusTrader](http://nautilustrader.io).
 

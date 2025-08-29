@@ -178,7 +178,6 @@ impl MovingAverage for WeightedMovingAverage {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::f64::{INFINITY, NAN};
 
     use arraydeque::{ArrayDeque, Wrapping};
     use rstest::rstest;
@@ -391,7 +390,7 @@ mod tests {
     fn test_nan_input_propagates() {
         let mut wma = WeightedMovingAverage::new(2, vec![0.5, 0.5], None);
         wma.update_raw(1.0);
-        wma.update_raw(NAN);
+        wma.update_raw(f64::NAN);
 
         assert!(wma.value().is_nan());
     }
@@ -548,14 +547,14 @@ mod tests {
 
     #[rstest]
     fn new_ok_with_infinite_weight() {
-        let res = WeightedMovingAverage::new_checked(2, vec![INFINITY, 1.0], None);
+        let res = WeightedMovingAverage::new_checked(2, vec![f64::INFINITY, 1.0], None);
         assert!(res.is_ok());
     }
 
     #[rstest]
     #[should_panic]
     fn new_panics_on_nan_weight() {
-        let _ = WeightedMovingAverage::new(2, vec![NAN, 1.0], None);
+        let _ = WeightedMovingAverage::new(2, vec![f64::NAN, 1.0], None);
     }
 
     #[rstest]
@@ -568,7 +567,7 @@ mod tests {
     fn inf_input_propagates() {
         let mut wma = WeightedMovingAverage::new(2, vec![0.5, 0.5], None);
         wma.update_raw(1.0);
-        wma.update_raw(INFINITY);
+        wma.update_raw(f64::INFINITY);
         assert!(wma.value().is_infinite());
     }
 

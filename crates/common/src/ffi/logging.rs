@@ -197,7 +197,6 @@ pub extern "C" fn logger_flush() {
 pub extern "C" fn logger_drop(log_guard: LogGuard_API) {
     drop(log_guard);
 }
-// FFI wrappers for logger control
 
 #[unsafe(no_mangle)]
 pub extern "C" fn logging_is_initialized() -> u8 {

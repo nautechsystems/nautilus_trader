@@ -5,11 +5,13 @@ use databento::{
     dbn::{Dataset::GlbxMdp3, MboMsg, SType, Schema, TradeMsg},
     live::Subscription,
 };
+use nautilus_core::consts::NAUTILUS_USER_AGENT;
 use time::OffsetDateTime;
 
 #[tokio::main]
 async fn main() {
     let mut client = LiveClient::builder()
+        .user_agent_extension(NAUTILUS_USER_AGENT.into())
         .key(env::var("DATABENTO_API_KEY").unwrap())
         .unwrap()
         .dataset(GlbxMdp3)

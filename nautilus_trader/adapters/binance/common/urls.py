@@ -51,7 +51,7 @@ def get_ws_base_url(account_type: BinanceAccountType, is_testnet: bool, is_us: b
     # Testnet base URLs
     if is_testnet:
         if account_type.is_spot_or_margin:
-            return "wss://testnet.binance.vision"
+            return "wss://stream.testnet.binance.vision"
         elif account_type == BinanceAccountType.USDT_FUTURE:
             return "wss://stream.binancefuture.com"
         elif account_type == BinanceAccountType.COIN_FUTURE:

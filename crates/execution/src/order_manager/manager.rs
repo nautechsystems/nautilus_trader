@@ -361,12 +361,10 @@ impl OrderManager {
                     if !self
                         .submit_order_commands
                         .contains_key(&child_order.client_order_id())
-                    {
-                        if let Err(e) =
+                        && let Err(e) =
                             self.create_new_submit_order(&child_order, position_id, client_id)
-                        {
-                            log::error!("Failed to create new submit order: {e}");
-                        }
+                    {
+                        log::error!("Failed to create new submit order: {e}");
                     }
                 }
             }
@@ -530,14 +528,14 @@ impl OrderManager {
                 continue;
             }
 
-            if let Some(contingency_type) = order.contingency_type() {
-                if matches!(
+            if let Some(contingency_type) = order.contingency_type()
+                && matches!(
                     contingency_type,
                     ContingencyType::Oto | ContingencyType::Oco
-                ) && quantity != contingent_order.quantity()
-                {
-                    self.modify_order_quantity(&mut contingent_order, quantity);
-                }
+                )
+                && quantity != contingent_order.quantity()
+            {
+                self.modify_order_quantity(&mut contingent_order, quantity);
             }
         }
     }

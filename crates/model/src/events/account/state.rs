@@ -13,14 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::{Display, Formatter};
+use std::{
+    collections::HashMap,
+    fmt::{Display, Formatter},
+};
 
 use nautilus_core::{UUID4, UnixNanos};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     enums::AccountType,
-    identifiers::AccountId,
+    identifiers::{AccountId, InstrumentId},
     types::{AccountBalance, Currency, MarginBalance},
 };
 
@@ -79,6 +82,76 @@ impl AccountState {
             ts_init,
         }
     }
+
+    /// Returns `true` if this account state has the same balances and margins as another.
+    ///
+    /// This compares all balances and margins for equality, returning `true` only if
+    /// all balances and margins are equal. If any balance or margin is different or
+    /// missing, returns `false`.
+    ///
+    /// # Note
+    ///
+    /// This method does not compare event IDs, timestamps, or other metadata - only
+    /// the actual balance and margin values.
+    pub fn has_same_balances_and_margins(&self, other: &Self) -> bool {
+        // Quick check - if lengths differ, they can't be equal
+        if self.balances.len() != other.balances.len() || self.margins.len() != other.margins.len()
+        {
+            return false;
+        }
+
+        // Compare balances by currency
+        let self_balances: HashMap<Currency, &AccountBalance> = self
+            .balances
+            .iter()
+            .map(|balance| (balance.currency, balance))
+            .collect();
+
+        let other_balances: HashMap<Currency, &AccountBalance> = other
+            .balances
+            .iter()
+            .map(|balance| (balance.currency, balance))
+            .collect();
+
+        // Check if all balances are equal
+        for (currency, self_balance) in &self_balances {
+            match other_balances.get(currency) {
+                Some(other_balance) => {
+                    if self_balance != other_balance {
+                        return false;
+                    }
+                }
+                None => return false, // Currency missing in other
+            }
+        }
+
+        // Compare margins by instrument_id
+        let self_margins: HashMap<InstrumentId, &MarginBalance> = self
+            .margins
+            .iter()
+            .map(|margin| (margin.instrument_id, margin))
+            .collect();
+
+        let other_margins: HashMap<InstrumentId, &MarginBalance> = other
+            .margins
+            .iter()
+            .map(|margin| (margin.instrument_id, margin))
+            .collect();
+
+        // Check if all margins are equal
+        for (instrument_id, self_margin) in &self_margins {
+            match other_margins.get(instrument_id) {
+                Some(other_margin) => {
+                    if self_margin != other_margin {
+                        return false;
+                    }
+                }
+                None => return false, // Instrument missing in other
+            }
+        }
+
+        true
+    }
 }
 
 impl Display for AccountState {
@@ -122,11 +195,17 @@ impl PartialEq for AccountState {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use nautilus_core::{UUID4, UnixNanos};
     use rstest::rstest;
 
-    use crate::events::{
-        AccountState,
-        account::stubs::{cash_account_state, margin_account_state},
+    use crate::{
+        enums::AccountType,
+        events::{
+            AccountState,
+            account::stubs::{cash_account_state, margin_account_state},
+        },
+        identifiers::{AccountId, InstrumentId},
+        types::{AccountBalance, Currency, MarginBalance, Money},
     };
 
     #[rstest]
@@ -157,5 +236,204 @@ mod tests {
             margins=[MarginBalance(initial=5000.00 USD, maintenance=20000.00 USD, instrument_id=BTCUSDT.COINBASE)], \
             event_id=16578139-a945-4b65-b46c-bc131a15d8e7)"
         );
+    }
+
+    #[rstest]
+    fn test_has_same_balances_and_margins_when_identical() {
+        let state1 = cash_account_state();
+        let state2 = cash_account_state();
+        assert!(state1.has_same_balances_and_margins(&state2));
+    }
+
+    #[rstest]
+    fn test_has_same_balances_and_margins_when_different_balance_amounts() {
+        let state1 = cash_account_state();
+        let mut state2 = cash_account_state();
+        // Create a different balance with same currency
+        let usd = Currency::USD();
+        let different_balance = AccountBalance::new(
+            Money::new(2000000.0, usd),
+            Money::new(50000.0, usd),
+            Money::new(1950000.0, usd),
+        );
+        state2.balances = vec![different_balance];
+        assert!(!state1.has_same_balances_and_margins(&state2));
+    }
+
+    #[rstest]
+    fn test_has_same_balances_and_margins_when_different_balance_currencies() {
+        let state1 = cash_account_state();
+        let mut state2 = cash_account_state();
+        // Create a balance with different currency
+        let eur = Currency::EUR();
+        let different_balance = AccountBalance::new(
+            Money::new(1525000.0, eur),
+            Money::new(25000.0, eur),
+            Money::new(1500000.0, eur),
+        );
+        state2.balances = vec![different_balance];
+        assert!(!state1.has_same_balances_and_margins(&state2));
+    }
+
+    #[rstest]
+    fn test_has_same_balances_and_margins_when_missing_balance() {
+        let state1 = cash_account_state();
+        let mut state2 = cash_account_state();
+        // Add an additional balance to state2
+        let eur = Currency::EUR();
+        let additional_balance = AccountBalance::new(
+            Money::new(1000000.0, eur),
+            Money::new(0.0, eur),
+            Money::new(1000000.0, eur),
+        );
+        state2.balances.push(additional_balance);
+        assert!(!state1.has_same_balances_and_margins(&state2));
+    }
+
+    #[rstest]
+    fn test_has_same_balances_and_margins_when_different_margin_amounts() {
+        let state1 = margin_account_state();
+        let mut state2 = margin_account_state();
+        // Create a different margin with same instrument_id
+        let usd = Currency::USD();
+        let instrument_id = InstrumentId::from("BTCUSDT.COINBASE");
+        let different_margin = MarginBalance::new(
+            Money::new(10000.0, usd),
+            Money::new(40000.0, usd),
+            instrument_id,
+        );
+        state2.margins = vec![different_margin];
+        assert!(!state1.has_same_balances_and_margins(&state2));
+    }
+
+    #[rstest]
+    fn test_has_same_balances_and_margins_when_different_margin_instruments() {
+        let state1 = margin_account_state();
+        let mut state2 = margin_account_state();
+        // Create a margin with different instrument_id
+        let usd = Currency::USD();
+        let different_instrument_id = InstrumentId::from("ETHUSDT.BINANCE");
+        let different_margin = MarginBalance::new(
+            Money::new(5000.0, usd),
+            Money::new(20000.0, usd),
+            different_instrument_id,
+        );
+        state2.margins = vec![different_margin];
+        assert!(!state1.has_same_balances_and_margins(&state2));
+    }
+
+    #[rstest]
+    fn test_has_same_balances_and_margins_when_missing_margin() {
+        let state1 = margin_account_state();
+        let mut state2 = margin_account_state();
+        // Add an additional margin to state2
+        let usd = Currency::USD();
+        let additional_instrument_id = InstrumentId::from("ETHUSDT.BINANCE");
+        let additional_margin = MarginBalance::new(
+            Money::new(3000.0, usd),
+            Money::new(15000.0, usd),
+            additional_instrument_id,
+        );
+        state2.margins.push(additional_margin);
+        assert!(!state1.has_same_balances_and_margins(&state2));
+    }
+
+    #[rstest]
+    fn test_has_same_balances_and_margins_with_empty_collections() {
+        let account_id = AccountId::new("TEST-001");
+        let event_id = UUID4::new();
+        let ts_event = UnixNanos::from(1);
+        let ts_init = UnixNanos::from(2);
+
+        let state1 = AccountState::new(
+            account_id,
+            AccountType::Cash,
+            vec![], // Empty balances
+            vec![], // Empty margins
+            true,
+            event_id,
+            ts_event,
+            ts_init,
+            Some(Currency::USD()),
+        );
+
+        let state2 = AccountState::new(
+            account_id,
+            AccountType::Cash,
+            vec![], // Empty balances
+            vec![], // Empty margins
+            true,
+            UUID4::new(),       // Different event_id
+            UnixNanos::from(3), // Different timestamps
+            UnixNanos::from(4),
+            Some(Currency::USD()),
+        );
+
+        assert!(state1.has_same_balances_and_margins(&state2));
+    }
+
+    #[rstest]
+    fn test_has_same_balances_and_margins_with_multiple_balances_and_margins() {
+        let account_id = AccountId::new("TEST-001");
+        let event_id = UUID4::new();
+        let ts_event = UnixNanos::from(1);
+        let ts_init = UnixNanos::from(2);
+
+        let usd = Currency::USD();
+        let eur = Currency::EUR();
+        let btc_instrument = InstrumentId::from("BTCUSDT.COINBASE");
+        let eth_instrument = InstrumentId::from("ETHUSDT.BINANCE");
+
+        let balances = vec![
+            AccountBalance::new(
+                Money::new(1000000.0, usd),
+                Money::new(0.0, usd),
+                Money::new(1000000.0, usd),
+            ),
+            AccountBalance::new(
+                Money::new(500000.0, eur),
+                Money::new(10000.0, eur),
+                Money::new(490000.0, eur),
+            ),
+        ];
+
+        let margins = vec![
+            MarginBalance::new(
+                Money::new(5000.0, usd),
+                Money::new(20000.0, usd),
+                btc_instrument,
+            ),
+            MarginBalance::new(
+                Money::new(3000.0, usd),
+                Money::new(15000.0, usd),
+                eth_instrument,
+            ),
+        ];
+
+        let state1 = AccountState::new(
+            account_id,
+            AccountType::Margin,
+            balances.clone(),
+            margins.clone(),
+            true,
+            event_id,
+            ts_event,
+            ts_init,
+            Some(usd),
+        );
+
+        let state2 = AccountState::new(
+            account_id,
+            AccountType::Margin,
+            balances,
+            margins,
+            true,
+            UUID4::new(),       // Different event_id
+            UnixNanos::from(3), // Different timestamps
+            UnixNanos::from(4),
+            Some(usd),
+        );
+
+        assert!(state1.has_same_balances_and_margins(&state2));
     }
 }

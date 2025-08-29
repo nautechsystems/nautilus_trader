@@ -158,3 +158,134 @@ where
         self.len() == 0
     }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+#[allow(clippy::unnecessary_to_owned)]
+mod tests {
+    use std::collections::{HashMap, HashSet};
+
+    use ahash::{AHashMap, AHashSet};
+    use indexmap::{IndexMap, IndexSet};
+    use rstest::*;
+
+    use super::*;
+
+    #[rstest]
+    fn test_hashset_setlike() {
+        let mut set: HashSet<String> = HashSet::new();
+        set.insert("test".to_string());
+        set.insert("value".to_string());
+
+        assert!(set.contains(&"test".to_string()));
+        assert!(!set.contains(&"missing".to_string()));
+        assert!(!set.is_empty());
+
+        let empty_set: HashSet<String> = HashSet::new();
+        assert!(empty_set.is_empty());
+    }
+
+    #[rstest]
+    fn test_indexset_setlike() {
+        let mut set: IndexSet<String> = IndexSet::new();
+        set.insert("test".to_string());
+        set.insert("value".to_string());
+
+        assert!(set.contains(&"test".to_string()));
+        assert!(!set.contains(&"missing".to_string()));
+        assert!(!set.is_empty());
+
+        let empty_set: IndexSet<String> = IndexSet::new();
+        assert!(empty_set.is_empty());
+    }
+
+    #[rstest]
+    fn test_ahashset_setlike() {
+        let mut set: AHashSet<String> = AHashSet::new();
+        set.insert("test".to_string());
+        set.insert("value".to_string());
+
+        assert!(set.contains(&"test".to_string()));
+        assert!(!set.contains(&"missing".to_string()));
+        assert!(!set.is_empty());
+
+        let empty_set: AHashSet<String> = AHashSet::new();
+        assert!(empty_set.is_empty());
+    }
+
+    #[rstest]
+    fn test_hashmap_maplike() {
+        let mut map: HashMap<String, i32> = HashMap::new();
+        map.insert("key1".to_string(), 42);
+        map.insert("key2".to_string(), 100);
+
+        assert!(map.contains_key(&"key1".to_string()));
+        assert!(!map.contains_key(&"missing".to_string()));
+        assert!(!map.is_empty());
+
+        let empty_map: HashMap<String, i32> = HashMap::new();
+        assert!(empty_map.is_empty());
+    }
+
+    #[rstest]
+    fn test_indexmap_maplike() {
+        let mut map: IndexMap<String, i32> = IndexMap::new();
+        map.insert("key1".to_string(), 42);
+        map.insert("key2".to_string(), 100);
+
+        assert!(map.contains_key(&"key1".to_string()));
+        assert!(!map.contains_key(&"missing".to_string()));
+        assert!(!map.is_empty());
+
+        let empty_map: IndexMap<String, i32> = IndexMap::new();
+        assert!(empty_map.is_empty());
+    }
+
+    #[rstest]
+    fn test_ahashmap_maplike() {
+        let mut map: AHashMap<String, i32> = AHashMap::new();
+        map.insert("key1".to_string(), 42);
+        map.insert("key2".to_string(), 100);
+
+        assert!(map.contains_key(&"key1".to_string()));
+        assert!(!map.contains_key(&"missing".to_string()));
+        assert!(!map.is_empty());
+
+        let empty_map: AHashMap<String, i32> = AHashMap::new();
+        assert!(empty_map.is_empty());
+    }
+
+    #[rstest]
+    fn test_trait_object_setlike() {
+        let mut hashset: HashSet<String> = HashSet::new();
+        hashset.insert("test".to_string());
+
+        let mut indexset: IndexSet<String> = IndexSet::new();
+        indexset.insert("test".to_string());
+
+        let sets: Vec<&dyn SetLike<Item = String>> = vec![&hashset, &indexset];
+
+        for set in sets {
+            assert!(set.contains(&"test".to_string()));
+            assert!(!set.is_empty());
+        }
+    }
+
+    #[rstest]
+    fn test_trait_object_maplike() {
+        let mut hashmap: HashMap<String, i32> = HashMap::new();
+        hashmap.insert("key".to_string(), 42);
+
+        let mut indexmap: IndexMap<String, i32> = IndexMap::new();
+        indexmap.insert("key".to_string(), 42);
+
+        let maps: Vec<&dyn MapLike<Key = String, Value = i32>> = vec![&hashmap, &indexmap];
+
+        for map in maps {
+            assert!(map.contains_key(&"key".to_string()));
+            assert!(!map.is_empty());
+        }
+    }
+}

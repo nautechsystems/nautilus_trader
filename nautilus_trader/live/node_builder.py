@@ -155,7 +155,7 @@ class TradingNodeBuilder:
         """
         PyCondition.not_none(config, "config")
 
-        if not config:
+        if not config and not self._data_engine.get_external_client_ids():
             self._log.warning("No `data_clients` configuration found")
 
         for parts, cfg in config.items():
@@ -213,7 +213,7 @@ class TradingNodeBuilder:
         """
         PyCondition.not_none(config, "config")
 
-        if not config:
+        if not config and not self._exec_engine.get_external_client_ids():
             self._log.warning("No `exec_clients` configuration found")
 
         for parts, cfg in config.items():

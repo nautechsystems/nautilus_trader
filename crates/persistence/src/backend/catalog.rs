@@ -21,11 +21,11 @@
 //!
 //! # Key Features
 //!
-//! - **Object Store Integration**: Works with local filesystems, S3, and other object stores
-//! - **Data Type Support**: Handles all major financial data types (quotes, trades, bars, etc.)
-//! - **Time-based Organization**: Organizes data by timestamp ranges for efficient querying
-//! - **Consolidation**: Merges multiple files to optimize storage and query performance
-//! - **Validation**: Ensures data integrity with timestamp ordering and interval validation
+//! - **Object Store Integration**: Works with local filesystems, S3, and other object stores.
+//! - **Data Type Support**: Handles all major financial data types (quotes, trades, bars, etc.).
+//! - **Time-based Organization**: Organizes data by timestamp ranges for efficient querying.
+//! - **Consolidation**: Merges multiple files to optimize storage and query performance.
+//! - **Validation**: Ensures data integrity with timestamp ordering and interval validation.
 //!
 //! # Architecture
 //!
@@ -80,7 +80,7 @@ use nautilus_core::{
 };
 use nautilus_model::data::{
     Bar, Data, HasTsInit, IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta, OrderBookDepth10,
-    QuoteTick, TradeTick, close::InstrumentClose,
+    QuoteTick, TradeTick, close::InstrumentClose, to_variant,
 };
 use nautilus_serialization::arrow::{DecodeDataFromRecordBatch, EncodeToRecordBatch};
 use object_store::{ObjectStore, path::Path as ObjectPath};
@@ -88,10 +88,7 @@ use serde::Serialize;
 use unbounded_interval_tree::interval_tree::IntervalTree;
 
 use super::session::{self, DataBackendSession, QueryResult, build_query};
-use crate::parquet::{
-    combine_parquet_files_from_object_store, min_max_from_parquet_metadata_object_store,
-    write_batches_to_object_store,
-};
+use crate::parquet::write_batches_to_object_store;
 
 /// A high-performance data catalog for storing and retrieving financial market data using Apache Parquet format.
 ///
@@ -101,41 +98,41 @@ use crate::parquet::{
 ///
 /// # Features
 ///
-/// - **Efficient Storage**: Uses Apache Parquet format with configurable compression
-/// - **Object Store Backend**: Supports multiple storage backends through the `object_store` crate
-/// - **Time-based Organization**: Organizes data by timestamp ranges for optimal query performance
-/// - **Data Validation**: Ensures timestamp ordering and interval consistency
-/// - **Consolidation**: Merges multiple files to reduce storage overhead and improve query speed
-/// - **Type Safety**: Strongly typed data handling with compile-time guarantees
+/// - **Efficient Storage**: Uses Apache Parquet format with configurable compression.
+/// - **Object Store Backend**: Supports multiple storage backends through the `object_store` crate.
+/// - **Time-based Organization**: Organizes data by timestamp ranges for optimal query performance.
+/// - **Data Validation**: Ensures timestamp ordering and interval consistency.
+/// - **Consolidation**: Merges multiple files to reduce storage overhead and improve query speed.
+/// - **Type Safety**: Strongly typed data handling with compile-time guarantees.
 ///
 /// # Data Organization
 ///
 /// Data is organized hierarchically by data type and instrument:
-/// - `data/{data_type}/{instrument_id}/{start_ts}-{end_ts}.parquet`
-/// - Files are named with their timestamp ranges for efficient range queries
-/// - Intervals are validated to be disjoint to prevent data overlap
+/// - `data/{data_type}/{instrument_id}/{start_ts}-{end_ts}.parquet`.
+/// - Files are named with their timestamp ranges for efficient range queries.
+/// - Intervals are validated to be disjoint to prevent data overlap.
 ///
 /// # Performance Considerations
 ///
-/// - **Batch Size**: Controls memory usage during data processing
-/// - **Compression**: SNAPPY compression provides good balance of speed and size
-/// - **Row Group Size**: Affects query performance and memory usage
-/// - **File Consolidation**: Reduces the number of files for better query performance
+/// - **Batch Size**: Controls memory usage during data processing.
+/// - **Compression**: SNAPPY compression provides good balance of speed and size.
+/// - **Row Group Size**: Affects query performance and memory usage.
+/// - **File Consolidation**: Reduces the number of files for better query performance.
 pub struct ParquetDataCatalog {
     /// The base path for data storage within the object store.
-    base_path: String,
+    pub base_path: String,
     /// The original URI provided when creating the catalog.
-    original_uri: String,
+    pub original_uri: String,
     /// The object store backend for data persistence.
-    object_store: Arc<dyn ObjectStore>,
+    pub object_store: Arc<dyn ObjectStore>,
     /// The DataFusion session for query execution.
-    session: DataBackendSession,
+    pub session: DataBackendSession,
     /// The number of records to process in each batch.
-    batch_size: usize,
+    pub batch_size: usize,
     /// The compression algorithm used for Parquet files.
-    compression: parquet::basic::Compression,
+    pub compression: parquet::basic::Compression,
     /// The maximum number of rows in each Parquet row group.
-    max_row_group_size: usize,
+    pub max_row_group_size: usize,
 }
 
 impl Debug for ParquetDataCatalog {
@@ -205,11 +202,11 @@ impl ParquetDataCatalog {
     ///
     /// # Supported URI Schemes
     ///
-    /// - **AWS S3**: `s3://bucket/path`
-    /// - **Google Cloud Storage**: `gs://bucket/path` or `gcs://bucket/path`
-    /// - **Azure Blob Storage**: `azure://account/container/path` or `abfs://container@account.dfs.core.windows.net/path`
-    /// - **HTTP/WebDAV**: `http://` or `https://`
-    /// - **Local files**: `file://path` or plain paths
+    /// - **AWS S3**: `s3://bucket/path`.
+    /// - **Google Cloud Storage**: `gs://bucket/path` or `gcs://bucket/path`.
+    /// - **Azure Blob Storage**: `azure://account/container/path` or `abfs://container@account.dfs.core.windows.net/path`.
+    /// - **HTTP/WebDAV**: `http://` or `https://`.
+    /// - **Local files**: `file://path` or plain paths.
     ///
     /// # Parameters
     ///
@@ -297,6 +294,20 @@ impl ParquetDataCatalog {
         })
     }
 
+    /// Returns the base path of the catalog for testing purposes.
+    #[must_use]
+    pub fn get_base_path(&self) -> String {
+        self.base_path.clone()
+    }
+
+    /// Resets the backend session to clear any cached table registrations.
+    ///
+    /// This is useful during catalog operations when files are being modified
+    /// and we need to ensure fresh data is loaded.
+    pub fn reset_session(&mut self) {
+        self.session.clear_registered_tables();
+    }
+
     /// Writes mixed data types to the catalog by separating them into type-specific collections.
     ///
     /// This method takes a heterogeneous collection of market data and separates it by type,
@@ -373,14 +384,14 @@ impl ParquetDataCatalog {
 
         // TODO: need to handle instruments here
 
-        self.write_to_parquet(deltas, start, end)?;
-        self.write_to_parquet(depth10s, start, end)?;
-        self.write_to_parquet(quotes, start, end)?;
-        self.write_to_parquet(trades, start, end)?;
-        self.write_to_parquet(bars, start, end)?;
-        self.write_to_parquet(mark_prices, start, end)?;
-        self.write_to_parquet(index_prices, start, end)?;
-        self.write_to_parquet(closes, start, end)?;
+        self.write_to_parquet(deltas, start, end, None)?;
+        self.write_to_parquet(depth10s, start, end, None)?;
+        self.write_to_parquet(quotes, start, end, None)?;
+        self.write_to_parquet(trades, start, end, None)?;
+        self.write_to_parquet(bars, start, end, None)?;
+        self.write_to_parquet(mark_prices, start, end, None)?;
+        self.write_to_parquet(index_prices, start, end, None)?;
+        self.write_to_parquet(closes, start, end, None)?;
 
         Ok(())
     }
@@ -408,17 +419,17 @@ impl ParquetDataCatalog {
     /// # Errors
     ///
     /// This function will return an error if:
-    /// - Data serialization to Arrow record batches fails
-    /// - Object store write operations fail
-    /// - File path construction fails
-    /// - Timestamp interval validation fails after writing
+    /// - Data serialization to Arrow record batches fails.
+    /// - Object store write operations fail.
+    /// - File path construction fails.
+    /// - Timestamp interval validation fails after writing.
     ///
     /// # Panics
     ///
     /// Panics if:
-    /// - Data timestamps are not in ascending order
-    /// - Record batches are empty after conversion
-    /// - Required metadata is missing from the schema
+    /// - Data timestamps are not in ascending order.
+    /// - Record batches are empty after conversion.
+    /// - Required metadata is missing from the schema.
     ///
     /// # Examples
     ///
@@ -438,6 +449,7 @@ impl ParquetDataCatalog {
         data: Vec<T>,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
+        skip_disjoint_check: Option<bool>,
     ) -> anyhow::Result<PathBuf>
     where
         T: HasTsInit + EncodeToRecordBatch + CatalogPathPrefix,
@@ -479,10 +491,13 @@ impl ParquetDataCatalog {
             )
             .await
         })?;
-        let intervals = self.get_directory_intervals(&directory)?;
 
-        if !are_intervals_disjoint(&intervals) {
-            anyhow::bail!("Intervals are not disjoint after writing a new file");
+        if !skip_disjoint_check.unwrap_or(false) {
+            let intervals = self.get_directory_intervals(&directory)?;
+
+            if !are_intervals_disjoint(&intervals) {
+                anyhow::bail!("Intervals are not disjoint after writing a new file");
+            }
         }
 
         Ok(path)
@@ -510,9 +525,9 @@ impl ParquetDataCatalog {
     /// # Errors
     ///
     /// This function will return an error if:
-    /// - JSON serialization fails
-    /// - Object store write operations fail
-    /// - File path construction fails
+    /// - JSON serialization fails.
+    /// - Object store write operations fail.
+    /// - File path construction fails.
     ///
     /// # Panics
     ///
@@ -603,7 +618,10 @@ impl ParquetDataCatalog {
     /// # Panics
     ///
     /// Panics if any timestamp is less than the previous timestamp.
-    fn check_ascending_timestamps<T: HasTsInit>(data: &[T], type_name: &str) -> anyhow::Result<()> {
+    pub fn check_ascending_timestamps<T: HasTsInit>(
+        data: &[T],
+        type_name: &str,
+    ) -> anyhow::Result<()> {
         if !data.windows(2).all(|w| w[0].ts_init() <= w[1].ts_init()) {
             anyhow::bail!("{type_name} timestamps must be in ascending order");
         }
@@ -622,7 +640,7 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `data`: Vector of data records to convert
+    /// - `data`: Vector of data records to convert.
     ///
     /// # Returns
     ///
@@ -723,8 +741,50 @@ impl ParquetDataCatalog {
         Ok(())
     }
 
-    /// Helper method to list parquet files in a directory
-    fn list_parquet_files(&self, directory: &str) -> anyhow::Result<Vec<String>> {
+    /// Lists all Parquet files in a specified directory.
+    ///
+    /// This method scans a directory and returns the full paths of all files with the `.parquet`
+    /// extension. It works with both local filesystems and remote object stores, making it
+    /// suitable for various storage backends.
+    ///
+    /// # Parameters
+    ///
+    /// - `directory`: The directory path to scan for Parquet files.
+    ///
+    /// # Returns
+    ///
+    /// Returns a vector of full file paths (as strings) for all Parquet files found in the directory.
+    /// The paths are relative to the object store root and suitable for use with object store operations.
+    /// Returns an empty vector if the directory doesn't exist or contains no Parquet files.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - Object store listing operations fail.
+    /// - Directory access is denied.
+    /// - Network issues occur (for remote object stores).
+    ///
+    /// # Notes
+    ///
+    /// - Only files ending with `.parquet` are included.
+    /// - Subdirectories are not recursively scanned.
+    /// - File paths are returned in the order provided by the object store.
+    /// - Works with all supported object store backends (local, S3, GCS, Azure, etc.).
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
+    ///
+    /// let catalog = ParquetDataCatalog::new(/* ... */);
+    /// let files = catalog.list_parquet_files("data/quotes/EURUSD")?;
+    ///
+    /// for file in files {
+    ///     println!("Found Parquet file: {}", file);
+    /// }
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn list_parquet_files(&self, directory: &str) -> anyhow::Result<Vec<String>> {
         self.execute_async(async {
             let prefix = ObjectPath::from(format!("{directory}/"));
             let mut stream = self.object_store.list(Some(&prefix));
@@ -741,23 +801,55 @@ impl ParquetDataCatalog {
     }
 
     /// Helper method to reconstruct full URI for remote object store paths
-    fn reconstruct_full_uri(&self, path_str: &str) -> String {
+    #[must_use]
+    pub fn reconstruct_full_uri(&self, path_str: &str) -> String {
         // Check if this is a remote URI scheme that needs reconstruction
         if self.is_remote_uri() {
             // Extract the base URL (scheme + host) from the original URI
-            if let Ok(url) = url::Url::parse(&self.original_uri) {
-                if let Some(host) = url.host_str() {
-                    return format!("{}://{}/{}", url.scheme(), host, path_str);
-                }
+            if let Ok(url) = url::Url::parse(&self.original_uri)
+                && let Some(host) = url.host_str()
+            {
+                return format!("{}://{}/{}", url.scheme(), host, path_str);
             }
         }
 
-        // For local paths or if URL parsing fails, return the path as-is
-        path_str.to_string()
+        // For local paths, extract the directory from the original URI
+        if self.original_uri.starts_with("file://") {
+            // Extract the path from the file:// URI
+            if let Ok(url) = url::Url::parse(&self.original_uri)
+                && let Ok(base_path) = url.to_file_path()
+            {
+                // Use platform-appropriate path separator for display
+                // but object store paths always use forward slashes
+                let base_str = base_path.to_string_lossy();
+                return self.join_paths(&base_str, path_str);
+            }
+        }
+
+        // For local paths without file:// prefix, use the original URI as base
+        if self.base_path.is_empty() {
+            // If base_path is empty and not a file URI, try using original_uri as base
+            if self.original_uri.contains("://") {
+                // Fallback: return the path as-is
+                path_str.to_string()
+            } else {
+                self.join_paths(self.original_uri.trim_end_matches('/'), path_str)
+            }
+        } else {
+            let base = self.base_path.trim_end_matches('/');
+            self.join_paths(base, path_str)
+        }
+    }
+
+    /// Helper method to join paths using forward slashes (object store convention)
+    #[must_use]
+    fn join_paths(&self, base: &str, path: &str) -> String {
+        make_object_store_path(base, &[path])
     }
 
     /// Helper method to check if the original URI uses a remote object store scheme
-    fn is_remote_uri(&self) -> bool {
+    #[must_use]
+    pub fn is_remote_uri(&self) -> bool {
         self.original_uri.starts_with("s3://")
             || self.original_uri.starts_with("gs://")
             || self.original_uri.starts_with("gcs://")
@@ -767,405 +859,81 @@ impl ParquetDataCatalog {
             || self.original_uri.starts_with("https://")
     }
 
-    /// Consolidates all data files in the catalog by merging multiple files into single files per directory.
+    /// Executes a query against the catalog to retrieve market data of a specific type.
     ///
-    /// This method finds all leaf data directories in the catalog and consolidates the Parquet files
-    /// within each directory. Consolidation improves query performance by reducing the number of files
-    /// that need to be read and can also reduce storage overhead.
+    /// This is the primary method for querying data from the catalog. It registers the appropriate
+    /// object store with the DataFusion session, finds all relevant Parquet files, and executes
+    /// the query across them. The method supports filtering by instrument IDs, time ranges, and
+    /// custom SQL WHERE clauses.
+    ///
+    /// # Type Parameters
+    ///
+    /// - `T`: The data type to query, must implement required traits for deserialization and cataloging.
     ///
     /// # Parameters
     ///
-    /// - `start`: Optional start timestamp to limit consolidation to files within this range.
-    /// - `end`: Optional end timestamp to limit consolidation to files within this range.
-    /// - `ensure_contiguous_files`: Whether to validate that consolidated intervals are contiguous (default: true).
+    /// - `instrument_ids`: Optional list of instrument IDs to filter by. If `None`, queries all instruments.
+    /// - `start`: Optional start timestamp for filtering (inclusive). If `None`, queries from the beginning.
+    /// - `end`: Optional end timestamp for filtering (inclusive). If `None`, queries to the end.
+    /// - `where_clause`: Optional SQL WHERE clause for additional filtering (e.g., "price > 100").
     ///
     /// # Returns
     ///
-    /// Returns `Ok(())` on success, or an error if consolidation fails for any directory.
+    /// Returns a [`QueryResult`] containing the query execution context and data.
+    /// Use [`QueryResult::collect()`] to retrieve the actual data records.
     ///
     /// # Errors
     ///
     /// This function will return an error if:
-    /// - Directory listing fails.
-    /// - File consolidation operations fail.
-    /// - Interval validation fails (when `ensure_contiguous_files` is true).
+    /// - Object store registration fails for remote URIs.
+    /// - File discovery fails.
+    /// - DataFusion query execution fails.
+    /// - Data deserialization fails.
+    ///
+    /// # Performance Notes
+    ///
+    /// - Files are automatically filtered by timestamp ranges before querying.
+    /// - DataFusion optimizes queries across multiple Parquet files.
+    /// - Use specific instrument IDs and time ranges to improve performance.
+    /// - WHERE clauses are pushed down to the Parquet reader when possible.
     ///
     /// # Examples
     ///
     /// ```rust,no_run
+    /// use nautilus_model::data::QuoteTick;
     /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     /// use nautilus_core::UnixNanos;
     ///
-    /// let catalog = ParquetDataCatalog::new(/* ... */);
+    /// let mut catalog = ParquetDataCatalog::new(/* ... */);
     ///
-    /// // Consolidate all files in the catalog
-    /// catalog.consolidate_catalog(None, None, None)?;
+    /// // Query all quote data
+    /// let result = catalog.query::<QuoteTick>(None, None, None, None)?;
+    /// let quotes = result.collect();
     ///
-    /// // Consolidate only files within a specific time range
-    /// catalog.consolidate_catalog(
+    /// // Query specific instruments within a time range
+    /// let result = catalog.query::<QuoteTick>(
+    ///     Some(vec!["EURUSD".to_string(), "GBPUSD".to_string()]),
     ///     Some(UnixNanos::from(1609459200000000000)),
     ///     Some(UnixNanos::from(1609545600000000000)),
-    ///     Some(true)
-    /// )?;
-    /// # Ok::<(), anyhow::Error>(())
-    /// ```
-    pub fn consolidate_catalog(
-        &self,
-        start: Option<UnixNanos>,
-        end: Option<UnixNanos>,
-        ensure_contiguous_files: Option<bool>,
-    ) -> anyhow::Result<()> {
-        let leaf_directories = self.find_leaf_data_directories()?;
-
-        for directory in leaf_directories {
-            self.consolidate_directory(&directory, start, end, ensure_contiguous_files)?;
-        }
-
-        Ok(())
-    }
-
-    /// Consolidates data files for a specific data type and instrument.
-    ///
-    /// This method consolidates Parquet files within a specific directory (defined by data type
-    /// and optional instrument ID) by merging multiple files into a single file. This improves
-    /// query performance and can reduce storage overhead.
-    ///
-    /// # Parameters
-    ///
-    /// - `type_name`: The data type directory name (e.g., "quotes", "trades", "bars").
-    /// - `instrument_id`: Optional instrument ID to target a specific instrument's data.
-    /// - `start`: Optional start timestamp to limit consolidation to files within this range.
-    /// - `end`: Optional end timestamp to limit consolidation to files within this range.
-    /// - `ensure_contiguous_files`: Whether to validate that consolidated intervals are contiguous (default: true).
-    ///
-    /// # Returns
-    ///
-    /// Returns `Ok(())` on success, or an error if consolidation fails.
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if:
-    /// - The directory path cannot be constructed
-    /// - File consolidation operations fail
-    /// - Interval validation fails (when `ensure_contiguous_files` is true)
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
-    /// use nautilus_core::UnixNanos;
-    ///
-    /// let catalog = ParquetDataCatalog::new(/* ... */);
-    ///
-    /// // Consolidate all quote files for a specific instrument
-    /// catalog.consolidate_data(
-    ///     "quotes",
-    ///     Some("BTCUSD".to_string()),
-    ///     None,
-    ///     None,
     ///     None
     /// )?;
     ///
-    /// // Consolidate trade files within a time range
-    /// catalog.consolidate_data(
-    ///     "trades",
+    /// // Query with custom WHERE clause
+    /// let result = catalog.query::<QuoteTick>(
+    ///     Some(vec!["EURUSD".to_string()]),
     ///     None,
-    ///     Some(UnixNanos::from(1609459200000000000)),
-    ///     Some(UnixNanos::from(1609545600000000000)),
-    ///     Some(true)
+    ///     None,
+    ///     Some("bid_price > 1.2000")
     /// )?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
-    pub fn consolidate_data(
-        &self,
-        type_name: &str,
-        instrument_id: Option<String>,
-        start: Option<UnixNanos>,
-        end: Option<UnixNanos>,
-        ensure_contiguous_files: Option<bool>,
-    ) -> anyhow::Result<()> {
-        let directory = self.make_path(type_name, instrument_id)?;
-        self.consolidate_directory(&directory, start, end, ensure_contiguous_files)
-    }
-
-    fn consolidate_directory(
-        &self,
-        directory: &str,
-        start: Option<UnixNanos>,
-        end: Option<UnixNanos>,
-        ensure_contiguous_files: Option<bool>,
-    ) -> anyhow::Result<()> {
-        let parquet_files = self.list_parquet_files(directory)?;
-
-        if parquet_files.len() <= 1 {
-            return Ok(());
-        }
-
-        let mut files_to_consolidate = Vec::new();
-        let mut intervals = Vec::new();
-        let start = start.map(|t| t.as_u64());
-        let end = end.map(|t| t.as_u64());
-
-        for file in parquet_files {
-            if let Some(interval) = parse_filename_timestamps(&file) {
-                let (interval_start, interval_end) = interval;
-                let include_file = match (start, end) {
-                    (Some(s), Some(e)) => interval_start >= s && interval_end <= e,
-                    (Some(s), None) => interval_start >= s,
-                    (None, Some(e)) => interval_end <= e,
-                    (None, None) => true,
-                };
-
-                if include_file {
-                    files_to_consolidate.push(file);
-                    intervals.push(interval);
-                }
-            }
-        }
-
-        intervals.sort_by_key(|&(start, _)| start);
-
-        if !intervals.is_empty() {
-            let file_name = timestamps_to_filename(
-                UnixNanos::from(intervals[0].0),
-                UnixNanos::from(intervals.last().unwrap().1),
-            );
-            let path = format!("{directory}/{file_name}");
-
-            // Convert string paths to ObjectPath for the function call
-            let object_paths: Vec<ObjectPath> = files_to_consolidate
-                .iter()
-                .map(|path| ObjectPath::from(path.as_str()))
-                .collect();
-
-            self.execute_async(async {
-                combine_parquet_files_from_object_store(
-                    self.object_store.clone(),
-                    object_paths,
-                    &ObjectPath::from(path),
-                    Some(self.compression),
-                    Some(self.max_row_group_size),
-                )
-                .await
-            })?;
-        }
-
-        if ensure_contiguous_files.unwrap_or(true) && !are_intervals_contiguous(&intervals) {
-            anyhow::bail!("Intervals are not disjoint after consolidating a directory");
-        }
-
-        Ok(())
-    }
-
-    /// Resets the filenames of all Parquet files in the catalog to match their actual content timestamps.
-    ///
-    /// This method scans all leaf data directories in the catalog and renames files based on
-    /// the actual timestamp range of their content. This is useful when files have been
-    /// modified or when filename conventions have changed.
-    ///
-    /// # Returns
-    ///
-    /// Returns `Ok(())` on success, or an error if the operation fails.
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if:
-    /// - Directory listing fails
-    /// - File metadata reading fails
-    /// - File rename operations fail
-    /// - Interval validation fails after renaming
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
-    ///
-    /// let catalog = ParquetDataCatalog::new(/* ... */);
-    ///
-    /// // Reset all filenames in the catalog
-    /// catalog.reset_catalog_file_names()?;
-    /// # Ok::<(), anyhow::Error>(())
-    /// ```
-    pub fn reset_catalog_file_names(&self) -> anyhow::Result<()> {
-        let leaf_directories = self.find_leaf_data_directories()?;
-
-        for directory in leaf_directories {
-            self.reset_file_names(&directory)?;
-        }
-
-        Ok(())
-    }
-
-    /// Resets the filenames of Parquet files for a specific data type and instrument ID.
-    ///
-    /// This method renames files in a specific directory based on the actual timestamp
-    /// range of their content. This is useful for correcting filenames after data
-    /// modifications or when filename conventions have changed.
-    ///
-    /// # Parameters
-    ///
-    /// - `data_cls`: The data type directory name (e.g., "quotes", "trades").
-    /// - `instrument_id`: Optional instrument ID to target a specific instrument's data.
-    ///
-    /// # Returns
-    ///
-    /// Returns `Ok(())` on success, or an error if the operation fails.
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if:
-    /// - The directory path cannot be constructed
-    /// - File metadata reading fails
-    /// - File rename operations fail
-    /// - Interval validation fails after renaming
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
-    ///
-    /// let catalog = ParquetDataCatalog::new(/* ... */);
-    ///
-    /// // Reset filenames for all quote files
-    /// catalog.reset_data_file_names("quotes", None)?;
-    ///
-    /// // Reset filenames for a specific instrument's trade files
-    /// catalog.reset_data_file_names("trades", Some("BTCUSD".to_string()))?;
-    /// # Ok::<(), anyhow::Error>(())
-    /// ```
-    pub fn reset_data_file_names(
-        &self,
-        data_cls: &str,
-        instrument_id: Option<String>,
-    ) -> anyhow::Result<()> {
-        let directory = self.make_path(data_cls, instrument_id)?;
-        self.reset_file_names(&directory)
-    }
-
-    /// Reset the filenames of parquet files in a directory
-    fn reset_file_names(&self, directory: &str) -> anyhow::Result<()> {
-        let parquet_files = self.list_parquet_files(directory)?;
-
-        for file in parquet_files {
-            let object_path = ObjectPath::from(file.as_str());
-            let (first_ts, last_ts) = self.execute_async(async {
-                min_max_from_parquet_metadata_object_store(
-                    self.object_store.clone(),
-                    &object_path,
-                    "ts_init",
-                )
-                .await
-            })?;
-
-            let new_filename =
-                timestamps_to_filename(UnixNanos::from(first_ts), UnixNanos::from(last_ts));
-            let new_file_path = format!("{directory}/{new_filename}");
-            let new_object_path = ObjectPath::from(new_file_path);
-
-            self.move_file(&object_path, &new_object_path)?;
-        }
-
-        let intervals = self.get_directory_intervals(directory)?;
-
-        if !are_intervals_disjoint(&intervals) {
-            anyhow::bail!("Intervals are not disjoint after resetting file names");
-        }
-
-        Ok(())
-    }
-
-    /// Finds all leaf data directories in the catalog.
-    ///
-    /// A leaf directory is one that contains data files but no subdirectories.
-    /// This method is used to identify directories that can be processed for
-    /// consolidation or other operations.
-    ///
-    /// # Returns
-    ///
-    /// Returns a vector of directory path strings representing leaf directories,
-    /// or an error if directory traversal fails.
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if:
-    /// - Object store listing operations fail
-    /// - Directory structure cannot be analyzed
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
-    ///
-    /// let catalog = ParquetDataCatalog::new(/* ... */);
-    ///
-    /// let leaf_dirs = catalog.find_leaf_data_directories()?;
-    /// for dir in leaf_dirs {
-    ///     println!("Found leaf directory: {}", dir);
-    /// }
-    /// # Ok::<(), anyhow::Error>(())
-    /// ```
-    pub fn find_leaf_data_directories(&self) -> anyhow::Result<Vec<String>> {
-        let data_dir = if self.base_path.is_empty() {
-            "data".to_string()
-        } else {
-            format!("{}/data", self.base_path)
-        };
-
-        let leaf_dirs = self.execute_async(async {
-            let mut all_paths = std::collections::HashSet::new();
-            let mut directories = std::collections::HashSet::new();
-            let mut files_in_dirs = std::collections::HashMap::new();
-
-            // List all objects under the data directory
-            let prefix = ObjectPath::from(format!("{data_dir}/"));
-            let mut stream = self.object_store.list(Some(&prefix));
-
-            while let Some(object) = stream.next().await {
-                let object = object?;
-                let path_str = object.location.to_string();
-                all_paths.insert(path_str.clone());
-
-                // Extract directory path
-                if let Some(parent) = std::path::Path::new(&path_str).parent() {
-                    let parent_str = parent.to_string_lossy().to_string();
-                    directories.insert(parent_str.clone());
-
-                    // Track files in each directory
-                    files_in_dirs
-                        .entry(parent_str)
-                        .or_insert_with(Vec::new)
-                        .push(path_str);
-                }
-            }
-
-            // Find leaf directories (directories with files but no subdirectories)
-            let mut leaf_dirs = Vec::new();
-            for dir in &directories {
-                let has_files = files_in_dirs
-                    .get(dir)
-                    .is_some_and(|files| !files.is_empty());
-                let has_subdirs = directories
-                    .iter()
-                    .any(|d| d.starts_with(&format!("{dir}/")) && d != dir);
-
-                if has_files && !has_subdirs {
-                    leaf_dirs.push(dir.clone());
-                }
-            }
-
-            Ok::<Vec<String>, anyhow::Error>(leaf_dirs)
-        })?;
-
-        Ok(leaf_dirs)
-    }
-
-    /// Query data loaded in the catalog
     pub fn query<T>(
         &mut self,
         instrument_ids: Option<Vec<String>>,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         where_clause: Option<&str>,
+        files: Option<Vec<String>>,
     ) -> anyhow::Result<QueryResult>
     where
         T: DecodeDataFromRecordBatch + CatalogPathPrefix,
@@ -1181,17 +949,141 @@ impl ParquetDataCatalog {
                 .register_object_store(&base_url, self.object_store.clone());
         }
 
-        let files_list = self.query_files(T::path_prefix(), instrument_ids, start, end)?;
+        let files_list = if let Some(files) = files {
+            files
+        } else {
+            self.query_files(T::path_prefix(), instrument_ids, start, end)?
+        };
 
-        for (idx, file_uri) in files_list.iter().enumerate() {
-            let table_name = format!("{}_{}", T::path_prefix(), idx);
+        for file_uri in &files_list {
+            // Extract identifier from file path and filename to create meaningful table names
+            let identifier = extract_identifier_from_path(file_uri);
+            let safe_sql_identifier = make_sql_safe_identifier(&identifier);
+            let safe_filename = extract_sql_safe_filename(file_uri);
+
+            // Create table name from path_prefix, identifier, and filename
+            let table_name = format!(
+                "{}_{}_{}",
+                T::path_prefix(),
+                safe_sql_identifier,
+                safe_filename
+            );
             let query = build_query(&table_name, start, end, where_clause);
 
+            // Convert object store path to filesystem path for DataFusion
+            // Only apply reconstruction if the path is not already absolute
+            let resolved_path = if file_uri.starts_with('/') {
+                // Path is already absolute, use as-is
+                file_uri.clone()
+            } else {
+                // Path is relative, reconstruct full URI
+                self.reconstruct_full_uri(file_uri)
+            };
             self.session
-                .add_file::<T>(&table_name, file_uri, Some(&query))?;
+                .add_file::<T>(&table_name, &resolved_path, Some(&query))?;
         }
 
         Ok(self.session.get_query_result())
+    }
+
+    /// Queries typed data from the catalog and returns results as a strongly-typed vector.
+    ///
+    /// This is a convenience method that wraps the generic `query` method and automatically
+    /// collects and converts the results into a vector of the specific data type. It handles
+    /// the type conversion from the generic [`Data`] enum to the concrete type `T`.
+    ///
+    /// # Type Parameters
+    ///
+    /// - `T`: The specific data type to query and return. Must implement required traits for
+    ///   deserialization, cataloging, and conversion from the [`Data`] enum.
+    ///
+    /// # Parameters
+    ///
+    /// - `instrument_ids`: Optional list of instrument IDs to filter by. If `None`, queries all instruments.
+    ///   For exact matches, provide the full instrument ID. For bars, partial matches are supported.
+    /// - `start`: Optional start timestamp for filtering (inclusive). If `None`, queries from the beginning.
+    /// - `end`: Optional end timestamp for filtering (inclusive). If `None`, queries to the end.
+    /// - `where_clause`: Optional SQL WHERE clause for additional filtering. Use standard SQL syntax
+    ///   with column names matching the Parquet schema (e.g., "`bid_price` > 1.2000", "volume > 1000").
+    ///
+    /// # Returns
+    ///
+    /// Returns a vector of the specific data type `T`, sorted by timestamp. The vector will be
+    /// empty if no data matches the query criteria.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The underlying query execution fails.
+    /// - Data type conversion fails.
+    /// - Object store access fails.
+    /// - Invalid WHERE clause syntax is provided.
+    ///
+    /// # Performance Considerations
+    ///
+    /// - Use specific instrument IDs and time ranges to minimize data scanning.
+    /// - WHERE clauses are pushed down to Parquet readers when possible.
+    /// - Results are automatically sorted by timestamp during collection.
+    /// - Memory usage scales with the amount of data returned.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use nautilus_model::data::{QuoteTick, TradeTick, Bar};
+    /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
+    /// use nautilus_core::UnixNanos;
+    ///
+    /// let mut catalog = ParquetDataCatalog::new(/* ... */);
+    ///
+    /// // Query all quotes for a specific instrument
+    /// let quotes: Vec<QuoteTick> = catalog.query_typed_data(
+    ///     Some(vec!["EURUSD".to_string()]),
+    ///     None,
+    ///     None,
+    ///     None
+    /// )?;
+    ///
+    /// // Query trades within a specific time range
+    /// let trades: Vec<TradeTick> = catalog.query_typed_data(
+    ///     Some(vec!["BTCUSD".to_string()]),
+    ///     Some(UnixNanos::from(1609459200000000000)),
+    ///     Some(UnixNanos::from(1609545600000000000)),
+    ///     None
+    /// )?;
+    ///
+    /// // Query bars with volume filter
+    /// let bars: Vec<Bar> = catalog.query_typed_data(
+    ///     Some(vec!["AAPL".to_string()]),
+    ///     None,
+    ///     None,
+    ///     Some("volume > 1000000")
+    /// )?;
+    ///
+    /// // Query multiple instruments with price filter
+    /// let quotes: Vec<QuoteTick> = catalog.query_typed_data(
+    ///     Some(vec!["EURUSD".to_string(), "GBPUSD".to_string()]),
+    ///     None,
+    ///     None,
+    ///     Some("bid_price > 1.2000 AND ask_price < 1.3000")
+    /// )?;
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn query_typed_data<T>(
+        &mut self,
+        instrument_ids: Option<Vec<String>>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+        where_clause: Option<&str>,
+        files: Option<Vec<String>>,
+    ) -> anyhow::Result<Vec<T>>
+    where
+        T: DecodeDataFromRecordBatch + CatalogPathPrefix + TryFrom<Data>,
+    {
+        let query_result = self.query::<T>(instrument_ids, start, end, where_clause, files)?;
+        let all_data = query_result.collect();
+
+        // Convert Data enum variants to specific type T using to_variant
+        Ok(to_variant::<T>(all_data))
     }
 
     /// Queries all Parquet files for a specific data type and optional instrument IDs.
@@ -1307,7 +1199,7 @@ impl ParquetDataCatalog {
                         let dir_name = path_parts[path_parts.len() - 2];
                         safe_identifiers
                             .iter()
-                            .any(|safe_id| dir_name.starts_with(&format!("{}-", safe_id)))
+                            .any(|safe_id| dir_name.starts_with(&format!("{safe_id}-")))
                     } else {
                         false
                     }
@@ -1350,9 +1242,9 @@ impl ParquetDataCatalog {
     /// # Errors
     ///
     /// This function will return an error if:
-    /// - The directory path cannot be constructed
-    /// - Interval retrieval fails
-    /// - Gap calculation fails
+    /// - The directory path cannot be constructed.
+    /// - Interval retrieval fails.
+    /// - Gap calculation fails.
     ///
     /// # Examples
     ///
@@ -1405,8 +1297,8 @@ impl ParquetDataCatalog {
     /// # Errors
     ///
     /// This function will return an error if:
-    /// - The directory path cannot be constructed
-    /// - Interval retrieval fails
+    /// - The directory path cannot be constructed.
+    /// - Interval retrieval fails.
     ///
     /// # Examples
     ///
@@ -1484,8 +1376,49 @@ impl ParquetDataCatalog {
         self.get_directory_intervals(&directory)
     }
 
-    /// Get the time intervals covered by parquet files in a directory
-    fn get_directory_intervals(&self, directory: &str) -> anyhow::Result<Vec<(u64, u64)>> {
+    /// Gets the time intervals covered by Parquet files in a specific directory.
+    ///
+    /// This method scans a directory for Parquet files and extracts the timestamp ranges
+    /// from their filenames. It's used internally by other methods to determine data coverage
+    /// and is essential for interval-based operations like gap detection and consolidation.
+    ///
+    /// # Parameters
+    ///
+    /// - `directory`: The directory path to scan for Parquet files.
+    ///
+    /// # Returns
+    ///
+    /// Returns a vector of (start, end) tuples representing the time intervals covered
+    /// by files in the directory, sorted by start timestamp. Returns an empty vector
+    /// if the directory doesn't exist or contains no valid Parquet files.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - Object store listing operations fail.
+    /// - Directory access is denied.
+    ///
+    /// # Notes
+    ///
+    /// - Only files with valid timestamp-based filenames are included.
+    /// - Files with unparseable names are silently ignored.
+    /// - The method works with both local and remote object stores.
+    /// - Results are automatically sorted by start timestamp.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
+    ///
+    /// let catalog = ParquetDataCatalog::new(/* ... */);
+    /// let intervals = catalog.get_directory_intervals("data/quotes/EURUSD")?;
+    ///
+    /// for (start, end) in intervals {
+    ///     println!("File covers {} to {}", start, end);
+    /// }
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn get_directory_intervals(&self, directory: &str) -> anyhow::Result<Vec<(u64, u64)>> {
         let mut intervals = Vec::new();
 
         // Use object store for all operations
@@ -1502,10 +1435,10 @@ impl ParquetDataCatalog {
             match result {
                 Ok(object) => {
                     let path_str = object.location.to_string();
-                    if path_str.ends_with(".parquet") {
-                        if let Some(interval) = parse_filename_timestamps(&path_str) {
-                            intervals.push(interval);
-                        }
+                    if path_str.ends_with(".parquet")
+                        && let Some(interval) = parse_filename_timestamps(&path_str)
+                    {
+                        intervals.push(interval);
                     }
                 }
                 Err(_) => {
@@ -1520,20 +1453,67 @@ impl ParquetDataCatalog {
         Ok(intervals)
     }
 
-    /// Create a directory path for a data type and instrument ID
-    fn make_path(&self, type_name: &str, instrument_id: Option<String>) -> anyhow::Result<String> {
-        let mut path = if self.base_path.is_empty() {
-            format!("data/{type_name}")
-        } else {
-            // Remove trailing slash from base_path to avoid double slashes
-            let base_path = self.base_path.trim_end_matches('/');
-            format!("{base_path}/data/{type_name}")
-        };
+    /// Constructs a directory path for storing data of a specific type and instrument.
+    ///
+    /// This method builds the hierarchical directory structure used by the catalog to organize
+    /// data by type and instrument. The path follows the pattern: `{base_path}/data/{type_name}/{instrument_id}`.
+    /// Instrument IDs are automatically converted to URI-safe format by removing forward slashes.
+    ///
+    /// # Parameters
+    ///
+    /// - `type_name`: The data type directory name (e.g., "quotes", "trades", "bars").
+    /// - `instrument_id`: Optional instrument ID. If provided, creates a subdirectory for the instrument.
+    ///   If `None`, returns the path to the data type directory.
+    ///
+    /// # Returns
+    ///
+    /// Returns the constructed directory path as a string, or an error if path construction fails.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The instrument ID contains invalid characters that cannot be made URI-safe.
+    /// - Path construction fails due to system limitations.
+    ///
+    /// # Path Structure
+    ///
+    /// - Without instrument ID: `{base_path}/data/{type_name}`.
+    /// - With instrument ID: `{base_path}/data/{type_name}/{safe_instrument_id}`.
+    /// - If `base_path` is empty: `data/{type_name}[/{safe_instrument_id}]`.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
+    ///
+    /// let catalog = ParquetDataCatalog::new(/* ... */);
+    ///
+    /// // Path for all quote data
+    /// let quotes_path = catalog.make_path("quotes", None)?;
+    /// // Returns: "/base/path/data/quotes"
+    ///
+    /// // Path for specific instrument quotes
+    /// let eurusd_quotes = catalog.make_path("quotes", Some("EUR/USD".to_string()))?;
+    /// // Returns: "/base/path/data/quotes/EURUSD" (slash removed)
+    ///
+    /// // Path for bar data with complex instrument ID
+    /// let bars_path = catalog.make_path("bars", Some("BTC/USD-1H".to_string()))?;
+    /// // Returns: "/base/path/data/bars/BTCUSD-1H"
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn make_path(
+        &self,
+        type_name: &str,
+        instrument_id: Option<String>,
+    ) -> anyhow::Result<String> {
+        let mut components = vec!["data".to_string(), type_name.to_string()];
 
         if let Some(id) = instrument_id {
-            path = format!("{}/{}", path, urisafe_instrument_id(&id));
+            let safe_id = urisafe_instrument_id(&id);
+            components.push(safe_id);
         }
 
+        let path = make_object_store_path_owned(&self.base_path, components);
         Ok(path)
     }
 
@@ -1559,25 +1539,67 @@ impl ParquetDataCatalog {
         self.move_file(&old_object_path, &new_object_path)
     }
 
-    /// Helper method to convert a path string to `ObjectPath`, handling `base_path`
-    fn to_object_path(&self, path: &str) -> ObjectPath {
+    /// Converts a catalog path string to an [`ObjectPath`] for object store operations.
+    ///
+    /// This method handles the conversion between catalog-relative paths and object store paths,
+    /// taking into account the catalog's base path configuration. It automatically strips the
+    /// base path prefix when present to create the correct object store path.
+    ///
+    /// # Parameters
+    ///
+    /// - `path`: The catalog path string to convert. Can be absolute or relative.
+    ///
+    /// # Returns
+    ///
+    /// Returns an [`ObjectPath`] suitable for use with object store operations.
+    ///
+    /// # Path Handling
+    ///
+    /// - If `base_path` is empty, the path is used as-is.
+    /// - If `base_path` is set, it's stripped from the path if present.
+    /// - Trailing slashes and backslashes are automatically handled.
+    /// - The resulting path is relative to the object store root.
+    /// - All paths are normalized to use forward slashes (object store convention).
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
+    ///
+    /// let catalog = ParquetDataCatalog::new(/* ... */);
+    ///
+    /// // Convert a full catalog path
+    /// let object_path = catalog.to_object_path("/base/data/quotes/file.parquet");
+    /// // Returns: ObjectPath("data/quotes/file.parquet") if base_path is "/base"
+    ///
+    /// // Convert a relative path
+    /// let object_path = catalog.to_object_path("data/trades/file.parquet");
+    /// // Returns: ObjectPath("data/trades/file.parquet")
+    /// ```
+    #[must_use]
+    pub fn to_object_path(&self, path: &str) -> ObjectPath {
+        // Normalize path separators to forward slashes for object store
+        let normalized_path = path.replace('\\', "/");
+
         if self.base_path.is_empty() {
-            return ObjectPath::from(path);
+            return ObjectPath::from(normalized_path);
         }
 
-        let base = self.base_path.trim_end_matches('/');
+        // Normalize base path separators as well
+        let normalized_base = self.base_path.replace('\\', "/");
+        let base = normalized_base.trim_end_matches('/');
 
         // Remove the catalog base prefix if present
-        let without_base = path
+        let without_base = normalized_path
             .strip_prefix(&format!("{base}/"))
-            .or_else(|| path.strip_prefix(base))
-            .unwrap_or(path);
+            .or_else(|| normalized_path.strip_prefix(base))
+            .unwrap_or(&normalized_path);
 
         ObjectPath::from(without_base)
     }
 
     /// Helper method to move a file using object store rename operation
-    fn move_file(&self, old_path: &ObjectPath, new_path: &ObjectPath) -> anyhow::Result<()> {
+    pub fn move_file(&self, old_path: &ObjectPath, new_path: &ObjectPath) -> anyhow::Result<()> {
         self.execute_async(async {
             self.object_store
                 .rename(old_path, new_path)
@@ -1587,7 +1609,7 @@ impl ParquetDataCatalog {
     }
 
     /// Helper method to execute async operations with a runtime
-    fn execute_async<F, R>(&self, future: F) -> anyhow::Result<R>
+    pub fn execute_async<F, R>(&self, future: F) -> anyhow::Result<R>
     where
         F: std::future::Future<Output = anyhow::Result<R>>,
     {
@@ -1653,10 +1675,6 @@ impl_catalog_path_prefix!(IndexPriceUpdate, "index_prices");
 impl_catalog_path_prefix!(MarkPriceUpdate, "mark_prices");
 impl_catalog_path_prefix!(InstrumentClose, "instrument_closes");
 
-////////////////////////////////////////////////////////////////////////////////
-// Helper functions for filename operations
-////////////////////////////////////////////////////////////////////////////////
-
 /// Converts timestamps to a filename using ISO 8601 format.
 ///
 /// This function converts two Unix nanosecond timestamps to a filename that uses
@@ -1683,7 +1701,8 @@ impl_catalog_path_prefix!(InstrumentClose, "instrument_closes");
 /// );
 /// // Returns something like: "2021-01-01T00-00-00-000000000Z_2021-01-02T00-00-00-000000000Z.parquet"
 /// ```
-fn timestamps_to_filename(timestamp_1: UnixNanos, timestamp_2: UnixNanos) -> String {
+#[must_use]
+pub fn timestamps_to_filename(timestamp_1: UnixNanos, timestamp_2: UnixNanos) -> String {
     let datetime_1 = iso_timestamp_to_file_timestamp(&unix_nanos_to_iso8601(timestamp_1));
     let datetime_2 = iso_timestamp_to_file_timestamp(&unix_nanos_to_iso8601(timestamp_2));
 
@@ -1780,10 +1799,6 @@ fn iso_to_unix_nanos(iso_timestamp: &str) -> anyhow::Result<u64> {
     Ok(iso8601_to_unix_nanos(iso_timestamp.to_string())?.into())
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Helper functions for interval operations
-////////////////////////////////////////////////////////////////////////////////
-
 /// Converts an instrument ID to a URI-safe format by removing forward slashes.
 ///
 /// Some instrument IDs contain forward slashes (e.g., "BTC/USD") which are not
@@ -1807,6 +1822,236 @@ fn iso_to_unix_nanos(iso_timestamp: &str) -> anyhow::Result<u64> {
 /// ```
 fn urisafe_instrument_id(instrument_id: &str) -> String {
     instrument_id.replace('/', "")
+}
+
+/// Extracts the identifier from a file path.
+///
+/// The identifier is typically the second-to-last path component (directory name).
+/// For example, from "`data/quote_tick/EURUSD/file.parquet`", extracts "EURUSD".
+#[must_use]
+pub fn extract_identifier_from_path(file_path: &str) -> String {
+    let path_parts: Vec<&str> = file_path.split('/').collect();
+    if path_parts.len() >= 2 {
+        path_parts[path_parts.len() - 2].to_string()
+    } else {
+        "unknown".to_string()
+    }
+}
+
+/// Makes an identifier safe for use in SQL table names.
+///
+/// Removes forward slashes, replaces dots, hyphens, and spaces with underscores, and converts to lowercase.
+#[must_use]
+pub fn make_sql_safe_identifier(identifier: &str) -> String {
+    urisafe_instrument_id(identifier)
+        .replace(['.', '-', ' '], "_")
+        .to_lowercase()
+}
+
+/// Extracts the filename from a file path and makes it SQL-safe.
+///
+/// For example, from "data/quote_tick/EURUSD/2021-01-01T00-00-00-000000000Z_2021-01-02T00-00-00-000000000Z.parquet",
+/// extracts "`2021_01_01t00_00_00_000000000z_2021_01_02t00_00_00_000000000z`".
+#[must_use]
+pub fn extract_sql_safe_filename(file_path: &str) -> String {
+    if file_path.is_empty() {
+        return "unknown_file".to_string();
+    }
+
+    let filename = file_path.split('/').next_back().unwrap_or("unknown_file");
+
+    // Remove .parquet extension
+    let name_without_ext = if let Some(dot_pos) = filename.rfind(".parquet") {
+        &filename[..dot_pos]
+    } else {
+        filename
+    };
+
+    // Remove characters that can pose problems: hyphens, colons, etc.
+    name_without_ext
+        .replace(['-', ':', '.'], "_")
+        .to_lowercase()
+}
+
+/// Creates a platform-appropriate local path using `PathBuf`.
+///
+/// This function constructs file system paths using the platform's native path separators.
+/// Use this for local file operations that need to work with the actual file system.
+///
+/// # Arguments
+///
+/// * `base_path` - The base directory path
+/// * `components` - Path components to join
+///
+/// # Returns
+///
+/// A `PathBuf` with platform-appropriate separators
+///
+/// # Examples
+///
+/// ```rust
+/// # use nautilus_persistence::backend::catalog::make_local_path;
+/// let path = make_local_path("/base", &["data", "quotes", "EURUSD"]);
+/// // On Unix: "/base/data/quotes/EURUSD"
+/// // On Windows: "\base\data\quotes\EURUSD"
+/// ```
+pub fn make_local_path<P: AsRef<Path>>(base_path: P, components: &[&str]) -> PathBuf {
+    let mut path = PathBuf::from(base_path.as_ref());
+    for component in components {
+        path.push(component);
+    }
+    path
+}
+
+/// Creates an object store path using forward slashes.
+///
+/// Object stores (S3, GCS, etc.) always expect forward slashes regardless of platform.
+/// Use this when creating paths for object store operations.
+///
+/// # Arguments
+///
+/// * `base_path` - The base path (can be empty)
+/// * `components` - Path components to join
+///
+/// # Returns
+///
+/// A string path with forward slash separators
+///
+/// # Examples
+///
+/// ```rust
+/// # use nautilus_persistence::backend::catalog::make_object_store_path;
+/// let path = make_object_store_path("base", &["data", "quotes", "EURUSD"]);
+/// assert_eq!(path, "base/data/quotes/EURUSD");
+/// ```
+#[must_use]
+pub fn make_object_store_path(base_path: &str, components: &[&str]) -> String {
+    let mut parts = Vec::new();
+
+    if !base_path.is_empty() {
+        let normalized_base = base_path
+            .replace('\\', "/")
+            .trim_end_matches('/')
+            .to_string();
+        if !normalized_base.is_empty() {
+            parts.push(normalized_base);
+        }
+    }
+
+    for component in components {
+        let normalized_component = component
+            .replace('\\', "/")
+            .trim_start_matches('/')
+            .trim_end_matches('/')
+            .to_string();
+        if !normalized_component.is_empty() {
+            parts.push(normalized_component);
+        }
+    }
+
+    parts.join("/")
+}
+
+/// Creates an object store path using forward slashes with owned strings.
+///
+/// This variant accepts owned strings to avoid lifetime issues.
+///
+/// # Arguments
+///
+/// * `base_path` - The base path (can be empty)
+/// * `components` - Path components to join (owned strings)
+///
+/// # Returns
+///
+/// A string path with forward slash separators
+#[must_use]
+pub fn make_object_store_path_owned(base_path: &str, components: Vec<String>) -> String {
+    let mut parts = Vec::new();
+
+    if !base_path.is_empty() {
+        let normalized_base = base_path
+            .replace('\\', "/")
+            .trim_end_matches('/')
+            .to_string();
+        if !normalized_base.is_empty() {
+            parts.push(normalized_base);
+        }
+    }
+
+    for component in components {
+        let normalized_component = component
+            .replace('\\', "/")
+            .trim_start_matches('/')
+            .trim_end_matches('/')
+            .to_string();
+        if !normalized_component.is_empty() {
+            parts.push(normalized_component);
+        }
+    }
+
+    parts.join("/")
+}
+
+/// Converts a local `PathBuf` to an object store path string.
+///
+/// This function normalizes a local file system path to the forward-slash format
+/// expected by object stores, handling platform differences.
+///
+/// # Arguments
+///
+/// * `local_path` - The local `PathBuf` to convert
+///
+/// # Returns
+///
+/// A string with forward slash separators suitable for object store operations
+///
+/// # Examples
+///
+/// ```rust
+/// # use std::path::PathBuf;
+/// # use nautilus_persistence::backend::catalog::local_to_object_store_path;
+/// let local_path = PathBuf::from("data").join("quotes").join("EURUSD");
+/// let object_path = local_to_object_store_path(&local_path);
+/// assert_eq!(object_path, "data/quotes/EURUSD");
+/// ```
+#[must_use]
+pub fn local_to_object_store_path(local_path: &Path) -> String {
+    local_path.to_string_lossy().replace('\\', "/")
+}
+
+/// Extracts path components using platform-appropriate path parsing.
+///
+/// This function safely parses a path into its components, handling both
+/// local file system paths and object store paths correctly.
+///
+/// # Arguments
+///
+/// * `path_str` - The path string to parse
+///
+/// # Returns
+///
+/// A vector of path components
+///
+/// # Examples
+///
+/// ```rust
+/// # use nautilus_persistence::backend::catalog::extract_path_components;
+/// let components = extract_path_components("data/quotes/EURUSD");
+/// assert_eq!(components, vec!["data", "quotes", "EURUSD"]);
+///
+/// // Works with both separators
+/// let components = extract_path_components("data\\quotes\\EURUSD");
+/// assert_eq!(components, vec!["data", "quotes", "EURUSD"]);
+/// ```
+#[must_use]
+pub fn extract_path_components(path_str: &str) -> Vec<String> {
+    // Normalize separators and split
+    let normalized = path_str.replace('\\', "/");
+    normalized
+        .split('/')
+        .filter(|s| !s.is_empty())
+        .map(ToString::to_string)
+        .collect()
 }
 
 /// Checks if a filename's timestamp range intersects with a query interval.
@@ -1866,7 +2111,8 @@ fn query_intersects_filename(filename: &str, start: Option<u64>, end: Option<u64
 /// assert!(parse_filename_timestamps("2021-01-01T00-00-00-000000000Z_2021-01-02T00-00-00-000000000Z.parquet").is_some());
 /// assert_eq!(parse_filename_timestamps("invalid.parquet"), None);
 /// ```
-fn parse_filename_timestamps(filename: &str) -> Option<(u64, u64)> {
+#[must_use]
+pub fn parse_filename_timestamps(filename: &str) -> Option<(u64, u64)> {
     let path = Path::new(filename);
     let base_name = path.file_name()?.to_str()?;
     let base_filename = base_name.strip_suffix(".parquet")?;
@@ -1906,7 +2152,8 @@ fn parse_filename_timestamps(filename: &str) -> Option<(u64, u64)> {
 /// // Overlapping intervals
 /// assert!(!are_intervals_disjoint(&[(1, 10), (5, 15)]));
 /// ```
-fn are_intervals_disjoint(intervals: &[(u64, u64)]) -> bool {
+#[must_use]
+pub fn are_intervals_disjoint(intervals: &[(u64, u64)]) -> bool {
     let n = intervals.len();
 
     if n <= 1 {
@@ -1953,7 +2200,8 @@ fn are_intervals_disjoint(intervals: &[(u64, u64)]) -> bool {
 /// // Non-contiguous intervals (gap between 5 and 8)
 /// assert!(!are_intervals_contiguous(&[(1, 5), (8, 10)]));
 /// ```
-fn are_intervals_contiguous(intervals: &[(u64, u64)]) -> bool {
+#[must_use]
+pub fn are_intervals_contiguous(intervals: &[(u64, u64)]) -> bool {
     let n = intervals.len();
     if n <= 1 {
         return true;
@@ -2034,8 +2282,8 @@ fn query_interval_diff(start: u64, end: u64, closed_intervals: &[(u64, u64)]) ->
 ///
 /// # Notes
 ///
-/// - Invalid intervals (where start > end) are skipped
-/// - Uses saturating addition to prevent overflow when converting to half-open intervals
+/// - Invalid intervals (where start > end) are skipped.
+/// - Uses saturating addition to prevent overflow when converting to half-open intervals.
 fn get_interval_set(intervals: &[(u64, u64)]) -> IntervalTree<u64> {
     let mut tree = IntervalTree::default();
 
@@ -2100,150 +2348,5 @@ fn interval_to_tuple(
         Some((start, end))
     } else {
         None
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
-
-#[cfg(test)]
-mod tests {
-    use nautilus_model::data::HasTsInit;
-
-    use super::*;
-
-    #[derive(Clone)]
-    struct DummyData(u64);
-
-    impl HasTsInit for DummyData {
-        fn ts_init(&self) -> UnixNanos {
-            UnixNanos::from(self.0)
-        }
-    }
-
-    #[test]
-    fn test_check_ascending_timestamps_error() {
-        let data = vec![DummyData(2), DummyData(1)];
-        let result = super::ParquetDataCatalog::check_ascending_timestamps(&data, "dummy");
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_to_object_path_trailing_slash() {
-        // Create catalog with base path that contains a trailing slash
-        let tmp = tempfile::tempdir().unwrap();
-        let base_dir = tmp.path().join("catalog");
-        std::fs::create_dir_all(&base_dir).unwrap();
-
-        let catalog = ParquetDataCatalog::new(base_dir.clone(), None, None, None, None);
-
-        // Build a sample path under the catalog base
-        let sample_path = format!(
-            "{}/data/quotes/XYZ/2021-01-01T00-00-00-000000000Z_2021-01-01T00-00-01-000000000Z.parquet",
-            base_dir.to_string_lossy()
-        );
-
-        let object_path = catalog.to_object_path(&sample_path);
-
-        assert!(
-            !object_path
-                .as_ref()
-                .starts_with(base_dir.to_string_lossy().as_ref())
-        );
-    }
-
-    #[test]
-    fn test_is_remote_uri() {
-        // Test S3 URIs
-        let s3_catalog =
-            ParquetDataCatalog::from_uri("s3://bucket/path", None, None, None, None).unwrap();
-        assert!(s3_catalog.is_remote_uri());
-
-        // Test GCS URIs
-        let gcs_catalog =
-            ParquetDataCatalog::from_uri("gs://bucket/path", None, None, None, None).unwrap();
-        assert!(gcs_catalog.is_remote_uri());
-
-        let gcs2_catalog =
-            ParquetDataCatalog::from_uri("gcs://bucket/path", None, None, None, None).unwrap();
-        assert!(gcs2_catalog.is_remote_uri());
-
-        // Test Azure URIs
-        let azure_catalog =
-            ParquetDataCatalog::from_uri("azure://account/container/path", None, None, None, None)
-                .unwrap();
-        assert!(azure_catalog.is_remote_uri());
-
-        let abfs_catalog = ParquetDataCatalog::from_uri(
-            "abfs://container@account.dfs.core.windows.net/path",
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
-        assert!(abfs_catalog.is_remote_uri());
-
-        // Test HTTP URIs
-        let http_catalog =
-            ParquetDataCatalog::from_uri("http://example.com/path", None, None, None, None)
-                .unwrap();
-        assert!(http_catalog.is_remote_uri());
-
-        let https_catalog =
-            ParquetDataCatalog::from_uri("https://example.com/path", None, None, None, None)
-                .unwrap();
-        assert!(https_catalog.is_remote_uri());
-
-        // Test local paths (should not be remote)
-        let tmp = tempfile::tempdir().unwrap();
-        let local_catalog =
-            ParquetDataCatalog::new(tmp.path().to_path_buf(), None, None, None, None);
-        assert!(!local_catalog.is_remote_uri());
-
-        let tmp_file = tempfile::tempdir().unwrap();
-        let file_uri = format!("file://{}", tmp_file.path().display());
-        let file_catalog = ParquetDataCatalog::from_uri(&file_uri, None, None, None, None).unwrap();
-        assert!(!file_catalog.is_remote_uri());
-    }
-
-    #[test]
-    fn test_reconstruct_full_uri() {
-        // Test S3 URI reconstruction
-        let s3_catalog =
-            ParquetDataCatalog::from_uri("s3://bucket/base/path", None, None, None, None).unwrap();
-        let reconstructed = s3_catalog.reconstruct_full_uri("data/quotes/file.parquet");
-        assert_eq!(reconstructed, "s3://bucket/data/quotes/file.parquet");
-
-        // Test GCS URI reconstruction
-        let gcs_catalog =
-            ParquetDataCatalog::from_uri("gs://bucket/base/path", None, None, None, None).unwrap();
-        let reconstructed = gcs_catalog.reconstruct_full_uri("data/trades/file.parquet");
-        assert_eq!(reconstructed, "gs://bucket/data/trades/file.parquet");
-
-        // Test Azure URI reconstruction
-        let azure_catalog =
-            ParquetDataCatalog::from_uri("azure://account/container/path", None, None, None, None)
-                .unwrap();
-        let reconstructed = azure_catalog.reconstruct_full_uri("data/bars/file.parquet");
-        assert_eq!(reconstructed, "azure://account/data/bars/file.parquet");
-
-        // Test HTTP URI reconstruction
-        let http_catalog =
-            ParquetDataCatalog::from_uri("https://example.com/base/path", None, None, None, None)
-                .unwrap();
-        let reconstructed = http_catalog.reconstruct_full_uri("data/quotes/file.parquet");
-        assert_eq!(
-            reconstructed,
-            "https://example.com/data/quotes/file.parquet"
-        );
-
-        // Test local path (should return path as-is)
-        let tmp = tempfile::tempdir().unwrap();
-        let local_catalog =
-            ParquetDataCatalog::new(tmp.path().to_path_buf(), None, None, None, None);
-        let reconstructed = local_catalog.reconstruct_full_uri("data/quotes/file.parquet");
-        assert_eq!(reconstructed, "data/quotes/file.parquet");
     }
 }

@@ -265,6 +265,290 @@ class TestPortfolio:
             )
             self.exec_engine.process(fill)
 
+    def test_limit_order_consumes_entire_balance_of_multi_currency_cash_account(self):
+        # Arrange
+        AccountFactory.register_calculated_account("BINANCE")
+
+        account_id = AccountId("BINANCE-000")
+        state = AccountState(
+            account_id=account_id,
+            account_type=AccountType.CASH,
+            base_currency=None,  # Multi-currency account
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(100_100.00000000, USDT),
+                    Money(0.00000000, USDT),
+                    Money(100_100.00000000, USDT),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.portfolio.update_account(state)
+
+        account = self.portfolio.account(BINANCE)
+
+        order = self.order_factory.limit(  # will use up entire quote balance
+            instrument_id=BTCUSDT_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str(f"{Decimal('100_000'):.{BTCUSDT_BINANCE.size_precision}f}"),
+            price=Price.from_str("1"),
+        )
+
+        self.cache.add_order(order, position_id=None)
+
+        self.exec_engine.process(TestEventStubs.order_submitted(order, account_id=account_id))
+
+        usdt_balance = account.balance(USDT)
+        assert usdt_balance.total == Money(100_100.00000000, USDT)
+        assert usdt_balance.locked == Money(0.00000000, USDT)
+        assert usdt_balance.free == Money(100_100.00000000, USDT)
+
+        btc_balance = account.balance(BTC)
+        assert btc_balance is None
+
+        self.exec_engine.process(TestEventStubs.order_accepted(order, account_id=account_id))
+
+        usdt_balance = account.balance(USDT)
+        assert usdt_balance.total == Money(100_100.00000000, USDT)
+        assert usdt_balance.locked == Money(100_000.00000000, USDT)
+        assert usdt_balance.free == Money(100.00000000, USDT)
+
+        btc_balance = account.balance(BTC)
+        assert btc_balance is None
+
+        self.exec_engine.process(
+            TestEventStubs.order_filled(
+                order,
+                BTCUSDT_BINANCE,
+                last_px=order.price,
+                account_id=account_id,
+            ),
+        )
+
+        usdt_balance = account.balance(USDT)
+        assert usdt_balance.total == Money(0.00000000, USDT)
+        assert usdt_balance.locked == Money(0.00000000, USDT)
+        assert usdt_balance.free == Money(0.00000000, USDT)
+
+        btc_balance = account.balance(BTC)
+        assert btc_balance.total == Money(100_000.00000000, BTC)
+        assert btc_balance.locked == Money(0.00000000, BTC)
+        assert btc_balance.free == Money(100_000.00000000, BTC)
+
+    def test_market_order_consumes_entire_balance_of_multi_currency_cash_account(self):
+        # Arrange
+        AccountFactory.register_calculated_account("BINANCE")
+
+        account_id = AccountId("BINANCE-000")
+        state = AccountState(
+            account_id=account_id,
+            account_type=AccountType.CASH,
+            base_currency=None,  # Multi-currency account
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(100_100.00000000, USDT),
+                    Money(0.00000000, USDT),
+                    Money(100_100.00000000, USDT),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.portfolio.update_account(state)
+
+        account = self.portfolio.account(BINANCE)
+
+        order = self.order_factory.market(
+            instrument_id=BTCUSDT_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str(f"{Decimal('100_000'):.{BTCUSDT_BINANCE.size_precision}f}"),
+        )
+
+        self.cache.add_order(order, position_id=None)
+
+        self.exec_engine.process(TestEventStubs.order_submitted(order, account_id=account_id))
+
+        usdt_balance = account.balance(USDT)
+        assert usdt_balance.total == Money(100_100.00000000, USDT)
+        assert usdt_balance.locked == Money(0.00000000, USDT)
+        assert usdt_balance.free == Money(100_100.00000000, USDT)
+
+        btc_balance = account.balance(BTC)
+        assert btc_balance is None
+
+        self.exec_engine.process(TestEventStubs.order_accepted(order, account_id=account_id))
+
+        usdt_balance = account.balance(USDT)
+        assert usdt_balance.total == Money(100_100.00000000, USDT)
+        assert usdt_balance.locked == Money(0.00000000, USDT)
+        assert usdt_balance.free == Money(100_100.00000000, USDT)
+
+        btc_balance = account.balance(BTC)
+        assert btc_balance is None
+
+        self.exec_engine.process(
+            TestEventStubs.order_filled(
+                order,
+                BTCUSDT_BINANCE,
+                last_px=Price.from_str(f"{1:.{BTCUSDT_BINANCE.price_precision}f}"),
+                account_id=account_id,
+            ),
+        )
+
+        usdt_balance = account.balance(USDT)
+        assert usdt_balance.total == Money(0.00000000, USDT)
+        assert usdt_balance.locked == Money(0.00000000, USDT)
+        assert usdt_balance.free == Money(0.00000000, USDT)
+
+        btc_balance = account.balance(BTC)
+        assert btc_balance.total == Money(100_000.00000000, BTC)
+        assert btc_balance.locked == Money(0.00000000, BTC)
+        assert btc_balance.free == Money(100_000.00000000, BTC)
+
+    def test_limit_order_consumes_nearly_entire_balance_of_single_currency_margin_account(self):
+        # Arrange
+        AccountFactory.register_calculated_account("SIM")
+
+        account_id = AccountId("SIM-01234")
+        state = AccountState(
+            account_id=account_id,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(100_000.00000000, USD),
+                    Money(0.00000000, USD),
+                    Money(100_000.00000000, USD),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.portfolio.update_account(state)
+
+        account = self.portfolio.account(SIM)
+
+        order = self.order_factory.limit(  # will use up entire quote balance
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str(f"{Decimal('3_300_000'):.{AUDUSD_SIM.size_precision}f}"),
+            price=Price.from_str("1"),
+        )
+
+        self.cache.add_order(order, position_id=None)
+
+        self.exec_engine.process(TestEventStubs.order_submitted(order, account_id=account_id))
+
+        usdt_balance = account.balance(USD)
+        assert usdt_balance.total == Money(100_000.00000000, USD)
+        assert usdt_balance.locked == Money(0.00000000, USD)
+        assert usdt_balance.free == Money(100_000.00000000, USD)
+
+        self.exec_engine.process(TestEventStubs.order_accepted(order, account_id=account_id))
+
+        usdt_balance = account.balance(USD)
+        assert usdt_balance.total == Money(100_000.00000000, USD)
+        assert usdt_balance.locked == Money(99_000.00000000, USD)
+        assert usdt_balance.free == Money(1_000.00000000, USD)
+
+        self.exec_engine.process(
+            TestEventStubs.order_filled(
+                order,
+                AUDUSD_SIM,
+                last_px=order.price,
+                account_id=account_id,
+            ),
+        )
+
+        usdt_balance = account.balance(USD)
+        assert usdt_balance.total == Money(99_934.00000000, USD)
+        assert usdt_balance.locked == Money(99_000.00000000, USD)
+        assert usdt_balance.free == Money(934.00000000, USD)
+
+        assert self.portfolio.net_position(AUDUSD_SIM.id) == Decimal("3_300_000")
+
+    def test_market_order_consumes_nearly_entire_balance_of_single_currency_margin_account(self):
+        # Arrange
+        AccountFactory.register_calculated_account("SIM")
+
+        account_id = AccountId("SIM-01234")
+        state = AccountState(
+            account_id=account_id,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(100_000.00000000, USD),
+                    Money(0.00000000, USD),
+                    Money(100_000.00000000, USD),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.portfolio.update_account(state)
+
+        account = self.portfolio.account(SIM)
+
+        order = self.order_factory.market(  # will use up entire quote balance
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str(f"{Decimal('3_300_000'):.{AUDUSD_SIM.size_precision}f}"),
+        )
+
+        self.cache.add_order(order, position_id=None)
+
+        self.exec_engine.process(TestEventStubs.order_submitted(order, account_id=account_id))
+
+        usdt_balance = account.balance(USD)
+        assert usdt_balance.total == Money(100_000.00000000, USD)
+        assert usdt_balance.locked == Money(0.00000000, USD)
+        assert usdt_balance.free == Money(100_000.00000000, USD)
+
+        self.exec_engine.process(TestEventStubs.order_accepted(order, account_id=account_id))
+
+        usdt_balance = account.balance(USD)
+        assert usdt_balance.total == Money(100_000.00000000, USD)
+        assert usdt_balance.locked == Money(0.00000000, USD)
+        assert usdt_balance.free == Money(100_000.00000000, USD)
+
+        self.exec_engine.process(
+            TestEventStubs.order_filled(
+                order,
+                AUDUSD_SIM,
+                last_px=Price.from_str("1"),
+                account_id=account_id,
+            ),
+        )
+
+        usdt_balance = account.balance(USD)
+        assert usdt_balance.total == Money(99_934.00000000, USD)
+        assert usdt_balance.locked == Money(99_000.00000000, USD)
+        assert usdt_balance.free == Money(934.00000000, USD)
+
+        assert self.portfolio.net_position(AUDUSD_SIM.id) == Decimal("3_300_000")
+
     def test_exceed_free_balance_multi_currency_raises_account_balance_negative_exception(self):
         # Arrange
         AccountFactory.register_calculated_account("BINANCE")

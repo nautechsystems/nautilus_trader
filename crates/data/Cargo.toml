@@ -20,11 +20,11 @@ crate-type = ["rlib", "cdylib"]
 [features]
 default = []
 extension-module = [
-  "pyo3/extension-module",
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
   "nautilus-persistence/extension-module",
+  "pyo3/extension-module",
 ]
 ffi = [
   "nautilus-common/ffi",
@@ -33,11 +33,11 @@ ffi = [
   "nautilus-persistence/ffi",
 ]
 python = [
-  "pyo3",
   "nautilus-common/python",
   "nautilus-core/python",
   "nautilus-model/python",
   "nautilus-persistence/python",
+  "pyo3",
 ]
 high-precision = ["nautilus-model/high-precision"]
 defi = [

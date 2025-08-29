@@ -28,6 +28,7 @@ use pyo3::{
 
 use crate::identifier_for_python;
 
+identifier_for_python!(crate::identifiers::ActorId);
 identifier_for_python!(crate::identifiers::AccountId);
 identifier_for_python!(crate::identifiers::ClientId);
 identifier_for_python!(crate::identifiers::ClientOrderId);

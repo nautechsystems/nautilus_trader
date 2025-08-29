@@ -939,8 +939,8 @@ mod tests {
             if let (Some(sum1), Some(sum2)) = (
                 nanos1.as_u64().checked_add(nanos2.as_u64()),
                 nanos2.as_u64().checked_add(nanos3.as_u64())
-            ) {
-                if let (Some(left), Some(right)) = (
+            )
+                && let (Some(left), Some(right)) = (
                     sum1.checked_add(nanos3.as_u64()),
                     nanos1.as_u64().checked_add(sum2)
                 ) {
@@ -948,7 +948,6 @@ mod tests {
                     let right_result = UnixNanos::from(right);
                     prop_assert_eq!(left_result, right_result, "Addition should be associative");
                 }
-            }
         }
 
         #[test]
@@ -1051,18 +1050,16 @@ mod tests {
             let checked_sub = nanos1.checked_sub(nanos2.as_u64());
 
             // If checked_add succeeds, regular addition should produce the same result
-            if let Some(sum) = checked_add {
-                if nanos1.as_u64().checked_add(nanos2.as_u64()).is_some() {
+            if let Some(sum) = checked_add
+                && nanos1.as_u64().checked_add(nanos2.as_u64()).is_some() {
                     prop_assert_eq!(sum, nanos1 + nanos2, "Checked add should match regular add when no overflow");
                 }
-            }
 
             // If checked_sub succeeds, regular subtraction should produce the same result
-            if let Some(diff) = checked_sub {
-                if nanos1.as_u64() >= nanos2.as_u64() {
+            if let Some(diff) = checked_sub
+                && nanos1.as_u64() >= nanos2.as_u64() {
                     prop_assert_eq!(diff, nanos1 - nanos2, "Checked sub should match regular sub when no underflow");
                 }
-            }
         }
 
         #[test]

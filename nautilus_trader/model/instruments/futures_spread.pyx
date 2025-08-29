@@ -80,6 +80,8 @@ cdef class FuturesSpread(Instrument):
         The fee rate for liquidity takers as a percentage of order value.
     exchange : str, optional
         The exchange ISO 10383 Market Identifier Code (MIC) where the instrument trades.
+    tick_scheme_name : str, optional
+        The name of the tick scheme.
     info : dict[str, object], optional
         The additional instrument information.
 
@@ -125,6 +127,7 @@ cdef class FuturesSpread(Instrument):
         maker_fee: Decimal | None = None,
         taker_fee: Decimal | None = None,
         str exchange = None,
+        str tick_scheme_name = None,
         dict info = None,
     ) -> None:
         Condition.valid_string(strategy_type, "strategy_type")
@@ -155,6 +158,7 @@ cdef class FuturesSpread(Instrument):
             taker_fee=taker_fee or Decimal(0),
             ts_event=ts_event,
             ts_init=ts_init,
+            tick_scheme_name=tick_scheme_name,
             info=info,
         )
 
@@ -237,6 +241,7 @@ cdef class FuturesSpread(Instrument):
             maker_fee=Decimal(values["maker_fee"]),
             taker_fee=Decimal(values["taker_fee"]),
             exchange=values["exchange"],
+            tick_scheme_name=values.get("tick_scheme_name"),
             info=values.get("info"),
         )
 
@@ -270,6 +275,7 @@ cdef class FuturesSpread(Instrument):
             "maker_fee": str(obj.maker_fee),
             "taker_fee": str(obj.taker_fee),
             "exchange": obj.exchange,
+            "tick_scheme_name": obj.tick_scheme_name,
             "info": obj.info,
         }
 

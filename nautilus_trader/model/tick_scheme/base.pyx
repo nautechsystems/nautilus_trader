@@ -13,6 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.math cimport ceil as cceil
+from libc.math cimport floor as cfloor
+from libc.math cimport round as cround
+
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.objects cimport Price
 
@@ -54,7 +58,7 @@ cdef class TickScheme:
         """
         Return the price `n` ask ticks away from value.
 
-        If a given price is between two ticks, n=0 will find the nearest ask tick.
+        If a given price is between two ticks, n=0 will find the nearest ask tick (inclusive).
 
         Parameters
         ----------
@@ -74,7 +78,7 @@ cdef class TickScheme:
         """
         Return the price `n` bid ticks away from value.
 
-        If a given price is between two ticks, n=0 will find the nearest bid tick.
+        If a given price is between two ticks, n=0 will find the nearest bid tick (inclusive).
 
         Parameters
         ----------
@@ -91,25 +95,46 @@ cdef class TickScheme:
         raise NotImplementedError()  # pragma: no cover
 
 
-cdef inline double _round_base(double value, double base):
-    return int(value / base) * base
+# Epsilon tolerance for tick boundary detection
+# This absolute tolerance works well for typical FX/crypto price ranges
+cdef double INCLUSIVE_EPS = 1e-10
 
 
 cpdef double round_down(double value, double base):
     """
     Returns a value rounded down to a specific number of decimal places.
+
+    If value is already on the boundary, returns the same value (price-inclusive).
     """
-    return _round_base(value=value, base=base)
+    cdef double base_multiple = value / base
+    cdef double rounded_multiple = cround(base_multiple)
+
+    # Check if we're already on a tick boundary (within floating point precision)
+    if abs(base_multiple - rounded_multiple) < INCLUSIVE_EPS:
+        return value
+    else:
+        # Round down to previous boundary using floor
+        return cfloor(base_multiple) * base
 
 
 cpdef double round_up(double value, double base):
     """
-    Returns a value rounded down to a specific number of decimal places.
+    Returns a value rounded up to a specific number of decimal places.
+
+    If value is already on the boundary, returns the same value (price-inclusive).
     """
-    return _round_base(value=value, base=base) + base
+    cdef double base_multiple = value / base
+    cdef double rounded_multiple = cround(base_multiple)
+
+    # Check if we're already on a tick boundary (within floating point precision)
+    if abs(base_multiple - rounded_multiple) < INCLUSIVE_EPS:
+        return value
+    else:
+        # Round up to next boundary using ceil
+        return cceil(base_multiple) * base
 
 
-cdef dict TICK_SCHEMES = {}  # type: dict[str, TickScheme]
+cdef dict[str, TickScheme] TICK_SCHEMES = {}
 
 cpdef void register_tick_scheme(TickScheme tick_scheme):
     Condition.not_none(tick_scheme, "tick_scheme")

@@ -21,7 +21,7 @@ jobs:
         language: ['python']
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@002fdce3c6a235733a90a27c80493a3241e56863 # v2.12.1
+      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
         with:
           egress-policy: audit
 
@@ -33,7 +33,7 @@ jobs:
 
       - name: Initialize CodeQL
         # https://github.com/github/codeql-action
-        uses: github/codeql-action/init@70df9def86d22bf0ea4e7f8b956e7b92e7c1ea22 # v2.20.7
+        uses: github/codeql-action/init@9b02dc2f60288b463e7a66e39c78829b62780db7 # codeql-bundle-v2.22.1
         with:
           languages: ${{ matrix.language }}
           # If you wish to specify custom queries, you can do so here or in a config file.
@@ -43,4 +43,4 @@ jobs:
 
       - name: Perform CodeQL Analysis
         # https://github.com/github/codeql-action
-        uses: github/codeql-action/analyze@70df9def86d22bf0ea4e7f8b956e7b92e7c1ea22 # v2.20.7
+        uses: github/codeql-action/analyze@9b02dc2f60288b463e7a66e39c78829b62780db7 # codeql-bundle-v2.22.1

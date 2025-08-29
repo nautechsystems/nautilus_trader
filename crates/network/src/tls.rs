@@ -130,16 +130,19 @@ where
 
 /// Extracts the host name from the request URI.
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics if the request URI has no host component.
+/// Returns an error if the request URI has no host component.
 #[allow(clippy::result_large_err)]
 fn domain(request: &Request) -> Result<String, Error> {
     match request.uri().host() {
         // rustls expects IPv6 addresses without the surrounding [] brackets
         Some(d) if d.starts_with('[') && d.ends_with(']') => Ok(d[1..d.len() - 1].to_string()),
         Some(d) => Ok(d.to_string()),
-        None => panic!("No host name"),
+        None => Err(Error::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Request URI missing host component",
+        ))),
     }
 }
 
@@ -157,22 +160,22 @@ pub fn create_tls_config_from_certs_dir(certs_dir: &Path) -> anyhow::Result<rust
         let entry = entry?;
         let path = entry.path();
 
-        if client_key.is_none() {
-            if let Ok(key) = load_private_key(&path) {
-                client_key = Some(key);
-                continue;
-            }
+        if client_key.is_none()
+            && let Ok(key) = load_private_key(&path)
+        {
+            client_key = Some(key);
+            continue;
         }
 
-        if let Ok(certs) = load_certs(&path) {
-            if !certs.is_empty() {
-                if client_cert.is_none() {
-                    client_cert = Some(certs);
-                } else {
-                    for cert in certs {
-                        if let Err(e) = root_store.add(cert) {
-                            eprintln!("Warning: Invalid certificate in {path:?}: {e}");
-                        }
+        if let Ok(certs) = load_certs(&path)
+            && !certs.is_empty()
+        {
+            if client_cert.is_none() {
+                client_cert = Some(certs);
+            } else {
+                for cert in certs {
+                    if let Err(e) = root_store.add(cert) {
+                        eprintln!("Warning: Invalid certificate in {path:?}: {e}");
                     }
                 }
             }

@@ -41,13 +41,15 @@ use crate::{
 )]
 pub struct CashAccount {
     pub base: BaseAccount,
+    pub allow_borrowing: bool,
 }
 
 impl CashAccount {
     /// Creates a new [`CashAccount`] instance.
-    pub fn new(event: AccountState, calculate_account_state: bool) -> Self {
+    pub fn new(event: AccountState, calculate_account_state: bool, allow_borrowing: bool) -> Self {
         Self {
             base: BaseAccount::new(event, calculate_account_state),
+            allow_borrowing,
         }
     }
 
@@ -179,6 +181,18 @@ impl Account for CashAccount {
     }
 
     fn apply(&mut self, event: AccountState) {
+        // Check for negative balances if borrowing is not allowed
+        if !self.allow_borrowing {
+            for balance in &event.balances {
+                if balance.total.as_decimal() < rust_decimal::Decimal::ZERO {
+                    panic!(
+                        "Account balance negative: {} {}",
+                        balance.total.as_decimal(),
+                        balance.currency.code
+                    );
+                }
+            }
+        }
         self.base_apply(event);
     }
 

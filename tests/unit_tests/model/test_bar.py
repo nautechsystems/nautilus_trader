@@ -14,8 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 import pickle
-from datetime import timedelta
 
+import pandas as pd
 import pytest
 
 from nautilus_trader.core import nautilus_pyo3
@@ -89,68 +89,182 @@ class TestBarSpecification:
         assert repr(bar_spec) == "BarSpecification(1-MINUTE-BID)"
 
     @pytest.mark.parametrize(
-        "aggregation",
+        ("bar_aggregation", "step", "expected_msg"),
         [
-            BarAggregation.TICK,
-            BarAggregation.MONTH,
+            # MILLISECOND
+            [BarAggregation.MILLISECOND, 0, "'step' not a positive integer, was 0"],
+            [BarAggregation.MILLISECOND, -1, "'step' not a positive integer, was -1"],
+            [
+                BarAggregation.MILLISECOND,
+                12,
+                "Invalid step in bar_type.spec.step: 12 for aggregation=10. step must evenly divide 1000",
+            ],
+            [
+                BarAggregation.MILLISECOND,
+                2000,
+                "Invalid step in bar_type.spec.step: 2000 for aggregation=10. step must evenly divide 1000",
+            ],
+            [
+                BarAggregation.MILLISECOND,
+                1000,
+                "Invalid step in bar_type.spec.step: 1000 for aggregation=10. step must not be 1000",
+            ],
+            # SECOND
+            [
+                BarAggregation.SECOND,
+                50,
+                "Invalid step in bar_type.spec.step: 50 for aggregation=11. step must evenly divide 60",
+            ],
+            [
+                BarAggregation.SECOND,
+                120,
+                "Invalid step in bar_type.spec.step: 120 for aggregation=11. step must evenly divide 60",
+            ],
+            [
+                BarAggregation.SECOND,
+                60,
+                "Invalid step in bar_type.spec.step: 60 for aggregation=11. step must not be 60",
+            ],
+            # MINUTE
+            [
+                BarAggregation.MINUTE,
+                40,
+                "Invalid step in bar_type.spec.step: 40 for aggregation=12. step must evenly divide 60",
+            ],
+            [
+                BarAggregation.MINUTE,
+                120,
+                "Invalid step in bar_type.spec.step: 120 for aggregation=12. step must evenly divide 60",
+            ],
+            [
+                BarAggregation.MINUTE,
+                60,
+                "Invalid step in bar_type.spec.step: 60 for aggregation=12. step must not be 60",
+            ],
+            # HOUR
+            [
+                BarAggregation.HOUR,
+                13,
+                "Invalid step in bar_type.spec.step: 13 for aggregation=13. step must evenly divide 24",
+            ],
+            [
+                BarAggregation.HOUR,
+                48,
+                "Invalid step in bar_type.spec.step: 48 for aggregation=13. step must evenly divide 24",
+            ],
+            [
+                BarAggregation.HOUR,
+                24,
+                "Invalid step in bar_type.spec.step: 24 for aggregation=13. step must not be 24",
+            ],
+            # DAY
+            [
+                BarAggregation.DAY,
+                2,
+                "Invalid step in bar_type.spec.step: 2 for aggregation=14. step must evenly divide 1",
+            ],
+            # WEEK
+            [
+                BarAggregation.WEEK,
+                2,
+                "Invalid step in bar_type.spec.step: 2 for aggregation=15. step must evenly divide 1",
+            ],
+            [
+                BarAggregation.WEEK,
+                3,
+                "Invalid step in bar_type.spec.step: 3 for aggregation=15. step must evenly divide 1",
+            ],
+            # MONTH
+            [
+                BarAggregation.MONTH,
+                5,
+                "Invalid step in bar_type.spec.step: 5 for aggregation=16. step must evenly divide 12",
+            ],
+            [
+                BarAggregation.MONTH,
+                24,
+                "Invalid step in bar_type.spec.step: 24 for aggregation=16. step must evenly divide 12",
+            ],
+            [
+                BarAggregation.MONTH,
+                12,
+                "Invalid step in bar_type.spec.step: 12 for aggregation=16. step must not be 12",
+            ],
         ],
     )
-    def test_timedelta_for_unsupported_aggregations_raises_value_error(self, aggregation):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            spec = BarSpecification(1, aggregation, price_type=PriceType.LAST)
-            _ = spec.timedelta
+    def test_instantiate_given_invalid_step_raises_value_error(
+        self,
+        bar_aggregation: BarAggregation,
+        step: int,
+        expected_msg: str,
+    ):
+        with pytest.raises(ValueError, match=expected_msg):
+            BarSpecification(step, bar_aggregation, PriceType.BID)
 
     @pytest.mark.parametrize(
-        ("step", "aggregation", "expected"),
+        ("step", "aggregation"),
         [
-            [
-                500,
-                BarAggregation.MILLISECOND,
-                timedelta(milliseconds=500),
-            ],
-            [
-                10,
-                BarAggregation.SECOND,
-                timedelta(seconds=10),
-            ],
-            [
-                5,
-                BarAggregation.MINUTE,
-                timedelta(minutes=5),
-            ],
-            [
-                1,
-                BarAggregation.HOUR,
-                timedelta(hours=1),
-            ],
-            [
-                1,
-                BarAggregation.DAY,
-                timedelta(days=1),
-            ],
-            [
-                1,
-                BarAggregation.WEEK,
-                timedelta(days=7),
-            ],
+            # Millisecond valid steps
+            (1, BarAggregation.MILLISECOND),
+            (10, BarAggregation.MILLISECOND),
+            (100, BarAggregation.MILLISECOND),
+            (200, BarAggregation.MILLISECOND),
+            (250, BarAggregation.MILLISECOND),
+            (500, BarAggregation.MILLISECOND),
+            # Second valid steps
+            (1, BarAggregation.SECOND),
+            (5, BarAggregation.SECOND),
+            (10, BarAggregation.SECOND),
+            (15, BarAggregation.SECOND),
+            (20, BarAggregation.SECOND),
+            (30, BarAggregation.SECOND),
+            # Minute valid steps
+            (1, BarAggregation.MINUTE),
+            (5, BarAggregation.MINUTE),
+            (10, BarAggregation.MINUTE),
+            (15, BarAggregation.MINUTE),
+            (20, BarAggregation.MINUTE),
+            (30, BarAggregation.MINUTE),
+            # Hour valid steps
+            (1, BarAggregation.HOUR),
+            (2, BarAggregation.HOUR),
+            (3, BarAggregation.HOUR),
+            (4, BarAggregation.HOUR),
+            (6, BarAggregation.HOUR),
+            (8, BarAggregation.HOUR),
+            (12, BarAggregation.HOUR),
+            # Day and Week - only step=1 is valid
+            (1, BarAggregation.DAY),
+            (1, BarAggregation.WEEK),
+            # Month valid steps
+            (1, BarAggregation.MONTH),
+            (2, BarAggregation.MONTH),
+            (3, BarAggregation.MONTH),
+            (4, BarAggregation.MONTH),
+            (6, BarAggregation.MONTH),
+            # Year valid steps
+            (1, BarAggregation.YEAR),
+            (2, BarAggregation.YEAR),
+            (3, BarAggregation.YEAR),
+            (4, BarAggregation.YEAR),
+            (13, BarAggregation.YEAR),
+            # Non-time aggregations
+            (1, BarAggregation.TICK),
+            (100, BarAggregation.TICK),
+            (1000, BarAggregation.TICK),
+            (100, BarAggregation.VOLUME),
+            (1000, BarAggregation.VOLUME),
+            (10000, BarAggregation.VALUE),
         ],
     )
-    def test_timedelta_given_various_values_returns_expected(
-        self,
-        step,
-        aggregation,
-        expected,
-    ):
+    def test_instantiate_given_correct_step_passes(self, step, aggregation):
         # Arrange, Act
-        spec = BarSpecification(
-            step=step,
-            aggregation=aggregation,
-            price_type=PriceType.LAST,
-        )
+        spec = BarSpecification(step, aggregation, PriceType.LAST)
 
         # Assert
-        assert spec.timedelta == expected
+        assert spec.step == step
+        assert spec.aggregation == aggregation
+        assert spec.price_type == PriceType.LAST
 
     @pytest.mark.parametrize(
         "value",
@@ -165,8 +279,8 @@ class TestBarSpecification:
         ("value", "expected"),
         [
             [
-                "300-MILLISECOND-LAST",
-                BarSpecification(300, BarAggregation.MILLISECOND, PriceType.LAST),
+                "200-MILLISECOND-LAST",
+                BarSpecification(200, BarAggregation.MILLISECOND, PriceType.LAST),
             ],
             [
                 "1-MINUTE-BID",
@@ -246,6 +360,88 @@ class TestBarSpecification:
             BarSpecification.check_information_aggregated(bar_spec.aggregation)
             == is_information_aggregated
         )
+
+    @pytest.mark.parametrize(
+        ("step", "aggregation", "expected_timedelta"),
+        [
+            # MILLISECOND aggregations
+            (1, BarAggregation.MILLISECOND, pd.Timedelta(milliseconds=1)),
+            (100, BarAggregation.MILLISECOND, pd.Timedelta(milliseconds=100)),
+            (500, BarAggregation.MILLISECOND, pd.Timedelta(milliseconds=500)),
+            (250, BarAggregation.MILLISECOND, pd.Timedelta(milliseconds=250)),
+            # SECOND aggregations
+            (1, BarAggregation.SECOND, pd.Timedelta(seconds=1)),
+            (5, BarAggregation.SECOND, pd.Timedelta(seconds=5)),
+            (30, BarAggregation.SECOND, pd.Timedelta(seconds=30)),
+            (15, BarAggregation.SECOND, pd.Timedelta(seconds=15)),
+            # MINUTE aggregations
+            (1, BarAggregation.MINUTE, pd.Timedelta(minutes=1)),
+            (5, BarAggregation.MINUTE, pd.Timedelta(minutes=5)),
+            (15, BarAggregation.MINUTE, pd.Timedelta(minutes=15)),
+            (30, BarAggregation.MINUTE, pd.Timedelta(minutes=30)),
+            # HOUR aggregations
+            (1, BarAggregation.HOUR, pd.Timedelta(hours=1)),
+            (2, BarAggregation.HOUR, pd.Timedelta(hours=2)),
+            (4, BarAggregation.HOUR, pd.Timedelta(hours=4)),
+            (12, BarAggregation.HOUR, pd.Timedelta(hours=12)),
+            # DAY aggregations
+            (1, BarAggregation.DAY, pd.Timedelta(days=1)),
+            # WEEK aggregations
+            (1, BarAggregation.WEEK, pd.Timedelta(weeks=1)),
+        ],
+    )
+    def test_get_interval_ns_and_timedelta_valid_aggregations(
+        self,
+        step: int,
+        aggregation: BarAggregation,
+        expected_timedelta: pd.Timedelta,
+    ):
+        # Arrange
+        spec = BarSpecification(step, aggregation, PriceType.LAST)
+
+        # Act
+        actual_ns = spec.get_interval_ns()
+        actual_timedelta = spec.timedelta
+
+        # Assert
+        assert actual_ns == expected_timedelta.value
+        assert actual_timedelta == expected_timedelta
+        # Verify consistency between methods
+        assert actual_timedelta == pd.Timedelta(nanoseconds=actual_ns)
+
+    @pytest.mark.parametrize(
+        "aggregation",
+        [
+            BarAggregation.TICK,
+            BarAggregation.VOLUME,
+            BarAggregation.VALUE,
+            BarAggregation.TICK_IMBALANCE,
+            BarAggregation.VOLUME_IMBALANCE,
+            BarAggregation.VALUE_IMBALANCE,
+            BarAggregation.TICK_RUNS,
+            BarAggregation.VOLUME_RUNS,
+            BarAggregation.VALUE_RUNS,
+            BarAggregation.MONTH,
+            BarAggregation.YEAR,
+        ],
+    )
+    def test_get_interval_ns_and_timedelta_non_time_aggregations_raise_error(
+        self,
+        aggregation: BarAggregation,
+    ):
+        # Arrange
+        spec = BarSpecification(1, aggregation, PriceType.LAST)
+
+        # Act & Assert
+        if aggregation in [BarAggregation.MONTH, BarAggregation.YEAR]:
+            match = f"get_interval_ns not supported for the `BarAggregation.{aggregation.name}` aggregation"
+        else:
+            match = "Aggregation not time based"
+
+        with pytest.raises(ValueError, match=match):
+            spec.get_interval_ns()
+        with pytest.raises(ValueError, match=match):
+            spec.timedelta
 
     def test_properties(self):
         # Arrange, Act

@@ -16,7 +16,6 @@
 Unit tests for the dYdX execution engine.
 """
 
-from uuid import uuid4
 
 import pytest
 
@@ -32,7 +31,7 @@ def client_order_id_helper(cache):
     return ClientOrderIdHelper(cache=cache)
 
 
-@pytest.mark.parametrize("order_string", [str(uuid4()), str(12345)])
+@pytest.mark.parametrize("order_string", ["839ca109-f2c8-46b5-88f2-345eeeb01058", str(12345)])
 def test_generate_client_order_id_int_uuid(client_order_id_helper, order_string) -> None:
     """
     Test the generate_client_order_id_int method with a UUID4.

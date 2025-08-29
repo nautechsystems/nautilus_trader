@@ -4,6 +4,7 @@
 [![Documentation](https://img.shields.io/docsrs/nautilus-indicators)](https://docs.rs/nautilus-indicators/latest/nautilus-indicators/)
 [![crates.io version](https://img.shields.io/crates/v/nautilus-indicators.svg)](https://crates.io/crates/nautilus-indicators)
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
+[![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
 
 Technical analysis indicators for [NautilusTrader](http://nautilustrader.io).
 

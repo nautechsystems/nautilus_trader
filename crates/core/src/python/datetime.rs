@@ -16,6 +16,7 @@
 //! Date/time utility wrappers exposed to Python.
 
 use pyo3::prelude::*;
+use pyo3_stub_gen::derive::gen_stub_pyfunction;
 
 use super::to_pyvalue_err;
 use crate::{
@@ -38,6 +39,7 @@ use crate::{
 /// -------
 /// int
 #[must_use]
+#[gen_stub_pyfunction]
 #[pyfunction(name = "secs_to_nanos")]
 pub fn py_secs_to_nanos(secs: f64) -> u64 {
     secs_to_nanos(secs)
@@ -54,6 +56,7 @@ pub fn py_secs_to_nanos(secs: f64) -> u64 {
 /// -------
 /// int
 #[must_use]
+#[gen_stub_pyfunction]
 #[pyfunction(name = "secs_to_millis")]
 pub fn py_secs_to_millis(secs: f64) -> u64 {
     secs_to_millis(secs)

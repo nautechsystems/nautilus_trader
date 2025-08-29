@@ -109,7 +109,7 @@ impl Money {
         if currency.precision > MAX_FLOAT_PRECISION {
             // Floats are only reliable up to ~16 decimal digits of precision regardless of feature flags
             anyhow::bail!(
-                "`currency.precision` exceeded maximum float precision ({MAX_FLOAT_PRECISION}), use `Money::from_wei()` for WEI values instead"
+                "`currency.precision` exceeded maximum float precision ({MAX_FLOAT_PRECISION}), use `Money::from_wei()` for wei values instead"
             );
         }
 
@@ -452,12 +452,25 @@ impl<'de> Deserialize<'de> for Money {
     }
 }
 
+/// Checks if the money `value` is positive.
+///
+/// # Errors
+///
+/// Returns an error if `value` is not positive.
+#[inline(always)]
+pub fn check_positive_money(value: Money, param: &str) -> anyhow::Result<()> {
+    if value.raw <= 0 {
+        anyhow::bail!("invalid `Money` for '{param}' not positive, was {value}");
+    }
+    Ok(())
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use float_cmp::approx_eq;
+    use nautilus_core::approx_eq;
     use rstest::rstest;
     use rust_decimal_macros::dec;
 
@@ -508,9 +521,9 @@ mod tests {
     #[case(
         1_000_000_000_000_000_000_i128,
         18,
-        "WEI",
-        "Money(1000000000000000000, WEI)",
-        "1000000000000000000 WEI"
+        "wei",
+        "Money(1000000000000000000, wei)",
+        "1000000000000000000 wei"
     )] // High precision
     #[case(
         2_500_000_000_000_000_000_i128,
@@ -847,8 +860,8 @@ mod tests {
                 if let (Some(sum1), Some(sum2)) = (
                     money1.raw.checked_add(money2.raw),
                     money2.raw.checked_add(money3.raw)
-                ) {
-                    if let (Some(left), Some(right)) = (
+                )
+                    && let (Some(left), Some(right)) = (
                         sum1.checked_add(money3.raw),
                         money1.raw.checked_add(sum2)
                     ) {
@@ -856,7 +869,6 @@ mod tests {
                         let right_result = Money::from_raw(right, money1.currency);
                         prop_assert_eq!(left_result, right_result, "Addition should be associative");
                     }
-                }
             }
         }
 
@@ -1005,6 +1017,32 @@ mod tests {
                 let expected_sub = original_f64 - factor;
                 prop_assert!((sub_result - expected_sub).abs() < 0.01,
                     "Subtraction with f64 should be accurate");
+            }
+        }
+    }
+
+    #[rstest]
+    #[case(42.0, true, "positive value")]
+    #[case(0.0, false, "zero value")]
+    #[case( -13.5,  false, "negative value")]
+    fn test_check_positive_money(
+        #[case] amount: f64,
+        #[case] should_succeed: bool,
+        #[case] _case_name: &str,
+    ) {
+        let money = Money::new(amount, Currency::USD());
+
+        let res = check_positive_money(money, "money");
+
+        match should_succeed {
+            true => assert!(res.is_ok(), "expected Ok(..) for {amount}"),
+            false => {
+                assert!(res.is_err(), "expected Err(..) for {amount}");
+                let msg = res.unwrap_err().to_string();
+                assert!(
+                    msg.contains("not positive"),
+                    "error message should mention positivity; got: {msg:?}"
+                );
             }
         }
     }

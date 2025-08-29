@@ -472,7 +472,7 @@ mod tests {
 
         // Debug: print file contents if test is failing
         if !log_contents.contains("This is a trace message") {
-            println!("File contents:\n{}", log_contents);
+            println!("File contents:\n{log_contents}");
         }
 
         // Verify that all log levels are present

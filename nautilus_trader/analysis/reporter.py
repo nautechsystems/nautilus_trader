@@ -114,7 +114,10 @@ class ReportProvider:
         return report
 
     @staticmethod
-    def generate_positions_report(positions: list[Position]) -> pd.DataFrame:
+    def generate_positions_report(
+        positions: list[Position],
+        snapshots: list[Position] | None = None,
+    ) -> pd.DataFrame:
         """
         Generate a positions report.
 
@@ -122,21 +125,33 @@ class ReportProvider:
         ----------
         positions : list[Position]
             The positions for the report.
+        snapshots : list[Position], optional
+            The position snapshots to include in the report.
+            These will be marked with an 'is_snapshot' column.
 
         Returns
         -------
         pd.DataFrame
+            The positions report.
 
         """
-        if not positions:
+        # Combine positions and snapshots
+        all_positions = positions.copy()
+        snapshot_ids = set()
+
+        if snapshots:
+            all_positions.extend(snapshots)
+            snapshot_ids = {str(p.id) for p in snapshots}
+
+        if not all_positions:
             return pd.DataFrame()
 
-        positions = [p.to_dict() for p in positions]
-        if not positions:
+        positions_data = [p.to_dict() for p in all_positions]
+        if not positions_data:
             return pd.DataFrame()
 
         sort = ["ts_opened", "ts_closed", "position_id"]
-        report = pd.DataFrame(data=positions).set_index("position_id").sort_values(sort)
+        report = pd.DataFrame(data=positions_data).set_index("position_id").sort_values(sort)
         del report["signed_qty"]
         del report["quote_currency"]
         del report["base_currency"]
@@ -146,6 +161,9 @@ class ReportProvider:
             unix_nanos_to_dt(ts_closed) if not pd.isna(ts_closed) else pd.NA
             for ts_closed in report["ts_closed"]
         ]
+
+        # Add is_snapshot column
+        report["is_snapshot"] = report.index.isin(snapshot_ids)
 
         return report
 

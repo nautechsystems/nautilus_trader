@@ -13,10 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    sync::{Arc, atomic::Ordering},
-    time::Duration,
-};
+use std::{sync::atomic::Ordering, time::Duration};
 
 use nautilus_core::python::to_pyruntime_err;
 use pyo3::prelude::*;
@@ -32,7 +29,7 @@ impl SocketConfig {
     #[new]
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (url, ssl, suffix, handler, heartbeat=None, reconnect_timeout_ms=10_000, reconnect_delay_initial_ms=2_000, reconnect_delay_max_ms=30_000, reconnect_backoff_factor=1.5, reconnect_jitter_ms=100, certs_dir=None))]
-    fn py_new(
+    const fn py_new(
         url: String,
         ssl: bool,
         suffix: Vec<u8>,
@@ -50,7 +47,7 @@ impl SocketConfig {
             url,
             mode,
             suffix,
-            py_handler: Some(Arc::new(handler)),
+            py_handler: Some(handler),
             heartbeat,
             reconnect_timeout_ms,
             reconnect_delay_initial_ms,
@@ -174,10 +171,10 @@ impl SocketClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             match ConnectionMode::from_atomic(&mode) {
                 ConnectionMode::Closed => {
-                    tracing::warn!("Socket already closed");
+                    tracing::debug!("Socket already closed");
                 }
                 ConnectionMode::Disconnect => {
-                    tracing::warn!("Socket already disconnecting");
+                    tracing::debug!("Socket already disconnecting");
                 }
                 _ => {
                     mode.store(ConnectionMode::Disconnect.as_u8(), Ordering::SeqCst);

@@ -81,6 +81,8 @@ cdef class CryptoPerpetual(Instrument):
         The fee rate for liquidity makers as a percentage of order value.
     taker_fee : Decimal, optional
         The fee rate for liquidity takers as a percentage of order value.
+    tick_scheme_name : str, optional
+        The name of the tick scheme.
     info : dict[str, object], optional
         The additional instrument information.
 
@@ -144,6 +146,7 @@ cdef class CryptoPerpetual(Instrument):
         margin_maint: Decimal | None = None,
         maker_fee: Decimal | None = None,
         taker_fee: Decimal | None = None,
+        str tick_scheme_name = None,
         dict info = None,
     ) -> None:
         super().__init__(
@@ -171,6 +174,7 @@ cdef class CryptoPerpetual(Instrument):
             taker_fee=taker_fee or Decimal(0),
             ts_event=ts_event,
             ts_init=ts_init,
+            tick_scheme_name=tick_scheme_name,
             info=info,
         )
 
@@ -236,6 +240,7 @@ cdef class CryptoPerpetual(Instrument):
             taker_fee=Decimal(values["taker_fee"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
+            tick_scheme_name=values.get("tick_scheme_name"),
             info=values["info"],
         )
 
@@ -268,6 +273,7 @@ cdef class CryptoPerpetual(Instrument):
             "taker_fee": str(obj.taker_fee),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
+            "tick_scheme_name": obj.tick_scheme_name,
             "info": obj.info,
         }
 

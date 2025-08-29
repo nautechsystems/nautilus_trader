@@ -13,9 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{any::Any, cell::RefCell, rc::Rc};
+use std::any::Any;
 
 use nautilus_common::{messages::execution::TradingCommand, msgbus::handler::MessageHandler};
+use nautilus_core::WeakCell;
 use nautilus_model::events::OrderEventAny;
 use ustr::Ustr;
 
@@ -23,8 +24,16 @@ use super::emulator::OrderEmulator;
 
 #[derive(Debug)]
 pub struct OrderEmulatorExecuteHandler {
-    pub id: Ustr,
-    pub emulator: Rc<RefCell<OrderEmulator>>,
+    id: Ustr,
+    emulator: WeakCell<OrderEmulator>,
+}
+
+impl OrderEmulatorExecuteHandler {
+    #[inline]
+    #[must_use]
+    pub fn new(id: Ustr, emulator: WeakCell<OrderEmulator>) -> Self {
+        Self { id, emulator }
+    }
 }
 
 impl MessageHandler for OrderEmulatorExecuteHandler {
@@ -33,12 +42,14 @@ impl MessageHandler for OrderEmulatorExecuteHandler {
     }
 
     fn handle(&self, msg: &dyn Any) {
-        self.emulator.borrow_mut().execute(
-            msg.downcast_ref::<&TradingCommand>()
-                .unwrap()
-                .to_owned()
-                .clone(),
-        );
+        if let Some(emulator) = self.emulator.upgrade() {
+            emulator.borrow_mut().execute(
+                msg.downcast_ref::<&TradingCommand>()
+                    .unwrap()
+                    .to_owned()
+                    .clone(),
+            );
+        }
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -48,8 +59,16 @@ impl MessageHandler for OrderEmulatorExecuteHandler {
 
 #[derive(Debug)]
 pub struct OrderEmulatorOnEventHandler {
-    pub id: Ustr,
-    pub emulator: Rc<RefCell<OrderEmulator>>,
+    id: Ustr,
+    emulator: WeakCell<OrderEmulator>,
+}
+
+impl OrderEmulatorOnEventHandler {
+    #[inline]
+    #[must_use]
+    pub fn new(id: Ustr, emulator: WeakCell<OrderEmulator>) -> Self {
+        Self { id, emulator }
+    }
 }
 
 impl MessageHandler for OrderEmulatorOnEventHandler {
@@ -58,12 +77,14 @@ impl MessageHandler for OrderEmulatorOnEventHandler {
     }
 
     fn handle(&self, msg: &dyn Any) {
-        self.emulator.borrow_mut().on_event(
-            msg.downcast_ref::<&OrderEventAny>()
-                .unwrap()
-                .to_owned()
-                .clone(),
-        );
+        if let Some(emulator) = self.emulator.upgrade() {
+            emulator.borrow_mut().on_event(
+                msg.downcast_ref::<&OrderEventAny>()
+                    .unwrap()
+                    .to_owned()
+                    .clone(),
+            );
+        }
     }
 
     fn as_any(&self) -> &dyn Any {

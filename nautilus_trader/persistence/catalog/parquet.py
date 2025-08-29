@@ -325,14 +325,6 @@ class ParquetDataCatalog(BaseDataCatalog):
         directory = self._make_path(data_cls=data_cls, identifier=identifier)
         self.fs.mkdirs(directory, exist_ok=True)
 
-        if isinstance(data[0], Instrument):
-            # When writing an instrument for a given instrument_id, we don't want duplicates
-            # Also keeping the first occurrence can give information about when it's first available
-            data = [data[0]]
-
-            for file in self.fs.glob(f"{directory}/*.parquet"):
-                self.fs.rm(file)
-
         start = start if start else data[0].ts_init
         end = end if end else data[-1].ts_init
         filename = _timestamps_to_filename(start, end)
@@ -436,7 +428,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             intervals,
         ), "Intervals are not disjoint after extending file name"
 
-    def reset_catalog_file_names(self) -> None:
+    def reset_all_file_names(self) -> None:
         """
         Reset the filenames of all parquet files in the catalog to match their actual
         content timestamps.
@@ -475,7 +467,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         ID.
 
         This method resets the filenames of parquet files for the specified data class and
-        instrument ID to accurately reflect the minimum and maximum timestamps of the data
+        identifier to accurately reflect the minimum and maximum timestamps of the data
         they contain. It examines the parquet metadata for each file and renames the file
         to follow the pattern '{first_timestamp}-{last_timestamp}.parquet'.
 
@@ -484,13 +476,13 @@ class ParquetDataCatalog(BaseDataCatalog):
         data_cls : type
             The data class type to reset filenames for (e.g., QuoteTick, TradeTick, Bar).
         identifier : str, optional
-            The specific instrument ID to reset filenames for. If None, resets filenames
-            for all instruments of the specified data class.
+            The specific identifier (instrument ID, etc) to reset filenames for.
+            If None, resets filenames for all instruments of the specified data class.
 
         Notes
         -----
-        - This operation is more targeted than `reset_catalog_file_names` as it only affects
-          files for a specific data class and instrument ID.
+        - This operation is more targeted than `reset_all_file_names` as it only affects
+          files for a specific data class and identifier.
         - The method does not modify the content of the files, only their names.
         - After renaming, the method verifies that the intervals represented by the filenames
           are disjoint (non-overlapping) to maintain data integrity.
@@ -728,31 +720,6 @@ class ParquetDataCatalog(BaseDataCatalog):
                 ensure_contiguous_files=ensure_contiguous_files,
             )
 
-    def _extract_data_cls_and_identifier_from_path(
-        self,
-        directory: str,
-    ) -> tuple[type | None, str | None]:
-        # Remove the base catalog path to get the relative path
-        base_path = self.path.rstrip("/")
-        if directory.startswith(base_path):
-            relative_path = directory[len(base_path) :].lstrip("/")
-        else:
-            relative_path = directory
-
-        # Expected format: "data/{data_type_filename}/{identifier}" or "data/{data_type_filename}"
-        path_parts = relative_path.split("/")
-
-        if len(path_parts) < 2 or path_parts[0] != "data":
-            return None, None
-
-        data_type_filename = path_parts[1]
-        identifier = path_parts[2] if len(path_parts) > 2 else None
-
-        # Convert filename back to data class
-        data_cls = filename_to_class(data_type_filename)
-
-        return data_cls, identifier
-
     def consolidate_data_by_period(  # noqa: C901
         self,
         data_cls: type,
@@ -836,6 +803,8 @@ class ParquetDataCatalog(BaseDataCatalog):
         existing_files = list(existing_files)  # Make it mutable
 
         # Phase 2: Execute queries, write, and delete
+        file_start_ns = None  # Track contiguity across periods
+
         for query_info in queries_to_execute:
             # Query data for this period using existing files
             period_data = self.query(
@@ -847,14 +816,20 @@ class ParquetDataCatalog(BaseDataCatalog):
             )
 
             if not period_data:
-                # Skip if no data found
+                # Skip if no data found, but maintain contiguity by using query start
+                if file_start_ns is None:
+                    file_start_ns = query_info["query_start"]
                 continue
+            else:
+                file_start_ns = None
 
             # Determine final file timestamps
             if query_info["use_period_boundaries"]:
-                # Use period boundaries for file naming
-                file_start_ns = query_info["target_file_start"]
-                file_end_ns = query_info["target_file_end"]
+                # Use period boundaries for file naming, maintaining contiguity
+                if file_start_ns is None:
+                    file_start_ns = query_info["query_start"]
+
+                file_end_ns = query_info["query_end"]
             else:
                 # Use actual data timestamps for file naming
                 file_start_ns = period_data[0].ts_init
@@ -886,11 +861,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             for file in existing_files[:]:  # Use slice copy to avoid modification during iteration
                 interval = _parse_filename_timestamps(file)
 
-                if (
-                    interval
-                    and query_info["query_start"] <= interval[0]
-                    and interval[1] <= query_info["query_end"]
-                ):
+                if interval and interval[1] <= query_info["query_end"]:
                     files_to_remove.add(file)
                     existing_files.remove(file)
 
@@ -999,31 +970,25 @@ class ParquetDataCatalog(BaseDataCatalog):
         # Handle interval splitting by creating split operations for data preservation
         if filtered_intervals and used_start is not None:
             first_interval = filtered_intervals[0]
-            if first_interval[0] < used_start.value < first_interval[1]:
+            if first_interval[0] < used_start.value <= first_interval[1]:
                 # Split before start: preserve data from interval_start to start-1
                 queries_to_execute.append(
                     {
                         "query_start": first_interval[0],
                         "query_end": used_start.value - 1,
-                        "target_file_start": first_interval[0],
-                        "target_file_end": used_start.value - 1,
                         "use_period_boundaries": False,
-                        "is_split": True,
                     },
                 )
 
         if filtered_intervals and used_end is not None:
             last_interval = filtered_intervals[-1]
-            if last_interval[0] < used_end.value < last_interval[1]:
+            if last_interval[0] <= used_end.value < last_interval[1]:
                 # Split after end: preserve data from end+1 to interval_end
                 queries_to_execute.append(
                     {
                         "query_start": used_end.value + 1,
                         "query_end": last_interval[1],
-                        "target_file_start": used_end.value + 1,
-                        "target_file_end": last_interval[1],
                         "use_period_boundaries": False,
-                        "is_split": True,
                     },
                 )
 
@@ -1066,21 +1031,11 @@ class ParquetDataCatalog(BaseDataCatalog):
                 if current_end_ns > group_end_ts:
                     current_end_ns = group_end_ts
 
-                # Determine target file timestamps based on ensure_contiguous_files
+                # Create target filename to check if it already exists (only for period boundaries)
                 if ensure_contiguous_files:
-                    # Use period boundaries for file naming
-                    target_file_start_ns = current_start_ns
-                    target_file_end_ns = current_end_ns
-                else:
-                    # For actual data timestamps, we'll determine this after querying
-                    target_file_start_ns = None
-                    target_file_end_ns = None
-
-                # Create target filename to check if it already exists
-                if target_file_start_ns is not None and target_file_end_ns is not None:
                     target_filename = os.path.join(
                         directory,
-                        _timestamps_to_filename(target_file_start_ns, target_file_end_ns),
+                        _timestamps_to_filename(current_start_ns, current_end_ns),
                     )
 
                     # Skip if target file already exists
@@ -1093,10 +1048,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                     {
                         "query_start": current_start_ns,
                         "query_end": current_end_ns,
-                        "target_file_start": target_file_start_ns,
-                        "target_file_end": target_file_end_ns,
                         "use_period_boundaries": ensure_contiguous_files,
-                        "is_split": False,
                     },
                 )
 
@@ -1106,7 +1058,53 @@ class ParquetDataCatalog(BaseDataCatalog):
                 if current_start_ns > group_end_ts:
                     break
 
-        return queries_to_execute
+        # Sort queries by start date to enable efficient file removal
+        # Files can be removed when interval[1] <= query_info["query_end"]
+        # and processing in chronological order ensures optimal cleanup
+        return sorted(queries_to_execute, key=lambda q: q["query_start"])
+
+    def delete_catalog_range(
+        self,
+        start: TimestampLike | None = None,
+        end: TimestampLike | None = None,
+    ) -> None:
+        """
+        Delete data within a specified time range across the entire catalog.
+
+        This method identifies all leaf directories in the catalog that contain parquet files
+        and deletes data within the specified time range from each directory. A leaf directory
+        is one that contains files but no subdirectories. This is a convenience method that
+        effectively calls `delete_data_range` for all data types and instrument IDs in the catalog.
+
+        Parameters
+        ----------
+        start : TimestampLike, optional
+            The start timestamp for the deletion range. If None, deletes from the beginning.
+        end : TimestampLike, optional
+            The end timestamp for the deletion range. If None, deletes to the end.
+
+        Notes
+        -----
+        - This operation permanently removes data and cannot be undone
+        - The deletion process handles file intersections intelligently by splitting files
+          when they partially overlap with the deletion range
+        - Files completely within the deletion range are removed entirely
+        - Files partially overlapping the deletion range are split to preserve data outside the range
+        - This method is useful for bulk data cleanup operations across the entire catalog
+        - Empty directories are not automatically removed after deletion
+
+        """
+        leaf_directories = self._find_leaf_data_directories()
+
+        for directory in leaf_directories:
+            # Extract data class and identifier from directory path
+            try:
+                data_cls, identifier = self._extract_data_cls_and_identifier_from_path(directory)
+                if data_cls is not None:
+                    self.delete_data_range(data_cls, identifier, start, end)
+            except Exception as e:
+                print(f"Failed to delete data in directory {directory}: {e}")
+                continue
 
     def _find_leaf_data_directories(self) -> list[str]:
         all_paths = self.fs.glob(os.path.join(self.path, "data", "**"))
@@ -1122,6 +1120,262 @@ class ParquetDataCatalog(BaseDataCatalog):
                 leaf_dirs.append(directory)
 
         return leaf_dirs
+
+    def _extract_data_cls_and_identifier_from_path(
+        self,
+        directory: str,
+    ) -> tuple[type | None, str | None]:
+        # Remove the base catalog path to get the relative path
+        base_path = self.path.rstrip("/")
+        if directory.startswith(base_path):
+            relative_path = directory[len(base_path) :].lstrip("/")
+        else:
+            relative_path = directory
+
+        # Expected format: "data/{data_type_filename}/{identifier}" or "data/{data_type_filename}"
+        path_parts = relative_path.split("/")
+
+        if len(path_parts) < 2 or path_parts[0] != "data":
+            return None, None
+
+        data_type_filename = path_parts[1]
+        identifier = path_parts[2] if len(path_parts) > 2 else None
+
+        # Convert filename back to data class
+        data_cls = filename_to_class(data_type_filename)
+
+        return data_cls, identifier
+
+    def delete_data_range(  # noqa: C901
+        self,
+        data_cls: type,
+        identifier: str | None = None,
+        start: TimestampLike | None = None,
+        end: TimestampLike | None = None,
+    ) -> None:
+        """
+        Delete data within a specified time range for a specific data class and
+        instrument.
+
+        This method identifies all parquet files that intersect with the specified time range
+        and handles them appropriately:
+        - Files completely within the range are deleted
+        - Files partially overlapping the range are split to preserve data outside the range
+        - The original intersecting files are removed after processing
+
+        Parameters
+        ----------
+        data_cls : type
+            The data class type to delete data for (e.g., QuoteTick, TradeTick, Bar).
+        identifier : str, optional
+            The instrument identifier to delete data for. If None, deletes data across all instruments
+            for the specified data class.
+        start : TimestampLike, optional
+            The start timestamp for the deletion range. If None, deletes from the beginning.
+        end : TimestampLike, optional
+            The end timestamp for the deletion range. If None, deletes to the end.
+
+        Notes
+        -----
+        - This operation permanently removes data and cannot be undone
+        - Files that partially overlap the deletion range are split to preserve data outside the range
+        - The method ensures data integrity by using atomic operations where possible
+        - Empty directories are not automatically removed after deletion
+
+        """
+        # Handle identifier=None by deleting from all identifiers for this data class
+        if identifier is None:
+            # Find all directories for this data class
+            leaf_directories = self._find_leaf_data_directories()
+            data_cls_name = class_to_filename(data_cls)
+
+            for directory in leaf_directories:
+                # Check if this directory is for the specified data class
+                if f"/data/{data_cls_name}/" in directory:
+                    # Extract the identifier from the directory path
+                    parts = directory.split("/")
+                    if len(parts) >= 3 and parts[-2] == data_cls_name:
+                        dir_identifier = parts[-1]
+                        # Recursively call delete for this specific identifier
+                        self.delete_data_range(
+                            data_cls=data_cls,
+                            identifier=dir_identifier,
+                            start=start,
+                            end=end,
+                        )
+            return
+
+        # Use get_intervals for cleaner implementation
+        intervals = self.get_intervals(data_cls, identifier)
+
+        if not intervals:
+            return  # No files to process
+
+        # Use auxiliary function to prepare all operations for execution
+        operations_to_execute = self._prepare_delete_operations(
+            data_cls,
+            identifier,
+            intervals,
+            start,
+            end,
+        )
+
+        if not operations_to_execute:
+            return  # No operations to execute
+
+        # Execute all operations
+        files_to_remove = set()
+
+        for operation in operations_to_execute:
+            if operation["type"] == "split_before":
+                # Query data before the deletion range and write it
+                before_data = self.query(
+                    data_cls=data_cls,
+                    identifiers=[identifier] if identifier else None,
+                    start=operation["query_start"],
+                    end=operation["query_end"],
+                    files=operation["files"],
+                )
+                if before_data:
+                    self.write_data(
+                        data=before_data,
+                        start=operation["file_start_ns"],
+                        end=operation["file_end_ns"],
+                        skip_disjoint_check=True,
+                    )
+
+            elif operation["type"] == "split_after":
+                # Query data after the deletion range and write it
+                after_data = self.query(
+                    data_cls=data_cls,
+                    identifiers=[identifier] if identifier else None,
+                    start=operation["query_start"],
+                    end=operation["query_end"],
+                    files=operation["files"],
+                )
+                if after_data:
+                    self.write_data(
+                        data=after_data,
+                        start=operation["file_start_ns"],
+                        end=operation["file_end_ns"],
+                        skip_disjoint_check=True,
+                    )
+
+            # Mark files for removal (applies to all operation types)
+            for file in operation["files"]:
+                files_to_remove.add(file)
+
+        # Remove all files that were processed
+        for file in files_to_remove:
+            if self.fs.exists(file):
+                self.fs.rm(file)
+
+    def _prepare_delete_operations(
+        self,
+        data_cls: type,
+        identifier: str | None,
+        intervals: list[tuple[int, int]],
+        start: TimestampLike | None = None,
+        end: TimestampLike | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Prepare all operations for data deletion by identifying files that need to be
+        split or removed.
+
+        This auxiliary function handles all the preparation logic for deletion:
+        1. Filters intervals by time range
+        2. Identifies files that intersect with the deletion range
+        3. Creates split operations for files that partially overlap
+        4. Generates removal operations for files completely within the range
+
+        Parameters
+        ----------
+        data_cls : type
+            The data class type for path generation
+        identifier : str, optional
+            The instrument identifier for path generation
+        intervals : list[tuple[int, int]]
+            List of (start_ts, end_ts) tuples representing existing file intervals
+        start : TimestampLike, optional
+            The start timestamp for deletion range
+        end : TimestampLike, optional
+            The end timestamp for deletion range
+
+        Returns
+        -------
+        list[dict]
+            List of operation dictionaries ready for execution
+
+        """
+        # Convert start/end to nanoseconds
+        used_start: pd.Timestamp | None = time_object_to_dt(start)
+        used_end: pd.Timestamp | None = time_object_to_dt(end)
+
+        delete_start_ns = used_start.value if used_start else None
+        delete_end_ns = used_end.value if used_end else None
+
+        operations: list[dict[str, Any]] = []
+
+        # Get all files for this data class and identifier
+        all_files = self._query_files(data_cls, [identifier] if identifier else None)
+
+        for file in all_files:
+            interval = _parse_filename_timestamps(file)
+            if not interval:
+                continue
+
+            file_start_ns, file_end_ns = interval
+
+            # Check if file intersects with deletion range
+            intersects = (delete_start_ns is None or delete_start_ns <= file_end_ns) and (
+                delete_end_ns is None or file_start_ns <= delete_end_ns
+            )
+
+            if not intersects:
+                continue  # File doesn't intersect with deletion range
+
+            # Determine what type of operation is needed
+            file_completely_within_range = (
+                delete_start_ns is None or delete_start_ns <= file_start_ns
+            ) and (delete_end_ns is None or file_end_ns <= delete_end_ns)
+
+            if file_completely_within_range:
+                # File is completely within deletion range - just mark for removal
+                operations.append(
+                    {
+                        "type": "remove",
+                        "files": [file],
+                    },
+                )
+            else:
+                # File partially overlaps - need to split
+                if delete_start_ns is not None and file_start_ns < delete_start_ns:
+                    # Keep data before deletion range
+                    operations.append(
+                        {
+                            "type": "split_before",
+                            "files": [file],
+                            "query_start": file_start_ns,
+                            "query_end": delete_start_ns - 1,  # Exclusive end
+                            "file_start_ns": file_start_ns,
+                            "file_end_ns": delete_start_ns - 1,
+                        },
+                    )
+
+                if delete_end_ns is not None and delete_end_ns < file_end_ns:
+                    # Keep data after deletion range
+                    operations.append(
+                        {
+                            "type": "split_after",
+                            "files": [file],
+                            "query_start": delete_end_ns + 1,  # Exclusive start
+                            "query_end": file_end_ns,
+                            "file_start_ns": delete_end_ns + 1,
+                            "file_end_ns": file_end_ns,
+                        },
+                    )
+
+        return operations
 
     # -- QUERIES ----------------------------------------------------------------------------------
 
@@ -1368,8 +1622,18 @@ class ParquetDataCatalog(BaseDataCatalog):
         if self.fs_protocol != "file":
             self._register_object_store_with_session(session)
 
-        for idx, file in enumerate(file_list):
-            table = f"{file_prefix}_{idx}"
+        for file in file_list:
+            # Extract identifier from file path and filename to create meaningful table names
+            identifier = file.split("/")[-2]
+            safe_sql_identifier = (
+                urisafe_identifier(identifier)
+                .replace(".", "_")
+                .replace("-", "_")
+                .replace(" ", "_")
+                .lower()
+            )
+            safe_filename = _extract_sql_safe_filename(file)
+            table = f"{file_prefix}_{safe_sql_identifier}_{safe_filename}"
             query = self._build_query(
                 table,
                 start=start,
@@ -2044,10 +2308,6 @@ def _min_max_from_parquet_metadata(file_path: str, column_name: str) -> tuple[in
                         overall_min_value = min_value
                     if overall_max_value is None or max_value > overall_max_value:
                         overall_max_value = max_value
-                else:
-                    print(
-                        f"Warning: Statistics not available for column '{column_name}' in row group {i}.",
-                    )
 
     if overall_min_value is None or overall_max_value is None:
         print(f"Column '{column_name}' not found or has no statistics in any row group.")
@@ -2116,3 +2376,19 @@ def _get_integer_interval_set(intervals: list[tuple[int, int]]) -> P.Interval:
         union_result |= P.closedopen(interval[0], interval[1] + 1)
 
     return union_result
+
+
+def _extract_sql_safe_filename(file_path: str) -> str:
+    if not file_path:
+        return "unknown_file"
+
+    filename = file_path.split("/")[-1]
+
+    # Remove .parquet extension
+    if filename.endswith(".parquet"):
+        name_without_ext = filename[:-8]  # Remove ".parquet"
+    else:
+        name_without_ext = filename
+
+    # Remove characters that can pose problems: hyphens, colons, etc.
+    return name_without_ext.replace("-", "_").replace(":", "_").replace(".", "_").lower()

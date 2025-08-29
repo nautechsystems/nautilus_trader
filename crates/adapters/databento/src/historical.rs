@@ -29,7 +29,7 @@ use databento::{
     historical::timeseries::GetRangeParams,
 };
 use indexmap::IndexMap;
-use nautilus_core::{UnixNanos, time::AtomicTime};
+use nautilus_core::{UnixNanos, consts::NAUTILUS_USER_AGENT, time::AtomicTime};
 use nautilus_model::{
     data::{Bar, Data, InstrumentStatus, QuoteTick, TradeTick},
     enums::BarAggregation,
@@ -97,6 +97,7 @@ impl DatabentoHistoricalClient {
         use_exchange_as_venue: bool,
     ) -> anyhow::Result<Self> {
         let client = databento::HistoricalClient::builder()
+            .user_agent_extension(NAUTILUS_USER_AGENT.into())
             .key(key.clone())
             .map_err(|e| anyhow::anyhow!("Failed to create client builder: {e}"))?
             .build()

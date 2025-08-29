@@ -73,7 +73,7 @@ impl PortfolioStatistic for SharpeRatio {
 mod tests {
     use std::collections::BTreeMap;
 
-    use nautilus_core::UnixNanos;
+    use nautilus_core::{UnixNanos, approx_eq};
     use rstest::rstest;
 
     use super::*;
@@ -115,7 +115,12 @@ mod tests {
         let returns = create_returns(vec![0.01, -0.02, 0.015, -0.005, 0.025]);
         let result = ratio.calculate_from_returns(&returns);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), 4.48998886412873);
+        assert!(approx_eq!(
+            f64,
+            result.unwrap(),
+            4.48998886412873,
+            epsilon = 1e-9
+        ));
     }
 
     #[rstest]

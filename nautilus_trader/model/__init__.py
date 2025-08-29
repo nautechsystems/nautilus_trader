@@ -30,6 +30,7 @@ from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import DataType
+from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import InstrumentClose
 from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import MarkPriceUpdate
@@ -99,6 +100,7 @@ __all__ = [
     "CustomData",
     "DataType",
     "ExecAlgorithmId",
+    "FundingRateUpdate",
     "InstrumentClose",
     "InstrumentId",
     "InstrumentStatus",

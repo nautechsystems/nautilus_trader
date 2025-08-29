@@ -13,8 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 import asyncio
+import logging
 from functools import partial
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
@@ -282,7 +286,7 @@ async def test_modify_order_success(
     await asyncio.sleep(0)
 
     # Assert
-    pending_update, _, updated = events[-3:]
+    pending_update, updated = events[-2:]
     assert isinstance(pending_update, OrderPendingUpdate)
     assert isinstance(updated, OrderUpdated)
     assert updated.price == betfair_float_to_price(50)
@@ -525,7 +529,7 @@ async def test_order_stream_new_full_image(exec_client, setup_order_state, cache
     # Act
     exec_client.handle_order_stream_update(raw)
     await asyncio.sleep(0)
-    assert len(events) == 6
+    assert len(events) == 4
 
 
 @pytest.mark.asyncio()
@@ -557,7 +561,7 @@ async def test_order_stream_update(exec_client, setup_order_state, events):
     await asyncio.sleep(0)
 
     # Assert
-    assert len(events) == 5
+    assert len(events) == 3
 
 
 @pytest.mark.asyncio()
@@ -573,7 +577,7 @@ async def test_order_stream_filled(exec_client, setup_order_state, events, fill_
     await asyncio.sleep(0)
 
     # Assert
-    assert len(events) == 6
+    assert len(events) == 4
     fill: OrderFilled = fill_events[0]
     assert isinstance(fill, OrderFilled)
     assert fill.last_px == betfair_float_to_price(1.10)
@@ -617,7 +621,7 @@ async def test_order_stream_filled_multiple_prices(
     await asyncio.sleep(0)
 
     # Assert
-    assert len(events) == 12
+    assert len(events) == 8
     fill1, fill2 = (event for event in events if isinstance(event, OrderFilled))
     assert isinstance(fill1, OrderFilled)
     assert isinstance(fill2, OrderFilled)
@@ -1077,15 +1081,103 @@ async def test_generate_fill_reports(exec_client):
 
 @pytest.mark.asyncio
 @pytest.mark.live_components
-async def test_reconcile_mass_status(exec_client, exec_engine):
+async def test_reconcile_execution_mass_status(exec_client, exec_engine):
     # Arrange
     mock_betfair_request(
         exec_client._client,
         BetfairResponses.list_current_orders_execution_complete(),
     )
 
-    # Act
+    # Act, Assert
     mass_status = await exec_client.generate_mass_status()
-    exec_engine._reconcile_mass_status(mass_status)
+    exec_engine._reconcile_execution_mass_status(mass_status)
 
-    # Assert
+
+# A price far below the allowed minimum (~ -1.7e13)
+_NEGATIVE_PRICE = -7.849774150506724e14
+
+
+class _StubUnmatchedOrder(SimpleNamespace):
+    """
+    Minimal attribute bag to satisfy the handlers.
+    """
+
+
+@pytest.fixture()
+def order_and_cache(exec_client, monkeypatch):
+    """
+    Insert a stub order/instrument into the execution-client cache.
+    """
+    instrument = betting_instrument()
+    order = TestExecStubs.limit_order(instrument=instrument)
+
+    # Insert directly into the real cache (simpler than monkey-patching the
+    # Cython-backed methods which are immutable).
+
+    exec_client._cache.add_instrument(instrument)
+    exec_client._cache.add_order(order)
+
+    return order, instrument
+
+
+def _make_unmatched_order(order, *, price: float = _NEGATIVE_PRICE):
+    """
+    Construct an unmatched-order stub with a deliberately bad price.
+    """
+    return _StubUnmatchedOrder(
+        id=str(order.client_order_id),  # Bet ID
+        side="L",  # Unused due to monkey-patch above
+        p=order.price.as_double(),
+        avp=price,
+        s=order.quantity.as_double(),
+        sm=order.quantity.as_double(),  # Matched size triggers a fill path
+        md=0,
+        pt=None,
+        ot=None,
+        sc=0,
+        sl=0,
+        sv=0,
+        lapse_status_reason_code=None,
+    )
+
+
+@pytest.mark.parametrize(
+    "handler_name",
+    [
+        "_handle_stream_executable_order_update",
+        "_handle_stream_execution_complete_order_update",
+    ],
+)
+def test_invalid_price_is_skipped(
+    handler_name,
+    exec_client: BetfairExecutionClient,
+    order_and_cache,
+    monkeypatch,
+    caplog,
+):
+    order, _ = order_and_cache
+
+    # Arrange: intercept generate_order_filled and capture warnings
+    generate_mock = MagicMock()
+    monkeypatch.setattr(exec_client, "generate_order_filled", generate_mock)
+
+    # Import locally to avoid ruff E402 at module level
+    from nautilus_trader.adapters.betfair.common import OrderSideParser
+    from nautilus_trader.adapters.betfair.parsing import requests as parsing_requests
+    from nautilus_trader.model.enums import OrderSide
+
+    # Monkey-patch helpers ONLY for this test to keep side-effects local
+    monkeypatch.setattr(OrderSideParser, "to_nautilus", lambda _side: OrderSide.BUY)
+    monkeypatch.setattr(parsing_requests, "order_to_trade_id", lambda _uo: TradeId("TRADE-TEST"))
+
+    unmatched_order = _make_unmatched_order(order)
+
+    caplog.set_level(logging.WARNING, logger=exec_client._log.name)
+
+    # Act
+    getattr(exec_client, handler_name)(unmatched_order)
+
+    # Assert: no fill generated. Capturing the exact log record is brittle because the
+    # BetfairExecutionClient logger is a custom adapter the important functional
+    # guarantee is that we *did not* emit a fill.
+    generate_mock.assert_not_called()

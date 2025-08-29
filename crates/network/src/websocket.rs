@@ -42,6 +42,9 @@ use futures_util::{
     stream::{SplitSink, SplitStream},
 };
 use http::HeaderName;
+use nautilus_core::CleanDrop;
+#[cfg(feature = "python")]
+use nautilus_core::python::clone_py_object;
 use nautilus_cryptography::providers::install_cryptographic_provider;
 #[cfg(feature = "python")]
 use pyo3::{prelude::*, types::PyBytes};
@@ -62,17 +65,32 @@ use crate::{
     ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota},
 };
 
+// Connection timing constants
+const CONNECTION_STATE_CHECK_INTERVAL_MS: u64 = 10;
+const GRACEFUL_SHUTDOWN_DELAY_MS: u64 = 100;
+const GRACEFUL_SHUTDOWN_TIMEOUT_SECS: u64 = 5;
+
 type MessageWriter = SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>;
 pub type MessageReader = SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
 
 /// Defines how WebSocket messages are consumed.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum Consumer {
     /// Python-based message handler.
     #[cfg(feature = "python")]
-    Python(Option<Arc<PyObject>>),
+    Python(Option<PyObject>),
     /// Rust-based message handler using a channel sender.
     Rust(Sender<Message>),
+}
+
+impl Clone for Consumer {
+    fn clone(&self) -> Self {
+        match self {
+            #[cfg(feature = "python")]
+            Self::Python(opt) => Self::Python(opt.as_ref().map(clone_py_object)),
+            Self::Rust(sender) => Self::Rust(sender.clone()),
+        }
+    }
 }
 
 impl Consumer {
@@ -86,7 +104,7 @@ impl Consumer {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
@@ -104,7 +122,7 @@ pub struct WebSocketConfig {
     pub heartbeat_msg: Option<String>,
     /// The handler for incoming pings.
     #[cfg(feature = "python")]
-    pub ping_handler: Option<Arc<PyObject>>,
+    pub ping_handler: Option<PyObject>,
     /// The timeout (milliseconds) for reconnection attempts.
     pub reconnect_timeout_ms: Option<u64>,
     /// The initial reconnection delay (milliseconds) for reconnects.
@@ -115,6 +133,25 @@ pub struct WebSocketConfig {
     pub reconnect_backoff_factor: Option<f64>,
     /// The maximum jitter (milliseconds) added to reconnection delays.
     pub reconnect_jitter_ms: Option<u64>,
+}
+
+impl Clone for WebSocketConfig {
+    fn clone(&self) -> Self {
+        Self {
+            url: self.url.clone(),
+            headers: self.headers.clone(),
+            handler: self.handler.clone(),
+            heartbeat: self.heartbeat,
+            heartbeat_msg: self.heartbeat_msg.clone(),
+            #[cfg(feature = "python")]
+            ping_handler: self.ping_handler.as_ref().map(clone_py_object),
+            reconnect_timeout_ms: self.reconnect_timeout_ms,
+            reconnect_delay_initial_ms: self.reconnect_delay_initial_ms,
+            reconnect_delay_max_ms: self.reconnect_delay_max_ms,
+            reconnect_backoff_factor: self.reconnect_backoff_factor,
+            reconnect_jitter_ms: self.reconnect_jitter_ms,
+        }
+    }
 }
 
 /// Represents a command for the writer task.
@@ -178,12 +215,14 @@ impl WebSocketClientInner {
 
         let read_task = match &handler {
             #[cfg(feature = "python")]
-            Consumer::Python(handler) => handler.as_ref().map(|handler| {
+            Consumer::Python(handler) => handler.as_ref().map(|handler_obj| {
+                let owned_handler = clone_py_object(handler_obj);
+                let owned_ping = ping_handler.as_ref().map(clone_py_object);
                 Self::spawn_python_callback_task(
                     connection_mode.clone(),
                     reader,
-                    handler.clone(),
-                    ping_handler.clone(),
+                    owned_handler,
+                    owned_ping,
                 )
             }),
             Consumer::Rust(sender) => Some(Self::spawn_rust_streaming_task(
@@ -275,18 +314,18 @@ impl WebSocketClientInner {
             }
 
             // Delay before closing connection
-            tokio::time::sleep(Duration::from_millis(100)).await;
+            tokio::time::sleep(Duration::from_millis(GRACEFUL_SHUTDOWN_DELAY_MS)).await;
 
             if ConnectionMode::from_atomic(&self.connection_mode).is_disconnect() {
                 tracing::debug!("Reconnect aborted mid-flight (after delay)");
                 return Ok(());
             }
 
-            if let Some(ref read_task) = self.read_task.take() {
-                if !read_task.is_finished() {
-                    read_task.abort();
-                    log_task_aborted("read");
-                }
+            if let Some(ref read_task) = self.read_task.take()
+                && !read_task.is_finished()
+            {
+                read_task.abort();
+                log_task_aborted("read");
             }
 
             // If a disconnect was requested during reconnect, do not proceed to reactivate
@@ -305,8 +344,8 @@ impl WebSocketClientInner {
                     Self::spawn_python_callback_task(
                         self.connection_mode.clone(),
                         reader,
-                        handler.clone(),
-                        self.config.ping_handler.clone(),
+                        clone_py_object(handler),
+                        self.config.ping_handler.as_ref().map(clone_py_object),
                     )
                 }),
                 Consumer::Rust(sender) => Some(Self::spawn_rust_streaming_task(
@@ -354,7 +393,7 @@ impl WebSocketClientInner {
     ) -> tokio::task::JoinHandle<()> {
         tracing::debug!("Started streaming task 'read'");
 
-        let check_interval = Duration::from_millis(10);
+        let check_interval = Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS);
 
         tokio::task::spawn(async move {
             loop {
@@ -389,13 +428,13 @@ impl WebSocketClientInner {
     fn spawn_python_callback_task(
         connection_state: Arc<AtomicU8>,
         mut reader: MessageReader,
-        handler: Arc<PyObject>,
-        ping_handler: Option<Arc<PyObject>>,
+        handler: PyObject,
+        ping_handler: Option<PyObject>,
     ) -> tokio::task::JoinHandle<()> {
         log_task_started("read");
 
         // Interval between checking the connection mode
-        let check_interval = Duration::from_millis(10);
+        let check_interval = Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS);
 
         tokio::task::spawn(async move {
             loop {
@@ -426,13 +465,12 @@ impl WebSocketClientInner {
                     }
                     Ok(Some(Ok(Message::Ping(ping)))) => {
                         tracing::trace!("Received ping: {ping:?}");
-                        if let Some(ref handler) = ping_handler {
-                            if let Err(e) =
+                        if let Some(ref handler) = ping_handler
+                            && let Err(e) =
                                 Python::with_gil(|py| handler.call1(py, (PyBytes::new(py, &ping),)))
-                            {
-                                tracing::error!("Error calling handler: {e}");
-                                break;
-                            }
+                        {
+                            tracing::error!("Error calling handler: {e}");
+                            break;
                         }
                         continue;
                     }
@@ -471,7 +509,7 @@ impl WebSocketClientInner {
         log_task_started("write");
 
         // Interval between checking the connection mode
-        let check_interval = Duration::from_millis(10);
+        let check_interval = Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS);
 
         tokio::task::spawn(async move {
             let mut active_writer = writer;
@@ -481,7 +519,11 @@ impl WebSocketClientInner {
                     ConnectionMode::Disconnect => {
                         // Attempt to close the writer gracefully before exiting,
                         // we ignore any error as the writer may already be closed.
-                        _ = active_writer.close().await;
+                        _ = tokio::time::timeout(
+                            Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS),
+                            active_writer.close(),
+                        )
+                        .await;
                         break;
                     }
                     ConnectionMode::Closed => break,
@@ -505,7 +547,11 @@ impl WebSocketClientInner {
 
                                 // Attempt to close the writer gracefully on update,
                                 // we ignore any error as the writer may already be closed.
-                                _ = active_writer.close().await;
+                                _ = tokio::time::timeout(
+                                    Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS),
+                                    active_writer.close(),
+                                )
+                                .await;
 
                                 active_writer = new_writer;
                                 tracing::debug!("Updated writer");
@@ -539,7 +585,11 @@ impl WebSocketClientInner {
 
             // Attempt to close the writer gracefully before exiting,
             // we ignore any error as the writer may already be closed.
-            _ = active_writer.close().await;
+            _ = tokio::time::timeout(
+                Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS),
+                active_writer.close(),
+            )
+            .await;
 
             log_task_stopped("write");
         })
@@ -585,11 +635,18 @@ impl WebSocketClientInner {
 
 impl Drop for WebSocketClientInner {
     fn drop(&mut self) {
-        if let Some(ref read_task) = self.read_task.take() {
-            if !read_task.is_finished() {
-                read_task.abort();
-                log_task_aborted("read");
-            }
+        // Delegate to explicit cleanup handler
+        self.clean_drop();
+    }
+}
+
+impl CleanDrop for WebSocketClientInner {
+    fn clean_drop(&mut self) {
+        if let Some(ref read_task) = self.read_task.take()
+            && !read_task.is_finished()
+        {
+            read_task.abort();
+            log_task_aborted("read");
         }
 
         if !self.write_task.is_finished() {
@@ -597,11 +654,25 @@ impl Drop for WebSocketClientInner {
             log_task_aborted("write");
         }
 
-        if let Some(ref handle) = self.heartbeat_task.take() {
-            if !handle.is_finished() {
-                handle.abort();
-                log_task_aborted("heartbeat");
+        if let Some(ref handle) = self.heartbeat_task.take()
+            && !handle.is_finished()
+        {
+            handle.abort();
+            log_task_aborted("heartbeat");
+        }
+
+        #[cfg(feature = "python")]
+        {
+            // Clear the main message handler to break ref cycle
+            match &mut self.config.handler {
+                Consumer::Python(handler_opt) => {
+                    *handler_opt = None;
+                }
+                Consumer::Rust(_) => {}
             }
+
+            // Clear optional ping handler to break ref cycle
+            self.config.ping_handler = None;
         }
     }
 }
@@ -785,9 +856,9 @@ impl WebSocketClient {
         self.connection_mode
             .store(ConnectionMode::Disconnect.as_u8(), Ordering::SeqCst);
 
-        match tokio::time::timeout(Duration::from_secs(5), async {
+        match tokio::time::timeout(Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS), async {
             while !self.is_disconnected() {
-                tokio::time::sleep(Duration::from_millis(10)).await;
+                tokio::time::sleep(Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS)).await;
             }
 
             if !self.controller_task.is_finished() {
@@ -882,7 +953,7 @@ impl WebSocketClient {
         tokio::task::spawn(async move {
             log_task_started("controller");
 
-            let check_interval = Duration::from_millis(10);
+            let check_interval = Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS);
 
             loop {
                 tokio::time::sleep(check_interval).await;
@@ -891,23 +962,23 @@ impl WebSocketClient {
                 if mode.is_disconnect() {
                     tracing::debug!("Disconnecting");
 
-                    let timeout = Duration::from_secs(5);
+                    let timeout = Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS);
                     if tokio::time::timeout(timeout, async {
                         // Delay awaiting graceful shutdown
-                        tokio::time::sleep(Duration::from_millis(100)).await;
+                        tokio::time::sleep(Duration::from_millis(GRACEFUL_SHUTDOWN_DELAY_MS)).await;
 
-                        if let Some(task) = &inner.read_task {
-                            if !task.is_finished() {
-                                task.abort();
-                                log_task_aborted("read");
-                            }
+                        if let Some(task) = &inner.read_task
+                            && !task.is_finished()
+                        {
+                            task.abort();
+                            log_task_aborted("read");
                         }
 
-                        if let Some(task) = &inner.heartbeat_task {
-                            if !task.is_finished() {
-                                task.abort();
-                                log_task_aborted("heartbeat");
-                            }
+                        if let Some(task) = &inner.heartbeat_task
+                            && !task.is_finished()
+                        {
+                            task.abort();
+                            log_task_aborted("heartbeat");
                         }
                     })
                     .await

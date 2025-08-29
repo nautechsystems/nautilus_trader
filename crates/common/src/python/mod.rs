@@ -16,6 +16,7 @@
 //! Python bindings from [PyO3](https://pyo3.rs).
 
 pub mod actor;
+pub mod cache;
 pub mod clock;
 pub mod custom;
 pub mod enums;
@@ -44,14 +45,19 @@ use crate::python::msgbus::{
 pub fn common(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::custom::CustomData>()?;
     m.add_class::<crate::signal::Signal>()?;
-    m.add_class::<crate::python::clock::TestClock_Py>()?;
-    m.add_class::<crate::python::clock::LiveClock_Py>()?;
+    m.add_class::<crate::cache::CacheConfig>()?;
+    m.add_class::<crate::cache::Cache>()?;
     m.add_class::<crate::python::actor::PyDataActor>()?;
+    m.add_class::<crate::python::clock::PyClock>()?;
+    m.add_class::<crate::python::logging::PyLogger>()?;
+    m.add_class::<crate::python::handler::PythonMessageHandler>()?;
+    m.add_class::<crate::actor::data_actor::DataActorConfig>()?;
+    m.add_class::<crate::actor::data_actor::ImportableActorConfig>()?;
     m.add_class::<crate::msgbus::BusMessage>()?;
     m.add_class::<crate::msgbus::listener::MessageBusListener>()?;
-    m.add_class::<crate::python::handler::PythonMessageHandler>()?;
     m.add_class::<crate::enums::ComponentState>()?;
     m.add_class::<crate::enums::ComponentTrigger>()?;
+    m.add_class::<crate::enums::Environment>()?;
     m.add_class::<crate::enums::LogColor>()?;
     m.add_class::<crate::enums::LogLevel>()?;
     m.add_class::<crate::enums::LogFormat>()?;

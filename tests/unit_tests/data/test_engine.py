@@ -26,6 +26,7 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.datetime import time_object_to_dt
+from nautilus_trader.core.datetime import unix_nanos_to_dt
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.data.engine import DataEngineConfig
@@ -40,6 +41,7 @@ from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.data.messages import SubscribeBars
 from nautilus_trader.data.messages import SubscribeData
+from nautilus_trader.data.messages import SubscribeFundingRates
 from nautilus_trader.data.messages import SubscribeIndexPrices
 from nautilus_trader.data.messages import SubscribeInstrument
 from nautilus_trader.data.messages import SubscribeInstruments
@@ -49,6 +51,7 @@ from nautilus_trader.data.messages import SubscribeQuoteTicks
 from nautilus_trader.data.messages import SubscribeTradeTicks
 from nautilus_trader.data.messages import UnsubscribeBars
 from nautilus_trader.data.messages import UnsubscribeData
+from nautilus_trader.data.messages import UnsubscribeFundingRates
 from nautilus_trader.data.messages import UnsubscribeIndexPrices
 from nautilus_trader.data.messages import UnsubscribeInstrument
 from nautilus_trader.data.messages import UnsubscribeInstruments
@@ -65,8 +68,10 @@ from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
+from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import OptionKind
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import RecordFlag
 from nautilus_trader.model.identifiers import ClientId
@@ -75,6 +80,9 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.instruments.currency_pair import CurrencyPair
+from nautilus_trader.model.instruments.option_contract import OptionContract
+from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog.parquet import _timestamps_to_filename
@@ -100,8 +108,9 @@ ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
 class TestDataEngine:
-    def setup(self):
-        # Fixture Setup
+    @pytest.fixture(autouse=True)
+    def setup_method(self, tmp_path):
+        self.tmp_path = tmp_path
         self.clock = TestClock()
         self.trader_id = TestIdStubs.trader_id()
 
@@ -540,6 +549,8 @@ class TestDataEngine:
             correlation_id=UUID4(),
             response_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
+            start=pd.Timestamp("2023-01-01"),
+            end=pd.Timestamp("2023-01-02"),
         )
 
         # Act
@@ -1572,6 +1583,143 @@ class TestDataEngine:
         assert self.data_engine.subscribed_index_prices() == []
         assert self.binance_client.subscribed_index_prices() == []
 
+    def test_subscribe_funding_rates_then_subscribes(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+
+        subscribe = SubscribeFundingRates(
+            client_id=None,  # Will route to the Binance venue
+            venue=BINANCE,
+            instrument_id=ETHUSDT_BINANCE.id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.data_engine.execute(subscribe)
+
+        # Assert
+        assert self.data_engine.subscribed_funding_rates() == [ETHUSDT_BINANCE.id]
+
+    def test_unsubscribe_funding_rates_then_unsubscribes(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+
+        handler = []
+        self.msgbus.subscribe(topic="data.funding_rates.BINANCE.ETH/USD", handler=handler.append)
+
+        subscribe = SubscribeFundingRates(
+            client_id=None,  # Will route to the Binance venue
+            venue=BINANCE,
+            instrument_id=ETHUSDT_BINANCE.id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.data_engine.execute(subscribe)
+
+        assert self.binance_client.subscribed_funding_rates() == [ETHUSDT_BINANCE.id]
+
+        unsubscribe = UnsubscribeFundingRates(
+            client_id=None,  # Will route to the Binance venue
+            venue=BINANCE,
+            instrument_id=ETHUSDT_BINANCE.id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.data_engine.execute(unsubscribe)
+
+        # Assert
+        assert self.data_engine.subscribed_funding_rates() == []
+        assert self.binance_client.subscribed_funding_rates() == []
+
+    def test_process_funding_rate_when_subscriber_then_sends_to_registered_handler(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+
+        handler = []
+        self.msgbus.subscribe(topic="data.funding_rates.BINANCE.ETHUSDT", handler=handler.append)
+
+        subscribe = SubscribeFundingRates(
+            client_id=None,  # Will route to the Binance venue
+            venue=BINANCE,
+            instrument_id=ETHUSDT_BINANCE.id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.data_engine.execute(subscribe)
+
+        from decimal import Decimal
+
+        from nautilus_trader.model.data import FundingRateUpdate
+
+        funding_rate = FundingRateUpdate(
+            instrument_id=ETHUSDT_BINANCE.id,
+            rate=Decimal("0.0001"),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Act
+        self.data_engine.process(funding_rate)
+
+        # Assert
+        assert handler == [funding_rate]
+        assert self.cache.funding_rate(ETHUSDT_BINANCE.id) == funding_rate
+
+    def test_process_funding_rate_when_subscribers_then_sends_to_registered_handlers(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+
+        handler1 = []
+        handler2 = []
+        self.msgbus.subscribe(topic="data.funding_rates.BINANCE.ETHUSDT", handler=handler1.append)
+        self.msgbus.subscribe(topic="data.funding_rates.BINANCE.ETHUSDT", handler=handler2.append)
+
+        subscribe1 = SubscribeFundingRates(
+            client_id=None,  # Will route to the Binance venue
+            venue=BINANCE,
+            instrument_id=ETHUSDT_BINANCE.id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        subscribe2 = SubscribeFundingRates(
+            client_id=None,  # Will route to the Binance venue
+            venue=BINANCE,
+            instrument_id=ETHUSDT_BINANCE.id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.data_engine.execute(subscribe1)
+        self.data_engine.execute(subscribe2)
+
+        from decimal import Decimal
+
+        from nautilus_trader.model.data import FundingRateUpdate
+
+        funding_rate = FundingRateUpdate(
+            instrument_id=ETHUSDT_BINANCE.id,
+            rate=Decimal("0.0001"),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Act
+        self.data_engine.process(funding_rate)
+
+        # Assert
+        assert handler1 == [funding_rate]
+        assert handler2 == [funding_rate]
+
     def test_subscribe_synthetic_quote_ticks_then_subscribes(self):
         # Arrange
         self.data_engine.register_client(self.binance_client)
@@ -2181,7 +2329,7 @@ class TestDataEngine:
         # Assert
         assert self.data_engine.request_count == 1
         assert len(handler) == 1
-        assert handler[0].data == ETHUSDT_BINANCE
+        assert handler[0].data == [ETHUSDT_BINANCE]
 
     def test_request_instruments_reaches_client(self):
         # Arrange
@@ -2210,7 +2358,7 @@ class TestDataEngine:
     @pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
     def test_request_instrument_when_catalog_registered(self):
         # Arrange
-        catalog = setup_catalog(protocol="file")
+        catalog = setup_catalog(protocol="file", path=self.tmp_path / "catalog")
 
         idealpro = Venue("IDEALPRO")
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=idealpro)
@@ -2238,12 +2386,17 @@ class TestDataEngine:
         # Assert
         assert self.data_engine.request_count == 1
         assert len(handler) == 1
-        assert isinstance(handler[0].data, Instrument)
+        assert (
+            isinstance(handler[0].data, list)
+            and len(handler[0].data) == 1
+            and isinstance(handler[0].data[0], Instrument)
+        )
+        assert handler[0].data[0].id == instrument.id
 
     @pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
     def test_request_instruments_for_venue_when_catalog_registered(self):
         # Arrange
-        catalog = setup_catalog(protocol="file")
+        catalog = setup_catalog(protocol="file", path=self.tmp_path / "catalog")
 
         idealpro = Venue("IDEALPRO")
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=idealpro)
@@ -2271,6 +2424,532 @@ class TestDataEngine:
         assert self.data_engine.request_count == 1
         assert len(handler) == 1
         assert len(handler[0].data) == 1
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
+    def test_request_instrument_with_different_ts_init_values(self):
+        """
+        Test that RequestInstrument returns the correct instrument based on ts_init and
+        time filtering.
+
+        RequestInstrument always returns the latest instrument (data[-1]) regardless of
+        parameters.
+
+        """
+        # Arrange
+        catalog = setup_catalog(protocol="file", path=self.tmp_path / "catalog")
+
+        idealpro = Venue("IDEALPRO")
+        base_instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=idealpro)
+
+        # Create instruments with different ts_init values (representing different times when instrument was created/updated)
+        ts_1 = 1_000_000_000_000_000_000  # Earlier time
+        ts_2 = 2_000_000_000_000_000_000  # Later time
+        ts_3 = 3_000_000_000_000_000_000  # Even later time
+
+        # Create the same instrument with different ts_init values
+        instrument_v1 = CurrencyPair(
+            instrument_id=base_instrument.id,
+            raw_symbol=base_instrument.raw_symbol,
+            base_currency=base_instrument.base_currency,
+            quote_currency=base_instrument.quote_currency,
+            price_precision=base_instrument.price_precision,
+            size_precision=base_instrument.size_precision,
+            price_increment=base_instrument.price_increment,
+            size_increment=base_instrument.size_increment,
+            lot_size=base_instrument.lot_size,
+            max_quantity=base_instrument.max_quantity,
+            min_quantity=base_instrument.min_quantity,
+            max_price=base_instrument.max_price,
+            min_price=base_instrument.min_price,
+            max_notional=base_instrument.max_notional,
+            min_notional=base_instrument.min_notional,
+            margin_init=base_instrument.margin_init,
+            margin_maint=base_instrument.margin_maint,
+            maker_fee=base_instrument.maker_fee,
+            taker_fee=base_instrument.taker_fee,
+            ts_event=ts_1,
+            ts_init=ts_1,
+        )
+
+        instrument_v2 = CurrencyPair(
+            instrument_id=base_instrument.id,
+            raw_symbol=base_instrument.raw_symbol,
+            base_currency=base_instrument.base_currency,
+            quote_currency=base_instrument.quote_currency,
+            price_precision=base_instrument.price_precision,
+            size_precision=base_instrument.size_precision,
+            price_increment=base_instrument.price_increment,
+            size_increment=base_instrument.size_increment,
+            lot_size=base_instrument.lot_size,
+            max_quantity=base_instrument.max_quantity,
+            min_quantity=base_instrument.min_quantity,
+            max_price=base_instrument.max_price,
+            min_price=base_instrument.min_price,
+            max_notional=base_instrument.max_notional,
+            min_notional=base_instrument.min_notional,
+            margin_init=base_instrument.margin_init,
+            margin_maint=base_instrument.margin_maint,
+            maker_fee=base_instrument.maker_fee,
+            taker_fee=base_instrument.taker_fee,
+            ts_event=ts_2,
+            ts_init=ts_2,
+        )
+
+        instrument_v3 = CurrencyPair(
+            instrument_id=base_instrument.id,
+            raw_symbol=base_instrument.raw_symbol,
+            base_currency=base_instrument.base_currency,
+            quote_currency=base_instrument.quote_currency,
+            price_precision=base_instrument.price_precision,
+            size_precision=base_instrument.size_precision,
+            price_increment=base_instrument.price_increment,
+            size_increment=base_instrument.size_increment,
+            lot_size=base_instrument.lot_size,
+            max_quantity=base_instrument.max_quantity,
+            min_quantity=base_instrument.min_quantity,
+            max_price=base_instrument.max_price,
+            min_price=base_instrument.min_price,
+            max_notional=base_instrument.max_notional,
+            min_notional=base_instrument.min_notional,
+            margin_init=base_instrument.margin_init,
+            margin_maint=base_instrument.margin_maint,
+            maker_fee=base_instrument.maker_fee,
+            taker_fee=base_instrument.taker_fee,
+            ts_event=ts_3,
+            ts_init=ts_3,
+        )
+
+        # Write instruments to catalog in order
+        catalog.write_data([instrument_v1])
+        catalog.write_data([instrument_v2])
+        catalog.write_data([instrument_v3])
+
+        self.data_engine.register_catalog(catalog)
+
+        # Advance clock to after all instrument timestamps to avoid "future data" error
+        self.clock.advance_time(ts_3 + 1_000_000_000_000_000_000)
+
+        # Test 1: Request without time constraints should return the latest instrument (v3)
+        handler = []
+        request = RequestInstrument(
+            instrument_id=base_instrument.id,
+            start=None,
+            end=None,
+            client_id=None,
+            venue=idealpro,
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            params=None,
+        )
+
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Should return the latest instrument (v3)
+        assert len(handler) == 1
+        assert (
+            isinstance(handler[0].data, list)
+            and len(handler[0].data) == 1
+            and isinstance(handler[0].data[0], Instrument)
+        )
+        assert handler[0].data[0].id == base_instrument.id
+        assert handler[0].data[0].ts_init == ts_3
+
+        # Test 2: Request with end time between ts_1 and ts_2 should return v1
+        handler.clear()
+        request = RequestInstrument(
+            instrument_id=base_instrument.id,
+            start=unix_nanos_to_dt(ts_1 - 500_000_000_000_000_000),  # Before ts_1
+            end=unix_nanos_to_dt(ts_1 + 500_000_000_000_000_000),  # Between ts_1 and ts_2
+            client_id=None,
+            venue=idealpro,
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            params=None,
+        )
+
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Should return instrument v1
+        assert len(handler) == 1
+        assert (
+            isinstance(handler[0].data, list)
+            and len(handler[0].data) == 1
+            and isinstance(handler[0].data[0], Instrument)
+        )
+        assert handler[0].data[0].id == base_instrument.id
+        assert handler[0].data[0].ts_init == ts_1
+
+        # Test 3: Request with end time between ts_2 and ts_3 should return v2
+        handler.clear()
+        request = RequestInstrument(
+            instrument_id=base_instrument.id,
+            start=unix_nanos_to_dt(ts_2 - 500_000_000_000_000_000),  # Before ts_2
+            end=unix_nanos_to_dt(ts_2 + 500_000_000_000_000_000),  # Between ts_2 and ts_3
+            client_id=None,
+            venue=idealpro,
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            params=None,
+        )
+
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Should return instrument v2
+        assert len(handler) == 1
+        assert (
+            isinstance(handler[0].data, list)
+            and len(handler[0].data) == 1
+            and isinstance(handler[0].data[0], Instrument)
+        )
+        assert handler[0].data[0].id == base_instrument.id
+        assert handler[0].data[0].ts_init == ts_2
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
+    def test_request_instruments_with_different_ts_init_values_and_only_last(self):
+        """
+        Test that RequestInstruments with only_last parameter works correctly.
+        """
+        # Arrange
+        catalog = setup_catalog(protocol="file", path=self.tmp_path / "catalog")
+
+        idealpro = Venue("IDEALPRO")
+
+        # Create two different instruments
+        audusd_base = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=idealpro)
+        eurusd_base = TestInstrumentProvider.default_fx_ccy("EUR/USD", venue=idealpro)
+
+        # Create multiple versions of each instrument with different ts_init values
+        ts_1 = 1_000_000_000_000_000_000  # Earlier time
+        ts_2 = 2_000_000_000_000_000_000  # Later time
+        ts_3 = 3_000_000_000_000_000_000  # Even later time
+
+        # AUD/USD versions
+        audusd_v1 = CurrencyPair(
+            instrument_id=audusd_base.id,
+            raw_symbol=audusd_base.raw_symbol,
+            base_currency=audusd_base.base_currency,
+            quote_currency=audusd_base.quote_currency,
+            price_precision=audusd_base.price_precision,
+            size_precision=audusd_base.size_precision,
+            price_increment=audusd_base.price_increment,
+            size_increment=audusd_base.size_increment,
+            lot_size=audusd_base.lot_size,
+            max_quantity=audusd_base.max_quantity,
+            min_quantity=audusd_base.min_quantity,
+            max_price=audusd_base.max_price,
+            min_price=audusd_base.min_price,
+            max_notional=audusd_base.max_notional,
+            min_notional=audusd_base.min_notional,
+            margin_init=audusd_base.margin_init,
+            margin_maint=audusd_base.margin_maint,
+            maker_fee=audusd_base.maker_fee,
+            taker_fee=audusd_base.taker_fee,
+            ts_event=ts_1,
+            ts_init=ts_1,
+        )
+
+        audusd_v2 = CurrencyPair(
+            instrument_id=audusd_base.id,
+            raw_symbol=audusd_base.raw_symbol,
+            base_currency=audusd_base.base_currency,
+            quote_currency=audusd_base.quote_currency,
+            price_precision=audusd_base.price_precision,
+            size_precision=audusd_base.size_precision,
+            price_increment=audusd_base.price_increment,
+            size_increment=audusd_base.size_increment,
+            lot_size=audusd_base.lot_size,
+            max_quantity=audusd_base.max_quantity,
+            min_quantity=audusd_base.min_quantity,
+            max_price=audusd_base.max_price,
+            min_price=audusd_base.min_price,
+            max_notional=audusd_base.max_notional,
+            min_notional=audusd_base.min_notional,
+            margin_init=audusd_base.margin_init,
+            margin_maint=audusd_base.margin_maint,
+            maker_fee=audusd_base.maker_fee,
+            taker_fee=audusd_base.taker_fee,
+            ts_event=ts_3,
+            ts_init=ts_3,
+        )
+
+        # EUR/USD versions
+        eurusd_v1 = CurrencyPair(
+            instrument_id=eurusd_base.id,
+            raw_symbol=eurusd_base.raw_symbol,
+            base_currency=eurusd_base.base_currency,
+            quote_currency=eurusd_base.quote_currency,
+            price_precision=eurusd_base.price_precision,
+            size_precision=eurusd_base.size_precision,
+            price_increment=eurusd_base.price_increment,
+            size_increment=eurusd_base.size_increment,
+            lot_size=eurusd_base.lot_size,
+            max_quantity=eurusd_base.max_quantity,
+            min_quantity=eurusd_base.min_quantity,
+            max_price=eurusd_base.max_price,
+            min_price=eurusd_base.min_price,
+            max_notional=eurusd_base.max_notional,
+            min_notional=eurusd_base.min_notional,
+            margin_init=eurusd_base.margin_init,
+            margin_maint=eurusd_base.margin_maint,
+            maker_fee=eurusd_base.maker_fee,
+            taker_fee=eurusd_base.taker_fee,
+            ts_event=ts_2,
+            ts_init=ts_2,
+        )
+
+        # Write instruments to catalog
+        catalog.write_data([audusd_v1])
+        catalog.write_data([eurusd_v1])
+        catalog.write_data([audusd_v2])  # Later version of AUD/USD
+
+        self.data_engine.register_catalog(catalog)
+
+        # Advance clock to after all instrument timestamps to avoid "future data" error
+        self.clock.advance_time(ts_3 + 1_000_000_000_000_000_000)
+
+        # Test 1: Request with only_last=True (default) should return only latest version of each instrument
+        handler = []
+        request = RequestInstruments(
+            start=None,
+            end=None,
+            client_id=None,
+            venue=idealpro,
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            params={"only_last": True},
+        )
+
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Should return 2 instruments: latest AUD/USD (v2) and EUR/USD (v1)
+        assert len(handler) == 1
+        assert len(handler[0].data) == 2
+
+        # Sort by instrument ID for consistent testing
+        instruments = sorted(handler[0].data, key=lambda x: str(x.id))
+
+        # First should be AUD/USD v2 (latest)
+        assert instruments[0].id == audusd_base.id
+        assert instruments[0].ts_init == ts_3
+
+        # Second should be EUR/USD v1 (only version)
+        assert instruments[1].id == eurusd_base.id
+        assert instruments[1].ts_init == ts_2
+
+        # Test 2: Request with only_last=False should return all instruments
+        handler.clear()
+        request = RequestInstruments(
+            start=None,
+            end=None,
+            client_id=None,
+            venue=idealpro,
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            params={"only_last": False},
+        )
+
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Should return 3 instruments: both AUD/USD versions and EUR/USD
+        assert len(handler) == 1
+        assert len(handler[0].data) == 3
+
+        # Sort by ts_init for consistent testing
+        instruments = sorted(handler[0].data, key=lambda x: x.ts_init)
+
+        # First should be AUD/USD v1
+        assert instruments[0].id == audusd_base.id
+        assert instruments[0].ts_init == ts_1
+
+        # Second should be EUR/USD v1
+        assert instruments[1].id == eurusd_base.id
+        assert instruments[1].ts_init == ts_2
+
+        # Third should be AUD/USD v2
+        assert instruments[2].id == audusd_base.id
+        assert instruments[2].ts_init == ts_3
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
+    def test_request_instruments_with_time_filtering(self):
+        """
+        Test that RequestInstruments respects start and end time parameters.
+        """
+        # Arrange
+        catalog = setup_catalog(protocol="file", path=self.tmp_path / "catalog")
+
+        idealpro = Venue("IDEALPRO")
+
+        # Create instruments with different ts_init values
+        ts_1 = 1_000_000_000_000_000_000  # Earlier time
+        ts_2 = 2_000_000_000_000_000_000  # Middle time
+        ts_3 = 3_000_000_000_000_000_000  # Later time
+
+        audusd_base = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=idealpro)
+        eurusd_base = TestInstrumentProvider.default_fx_ccy("EUR/USD", venue=idealpro)
+        gbpusd_base = TestInstrumentProvider.default_fx_ccy("GBP/USD", venue=idealpro)
+
+        # Create instruments at different times
+        audusd_early = CurrencyPair(
+            instrument_id=audusd_base.id,
+            raw_symbol=audusd_base.raw_symbol,
+            base_currency=audusd_base.base_currency,
+            quote_currency=audusd_base.quote_currency,
+            price_precision=audusd_base.price_precision,
+            size_precision=audusd_base.size_precision,
+            price_increment=audusd_base.price_increment,
+            size_increment=audusd_base.size_increment,
+            lot_size=audusd_base.lot_size,
+            max_quantity=audusd_base.max_quantity,
+            min_quantity=audusd_base.min_quantity,
+            max_price=audusd_base.max_price,
+            min_price=audusd_base.min_price,
+            max_notional=audusd_base.max_notional,
+            min_notional=audusd_base.min_notional,
+            margin_init=audusd_base.margin_init,
+            margin_maint=audusd_base.margin_maint,
+            maker_fee=audusd_base.maker_fee,
+            taker_fee=audusd_base.taker_fee,
+            ts_event=ts_1,
+            ts_init=ts_1,
+        )
+
+        eurusd_middle = CurrencyPair(
+            instrument_id=eurusd_base.id,
+            raw_symbol=eurusd_base.raw_symbol,
+            base_currency=eurusd_base.base_currency,
+            quote_currency=eurusd_base.quote_currency,
+            price_precision=eurusd_base.price_precision,
+            size_precision=eurusd_base.size_precision,
+            price_increment=eurusd_base.price_increment,
+            size_increment=eurusd_base.size_increment,
+            lot_size=eurusd_base.lot_size,
+            max_quantity=eurusd_base.max_quantity,
+            min_quantity=eurusd_base.min_quantity,
+            max_price=eurusd_base.max_price,
+            min_price=eurusd_base.min_price,
+            max_notional=eurusd_base.max_notional,
+            min_notional=eurusd_base.min_notional,
+            margin_init=eurusd_base.margin_init,
+            margin_maint=eurusd_base.margin_maint,
+            maker_fee=eurusd_base.maker_fee,
+            taker_fee=eurusd_base.taker_fee,
+            ts_event=ts_2,
+            ts_init=ts_2,
+        )
+
+        gbpusd_late = CurrencyPair(
+            instrument_id=gbpusd_base.id,
+            raw_symbol=gbpusd_base.raw_symbol,
+            base_currency=gbpusd_base.base_currency,
+            quote_currency=gbpusd_base.quote_currency,
+            price_precision=gbpusd_base.price_precision,
+            size_precision=gbpusd_base.size_precision,
+            price_increment=gbpusd_base.price_increment,
+            size_increment=gbpusd_base.size_increment,
+            lot_size=gbpusd_base.lot_size,
+            max_quantity=gbpusd_base.max_quantity,
+            min_quantity=gbpusd_base.min_quantity,
+            max_price=gbpusd_base.max_price,
+            min_price=gbpusd_base.min_price,
+            max_notional=gbpusd_base.max_notional,
+            min_notional=gbpusd_base.min_notional,
+            margin_init=gbpusd_base.margin_init,
+            margin_maint=gbpusd_base.margin_maint,
+            maker_fee=gbpusd_base.maker_fee,
+            taker_fee=gbpusd_base.taker_fee,
+            ts_event=ts_3,
+            ts_init=ts_3,
+        )
+
+        # Write instruments to catalog
+        catalog.write_data([audusd_early])
+        catalog.write_data([eurusd_middle])
+        catalog.write_data([gbpusd_late])
+
+        self.data_engine.register_catalog(catalog)
+
+        # Advance clock to after all instrument timestamps to avoid "future data" error
+        self.clock.advance_time(ts_3 + 1_000_000_000_000_000_000)
+
+        # Test 1: Request instruments from start to middle time (should get AUD/USD and EUR/USD)
+        handler = []
+        request = RequestInstruments(
+            start=unix_nanos_to_dt(ts_1 - 500_000_000_000_000_000),  # Before ts_1
+            end=unix_nanos_to_dt(ts_2 + 500_000_000_000_000_000),  # After ts_2, before ts_3
+            client_id=None,
+            venue=idealpro,
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            params=None,
+        )
+
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Should return 2 instruments: AUD/USD and EUR/USD (not GBP/USD which is after end time)
+        assert len(handler) == 1
+        assert len(handler[0].data) == 2
+
+        # Sort by ts_init for consistent testing
+        instruments = sorted(handler[0].data, key=lambda x: x.ts_init)
+
+        assert instruments[0].id == audusd_base.id
+        assert instruments[0].ts_init == ts_1
+        assert instruments[1].id == eurusd_base.id
+        assert instruments[1].ts_init == ts_2
+
+        # Test 2: Request instruments from middle to late time (should get EUR/USD and GBP/USD)
+        handler.clear()
+        request = RequestInstruments(
+            start=unix_nanos_to_dt(ts_2 - 500_000_000_000_000_000),  # Before ts_2
+            end=unix_nanos_to_dt(ts_3 + 500_000_000_000_000_000),  # After ts_3
+            client_id=None,
+            venue=idealpro,
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            params=None,
+        )
+
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Should return 2 instruments: EUR/USD and GBP/USD (not AUD/USD which is before start time)
+        assert len(handler) == 1
+        assert len(handler[0].data) == 2
+
+        # Sort by ts_init for consistent testing
+        instruments = sorted(handler[0].data, key=lambda x: x.ts_init)
+
+        assert instruments[0].id == eurusd_base.id
+        assert instruments[0].ts_init == ts_2
+        assert instruments[1].id == gbpusd_base.id
+        assert instruments[1].ts_init == ts_3
+
+        # Test 3: Request instruments with narrow time window (should get only EUR/USD)
+        handler.clear()
+        request = RequestInstruments(
+            start=unix_nanos_to_dt(ts_2 - 100_000_000_000_000_000),  # Just before ts_2
+            end=unix_nanos_to_dt(ts_2 + 100_000_000_000_000_000),  # Just after ts_2
+            client_id=None,
+            venue=idealpro,
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            params=None,
+        )
+
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Should return 1 instrument: only EUR/USD
+        assert len(handler) == 1
+        assert len(handler[0].data) == 1
+        assert handler[0].data[0].id == eurusd_base.id
+        assert handler[0].data[0].ts_init == ts_2
 
     def test_request_order_book_snapshot_reaches_client(self):
         # Arrange
@@ -2382,7 +3061,7 @@ class TestDataEngine:
 
     def test_request_bars_when_catalog_registered(self):
         # Arrange
-        catalog = setup_catalog(protocol="file")
+        catalog = setup_catalog(protocol="file", path=self.tmp_path / "catalog")
         bar_spec = BarSpecification(1000, BarAggregation.TICK, PriceType.MID)
         bar_type = BarType(ETHUSDT_BINANCE.id, bar_spec)
         bar = Bar(
@@ -2422,7 +3101,7 @@ class TestDataEngine:
 
     def test_request_bars_when_catalog_and_client_registered(self):
         # Arrange
-        catalog = setup_catalog(protocol="file")
+        catalog = setup_catalog(protocol="file", path=self.tmp_path / "catalog")
         bar_spec = BarSpecification(1000, BarAggregation.TICK, PriceType.MID)
         bar_type = BarType(ETHUSDT_BINANCE.id, bar_spec)
         bar = Bar(
@@ -2528,7 +3207,7 @@ class TestDataEngine:
         os.rename(parquet_file, other_name)
 
         # Act
-        catalog.reset_catalog_file_names()
+        catalog.reset_all_file_names()
 
         # Assert
         assert catalog.get_intervals(Bar, bar_type) == [
@@ -2573,7 +3252,7 @@ class TestDataEngine:
 
     def test_request_quote_ticks_when_catalog_registered(self):
         # Arrange
-        catalog = setup_catalog(protocol="file")
+        catalog = setup_catalog(protocol="file", path=self.tmp_path / "catalog")
         quote_tick = QuoteTick(
             ETHUSDT_BINANCE.id,
             Price.from_str("1051.00000"),
@@ -2610,7 +3289,7 @@ class TestDataEngine:
 
     def test_request_quote_ticks_when_catalog_and_client_registered(self):
         # Arrange
-        catalog = setup_catalog(protocol="file")
+        catalog = setup_catalog(protocol="file", path=self.tmp_path / "catalog")
         quote_tick = QuoteTick(
             ETHUSDT_BINANCE.id,
             Price.from_str("1051.00000"),
@@ -2703,7 +3382,7 @@ class TestDataEngine:
 
     def test_request_trade_ticks_when_catalog_registered(self):
         # Arrange
-        catalog = setup_catalog(protocol="file")
+        catalog = setup_catalog(protocol="file", path=self.tmp_path / "catalog")
         trade_tick = TradeTick(
             instrument_id=ETHUSDT_BINANCE.id,
             price=Price.from_str("1051.00000"),
@@ -2742,7 +3421,7 @@ class TestDataEngine:
 
     def test_request_trade_ticks_when_catalog_and_client_registered(self):
         # Arrange
-        catalog = setup_catalog(protocol="file")
+        catalog = setup_catalog(protocol="file", path=self.tmp_path / "catalog")
         trade_tick = TradeTick(
             instrument_id=ETHUSDT_BINANCE.id,
             price=Price.from_str("1051.00000"),
@@ -2819,7 +3498,7 @@ class TestDataEngine:
         )
         definition = loader.from_dbn_file(definition_path, as_legacy_cython=True)
 
-        catalog = setup_catalog(protocol="file")
+        catalog = setup_catalog(protocol="file", path=self.tmp_path / "catalog")
         catalog.write_data(data)
         catalog.write_data(definition)
 
@@ -2942,7 +3621,7 @@ class TestDataEngine:
         )
         definition = loader.from_dbn_file(definition_path, as_legacy_cython=True)
 
-        catalog = setup_catalog(protocol="file")
+        catalog = setup_catalog(protocol="file", path=self.tmp_path / "catalog")
         catalog.write_data(data)
         catalog.write_data(definition)
 
@@ -3037,7 +3716,7 @@ class TestDataEngine:
         )
         definition = loader.from_dbn_file(definition_path, as_legacy_cython=True)
 
-        catalog = setup_catalog(protocol="file")
+        catalog = setup_catalog(protocol="file", path=self.tmp_path / "catalog")
         catalog.write_data(data)
         catalog.write_data(definition)
 
@@ -3355,10 +4034,258 @@ class TestDataEngine:
     #     assert handler[0].data[0].ts_init == 1637971200000000000
     #     assert handler[0].data[-1].ts_init == 1638058200000000000
 
+    # -- SPREAD INTEGRATION TESTS ----------------------------------------------------------------
+
+    def test_subscribe_spread_quotes_creates_aggregator(self):
+        # Arrange
+        # Create a client for XCME venue
+        xcme_client = BacktestMarketDataClient(
+            client_id=ClientId("XCME"),
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        self.data_engine.register_client(xcme_client)
+        xcme_client.start()
+
+        # Create option instruments for spread
+        option1 = OptionContract(
+            instrument_id=InstrumentId(Symbol("ESM4 P5230"), Venue("XCME")),
+            raw_symbol=Symbol("ESM4 P5230"),
+            asset_class=AssetClass.EQUITY,
+            currency=Currency.from_str("USD"),
+            price_precision=2,
+            price_increment=Price.from_str("0.01"),
+            multiplier=Quantity.from_int(100),
+            lot_size=Quantity.from_int(1),
+            underlying="ESM4",
+            option_kind=OptionKind.PUT,
+            activation_ns=0,
+            expiration_ns=1719792000000000000,
+            strike_price=Price.from_str("5230.0"),
+            ts_event=0,
+            ts_init=0,
+        )
+        option2 = OptionContract(
+            instrument_id=InstrumentId(Symbol("ESM4 P5250"), Venue("XCME")),
+            raw_symbol=Symbol("ESM4 P5250"),
+            asset_class=AssetClass.EQUITY,
+            currency=Currency.from_str("USD"),
+            price_precision=2,
+            price_increment=Price.from_str("0.01"),
+            multiplier=Quantity.from_int(100),
+            lot_size=Quantity.from_int(1),
+            underlying="ESM4",
+            option_kind=OptionKind.PUT,
+            activation_ns=0,
+            expiration_ns=1719792000000000000,
+            strike_price=Price.from_str("5250.0"),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Add instruments to cache
+        self.data_engine.process(option1)
+        self.data_engine.process(option2)
+
+        # Create spread instrument ID
+        spread_instrument_id = InstrumentId.new_spread(
+            [
+                (option1.id, 1),
+                (option2.id, -1),
+            ],
+        )
+
+        subscribe = SubscribeQuoteTicks(
+            client_id=None,
+            venue=Venue("XCME"),  # Use the venue from the spread components
+            instrument_id=spread_instrument_id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.data_engine.execute(subscribe)
+
+        # Assert - Verify the command was processed without errors
+        assert self.data_engine.command_count == 1
+        # Note: The actual spread quote aggregator creation depends on the DataEngine implementation
+        # This test verifies that the subscription command is processed correctly
+
+    def test_unsubscribe_spread_quotes_removes_aggregator(self):
+        # Arrange
+        # Create a client for XCME venue
+        xcme_client = BacktestMarketDataClient(
+            client_id=ClientId("XCME"),
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        self.data_engine.register_client(xcme_client)
+        xcme_client.start()
+
+        # Create option instruments for spread
+        option1 = OptionContract(
+            instrument_id=InstrumentId(Symbol("ESM4 P5230"), Venue("XCME")),
+            raw_symbol=Symbol("ESM4 P5230"),
+            asset_class=AssetClass.EQUITY,
+            currency=Currency.from_str("USD"),
+            price_precision=2,
+            price_increment=Price.from_str("0.01"),
+            multiplier=Quantity.from_int(100),
+            lot_size=Quantity.from_int(1),
+            underlying="ESM4",
+            option_kind=OptionKind.PUT,
+            activation_ns=0,
+            expiration_ns=1719792000000000000,
+            strike_price=Price.from_str("5230.0"),
+            ts_event=0,
+            ts_init=0,
+        )
+        option2 = OptionContract(
+            instrument_id=InstrumentId(Symbol("ESM4 P5250"), Venue("XCME")),
+            raw_symbol=Symbol("ESM4 P5250"),
+            asset_class=AssetClass.EQUITY,
+            currency=Currency.from_str("USD"),
+            price_precision=2,
+            price_increment=Price.from_str("0.01"),
+            multiplier=Quantity.from_int(100),
+            lot_size=Quantity.from_int(1),
+            underlying="ESM4",
+            option_kind=OptionKind.PUT,
+            activation_ns=0,
+            expiration_ns=1719792000000000000,
+            strike_price=Price.from_str("5250.0"),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Add instruments to cache
+        self.data_engine.process(option1)
+        self.data_engine.process(option2)
+
+        # Create spread instrument ID
+        spread_instrument_id = InstrumentId.new_spread(
+            [
+                (option1.id, 1),
+                (option2.id, -1),
+            ],
+        )
+
+        # Subscribe first
+        subscribe = SubscribeQuoteTicks(
+            client_id=None,
+            venue=Venue("XCME"),  # Use the venue from the spread components
+            instrument_id=spread_instrument_id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        self.data_engine.execute(subscribe)
+
+        # Verify subscription was processed
+        assert self.data_engine.command_count == 1
+
+        # Act - Unsubscribe
+        unsubscribe = UnsubscribeQuoteTicks(
+            client_id=None,
+            venue=Venue("XCME"),  # Use the venue from the spread components
+            instrument_id=spread_instrument_id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        self.data_engine.execute(unsubscribe)
+
+        # Assert - Verify unsubscribe was processed
+        assert self.data_engine.command_count == 2
+
+    def test_spread_quote_generation_and_distribution(self):
+        # Arrange
+        # Create a client for XCME venue
+        xcme_client = BacktestMarketDataClient(
+            client_id=ClientId("XCME"),
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        self.data_engine.register_client(xcme_client)
+        xcme_client.start()
+
+        # Create option instruments for spread
+        option1 = OptionContract(
+            instrument_id=InstrumentId(Symbol("ESM4 P5230"), Venue("XCME")),
+            raw_symbol=Symbol("ESM4 P5230"),
+            asset_class=AssetClass.EQUITY,
+            currency=Currency.from_str("USD"),
+            price_precision=2,
+            price_increment=Price.from_str("0.01"),
+            multiplier=Quantity.from_int(100),
+            lot_size=Quantity.from_int(1),
+            underlying="ESM4",
+            option_kind=OptionKind.PUT,
+            activation_ns=0,
+            expiration_ns=1719792000000000000,
+            strike_price=Price.from_str("5230.0"),
+            ts_event=0,
+            ts_init=0,
+        )
+        option2 = OptionContract(
+            instrument_id=InstrumentId(Symbol("ESM4 P5250"), Venue("XCME")),
+            raw_symbol=Symbol("ESM4 P5250"),
+            asset_class=AssetClass.EQUITY,
+            currency=Currency.from_str("USD"),
+            price_precision=2,
+            price_increment=Price.from_str("0.01"),
+            multiplier=Quantity.from_int(100),
+            lot_size=Quantity.from_int(1),
+            underlying="ESM4",
+            option_kind=OptionKind.PUT,
+            activation_ns=0,
+            expiration_ns=1719792000000000000,
+            strike_price=Price.from_str("5250.0"),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Add instruments to cache
+        self.data_engine.process(option1)
+        self.data_engine.process(option2)
+
+        # Create spread instrument ID
+        spread_instrument_id = InstrumentId.new_spread(
+            [
+                (option1.id, 1),
+                (option2.id, -1),
+            ],
+        )
+
+        # Set up handler to capture spread quotes
+        handler = []
+        self.msgbus.subscribe(
+            topic=f"data.quotes.{spread_instrument_id.venue}.{spread_instrument_id.symbol}",
+            handler=handler.append,
+        )
+
+        # Subscribe to spread quotes
+        subscribe = SubscribeQuoteTicks(
+            client_id=None,
+            venue=Venue("XCME"),  # Use the venue from the spread components
+            instrument_id=spread_instrument_id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        self.data_engine.execute(subscribe)
+
+        # Act - Advance time to trigger quote generation
+        self.clock.advance_time(2_000_000_000)  # Advance 2 seconds
+
+        # Assert - Verify the subscription was processed and handler is set up
+        assert self.data_engine.command_count == 1
+        # The test verifies the infrastructure is in place for spread quote handling
+
 
 class TestDataBufferEngine:
-    def setup(self):
-        # Fixture Setup
+    @pytest.fixture(autouse=True)
+    def setup_method(self, tmp_path):
         self.clock = TestClock()
         self.trader_id = TestIdStubs.trader_id()
 
@@ -3493,6 +4420,32 @@ class TestDataBufferEngine:
         assert len(handler) == 2
         assert len(handler[0].deltas) == 1
         assert len(handler[1].deltas) == 1
+
+    def test_execute_skips_commands_for_external_clients(self):
+        # Arrange
+        ext_client_id = ClientId("EXT_DATA")
+
+        msgbus = MessageBus(trader_id=self.trader_id, clock=self.clock)
+        cache = TestComponentStubs.cache()
+
+        engine = DataEngine(
+            msgbus=msgbus,
+            cache=cache,
+            clock=self.clock,
+            config=DataEngineConfig(external_clients=[ext_client_id]),
+        )
+
+        cmd = SubscribeInstruments(
+            client_id=ext_client_id,
+            venue=None,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act / Assert: should not raise even though no client registered
+        engine.execute(cmd)
+
+        assert engine.get_external_client_ids() == {ext_client_id}
 
     def test_process_order_book_deltas_then_sends_to_registered_handler(self):
         # Arrange

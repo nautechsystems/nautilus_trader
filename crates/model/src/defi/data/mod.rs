@@ -20,10 +20,9 @@
 
 use std::fmt::Display;
 
-use nautilus_core::UnixNanos;
 use serde::{Deserialize, Serialize};
 
-use crate::{data::HasTsInit, defi::Pool, identifiers::InstrumentId};
+use crate::{defi::Pool, identifiers::InstrumentId};
 
 pub mod block;
 pub mod liquidity;
@@ -37,6 +36,10 @@ pub use swap::PoolSwap;
 pub use transaction::Transaction;
 
 /// Represents DeFi-specific data events in a decentralized exchange ecosystem.
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum DefiData {
@@ -52,13 +55,17 @@ pub enum DefiData {
 
 impl DefiData {
     /// Returns the instrument ID associated with this DeFi data.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the variant is a `Block` where instrument IDs are not applicable.
     #[must_use]
     pub fn instrument_id(&self) -> InstrumentId {
         match self {
-            Self::Block(_) => todo!("Not implemented yet"),
-            Self::PoolSwap(swap) => swap.instrument_id(),
-            Self::PoolLiquidityUpdate(update) => update.instrument_id(),
-            Self::Pool(pool) => pool.instrument_id(),
+            Self::Block(_) => panic!("`InstrumentId` not applicable to `Block`"), // TBD?
+            Self::PoolSwap(swap) => swap.instrument_id,
+            Self::PoolLiquidityUpdate(update) => update.instrument_id,
+            Self::Pool(pool) => pool.instrument_id,
         }
     }
 }
@@ -70,17 +77,6 @@ impl Display for DefiData {
             Self::PoolSwap(s) => write!(f, "{s}"),
             Self::PoolLiquidityUpdate(u) => write!(f, "{u}"),
             Self::Pool(p) => write!(f, "{p}"),
-        }
-    }
-}
-
-impl HasTsInit for DefiData {
-    fn ts_init(&self) -> UnixNanos {
-        match self {
-            Self::Block(block) => block.timestamp, // TODO: TBD
-            Self::PoolSwap(swap) => swap.ts_init,
-            Self::PoolLiquidityUpdate(update) => update.ts_init,
-            Self::Pool(pool) => pool.ts_init,
         }
     }
 }

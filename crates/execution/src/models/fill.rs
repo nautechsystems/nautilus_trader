@@ -78,6 +78,25 @@ impl FillModel {
         self.event_success(self.prob_slippage)
     }
 
+    /// Returns a simulated OrderBook for fill simulation.
+    ///
+    /// This method allows custom fill models to provide their own liquidity
+    /// simulation by returning a custom OrderBook that represents the expected
+    /// market liquidity. The matching engine will use this simulated OrderBook
+    /// to determine fills.
+    ///
+    /// The default implementation returns None, which means the matching engine
+    /// will use its standard fill logic (maintaining backward compatibility).
+    pub fn get_orderbook_for_fill_simulation(
+        &self,
+        _instrument: &dyn std::any::Any, // Placeholder for instrument type
+        _order: &dyn std::any::Any,      // Placeholder for order type
+        _best_bid: f64,
+        _best_ask: f64,
+    ) -> Option<Box<dyn std::any::Any>> {
+        None // Default implementation - use existing fill logic
+    }
+
     fn event_success(&mut self, probability: f64) -> bool {
         match probability {
             0.0 => false,

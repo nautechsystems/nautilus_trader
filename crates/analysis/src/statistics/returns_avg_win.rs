@@ -52,7 +52,7 @@ impl PortfolioStatistic for ReturnsAverageWin {
 mod tests {
     use std::collections::BTreeMap;
 
-    use nautilus_core::UnixNanos;
+    use nautilus_core::{UnixNanos, approx_eq};
     use rstest::rstest;
 
     use super::*;
@@ -90,7 +90,7 @@ mod tests {
         let result = avg_win.calculate_from_returns(&returns);
         assert!(result.is_some());
         // Average of [10.0, 20.0, 30.0] = (10 + 20 + 30) / 3 = 20.0
-        assert_eq!(result.unwrap(), 20.0);
+        assert!(approx_eq!(f64, result.unwrap(), 20.0, epsilon = 1e-9));
     }
 
     #[rstest]
@@ -100,7 +100,7 @@ mod tests {
         let result = avg_win.calculate_from_returns(&returns);
         assert!(result.is_some());
         // Average of [10.0, 30.0] = (10 + 30) / 2 = 20.0
-        assert_eq!(result.unwrap(), 20.0);
+        assert!(approx_eq!(f64, result.unwrap(), 20.0, epsilon = 1e-9));
     }
 
     #[rstest]

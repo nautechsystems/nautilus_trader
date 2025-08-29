@@ -722,7 +722,7 @@ mod tests {
             .instrument_id(InstrumentId::from("BTC-USDT.BINANCE"))
             .quantity(Quantity::from(10))
             .trigger_price(Price::new(100.0, 2))
-            .trigger_instrument_id(trigger_instrument_id.clone())
+            .trigger_instrument_id(trigger_instrument_id)
             .build();
 
         // Assert that the trigger instrument ID is set correctly

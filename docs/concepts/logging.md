@@ -25,13 +25,14 @@ Log level (`LogLevel`) values include (and generally match Rust's `tracing` leve
 Python loggers expose the following levels:
 
 - `OFF`
+- `TRACE` (can be set as a filter level, but not directly generated from Python)
 - `DEBUG`
 - `INFO`
 - `WARNING`
 - `ERROR`
 
 :::warning
-The Python `Logger` does not provide a `trace()` method; `TRACE` level logs are only emitted by the underlying Rust components and cannot be generated directly from Python code.
+The Python `Logger` does not provide a `trace()` method; `TRACE` level logs are only emitted by the underlying Rust components and cannot be generated directly from Python code. However, you can set `TRACE` as a logging level filter to see trace logs from Rust components.
 
 See the `LoggingConfig` [API Reference](../api_reference/config.md#class-loggingconfig) for further details.
 :::
@@ -95,7 +96,7 @@ The format depends on whether file rotation is enabled:
   - `{instance_id}`: A unique instance identifier.
   - `{log|json}`: File suffix based on format setting.
 
-**With file rotation disabled**:
+**Without size-based rotation (default naming)**:
 
 - **Format**: `{trader_id}_{%Y-%m-%d}_{instance_id}.{log|json}`
 - **Example**: `TESTER-001_2025-04-09_d7dc12c8-7008-4042-8ac4-017c3db0fc38.log`
@@ -104,6 +105,7 @@ The format depends on whether file rotation is enabled:
   - `{%Y-%m-%d}`: Date only (YYYY-MM-DD).
   - `{instance_id}`: A unique instance identifier.
   - `{log|json}`: File suffix based on format setting.
+- **Note**: With default naming and no size limit, logs rotate daily at UTC midnight.
 
 **Custom naming**:
 
@@ -168,13 +170,28 @@ See the `init_logging` [API Reference](../api_reference/common) for further deta
 :::
 
 :::warning
-Only one logging subsystem can be initialized per process with an `init_logging` call, and the `LogGuard` which is returned must be kept alive for the lifetime of the program.
+Only one logging subsystem can be initialized per process with an `init_logging` call. Multiple `LogGuard` instances (up to 255) can exist concurrently, and the logging thread will remain active until all guards are dropped.
 :::
 
 ## LogGuard: Managing log lifecycle
 
 The `LogGuard` ensures that the logging subsystem remains active and operational throughout the lifecycle of a process.
 It prevents premature shutdown of the logging subsystem when running multiple engines in the same process.
+
+### Reference Counting Implementation
+
+The logging system uses reference counting to track active `LogGuard` instances:
+
+- **Counter increments**: When a new `LogGuard` is created, an atomic counter is incremented.
+- **Counter decrements**: When a `LogGuard` is dropped, the counter is decremented.
+- **Logging thread termination**: When the counter reaches zero (last `LogGuard` dropped), the logging thread is properly joined to ensure all pending log messages are written before the process terminates.
+- **Maximum guards**: The system supports up to 255 concurrent `LogGuard` instances. Attempting to create more will cause a panic.
+
+This mechanism ensures that:
+
+1. Log messages are never lost due to premature thread termination.
+2. The logging thread remains active as long as any `LogGuard` exists.
+3. All buffered logs are properly flushed to their destinations when the program ends.
 
 ### Why use LogGuard?
 
@@ -224,6 +241,6 @@ for i in range(number_of_backtests):
 
 ### Considerations
 
-- **Single LogGuard per process**: Only one `LogGuard` can be used per process.
+- **Multiple LogGuards per process**: The system supports up to 255 concurrent `LogGuard` instances per process. Each guard increments a reference counter when created and decrements it when dropped.
 - **Thread safety**: The logging subsystem, including `LogGuard`, is thread-safe, ensuring consistent behavior even in multi-threaded environments.
-- **Flush logs on termination**: Always ensure that logs are properly flushed when the process terminates. The `LogGuard` automatically handles this as it goes out of scope.
+- **Automatic cleanup**: When the last `LogGuard` is dropped (reference count reaches zero), the logging thread is properly joined to ensure all pending logs are written before the process terminates.

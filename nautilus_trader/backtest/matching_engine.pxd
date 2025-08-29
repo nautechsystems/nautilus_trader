@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
 from libc.stdint cimport uint32_t
 from libc.stdint cimport uint64_t
 
@@ -31,6 +30,7 @@ from nautilus_trader.core.rust.model cimport LiquiditySide
 from nautilus_trader.core.rust.model cimport MarketStatus
 from nautilus_trader.core.rust.model cimport MarketStatusAction
 from nautilus_trader.core.rust.model cimport OmsType
+from nautilus_trader.core.rust.model cimport PriceRaw
 from nautilus_trader.core.rust.model cimport TimeInForce
 from nautilus_trader.execution.matching_core cimport MatchingCore
 from nautilus_trader.execution.messages cimport BatchCancelOrders
@@ -120,9 +120,9 @@ cdef class OrderMatchingEngine:
 
     cdef MatchingCore _core
     cdef bint _has_targets
-    cdef int64_t _target_bid
-    cdef int64_t _target_ask
-    cdef int64_t _target_last
+    cdef PriceRaw _target_bid
+    cdef PriceRaw _target_ask
+    cdef PriceRaw _target_last
     cdef Bar _last_bid_bar
     cdef Bar _last_ask_bar
 
@@ -199,6 +199,8 @@ cdef class OrderMatchingEngine:
     cpdef void iterate(self, uint64_t timestamp_ns, AggressorSide aggressor_side=*)
     cpdef list determine_limit_price_and_volume(self, Order order)
     cpdef list determine_market_price_and_volume(self, Order order)
+    cdef list determine_market_fills_with_simulation(self, Order order)
+    cdef list determine_limit_fills_with_simulation(self, Order order)
     cpdef void fill_market_order(self, Order order)
     cpdef void fill_limit_order(self, Order order)
     cdef void _trail_stop_order(self, Order order)
@@ -242,7 +244,7 @@ cdef class OrderMatchingEngine:
 
 # -- EVENT GENERATORS -----------------------------------------------------------------------------
 
-    cdef void _generate_order_rejected(self, Order order, str reason)
+    cdef void _generate_order_rejected(self, Order order, str reason, bint due_post_only=*)
     cdef void _generate_order_accepted(self, Order order, VenueOrderId venue_order_id)
     cdef void _generate_order_modify_rejected(
         self,

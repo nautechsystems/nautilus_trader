@@ -45,6 +45,7 @@ impl PortfolioStatistic for MaxLoser {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::approx_eq;
     use rstest::rstest;
 
     use super::*;
@@ -54,7 +55,7 @@ mod tests {
         let max_loser = MaxLoser {};
         let result = max_loser.calculate_from_realized_pnls(&[]);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), 0.0);
+        assert!(approx_eq!(f64, result.unwrap(), 0.0, epsilon = 1e-9));
     }
 
     #[rstest]
@@ -71,7 +72,7 @@ mod tests {
         let pnls = vec![-10.0, -20.0, -30.0];
         let result = max_loser.calculate_from_realized_pnls(&pnls);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), -30.0);
+        assert!(approx_eq!(f64, result.unwrap(), -30.0, epsilon = 1e-9));
     }
 
     #[rstest]
@@ -80,7 +81,7 @@ mod tests {
         let pnls = vec![10.0, -20.0, 30.0, -40.0];
         let result = max_loser.calculate_from_realized_pnls(&pnls);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), -40.0);
+        assert!(approx_eq!(f64, result.unwrap(), -40.0, epsilon = 1e-9));
     }
 
     #[rstest]
@@ -89,7 +90,7 @@ mod tests {
         let pnls = vec![10.0, 0.0, -20.0, -30.0];
         let result = max_loser.calculate_from_realized_pnls(&pnls);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), -30.0);
+        assert!(approx_eq!(f64, result.unwrap(), -30.0, epsilon = 1e-9));
     }
 
     #[rstest]
@@ -98,7 +99,7 @@ mod tests {
         let pnls = vec![-10.0];
         let result = max_loser.calculate_from_realized_pnls(&pnls);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), -10.0);
+        assert!(approx_eq!(f64, result.unwrap(), -10.0, epsilon = 1e-9));
     }
 
     #[rstest]

@@ -25,6 +25,9 @@ from nautilus_trader.model.objects cimport Quantity
 cdef class CashAccount(Account):
     cdef dict _balances_locked
 
+    cdef readonly bint allow_borrowing
+    """If borrowing is allowed (negative balances).\n\n:returns: `bool`"""
+
 # -- COMMANDS -------------------------------------------------------------------------------------
 
     cpdef void update_balance_locked(self, InstrumentId instrument_id, Money locked)

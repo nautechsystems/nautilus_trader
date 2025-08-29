@@ -82,10 +82,10 @@ pub fn decode_nautilus_instrument_id(
         .get(&publisher_id)
         .ok_or_else(|| anyhow::anyhow!("`Venue` not found for `publisher_id` {publisher_id}"))?;
     let mut instrument_id = get_nautilus_instrument_id_for_record(record, metadata, *venue)?;
-    if publisher == Publisher::GlbxMdp3Glbx {
-        if let Some(venue) = symbol_venue_map.get(&instrument_id.symbol) {
-            instrument_id.venue = *venue;
-        }
+    if publisher == Publisher::GlbxMdp3Glbx
+        && let Some(venue) = symbol_venue_map.get(&instrument_id.symbol)
+    {
+        instrument_id.venue = *venue;
     }
 
     Ok(instrument_id)

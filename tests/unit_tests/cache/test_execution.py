@@ -23,6 +23,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.config import LoggingConfig
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
@@ -1380,6 +1381,120 @@ class TestCache:
         assert self.cache.orders_closed_count() == 0
         assert len(position.events) == 0  # <-- Events for order were purged
 
+    def test_purge_closed_orders_with_linked_orders_does_not_purge_parent_when_child_open(self):
+        # Arrange - Create bracket order which has linked orders
+        bracket_order = self.strategy.order_factory.bracket(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            entry_price=Price.from_str("1.00000"),
+            sl_trigger_price=Price.from_str("0.99000"),
+            tp_price=Price.from_str("1.01000"),
+        )
+
+        # Extract the entry order (parent) and stop loss order (child)
+        parent_order = bracket_order.orders[0]  # Entry order
+        child_order = bracket_order.orders[1]  # Stop loss order
+
+        position_id = PositionId("P-1")
+        self.cache.add_order(parent_order, position_id)
+        self.cache.add_order(child_order, position_id)
+
+        # Submit and accept parent order
+        parent_order.apply(TestEventStubs.order_submitted(parent_order))
+        self.cache.update_order(parent_order)
+        parent_order.apply(TestEventStubs.order_accepted(parent_order))
+        self.cache.update_order(parent_order)
+
+        # Fill and close parent order
+        fill = TestEventStubs.order_filled(
+            parent_order,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("1.00000"),
+        )
+        parent_order.apply(fill)
+        self.cache.update_order(parent_order)
+
+        # Submit and accept child order (but keep it open)
+        child_order.apply(TestEventStubs.order_submitted(child_order))
+        self.cache.update_order(child_order)
+        child_order.apply(TestEventStubs.order_accepted(child_order))
+        self.cache.update_order(child_order)
+
+        # Verify initial state
+        assert parent_order.is_closed
+        assert not child_order.is_closed
+        assert self.cache.orders_closed_count() == 1
+        assert self.cache.orders_open_count() == 1
+
+        # Act
+        self.cache.purge_closed_orders(ts_now=0)
+
+        # Assert - parent order should NOT be purged because child is still open
+        assert self.cache.order_exists(parent_order.client_order_id)
+        assert self.cache.order(parent_order.client_order_id) is not None
+        assert self.cache.orders_closed_count() == 1
+        assert self.cache.orders_open_count() == 1
+
+    def test_purge_closed_orders_with_linked_orders_purges_parent_when_all_children_closed(self):
+        # Arrange - Create bracket order which has linked orders
+        bracket_orders = self.strategy.order_factory.bracket(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            entry_price=Price.from_str("1.00000"),
+            sl_trigger_price=Price.from_str("0.99000"),
+            tp_price=Price.from_str("1.01000"),
+        )
+
+        # Extract the entry order (parent) and stop loss order (child)
+        parent_order = bracket_orders.orders[0]  # Entry order
+        child_order = bracket_orders.orders[1]  # Stop loss order
+
+        position_id = PositionId("P-1")
+        self.cache.add_order(parent_order, position_id)
+        self.cache.add_order(child_order, position_id)
+
+        # Submit and accept parent order
+        parent_order.apply(TestEventStubs.order_submitted(parent_order))
+        self.cache.update_order(parent_order)
+        parent_order.apply(TestEventStubs.order_accepted(parent_order))
+        self.cache.update_order(parent_order)
+
+        # Fill and close parent order
+        fill = TestEventStubs.order_filled(
+            parent_order,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("1.00000"),
+        )
+        parent_order.apply(fill)
+        self.cache.update_order(parent_order)
+
+        # Submit, accept and cancel child order (close it)
+        child_order.apply(TestEventStubs.order_submitted(child_order))
+        self.cache.update_order(child_order)
+        child_order.apply(TestEventStubs.order_accepted(child_order))
+        self.cache.update_order(child_order)
+        child_order.apply(TestEventStubs.order_canceled(child_order))
+        self.cache.update_order(child_order)
+
+        # Verify initial state
+        assert parent_order.is_closed
+        assert child_order.is_closed
+        assert self.cache.orders_closed_count() == 2
+        assert self.cache.orders_open_count() == 0
+
+        # Act
+        self.cache.purge_closed_orders(ts_now=0)
+
+        # Assert - both orders should be purged since all children are closed
+        assert not self.cache.order_exists(parent_order.client_order_id)
+        assert not self.cache.order_exists(child_order.client_order_id)
+        assert self.cache.orders_closed_count() == 0
+        assert self.cache.orders_open_count() == 0
+
     def test_purge_closed_positions(self):
         # Arrange
         order1 = self.strategy.order_factory.market(
@@ -1431,6 +1546,132 @@ class TestCache:
         assert position1_id not in self.cache.positions_closed()
         assert self.cache.positions_total_count() == 0
         assert self.cache.positions_closed_count() == 0
+
+    def test_purge_order_with_database_enabled(self):
+        # Arrange
+        order = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        position_id = PositionId("P-1")
+        self.cache.add_order(order, position_id)
+
+        order.apply(TestEventStubs.order_submitted(order))
+        self.cache.update_order(order)
+
+        order.apply(TestEventStubs.order_accepted(order))
+        self.cache.update_order(order)
+
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("1.00000"),
+        )
+        order.apply(fill)
+        self.cache.update_order(order)
+
+        # Act
+        self.cache.purge_order(client_order_id=order.client_order_id, purge_from_database=True)
+
+        # Assert
+        assert not self.cache.order_exists(order.client_order_id)
+        assert self.cache.order(order.client_order_id) is None
+
+    def test_purge_position_with_database_enabled(self):
+        # Arrange
+        order = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        position_id = PositionId("P-1")
+        self.cache.add_order(order, position_id)
+
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("1.00000"),
+        )
+
+        position = Position(instrument=AUDUSD_SIM, fill=fill)
+        self.cache.add_position(position, OmsType.HEDGING)
+
+        # Act
+        self.cache.purge_position(position_id=position_id, purge_from_database=True)
+
+        # Assert
+        assert not self.cache.position_exists(position_id)
+        assert self.cache.position(position_id) is None
+
+    def test_purge_account_events_with_database_enabled(self):
+        # Arrange
+        account = TestExecStubs.cash_account()
+        self.cache.add_account(account)
+
+        # Add multiple account state events with different timestamps
+        from nautilus_trader.model.events import AccountState
+        from nautilus_trader.model.objects import AccountBalance
+
+        event1 = AccountState(
+            account_id=account.id,
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(1_000_000.00, USD),
+                    Money(0.00, USD),
+                    Money(1_000_000.00, USD),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=100_000_000,  # Old event
+            ts_init=100_000_000,
+        )
+
+        event2 = AccountState(
+            account_id=account.id,
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(1_500_000.00, USD),
+                    Money(0.00, USD),
+                    Money(1_500_000.00, USD),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=200_000_000,  # Newer event
+            ts_init=200_000_000,
+        )
+
+        account.apply(event1)
+        account.apply(event2)
+
+        # Verify we have 3 events (initial + 2 added)
+        initial_event_count = account.event_count
+
+        # Act - Enable database purging to test our implementation
+        self.cache.purge_account_events(
+            ts_now=1_000_000_000,
+            lookback_secs=0,
+            purge_from_database=True,
+        )
+
+        # Assert - Events should be purged and no exceptions raised
+        # Should retain exactly 1 event (the latest)
+        assert account.event_count == 1
+        assert account.event_count < initial_event_count
 
 
 class TestExecutionCacheIntegrityCheck:

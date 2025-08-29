@@ -2,7 +2,7 @@
 set -euo pipefail
 
 for i in {1..3}; do
-  if aws s3 cp index.html "s3://${CLOUDFLARE_R2_BUCKET_NAME}/simple/nautilus-trader/index.html" \
+  if aws s3 cp index.html "s3://${CLOUDFLARE_R2_BUCKET_NAME}/${CLOUDFLARE_R2_PREFIX:-simple/nautilus-trader}/index.html" \
     --endpoint-url="${CLOUDFLARE_R2_URL}" \
     --content-type "text/html; charset=utf-8"; then
     echo "Successfully uploaded index.html"

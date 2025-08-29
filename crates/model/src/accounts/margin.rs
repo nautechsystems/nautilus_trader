@@ -116,7 +116,12 @@ impl MarginAccount {
     /// Panics if an existing margin balance is found but cannot be unwrapped.
     pub fn update_initial_margin(&mut self, instrument_id: InstrumentId, margin_init: Money) {
         let margin_balance = self.margins.get(&instrument_id);
-        if margin_balance.is_none() {
+        if let Some(balance) = margin_balance {
+            // update the margin_balance initial property with margin_init
+            let mut new_margin_balance = *balance;
+            new_margin_balance.initial = margin_init;
+            self.margins.insert(instrument_id, new_margin_balance);
+        } else {
             self.margins.insert(
                 instrument_id,
                 MarginBalance::new(
@@ -125,11 +130,6 @@ impl MarginAccount {
                     instrument_id,
                 ),
             );
-        } else {
-            // update the margin_balance initial property with margin_init
-            let mut new_margin_balance = *margin_balance.unwrap();
-            new_margin_balance.initial = margin_init;
-            self.margins.insert(instrument_id, new_margin_balance);
         }
         self.recalculate_balance(margin_init.currency);
     }
@@ -160,7 +160,12 @@ impl MarginAccount {
         margin_maintenance: Money,
     ) {
         let margin_balance = self.margins.get(&instrument_id);
-        if margin_balance.is_none() {
+        if let Some(balance) = margin_balance {
+            // update the margin_balance maintenance property with margin_maintenance
+            let mut new_margin_balance = *balance;
+            new_margin_balance.maintenance = margin_maintenance;
+            self.margins.insert(instrument_id, new_margin_balance);
+        } else {
             self.margins.insert(
                 instrument_id,
                 MarginBalance::new(
@@ -169,11 +174,6 @@ impl MarginAccount {
                     instrument_id,
                 ),
             );
-        } else {
-            // update the margin_balance maintenance property with margin_maintenance
-            let mut new_margin_balance = *margin_balance.unwrap();
-            new_margin_balance.maintenance = margin_maintenance;
-            self.margins.insert(instrument_id, new_margin_balance);
         }
         self.recalculate_balance(margin_maintenance.currency);
     }
@@ -407,17 +407,18 @@ impl Account for MarginAccount {
     ) -> anyhow::Result<Vec<Money>> {
         let mut pnls: Vec<Money> = Vec::new();
 
-        if let Some(ref pos) = position {
-            if pos.quantity.is_positive() && pos.entry != fill.order_side {
-                // Calculate and add PnL using the minimum of fill quantity and position quantity
-                // to avoid double-limiting that occurs in position.calculate_pnl()
-                let pnl_quantity = Quantity::from_raw(
-                    fill.last_qty.raw.min(pos.quantity.raw),
-                    fill.last_qty.precision,
-                );
-                let pnl = pos.calculate_pnl(pos.avg_px_open, fill.last_px.as_f64(), pnl_quantity);
-                pnls.push(pnl);
-            }
+        if let Some(ref pos) = position
+            && pos.quantity.is_positive()
+            && pos.entry != fill.order_side
+        {
+            // Calculate and add PnL using the minimum of fill quantity and position quantity
+            // to avoid double-limiting that occurs in position.calculate_pnl()
+            let pnl_quantity = Quantity::from_raw(
+                fill.last_qty.raw.min(pos.quantity.raw),
+                fill.last_qty.precision,
+            );
+            let pnl = pos.calculate_pnl(pos.avg_px_open, fill.last_px.as_f64(), pnl_quantity);
+            pnls.push(pnl);
         }
 
         Ok(pnls)

@@ -20,16 +20,16 @@ crate-type = ["rlib", "staticlib"]
 [features]
 default = []
 extension-module = [
-  "pyo3/extension-module",
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
+  "pyo3/extension-module",
 ]
 python = [
-  "pyo3",
   "nautilus-common/python",
   "nautilus-core/python",
   "nautilus-model/python",
+  "pyo3",
 ]
 high-precision = ["nautilus-model/high-precision"]
 
@@ -44,6 +44,7 @@ pyo3 = { workspace = true, optional = true }
 reqwest = { workspace = true }
 serde_json = { workspace = true }
 aws-lc-rs = { workspace = true }
+rand = { workspace = true }
 tokio = { workspace = true }
 
 [dev-dependencies]

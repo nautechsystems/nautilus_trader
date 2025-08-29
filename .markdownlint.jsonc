@@ -10,7 +10,7 @@
   // MD004/ul-style : Unordered list style : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md004.md
   "MD004": {
     // List style
-    "style": "consistent"
+    "style": "dash"
   },
   // MD005/list-indent : Inconsistent indentation for list items at the same level : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md005.md
   "MD005": true,
@@ -66,5 +66,11 @@
   "MD049": {
     // Emphasis style
     "style": "asterisk"
-  }
+  },
+  // MD018/no-space-after-atx-heading : Space required after ‘#’ in ATX headings : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md018.md
+  "MD018": true,
+  // MD026/no-trailing-punctuation : Headings should not end with punctuation : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md026.md
+  "MD026": true,
+  // MD047/single-trailing-newline : File must end with a single newline : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md047.md
+  "MD047": true
 }

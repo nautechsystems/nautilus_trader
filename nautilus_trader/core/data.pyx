@@ -41,7 +41,7 @@ cdef class Data:
     @property
     def ts_init(self) -> int:
         """
-        UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the instance was created.
 
         Returns
         -------

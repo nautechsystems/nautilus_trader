@@ -82,7 +82,7 @@ or multiple wallets could be configured with multiple `PolymarketExecutionClient
 Ensure your wallet is funded with **USDC.e**, otherwise you will encounter the "not enough balance / allowance" API error when submitting orders.
 :::
 
-### Setting Allowances for Polymarket Contracts
+### Setting allowances for Polymarket contracts
 
 Before you can start trading, you need to ensure that your wallet has allowances set for Polymarket's smart contracts.
 You can do this by running the provided script located at `/adapters/polymarket/scripts/set_allowances.py`.
@@ -99,7 +99,7 @@ Polymarket CLOB Exchange to interact with your funds.
 
 Before running the script, ensure the following prerequisites are met:
 
-- Install the web3 Python package: `pip install --upgrade web3==5.28`
+- Install the web3 Python package: `pip install --upgrade web3==5.28`.
 - Have a **Polygon**-compatible wallet funded with some MATIC (used for gas fees).
 - Set the following environment variables in your shell:
   - `POLYGON_PRIVATE_KEY`: Your private key for the **Polygon**-compatible wallet.
@@ -129,7 +129,7 @@ Run the script using:
 python nautilus_trader/adapters/polymarket/scripts/set_allowances.py
 ```
 
-### Script Breakdown
+### Script breakdown
 
 The script performs the following actions:
 
@@ -187,7 +187,7 @@ We recommend using environment variables to manage your credentials.
 
 Polymarket operates as a prediction market with limited order complexity compared to traditional exchanges.
 
-### Order Types
+### Order types
 
 | Order Type             | Binary Options | Notes                               |
 |------------------------|----------------|-------------------------------------|
@@ -199,23 +199,23 @@ Polymarket operates as a prediction market with limited order complexity compare
 | `LIMIT_IF_TOUCHED`     | -              | *Not supported*.                    |
 | `TRAILING_STOP_MARKET` | -              | *Not supported*.                    |
 
-### Execution Instructions
+### Execution instructions
 
 | Instruction   | Binary Options | Notes                                     |
 |---------------|----------------|-------------------------------------------|
 | `post_only`   | -              | *Not supported*.                          |
 | `reduce_only` | -              | *Not supported*.                          |
 
-### Time-in-Force Options
+### Time-in-force options
 
-| Time-in-Force | Binary Options | Notes                                     |
+| Time in force | Binary Options | Notes                                     |
 |---------------|----------------|-------------------------------------------|
 | `GTC`         | ✓              | Good Till Canceled.                       |
 | `GTD`         | ✓              | Good Till Date.                           |
 | `FOK`         | ✓              | Fill or Kill.                             |
 | `IOC`         | ✓              | Immediate or Cancel (maps to FAK).        |
 
-### Advanced Order Features
+### Advanced order features
 
 | Feature            | Binary Options | Notes                                |
 |--------------------|----------------|--------------------------------------|
@@ -223,7 +223,42 @@ Polymarket operates as a prediction market with limited order complexity compare
 | Bracket/OCO Orders | -              | *Not supported*.                     |
 | Iceberg Orders     | -              | *Not supported*.                     |
 
-### Configuration Options
+### Batch operations
+
+| Operation          | Binary Options | Notes                                |
+|--------------------|----------------|--------------------------------------|
+| Batch Submit       | -              | *Not supported*.                     |
+| Batch Modify       | -              | *Not supported*.                     |
+| Batch Cancel       | -              | *Not supported*.                     |
+
+### Position management
+
+| Feature              | Binary Options | Notes                                |
+|--------------------|----------------|--------------------------------------|
+| Query positions     | ✓              | Contract balance-based positions.    |
+| Position mode       | -              | Binary outcome positions only.       |
+| Leverage control    | -              | No leverage available.               |
+| Margin mode         | -              | No margin trading.                   |
+
+### Order querying
+
+| Feature              | Binary Options | Notes                                |
+|--------------------|----------------|--------------------------------------|
+| Query open orders   | ✓              | Active orders only.                  |
+| Query order history | ✓              | Limited historical data.             |
+| Order status updates| ✓              | Real-time order state changes.      |
+| Trade history       | ✓              | Execution and fill reports.         |
+
+### Contingent orders
+
+| Feature              | Binary Options | Notes                                |
+|--------------------|----------------|--------------------------------------|
+| Order lists         | -              | *Not supported*.                     |
+| OCO orders          | -              | *Not supported*.                     |
+| Bracket orders      | -              | *Not supported*.                     |
+| Conditional orders  | -              | *Not supported*.                     |
+
+### Configuration options
 
 The following execution client configuration options are available:
 

@@ -3,7 +3,7 @@ set -euo pipefail
 
 echo "Generating package index..."
 
-bucket_path="s3://${CLOUDFLARE_R2_BUCKET_NAME}/simple/nautilus-trader/"
+bucket_path="s3://${CLOUDFLARE_R2_BUCKET_NAME}/${CLOUDFLARE_R2_PREFIX:-simple/nautilus-trader}/"
 index_file="index.html"
 
 # Create a temporary directory for downloads

@@ -4,6 +4,7 @@
 [![Documentation](https://img.shields.io/docsrs/nautilus-portfolio)](https://docs.rs/nautilus-portfolio/latest/nautilus-portfolio/)
 [![crates.io version](https://img.shields.io/crates/v/nautilus-portfolio.svg)](https://crates.io/crates/nautilus-portfolio)
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
+[![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
 
 Portfolio management and risk analysis for [NautilusTrader](http://nautilustrader.io).
 

@@ -39,3 +39,9 @@ BINANCE_RETRY_ERRORS: set[BinanceErrorCode] = {
     BinanceErrorCode.CANCEL_REJECTED,
     BinanceErrorCode.ME_RECVWINDOW_REJECT,
 }
+
+# Set of Binance error codes for which Nautilus will log a warning on failure, rather than an error
+BINANCE_RETRY_WARNINGS: set[BinanceErrorCode] = {
+    BinanceErrorCode.FOK_ORDER_REJECT,
+    BinanceErrorCode.GTX_ORDER_REJECT,
+}

@@ -348,3 +348,116 @@ class TestReportProvider:
         assert report.iloc[0]["ts_opened"] == UNIX_EPOCH
         assert pd.isna(report.iloc[0]["ts_closed"])
         assert report.iloc[0]["realized_return"] == 0.0
+        # Check that is_snapshot column exists and is False by default
+        assert "is_snapshot" in report.columns
+        assert not report.iloc[0]["is_snapshot"]
+        assert not report.iloc[1]["is_snapshot"]
+
+    def test_generate_positions_report_with_snapshots(self):
+        # Arrange
+        # This test demonstrates the manual snapshot functionality for reporting purposes.
+
+        # Create orders
+        buy_order_100k = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        sell_order_200k = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(200_000),
+        )
+
+        buy_order_100k_close = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        # Create fills in chronological order
+        # 1. Open long position (P-001)
+        open_long_fill = TestEventStubs.order_filled(
+            buy_order_100k,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-001"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00010"),
+        )
+
+        # 2. Reverse position - close long and open short
+        # This closes P-001 and creates P-002 (snapshot) and P-003 (new short)
+        reverse_fill_close = TestEventStubs.order_filled(
+            sell_order_200k,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-001"),  # Closes the long
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00050"),
+            last_qty=Quantity.from_int(100_000),  # First 100k closes the long
+        )
+
+        reverse_fill_open = TestEventStubs.order_filled(
+            sell_order_200k,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-003"),  # Opens new short
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00050"),
+            last_qty=Quantity.from_int(100_000),  # Second 100k opens short
+        )
+
+        # 3. Close short position
+        close_short_fill = TestEventStubs.order_filled(
+            buy_order_100k_close,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-003"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00060"),
+        )
+
+        # Create positions to demonstrate snapshot reporting
+        # P-001: Original long position (closed by reversal)
+        position1 = Position(instrument=AUDUSD_SIM, fill=open_long_fill)
+        position1.apply(reverse_fill_close)  # Closed when reversed
+
+        # P-002: Manual snapshot for reporting/historical purposes
+        snapshot_fill = TestEventStubs.order_filled(
+            buy_order_100k,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-002"),  # Snapshot gets unique ID
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00010"),
+        )
+        snapshot_close_fill = TestEventStubs.order_filled(
+            sell_order_200k,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-002"),  # Snapshot close
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00050"),
+            last_qty=Quantity.from_int(100_000),
+        )
+        position2_snapshot = Position(instrument=AUDUSD_SIM, fill=snapshot_fill)
+        position2_snapshot.apply(snapshot_close_fill)  # Same state as position1
+
+        # P-003: New short position (created after reversal)
+        position3 = Position(instrument=AUDUSD_SIM, fill=reverse_fill_open)
+        position3.apply(close_short_fill)  # Closed by final buy
+
+        positions = [position1, position3]
+        snapshots = [position2_snapshot]
+
+        # Act
+        report = ReportProvider.generate_positions_report(positions, snapshots)
+
+        # Assert
+        assert len(report) == 3  # 2 regular + 1 snapshot
+        assert "is_snapshot" in report.columns
+        # Check regular positions are marked as False
+        assert not report.loc[position1.id.value]["is_snapshot"]
+        assert not report.loc[position3.id.value]["is_snapshot"]
+        # Check snapshot position is marked as True
+        assert report.loc[position2_snapshot.id.value]["is_snapshot"]
+        # Verify positions have correct side (FLAT means closed)
+        assert report.loc[position1.id.value]["side"] == "FLAT"
+        assert report.loc[position3.id.value]["side"] == "FLAT"
+        assert report.loc[position2_snapshot.id.value]["side"] == "FLAT"

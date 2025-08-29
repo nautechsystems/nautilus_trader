@@ -13,8 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{any::Any, sync::Arc};
+use std::any::Any;
 
+use nautilus_core::python::clone_py_object;
 use pyo3::prelude::*;
 use ustr::Ustr;
 
@@ -24,10 +25,19 @@ use crate::msgbus::handler::MessageHandler;
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
 )]
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct PythonMessageHandler {
     id: Ustr,
-    handler: Arc<PyObject>,
+    handler: PyObject,
+}
+
+impl Clone for PythonMessageHandler {
+    fn clone(&self) -> Self {
+        Self {
+            id: self.id,
+            handler: clone_py_object(&self.handler),
+        }
+    }
 }
 
 #[pymethods]
@@ -37,10 +47,7 @@ impl PythonMessageHandler {
     #[must_use]
     pub fn new(id: &str, handler: PyObject) -> Self {
         let id = Ustr::from(id);
-        Self {
-            id,
-            handler: Arc::new(handler),
-        }
+        Self { id, handler }
     }
 }
 

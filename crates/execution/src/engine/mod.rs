@@ -37,8 +37,8 @@ use nautilus_common::{
     generators::position_id::PositionIdGenerator,
     logging::{CMD, EVT, RECV},
     messages::execution::{
-        BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryOrder, SubmitOrder,
-        SubmitOrderList, TradingCommand,
+        BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryAccount, QueryOrder,
+        SubmitOrder, SubmitOrderList, TradingCommand,
     },
     msgbus::{
         self, get_message_bus,
@@ -76,6 +76,7 @@ pub struct ExecutionEngine {
     routing_map: HashMap<Venue, ClientId>,
     oms_overrides: HashMap<StrategyId, OmsType>,
     external_order_claims: HashMap<InstrumentId, StrategyId>,
+    external_clients: HashSet<ClientId>,
     pos_id_generator: PositionIdGenerator,
     config: ExecutionEngineConfig,
 }
@@ -104,6 +105,12 @@ impl ExecutionEngine {
             routing_map: HashMap::new(),
             oms_overrides: HashMap::new(),
             external_order_claims: HashMap::new(),
+            external_clients: config
+                .as_ref()
+                .and_then(|c| c.external_clients.clone())
+                .unwrap_or_default()
+                .into_iter()
+                .collect(),
             pos_id_generator: PositionIdGenerator::new(trader_id, clock),
             config: config.unwrap_or_default(),
         }
@@ -281,6 +288,14 @@ impl ExecutionEngine {
             log::debug!("{RECV}{CMD} {command:?}");
         }
 
+        if self.external_clients.contains(&command.client_id()) {
+            if self.config.debug {
+                let cid = command.client_id();
+                log::debug!("Skipping execution command for external client {cid}: {command:?}");
+            }
+            return;
+        }
+
         let client: Rc<dyn ExecutionClient> = if let Some(client) = self
             .clients
             .get(&command.client_id())
@@ -309,6 +324,7 @@ impl ExecutionEngine {
             TradingCommand::CancelAllOrders(cmd) => self.handle_cancel_all_orders(client, cmd),
             TradingCommand::BatchCancelOrders(cmd) => self.handle_batch_cancel_orders(client, cmd),
             TradingCommand::QueryOrder(cmd) => self.handle_query_order(client, cmd),
+            TradingCommand::QueryAccount(cmd) => self.handle_query_account(client, cmd),
         }
     }
 
@@ -489,6 +505,12 @@ impl ExecutionEngine {
         }
     }
 
+    fn handle_query_account(&self, client: Rc<dyn ExecutionClient>, cmd: &QueryAccount) {
+        if let Err(e) = client.query_account(cmd) {
+            log::error!("Error querying account: {e}");
+        }
+    }
+
     fn handle_query_order(&self, client: Rc<dyn ExecutionClient>, cmd: &QueryOrder) {
         if let Err(e) = client.query_order(cmd) {
             log::error!("Error querying order: {e}");
@@ -500,11 +522,11 @@ impl ExecutionEngine {
             log::debug!("Creating order state snapshot for {order}");
         }
 
-        if self.cache.borrow().has_backing() {
-            if let Err(e) = self.cache.borrow().snapshot_order_state(order) {
-                log::error!("Failed to snapshot order state: {e}");
-                return;
-            }
+        if self.cache.borrow().has_backing()
+            && let Err(e) = self.cache.borrow().snapshot_order_state(order)
+        {
+            log::error!("Failed to snapshot order state: {e}");
+            return;
         }
 
         if get_message_bus().borrow().has_backing {
@@ -607,10 +629,10 @@ impl ExecutionEngine {
         }
 
         // Use native venue OMS
-        if let Some(client_id) = self.routing_map.get(&fill.instrument_id.venue) {
-            if let Some(client) = self.clients.get(client_id) {
-                return client.oms_type();
-            }
+        if let Some(client_id) = self.routing_map.get(&fill.instrument_id.venue)
+            && let Some(client) = self.clients.get(client_id)
+        {
+            return client.oms_type();
         }
 
         if let Some(client) = &self.default_client {
@@ -743,18 +765,18 @@ impl ExecutionEngine {
             for client_order_id in order.linked_order_ids().unwrap_or_default() {
                 let mut cache = self.cache.borrow_mut();
                 let contingent_order = cache.mut_order(client_order_id);
-                if let Some(contingent_order) = contingent_order {
-                    if contingent_order.position_id().is_none() {
-                        contingent_order.set_position_id(Some(position_id));
+                if let Some(contingent_order) = contingent_order
+                    && contingent_order.position_id().is_none()
+                {
+                    contingent_order.set_position_id(Some(position_id));
 
-                        if let Err(e) = self.cache.borrow_mut().add_position_id(
-                            &position_id,
-                            &contingent_order.instrument_id().venue,
-                            &contingent_order.client_order_id(),
-                            &contingent_order.strategy_id(),
-                        ) {
-                            log::error!("Failed to add position ID: {e}");
-                        }
+                    if let Err(e) = self.cache.borrow_mut().add_position_id(
+                        &position_id,
+                        &contingent_order.instrument_id().venue,
+                        &contingent_order.client_order_id(),
+                        &contingent_order.strategy_id(),
+                    ) {
+                        log::error!("Failed to add position ID: {e}");
                     }
                 }
             }
@@ -925,13 +947,12 @@ impl ExecutionEngine {
             commission2,
         );
 
-        if oms_type == OmsType::Hedging {
-            if let Some(position_id) = fill.position_id {
-                if position_id.is_virtual() {
-                    log::warn!("Closing position {fill_split1:?}");
-                    log::warn!("Flipping position {fill_split2:?}");
-                }
-            }
+        if oms_type == OmsType::Hedging
+            && let Some(position_id) = fill.position_id
+            && position_id.is_virtual()
+        {
+            log::warn!("Closing position {fill_split1:?}");
+            log::warn!("Flipping position {fill_split2:?}");
         }
 
         // Open flipped position

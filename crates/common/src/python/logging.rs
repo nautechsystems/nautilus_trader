@@ -196,3 +196,103 @@ pub fn py_logging_clock_set_realtime_mode() {
 pub fn py_logging_clock_set_static_time(time_ns: u64) {
     logging_clock_set_static_time(time_ns);
 }
+
+/// A thin wrapper around the global Rust logger which exposes ergonomic
+/// logging helpers for Python code.
+///
+/// It mirrors the familiar Python `logging` interface while forwarding
+/// all records through the Nautilus logging infrastructure so that log levels
+/// and formatting remain consistent across Rust and Python.
+#[pyclass(
+    module = "nautilus_trader.core.nautilus_pyo3.common",
+    name = "Logger",
+    unsendable
+)]
+#[derive(Debug, Clone)]
+pub struct PyLogger {
+    name: Ustr,
+}
+
+impl PyLogger {
+    pub fn new(name: &str) -> Self {
+        Self {
+            name: Ustr::from(name),
+        }
+    }
+}
+
+#[pymethods]
+impl PyLogger {
+    /// Create a new `Logger` instance.
+    #[new]
+    #[pyo3(signature = (name="Python"))]
+    fn py_new(name: &str) -> Self {
+        Self::new(name)
+    }
+
+    /// The component identifier carried by this logger.
+    #[getter]
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Emit a TRACE level record.
+    #[pyo3(name = "trace")]
+    fn py_trace(&self, message: &str, color: Option<LogColor>) {
+        self._log(LogLevel::Trace, color, message);
+    }
+
+    /// Emit a DEBUG level record.
+    #[pyo3(name = "debug")]
+    fn py_debug(&self, message: &str, color: Option<LogColor>) {
+        self._log(LogLevel::Debug, color, message);
+    }
+
+    /// Emit an INFO level record.
+    #[pyo3(name = "info")]
+    fn py_info(&self, message: &str, color: Option<LogColor>) {
+        self._log(LogLevel::Info, color, message);
+    }
+
+    /// Emit a WARNING level record.
+    #[pyo3(name = "warning")]
+    fn py_warning(&self, message: &str, color: Option<LogColor>) {
+        self._log(LogLevel::Warning, color, message);
+    }
+
+    /// Emit an ERROR level record.
+    #[pyo3(name = "error")]
+    fn py_error(&self, message: &str, color: Option<LogColor>) {
+        self._log(LogLevel::Error, color, message);
+    }
+
+    /// Emit an ERROR level record with the active Python exception info.
+    #[pyo3(name = "exception")]
+    #[pyo3(signature = (message="", color=None))]
+    fn py_exception(&self, py: Python, message: &str, color: Option<LogColor>) {
+        let mut full_msg = message.to_owned();
+
+        if pyo3::PyErr::occurred(py) {
+            let err = PyErr::fetch(py);
+            let err_str = err.to_string();
+            if full_msg.is_empty() {
+                full_msg = err_str;
+            } else {
+                full_msg = format!("{full_msg}: {err_str}");
+            }
+        }
+
+        self._log(LogLevel::Error, color, &full_msg);
+    }
+
+    /// Flush buffered log records.
+    #[pyo3(name = "flush")]
+    fn py_flush(&self) {
+        log::logger().flush();
+    }
+
+    fn _log(&self, level: LogLevel, color: Option<LogColor>, message: &str) {
+        let color = color.unwrap_or(LogColor::Normal);
+        logger::log(level, color, self.name, message);
+    }
+}

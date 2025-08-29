@@ -26,6 +26,7 @@ methods. It also provides methods for managing orders and trade execution:
 - `cancel_all_orders(...)`
 - `close_position(...)`
 - `close_all_positions(...)`
+- `query_account(...)`
 - `query_order(...)`
 
 These methods create the necessary execution commands under the hood and send them on the message

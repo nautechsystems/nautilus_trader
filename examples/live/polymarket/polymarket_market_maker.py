@@ -51,6 +51,8 @@ from nautilus_trader.trading.strategy import Strategy
 # For correct subscription operation, you must specify all instruments to be immediately
 # subscribed for as part of the data client configuration
 
+# To find active markets run `python nautilus_trader/adapters/polymarket/scripts/active_markets.py`
+
 # will-the-indiana-pacers-win-the-2025-nba-finals
 # https://polymarket.com/event/will-the-new-york-knicks-win-the-2025-nba-finals
 condition_id = "0xf2a89afeddff5315e37211b0b0e4e93ed167fba2694cd35c252672d0aca73711"

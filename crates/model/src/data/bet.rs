@@ -411,7 +411,7 @@ mod tests {
     #[rstest]
     fn test_display_bet() {
         let bet = Bet::new(dec!(2.0), dec!(100.0), BetSide::Back);
-        let formatted = format!("{}", bet);
+        let formatted = format!("{bet}");
         assert!(formatted.contains("Back"));
         assert!(formatted.contains("2.00"));
         assert!(formatted.contains("100.00"));
@@ -517,7 +517,7 @@ mod tests {
         let mut position = BetPosition::default();
         let bet = Bet::new(dec!(2.0), dec!(100.0), BetSide::Back);
         position.add_bet(bet);
-        let formatted = format!("{}", position);
+        let formatted = format!("{position}");
 
         assert!(formatted.contains("price"));
         assert!(formatted.contains("exposure"));

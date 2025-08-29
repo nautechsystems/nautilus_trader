@@ -7,7 +7,9 @@
 //! cargo bench -p <my_crate> --bench <file_stem>
 //! ```
 
-use criterion::{black_box, Criterion, criterion_group, criterion_main};
+use std::hint::black_box;
+
+use criterion::{criterion_group, criterion_main, Criterion};
 
 // -----------------------------------------------------------------------------
 // Replace `my_function` and set-up code with your real workload.

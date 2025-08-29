@@ -165,6 +165,7 @@ impl BaseExecutionClient {
         client_order_id: ClientOrderId,
         reason: &str,
         ts_event: UnixNanos,
+        due_post_only: bool,
     ) {
         let event = OrderRejected::new(
             self.trader_id,
@@ -177,6 +178,7 @@ impl BaseExecutionClient {
             ts_event,
             self.clock.borrow().timestamp_ns(),
             false,
+            due_post_only,
         );
         self.send_order_event(OrderEventAny::Rejected(event));
     }
@@ -270,12 +272,12 @@ impl BaseExecutionClient {
         if !venue_order_id_modified {
             let cache = self.cache.as_ref().borrow();
             let existing_order_result = cache.venue_order_id(&client_order_id);
-            if let Some(existing_order) = existing_order_result {
-                if *existing_order != venue_order_id {
-                    log::error!(
-                        "Existing venue order id {existing_order} does not match provided venue order id {venue_order_id}"
-                    );
-                }
+            if let Some(existing_order) = existing_order_result
+                && *existing_order != venue_order_id
+            {
+                log::error!(
+                    "Existing venue order id {existing_order} does not match provided venue order id {venue_order_id}"
+                );
             }
         }
 
@@ -424,22 +426,22 @@ impl BaseExecutionClient {
     }
 
     fn send_mass_status_report(&self, report: ExecutionMassStatus) {
-        let endpoint = "ExecEngine.reconcile_mass_status".into();
+        let endpoint = "ExecEngine.reconcile_execution_mass_status".into();
         msgbus::send_any(endpoint, &report as &dyn Any);
     }
 
     fn send_order_status_report(&self, report: OrderStatusReport) {
-        let endpoint = "ExecEngine.reconcile_report".into();
+        let endpoint = "ExecEngine.reconcile_execution_report".into();
         msgbus::send_any(endpoint, &report as &dyn Any);
     }
 
     fn send_fill_report(&self, report: FillReport) {
-        let endpoint = "ExecEngine.reconcile_report".into();
+        let endpoint = "ExecEngine.reconcile_execution_report".into();
         msgbus::send_any(endpoint, &report as &dyn Any);
     }
 
     fn send_position_report(&self, report: PositionStatusReport) {
-        let endpoint = "ExecEngine.reconcile_report".into();
+        let endpoint = "ExecEngine.reconcile_execution_report".into();
         msgbus::send_any(endpoint, &report as &dyn Any);
     }
 }

@@ -23,7 +23,7 @@ use nautilus_common::{
     clock::Clock,
     msgbus::{handler::ShareableMessageHandler, register},
 };
-use nautilus_core::UUID4;
+use nautilus_core::{UUID4, WeakCell};
 use ustr::Ustr;
 
 use crate::order_emulator::{
@@ -66,19 +66,19 @@ impl OrderEmulatorAdapter {
     // }
 
     fn initialize_execute_handler(emulator: Rc<RefCell<OrderEmulator>>) {
-        let handler = ShareableMessageHandler(Rc::new(OrderEmulatorExecuteHandler {
-            id: Ustr::from(&UUID4::new().to_string()),
-            emulator,
-        }));
+        let handler = ShareableMessageHandler(Rc::new(OrderEmulatorExecuteHandler::new(
+            Ustr::from(&UUID4::new().to_string()),
+            WeakCell::from(Rc::downgrade(&emulator)),
+        )));
 
         register("OrderEmulator.execute".into(), handler);
     }
 
     fn initialize_on_event_handler(emulator: Rc<RefCell<OrderEmulator>>) {
-        let handler = ShareableMessageHandler(Rc::new(OrderEmulatorOnEventHandler {
-            id: Ustr::from(&UUID4::new().to_string()),
-            emulator,
-        }));
+        let handler = ShareableMessageHandler(Rc::new(OrderEmulatorOnEventHandler::new(
+            Ustr::from(&UUID4::new().to_string()),
+            WeakCell::from(Rc::downgrade(&emulator)),
+        )));
 
         register("OrderEmulator.on_event".into(), handler);
     }

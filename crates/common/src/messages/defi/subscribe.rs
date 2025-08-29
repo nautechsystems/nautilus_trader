@@ -13,10 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use alloy_primitives::Address;
 use indexmap::IndexMap;
 use nautilus_core::{UUID4, UnixNanos};
-use nautilus_model::{defi::chain::Blockchain, identifiers::ClientId};
+use nautilus_model::{
+    defi::chain::Blockchain,
+    identifiers::{ClientId, InstrumentId},
+};
 
 #[derive(Debug, Clone)]
 pub struct SubscribeBlocks {
@@ -50,7 +52,7 @@ impl SubscribeBlocks {
 /// Represents a subscription command for pool definition updates from a specific AMM pool.
 #[derive(Debug, Clone)]
 pub struct SubscribePool {
-    pub address: Address,
+    pub instrument_id: InstrumentId,
     pub client_id: Option<ClientId>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
@@ -61,14 +63,14 @@ impl SubscribePool {
     /// Creates a new [`SubscribePool`] instance.
     #[must_use]
     pub const fn new(
-        address: Address,
+        instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         command_id: UUID4,
         ts_init: UnixNanos,
         params: Option<IndexMap<String, String>>,
     ) -> Self {
         Self {
-            address,
+            instrument_id,
             client_id,
             command_id,
             ts_init,
@@ -79,7 +81,7 @@ impl SubscribePool {
 
 #[derive(Debug, Clone)]
 pub struct SubscribePoolSwaps {
-    pub address: Address,
+    pub instrument_id: InstrumentId,
     pub client_id: Option<ClientId>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
@@ -90,7 +92,7 @@ impl SubscribePoolSwaps {
     /// Creates a new [`SubscribePoolSwaps`] instance.
     #[must_use]
     pub const fn new(
-        address: Address,
+        instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         command_id: UUID4,
         ts_init: UnixNanos,
@@ -98,7 +100,7 @@ impl SubscribePoolSwaps {
         params: Option<IndexMap<String, String>>,
     ) -> Self {
         Self {
-            address,
+            instrument_id,
             client_id,
             command_id,
             ts_init,
@@ -110,7 +112,7 @@ impl SubscribePoolSwaps {
 /// Represents a subscription command for pool liquidity updates from a specific AMM pool.
 #[derive(Debug, Clone)]
 pub struct SubscribePoolLiquidityUpdates {
-    pub address: Address,
+    pub instrument_id: InstrumentId,
     pub client_id: Option<ClientId>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
@@ -121,14 +123,14 @@ impl SubscribePoolLiquidityUpdates {
     /// Creates a new [`SubscribePoolLiquidityUpdates`] instance.
     #[must_use]
     pub const fn new(
-        address: Address,
+        instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         command_id: UUID4,
         ts_init: UnixNanos,
         params: Option<IndexMap<String, String>>,
     ) -> Self {
         Self {
-            address,
+            instrument_id,
             client_id,
             command_id,
             ts_init,

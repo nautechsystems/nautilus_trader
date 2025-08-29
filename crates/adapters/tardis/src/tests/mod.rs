@@ -14,9 +14,14 @@
 // -------------------------------------------------------------------------------------------------
 
 #[cfg(test)]
+/// Returns the path to the test data file.
+///
+/// # Panics
+///
+/// Panics if the file cannot be read.
 #[must_use]
-pub fn load_test_json(file_name: &str) -> String {
-    use std::{fs, path::PathBuf};
+pub fn get_test_data_path(file_name: &str) -> std::path::PathBuf {
+    use std::path::PathBuf;
 
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("src")
@@ -24,5 +29,18 @@ pub fn load_test_json(file_name: &str) -> String {
         .join("data")
         .join(file_name);
 
-    fs::read_to_string(path).expect("Failed to read test JSON file")
+    assert!(path.exists(), "Test data file not found: {path:?}");
+    path
+}
+
+#[cfg(test)]
+/// Load the JSON data from `file_name`.
+///
+/// # Panics
+///
+/// Panics if the file cannot be read.
+#[must_use]
+pub fn load_test_json(file_name: &str) -> String {
+    let path = get_test_data_path(file_name);
+    std::fs::read_to_string(path).expect("Failed to read test JSON file")
 }

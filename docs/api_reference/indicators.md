@@ -197,7 +197,7 @@
 ```
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.indicators.base.indicator
+.. automodule:: nautilus_trader.indicators.base
    :show-inheritance:
    :inherited-members:
    :members:

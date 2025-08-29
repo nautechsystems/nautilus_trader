@@ -30,36 +30,39 @@ const NAUTILUS_WORKER_THREADS: &str = "NAUTILUS_WORKER_THREADS";
 /// 0 means Tokio will use the default (number of logical CPUs).
 const DEFAULT_OS_THREADS: usize = 0;
 
-/// Retrieves a reference to a globally shared Tokio runtime.
-/// The runtime is lazily initialized on the first call and reused thereafter.
+/// Creates and configures a new multi-threaded Tokio runtime.
 ///
-/// This global runtime is intended for use cases where passing a runtime
-/// around is impractical. The number of OS threads is configured using the
-/// `NAUTILUS_WORKER_THREADS` environment variable. If not set, all available
-/// logical CPUs will be used.
+/// The number of OS threads is configured using the `NAUTILUS_WORKER_THREADS`
+/// environment variable. If not set, all available logical CPUs will be used.
 ///
 /// # Panics
 ///
 /// Panics if the runtime could not be created, which typically indicates
 /// an inability to spawn threads or allocate necessary resources.
-pub fn get_runtime() -> &'static tokio::runtime::Runtime {
+fn initialize_runtime() -> tokio::runtime::Runtime {
     let worker_threads = std::env::var(NAUTILUS_WORKER_THREADS)
         .ok()
         .and_then(|val| val.parse::<usize>().ok())
         .unwrap_or(DEFAULT_OS_THREADS);
 
-    RUNTIME.get_or_init(|| {
-        let mut builder = Builder::new_multi_thread();
+    let mut builder = Builder::new_multi_thread();
 
-        let builder = if worker_threads > 0 {
-            builder.worker_threads(worker_threads)
-        } else {
-            &mut builder
-        };
+    let builder = if worker_threads > 0 {
+        builder.worker_threads(worker_threads)
+    } else {
+        &mut builder
+    };
 
-        builder
-            .enable_all()
-            .build()
-            .expect("Failed to create tokio runtime")
-    })
+    builder
+        .enable_all()
+        .build()
+        .expect("Failed to create tokio runtime")
+}
+
+/// Returns a reference to the global Nautilus Tokio runtime.
+///
+/// The runtime is lazily initialized on the first call and reused thereafter.
+/// Intended for use cases where passing a runtime around is impractical.
+pub fn get_runtime() -> &'static tokio::runtime::Runtime {
+    RUNTIME.get_or_init(initialize_runtime)
 }

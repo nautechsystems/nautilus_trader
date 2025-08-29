@@ -26,7 +26,7 @@ use nautilus_common::{
     timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{
-    UnixNanos,
+    SharedCell, UnixNanos, WeakCell,
     correctness::{self, FAILED},
     datetime::{add_n_months_nanos, subtract_n_months_nanos},
 };
@@ -277,16 +277,16 @@ impl BarBuilder {
             self.close = self.last_close;
         }
 
-        if let (Some(close), Some(low)) = (self.close, self.low) {
-            if close < low {
-                self.low = Some(close);
-            }
+        if let (Some(close), Some(low)) = (self.close, self.low)
+            && close < low
+        {
+            self.low = Some(close);
         }
 
-        if let (Some(close), Some(high)) = (self.close, self.high) {
-            if close > high {
-                self.high = Some(close);
-            }
+        if let (Some(close), Some(high)) = (self.close, self.high)
+            && close > high
+        {
+            self.high = Some(close);
         }
 
         // SAFETY: The open was checked, so we can assume all prices are Some
@@ -890,21 +890,26 @@ impl<H: FnMut(Bar)> Debug for TimeBarAggregator<H> {
 /// It holds a reference to a `TimeBarAggregator` and triggers bar creation when
 /// timer events occur.
 pub struct NewBarCallback<H: FnMut(Bar)> {
-    aggregator: Rc<RefCell<TimeBarAggregator<H>>>,
+    aggregator: WeakCell<TimeBarAggregator<H>>,
 }
 
 impl<H: FnMut(Bar)> NewBarCallback<H> {
     /// Creates a new callback that invokes the time bar aggregator on timer events.
     #[must_use]
-    pub const fn new(aggregator: Rc<RefCell<TimeBarAggregator<H>>>) -> Self {
-        Self { aggregator }
+    pub fn new(aggregator: Rc<RefCell<TimeBarAggregator<H>>>) -> Self {
+        let shared: SharedCell<TimeBarAggregator<H>> = SharedCell::from(aggregator);
+        Self {
+            aggregator: shared.downgrade(),
+        }
     }
 }
 
 impl<H: FnMut(Bar) + 'static> From<NewBarCallback<H>> for TimeEventCallback {
     fn from(value: NewBarCallback<H>) -> Self {
         Self::Rust(Rc::new(move |event: TimeEvent| {
-            value.aggregator.borrow_mut().build_bar(event);
+            if let Some(agg) = value.aggregator.upgrade() {
+                agg.borrow_mut().build_bar(event);
+            }
         }))
     }
 }

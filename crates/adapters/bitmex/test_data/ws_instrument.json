@@ -1,0 +1,16 @@
+{
+    "symbol": "XBTUSD",
+    "lastPrice": 95123.5,
+    "lastTickDirection": "ZeroPlusTick",
+    "markPrice": 95125.7,
+    "indexPrice": 95124.3,
+    "indicativeSettlePrice": 95126.0,
+    "openInterest": 123456789,
+    "openValue": 1234567890,
+    "fairBasis": 1.4,
+    "fairBasisRate": 0.00001,
+    "fairPrice": 95125.0,
+    "markMethod": "FairPrice",
+    "indicativeTaxRate": 0.00075,
+    "timestamp": "2024-11-25T12:00:00.000Z"
+}

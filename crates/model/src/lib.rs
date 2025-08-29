@@ -39,9 +39,12 @@
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 //! - `stubs`: Enables type stubs for use in testing scenarios.
 //! - `high-precision`: Enables [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) to use 128-bit value types.
+//! - `defi`: Enables the DeFi (Decentralized Finance) domain model.
+//! - `extension-module`: Builds the crate as a Python extension module.
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]
+#![deny(unsafe_op_in_unsafe_fn)]
 #![deny(nonstandard_style)]
 #![deny(missing_debug_implementations)]
 #![deny(clippy::missing_errors_doc)]

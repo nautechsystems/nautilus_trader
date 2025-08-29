@@ -18,6 +18,10 @@ use serde::{Deserialize, Serialize};
 use crate::{enums::SerializationEncoding, msgbus::database::DatabaseConfig};
 
 /// Configuration for `Cache` instances.
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
+)]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct CacheConfig {

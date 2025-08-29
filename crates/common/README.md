@@ -4,6 +4,7 @@
 [![Documentation](https://img.shields.io/docsrs/nautilus-common)](https://docs.rs/nautilus-common/latest/nautilus-common/)
 [![crates.io version](https://img.shields.io/crates/v/nautilus-common.svg)](https://crates.io/crates/nautilus-common)
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
+[![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
 
 Common componentry for [NautilusTrader](http://nautilustrader.io).
 
@@ -30,7 +31,7 @@ or as part of a Rust only build.
 
 - `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
-- `stubs`: Enables type stubs for use in testing scenarios.
+- `defi`: Enables DeFi (Decentralized Finance) support.
 
 ## Documentation
 

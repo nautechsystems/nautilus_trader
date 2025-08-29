@@ -407,10 +407,10 @@ impl CoinbaseIntxFixClient {
     /// Returns an error if logout or socket closure fails.
     pub async fn close(&mut self) -> anyhow::Result<()> {
         // Send logout message if connected
-        if self.is_logged_on() {
-            if let Err(e) = self.send_logout("Normal logout").await {
-                tracing::warn!("Failed to send logout message: {e}");
-            }
+        if self.is_logged_on()
+            && let Err(e) = self.send_logout("Normal logout").await
+        {
+            tracing::warn!("Failed to send logout message: {e}");
         }
 
         // Close socket

@@ -43,6 +43,7 @@ from nautilus_trader.model.events import PositionEvent
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.wranglers_v2 import BarDataWranglerV2
 from nautilus_trader.persistence.wranglers_v2 import OrderBookDeltaDataWranglerV2
+from nautilus_trader.persistence.wranglers_v2 import OrderBookDepth10DataWranglerV2
 from nautilus_trader.persistence.wranglers_v2 import QuoteTickDataWranglerV2
 from nautilus_trader.persistence.wranglers_v2 import TradeTickDataWranglerV2
 from nautilus_trader.serialization.arrow.implementations import account_state
@@ -184,9 +185,12 @@ class ArrowSerializer:
                         pyo3_instrument_closes,
                     )
                 elif data_cls == OrderBookDepth10:
-                    raise RuntimeError(
-                        f"Unsupported Rust defined data type for catalog write, was `{data_cls}`. "
-                        "You need to use a loader which returns `nautilus_pyo3.OrderBookDepth10` objects.",
+                    data = [
+                        nautilus_pyo3.OrderBookDepth10.from_dict(OrderBookDepth10.to_dict(item))
+                        for item in data
+                    ]
+                    batch_bytes = nautilus_pyo3.book_depth10_to_arrow_record_batch_bytes(
+                        data,
                     )
                 else:
                     raise RuntimeError(
@@ -291,6 +295,7 @@ class ArrowSerializer:
         Wrangler = {
             OrderBookDelta: OrderBookDeltaDataWranglerV2,
             OrderBookDeltas: OrderBookDeltaDataWranglerV2,
+            OrderBookDepth10: OrderBookDepth10DataWranglerV2,
             QuoteTick: QuoteTickDataWranglerV2,
             TradeTick: TradeTickDataWranglerV2,
             Bar: BarDataWranglerV2,

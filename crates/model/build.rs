@@ -75,11 +75,9 @@ fn main() {
                 }
             });
 
-        if high_precision_c {
-            if let Some(mut includes) = config_c.after_includes {
-                includes.insert_str(0, "\n#define HIGH_PRECISION\n");
-                config_c.after_includes = Some(includes);
-            }
+        if high_precision_c && let Some(mut includes) = config_c.after_includes {
+            includes.insert_str(0, "\n#define HIGH_PRECISION\n");
+            config_c.after_includes = Some(includes);
         }
 
         let c_header_path = crate_dir.join("../../nautilus_trader/core/includes/model.h");

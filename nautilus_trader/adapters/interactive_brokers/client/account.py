@@ -17,6 +17,7 @@ import functools
 from decimal import Decimal
 
 from ibapi.account_summary_tags import AccountSummaryTags
+from ibapi.contract import Contract
 
 from nautilus_trader.adapters.interactive_brokers.client.common import BaseMixin
 from nautilus_trader.adapters.interactive_brokers.client.common import IBPosition
@@ -179,7 +180,7 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
         self,
         *,
         account_id: str,
-        contract: IBContract,
+        contract: Contract,
         position: Decimal,
         avg_cost: float,
     ) -> None:
@@ -187,7 +188,9 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
         Provide the portfolio's open positions.
         """
         if request := self._requests.get(name="OpenPositions"):
-            request.result.append(IBPosition(account_id, contract, position, avg_cost))
+            # Convert IB API Contract to IBContract
+            ib_contract = IBContract(**contract.__dict__)
+            request.result.append(IBPosition(account_id, ib_contract, position, avg_cost))
 
     async def process_position_end(self) -> None:
         """

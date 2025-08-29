@@ -278,6 +278,22 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
                 venue_order_id=venue_order_id,
                 ts_event=ts_event,
             )
+        elif self.x == BinanceExecutionType.REJECTED:
+            # A rejection can occur for many reasons, but most commonly for
+            # POST-ONLY (GTX) orders that would immediately take liquidity. We
+            # flag these specifically so downstream components can distinguish
+            # between generic rejections and those due to the post-only
+            # constraint.
+            due_post_only = self.f == BinanceTimeInForce.GTX
+
+            exec_client.generate_order_rejected(
+                strategy_id=strategy_id,
+                instrument_id=instrument_id,
+                client_order_id=client_order_id,
+                reason=str(self.r),
+                ts_event=ts_event,
+                due_post_only=due_post_only,
+            )
         elif self.x == BinanceExecutionType.EXPIRED:
             exec_client.generate_order_expired(
                 strategy_id=strategy_id,

@@ -53,8 +53,10 @@ logs/
 .mypy_cache/
 .profile/
 .pytest_cache/
+.python-version
 .ruff_cache/
 *dask-worker-space*
+cython_debug/
 requirements*
 venv*/
 __pycache__/
@@ -64,14 +66,17 @@ _build/
 build/
 dist/
 env/
+*tmp/
 *temp/
 
 # System and editor specific
 .cursorignore
 .DS_Store
 .null-ls*
+AGENTS.md
 CLAUDE.md
 CODEX.md
+GEMINI.md
 PERF.JSON
 output.json
 
@@ -99,3 +104,4 @@ tests/test_data/**/backtest/**
 !tests/test_data/nautilus/*/**.parquet
 !tests/integration_tests/adapters/betfair/responses/*.log
 !/nautilus_core/adapters/src/databento/test_data/*
+*.sh

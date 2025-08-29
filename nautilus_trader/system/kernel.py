@@ -15,7 +15,6 @@
 
 import asyncio
 import concurrent.futures
-import os
 import platform
 import signal
 import socket
@@ -189,9 +188,6 @@ class NautilusKernel:
                 file_path.open("w").close()
 
         if not is_logging_initialized():
-            if "RUST_LOG" not in os.environ:
-                os.environ["RUST_LOG"] = "off"
-
             if not logging.bypass_logging:
                 if logging.use_pyo3:
                     set_logging_pyo3(True)
@@ -1013,8 +1009,11 @@ class NautilusKernel:
         if not await self._await_engines_connected():
             return
 
-        if not await self._await_execution_reconciliation():
-            return
+        if self.exec_engine.reconciliation:
+            if not await self._await_execution_reconciliation():
+                return
+        else:
+            self._log.warning("Reconciliation deactivated")
 
         self._emulator.start()
         self._initialize_portfolio()
@@ -1318,7 +1317,7 @@ class NautilusKernel:
             color=LogColor.BLUE,
         )
 
-        if not await self._exec_engine.reconcile_state(
+        if not await self._exec_engine.reconcile_execution_state(
             timeout_secs=self._config.timeout_reconciliation,
         ):
             self._log.error("Execution state could not be reconciled")

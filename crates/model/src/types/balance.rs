@@ -56,8 +56,7 @@ impl AccountBalance {
         check_predicate_true(
             total == locked + free,
             &format!(
-                "total balance is not equal to the sum of locked and free balances: {} != {} + {}",
-                total, locked, free
+                "total balance is not equal to the sum of locked and free balances: {total} != {locked} + {free}"
             ),
         )?;
         Ok(Self {

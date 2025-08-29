@@ -13,10 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use alloy_primitives::Address;
 use indexmap::IndexMap;
 use nautilus_core::{UUID4, UnixNanos};
-use nautilus_model::{defi::chain::Blockchain, identifiers::ClientId};
+use nautilus_model::{
+    defi::chain::Blockchain,
+    identifiers::{ClientId, InstrumentId},
+};
 
 #[derive(Debug, Clone)]
 pub struct UnsubscribeBlocks {
@@ -50,7 +52,7 @@ impl UnsubscribeBlocks {
 /// Represents an unsubscription command for pool definition updates from a specific AMM pool.
 #[derive(Debug, Clone)]
 pub struct UnsubscribePool {
-    pub address: Address,
+    pub instrument_id: InstrumentId,
     pub client_id: Option<ClientId>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
@@ -61,14 +63,14 @@ impl UnsubscribePool {
     /// Creates a new [`UnsubscribePool`] instance.
     #[must_use]
     pub const fn new(
-        address: Address,
+        instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         command_id: UUID4,
         ts_init: UnixNanos,
         params: Option<IndexMap<String, String>>,
     ) -> Self {
         Self {
-            address,
+            instrument_id,
             client_id,
             command_id,
             ts_init,
@@ -79,7 +81,7 @@ impl UnsubscribePool {
 
 #[derive(Debug, Clone)]
 pub struct UnsubscribePoolSwaps {
-    pub address: Address,
+    pub instrument_id: InstrumentId,
     pub client_id: Option<ClientId>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
@@ -90,14 +92,14 @@ impl UnsubscribePoolSwaps {
     /// Creates a new [`UnsubscribePoolSwaps`] instance.
     #[must_use]
     pub const fn new(
-        address: Address,
+        instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         command_id: UUID4,
         ts_init: UnixNanos,
         params: Option<IndexMap<String, String>>,
     ) -> Self {
         Self {
-            address,
+            instrument_id,
             client_id,
             command_id,
             ts_init,
@@ -109,7 +111,7 @@ impl UnsubscribePoolSwaps {
 /// Represents an unsubscription command for pool liquidity updates from a specific AMM pool.
 #[derive(Debug, Clone)]
 pub struct UnsubscribePoolLiquidityUpdates {
-    pub address: Address,
+    pub instrument_id: InstrumentId,
     pub client_id: Option<ClientId>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
@@ -120,14 +122,14 @@ impl UnsubscribePoolLiquidityUpdates {
     /// Creates a new [`UnsubscribePoolLiquidityUpdates`] instance.
     #[must_use]
     pub const fn new(
-        address: Address,
+        instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         command_id: UUID4,
         ts_init: UnixNanos,
         params: Option<IndexMap<String, String>>,
     ) -> Self {
         Self {
-            address,
+            instrument_id,
             client_id,
             command_id,
             ts_init,

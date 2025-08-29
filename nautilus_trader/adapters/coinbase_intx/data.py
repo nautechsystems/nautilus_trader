@@ -24,6 +24,7 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
@@ -150,13 +151,26 @@ class CoinbaseIntxDataClient(LiveMarketDataClient):
         # Shutdown websockets
         if not self._ws_client.is_closed():
             self._log.info("Disconnecting websocket")
+
             await self._ws_client.close()
+
             self._log.info(f"Disconnected from {self._ws_client.url}", LogColor.BLUE)
 
-        # Cancel all client futures
+        # Cancel any pending futures
         for future in self._ws_client_futures:
             if not future.done():
                 future.cancel()
+
+        if self._ws_client_futures:
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*self._ws_client_futures, return_exceptions=True),
+                    timeout=2.0,
+                )
+            except TimeoutError:
+                self._log.warning("Timeout while waiting for websockets shutdown to complete")
+
+        self._ws_client_futures.clear()
 
     def _cache_instruments(self) -> None:
         # Ensures instrument definitions are available for correct
@@ -261,12 +275,18 @@ class CoinbaseIntxDataClient(LiveMarketDataClient):
         await self._ws_client.unsubscribe_bars(pyo3_bar_type)
 
     async def _request_instrument(self, request: RequestInstrument) -> None:
-        if request.start is not None:
+        # Check if start/end times are too far from current time
+        now = self._clock.utc_now()
+        now_ns = dt_to_unix_nanos(now)
+        start_ns = dt_to_unix_nanos(request.start)
+        end_ns = dt_to_unix_nanos(request.end)
+
+        if abs(start_ns - now_ns) > 10_000_000:  # More than 10ms difference
             self._log.warning(
                 f"Requesting instrument {request.instrument_id} with specified `start` which has no effect",
             )
 
-        if request.end is not None:
+        if abs(end_ns - now_ns) > 10_000_000:  # More than 10ms difference
             self._log.warning(
                 f"Requesting instrument {request.instrument_id} with specified `end` which has no effect",
             )
@@ -276,15 +296,21 @@ class CoinbaseIntxDataClient(LiveMarketDataClient):
             self._log.error(f"Cannot find instrument for {request.instrument_id}")
             return
 
-        self._handle_instrument(instrument, request.id, request.params)
+        self._handle_instrument(instrument, request.id, request.start, request.end, request.params)
 
     async def _request_instruments(self, request: RequestInstruments) -> None:
-        if request.start is not None:
+        # Check if start/end times are too far from current time
+        now = self._clock.utc_now()
+        now_ns = dt_to_unix_nanos(now)
+        start_ns = dt_to_unix_nanos(request.start)
+        end_ns = dt_to_unix_nanos(request.end)
+
+        if abs(start_ns - now_ns) > 10_000_000:  # More than 10ms difference
             self._log.warning(
                 f"Requesting instruments for {request.venue} with specified `start` which has no effect",
             )
 
-        if request.end is not None:
+        if abs(end_ns - now_ns) > 10_000_000:  # More than 10ms difference
             self._log.warning(
                 f"Requesting instruments for {request.venue} with specified `end` which has no effect",
             )
@@ -292,9 +318,11 @@ class CoinbaseIntxDataClient(LiveMarketDataClient):
         instruments = self._instrument_provider.get_all()
 
         self._handle_instruments(
-            instruments,
             request.venue,
+            instruments,
             request.id,
+            request.start,
+            request.end,
             request.params,
         )
 

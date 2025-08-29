@@ -312,6 +312,8 @@ pub enum BarAggregation {
     Week = 15,
     /// Based on time intervals with month granularity.
     Month = 16,
+    /// Based on time intervals with year granularity.
+    Year = 17,
 }
 
 /// The interval type for bar aggregation.

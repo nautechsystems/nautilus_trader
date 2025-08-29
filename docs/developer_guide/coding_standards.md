@@ -68,9 +68,9 @@ Use truthiness to check for empty collections (e.g., `if not my_list:`) rather t
 
 We welcome all feedback on where the codebase departs from PEP-8 for no apparent reason.
 
-## Python Style Guide
+## Python style guide
 
-### Type Hints
+### Type hints
 
 All function and method signatures *must* include comprehensive type annotations:
 

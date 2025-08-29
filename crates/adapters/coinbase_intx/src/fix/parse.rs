@@ -124,25 +124,24 @@ pub fn convert_to_order_status_report(
         None, // Report ID will be generated
     );
 
-    if let Some(price_str) = message.get_field(fix_tag::PRICE) {
-        if let Ok(price_val) = price_str.parse::<f64>() {
-            report = report.with_price(Price::new(price_val, DEFAULT_PRECISION));
-        }
+    if let Some(price_str) = message.get_field(fix_tag::PRICE)
+        && let Ok(price_val) = price_str.parse::<f64>()
+    {
+        report = report.with_price(Price::new(price_val, DEFAULT_PRECISION));
     }
 
-    if let Some(stop_px) = message.get_field(fix_tag::STOP_PX) {
-        if let Ok(stop_val) = stop_px.parse::<f64>() {
-            report = report.with_trigger_price(Price::new(stop_val, DEFAULT_PRECISION));
-            report = report.with_trigger_type(TriggerType::LastPrice);
-        }
+    if let Some(stop_px) = message.get_field(fix_tag::STOP_PX)
+        && let Ok(stop_val) = stop_px.parse::<f64>()
+    {
+        report = report.with_trigger_price(Price::new(stop_val, DEFAULT_PRECISION));
+        report = report.with_trigger_type(TriggerType::LastPrice);
     }
 
-    if let Some(avg_px) = message.get_field(fix_tag::AVG_PX) {
-        if let Ok(avg_val) = avg_px.parse::<f64>() {
-            if avg_val > 0.0 {
-                report = report.with_avg_px(avg_val);
-            }
-        }
+    if let Some(avg_px) = message.get_field(fix_tag::AVG_PX)
+        && let Ok(avg_val) = avg_px.parse::<f64>()
+        && avg_val > 0.0
+    {
+        report = report.with_avg_px(avg_val);
     }
 
     // Execution instructions
@@ -158,16 +157,16 @@ pub fn convert_to_order_status_report(
         }
     }
 
-    if let Some(expire_time) = message.get_field(fix_tag::EXPIRE_TIME) {
-        if let Ok(dt) = parse_fix_timestamp(expire_time) {
-            report = report.with_expire_time(dt);
-        }
+    if let Some(expire_time) = message.get_field(fix_tag::EXPIRE_TIME)
+        && let Ok(dt) = parse_fix_timestamp(expire_time)
+    {
+        report = report.with_expire_time(dt);
     }
 
-    if let Some(text) = message.get_field(fix_tag::TEXT) {
-        if !text.is_empty() {
-            report = report.with_cancel_reason(text.to_string());
-        }
+    if let Some(text) = message.get_field(fix_tag::TEXT)
+        && !text.is_empty()
+    {
+        report = report.with_cancel_reason(text.to_string());
     }
 
     Ok(report)
@@ -195,23 +194,22 @@ pub fn convert_to_fill_report(
 
     let mut commission = Money::new(0.0, currency);
 
-    if let Some(num_fees) = message.get_field(fix_tag::NO_MISC_FEES) {
-        if let Ok(n) = num_fees.parse::<usize>() {
-            // For simplicity, we'll just use the first fee
-            if n > 0 {
-                if let (Some(fee_amt), Some(fee_curr)) = (
-                    message.get_field(fix_tag::MISC_FEE_AMT),
-                    message.get_field(fix_tag::MISC_FEE_CURR),
-                ) {
-                    if let Ok(amt) = fee_amt.parse::<f64>() {
-                        // Parse fee currency, error on invalid code
-                        let fee_currency = fee_curr.parse::<Currency>().map_err(|e| {
-                            anyhow::anyhow!("Invalid fee currency '{fee_curr}': {e}")
-                        })?;
-                        commission = Money::new(amt, fee_currency);
-                    }
-                }
-            }
+    if let Some(num_fees) = message.get_field(fix_tag::NO_MISC_FEES)
+        && let Ok(n) = num_fees.parse::<usize>()
+    {
+        // For simplicity, we'll just use the first fee
+        if n > 0
+            && let (Some(fee_amt), Some(fee_curr)) = (
+                message.get_field(fix_tag::MISC_FEE_AMT),
+                message.get_field(fix_tag::MISC_FEE_CURR),
+            )
+            && let Ok(amt) = fee_amt.parse::<f64>()
+        {
+            // Parse fee currency, error on invalid code
+            let fee_currency = fee_curr
+                .parse::<Currency>()
+                .map_err(|e| anyhow::anyhow!("Invalid fee currency '{fee_curr}': {e}"))?;
+            commission = Money::new(amt, fee_currency);
         }
     }
 

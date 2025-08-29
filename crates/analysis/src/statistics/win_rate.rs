@@ -51,6 +51,7 @@ impl PortfolioStatistic for WinRate {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::approx_eq;
     use rstest::rstest;
 
     use super::*;
@@ -60,7 +61,7 @@ mod tests {
         let win_rate = WinRate {};
         let result = win_rate.calculate_from_realized_pnls(&[]);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), 0.0);
+        assert!(approx_eq!(f64, result.unwrap(), 0.0, epsilon = 1e-9));
     }
 
     #[rstest]
@@ -69,7 +70,7 @@ mod tests {
         let realized_pnls = vec![100.0, 50.0, 200.0];
         let result = win_rate.calculate_from_realized_pnls(&realized_pnls);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), 1.0);
+        assert!(approx_eq!(f64, result.unwrap(), 1.0, epsilon = 1e-9));
     }
 
     #[rstest]
@@ -78,7 +79,7 @@ mod tests {
         let realized_pnls = vec![-100.0, -50.0, -200.0];
         let result = win_rate.calculate_from_realized_pnls(&realized_pnls);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), 0.0);
+        assert!(approx_eq!(f64, result.unwrap(), 0.0, epsilon = 1e-9));
     }
 
     #[rstest]
@@ -87,7 +88,7 @@ mod tests {
         let realized_pnls = vec![100.0, -50.0, 200.0, -100.0];
         let result = win_rate.calculate_from_realized_pnls(&realized_pnls);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), 0.5);
+        assert!(approx_eq!(f64, result.unwrap(), 0.5, epsilon = 1e-9));
     }
 
     #[rstest]

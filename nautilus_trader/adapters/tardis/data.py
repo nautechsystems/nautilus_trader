@@ -14,8 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-
-import pandas as pd
+from typing import Any
 
 from nautilus_trader.adapters.tardis.common import convert_nautilus_bar_type_to_tardis_data_type
 from nautilus_trader.adapters.tardis.common import convert_nautilus_data_type_to_tardis_data_type
@@ -31,21 +30,25 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
 from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.data.messages import SubscribeBars
+from nautilus_trader.data.messages import SubscribeFundingRates
 from nautilus_trader.data.messages import SubscribeOrderBook
 from nautilus_trader.data.messages import SubscribeQuoteTicks
 from nautilus_trader.data.messages import SubscribeTradeTicks
 from nautilus_trader.data.messages import UnsubscribeBars
+from nautilus_trader.data.messages import UnsubscribeFundingRates
 from nautilus_trader.data.messages import UnsubscribeOrderBook
 from nautilus_trader.data.messages import UnsubscribeQuoteTicks
 from nautilus_trader.data.messages import UnsubscribeTradeTicks
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
@@ -153,10 +156,19 @@ class TardisDataClient(LiveMarketDataClient):
                 ws_client.close()
         self._ws_clients.clear()
 
-        try:
-            await asyncio.wait_for(asyncio.gather(*self._ws_client_futures), timeout=2.0)
-        except TimeoutError:
-            self._log.warning("Timeout while waiting for websockets shutdown to complete")
+        # Cancel any pending futures
+        for future in self._ws_client_futures:
+            if not future.done():
+                future.cancel()
+
+        if self._ws_client_futures:
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*self._ws_client_futures, return_exceptions=True),
+                    timeout=2.0,
+                )
+            except TimeoutError:
+                self._log.warning("Timeout while waiting for websockets shutdown to complete")
 
         self._ws_client_futures.clear()
 
@@ -289,6 +301,11 @@ class TardisDataClient(LiveMarketDataClient):
         tardis_data_type = convert_nautilus_data_type_to_tardis_data_type(TradeTick)
         self._subscribe_stream(command.instrument_id, tardis_data_type, "trades")
 
+    async def _subscribe_funding_rates(self, command: SubscribeFundingRates) -> None:
+        # For Tardis, funding rates come from derivative_ticker messages
+        tardis_data_type = convert_nautilus_data_type_to_tardis_data_type(FundingRateUpdate)
+        self._subscribe_stream(command.instrument_id, tardis_data_type, "funding rates")
+
     async def _subscribe_bars(self, command: SubscribeBars) -> None:
         tardis_data_type = convert_nautilus_bar_type_to_tardis_data_type(command.bar_type)
         self._subscribe_stream(command.bar_type.instrument_id, tardis_data_type, "bars")
@@ -314,18 +331,29 @@ class TardisDataClient(LiveMarketDataClient):
         ws_client_key = get_ws_client_key(command.instrument_id, tardis_data_type)
         self._dispose_websocket_client_by_key(ws_client_key)
 
+    async def _unsubscribe_funding_rates(self, command: UnsubscribeFundingRates) -> None:
+        tardis_data_type = convert_nautilus_data_type_to_tardis_data_type(FundingRateUpdate)
+        ws_client_key = get_ws_client_key(command.instrument_id, tardis_data_type)
+        self._dispose_websocket_client_by_key(ws_client_key)
+
     async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
         tardis_data_type = convert_nautilus_bar_type_to_tardis_data_type(command.bar_type)
         ws_client_key = get_ws_client_key(command.bar_type.instrument_id, tardis_data_type)
         self._dispose_websocket_client_by_key(ws_client_key)
 
     async def _request_instrument(self, request: RequestInstrument) -> None:
-        if request.start is not None:
+        # Check if start/end times are too far from current time
+        now = self._clock.utc_now()
+        now_ns = dt_to_unix_nanos(now)
+        start_ns = dt_to_unix_nanos(request.start)
+        end_ns = dt_to_unix_nanos(request.end)
+
+        if abs(start_ns - now_ns) > 10_000_000:  # More than 10ms difference
             self._log.warning(
                 f"Requesting instrument {request.instrument_id} with specified `start` which has no effect",
             )
 
-        if request.end is not None:
+        if abs(end_ns - now_ns) > 10_000_000:  # More than 10ms difference
             self._log.warning(
                 f"Requesting instrument {request.instrument_id} with specified `end` which has no effect",
             )
@@ -335,15 +363,21 @@ class TardisDataClient(LiveMarketDataClient):
             self._log.error(f"Cannot find instrument for {request.instrument_id}")
             return
 
-        self._handle_instrument(instrument, request.id, request.params)
+        self._handle_instrument(instrument, request.id, request.start, request.end, request.params)
 
     async def _request_instruments(self, request: RequestInstruments) -> None:
-        if request.start is not None:
+        # Check if start/end times are too far from current time
+        now = self._clock.utc_now()
+        now_ns = dt_to_unix_nanos(now)
+        start_ns = dt_to_unix_nanos(request.start)
+        end_ns = dt_to_unix_nanos(request.end)
+
+        if abs(start_ns - now_ns) > 10_000_000:  # More than 10ms difference
             self._log.warning(
                 f"Requesting instruments for {request.venue} with specified `start` which has no effect",
             )
 
-        if request.end is not None:
+        if abs(end_ns - now_ns) > 10_000_000:  # More than 10ms difference
             self._log.warning(
                 f"Requesting instruments for {request.venue} with specified `end` which has no effect",
             )
@@ -355,9 +389,11 @@ class TardisDataClient(LiveMarketDataClient):
                 target_instruments.append(instrument)
 
         self._handle_instruments(
-            target_instruments,
             request.venue,
+            target_instruments,
             request.id,
+            request.start,
+            request.end,
             request.params,
         )
 
@@ -403,28 +439,22 @@ class TardisDataClient(LiveMarketDataClient):
             LogColor.MAGENTA,
         )
 
-        if request.start and request.start.date() == self._clock.utc_now().date():
+        if request.start.date() == self._clock.utc_now().date():
             self._log.error(
                 f"Cannot request bars: `start` cannot fall on the current UTC date, was {request.start.date()} (try an earlier `start`)",
             )
             return
-        if request.start and request.end and request.start.date() == request.end.date():
+        if request.start.date() == request.end.date():
             self._log.error(
                 f"Cannot request bars: `start` and `end` cannot fall on the same date, was {request.start.date()} (try an earlier `start`)",
             )
             return
 
-        date_now_utc = self._clock.utc_now().date()
-
         replay_request = create_replay_normalized_request_options(
             exchange=tardis_exchange_str,
             symbols=[raw_symbol_str],
-            from_date=(
-                request.start.date()
-                if request.start is not None
-                else date_now_utc - pd.Timedelta(days=1)
-            ),
-            to_date=request.end.date() if request.end is not None else date_now_utc,
+            from_date=request.start.date(),
+            to_date=request.end.date(),
             data_types=[tardis_data_type],
         )
 
@@ -447,8 +477,7 @@ class TardisDataClient(LiveMarketDataClient):
         pyo3_bars = [
             pyo3_bar
             for pyo3_bar in pyo3_bars
-            if (request.start is None or pyo3_bar.ts_event >= request.start.value)
-            and (request.end is None or pyo3_bar.ts_event <= request.end.value)
+            if pyo3_bar.ts_event >= request.start.value and pyo3_bar.ts_event <= request.end.value
         ]
 
         bars = Bar.from_pyo3_list(pyo3_bars)
@@ -458,14 +487,24 @@ class TardisDataClient(LiveMarketDataClient):
             LogColor.MAGENTA,
         )
 
-        self._handle_bars(request.bar_type, bars, None, request.id, request.params)
+        self._handle_bars(
+            request.bar_type,
+            bars,
+            None,
+            request.id,
+            request.start,
+            request.end,
+            request.params,
+        )
 
-    def _handle_msg(
-        self,
-        pycapsule: object,
-    ) -> None:
+    def _handle_msg(self, msg: Any) -> None:
+        if isinstance(msg, nautilus_pyo3.FundingRateUpdate):
+            funding_rate = FundingRateUpdate.from_pyo3(msg)
+            self._handle_data(funding_rate)
+            return
+
         # The capsule will fall out of scope at the end of this method,
         # and eventually be garbage collected. The contained pointer
         # to `Data` is still owned and managed by Rust.
-        data = capsule_to_data(pycapsule)
+        data = capsule_to_data(msg)
         self._handle_data(data)

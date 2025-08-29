@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pandas as pd
 import pytest
 
 from nautilus_trader.common.component import TestClock
@@ -93,6 +94,8 @@ class TestDataMessage:
                 correlation_id=UUID4(),
                 response_id=UUID4(),
                 ts_init=self.clock.timestamp_ns(),
+                start=pd.Timestamp("2023-01-01"),
+                end=pd.Timestamp("2023-01-02"),
             )
         assert issubclass(e.type, ValueError)
         assert e.match("Both `client_id` and `venue` were None")
@@ -234,6 +237,8 @@ class TestDataMessage:
             correlation_id=correlation_id,
             response_id=response_id,
             ts_init=self.clock.timestamp_ns(),
+            start=pd.Timestamp("2023-01-01"),
+            end=pd.Timestamp("2023-01-02"),
         )
 
         # Assert
@@ -264,6 +269,8 @@ class TestDataMessage:
             correlation_id=correlation_id,
             response_id=response_id,
             ts_init=self.clock.timestamp_ns(),
+            start=pd.Timestamp("2023-01-01"),
+            end=pd.Timestamp("2023-01-02"),
         )
 
         # Assert

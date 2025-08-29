@@ -31,6 +31,7 @@ class GreeksData(Data):
     is_call: bool = True
     strike: float = 0.0
     expiry: int = 0
+    expiry_in_days: int = 0
     expiry_in_years: float = 0.0
     multiplier: float = 0.0
     quantity: float = 0.0
@@ -84,6 +85,7 @@ class GreeksData(Data):
             self.is_call,
             self.strike,
             self.expiry,
+            self.expiry_in_days,
             self.expiry_in_years,
             self.multiplier,
             self.quantity,

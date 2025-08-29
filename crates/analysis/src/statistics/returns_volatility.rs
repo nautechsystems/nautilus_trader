@@ -64,7 +64,7 @@ impl PortfolioStatistic for ReturnsVolatility {
 mod tests {
     use std::collections::BTreeMap;
 
-    use nautilus_core::UnixNanos;
+    use nautilus_core::{UnixNanos, approx_eq};
     use rstest::rstest;
 
     use super::*;
@@ -113,7 +113,12 @@ mod tests {
         let result = volatility.calculate_from_returns(&returns);
         assert!(result.is_some());
 
-        assert_eq!(result.unwrap(), 0.48526281538976396);
+        assert!(approx_eq!(
+            f64,
+            result.unwrap(),
+            0.48526281538976396,
+            epsilon = 1e-9
+        ));
     }
 
     #[rstest]

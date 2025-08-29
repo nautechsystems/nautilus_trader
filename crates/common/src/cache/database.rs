@@ -19,8 +19,7 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use std::collections::HashMap;
-
+use ahash::AHashMap;
 use bytes::Bytes;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
@@ -43,14 +42,14 @@ use crate::{custom::CustomData, signal::Signal};
 
 #[derive(Debug, Default)]
 pub struct CacheMap {
-    pub currencies: HashMap<Ustr, Currency>,
-    pub instruments: HashMap<InstrumentId, InstrumentAny>,
-    pub synthetics: HashMap<InstrumentId, SyntheticInstrument>,
-    pub accounts: HashMap<AccountId, AccountAny>,
-    pub orders: HashMap<ClientOrderId, OrderAny>,
-    pub positions: HashMap<PositionId, Position>,
-    pub greeks: HashMap<InstrumentId, GreeksData>,
-    pub yield_curves: HashMap<String, YieldCurveData>,
+    pub currencies: AHashMap<Ustr, Currency>,
+    pub instruments: AHashMap<InstrumentId, InstrumentAny>,
+    pub synthetics: AHashMap<InstrumentId, SyntheticInstrument>,
+    pub accounts: AHashMap<AccountId, AccountAny>,
+    pub orders: AHashMap<ClientOrderId, OrderAny>,
+    pub positions: AHashMap<PositionId, Position>,
+    pub greeks: AHashMap<InstrumentId, GreeksData>,
+    pub yield_curves: AHashMap<String, YieldCurveData>,
 }
 
 #[async_trait::async_trait]
@@ -81,57 +80,57 @@ pub trait CacheDatabaseAdapter {
     /// # Errors
     ///
     /// Returns an error if the load operation fails.
-    fn load(&self) -> anyhow::Result<HashMap<String, Bytes>>;
+    fn load(&self) -> anyhow::Result<AHashMap<String, Bytes>>;
 
     /// Loads all currencies from the cache.
     ///
     /// # Errors
     ///
     /// Returns an error if loading currencies fails.
-    async fn load_currencies(&self) -> anyhow::Result<HashMap<Ustr, Currency>>;
+    async fn load_currencies(&self) -> anyhow::Result<AHashMap<Ustr, Currency>>;
 
     /// Loads all instruments from the cache.
     ///
     /// # Errors
     ///
     /// Returns an error if loading instruments fails.
-    async fn load_instruments(&self) -> anyhow::Result<HashMap<InstrumentId, InstrumentAny>>;
+    async fn load_instruments(&self) -> anyhow::Result<AHashMap<InstrumentId, InstrumentAny>>;
 
     /// Loads all synthetic instruments from the cache.
     ///
     /// # Errors
     ///
     /// Returns an error if loading synthetic instruments fails.
-    async fn load_synthetics(&self) -> anyhow::Result<HashMap<InstrumentId, SyntheticInstrument>>;
+    async fn load_synthetics(&self) -> anyhow::Result<AHashMap<InstrumentId, SyntheticInstrument>>;
 
     /// Loads all accounts from the cache.
     ///
     /// # Errors
     ///
     /// Returns an error if loading accounts fails.
-    async fn load_accounts(&self) -> anyhow::Result<HashMap<AccountId, AccountAny>>;
+    async fn load_accounts(&self) -> anyhow::Result<AHashMap<AccountId, AccountAny>>;
 
     /// Loads all orders from the cache.
     ///
     /// # Errors
     ///
     /// Returns an error if loading orders fails.
-    async fn load_orders(&self) -> anyhow::Result<HashMap<ClientOrderId, OrderAny>>;
+    async fn load_orders(&self) -> anyhow::Result<AHashMap<ClientOrderId, OrderAny>>;
 
     /// Loads all positions from the cache.
     ///
     /// # Errors
     ///
     /// Returns an error if loading positions fails.
-    async fn load_positions(&self) -> anyhow::Result<HashMap<PositionId, Position>>;
+    async fn load_positions(&self) -> anyhow::Result<AHashMap<PositionId, Position>>;
 
     /// Loads all [`GreeksData`] from the cache.
     ///
     /// # Errors
     ///
     /// Returns an error if loading greeks data fails.
-    async fn load_greeks(&self) -> anyhow::Result<HashMap<InstrumentId, GreeksData>> {
-        Ok(HashMap::new())
+    async fn load_greeks(&self) -> anyhow::Result<AHashMap<InstrumentId, GreeksData>> {
+        Ok(AHashMap::new())
     }
 
     /// Loads all [`YieldCurveData`] from the cache.
@@ -139,8 +138,8 @@ pub trait CacheDatabaseAdapter {
     /// # Errors
     ///
     /// Returns an error if loading yield curve data fails.
-    async fn load_yield_curves(&self) -> anyhow::Result<HashMap<String, YieldCurveData>> {
-        Ok(HashMap::new())
+    async fn load_yield_curves(&self) -> anyhow::Result<AHashMap<String, YieldCurveData>> {
+        Ok(AHashMap::new())
     }
 
     /// Loads mapping from order IDs to position IDs.
@@ -148,14 +147,14 @@ pub trait CacheDatabaseAdapter {
     /// # Errors
     ///
     /// Returns an error if loading the index order-position mapping fails.
-    fn load_index_order_position(&self) -> anyhow::Result<HashMap<ClientOrderId, Position>>;
+    fn load_index_order_position(&self) -> anyhow::Result<AHashMap<ClientOrderId, Position>>;
 
     /// Loads mapping from order IDs to client IDs.
     ///
     /// # Errors
     ///
     /// Returns an error if loading the index order-client mapping fails.
-    fn load_index_order_client(&self) -> anyhow::Result<HashMap<ClientOrderId, ClientId>>;
+    fn load_index_order_client(&self) -> anyhow::Result<AHashMap<ClientOrderId, ClientId>>;
 
     /// Loads a single currency by code.
     ///
@@ -211,14 +210,14 @@ pub trait CacheDatabaseAdapter {
     /// # Errors
     ///
     /// Returns an error if loading actor state fails.
-    fn load_actor(&self, component_id: &ComponentId) -> anyhow::Result<HashMap<String, Bytes>>;
+    fn load_actor(&self, component_id: &ComponentId) -> anyhow::Result<AHashMap<String, Bytes>>;
 
     /// Loads strategy state by strategy ID.
     ///
     /// # Errors
     ///
     /// Returns an error if loading strategy state fails.
-    fn load_strategy(&self, strategy_id: &StrategyId) -> anyhow::Result<HashMap<String, Bytes>>;
+    fn load_strategy(&self, strategy_id: &StrategyId) -> anyhow::Result<AHashMap<String, Bytes>>;
 
     /// Loads signals by name.
     ///
@@ -275,81 +274,113 @@ pub trait CacheDatabaseAdapter {
     /// Returns an error if loading bars fails.
     fn load_bars(&self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<Bar>>;
 
+    /// Adds a generic key-value pair to the cache.
+    ///
     /// # Errors
     ///
     /// Returns an error if adding a generic key/value fails.
     fn add(&self, key: String, value: Bytes) -> anyhow::Result<()>;
 
+    /// Adds a currency to the cache.
+    ///
     /// # Errors
     ///
     /// Returns an error if adding a currency fails.
     fn add_currency(&self, currency: &Currency) -> anyhow::Result<()>;
 
+    /// Adds an instrument to the cache.
+    ///
     /// # Errors
     ///
     /// Returns an error if adding an instrument fails.
     fn add_instrument(&self, instrument: &InstrumentAny) -> anyhow::Result<()>;
 
+    /// Adds a synthetic instrument to the cache.
+    ///
     /// # Errors
     ///
     /// Returns an error if adding a synthetic instrument fails.
     fn add_synthetic(&self, synthetic: &SyntheticInstrument) -> anyhow::Result<()>;
 
+    /// Adds an account to the cache.
+    ///
     /// # Errors
     ///
     /// Returns an error if adding an account fails.
     fn add_account(&self, account: &AccountAny) -> anyhow::Result<()>;
 
+    /// Adds an order to the cache.
+    ///
     /// # Errors
     ///
     /// Returns an error if adding an order fails.
     fn add_order(&self, order: &OrderAny, client_id: Option<ClientId>) -> anyhow::Result<()>;
 
+    /// Adds an order snapshot to the cache.
+    ///
     /// # Errors
     ///
     /// Returns an error if adding an order snapshot fails.
     fn add_order_snapshot(&self, snapshot: &OrderSnapshot) -> anyhow::Result<()>;
 
+    /// Adds a position to the cache.
+    ///
     /// # Errors
     ///
     /// Returns an error if adding a position fails.
     fn add_position(&self, position: &Position) -> anyhow::Result<()>;
 
+    /// Adds a position snapshot to the cache.
+    ///
     /// # Errors
     ///
     /// Returns an error if adding a position snapshot fails.
     fn add_position_snapshot(&self, snapshot: &PositionSnapshot) -> anyhow::Result<()>;
 
+    /// Adds an order book to the cache.
+    ///
     /// # Errors
     ///
     /// Returns an error if adding an order book fails.
     fn add_order_book(&self, order_book: &OrderBook) -> anyhow::Result<()>;
 
+    /// Adds a signal to the cache.
+    ///
     /// # Errors
     ///
     /// Returns an error if adding a signal fails.
     fn add_signal(&self, signal: &Signal) -> anyhow::Result<()>;
 
+    /// Adds custom data to the cache.
+    ///
     /// # Errors
     ///
     /// Returns an error if adding custom data fails.
     fn add_custom_data(&self, data: &CustomData) -> anyhow::Result<()>;
 
+    /// Adds a quote tick to the cache.
+    ///
     /// # Errors
     ///
     /// Returns an error if adding a quote tick fails.
     fn add_quote(&self, quote: &QuoteTick) -> anyhow::Result<()>;
 
+    /// Adds a trade tick to the cache.
+    ///
     /// # Errors
     ///
     /// Returns an error if adding a trade tick fails.
     fn add_trade(&self, trade: &TradeTick) -> anyhow::Result<()>;
 
+    /// Adds a bar to the cache.
+    ///
     /// # Errors
     ///
     /// Returns an error if adding a bar fails.
     fn add_bar(&self, bar: &Bar) -> anyhow::Result<()>;
 
+    /// Adds greeks data to the cache.
+    ///
     /// # Errors
     ///
     /// Returns an error if adding greeks data fails.
@@ -357,6 +388,8 @@ pub trait CacheDatabaseAdapter {
         Ok(())
     }
 
+    /// Adds yield curve data to the cache.
+    ///
     /// # Errors
     ///
     /// Returns an error if adding yield curve data fails.
@@ -364,16 +397,43 @@ pub trait CacheDatabaseAdapter {
         Ok(())
     }
 
+    /// Deletes actor state from the cache.
+    ///
     /// # Errors
     ///
     /// Returns an error if deleting actor state fails.
     fn delete_actor(&self, component_id: &ComponentId) -> anyhow::Result<()>;
 
+    /// Deletes strategy state from the cache.
+    ///
     /// # Errors
     ///
     /// Returns an error if deleting strategy state fails.
     fn delete_strategy(&self, component_id: &StrategyId) -> anyhow::Result<()>;
 
+    /// Deletes an order from the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if deleting an order fails.
+    fn delete_order(&self, client_order_id: &ClientOrderId) -> anyhow::Result<()>;
+
+    /// Deletes a position from the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if deleting a position fails.
+    fn delete_position(&self, position_id: &PositionId) -> anyhow::Result<()>;
+
+    /// Deletes an account event from the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if deleting account events fails.
+    fn delete_account_event(&self, account_id: &AccountId, event_id: &str) -> anyhow::Result<()>;
+
+    /// Indexes a venue order ID with its client order ID.
+    ///
     /// # Errors
     ///
     /// Returns an error if indexing venue order ID fails.
@@ -383,6 +443,8 @@ pub trait CacheDatabaseAdapter {
         venue_order_id: VenueOrderId,
     ) -> anyhow::Result<()>;
 
+    /// Indexes an order-position mapping.
+    ///
     /// # Errors
     ///
     /// Returns an error if indexing order-position mapping fails.
@@ -392,41 +454,57 @@ pub trait CacheDatabaseAdapter {
         position_id: PositionId,
     ) -> anyhow::Result<()>;
 
+    /// Updates actor state in the cache.
+    ///
     /// # Errors
     ///
     /// Returns an error if updating actor state fails.
     fn update_actor(&self) -> anyhow::Result<()>;
 
+    /// Updates strategy state in the cache.
+    ///
     /// # Errors
     ///
     /// Returns an error if updating strategy state fails.
     fn update_strategy(&self) -> anyhow::Result<()>;
 
+    /// Updates an account in the cache.
+    ///
     /// # Errors
     ///
     /// Returns an error if updating an account fails.
     fn update_account(&self, account: &AccountAny) -> anyhow::Result<()>;
 
+    /// Updates an order in the cache with an order event.
+    ///
     /// # Errors
     ///
     /// Returns an error if updating an order fails.
     fn update_order(&self, order_event: &OrderEventAny) -> anyhow::Result<()>;
 
+    /// Updates a position in the cache.
+    ///
     /// # Errors
     ///
     /// Returns an error if updating a position fails.
     fn update_position(&self, position: &Position) -> anyhow::Result<()>;
 
+    /// Creates a snapshot of order state.
+    ///
     /// # Errors
     ///
     /// Returns an error if snapshotting order state fails.
     fn snapshot_order_state(&self, order: &OrderAny) -> anyhow::Result<()>;
 
+    /// Creates a snapshot of position state.
+    ///
     /// # Errors
     ///
     /// Returns an error if snapshotting position state fails.
     fn snapshot_position_state(&self, position: &Position) -> anyhow::Result<()>;
 
+    /// Records a heartbeat timestamp.
+    ///
     /// # Errors
     ///
     /// Returns an error if heartbeat recording fails.

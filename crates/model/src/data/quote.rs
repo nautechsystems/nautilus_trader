@@ -225,15 +225,61 @@ impl HasTsInit for QuoteTick {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use nautilus_core::{UnixNanos, serialization::Serializable};
+
+    use nautilus_core::UnixNanos;
     use rstest::rstest;
 
+    use super::QuoteTickBuilder;
     use crate::{
-        data::{QuoteTick, stubs::quote_ethusdt_binance},
+        data::{HasTsInit, QuoteTick, stubs::quote_ethusdt_binance},
         enums::PriceType,
         identifiers::InstrumentId,
         types::{Price, Quantity},
     };
+
+    fn create_test_quote() -> QuoteTick {
+        QuoteTick::new(
+            InstrumentId::from("EURUSD.SIM"),
+            Price::from("1.0500"),
+            Price::from("1.0505"),
+            Quantity::from("100000"),
+            Quantity::from("75000"),
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::from(2_000_000_000),
+        )
+    }
+
+    #[rstest]
+    fn test_quote_tick_new() {
+        let quote = create_test_quote();
+
+        assert_eq!(quote.instrument_id, InstrumentId::from("EURUSD.SIM"));
+        assert_eq!(quote.bid_price, Price::from("1.0500"));
+        assert_eq!(quote.ask_price, Price::from("1.0505"));
+        assert_eq!(quote.bid_size, Quantity::from("100000"));
+        assert_eq!(quote.ask_size, Quantity::from("75000"));
+        assert_eq!(quote.ts_event, UnixNanos::from(1_000_000_000));
+        assert_eq!(quote.ts_init, UnixNanos::from(2_000_000_000));
+    }
+
+    #[rstest]
+    fn test_quote_tick_new_checked_valid() {
+        let result = QuoteTick::new_checked(
+            InstrumentId::from("GBPUSD.SIM"),
+            Price::from("1.2500"),
+            Price::from("1.2505"),
+            Quantity::from("50000"),
+            Quantity::from("60000"),
+            UnixNanos::from(500_000_000),
+            UnixNanos::from(1_500_000_000),
+        );
+
+        assert!(result.is_ok());
+        let quote = result.unwrap();
+        assert_eq!(quote.instrument_id, InstrumentId::from("GBPUSD.SIM"));
+        assert_eq!(quote.bid_price, Price::from("1.2500"));
+        assert_eq!(quote.ask_price, Price::from("1.2505"));
+    }
 
     #[rstest]
     #[should_panic(
@@ -280,15 +326,94 @@ mod tests {
         );
 
         assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains(
+            "'bid_size.precision' u8 of 6 was not equal to 'ask_size.precision' u8 of 7"
+        ));
     }
 
     #[rstest]
-    fn test_to_string(quote_ethusdt_binance: QuoteTick) {
-        let quote = quote_ethusdt_binance;
+    fn test_quote_tick_builder() {
+        let quote = QuoteTickBuilder::default()
+            .instrument_id(InstrumentId::from("BTCUSD.CRYPTO"))
+            .bid_price(Price::from("50000.00"))
+            .ask_price(Price::from("50001.00"))
+            .bid_size(Quantity::from("0.50"))
+            .ask_size(Quantity::from("0.75"))
+            .ts_event(UnixNanos::from(3_000_000_000))
+            .ts_init(UnixNanos::from(4_000_000_000))
+            .build()
+            .unwrap();
+
+        assert_eq!(quote.instrument_id, InstrumentId::from("BTCUSD.CRYPTO"));
+        assert_eq!(quote.bid_price, Price::from("50000.00"));
+        assert_eq!(quote.ask_price, Price::from("50001.00"));
+        assert_eq!(quote.bid_size, Quantity::from("0.50"));
+        assert_eq!(quote.ask_size, Quantity::from("0.75"));
+        assert_eq!(quote.ts_event, UnixNanos::from(3_000_000_000));
+        assert_eq!(quote.ts_init, UnixNanos::from(4_000_000_000));
+    }
+
+    #[rstest]
+    fn test_get_metadata() {
+        let instrument_id = InstrumentId::from("EURUSD.SIM");
+        let metadata = QuoteTick::get_metadata(&instrument_id, 5, 8);
+
+        assert_eq!(metadata.len(), 3);
         assert_eq!(
-            quote.to_string(),
-            "ETHUSDT-PERP.BINANCE,10000.0000,10001.0000,1.00000000,1.00000000,0"
+            metadata.get("instrument_id"),
+            Some(&"EURUSD.SIM".to_string())
         );
+        assert_eq!(metadata.get("price_precision"), Some(&"5".to_string()));
+        assert_eq!(metadata.get("size_precision"), Some(&"8".to_string()));
+    }
+
+    #[rstest]
+    fn test_get_fields() {
+        let fields = QuoteTick::get_fields();
+
+        assert_eq!(fields.len(), 6);
+
+        #[cfg(feature = "high-precision")]
+        {
+            assert_eq!(
+                fields.get("bid_price"),
+                Some(&"FixedSizeBinary(16)".to_string())
+            );
+            assert_eq!(
+                fields.get("ask_price"),
+                Some(&"FixedSizeBinary(16)".to_string())
+            );
+            assert_eq!(
+                fields.get("bid_size"),
+                Some(&"FixedSizeBinary(16)".to_string())
+            );
+            assert_eq!(
+                fields.get("ask_size"),
+                Some(&"FixedSizeBinary(16)".to_string())
+            );
+        }
+        #[cfg(not(feature = "high-precision"))]
+        {
+            assert_eq!(
+                fields.get("bid_price"),
+                Some(&"FixedSizeBinary(8)".to_string())
+            );
+            assert_eq!(
+                fields.get("ask_price"),
+                Some(&"FixedSizeBinary(8)".to_string())
+            );
+            assert_eq!(
+                fields.get("bid_size"),
+                Some(&"FixedSizeBinary(8)".to_string())
+            );
+            assert_eq!(
+                fields.get("ask_size"),
+                Some(&"FixedSizeBinary(8)".to_string())
+            );
+        }
+
+        assert_eq!(fields.get("ts_event"), Some(&"UInt64".to_string()));
+        assert_eq!(fields.get("ts_init"), Some(&"UInt64".to_string()));
     }
 
     #[rstest]
@@ -306,18 +431,111 @@ mod tests {
     }
 
     #[rstest]
-    fn test_json_serialization(quote_ethusdt_binance: QuoteTick) {
+    #[case(PriceType::Bid, Quantity::from("1.00000000"))]
+    #[case(PriceType::Ask, Quantity::from("1.00000000"))]
+    #[case(PriceType::Mid, Quantity::from("1.00000000"))]
+    fn test_extract_size(
+        #[case] input: PriceType,
+        #[case] expected: Quantity,
+        quote_ethusdt_binance: QuoteTick,
+    ) {
         let quote = quote_ethusdt_binance;
-        let serialized = quote.to_json_bytes().unwrap();
-        let deserialized = QuoteTick::from_json_bytes(serialized.as_ref()).unwrap();
-        assert_eq!(deserialized, quote);
+        let result = quote.extract_size(input);
+        assert_eq!(result, expected);
     }
 
     #[rstest]
-    fn test_msgpack_serialization(quote_ethusdt_binance: QuoteTick) {
+    #[should_panic(expected = "Cannot extract with price type LAST")]
+    fn test_extract_price_invalid_type() {
+        let quote = create_test_quote();
+        let _ = quote.extract_price(PriceType::Last);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "Cannot extract with price type LAST")]
+    fn test_extract_size_invalid_type() {
+        let quote = create_test_quote();
+        let _ = quote.extract_size(PriceType::Last);
+    }
+
+    #[rstest]
+    fn test_quote_tick_has_ts_init() {
+        let quote = create_test_quote();
+        assert_eq!(quote.ts_init(), UnixNanos::from(2_000_000_000));
+    }
+
+    #[rstest]
+    fn test_quote_tick_display() {
+        let quote = create_test_quote();
+        let display_str = format!("{quote}");
+
+        assert!(display_str.contains("EURUSD.SIM"));
+        assert!(display_str.contains("1.0500"));
+        assert!(display_str.contains("1.0505"));
+        assert!(display_str.contains("100000"));
+        assert!(display_str.contains("75000"));
+        assert!(display_str.contains("1000000000"));
+    }
+
+    #[rstest]
+    fn test_quote_tick_with_zero_prices() {
+        let quote = QuoteTick::new(
+            InstrumentId::from("TEST.SIM"),
+            Price::from("0.0000"),
+            Price::from("0.0000"),
+            Quantity::from("1000.0000"),
+            Quantity::from("1000.0000"),
+            UnixNanos::from(0),
+            UnixNanos::from(0),
+        );
+
+        assert!(quote.bid_price.is_zero());
+        assert!(quote.ask_price.is_zero());
+        assert_eq!(quote.ts_event, UnixNanos::from(0));
+        assert_eq!(quote.ts_init, UnixNanos::from(0));
+    }
+
+    #[rstest]
+    fn test_quote_tick_with_max_values() {
+        let quote = QuoteTick::new(
+            InstrumentId::from("TEST.SIM"),
+            Price::from("999999.9999"),
+            Price::from("999999.9999"),
+            Quantity::from("999999999.9999"),
+            Quantity::from("999999999.9999"),
+            UnixNanos::from(u64::MAX),
+            UnixNanos::from(u64::MAX),
+        );
+
+        assert_eq!(quote.ts_event, UnixNanos::from(u64::MAX));
+        assert_eq!(quote.ts_init, UnixNanos::from(u64::MAX));
+    }
+
+    #[rstest]
+    fn test_extract_mid_price_precision() {
+        let quote = QuoteTick::new(
+            InstrumentId::from("TEST.SIM"),
+            Price::from("1.00"),
+            Price::from("1.02"),
+            Quantity::from("100.00"),
+            Quantity::from("100.00"),
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::from(2_000_000_000),
+        );
+
+        let mid_price = quote.extract_price(PriceType::Mid);
+        let mid_size = quote.extract_size(PriceType::Mid);
+
+        assert_eq!(mid_price, Price::from("1.010"));
+        assert_eq!(mid_size, Quantity::from("100.000"));
+    }
+
+    #[rstest]
+    fn test_to_string(quote_ethusdt_binance: QuoteTick) {
         let quote = quote_ethusdt_binance;
-        let serialized = quote.to_msgpack_bytes().unwrap();
-        let deserialized = QuoteTick::from_msgpack_bytes(serialized.as_ref()).unwrap();
-        assert_eq!(deserialized, quote);
+        assert_eq!(
+            quote.to_string(),
+            "ETHUSDT-PERP.BINANCE,10000.0000,10001.0000,1.00000000,1.00000000,0"
+        );
     }
 }

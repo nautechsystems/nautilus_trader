@@ -34,6 +34,7 @@ pub fn persistence(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<catalog::ParquetDataCatalogV2>()?;
     m.add_class::<wranglers::bar::BarDataWrangler>()?;
     m.add_class::<wranglers::delta::OrderBookDeltaDataWrangler>()?;
+    m.add_class::<wranglers::depth::OrderBookDepth10DataWrangler>()?;
     m.add_class::<wranglers::quote::QuoteTickDataWrangler>()?;
     m.add_class::<wranglers::trade::TradeTickDataWrangler>()?;
     Ok(())

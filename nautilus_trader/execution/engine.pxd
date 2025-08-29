@@ -17,6 +17,7 @@ from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.component cimport TimeEvent
 from nautilus_trader.common.generators cimport PositionIdGenerator
+from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.rust.model cimport OmsType
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.execution.client cimport ExecutionClient
@@ -24,10 +25,10 @@ from nautilus_trader.execution.messages cimport BatchCancelOrders
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
+from nautilus_trader.execution.messages cimport QueryAccount
 from nautilus_trader.execution.messages cimport QueryOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
-from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.position cimport PositionEvent
@@ -46,11 +47,12 @@ from nautilus_trader.trading.strategy cimport Strategy
 cdef class ExecutionEngine(Component):
     cdef readonly Cache _cache
     cdef readonly ExecutionClient _default_client
-    cdef readonly PositionIdGenerator _pos_id_generator
+    cdef readonly set[ClientId] _external_clients
     cdef readonly dict[ClientId, ExecutionClient] _clients
     cdef readonly dict[Venue, ExecutionClient] _routing_map
     cdef readonly dict[StrategyId, OmsType] _oms_overrides
     cdef readonly dict[InstrumentId, StrategyId] _external_order_claims
+    cdef readonly PositionIdGenerator _pos_id_generator
     cdef readonly str snapshot_positions_timer_name
     cdef list[PositionEvent] _pending_position_events
 
@@ -76,6 +78,7 @@ cdef class ExecutionEngine(Component):
     cpdef bint check_connected(self)
     cpdef bint check_disconnected(self)
     cpdef bint check_residuals(self)
+    cpdef set[ClientId] get_external_client_ids(self)
     cpdef StrategyId get_external_order_claim(self, InstrumentId instrument_id)
     cpdef set[InstrumentId] get_external_order_claims_instruments(self)
     cpdef set[ExecutionClient] get_clients_for_orders(self, list[Order] orders)
@@ -108,19 +111,20 @@ cdef class ExecutionEngine(Component):
 
     cpdef void stop_clients(self)
     cpdef void load_cache(self)
-    cpdef void execute(self, TradingCommand command)
+    cpdef void execute(self, Command command)
     cpdef void process(self, OrderEvent event)
     cpdef void flush_db(self)
 
 # -- COMMAND HANDLERS -----------------------------------------------------------------------------
 
-    cpdef void _execute_command(self, TradingCommand command)
+    cpdef void _execute_command(self, Command command)
     cpdef void _handle_submit_order(self, ExecutionClient client, SubmitOrder command)
     cpdef void _handle_submit_order_list(self, ExecutionClient client, SubmitOrderList command)
     cpdef void _handle_modify_order(self, ExecutionClient client, ModifyOrder command)
     cpdef void _handle_cancel_order(self, ExecutionClient client, CancelOrder command)
     cpdef void _handle_cancel_all_orders(self, ExecutionClient client, CancelAllOrders command)
     cpdef void _handle_batch_cancel_orders(self, ExecutionClient client, BatchCancelOrders command)
+    cpdef void _handle_query_account(self, ExecutionClient client, QueryAccount command)
     cpdef void _handle_query_order(self, ExecutionClient client, QueryOrder command)
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
@@ -132,6 +136,9 @@ cdef class ExecutionEngine(Component):
     cpdef PositionId _determine_netting_position_id(self, OrderFilled fill)
     cpdef void _apply_event_to_order(self, Order order, OrderEvent event)
     cpdef void _handle_order_fill(self, Order order, OrderFilled fill, OmsType oms_type)
+    cdef bint _is_leg_fill(self, OrderFilled fill)
+    cdef void _handle_position_update(self, Instrument instrument, OrderFilled fill, OmsType oms_type)
+    cpdef void _handle_leg_fill_without_order(self, OrderFilled fill)
     cpdef Position _open_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type)
     cpdef void _update_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type)
     cpdef bint _will_flip_position(self, Position position, OrderFilled fill)

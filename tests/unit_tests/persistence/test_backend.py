@@ -36,15 +36,15 @@ def test_backend_session_order_book_deltas() -> None:
     # Act
     result = session.to_query_result()
 
-    ticks = []
+    deltas = []
     for chunk in result:
-        ticks.extend(capsule_to_list(chunk))
+        deltas.extend(capsule_to_list(chunk))
 
     # Assert
-    assert pd.read_parquet(data_path).shape[0] == 1077
-    assert len(ticks) == 1077
-    is_ascending = all(ticks[i].ts_init <= ticks[i].ts_init for i in range(len(ticks) - 1))
-    assert is_ascending
+    assert pd.read_parquet(data_path).shape[0] == 1_077
+    assert len(deltas) == 1_077
+    # TODO: deltas.parquet does not have non decreasing timestamps and so would fail the
+    # is_ascending check (bad data file)
 
 
 def test_backend_session_quotes() -> None:
@@ -60,15 +60,17 @@ def test_backend_session_quotes() -> None:
     # Act
     result = session.to_query_result()
 
-    ticks = []
+    quotes = []
     for chunk in result:
-        ticks.extend(capsule_to_list(chunk))
+        quotes.extend(capsule_to_list(chunk))
 
     # TODO: Quote tick test data currently uses incorrectly scaled prices and sizes and needs repair
     # Assert
-    assert len(ticks) == 9_500
-    assert str(ticks[-1]) == "EUR/USD.SIM,112.13000,112.13200,10000000,10000000,1577919652000000125"
-    is_ascending = all(ticks[i].ts_init <= ticks[i].ts_init for i in range(len(ticks) - 1))
+    assert len(quotes) == 9_500
+    assert (
+        str(quotes[-1]) == "EUR/USD.SIM,112.13000,112.13200,10000000,10000000,1577919652000000125"
+    )
+    is_ascending = all(quotes[i].ts_init <= quotes[i + 1].ts_init for i in range(len(quotes) - 1))
     assert is_ascending
 
 
@@ -85,13 +87,13 @@ def test_backend_session_trades() -> None:
     # Act
     result = session.to_query_result()
 
-    ticks = []
+    trades = []
     for chunk in result:
-        ticks.extend(capsule_to_list(chunk))
+        trades.extend(capsule_to_list(chunk))
 
     # Assert
-    assert len(ticks) == 100
-    is_ascending = all(ticks[i].ts_init <= ticks[i].ts_init for i in range(len(ticks) - 1))
+    assert len(trades) == 100
+    is_ascending = all(trades[i].ts_init <= trades[i + 1].ts_init for i in range(len(trades) - 1))
     assert is_ascending
 
 
@@ -114,7 +116,7 @@ def test_backend_session_bars() -> None:
 
     # Assert
     assert len(bars) == 10
-    is_ascending = all(bars[i].ts_init <= bars[i].ts_init for i in range(len(bars) - 1))
+    is_ascending = all(bars[i].ts_init <= bars[i + 1].ts_init for i in range(len(bars) - 1))
     assert is_ascending
 
 
@@ -134,13 +136,13 @@ def test_backend_session_multiple_types() -> None:
     # Act
     result = session.to_query_result()
 
-    ticks = []
+    data = []
     for chunk in result:
-        ticks.extend(capsule_to_list(chunk))
+        data.extend(capsule_to_list(chunk))
 
     # Assert
-    assert len(ticks) == 9_600
-    is_ascending = all(ticks[i].ts_init <= ticks[i].ts_init for i in range(len(ticks) - 1))
+    assert len(data) == 9_600
+    is_ascending = all(data[i].ts_init <= data[i + 1].ts_init for i in range(len(data) - 1))
     assert is_ascending
 
 
@@ -164,13 +166,13 @@ def test_backend_session_register_object_store_from_uri_local_file() -> None:
     session.add_file(NautilusDataType.TradeTick, "trade_ticks", str(data_path))
     result = session.to_query_result()
 
-    ticks = []
+    trades = []
     for chunk in result:
-        ticks.extend(capsule_to_list(chunk))
+        trades.extend(capsule_to_list(chunk))
 
     # Assert
-    assert len(ticks) == 100
-    is_ascending = all(ticks[i].ts_init <= ticks[i].ts_init for i in range(len(ticks) - 1))
+    assert len(trades) == 100
+    is_ascending = all(trades[i].ts_init <= trades[i + 1].ts_init for i in range(len(trades) - 1))
     assert is_ascending
 
 

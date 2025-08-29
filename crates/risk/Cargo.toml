@@ -20,18 +20,18 @@ crate-type = ["rlib", "cdylib"]
 [features]
 default = []
 extension-module = [
-  "pyo3/extension-module",
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
   "nautilus-execution/extension-module",
   "nautilus-model/extension-module",
+  "pyo3/extension-module",
 ]
 python = [
-  "pyo3",
   "nautilus-common/python",
   "nautilus-core/python",
   "nautilus-execution/python",
   "nautilus-model/python",
+  "pyo3",
 ]
 
 [package.metadata.docs.rs]

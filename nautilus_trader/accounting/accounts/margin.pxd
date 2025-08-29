@@ -16,6 +16,7 @@
 from decimal import Decimal
 
 from nautilus_trader.accounting.accounts.base cimport Account
+from nautilus_trader.accounting.margin_models cimport MarginModel
 from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -26,6 +27,7 @@ from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class MarginAccount(Account):
+    cdef MarginModel _margin_model
     cdef dict _leverages
     cdef dict _margins
 
@@ -47,6 +49,7 @@ cdef class MarginAccount(Account):
 
     cpdef void set_default_leverage(self, leverage: Decimal)
     cpdef void set_leverage(self, InstrumentId instrument_id, leverage: Decimal)
+    cpdef void set_margin_model(self, MarginModel margin_model)
     cpdef void update_margin_init(self, InstrumentId instrument_id, Money margin_init)
     cpdef void update_margin_maint(self, InstrumentId instrument_id, Money margin_maint)
     cpdef void update_margin(self, MarginBalance margin)

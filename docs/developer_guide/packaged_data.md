@@ -2,17 +2,17 @@
 
 Various data is contained internally in the `tests/test_kit/data` folder.
 
-## Libor Rates
+## Libor rates
 
 The libor rates for 1 month USD can be updated by downloading the CSV data from <https://fred.stlouisfed.org/series/USD1MTD156N>.
 
 Ensure you select `Max` for the time window.
 
-## Short Term Interest Rates
+## Short term interest rates
 
 The interbank short term interest rates can be updated by downloading the CSV data at <https://data.oecd.org/interest/short-term-interest-rates.htm>.
 
-## Economic Events
+## Economic events
 
 The economic events can be updated from downloading the CSV data from fxstreet <https://www.fxstreet.com/economic-calendar>.
 

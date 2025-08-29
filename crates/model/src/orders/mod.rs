@@ -136,12 +136,12 @@ pub(crate) fn check_display_qty(
     display_qty: Option<Quantity>,
     quantity: Quantity,
 ) -> Result<(), OrderError> {
-    if let Some(q) = display_qty {
-        if q > quantity {
-            return Err(OrderError::Invariant(anyhow!(
-                "`display_qty` may not exceed `quantity`"
-            )));
-        }
+    if let Some(q) = display_qty
+        && q > quantity
+    {
+        return Err(OrderError::Invariant(anyhow!(
+            "`display_qty` may not exceed `quantity`"
+        )));
     }
     Ok(())
 }
@@ -252,6 +252,9 @@ pub trait Order: 'static + Send {
     fn expire_time(&self) -> Option<UnixNanos>;
     fn price(&self) -> Option<Price>;
     fn trigger_price(&self) -> Option<Price>;
+    fn activation_price(&self) -> Option<Price> {
+        None
+    }
     fn trigger_type(&self) -> Option<TriggerType>;
     fn liquidity_side(&self) -> Option<LiquiditySide>;
     fn is_post_only(&self) -> bool;
@@ -367,10 +370,10 @@ pub trait Order: 'static + Send {
     }
 
     fn is_open(&self) -> bool {
-        if let Some(emulation_trigger) = self.emulation_trigger() {
-            if emulation_trigger != TriggerType::NoTrigger {
-                return false;
-            }
+        if let Some(emulation_trigger) = self.emulation_trigger()
+            && emulation_trigger != TriggerType::NoTrigger
+        {
+            return false;
         }
 
         matches!(
@@ -399,10 +402,10 @@ pub trait Order: 'static + Send {
     }
 
     fn is_inflight(&self) -> bool {
-        if let Some(emulation_trigger) = self.emulation_trigger() {
-            if emulation_trigger != TriggerType::NoTrigger {
-                return false;
-            }
+        if let Some(emulation_trigger) = self.emulation_trigger()
+            && emulation_trigger != TriggerType::NoTrigger
+        {
+            return false;
         }
 
         matches!(
@@ -688,13 +691,12 @@ impl OrderCore {
     }
 
     fn updated(&mut self, event: &OrderUpdated) {
-        if let Some(venue_order_id) = &event.venue_order_id {
-            if self.venue_order_id.is_none()
-                || venue_order_id != self.venue_order_id.as_ref().unwrap()
-            {
-                self.venue_order_id = Some(*venue_order_id);
-                self.venue_order_ids.push(*venue_order_id);
-            }
+        if let Some(venue_order_id) = &event.venue_order_id
+            && (self.venue_order_id.is_none()
+                || venue_order_id != self.venue_order_id.as_ref().unwrap())
+        {
+            self.venue_order_id = Some(*venue_order_id);
+            self.venue_order_ids.push(*venue_order_id);
         }
     }
 

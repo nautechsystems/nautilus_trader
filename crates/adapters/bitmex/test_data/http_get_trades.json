@@ -1,0 +1,41 @@
+[
+    {
+        "timestamp": "2024-11-25T10:35:00.789Z",
+        "symbol": "XBTUSD",
+        "side": "Buy",
+        "size": 100,
+        "price": 98950.0,
+        "tickDirection": "PlusTick",
+        "trdMatchID": "00000000-006d-1000-0000-000e8737d540",
+        "grossValue": 101065,
+        "homeNotional": 0.00101065,
+        "foreignNotional": 100.0,
+        "trdType": "Regular"
+    },
+    {
+        "timestamp": "2024-11-25T10:35:01.123Z",
+        "symbol": "XBTUSD",
+        "side": "Buy",
+        "size": 100,
+        "price": 98951.0,
+        "tickDirection": "PlusTick",
+        "trdMatchID": "00000000-006d-1000-0000-000e8737d541",
+        "grossValue": 101055,
+        "homeNotional": 0.00101055,
+        "foreignNotional": 100.0,
+        "trdType": "Regular"
+    },
+    {
+        "timestamp": "2024-11-25T10:34:45.234Z",
+        "symbol": "XBTUSD",
+        "side": "Sell",
+        "size": 50,
+        "price": 98949.5,
+        "tickDirection": "MinusTick",
+        "trdMatchID": "00000000-006d-1000-0000-000e8737d539",
+        "grossValue": 50535,
+        "homeNotional": 0.00050535,
+        "foreignNotional": 50.0,
+        "trdType": "Regular"
+    }
+]

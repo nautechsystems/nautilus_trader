@@ -204,7 +204,7 @@ pub fn deregister(endpoint: MStr<Endpoint>) {
 pub fn subscribe(pattern: MStr<Pattern>, handler: ShareableMessageHandler, priority: Option<u8>) {
     let msgbus = get_message_bus();
     let mut msgbus_ref_mut = msgbus.borrow_mut();
-    let sub = core::Subscription::new(pattern, handler, priority);
+    let sub = Subscription::new(pattern, handler, priority);
 
     log::debug!(
         "Subscribing {:?} for pattern '{}'",
@@ -212,6 +212,9 @@ pub fn subscribe(pattern: MStr<Pattern>, handler: ShareableMessageHandler, prior
         sub.pattern
     );
 
+    // Prevent duplicate subscriptions for the exact pattern regardless of handler identity. This
+    // guards against callers accidentally registering multiple handlers for the same topic, which
+    // can lead to duplicated message delivery and unexpected side-effects.
     if msgbus_ref_mut.subscriptions.contains(&sub) {
         log::warn!("{sub:?} already exists");
         return;

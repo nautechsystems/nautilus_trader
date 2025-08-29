@@ -13,9 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.stdint cimport uint64_t
+
 from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarType
+from nautilus_trader.model.data cimport FundingRateUpdate
 from nautilus_trader.model.data cimport IndexPriceUpdate
 from nautilus_trader.model.data cimport MarkPriceUpdate
 from nautilus_trader.model.data cimport QuoteTick
@@ -89,11 +92,11 @@ cdef class CacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `own_order_book` must be implemented in the subclass")  # pragma: no cover
 
-    cpdef dict[Decimal, list[Order]] own_bid_orders(self, InstrumentId instrument_id, set[OrderStatus] status = None):
+    cpdef dict[Decimal, list[Order]] own_bid_orders(self, InstrumentId instrument_id, set[OrderStatus] status = None, uint64_t accepted_buffer_ns = 0, uint64_t ts_now = 0):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `own_bid_book` must be implemented in the subclass")  # pragma: no cover
 
-    cpdef dict[Decimal, list[Order]] own_ask_orders(self, InstrumentId instrument_id, set[OrderStatus] status = None):
+    cpdef dict[Decimal, list[Order]] own_ask_orders(self, InstrumentId instrument_id, set[OrderStatus] status = None, uint64_t accepted_buffer_ns = 0, uint64_t ts_now = 0):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `own_ask_book` must be implemented in the subclass")  # pragma: no cover
 
@@ -112,6 +115,10 @@ cdef class CacheFacade:
     cpdef IndexPriceUpdate index_price(self, InstrumentId instrument_id, int index=0):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `index_price` must be implemented in the subclass")  # pragma: no cover
+
+    cpdef FundingRateUpdate funding_rate(self, InstrumentId instrument_id):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method `funding_rate` must be implemented in the subclass")  # pragma: no cover
 
     cpdef Bar bar(self, BarType bar_type, int index=0):
         """Abstract method (implement in subclass)."""

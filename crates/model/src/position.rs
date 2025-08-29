@@ -2028,8 +2028,10 @@ mod tests {
     #[rstest]
     fn test_position_with_commission_none(audusd_sim: CurrencyPair) {
         let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
-        let mut fill = OrderFilled::default();
-        fill.position_id = Some(PositionId::from("1"));
+        let fill = OrderFilled {
+            position_id: Some(PositionId::from("1")),
+            ..Default::default()
+        };
 
         let position = Position::new(&audusd_sim, fill);
         assert_eq!(position.realized_pnl, Some(Money::from("0 USD")));
@@ -2038,9 +2040,11 @@ mod tests {
     #[rstest]
     fn test_position_with_commission_zero(audusd_sim: CurrencyPair) {
         let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
-        let mut fill = OrderFilled::default();
-        fill.position_id = Some(PositionId::from("1"));
-        fill.commission = Some(Money::from("0 USD"));
+        let fill = OrderFilled {
+            position_id: Some(PositionId::from("1")),
+            commission: Some(Money::from("0 USD")),
+            ..Default::default()
+        };
 
         let position = Position::new(&audusd_sim, fill);
         assert_eq!(position.realized_pnl, Some(Money::from("0 USD")));

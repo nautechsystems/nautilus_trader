@@ -14,7 +14,8 @@
 // -------------------------------------------------------------------------------------------------
 
 #[cfg(test)]
-#[cfg(target_os = "linux")] // Databases only supported on Linux
+#[cfg(feature = "postgres")]
+#[cfg(target_os = "linux")] // Databases only tested and supported on Linux
 mod serial_tests {
     use std::{collections::HashSet, time::Duration};
 
@@ -501,6 +502,7 @@ mod serial_tests {
 
         let mut account = AccountAny::Cash(CashAccount::new(
             cash_account_state_million_usd("1000000 USD", "0 USD", "1000000 USD"),
+            false,
             false,
         ));
         let last_event = account.last_event().unwrap();

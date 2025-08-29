@@ -45,6 +45,7 @@ impl PortfolioStatistic for MinWinner {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::approx_eq;
     use rstest::rstest;
 
     use super::*;
@@ -54,7 +55,7 @@ mod tests {
         let min_winner = MinWinner {};
         let result = min_winner.calculate_from_realized_pnls(&[]);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), 0.0);
+        assert!(approx_eq!(f64, result.unwrap(), 0.0, epsilon = 1e-9));
     }
 
     #[rstest]
@@ -71,7 +72,7 @@ mod tests {
         let realized_pnls = vec![100.0, 50.0, 200.0];
         let result = min_winner.calculate_from_realized_pnls(&realized_pnls);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), 50.0); // Minimum of 100.0, 50.0, and 200.0 is 50.0
+        assert!(approx_eq!(f64, result.unwrap(), 50.0, epsilon = 1e-9)); // Minimum of 100.0, 50.0, and 200.0 is 50.0
     }
 
     #[rstest]
@@ -80,7 +81,7 @@ mod tests {
         let realized_pnls = vec![100.0, -50.0, 200.0, -100.0];
         let result = min_winner.calculate_from_realized_pnls(&realized_pnls);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), 100.0); // Minimum of 100.0 and 200.0 is 100.0
+        assert!(approx_eq!(f64, result.unwrap(), 100.0, epsilon = 1e-9)); // Minimum of 100.0 and 200.0 is 100.0
     }
 
     #[rstest]
@@ -89,7 +90,7 @@ mod tests {
         let realized_pnls = vec![50.0];
         let result = min_winner.calculate_from_realized_pnls(&realized_pnls);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), 50.0);
+        assert!(approx_eq!(f64, result.unwrap(), 50.0, epsilon = 1e-9));
     }
 
     #[rstest]

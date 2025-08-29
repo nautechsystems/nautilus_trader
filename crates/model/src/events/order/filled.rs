@@ -437,9 +437,71 @@ impl OrderEvent for OrderFilled {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use nautilus_core::UnixNanos;
     use rstest::rstest;
 
-    use crate::events::{OrderFilled, order::stubs::*};
+    use super::*;
+    use crate::{
+        enums::{LiquiditySide, OrderSide, OrderSideSpecified, OrderType},
+        events::order::stubs::*,
+        identifiers::{
+            AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, TraderId,
+            VenueOrderId,
+        },
+        types::{Currency, Money, Price, Quantity},
+    };
+
+    fn create_test_order_filled() -> OrderFilled {
+        OrderFilled::new(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("EMA-CROSS"),
+            InstrumentId::from("EURUSD.SIM"),
+            ClientOrderId::from("O-19700101-000000-001-001-1"),
+            VenueOrderId::from("V-001"),
+            AccountId::from("SIM-001"),
+            TradeId::from("T-001"),
+            OrderSide::Buy,
+            OrderType::Market,
+            Quantity::from("100"),
+            Price::from("1.0500"),
+            Currency::USD(),
+            LiquiditySide::Taker,
+            Default::default(),
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::from(2_000_000_000),
+            false,
+            Some(PositionId::from("P-001")),
+            Some(Money::new(2.5, Currency::USD())),
+        )
+    }
+
+    #[rstest]
+    fn test_order_filled_new() {
+        let order_filled = create_test_order_filled();
+
+        assert_eq!(order_filled.trader_id, TraderId::from("TRADER-001"));
+        assert_eq!(order_filled.strategy_id, StrategyId::from("EMA-CROSS"));
+        assert_eq!(order_filled.instrument_id, InstrumentId::from("EURUSD.SIM"));
+        assert_eq!(
+            order_filled.client_order_id,
+            ClientOrderId::from("O-19700101-000000-001-001-1")
+        );
+        assert_eq!(order_filled.venue_order_id, VenueOrderId::from("V-001"));
+        assert_eq!(order_filled.account_id, AccountId::from("SIM-001"));
+        assert_eq!(order_filled.trade_id, TradeId::from("T-001"));
+        assert_eq!(order_filled.order_side, OrderSide::Buy);
+        assert_eq!(order_filled.order_type, OrderType::Market);
+        assert_eq!(order_filled.last_qty, Quantity::from("100"));
+        assert_eq!(order_filled.last_px, Price::from("1.0500"));
+        assert_eq!(order_filled.currency, Currency::USD());
+        assert_eq!(order_filled.liquidity_side, LiquiditySide::Taker);
+        assert_eq!(order_filled.position_id, Some(PositionId::from("P-001")));
+        assert_eq!(
+            order_filled.commission,
+            Some(Money::new(2.5, Currency::USD()))
+        );
+        assert!(!order_filled.reconciliation);
+    }
 
     #[rstest]
     fn test_order_filled_display(order_filled: OrderFilled) {
@@ -457,5 +519,218 @@ mod tests {
     fn test_order_filled_is_buy(order_filled: OrderFilled) {
         assert!(order_filled.is_buy());
         assert!(!order_filled.is_sell());
+    }
+
+    #[rstest]
+    fn test_order_filled_is_sell() {
+        let mut order_filled = create_test_order_filled();
+        order_filled.order_side = OrderSide::Sell;
+
+        assert!(order_filled.is_sell());
+        assert!(!order_filled.is_buy());
+    }
+
+    #[rstest]
+    fn test_order_filled_specified_side() {
+        let buy_order = create_test_order_filled();
+        assert_eq!(buy_order.specified_side(), OrderSideSpecified::Buy);
+
+        let mut sell_order = create_test_order_filled();
+        sell_order.order_side = OrderSide::Sell;
+        assert_eq!(sell_order.specified_side(), OrderSideSpecified::Sell);
+    }
+
+    #[rstest]
+    fn test_order_filled_default() {
+        let order_filled = OrderFilled::default();
+
+        assert_eq!(order_filled.trader_id, TraderId::default());
+        assert_eq!(order_filled.strategy_id, StrategyId::default());
+        assert_eq!(order_filled.instrument_id, InstrumentId::default());
+        assert_eq!(order_filled.client_order_id, ClientOrderId::default());
+        assert_eq!(order_filled.venue_order_id, VenueOrderId::default());
+        assert_eq!(order_filled.account_id, AccountId::default());
+        assert_eq!(order_filled.trade_id, TradeId::default());
+        assert_eq!(order_filled.order_side, OrderSide::Buy);
+        assert_eq!(order_filled.order_type, OrderType::Market);
+        assert_eq!(order_filled.currency, Currency::USD());
+        assert_eq!(order_filled.liquidity_side, LiquiditySide::Taker);
+        assert_eq!(order_filled.position_id, None);
+        assert_eq!(order_filled.commission, None);
+        assert!(!order_filled.reconciliation);
+    }
+
+    #[rstest]
+    fn test_order_filled_order_event_trait() {
+        let order_filled = create_test_order_filled();
+
+        assert_eq!(order_filled.id(), order_filled.event_id);
+        assert_eq!(order_filled.kind(), "OrderFilled");
+        assert_eq!(order_filled.order_type(), Some(OrderType::Market));
+        assert_eq!(order_filled.order_side(), Some(OrderSide::Buy));
+        assert_eq!(order_filled.trader_id(), TraderId::from("TRADER-001"));
+        assert_eq!(order_filled.strategy_id(), StrategyId::from("EMA-CROSS"));
+        assert_eq!(
+            order_filled.instrument_id(),
+            InstrumentId::from("EURUSD.SIM")
+        );
+        assert_eq!(order_filled.trade_id(), Some(TradeId::from("T-001")));
+        assert_eq!(order_filled.currency(), Some(Currency::USD()));
+        assert_eq!(
+            order_filled.client_order_id(),
+            ClientOrderId::from("O-19700101-000000-001-001-1")
+        );
+        assert_eq!(order_filled.reason(), None);
+        assert_eq!(order_filled.quantity(), Some(Quantity::from("100")));
+        assert_eq!(order_filled.liquidity_side(), Some(LiquiditySide::Taker));
+        assert!(!order_filled.reconciliation());
+        assert_eq!(
+            order_filled.venue_order_id(),
+            Some(VenueOrderId::from("V-001"))
+        );
+        assert_eq!(order_filled.account_id(), Some(AccountId::from("SIM-001")));
+        assert_eq!(order_filled.position_id(), Some(PositionId::from("P-001")));
+        assert_eq!(
+            order_filled.commission(),
+            Some(Money::new(2.5, Currency::USD()))
+        );
+        assert_eq!(order_filled.last_px(), Some(Price::from("1.0500")));
+        assert_eq!(order_filled.last_qty(), Some(Quantity::from("100")));
+    }
+
+    #[rstest]
+    fn test_order_filled_different_order_types() {
+        let mut market_order = create_test_order_filled();
+        market_order.order_type = OrderType::Market;
+
+        let mut limit_order = create_test_order_filled();
+        limit_order.order_type = OrderType::Limit;
+
+        let mut stop_order = create_test_order_filled();
+        stop_order.order_type = OrderType::StopMarket;
+
+        assert_ne!(market_order, limit_order);
+        assert_ne!(limit_order, stop_order);
+        assert_eq!(market_order.order_type, OrderType::Market);
+        assert_eq!(limit_order.order_type, OrderType::Limit);
+        assert_eq!(stop_order.order_type, OrderType::StopMarket);
+    }
+
+    #[rstest]
+    fn test_order_filled_different_liquidity_sides() {
+        let mut taker = create_test_order_filled();
+        taker.liquidity_side = LiquiditySide::Taker;
+
+        let mut maker = create_test_order_filled();
+        maker.liquidity_side = LiquiditySide::Maker;
+
+        assert_ne!(taker, maker);
+        assert_eq!(taker.liquidity_side, LiquiditySide::Taker);
+        assert_eq!(maker.liquidity_side, LiquiditySide::Maker);
+    }
+
+    #[rstest]
+    fn test_order_filled_without_position_id() {
+        let mut order_filled = create_test_order_filled();
+        order_filled.position_id = None;
+
+        assert!(order_filled.position_id.is_none());
+    }
+
+    #[rstest]
+    fn test_order_filled_without_commission() {
+        let mut order_filled = create_test_order_filled();
+        order_filled.commission = None;
+
+        assert!(order_filled.commission.is_none());
+    }
+
+    #[rstest]
+    fn test_order_filled_with_reconciliation() {
+        let mut order_filled = create_test_order_filled();
+        order_filled.reconciliation = true;
+
+        assert!(order_filled.reconciliation);
+    }
+
+    #[rstest]
+    fn test_order_filled_clone() {
+        let order_filled1 = create_test_order_filled();
+        let order_filled2 = order_filled1;
+
+        assert_eq!(order_filled1, order_filled2);
+    }
+
+    #[rstest]
+    fn test_order_filled_debug() {
+        let order_filled = create_test_order_filled();
+        let debug_str = format!("{order_filled:?}");
+
+        assert!(debug_str.contains("OrderFilled"));
+        assert!(debug_str.contains("TRADER-001"));
+        assert!(debug_str.contains("EMA-CROSS"));
+        assert!(debug_str.contains("EURUSD.SIM"));
+        assert!(debug_str.contains("P-001"));
+    }
+
+    #[rstest]
+    fn test_order_filled_partial_eq() {
+        let order_filled1 = create_test_order_filled();
+        let mut order_filled2 = create_test_order_filled();
+        order_filled2.event_id = order_filled1.event_id; // Make event_ids equal
+        let mut order_filled3 = create_test_order_filled();
+        order_filled3.trade_id = TradeId::from("T-002");
+
+        assert_eq!(order_filled1, order_filled2);
+        assert_ne!(order_filled1, order_filled3);
+    }
+
+    #[rstest]
+    fn test_order_filled_timestamps() {
+        let order_filled = create_test_order_filled();
+
+        assert_eq!(order_filled.ts_event, UnixNanos::from(1_000_000_000));
+        assert_eq!(order_filled.ts_init, UnixNanos::from(2_000_000_000));
+        assert!(order_filled.ts_event < order_filled.ts_init);
+    }
+
+    #[rstest]
+    fn test_order_filled_different_currencies() {
+        let mut usd_fill = create_test_order_filled();
+        usd_fill.currency = Currency::USD();
+
+        let mut eur_fill = create_test_order_filled();
+        eur_fill.currency = Currency::EUR();
+
+        assert_ne!(usd_fill, eur_fill);
+        assert_eq!(usd_fill.currency, Currency::USD());
+        assert_eq!(eur_fill.currency, Currency::EUR());
+    }
+
+    #[rstest]
+    fn test_order_filled_different_prices_and_quantities() {
+        let mut large_fill = create_test_order_filled();
+        large_fill.last_qty = Quantity::from("1000");
+        large_fill.last_px = Price::from("1.1000");
+
+        let mut small_fill = create_test_order_filled();
+        small_fill.last_qty = Quantity::from("100");
+        small_fill.last_px = Price::from("1.0500");
+
+        assert_ne!(large_fill, small_fill);
+        assert_eq!(large_fill.last_qty, Quantity::from("1000"));
+        assert_eq!(large_fill.last_px, Price::from("1.1000"));
+        assert_eq!(small_fill.last_qty, Quantity::from("100"));
+        assert_eq!(small_fill.last_px, Price::from("1.0500"));
+    }
+
+    #[rstest]
+    fn test_order_filled_serialization() {
+        let original = create_test_order_filled();
+
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: OrderFilled = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(original, deserialized);
     }
 }

@@ -3,8 +3,8 @@ from collections import deque
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.core.datetime import unix_nanos_to_dt
-from nautilus_trader.indicators.average.ma_factory import MovingAverageFactory
-from nautilus_trader.indicators.average.ma_factory import MovingAverageType
+from nautilus_trader.indicators import MovingAverageFactory
+from nautilus_trader.indicators import MovingAverageType
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.instruments import Instrument

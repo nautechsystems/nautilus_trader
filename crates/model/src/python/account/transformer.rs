@@ -31,9 +31,11 @@ use crate::{
 ///
 /// Panics if event conversion (`py_from_dict`) unwrap fails.
 #[pyfunction]
+#[pyo3(signature = (events, calculate_account_state, allow_borrowing = false))]
 pub fn cash_account_from_account_events(
     events: Vec<Bound<'_, PyDict>>,
     calculate_account_state: bool,
+    allow_borrowing: bool,
 ) -> PyResult<CashAccount> {
     let account_events = events
         .into_iter()
@@ -44,7 +46,7 @@ pub fn cash_account_from_account_events(
         return Err(to_pyvalue_err("No account events"));
     }
     let init_event = account_events[0].clone();
-    let mut cash_account = CashAccount::new(init_event, calculate_account_state);
+    let mut cash_account = CashAccount::new(init_event, calculate_account_state, allow_borrowing);
     for event in account_events.iter().skip(1) {
         cash_account.apply(event.clone());
     }

@@ -198,6 +198,228 @@ class OrderBookDeltaDataWranglerV2(WranglerBase):
         return self.from_arrow(table)
 
 
+class OrderBookDepth10DataWranglerV2(WranglerBase):
+    """
+    Provides a means of building lists of Nautilus `OrderBookDepth10` objects.
+
+    Parameters
+    ----------
+    instrument : Instrument
+        The instrument for the data wrangler.
+
+    Warnings
+    --------
+    This wrangler is used to build the PyO3 exposed version of `OrderBookDepth10` and
+    will not work the same way as the current wranglers which build the legacy `Cython` trades.
+
+    """
+
+    def __init__(
+        self,
+        instrument_id: str,
+        price_precision: int,
+        size_precision: int,
+    ) -> None:
+        self._inner = nautilus_pyo3.OrderBookDepth10DataWrangler(
+            instrument_id=instrument_id,
+            price_precision=price_precision,
+            size_precision=size_precision,
+        )
+
+    def from_arrow(
+        self,
+        table: pa.Table,
+    ) -> list[nautilus_pyo3.OrderBookDepth10]:
+        sink = pa.BufferOutputStream()
+        writer: pa.RecordBatchStreamWriter = pa.ipc.new_stream(sink, table.schema)
+        writer.write_table(table)
+        writer.close()
+
+        data: bytes = sink.getvalue().to_pybytes()
+        return self._inner.process_record_batch_bytes(data)
+
+    def _process_price_column(self, df: pd.DataFrame, col_name: str, default_bytes: bytes) -> list:
+        """
+        Process a price column from the DataFrame.
+        """
+        if col_name in df.columns:
+            return (
+                df[col_name]
+                .apply(lambda x: int(x * FIXED_SCALAR))
+                .apply(
+                    lambda x: x.to_bytes(FIXED_PRECISION_BYTES, byteorder="big", signed=True),
+                )
+                .to_numpy()
+            )
+        else:
+            return [default_bytes] * len(df)
+
+    def _process_size_column(self, df: pd.DataFrame, col_name: str, default_bytes: bytes) -> list:
+        """
+        Process a size column from the DataFrame.
+        """
+        if col_name in df.columns:
+            return (
+                df[col_name]
+                .apply(lambda x: int(x * FIXED_SCALAR))
+                .apply(
+                    lambda x: x.to_bytes(FIXED_PRECISION_BYTES, byteorder="big", signed=False),
+                )
+                .to_numpy()
+            )
+        else:
+            return [default_bytes] * len(df)
+
+    def _process_count_column(self, df: pd.DataFrame, col_name: str) -> list:
+        """
+        Process a count column from the DataFrame.
+        """
+        if col_name in df.columns:
+            return df[col_name].to_numpy(dtype="uint32").tolist()
+        else:
+            return [1] * len(df)
+
+    def from_pandas(
+        self,
+        df: pd.DataFrame,
+        ts_init_delta: int = 0,
+    ) -> list[nautilus_pyo3.OrderBookDepth10]:
+        """
+        Process the given pandas DataFrame into Nautilus `OrderBookDepth10` objects.
+
+        Parameters
+        ----------
+        df : pandas.DataFrame
+            The order book depth data frame to process. Expected columns:
+            - bid_price_0 to bid_price_9: Bid prices for each level
+            - ask_price_0 to ask_price_9: Ask prices for each level
+            - bid_size_0 to bid_size_9: Bid sizes for each level
+            - ask_size_0 to ask_size_9: Ask sizes for each level
+            - bid_count_0 to bid_count_9: Number of orders at each bid level (optional)
+            - ask_count_0 to ask_count_9: Number of orders at each ask level (optional)
+            - flags: Flags field (optional)
+            - sequence: Sequence number (optional, uses index if not provided)
+            - timestamp or ts_event: Event timestamp
+            - ts_recv or ts_init: Initialization timestamp (optional)
+        ts_init_delta : int, default 0
+            The difference in nanoseconds between the data timestamps and the
+            `ts_init` value. Can be used to represent/simulate latency between
+            the data source and the Nautilus system. Cannot be negative.
+
+        Returns
+        -------
+        list[OrderBookDepth10]
+            A list of PyO3 [pyclass] `OrderBookDepth10` objects.
+
+        """
+        # Rename columns
+        expected_columns = {
+            "timestamp": "ts_event",
+            "ts_recv": "ts_init",
+        }
+        df = df.rename(columns=expected_columns)
+
+        if "flags" not in df.columns:
+            df["flags"] = 0
+        if "sequence" not in df.columns:
+            df["sequence"] = df.index
+
+        # Process timestamps
+        ts_event = (
+            pd.to_datetime(df["ts_event"], utc=True, format="mixed")
+            .dt.tz_localize(None)
+            .astype("int64")
+        ).to_numpy(dtype="uint64")
+
+        if "ts_init" in df.columns:
+            ts_init = (
+                pd.to_datetime(df["ts_init"], utc=True, format="mixed")
+                .dt.tz_localize(None)
+                .astype("int64")
+            ).to_numpy(dtype="uint64")
+        else:
+            ts_init = ts_event + ts_init_delta
+
+        # Process metadata fields
+        flags = df["flags"].to_numpy(dtype="uint8")
+        sequence = df["sequence"].to_numpy(dtype="uint64")
+
+        # Build arrays for Arrow table
+        arrays = []
+        fields = []
+
+        # Create default zero bytes for missing values
+        zero_price_bytes = (0).to_bytes(FIXED_PRECISION_BYTES, byteorder="big", signed=True)
+        zero_size_bytes = (0).to_bytes(FIXED_PRECISION_BYTES, byteorder="big", signed=False)
+
+        # Process all price and size columns
+        depth = 10
+
+        for idx in range(depth):
+            # Process bid price
+            col_name = f"bid_price_{idx}"
+            bid_price = self._process_price_column(df, col_name, zero_price_bytes)
+            arrays.append(pa.array(bid_price, type=pa.binary(FIXED_PRECISION_BYTES)))
+            fields.append(pa.field(col_name, pa.binary(FIXED_PRECISION_BYTES), nullable=False))
+
+        for idx in range(depth):
+            # Process ask price
+            col_name = f"ask_price_{idx}"
+            ask_price = self._process_price_column(df, col_name, zero_price_bytes)
+            arrays.append(pa.array(ask_price, type=pa.binary(FIXED_PRECISION_BYTES)))
+            fields.append(pa.field(col_name, pa.binary(FIXED_PRECISION_BYTES), nullable=False))
+
+        for idx in range(depth):
+            # Process bid size
+            col_name = f"bid_size_{idx}"
+            bid_size = self._process_size_column(df, col_name, zero_size_bytes)
+            arrays.append(pa.array(bid_size, type=pa.binary(FIXED_PRECISION_BYTES)))
+            fields.append(pa.field(col_name, pa.binary(FIXED_PRECISION_BYTES), nullable=False))
+
+        for idx in range(depth):
+            # Process ask size
+            col_name = f"ask_size_{idx}"
+            ask_size = self._process_size_column(df, col_name, zero_size_bytes)
+            arrays.append(pa.array(ask_size, type=pa.binary(FIXED_PRECISION_BYTES)))
+            fields.append(pa.field(col_name, pa.binary(FIXED_PRECISION_BYTES), nullable=False))
+
+        for idx in range(depth):
+            # Process bid count
+            col_name = f"bid_count_{idx}"
+            bid_count = self._process_count_column(df, col_name)
+            arrays.append(pa.array(bid_count, type=pa.uint32()))
+            fields.append(pa.field(col_name, pa.uint32(), nullable=False))
+
+        for idx in range(depth):
+            # Process ask count
+            col_name = f"ask_count_{idx}"
+            ask_count = self._process_count_column(df, col_name)
+            arrays.append(pa.array(ask_count, type=pa.uint32()))
+            fields.append(pa.field(col_name, pa.uint32(), nullable=False))
+
+        # Add metadata fields at the end
+        arrays.extend(
+            [
+                pa.array(flags, type=pa.uint8()),
+                pa.array(sequence, type=pa.uint64()),
+                pa.array(ts_event, type=pa.uint64()),
+                pa.array(ts_init, type=pa.uint64()),
+            ],
+        )
+
+        fields.extend(
+            [
+                pa.field("flags", pa.uint8(), nullable=False),
+                pa.field("sequence", pa.uint64(), nullable=False),
+                pa.field("ts_event", pa.uint64(), nullable=False),
+                pa.field("ts_init", pa.uint64(), nullable=False),
+            ],
+        )
+
+        table = pa.Table.from_arrays(arrays, schema=pa.schema(fields))
+        return self.from_arrow(table)
+
+
 class QuoteTickDataWranglerV2(WranglerBase):
     """
     Provides a means of building lists of Nautilus `QuoteTick` objects.

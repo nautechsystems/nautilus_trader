@@ -70,7 +70,7 @@ async def test_submit_order_success(exec_client, instrument, strategy, events):
 
     # Assert
     print(events)
-    _, submitted, _, accepted, filled, _, _ = events
+    _, submitted, accepted, filled, _ = events
     assert isinstance(submitted, OrderSubmitted)
     assert isinstance(accepted, OrderAccepted)
     assert isinstance(filled, OrderFilled)
@@ -115,15 +115,11 @@ async def test_submit_orders_list_success(
         _,  # second initialized
         first_submitted,
         second_submitted,
-        _,  # account state
         first_accepted,
-        _,  # account state
         second_accepted,
         first_filled,
-        _,  # account state
         _,  # position opened
         second_filled,
-        _,  # account state
         _,  # position changed
     ) = events
     assert isinstance(first_submitted, OrderSubmitted)
@@ -156,7 +152,7 @@ async def test_modify_order_success(exec_client, strategy, instrument, events):
     exec_client.on_data(_make_quote_tick(instrument))
 
     # Assert
-    initialised, submitted, _, accepted, pending_update, _, updated = events
+    initialised, submitted, accepted, pending_update, updated = events
     assert isinstance(pending_update, OrderPendingUpdate)
     assert isinstance(updated, OrderUpdated)
     assert updated.price == Price.from_str("0.01")
@@ -205,7 +201,7 @@ async def test_cancel_order_success(exec_client, cache, strategy, instrument, ev
     exec_client.on_data(_make_quote_tick(instrument))
 
     # Assert
-    _, _, _, _, pending_cancel, _, cancelled = events
+    _, _, _, pending_cancel, cancelled = events
     assert isinstance(pending_cancel, OrderPendingCancel)
     assert isinstance(cancelled, OrderCanceled)
 

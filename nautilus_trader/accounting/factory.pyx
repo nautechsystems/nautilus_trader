@@ -21,8 +21,9 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport AccountType
 
 
-cdef dict _ISSUER_ACCOUNT_TYPE = {}        # type: dict[str, type]
-cdef dict _ISSUER_ACCOUNT_CALCULATED = {}  # type: dict[str, bool]
+cdef dict[str, type] _ISSUER_ACCOUNT_TYPE = {}
+cdef dict[str, bint] _ISSUER_ACCOUNT_CALCULATED = {}
+cdef dict[str, bint] _ISSUER_CASH_BORROWING = {}
 
 
 cdef class AccountFactory:
@@ -77,6 +78,28 @@ cdef class AccountFactory:
         _ISSUER_ACCOUNT_CALCULATED[issuer] = True
 
     @staticmethod
+    def register_cash_borrowing(str issuer):
+        """
+        Register for cash accounts of the given issuer to allow borrowing
+        (negative balances).
+
+        Parameters
+        ----------
+        issuer : str
+            The issuer for the account.
+
+        Raises
+        ------
+        KeyError
+            If cash borrowing has already been registered for the `issuer`.
+
+        """
+        Condition.not_none(issuer, "issuer")
+        Condition.not_in(issuer, _ISSUER_CASH_BORROWING, "issuer", "_ISSUER_CASH_BORROWING")
+
+        _ISSUER_CASH_BORROWING[issuer] = True
+
+    @staticmethod
     cdef Account create_c(AccountState event):
         Condition.not_none(event, "event")
 
@@ -86,12 +109,13 @@ cdef class AccountFactory:
         # Determine account settings
         cdef type account_cls = _ISSUER_ACCOUNT_TYPE.get(issuer)
         cdef bint calculated = _ISSUER_ACCOUNT_CALCULATED.get(issuer, False)
+        cdef bint allow_borrowing = _ISSUER_CASH_BORROWING.get(issuer, False)
 
         # Create account
         if account_cls is not None:
             return account_cls(event, calculated)
         if event.account_type == AccountType.CASH:
-            return CashAccount(event, calculated)
+            return CashAccount(event, calculated, allow_borrowing)
         elif event.account_type == AccountType.MARGIN:
             return MarginAccount(event, calculated)
         elif event.account_type == AccountType.BETTING:

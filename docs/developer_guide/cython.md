@@ -22,7 +22,7 @@ feature for many years. Unfortunately, it's safe to assume that PyCharm will not
 be receiving first class support for Cython debugging
 <https://youtrack.jetbrains.com/issue/PY-9476>.
 
-### Cython Docs
+### Cython docs
 
 The following recommendations are contained in the Cython docs:
 <https://cython.readthedocs.io/en/latest/src/userguide/debugging.html>

@@ -330,6 +330,7 @@ CREATE TABLE IF NOT EXISTS "dex" (
     chain_id INTEGER NOT NULL REFERENCES chain(chain_id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     factory_address TEXT UNIQUE,
+    creation_block BIGINT NOT NULL,
     PRIMARY KEY (chain_id, name)
 );
 

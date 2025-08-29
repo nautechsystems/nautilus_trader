@@ -58,7 +58,7 @@ pip install -U "nautilus_trader[docker,ib]"
 
 ## From the Nautech Systems package index
 
-The Nautech Systems package index (`packages.nautechsystems.io`) is [PEP-503](https://peps.python.org/pep-0503/) compliant and hosts both stable and development binary wheels for `nautilus_trader`.
+The Nautech Systems package index (`packages.nautechsystems.io`) complies with [PEP-503](https://peps.python.org/pep-0503/) and hosts both stable and development binary wheels for `nautilus_trader`.
 This enables users to install either the latest stable release or pre-release versions for testing.
 
 ### Stable wheels
@@ -93,12 +93,12 @@ while adhering to [PEP-440](https://peps.python.org/pep-0440/) versioning standa
 - `nightly` wheels use the version format `a{date}` (alpha) (e.g., `1.208.0a20241212`).
 
 :::warning
-We don't recommend using development wheels in production environments, such as live trading controlling real capital.
+We do not recommend using development wheels in production environments, such as live trading controlling real capital.
 :::
 
 ### Installation commands
 
-By default, pip installs the latest stable release. Adding the `--pre` flag ensures that pre-release versions, including development wheels, are considered.
+By default, pip will install the latest stable release. Adding the `--pre` flag ensures that pre-release versions, including development wheels, are considered.
 
 To install the latest available pre-release (including development wheels):
 
@@ -124,15 +124,15 @@ curl -s https://packages.nautechsystems.io/simple/nautilus-trader/index.html | g
 
 ### Branch updates
 
-- `develop` branch wheels (`.dev`): Are built and published continuously with every merged commit.
-- `nightly` branch wheels (`a`): Are built and published daily when `develop` branch is automatically merged at **14:00 UTC** (if there are changes).
+- `develop` branch wheels (`.dev`): Build and publish continuously with every merged commit.
+- `nightly` branch wheels (`a`): Build and publish daily when we automatically merge the `develop` branch at **14:00 UTC** (if there are changes).
 
 ### Retention policies
 
-- `develop` branch wheels (`.dev`): Only the most recent wheel build is retained.
-- `nightly` branch wheels (`a`): Only the 10 most recent wheel builds are retained.
+- `develop` branch wheels (`.dev`): We retain only the most recent wheel build.
+- `nightly` branch wheels (`a`): We retain only the 10 most recent wheel builds.
 
-## From Source
+## From source
 
 It's possible to install from source using pip if you first install the build dependencies as specified in the `pyproject.toml`.
 
@@ -218,7 +218,7 @@ Adjust the Python version and architecture in the `LD_LIBRARY_PATH` to match you
 Use `uv python list` to find the exact path for your Python installation.
 :::
 
-## From GitHub Release
+## From GitHub release
 
 To install a binary wheel from GitHub, first navigate to the [latest release](https://github.com/nautechsystems/nautilus_trader/releases/latest).
 Download the appropriate `.whl` for your operating system and Python version, then run:

@@ -489,29 +489,29 @@ impl AccountsManager {
         let mut balances = Vec::new();
         let mut commission = fill.commission;
 
-        if let Some(ref mut comm) = commission {
-            if comm.currency != base_currency {
-                let xrate = self.cache.borrow().get_xrate(
-                    fill.instrument_id.venue,
-                    comm.currency,
-                    base_currency,
-                    if fill.order_side == OrderSide::Sell {
-                        PriceType::Bid
-                    } else {
-                        PriceType::Ask
-                    },
-                );
-
-                if let Some(xrate) = xrate {
-                    *comm = Money::new(comm.as_f64() * xrate, base_currency);
+        if let Some(ref mut comm) = commission
+            && comm.currency != base_currency
+        {
+            let xrate = self.cache.borrow().get_xrate(
+                fill.instrument_id.venue,
+                comm.currency,
+                base_currency,
+                if fill.order_side == OrderSide::Sell {
+                    PriceType::Bid
                 } else {
-                    log::error!(
-                        "Cannot calculate account state: insufficient data for {}/{}",
-                        comm.currency,
-                        base_currency
-                    );
-                    return;
-                }
+                    PriceType::Ask
+                },
+            );
+
+            if let Some(xrate) = xrate {
+                *comm = Money::new(comm.as_f64() * xrate, base_currency);
+            } else {
+                log::error!(
+                    "Cannot calculate account state: insufficient data for {}/{}",
+                    comm.currency,
+                    base_currency
+                );
+                return;
             }
         }
 

@@ -14,12 +14,15 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import os
 from decimal import Decimal
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_MAX_CALLBACK_RATE
 from nautilus_trader.adapters.binance.common.constants import BINANCE_MIN_CALLBACK_RATE
+from nautilus_trader.adapters.binance.common.constants import BINANCE_RETRY_WARNINGS
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceEnumParser
+from nautilus_trader.adapters.binance.common.enums import BinanceErrorCode
 from nautilus_trader.adapters.binance.common.enums import BinanceFuturesPositionSide
 from nautilus_trader.adapters.binance.common.enums import BinanceTimeInForce
 from nautilus_trader.adapters.binance.common.schemas.account import BinanceOrder
@@ -31,6 +34,7 @@ from nautilus_trader.adapters.binance.http.account import BinanceAccountHttpAPI
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceClientError
 from nautilus_trader.adapters.binance.http.error import BinanceError
+from nautilus_trader.adapters.binance.http.error import get_binance_error_code
 from nautilus_trader.adapters.binance.http.error import should_retry
 from nautilus_trader.adapters.binance.http.market import BinanceMarketHttpAPI
 from nautilus_trader.adapters.binance.http.user import BinanceUserDataHttpAPI
@@ -52,6 +56,7 @@ from nautilus_trader.execution.messages import GenerateOrderStatusReport
 from nautilus_trader.execution.messages import GenerateOrderStatusReports
 from nautilus_trader.execution.messages import GeneratePositionStatusReports
 from nautilus_trader.execution.messages import ModifyOrder
+from nautilus_trader.execution.messages import QueryAccount
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.execution.reports import FillReport
@@ -163,6 +168,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._use_reduce_only: bool = config.use_reduce_only
         self._use_position_ids: bool = config.use_position_ids
         self._treat_expired_as_canceled: bool = config.treat_expired_as_canceled
+        self._log_rejected_due_post_only_as_warning: bool = (
+            config.log_rejected_due_post_only_as_warning
+        )
         self._recv_window = config.recv_window_ms
         self._max_retries = config.max_retries or 3
         self._log.info(f"Key type: {config.key_type.value}", LogColor.BLUE)
@@ -175,6 +183,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._log.info(f"{config.max_retries=}", LogColor.BLUE)
         self._log.info(f"{config.retry_delay_initial_ms=}", LogColor.BLUE)
         self._log.info(f"{config.retry_delay_max_ms=}", LogColor.BLUE)
+        self._log.info(f"{config.listen_key_ping_max_failures=}", LogColor.BLUE)
+        self._log.info(f"{config.log_rejected_due_post_only_as_warning=}", LogColor.BLUE)
 
         self._is_dual_side_position: bool | None = None  # Initialized on connection
         self._set_account_id(
@@ -194,6 +204,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._ping_listen_keys_interval: int = 60 * 5  # Once every 5 mins (hard-coded)
         self._ping_listen_keys_task: asyncio.Task | None = None
         self._listen_key: str | None = None
+        self._ping_consecutive_failures: int = 0
+        self._ping_max_failures: int = config.listen_key_ping_max_failures
+        self._last_successful_ping_ns: int = 0
 
         # WebSocket API
         self._ws_client = BinanceWebSocketClient(
@@ -228,6 +241,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             logger=self._log,
             exc_types=(BinanceError,),
             retry_check=should_retry,
+            error_logger=self._log_retry_error,
         )
 
         self._log.info(f"Base url HTTP {self._http_client.base_url}", LogColor.BLUE)
@@ -261,6 +275,19 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
     def _stop(self) -> None:
         self._retry_manager_pool.shutdown()
 
+    def _log_retry_error(self, message: str, exception: BaseException | None) -> None:
+        error_code = get_binance_error_code(exception) if exception else None
+
+        match error_code:
+            case (
+                BinanceErrorCode.GTX_ORDER_REJECT
+            ) if not self._log_rejected_due_post_only_as_warning:
+                self._log.info(message)
+            case code if code in BINANCE_RETRY_WARNINGS:
+                self._log.warning(message)
+            case _:
+                self._log.error(message)
+
     async def _connect(self) -> None:
         try:
             await self._instrument_provider.initialize()
@@ -282,6 +309,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
         # Set up WebSocket listen key
         self._listen_key = response.listenKey
+        self._last_successful_ping_ns = self._clock.timestamp_ns()  # Initialize on connection
         self._log.info(f"Listen key {self._listen_key}")
         self._ping_listen_keys_task = self.create_task(self._ping_listen_keys())
 
@@ -304,15 +332,85 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                     f"{self._ping_listen_keys_interval}s",
                 )
                 await asyncio.sleep(self._ping_listen_keys_interval)
-                if self._listen_key:
-                    self._log.debug(f"Pinging WebSocket listen key {self._listen_key}")
-                    try:
-                        await self._http_user.keepalive_listen_key(listen_key=self._listen_key)
-                    except BinanceClientError as e:
-                        # We may see this if an old listen key was used for the ping
-                        self._log.error(f"Error pinging listen key: {e}")
+
+                if not self._listen_key:
+                    self._log.warning("No listen key available for ping")
+                    continue
+
+                self._log.debug(f"Pinging WebSocket listen key {self._listen_key}")
+
+                try:
+                    await self._http_user.keepalive_listen_key(listen_key=self._listen_key)
+
+                    # Reset failure tracking on success
+                    self._ping_consecutive_failures = 0
+                    self._last_successful_ping_ns = self._clock.timestamp_ns()
+                    self._log.debug(f"Listen key ping successful: {self._listen_key}")
+
+                except (BinanceClientError, BinanceError) as e:
+                    self._ping_consecutive_failures += 1
+                    time_since_success_secs = (
+                        (self._clock.timestamp_ns() - self._last_successful_ping_ns) / 1_000_000_000
+                        if self._last_successful_ping_ns > 0
+                        else 0
+                    )
+
+                    self._log.error(
+                        f"Listen key ping failed (attempt {self._ping_consecutive_failures}/"
+                        f"{self._ping_max_failures}): {e}, "
+                        f"time since last success: {time_since_success_secs:.1f}s",
+                    )
+
+                    if self._ping_consecutive_failures >= self._ping_max_failures:
+                        self._log.error(
+                            f"Listen key ping failed {self._ping_max_failures} consecutive times; "
+                            "initiating WebSocket reconnection to prevent data loss",
+                        )
+                        await self._handle_listen_key_failure()
+                        self._ping_consecutive_failures = 0  # Reset after handling
         except asyncio.CancelledError:
             self._log.debug("Canceled task 'ping_listen_keys'")
+
+    async def _handle_listen_key_failure(self) -> None:
+        # Handle listen key authentication failure with full recovery.
+        #
+        # This method attempts to recover from listen key failures by:
+        # 1. Disconnecting the current WebSocket
+        # 2. Creating a new listen key
+        # 3. Reconnecting the WebSocket with the new key
+
+        try:
+            self._log.warning("Starting listen key recovery process")
+
+            # Disconnect current WebSocket
+            await self._ws_client.disconnect()
+            self._log.debug("Disconnected WebSocket for listen key recovery")
+
+            # Create new listen key
+            response: BinanceListenKey = await self._http_user.create_listen_key()
+            self._listen_key = response.listenKey
+            self._last_successful_ping_ns = self._clock.timestamp_ns()
+            self._log.info(f"Created new listen key for recovery: {self._listen_key}")
+
+            # Reconnect WebSocket with new key
+            await self._ws_client.subscribe_listen_key(self._listen_key)
+            self._log.info("WebSocket reconnected successfully with new listen key")
+
+        except Exception as e:
+            self._log.error(f"Failed to recover from listen key failure: {e}")
+
+            # Check if graceful shutdown is configured
+            if hasattr(self, "graceful_shutdown_on_exception"):
+                execution_engine = getattr(self, "_execution_engine", None)
+                if execution_engine and hasattr(execution_engine, "graceful_shutdown_on_exception"):
+                    if execution_engine.graceful_shutdown_on_exception:
+                        execution_engine.shutdown_system(f"Listen key recovery failed: {e}")
+                        return
+
+            self._log.error(
+                "Terminating process to prevent operation with invalid authentication",
+            )
+            os._exit(1)
 
     async def _disconnect(self) -> None:
         # Cancel tasks
@@ -389,20 +487,23 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                     return None  # Nothing else to do
 
                 if retries >= self._max_retries:
-                    # Clean up retry counter when order is finally rejected
                     if (
                         command.client_order_id
                         and command.client_order_id in self._generate_order_status_retries
                     ):
                         del self._generate_order_status_retries[command.client_order_id]
 
-                    # Order will no longer be considered in-flight once this event is applied.
+                    # Determine if the rejection was specifically due to a POST-ONLY order
+                    # that would have executed immediately as a taker (GTX_ORDER_REJECT -5022).
+                    due_post_only = _is_post_only_rejection(e)
+
                     self.generate_order_rejected(
                         strategy_id=order.strategy_id,
                         instrument_id=command.instrument_id,
                         client_order_id=command.client_order_id,
                         reason=str(e.message),
                         ts_event=self._clock.timestamp_ns(),
+                        due_post_only=due_post_only,
                     )
             return None  # Error now handled
 
@@ -692,6 +793,10 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         )
         return position_side
 
+    async def _query_account(self, _command: QueryAccount) -> None:
+        # Specific account ID (sub account) not yet supported
+        await self._update_account_state()
+
     async def _submit_order(self, command: SubmitOrder) -> None:
         position_side = self._get_position_side_from_position_id(
             position_id=command.position_id,
@@ -730,12 +835,20 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 position_side,
             )
             if not retry_manager.result:
+                # Determine if the rejection was specifically due to a POST-ONLY order
+                # that would have executed immediately as a taker (GTX_ORDER_REJECT -5022).
+                exc = retry_manager.last_exception
+                due_post_only = (
+                    _is_post_only_rejection(exc) if isinstance(exc, BinanceError) else False
+                )
+
                 self.generate_order_rejected(
                     strategy_id=order.strategy_id,
                     instrument_id=order.instrument_id,
                     client_order_id=order.client_order_id,
                     reason=retry_manager.message,
                     ts_event=self._clock.timestamp_ns(),
+                    due_post_only=due_post_only,
                 )
         finally:
             await self._retry_manager_pool.release(retry_manager)
@@ -1128,3 +1241,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
     def _handle_user_ws_message(self, raw: bytes) -> None:
         # Implement in child class
         raise NotImplementedError
+
+
+def _is_post_only_rejection(error: BinanceError) -> bool:
+    error_code = get_binance_error_code(error)
+    return error_code == BinanceErrorCode.GTX_ORDER_REJECT

@@ -32,8 +32,6 @@ just need to override the `execute`, `process`, `send` and `receive` methods.
 from typing import Callable
 
 from nautilus_trader.common.enums import LogColor
-from nautilus_trader.core import nautilus_pyo3
-from nautilus_trader.core.datetime import max_date
 from nautilus_trader.core.datetime import min_date
 from nautilus_trader.core.datetime import time_object_to_dt
 from nautilus_trader.data.config import DataEngineConfig
@@ -62,6 +60,7 @@ from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.aggregation cimport BarAggregator
+from nautilus_trader.data.aggregation cimport SpreadQuoteAggregator
 from nautilus_trader.data.aggregation cimport TickBarAggregator
 from nautilus_trader.data.aggregation cimport TimeBarAggregator
 from nautilus_trader.data.aggregation cimport ValueBarAggregator
@@ -105,6 +104,7 @@ from nautilus_trader.model.data cimport BarAggregation
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport CustomData
 from nautilus_trader.model.data cimport DataType
+from nautilus_trader.model.data cimport FundingRateUpdate
 from nautilus_trader.model.data cimport IndexPriceUpdate
 from nautilus_trader.model.data cimport InstrumentClose
 from nautilus_trader.model.data cimport InstrumentStatus
@@ -166,6 +166,7 @@ cdef class DataEngine(Component):
         self._catalogs: dict[str, ParquetDataCatalog] = {}
         self._order_book_intervals: dict[tuple[InstrumentId, int], list[Callable[[OrderBook], None]]] = {}
         self._bar_aggregators: dict[BarType, BarAggregator] = {}
+        self._spread_quote_aggregators: dict[InstrumentId, SpreadQuoteAggregator] = {}
         self._synthetic_quote_feeds: dict[InstrumentId, list[SyntheticInstrument]] = {}
         self._synthetic_trade_feeds: dict[InstrumentId, list[SyntheticInstrument]] = {}
         self._subscribed_synthetic_quotes: list[InstrumentId] = []
@@ -174,6 +175,22 @@ cdef class DataEngine(Component):
         self._snapshot_info: dict[str, SnapshotInfo] = {}
         self._query_group_n_responses: dict[UUID4, int] = {}
         self._query_group_responses: dict[UUID4, list] = {}
+
+        self._topic_cache_instruments: dict[InstrumentId, str] = {}
+        self._topic_cache_deltas: dict[InstrumentId, str] = {}
+        self._topic_cache_depth: dict[InstrumentId, str] = {}
+        self._topic_cache_quotes: dict[InstrumentId, str] = {}
+        self._topic_cache_trades: dict[InstrumentId, str] = {}
+        self._topic_cache_status: dict[InstrumentId, str] = {}
+        self._topic_cache_mark_prices: dict[InstrumentId, str] = {}
+        self._topic_cache_index_prices: dict[InstrumentId, str] = {}
+        self._topic_cache_funding_rates: dict[InstrumentId, str] = {}
+        self._topic_cache_close_prices: dict[InstrumentId, str] = {}
+        self._topic_cache_snapshots: dict[tuple[InstrumentId, int], str] = {}
+        self._topic_cache_custom: dict[tuple[DataType, InstrumentId], str] = {}
+        self._topic_cache_custom_simple: dict[DataType, str] = {}
+        self._topic_cache_instruments: dict[InstrumentId, str] = {}
+        self._topic_cache_bars: dict[BarType, str] = {}
 
         # Configuration
         self.debug = config.debug
@@ -286,6 +303,34 @@ cdef class DataEngine(Component):
                 return False
 
         return True
+
+    cpdef set[ClientId] get_external_client_ids(self):
+        """
+        Returns the configured external client order IDs.
+
+        Returns
+        -------
+        set[ClientId]
+
+        """
+        return self._external_clients.copy()
+
+    cpdef bint _is_backtest_client(self, DataClient client):
+        """
+        Check if we're in a backtest context by looking for the default backtest client.
+
+        Returns
+        -------
+        bool
+            True if in backtest context, else False.
+
+        """
+        # Avoid importing `BacktestMarketDataClient` from the `backtest` subpackage at
+        # module import time – doing so creates a circular import between
+        # `nautilus_trader.data` and `nautilus_trader.backtest`.
+        from nautilus_trader.backtest.data_client import BacktestMarketDataClient
+
+        return isinstance(client, BacktestMarketDataClient)
 
 # --REGISTRATION ----------------------------------------------------------------------------------
 
@@ -531,6 +576,23 @@ cdef class DataEngine(Component):
 
         return subscriptions
 
+    cpdef list subscribed_funding_rates(self):
+        """
+        Return the funding rate update instruments subscribed to.
+
+        Returns
+        -------
+        list[InstrumentId]
+
+        """
+        cdef list subscriptions = []
+
+        cdef MarketDataClient client
+        for client in [c for c in self._clients.values() if isinstance(c, MarketDataClient)]:
+            subscriptions += client.subscribed_funding_rates()
+
+        return subscriptions
+
     cpdef list subscribed_bars(self):
         """
         Return the bar types subscribed to.
@@ -629,6 +691,9 @@ cdef class DataEngine(Component):
             if isinstance(aggregator, TimeBarAggregator):
                 aggregator.stop()
 
+        for aggregator in self._spread_quote_aggregators.values():
+            aggregator.stop()
+
         self._on_stop()
 
     cpdef void _reset(self):
@@ -638,6 +703,7 @@ cdef class DataEngine(Component):
 
         self._order_book_intervals.clear()
         self._bar_aggregators.clear()
+        self._spread_quote_aggregators.clear()
         self._synthetic_quote_feeds.clear()
         self._synthetic_trade_feeds.clear()
         self._subscribed_synthetic_quotes.clear()
@@ -735,7 +801,8 @@ cdef class DataEngine(Component):
         if command.client_id in self._external_clients:
             self._msgbus.add_streaming_type(command.data_type.type)
             self._log.debug(
-                f"{command.client_id} declared as external client - disregarding subscription command",
+                f"Skipping data command for external client {command.client_id}: {command}",
+                LogColor.MAGENTA,
             )
             return
 
@@ -753,7 +820,6 @@ cdef class DataEngine(Component):
         if venue is not None and venue.is_synthetic():
             # No further check as no client needed
             pass
-
         elif client is None:
             client = self._routing_map.get(command.venue, self._default_client)
 
@@ -792,6 +858,8 @@ cdef class DataEngine(Component):
             self._handle_subscribe_mark_prices(client, command)
         elif isinstance(command, SubscribeIndexPrices):
             self._handle_subscribe_index_prices(client, command)
+        elif isinstance(command, SubscribeFundingRates):
+            self._handle_subscribe_funding_rates(client, command)
         elif isinstance(command, SubscribeBars):
             self._handle_subscribe_bars(client, command)
         elif isinstance(command, SubscribeInstrumentStatus):
@@ -819,6 +887,8 @@ cdef class DataEngine(Component):
             self._handle_unsubscribe_mark_prices(client, command)
         elif isinstance(command, UnsubscribeIndexPrices):
             self._handle_unsubscribe_index_prices(client, command)
+        elif isinstance(command, UnsubscribeFundingRates):
+            self._handle_unsubscribe_funding_rates(client, command)
         elif isinstance(command, UnsubscribeBars):
             self._handle_unsubscribe_bars(client, command)
         elif isinstance(command, UnsubscribeInstrumentStatus):
@@ -872,11 +942,13 @@ cdef class DataEngine(Component):
             self._log.error("Cannot subscribe for synthetic instrument `OrderBook` data")
             return
 
+        cdef tuple[InstrumentId, int] key = (command.instrument_id, command.interval_ms)
         cdef:
+            str topic
             uint64_t interval_ns
             uint64_t timestamp_ns
             SnapshotInfo snap_info
-        key = (command.instrument_id, command.interval_ms)
+
         if key not in self._order_book_intervals:
             self._order_book_intervals[key] = []
 
@@ -885,7 +957,7 @@ cdef class DataEngine(Component):
             timestamp_ns = self._clock.timestamp_ns()
             start_time_ns = timestamp_ns - (timestamp_ns % interval_ns)
 
-            topic = f"data.book.snapshots.{command.instrument_id.venue}.{command.instrument_id.symbol}.{command.interval_ms}"
+            topic = self._get_snapshots_topic(command.instrument_id, command.interval_ms)
 
             # Cache snapshot event info
             snap_info = SnapshotInfo.__new__(SnapshotInfo)
@@ -917,7 +989,6 @@ cdef class DataEngine(Component):
         Condition.not_none(command.instrument_id, "instrument_id")
         Condition.not_none(command.params, "params")
 
-        cdef bint only_deltas = command.data_type.type == OrderBookDelta
         cdef Instrument instrument = self._cache.instrument(command.instrument_id)
 
         if instrument is None:
@@ -940,6 +1011,8 @@ cdef class DataEngine(Component):
                 self._create_new_book(command.instrument_id, command.book_type)
 
         # Always re-subscribe to override previous settings
+        cdef bint only_deltas = command.data_type.type == OrderBookDelta
+
         try:
             if command.instrument_id not in client.subscribed_order_book_deltas():
                 client.subscribe_order_book_deltas(command)
@@ -986,8 +1059,14 @@ cdef class DataEngine(Component):
 
     cpdef void _handle_subscribe_quote_ticks(self, MarketDataClient client, SubscribeQuoteTicks command):
         Condition.not_none(command.instrument_id, "instrument_id")
+
         if command.instrument_id.is_synthetic():
             self._handle_subscribe_synthetic_quote_ticks(command.instrument_id)
+            return
+
+        # Handle spread instruments (like bar aggregators, work in any context)
+        if command.instrument_id.is_spread() and self._is_backtest_client(client):
+            self._start_spread_quote_aggregator(client, command)
             return
 
         Condition.not_none(client, "client")
@@ -1032,6 +1111,7 @@ cdef class DataEngine(Component):
         if command.instrument_id.is_synthetic():
             self._handle_subscribe_synthetic_trade_ticks(command.instrument_id)
             return
+
         Condition.not_none(client, "client")
 
         if "start" not in command.params:
@@ -1083,6 +1163,13 @@ cdef class DataEngine(Component):
 
         if command.instrument_id not in client.subscribed_index_prices():
             client.subscribe_index_prices(command)
+
+    cpdef void _handle_subscribe_funding_rates(self, MarketDataClient client, SubscribeFundingRates command):
+        Condition.not_none(client, "client")
+        Condition.not_none(command.instrument_id, "instrument_id")
+
+        if command.instrument_id not in client.subscribed_funding_rates():
+            client.subscribe_funding_rates(command)
 
     cpdef void _handle_subscribe_bars(self, MarketDataClient client, SubscribeBars command):
         Condition.not_none(client, "client")
@@ -1234,12 +1321,17 @@ cdef class DataEngine(Component):
                 client.unsubscribe_order_book_snapshots(command)
 
     cpdef void _handle_unsubscribe_quote_ticks(self, MarketDataClient client, UnsubscribeQuoteTicks command):
+        Condition.not_none(command.instrument_id, "instrument_id")
+
+        # Handle spread instruments (like bar aggregators, work in any context)
+        if command.instrument_id.is_spread() and self._is_backtest_client(client):
+            self._stop_spread_quote_aggregator(client, command)
+            return
+
         Condition.not_none(client, "client")
 
         if not self._msgbus.has_subscribers(
-            f"data.quotes"
-            f".{command.instrument_id.venue}"
-            f".{command.instrument_id.symbol}",
+            self._get_quotes_topic(command.instrument_id),
         ):
             if command.instrument_id in client.subscribed_quote_ticks():
                 client.unsubscribe_quote_ticks(command)
@@ -1248,9 +1340,7 @@ cdef class DataEngine(Component):
         Condition.not_none(client, "client")
 
         if not self._msgbus.has_subscribers(
-            f"data.trades"
-            f".{command.instrument_id.venue}"
-            f".{command.instrument_id.symbol}",
+            self._get_trades_topic(command.instrument_id),
         ):
             if command.instrument_id in client.subscribed_trade_ticks():
                 client.unsubscribe_trade_ticks(command)
@@ -1259,9 +1349,7 @@ cdef class DataEngine(Component):
         Condition.not_none(client, "client")
 
         if not self._msgbus.has_subscribers(
-            f"data.mark_prices"
-            f".{command.instrument_id.venue}"
-            f".{command.instrument_id.symbol}",
+            self._get_mark_prices_topic(command.instrument_id),
         ):
             if command.instrument_id in client.subscribed_mark_prices():
                 client.unsubscribe_mark_prices(command)
@@ -1270,17 +1358,24 @@ cdef class DataEngine(Component):
         Condition.not_none(client, "client")
 
         if not self._msgbus.has_subscribers(
-            f"data.index_prices"
-            f".{command.instrument_id.venue}"
-            f".{command.instrument_id.symbol}",
+            self._get_index_prices_topic(command.instrument_id),
         ):
             if command.instrument_id in client.subscribed_index_prices():
                 client.unsubscribe_index_prices(command)
 
+    cpdef void _handle_unsubscribe_funding_rates(self, MarketDataClient client, UnsubscribeFundingRates command):
+        Condition.not_none(client, "client")
+
+        if not self._msgbus.has_subscribers(
+            self._get_funding_rates_topic(command.instrument_id),
+        ):
+            if command.instrument_id in client.subscribed_funding_rates():
+                client.unsubscribe_funding_rates(command)
+
     cpdef void _handle_unsubscribe_bars(self, MarketDataClient client, UnsubscribeBars command):
         Condition.not_none(client, "client")
 
-        if self._msgbus.has_subscribers(f"data.bars.{command.bar_type.standard()}"):
+        if self._msgbus.has_subscribers(self._get_bars_topic(command.bar_type.standard())):
             return
 
         if command.bar_type.is_internally_aggregated():
@@ -1417,17 +1512,13 @@ cdef class DataEngine(Component):
     cpdef void _handle_date_range_request(self, DataClient client, RequestData request):
         cdef DataClient used_client = client
 
-        # Avoid importing `BacktestMarketDataClient` from the `backtest` subpackage at
-        # module import time – doing so creates a circular import between
-        # `nautilus_trader.data` and `nautilus_trader.backtest`.
-        from nautilus_trader.backtest.data_client import BacktestMarketDataClient
-
-        if isinstance(client, BacktestMarketDataClient):
+        if self._is_backtest_client(client):
             used_client = None
 
         # Capping dates to the now datetime
         cdef bint query_past_data = request.params.get("subscription_name") is None
         cdef datetime now = self._clock.utc_now()
+
         cdef datetime start = request.start if request.start is not None else time_object_to_dt(0)
         cdef datetime end = request.end if request.end is not None else now
 
@@ -1462,7 +1553,8 @@ cdef class DataEngine(Component):
             if has_catalog_data:
                 break
 
-        n_requests = (len(missing_intervals) if used_client else 0) + (1 if has_catalog_data else 0)
+        skip_catalog_data = request.params.get("skip_catalog_data", False)
+        n_requests = (len(missing_intervals) if used_client else 0) + (1 if has_catalog_data and not skip_catalog_data else 0)
 
         if n_requests == 0:
             response = DataResponse(
@@ -1472,18 +1564,19 @@ cdef class DataEngine(Component):
                 data=[],
                 correlation_id=request.id,
                 response_id=UUID4(),
+                start=request.start,
+                end=request.end,
                 ts_init=self._clock.timestamp_ns(),
                 params=request.params,
             )
             self._handle_response(response)
+            return
 
         self._new_query_group(request.id, n_requests)
 
         # Catalog query
-        if has_catalog_data:
+        if has_catalog_data and not skip_catalog_data:
             new_request = request.with_dates(start, end, now.value)
-            new_request.params["request_ts_start"] = start.value
-            new_request.params["request_ts_end"] = end.value
             new_request.params["identifier"] = identifier
             self._query_catalog(new_request)
 
@@ -1491,8 +1584,6 @@ cdef class DataEngine(Component):
         if len(missing_intervals) > 0 and used_client:
             for request_start, request_end in missing_intervals:
                 new_request = request.with_dates(time_object_to_dt(request_start), time_object_to_dt(request_end), now.value)
-                new_request.params["request_ts_start"] = request_start
-                new_request.params["request_ts_end"] = request_end
                 new_request.params["identifier"] = identifier
                 self._date_range_client_request(used_client, new_request)
 
@@ -1540,15 +1631,17 @@ cdef class DataEngine(Component):
         # We assume each symbol is only in one catalog
         for catalog in self._catalogs.values():
             if isinstance(request, RequestInstruments):
+                # We only use ts_end if end is passed as request argument
                 data += catalog.instruments(
                     start=ts_start,
-                    end=ts_end,
+                    end=(ts_end if end is not None else None),
                 )
             elif isinstance(request, RequestInstrument):
+                # We only use ts_end if end is passed as request argument
                 data = catalog.instruments(
                     instrument_ids=[str(request.instrument_id)],
                     start=ts_start,
-                    end=ts_end,
+                    end=(ts_end if end is not None else None),
                 )
             elif isinstance(request, RequestQuoteTicks):
                 data = catalog.quote_ticks(
@@ -1599,7 +1692,20 @@ cdef class DataEngine(Component):
                 self._log.error(f"Cannot find instrument for {request.instrument_id}")
                 return
 
-            data = data[0]
+        if isinstance(request, RequestInstruments) or isinstance(request, RequestInstrument):
+            only_last = request.params.get("only_last", True)
+
+            if only_last:
+                # Retains only the latest instrument record per instrument_id, based on the most recent ts_init
+                last_instrument = {}
+
+                for instrument in data:
+                    if instrument.id not in last_instrument:
+                        last_instrument[instrument.id] = instrument
+                    elif instrument.ts_init > last_instrument[instrument.id].ts_init:
+                        last_instrument[instrument.id] = instrument
+
+                data = list(last_instrument.values())
 
         params = request.params.copy()
         params["update_catalog"] = False
@@ -1611,6 +1717,8 @@ cdef class DataEngine(Component):
             data=data,
             correlation_id=request.id,
             response_id=UUID4(),
+            start=request.start,
+            end=request.end,
             ts_init=self._clock.timestamp_ns(),
             params=params,
         )
@@ -1635,6 +1743,8 @@ cdef class DataEngine(Component):
             self._handle_mark_price(data)
         elif isinstance(data, IndexPriceUpdate):
             self._handle_index_price(data)
+        elif isinstance(data, FundingRateUpdate):
+            self._handle_funding_rate(data)
         elif isinstance(data, Bar):
             self._handle_bar(data)
         elif isinstance(data, Instrument):
@@ -1661,9 +1771,7 @@ cdef class DataEngine(Component):
             )
 
         self._msgbus.publish_c(
-            topic=f"data.instrument"
-                  f".{instrument.id.venue}"
-                  f".{instrument.id.symbol}",
+            topic=self._get_instruments_topic(instrument.id),
             msg=instrument,
         )
 
@@ -1671,38 +1779,35 @@ cdef class DataEngine(Component):
         cdef OrderBookDeltas deltas = None
         cdef list[OrderBookDelta] buffer_deltas = None
         cdef bint is_last_delta = False
+        cdef InstrumentId instrument_id = delta.instrument_id
 
         if self._buffer_deltas:
-            buffer_deltas = self._buffered_deltas_map.get(delta.instrument_id)
+            buffer_deltas = self._buffered_deltas_map.get(instrument_id)
 
             if buffer_deltas is None:
                 buffer_deltas = []
-                self._buffered_deltas_map[delta.instrument_id] = buffer_deltas
+                self._buffered_deltas_map[instrument_id] = buffer_deltas
 
             buffer_deltas.append(delta)
             is_last_delta = delta.flags == RecordFlag.F_LAST
 
             if is_last_delta:
                 deltas = OrderBookDeltas(
-                    instrument_id=delta.instrument_id,
+                    instrument_id=instrument_id,
                     deltas=buffer_deltas
                 )
                 self._msgbus.publish_c(
-                    topic=f"data.book.deltas"
-                        f".{deltas.instrument_id.venue}"
-                        f".{deltas.instrument_id.symbol}",
+                    topic=self._get_deltas_topic(instrument_id),
                     msg=deltas,
                 )
                 buffer_deltas.clear()
         else:
             deltas = OrderBookDeltas(
-                instrument_id=delta.instrument_id,
+                instrument_id=instrument_id,
                 deltas=[delta]
             )
             self._msgbus.publish_c(
-                 topic=f"data.book.deltas"
-                    f".{deltas.instrument_id.venue}"
-                    f".{deltas.instrument_id.symbol}",
+                topic=self._get_deltas_topic(instrument_id),
                 msg=deltas,
             )
 
@@ -1710,13 +1815,14 @@ cdef class DataEngine(Component):
         cdef OrderBookDeltas deltas_to_publish = None
         cdef list[OrderBookDelta] buffer_deltas = None
         cdef bint is_last_delta = False
+        cdef InstrumentId instrument_id = deltas.instrument_id
 
         if self._buffer_deltas:
-            buffer_deltas = self._buffered_deltas_map.get(deltas.instrument_id)
+            buffer_deltas = self._buffered_deltas_map.get(instrument_id)
 
             if buffer_deltas is None:
                 buffer_deltas = []
-                self._buffered_deltas_map[deltas.instrument_id] = buffer_deltas
+                self._buffered_deltas_map[instrument_id] = buffer_deltas
 
             for delta in deltas.deltas:
                 buffer_deltas.append(delta)
@@ -1724,61 +1830,55 @@ cdef class DataEngine(Component):
 
                 if is_last_delta:
                     deltas_to_publish = OrderBookDeltas(
-                        instrument_id=deltas.instrument_id,
+                        instrument_id=instrument_id,
                         deltas=buffer_deltas,
                     )
                     self._msgbus.publish_c(
-                        topic=f"data.book.deltas"
-                            f".{deltas.instrument_id.venue}"
-                            f".{deltas.instrument_id.symbol}",
+                        topic=self._get_deltas_topic(instrument_id),
                         msg=deltas_to_publish,
                     )
                     buffer_deltas.clear()
         else:
             self._msgbus.publish_c(
-                topic=f"data.book.deltas"
-                    f".{deltas.instrument_id.venue}"
-                    f".{deltas.instrument_id.symbol}",
+                topic=self._get_deltas_topic(instrument_id),
                 msg=deltas,
             )
 
     cpdef void _handle_order_book_depth(self, OrderBookDepth10 depth):
         self._msgbus.publish_c(
-            topic=f"data.book.depth"
-                  f".{depth.instrument_id.venue}"
-                  f".{depth.instrument_id.symbol}",
+            topic=self._get_depth_topic(depth.instrument_id),
             msg=depth,
         )
 
     cpdef void _handle_quote_tick(self, QuoteTick tick):
         self._cache.add_quote_tick(tick)
 
+        cdef InstrumentId instrument_id = tick.instrument_id
+
         # Handle synthetics update
-        cdef list synthetics = self._synthetic_quote_feeds.get(tick.instrument_id)
+        cdef list synthetics = self._synthetic_quote_feeds.get(instrument_id)
 
         if synthetics is not None:
             self._update_synthetics_with_quote(synthetics, tick)
 
         self._msgbus.publish_c(
-            topic=f"data.quotes"
-                  f".{tick.instrument_id.venue}"
-                  f".{tick.instrument_id.symbol}",
+            topic=self._get_quotes_topic(instrument_id),
             msg=tick,
         )
 
     cpdef void _handle_trade_tick(self, TradeTick tick):
         self._cache.add_trade_tick(tick)
 
+        cdef InstrumentId instrument_id = tick.instrument_id
+
         # Handle synthetics update
-        cdef list synthetics = self._synthetic_trade_feeds.get(tick.instrument_id)
+        cdef list synthetics = self._synthetic_trade_feeds.get(instrument_id)
 
         if synthetics is not None:
             self._update_synthetics_with_trade(synthetics, tick)
 
         self._msgbus.publish_c(
-            topic=f"data.trades"
-                  f".{tick.instrument_id.venue}"
-                  f".{tick.instrument_id.symbol}",
+            topic=self._get_trades_topic(instrument_id),
             msg=tick,
         )
 
@@ -1786,9 +1886,7 @@ cdef class DataEngine(Component):
         self._cache.add_mark_price(mark_price)
 
         self._msgbus.publish_c(
-            topic=f"data.mark_prices"
-                  f".{mark_price.instrument_id.venue}"
-                  f".{mark_price.instrument_id.symbol}",
+            topic=self._get_mark_prices_topic(mark_price.instrument_id),
             msg=mark_price,
         )
 
@@ -1796,10 +1894,16 @@ cdef class DataEngine(Component):
         self._cache.add_index_price(index_price)
 
         self._msgbus.publish_c(
-            topic=f"data.index_prices"
-                  f".{index_price.instrument_id.venue}"
-                  f".{index_price.instrument_id.symbol}",
+            topic=self._get_index_prices_topic(index_price.instrument_id),
             msg=index_price,
+        )
+
+    cpdef void _handle_funding_rate(self, FundingRateUpdate funding_rate):
+        self._cache.add_funding_rate(funding_rate)
+
+        self._msgbus.publish_c(
+            topic=self._get_funding_rates_topic(funding_rate.instrument_id),
+            msg=funding_rate,
         )
 
     cpdef void _handle_bar(self, Bar bar):
@@ -1841,21 +1945,17 @@ cdef class DataEngine(Component):
         if not bar.is_revision:
             self._cache.add_bar(bar)
 
-        self._msgbus.publish_c(topic=f"data.bars.{bar_type}", msg=bar)
+        self._msgbus.publish_c(topic=self._get_bars_topic(bar_type), msg=bar)
 
     cpdef void _handle_instrument_status(self, InstrumentStatus data):
-        self._msgbus.publish_c(topic=f"data.status.{data.instrument_id.venue}.{data.instrument_id.symbol}", msg=data)
+        self._msgbus.publish_c(topic=self._get_status_topic(data.instrument_id), msg=data)
 
     cpdef void _handle_close_price(self, InstrumentClose data):
-        self._msgbus.publish_c(topic=f"data.venue.close_price.{data.instrument_id}", msg=data)
+        self._msgbus.publish_c(topic=self._get_close_prices_topic(data.instrument_id), msg=data)
 
     cpdef void _handle_custom_data(self, CustomData data):
-        topic = f"data.{data.data_type.topic}"
-        instrument_id = getattr(data.data, "instrument_id", None)
-
-        if instrument_id and not data.data_type.metadata:
-            topic = f"data.{data.data_type.type.__name__}.{instrument_id.venue}.{instrument_id.symbol.topic()}"
-
+        cdef InstrumentId instrument_id = getattr(data.data, "instrument_id", None)
+        cdef str topic = self._get_custom_data_topic(data.data_type, instrument_id)
         self._msgbus.publish_c(topic=topic, msg=data.data)
 
 # -- RESPONSE HANDLERS ----------------------------------------------------------------------------
@@ -1878,26 +1978,22 @@ cdef class DataEngine(Component):
             if response_2.data_type.type == Instrument:
                 update_catalog = response_2.params.get("update_catalog", False)
                 force_update_catalog = response_2.params.get("force_update_catalog", False)
-
-                if isinstance(response_2.data, list):
-                    self._handle_instruments(response_2.data, update_catalog, force_update_catalog)
-                else:
-                    self._handle_instrument(response_2.data, update_catalog, force_update_catalog)
+                self._handle_instruments(response_2.data, update_catalog, force_update_catalog)
             elif response_2.data_type.type == QuoteTick:
                 if response_2.params.get("bars_market_data_type"):
-                    response_2.data = self._handle_aggregated_bars(response_2.data, response_2.params)
+                    response_2.data = self._handle_aggregated_bars(response_2)
                     response_2.data_type = DataType(Bar)
                 else:
                     self._handle_quote_ticks(response_2.data)
             elif response_2.data_type.type == TradeTick:
                 if response_2.params.get("bars_market_data_type"):
-                    response_2.data = self._handle_aggregated_bars(response_2.data, response_2.params)
+                    response_2.data = self._handle_aggregated_bars(response_2)
                     response_2.data_type = DataType(Bar)
                 else:
                     self._handle_trade_ticks(response_2.data)
             elif response_2.data_type.type == Bar:
                 if response_2.params.get("bars_market_data_type"):
-                    response_2.data = self._handle_aggregated_bars(response_2.data, response_2.params)
+                    response_2.data = self._handle_aggregated_bars(response_2)
                 else:
                     self._handle_bars(response_2.data, response_2.data_type.metadata.get("partial"))
             # Note: custom data will use the callback submitted by the user in actor.request_data
@@ -1913,14 +2009,18 @@ cdef class DataEngine(Component):
 
     cdef DataResponse _handle_query_group_aux(self, DataResponse response):
         if response.data_type.type is Instrument:
+            instrument_properties = response.params.get("instrument_properties")
+            data = [self._modify_instrument_properties(instrument, instrument_properties) for instrument in response.data]
+            response.data = data
+
             return response
 
         correlation_id = response.correlation_id
 
         if correlation_id not in self._query_group_n_responses or self._query_group_n_responses[correlation_id] == 1:
             self._check_bounds(response)
-            start = response.params.get("request_ts_start")
-            end = response.params.get("request_ts_end")
+            start = response.start.value if response.start is not None else None
+            end = response.end.value if response.end is not None else None
             identifier = response.params.get("identifier")
             update_catalog = response.params.get("update_catalog", False)
 
@@ -1953,8 +2053,8 @@ cdef class DataEngine(Component):
             update_catalog = response.params.get("update_catalog", False)
 
             if update_catalog:
-                start = response.params.get("request_ts_start")
-                end = response.params.get("request_ts_end")
+                start = response.start.value if response.start is not None else None
+                end = response.end.value if response.end is not None else None
                 identifier = response.params.get("identifier")
                 self._update_catalog(
                     response.data,
@@ -1973,14 +2073,23 @@ cdef class DataEngine(Component):
 
         return response
 
+    cpdef Instrument _modify_instrument_properties(self, Instrument instrument, dict instrument_properties):
+        if instrument_properties is None:
+            return instrument
+
+        instrument_dict = type(instrument).to_dict(instrument)
+        instrument_dict.update(instrument_properties)
+
+        return type(instrument).from_dict(instrument_dict)
+
     cpdef void _check_bounds(self, DataResponse response):
         cdef int data_len = len(response.data)
 
         if data_len == 0:
             return
 
-        cdef uint64_t start = response.params.get("request_ts_start", 0)
-        cdef uint64_t end = response.params.get("request_ts_end", 0)
+        cdef uint64_t start = response.start.value if response.start is not None else 0
+        cdef uint64_t end = response.end.value if response.end is not None else 0
         cdef int first_index = 0
         cdef int last_index = data_len - 1
 
@@ -2001,7 +2110,7 @@ cdef class DataEngine(Component):
 
     def _update_catalog(
         self,
-        ticks: list,
+        data: list,
         data_cls: type,
         identifier: object,
         start: int | None = None,
@@ -2021,11 +2130,11 @@ cdef class DataEngine(Component):
             used_catalog = list(self._catalogs.values())[0]
 
         if used_catalog is not None:
-            if len(ticks) == 0 and data_cls and start and end:
+            if len(data) == 0 and data_cls and start and end:
                 # identifier can be None for custom data
                 used_catalog.extend_file_name(data_cls, identifier, start, end)
             else:
-                used_catalog.write_data(ticks, start, end)
+                used_catalog.write_data(data, start, end)
         else:
             self._log.warning("No catalog available for appending data.")
 
@@ -2074,18 +2183,23 @@ cdef class DataEngine(Component):
                     # - with the partial bar being for a now removed aggregator.
                     self._log.error("No aggregator for partial bar update")
 
-    cpdef dict _handle_aggregated_bars(self, list ticks, dict params):
+    cpdef dict _handle_aggregated_bars(self, DataResponse response):
         # Closure is not allowed in cpdef functions so we call a cdef function
-        return self._handle_aggregated_bars_aux(ticks, params)
+        return self._handle_aggregated_bars_aux(response)
 
-    cdef dict _handle_aggregated_bars_aux(self, list ticks, dict params):
-        result = {}
+    cdef dict _handle_aggregated_bars_aux(self, DataResponse response):
+        cdef dict result = {}
+        cdef list ticks = response.data
+        cdef dict params = response.params
 
         if len(ticks) == 0:
             self._log.warning("_handle_aggregated_bars: No data to aggregate")
             return result
 
-        bars_result = {}
+        # Extract start and end time from original request timing
+        cdef uint64_t start_ns = dt_to_unix_nanos(response.start)
+        cdef uint64_t end_ns = dt_to_unix_nanos(response.end)
+        cdef dict bars_result = {}
 
         if params["include_external_data"]:
             if params["bars_market_data_type"] == "quote_ticks":
@@ -2117,24 +2231,19 @@ cdef class DataEngine(Component):
                     self._bar_aggregators[bar_type.standard()] = aggregator
 
             aggregated_bars = []
-            handler = lambda bar: aggregated_bars.append(bar)
+            handler = aggregated_bars.append
+            aggregator.start_batch_update(handler, start_ns)
 
             if params["bars_market_data_type"] == "quote_ticks" and not bar_type.is_composite():
-                aggregator.start_batch_update(handler, ticks[0].ts_event)
-
                 for tick in ticks:
                     aggregator.handle_quote_tick(tick)
             elif params["bars_market_data_type"] == "trade_ticks" and not bar_type.is_composite():
-                aggregator.start_batch_update(handler, ticks[0].ts_event)
-
                 for tick in ticks:
                     aggregator.handle_trade_tick(tick)
             else:
                 input_bars = bars_result[bar_type.composite()]
 
                 if len(input_bars) > 0:
-                    aggregator.start_batch_update(handler, input_bars[0].ts_init)
-
                     for bar in input_bars:
                         aggregator.handle_bar(bar)
 
@@ -2156,8 +2265,129 @@ cdef class DataEngine(Component):
 
 # -- INTERNAL -------------------------------------------------------------------------------------
 
+    cdef str _get_instruments_topic(self, InstrumentId instrument_id):
+        cdef str topic = self._topic_cache_instruments.get(instrument_id)
+        if topic is None:
+            topic = f"data.instrument.{instrument_id.venue}.{instrument_id.symbol}"
+            self._topic_cache_instruments[instrument_id] = topic
+
+        return topic
+
+    cdef str _get_deltas_topic(self, InstrumentId instrument_id):
+        cdef str topic = self._topic_cache_deltas.get(instrument_id)
+        if topic is None:
+            topic = f"data.book.deltas.{instrument_id.venue}.{instrument_id.symbol}"
+            self._topic_cache_deltas[instrument_id] = topic
+
+        return topic
+
+    cdef str _get_depth_topic(self, InstrumentId instrument_id):
+        cdef str topic = self._topic_cache_depth.get(instrument_id)
+        if topic is None:
+            topic = f"data.book.depth.{instrument_id.venue}.{instrument_id.symbol}"
+            self._topic_cache_depth[instrument_id] = topic
+
+        return topic
+
+    cdef str _get_quotes_topic(self, InstrumentId instrument_id):
+        cdef str topic = self._topic_cache_quotes.get(instrument_id)
+        if topic is None:
+            topic = f"data.quotes.{instrument_id.venue}.{instrument_id.symbol}"
+            self._topic_cache_quotes[instrument_id] = topic
+
+        return topic
+
+    cdef str _get_trades_topic(self, InstrumentId instrument_id):
+        cdef str topic = self._topic_cache_trades.get(instrument_id)
+        if topic is None:
+            topic = f"data.trades.{instrument_id.venue}.{instrument_id.symbol}"
+            self._topic_cache_trades[instrument_id] = topic
+
+        return topic
+
+    cdef str _get_status_topic(self, InstrumentId instrument_id):
+        cdef str topic = self._topic_cache_status.get(instrument_id)
+        if topic is None:
+            topic = f"data.status.{instrument_id.venue}.{instrument_id.symbol}"
+            self._topic_cache_status[instrument_id] = topic
+
+        return topic
+
+    cdef str _get_mark_prices_topic(self, InstrumentId instrument_id):
+        cdef str topic = self._topic_cache_mark_prices.get(instrument_id)
+        if topic is None:
+            topic = f"data.mark_prices.{instrument_id.venue}.{instrument_id.symbol}"
+            self._topic_cache_mark_prices[instrument_id] = topic
+
+        return topic
+
+    cdef str _get_index_prices_topic(self, InstrumentId instrument_id):
+        cdef str topic = self._topic_cache_index_prices.get(instrument_id)
+        if topic is None:
+            topic = f"data.index_prices.{instrument_id.venue}.{instrument_id.symbol}"
+            self._topic_cache_index_prices[instrument_id] = topic
+
+        return topic
+
+    cdef str _get_funding_rates_topic(self, InstrumentId instrument_id):
+        cdef str topic = self._topic_cache_funding_rates.get(instrument_id)
+        if topic is None:
+            topic = f"data.funding_rates.{instrument_id.venue}.{instrument_id.symbol}"
+            self._topic_cache_funding_rates[instrument_id] = topic
+        return topic
+
+    cdef str _get_close_prices_topic(self, InstrumentId instrument_id):
+        cdef str topic = self._topic_cache_close_prices.get(instrument_id)
+        if topic is None:
+            topic = f"data.venue.close_price.{instrument_id}"
+            self._topic_cache_close_prices[instrument_id] = topic
+
+        return topic
+
+    cdef str _get_snapshots_topic(self, InstrumentId instrument_id, int interval_ms):
+        cdef tuple key = (instrument_id, interval_ms)
+        cdef str topic = self._topic_cache_snapshots.get(key)
+        if topic is None:
+            topic = f"data.book.snapshots.{instrument_id.venue}.{instrument_id.symbol}.{interval_ms}"
+            self._topic_cache_snapshots[key] = topic
+
+        return topic
+
+    cdef str _get_custom_data_topic(self, DataType data_type, InstrumentId instrument_id = None):
+        cdef:
+            tuple[DataType, InstrumentId] key
+            str topic
+
+        # Handle both cases: with and without instrument_id
+        if instrument_id is not None and not data_type.metadata:
+            # Case 1: with instrument_id and no metadata - venue/symbol format
+            key = (data_type, instrument_id)
+            topic = self._topic_cache_custom.get(key)
+
+            if topic is None:
+                topic = f"data.{data_type.type.__name__}.{instrument_id.venue}.{instrument_id.symbol.topic()}"
+                self._topic_cache_custom[key] = topic
+
+            return topic
+        else:
+            # Case 2: without instrument_id or with metadata - use data_type.topic
+            topic = self._topic_cache_custom_simple.get(data_type)
+            if topic is None:
+                topic = f"data.{data_type.topic}"
+                self._topic_cache_custom_simple[data_type] = topic
+
+            return topic
+
+    cdef str _get_bars_topic(self, BarType bar_type):
+        cdef str topic = self._topic_cache_bars.get(bar_type)
+        if topic is None:
+            topic = f"data.bars.{bar_type}"
+            self._topic_cache_bars[bar_type] = topic
+
+        return topic
+
     # Python wrapper to enable callbacks
-    cpdef void _internal_update_instruments(self, list instruments: [Instrument]):
+    cpdef void _internal_update_instruments(self, list instruments):
         # Handle all instruments individually
         cdef Instrument instrument
 
@@ -2212,6 +2442,80 @@ cdef class DataEngine(Component):
             msg=order_book,
         )
 
+    cpdef void _start_bar_aggregator(self, MarketDataClient client, SubscribeBars command):
+        cdef Instrument instrument = self._cache.instrument(command.bar_type.instrument_id)
+
+        if instrument is None:
+            self._log.error(
+                f"Cannot start bar aggregation: "
+                f"no instrument found for {command.bar_type.instrument_id}",
+            )
+            return
+
+        # An aggregator may already have been created with actor.request_aggregated_bars and _handle_aggregated_bars
+        aggregator = self._bar_aggregators.get(command.bar_type.standard())
+
+        if aggregator is None:
+            aggregator = self._create_bar_aggregator(instrument, command.bar_type)
+
+        # Set if awaiting initial partial bar
+        aggregator.set_await_partial(command.await_partial)
+
+        # Add aggregator
+        self._bar_aggregators[command.bar_type.standard()] = aggregator
+        self._log.debug(f"Added {aggregator} for {command.bar_type} bars")
+
+        # Subscribe to required data
+        if command.bar_type.is_composite():
+            composite_bar_type = command.bar_type.composite()
+
+            self._msgbus.subscribe(
+                topic=self._get_bars_topic(composite_bar_type),
+                handler=aggregator.handle_bar,
+            )
+            subscribe = SubscribeBars(
+                bar_type=composite_bar_type,
+                client_id=command.client_id,
+                venue=command.venue,
+                command_id=command.id,
+                ts_init=command.ts_init,
+                await_partial=command.await_partial,
+                params=command.params
+            )
+            self._handle_subscribe_bars(client, subscribe)
+        elif command.bar_type.spec.price_type == PriceType.LAST:
+            self._msgbus.subscribe(
+                topic=self._get_trades_topic(command.bar_type.instrument_id),
+                handler=aggregator.handle_trade_tick,
+                priority=5,
+            )
+            subscribe = SubscribeTradeTicks(
+                instrument_id=command.bar_type.instrument_id,
+                client_id=command.client_id,
+                venue=command.venue,
+                command_id=command.id,
+                ts_init=command.ts_init,
+                params=command.params
+            )
+            self._handle_subscribe_trade_ticks(client, subscribe)
+        else:
+            self._msgbus.subscribe(
+                topic=self._get_quotes_topic(command.bar_type.instrument_id),
+                handler=aggregator.handle_quote_tick,
+                priority=5,
+            )
+            subscribe = SubscribeQuoteTicks(
+                instrument_id=command.bar_type.instrument_id,
+                client_id=command.client_id,
+                venue=command.venue,
+                command_id=command.id,
+                ts_init=command.ts_init,
+                params=command.params
+            )
+            self._handle_subscribe_quote_ticks(client, subscribe)
+
+        aggregator.is_running = True
+
     cpdef object _create_bar_aggregator(self, Instrument instrument, BarType bar_type):
         if bar_type.spec.is_time_aggregated():
             # Use configured bar_build_delay, with special handling for composite bars
@@ -2259,84 +2563,6 @@ cdef class DataEngine(Component):
 
         return aggregator
 
-    cpdef void _start_bar_aggregator(self, MarketDataClient client, SubscribeBars command):
-        cdef Instrument instrument = self._cache.instrument(command.bar_type.instrument_id)
-
-        if instrument is None:
-            self._log.error(
-                f"Cannot start bar aggregation: "
-                f"no instrument found for {command.bar_type.instrument_id}",
-            )
-            return
-
-        # An aggregator may already have been created with actor.request_aggregated_bars and _handle_aggregated_bars
-        aggregator = self._bar_aggregators.get(command.bar_type.standard())
-
-        if aggregator is None:
-            aggregator = self._create_bar_aggregator(instrument, command.bar_type)
-
-        # Set if awaiting initial partial bar
-        aggregator.set_await_partial(command.await_partial)
-
-        # Add aggregator
-        self._bar_aggregators[command.bar_type.standard()] = aggregator
-        self._log.debug(f"Added {aggregator} for {command.bar_type} bars")
-
-        # Subscribe to required data
-        if command.bar_type.is_composite():
-            composite_bar_type = command.bar_type.composite()
-
-            self._msgbus.subscribe(
-                topic=f"data.bars.{composite_bar_type}",
-                handler=aggregator.handle_bar,
-            )
-            subscribe = SubscribeBars(
-                bar_type=composite_bar_type,
-                client_id=command.client_id,
-                venue=command.venue,
-                command_id=command.id,
-                ts_init=command.ts_init,
-                await_partial=command.await_partial,
-                params=command.params
-            )
-            self._handle_subscribe_bars(client, subscribe)
-        elif command.bar_type.spec.price_type == PriceType.LAST:
-            self._msgbus.subscribe(
-                topic=f"data.trades"
-                      f".{command.bar_type.instrument_id.venue}"
-                      f".{command.bar_type.instrument_id.symbol}",
-                handler=aggregator.handle_trade_tick,
-                priority=5,
-            )
-            subscribe = SubscribeTradeTicks(
-                instrument_id=command.bar_type.instrument_id,
-                client_id=command.client_id,
-                venue=command.venue,
-                command_id=command.id,
-                ts_init=command.ts_init,
-                params=command.params
-            )
-            self._handle_subscribe_trade_ticks(client, subscribe)
-        else:
-            self._msgbus.subscribe(
-                topic=f"data.quotes"
-                      f".{command.bar_type.instrument_id.venue}"
-                      f".{command.bar_type.instrument_id.symbol}",
-                handler=aggregator.handle_quote_tick,
-                priority=5,
-            )
-            subscribe = SubscribeQuoteTicks(
-                instrument_id=command.bar_type.instrument_id,
-                client_id=command.client_id,
-                venue=command.venue,
-                command_id=command.id,
-                ts_init=command.ts_init,
-                params=command.params
-            )
-            self._handle_subscribe_quote_ticks(client, subscribe)
-
-        aggregator.is_running = True
-
     cpdef void _stop_bar_aggregator(self, MarketDataClient client, UnsubscribeBars command):
         cdef aggregator = self._bar_aggregators.get(command.bar_type.standard())
 
@@ -2354,7 +2580,7 @@ cdef class DataEngine(Component):
         if command.bar_type.is_composite():
             composite_bar_type = command.bar_type.composite()
             self._msgbus.unsubscribe(
-                topic=f"data.bars.{composite_bar_type}",
+                topic=self._get_bars_topic(composite_bar_type),
                 handler=aggregator.handle_bar,
             )
             unsubscribe = UnsubscribeBars(
@@ -2368,9 +2594,7 @@ cdef class DataEngine(Component):
             self._handle_unsubscribe_bars(client, unsubscribe)
         elif command.bar_type.spec.price_type == PriceType.LAST:
             self._msgbus.unsubscribe(
-                topic=f"data.trades"
-                      f".{command.bar_type.instrument_id.venue}"
-                      f".{command.bar_type.instrument_id.symbol}",
+                topic=self._get_trades_topic(command.bar_type.instrument_id),
                 handler=aggregator.handle_trade_tick,
             )
             unsubscribe = UnsubscribeTradeTicks(
@@ -2384,9 +2608,7 @@ cdef class DataEngine(Component):
             self._handle_unsubscribe_trade_ticks(client, unsubscribe)
         else:
             self._msgbus.unsubscribe(
-                topic=f"data.quotes"
-                      f".{command.bar_type.instrument_id.venue}"
-                      f".{command.bar_type.instrument_id.symbol}",
+                topic=self._get_quotes_topic(command.bar_type.instrument_id),
                 handler=aggregator.handle_quote_tick,
             )
             unsubscribe = UnsubscribeQuoteTicks(
@@ -2401,6 +2623,64 @@ cdef class DataEngine(Component):
 
         # Remove from aggregators
         del self._bar_aggregators[command.bar_type.standard()]
+
+    cpdef void _start_spread_quote_aggregator(self, MarketDataClient client, SubscribeQuoteTicks command):
+        cdef InstrumentId spread_instrument_id = command.instrument_id
+
+        if spread_instrument_id in self._spread_quote_aggregators:
+            return
+
+        cdef SpreadQuoteAggregator aggregator = SpreadQuoteAggregator(
+            spread_instrument_id=spread_instrument_id,
+            handler=self.process,
+            msgbus=self._msgbus,
+            cache=self._cache,
+            clock=self._clock,
+            update_interval_seconds=60,  # Update every 60 seconds
+        )
+        self._spread_quote_aggregators[spread_instrument_id] = aggregator
+
+        # Subscribe to quotes for component instruments
+        cdef list components = spread_instrument_id.to_list()
+
+        for component_id, _ in components:
+            subscribe = SubscribeQuoteTicks(
+                instrument_id=component_id,
+                client_id=command.client_id,
+                venue=command.venue,
+                command_id=command.id,
+                ts_init=command.ts_init,
+                params=command.params,
+            )
+            self._handle_subscribe_quote_ticks(client, subscribe)
+
+    cpdef void _stop_spread_quote_aggregator(self, MarketDataClient client, UnsubscribeQuoteTicks command):
+        cdef InstrumentId spread_instrument_id = command.instrument_id
+        cdef SpreadQuoteAggregator aggregator = self._spread_quote_aggregators.get(spread_instrument_id)
+
+        if aggregator is None:
+            self._log.warning(
+                f"Cannot stop spread quote aggregator: no aggregator found for {spread_instrument_id}",
+            )
+            return
+
+        aggregator.stop()
+
+        # Unsubscribe from component instruments
+        cdef list components = spread_instrument_id.to_list()
+
+        for component_id, _ in components:
+            unsubscribe = UnsubscribeQuoteTicks(
+                instrument_id=component_id,
+                client_id=command.client_id,
+                venue=command.venue,
+                command_id=command.id,
+                ts_init=command.ts_init,
+                params=command.params,
+            )
+            self._handle_unsubscribe_quote_ticks(client, unsubscribe)
+
+        del self._spread_quote_aggregators[spread_instrument_id]
 
     cpdef void _update_synthetics_with_quote(self, list synthetics, QuoteTick update):
         cdef SyntheticInstrument synthetic
@@ -2454,9 +2734,7 @@ cdef class DataEngine(Component):
         )
 
         self._msgbus.publish_c(
-            topic=f"data.quotes"
-                  f".{synthetic_instrument_id.venue}"
-                  f".{synthetic_instrument_id.symbol}",
+            topic=self._get_quotes_topic(synthetic_instrument_id),
             msg=synthetic_quote,
         )
 
@@ -2469,7 +2747,6 @@ cdef class DataEngine(Component):
     cpdef void _update_synthetic_with_trade(self, SyntheticInstrument synthetic, TradeTick update):
         cdef list components = synthetic.components
         cdef list[double] inputs = []
-
         cdef:
             InstrumentId instrument_id
             TradeTick component_quote
@@ -2506,8 +2783,6 @@ cdef class DataEngine(Component):
         )
 
         self._msgbus.publish_c(
-            topic=f"data.trades"
-                  f".{synthetic_instrument_id.venue}"
-                  f".{synthetic_instrument_id.symbol}",
+            topic=self._get_trades_topic(synthetic_instrument_id),
             msg=synthetic_trade,
         )

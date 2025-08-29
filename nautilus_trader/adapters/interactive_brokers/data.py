@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+from __future__ import annotations
 
 import asyncio
 from operator import attrgetter
@@ -28,6 +29,7 @@ from nautilus_trader.adapters.interactive_brokers.providers import InteractiveBr
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
+from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestData
 from nautilus_trader.data.messages import RequestInstrument
@@ -56,8 +58,10 @@ from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.instruments.currency_pair import CurrencyPair
 
 
@@ -166,8 +170,28 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         )
 
     async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
-        raise NotImplementedError(  # pragma: no cover
-            "implement the `_subscribe_order_book_deltas` coroutine",  # pragma: no cover
+        if command.book_type == BookType.L3_MBO:
+            self._log.error(
+                "Cannot subscribe to order book deltas: "
+                "L3_MBO data is not published by Interactive Brokers. "
+                "Valid book types are L1_MBP, L2_MBP",
+            )
+            return
+
+        if not (instrument := self._cache.instrument(command.instrument_id)):
+            self._log.error(
+                f"Cannot subscribe to order book deltas for {command.instrument_id}: instrument not found",
+            )
+            return
+
+        depth = 20 if not command.depth else command.depth
+        is_smart_depth = command.params.get("is_smart_depth", True)
+
+        await self._client.subscribe_order_book(
+            instrument_id=command.instrument_id,
+            contract=IBContract(**instrument.info["contract"]),
+            depth=depth,
+            is_smart_depth=is_smart_depth,
         )
 
     async def _subscribe_order_book_snapshots(self, command: SubscribeOrderBook) -> None:
@@ -176,18 +200,30 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         )
 
     async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
-        if not (instrument := self._cache.instrument(command.instrument_id)):
+        contract = self.instrument_provider.contract.get(command.instrument_id)
+
+        if not contract:
             self._log.error(
                 f"Cannot subscribe to quotes for {command.instrument_id}: instrument not found",
             )
             return
 
-        await self._client.subscribe_ticks(
-            instrument_id=command.instrument_id,
-            contract=IBContract(**instrument.info["contract"]),
-            tick_type="BidAsk",
-            ignore_size=self._ignore_quote_tick_size_updates,
-        )
+        batch_quotes = command.params.get("batch_quotes", False)
+
+        if contract.secType == "BAG" or batch_quotes:
+            # For OptionSpread (BAG) instruments, use reqMktData instead of reqTickByTickData
+            # because reqTickByTickData doesn't support BAG contracts
+            await self._client.subscribe_market_data(
+                instrument_id=command.instrument_id,
+                contract=contract,
+                generic_tick_list="",  # Empty for basic bid/ask data
+            )
+        else:
+            await self._client.subscribe_market_data(
+                instrument_id=command.instrument_id,
+                contract=contract,
+                generic_tick_list="",  # Empty for basic bid/ask data
+            )
 
     async def _subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
         if not (instrument := self._cache.instrument(command.instrument_id)):
@@ -210,20 +246,24 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         )
 
     async def _subscribe_bars(self, command: SubscribeBars) -> None:
-        if not (instrument := self._cache.instrument(command.bar_type.instrument_id)):
-            self._log.error(f"Cannot subscribe to {command.bar_type} bars: instrument not found")
+        contract = self.instrument_provider.contract.get(command.bar_type.instrument_id)
+
+        if not contract:
+            self._log.error(
+                f"Cannot subscribe to bars for {command.bar_type.instrument_id}: instrument not found",
+            )
             return
 
         if command.bar_type.spec.timedelta.total_seconds() == 5:
             await self._client.subscribe_realtime_bars(
                 bar_type=command.bar_type,
-                contract=IBContract(**instrument.info["contract"]),
+                contract=contract,
                 use_rth=self._use_regular_trading_hours,
             )
         else:
             await self._client.subscribe_historical_bars(
                 bar_type=command.bar_type,
-                contract=IBContract(**instrument.info["contract"]),
+                contract=contract,
                 use_rth=self._use_regular_trading_hours,
                 handle_revised_bars=self._handle_revised_bars,
             )
@@ -250,8 +290,10 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         )
 
     async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
-        raise NotImplementedError(  # pragma: no cover
-            "implement the `_unsubscribe_order_book_deltas` coroutine",  # pragma: no cover
+        is_smart_depth = command.params.get("is_smart_depth", True)
+        await self._client.unsubscribe_order_book(
+            instrument_id=command.instrument_id,
+            is_smart_depth=is_smart_depth,
         )
 
     async def _unsubscribe_order_book_snapshots(self, command: UnsubscribeOrderBook) -> None:
@@ -283,18 +325,24 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         )
 
     async def _request_instrument(self, request: RequestInstrument) -> None:
-        if request.start is not None:
+        # Check if start/end times are too far from current time
+        now = self._clock.utc_now()
+        now_ns = dt_to_unix_nanos(now)
+        start_ns = dt_to_unix_nanos(request.start)
+        end_ns = dt_to_unix_nanos(request.end)
+
+        if abs(start_ns - now_ns) > 10_000_000:  # More than 10ms difference
             self._log.warning(
                 f"Requesting instrument {request.instrument_id} with specified `start` which has no effect",
             )
 
-        if request.end is not None:
+        if abs(end_ns - now_ns) > 10_000_000:  # More than 10ms difference
             self._log.warning(
                 f"Requesting instrument {request.instrument_id} with specified `end` which has no effect",
             )
 
         force_instrument_update = request.params.get("force_instrument_update", False)
-        await self.instrument_provider.load_async(
+        await self.instrument_provider.load_with_return_async(
             request.instrument_id,
             force_instrument_update=force_instrument_update,
         )
@@ -305,16 +353,58 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             self._log.warning(f"Instrument for {request.instrument_id} not available")
             return
 
-        self._handle_instrument(instrument, request.id, request.params)
+        self._handle_instrument(instrument, request.id, request.start, request.end, request.params)
 
     async def _request_instruments(self, request: RequestInstruments) -> None:
+        force_instrument_update = request.params.get("force_instrument_update", False)
+        loaded_instrument_ids: list[InstrumentId] = []
+
+        if "ib_contracts" in request.params:
+            # We allow to pass IBContract parameters to build futures or option chains
+            ib_contracts = [IBContract(**d) for d in request.params["ib_contracts"]]
+            loaded_instrument_ids = await self.instrument_provider.load_ids_with_return_async(
+                ib_contracts,
+                force_instrument_update=force_instrument_update,
+            )
+            loaded_instruments: list[Instrument] = []
+
+            if loaded_instrument_ids:
+                for instrument_id in loaded_instrument_ids:
+                    instrument = self._cache.instrument(instrument_id)
+
+                    if instrument:
+                        loaded_instruments.append(instrument)
+                    else:
+                        self._log.warning(
+                            f"Instrument {instrument_id} not found in cache after loading",
+                        )
+            else:
+                self._log.warning("No instrument IDs were returned from load_ids_async")
+
+            self._handle_instruments(
+                venue=request.venue,
+                instruments=loaded_instruments,
+                correlation_id=request.id,
+                start=request.start,
+                end=request.end,
+                params=request.params,
+            )
+            return
+
         # We ensure existing instruments in the cache have their IB representations loaded as well in the adapter
         instruments = self._cache.instruments()
         instrument_ids = [instrument.id for instrument in instruments]
-        force_instrument_update = request.params.get("force_instrument_update", False)
-        await self.instrument_provider.load_ids_async(
+        loaded_instrument_ids = await self.instrument_provider.load_ids_with_return_async(
             instrument_ids,
             force_instrument_update=force_instrument_update,
+        )
+        self._handle_instruments(
+            venue=request.venue,
+            instruments=[],
+            correlation_id=request.id,
+            start=request.start,
+            end=request.end,
+            params=request.params,
         )
 
     async def _request_quote_ticks(self, request: RequestQuoteTicks) -> None:
@@ -337,7 +427,14 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             self._log.warning(f"No quote tick data received for {request.instrument_id}")
             return
 
-        self._handle_quote_ticks(request.instrument_id, ticks, request.id, request.params)
+        self._handle_quote_ticks(
+            request.instrument_id,
+            ticks,
+            request.id,
+            request.start,
+            request.end,
+            request.params,
+        )
 
     async def _request_trade_ticks(self, request: RequestTradeTicks) -> None:
         if not (instrument := self._cache.instrument(request.instrument_id)):
@@ -365,7 +462,14 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             self._log.warning(f"No trades received for {request.instrument_id}")
             return
 
-        self._handle_trade_ticks(request.instrument_id, ticks, request.id, request.params)
+        self._handle_trade_ticks(
+            request.instrument_id,
+            ticks,
+            request.id,
+            request.start,
+            request.end,
+            request.params,
+        )
 
     async def _handle_ticks_request(
         self,
@@ -406,7 +510,9 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         return ticks
 
     async def _request_bars(self, request: RequestBars) -> None:
-        if not (instrument := self._cache.instrument(request.bar_type.instrument_id)):
+        contract = self.instrument_provider.contract.get(request.bar_type.instrument_id)
+
+        if not contract:
             self._log.error(f"Cannot request {request.bar_type} bars: instrument not found")
             return
 
@@ -416,44 +522,32 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             )
             return
 
-        limit = request.limit
-
-        if not request.start and limit == 0:
-            limit = 1000
-
-        end = request.end
-
-        if not request.end:
-            end = pd.Timestamp.utcnow()
-
-        if request.start:
-            duration = end - request.start
-            duration_str = timedelta_to_duration_str(duration)
-        else:
-            duration_str = "7 D" if request.bar_type.spec.timedelta.total_seconds() >= 60 else "1 D"
+        duration = request.end - request.start
+        duration_str = timedelta_to_duration_str(duration)
 
         bars: list[Bar] = []
 
-        while (request.start and end > request.start) or (len(bars) < limit > 0):
-            bars_part: list[Bar] = await self._client.get_historical_bars(
-                bar_type=request.bar_type,
-                contract=IBContract(**instrument.info["contract"]),
-                use_rth=self._use_regular_trading_hours,
-                end_date_time=end,
-                duration=duration_str,
-                timeout=self._request_timeout,
-            )
-            bars.extend(bars_part)
-
-            if not bars_part or request.start:
-                break
-
-            end = pd.Timestamp(min(bars, key=attrgetter("ts_event")).ts_event, tz="UTC")
+        bars = await self._client.get_historical_bars(
+            bar_type=request.bar_type,
+            contract=contract,
+            use_rth=self._use_regular_trading_hours,
+            end_date_time=request.end,
+            duration=duration_str,
+            timeout=self._request_timeout,
+        )
 
         if bars:
             bars = list(set(bars))
             bars.sort(key=lambda x: x.ts_init)
-            self._handle_bars(request.bar_type, bars, bars[0], request.id, request.params)
+            self._handle_bars(
+                request.bar_type,
+                bars,
+                bars[0],
+                request.id,
+                request.start,
+                request.end,
+                request.params,
+            )
             status_msg = {"id": request.id, "status": "Success"}
         else:
             self._log.warning(f"No bar data received for {request.bar_type}")

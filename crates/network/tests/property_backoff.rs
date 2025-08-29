@@ -171,8 +171,13 @@ proptest! {
             backoff.next_duration();
         }
 
-        // State should have changed (unless immediate_first with single iteration)
-        if !(immediate_first && advance_iterations == 1) {
+        // State should have changed when growth beyond the initial delay is
+        // actually possible.  This is not the case when the initial delay is
+        // already at the maximum because further calls will clamp to the
+        // same maximum value.  We therefore only assert a change when
+        //  * growth is possible (initial < max), and
+        //  * we are not in the special immediate-first + single iteration case.
+        if initial < max && !(immediate_first && advance_iterations == 1) {
             prop_assert_ne!(
                 backoff.current_delay(),
                 initial_delay,

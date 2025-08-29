@@ -38,7 +38,7 @@ use anyhow::{anyhow, bail};
 use enum_dispatch::enum_dispatch;
 use nautilus_core::{
     UnixNanos,
-    correctness::{check_equal_u8, check_predicate_true},
+    correctness::{check_equal_u8, check_positive_decimal, check_predicate_true},
 };
 use rust_decimal::{Decimal, RoundingStrategy, prelude::*};
 use rust_decimal_macros::dec;
@@ -55,7 +55,7 @@ use crate::{
     enums::{AssetClass, InstrumentClass, OptionKind},
     identifiers::{InstrumentId, Symbol, Venue},
     types::{
-        Currency, Money, Price, Quantity, price::check_positive_price,
+        Currency, Money, Price, Quantity, money::check_positive_money, price::check_positive_price,
         quantity::check_positive_quantity,
     },
 };
@@ -72,8 +72,8 @@ pub fn validate_instrument_common(
     lot_size: Option<Quantity>,
     max_quantity: Option<Quantity>,
     min_quantity: Option<Quantity>,
-    _max_notional: Option<Money>, // TODO: Needs `check_positive_money`
-    _min_notional: Option<Money>, // TODO: Needs `check_positive_money`
+    max_notional: Option<Money>,
+    min_notional: Option<Money>,
     max_price: Option<Price>,
     min_price: Option<Price>,
 ) -> anyhow::Result<()> {
@@ -85,9 +85,8 @@ pub fn validate_instrument_common(
         "size_precision",
     )?;
     check_positive_quantity(multiplier, "multiplier")?;
-    // TODO: check_positive_decimal
-    check_predicate_true(margin_init >= dec!(0), "margin_init negative")?;
-    check_predicate_true(margin_maint >= dec!(0), "margin_maint negative")?;
+    check_positive_decimal(margin_init, "margin_init")?;
+    check_positive_decimal(margin_maint, "margin_maint")?;
 
     if let Some(price_increment) = price_increment {
         check_positive_price(price_increment, "price_increment")?;
@@ -111,14 +110,13 @@ pub fn validate_instrument_common(
         check_positive_quantity(quantity, "max_quantity")?;
     }
 
-    // TODO: check_positive_money
-    // if let Some(notional) = max_notional {
-    //     check_positive_i128(notional.raw, "notional")?;
-    // }
-    //
-    // if let Some(notional) = min_notional {
-    //     check_positive_i128(notional.raw, "notional")?;
-    // }
+    if let Some(notional) = max_notional {
+        check_positive_money(notional, "max_notional")?;
+    }
+
+    if let Some(notional) = min_notional {
+        check_positive_money(notional, "min_notional")?;
+    }
 
     if let Some(max_price) = max_price {
         check_positive_price(max_price, "max_price")?;
@@ -656,13 +654,63 @@ mod tests {
 
     #[rstest]
     fn tick_navigation(currency_pair_btcusdt: CurrencyPair) {
-        let start = 10_000.1234;
+        let start = 10_000.123_4;
         let bid_0 = currency_pair_btcusdt.next_bid_price(start, 0).unwrap();
         let bid_1 = currency_pair_btcusdt.next_bid_price(start, 1).unwrap();
         assert!(bid_1 < bid_0);
         let asks = currency_pair_btcusdt.next_ask_prices(start, 3);
         assert_eq!(asks.len(), 3);
         assert!(asks[0] > bid_0);
+    }
+
+    #[rstest]
+    #[should_panic]
+    fn validate_negative_margin_init() {
+        let size_increment = Quantity::new(0.01, 2);
+        let multiplier = Quantity::new(1.0, 0);
+
+        validate_instrument_common(
+            2,
+            2,              // size_precision
+            size_increment, // size_increment
+            multiplier,     // multiplier
+            dec!(-0.01),    // margin_init
+            dec!(0.01),     // margin_maint
+            None,           // price_increment
+            None,           // lot_size
+            None,           // max_quantity
+            None,           // min_quantity
+            None,           // max_notional
+            None,           // min_notional
+            None,           // max_price
+            None,           // min_price
+        )
+        .unwrap();
+    }
+
+    #[rstest]
+    #[should_panic]
+    fn validate_negative_margin_maint() {
+        let size_increment = Quantity::new(0.01, 2);
+        let multiplier = Quantity::new(1.0, 0);
+
+        validate_instrument_common(
+            2,
+            2,              // size_precision
+            size_increment, // size_increment
+            multiplier,     // multiplier
+            dec!(0.01),     // margin_init
+            dec!(-0.01),    // margin_maint
+            None,           // price_increment
+            None,           // lot_size
+            None,           // max_quantity
+            None,           // min_quantity
+            None,           // max_notional
+            None,           // min_notional
+            None,           // max_price
+            None,           // min_price
+        )
+        .unwrap();
     }
 
     #[rstest]
@@ -838,8 +886,8 @@ mod tests {
     }
 
     #[rstest]
-    #[case(1.234_9999, false, "1.235000")]
-    #[case(1.234_9999, true, "1.234999")]
+    #[case(1.234_999_9, false, "1.235000")]
+    #[case(1.234_999_9, true, "1.234999")]
     fn make_qty_boundary(
         currency_pair_btcusdt: CurrencyPair,
         #[case] input: f64,
@@ -958,7 +1006,6 @@ mod tests {
         .unwrap();
     }
 
-    #[ignore = "WIP: needs check_positive_money"]
     #[rstest]
     #[should_panic]
     fn validate_non_positive_max_notional(currency_pair_btcusdt: CurrencyPair) {
@@ -1010,7 +1057,6 @@ mod tests {
         .unwrap();
     }
 
-    #[ignore = "WIP: needs check_positive_money"]
     #[rstest]
     #[should_panic]
     fn validate_negative_min_notional(currency_pair_btcusdt: CurrencyPair) {
@@ -1040,7 +1086,7 @@ mod tests {
     #[rstest]
     #[case::dp0(Decimal::new(1_000, 0), Decimal::new(2, 0), 500.0)]
     #[case::dp1(Decimal::new(10_000, 1), Decimal::new(2, 0), 500.0)]
-    #[case::dp2(Decimal::new(1_000_00, 2), Decimal::new(2, 0), 500.0)]
+    #[case::dp2(Decimal::new(100_000, 2), Decimal::new(2, 0), 500.0)]
     #[case::dp3(Decimal::new(1_000_000, 3), Decimal::new(2, 0), 500.0)]
     #[case::dp4(Decimal::new(10_000_000, 4), Decimal::new(2, 0), 500.0)]
     #[case::dp5(Decimal::new(100_000_000, 5), Decimal::new(2, 0), 500.0)]
@@ -1128,8 +1174,8 @@ mod tests {
     #[rstest]
     #[case(0.999_999, false)]
     #[case(0.999_999, true)]
-    #[case(1.000_0001, false)]
-    #[case(1.000_0001, true)]
+    #[case(1.000_000_1, false)]
+    #[case(1.000_000_1, true)]
     #[case(1.234_5, false)]
     #[case(1.234_5, true)]
     #[case(2.345_5, false)]
@@ -1208,5 +1254,25 @@ mod tests {
         let price = Price::new(px.to_f64().unwrap(), 8);
         let base = currency_pair_btcusdt.calculate_base_quantity(qty, price);
         assert!((base.as_f64() - expected).abs() < 1e-9);
+    }
+
+    #[rstest]
+    fn check_positive_money_ok(currency_pair_btcusdt: CurrencyPair) {
+        let money = Money::new(100.0, currency_pair_btcusdt.quote_currency());
+        assert!(check_positive_money(money, "money").is_ok());
+    }
+
+    #[rstest]
+    #[should_panic]
+    fn check_positive_money_zero(currency_pair_btcusdt: CurrencyPair) {
+        let money = Money::new(0.0, currency_pair_btcusdt.quote_currency());
+        check_positive_money(money, "money").unwrap();
+    }
+
+    #[rstest]
+    #[should_panic]
+    fn check_positive_money_negative(currency_pair_btcusdt: CurrencyPair) {
+        let money = Money::new(-0.01, currency_pair_btcusdt.quote_currency());
+        check_positive_money(money, "money").unwrap();
     }
 }

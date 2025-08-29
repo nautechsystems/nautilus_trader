@@ -49,6 +49,7 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import BatchCancelOrders
+from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import order_type_to_str
@@ -289,21 +290,127 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
             return
 
     async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None:
-        # TODO: Iterate batches of 10 order cancels, also validate order is not already closed
+        valid_cancels = self._filter_valid_cancels(command.cancels)
+        if not valid_cancels:
+            self._log.info("No valid orders to cancel in batch")
+            return
+
+        successful_cancels, failed_cancels = await self._process_cancel_batches(
+            valid_cancels,
+            command.instrument_id.symbol.value,
+        )
+
+        self._log.info(
+            f"Batch cancel completed: {len(successful_cancels)} successful, "
+            f"{len(failed_cancels)} failed out of {len(valid_cancels)} valid orders",
+        )
+
+    def _filter_valid_cancels(self, cancels: list[CancelOrder]) -> list[CancelOrder]:
+        # Filter out orders that are already closed or not found
+        valid_cancels = []
+        for cancel in cancels:
+            order = self._cache.order(cancel.client_order_id)
+            if order is None:
+                # Note: Following single cancel behavior - log error but don't emit cancel rejected event
+                # for orders not found in cache (may have been cancelled/filled via other means)
+                self._log.error(f"{cancel.client_order_id!r} not found to cancel")
+                continue
+
+            if order.is_closed:
+                self._log.warning(
+                    f"BatchCancelOrders command for {cancel.client_order_id!r} when order already {order.status_string()} "
+                    "(will not send to exchange)",
+                )
+                continue
+
+            valid_cancels.append(cancel)
+        return valid_cancels
+
+    async def _process_cancel_batches(
+        self,
+        valid_cancels: list[CancelOrder],
+        symbol: str,
+    ) -> tuple[list[CancelOrder], list[CancelOrder]]:
+        # Process cancel orders in batches of 10 (Binance API limit)
+        batch_size = 10
+        batches = [
+            valid_cancels[i : i + batch_size] for i in range(0, len(valid_cancels), batch_size)
+        ]
+
+        # Process all batches concurrently for better latency
+        batch_results = await asyncio.gather(
+            *[self._cancel_order_batch(batch, symbol) for batch in batches],
+            return_exceptions=True,
+        )
+
+        successful_cancels: list[CancelOrder] = []
+        failed_cancels: list[CancelOrder] = []
+
+        for result in batch_results:
+            if isinstance(result, Exception):
+                # If a batch failed with an exception, treat all orders in that batch as failed
+                # This shouldn't normally happen as exceptions are handled in _cancel_order_batch
+                self._log.error(f"Unexpected batch processing exception: {result}")
+                continue
+
+            success, failure = result  # type: ignore[misc]
+            successful_cancels.extend(success)
+            failed_cancels.extend(failure)
+
+        return successful_cancels, failed_cancels
+
+    async def _cancel_order_batch(
+        self,
+        batch: list[CancelOrder],
+        symbol: str,
+    ) -> tuple[list[CancelOrder], list[CancelOrder]]:
+        batch_client_order_ids = [c.client_order_id.value for c in batch]
+        self._log.debug(
+            f"Attempting to cancel batch of {len(batch)} orders: {batch_client_order_ids}",
+        )
+
+        retry_manager = await self._retry_manager_pool.acquire()
         try:
-            await self._futures_http_account.cancel_multiple_orders(
-                symbol=command.instrument_id.symbol.value,
-                client_order_ids=[c.client_order_id.value for c in command.cancels],
+            await retry_manager.run(
+                "cancel_multiple_orders",
+                batch_client_order_ids,
+                self._futures_http_account.cancel_multiple_orders,
+                symbol=symbol,
+                client_order_ids=batch_client_order_ids,
             )
+
+            if retry_manager.result:
+                self._log.debug(f"Successfully cancelled batch: {batch_client_order_ids}")
+                return batch, []
+            else:
+                self._log.error(
+                    f"Failed to cancel batch: {batch_client_order_ids}, reason: {retry_manager.message}",
+                )
+                self._generate_cancel_rejected_events(batch, retry_manager.message)
+                return [], batch
+
         except BinanceError as e:
             error_code = BinanceErrorCode(int(e.message["code"]))
             if error_code == BinanceErrorCode.CANCEL_REJECTED:
-                self._log.warning(f"Cancel rejected: {e.message}")
+                self._log.warning(f"Cancel batch rejected: {e.message}")
             else:
-                self._log.exception(
-                    f"Cannot cancel multiple orders: {e.message}",
-                    e,
-                )
+                self._log.exception(f"Cannot cancel batch of orders: {e.message}", e)
+
+            self._generate_cancel_rejected_events(batch, f"Batch cancel failed: {e.message}")
+            return [], batch
+        finally:
+            await self._retry_manager_pool.release(retry_manager)
+
+    def _generate_cancel_rejected_events(self, cancels: list[CancelOrder], reason: str) -> None:
+        for cancel in cancels:
+            self.generate_order_cancel_rejected(
+                cancel.strategy_id,
+                cancel.instrument_id,
+                cancel.client_order_id,
+                cancel.venue_order_id,
+                reason,
+                self._clock.timestamp_ns(),
+            )
 
     # -- WEBSOCKET EVENT HANDLERS --------------------------------------------------------------------
 

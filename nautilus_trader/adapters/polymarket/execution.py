@@ -71,6 +71,7 @@ from nautilus_trader.execution.messages import GenerateFillReports
 from nautilus_trader.execution.messages import GenerateOrderStatusReport
 from nautilus_trader.execution.messages import GenerateOrderStatusReports
 from nautilus_trader.execution.messages import GeneratePositionStatusReports
+from nautilus_trader.execution.messages import QueryAccount
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
@@ -479,7 +480,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
     ) -> OrderStatusReport | None:
         await self._maintain_active_market(command.instrument_id)
 
-        if command.venue_order_id is None:
+        venue_order_id = command.venue_order_id
+        if venue_order_id is None:
             venue_order_id = self._cache.venue_order_id(command.client_order_id)
             if venue_order_id is None:
                 self._log.error(
@@ -497,10 +499,10 @@ class PolymarketExecutionClient(LiveExecutionClient):
         try:
             response: JSON | None = await retry_manager.run(
                 "generate_order_status_report",
-                [command.client_order_id, command.venue_order_id],
+                [command.client_order_id, venue_order_id],
                 asyncio.to_thread,
                 self._http_client.get_order,
-                order_id=command.venue_order_id.value,
+                order_id=venue_order_id.value,
             )
             if not response:
                 return None
@@ -643,6 +645,10 @@ class PolymarketExecutionClient(LiveExecutionClient):
         return reports
 
     # -- COMMAND HANDLERS -------------------------------------------------------------------------
+
+    async def _query_account(self, _command: QueryAccount) -> None:
+        # Specific account ID (sub account) not yet supported
+        await self._update_account_state()
 
     async def _cancel_order(self, command: CancelOrder) -> None:
         # https://docs.polymarket.com/#cancel-an-order

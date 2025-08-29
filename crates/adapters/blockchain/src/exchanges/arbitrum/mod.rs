@@ -13,7 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::LazyLock};
+
+use nautilus_model::defi::DexType;
 
 use crate::exchanges::extended::DexExtended;
 
@@ -35,32 +37,17 @@ pub use sushiswap_v3::SUSHISWAP_V3;
 pub use uniswap_v3::UNISWAP_V3;
 pub use uniswap_v4::UNISWAP_V4;
 
-/// Returns a vector of references to all Arbitrum Dexes.
-#[must_use]
-pub fn all() -> Vec<&'static DexExtended> {
-    vec![
-        &*CAMELOT_V3,
-        &*CURVE_FINANCE,
-        &*FLUID_DEX,
-        &*PANCAKESWAP_V3,
-        &*SUSHISWAP_V2,
-        &*SUSHISWAP_V3,
-        &*UNISWAP_V3,
-        &*UNISWAP_V4,
-    ]
-}
+pub static ARBITRUM_DEX_EXTENDED_MAP: LazyLock<HashMap<DexType, &'static DexExtended>> =
+    LazyLock::new(|| {
+        let mut map = HashMap::new();
+        map.insert(CAMELOT_V3.dex.name, &*CAMELOT_V3);
+        map.insert(CURVE_FINANCE.dex.name, &*CURVE_FINANCE);
+        map.insert(FLUID_DEX.dex.name, &*FLUID_DEX);
+        map.insert(PANCAKESWAP_V3.name, &*PANCAKESWAP_V3);
+        map.insert(SUSHISWAP_V2.dex.name, &*SUSHISWAP_V2);
+        map.insert(SUSHISWAP_V3.dex.name, &*SUSHISWAP_V3);
+        map.insert(UNISWAP_V3.dex.name, &*UNISWAP_V3);
+        map.insert(UNISWAP_V4.dex.name, &*UNISWAP_V4);
 
-/// Returns a map of Arbitrum DEX name to Dex reference for easy lookup.
-#[must_use]
-pub fn dex_map() -> HashMap<&'static str, &'static DexExtended> {
-    let mut map = HashMap::new();
-    map.insert("camelot_v3", &*CAMELOT_V3);
-    map.insert("curve_finance", &*CURVE_FINANCE);
-    map.insert("fluid_dex", &*FLUID_DEX);
-    map.insert("pancakeswap_v3", &*PANCAKESWAP_V3);
-    map.insert("sushiswap_v2", &*SUSHISWAP_V2);
-    map.insert("sushiswap_v3", &*SUSHISWAP_V3);
-    map.insert("uniswap_v3", &*UNISWAP_V3);
-    map.insert("uniswap_v4", &*UNISWAP_V4);
-    map
-}
+        map
+    });

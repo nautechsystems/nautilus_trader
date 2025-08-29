@@ -44,7 +44,7 @@ use crate::types::fixed::MAX_FLOAT_PRECISION;
 // -----------------------------------------------------------------------------
 
 // Use 128-bit integers when either `high-precision` or `defi` features are enabled. This is
-// required for the extended 18-decimal WEI precision used in DeFi contexts.
+// required for the extended 18-decimal wei precision used in DeFi contexts.
 
 #[cfg(feature = "high-precision")]
 pub type PriceRaw = i128;
@@ -158,7 +158,7 @@ impl Price {
         if precision > MAX_FLOAT_PRECISION {
             // Floats are only reliable up to ~16 decimal digits of precision regardless of feature flags
             anyhow::bail!(
-                "`precision` exceeded maximum float precision ({MAX_FLOAT_PRECISION}), use `Price::from_wei()` for WEI values instead"
+                "`precision` exceeded maximum float precision ({MAX_FLOAT_PRECISION}), use `Price::from_wei()` for wei values instead"
             );
         }
 
@@ -547,11 +547,11 @@ impl<'de> Deserialize<'de> for Price {
     }
 }
 
-/// Checks the given `price` is positive.
+/// Checks the price `value` is positive.
 ///
 /// # Errors
 ///
-/// Returns an error if the validation check fails.
+/// Returns an error if `value` is `PRICE_UNDEF` or not positive.
 pub fn check_positive_price(value: Price, param: &str) -> anyhow::Result<()> {
     if value.raw == PRICE_UNDEF {
         anyhow::bail!("invalid `Price` for '{param}', was PRICE_UNDEF")
@@ -579,17 +579,25 @@ pub fn decode_raw_price_i64(value: i64) -> PriceRaw {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use float_cmp::approx_eq;
+    use nautilus_core::approx_eq;
     use rstest::rstest;
     use rust_decimal_macros::dec;
 
     use super::*;
 
     #[rstest]
-    #[cfg(not(feature = "defi"))]
+    #[cfg(all(not(feature = "defi"), not(feature = "high-precision")))]
+    #[should_panic(expected = "`precision` exceeded maximum `FIXED_PRECISION` (9), was 50")]
+    fn test_invalid_precision_new() {
+        // Precision exceeds float precision limit
+        let _ = Price::new(1.0, 50);
+    }
+
+    #[rstest]
+    #[cfg(all(not(feature = "defi"), feature = "high-precision"))]
     #[should_panic(expected = "`precision` exceeded maximum `FIXED_PRECISION` (16), was 50")]
     fn test_invalid_precision_new() {
-        // Precision exceeds float precision limit (16)
+        // Precision exceeds float precision limit
         let _ = Price::new(1.0, 50);
     }
 
@@ -674,17 +682,17 @@ mod tests {
 
     #[rstest]
     fn test_negative_price_in_range() {
-        // Use precision 16 which is the max for float-based construction regardless of features
-        let neg_price = Price::new(PRICE_MIN / 2.0, 16);
+        // Use max fixed precision which varies based on feature flags
+        let neg_price = Price::new(PRICE_MIN / 2.0, FIXED_PRECISION);
         assert!(neg_price.raw < 0);
     }
 
     #[rstest]
     fn test_new_checked() {
-        // Use precision 16 which is the max for float-based construction regardless of features
-        assert!(Price::new_checked(1.0, 16).is_ok());
-        assert!(Price::new_checked(f64::NAN, 16).is_err());
-        assert!(Price::new_checked(f64::INFINITY, 16).is_err());
+        // Use max fixed precision which varies based on feature flags
+        assert!(Price::new_checked(1.0, FIXED_PRECISION).is_ok());
+        assert!(Price::new_checked(f64::NAN, FIXED_PRECISION).is_err());
+        assert!(Price::new_checked(f64::INFINITY, FIXED_PRECISION).is_err());
     }
 
     #[rstest]
@@ -878,29 +886,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_hash() {
-        use std::{
-            collections::hash_map::DefaultHasher,
-            hash::{Hash, Hasher},
-        };
-
-        let p1 = Price::new(10.0, 1);
-        let p2 = Price::new(10.0, 1);
-        let p3 = Price::new(20.0, 1);
-
-        let mut s1 = DefaultHasher::new();
-        let mut s2 = DefaultHasher::new();
-        let mut s3 = DefaultHasher::new();
-
-        p1.hash(&mut s1);
-        p2.hash(&mut s2);
-        p3.hash(&mut s3);
-
-        assert_eq!(s1.finish(), s2.finish());
-        assert_ne!(s1.finish(), s3.finish());
-    }
-
-    #[rstest]
     fn test_deref() {
         let price = Price::new(10.0, 1);
         assert_eq!(*price, price.raw);
@@ -920,14 +905,34 @@ mod tests {
     }
 
     #[rstest]
-    fn test_price_serde_json_round_trip() {
-        let original = Price::new(123.456, 3);
-        let json_str = serde_json::to_string(&original).unwrap();
-        assert_eq!(json_str, "\"123.456\"");
+    fn test_hash() {
+        use std::{
+            collections::hash_map::DefaultHasher,
+            hash::{Hash, Hasher},
+        };
 
-        let deserialized: Price = serde_json::from_str(&json_str).unwrap();
-        assert_eq!(deserialized, original);
-        assert_eq!(deserialized.precision, 3);
+        let price1 = Price::new(1.0, 2);
+        let price2 = Price::new(1.0, 2);
+        let price3 = Price::new(1.1, 2);
+
+        let mut hasher1 = DefaultHasher::new();
+        let mut hasher2 = DefaultHasher::new();
+        let mut hasher3 = DefaultHasher::new();
+
+        price1.hash(&mut hasher1);
+        price2.hash(&mut hasher2);
+        price3.hash(&mut hasher3);
+
+        assert_eq!(hasher1.finish(), hasher2.finish());
+        assert_ne!(hasher1.finish(), hasher3.finish());
+    }
+
+    #[rstest]
+    fn test_price_serde_json_round_trip() {
+        let price = Price::new(1.0500, 4);
+        let json = serde_json::to_string(&price).unwrap();
+        let deserialized: Price = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, price);
     }
 }
 
@@ -939,7 +944,6 @@ mod property_tests {
     use proptest::prelude::*;
 
     use super::*;
-    use crate::types::fixed::MAX_FLOAT_PRECISION;
 
     /// Strategy to generate valid price values within the allowed range.
     fn price_value_strategy() -> impl Strategy<Value = f64> {
@@ -959,7 +963,7 @@ mod property_tests {
 
     /// Strategy to generate valid precision values for float-based constructors.
     fn float_precision_strategy() -> impl Strategy<Value = u8> {
-        0..=MAX_FLOAT_PRECISION
+        0..=FIXED_PRECISION
     }
 
     proptest! {
@@ -1022,12 +1026,11 @@ mod property_tests {
             let p_delta = Price::new(delta, precision);
 
             // Use raw arithmetic to avoid floating-point precision issues
-            if let Some(added_raw) = p_base.raw.checked_add(p_delta.raw) {
-                if let Some(result_raw) = added_raw.checked_sub(p_delta.raw) {
+            if let Some(added_raw) = p_base.raw.checked_add(p_delta.raw)
+                && let Some(result_raw) = added_raw.checked_sub(p_delta.raw) {
                     // (base + delta) - delta should equal base exactly using raw arithmetic
                     prop_assert_eq!(result_raw, p_base.raw, "Inverse operation failed in raw arithmetic");
                 }
-            }
         }
 
         /// Property: Price ordering should be transitive
@@ -1058,14 +1061,14 @@ mod property_tests {
         ) {
             // Create a decimal string with exactly 'precision' decimal places
             let fractional_str = format!("{:0width$}", fractional % 10_u32.pow(precision as u32), width = precision as usize);
-            let price_str = format!("{}.{}", integral, fractional_str);
+            let price_str = format!("{integral}.{fractional_str}");
 
             let parsed: Price = price_str.parse().unwrap();
             prop_assert_eq!(parsed.precision, precision);
 
             // Round-trip should preserve the original string (after normalization)
             let round_trip = parsed.to_string();
-            let expected_value = format!("{}.{}", integral, fractional_str);
+            let expected_value = format!("{integral}.{fractional_str}");
             prop_assert_eq!(round_trip, expected_value);
         }
 
@@ -1109,7 +1112,7 @@ mod property_tests {
 
             // Addition should either succeed or fail predictably
             let sum_f64 = p_a.as_f64() + p_b.as_f64();
-            if sum_f64.is_finite() && sum_f64 >= PRICE_MIN && sum_f64 <= PRICE_MAX {
+            if sum_f64.is_finite() && (PRICE_MIN..=PRICE_MAX).contains(&sum_f64) {
                 let sum = p_a + p_b;
                 prop_assert!(sum.as_f64().is_finite());
                 prop_assert!(!sum.is_undefined());
@@ -1117,7 +1120,7 @@ mod property_tests {
 
             // Subtraction should either succeed or fail predictably
             let diff_f64 = p_a.as_f64() - p_b.as_f64();
-            if diff_f64.is_finite() && diff_f64 >= PRICE_MIN && diff_f64 <= PRICE_MAX {
+            if diff_f64.is_finite() && (PRICE_MIN..=PRICE_MAX).contains(&diff_f64) {
                 let diff = p_a - p_b;
                 prop_assert!(diff.as_f64().is_finite());
                 prop_assert!(!diff.is_undefined());

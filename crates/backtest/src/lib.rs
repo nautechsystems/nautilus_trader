@@ -45,9 +45,11 @@
 //!
 //! - `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//! - `extension-module`: Builds the crate as a Python extension module.
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]
+#![deny(unsafe_op_in_unsafe_fn)]
 #![deny(nonstandard_style)]
 #![deny(missing_debug_implementations)]
 #![deny(clippy::missing_errors_doc)]
@@ -57,6 +59,7 @@
 pub mod accumulator;
 pub mod config;
 pub mod data_client;
+pub mod data_iterator;
 pub mod engine;
 pub mod exchange;
 pub mod execution_client;

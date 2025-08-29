@@ -64,7 +64,7 @@ impl PortfolioStatistic for ProfitFactor {
 mod profit_factor_tests {
     use std::collections::BTreeMap;
 
-    use nautilus_core::UnixNanos;
+    use nautilus_core::{UnixNanos, approx_eq};
     use rstest::rstest;
 
     use super::*;
@@ -102,7 +102,7 @@ mod profit_factor_tests {
         let returns = create_returns(vec![-10.0, -20.0, -30.0]);
         let result = profit_factor.calculate_from_returns(&returns);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), 0.0);
+        assert!(approx_eq!(f64, result.unwrap(), 0.0, epsilon = 1e-9));
     }
 
     #[rstest]
@@ -112,7 +112,12 @@ mod profit_factor_tests {
         let result = profit_factor.calculate_from_returns(&returns);
         assert!(result.is_some());
         // (10.0 + 30.0) / |-20.0 + -40.0| = 40 / 60 = 0.666...
-        assert_eq!(result.unwrap(), 0.6666666666666666);
+        assert!(approx_eq!(
+            f64,
+            result.unwrap(),
+            0.6666666666666666,
+            epsilon = 1e-9
+        ));
     }
 
     #[rstest]
@@ -122,7 +127,7 @@ mod profit_factor_tests {
         let result = profit_factor.calculate_from_returns(&returns);
         assert!(result.is_some());
         // (10.0 + 0.0) / |-20.0 + -30.0| = 10 / 50 = 0.2
-        assert_eq!(result.unwrap(), 0.2);
+        assert!(approx_eq!(f64, result.unwrap(), 0.2, epsilon = 1e-9));
     }
 
     #[rstest]
@@ -131,7 +136,7 @@ mod profit_factor_tests {
         let returns = create_returns(vec![20.0, -20.0]);
         let result = profit_factor.calculate_from_returns(&returns);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), 1.0);
+        assert!(approx_eq!(f64, result.unwrap(), 1.0, epsilon = 1e-9));
     }
 
     #[rstest]

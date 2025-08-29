@@ -296,3 +296,154 @@ def test_trade_id_maximum_length() -> None:
     # Arrange, Act, Assert
     with pytest.raises(ValueError):
         TradeId("A" * 37)
+
+
+def test_instrument_id_new_spread_single_positive_ratio() -> None:
+    # Arrange
+    id1 = InstrumentId(Symbol("AAPL"), Venue("NASDAQ"))
+
+    # Act
+    result = InstrumentId.new_spread([(id1, 1)])
+
+    # Assert
+    assert result.symbol.value == "(1)AAPL"
+    assert result.venue == Venue("NASDAQ")
+
+
+def test_instrument_id_new_spread_single_negative_ratio() -> None:
+    # Arrange
+    id1 = InstrumentId(Symbol("AAPL"), Venue("NASDAQ"))
+
+    # Act
+    result = InstrumentId.new_spread([(id1, -2)])
+
+    # Assert
+    assert result.symbol.value == "((2))AAPL"
+    assert result.venue == Venue("NASDAQ")
+
+
+def test_instrument_id_new_spread_multiple_instruments_sorted() -> None:
+    # Arrange - note the order: MSFT, AAPL, GOOGL (not alphabetical)
+    id1 = InstrumentId(Symbol("MSFT"), Venue("NASDAQ"))
+    id2 = InstrumentId(Symbol("AAPL"), Venue("NASDAQ"))
+    id3 = InstrumentId(Symbol("GOOGL"), Venue("NASDAQ"))
+
+    # Act
+    result = InstrumentId.new_spread([(id1, 1), (id2, -2), (id3, 3)])
+
+    # Assert - should be sorted alphabetically: AAPL, GOOGL, MSFT
+    assert result.symbol.value == "((2))AAPL_(3)GOOGL_(1)MSFT"
+    assert result.venue == Venue("NASDAQ")
+
+
+def test_instrument_id_new_spread_empty_list_raises_error() -> None:
+    # Arrange, Act, Assert
+    with pytest.raises(ValueError, match="instrument_ratios list cannot be empty"):
+        InstrumentId.new_spread([])
+
+
+def test_instrument_id_new_spread_zero_ratio_raises_error() -> None:
+    # Arrange
+    id1 = InstrumentId(Symbol("AAPL"), Venue("NASDAQ"))
+
+    # Act, Assert
+    with pytest.raises(ValueError, match="ratio cannot be zero"):
+        InstrumentId.new_spread([(id1, 0)])
+
+
+def test_instrument_id_new_spread_mismatched_venues_raises_error() -> None:
+    # Arrange
+    id1 = InstrumentId(Symbol("AAPL"), Venue("NASDAQ"))
+    id2 = InstrumentId(Symbol("MSFT"), Venue("NYSE"))
+
+    # Act, Assert
+    with pytest.raises(ValueError, match="All venues must match"):
+        InstrumentId.new_spread([(id1, 1), (id2, -1)])
+
+
+def test_instrument_id_to_list_single_positive_ratio() -> None:
+    # Arrange
+    combo = InstrumentId(Symbol("(1)AAPL"), Venue("NASDAQ"))
+
+    # Act
+    result = combo.to_list()
+
+    # Assert
+    assert len(result) == 1
+    assert result[0][0] == InstrumentId(Symbol("AAPL"), Venue("NASDAQ"))
+    assert result[0][1] == 1
+
+
+def test_instrument_id_to_list_single_negative_ratio() -> None:
+    # Arrange
+    combo = InstrumentId(Symbol("((2))AAPL"), Venue("NASDAQ"))
+
+    # Act
+    result = combo.to_list()
+
+    # Assert
+    assert len(result) == 1
+    assert result[0][0] == InstrumentId(Symbol("AAPL"), Venue("NASDAQ"))
+    assert result[0][1] == -2
+
+
+def test_instrument_id_to_list_multiple_instruments() -> None:
+    # Arrange
+    combo = InstrumentId(Symbol("(1)AAPL_((2))MSFT_(3)GOOGL"), Venue("NASDAQ"))
+
+    # Act
+    result = combo.to_list()
+
+    # Assert - should be sorted alphabetically
+    assert len(result) == 3
+    assert result[0] == (InstrumentId(Symbol("AAPL"), Venue("NASDAQ")), 1)
+    assert result[1] == (InstrumentId(Symbol("GOOGL"), Venue("NASDAQ")), 3)
+    assert result[2] == (InstrumentId(Symbol("MSFT"), Venue("NASDAQ")), -2)
+
+
+def test_instrument_id_to_list_invalid_format_raises_error() -> None:
+    # Arrange
+    combo = InstrumentId(Symbol("INVALID_FORMAT"), Venue("NASDAQ"))
+
+    # Act, Assert
+    with pytest.raises(ValueError, match="Invalid symbol format for component"):
+        combo.to_list()
+
+
+def test_instrument_id_new_spread_to_list_roundtrip() -> None:
+    # Arrange - provide in alphabetical order since that's how they'll be returned
+    id1 = InstrumentId(Symbol("AAPL"), Venue("NASDAQ"))
+    id2 = InstrumentId(Symbol("GOOGL"), Venue("NASDAQ"))
+    id3 = InstrumentId(Symbol("MSFT"), Venue("NASDAQ"))
+    original_list = [(id1, 1), (id2, 3), (id3, -2)]  # Alphabetical order
+
+    # Act
+    spread = InstrumentId.new_spread(original_list)
+    result_list = spread.to_list()
+
+    # Assert
+    assert result_list == original_list
+
+
+def test_instrument_id_is_spread_false_for_simple_symbol() -> None:
+    # Arrange
+    instrument_id = InstrumentId(Symbol("AAPL"), Venue("NASDAQ"))
+
+    # Act, Assert
+    assert not instrument_id.is_spread()
+
+
+def test_instrument_id_is_spread_true_for_spread_symbol() -> None:
+    # Arrange
+    instrument_id = InstrumentId(Symbol("(1)AAPL_((2))MSFT"), Venue("NASDAQ"))
+
+    # Act, Assert
+    assert instrument_id.is_spread()
+
+
+def test_instrument_id_is_spread_true_for_symbol_with_underscore() -> None:
+    # Arrange
+    instrument_id = InstrumentId(Symbol("SOME_SYMBOL"), Venue("NASDAQ"))
+
+    # Act, Assert
+    assert instrument_id.is_spread()

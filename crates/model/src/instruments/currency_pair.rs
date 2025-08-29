@@ -61,6 +61,10 @@ pub struct CurrencyPair {
     pub price_increment: Price,
     /// The minimum size increment.
     pub size_increment: Quantity,
+    /// The contract multiplier.
+    pub multiplier: Quantity,
+    /// The rounded lot unit size.
+    pub lot_size: Option<Quantity>,
     /// The initial (order) margin requirement in percentage of order value.
     pub margin_init: Decimal,
     /// The maintenance (position) margin in percentage of position value.
@@ -69,8 +73,6 @@ pub struct CurrencyPair {
     pub maker_fee: Decimal,
     /// The fee rate for liquidity takers as a percentage of order value.
     pub taker_fee: Decimal,
-    /// The rounded lot unit size.
-    pub lot_size: Option<Quantity>,
     /// The maximum allowable order quantity.
     pub max_quantity: Option<Quantity>,
     /// The minimum allowable order quantity.
@@ -108,6 +110,7 @@ impl CurrencyPair {
         size_precision: u8,
         price_increment: Price,
         size_increment: Quantity,
+        multiplier: Option<Quantity>,
         lot_size: Option<Quantity>,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
@@ -146,6 +149,7 @@ impl CurrencyPair {
             size_precision,
             price_increment,
             size_increment,
+            multiplier: multiplier.unwrap_or(Quantity::from(1)),
             lot_size,
             max_quantity,
             min_quantity,
@@ -177,6 +181,7 @@ impl CurrencyPair {
         size_precision: u8,
         price_increment: Price,
         size_increment: Quantity,
+        multiplier: Option<Quantity>,
         lot_size: Option<Quantity>,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
@@ -200,6 +205,7 @@ impl CurrencyPair {
             size_precision,
             price_increment,
             size_increment,
+            multiplier,
             lot_size,
             max_quantity,
             min_quantity,
@@ -293,7 +299,7 @@ impl Instrument for CurrencyPair {
     }
 
     fn multiplier(&self) -> Quantity {
-        Quantity::from(1)
+        self.multiplier
     }
 
     fn lot_size(&self) -> Option<Quantity> {

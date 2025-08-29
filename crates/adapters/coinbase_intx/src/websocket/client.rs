@@ -402,7 +402,7 @@ impl CoinbaseIntxWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if the subscription fails.
-    pub async fn subscribe_funding(
+    pub async fn subscribe_funding_rates(
         &self,
         instrument_ids: Vec<InstrumentId>,
     ) -> Result<(), CoinbaseIntxWsError> {

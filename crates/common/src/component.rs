@@ -449,6 +449,42 @@ where
     component_ref
 }
 
+/// Registers a component actor by reference without consuming it.
+///
+/// This is useful for components that are owned by other structures (like Python instances)
+/// but still need to be registered in the global component and actor registries for
+/// lifecycle management.
+///
+/// # Safety
+///
+/// The caller must ensure that the referenced component remains valid for the lifetime
+/// of the registration. The component should not be dropped while registered.
+/// This creates an aliasing raw pointer which could lead to undefined behavior if
+/// the original component is mutated while the registry holds a reference.
+pub unsafe fn register_component_actor_by_ref<T>(component: &T)
+where
+    T: Component + Actor + 'static,
+{
+    let component_id = component.component_id().inner();
+    let actor_id = component.id();
+
+    // SAFETY: We create an Rc<UnsafeCell<T>> pointing to the same memory as the component.
+    // This is extremely unsafe as it creates aliasing mutable references.
+    // The caller must ensure no mutation happens while registered.
+    let component_ptr = component as *const T as *mut T;
+    unsafe {
+        let component_ref = Rc::new(UnsafeCell::new(std::ptr::read_unaligned(component_ptr)));
+
+        // Register in component registry
+        let component_trait_ref: Rc<UnsafeCell<dyn Component>> = component_ref.clone();
+        get_component_registry().insert(component_id, component_trait_ref);
+
+        // Register in actor registry
+        let actor_trait_ref: Rc<UnsafeCell<dyn Actor>> = component_ref.clone();
+        get_actor_registry().insert(actor_id, actor_trait_ref);
+    }
+}
+
 /// Safely calls start() on a component in the global registry.
 ///
 /// # Errors

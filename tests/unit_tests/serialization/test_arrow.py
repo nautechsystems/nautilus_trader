@@ -87,20 +87,10 @@ ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 CATALOG_PATH = TESTS_PACKAGE_ROOT / "unit_tests" / "persistence" / "catalog"
 
 
-def _reset(catalog: ParquetDataCatalog) -> None:
-    """
-    Cleanup resources before each test run.
-    """
-    assert catalog.path.endswith("tests/unit_tests/persistence/catalog")
-    if catalog.fs.exists(catalog.path):
-        catalog.fs.rm(catalog.path, recursive=True)
-    catalog.fs.mkdir(catalog.path)
-    assert catalog.fs.exists(catalog.path)
-
-
 @pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
 class TestArrowSerializer:
-    def setup(self):
+    @pytest.fixture(autouse=True)
+    def setup_method(self, tmp_path):
         # Fixture Setup
         self.trader_id = TestIdStubs.trader_id()
         self.strategy_id = TestIdStubs.strategy_id()
@@ -109,8 +99,7 @@ class TestArrowSerializer:
 
         self.serializer = ArrowSerializer
 
-        self.catalog = ParquetDataCatalog(path=str(CATALOG_PATH), fs_protocol="file")
-        _reset(self.catalog)
+        self.catalog = ParquetDataCatalog(path=str(tmp_path / "catalog"), fs_protocol="file")
         self.order_factory = OrderFactory(
             trader_id=TraderId("T-001"),
             strategy_id=StrategyId("S-001"),

@@ -78,9 +78,9 @@ from nautilus_trader.core.rust.model cimport orderbook_update
 from nautilus_trader.core.rust.model cimport orderbook_update_count
 from nautilus_trader.core.rust.model cimport orderbook_update_quote_tick
 from nautilus_trader.core.rust.model cimport orderbook_update_trade_tick
-from nautilus_trader.core.rust.model cimport vec_fills_drop
-from nautilus_trader.core.rust.model cimport vec_levels_drop
-from nautilus_trader.core.rust.model cimport vec_orders_drop
+from nautilus_trader.core.rust.model cimport vec_drop_book_levels
+from nautilus_trader.core.rust.model cimport vec_drop_book_orders
+from nautilus_trader.core.rust.model cimport vec_drop_fills
 from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.model.data cimport BookOrder
 from nautilus_trader.model.data cimport OrderBookDelta
@@ -436,7 +436,7 @@ cdef class OrderBook(Data):
         for i in range(raw_levels_vec.len):
             levels.append(BookLevel.from_mem_c(raw_levels[i]))
 
-        vec_levels_drop(raw_levels_vec)
+        vec_drop_book_levels(raw_levels_vec)
 
         return levels
 
@@ -460,7 +460,7 @@ cdef class OrderBook(Data):
         for i in range(raw_levels_vec.len):
             levels.append(BookLevel.from_mem_c(raw_levels[i]))
 
-        vec_levels_drop(raw_levels_vec)
+        vec_drop_book_levels(raw_levels_vec)
 
         return levels
 
@@ -666,7 +666,7 @@ cdef class OrderBook(Data):
             if fill_size.precision != size_prec:
                 raise RuntimeError(f"{fill_size.precision=} did not match instrument {size_prec=}")
 
-        vec_fills_drop(raw_fills_vec)
+        vec_drop_fills(raw_fills_vec)
 
         return fills
 
@@ -828,7 +828,7 @@ cdef class BookLevel:
         for i in range(raw_orders_vec.len):
             book_orders.append(BookOrder.from_mem_c(raw_orders[i]))
 
-        vec_orders_drop(raw_orders_vec)
+        vec_drop_book_orders(raw_orders_vec)
 
         return book_orders
 

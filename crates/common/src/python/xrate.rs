@@ -15,6 +15,7 @@
 
 use std::collections::HashMap;
 
+use ahash::AHashMap;
 use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::enums::PriceType;
 use pyo3::prelude::*;
@@ -45,8 +46,8 @@ pub fn py_get_exchange_rate(
         Ustr::from(from_currency),
         Ustr::from(to_currency),
         price_type,
-        quotes_bid,
-        quotes_ask,
+        AHashMap::from_iter(quotes_bid),
+        AHashMap::from_iter(quotes_ask),
     )
     .map_err(to_pyvalue_err)
 }

@@ -181,7 +181,9 @@ pub const fn parse_option_kind(value: OptionType) -> OptionKind {
 /// Parses a UNIX nanoseconds timestamp from the given Tardis microseconds `value_us`.
 #[must_use]
 pub fn parse_timestamp(value_us: u64) -> UnixNanos {
-    UnixNanos::from(value_us * NANOSECONDS_IN_MICROSECOND)
+    value_us
+        .checked_mul(NANOSECONDS_IN_MICROSECOND)
+        .map_or(UnixNanos::max(), UnixNanos::from)
 }
 
 /// Parses a Nautilus book action inferred from the given Tardis values.

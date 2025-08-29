@@ -1963,6 +1963,8 @@ cdef class OrderRejected(OrderEvent):
         UNIX timestamp (nanoseconds) when the object was initialized.
     reconciliation : bool, default False
         If the event was generated during reconciliation.
+    due_post_only : bool, default False
+        If the order was rejected because it was post-only and would execute immediately as a taker.
 
     """
 
@@ -1978,6 +1980,7 @@ cdef class OrderRejected(OrderEvent):
         uint64_t ts_event,
         uint64_t ts_init,
         bint reconciliation=False,
+        bint due_post_only=False,
     ):
         self._mem = order_rejected_new(
             trader_id._mem,
@@ -1990,6 +1993,7 @@ cdef class OrderRejected(OrderEvent):
             ts_event,
             ts_init,
             reconciliation,
+            due_post_only,
         )
 
     def __eq__(self, Event other) -> bool:
@@ -2005,6 +2009,7 @@ cdef class OrderRejected(OrderEvent):
             f"client_order_id={self.client_order_id}, "
             f"account_id={self.account_id}, "
             f"reason='{self.reason}', "
+            f"due_post_only={self.due_post_only}, "
             f"ts_event={self.ts_event})"
         )
 
@@ -2017,6 +2022,7 @@ cdef class OrderRejected(OrderEvent):
             f"client_order_id={self.client_order_id}, "
             f"account_id={self.account_id}, "
             f"reason='{self.reason}', "
+            f"due_post_only={self.due_post_only}, "
             f"event_id={self.id}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
@@ -2122,6 +2128,18 @@ cdef class OrderRejected(OrderEvent):
         return <bint>self._mem.reconciliation
 
     @property
+    def due_post_only(self) -> bool:
+        """
+        If the order was rejected because it was post-only and would execute immediately as a taker.
+
+        Returns
+        -------
+        bool
+
+        """
+        return <bint>self._mem.due_post_only
+
+    @property
     def id(self) -> UUID4:
         """
         The event message identifier.
@@ -2171,6 +2189,7 @@ cdef class OrderRejected(OrderEvent):
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
             reconciliation=values.get("reconciliation", False),
+            due_post_only=values.get("due_post_only", False),
         )
 
     @staticmethod
@@ -2188,6 +2207,7 @@ cdef class OrderRejected(OrderEvent):
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
+            "due_post_only": obj.due_post_only,
         }
 
     @staticmethod

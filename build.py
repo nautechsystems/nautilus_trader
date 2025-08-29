@@ -16,6 +16,7 @@ from Cython.Build import build_ext
 from Cython.Build import cythonize
 from Cython.Compiler import Options
 from Cython.Compiler.Version import version as cython_compiler_version
+from packaging.version import Version
 from setuptools import Distribution
 from setuptools import Extension
 
@@ -108,7 +109,16 @@ else:  # Linux
 
 CARGO_TARGET_DIR = os.environ.get("CARGO_TARGET_DIR", Path.cwd() / "target")
 CARGO_BUILD_TARGET = os.environ.get("CARGO_BUILD_TARGET", "")
-CARGO_TARGET_DIR = Path(CARGO_TARGET_DIR) / CARGO_BUILD_TARGET / BUILD_MODE
+
+# Determine the profile directory name
+if BUILD_MODE == "release":
+    profile_dir = "release"
+elif BUILD_MODE == "debug-pyo3":
+    profile_dir = "debug-pyo3"
+else:
+    profile_dir = "debug"
+
+CARGO_TARGET_DIR = Path(CARGO_TARGET_DIR) / CARGO_BUILD_TARGET / profile_dir
 
 # Directories with headers to include
 RUST_INCLUDES = ["nautilus_trader/core/includes"]
@@ -123,7 +133,7 @@ RUST_LIBS: list[str] = [str(path) for path in RUST_LIB_PATHS]
 
 
 def _set_feature_flags() -> list[str]:
-    features = "ffi,python,extension-module,postgres"
+    features = "cython-compat,ffi,python,extension-module,postgres"
     flags = ["--no-default-features", "--features"]
 
     if HIGH_PRECISION:
@@ -152,7 +162,13 @@ def _build_rust_libs() -> None:
             "nautilus-pyo3",
         ]
 
-        build_options = " --release" if BUILD_MODE == "release" else ""
+        if BUILD_MODE == "release":
+            build_options = ["--release"]
+        elif BUILD_MODE == "debug-pyo3":
+            build_options = ["--profile", "debug-pyo3"]
+        else:
+            build_options = []
+
         features = _set_feature_flags()
 
         cmd_args = [
@@ -160,7 +176,7 @@ def _build_rust_libs() -> None:
             "build",
             "--lib",
             *itertools.chain.from_iterable(("-p", p) for p in needed_crates),
-            *build_options.split(),
+            *build_options,
             *features,
         ]
 
@@ -201,7 +217,7 @@ CYTHON_COMPILER_DIRECTIVES = {
 }
 
 # TODO: Temporarily separate Cython configuration while we require v3.0.11 for coverage
-if cython_compiler_version == "3.1.2":
+if Version(cython_compiler_version) >= Version("3.1.2"):
     Options.warning_errors = True  # Treat compiler warnings as errors
     Options.extra_warnings = True
     CYTHON_COMPILER_DIRECTIVES["warn.deprecated.IF"] = False

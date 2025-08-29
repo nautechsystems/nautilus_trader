@@ -15,7 +15,7 @@
 
 import numpy as np
 
-from nautilus_trader.indicators.cci import CommodityChannelIndex
+from nautilus_trader.indicators import CommodityChannelIndex
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 

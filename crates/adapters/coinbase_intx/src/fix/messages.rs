@@ -167,7 +167,7 @@ impl FixMessage {
 
     /// Gets a field from the message.
     pub fn get_field(&self, tag: u32) -> Option<&str> {
-        self.fields.get(&tag).map(std::string::String::as_str)
+        self.fields.get(&tag).map(String::as_str)
     }
 
     /// Adds a field to the message.

@@ -43,6 +43,7 @@ from nautilus_trader.common.component cimport LogColor
 from nautilus_trader.common.component cimport Logger
 from nautilus_trader.common.component cimport MessageBus
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.rust.core cimport NANOSECONDS_IN_MILLISECOND
 from nautilus_trader.core.rust.model cimport AccountType
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport OrderType
@@ -139,6 +140,10 @@ cdef class Portfolio(PortfolioFacade):
         self._log_price: str = "mark price" if config.use_mark_prices else "quote, trade, or bar price"
         self._log_xrate: str = "mark" if config.use_mark_xrates else "data to calculate"
 
+        if config.min_account_state_logging_interval_ms:
+            interval_ns = config.min_account_state_logging_interval_ms * NANOSECONDS_IN_MILLISECOND
+            self._min_account_state_logging_interval_ns = interval_ns
+
         self._realized_pnls: dict[InstrumentId, Money] = {}
         self._unrealized_pnls: dict[InstrumentId, Money] = {}
         self._net_positions: dict[InstrumentId, Decimal] = {}
@@ -146,6 +151,7 @@ cdef class Portfolio(PortfolioFacade):
         self._index_bet_positions: dict[InstrumentId, set[PositionId]] = defaultdict(set)
         self._pending_calcs: set[InstrumentId] = set()
         self._bar_close_prices: dict[InstrumentId, Price] = {}
+        self._last_account_state_log_ts: dict[AccountId, uint64_t] = {}
 
         self.analyzer = PortfolioAnalyzer()
 
@@ -433,18 +439,12 @@ cdef class Portfolio(PortfolioFacade):
         """
         Condition.not_none(event, "event")
 
-        cdef Account account = self._cache.account(event.account_id)
+        self._update_account(event)
 
-        if account is None:
-            # Generate account
-            account = AccountFactory.create_c(event)
-            # Add to cache
-            self._cache.add_account(account)
-        else:
-            account.apply(event)
-            self._cache.update_account(account)
-
-        self._log.info(f"Updated {event}")
+        self._msgbus.publish_c(
+            topic=f"events.account.{event.account_id}",
+            msg=event,
+        )
 
     cpdef void update_order(self, OrderEvent event):
         """
@@ -552,7 +552,7 @@ cdef class Portfolio(PortfolioFacade):
             self._pending_calcs.add(instrument.id)
         elif account.is_cash_account or not isinstance(event, OrderFilled):
             # Only update account state for other than fill events (these will be updated on position update)
-            self.update_account(self._accounts.generate_account_state(account, event.ts_event))
+            self._update_account(self._accounts.generate_account_state(account, event.ts_event))
 
         self._log.debug(f"Updated from {event}")
 
@@ -614,7 +614,7 @@ cdef class Portfolio(PortfolioFacade):
 
         if result:
             account_state = self._accounts.generate_account_state(account, event.ts_event)
-            self.update_account(account_state)
+            self._update_account(account_state)
 
     cpdef void on_order_event(self, OrderEvent event):
         """
@@ -1354,8 +1354,30 @@ cdef class Portfolio(PortfolioFacade):
 
 # -- INTERNAL -------------------------------------------------------------------------------------
 
-    cdef object _net_position(self, InstrumentId instrument_id):
-        return self._net_positions.get(instrument_id, Decimal(0))
+    cdef void _update_account(self, AccountState event):
+        cdef Account account = self._cache.account(event.account_id)
+
+        if account is None:
+            # Generate account
+            account = AccountFactory.create_c(event)
+            self._cache.add_account(account)
+        else:
+            account.apply(event)
+            self._cache.update_account(account)
+
+        cdef bint should_log = True
+        cdef uint64_t ts_last_logged
+
+        if self._min_account_state_logging_interval_ns:
+            ts_last_logged = self._last_account_state_log_ts.get(event.account_id, 0)
+
+            if (not ts_last_logged) or (event.ts_init - ts_last_logged) >= self._min_account_state_logging_interval_ns:
+                self._last_account_state_log_ts[event.account_id] = event.ts_init
+            else:
+                should_log = False
+
+        if should_log:
+            self._log.info(f"Updated {event}")
 
     cdef void _update_net_position(self, InstrumentId instrument_id, list positions_open):
         net_position = Decimal(0)
@@ -1436,6 +1458,9 @@ cdef class Portfolio(PortfolioFacade):
             if not self._pending_calcs:
                 self.initialized = True
 
+    cdef object _net_position(self, InstrumentId instrument_id):
+        return self._net_positions.get(instrument_id, Decimal(0))
+
     cdef Money _calculate_realized_pnl(self, InstrumentId instrument_id):
         cdef Account account = self._cache.account_for_venue(instrument_id.venue)
 
@@ -1495,7 +1520,7 @@ cdef class Portfolio(PortfolioFacade):
                 bet_position = self._bet_positions.get(position.id)
 
                 if bet_position is None:
-                    self._log.error(
+                    self._log.debug(
                         f"Cannot calculate unrealized PnL: no `BetPosition` for {position.id}",
                     )
                     return None  # Cannot calculate
@@ -1594,7 +1619,7 @@ cdef class Portfolio(PortfolioFacade):
                 bet_position = self._bet_positions.get(position.id)
 
                 if bet_position is None:
-                    self._log.error(
+                    self._log.debug(
                         f"Cannot calculate unrealized PnL: no `BetPosition` for {position.id}",
                     )
                     return None  # Cannot calculate

@@ -3,16 +3,16 @@ set -eo pipefail
 
 # Function to update Cython version in pyproject.toml
 update_cython_version() {
-    local old_version="3.1.2"
+    local old_version="3.1.3"
     local new_version="3.0.11"
 
     # Create backup of original file
     cp pyproject.toml pyproject.toml.bak
 
-    # Update Cython version in both dependencies and build-system sections
+    # Update all occurrences of the pinned Cython version (case-insensitive on "cython")
+    # Example matches: "cython==3.1.3" or "Cython==3.1.3"
     if sed -i.tmp \
-        -e "s/cython = \"==.*\"/cython = \"==${new_version}\"/" \
-        -e "s/\"Cython==.*\"/\"Cython==${new_version}\"/" \
+        -e "s/[cC]ython==${old_version}/cython==${new_version}/g" \
         pyproject.toml; then
         echo "Updated Cython version to ${new_version}"
         rm -f pyproject.toml.tmp

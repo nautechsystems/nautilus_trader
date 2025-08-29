@@ -18,8 +18,6 @@ from functools import lru_cache
 
 from nautilus_trader.adapters.binance.common.credentials import get_api_key
 from nautilus_trader.adapters.binance.common.credentials import get_api_secret
-from nautilus_trader.adapters.binance.common.credentials import get_ed25519_private_key
-from nautilus_trader.adapters.binance.common.credentials import get_rsa_private_key
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceKeyType
 from nautilus_trader.adapters.binance.common.urls import get_http_base_url
@@ -92,11 +90,11 @@ def get_cached_binance_http_client(
             rsa_private_key = None
             ed25519_private_key = None
         case BinanceKeyType.RSA:
-            rsa_private_key = get_rsa_private_key(account_type, is_testnet)
+            rsa_private_key = api_secret
             ed25519_private_key = None
         case BinanceKeyType.ED25519:
             rsa_private_key = None
-            ed25519_private_key = get_ed25519_private_key(account_type, is_testnet)
+            ed25519_private_key = api_secret
         case _:
             # Theoretically unreachable but retained to keep the match exhaustive
             raise ValueError(f"invalid `key_type`, was {key_type}")

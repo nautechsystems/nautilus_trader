@@ -30,9 +30,12 @@ class CacheConfig(NautilusConfig, frozen=True):
         The configuration for the cache backing database.
     encoding : str, {'msgpack', 'json'}, default 'msgpack'
         The encoding for database operations, controls the type of serializer used.
-    timestamps_as_iso8601, default False
+    timestamps_as_iso8601 : bool, default False
         If timestamps should be persisted as ISO 8601 strings.
         If `False` then will persit as UNIX nanoseconds.
+    persist_account_events : bool, default True
+        If account state events are written to the backing database.
+        Set to `False` in place of purging account state events.
     buffer_interval_ms : PositiveInt, optional
         The buffer interval (milliseconds) between pipelined/batched transactions.
         The recommended range if using buffered pipeling is [10, 1000] milliseconds,
@@ -55,6 +58,7 @@ class CacheConfig(NautilusConfig, frozen=True):
     database: DatabaseConfig | None = None
     encoding: str = "msgpack"
     timestamps_as_iso8601: bool = False
+    persist_account_events: bool = True
     buffer_interval_ms: PositiveInt | None = None
     use_trader_prefix: bool = True
     use_instance_id: bool = False

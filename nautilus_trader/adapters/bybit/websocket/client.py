@@ -475,7 +475,12 @@ class BybitWebSocketClient:
         if future is not None:
             try:
                 order_resp: BybitWsOrderResponseMsg = self._decoder_ws_order_resp_map[msg.op].decode(raw)  # type: ignore[attr-defined]
-                future.set_result(order_resp)
+                if order_resp.retCode == 0:
+                    future.set_result(order_resp)
+                else:
+                    future.set_exception(
+                        BybitError(code=order_resp.retCode, message=order_resp.retMsg),
+                    )
             except Exception as e:
                 self._log.exception(f"Failed to decode order ack response {raw!r}", e)
         else:
@@ -535,6 +540,7 @@ class BybitWebSocketClient:
         time_in_force: BybitTimeInForce | None = None,
         client_order_id: str | None = None,
         reduce_only: bool | None = None,
+        is_leverage: bool | None = None,
         tpsl_mode: BybitTpSlMode | None = None,
         close_on_trigger: bool | None = None,
         tp_order_type: BybitOrderType | None = None,
@@ -561,6 +567,7 @@ class BybitWebSocketClient:
                     price=price,
                     timeInForce=time_in_force,
                     orderLinkId=client_order_id,
+                    isLeverage=int(is_leverage) if is_leverage is not None else None,
                     reduceOnly=reduce_only,
                     closeOnTrigger=close_on_trigger,
                     tpslMode=tpsl_mode if product_type != BybitProductType.SPOT else None,

@@ -235,7 +235,7 @@ class BinanceFuturesMarkPriceData(msgspec.Struct, frozen=True):
             index=Price.from_str(self.i),
             estimated_settle=Price.from_str(self.P),
             funding_rate=Decimal(self.r),
-            ts_next_funding=millis_to_nanos(self.T),
+            next_funding_ns=millis_to_nanos(self.T),
             ts_event=millis_to_nanos(self.E),
             ts_init=ts_init,
         )

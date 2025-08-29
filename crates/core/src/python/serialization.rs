@@ -33,7 +33,6 @@ where
     T: DeserializeOwned,
 {
     // Extract to JSON bytes
-    use crate::python::to_pyvalue_err;
     let json_str: String = PyModule::import(py, "json")?
         .call_method("dumps", (values,), None)?
         .extract()?;

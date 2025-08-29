@@ -404,6 +404,17 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
                     venue_order_id=venue_order_id,
                     ts_event=ts_event,
                 )
+        elif self.x == BinanceExecutionType.REJECTED:
+            due_post_only = self.f == BinanceTimeInForce.GTX
+
+            exec_client.generate_order_rejected(
+                strategy_id=strategy_id,
+                instrument_id=instrument_id,
+                client_order_id=client_order_id,
+                reason="REJECTED",  # Reason string not provided by futures WS
+                ts_event=ts_event,
+                due_post_only=due_post_only,
+            )
         else:
             # Event not handled
             exec_client._log.warning(f"Received unhandled {self}")

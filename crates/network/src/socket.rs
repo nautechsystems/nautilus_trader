@@ -39,6 +39,9 @@ use std::{
 };
 
 use bytes::Bytes;
+use nautilus_core::CleanDrop;
+#[cfg(feature = "python")]
+use nautilus_core::python::clone_py_object;
 use nautilus_cryptography::providers::install_cryptographic_provider;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
@@ -60,12 +63,19 @@ use crate::{
     tls::{Connector, create_tls_config_from_certs_dir, tcp_tls},
 };
 
+// Connection timing constants
+const CONNECTION_STATE_CHECK_INTERVAL_MS: u64 = 10;
+const GRACEFUL_SHUTDOWN_DELAY_MS: u64 = 100;
+const GRACEFUL_SHUTDOWN_TIMEOUT_SECS: u64 = 5;
+const SEND_OPERATION_TIMEOUT_SECS: u64 = 2;
+const SEND_OPERATION_CHECK_INTERVAL_MS: u64 = 1;
+
 type TcpWriter = WriteHalf<MaybeTlsStream<TcpStream>>;
 type TcpReader = ReadHalf<MaybeTlsStream<TcpStream>>;
 pub type TcpMessageHandler = dyn Fn(&[u8]) + Send + Sync;
 
 /// Configuration for TCP socket connection.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
@@ -79,7 +89,7 @@ pub struct SocketConfig {
     pub suffix: Vec<u8>,
     #[cfg(feature = "python")]
     /// The optional Python function to handle incoming messages.
-    pub py_handler: Option<Arc<PyObject>>,
+    pub py_handler: Option<PyObject>,
     /// The optional heartbeat with period and beat message.
     pub heartbeat: Option<(u64, Vec<u8>)>,
     /// The timeout (milliseconds) for reconnection attempts.
@@ -94,6 +104,28 @@ pub struct SocketConfig {
     pub reconnect_jitter_ms: Option<u64>,
     /// The path to the certificates directory.
     pub certs_dir: Option<String>,
+}
+
+impl Clone for SocketConfig {
+    fn clone(&self) -> Self {
+        Self {
+            url: self.url.clone(),
+            mode: self.mode,
+            suffix: self.suffix.clone(),
+            #[cfg(feature = "python")]
+            py_handler: self
+                .py_handler
+                .as_ref()
+                .map(nautilus_core::python::clone_py_object),
+            heartbeat: self.heartbeat.clone(),
+            reconnect_timeout_ms: self.reconnect_timeout_ms,
+            reconnect_delay_initial_ms: self.reconnect_delay_initial_ms,
+            reconnect_delay_max_ms: self.reconnect_delay_max_ms,
+            reconnect_backoff_factor: self.reconnect_backoff_factor,
+            reconnect_jitter_ms: self.reconnect_jitter_ms,
+            certs_dir: self.certs_dir.clone(),
+        }
+    }
 }
 
 /// Represents a command for the writer task.
@@ -180,7 +212,7 @@ impl SocketClientInner {
             reader,
             handler.clone(),
             #[cfg(feature = "python")]
-            py_handler.clone(),
+            py_handler.as_ref().map(clone_py_object),
             suffix.clone(),
         ));
 
@@ -292,7 +324,7 @@ impl SocketClientInner {
             }
 
             // Delay before closing connection
-            tokio::time::sleep(Duration::from_millis(100)).await;
+            tokio::time::sleep(Duration::from_millis(GRACEFUL_SHUTDOWN_DELAY_MS)).await;
 
             if ConnectionMode::from_atomic(&self.connection_mode).is_disconnect() {
                 tracing::debug!("Reconnect aborted mid-flight (after delay)");
@@ -320,7 +352,7 @@ impl SocketClientInner {
                 reader,
                 self.handler.clone(),
                 #[cfg(feature = "python")]
-                py_handler.clone(),
+                py_handler.as_ref().map(clone_py_object),
                 suffix.clone(),
             ));
 
@@ -356,13 +388,13 @@ impl SocketClientInner {
         connection_state: Arc<AtomicU8>,
         mut reader: TcpReader,
         handler: Option<Arc<TcpMessageHandler>>,
-        #[cfg(feature = "python")] py_handler: Option<Arc<PyObject>>,
+        #[cfg(feature = "python")] py_handler: Option<PyObject>,
         suffix: Vec<u8>,
     ) -> tokio::task::JoinHandle<()> {
         log_task_started("read");
 
         // Interval between checking the connection mode
-        let check_interval = Duration::from_millis(10);
+        let check_interval = Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS);
 
         tokio::task::spawn(async move {
             let mut buf = Vec::new();
@@ -402,13 +434,13 @@ impl SocketClientInner {
                                 }
 
                                 #[cfg(feature = "python")]
-                                if let Some(py_handler) = &py_handler {
-                                    if let Err(e) = Python::with_gil(|py| {
+                                if let Some(py_handler) = &py_handler
+                                    && let Err(e) = Python::with_gil(|py| {
                                         py_handler.call1(py, (data.as_slice(),))
-                                    }) {
-                                        tracing::error!("Call to handler failed: {e}");
-                                        break;
-                                    }
+                                    })
+                                {
+                                    tracing::error!("Call to handler failed: {e}");
+                                    break;
                                 }
                             }
                         }
@@ -433,7 +465,7 @@ impl SocketClientInner {
         log_task_started("write");
 
         // Interval between checking the connection mode
-        let check_interval = Duration::from_millis(10);
+        let check_interval = Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS);
 
         tokio::task::spawn(async move {
             let mut active_writer = writer;
@@ -463,7 +495,11 @@ impl SocketClientInner {
 
                                 // Attempt to shutdown the writer gracefully before updating,
                                 // we ignore any error as the writer may already be closed.
-                                _ = active_writer.shutdown().await;
+                                _ = tokio::time::timeout(
+                                    Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS),
+                                    active_writer.shutdown(),
+                                )
+                                .await;
 
                                 active_writer = new_writer;
                                 tracing::debug!("Updated writer");
@@ -501,7 +537,11 @@ impl SocketClientInner {
 
             // Attempt to shutdown the writer gracefully before exiting,
             // we ignore any error as the writer may already be closed.
-            _ = active_writer.shutdown().await;
+            _ = tokio::time::timeout(
+                Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS),
+                active_writer.shutdown(),
+            )
+            .await;
 
             log_task_stopped("write");
         })
@@ -544,6 +584,13 @@ impl SocketClientInner {
 
 impl Drop for SocketClientInner {
     fn drop(&mut self) {
+        // Delegate to explicit cleanup handler
+        self.clean_drop();
+    }
+}
+
+impl CleanDrop for SocketClientInner {
+    fn clean_drop(&mut self) {
         if !self.read_task.is_finished() {
             self.read_task.abort();
             log_task_aborted("read");
@@ -554,11 +601,17 @@ impl Drop for SocketClientInner {
             log_task_aborted("write");
         }
 
-        if let Some(ref handle) = self.heartbeat_task.take() {
-            if !handle.is_finished() {
-                handle.abort();
-                log_task_aborted("heartbeat");
-            }
+        if let Some(ref handle) = self.heartbeat_task.take()
+            && !handle.is_finished()
+        {
+            handle.abort();
+            log_task_aborted("heartbeat");
+        }
+
+        #[cfg(feature = "python")]
+        {
+            // Remove stored Python handler to break ref cycle
+            self.config.py_handler = None;
         }
     }
 }
@@ -674,9 +727,9 @@ impl SocketClient {
         self.connection_mode
             .store(ConnectionMode::Disconnect.as_u8(), Ordering::SeqCst);
 
-        match tokio::time::timeout(Duration::from_secs(5), async {
+        match tokio::time::timeout(Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS), async {
             while !self.is_closed() {
-                tokio::time::sleep(Duration::from_millis(10)).await;
+                tokio::time::sleep(Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS)).await;
             }
 
             if !self.controller_task.is_finished() {
@@ -705,8 +758,8 @@ impl SocketClient {
             return Err(SendError::Closed);
         }
 
-        let timeout = Duration::from_secs(2);
-        let check_interval = Duration::from_millis(1);
+        let timeout = Duration::from_secs(SEND_OPERATION_TIMEOUT_SECS);
+        let check_interval = Duration::from_millis(SEND_OPERATION_CHECK_INTERVAL_MS);
 
         if !self.is_active() {
             tracing::debug!("Waiting for client to become ACTIVE before sending...");
@@ -745,7 +798,7 @@ impl SocketClient {
         tokio::task::spawn(async move {
             log_task_started("controller");
 
-            let check_interval = Duration::from_millis(10);
+            let check_interval = Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS);
 
             loop {
                 tokio::time::sleep(check_interval).await;
@@ -754,21 +807,21 @@ impl SocketClient {
                 if mode.is_disconnect() {
                     tracing::debug!("Disconnecting");
 
-                    let timeout = Duration::from_secs(5);
+                    let timeout = Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS);
                     if tokio::time::timeout(timeout, async {
                         // Delay awaiting graceful shutdown
-                        tokio::time::sleep(Duration::from_millis(100)).await;
+                        tokio::time::sleep(Duration::from_millis(GRACEFUL_SHUTDOWN_DELAY_MS)).await;
 
                         if !inner.read_task.is_finished() {
                             inner.read_task.abort();
                             log_task_aborted("read");
                         }
 
-                        if let Some(task) = &inner.heartbeat_task {
-                            if !task.is_finished() {
-                                task.abort();
-                                log_task_aborted("heartbeat");
-                            }
+                        if let Some(task) = &inner.heartbeat_task
+                            && !task.is_finished()
+                        {
+                            task.abort();
+                            log_task_aborted("heartbeat");
                         }
                     })
                     .await
@@ -960,7 +1013,7 @@ counter = Counter()
             url: format!("127.0.0.1:{port}"),
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),
-            py_handler: Some(Arc::new(create_handler())),
+            py_handler: Some(create_handler()),
             heartbeat: None,
             reconnect_timeout_ms: None,
             reconnect_delay_initial_ms: None,
@@ -996,7 +1049,7 @@ counter = Counter()
             url: format!("127.0.0.1:{port}"),
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),
-            py_handler: Some(Arc::new(create_handler())),
+            py_handler: Some(create_handler()),
             heartbeat: None,
             reconnect_timeout_ms: None,
             reconnect_delay_initial_ms: None,
@@ -1032,7 +1085,7 @@ counter = Counter()
             url: format!("127.0.0.1:{port}"),
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),
-            py_handler: Some(Arc::new(create_handler())),
+            py_handler: Some(create_handler()),
             heartbeat: None,
             reconnect_timeout_ms: None,
             reconnect_delay_initial_ms: None,
@@ -1087,7 +1140,7 @@ counter = Counter()
             url: format!("127.0.0.1:{port}"),
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),
-            py_handler: Some(Arc::new(create_handler())),
+            py_handler: Some(create_handler()),
             heartbeat,
             reconnect_timeout_ms: None,
             reconnect_delay_initial_ms: None,
@@ -1144,7 +1197,7 @@ def handler(bytes_data):
         let py_handler = Some(Python::with_gil(|py| {
             let pymod = PyModule::from_code(py, &code, &filename, &module).unwrap();
             let func = pymod.getattr("handler").unwrap();
-            Arc::new(func.into_py_any_unwrap(py))
+            func.into_py_any_unwrap(py)
         }));
 
         let config = SocketConfig {
@@ -1208,7 +1261,7 @@ def handler(bytes_data):
             url: format!("127.0.0.1:{port}"),
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),
-            py_handler: Some(Arc::new(create_handler())),
+            py_handler: Some(create_handler()),
             heartbeat: None,
             reconnect_timeout_ms: Some(5_000),
             reconnect_delay_initial_ms: Some(500),
@@ -1258,7 +1311,7 @@ mod rust_tests {
         // Server task: accept one connection and then drop it
         let server = task::spawn(async move {
             if let Ok((mut sock, _)) = listener.accept().await {
-                let _ = sock.shutdown();
+                drop(sock.shutdown());
             }
             // Keep listener alive briefly to avoid premature exit
             sleep(Duration::from_secs(1)).await;

@@ -33,6 +33,8 @@ from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
+from nautilus_trader.execution.messages cimport QueryAccount
+from nautilus_trader.execution.messages cimport QueryOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.model.events.account cimport AccountState
@@ -254,6 +256,22 @@ cdef class ExecutionClient(Component):
         )
         raise NotImplementedError("method `batch_cancel_orders` must be implemented in the subclass")
 
+    cpdef void query_account(self, QueryAccount command):
+        """
+        Query the account specified by the command which will generate an `AccountState` event.
+
+        Parameters
+        ----------
+        command : QueryAccount
+            The command to execute.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot execute command {command}: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `query_account` method for this client",  # pragma: no cover  # noqa
+        )
+        raise NotImplementedError("method `query_account` must be implemented in the subclass")
+
     cpdef void query_order(self, QueryOrder command):
         """
         Initiate a reconciliation for the queried order which will generate an
@@ -357,6 +375,7 @@ cdef class ExecutionClient(Component):
         ClientOrderId client_order_id,
         str reason,
         uint64_t ts_event,
+        bint due_post_only=False,
     ):
         """
         Generate an `OrderRejected` event and send it to the `ExecutionEngine`.
@@ -373,6 +392,8 @@ cdef class ExecutionClient(Component):
             The order rejected reason.
         ts_event : uint64_t
             UNIX timestamp (nanoseconds) when the order rejected event occurred.
+        due_post_only : bool, default False
+            If the order was rejected because it was post-only and would execute immediately as a taker.
 
         """
         # Generate event
@@ -386,6 +407,7 @@ cdef class ExecutionClient(Component):
             event_id=UUID4(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
+            due_post_only=due_post_only,
         )
 
         self._send_order_event(rejected)
@@ -805,18 +827,18 @@ cdef class ExecutionClient(Component):
 
     cpdef void _send_mass_status_report(self, report: ExecutionMassStatus):
         self._msgbus.send(
-            endpoint="ExecEngine.reconcile_mass_status",
+            endpoint="ExecEngine.reconcile_execution_mass_status",
             msg=report,
         )
 
     cpdef void _send_order_status_report(self, report: OrderStatusReport):
         self._msgbus.send(
-            endpoint="ExecEngine.reconcile_report",
+            endpoint="ExecEngine.reconcile_execution_report",
             msg=report,
         )
 
     cpdef void _send_fill_report(self, report: FillReport):
         self._msgbus.send(
-            endpoint="ExecEngine.reconcile_report",
+            endpoint="ExecEngine.reconcile_execution_report",
             msg=report,
         )

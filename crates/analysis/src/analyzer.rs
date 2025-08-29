@@ -214,10 +214,10 @@ impl PortfolioAnalyzer {
             .or_else(|| self.account_balances.keys().next())
             .ok_or("Currency not specified for multi-currency portfolio")?;
 
-        if let Some(unrealized_pnl) = unrealized_pnl {
-            if unrealized_pnl.currency != *currency {
-                return Err("Unrealized PnL currency does not match specified currency");
-            }
+        if let Some(unrealized_pnl) = unrealized_pnl
+            && unrealized_pnl.currency != *currency
+        {
+            return Err("Unrealized PnL currency does not match specified currency");
         }
 
         let account_balance = self
@@ -256,10 +256,10 @@ impl PortfolioAnalyzer {
             .or_else(|| self.account_balances.keys().next())
             .ok_or("Currency not specified for multi-currency portfolio")?;
 
-        if let Some(unrealized_pnl) = unrealized_pnl {
-            if unrealized_pnl.currency != *currency {
-                return Err("Unrealized PnL currency does not match specified currency");
-            }
+        if let Some(unrealized_pnl) = unrealized_pnl
+            && unrealized_pnl.currency != *currency
+        {
+            return Err("Unrealized PnL currency does not match specified currency");
         }
 
         let account_balance = self
@@ -420,6 +420,7 @@ impl PortfolioAnalyzer {
 mod tests {
     use std::sync::Arc;
 
+    use nautilus_core::approx_eq;
     use nautilus_model::{
         enums::{AccountType, LiquiditySide, OrderSide},
         events::{AccountState, OrderFilled},
@@ -441,10 +442,10 @@ mod tests {
     }
 
     impl MockStatistic {
-        fn new(name: &str) -> Arc<dyn PortfolioStatistic<Item = f64> + Send + Sync> {
-            Arc::new(Self {
+        fn new(name: &str) -> Self {
+            Self {
                 name: name.to_string(),
-            })
+            }
         }
     }
 
@@ -615,7 +616,8 @@ mod tests {
     #[rstest]
     fn test_register_and_deregister_statistics() {
         let mut analyzer = PortfolioAnalyzer::new();
-        let stat = Arc::new(MockStatistic::new("test_stat"));
+        let stat: Arc<dyn PortfolioStatistic<Item = f64> + Send + Sync> =
+            Arc::new(MockStatistic::new("test_stat"));
 
         // Test registration
         analyzer.register_statistic(Arc::clone(&stat));
@@ -626,8 +628,10 @@ mod tests {
         assert!(analyzer.statistic("test_stat").is_none());
 
         // Test deregister all
-        let stat1 = Arc::new(MockStatistic::new("stat1"));
-        let stat2 = Arc::new(MockStatistic::new("stat2"));
+        let stat1: Arc<dyn PortfolioStatistic<Item = f64> + Send + Sync> =
+            Arc::new(MockStatistic::new("stat1"));
+        let stat2: Arc<dyn PortfolioStatistic<Item = f64> + Send + Sync> =
+            Arc::new(MockStatistic::new("stat2"));
         analyzer.register_statistic(Arc::clone(&stat1));
         analyzer.register_statistic(Arc::clone(&stat2));
         analyzer.deregister_statistics();
@@ -655,14 +659,14 @@ mod tests {
 
         // Test total PnL calculation
         let result = analyzer.total_pnl(Some(&currency), None).unwrap();
-        assert_eq!(result, 500.0);
+        assert!(approx_eq!(f64, result, 500.0, epsilon = 1e-9));
 
         // Test with unrealized PnL
         let unrealized_pnl = Money::new(100.0, currency);
         let result = analyzer
             .total_pnl(Some(&currency), Some(&unrealized_pnl))
             .unwrap();
-        assert_eq!(result, 600.0);
+        assert!(approx_eq!(f64, result, 600.0, epsilon = 1e-9));
     }
 
     #[rstest]
@@ -688,14 +692,14 @@ mod tests {
         let result = analyzer
             .total_pnl_percentage(Some(&currency), None)
             .unwrap();
-        assert_eq!(result, 50.0); // (1500 - 1000) / 1000 * 100
+        assert!(approx_eq!(f64, result, 50.0, epsilon = 1e-9)); // (1500 - 1000) / 1000 * 100
 
         // Test with unrealized PnL
         let unrealized_pnl = Money::new(500.0, currency);
         let result = analyzer
             .total_pnl_percentage(Some(&currency), Some(&unrealized_pnl))
             .unwrap();
-        assert_eq!(result, 100.0); // (2000 - 1000) / 1000 * 100
+        assert!(approx_eq!(f64, result, 100.0, epsilon = 1e-9)); // (2000 - 1000) / 1000 * 100
     }
 
     #[rstest]
@@ -713,20 +717,26 @@ mod tests {
         // Verify realized PnLs were recorded
         let pnls = analyzer.realized_pnls(Some(&currency)).unwrap();
         assert_eq!(pnls.len(), 2);
-        assert_eq!(pnls[0].1, 100.0);
-        assert_eq!(pnls[1].1, 200.0);
+        assert!(approx_eq!(f64, pnls[0].1, 100.0, epsilon = 1e-9));
+        assert!(approx_eq!(f64, pnls[1].1, 200.0, epsilon = 1e-9));
 
         // Verify returns were recorded
         let returns = analyzer.returns();
         assert_eq!(returns.len(), 1);
-        assert_eq!(*returns.values().next().unwrap(), 0.30000000000000004);
+        assert!(approx_eq!(
+            f64,
+            *returns.values().next().unwrap(),
+            0.30000000000000004,
+            epsilon = 1e-9
+        ));
     }
 
     #[rstest]
     fn test_performance_stats_calculation() {
         let mut analyzer = PortfolioAnalyzer::new();
         let currency = Currency::USD();
-        let stat = Arc::new(MockStatistic::new("test_stat"));
+        let stat: Arc<dyn PortfolioStatistic<Item = f64> + Send + Sync> =
+            Arc::new(MockStatistic::new("test_stat"));
         analyzer.register_statistic(Arc::clone(&stat));
 
         // Add some positions
@@ -769,7 +779,8 @@ mod tests {
     fn test_formatted_output() {
         let mut analyzer = PortfolioAnalyzer::new();
         let currency = Currency::USD();
-        let stat = Arc::new(MockStatistic::new("test_stat"));
+        let stat: Arc<dyn PortfolioStatistic<Item = f64> + Send + Sync> =
+            Arc::new(MockStatistic::new("test_stat"));
         analyzer.register_statistic(Arc::clone(&stat));
 
         let positions = vec![

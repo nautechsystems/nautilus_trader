@@ -26,6 +26,7 @@ from nautilus_trader.common.component cimport Logger
 from nautilus_trader.common.component cimport MessageBus
 from nautilus_trader.common.component cimport is_logging_initialized
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport OrderStatus
@@ -576,7 +577,7 @@ cdef class OrderManager:
             self._log.info(f"{CMD}{SENT} [Risk] {command}")  # pragma: no cover  (no logging in tests)
         self._msgbus.send(endpoint="RiskEngine.execute", msg=command)
 
-    cpdef void send_exec_command(self, TradingCommand command):
+    cpdef void send_exec_command(self, Command command):
         Condition.not_none(command, "command")
 
         if self.log_commands and is_logging_initialized():

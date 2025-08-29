@@ -16,7 +16,7 @@
 from nautilus_trader.model.objects cimport Price
 
 
-cdef dict TICK_SCHEMES
+cdef dict[str, TickScheme] TICK_SCHEMES
 
 cdef class TickScheme:
     cdef readonly str name

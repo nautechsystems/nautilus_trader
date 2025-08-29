@@ -41,6 +41,8 @@ class StrategyConfig(NautilusConfig, kw_only=True, frozen=True):
         amongst all running strategies for a particular trader ID.
     use_uuid_client_order_ids : bool, default False
         If UUID4's should be used for client order ID values.
+    use_hyphens_in_client_order_ids : bool, default True
+        If hyphens should be used in generated client order ID values.
     oms_type : OmsType, optional
         The order management system type for the strategy. This will determine
         how the `ExecutionEngine` handles position IDs.
@@ -58,18 +60,22 @@ class StrategyConfig(NautilusConfig, kw_only=True, frozen=True):
         If False, then only warning events and above are logged.
     log_commands : bool, default True
         If commands should be logged by the strategy.
+    log_rejected_due_post_only_as_warning : bool, default True
+        If order rejected events where `due_post_only` is True should be logged as warnings.
 
     """
 
     strategy_id: StrategyId | None = None
     order_id_tag: str | None = None
     use_uuid_client_order_ids: bool = False
+    use_hyphens_in_client_order_ids: bool = True
     oms_type: str | None = None
     external_order_claims: list[InstrumentId] | None = None
     manage_contingent_orders: bool = False
     manage_gtd_expiry: bool = False
     log_events: bool = True
     log_commands: bool = True
+    log_rejected_due_post_only_as_warning: bool = True
 
 
 class ImportableStrategyConfig(NautilusConfig, frozen=True):

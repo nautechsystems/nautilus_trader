@@ -39,13 +39,13 @@ pub use response::{
 };
 pub use subscribe::{
     SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots,
-    SubscribeCustomData, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
-    SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices, SubscribeQuotes,
-    SubscribeTrades,
+    SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
+    SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices,
+    SubscribeQuotes, SubscribeTrades,
 };
 pub use unsubscribe::{
     UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots,
-    UnsubscribeCustomData, UnsubscribeIndexPrices, UnsubscribeInstrument,
+    UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
     UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
     UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
 };
@@ -53,6 +53,7 @@ pub use unsubscribe::{
 #[cfg(feature = "defi")]
 use crate::messages::defi::{DefiSubscribeCommand, DefiUnsubscribeCommand};
 
+#[non_exhaustive]
 #[derive(Clone, Debug, PartialEq)]
 pub enum DataCommand {
     Request(RequestCommand),
@@ -84,6 +85,7 @@ pub enum SubscribeCommand {
     Bars(SubscribeBars),
     MarkPrices(SubscribeMarkPrices),
     IndexPrices(SubscribeIndexPrices),
+    FundingRates(SubscribeFundingRates),
     InstrumentStatus(SubscribeInstrumentStatus),
     InstrumentClose(SubscribeInstrumentClose),
 }
@@ -113,6 +115,7 @@ impl SubscribeCommand {
             Self::Bars(cmd) => cmd.command_id,
             Self::MarkPrices(cmd) => cmd.command_id,
             Self::IndexPrices(cmd) => cmd.command_id,
+            Self::FundingRates(cmd) => cmd.command_id,
             Self::InstrumentStatus(cmd) => cmd.command_id,
             Self::InstrumentClose(cmd) => cmd.command_id,
         }
@@ -130,6 +133,7 @@ impl SubscribeCommand {
             Self::Trades(cmd) => cmd.client_id.as_ref(),
             Self::MarkPrices(cmd) => cmd.client_id.as_ref(),
             Self::IndexPrices(cmd) => cmd.client_id.as_ref(),
+            Self::FundingRates(cmd) => cmd.client_id.as_ref(),
             Self::Bars(cmd) => cmd.client_id.as_ref(),
             Self::InstrumentStatus(cmd) => cmd.client_id.as_ref(),
             Self::InstrumentClose(cmd) => cmd.client_id.as_ref(),
@@ -148,6 +152,7 @@ impl SubscribeCommand {
             Self::Trades(cmd) => cmd.venue.as_ref(),
             Self::MarkPrices(cmd) => cmd.venue.as_ref(),
             Self::IndexPrices(cmd) => cmd.venue.as_ref(),
+            Self::FundingRates(cmd) => cmd.venue.as_ref(),
             Self::Bars(cmd) => cmd.venue.as_ref(),
             Self::InstrumentStatus(cmd) => cmd.venue.as_ref(),
             Self::InstrumentClose(cmd) => cmd.venue.as_ref(),
@@ -166,6 +171,7 @@ impl SubscribeCommand {
             Self::Trades(cmd) => cmd.ts_init,
             Self::MarkPrices(cmd) => cmd.ts_init,
             Self::IndexPrices(cmd) => cmd.ts_init,
+            Self::FundingRates(cmd) => cmd.ts_init,
             Self::Bars(cmd) => cmd.ts_init,
             Self::InstrumentStatus(cmd) => cmd.ts_init,
             Self::InstrumentClose(cmd) => cmd.ts_init,
@@ -186,6 +192,7 @@ pub enum UnsubscribeCommand {
     Bars(UnsubscribeBars),
     MarkPrices(UnsubscribeMarkPrices),
     IndexPrices(UnsubscribeIndexPrices),
+    FundingRates(UnsubscribeFundingRates),
     InstrumentStatus(UnsubscribeInstrumentStatus),
     InstrumentClose(UnsubscribeInstrumentClose),
 }
@@ -215,6 +222,7 @@ impl UnsubscribeCommand {
             Self::Bars(cmd) => cmd.command_id,
             Self::MarkPrices(cmd) => cmd.command_id,
             Self::IndexPrices(cmd) => cmd.command_id,
+            Self::FundingRates(cmd) => cmd.command_id,
             Self::InstrumentStatus(cmd) => cmd.command_id,
             Self::InstrumentClose(cmd) => cmd.command_id,
         }
@@ -233,6 +241,7 @@ impl UnsubscribeCommand {
             Self::Bars(cmd) => cmd.client_id.as_ref(),
             Self::MarkPrices(cmd) => cmd.client_id.as_ref(),
             Self::IndexPrices(cmd) => cmd.client_id.as_ref(),
+            Self::FundingRates(cmd) => cmd.client_id.as_ref(),
             Self::InstrumentStatus(cmd) => cmd.client_id.as_ref(),
             Self::InstrumentClose(cmd) => cmd.client_id.as_ref(),
         }
@@ -251,6 +260,7 @@ impl UnsubscribeCommand {
             Self::Bars(cmd) => cmd.venue.as_ref(),
             Self::MarkPrices(cmd) => cmd.venue.as_ref(),
             Self::IndexPrices(cmd) => cmd.venue.as_ref(),
+            Self::FundingRates(cmd) => cmd.venue.as_ref(),
             Self::InstrumentStatus(cmd) => cmd.venue.as_ref(),
             Self::InstrumentClose(cmd) => cmd.venue.as_ref(),
         }
@@ -268,6 +278,7 @@ impl UnsubscribeCommand {
             Self::Trades(cmd) => cmd.ts_init,
             Self::MarkPrices(cmd) => cmd.ts_init,
             Self::IndexPrices(cmd) => cmd.ts_init,
+            Self::FundingRates(cmd) => cmd.ts_init,
             Self::Bars(cmd) => cmd.ts_init,
             Self::InstrumentStatus(cmd) => cmd.ts_init,
             Self::InstrumentClose(cmd) => cmd.ts_init,

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::Debug;
+use std::{fmt::Debug, time::Duration};
 
 use nautilus_common::{
     cache::CacheConfig, enums::Environment, logging::logger::LoggerConfig,
@@ -41,18 +41,18 @@ pub trait NautilusKernelConfig: Debug {
     fn logging(&self) -> LoggerConfig;
     /// Returns the unique instance identifier for the kernel.
     fn instance_id(&self) -> Option<UUID4>;
-    /// Returns the timeout (seconds) for all clients to connect and initialize.
-    fn timeout_connection(&self) -> u32;
-    /// Returns the timeout (seconds) for execution state to reconcile.
-    fn timeout_reconciliation(&self) -> u32;
-    /// Returns the timeout (seconds) for portfolio to initialize margins and unrealized pnls.
-    fn timeout_portfolio(&self) -> u32;
-    /// Returns the timeout (seconds) for all engine clients to disconnect.
-    fn timeout_disconnection(&self) -> u32;
-    /// Returns the timeout (seconds) after stopping the node to await residual events before final shutdown.
-    fn timeout_post_stop(&self) -> u32;
-    /// Returns the timeout (seconds) to await pending tasks cancellation during shutdown.
-    fn timeout_shutdown(&self) -> u32;
+    /// Returns the timeout for all clients to connect and initialize.
+    fn timeout_connection(&self) -> Duration;
+    /// Returns the timeout for execution state to reconcile.
+    fn timeout_reconciliation(&self) -> Duration;
+    /// Returns the timeout for portfolio to initialize margins and unrealized pnls.
+    fn timeout_portfolio(&self) -> Duration;
+    /// Returns the timeout for all engine clients to disconnect.
+    fn timeout_disconnection(&self) -> Duration;
+    /// Returns the timeout after stopping the node to await residual events before final shutdown.
+    fn delay_post_stop(&self) -> Duration;
+    /// Returns the timeout to await pending tasks cancellation during shutdown.
+    fn timeout_shutdown(&self) -> Duration;
     /// Returns the cache configuration.
     fn cache(&self) -> Option<CacheConfig>;
     /// Returns the message bus configuration.
@@ -84,18 +84,18 @@ pub struct KernelConfig {
     pub logging: LoggerConfig,
     /// The unique instance identifier for the kernel
     pub instance_id: Option<UUID4>,
-    /// The timeout (seconds) for all clients to connect and initialize.
-    pub timeout_connection: u32,
-    /// The timeout (seconds) for execution state to reconcile.
-    pub timeout_reconciliation: u32,
-    /// The timeout (seconds) for portfolio to initialize margins and unrealized pnls.
-    pub timeout_portfolio: u32,
-    /// The timeout (seconds) for all engine clients to disconnect.
-    pub timeout_disconnection: u32,
-    /// The timeout (seconds) after stopping the node to await residual events before final shutdown.
-    pub timeout_post_stop: u32,
-    /// The timeout (seconds) to await pending tasks cancellation during shutdown.
-    pub timeout_shutdown: u32,
+    /// The timeout for all clients to connect and initialize.
+    pub timeout_connection: Duration,
+    /// The timeout for execution state to reconcile.
+    pub timeout_reconciliation: Duration,
+    /// The timeout for portfolio to initialize margins and unrealized pnls.
+    pub timeout_portfolio: Duration,
+    /// The timeout for all engine clients to disconnect.
+    pub timeout_disconnection: Duration,
+    /// The delay after stopping the node to await residual events before final shutdown.
+    pub delay_post_stop: Duration,
+    /// The delay to await pending tasks cancellation during shutdown.
+    pub timeout_shutdown: Duration,
     /// The cache configuration.
     pub cache: Option<CacheConfig>,
     /// The message bus configuration.
@@ -137,27 +137,27 @@ impl NautilusKernelConfig for KernelConfig {
         self.instance_id
     }
 
-    fn timeout_connection(&self) -> u32 {
+    fn timeout_connection(&self) -> Duration {
         self.timeout_connection
     }
 
-    fn timeout_reconciliation(&self) -> u32 {
+    fn timeout_reconciliation(&self) -> Duration {
         self.timeout_reconciliation
     }
 
-    fn timeout_portfolio(&self) -> u32 {
+    fn timeout_portfolio(&self) -> Duration {
         self.timeout_portfolio
     }
 
-    fn timeout_disconnection(&self) -> u32 {
+    fn timeout_disconnection(&self) -> Duration {
         self.timeout_disconnection
     }
 
-    fn timeout_post_stop(&self) -> u32 {
-        self.timeout_post_stop
+    fn delay_post_stop(&self) -> Duration {
+        self.delay_post_stop
     }
 
-    fn timeout_shutdown(&self) -> u32 {
+    fn timeout_shutdown(&self) -> Duration {
         self.timeout_shutdown
     }
 
@@ -199,12 +199,12 @@ impl Default for KernelConfig {
             save_state: false,
             logging: LoggerConfig::default(),
             instance_id: None,
-            timeout_connection: 60,
-            timeout_reconciliation: 30,
-            timeout_portfolio: 10,
-            timeout_disconnection: 10,
-            timeout_post_stop: 10,
-            timeout_shutdown: 5,
+            timeout_connection: Duration::from_secs(60),
+            timeout_reconciliation: Duration::from_secs(30),
+            timeout_portfolio: Duration::from_secs(10),
+            timeout_disconnection: Duration::from_secs(10),
+            delay_post_stop: Duration::from_secs(10),
+            timeout_shutdown: Duration::from_secs(5),
             cache: None,
             msgbus: None,
             data_engine: None,

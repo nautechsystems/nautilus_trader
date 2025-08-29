@@ -248,7 +248,7 @@ mod tests {
     fn test_get_schema_map() {
         let schema_map = Bar::get_schema_map();
         let mut expected_map = HashMap::new();
-        let fixed_size_binary = format!("FixedSizeBinary({})", PRECISION_BYTES);
+        let fixed_size_binary = format!("FixedSizeBinary({PRECISION_BYTES})");
         expected_map.insert("open".to_string(), fixed_size_binary.clone());
         expected_map.insert("high".to_string(), fixed_size_binary.clone());
         expected_map.insert("low".to_string(), fixed_size_binary.clone());

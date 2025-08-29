@@ -46,6 +46,7 @@ from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.data.messages import SubscribeBars
 from nautilus_trader.data.messages import SubscribeData
+from nautilus_trader.data.messages import SubscribeFundingRates
 from nautilus_trader.data.messages import SubscribeIndexPrices
 from nautilus_trader.data.messages import SubscribeInstrument
 from nautilus_trader.data.messages import SubscribeInstrumentClose
@@ -57,6 +58,7 @@ from nautilus_trader.data.messages import SubscribeQuoteTicks
 from nautilus_trader.data.messages import SubscribeTradeTicks
 from nautilus_trader.data.messages import UnsubscribeBars
 from nautilus_trader.data.messages import UnsubscribeData
+from nautilus_trader.data.messages import UnsubscribeFundingRates
 from nautilus_trader.data.messages import UnsubscribeInstrument
 from nautilus_trader.data.messages import UnsubscribeInstrumentClose
 from nautilus_trader.data.messages import UnsubscribeInstruments
@@ -610,6 +612,15 @@ class LiveMarketDataClient(MarketDataClient):
             success_color=LogColor.BLUE,
         )
 
+    def subscribe_funding_rates(self, command: SubscribeFundingRates) -> None:
+        self._add_subscription_funding_rates(command.instrument_id)
+        self.create_task(
+            self._subscribe_funding_rates(command),
+            log_msg=f"subscribe: funding_rates {command.instrument_id}",
+            success_msg=f"Subscribed {command.instrument_id} funding rates",
+            success_color=LogColor.BLUE,
+        )
+
     def subscribe_bars(self, command: SubscribeBars) -> None:
         PyCondition.is_true(
             command.bar_type.is_externally_aggregated(),
@@ -721,6 +732,15 @@ class LiveMarketDataClient(MarketDataClient):
             self._unsubscribe_trade_ticks(command),
             log_msg=f"unsubscribe: index_prices {command.instrument_id}",
             success_msg=f"Unsubscribed {command.instrument_id} index prices",
+            success_color=LogColor.BLUE,
+        )
+
+    def unsubscribe_funding_rates(self, command: UnsubscribeFundingRates) -> None:
+        self._remove_subscription_funding_rates(command.instrument_id)
+        self.create_task(
+            self._unsubscribe_funding_rates(command),
+            log_msg=f"unsubscribe: funding_rates {command.instrument_id}",
+            success_msg=f"Unsubscribed {command.instrument_id} funding rates",
             success_color=LogColor.BLUE,
         )
 
@@ -881,6 +901,11 @@ class LiveMarketDataClient(MarketDataClient):
             "implement the `_subscribe_index_prices` coroutine",  # pragma: no cover
         )
 
+    async def _subscribe_funding_rates(self, command: SubscribeFundingRates) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "implement the `_subscribe_funding_rates` coroutine",  # pragma: no cover
+        )
+
     async def _subscribe_bars(self, command: SubscribeBars) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe_bars` coroutine",  # pragma: no cover
@@ -939,6 +964,11 @@ class LiveMarketDataClient(MarketDataClient):
     async def _unsubscribe_index_prices(self, command: SubscribeIndexPrices) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_unsubscribe_index_prices` coroutine",  # pragma: no cover
+        )
+
+    async def _unsubscribe_funding_rates(self, command: UnsubscribeFundingRates) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "implement the `_unsubscribe_funding_rates` coroutine",  # pragma: no cover
         )
 
     async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:

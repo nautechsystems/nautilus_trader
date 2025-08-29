@@ -25,6 +25,7 @@ from nautilus_trader.common.config import msgspec_encoding_hook
 from nautilus_trader.common.config import resolve_config_path
 from nautilus_trader.common.config import resolve_path
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ExecAlgorithmId
 
 
@@ -52,6 +53,10 @@ class ExecEngineConfig(NautilusConfig, frozen=True):
         If ``None`` then no additional snapshots will be taken.
         To include unrealized PnL in these snapshots, quotes for the position's instrument must be
         available in the cache.
+    external_clients : list[ClientId], optional
+        Client IDs representing external execution streams.
+        Commands with these client IDs will be published on the message bus only;
+        the execution engine will not attempt to forward them to a local `ExecutionClient`.
     debug : bool, default False
         If debug mode is active (will provide extra debug logging).
 
@@ -62,6 +67,7 @@ class ExecEngineConfig(NautilusConfig, frozen=True):
     snapshot_orders: bool = False
     snapshot_positions: bool = False
     snapshot_positions_interval_secs: PositiveFloat | None = None
+    external_clients: list[ClientId] | None = None
     debug: bool = False
 
 

@@ -60,6 +60,7 @@ cdef class TieredTickScheme(TickScheme):
             start, stop, incr = x
             assert start < stop, f"Start should be less than stop (start={start}, stop={stop})"
             assert incr <= start and incr <= stop, f"Increment should be less than start and stop ({start}, {stop}, {incr})"
+
         return tiers
 
     cpdef _build_ticks(self):
@@ -68,19 +69,25 @@ cdef class TieredTickScheme(TickScheme):
         for start, stop, step in self.tiers:
             if stop == np.inf:
                 stop = start + ((self.max_ticks_per_tier + 1) * step)
+
             ticks = [Price(x, self.price_precision) for x in np.arange(start, stop, step)]
+
             if len(ticks) > self.max_ticks_per_tier+1:
                 print(f"{self.name}: too many ticks for tier ({start=}, {stop=}, {step=}, trimming to {self.max_ticks_per_tier} (from {len(ticks)})")
                 ticks = ticks[:self.max_ticks_per_tier]
+
             all_ticks.extend(ticks)
+
         return np.asarray(all_ticks)
 
     cpdef int find_tick_index(self, double value):
         cdef int idx = self.ticks.searchsorted(value)
         cdef double prev_value = self.ticks[idx - 1].as_double()
         # print(f"Searching for {value=}, {idx=}, {prev_value=}, exact?={value == prev_value}")
+
         if value == prev_value:
             return idx - 1
+
         return idx
 
     cpdef Price next_ask_price(self, double value, int n=0):
@@ -102,8 +109,10 @@ cdef class TieredTickScheme(TickScheme):
 
         """
         Condition.not_negative(n, "n")
+
         cdef int idx = self.find_tick_index(value)
         Condition.is_true(idx + n <= self.tick_count, f"n={n} beyond ask tick bound")
+
         return self.ticks[idx + n]
 
     cpdef Price next_bid_price(self, double value, int n=0):
@@ -125,10 +134,13 @@ cdef class TieredTickScheme(TickScheme):
 
         """
         Condition.not_negative(n, "n")
+
         cdef int idx = self.find_tick_index(value)
         Condition.is_true((idx - n) > 0, f"n={n} beyond bid tick bound")
+
         if self.ticks[idx].as_double() == value:
             return self.ticks[idx - n]
+
         return self.ticks[idx - 1 - n]
 
 

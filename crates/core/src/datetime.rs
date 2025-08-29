@@ -298,6 +298,68 @@ pub fn add_n_months_nanos(unix_nanos: UnixNanos, n: u32) -> anyhow::Result<UnixN
     Ok(UnixNanos::from(timestamp as u64))
 }
 
+/// Add `n` years to a chrono `DateTime<Utc>`.
+///
+/// # Errors
+///
+/// Returns an error if the resulting date would be invalid or out of range.
+pub fn add_n_years(datetime: DateTime<Utc>, n: u32) -> anyhow::Result<DateTime<Utc>> {
+    // Use checked_add_months with n * 12 months
+    match datetime.checked_add_months(chrono::Months::new(n * 12)) {
+        Some(result) => Ok(result),
+        None => anyhow::bail!("Failed to add {n} years to {datetime}"),
+    }
+}
+
+/// Subtract `n` years from a chrono `DateTime<Utc>`.
+///
+/// # Errors
+///
+/// Returns an error if the resulting date would be invalid or out of range.
+pub fn subtract_n_years(datetime: DateTime<Utc>, n: u32) -> anyhow::Result<DateTime<Utc>> {
+    // Use checked_sub_months with n * 12 months
+    match datetime.checked_sub_months(chrono::Months::new(n * 12)) {
+        Some(result) => Ok(result),
+        None => anyhow::bail!("Failed to subtract {n} years from {datetime}"),
+    }
+}
+
+/// Add `n` years to a given UNIX nanoseconds timestamp.
+///
+/// # Errors
+///
+/// Returns an error if the resulting timestamp is out of range or invalid.
+pub fn add_n_years_nanos(unix_nanos: UnixNanos, n: u32) -> anyhow::Result<UnixNanos> {
+    let datetime = unix_nanos.to_datetime_utc();
+    let result = add_n_years(datetime, n)?;
+    let timestamp = match result.timestamp_nanos_opt() {
+        Some(ts) => ts,
+        None => anyhow::bail!("Timestamp out of range after adding {n} years"),
+    };
+
+    Ok(UnixNanos::from(timestamp as u64))
+}
+
+/// Subtract `n` years from a given UNIX nanoseconds timestamp.
+///
+/// # Errors
+///
+/// Returns an error if the resulting timestamp is out of range or invalid.
+pub fn subtract_n_years_nanos(unix_nanos: UnixNanos, n: u32) -> anyhow::Result<UnixNanos> {
+    let datetime = unix_nanos.to_datetime_utc();
+    let result = subtract_n_years(datetime, n)?;
+    let timestamp = match result.timestamp_nanos_opt() {
+        Some(ts) => ts,
+        None => anyhow::bail!("Timestamp out of range after subtracting {n} years"),
+    };
+
+    if timestamp < 0 {
+        anyhow::bail!("Negative timestamp not allowed");
+    }
+
+    Ok(UnixNanos::from(timestamp as u64))
+}
+
 /// Returns the last valid day of `(year, month)`.
 #[must_use]
 pub const fn last_day_of_month(year: i32, month: u32) -> u32 {

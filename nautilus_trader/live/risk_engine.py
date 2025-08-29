@@ -14,12 +14,14 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import os
 from asyncio import Queue
 from typing import Final
 
 from nautilus_trader.cache.base import CacheFacade
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
+from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import LiveRiskEngineConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.message import Command
@@ -100,6 +102,11 @@ class LiveRiskEngine(RiskEngine):
         self._cmd_queue_task: asyncio.Task | None = None
         self._evt_queue_task: asyncio.Task | None = None
         self._kill: bool = False
+
+        # Configuration
+        self.graceful_shutdown_on_exception: bool = config.graceful_shutdown_on_exception
+        self._shutdown_initiated: bool = False
+        self._log.info(f"{config.graceful_shutdown_on_exception=}", LogColor.BLUE)
 
     def get_cmd_queue_task(self) -> asyncio.Task | None:
         """
@@ -202,6 +209,26 @@ class LiveRiskEngine(RiskEngine):
 
     # -- INTERNAL -------------------------------------------------------------------------------------
 
+    def _handle_queue_exception(self, e: Exception, queue_name: str) -> None:
+        self._log.exception(
+            f"Unexpected exception in {queue_name} queue processing: {e!r}",
+            e,
+        )
+        if self.graceful_shutdown_on_exception:
+            if not self._shutdown_initiated:
+                self._log.warning(
+                    "Initiating graceful shutdown due to unexpected exception",
+                )
+                self.shutdown_system(
+                    f"Unexpected exception in {queue_name} queue processing: {e!r}",
+                )
+                self._shutdown_initiated = True
+        else:
+            self._log.error(
+                "System will terminate immediately to prevent operation in degraded state",
+            )
+            os._exit(1)  # Immediate crash
+
     def _enqueue_sentinel(self) -> None:
         self._loop.call_soon_threadsafe(self._cmd_queue.put_nowait, self._sentinel)
         self._loop.call_soon_threadsafe(self._evt_queue.put_nowait, self._sentinel)
@@ -229,14 +256,17 @@ class LiveRiskEngine(RiskEngine):
         )
         try:
             while True:
-                command: Command | None = await self._cmd_queue.get()
-                if command is self._sentinel:
+                try:
+                    command: Command | None = await self._cmd_queue.get()
+                    if command is self._sentinel:
+                        break
+
+                    self._execute_command(command)
+                except asyncio.CancelledError:
+                    self._log.warning("Canceled task 'run_cmd_queue'")
                     break
-                self._execute_command(command)
-        except asyncio.CancelledError:
-            self._log.warning("Canceled task 'run_cmd_queue'")
-        except Exception as e:
-            self._log.exception(f"{e!r}", e)
+                except Exception as e:
+                    self._handle_queue_exception(e, "command")
         finally:
             stopped_msg = "Command message queue stopped"
             if not self._cmd_queue.empty():
@@ -250,14 +280,17 @@ class LiveRiskEngine(RiskEngine):
         )
         try:
             while True:
-                event: Event | None = await self._evt_queue.get()
-                if event is self._sentinel:
+                try:
+                    event: Event | None = await self._evt_queue.get()
+                    if event is self._sentinel:
+                        break
+
+                    self._handle_event(event)
+                except asyncio.CancelledError:
+                    self._log.warning("Canceled task 'run_evt_queue'")
                     break
-                self._handle_event(event)
-        except asyncio.CancelledError:
-            self._log.warning("Canceled task 'run_evt_queue'")
-        except Exception as e:
-            self._log.exception(f"{e!r}", e)
+                except Exception as e:
+                    self._handle_queue_exception(e, "event")
         finally:
             stopped_msg = "Event message queue stopped"
             if not self._evt_queue.empty():

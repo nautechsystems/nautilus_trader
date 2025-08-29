@@ -16,6 +16,8 @@
 from decimal import Decimal
 from typing import Any
 
+import pandas as pd
+
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import PositiveFloat
 from nautilus_trader.config import PositiveInt
@@ -23,7 +25,7 @@ from nautilus_trader.config import StrategyConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
-from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
+from nautilus_trader.indicators import ExponentialMovingAverage
 from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
@@ -140,7 +142,10 @@ class EMACrossTWAP(Strategy):
         self.register_indicator_for_bars(self.config.bar_type, self.slow_ema)
 
         # Get historical data
-        self.request_bars(self.config.bar_type)
+        self.request_bars(
+            self.config.bar_type,
+            start=self._clock.utc_now() - pd.Timedelta(days=1),
+        )
 
         # Subscribe to live data
         self.subscribe_bars(self.config.bar_type)

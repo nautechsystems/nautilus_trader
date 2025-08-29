@@ -9,18 +9,18 @@ Adapters provide connectivity to trading venues and data providers—translating
 
 An adapter typically consists of several components:
 
-1. **Instrument Provider**: Supplies instrument definitions
-2. **Data Client**: Handles live market data feeds and historical data requests
-3. **Execution Client**: Handles order execution and management
-4. **Configuration**: Configures the client settings
+1. **Instrument Provider**: Supplies instrument definitions.
+2. **Data Client**: Handles live market data feeds and historical data requests.
+3. **Execution Client**: Handles order execution and management.
+4. **Configuration**: Configures the client settings.
 
 ## Adapter implementation steps
 
-1. Create a new Python subpackage for your adapter
-2. Implement the Instrument Provider by inheriting from `InstrumentProvider` and implementing the necessary methods to load instruments
-3. Implement the Data Client by inheriting from either the `LiveDataClient` and `LiveMarketDataClient` class as applicable, providing implementations for the required methods
-4. Implement the Execution Client by inheriting from `LiveExecutionClient` and providing implementations for the required methods
-5. Create configuration classes to hold your adapter’s settings
+1. Create a new Python subpackage for your adapter.
+2. Implement the Instrument Provider by inheriting from `InstrumentProvider` and implementing the necessary methods to load instruments.
+3. Implement the Data Client by inheriting from either the `LiveDataClient` and `LiveMarketDataClient` class as applicable, providing implementations for the required methods.
+4. Implement the Execution Client by inheriting from `LiveExecutionClient` and providing implementations for the required methods.
+5. Create configuration classes to hold your adapter’s settings.
 6. Test your adapter thoroughly to ensure all methods are correctly implemented and the adapter works as expected (see the [Testing Guide](testing.md)).
 
 ## Template for building an adapter
@@ -98,13 +98,13 @@ class TemplateLiveDataClient(LiveDataClient):
 
 **Key Methods**:
 
-- `_connect`: Establishes a connection to the data provider
-- `_disconnect`: Closes the connection to the data provider
-- `reset`: Resets the state of the client
-- `dispose`: Disposes of any resources held by the client
-- `_subscribe`: Subscribes to a specific data type
-- `_unsubscribe`: Unsubscribes from a specific data type
-- `_request`: Requests data from the provider
+- `_connect`: Establishes a connection to the data provider.
+- `_disconnect`: Closes the connection to the data provider.
+- `reset`: Resets the state of the client.
+- `dispose`: Disposes of any resources held by the client.
+- `_subscribe`: Subscribes to a specific data type.
+- `_unsubscribe`: Unsubscribes from a specific data type.
+- `_request`: Requests data from the provider.
 
 ### MarketDataClient
 
@@ -146,22 +146,86 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
 
     async def _unsubscribe_order_book_deltas(self, instrument_id: InstrumentId) -> None:
         raise NotImplementedError("implement `_unsubscribe_order_book_deltas` in your adapter subclass")
+
+    async def _subscribe_quote_ticks(self, instrument_id: InstrumentId, kwargs: dict | None = None) -> None:
+        raise NotImplementedError("implement `_subscribe_quote_ticks` in your adapter subclass")
+
+    async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
+        raise NotImplementedError("implement `_unsubscribe_quote_ticks` in your adapter subclass")
+
+    async def _subscribe_trade_ticks(self, instrument_id: InstrumentId, kwargs: dict | None = None) -> None:
+        raise NotImplementedError("implement `_subscribe_trade_ticks` in your adapter subclass")
+
+    async def _unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+        raise NotImplementedError("implement `_unsubscribe_trade_ticks` in your adapter subclass")
+
+    async def _subscribe_mark_prices(self, instrument_id: InstrumentId, kwargs: dict | None = None) -> None:
+        raise NotImplementedError("implement `_subscribe_mark_prices` in your adapter subclass")
+
+    async def _unsubscribe_mark_prices(self, instrument_id: InstrumentId) -> None:
+        raise NotImplementedError("implement `_unsubscribe_mark_prices` in your adapter subclass")
+
+    async def _subscribe_index_prices(self, instrument_id: InstrumentId, kwargs: dict | None = None) -> None:
+        raise NotImplementedError("implement `_subscribe_index_prices` in your adapter subclass")
+
+    async def _unsubscribe_index_prices(self, instrument_id: InstrumentId) -> None:
+        raise NotImplementedError("implement `_unsubscribe_index_prices` in your adapter subclass")
+
+    async def _subscribe_funding_rates(self, instrument_id: InstrumentId, kwargs: dict | None = None) -> None:
+        raise NotImplementedError("implement `_subscribe_funding_rates` in your adapter subclass")
+
+    async def _unsubscribe_funding_rates(self, instrument_id: InstrumentId) -> None:
+        raise NotImplementedError("implement `_unsubscribe_funding_rates` in your adapter subclass")
+
+    async def _subscribe_bars(self, bar_type: BarType, kwargs: dict | None = None) -> None:
+        raise NotImplementedError("implement `_subscribe_bars` in your adapter subclass")
+
+    async def _unsubscribe_bars(self, bar_type: BarType) -> None:
+        raise NotImplementedError("implement `_unsubscribe_bars` in your adapter subclass")
+
+    async def _subscribe_instrument_status(self, instrument_id: InstrumentId, kwargs: dict | None = None) -> None:
+        raise NotImplementedError("implement `_subscribe_instrument_status` in your adapter subclass")
+
+    async def _unsubscribe_instrument_status(self, instrument_id: InstrumentId) -> None:
+        raise NotImplementedError("implement `_unsubscribe_instrument_status` in your adapter subclass")
+
+    async def _subscribe_instrument_close(self, instrument_id: InstrumentId, kwargs: dict | None = None) -> None:
+        raise NotImplementedError("implement `_subscribe_instrument_close` in your adapter subclass")
+
+    async def _unsubscribe_instrument_close(self, instrument_id: InstrumentId) -> None:
+        raise NotImplementedError("implement `_unsubscribe_instrument_close` in your adapter subclass")
 ```
 
 **Key Methods**:
 
-- `_connect`: Establishes a connection to the venues APIs
-- `_disconnect`: Closes the connection to the venues APIs
-- `reset`: Resets the state of the client
-- `dispose`: Disposes of any resources held by the client
-- `_subscribe_instruments`: Subscribes to market data for multiple instruments
-- `_unsubscribe_instruments`: Unsubscribes from market data for multiple instruments
-- `_subscribe_order_book_deltas`: Subscribes to order book delta updates
-- `_unsubscribe_order_book_deltas`: Unsubscribes from order book delta updates
+- `_connect`: Establishes a connection to the venues APIs.
+- `_disconnect`: Closes the connection to the venues APIs.
+- `reset`: Resets the state of the client.
+- `dispose`: Disposes of any resources held by the client.
+- `_subscribe_instruments`: Subscribes to market data for multiple instruments.
+- `_unsubscribe_instruments`: Unsubscribes from market data for multiple instruments.
+- `_subscribe_order_book_deltas`: Subscribes to order book delta updates.
+- `_unsubscribe_order_book_deltas`: Unsubscribes from order book delta updates.
+- `_subscribe_quote_ticks`: Subscribes to top-of-book quote updates.
+- `_unsubscribe_quote_ticks`: Unsubscribes from quote tick updates.
+- `_subscribe_trade_ticks`: Subscribes to trade tick updates.
+- `_unsubscribe_trade_ticks`: Unsubscribes from trade tick updates.
+- `_subscribe_mark_prices`: Subscribes to mark price updates.
+- `_unsubscribe_mark_prices`: Unsubscribes from mark price updates.
+- `_subscribe_index_prices`: Subscribes to index price updates.
+- `_unsubscribe_index_prices`: Unsubscribes from index price updates.
+- `_subscribe_funding_rates`: Subscribes to funding rate updates.
+- `_unsubscribe_funding_rates`: Unsubscribes from funding rate updates.
+- `_subscribe_bars`: Subscribes to bar/candlestick updates.
+- `_unsubscribe_bars`: Unsubscribes from bar updates.
+- `_subscribe_instrument_status`: Subscribes to instrument status updates.
+- `_unsubscribe_instrument_status`: Unsubscribes from instrument status updates.
+- `_subscribe_instrument_close`: Subscribes to instrument close price updates.
+- `_unsubscribe_instrument_close`: Unsubscribes from instrument close price updates.
 
 ---
 
-## REST‐API field-mapping guideline
+## REST API field-mapping guideline
 
 When translating a venue’s REST payload into our domain model **avoid renaming** the upstream
 fields unless there is a compelling reason (e.g. a clash with reserved keywords). The only
@@ -232,17 +296,17 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
 
 **Key Methods**:
 
-- `_connect`: Establishes a connection to the venues APIs
-- `_disconnect`: Closes the connection to the venues APIs
-- `_submit_order`: Submits a new order to the venue
-- `_modify_order`: Modifies an existing order on the venue
-- `_cancel_order`: Cancels a specific order on the venue
-- `_cancel_all_orders`: Cancels all orders for an instrument on the venue
-- `_batch_cancel_orders`: Cancels a batch of orders for an instrument on the venue
-- `generate_order_status_report`: Generates a report for a specific order on the venue
-- `generate_order_status_reports`: Generates reports for all orders on the venue
-- `generate_fill_reports`: Generates reports for filled orders on the venue
-- `generate_position_status_reports`: Generates reports for position status on the venue
+- `_connect`: Establishes a connection to the venues APIs.
+- `_disconnect`: Closes the connection to the venues APIs.
+- `_submit_order`: Submits a new order to the venue.
+- `_modify_order`: Modifies an existing order on the venue.
+- `_cancel_order`: Cancels a specific order on the venue.
+- `_cancel_all_orders`: Cancels all orders for an instrument on the venue.
+- `_batch_cancel_orders`: Cancels a batch of orders for an instrument on the venue.
+- `generate_order_status_report`: Generates a report for a specific order on the venue.
+- `generate_order_status_reports`: Generates reports for all orders on the venue.
+- `generate_fill_reports`: Generates reports for filled orders on the venue.
+- `generate_position_status_reports`: Generates reports for position status on the venue.
 
 ### Configuration
 
@@ -274,6 +338,6 @@ class TemplateExecClientConfig(LiveExecClientConfig):
 
 **Key Attributes**:
 
-- `api_key`: The API key for authenticating with the data provider
-- `api_secret`: The API secret for authenticating with the data provider
-- `base_url`: The base URL for connecting to the data provider’s API
+- `api_key`: The API key for authenticating with the data provider.
+- `api_secret`: The API secret for authenticating with the data provider.
+- `base_url`: The base URL for connecting to the data provider’s API.

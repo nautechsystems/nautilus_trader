@@ -44,6 +44,7 @@ from nautilus_trader.execution.messages import GenerateOrderStatusReport
 from nautilus_trader.execution.messages import GenerateOrderStatusReports
 from nautilus_trader.execution.messages import GeneratePositionStatusReports
 from nautilus_trader.execution.messages import ModifyOrder
+from nautilus_trader.execution.messages import QueryAccount
 from nautilus_trader.execution.messages import QueryOrder
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
@@ -294,6 +295,13 @@ class LiveExecutionClient(ExecutionClient):
         self.create_task(
             self._batch_cancel_orders(command),
             log_msg=f"batch_cancel_orders: {command}",
+        )
+
+    def query_account(self, command: QueryAccount) -> None:
+        self._log.info(f"Query {command.account_id!r}", LogColor.BLUE)
+        self.create_task(
+            self._query_account(command),
+            log_msg=f"query_account: {command}",
         )
 
     def query_order(self, command: QueryOrder) -> None:

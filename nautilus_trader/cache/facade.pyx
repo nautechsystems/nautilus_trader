@@ -147,17 +147,9 @@ cdef class CacheDatabaseFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `load_actor` must be implemented in the subclass")  # pragma: no cover
 
-    cpdef void delete_actor(self, ComponentId component_id):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method `delete_actor` must be implemented in the subclass")  # pragma: no cover
-
     cpdef dict load_strategy(self, StrategyId strategy_id):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `load_strategy` must be implemented in the subclass")  # pragma: no cover
-
-    cpdef void delete_strategy(self, StrategyId strategy_id):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method `delete_strategy` must be implemented in the subclass")  # pragma: no cover
 
     cpdef void add(self, str key, bytes value):
         """Abstract method (implement in subclass)."""
@@ -222,6 +214,26 @@ cdef class CacheDatabaseFacade:
     cpdef void snapshot_position_state(self, Position position, uint64_t ts_snapshot, Money unrealized_pnl = None):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `snapshot_position_state` must be implemented in the subclass")  # pragma: no cover
+
+    cpdef void delete_order(self, ClientOrderId client_order_id):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method `delete_order` must be implemented in the subclass")  # pragma: no cover
+
+    cpdef void delete_position(self, PositionId position_id):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method `delete_position` must be implemented in the subclass")  # pragma: no cover
+
+    cpdef void delete_account_event(self, AccountId account_id, str event_id):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method `delete_account_event` must be implemented in the subclass")  # pragma: no cover
+
+    cpdef void delete_actor(self, ComponentId component_id):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method `delete_actor` must be implemented in the subclass")  # pragma: no cover
+
+    cpdef void delete_strategy(self, StrategyId strategy_id):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method `delete_strategy` must be implemented in the subclass")  # pragma: no cover
 
     cpdef void heartbeat(self, datetime timestamp):
         """Abstract method (implement in subclass)."""

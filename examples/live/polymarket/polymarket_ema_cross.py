@@ -39,6 +39,8 @@ from nautilus_trader.model.identifiers import TraderId
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
+# To find active markets run `python nautilus_trader/adapters/polymarket/scripts/active_markets.py`
+
 # will-the-indiana-pacers-win-the-2025-nba-finals
 # https://polymarket.com/event/will-the-new-york-knicks-win-the-2025-nba-finals
 condition_id = "0xf2a89afeddff5315e37211b0b0e4e93ed167fba2694cd35c252672d0aca73711"

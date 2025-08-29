@@ -19,12 +19,8 @@ crate-type = ["rlib", "cdylib"]
 
 [features]
 default = []
-extension-module = [
-    "pyo3/extension-module",
-]
-python = [
-    "pyo3",
-]
+extension-module = ["pyo3/extension-module"]
+python = ["pyo3"]
 
 [package.metadata.docs.rs]
 all-features = true

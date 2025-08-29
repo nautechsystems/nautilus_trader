@@ -15,6 +15,7 @@
 
 use std::collections::HashMap;
 
+use ahash::AHashMap;
 use nautilus_common::{custom::CustomData, signal::Signal};
 use nautilus_model::{
     accounts::{Account, AccountAny},
@@ -1127,8 +1128,8 @@ impl DatabaseQueries {
     /// Returns an error if the SQL SELECT or iteration fails.
     pub async fn load_distinct_order_event_client_ids(
         pool: &PgPool,
-    ) -> anyhow::Result<HashMap<ClientOrderId, ClientId>> {
-        let mut map: HashMap<ClientOrderId, ClientId> = HashMap::new();
+    ) -> anyhow::Result<AHashMap<ClientOrderId, ClientId>> {
+        let mut map: AHashMap<ClientOrderId, ClientId> = AHashMap::new();
         let result = sqlx::query_as::<_, OrderEventOrderClientIdCombination>(
             r#"
             SELECT DISTINCT

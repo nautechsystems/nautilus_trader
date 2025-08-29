@@ -157,9 +157,9 @@ Coinbase International offers market, limit, and stop order types, enabling a br
 | `post_only`   | ✓           | ✓    | Ensures orders only provide liquidity.           |
 | `reduce_only` | ✓           | ✓    | Ensures orders only reduce existing positions.   |
 
-### Time-in-Force Options
+### Time in force options
 
-| Time-in-Force | Derivatives | Spot | Notes                                            |
+| Time in force | Derivatives | Spot | Notes                                            |
 |---------------|-------------|------|--------------------------------------------------|
 | `GTC`         | ✓           | ✓    | Good Till Canceled.                              |
 | `GTD`         | ✓           | ✓    | Good Till Date.                                  |
@@ -173,6 +173,41 @@ Coinbase International offers market, limit, and stop order types, enabling a br
 | Order Modification | ✓           | ✓    | Price and quantity modification.             |
 | Bracket/OCO Orders | ?           | ?    | Requires further investigation.              |
 | Iceberg Orders     | ✓           | ✓    | Available via FIX protocol.                 |
+
+### Batch operations
+
+| Operation          | Derivatives | Spot | Notes                                       |
+|--------------------|-------------|------|---------------------------------------------|
+| Batch Submit       | -           | -    | *Not supported*.                            |
+| Batch Modify       | -           | -    | *Not supported*.                            |
+| Batch Cancel       | -           | -    | *Not supported*.                            |
+
+### Position management
+
+| Feature              | Derivatives | Spot | Notes                                       |
+|--------------------|-------------|------|---------------------------------------------|
+| Query positions     | ✓           | -    | Real-time position updates for derivatives.  |
+| Position mode       | -           | -    | Single position mode only.                   |
+| Leverage control    | ✓           | -    | Per-portfolio leverage settings.             |
+| Margin mode         | ✓           | -    | Cross margin only.                           |
+
+### Order querying
+
+| Feature              | Derivatives | Spot | Notes                                       |
+|--------------------|-------------|------|---------------------------------------------|
+| Query open orders   | ✓           | ✓    | List all active orders.                      |
+| Query order history | ✓           | ✓    | Historical order data.                       |
+| Order status updates| ✓           | ✓    | Real-time updates via FIX drop copy.       |
+| Trade history       | ✓           | ✓    | Execution and fill reports.                 |
+
+### Contingent orders
+
+| Feature              | Derivatives | Spot | Notes                                       |
+|--------------------|-------------|------|---------------------------------------------|
+| Order lists         | -           | -    | *Not supported*.                            |
+| OCO orders          | ?           | ?    | Requires further investigation.              |
+| Bracket orders      | ?           | ?    | Requires further investigation.              |
+| Conditional orders  | ✓           | ✓    | Stop and stop-limit orders.                |
 
 ### Configuration Options
 

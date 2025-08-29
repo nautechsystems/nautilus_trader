@@ -18,6 +18,10 @@ use sqlx::{ConnectOptions, PgPool, postgres::PgConnectOptions};
 
 #[derive(Debug, Clone, Builder)]
 #[builder(default)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.infrastructure")
+)]
 pub struct PostgresConnectOptions {
     pub host: String,
     pub port: u16,
@@ -62,7 +66,7 @@ impl PostgresConnectOptions {
         Self::new(
             String::from("localhost"),
             5432,
-            String::from("postgres"),
+            String::from("nautilus"),
             String::from("pass"),
             String::from("nautilus"),
         )
