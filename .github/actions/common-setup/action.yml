@@ -147,6 +147,11 @@ runs:
       with:
         python-version: ${{ inputs.python-version }}
 
+    - name: Ensure ~/.local/bin on PATH
+      shell: bash
+      run: |
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
     - name: Get Python version
       shell: bash
       run: |
