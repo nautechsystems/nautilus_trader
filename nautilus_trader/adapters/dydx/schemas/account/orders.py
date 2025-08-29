@@ -68,6 +68,7 @@ class DYDXOrderResponse(msgspec.Struct, forbid_unknown_fields=True):
     goodTilBlockTime: str | None = None
     createdAtHeight: str | None = None
     triggerPrice: str | None = None
+    orderRouterAddress: str | None = None
 
     def base_currency(self) -> str:
         """
