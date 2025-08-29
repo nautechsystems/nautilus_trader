@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Type definitions for Hyperliquid trading.
-
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::{fmt, ops::Deref, str::FromStr};

@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! HTTP request/response models for Hyperliquid API.
-
 use crate::common::{
     enums::Side,
     types::{Price, Qty, Usd},

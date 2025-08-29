@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Secure credential handling for Hyperliquid.
-
 use serde::Deserialize;
 use std::{env, fmt, fs, path::Path};
 use zeroize::{Zeroize, ZeroizeOnDrop};

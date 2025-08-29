@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Constants and configuration for Hyperliquid API.
-
 use std::{env, sync::LazyLock, time::Duration};
 
 use nautilus_model::identifiers::Venue;

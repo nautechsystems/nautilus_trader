@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Thin HTTP query helpers for Hyperliquid API.
-
 use serde::Serialize;
 use serde_json::Value;
 

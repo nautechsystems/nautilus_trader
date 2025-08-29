@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Parsing utilities for Hyperliquid API responses.
-
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serializer};
 use std::str::FromStr;

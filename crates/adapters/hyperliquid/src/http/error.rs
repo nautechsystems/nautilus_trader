@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Error types for Hyperliquid adapter
-
 use thiserror::Error;
 
 /// Comprehensive error type for Hyperliquid operations

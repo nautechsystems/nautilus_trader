@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! WebSocket message definitions for Hyperliquid API.
-
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
