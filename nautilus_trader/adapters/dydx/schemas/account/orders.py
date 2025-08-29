@@ -40,7 +40,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 
 
-class DYDXOrderResponse(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXOrderResponse(msgspec.Struct, forbid_unknown_fields=False):
     """
     Define the schema for the order response.
     """
