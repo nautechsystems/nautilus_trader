@@ -82,6 +82,39 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
 
         subscription.handle()
 
+    def subscribe_positions(self) -> None:
+        """
+        Subscribe to real-time position updates for all accounts.
+
+        This enables automatic detection of position changes from option exercises and
+        other external events.
+
+        """
+        name = "PositionUpdates"
+
+        if not (subscription := self._subscriptions.get(name=name)):
+            subscription = self._subscriptions.add(
+                req_id=self._next_req_id(),
+                name=name,
+                handle=self._eclient.reqPositions,
+                cancel=self._eclient.cancelPositions,
+            )
+
+        if not subscription:
+            return
+
+        subscription.handle()
+
+    def unsubscribe_positions(self) -> None:
+        """
+        Unsubscribe from real-time position updates.
+        """
+        name = "PositionUpdates"
+
+        if subscription := self._subscriptions.get(name=name):
+            self._subscriptions.remove(subscription.req_id)
+            self._eclient.cancelPositions()
+
     def unsubscribe_account_summary(self, account_id: str) -> None:
         """
         Unsubscribe from the account summary for the specified account. This method is
@@ -188,9 +221,17 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
         Provide the portfolio's open positions.
         """
         if request := self._requests.get(name="OpenPositions"):
-            # Convert IB API Contract to IBContract
+            # Handle position updates for requests (get_positions)
             ib_contract = IBContract(**contract.__dict__)
             request.result.append(IBPosition(account_id, ib_contract, position, avg_cost))
+        elif self._subscriptions.get(name="PositionUpdates"):
+            # Handle real-time position updates from subscription
+            ib_contract = IBContract(**contract.__dict__)
+            ib_position = IBPosition(account_id, ib_contract, position, avg_cost)
+
+            # Emit position update event for registered clients
+            if handler := self._event_subscriptions.get(f"positionUpdate-{account_id}", None):
+                handler(ib_position)
 
     async def process_position_end(self) -> None:
         """

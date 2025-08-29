@@ -209,11 +209,11 @@ cdef class GreeksCalculator:
             underlying_price_obj = self._cache.price(underlying_instrument_id, PriceType.LAST)
 
             if option_mid_price_obj is None:
-                self._log.error(f"No mid price available for option {instrument_id}")
+                self._log.warning(f"No mid price available for option {instrument_id}")
                 return
 
             if underlying_price_obj is None:
-                self._log.error(f"No last price available for underlying {underlying_instrument_id}")
+                self._log.warning(f"No last price available for underlying {underlying_instrument_id}")
                 return
 
             option_mid_price = float(option_mid_price_obj)

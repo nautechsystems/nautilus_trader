@@ -15,7 +15,7 @@
 
 //! Portfolio analysis and performance metrics for [NautilusTrader](http://nautilustrader.io).
 //!
-//! The *analysis* crate provides a comprehensive suite of portfolio analysis tools and performance
+//! The `nautilus-analysis` crate provides a comprehensive suite of portfolio analysis tools and performance
 //! statistics for evaluating trading strategies and portfolios. This includes return-based metrics,
 //! PnL-based statistics, and risk measurements commonly used in quantitative finance:
 //!
@@ -42,7 +42,6 @@
 //! or as part of a Rust only build.
 //!
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
-//! - `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
 //! - `extension-module`: Builds the crate as a Python extension module.
 
 #![warn(rustc::all)]

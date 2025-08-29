@@ -1198,7 +1198,7 @@ where
     fn await_partial(&self) -> bool {
         self.core.await_partial()
     }
-    /// Stop time-based aggregator by cancelling its timer.
+    /// Stop time-based aggregator by canceling its timer.
     fn stop(&mut self) {
         Self::stop(self);
     }

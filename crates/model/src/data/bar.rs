@@ -191,83 +191,18 @@ pub fn get_time_bar_start(
 
     match spec.aggregation {
         BarAggregation::Millisecond => {
-            let mut start_time = now.trunc_subsecs(0);
-            start_time += origin_offset;
-
-            if now < start_time {
-                start_time -= Duration::seconds(1);
-            }
-
-            while start_time <= now {
-                start_time += Duration::milliseconds(step);
-            }
-
-            start_time -= Duration::milliseconds(step);
-            start_time
+            find_closest_smaller_time(now, origin_offset, Duration::milliseconds(step))
         }
         BarAggregation::Second => {
-            let mut start_time = now.trunc_subsecs(0) - Duration::seconds(now.second() as i64);
-            start_time += origin_offset;
-
-            if now < start_time {
-                start_time -= Duration::minutes(1);
-            }
-
-            while start_time <= now {
-                start_time += Duration::seconds(step);
-            }
-
-            start_time -= Duration::seconds(step);
-            start_time
+            find_closest_smaller_time(now, origin_offset, Duration::seconds(step))
         }
         BarAggregation::Minute => {
-            let mut start_time = now.trunc_subsecs(0)
-                - Duration::seconds(now.second() as i64)
-                - Duration::minutes(now.minute() as i64);
-            start_time += origin_offset;
-
-            if now < start_time {
-                start_time -= Duration::hours(1);
-            }
-
-            while start_time <= now {
-                start_time += Duration::minutes(step);
-            }
-
-            start_time -= Duration::minutes(step);
-            start_time
+            find_closest_smaller_time(now, origin_offset, Duration::minutes(step))
         }
         BarAggregation::Hour => {
-            let mut start_time = now.trunc_subsecs(0)
-                - Duration::seconds(now.second() as i64)
-                - Duration::minutes(now.minute() as i64)
-                - Duration::hours(now.hour() as i64);
-            start_time += origin_offset;
-
-            if now < start_time {
-                start_time -= Duration::days(1);
-            }
-
-            while start_time <= now {
-                start_time += Duration::hours(step);
-            }
-
-            start_time -= Duration::hours(step);
-            start_time
+            find_closest_smaller_time(now, origin_offset, Duration::hours(step))
         }
-        BarAggregation::Day => {
-            let mut start_time = now.trunc_subsecs(0)
-                - Duration::seconds(now.second() as i64)
-                - Duration::minutes(now.minute() as i64)
-                - Duration::hours(now.hour() as i64);
-            start_time += origin_offset;
-
-            if now < start_time {
-                start_time -= Duration::days(1);
-            }
-
-            start_time
-        }
+        BarAggregation::Day => find_closest_smaller_time(now, origin_offset, Duration::days(step)),
         BarAggregation::Week => {
             let mut start_time = now.trunc_subsecs(0)
                 - Duration::seconds(now.second() as i64)
@@ -313,6 +248,29 @@ pub fn get_time_bar_start(
             spec.aggregation
         ),
     }
+}
+
+/// Finds the closest smaller time based on a daily time origin and period.
+///
+/// This function calculates the most recent time that is aligned with the given period
+/// and is less than or equal to the current time.
+fn find_closest_smaller_time(
+    now: DateTime<Utc>,
+    daily_time_origin: TimeDelta,
+    period: TimeDelta,
+) -> DateTime<Utc> {
+    // Floor to start of day
+    let day_start = now.trunc_subsecs(0)
+        - Duration::seconds(now.second() as i64)
+        - Duration::minutes(now.minute() as i64)
+        - Duration::hours(now.hour() as i64);
+    let base_time = day_start + daily_time_origin;
+
+    let time_difference = now - base_time;
+    let num_periods = (time_difference.num_nanoseconds().unwrap_or(0)
+        / period.num_nanoseconds().unwrap_or(1)) as i32;
+
+    base_time + period * num_periods
 }
 
 /// Represents a bar aggregation specification including a step, aggregation

@@ -15,7 +15,7 @@
 
 //! Test utilities and data management for [NautilusTrader](http://nautilustrader.io).
 //!
-//! The *testkit* crate provides comprehensive testing utilities including test data management,
+//! The `nautilus-testkit` crate provides comprehensive testing utilities including test data management,
 //! file handling, and common testing patterns. This crate supports robust testing workflows
 //! across the entire NautilusTrader ecosystem with automated data downloads and validation:
 //!

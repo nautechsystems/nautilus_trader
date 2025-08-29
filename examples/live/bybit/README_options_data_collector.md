@@ -4,12 +4,12 @@ This script discovers all available options for a given underlying asset (e.g., 
 
 ## Features
 
-- **Automatic Discovery**: Connects to Bybit and discovers all available options for the specified underlying asset
-- **Complete Data Collection**: Fetches both quote ticks and orderbook deltas for all discovered options
-- **Spot Data**: Also collects data for the underlying spot instrument
-- **Organized Storage**: Saves data in a hierarchical directory structure with separate files for each instrument
-- **Real-time Processing**: Processes and stores data in real-time with configurable batch sizes
-- **Comprehensive Logging**: Provides detailed logging of discovered instruments and data collection statistics
+- **Automatic Discovery**: Connects to Bybit and discovers all available options for the specified underlying asset.
+- **Complete Data Collection**: Fetches both quote ticks and orderbook deltas for all discovered options.
+- **Spot Data**: Also collects data for the underlying spot instrument.
+- **Organized Storage**: Saves data in a hierarchical directory structure with separate files for each instrument.
+- **Real-time Processing**: Processes and stores data in real-time with configurable batch sizes.
+- **Comprehensive Logging**: Provides detailed logging of discovered instruments and data collection statistics.
 
 ## Requirements
 

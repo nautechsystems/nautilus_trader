@@ -1,13 +1,28 @@
-version: '3.5'
+version: "3.5"
 
 services:
+  nautilus:
+    build:
+      context: ..
+      dockerfile: .docker/nautilus_trader.dockerfile
+    environment:
+      NAUTILUS_PATH: /opt/nautilus
+    volumes:
+      - ./nautilus_data:/opt/nautilus
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - nautilus-network
+    restart: unless-stopped
+
   postgres:
     container_name: nautilus-database
     image: postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-nautilus}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pass}
-      POSTGRES_DATABASE: nautilus
+      POSTGRES_DB: ${POSTGRES_DB:-nautilus}
       PGDATA: /data/postgres
     volumes:
       - nautilus-database:/data/postgres
@@ -37,7 +52,7 @@ services:
     container_name: nautilus-redis
     image: redis
     ports:
-      - 6379:6379
+      - "6379:6379"
     restart: unless-stopped
     networks:
       - nautilus-network

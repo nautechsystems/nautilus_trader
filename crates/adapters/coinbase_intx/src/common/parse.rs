@@ -25,7 +25,7 @@ use nautilus_model::{
             BAR_SPEC_5_MINUTE_LAST, BAR_SPEC_30_MINUTE_LAST,
         },
     },
-    enums::{AggressorSide, CurrencyType, LiquiditySide, OrderSide, PositionSide},
+    enums::{AggressorSide, CurrencyType, LiquiditySide, PositionSide},
     identifiers::{InstrumentId, Symbol},
     types::{Currency, Money, Price, Quantity},
 };
@@ -157,15 +157,6 @@ pub const fn parse_position_side(current_qty: Option<f64>) -> PositionSide {
         Some(qty) if qty.is_sign_positive() => PositionSide::Long,
         Some(qty) if qty.is_sign_negative() => PositionSide::Short,
         _ => PositionSide::Flat,
-    }
-}
-
-#[must_use]
-pub const fn parse_order_side(order_side: &Option<CoinbaseIntxSide>) -> OrderSide {
-    match order_side {
-        Some(CoinbaseIntxSide::Buy) => OrderSide::Buy,
-        Some(CoinbaseIntxSide::Sell) => OrderSide::Sell,
-        None => OrderSide::NoOrderSide,
     }
 }
 

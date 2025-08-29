@@ -31,6 +31,12 @@ pub struct DefiDataSubscriptionManager {
     pool_burn_event_encoded: AHashMap<DexType, String>,
 }
 
+impl Default for DefiDataSubscriptionManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DefiDataSubscriptionManager {
     /// Creates a new [`DefiDataSubscriptionManager`] instance.
     pub fn new() -> Self {

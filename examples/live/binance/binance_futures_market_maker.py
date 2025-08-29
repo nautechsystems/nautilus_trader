@@ -56,7 +56,7 @@ config_node = TradingNodeConfig(
         BINANCE: BinanceDataClientConfig(
             # api_key=os.getenv("BINANCE_FUTURES_API_KEY"),
             # api_secret=os.getenv("BINANCE_FUTURES_API_SECRET"),
-            account_type=BinanceAccountType.USDT_FUTURE,
+            account_type=BinanceAccountType.USDT_FUTURES,
             instrument_provider=InstrumentProviderConfig(load_all=True),
         ),
     },
@@ -64,7 +64,7 @@ config_node = TradingNodeConfig(
         BINANCE: BinanceExecClientConfig(
             # api_key=os.getenv("BINANCE_FUTURES_API_KEY"),
             # api_secret=os.getenv("BINANCE_FUTURES_API_SECRET"),
-            account_type=BinanceAccountType.USDT_FUTURE,
+            account_type=BinanceAccountType.USDT_FUTURES,
             instrument_provider=InstrumentProviderConfig(load_all=True),
             max_retries=3,
             retry_delay_initial_ms=1_000,

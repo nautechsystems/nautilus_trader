@@ -40,7 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // client.subscribe_funding_rates(vec![instrument_id]).await?;
     // client.subscribe_trades(vec![instrument_id]).await?;
     // client.subscribe_quotes(vec![instrument_id]).await?;
-    client.subscribe_order_book(vec![instrument_id]).await?;
+    client.subscribe_book(vec![instrument_id]).await?;
 
     // let bar_type = BarType::from("ETH-PERP.COINBASE_INTX-1-MINUTE-LAST-EXTERNAL");
     // client.subscribe_bars(bar_type).await?;

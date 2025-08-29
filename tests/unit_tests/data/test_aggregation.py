@@ -21,12 +21,12 @@ import pandas as pd
 import pytest
 
 from nautilus_trader import TEST_DATA_DIR
+from nautilus_trader.backtest.models.aggregator import SpreadQuoteAggregator
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.data.aggregation import BarBuilder
-from nautilus_trader.data.aggregation import SpreadQuoteAggregator
 from nautilus_trader.data.aggregation import TickBarAggregator
 from nautilus_trader.data.aggregation import TimeBarAggregator
 from nautilus_trader.data.aggregation import ValueBarAggregator
@@ -52,8 +52,8 @@ from nautilus_trader.model.instruments.option_spread import OptionSpread
 from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.tick_scheme.base import register_tick_scheme
-from nautilus_trader.model.tick_scheme.implementations.tiered import TieredTickScheme
+from nautilus_trader.model.tick_scheme import TieredTickScheme
+from nautilus_trader.model.tick_scheme import register_tick_scheme
 from nautilus_trader.persistence.loaders import ParquetTickDataLoader
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
 from nautilus_trader.persistence.wranglers import TradeTickDataWrangler

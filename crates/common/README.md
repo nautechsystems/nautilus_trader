@@ -8,7 +8,7 @@
 
 Common componentry for [NautilusTrader](http://nautilustrader.io).
 
-The *common* crate provides shared components and utilities that form the system foundation for
+The `nautilus-common` crate provides shared components and utilities that form the system foundation for
 NautilusTrader applications. This includes the actor system, message bus, caching layer, and other
 essential services.
 

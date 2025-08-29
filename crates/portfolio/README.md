@@ -8,7 +8,7 @@
 
 Portfolio management and risk analysis for [NautilusTrader](http://nautilustrader.io).
 
-The *portfolio* crate provides comprehensive portfolio management capabilities including
+The `nautilus-portfolio` crate provides comprehensive portfolio management capabilities including
 real-time position tracking, performance calculations, and risk management. This includes
 sophisticated portfolio analytics and multi-currency support:
 

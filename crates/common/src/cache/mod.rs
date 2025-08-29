@@ -57,7 +57,10 @@ use nautilus_model::{
         OrderListId, PositionId, StrategyId, Venue, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny, SyntheticInstrument},
-    orderbook::{OrderBook, own::OwnOrderBook},
+    orderbook::{
+        OrderBook,
+        own::{OwnOrderBook, should_handle_own_book_order},
+    },
     orders::{Order, OrderAny, OrderList},
     position::Position,
     types::{Currency, Money, Price, Quantity},
@@ -115,6 +118,7 @@ impl Debug for Cache {
             .field("mark_xrates", &self.mark_xrates)
             .field("mark_prices", &self.mark_prices)
             .field("index_prices", &self.index_prices)
+            .field("funding_rates", &self.funding_rates)
             .field("bars", &self.bars)
             .field("greeks", &self.greeks)
             .field("yield_curves", &self.yield_curves)
@@ -1849,6 +1853,13 @@ impl Cache {
             };
         }
 
+        // Update own book
+        if self.own_order_book(&order.instrument_id()).is_some()
+            && should_handle_own_book_order(order)
+        {
+            self.update_own_order_book(order);
+        }
+
         if let Some(database) = &mut self.database {
             database.update_order(order.last_event())?;
             // TODO: Implement order snapshots
@@ -1877,6 +1888,7 @@ impl Cache {
     /// Returns an error if updating the position in the database fails.
     pub fn update_position(&mut self, position: &Position) -> anyhow::Result<()> {
         // Update open/closed state
+
         if position.is_open() {
             self.index.positions_open.insert(position.id);
             self.index.positions_closed.remove(&position.id);
@@ -1892,6 +1904,9 @@ impl Cache {
             //     database.snapshot_order_state(order)?;
             // }
         }
+
+        self.positions.insert(position.id, position.clone());
+
         Ok(())
     }
 
@@ -3254,5 +3269,45 @@ impl Cache {
             .values()
             .filter(|account| &account.id() == account_id)
             .collect()
+    }
+
+    /// Updates the own order book with an order.
+    ///
+    /// This method adds, updates, or removes an order from the own order book
+    /// based on the order's current state.
+    pub fn update_own_order_book(&mut self, order: &OrderAny) {
+        let instrument_id = order.instrument_id();
+
+        // Get or create the own order book for this instrument
+        let own_book = self
+            .own_books
+            .entry(instrument_id)
+            .or_insert_with(|| OwnOrderBook::new(instrument_id));
+
+        // Convert order to own book order
+        let own_book_order = order.to_own_book_order();
+
+        if order.is_closed() {
+            // Remove the order from the own book if it's closed
+            if let Err(e) = own_book.delete(own_book_order) {
+                log::debug!(
+                    "Failed to delete order {} from own book: {}",
+                    order.client_order_id(),
+                    e
+                );
+            } else {
+                log::debug!("Deleted order {} from own book", order.client_order_id());
+            }
+        } else {
+            // Add or update the order in the own book
+            own_book.update(own_book_order).unwrap_or_else(|e| {
+                log::debug!(
+                    "Failed to update order {} in own book: {}",
+                    order.client_order_id(),
+                    e
+                );
+            });
+            log::debug!("Updated order {} in own book", order.client_order_id());
+        }
     }
 }

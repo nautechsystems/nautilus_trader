@@ -15,6 +15,7 @@
 
 use std::num::NonZero;
 
+use ahash::AHashMap;
 use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime, uuid::UUID4};
 use nautilus_model::{
     data::{
@@ -30,6 +31,7 @@ use nautilus_model::{
     },
     enums::{AggregationSource, BarAggregation, OrderSide, PriceType, RecordFlag},
     identifiers::{AccountId, ClientOrderId, InstrumentId, OrderListId, TradeId, VenueOrderId},
+    instruments::{Instrument, InstrumentAny},
     reports::{fill::FillReport, order::OrderStatusReport, position::PositionStatusReport},
     types::{
         currency::Currency,
@@ -38,6 +40,7 @@ use nautilus_model::{
         quantity::{QUANTITY_MAX, Quantity},
     },
 };
+use ustr::Ustr;
 use uuid::Uuid;
 
 use super::{
@@ -49,9 +52,20 @@ use super::{
 };
 use crate::common::parse::{
     parse_instrument_id, parse_liquidity_side, parse_optional_datetime_to_unix_nanos,
-    parse_order_side, parse_order_status, parse_order_type, parse_position_side,
-    parse_time_in_force,
+    parse_order_status, parse_order_type, parse_position_side, parse_time_in_force,
 };
+
+/// Check if a symbol is an index symbol (starts with '.').
+///
+/// Index symbols in BitMEX represent indices like `.BXBT` and have different
+/// behavior from regular instruments:
+/// - They only have a single price value (no bid/ask spread).
+/// - They don't have trades or quotes.
+/// - Their price is delivered via the `lastPrice` field.
+#[inline]
+pub fn is_index_symbol(symbol: &str) -> bool {
+    symbol.starts_with('.')
+}
 
 const BAR_SPEC_1_MINUTE: BarSpecification = BarSpecification {
     step: NonZero::new(1).unwrap(),
@@ -82,9 +96,10 @@ pub fn parse_book_msg_vec(
     ts_init: UnixNanos,
 ) -> Vec<Data> {
     let mut deltas = Vec::with_capacity(data.len());
+
     for msg in data {
         deltas.push(Data::Delta(parse_book_msg(
-            msg,
+            &msg,
             &action,
             price_precision,
             ts_init,
@@ -100,9 +115,10 @@ pub fn parse_book10_msg_vec(
     ts_init: UnixNanos,
 ) -> Vec<Data> {
     let mut depths = Vec::with_capacity(data.len());
+
     for msg in data {
         depths.push(Data::Depth10(Box::new(parse_book10_msg(
-            msg,
+            &msg,
             price_precision,
             ts_init,
         ))));
@@ -117,8 +133,9 @@ pub fn parse_trade_msg_vec(
     ts_init: UnixNanos,
 ) -> Vec<Data> {
     let mut trades = Vec::with_capacity(data.len());
+
     for msg in data {
-        trades.push(Data::Trade(parse_trade_msg(msg, price_precision, ts_init)));
+        trades.push(Data::Trade(parse_trade_msg(&msg, price_precision, ts_init)));
     }
     trades
 }
@@ -131,9 +148,10 @@ pub fn parse_trade_bin_msg_vec(
     ts_init: UnixNanos,
 ) -> Vec<Data> {
     let mut trades = Vec::with_capacity(data.len());
+
     for msg in data {
         trades.push(Data::Bar(parse_trade_bin_msg(
-            msg,
+            &msg,
             &topic,
             price_precision,
             ts_init,
@@ -145,7 +163,7 @@ pub fn parse_trade_bin_msg_vec(
 #[allow(clippy::too_many_arguments)]
 #[must_use]
 pub fn parse_book_msg(
-    msg: OrderBookMsg,
+    msg: &OrderBookMsg,
     action: &Action,
     price_precision: u8,
     ts_init: UnixNanos,
@@ -185,7 +203,7 @@ pub fn parse_book_msg(
 #[allow(clippy::too_many_arguments)]
 #[must_use]
 pub fn parse_book10_msg(
-    msg: OrderBook10Msg,
+    msg: &OrderBook10Msg,
     price_precision: u8,
     ts_init: UnixNanos,
 ) -> OrderBookDepth10 {
@@ -242,7 +260,7 @@ pub fn parse_book10_msg(
 
 #[must_use]
 pub fn parse_quote_msg(
-    msg: QuoteMsg,
+    msg: &QuoteMsg,
     last_quote: &QuoteTick,
     price_precision: u8,
     ts_init: UnixNanos,
@@ -283,7 +301,7 @@ pub fn parse_quote_msg(
 }
 
 #[must_use]
-pub fn parse_trade_msg(msg: TradeMsg, price_precision: u8, ts_init: UnixNanos) -> TradeTick {
+pub fn parse_trade_msg(msg: &TradeMsg, price_precision: u8, ts_init: UnixNanos) -> TradeTick {
     let instrument_id = parse_instrument_id(&msg.symbol);
     let price = Price::new(msg.price, price_precision);
     let size = parse_quantity(msg.size);
@@ -308,7 +326,7 @@ pub fn parse_trade_msg(msg: TradeMsg, price_precision: u8, ts_init: UnixNanos) -
 
 #[must_use]
 pub fn parse_trade_bin_msg(
-    msg: TradeBinMsg,
+    msg: &TradeBinMsg,
     topic: &WsTopic,
     price_precision: u8,
     ts_init: UnixNanos,
@@ -327,12 +345,12 @@ pub fn parse_trade_bin_msg(
     Bar::new(bar_type, open, high, low, close, volume, ts_event, ts_init)
 }
 
-#[must_use]
 /// Converts a WebSocket topic to a bar specification.
 ///
 /// # Panics
 ///
 /// Panics if the topic is not a valid bar topic (TradeBin1m, TradeBin5m, TradeBin1h, or TradeBin1d).
+#[must_use]
 pub fn bar_spec_from_topic(topic: &WsTopic) -> BarSpecification {
     match topic {
         WsTopic::TradeBin1m => BAR_SPEC_1_MINUTE,
@@ -359,7 +377,6 @@ pub fn topic_from_bar_spec(spec: BarSpecification) -> WsTopic {
     }
 }
 
-// TODO: Use high-precision when it lands
 #[must_use]
 pub fn parse_quantity(value: u64) -> Quantity {
     let size_workaround = std::cmp::min(QUANTITY_MAX as u64, value);
@@ -374,11 +391,11 @@ pub fn parse_quantity(value: u64) -> Quantity {
 /// # Panics
 ///
 /// Panics if required fields are missing or invalid.
-pub fn parse_order_msg(msg: OrderMsg, price_precision: u8) -> OrderStatusReport {
+pub fn parse_order_msg(msg: &OrderMsg, price_precision: u8) -> OrderStatusReport {
     let account_id = AccountId::new(format!("BITMEX-{}", msg.account));
     let instrument_id = parse_instrument_id(&msg.symbol);
     let venue_order_id = VenueOrderId::new(msg.order_id.to_string());
-    let order_side = parse_order_side(&Some(crate::enums::Side::from(msg.side)));
+    let order_side: OrderSide = crate::common::enums::BitmexSide::from(msg.side).into();
     let order_type = parse_order_type(&msg.ord_type);
     let time_in_force = parse_time_in_force(&msg.time_in_force);
     let order_status = parse_order_status(&msg.ord_status);
@@ -407,11 +424,11 @@ pub fn parse_order_msg(msg: OrderMsg, price_precision: u8) -> OrderStatusReport 
         Some(report_id),
     );
 
-    if let Some(cl_ord_id) = msg.cl_ord_id {
+    if let Some(cl_ord_id) = &msg.cl_ord_id {
         report = report.with_client_order_id(ClientOrderId::new(cl_ord_id));
     }
 
-    if let Some(cl_ord_link_id) = msg.cl_ord_link_id {
+    if let Some(cl_ord_link_id) = &msg.cl_ord_link_id {
         report = report.with_order_list_id(OrderListId::new(cl_ord_link_id));
     }
 
@@ -440,7 +457,7 @@ pub fn parse_order_msg(msg: OrderMsg, price_precision: u8) -> OrderStatusReport 
 /// Panics if required fields are missing or invalid.
 pub fn parse_execution_msg(msg: ExecutionMsg, price_precision: u8) -> Option<FillReport> {
     // Skip non-trade executions
-    if msg.exec_type != Some(crate::enums::ExecType::Trade) {
+    if msg.exec_type != Some(crate::common::enums::BitmexExecType::Trade) {
         return None;
     }
 
@@ -448,7 +465,10 @@ pub fn parse_execution_msg(msg: ExecutionMsg, price_precision: u8) -> Option<Fil
     let instrument_id = parse_instrument_id(&msg.symbol?);
     let venue_order_id = VenueOrderId::new(msg.order_id?.to_string());
     let trade_id = TradeId::new(msg.trd_match_id?.to_string());
-    let order_side = parse_order_side(&msg.side.map(crate::enums::Side::from));
+    let order_side: OrderSide = msg
+        .side
+        .map(crate::common::enums::BitmexSide::from)
+        .map_or(OrderSide::NoOrderSide, |s| s.into());
     let last_qty = Quantity::from(msg.last_qty?);
     let last_px = Price::new(msg.last_px?, price_precision);
     let settlement_currency = msg.settl_currency.unwrap_or("XBT".to_string());
@@ -535,14 +555,35 @@ pub fn parse_margin_msg(msg: MarginMsg) -> (AccountId, Currency, i64) {
 
 /// Parse a BitMEX WebSocket instrument message for mark and index prices.
 ///
+/// For index symbols (e.g., `.BXBT`):
+/// - Uses the `lastPrice` field as the index price.
+/// - Also emits the `markPrice` field (which equals `lastPrice` for indices).
+///
+/// For regular instruments:
+/// - Uses the `index_price` field for index price updates.
+/// - Uses the `mark_price` field for mark price updates.
+///
 /// Returns a Vec of Data containing mark and/or index price updates.
-/// Returns an empty Vec if neither price is present.
-pub fn parse_instrument_msg(msg: InstrumentMsg) -> Vec<Data> {
+/// Returns an empty Vec if no relevant price is present.
+pub fn parse_instrument_msg(
+    msg: InstrumentMsg,
+    instruments_cache: &AHashMap<Ustr, InstrumentAny>,
+) -> Vec<Data> {
     let mut updates = Vec::new();
+    let is_index = is_index_symbol(&msg.symbol);
 
-    // Return early if no mark or index price present
+    // For index symbols (like .BXBT), the lastPrice field contains the index price
+    // For regular instruments, use the explicit index_price field if present
+    let effective_index_price = if is_index {
+        msg.last_price
+    } else {
+        msg.index_price
+    };
+
+    // Return early if no relevant prices present (mark_price or effective_index_price)
+    // Note: effective_index_price uses lastPrice for index symbols, index_price for others
     // (Funding rates come through a separate Funding channel)
-    if msg.mark_price.is_none() && msg.index_price.is_none() {
+    if msg.mark_price.is_none() && effective_index_price.is_none() {
         return updates;
     }
 
@@ -550,9 +591,16 @@ pub fn parse_instrument_msg(msg: InstrumentMsg) -> Vec<Data> {
     let ts_event = parse_optional_datetime_to_unix_nanos(&Some(msg.timestamp), "");
     let ts_init = get_atomic_clock_realtime().get_time_ns();
 
+    // Look up instrument for proper precision
+    let price_precision = instruments_cache
+        .get(&Ustr::from(&msg.symbol))
+        .map(|inst| inst.price_precision())
+        .unwrap_or(1); // Default to 1 if instrument not found
+
     // Add mark price update if present
+    // For index symbols, markPrice equals lastPrice and is valid to emit
     if let Some(mark_price) = msg.mark_price {
-        let price = Price::from(mark_price.to_string().as_str());
+        let price = Price::new(mark_price, price_precision);
         updates.push(Data::MarkPriceUpdate(MarkPriceUpdate::new(
             instrument_id,
             price,
@@ -562,8 +610,8 @@ pub fn parse_instrument_msg(msg: InstrumentMsg) -> Vec<Data> {
     }
 
     // Add index price update if present
-    if let Some(index_price) = msg.index_price {
-        let price = Price::from(index_price.to_string().as_str());
+    if let Some(index_price) = effective_index_price {
+        let price = Price::new(index_price, price_precision);
         updates.push(Data::IndexPriceUpdate(IndexPriceUpdate::new(
             instrument_id,
             price,
@@ -615,8 +663,13 @@ pub fn parse_funding_msg(msg: FundingMsg) -> Option<FundingRateUpdate> {
 mod tests {
     use nautilus_model::{
         data::quote::QuoteTick,
-        enums::{AggressorSide, BookAction, LiquiditySide, PositionSide},
-        identifiers::InstrumentId,
+        enums::{
+            AggressorSide, BookAction, LiquiditySide, OrderStatus, OrderType, PositionSide,
+            TimeInForce,
+        },
+        identifiers::{InstrumentId, Symbol},
+        instruments::CryptoPerpetual,
+        types::Currency,
     };
     use rstest::rstest;
 
@@ -631,7 +684,7 @@ mod tests {
         let msg: OrderBookMsg = serde_json::from_str(&json_data).unwrap();
 
         // Test Insert action
-        let delta = parse_book_msg(msg.clone(), &Action::Insert, 1, UnixNanos::from(3));
+        let delta = parse_book_msg(&msg, &Action::Insert, 1, UnixNanos::from(3));
         assert_eq!(delta.instrument_id, instrument_id);
         assert_eq!(delta.order.price, Price::from("98459.9"));
         assert_eq!(delta.order.size, Quantity::from(33000));
@@ -644,7 +697,7 @@ mod tests {
         assert_eq!(delta.ts_init, 3);
 
         // Test Update action (should have different flags)
-        let delta = parse_book_msg(msg, &Action::Update, 1, UnixNanos::from(3));
+        let delta = parse_book_msg(&msg, &Action::Update, 1, UnixNanos::from(3));
         assert_eq!(delta.flags, 0);
         assert_eq!(delta.action, BookAction::Update);
     }
@@ -654,7 +707,7 @@ mod tests {
         let json_data = load_test_json("ws_orderbook_10.json");
         let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
         let msg: OrderBook10Msg = serde_json::from_str(&json_data).unwrap();
-        let depth10 = parse_book10_msg(msg, 1, UnixNanos::from(3));
+        let depth10 = parse_book10_msg(&msg, 1, UnixNanos::from(3));
 
         assert_eq!(depth10.instrument_id, instrument_id);
 
@@ -694,7 +747,7 @@ mod tests {
             UnixNanos::from(2),
         );
         let msg: QuoteMsg = serde_json::from_str(&json_data).unwrap();
-        let quote = parse_quote_msg(msg, &last_quote, 2, UnixNanos::from(3));
+        let quote = parse_quote_msg(&msg, &last_quote, 2, UnixNanos::from(3));
 
         assert_eq!(quote.instrument_id, instrument_id);
         assert_eq!(quote.bid_price, Price::from("487.55"));
@@ -711,7 +764,7 @@ mod tests {
 
         let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
         let msg: TradeMsg = serde_json::from_str(&json_data).unwrap();
-        let trade = parse_trade_msg(msg, 1, UnixNanos::from(3));
+        let trade = parse_trade_msg(&msg, 1, UnixNanos::from(3));
 
         assert_eq!(trade.instrument_id, instrument_id);
         assert_eq!(trade.price, Price::from("98570.9"));
@@ -733,7 +786,7 @@ mod tests {
         let topic = WsTopic::TradeBin1m;
 
         let msg: TradeBinMsg = serde_json::from_str(&json_data).unwrap();
-        let bar = parse_trade_bin_msg(msg, &topic, 1, UnixNanos::from(3));
+        let bar = parse_trade_bin_msg(&msg, &topic, 1, UnixNanos::from(3));
 
         assert_eq!(bar.instrument_id(), instrument_id);
         assert_eq!(
@@ -753,7 +806,7 @@ mod tests {
     fn test_parse_order_msg() {
         let json_data = load_test_json("ws_order.json");
         let msg: OrderMsg = serde_json::from_str(&json_data).unwrap();
-        let report = parse_order_msg(msg, 1);
+        let report = parse_order_msg(&msg, 1);
 
         assert_eq!(report.account_id.to_string(), "BITMEX-1234567");
         assert_eq!(report.instrument_id, InstrumentId::from("XBTUSD.BITMEX"));
@@ -765,16 +818,10 @@ mod tests {
             report.client_order_id.unwrap().to_string(),
             "mm_bitmex_1a/oemUeQ4CAJZgP3fjHsA"
         );
-        assert_eq!(report.order_side, nautilus_model::enums::OrderSide::Buy);
-        assert_eq!(report.order_type, nautilus_model::enums::OrderType::Limit);
-        assert_eq!(
-            report.time_in_force,
-            nautilus_model::enums::TimeInForce::Gtc
-        );
-        assert_eq!(
-            report.order_status,
-            nautilus_model::enums::OrderStatus::Accepted
-        );
+        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.order_type, OrderType::Limit);
+        assert_eq!(report.time_in_force, TimeInForce::Gtc);
+        assert_eq!(report.order_status, OrderStatus::Accepted);
         assert_eq!(report.quantity, Quantity::from(100));
         assert_eq!(report.filled_qty, Quantity::from(0));
         assert_eq!(report.price.unwrap(), Price::from("98000.0"));
@@ -801,11 +848,11 @@ mod tests {
             fill.client_order_id.unwrap().to_string(),
             "mm_bitmex_2b/oemUeQ4CAJZgP3fjHsB"
         );
-        assert_eq!(fill.order_side, nautilus_model::enums::OrderSide::Sell);
+        assert_eq!(fill.order_side, OrderSide::Sell);
         assert_eq!(fill.last_qty, Quantity::from(100));
         assert_eq!(fill.last_px, Price::from("98950.0"));
         assert_eq!(fill.liquidity_side, LiquiditySide::Maker);
-        assert_eq!(fill.commission.raw, 7500000000000); // 0.00075 with proper precision
+        assert_eq!(fill.commission, Money::new(0.00075, Currency::from("XBT")));
         assert_eq!(fill.commission.currency.code.to_string(), "XBT");
         assert_eq!(fill.ts_event, 1732530900789000000); // 2024-11-25T10:35:00.789Z
     }
@@ -815,7 +862,7 @@ mod tests {
         // Test that non-trade executions return None
         let mut msg: ExecutionMsg =
             serde_json::from_str(&load_test_json("ws_execution.json")).unwrap();
-        msg.exec_type = Some(crate::enums::ExecType::Settlement);
+        msg.exec_type = Some(crate::common::enums::BitmexExecType::Settlement);
 
         let result = parse_execution_msg(msg, 1);
         assert!(result.is_none());
@@ -901,8 +948,10 @@ mod tests {
     fn test_parse_instrument_msg_both_prices() {
         let json_data = load_test_json("ws_instrument.json");
         let msg: InstrumentMsg = serde_json::from_str(&json_data).unwrap();
-        let updates = parse_instrument_msg(msg);
+        let instruments_cache = AHashMap::new();
+        let updates = parse_instrument_msg(msg, &instruments_cache);
 
+        // XBTUSD is not an index symbol, so it should have both mark and index prices
         assert_eq!(updates.len(), 2);
 
         // Check mark price update
@@ -930,7 +979,8 @@ mod tests {
             serde_json::from_str(&load_test_json("ws_instrument.json")).unwrap();
         msg.index_price = None;
 
-        let updates = parse_instrument_msg(msg);
+        let instruments_cache = AHashMap::new();
+        let updates = parse_instrument_msg(msg, &instruments_cache);
 
         assert_eq!(updates.len(), 1);
         match &updates[0] {
@@ -948,7 +998,8 @@ mod tests {
             serde_json::from_str(&load_test_json("ws_instrument.json")).unwrap();
         msg.mark_price = None;
 
-        let updates = parse_instrument_msg(msg);
+        let instruments_cache = AHashMap::new();
+        let updates = parse_instrument_msg(msg, &instruments_cache);
 
         assert_eq!(updates.len(), 1);
         match &updates[0] {
@@ -966,9 +1017,79 @@ mod tests {
             serde_json::from_str(&load_test_json("ws_instrument.json")).unwrap();
         msg.mark_price = None;
         msg.index_price = None;
+        msg.last_price = None;
 
-        let updates = parse_instrument_msg(msg);
+        let instruments_cache = AHashMap::new();
+        let updates = parse_instrument_msg(msg, &instruments_cache);
         assert_eq!(updates.len(), 0);
+    }
+
+    #[rstest]
+    fn test_parse_instrument_msg_index_symbol() {
+        // Test for index symbols like .BXBT where lastPrice is the index price
+        // and markPrice equals lastPrice
+        let mut msg: InstrumentMsg =
+            serde_json::from_str(&load_test_json("ws_instrument.json")).unwrap();
+        msg.symbol = ".BXBT".to_string();
+        msg.last_price = Some(119163.05);
+        msg.mark_price = Some(119163.05); // Index symbols have mark price equal to last price
+        msg.index_price = None;
+
+        // Create instruments cache with proper precision for .BXBT
+        let mut instruments_cache = AHashMap::new();
+        let instrument_id = InstrumentId::from(".BXBT.BITMEX");
+        let instrument = CryptoPerpetual::new(
+            instrument_id,
+            Symbol::from(".BXBT"),
+            Currency::BTC(),
+            Currency::USD(),
+            Currency::USD(),
+            false, // is_inverse
+            2,     // price_precision (for 119163.05)
+            8,     // size_precision
+            Price::from("0.01"),
+            Quantity::from("0.00000001"),
+            None,                 // multiplier
+            None,                 // lot_size
+            None,                 // max_quantity
+            None,                 // min_quantity
+            None,                 // max_notional
+            None,                 // min_notional
+            None,                 // max_price
+            None,                 // min_price
+            None,                 // margin_init
+            None,                 // margin_maint
+            None,                 // maker_fee
+            None,                 // taker_fee
+            UnixNanos::default(), // ts_event
+            UnixNanos::default(), // ts_init
+        );
+        instruments_cache.insert(
+            Ustr::from(".BXBT"),
+            InstrumentAny::CryptoPerpetual(instrument),
+        );
+
+        let updates = parse_instrument_msg(msg, &instruments_cache);
+
+        assert_eq!(updates.len(), 2);
+
+        // Check mark price update
+        match &updates[0] {
+            Data::MarkPriceUpdate(update) => {
+                assert_eq!(update.instrument_id.to_string(), ".BXBT.BITMEX");
+                assert_eq!(update.value, Price::from("119163.05"));
+            }
+            _ => panic!("Expected MarkPriceUpdate for index symbol"),
+        }
+
+        // Check index price update
+        match &updates[1] {
+            Data::IndexPriceUpdate(update) => {
+                assert_eq!(update.instrument_id.to_string(), ".BXBT.BITMEX");
+                assert_eq!(update.value, Price::from("119163.05"));
+            }
+            _ => panic!("Expected IndexPriceUpdate for index symbol"),
+        }
     }
 
     #[rstest]

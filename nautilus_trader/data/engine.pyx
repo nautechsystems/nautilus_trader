@@ -41,6 +41,7 @@ from nautilus_trader.persistence.catalog import ParquetDataCatalog
 from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
 
+from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport CMD
 from nautilus_trader.common.component cimport RECV
 from nautilus_trader.common.component cimport REQ
@@ -60,13 +61,13 @@ from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.aggregation cimport BarAggregator
-from nautilus_trader.data.aggregation cimport SpreadQuoteAggregator
 from nautilus_trader.data.aggregation cimport TickBarAggregator
 from nautilus_trader.data.aggregation cimport TimeBarAggregator
 from nautilus_trader.data.aggregation cimport ValueBarAggregator
 from nautilus_trader.data.aggregation cimport VolumeBarAggregator
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.client cimport MarketDataClient
+from nautilus_trader.data.engine cimport SnapshotInfo
 from nautilus_trader.data.messages cimport DataCommand
 from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.data.messages cimport RequestBars
@@ -117,6 +118,7 @@ from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
 from nautilus_trader.model.objects cimport Price
@@ -166,7 +168,6 @@ cdef class DataEngine(Component):
         self._catalogs: dict[str, ParquetDataCatalog] = {}
         self._order_book_intervals: dict[tuple[InstrumentId, int], list[Callable[[OrderBook], None]]] = {}
         self._bar_aggregators: dict[BarType, BarAggregator] = {}
-        self._spread_quote_aggregators: dict[InstrumentId, SpreadQuoteAggregator] = {}
         self._synthetic_quote_feeds: dict[InstrumentId, list[SyntheticInstrument]] = {}
         self._synthetic_trade_feeds: dict[InstrumentId, list[SyntheticInstrument]] = {}
         self._subscribed_synthetic_quotes: list[InstrumentId] = []
@@ -691,9 +692,6 @@ cdef class DataEngine(Component):
             if isinstance(aggregator, TimeBarAggregator):
                 aggregator.stop()
 
-        for aggregator in self._spread_quote_aggregators.values():
-            aggregator.stop()
-
         self._on_stop()
 
     cpdef void _reset(self):
@@ -703,7 +701,6 @@ cdef class DataEngine(Component):
 
         self._order_book_intervals.clear()
         self._bar_aggregators.clear()
-        self._spread_quote_aggregators.clear()
         self._synthetic_quote_feeds.clear()
         self._synthetic_trade_feeds.clear()
         self._subscribed_synthetic_quotes.clear()
@@ -844,12 +841,7 @@ cdef class DataEngine(Component):
         elif isinstance(command, SubscribeInstrument):
             self._handle_subscribe_instrument(client, command)
         elif isinstance(command, SubscribeOrderBook):
-            if command.data_type.type == OrderBookDelta:
-                self._handle_subscribe_order_book_deltas(client, command)
-            elif command.data_type.type == OrderBookDepth10:
-                self._handle_subscribe_order_book_depth(client, command)
-            else:
-                self._handle_subscribe_order_book_snapshots(client, command)
+            self._handle_subscribe_order_book(client, command)
         elif isinstance(command, SubscribeQuoteTicks):
             self._handle_subscribe_quote_ticks(client, command)
         elif isinstance(command, SubscribeTradeTicks):
@@ -875,10 +867,7 @@ cdef class DataEngine(Component):
         elif isinstance(command, UnsubscribeInstrument):
             self._handle_unsubscribe_instrument(client, command)
         elif isinstance(command, UnsubscribeOrderBook):
-            if command.data_type.type == OrderBookDelta:
-                self._handle_unsubscribe_order_book_deltas(client, command)
-            else:
-                self._handle_unsubscribe_order_book_snapshots(client, command)
+            self._handle_unsubscribe_order_book(client, command)
         elif isinstance(command, UnsubscribeQuoteTicks):
             self._handle_unsubscribe_quote_ticks(client, command)
         elif isinstance(command, UnsubscribeTradeTicks):
@@ -913,82 +902,69 @@ cdef class DataEngine(Component):
         if command.instrument_id not in client.subscribed_instruments():
             client.subscribe_instrument(command)
 
-    cpdef void _handle_subscribe_order_book_deltas(self, MarketDataClient client, SubscribeOrderBook command):
+    cpdef void _handle_subscribe_order_book(self, MarketDataClient client, SubscribeOrderBook command):
         Condition.not_none(client, "client")
-        Condition.not_none(command.instrument_id, "instrument_id")
-        Condition.not_none(command.params, "params")
 
         if command.instrument_id.is_synthetic():
-            self._log.error("Cannot subscribe for synthetic instrument `OrderBookDelta` data")
+            self._log.error(f"Cannot subscribe for synthetic instrument `{command.data_type.type}` data")
             return
 
-        self._setup_order_book(client, command)
+        if command.data_type.type == OrderBookDelta:
+            if command.instrument_id not in client.subscribed_order_book_deltas():
+                client.subscribe_order_book_deltas(command)
+        elif command.data_type.type == OrderBookDepth10:
+            if command.instrument_id not in client.subscribed_order_book_snapshots():
+                client.subscribe_order_book_snapshots(command)
+        else:  # pragma: no cover (design-time error)
+            raise TypeError(f"Invalid book data type, was {command.data_type}")
 
-    cpdef void _handle_subscribe_order_book_depth(self, MarketDataClient client, SubscribeOrderBook command):
-        Condition.not_none(client, "client")
-        Condition.not_none(command.instrument_id, "instrument_id")
-        Condition.not_none(command.params, "params")
-
-        self._setup_order_book(client, command)
-
-
-    cpdef void _handle_subscribe_order_book_snapshots(self, MarketDataClient client, SubscribeOrderBook command):
-        Condition.not_none(client, "client")
-        Condition.not_none(command.instrument_id, "instrument_id")
-        Condition.positive_int(command.interval_ms, "interval_ms")
-        Condition.not_none(command.params, "params")
-
-        if command.instrument_id.is_synthetic():
-            self._log.error("Cannot subscribe for synthetic instrument `OrderBook` data")
-            return
-
-        cdef tuple[InstrumentId, int] key = (command.instrument_id, command.interval_ms)
         cdef:
             str topic
             uint64_t interval_ns
             uint64_t timestamp_ns
             SnapshotInfo snap_info
+            tuple[InstrumentId, int] key
 
-        if key not in self._order_book_intervals:
-            self._order_book_intervals[key] = []
+        if command.interval_ms > 0:
+            key = (command.instrument_id, command.interval_ms)
 
-            timer_name = f"OrderBook|{command.instrument_id}|{command.interval_ms}"
-            interval_ns = millis_to_nanos(command.interval_ms)
-            timestamp_ns = self._clock.timestamp_ns()
-            start_time_ns = timestamp_ns - (timestamp_ns % interval_ns)
+            if key not in self._order_book_intervals:
+                self._order_book_intervals[key] = []
 
-            topic = self._get_snapshots_topic(command.instrument_id, command.interval_ms)
+                timer_name = f"OrderBook|{command.instrument_id}|{command.interval_ms}"
+                interval_ns = millis_to_nanos(command.interval_ms)
+                timestamp_ns = self._clock.timestamp_ns()
+                start_time_ns = timestamp_ns - (timestamp_ns % interval_ns)
 
-            # Cache snapshot event info
-            snap_info = SnapshotInfo.__new__(SnapshotInfo)
-            snap_info.instrument_id = command.instrument_id
-            snap_info.venue = command.instrument_id.venue
-            snap_info.is_composite = command.instrument_id.symbol.is_composite()
-            snap_info.root = command.instrument_id.symbol.root()
-            snap_info.topic = topic
-            snap_info.interval_ms = command.interval_ms
+                topic = self._get_snapshots_topic(command.instrument_id, command.interval_ms)
 
-            self._snapshot_info[timer_name] = snap_info
+                # Cache snapshot event info
+                snap_info = SnapshotInfo.__new__(SnapshotInfo)
+                snap_info.instrument_id = command.instrument_id
+                snap_info.venue = command.instrument_id.venue
+                snap_info.is_composite = command.instrument_id.symbol.is_composite()
+                snap_info.root = command.instrument_id.symbol.root()
+                snap_info.topic = topic
+                snap_info.interval_ms = command.interval_ms
 
-            if start_time_ns - NANOSECONDS_IN_MILLISECOND <= self._clock.timestamp_ns():
-                start_time_ns += NANOSECONDS_IN_SECOND  # Add one second
+                self._snapshot_info[timer_name] = snap_info
 
-            self._clock.set_timer_ns(
-                name=timer_name,
-                interval_ns=interval_ns,
-                start_time_ns=start_time_ns,
-                stop_time_ns=0,  # No stop
-                callback=self._snapshot_order_book,
-            )
-            self._log.debug(f"Set timer {timer_name}")
+                if start_time_ns - NANOSECONDS_IN_MILLISECOND <= self._clock.timestamp_ns():
+                    start_time_ns += NANOSECONDS_IN_SECOND  # Add one second
 
-        self._setup_order_book(client, command)
+                self._clock.set_timer_ns(
+                    name=timer_name,
+                    interval_ns=interval_ns,
+                    start_time_ns=start_time_ns,
+                    stop_time_ns=0,  # No stop
+                    callback=self._snapshot_order_book,
+                )
+                self._log.debug(f"Set timer {timer_name}")
+
+        if command.managed:
+            self._setup_order_book(client, command)
 
     cpdef void _setup_order_book(self, MarketDataClient client, SubscribeOrderBook command):
-        Condition.not_none(client, "client")
-        Condition.not_none(command.instrument_id, "instrument_id")
-        Condition.not_none(command.params, "params")
-
         cdef Instrument instrument = self._cache.instrument(command.instrument_id)
 
         if instrument is None:
@@ -999,46 +975,20 @@ cdef class DataEngine(Component):
         cdef:
             list[Instrument] instruments
             str root
-        if command.managed:
-            # Create order book(s)
-            if command.instrument_id.symbol.is_composite():
-                root = command.instrument_id.symbol.root()
-                instruments = self._cache.instruments(venue=command.instrument_id.venue, underlying=root)
 
-                for instrument in instruments:
-                    self._create_new_book(instrument.id, command.book_type)
-            else:
-                self._create_new_book(command.instrument_id, command.book_type)
+        # Create order book(s)
+        if command.instrument_id.symbol.is_composite():
+            root = command.instrument_id.symbol.root()
+            instruments = self._cache.instruments(venue=command.instrument_id.venue, underlying=root)
 
-        # Always re-subscribe to override previous settings
-        cdef bint only_deltas = command.data_type.type == OrderBookDelta
+            for instrument in instruments:
+                self._create_new_book(instrument.id, command.book_type)
+        else:
+            self._create_new_book(command.instrument_id, command.book_type)
 
-        try:
-            if command.instrument_id not in client.subscribed_order_book_deltas():
-                client.subscribe_order_book_deltas(command)
-        except NotImplementedError:
-            if only_deltas:
-                raise
-
-            if command.instrument_id not in client.subscribed_order_book_snapshots():
-                client.subscribe_order_book_snapshots(command)
-
-        # Set up subscriptions
-        cdef str topic = f"data.book.deltas.{command.instrument_id.venue}.{command.instrument_id.symbol.topic()}"
+        cdef str topic = self._get_book_topic(command.data_type.type, command.instrument_id)
 
         if not self._msgbus.is_subscribed(
-            topic=topic,
-            handler=self._update_order_book,
-        ):
-            self._msgbus.subscribe(
-                topic=topic,
-                handler=self._update_order_book,
-                priority=10,
-            )
-
-        topic = f"data.book.depth.{command.instrument_id.venue}.{command.instrument_id.symbol.topic()}"
-
-        if not only_deltas and not self._msgbus.is_subscribed(
             topic=topic,
             handler=self._update_order_book,
         ):
@@ -1064,16 +1014,11 @@ cdef class DataEngine(Component):
             self._handle_subscribe_synthetic_quote_ticks(command.instrument_id)
             return
 
-        # Handle spread instruments (like bar aggregators, work in any context)
-        if command.instrument_id.is_spread() and self._is_backtest_client(client):
-            self._start_spread_quote_aggregator(client, command)
-            return
-
         Condition.not_none(client, "client")
 
-        if "start" not in command.params:
+        if "start_ns" not in command.params:
             last_timestamp: datetime | None = self._catalog_last_timestamp(QuoteTick, str(command.instrument_id))[0]
-            command.params["start"] = last_timestamp.value + 1 if last_timestamp else None
+            command.params["start_ns"] = last_timestamp.value + 1 if last_timestamp else None
 
         if command.instrument_id not in client.subscribed_quote_ticks():
             client.subscribe_quote_ticks(command)
@@ -1114,9 +1059,9 @@ cdef class DataEngine(Component):
 
         Condition.not_none(client, "client")
 
-        if "start" not in command.params:
+        if "start_ns" not in command.params:
             last_timestamp: datetime | None = self._catalog_last_timestamp(TradeTick, str(command.instrument_id))[0]
-            command.params["start"] = last_timestamp.value + 1 if last_timestamp else None
+            command.params["start_ns"] = last_timestamp.value + 1 if last_timestamp else None
 
         if command.instrument_id not in client.subscribed_trade_ticks():
             client.subscribe_trade_ticks(command)
@@ -1186,9 +1131,9 @@ cdef class DataEngine(Component):
                 )
                 return
 
-            if "start" not in command.params:
+            if "start_ns" not in command.params:
                 last_timestamp: datetime | None = self._catalog_last_timestamp(Bar, str(command.bar_type))[0]
-                command.params["start"] = last_timestamp.value + 1 if last_timestamp else None
+                command.params["start_ns"] = last_timestamp.value + 1 if last_timestamp else None
 
             if command.bar_type not in client.subscribed_bars():
                 client.subscribe_bars(command)
@@ -1198,9 +1143,9 @@ cdef class DataEngine(Component):
 
         try:
             if command.data_type not in client.subscribed_custom_data():
-                if "start" not in command.params:
+                if "start_ns" not in command.params:
                     last_timestamp: datetime | None = self._catalog_last_timestamp(command.data_type.type, str(command.instrument_id))[0]
-                    command.params["start"] = last_timestamp.value + 1 if last_timestamp else None
+                    command.params["start_ns"] = last_timestamp.value + 1 if last_timestamp else None
 
                 client.subscribe(command)
         except NotImplementedError:
@@ -1254,80 +1199,59 @@ cdef class DataEngine(Component):
             if command.instrument_id in client.subscribed_instruments():
                 client.unsubscribe_instrument(command)
 
-    cpdef void _handle_unsubscribe_order_book_deltas(self, MarketDataClient client, UnsubscribeOrderBook command):
+    cpdef void _handle_unsubscribe_order_book(self, MarketDataClient client, UnsubscribeOrderBook command):
         Condition.not_none(client, "client")
-        Condition.not_none(command.params, "params")
 
         if command.instrument_id.is_synthetic():
-            self._log.error("Cannot unsubscribe from synthetic instrument `OrderBookDelta` data")
+            self._log.error(f"Cannot unsubscribe from synthetic instrument `{command.data_type.type}` data")
             return
 
-        cdef str topic = f"data.book.deltas.{command.instrument_id.venue}.{command.instrument_id.symbol.topic()}"
+        cdef str topic = self._get_book_topic(command.data_type.type, command.instrument_id)
+
+        # If the internal order book is the last subscriber on this topic, remove it
         cdef int num_subscribers = len(self._msgbus.subscriptions(pattern=topic))
         cdef bint is_internal_book_subscriber = self._msgbus.is_subscribed(
             topic=topic,
             handler=self._update_order_book,
         )
-
-        # Remove the subscription for the internal order book if it is the last subscription
         if num_subscribers == 1 and is_internal_book_subscriber:
             self._msgbus.unsubscribe(
                 topic=topic,
                 handler=self._update_order_book,
             )
 
+        # If no more subscribers to the client-backed topic, unsubscribe the client
         if not self._msgbus.has_subscribers(topic):
-            if command.instrument_id in client.subscribed_order_book_deltas():
-                client.unsubscribe_order_book_deltas(command)
+            if command.data_type.type == OrderBookDelta:
+                if command.instrument_id in client.subscribed_order_book_deltas():
+                    client.unsubscribe_order_book_deltas(command)
+            else:
+                if command.instrument_id in client.subscribed_order_book_snapshots():
+                    client.unsubscribe_order_book_snapshots(command)
 
-    cpdef void _handle_unsubscribe_order_book_snapshots(self, MarketDataClient client, UnsubscribeOrderBook command):
-        Condition.not_none(client, "client")
-        Condition.not_none(command.params, "params")
+        # Cancel any snapshot timers for this instrument that no longer have subscribers
+        cdef tuple[InstrumentId, int] key
+        cdef list[tuple[InstrumentId, int]] keys_to_remove = []
+        cdef str timer_name
+        cdef str snapshots_topic
 
-        if command.instrument_id.is_synthetic():
-            self._log.error("Cannot unsubscribe from synthetic instrument `OrderBook` data")
-            return
+        for key in list(self._order_book_intervals.keys()):
+            if key[0] != command.instrument_id:
+                continue
 
-        # Set up topics
-        cdef str deltas_topic = f"data.book.deltas.{command.instrument_id.venue}.{command.instrument_id.symbol.topic()}"
-        cdef str depth_topic = f"data.book.depth.{command.instrument_id.venue}.{command.instrument_id.symbol.topic()}"
-        cdef str snapshots_topic = f"data.book.snapshots.{command.instrument_id.venue}.{command.instrument_id.symbol.topic()}"
+            snapshots_topic = self._get_snapshots_topic(key[0], key[1])
+            if not self._msgbus.has_subscribers(snapshots_topic):
+                timer_name = f"OrderBook|{key[0]}|{key[1]}"
+                self._clock.cancel_timer(timer_name)
+                keys_to_remove.append(key)
+                if timer_name in self._snapshot_info:
+                    del self._snapshot_info[timer_name]
 
-        # Check the deltas and the depth subscription
-        cdef list[str] topics = [deltas_topic, depth_topic]
-        cdef int num_subscribers = 0
-        cdef bint is_internal_book_subscriber = False
-
-        for topic in topics:
-            num_subscribers = len(self._msgbus.subscriptions(pattern=topic))
-            is_internal_book_subscriber = self._msgbus.is_subscribed(
-                topic=topic,
-                handler=self._update_order_book,
-            )
-
-            # Remove the subscription for the internal order book if it is the last subscription
-            if num_subscribers == 1 and is_internal_book_subscriber:
-                self._msgbus.unsubscribe(
-                    topic=topic,
-                    handler=self._update_order_book,
-                )
-
-        if not self._msgbus.has_subscribers(deltas_topic):
-            if command.instrument_id in client.subscribed_order_book_deltas():
-                client.unsubscribe_order_book_deltas(command)
-
-        if not self._msgbus.has_subscribers(snapshots_topic):
-            if command.instrument_id in client.subscribed_order_book_snapshots():
-                client.unsubscribe_order_book_snapshots(command)
+        for key in keys_to_remove:
+            del self._order_book_intervals[key]
 
     cpdef void _handle_unsubscribe_quote_ticks(self, MarketDataClient client, UnsubscribeQuoteTicks command):
         Condition.not_none(command.instrument_id, "instrument_id")
-
-        # Handle spread instruments (like bar aggregators, work in any context)
-        if command.instrument_id.is_spread() and self._is_backtest_client(client):
-            self._stop_spread_quote_aggregator(client, command)
-            return
-
         Condition.not_none(client, "client")
 
         if not self._msgbus.has_subscribers(
@@ -2225,7 +2149,7 @@ cdef class DataEngine(Component):
                     )
                     continue
 
-                aggregator = self._create_bar_aggregator(instrument, bar_type)
+                aggregator = self._create_bar_aggregator(instrument, bar_type, params)
 
                 if params["update_subscriptions"]:
                     self._bar_aggregators[bar_type.standard()] = aggregator
@@ -2273,10 +2197,18 @@ cdef class DataEngine(Component):
 
         return topic
 
+    cdef str _get_book_topic(self, type book_data_type, InstrumentId instrument_id):
+        if book_data_type == OrderBookDelta:
+            return self._get_deltas_topic(instrument_id)
+        elif book_data_type == OrderBookDepth10:
+            return self._get_depth_topic(instrument_id)
+        else:  # pragma: no cover (design-time error)
+            raise TypeError(f"Invalid book data type, was {book_data_type}")
+
     cdef str _get_deltas_topic(self, InstrumentId instrument_id):
         cdef str topic = self._topic_cache_deltas.get(instrument_id)
         if topic is None:
-            topic = f"data.book.deltas.{instrument_id.venue}.{instrument_id.symbol}"
+            topic = f"data.book.deltas.{instrument_id.venue}.{instrument_id.symbol.topic()}"
             self._topic_cache_deltas[instrument_id] = topic
 
         return topic
@@ -2284,7 +2216,7 @@ cdef class DataEngine(Component):
     cdef str _get_depth_topic(self, InstrumentId instrument_id):
         cdef str topic = self._topic_cache_depth.get(instrument_id)
         if topic is None:
-            topic = f"data.book.depth.{instrument_id.venue}.{instrument_id.symbol}"
+            topic = f"data.book.depth.{instrument_id.venue}.{instrument_id.symbol.topic()}"
             self._topic_cache_depth[instrument_id] = topic
 
         return topic
@@ -2443,7 +2375,7 @@ cdef class DataEngine(Component):
         )
 
     cpdef void _start_bar_aggregator(self, MarketDataClient client, SubscribeBars command):
-        cdef Instrument instrument = self._cache.instrument(command.bar_type.instrument_id)
+        instrument = self._cache.instrument(command.bar_type.instrument_id)
 
         if instrument is None:
             self._log.error(
@@ -2456,7 +2388,7 @@ cdef class DataEngine(Component):
         aggregator = self._bar_aggregators.get(command.bar_type.standard())
 
         if aggregator is None:
-            aggregator = self._create_bar_aggregator(instrument, command.bar_type)
+            aggregator = self._create_bar_aggregator(instrument, command.bar_type, command.params)
 
         # Set if awaiting initial partial bar
         aggregator.set_await_partial(command.await_partial)
@@ -2516,10 +2448,11 @@ cdef class DataEngine(Component):
 
         aggregator.is_running = True
 
-    cpdef object _create_bar_aggregator(self, Instrument instrument, BarType bar_type):
+    cpdef object _create_bar_aggregator(self, Instrument instrument, BarType bar_type, dict params):
         if bar_type.spec.is_time_aggregated():
             # Use configured bar_build_delay, with special handling for composite bars
             bar_build_delay = self._time_bars_build_delay
+            time_bars_origin_offset = self._time_bars_origin_offset.get(bar_type.spec.aggregation) or params.get("time_bars_origin_offset")
 
             if bar_type.is_composite() and bar_type.composite().is_internally_aggregated() and bar_build_delay == 0:
                 bar_build_delay = 15  # Default for composite bars when config is 0
@@ -2533,7 +2466,7 @@ cdef class DataEngine(Component):
                 timestamp_on_close=self._time_bars_timestamp_on_close,
                 skip_first_non_full_bar=self._time_bars_skip_first_non_full_bar,
                 build_with_no_updates=self._time_bars_build_with_no_updates,
-                time_bars_origin_offset=self._time_bars_origin_offset.get(bar_type.spec.aggregation),
+                time_bars_origin_offset=time_bars_origin_offset,
                 bar_build_delay=bar_build_delay,
             )
         elif bar_type.spec.aggregation == BarAggregation.TICK:
@@ -2564,7 +2497,7 @@ cdef class DataEngine(Component):
         return aggregator
 
     cpdef void _stop_bar_aggregator(self, MarketDataClient client, UnsubscribeBars command):
-        cdef aggregator = self._bar_aggregators.get(command.bar_type.standard())
+        aggregator = self._bar_aggregators.get(command.bar_type.standard())
 
         if aggregator is None:
             self._log.warning(
@@ -2623,64 +2556,6 @@ cdef class DataEngine(Component):
 
         # Remove from aggregators
         del self._bar_aggregators[command.bar_type.standard()]
-
-    cpdef void _start_spread_quote_aggregator(self, MarketDataClient client, SubscribeQuoteTicks command):
-        cdef InstrumentId spread_instrument_id = command.instrument_id
-
-        if spread_instrument_id in self._spread_quote_aggregators:
-            return
-
-        cdef SpreadQuoteAggregator aggregator = SpreadQuoteAggregator(
-            spread_instrument_id=spread_instrument_id,
-            handler=self.process,
-            msgbus=self._msgbus,
-            cache=self._cache,
-            clock=self._clock,
-            update_interval_seconds=60,  # Update every 60 seconds
-        )
-        self._spread_quote_aggregators[spread_instrument_id] = aggregator
-
-        # Subscribe to quotes for component instruments
-        cdef list components = spread_instrument_id.to_list()
-
-        for component_id, _ in components:
-            subscribe = SubscribeQuoteTicks(
-                instrument_id=component_id,
-                client_id=command.client_id,
-                venue=command.venue,
-                command_id=command.id,
-                ts_init=command.ts_init,
-                params=command.params,
-            )
-            self._handle_subscribe_quote_ticks(client, subscribe)
-
-    cpdef void _stop_spread_quote_aggregator(self, MarketDataClient client, UnsubscribeQuoteTicks command):
-        cdef InstrumentId spread_instrument_id = command.instrument_id
-        cdef SpreadQuoteAggregator aggregator = self._spread_quote_aggregators.get(spread_instrument_id)
-
-        if aggregator is None:
-            self._log.warning(
-                f"Cannot stop spread quote aggregator: no aggregator found for {spread_instrument_id}",
-            )
-            return
-
-        aggregator.stop()
-
-        # Unsubscribe from component instruments
-        cdef list components = spread_instrument_id.to_list()
-
-        for component_id, _ in components:
-            unsubscribe = UnsubscribeQuoteTicks(
-                instrument_id=component_id,
-                client_id=command.client_id,
-                venue=command.venue,
-                command_id=command.id,
-                ts_init=command.ts_init,
-                params=command.params,
-            )
-            self._handle_unsubscribe_quote_ticks(client, unsubscribe)
-
-        del self._spread_quote_aggregators[spread_instrument_id]
 
     cpdef void _update_synthetics_with_quote(self, list synthetics, QuoteTick update):
         cdef SyntheticInstrument synthetic

@@ -29,7 +29,7 @@ async def test_binance_spot_account_http_client():
 
     client = get_cached_binance_http_client(
         clock=clock,
-        account_type=BinanceAccountType.USDT_FUTURE,
+        account_type=BinanceAccountType.USDT_FUTURES,
         api_key=os.getenv("BINANCE_FUTURES_TESTNET_API_KEY"),
         api_secret=os.getenv("BINANCE_FUTURES_TESTNET_API_SECRET"),
         is_testnet=True,
@@ -38,7 +38,7 @@ async def test_binance_spot_account_http_client():
     http_account = BinanceFuturesAccountHttpAPI(
         client=client,
         clock=clock,
-        account_type=BinanceAccountType.USDT_FUTURE,
+        account_type=BinanceAccountType.USDT_FUTURES,
     )
 
     await http_account.query_futures_hedge_mode()

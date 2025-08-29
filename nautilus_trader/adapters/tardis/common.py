@@ -33,8 +33,8 @@ from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.instruments import Instrument
 
 
-def create_instrument_info(instrument: Instrument) -> nautilus_pyo3.InstrumentMiniInfo:
-    return nautilus_pyo3.InstrumentMiniInfo(
+def create_instrument_info(instrument: Instrument) -> nautilus_pyo3.TardisInstrumentMiniInfo:
+    return nautilus_pyo3.TardisInstrumentMiniInfo(
         instrument_id=nautilus_pyo3.InstrumentId.from_str(instrument.id.value),
         raw_symbol=instrument.raw_symbol.value,
         exchange=infer_tardis_exchange_str(instrument),

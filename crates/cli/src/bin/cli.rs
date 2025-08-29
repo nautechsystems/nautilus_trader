@@ -21,6 +21,7 @@ use nautilus_cli::opt::NautilusCli;
 async fn main() {
     dotenvy::dotenv().ok();
     simple_logger::SimpleLogger::new()
+        .with_level(LevelFilter::Info)
         .with_module_level("sqlx", LevelFilter::Off)
         .init()
         .unwrap();

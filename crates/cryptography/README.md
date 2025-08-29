@@ -8,7 +8,7 @@
 
 Cryptographic utilities and security functions for [NautilusTrader](http://nautilustrader.io).
 
-The *cryptography* crate provides essential cryptographic primitives and security utilities
+The `nautilus-cryptography` crate provides essential cryptographic primitives and security utilities
 required for secure communication with trading venues and data providers. This includes
 digital signing, TLS configuration, and cryptographic provider management:
 

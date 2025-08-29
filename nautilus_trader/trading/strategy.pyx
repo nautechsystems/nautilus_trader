@@ -1631,7 +1631,7 @@ cdef class Strategy(Actor):
         Condition.not_none(event, "event")
 
         if type(event) in self._warning_events and not (
-            isinstance(event, OrderRejected) and not self._log_rejected_due_post_only_as_warning
+            isinstance(event, OrderRejected) and event.due_post_only and not self._log_rejected_due_post_only_as_warning
         ):
             self.log.warning(f"{RECV}{EVT} {event}")
         elif self._log_events:

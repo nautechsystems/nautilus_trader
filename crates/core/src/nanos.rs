@@ -104,7 +104,7 @@ impl UnixNanos {
     #[must_use]
     pub const fn as_i64(&self) -> i64 {
         assert!(
-            (self.0 <= i64::MAX as u64),
+            self.0 <= i64::MAX as u64,
             "UnixNanos value exceeds i64::MAX"
         );
         self.0 as i64
@@ -320,10 +320,7 @@ impl From<DateTime<Utc>> for UnixNanos {
             .timestamp_nanos_opt()
             .expect("DateTime timestamp out of range for UnixNanos");
 
-        assert!(
-            (nanos >= 0),
-            "DateTime timestamp cannot be negative: {nanos}"
-        );
+        assert!(nanos >= 0, "DateTime timestamp cannot be negative: {nanos}");
 
         Self::from(nanos as u64)
     }

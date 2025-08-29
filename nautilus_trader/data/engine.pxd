@@ -92,7 +92,6 @@ cdef class DataEngine(Component):
     cdef readonly dict[Venue, DataClient] _routing_map
     cdef readonly dict _order_book_intervals
     cdef readonly dict[BarType, BarAggregator] _bar_aggregators
-    cdef readonly dict[InstrumentId, SpreadQuoteAggregator] _spread_quote_aggregators
     cdef readonly dict[InstrumentId, list[SyntheticInstrument]] _synthetic_quote_feeds
     cdef readonly dict[InstrumentId, list[SyntheticInstrument]] _synthetic_trade_feeds
     cdef readonly list[InstrumentId] _subscribed_synthetic_quotes
@@ -186,15 +185,11 @@ cdef class DataEngine(Component):
     cpdef void _handle_unsubscribe(self, DataClient client, UnsubscribeData command)
     cpdef void _handle_subscribe_instruments(self, MarketDataClient client, SubscribeInstruments command)
     cpdef void _handle_subscribe_instrument(self, MarketDataClient client, SubscribeInstrument command)
-    cpdef void _handle_subscribe_order_book_deltas(self, MarketDataClient client, SubscribeOrderBook command)
-    cpdef void _handle_subscribe_order_book_depth(self, MarketDataClient client, SubscribeOrderBook command)
-    cpdef void _handle_subscribe_order_book_snapshots(self, MarketDataClient client, SubscribeOrderBook command)
+    cpdef void _handle_subscribe_order_book(self, MarketDataClient client, SubscribeOrderBook command)
     cpdef void _setup_order_book(self, MarketDataClient client, SubscribeOrderBook command)
     cpdef void _create_new_book(self, InstrumentId instrument_id, BookType book_type)
     cpdef void _handle_subscribe_quote_ticks(self, MarketDataClient client, SubscribeQuoteTicks command)
     cpdef void _handle_subscribe_synthetic_quote_ticks(self, InstrumentId instrument_id)
-    cpdef void _start_spread_quote_aggregator(self, MarketDataClient client, SubscribeQuoteTicks command)
-    cpdef void _stop_spread_quote_aggregator(self, MarketDataClient client, UnsubscribeQuoteTicks command)
     cpdef void _handle_subscribe_trade_ticks(self, MarketDataClient client, SubscribeTradeTicks command)
     cpdef void _handle_subscribe_mark_prices(self, MarketDataClient client, SubscribeMarkPrices command)
     cpdef void _handle_subscribe_index_prices(self, MarketDataClient client, SubscribeIndexPrices command)
@@ -206,8 +201,7 @@ cdef class DataEngine(Component):
     cpdef void _handle_subscribe_instrument_close(self, MarketDataClient client, SubscribeInstrumentClose command)
     cpdef void _handle_unsubscribe_instruments(self, MarketDataClient client, UnsubscribeInstruments command)
     cpdef void _handle_unsubscribe_instrument(self, MarketDataClient client, UnsubscribeInstrument command)
-    cpdef void _handle_unsubscribe_order_book_deltas(self, MarketDataClient client, UnsubscribeOrderBook command)
-    cpdef void _handle_unsubscribe_order_book_snapshots(self, MarketDataClient client, UnsubscribeOrderBook command)
+    cpdef void _handle_unsubscribe_order_book(self, MarketDataClient client, UnsubscribeOrderBook command)
     cpdef void _handle_unsubscribe_quote_ticks(self, MarketDataClient client, UnsubscribeQuoteTicks command)
     cpdef void _handle_unsubscribe_trade_ticks(self, MarketDataClient client, UnsubscribeTradeTicks command)
     cpdef void _handle_unsubscribe_mark_prices(self, MarketDataClient client, UnsubscribeMarkPrices command)
@@ -268,6 +262,7 @@ cdef class DataEngine(Component):
 # -- INTERNAL -------------------------------------------------------------------------------------
 
     cdef str _get_instruments_topic(self, InstrumentId instrument_id)
+    cdef str _get_book_topic(self, type book_data_type, InstrumentId instrument_id)
     cdef str _get_deltas_topic(self, InstrumentId instrument_id)
     cdef str _get_depth_topic(self, InstrumentId instrument_id)
     cdef str _get_quotes_topic(self, InstrumentId instrument_id)
@@ -285,7 +280,7 @@ cdef class DataEngine(Component):
     cpdef void _update_order_book(self, Data data)
     cpdef void _snapshot_order_book(self, TimeEvent snap_event)
     cpdef void _publish_order_book(self, InstrumentId instrument_id, str topic)
-    cpdef object _create_bar_aggregator(self, Instrument instrument, BarType bar_type)
+    cpdef object _create_bar_aggregator(self, Instrument instrument, BarType bar_type, dict params)
     cpdef void _start_bar_aggregator(self, MarketDataClient client, SubscribeBars command)
     cpdef void _stop_bar_aggregator(self, MarketDataClient client, UnsubscribeBars command)
     cpdef void _update_synthetics_with_quote(self, list synthetics, QuoteTick update)

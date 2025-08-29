@@ -36,7 +36,7 @@ from nautilus_trader.common.component import LiveClock
 
 
 clock = LiveClock()
-account_type = BinanceAccountType.USDT_FUTURE
+account_type = BinanceAccountType.USDT_FUTURES
 
 client = get_cached_binance_http_client(
     loop=asyncio.get_event_loop(),
@@ -50,7 +50,7 @@ await client.connect()
 
 provider = BinanceFuturesInstrumentProvider(
     client=client,
-    account_type=BinanceAccountType.USDT_FUTURE,
+    account_type=BinanceAccountType.USDT_FUTURES,
 )
 
 await provider.load_all_async()

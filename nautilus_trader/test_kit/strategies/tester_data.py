@@ -55,13 +55,16 @@ class DataTesterConfig(ActorConfig, frozen=True):
     subscribe_index_prices: bool = False
     subscribe_funding_rates: bool = False
     subscribe_bars: bool = False
+    subscribe_instrument: bool = False
     subscribe_instrument_status: bool = False
     subscribe_instrument_close: bool = False
+    subscribe_params: dict[str, Any] | None = None
     can_unsubscribe: bool = True
     request_instruments: bool = False
     request_quotes: bool = False
     request_trades: bool = False
     request_bars: bool = False
+    request_params: dict[str, Any] | None = None
     requests_start_delta: pd.Timedelta | None = None
     book_type: BookType = BookType.L2_MBP
     book_depth: PositiveInt | None = None
@@ -99,7 +102,23 @@ class DataTester(Actor):
 
         client_id = self.config.client_id
 
+        if self.config.request_instruments:
+            venues = set()
+
+            for instrument_id in self.config.instrument_ids or []:
+                venues.add(instrument_id.venue)
+
+            for venue in venues:
+                self.request_instruments(
+                    venue=venue,
+                    client_id=client_id,
+                    params=self.config.request_params,
+                )
+
         for instrument_id in self.config.instrument_ids or []:
+            if self.config.subscribe_instrument:
+                self.subscribe_instrument(instrument_id)
+
             if self.config.subscribe_book_deltas:
                 self.subscribe_order_book_deltas(
                     instrument_id=instrument_id,
@@ -121,6 +140,7 @@ class DataTester(Actor):
                     depth=self.config.book_depth or 0,
                     interval_ms=self.config.book_interval_ms,
                     client_id=client_id,
+                    params=self.config.subscribe_params,
                 )
 
             if self.config.subscribe_book_depth:
@@ -129,38 +149,89 @@ class DataTester(Actor):
                     book_type=self.config.book_type,
                     depth=self.config.book_depth or 10,
                     client_id=client_id,
+                    params=self.config.subscribe_params,
                 )
 
             if self.config.subscribe_quotes:
-                self.subscribe_quote_ticks(instrument_id, client_id=client_id)
+                self.subscribe_quote_ticks(
+                    instrument_id=instrument_id,
+                    client_id=client_id,
+                    params=self.config.subscribe_params,
+                )
 
             if self.config.subscribe_trades:
-                self.subscribe_trade_ticks(instrument_id, client_id=client_id)
+                self.subscribe_trade_ticks(
+                    instrument_id=instrument_id,
+                    client_id=client_id,
+                    params=self.config.subscribe_params,
+                )
 
             if self.config.subscribe_mark_prices:
-                self.subscribe_mark_prices(instrument_id, client_id=client_id)
+                self.subscribe_mark_prices(
+                    instrument_id=instrument_id,
+                    client_id=client_id,
+                    params=self.config.subscribe_params,
+                )
 
             if self.config.subscribe_index_prices:
-                self.subscribe_index_prices(instrument_id, client_id=client_id)
+                self.subscribe_index_prices(
+                    instrument_id=instrument_id,
+                    client_id=client_id,
+                    params=self.config.subscribe_params,
+                )
 
             if self.config.subscribe_funding_rates:
-                self.subscribe_funding_rates(instrument_id, client_id=client_id)
+                self.subscribe_funding_rates(
+                    instrument_id=instrument_id,
+                    client_id=client_id,
+                    params=self.config.subscribe_params,
+                )
 
             if self.config.subscribe_instrument_status:
-                self.subscribe_instrument_status(instrument_id, client_id=client_id)
+                self.subscribe_instrument_status(
+                    instrument_id=instrument_id,
+                    client_id=client_id,
+                    params=self.config.subscribe_params,
+                )
 
             if self.config.subscribe_instrument_close:
-                self.subscribe_instrument_close(instrument_id, client_id=client_id)
+                self.subscribe_instrument_close(
+                    instrument_id=instrument_id,
+                    client_id=client_id,
+                    params=self.config.subscribe_params,
+                )
+
+            if self.config.request_quotes:
+                self.request_quote_ticks(
+                    instrument_id=instrument_id,
+                    start=requests_start,
+                    client_id=client_id,
+                    params=self.config.request_params,
+                )
 
             if self.config.request_trades:
-                self.request_trade_ticks(instrument_id, start=requests_start, client_id=client_id)
+                self.request_trade_ticks(
+                    instrument_id=instrument_id,
+                    start=requests_start,
+                    client_id=client_id,
+                    params=self.config.request_params,
+                )
 
         for bar_type in self.config.bar_types or []:
             if self.config.subscribe_bars:
-                self.subscribe_bars(bar_type, client_id=client_id)
+                self.subscribe_bars(
+                    bar_type=bar_type,
+                    client_id=client_id,
+                    params=self.config.subscribe_params,
+                )
 
             if self.config.request_bars:
-                self.request_bars(bar_type, start=requests_start, client_id=client_id)
+                self.request_bars(
+                    bar_type,
+                    start=requests_start,
+                    client_id=client_id,
+                    params=self.config.request_params,
+                )
 
     def setup_book(self, instrument_id: InstrumentId) -> None:
         self._books[instrument_id] = OrderBook(instrument_id, self.config.book_type)
@@ -180,16 +251,24 @@ class DataTester(Actor):
         client_id = self.config.client_id
 
         for instrument_id in self.config.instrument_ids or []:
+            if self.config.subscribe_instrument:
+                self.unsubscribe_instrument(
+                    instrument_id=instrument_id,
+                    params=self.config.subscribe_params,
+                )
+
             if self.config.subscribe_book_deltas:
                 self.unsubscribe_order_book_deltas(
                     instrument_id=instrument_id,
                     client_id=client_id,
+                    params=self.config.subscribe_params,
                 )
 
             if self.config.subscribe_book_depth:
                 self.unsubscribe_order_book_depth(
                     instrument_id=instrument_id,
                     client_id=client_id,
+                    params=self.config.subscribe_params,
                 )
 
             if self.config.subscribe_book_at_interval:
@@ -197,32 +276,65 @@ class DataTester(Actor):
                     instrument_id=instrument_id,
                     interval_ms=self.config.book_interval_ms,
                     client_id=client_id,
+                    params=self.config.subscribe_params,
                 )
 
             if self.config.subscribe_quotes:
-                self.unsubscribe_quote_ticks(instrument_id, client_id=client_id)
+                self.unsubscribe_quote_ticks(
+                    instrument_id=instrument_id,
+                    client_id=client_id,
+                    params=self.config.subscribe_params,
+                )
 
             if self.config.subscribe_trades:
-                self.unsubscribe_trade_ticks(instrument_id, client_id=client_id)
+                self.unsubscribe_trade_ticks(
+                    instrument_id=instrument_id,
+                    client_id=client_id,
+                    params=self.config.subscribe_params,
+                )
 
             if self.config.subscribe_mark_prices:
-                self.unsubscribe_mark_prices(instrument_id, client_id=client_id)
+                self.unsubscribe_mark_prices(
+                    instrument_id=instrument_id,
+                    client_id=client_id,
+                    params=self.config.subscribe_params,
+                )
 
             if self.config.subscribe_index_prices:
-                self.unsubscribe_index_prices(instrument_id, client_id=client_id)
+                self.unsubscribe_index_prices(
+                    instrument_id=instrument_id,
+                    client_id=client_id,
+                    params=self.config.subscribe_params,
+                )
 
             if self.config.subscribe_funding_rates:
-                self.unsubscribe_funding_rates(instrument_id, client_id=client_id)
+                self.unsubscribe_funding_rates(
+                    instrument_id=instrument_id,
+                    client_id=client_id,
+                    params=self.config.subscribe_params,
+                )
 
             if self.config.subscribe_instrument_status:
-                self.unsubscribe_instrument_status(instrument_id, client_id=client_id)
+                self.unsubscribe_instrument_status(
+                    instrument_id=instrument_id,
+                    client_id=client_id,
+                    params=self.config.subscribe_params,
+                )
 
             if self.config.subscribe_instrument_close:
-                self.unsubscribe_instrument_close(instrument_id, client_id=client_id)
+                self.unsubscribe_instrument_close(
+                    instrument_id=instrument_id,
+                    client_id=client_id,
+                    params=self.config.subscribe_params,
+                )
 
         for bar_type in self.config.bar_types or []:
             if self.config.subscribe_bars:
-                self.unsubscribe_bars(bar_type, client_id=client_id)
+                self.unsubscribe_bars(
+                    bar_type=bar_type,
+                    client_id=client_id,
+                    params=self.config.subscribe_params,
+                )
 
     def on_historical_data(self, data: Any) -> None:
         """

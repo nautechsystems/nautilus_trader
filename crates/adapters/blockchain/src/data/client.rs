@@ -25,7 +25,6 @@ use nautilus_common::{
     runtime::get_runtime,
 };
 use nautilus_data::client::DataClient;
-use nautilus_infrastructure::sql::pg::PostgresConnectOptions;
 use nautilus_model::{
     defi::{DefiData, SharedChain, validation::validate_address},
     identifiers::{ClientId, Venue},
@@ -75,8 +74,7 @@ impl BlockchainDataClient {
         let chain = config.chain.clone();
         let (command_tx, command_rx) = tokio::sync::mpsc::unbounded_channel();
         let (hypersync_tx, hypersync_rx) = tokio::sync::mpsc::unbounded_channel();
-        let core_client =
-            BlockchainDataClientCore::new(chain.clone(), config.clone(), hypersync_tx);
+        let core_client = BlockchainDataClientCore::new(config.clone(), Some(hypersync_tx));
         Self {
             chain,
             core_client: Some(core_client),
@@ -86,20 +84,6 @@ impl BlockchainDataClient {
             command_rx: Some(command_rx),
             process_task: None,
             shutdown_tx: None,
-        }
-    }
-
-    /// Initializes the database connection for the blockchain cache.
-    pub async fn initialize_cache_database(&mut self, pg_connect_options: PostgresConnectOptions) {
-        tracing::info!(
-            "Initializing blockchain cache on database '{}'",
-            pg_connect_options.database
-        );
-        if let Some(core_client) = &mut self.core_client {
-            core_client
-                .cache
-                .initialize_database(pg_connect_options.clone().into())
-                .await;
         }
     }
 
@@ -175,7 +159,7 @@ impl BlockchainDataClient {
                                     // Fetch and process all subscribed events per DEX
                                     for dex in core_client.cache.get_registered_dexes(){
                                         let addresses = core_client.subscription_manager.get_subscribed_dex_contract_addresses(&dex);
-                                        if addresses.len() > 0 {
+                                        if !addresses.is_empty() {
                                             core_client.hypersync_client.process_block_dex_contract_events(
                                                 &dex,
                                                 block.number,
@@ -485,10 +469,10 @@ impl BlockchainDataClient {
     /// This method blocks until the spawned process task finishes execution,
     /// which typically happens after a shutdown signal is sent.
     pub async fn await_process_task_close(&mut self) {
-        if let Some(handle) = self.process_task.take() {
-            if let Err(e) = handle.await {
-                tracing::error!("Process task join error: {e}");
-            }
+        if let Some(handle) = self.process_task.take()
+            && let Err(e) = handle.await
+        {
+            tracing::error!("Process task join error: {e}");
         }
     }
 }
@@ -543,12 +527,9 @@ impl DataClient for BlockchainDataClient {
             self.chain.name
         );
 
-        if let Some(pg_connect_options) = self.config.postgres_cache_database_config.clone() {
-            self.initialize_cache_database(pg_connect_options).await;
-        }
-
         if let Some(core_client) = &mut self.core_client {
             core_client.connect().await?;
+            core_client.initialize_cache_database().await;
         }
 
         if self.process_task.is_none() {

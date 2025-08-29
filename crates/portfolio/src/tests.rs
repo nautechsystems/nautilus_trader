@@ -27,7 +27,7 @@ use nautilus_model::{
         order::stubs::{order_accepted, order_filled, order_submitted},
     },
     identifiers::{
-        AccountId, ClientOrderId, PositionId, StrategyId, Symbol, TradeId, VenueOrderId,
+        AccountId, ClientOrderId, PositionId, StrategyId, Symbol, TradeId, TraderId, VenueOrderId,
         stubs::{account_id, uuid4},
     },
     instruments::{
@@ -1598,14 +1598,27 @@ fn test_closing_position_updates_portfolio(
     mut portfolio: Portfolio,
     instrument_audusd: InstrumentAny,
 ) {
-    let account_state = get_margin_account(None);
+    // Arrange - Create margin account with 1,000,000 USD balance
+    let account_id = AccountId::new("SIM-01234");
+    let account_state = AccountState::new(
+        account_id,
+        AccountType::Margin,
+        vec![AccountBalance::new(
+            Money::new(1_000_000.0, Currency::USD()),
+            Money::new(0.0, Currency::USD()),
+            Money::new(1_000_000.0, Currency::USD()),
+        )],
+        vec![],
+        true,
+        uuid4(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        Some(Currency::USD()),
+    );
+
     portfolio.update_account(&account_state);
 
-    let last_audusd = get_quote_tick(&instrument_audusd, 0.80501, 0.80505, 1.0, 1.0);
-    portfolio.cache.borrow_mut().add_quote(last_audusd).unwrap();
-    portfolio.update_quote_tick(&last_audusd);
-
-    // Create Order
+    // Create first order (BUY 100,000 AUD/USD)
     let order1 = OrderTestBuilder::new(OrderType::Market)
         .instrument_id(instrument_audusd.id())
         .side(OrderSide::Buy)
@@ -1614,101 +1627,149 @@ fn test_closing_position_updates_portfolio(
 
     let fill1 = OrderFilled::new(
         order1.trader_id(),
-        order1.strategy_id(),
+        StrategyId::new("S-1"),
         order1.instrument_id(),
         order1.client_order_id(),
         VenueOrderId::new("123456"),
-        AccountId::new("SIM-001"),
+        account_id,
         TradeId::new("1"),
         order1.order_side(),
         order1.order_type(),
         order1.quantity(),
-        Price::new(376.05, 0),
+        Price::new(1.00000, 5), // Fill at 1.00000
         Currency::USD(),
         LiquiditySide::Taker,
         uuid4(),
         UnixNanos::default(),
         UnixNanos::default(),
         false,
-        Some(PositionId::new("SSD")),
-        Some(Money::from("12.2 USD")),
+        Some(PositionId::new("P-123456")),
+        Some(Money::new(2.0, Currency::USD())), // Commission for opening trade
     );
 
-    let mut position1 = Position::new(&instrument_audusd, fill1);
+    // Create position from first fill
+    let mut position = Position::new(&instrument_audusd, fill1);
     portfolio
         .cache
         .borrow_mut()
-        .add_position(position1.clone(), OmsType::Hedging)
+        .add_position(position.clone(), OmsType::Hedging)
         .unwrap();
-    let position_opened1 = get_open_position(&position1);
-    portfolio.update_position(&PositionEvent::PositionOpened(position_opened1));
 
+    // Add quote tick for market data (needed for PnL calculations)
+    let quote_tick = get_quote_tick(&instrument_audusd, 1.00000, 1.00001, 1.0, 1.0);
+    portfolio.cache.borrow_mut().add_quote(quote_tick).unwrap();
+    portfolio.update_quote_tick(&quote_tick);
+
+    let position_opened = get_open_position(&position);
+    portfolio.update_position(&PositionEvent::PositionOpened(position_opened));
+
+    // Create second order (SELL 100,000 AUD/USD to close position)
     let order2 = OrderTestBuilder::new(OrderType::Market)
         .instrument_id(instrument_audusd.id())
         .side(OrderSide::Sell)
-        .quantity(Quantity::from("50000"))
+        .quantity(Quantity::from("100000"))
         .build();
 
     let fill2 = OrderFilled::new(
         order2.trader_id(),
-        order2.strategy_id(),
+        StrategyId::new("S-1"),
         order2.instrument_id(),
         order2.client_order_id(),
-        VenueOrderId::new("123456"),
-        AccountId::new("SIM-001"),
+        VenueOrderId::new("789012"),
+        account_id,
         TradeId::new("2"),
         order2.order_side(),
         order2.order_type(),
         order2.quantity(),
-        Price::new(1.00, 0),
+        Price::new(1.00010, 5), // Fill at 1.00010 (10 pip profit)
         Currency::USD(),
         LiquiditySide::Taker,
         uuid4(),
         UnixNanos::default(),
         UnixNanos::default(),
         false,
-        Some(PositionId::new("SSD")),
-        Some(Money::from("1.2 USD")),
+        Some(PositionId::new("P-123456")),
+        Some(Money::new(2.0, Currency::USD())), // Commission for closing trade
     );
 
-    position1.apply(&fill2);
+    // Apply the closing fill to the position
+    position.apply(&fill2);
     portfolio
         .cache
         .borrow_mut()
-        .update_position(&position1)
+        .update_position(&position)
         .unwrap();
 
-    // Act
-    let position1_closed = get_close_position(&position1);
-    portfolio.update_position(&PositionEvent::PositionClosed(position1_closed));
+    // Update quote tick for closing price (needed for PnL calculations)
+    let closing_quote_tick = get_quote_tick(&instrument_audusd, 1.00010, 1.00011, 1.0, 1.0);
+    portfolio
+        .cache
+        .borrow_mut()
+        .add_quote(closing_quote_tick)
+        .unwrap();
+    portfolio.update_quote_tick(&closing_quote_tick);
 
-    // Assert
+    // Act - Update portfolio with position closed event
+    let position_closed = get_close_position(&position);
+    portfolio.update_position(&PositionEvent::PositionClosed(position_closed));
+
+    // Assert - Check portfolio state after position closure
+    let net_exposures = portfolio.net_exposures(&Venue::from("SIM"));
+    assert!(net_exposures.is_none() || net_exposures.unwrap().is_empty()); // No net exposures
+    let unrealized_pnls_venue = portfolio.unrealized_pnls(&Venue::from("SIM"));
+    // Unrealized PnL should be zero for closed positions
+    if let Some(usd_unrealized) = unrealized_pnls_venue.get(&Currency::USD()) {
+        assert_eq!(usd_unrealized.as_decimal(), dec!(0.0));
+    }
+
+    let realized_pnls = portfolio.realized_pnls(&Venue::from("SIM"));
     assert_eq!(
-        portfolio
-            .net_exposures(&Venue::from("SIM"))
-            .unwrap()
+        realized_pnls.get(&Currency::USD()).unwrap().as_decimal(),
+        dec!(6.0) // Expected realized PnL: 10 USD profit - 4 USD commission = 6 USD
+    );
+
+    // Check instrument-specific values
+    // Calculate total PnL manually (realized + unrealized)
+    let realized_pnl_instrument = portfolio.realized_pnl(&instrument_audusd.id());
+    let unrealized_pnl_instrument = portfolio.unrealized_pnl(&instrument_audusd.id());
+    assert!(realized_pnl_instrument.is_some());
+    assert_eq!(realized_pnl_instrument.unwrap().as_decimal(), dec!(6.0));
+    assert!(
+        unrealized_pnl_instrument.is_none()
+            || unrealized_pnl_instrument.unwrap().as_decimal() == dec!(0.0)
+    );
+
+    assert_eq!(portfolio.margins_maint(&Venue::from("SIM")), HashMap::new()); // No maintenance margins
+
+    let net_exposure = portfolio.net_exposure(&instrument_audusd.id());
+    assert!(net_exposure.is_none() || net_exposure.unwrap().as_decimal() == dec!(0.0)); // Zero net exposure
+
+    let unrealized_pnl = portfolio.unrealized_pnl(&instrument_audusd.id());
+    assert!(unrealized_pnl.is_none() || unrealized_pnl.unwrap().as_decimal() == dec!(0.0)); // Zero unrealized PnL
+
+    let realized_pnl = portfolio.realized_pnl(&instrument_audusd.id());
+    assert!(realized_pnl.is_some());
+    assert_eq!(realized_pnl.unwrap().as_decimal(), dec!(6.0)); // 6 USD realized profit (after commission)
+
+    // Calculate total PnLs manually (realized + unrealized for venue)
+    let realized_pnls_venue_final = portfolio.realized_pnls(&Venue::from("SIM"));
+    assert_eq!(
+        realized_pnls_venue_final
             .get(&Currency::USD())
             .unwrap()
             .as_decimal(),
-        dec!(100000.00)
+        dec!(6.0)
     );
+
+    // Check position state
     assert_eq!(
-        portfolio
-            .unrealized_pnls(&Venue::from("SIM"))
-            .get(&Currency::USD())
-            .unwrap()
-            .as_decimal(),
-        dec!(-37500000.00)
-    );
-    assert_eq!(
-        portfolio
-            .realized_pnls(&Venue::from("SIM"))
-            .get(&Currency::USD())
-            .unwrap()
-            .as_decimal(),
-        dec!(-12.2)
-    );
-    assert_eq!(portfolio.margins_maint(&Venue::from("SIM")), HashMap::new());
+        portfolio.net_position(&instrument_audusd.id()),
+        Decimal::ZERO
+    ); // Zero net position
+    assert!(!portfolio.is_net_long(&instrument_audusd.id())); // Not long
+    assert!(!portfolio.is_net_short(&instrument_audusd.id())); // Not short
+    assert!(portfolio.is_flat(&instrument_audusd.id())); // Flat position
+    assert!(portfolio.is_completely_flat()); // Portfolio is completely flat
 }
 
 #[rstest]
@@ -1898,4 +1959,73 @@ fn test_several_positions_with_different_instruments_updates_portfolio(
     );
     // FIX: TODO: should not be empty
     assert_eq!(portfolio.margins_maint(&Venue::from("SIM")), HashMap::new());
+}
+
+#[rstest]
+fn test_realized_pnl_with_missing_exchange_rate_returns_zero_instead_of_panic(
+    mut portfolio: Portfolio,
+    instrument_audusd: InstrumentAny,
+) {
+    let mut cache = portfolio.cache.borrow_mut();
+    cache.add_instrument(instrument_audusd.clone()).unwrap();
+
+    let account_id = AccountId::new("SIM-001");
+    let account_state = AccountState::new(
+        account_id,
+        AccountType::Cash,
+        vec![AccountBalance::new(
+            Money::new(100000.0, Currency::EUR()),
+            Money::new(0.0, Currency::EUR()),
+            Money::new(100000.0, Currency::EUR()),
+        )],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        Some(Currency::EUR()),
+    );
+    cache.add_account(account_state.into()).unwrap();
+
+    let position_id = PositionId::new("P-001");
+
+    let filled = OrderFilled::new(
+        TraderId::new("TRADER-001"),
+        StrategyId::new("S-001"),
+        instrument_audusd.id(),
+        ClientOrderId::new("O-001"),
+        VenueOrderId::new("V-001"),
+        account_id,
+        TradeId::new("T-001"),
+        OrderSide::Buy,
+        OrderType::Market,
+        Quantity::new(10000.0, 0),
+        Price::new(0.6789, 4),
+        Currency::AUD(),
+        LiquiditySide::Taker,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+        Some(position_id),
+        Some(Money::new(1000.0, Currency::AUD())),
+    );
+
+    let position = Position::new(&instrument_audusd, filled);
+    cache.add_position(position, OmsType::Netting).unwrap();
+    drop(cache);
+
+    let result = portfolio.realized_pnl(&instrument_audusd.id());
+
+    assert!(result.is_some());
+
+    let pnl = result.unwrap();
+    assert_eq!(pnl.currency, Currency::EUR());
+    assert_eq!(pnl.as_f64(), 0.0);
+
+    let safe_calculation = result.unwrap().as_f64() * 1.5;
+    assert_eq!(safe_calculation, 0.0);
+
+    let result2 = portfolio.realized_pnl(&instrument_audusd.id());
+    assert_eq!(result2, result);
 }

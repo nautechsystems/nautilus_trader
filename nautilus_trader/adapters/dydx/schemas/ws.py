@@ -69,7 +69,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 
 
-class DYDXCandle(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXCandle(msgspec.Struct, forbid_unknown_fields=False):
     """
     Define the candles data.
     """
@@ -120,7 +120,7 @@ class DYDXCandle(msgspec.Struct, forbid_unknown_fields=True):
         )
 
 
-class DYDXWsCandlesChannelData(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXWsCandlesChannelData(msgspec.Struct, forbid_unknown_fields=False):
     """
     Define the candles channel data message from dYdX.
     """
@@ -134,7 +134,7 @@ class DYDXWsCandlesChannelData(msgspec.Struct, forbid_unknown_fields=True):
     version: str
 
 
-class DYDXWsCandlesMessageContents(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXWsCandlesMessageContents(msgspec.Struct, forbid_unknown_fields=False):
     """
     Define the candles contents.
     """
@@ -142,7 +142,7 @@ class DYDXWsCandlesMessageContents(msgspec.Struct, forbid_unknown_fields=True):
     candles: list[DYDXCandle]
 
 
-class DYDXWsCandlesSubscribedData(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXWsCandlesSubscribedData(msgspec.Struct, forbid_unknown_fields=False):
     """
     Define the candles channel data message from dYdX.
     """
@@ -168,7 +168,7 @@ class DYDXWsMessageGeneral(msgspec.Struct):
     message: str | None = None
 
 
-class DYDXTrade(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXTrade(msgspec.Struct, forbid_unknown_fields=False):
     """
     Define a trade tick.
     """
@@ -206,7 +206,7 @@ class DYDXTrade(msgspec.Struct, forbid_unknown_fields=True):
         )
 
 
-class DYDXWsTradeMessageContents(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXWsTradeMessageContents(msgspec.Struct, forbid_unknown_fields=False):
     """
     Define the trade message contents struct.
     """
@@ -214,7 +214,7 @@ class DYDXWsTradeMessageContents(msgspec.Struct, forbid_unknown_fields=True):
     trades: list[DYDXTrade]
 
 
-class DYDXWsTradeChannelData(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXWsTradeChannelData(msgspec.Struct, forbid_unknown_fields=False):
     """
     Define a trade websocket message.
     """
@@ -230,7 +230,7 @@ class DYDXWsTradeChannelData(msgspec.Struct, forbid_unknown_fields=True):
 
 
 # Price level: the first string indicates the price, the second string indicates the size
-class DYDXWsOrderbookMessageContents(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXWsOrderbookMessageContents(msgspec.Struct, forbid_unknown_fields=False):
     """
     Define the order book message contents.
     """
@@ -239,7 +239,7 @@ class DYDXWsOrderbookMessageContents(msgspec.Struct, forbid_unknown_fields=True)
     asks: list[list[str]] | None = None
 
 
-class DYDXWsOrderbookChannelData(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXWsOrderbookChannelData(msgspec.Struct, forbid_unknown_fields=False):
     """
     Define the order book messages.
     """
@@ -328,7 +328,7 @@ class DYDXWsOrderbookChannelData(msgspec.Struct, forbid_unknown_fields=True):
         return OrderBookDeltas(instrument_id=instrument_id, deltas=deltas)
 
 
-class PriceLevel(msgspec.Struct, forbid_unknown_fields=True):
+class PriceLevel(msgspec.Struct, forbid_unknown_fields=False):
     """
     Define an order book level.
     """
@@ -337,7 +337,7 @@ class PriceLevel(msgspec.Struct, forbid_unknown_fields=True):
     size: str
 
 
-class DYDXWsOrderbookMessageSnapshotContents(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXWsOrderbookMessageSnapshotContents(msgspec.Struct, forbid_unknown_fields=False):
     """
     Define the order book message contents.
     """
@@ -428,7 +428,7 @@ class DYDXWsOrderbookMessageSnapshotContents(msgspec.Struct, forbid_unknown_fiel
         return OrderBookDeltas(instrument_id=instrument_id, deltas=deltas)
 
 
-class DYDXWsOrderbookSnapshotChannelData(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXWsOrderbookSnapshotChannelData(msgspec.Struct, forbid_unknown_fields=False):
     """
     Define the order book snapshot messages.
     """
@@ -461,7 +461,7 @@ class DYDXWsOrderbookSnapshotChannelData(msgspec.Struct, forbid_unknown_fields=T
         )
 
 
-class DYDXWsOrderbookBatchedData(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXWsOrderbookBatchedData(msgspec.Struct, forbid_unknown_fields=False):
     """
     Define the order book batched deltas message.
     """
@@ -556,7 +556,7 @@ class DYDXWsOrderbookBatchedData(msgspec.Struct, forbid_unknown_fields=True):
         return OrderBookDeltas(instrument_id=instrument_id, deltas=deltas)
 
 
-class DYDXWsSubaccountsSubscribedContents(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXWsSubaccountsSubscribedContents(msgspec.Struct, forbid_unknown_fields=False):
     """
     Define the contents of the sub accounts subscribed message.
     """
@@ -588,7 +588,7 @@ class DYDXWsSubaccountsSubscribedContents(msgspec.Struct, forbid_unknown_fields=
         return account_balances
 
 
-class DYDXWsSubaccountsSubscribed(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXWsSubaccountsSubscribed(msgspec.Struct, forbid_unknown_fields=False):
     """
     Define the schema for the subaccounts initial response message.
 
@@ -609,7 +609,7 @@ class DYDXWsSubaccountsSubscribed(msgspec.Struct, forbid_unknown_fields=True):
     contents: DYDXWsSubaccountsSubscribedContents
 
 
-class DYDXWalletAddress(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXWalletAddress(msgspec.Struct, forbid_unknown_fields=False):
     """
     Define a wallet address object.
     """
@@ -618,7 +618,7 @@ class DYDXWalletAddress(msgspec.Struct, forbid_unknown_fields=True):
     subaccountNumber: int | None = None
 
 
-class DYDXWsTransferSubaccountMessageContents(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXWsTransferSubaccountMessageContents(msgspec.Struct, forbid_unknown_fields=False):
     """
     Define a transfer subaccount message.
     """
@@ -633,7 +633,7 @@ class DYDXWsTransferSubaccountMessageContents(msgspec.Struct, forbid_unknown_fie
     transactionHash: str
 
 
-class DYDXWsFillEventId(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXWsFillEventId(msgspec.Struct, forbid_unknown_fields=False):
     """
     Define the event id object of a fill message.
     """
@@ -642,7 +642,7 @@ class DYDXWsFillEventId(msgspec.Struct, forbid_unknown_fields=True):
     type: str
 
 
-class DYDXWsFillSubaccountMessageContents(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXWsFillSubaccountMessageContents(msgspec.Struct, forbid_unknown_fields=False):
     """
     Define a fill update message.
     """
@@ -667,9 +667,11 @@ class DYDXWsFillSubaccountMessageContents(msgspec.Struct, forbid_unknown_fields=
     affiliateRevShare: str | None = None
     builderFee: str | None = None
     builderAddress: str | None = None
+    orderRouterFee: str | None = None
+    orderRouterAddress: str | None = None
 
 
-class DYDXWsOrderSubaccountMessageContents(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXWsOrderSubaccountMessageContents(msgspec.Struct, forbid_unknown_fields=False):
     """
     Define an order update message.
     """
@@ -700,6 +702,10 @@ class DYDXWsOrderSubaccountMessageContents(msgspec.Struct, forbid_unknown_fields
     updatedAtHeight: str | None = None
     builderAddress: str | None = None
     feePpm: str | None = None
+    duration: str | None = None
+    interval: str | None = None
+    priceTolerance: str | None = None
+    orderRouterAddress: str | None = None
 
     def parse_to_order_status_report(
         self,
@@ -773,7 +779,7 @@ class DYDXWsOrderSubaccountMessageContents(msgspec.Struct, forbid_unknown_fields
         )
 
 
-class DYDXWsAssetPositionSubaccountMessageContents(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXWsAssetPositionSubaccountMessageContents(msgspec.Struct, forbid_unknown_fields=False):
     """
     Define an asset position update message.
     """
@@ -787,7 +793,7 @@ class DYDXWsAssetPositionSubaccountMessageContents(msgspec.Struct, forbid_unknow
     size: str
 
 
-class DYDXWsPerpetualPositionSubaccountMessageContents(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXWsPerpetualPositionSubaccountMessageContents(msgspec.Struct, forbid_unknown_fields=False):
     """
     Define a perpetual position update message.
     """
@@ -809,7 +815,7 @@ class DYDXWsPerpetualPositionSubaccountMessageContents(msgspec.Struct, forbid_un
     unrealizedPnl: str | None = None
 
 
-class DYDXTradingReward(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXTradingReward(msgspec.Struct, forbid_unknown_fields=False):
     """
     Define the trading rewards message.
     """
@@ -819,7 +825,7 @@ class DYDXTradingReward(msgspec.Struct, forbid_unknown_fields=True):
     tradingReward: str
 
 
-class DYDXWsSubaccountMessageContents(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXWsSubaccountMessageContents(msgspec.Struct, forbid_unknown_fields=False):
     """
     Define the contents of a subaccount message.
     """
@@ -843,7 +849,7 @@ class DYDXWsSubaccountMessageContents(msgspec.Struct, forbid_unknown_fields=True
     tradingReward: DYDXTradingReward | None = None
 
 
-class DYDXWsSubaccountsChannelData(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXWsSubaccountsChannelData(msgspec.Struct, forbid_unknown_fields=False):
     """
     Define the schema for subaccounts updates.
 
@@ -865,7 +871,7 @@ class DYDXWsSubaccountsChannelData(msgspec.Struct, forbid_unknown_fields=True):
     version: str | None = None
 
 
-class DYDXOraclePriceMarket(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXOraclePriceMarket(msgspec.Struct, forbid_unknown_fields=False):
     """
     Define the oracle price market message.
     """
@@ -876,7 +882,7 @@ class DYDXOraclePriceMarket(msgspec.Struct, forbid_unknown_fields=True):
     marketId: int
 
 
-class DYDXTradingPerpetualMarketMessage(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXTradingPerpetualMarketMessage(msgspec.Struct, forbid_unknown_fields=False):
     """
     Represent the dYdX perpetual market response object.
     """
@@ -911,7 +917,7 @@ class DYDXTradingPerpetualMarketMessage(msgspec.Struct, forbid_unknown_fields=Tr
     defaultFundingRate1H: str | None = None
 
 
-class DYDXMarketMessageContents(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXMarketMessageContents(msgspec.Struct, forbid_unknown_fields=False):
     """
     Define the markets contents.
     """
@@ -920,7 +926,7 @@ class DYDXMarketMessageContents(msgspec.Struct, forbid_unknown_fields=True):
     oraclePrices: dict[str, DYDXOraclePriceMarket] | None = None
 
 
-class DYDXWsMarketChannelData(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXWsMarketChannelData(msgspec.Struct, forbid_unknown_fields=False):
     """
     Define the markets channel data message from dYdX.
     """
@@ -934,7 +940,7 @@ class DYDXWsMarketChannelData(msgspec.Struct, forbid_unknown_fields=True):
     id: str | None = None
 
 
-class DYDXWsMarketSubscribedData(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXWsMarketSubscribedData(msgspec.Struct, forbid_unknown_fields=False):
     """
     Define the markets initial channel data message from dYdX.
     """
@@ -946,7 +952,7 @@ class DYDXWsMarketSubscribedData(msgspec.Struct, forbid_unknown_fields=True):
     contents: DYDXListPerpetualMarketsResponse
 
 
-class DYDXBlockHeightSubscribedContents(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXBlockHeightSubscribedContents(msgspec.Struct, forbid_unknown_fields=False):
     """
     Define the block height subscribed contents struct.
     """
@@ -955,7 +961,7 @@ class DYDXBlockHeightSubscribedContents(msgspec.Struct, forbid_unknown_fields=Tr
     time: datetime.datetime
 
 
-class DYDXWsBlockHeightSubscribedData(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXWsBlockHeightSubscribedData(msgspec.Struct, forbid_unknown_fields=False):
     """
     Define the block height subscribed data.
     """
@@ -968,7 +974,7 @@ class DYDXWsBlockHeightSubscribedData(msgspec.Struct, forbid_unknown_fields=True
     contents: DYDXBlockHeightSubscribedContents
 
 
-class DYDXBlockHeightChannelContents(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXBlockHeightChannelContents(msgspec.Struct, forbid_unknown_fields=False):
     """
     Define the block height channel contents struct.
     """
@@ -977,7 +983,7 @@ class DYDXBlockHeightChannelContents(msgspec.Struct, forbid_unknown_fields=True)
     time: datetime.datetime
 
 
-class DYDXWsBlockHeightChannelData(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXWsBlockHeightChannelData(msgspec.Struct, forbid_unknown_fields=False):
     """
     Define the block height channel data.
     """

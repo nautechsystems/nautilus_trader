@@ -8,7 +8,7 @@
 
 Backtest engine for [NautilusTrader](http://nautilustrader.io).
 
-The *backtest* crate provides a comprehensive event-driven backtesting framework that allows
+The `nautilus-backtest` crate provides a comprehensive event-driven backtesting framework that allows
 quantitative traders to test and validate trading strategies on historical data with high
 fidelity market simulation. The system replicates real market conditions including:
 
@@ -37,6 +37,7 @@ or as part of a Rust only build.
 
 - `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+- `extension-module`: Builds as a Python extension module (used with `python`).
 
 ## Documentation
 

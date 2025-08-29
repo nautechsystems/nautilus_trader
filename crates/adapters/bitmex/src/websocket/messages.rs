@@ -25,9 +25,9 @@ use strum::Display;
 use uuid::Uuid;
 
 use super::enums::{Action, Side, TickDirection};
-use crate::enums::{
-    ContingencyType, ExecInstruction, ExecType, LiquidityIndicator, OrderStatus, OrderType,
-    PegPriceType, TimeInForce,
+use crate::common::enums::{
+    BitmexContingencyType, BitmexExecInstruction, BitmexExecType, BitmexLiquidityIndicator,
+    BitmexOrderStatus, BitmexOrderType, BitmexPegPriceType, BitmexTimeInForce,
 };
 
 /// Unified WebSocket message type for BitMEX.
@@ -38,6 +38,7 @@ pub enum NautilusWsMessage {
     FillReports(Vec<FillReport>),
     PositionStatusReport(Box<PositionStatusReport>),
     FundingRateUpdates(Vec<FundingRateUpdate>),
+    AccountState(Box<nautilus_model::events::AccountState>),
 }
 
 /// Represents all possible message types from the `BitMEX` WebSocket API.
@@ -336,14 +337,14 @@ pub struct OrderMsg {
     pub display_qty: Option<i64>,
     pub stop_px: Option<f64>,
     pub peg_offset_value: Option<f64>,
-    pub peg_price_type: Option<PegPriceType>,
+    pub peg_price_type: Option<BitmexPegPriceType>,
     pub currency: String,
     pub settl_currency: String,
-    pub ord_type: OrderType,
-    pub time_in_force: TimeInForce,
-    pub exec_inst: Option<ExecInstruction>,
-    pub contingency_type: Option<ContingencyType>,
-    pub ord_status: OrderStatus,
+    pub ord_type: BitmexOrderType,
+    pub time_in_force: BitmexTimeInForce,
+    pub exec_inst: Option<BitmexExecInstruction>,
+    pub contingency_type: Option<BitmexContingencyType>,
+    pub ord_status: BitmexOrderStatus,
     pub triggered: Option<String>,
     pub working_indicator: bool,
     pub ord_rej_reason: Option<String>,
@@ -374,20 +375,20 @@ pub struct ExecutionMsg {
     pub last_px: Option<f64>,
     pub underlying_last_px: Option<f64>,
     pub last_mkt: Option<String>,
-    pub last_liquidity_ind: Option<LiquidityIndicator>,
+    pub last_liquidity_ind: Option<BitmexLiquidityIndicator>,
     pub order_qty: Option<i64>,
     pub price: Option<f64>,
     pub display_qty: Option<i64>,
     pub stop_px: Option<f64>,
     pub peg_offset_value: Option<f64>,
-    pub peg_price_type: Option<PegPriceType>,
+    pub peg_price_type: Option<BitmexPegPriceType>,
     pub currency: Option<String>,
     pub settl_currency: Option<String>,
-    pub exec_type: Option<ExecType>,
-    pub ord_type: Option<OrderType>,
-    pub time_in_force: Option<TimeInForce>,
-    pub exec_inst: Option<ExecInstruction>,
-    pub contingency_type: Option<ContingencyType>,
+    pub exec_type: Option<BitmexExecType>,
+    pub ord_type: Option<BitmexOrderType>,
+    pub time_in_force: Option<BitmexTimeInForce>,
+    pub exec_inst: Option<BitmexExecInstruction>,
+    pub contingency_type: Option<BitmexContingencyType>,
     pub ex_destination: Option<String>,
     pub ord_status: Option<String>,
     pub triggered: Option<String>,

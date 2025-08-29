@@ -67,14 +67,14 @@ config_node = TradingNodeConfig(
     timeout_reconciliation=10.0,
     timeout_portfolio=10.0,
     timeout_disconnection=10.0,
-    timeout_post_stop=0.0,  # No stop delay needed for data testing
+    timeout_post_stop=1.0,
 )
 
 # Instantiate the node with a configuration
 node = TradingNode(config=config_node)
 
 # Configure your strategy
-config_strat = DataTesterConfig(
+config_tester = DataTesterConfig(
     instrument_ids=[InstrumentId.from_str(f"{symbol}.{BYBIT}")],
     # subscribe_book=True,
     subscribe_quotes=True,
@@ -83,10 +83,10 @@ config_strat = DataTesterConfig(
 )
 
 # Instantiate your actor
-actor = DataTester(config=config_strat)
+tester = DataTester(config=config_tester)
 
 # Add your actors and modules
-node.trader.add_actor(actor)
+node.trader.add_actor(tester)
 
 # Register your client factories with the node (can take user-defined factories)
 node.add_data_client_factory(BYBIT, BybitLiveDataClientFactory)

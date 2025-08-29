@@ -1,0 +1,283 @@
+name: cli-binaries
+
+permissions:
+  contents: read
+  actions: read
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - nightly
+
+env:
+  RUST_BACKTRACE: 1
+  BUILD_MODE: release
+
+jobs:
+  build-linux-x86:
+    name: build cli (linux x86_64)
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Common setup
+        uses: ./.github/actions/common-setup
+        with:
+          python-version: "3.13"
+          free-disk-space: "true"
+
+      - name: Build CLI (all features)
+        run: |
+          cargo build --release -p nautilus-cli --bin nautilus --all-features
+
+      - name: Strip binary
+        run: |
+          strip target/release/nautilus || true
+
+      - name: Package artifact
+        run: |
+          set -euo pipefail
+          TARGET_TRIPLE="x86_64-unknown-linux-gnu"
+          STAGE_DIR="stage-cli"
+          mkdir -p "$STAGE_DIR" dist
+          cp target/release/nautilus "$STAGE_DIR/nautilus"
+          cp -L crates/cli/LICENSE "$STAGE_DIR/LICENSE" || cp -L LICENSE "$STAGE_DIR/LICENSE"
+          cp crates/cli/README.md "$STAGE_DIR/README.md"
+          tar -C "$STAGE_DIR" -czf "dist/nautilus-${TARGET_TRIPLE}.tar.gz" .
+          rm -rf "$STAGE_DIR"
+
+      - name: Smoke test --version
+        run: |
+          target/release/nautilus --version || (echo "Smoke test failed" && exit 1)
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nautilus-x86_64-unknown-linux-gnu.tar.gz
+          path: dist/nautilus-x86_64-unknown-linux-gnu.tar.gz
+
+  build-macos-arm64:
+    name: build cli (macOS arm64)
+    runs-on: macos-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Common setup
+        uses: ./.github/actions/common-setup
+        with:
+          python-version: "3.13"
+
+      - name: Build CLI (all features)
+        run: |
+          cargo build --release -p nautilus-cli --bin nautilus --all-features
+
+      - name: Strip binary
+        run: |
+          strip target/release/nautilus || true
+
+      - name: Package artifact
+        run: |
+          set -euo pipefail
+          TARGET_TRIPLE="aarch64-apple-darwin"
+          STAGE_DIR="stage-cli"
+          mkdir -p "$STAGE_DIR" dist
+          cp target/release/nautilus "$STAGE_DIR/nautilus"
+          cp -L crates/cli/LICENSE "$STAGE_DIR/LICENSE" || cp -L LICENSE "$STAGE_DIR/LICENSE"
+          cp crates/cli/README.md "$STAGE_DIR/README.md"
+          tar -C "$STAGE_DIR" -czf "dist/nautilus-${TARGET_TRIPLE}.tar.gz" .
+          rm -rf "$STAGE_DIR"
+
+      - name: Smoke test --version
+        run: |
+          target/release/nautilus --version || (echo "Smoke test failed" && exit 1)
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nautilus-aarch64-apple-darwin.tar.gz
+          path: dist/nautilus-aarch64-apple-darwin.tar.gz
+
+
+
+  build-windows-x86_64:
+    name: build cli (windows x86_64)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Common setup
+        uses: ./.github/actions/common-setup
+        with:
+          python-version: "3.13"
+          free-disk-space: "true"
+
+      - name: Build CLI (all features)
+        run: |
+          cargo build --release -p nautilus-cli --bin nautilus --all-features
+
+      - name: Package artifact
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $target = 'x86_64-pc-windows-msvc'
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          New-Item -ItemType Directory -Force -Path stage-cli | Out-Null
+          Copy-Item -LiteralPath target\release\nautilus.exe -Destination stage-cli\nautilus.exe
+          Copy-Item -LiteralPath crates\cli\README.md -Destination stage-cli\README.md
+          if (Test-Path -LiteralPath crates\cli\LICENSE) {
+            Copy-Item -LiteralPath crates\cli\LICENSE -Destination stage-cli\LICENSE -Force
+          } else {
+            Copy-Item -LiteralPath LICENSE -Destination stage-cli\LICENSE -Force
+          }
+          Compress-Archive -Path stage-cli\* -DestinationPath dist\nautilus-$target.zip -Force
+          Remove-Item -Recurse -Force stage-cli
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nautilus-x86_64-pc-windows-msvc.zip
+          path: dist/nautilus-x86_64-pc-windows-msvc.zip
+
+  publish-cli:
+    name: publish cli to R2
+    runs-on: ubuntu-latest
+    needs:
+      - build-linux-x86
+      - build-linux-arm64
+      - build-macos-arm64
+      - build-windows-x86_64
+    if: github.event_name == 'push' && github.ref == 'refs/heads/nightly'
+    permissions:
+      actions: write
+      contents: read
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      CLOUDFLARE_R2_URL: ${{ secrets.CLOUDFLARE_R2_URL }}
+      CLOUDFLARE_R2_REGION: "auto"
+      CLOUDFLARE_R2_BUCKET_NAME: "packages"
+      CLOUDFLARE_R2_PREFIX: "cli/nautilus-cli"
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Download built CLI artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: dist/cli
+
+      - name: Configure AWS CLI for Cloudflare R2
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Configuring AWS CLI for Cloudflare R2..."
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64-2.22.35.zip" -o "awscliv2.zip"
+          unzip -q awscliv2.zip
+          sudo ./aws/install --bin-dir /usr/local/bin --install-dir /usr/local/aws-cli --update
+          mkdir -p ~/.aws
+          envsubst < .github/aws/credentials.ini > ~/.aws/credentials
+          envsubst < .github/aws/config.ini > ~/.aws/config
+
+      - name: Upload install.sh to R2 (stable + latest)
+        shell: bash
+        run: |
+          aws s3 cp scripts/cli/install.sh "s3://${CLOUDFLARE_R2_BUCKET_NAME}/${CLOUDFLARE_R2_PREFIX}/install.sh" \
+            --endpoint-url="${CLOUDFLARE_R2_URL}" \
+            --content-type "text/x-shellscript"
+          aws s3 cp scripts/cli/install.sh "s3://${CLOUDFLARE_R2_BUCKET_NAME}/${CLOUDFLARE_R2_PREFIX}/latest/install.sh" \
+            --endpoint-url="${CLOUDFLARE_R2_URL}" \
+            --content-type "text/x-shellscript"
+
+      - name: Publish CLI binaries to R2 (versioned + latest) and generate manifest
+        shell: bash
+        run: |
+          bash ./scripts/ci/publish-cli-r2-upload.sh
+
+      - name: Prune old CLI versions
+        shell: bash
+        run: |
+          bash ./scripts/ci/publish-cli-r2-prune.sh
+
+      - name: Verify uploaded files in R2
+        shell: bash
+        run: |
+          bash ./scripts/ci/publish-cli-r2-verify.sh
+  build-linux-arm64:
+    name: build cli (linux aarch64)
+    runs-on: ubuntu-22.04-arm
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Common setup
+        uses: ./.github/actions/common-setup
+        with:
+          python-version: "3.13"
+          free-disk-space: "true"
+
+      - name: Build CLI (all features)
+        run: |
+          cargo build --release -p nautilus-cli --bin nautilus --all-features
+
+      - name: Strip binary
+        run: |
+          strip target/release/nautilus || true
+
+      - name: Package artifact
+        run: |
+          set -euo pipefail
+          TARGET_TRIPLE="aarch64-unknown-linux-gnu"
+          STAGE_DIR="stage-cli"
+          mkdir -p "$STAGE_DIR" dist
+          cp target/release/nautilus "$STAGE_DIR/nautilus"
+          cp -L crates/cli/LICENSE "$STAGE_DIR/LICENSE" || cp -L LICENSE "$STAGE_DIR/LICENSE"
+          cp crates/cli/README.md "$STAGE_DIR/README.md"
+          tar -C "$STAGE_DIR" -czf "dist/nautilus-${TARGET_TRIPLE}.tar.gz" .
+          rm -rf "$STAGE_DIR"
+
+      - name: Smoke test --version
+        run: |
+          target/release/nautilus --version || (echo "Smoke test failed" && exit 1)
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nautilus-aarch64-unknown-linux-gnu.tar.gz
+          path: dist/nautilus-aarch64-unknown-linux-gnu.tar.gz

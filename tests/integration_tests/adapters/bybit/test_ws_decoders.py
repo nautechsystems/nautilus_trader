@@ -14,9 +14,11 @@
 # -------------------------------------------------------------------------------------------------
 
 import pkgutil
+from decimal import Decimal
 
 import msgspec
 
+from nautilus_trader.adapters.bybit.common.enums import BybitEnumParser
 from nautilus_trader.adapters.bybit.common.enums import BybitExecType
 from nautilus_trader.adapters.bybit.common.enums import BybitKlineInterval
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderSide
@@ -28,6 +30,7 @@ from nautilus_trader.adapters.bybit.common.enums import BybitStopOrderType
 from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
 from nautilus_trader.adapters.bybit.common.enums import BybitTriggerDirection
 from nautilus_trader.adapters.bybit.common.enums import BybitTriggerType
+from nautilus_trader.adapters.bybit.schemas.trade import BybitExecution
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountExecution
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountExecutionMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountOrder
@@ -51,13 +54,17 @@ from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTickerSpot
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTickerSpotMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTrade
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTradeMsg
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import RecordFlag
+from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import Currency
+from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 
@@ -682,4 +689,44 @@ class TestBybitWsDecoders:
         assert result.data == [wallet_data]
         assert result.topic == "wallet"
         assert result.id == "5923248e5d0ee3-faeb-4864-87e4-9cd63f785c1b"
-        assert result.creationTime == 1690873065683
+
+    def test_execution_parse_to_fill_report_uses_exec_fee(self):
+        execution = BybitExecution(
+            symbol="XRPUSDT",
+            orderId="f6e324ff-99c2-4e89-9739-3086e47f9381",
+            orderLinkId="test-order-123",
+            side=BybitOrderSide.SELL,
+            orderPrice="0.3207",
+            orderQty="25",
+            leavesQty="0",
+            orderType=BybitOrderType.MARKET,
+            stopOrderType=BybitStopOrderType.NONE,
+            execFee="0.005061",  # Actual fee from exchange
+            execId="7e2ae69c-4edf-5800-a352-893d52b446aa",
+            execPrice="0.3374",
+            execQty="25",
+            execType=BybitExecType.TRADE,
+            execValue="8.435",
+            execTime="1672364174443",
+            feeCurrency="USDT",
+            isMaker=False,
+            feeRate="0.0006",
+            tradeIv="",
+            markIv="",
+            markPrice="0.3391",
+            indexPrice="",
+            underlyingPrice="",
+            blockTradeId="",
+            closedSize="",
+            seq=4688002127,
+        )
+
+        fill_report = execution.parse_to_fill_report(
+            account_id=AccountId("BYBIT-001"),
+            instrument_id=InstrumentId.from_str("XRPUSDT.BYBIT"),
+            report_id=UUID4(),
+            enum_parser=BybitEnumParser(),
+            ts_init=1672364174455000000,
+        )
+
+        assert fill_report.commission == Money(Decimal("0.005061"), Currency.from_str("USDT"))

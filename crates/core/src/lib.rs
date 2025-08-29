@@ -15,7 +15,7 @@
 
 //! Core foundational types and utilities for [NautilusTrader](http://nautilustrader.io).
 //!
-//! The *core* crate is designed to be lightweight, efficient, and to provide zero-cost abstractions
+//! The `nautilus-core` crate is designed to be lightweight, efficient, and to provide zero-cost abstractions
 //! wherever possible. It supplies the essential building blocks used across the NautilusTrader
 //! ecosystem, including:
 //!

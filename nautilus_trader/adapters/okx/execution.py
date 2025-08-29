@@ -17,7 +17,6 @@ import asyncio
 from typing import Any
 
 from nautilus_trader.adapters.okx.config import OKXExecClientConfig
-from nautilus_trader.adapters.okx.constants import OKX_SUPPORTED_ORDER_TYPES
 from nautilus_trader.adapters.okx.constants import OKX_VENUE
 from nautilus_trader.adapters.okx.providers import OKXInstrumentProvider
 from nautilus_trader.cache.cache import Cache
@@ -52,6 +51,7 @@ from nautilus_trader.model.events import OrderModifyRejected
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.functions import order_side_to_pyo3
 from nautilus_trader.model.functions import order_type_to_pyo3
+from nautilus_trader.model.functions import time_in_force_to_pyo3
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -171,6 +171,9 @@ class OKXExecutionClient(LiveExecutionClient):
             ),
         )
         self._ws_client_futures.add(future)
+
+        # Wait for connection to be established
+        await self._ws_client.wait_until_active(timeout_secs=10.0)
         self._log.info(f"Connected to {self._ws_client.url}", LogColor.BLUE)
         self._log.info(f"Private websocket API key {self._ws_client.api_key}", LogColor.BLUE)
         self._log.info("OKX API key authenticated", LogColor.GREEN)
@@ -557,17 +560,11 @@ class OKXExecutionClient(LiveExecutionClient):
     async def _submit_order(self, command: SubmitOrder) -> None:
         order = command.order
 
-        if order.order_type not in OKX_SUPPORTED_ORDER_TYPES:
-            self._log.error(
-                f"OKX does not support {order.order_type_string()} order types",
-            )
-            return
-
         if order.is_closed:
-            self._log.warning(f"Cannot submit already closed order, {order}")
+            self._log.warning(f"Cannot submit already closed order: {order}")
             return
 
-        # Generate order submitted event, to ensure correct ordering of event
+        # Generate OrderSubmitted event here to ensure correct event sequencing
         self.generate_order_submitted(
             strategy_id=order.strategy_id,
             instrument_id=order.instrument_id,
@@ -589,6 +586,10 @@ class OKXExecutionClient(LiveExecutionClient):
             else None
         )
 
+        pyo3_time_in_force = (
+            time_in_force_to_pyo3(order.time_in_force) if order.time_in_force else None
+        )
+
         await self._ws_client.submit_order(
             trader_id=pyo3_trader_id,
             strategy_id=pyo3_strategy_id,
@@ -600,6 +601,7 @@ class OKXExecutionClient(LiveExecutionClient):
             quantity=pyo3_quantity,
             price=pyo3_price,
             trigger_price=pyo3_trigger_price,
+            time_in_force=pyo3_time_in_force,
             post_only=order.is_post_only,
             reduce_only=order.is_reduce_only,
             quote_quantity=order.is_quote_quantity,
@@ -746,7 +748,7 @@ class OKXExecutionClient(LiveExecutionClient):
         report = FillReport.from_pyo3(msg)
 
         if self._is_external_order(report.client_order_id):
-            self._send_order_status_report(report)
+            self._send_fill_report(report)
             return
 
         order = self._cache.order(report.client_order_id)

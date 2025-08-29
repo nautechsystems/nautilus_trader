@@ -55,9 +55,7 @@ impl AccountBalance {
     pub fn new_checked(total: Money, locked: Money, free: Money) -> anyhow::Result<Self> {
         check_predicate_true(
             total == locked + free,
-            &format!(
-                "total balance is not equal to the sum of locked and free balances: {total} != {locked} + {free}"
-            ),
+            &format!("`total` ({total}) - `locked` ({locked}) != `free` ({free})"),
         )?;
         Ok(Self {
             currency: total.currency,

@@ -13,6 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Data persistence and storage management for [NautilusTrader](http://nautilustrader.io).
+//!
+//! The `nautilus-persistence` crate provides data persistence capabilities for storing and retrieving
+//! trading data, state, and configuration.
+//!
 //! # Platform
 //!
 //! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade

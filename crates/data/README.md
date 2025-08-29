@@ -8,16 +8,16 @@
 
 Data engine and market data processing for [NautilusTrader](http://nautilustrader.io).
 
-The *data* crate provides a comprehensive framework for handling market data ingestion,
+The `nautilus-data` crate provides a comprehensive framework for handling market data ingestion,
 processing, and aggregation within the NautilusTrader ecosystem. This includes real-time
 data streaming, historical data management, and various aggregation methodologies:
 
-- High-performance data engine for orchestrating data operations
-- Data client infrastructure for connecting to market data providers
-- Bar aggregation machinery supporting tick, volume, value, and time-based aggregation
-- Order book management and delta processing capabilities
-- Subscription management and data request handling
-- Configurable data routing and processing pipelines
+- High-performance data engine for orchestrating data operations.
+- Data client infrastructure for connecting to market data providers.
+- Bar aggregation machinery supporting tick, volume, value, and time-based aggregation.
+- Order book management and delta processing capabilities.
+- Subscription management and data request handling.
+- Configurable data routing and processing pipelines.
 
 ## Platform
 
@@ -40,6 +40,7 @@ or as part of a Rust only build.
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 - `high-precision`: Enables [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) to use 128-bit value types.
 - `defi`: Enables DeFi (Decentralized Finance) support.
+- `extension-module`: Builds as a Python extension module (used with `python`).
 
 ## Documentation
 

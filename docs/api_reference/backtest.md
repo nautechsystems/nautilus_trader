@@ -29,14 +29,6 @@
 ```
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.backtest.exchange
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```
-
-```{eval-rst}
 .. automodule:: nautilus_trader.backtest.execution_client
    :show-inheritance:
    :inherited-members:

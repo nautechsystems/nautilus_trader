@@ -21,7 +21,7 @@ use nautilus_core::python::to_pyvalue_err;
 use pyo3::{PyTypeInfo, prelude::*, types::PyType};
 use strum::IntoEnumIterator;
 
-use crate::enums::BitmexSymbolStatus;
+use crate::common::enums::BitmexSymbolStatus;
 
 #[pymethods]
 impl BitmexSymbolStatus {

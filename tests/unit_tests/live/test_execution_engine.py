@@ -352,7 +352,7 @@ class TestLiveExecutionEngine:
     async def test_kill_when_not_running_with_messages_on_queue(self):
         # Arrange, Act
         self.exec_engine.stop()
-        await asyncio.sleep(0)
+        await eventually(lambda: self.exec_engine.is_stopped)
         self.exec_engine.kill()
 
         # Assert

@@ -17,7 +17,7 @@ from typing import Any
 
 import pytest
 
-from nautilus_trader.backtest.matching_engine import OrderMatchingEngine
+from nautilus_trader.backtest.engine import OrderMatchingEngine
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.models import MakerTakerFeeModel
 from nautilus_trader.common.component import MessageBus

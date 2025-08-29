@@ -316,7 +316,8 @@ CREATE TABLE IF NOT EXISTS "block" (
     l1_gas_used BIGINT,
     l1_fee_scalar BIGINT,
     PRIMARY KEY (chain_id, number)
-);
+) PARTITION BY LIST (chain_id);
+CREATE TABLE IF NOT EXISTS "block_default" PARTITION OF "block" DEFAULT;
 
 CREATE TABLE IF NOT EXISTS "token"(
     chain_id INTEGER NOT NULL REFERENCES chain(chain_id) ON DELETE CASCADE,
@@ -324,13 +325,17 @@ CREATE TABLE IF NOT EXISTS "token"(
     symbol TEXT,
     name TEXT,
     decimals INTEGER,
+    error TEXT,
     PRIMARY KEY (chain_id, address)
-);
+) PARTITION BY LIST (chain_id);
+CREATE TABLE IF NOT EXISTS "token_default" PARTITION OF "token" DEFAULT;
+
 CREATE TABLE IF NOT EXISTS "dex" (
     chain_id INTEGER NOT NULL REFERENCES chain(chain_id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     factory_address TEXT UNIQUE,
     creation_block BIGINT NOT NULL,
+    last_full_sync_pools_block_number BIGINT,
     PRIMARY KEY (chain_id, name)
 );
 

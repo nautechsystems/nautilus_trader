@@ -58,6 +58,12 @@ impl InstrumentAny {
             Self::OptionSpread(inst) => inst.calculate_base_quantity(quantity, last_px),
         }
     }
+
+    /// Returns true if the instrument is a spread instrument.
+    #[must_use]
+    pub fn is_spread(&self) -> bool {
+        matches!(self, Self::FuturesSpread(_) | Self::OptionSpread(_))
+    }
 }
 
 impl PartialEq for InstrumentAny {

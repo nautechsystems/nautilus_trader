@@ -302,24 +302,18 @@ def test_instrument_id_new_spread_single_positive_ratio() -> None:
     # Arrange
     id1 = InstrumentId(Symbol("AAPL"), Venue("NASDAQ"))
 
-    # Act
-    result = InstrumentId.new_spread([(id1, 1)])
-
-    # Assert
-    assert result.symbol.value == "(1)AAPL"
-    assert result.venue == Venue("NASDAQ")
+    # Act, Assert - single leg spreads should raise an error
+    with pytest.raises(ValueError, match="instrument_ratios list needs to have at least 2 legs"):
+        InstrumentId.new_spread([(id1, 1)])
 
 
 def test_instrument_id_new_spread_single_negative_ratio() -> None:
     # Arrange
     id1 = InstrumentId(Symbol("AAPL"), Venue("NASDAQ"))
 
-    # Act
-    result = InstrumentId.new_spread([(id1, -2)])
-
-    # Assert
-    assert result.symbol.value == "((2))AAPL"
-    assert result.venue == Venue("NASDAQ")
+    # Act, Assert - single leg spreads should raise an error
+    with pytest.raises(ValueError, match="instrument_ratios list needs to have at least 2 legs"):
+        InstrumentId.new_spread([(id1, -2)])
 
 
 def test_instrument_id_new_spread_multiple_instruments_sorted() -> None:
@@ -338,17 +332,18 @@ def test_instrument_id_new_spread_multiple_instruments_sorted() -> None:
 
 def test_instrument_id_new_spread_empty_list_raises_error() -> None:
     # Arrange, Act, Assert
-    with pytest.raises(ValueError, match="instrument_ratios list cannot be empty"):
+    with pytest.raises(ValueError, match="instrument_ratios list needs to have at least 2 legs"):
         InstrumentId.new_spread([])
 
 
 def test_instrument_id_new_spread_zero_ratio_raises_error() -> None:
     # Arrange
     id1 = InstrumentId(Symbol("AAPL"), Venue("NASDAQ"))
+    id2 = InstrumentId(Symbol("MSFT"), Venue("NASDAQ"))
 
-    # Act, Assert
+    # Act, Assert - need at least 2 legs, but one has zero ratio
     with pytest.raises(ValueError, match="ratio cannot be zero"):
-        InstrumentId.new_spread([(id1, 0)])
+        InstrumentId.new_spread([(id1, 1), (id2, 0)])
 
 
 def test_instrument_id_new_spread_mismatched_venues_raises_error() -> None:

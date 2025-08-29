@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use futures_util::StreamExt;
-use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyvalue_err};
+use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
     data::BarType,
     identifiers::InstrumentId,
@@ -67,6 +67,22 @@ impl CoinbaseIntxWebSocketClient {
         self.is_closed()
     }
 
+    #[pyo3(name = "get_subscriptions")]
+    fn py_get_subscriptions(&self, instrument_id: InstrumentId) -> Vec<String> {
+        let channels = self.get_subscriptions(instrument_id);
+
+        // Convert to Coinbase channel names
+        channels
+            .iter()
+            .map(|c| {
+                serde_json::to_value(c)
+                    .ok()
+                    .and_then(|v| v.as_str().map(String::from))
+                    .unwrap_or_else(|| c.to_string())
+            })
+            .collect()
+    }
+
     #[pyo3(name = "connect")]
     fn py_connect<'py>(
         &mut self,
@@ -83,7 +99,7 @@ impl CoinbaseIntxWebSocketClient {
         get_runtime().block_on(async {
             self.connect(instruments_any)
                 .await
-                .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+                .map_err(to_pyruntime_err)
         })?;
 
         let stream = self.stream();
@@ -135,6 +151,23 @@ impl CoinbaseIntxWebSocketClient {
         })
     }
 
+    #[pyo3(name = "wait_until_active")]
+    fn py_wait_until_active<'py>(
+        &self,
+        py: Python<'py>,
+        timeout_secs: f64,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .wait_until_active(timeout_secs)
+                .await
+                .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+            Ok(())
+        })
+    }
+
     #[pyo3(name = "close")]
     fn py_close<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let mut client = self.clone();
@@ -165,8 +198,8 @@ impl CoinbaseIntxWebSocketClient {
         })
     }
 
-    #[pyo3(name = "subscribe_order_book")]
-    fn py_subscribe_order_book<'py>(
+    #[pyo3(name = "subscribe_book")]
+    fn py_subscribe_book<'py>(
         &self,
         py: Python<'py>,
         instrument_ids: Vec<InstrumentId>,
@@ -174,7 +207,7 @@ impl CoinbaseIntxWebSocketClient {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            if let Err(e) = client.subscribe_order_book(instrument_ids).await {
+            if let Err(e) = client.subscribe_book(instrument_ids).await {
                 log::error!("Failed to subscribe to order book: {e}");
             }
             Ok(())
@@ -277,8 +310,8 @@ impl CoinbaseIntxWebSocketClient {
         })
     }
 
-    #[pyo3(name = "unsubscribe_order_book")]
-    fn py_unsubscribe_order_book<'py>(
+    #[pyo3(name = "unsubscribe_book")]
+    fn py_unsubscribe_book<'py>(
         &self,
         py: Python<'py>,
         instrument_ids: Vec<InstrumentId>,
@@ -286,7 +319,7 @@ impl CoinbaseIntxWebSocketClient {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            if let Err(e) = client.unsubscribe_order_book(instrument_ids).await {
+            if let Err(e) = client.unsubscribe_book(instrument_ids).await {
                 log::error!("Failed to unsubscribe from order book: {e}");
             }
             Ok(())

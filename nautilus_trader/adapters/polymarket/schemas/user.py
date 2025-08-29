@@ -148,7 +148,7 @@ class PolymarketUserTrade(msgspec.Struct, tag="trade", tag_field="event_type", f
     """
 
     asset_id: str  # asset ID (token ID) of taker order (market order)
-    bucket_index: str
+    bucket_index: int
     fee_rate_bps: str
     id: str  # trade ID
     last_update: str  # time of last update to trade

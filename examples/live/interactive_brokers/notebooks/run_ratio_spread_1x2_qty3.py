@@ -314,29 +314,14 @@ class RatioSpreadTestStrategy(Strategy):
 
 
 # %%
-def auto_stop_node(node, delay_seconds=15):
-    """
-    Automatically stop the node after a delay.
-    """
-
-    def stop_after_delay():
-        time.sleep(delay_seconds)
-        node.stop()
-
-    thread = threading.Thread(target=stop_after_delay)
-    thread.daemon = True
-    thread.start()
-
-
-# %%
 # Create 1x2 ratio spread
-leg1_id = InstrumentId.from_str("E1AQ5 C6400.XCME")  # Long put
-leg2_id = InstrumentId.from_str("E1AQ5 P6440.XCME")  # Short put
+leg1_id = InstrumentId.from_str("E1CU5 P6440.XCME")  # Long put
+leg2_id = InstrumentId.from_str("E1CU5 P6450.XCME")  # Short put
 
 spread_id = InstrumentId.new_spread(
     [
-        (leg1_id, 1),  # Long 1 contract P6350
-        (leg2_id, 2),  # Long 2 contracts P6355 (both positive ratios)
+        (leg1_id, 1),
+        (leg2_id, -1),
     ],
 )
 
@@ -406,6 +391,23 @@ print("IMPORTANT: Make sure TWS/IB Gateway is running!")
 print("IMPORTANT: This will place a REAL market order in paper trading!")
 print()
 
+
+# %%
+def auto_stop_node(node, delay_seconds=15):
+    """
+    Automatically stop the node after a delay.
+    """
+
+    def stop_after_delay():
+        time.sleep(delay_seconds)
+        node.stop()
+
+    thread = threading.Thread(target=stop_after_delay)
+    thread.daemon = True
+    thread.start()
+
+
+# %%
 # Start auto-stop timer
 auto_stop_node(node, delay_seconds=60)
 

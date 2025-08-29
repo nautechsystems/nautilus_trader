@@ -13,10 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
-
 import msgspec
 
+from nautilus_trader.adapters.bybit.common.parsing import parse_str_to_raw
 from nautilus_trader.adapters.bybit.schemas.common import BybitListResult
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Currency
@@ -51,24 +50,26 @@ class BybitCoinBalance(msgspec.Struct):
 
     def parse_to_account_balance(self) -> AccountBalance:
         currency = Currency.from_str(self.coin)
-        total = Decimal(self.walletBalance)
-        locked = Decimal(self.locked)  # TODO: Locked only valid for Spot
-        free = total - locked
+
+        total_raw = parse_str_to_raw(self.walletBalance)
+        locked_raw = parse_str_to_raw(self.locked)  # TODO: Locked only valid for Spot
+        free_raw = total_raw - locked_raw
 
         return AccountBalance(
-            total=Money(total, currency),
-            locked=Money(locked, currency),
-            free=Money(free, currency),
+            total=Money.from_raw(total_raw, currency),
+            locked=Money.from_raw(locked_raw, currency),
+            free=Money.from_raw(free_raw, currency),
         )
 
     def parse_to_margin_balance(self) -> MarginBalance:
-        self.totalPositionIM = self.totalPositionIM if self.totalPositionIM != "" else "0"
-        self.totalPositionMM = self.totalPositionMM if self.totalPositionMM != "" else "0"
-        currency: Currency = Currency.from_str(self.coin)
+        currency = Currency.from_str(self.coin)
+
+        initial_raw = parse_str_to_raw(self.totalPositionIM)
+        maintenance_raw = parse_str_to_raw(self.totalPositionMM)
 
         return MarginBalance(
-            initial=Money(Decimal(self.totalPositionIM), currency),
-            maintenance=Money(Decimal(self.totalPositionMM), currency),
+            initial=Money.from_raw(initial_raw, currency),
+            maintenance=Money.from_raw(maintenance_raw, currency),
         )
 
 

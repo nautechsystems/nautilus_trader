@@ -447,9 +447,17 @@ cdef class CacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `position_id` must be implemented in the subclass")  # pragma: no cover
 
+    cpdef set[PositionId] position_snapshot_ids(self, InstrumentId instrument_id = None):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method `position_snapshot_ids` must be implemented in the subclass")  # pragma: no cover
+
     cpdef list position_snapshots(self, PositionId position_id = None):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `position_snapshots` must be implemented in the subclass")  # pragma: no cover
+
+    cpdef list position_snapshot_bytes(self, PositionId position_id):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method `position_snapshot_bytes` must be implemented in the subclass")  # pragma: no cover
 
     cpdef list positions(self, Venue venue = None, InstrumentId instrument_id = None, StrategyId strategy_id = None, PositionSide side = PositionSide.NO_POSITION_SIDE):
         """Abstract method (implement in subclass)."""

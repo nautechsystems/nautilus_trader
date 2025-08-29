@@ -103,7 +103,7 @@ pub fn duration_since_unix_epoch() -> Duration {
 pub fn nanos_since_unix_epoch() -> u64 {
     let ns = duration_since_unix_epoch().as_nanos();
     assert!(
-        (ns <= u128::from(u64::MAX)),
+        ns <= u128::from(u64::MAX),
         "System time overflow: value exceeds u64::MAX nanoseconds"
     );
     ns as u64

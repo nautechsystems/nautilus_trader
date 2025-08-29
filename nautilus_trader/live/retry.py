@@ -174,7 +174,6 @@ class RetryManager(Generic[T]):
                     self.result = True
                     return response  # Successful request
                 except self.exc_types as e:
-                    self.log.info(repr(e))
                     self.last_exception = e
 
                     if (
@@ -232,7 +231,7 @@ class RetryManager(Generic[T]):
         )
 
     def _log_error(self) -> None:
-        message = f"Failed on '{self.name}'{self._details_str()}"
+        message = f"Failed on {self.name}{self._details_str()}"
         if self.error_logger:
             self.error_logger(message, self.last_exception)
         else:
@@ -240,7 +239,7 @@ class RetryManager(Generic[T]):
 
     def _details_str(self) -> str:
         self.details_str = " " + ", ".join([repr(x) for x in self.details]) if self.details else ""
-        self.details_str += f": {self.last_exception}" if self.last_exception else ""
+        self.details_str += f": {self.last_exception!r}" if self.last_exception else ""
         return self.details_str
 
 

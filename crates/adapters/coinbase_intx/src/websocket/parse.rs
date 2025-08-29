@@ -401,7 +401,7 @@ pub fn parse_trade_msg(
 ) -> anyhow::Result<TradeTick> {
     let price = Price::new(msg.trade_price.parse::<f64>()?, price_precision);
     let size = Quantity::new(msg.trade_qty.parse::<f64>()?, size_precision);
-    let aggressor_side: AggressorSide = msg.aggressor_side.clone().into();
+    let aggressor_side: AggressorSide = msg.aggressor_side.into();
     let trade_id = TradeId::new(&msg.match_id);
     let ts_event = UnixNanos::from(msg.time);
 

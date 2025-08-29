@@ -94,6 +94,7 @@ cdef class Cache(CacheFacade):
     cdef dict _index_position_orders
     cdef dict _index_instrument_orders
     cdef dict _index_instrument_positions
+    cdef dict _index_instrument_position_snapshots
     cdef dict _index_strategy_orders
     cdef dict _index_strategy_positions
     cdef dict _index_exec_algorithm_orders

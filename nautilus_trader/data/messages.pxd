@@ -58,9 +58,7 @@ cdef class SubscribeOrderBook(SubscribeData):
     cdef readonly bint managed
     """If an order book should be managed by the data engine based on the subscribed feed."""
     cdef readonly int interval_ms
-    """The order book snapshot interval in milliseconds (must be positive)."""
-    cdef readonly bint only_deltas
-    """If the subscription is for OrderBookDeltas or OrderBook snapshots."""
+    """The order book snapshot interval in milliseconds (must be positive for snapshots)."""
 
 
 cdef class SubscribeQuoteTicks(SubscribeData):
@@ -112,8 +110,7 @@ cdef class UnsubscribeInstrument(UnsubscribeData):
 
 
 cdef class UnsubscribeOrderBook(UnsubscribeData):
-    cdef readonly bint only_deltas
-    """If the subscription is for OrderBookDeltas or OrderBook snapshots."""
+    pass
 
 
 cdef class UnsubscribeQuoteTicks(UnsubscribeData):

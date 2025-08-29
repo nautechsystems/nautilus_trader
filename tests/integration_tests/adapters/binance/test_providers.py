@@ -129,7 +129,7 @@ class TestBinanceInstrumentProvider:
             client=binance_http_client,
             logger=live_logger,
             clock=self.clock,
-            account_type=BinanceAccountType.USDT_FUTURE,
+            account_type=BinanceAccountType.USDT_FUTURES,
         )
 
         # Act

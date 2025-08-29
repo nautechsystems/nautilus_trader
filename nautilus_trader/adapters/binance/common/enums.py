@@ -149,8 +149,8 @@ class BinanceAccountType(Enum):
     SPOT = "SPOT"
     MARGIN = "MARGIN"
     ISOLATED_MARGIN = "ISOLATED_MARGIN"
-    USDT_FUTURE = "USDT_FUTURE"
-    COIN_FUTURE = "COIN_FUTURE"
+    USDT_FUTURES = "USDT_FUTURES"
+    COIN_FUTURES = "COIN_FUTURES"
 
     @property
     def is_spot(self):
@@ -174,8 +174,8 @@ class BinanceAccountType(Enum):
     @property
     def is_futures(self) -> bool:
         return self in (
-            BinanceAccountType.USDT_FUTURE,
-            BinanceAccountType.COIN_FUTURE,
+            BinanceAccountType.USDT_FUTURES,
+            BinanceAccountType.COIN_FUTURES,
         )
 
 

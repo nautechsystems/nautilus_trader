@@ -78,19 +78,26 @@ for linear perpetual swap products on OKX.
 
 ### Time in force
 
-| Time in force | Linear Perpetual Swap | Notes                |
-|---------------|-----------------------|----------------------|
-| `GTC`         | ✓                     | Good Till Canceled.  |
-| `FOK`         | ✓                     | Fill or Kill.        |
-| `IOC`         | ✓                     | Immediate or Cancel. |
+| Time in force | Linear Perpetual Swap | Notes                                             |
+|---------------|-----------------------|---------------------------------------------------|
+| `GTC`         | ✓                     | Good Till Canceled.                               |
+| `FOK`         | ✓                     | Fill or Kill.                                     |
+| `IOC`         | ✓                     | Immediate or Cancel.                              |
+| `GTD`         | ✗                     | *Not supported by OKX. Use strategy-managed GTD.* |
+
+:::info
+**GTD (Good Till Date) time in force**: OKX does not support GTD time in force through their API.
+If you need GTD functionality, you should use Nautilus's strategy-managed GTD feature instead,
+which will handle the order expiration by canceling the order at expiry.
+:::
 
 ### Batch operations
 
-| Operation          | Linear Perpetual Swap | Notes                                        |
-|--------------------|-----------------------|----------------------------------------------|
-| Batch Submit       | ✓                     | Submit multiple orders in single request.    |
-| Batch Modify       | ✓                     | Modify multiple orders in single request.    |
-| Batch Cancel       | ✓                     | Cancel multiple orders in single request.    |
+| Operation          | Linear Perpetual Swap | Notes                                     |
+|--------------------|-----------------------|-------------------------------------------|
+| Batch Submit       | ✓                     | Submit multiple orders in single request. |
+| Batch Modify       | ✓                     | Modify multiple orders in single request. |
+| Batch Cancel       | ✓                     | Cancel multiple orders in single request. |
 
 ### Position management
 

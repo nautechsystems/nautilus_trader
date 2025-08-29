@@ -17,6 +17,7 @@ import asyncio
 from collections.abc import Awaitable
 from collections.abc import Callable
 from typing import Any
+from weakref import WeakSet
 
 import msgspec
 
@@ -27,6 +28,7 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.nautilus_pyo3 import WebSocketClient
 from nautilus_trader.core.nautilus_pyo3 import WebSocketClientError
 from nautilus_trader.core.nautilus_pyo3 import WebSocketConfig
+from nautilus_trader.live.cancellation import cancel_tasks_with_timeout
 
 
 class BinanceWebSocketClient:
@@ -73,6 +75,7 @@ class BinanceWebSocketClient:
         self._handler: Callable[[bytes], None] = handler
         self._handler_reconnect: Callable[..., Awaitable[None]] | None = handler_reconnect
         self._loop = loop
+        self._tasks: WeakSet[asyncio.Task] = WeakSet()
 
         self._streams: list[str] = []
         self._clients: dict[int, WebSocketClient | None] = {}  # Client ID -> WebSocket client
@@ -244,7 +247,8 @@ class BinanceWebSocketClient:
             )
 
     def _handle_ping(self, client_id: int, raw: bytes) -> None:
-        self._loop.create_task(self.send_pong(client_id, raw))
+        task = self._loop.create_task(self.send_pong(client_id, raw))
+        self._tasks.add(task)
 
     async def send_pong(self, client_id: int, raw: bytes) -> None:
         """
@@ -271,10 +275,12 @@ class BinanceWebSocketClient:
 
         # Re-subscribe to all streams for this client
         streams = self._client_streams[client_id]
-        self._loop.create_task(self._resubscribe_client(client_id, streams))
+        task = self._loop.create_task(self._resubscribe_client(client_id, streams))
+        self._tasks.add(task)
 
         if self._handler_reconnect:
-            self._loop.create_task(self._handler_reconnect())  # type: ignore
+            task = self._loop.create_task(self._handler_reconnect())  # type: ignore
+            self._tasks.add(task)
 
     async def _resubscribe_client(self, client_id: int, streams: list[str]) -> None:
         """
@@ -291,6 +297,8 @@ class BinanceWebSocketClient:
         """
         Disconnect all clients from the server.
         """
+        await cancel_tasks_with_timeout(self._tasks, self._log)
+
         tasks = []
         for client_id in list(self._clients.keys()):
             tasks.append(self._disconnect_client(client_id))

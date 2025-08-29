@@ -15,7 +15,7 @@
 
 //! Order execution engine for [NautilusTrader](http://nautilustrader.io).
 //!
-//! The *execution* crate provides a comprehensive order execution system that handles the complete
+//! The `nautilus-execution` crate provides a comprehensive order execution system that handles the complete
 //! order lifecycle from submission to fill processing. This includes sophisticated order matching,
 //! execution venue integration, and advanced order type emulation:
 //!

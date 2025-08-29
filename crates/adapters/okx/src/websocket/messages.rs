@@ -80,6 +80,11 @@ pub struct OKXWsRequest<T> {
     pub id: Option<String>,
     /// Operation type (order, cancel-order, amend-order).
     pub op: OKXWsOperation,
+    /// Request effective deadline. Unix timestamp format in milliseconds.
+    /// This is when the request itself expires, not related to order expiration.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "expTime")]
+    pub exp_time: Option<String>,
     /// Arguments payload for the operation.
     pub args: Vec<T>,
 }
@@ -974,6 +979,7 @@ mod tests {
                 "ordType": "market",
                 "sz": "0.1"
             })],
+            exp_time: None,
         };
 
         let serialized = serde_json::to_string(&request).unwrap();
@@ -1233,6 +1239,7 @@ mod tests {
                 "ordType": "market",
                 "sz": "0.1"
             })],
+            exp_time: None,
         };
 
         let serialized = serde_json::to_string(&request).unwrap();

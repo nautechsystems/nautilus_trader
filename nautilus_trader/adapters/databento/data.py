@@ -60,6 +60,8 @@ from nautilus_trader.data.messages import UnsubscribeInstrumentStatus
 from nautilus_trader.data.messages import UnsubscribeOrderBook
 from nautilus_trader.data.messages import UnsubscribeQuoteTicks
 from nautilus_trader.data.messages import UnsubscribeTradeTicks
+from nautilus_trader.live.cancellation import DEFAULT_FUTURE_CANCELLATION_TIMEOUT
+from nautilus_trader.live.cancellation import cancel_tasks_with_timeout
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import DataType
@@ -243,19 +245,11 @@ class DatabentoDataClient(LiveMarketDataClient):
             live_client.close()
 
     async def _cancel_pending_futures(self) -> None:
-        for future in self._live_client_futures:
-            if not future.done():
-                future.cancel()
-
-        if self._live_client_futures:
-            try:
-                await asyncio.wait_for(
-                    asyncio.gather(*self._live_client_futures, return_exceptions=True),
-                    timeout=2.0,
-                )
-            except TimeoutError:
-                self._log.warning("Timeout while waiting for live clients shutdown to complete")
-
+        await cancel_tasks_with_timeout(
+            self._live_client_futures,
+            self._log,
+            timeout_secs=DEFAULT_FUTURE_CANCELLATION_TIMEOUT,
+        )
         self._live_client_futures.clear()
 
     async def _update_dataset_ranges(self) -> None:
@@ -294,6 +288,14 @@ class DatabentoDataClient(LiveMarketDataClient):
             await asyncio.gather(*coros)
         except asyncio.CancelledError:
             self._log.debug("Canceled task 'buffer_mbo_subscriptions'")
+
+    def _log_future_exception_callback(self, future: asyncio.Future) -> None:
+        if future.cancelled():
+            return  # Normal cancellation
+
+        exc = future.exception()
+        if exc:
+            self._log.error(f"Future raised: {exc}")
 
     def _get_live_client(self, dataset: Dataset) -> nautilus_pyo3.DatabentoLiveClient:
         # Retrieve or initialize the 'general' live client for the specified dataset
@@ -340,6 +342,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                     callback_pyo3=self._handle_msg_pyo3,  # Imbalance and Statistics messages
                 ),
             )
+            future.add_done_callback(self._log_future_exception_callback)
             self._live_client_futures.add(future)
             self._has_subscribed[dataset] = True
             self._log.info(f"Started {dataset} live feed", LogColor.BLUE)
@@ -471,7 +474,7 @@ class DatabentoDataClient(LiveMarketDataClient):
     async def _subscribe_instrument(self, command: SubscribeInstrument) -> None:
         try:
             dataset: Dataset = self._loader.get_dataset_for_venue(command.instrument_id.venue)
-            start: int | None = command.params.get("start")
+            start: int | None = command.params.get("start_ns")
 
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
@@ -599,6 +602,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                     callback_pyo3=self._handle_msg_pyo3,  # Imbalance and Statistics messages
                 ),
             )
+            future.add_done_callback(self._log_future_exception_callback)
             self._live_client_futures.add(future)
         except asyncio.CancelledError:
             self._log.warning(
@@ -648,7 +652,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             ]:
                 schema = DatabentoSchema.MBP_1.value
 
-            start: int | None = command.params.get("start")
+            start: int | None = command.params.get("start_ns")
             dataset: Dataset = self._loader.get_dataset_for_venue(command.instrument_id.venue)
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
@@ -682,7 +686,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             ]:
                 schema = DatabentoSchema.TRADES.value
 
-            start: int | None = command.params.get("start")
+            start: int | None = command.params.get("start_ns")
             dataset: Dataset = self._loader.get_dataset_for_venue(command.instrument_id.venue)
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
@@ -706,7 +710,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                 self._log.error(f"Cannot subscribe: {e}")
                 return
 
-            start: int | None = command.params.get("start")
+            start: int | None = command.params.get("start_ns")
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
                 schema=schema.value,
@@ -832,6 +836,8 @@ class DatabentoDataClient(LiveMarketDataClient):
             data_type=data_type,
             data=status,
             correlation_id=correlation_id,
+            start=None,
+            end=None,
             params=None,
         )
 
@@ -869,6 +875,8 @@ class DatabentoDataClient(LiveMarketDataClient):
             data_type=data_type,
             data=pyo3_imbalances,
             correlation_id=correlation_id,
+            start=None,
+            end=None,
             params=None,
         )
 
@@ -906,6 +914,8 @@ class DatabentoDataClient(LiveMarketDataClient):
             data_type=data_type,
             data=pyo3_statistics,
             correlation_id=correlation_id,
+            start=None,
+            end=None,
             params=None,
         )
 
@@ -1001,7 +1011,10 @@ class DatabentoDataClient(LiveMarketDataClient):
             end = available_end
 
         # NOTE: instruments are "published" every day at midnight
-        start = request.start or end - pd.Timedelta(days=1)
+        start = request.start
+
+        if start == end:
+            end += pd.Timedelta(1, "ns")
 
         if request.limit > 0:
             self._log.warning(
@@ -1056,7 +1069,10 @@ class DatabentoDataClient(LiveMarketDataClient):
             end = available_end
 
         # NOTE: instruments are "published" every day at midnight
-        start = request.start or end - pd.Timedelta(days=1)
+        start = request.start
+
+        if start == end:
+            end += pd.Timedelta(1, "ns")
 
         if request.limit > 0:
             self._log.warning(
@@ -1095,7 +1111,10 @@ class DatabentoDataClient(LiveMarketDataClient):
             end = available_end
 
         # NOTE: instruments are "published" every day at midnight
-        start = request.start or end - pd.Timedelta(days=1)
+        start = request.start
+
+        if start == end:
+            end += pd.Timedelta(1, "ns")
 
         if request.limit > 0:
             self._log.warning(

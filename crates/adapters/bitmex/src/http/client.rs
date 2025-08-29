@@ -30,26 +30,31 @@
 use std::{
     collections::HashMap,
     num::NonZeroU32,
-    sync::{Arc, LazyLock},
+    sync::{Arc, LazyLock, Mutex},
 };
 
+use ahash::AHashMap;
 use chrono::Utc;
 use nautilus_core::{consts::NAUTILUS_USER_AGENT, env::get_env_var};
-use nautilus_model::identifiers::Symbol;
+use nautilus_model::{
+    identifiers::Symbol,
+    instruments::{Instrument as InstrumentTrait, InstrumentAny},
+};
 use nautilus_network::{http::HttpClient, ratelimiter::quota::Quota};
 use reqwest::{Method, StatusCode};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
+use ustr::Ustr;
 
 use super::{
     error::{BitmexErrorResponse, BitmexHttpError},
-    models::{Execution, Instrument, Order, Position, Trade, Wallet},
+    models::{Execution, Instrument, Margin, Order, Position, Trade, Wallet},
     query::{
         DeleteOrderParams, GetExecutionParams, GetOrderParams, GetPositionParams, GetTradeParams,
         PostOrderParams, PutOrderParams,
     },
 };
-use crate::{
+use crate::common::{
     consts::{BITMEX_HTTP_TESTNET_URL, BITMEX_HTTP_URL},
     credential::Credential,
 };
@@ -253,6 +258,16 @@ impl BitmexHttpInnerClient {
         self.send_request(Method::GET, endpoint, None, true).await
     }
 
+    /// Get user margin information.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing, the request fails, or the API returns an error.
+    pub async fn http_get_margin(&self, currency: &str) -> Result<Margin, BitmexHttpError> {
+        let path = format!("/user/margin?currency={currency}");
+        self.send_request(Method::GET, &path, None, true).await
+    }
+
     /// Get historical trades.
     ///
     /// # Errors
@@ -388,6 +403,7 @@ impl BitmexHttpInnerClient {
 )]
 pub struct BitmexHttpClient {
     inner: Arc<BitmexHttpInnerClient>,
+    instruments_cache: Arc<Mutex<AHashMap<Ustr, InstrumentAny>>>,
 }
 
 impl Default for BitmexHttpClient {
@@ -423,6 +439,7 @@ impl BitmexHttpClient {
 
         Self {
             inner: Arc::new(inner),
+            instruments_cache: Arc::new(Mutex::new(AHashMap::new())),
         }
     }
 
@@ -637,5 +654,84 @@ impl BitmexHttpClient {
     ) -> Result<Vec<Position>, BitmexHttpError> {
         let inner = self.inner.clone();
         inner.http_get_positions(params).await
+    }
+
+    /// Add an instrument to the cache for precision lookups.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the instruments cache mutex is poisoned.
+    pub fn add_instrument(&mut self, instrument: InstrumentAny) {
+        self.instruments_cache
+            .lock()
+            .unwrap()
+            .insert(instrument.raw_symbol().inner(), instrument);
+    }
+
+    /// Get user margin information.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing, the request fails, or the API returns an error.
+    pub async fn http_get_margin(&self, currency: &str) -> anyhow::Result<Margin> {
+        self.inner
+            .http_get_margin(currency)
+            .await
+            .map_err(|e| anyhow::anyhow!(e))
+    }
+
+    /// Request account state for the given account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or no account state is returned.
+    pub async fn request_account_state(
+        &self,
+        account_id: nautilus_model::identifiers::AccountId,
+    ) -> anyhow::Result<nautilus_model::events::AccountState> {
+        // Get margin data for XBt (Bitcoin) by default
+        let margin = self
+            .inner
+            .http_get_margin("XBt")
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+
+        let ts_init = nautilus_core::nanos::UnixNanos::from(
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default() as u64,
+        );
+
+        // Convert HTTP Margin to WebSocket MarginMsg for parsing
+        let margin_msg = crate::websocket::messages::MarginMsg {
+            account: margin.account,
+            currency: margin.currency,
+            risk_limit: margin.risk_limit,
+            amount: margin.amount,
+            prev_realised_pnl: margin.prev_realised_pnl,
+            gross_comm: margin.gross_comm,
+            gross_open_cost: margin.gross_open_cost,
+            gross_open_premium: margin.gross_open_premium,
+            gross_exec_cost: margin.gross_exec_cost,
+            gross_mark_value: margin.gross_mark_value,
+            risk_value: margin.risk_value,
+            init_margin: margin.init_margin,
+            maint_margin: margin.maint_margin,
+            target_excess_margin: margin.target_excess_margin,
+            realised_pnl: margin.realised_pnl,
+            unrealised_pnl: margin.unrealised_pnl,
+            wallet_balance: margin.wallet_balance,
+            margin_balance: margin.margin_balance,
+            margin_leverage: margin.margin_leverage,
+            margin_used_pcnt: margin.margin_used_pcnt,
+            excess_margin: margin.excess_margin,
+            available_margin: margin.available_margin,
+            withdrawable_margin: margin.withdrawable_margin,
+            maker_fee_discount: None, // Not in HTTP response
+            taker_fee_discount: None, // Not in HTTP response
+            timestamp: margin.timestamp.unwrap_or_else(chrono::Utc::now),
+            foreign_margin_balance: None,
+            foreign_requirement: None,
+        };
+
+        crate::common::parse::parse_account_state(&margin_msg, account_id, ts_init)
     }
 }

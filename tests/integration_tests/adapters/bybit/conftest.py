@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from decimal import Decimal
 
 import pytest
 
@@ -22,7 +23,19 @@ from nautilus_trader.adapters.bybit.common.symbol import BybitSymbol
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import Logger
+from nautilus_trader.model.currencies import BTC
+from nautilus_trader.model.currencies import USDC
+from nautilus_trader.model.currencies import USDT
+from nautilus_trader.model.enums import OptionKind
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.instruments import CryptoOption
+from nautilus_trader.model.instruments import CryptoPerpetual
+from nautilus_trader.model.instruments import CurrencyPair
+from nautilus_trader.model.objects import Money
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 
 
 @pytest.fixture(scope="session")
@@ -79,3 +92,128 @@ def account_state():
 @pytest.fixture()
 def linear_btcusdt_symbol():
     return BybitSymbol("BTCUSDT.LINEAR")
+
+
+def create_bybit_spot_instrument(base_currency, quote_currency):
+    """
+    Create a spot instrument for testing.
+    """
+    return CurrencyPair(
+        instrument_id=InstrumentId.from_str(
+            f"{base_currency.code}{quote_currency.code}-SPOT.BYBIT",
+        ),
+        raw_symbol=Symbol(f"{base_currency.code}{quote_currency.code}"),
+        base_currency=base_currency,
+        quote_currency=quote_currency,
+        price_precision=2,
+        size_precision=6,
+        price_increment=Price.from_str("0.01"),
+        size_increment=Quantity.from_str("0.000001"),
+        lot_size=None,
+        max_quantity=Quantity.from_str("10000"),
+        min_quantity=Quantity.from_str("0.00001"),
+        max_notional=None,
+        min_notional=Money(1, quote_currency),
+        max_price=Price.from_str("1000000"),
+        min_price=Price.from_str("0.01"),
+        margin_init=Decimal(0),
+        margin_maint=Decimal(0),
+        maker_fee=Decimal("0.001"),
+        taker_fee=Decimal("0.001"),
+        ts_event=0,
+        ts_init=0,
+    )
+
+
+def create_bybit_linear_perpetual():
+    """
+    Create a linear perpetual (USDT settled) for testing.
+    """
+    return CryptoPerpetual(
+        instrument_id=InstrumentId.from_str("BTCUSDT-LINEAR.BYBIT"),
+        raw_symbol=Symbol("BTCUSDT"),
+        base_currency=BTC,
+        quote_currency=USDT,
+        settlement_currency=USDT,
+        is_inverse=False,
+        price_precision=2,
+        size_precision=3,
+        price_increment=Price.from_str("0.01"),
+        size_increment=Quantity.from_str("0.001"),
+        max_quantity=Quantity.from_str("1000"),
+        min_quantity=Quantity.from_str("0.001"),
+        max_notional=None,
+        min_notional=Money(5, USDT),
+        max_price=Price.from_str("1000000"),
+        min_price=Price.from_str("0.01"),
+        margin_init=Decimal("0.01"),
+        margin_maint=Decimal("0.005"),
+        maker_fee=Decimal("0.0001"),
+        taker_fee=Decimal("0.0006"),
+        ts_event=0,
+        ts_init=0,
+    )
+
+
+def create_bybit_inverse_perpetual():
+    """
+    Create an inverse perpetual (BTC settled) for testing.
+    """
+    return CryptoPerpetual(
+        instrument_id=InstrumentId.from_str("BTCUSD-INVERSE.BYBIT"),
+        raw_symbol=Symbol("BTCUSD"),
+        base_currency=BTC,
+        quote_currency=BTC,  # Inverse uses BTC as quote
+        settlement_currency=BTC,
+        is_inverse=True,
+        price_precision=1,
+        size_precision=0,
+        price_increment=Price.from_str("0.1"),
+        size_increment=Quantity.from_str("1"),
+        max_quantity=Quantity.from_str("1000000"),
+        min_quantity=Quantity.from_str("1"),
+        max_notional=None,
+        min_notional=None,
+        max_price=Price.from_str("1000000"),
+        min_price=Price.from_str("0.1"),
+        margin_init=Decimal("0.01"),
+        margin_maint=Decimal("0.005"),
+        maker_fee=Decimal("-0.00025"),  # Rebate
+        taker_fee=Decimal("0.00075"),
+        ts_event=0,
+        ts_init=0,
+    )
+
+
+def create_bybit_option_instrument():
+    """
+    Create an option instrument for testing.
+    """
+    return CryptoOption(
+        instrument_id=InstrumentId.from_str("BTC-280325-100000-C.BYBIT"),
+        raw_symbol=Symbol("BTC-280325-100000-C"),
+        underlying=BTC,
+        quote_currency=USDC,
+        settlement_currency=USDC,
+        is_inverse=False,
+        activation_ns=0,
+        expiration_ns=0,
+        strike_price=Price.from_str("100000"),
+        option_kind=OptionKind.CALL,
+        price_precision=2,
+        size_precision=3,
+        price_increment=Price.from_str("0.01"),
+        size_increment=Quantity.from_str("0.001"),
+        max_quantity=Quantity.from_str("1000"),
+        min_quantity=Quantity.from_str("0.001"),
+        max_notional=None,
+        min_notional=Money(5, USDC),
+        max_price=Price.from_str("1000000"),
+        min_price=Price.from_str("0.01"),
+        margin_init=Decimal("0.01"),
+        margin_maint=Decimal("0.005"),
+        maker_fee=Decimal("0.0003"),
+        taker_fee=Decimal("0.0003"),
+        ts_event=0,
+        ts_init=0,
+    )

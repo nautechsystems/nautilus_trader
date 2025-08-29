@@ -180,7 +180,28 @@ Individual orders can be customized using the `params` dictionary when submittin
 
 | Parameter     | Type   | Description                                                                    |
 |---------------|--------|--------------------------------------------------------------------------------|
-| `is_leverage` | `bool` | For Spot products only. If `True`, enables leverage trading. Default: `False`. |
+| `is_leverage` | `bool` | For SPOT products only. If `True`, enables margin trading (borrowing) for the order. Default: `False`. See [Bybit's isLeverage documentation](https://bybit-exchange.github.io/docs/v5/order/create-order#request-parameters). |
+
+#### Example: SPOT margin trading
+
+```python
+# Submit a SPOT order with margin enabled
+order = strategy.order_factory.market(
+    instrument_id=InstrumentId.from_str("BTCUSDT-SPOT.BYBIT"),
+    order_side=OrderSide.BUY,
+    quantity=Quantity.from_str("0.1"),
+    params={"is_leverage": True}  # Enable margin for this order
+)
+strategy.submit_order(order)
+```
+
+:::note
+Without `is_leverage=True` in the params, SPOT orders will only use your available balance
+and won't borrow funds, even if you have auto-borrow enabled on your Bybit account.
+:::
+
+For a complete example of using order parameters including `is_leverage`, see the
+[bybit_exec_tester.py](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/bybit/bybit_exec_tester.py) example.
 
 ### Product-specific limitations
 
@@ -210,24 +231,89 @@ If no product types are specified then all product types will be loaded and avai
 
 ### Execution clients
 
-Because Nautilus does not support a "unified" account, the account type must be either cash **or** margin.
-This means there is a limitation that you cannot specify SPOT with any of the other derivative product types.
+The adapter automatically determines the account type based on configured product types:
 
-- `CASH` account type will be used for SPOT products.
-- `MARGIN` account type will be used for all other derivative products.
+- **SPOT only**: Uses `CASH` account type with borrowing support enabled
+- **Derivatives or mixed products**: Uses `MARGIN` account type (UTA - Unified Trading Account)
+
+This allows you to trade SPOT alongside derivatives in a single Unified Trading Account, which is the standard account type for most Bybit users.
 
 :::info
-**Cash account borrowing (margin trading)**
+**Unified Trading Accounts (UTA) and SPOT margin trading**
 
-For Bybit SPOT products, cash accounts **allow borrowing** (negative balances),
-enabling margin trading capabilities. This means you can:
+Most Bybit users now have Unified Trading Accounts (UTA) as Bybit steers new users to this account type.
+Classic accounts are considered legacy.
 
-- Trade with leverage on SPOT pairs.
-- Maintain short positions.
-- Have negative balances in your account.
+For SPOT margin trading on UTA accounts:
 
-This is automatically enabled for all Bybit SPOT accounts and does not require any additional configuration.
+- Borrowing is **NOT automatically enabled** - it requires explicit API configuration
+- To use SPOT margin via API, you must submit orders with `is_leverage=True` in the parameters (see [Bybit docs](https://bybit-exchange.github.io/docs/v5/order/create-order#request-parameters))
+- If auto-borrow/auto-repay is enabled on your Bybit account, the venue will automatically borrow/repay funds for those margin orders
+- Without auto-borrow enabled, you'll need to manually manage borrowing through Bybit's interface
+
+**Important**: The Nautilus Bybit adapter defaults to `is_leverage=False` for SPOT orders,
+meaning they won't use margin unless you explicitly enable it.
 :::
+
+## Fee currency logic
+
+Understanding how Bybit determines the currency for trading fees is important for accurate accounting and position tracking. The fee currency rules vary between SPOT and derivatives products.
+
+### SPOT trading fees
+
+For SPOT trading, the fee currency depends on the order side and whether the fee is a rebate (negative fee for maker orders):
+
+#### Normal fees (positive)
+
+- **BUY orders**: Fee is charged in the **base currency** (e.g., BTC for BTCUSDT)
+- **SELL orders**: Fee is charged in the **quote currency** (e.g., USDT for BTCUSDT)
+
+#### Maker rebates (negative fees)
+When maker fees are negative (rebates), the currency logic is **inverted**:
+
+- **BUY orders with maker rebate**: Rebate is paid in the **quote currency** (e.g., USDT for BTCUSDT)
+- **SELL orders with maker rebate**: Rebate is paid in the **base currency** (e.g., BTC for BTCUSDT)
+
+:::note
+**Taker orders never have inverted logic**, even if the maker fee rate is negative. Taker fees always follow the normal fee currency rules.
+:::
+
+#### Example: BTCUSDT SPOT
+
+- **Buy 1 BTC as taker (0.1% fee)**: Pay 0.001 BTC in fees
+- **Sell 1 BTC as taker (0.1% fee)**: Pay equivalent USDT in fees
+- **Buy 1 BTC as maker (-0.01% rebate)**: Receive USDT rebate (inverted)
+- **Sell 1 BTC as maker (-0.01% rebate)**: Receive BTC rebate (inverted)
+
+### Derivatives trading fees
+
+For all derivatives products (LINEAR, INVERSE, OPTION), fees are always charged in the **settlement currency**:
+
+| Product Type | Settlement Currency                   | Fee Currency |
+|--------------|---------------------------------------|--------------|
+| LINEAR       | USDT (typically)                      | USDT         |
+| INVERSE      | Base coin (e.g., BTC for BTCUSD)      | Base coin    |
+| OPTION       | USDC (legacy) or USDT (post Feb 2025) | USDC/USDT    |
+
+### Fee calculation
+
+When the WebSocket execution message doesn't provide the exact fee amount (`execFee`), the adapter calculates fees as follows:
+
+#### SPOT products
+
+- **BUY orders**: `fee = base_quantity × fee_rate`
+- **SELL orders**: `fee = notional_value × fee_rate` (where `notional_value = quantity × price`)
+
+#### Derivatives
+
+- All derivatives: `fee = notional_value × fee_rate`
+
+### Official documentation
+
+For complete details on Bybit's fee structure and currency rules, refer to:
+
+- [Bybit WebSocket Private Execution](https://bybit-exchange.github.io/docs/v5/websocket/private/execution)
+- [Bybit Spot Fee Currency Instruction](https://bybit-exchange.github.io/docs/v5/enum#spot-fee-currency-instruction)
 
 The most common use case is to configure a live `TradingNode` to include Bybit
 data and execution clients. To achieve this, add a `BYBIT` section to your client

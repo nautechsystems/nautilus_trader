@@ -83,6 +83,32 @@ def test_subscribe_account_summary(ib_client):
     ib_client._eclient.reqAccountSummary.assert_called_once()
 
 
+def test_subscribe_positions(ib_client):
+    # Arrange
+    ib_client._eclient.reqPositions = Mock()
+
+    # Act
+    ib_client.subscribe_positions()
+
+    # Assert
+    assert ib_client._subscriptions.get(name="PositionUpdates") is not None
+    ib_client._eclient.reqPositions.assert_called_once()
+
+
+def test_unsubscribe_positions(ib_client):
+    # Arrange
+    ib_client._eclient.reqPositions = Mock()
+    ib_client._eclient.cancelPositions = Mock()
+    ib_client.subscribe_positions()
+
+    # Act
+    ib_client.unsubscribe_positions()
+
+    # Assert
+    assert ib_client._subscriptions.get(name="PositionUpdates") is None
+    ib_client._eclient.cancelPositions.assert_called_once()
+
+
 def test_unsubscribe_account_summary(ib_client):
     # Arrange
     ib_client._eclient.cancelAccountSummary = Mock()

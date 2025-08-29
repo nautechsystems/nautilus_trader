@@ -21,6 +21,7 @@ import pytest
 from nautilus_trader.common.component import Logger
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.live.enqueue import ThrottledEnqueuer
+from nautilus_trader.test_kit.functions import eventually
 
 
 @pytest.fixture
@@ -74,7 +75,7 @@ async def test_enqueue_when_queue_has_capacity(event_loop, clock, logger):
     # We expect a call_soon_threadsafe to enqueue_nowait_safely
     # But that callback won't run until we let the loop step
     enqueuer.enqueue("message1")
-    await asyncio.sleep(0)  # allow the loop to process scheduled callbacks
+    await eventually(lambda: not queue.empty())
 
     # Assert: check the queue now has our item
     assert not queue.empty()
@@ -97,7 +98,7 @@ async def test_enqueue_when_queue_is_full(event_loop, clock, logger):
 
     # Act: enqueue the new item (queue is full)
     enqueuer.enqueue("message2")
-    await asyncio.sleep(0)  # allow the event loop to run the scheduled put
+    await eventually(lambda: queue.qsize() == 1)
 
     # Assert: check queue is still size=1
     assert queue.qsize() == 1

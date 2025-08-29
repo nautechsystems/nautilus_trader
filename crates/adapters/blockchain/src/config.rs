@@ -13,10 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::sync::Arc;
-
 use nautilus_infrastructure::sql::pg::PostgresConnectOptions;
-use nautilus_model::defi::{Chain, DexType};
+use nautilus_model::defi::{DexType, SharedChain};
 
 /// Defines filtering criteria for the DEX pool universe that the data client will operate on.
 #[derive(Debug, Clone)]
@@ -55,7 +53,7 @@ impl Default for DexPoolFilters {
 )]
 pub struct BlockchainDataClientConfig {
     /// The blockchain chain configuration.
-    pub chain: Arc<Chain>,
+    pub chain: SharedChain,
     /// List of decentralized exchange IDs to register and sync during connection.
     pub dex_ids: Vec<DexType>,
     /// Determines if the client should use Hypersync for live data streaming.
@@ -79,7 +77,7 @@ impl BlockchainDataClientConfig {
     #[allow(clippy::too_many_arguments)]
     #[must_use]
     pub fn new(
-        chain: Arc<Chain>,
+        chain: SharedChain,
         dex_ids: Vec<DexType>,
         http_rpc_url: String,
         rpc_requests_per_second: Option<u32>,

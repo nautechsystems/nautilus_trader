@@ -15,7 +15,7 @@
 
 //! System-level components and orchestration for [NautilusTrader](http://nautilustrader.io).
 //!
-//! The *system* crate provides the core system architecture for orchestrating trading systems,
+//! The `nautilus-system` crate provides the core system architecture for orchestrating trading systems,
 //! including the kernel that manages all engines, configuration management,
 //! and system-level factories for creating components:
 //!

@@ -19,7 +19,17 @@ use strum::{AsRefStr, Display, EnumIter, EnumString};
 
 /// Side of an order or trade.
 #[derive(
-    Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
 )]
 pub enum Side {
     /// Buy side of the trade/order.
@@ -45,18 +55,28 @@ impl Side {
     }
 }
 
-impl From<Side> for crate::enums::Side {
+impl From<Side> for crate::common::enums::BitmexSide {
     fn from(side: Side) -> Self {
         match side {
-            Side::Buy => crate::enums::Side::Buy,
-            Side::Sell => crate::enums::Side::Sell,
+            Side::Buy => crate::common::enums::BitmexSide::Buy,
+            Side::Sell => crate::common::enums::BitmexSide::Sell,
         }
     }
 }
 
 /// Direction of price tick relative to previous trade.
 #[derive(
-    Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
 )]
 pub enum TickDirection {
     /// Price higher than previous trade.
@@ -71,7 +91,17 @@ pub enum TickDirection {
 
 /// Trading instrument state.
 #[derive(
-    Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
 )]
 #[serde(rename_all = "lowercase")]
 pub enum InstrumentState {
@@ -87,7 +117,17 @@ pub enum InstrumentState {
 
 /// Action type for table data messages.
 #[derive(
-    Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
 )]
 #[serde(rename_all = "lowercase")]
 pub enum Action {

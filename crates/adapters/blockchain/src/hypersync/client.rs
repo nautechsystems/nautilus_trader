@@ -48,7 +48,7 @@ pub struct HyperSyncClient {
     /// Background task handle for the block subscription task.
     blocks_task: Option<tokio::task::JoinHandle<()>>,
     /// Channel for sending blockchain messages to the adapter data client.
-    tx: tokio::sync::mpsc::UnboundedSender<BlockchainMessage>,
+    tx: Option<tokio::sync::mpsc::UnboundedSender<BlockchainMessage>>,
     /// Index of pool addressed keyed by instrument ID.
     pool_addresses: AHashMap<InstrumentId, Address>,
 }
@@ -62,7 +62,7 @@ impl HyperSyncClient {
     #[must_use]
     pub fn new(
         chain: SharedChain,
-        tx: tokio::sync::mpsc::UnboundedSender<BlockchainMessage>,
+        tx: Option<tokio::sync::mpsc::UnboundedSender<BlockchainMessage>>,
     ) -> Self {
         let mut config = hypersync_client::ClientConfig::default();
         let hypersync_url =
@@ -84,6 +84,11 @@ impl HyperSyncClient {
         self.pool_addresses.get(&instrument_id)
     }
 
+    /// Processes DEX contract events for a specific block.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the DEX extended configuration cannot be retrieved or if stream creation fails.
     pub async fn process_block_dex_contract_events(
         &self,
         dex: &DexType,
@@ -104,7 +109,12 @@ impl HyperSyncClient {
             contract_addresses,
             vec![topics],
         );
-        let tx = self.tx.clone();
+        let tx = if let Some(tx) = &self.tx {
+            tx.clone()
+        } else {
+            tracing::error!("Hypersync client channel should have been initialized");
+            return;
+        };
         let client = self.client.clone();
         let dex_extended =
             get_dex_extended(self.chain.name, dex).expect("Failed to get dex extended");
@@ -120,7 +130,7 @@ impl HyperSyncClient {
 
                 for batch in response.data.logs {
                     for log in batch {
-                        let event_signature = match log.topics.get(0).and_then(|t| t.as_ref()) {
+                        let event_signature = match log.topics.first().and_then(|t| t.as_ref()) {
                             Some(log_argument) => {
                                 format!("0x{}", hex::encode(log_argument.as_ref()))
                             }
@@ -191,6 +201,10 @@ impl HyperSyncClient {
     }
 
     /// Creates a stream of contract event logs matching the specified criteria.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the contract address cannot be parsed as a valid Ethereum address.
     pub async fn request_contract_events_stream(
         &self,
         from_block: u64,
@@ -294,7 +308,12 @@ impl HyperSyncClient {
 
         let chain = self.chain.name;
         let client = self.client.clone();
-        let tx = self.tx.clone();
+        let tx = if let Some(tx) = &self.tx {
+            tx.clone()
+        } else {
+            tracing::error!("Hypersync client channel should have been initialized");
+            return;
+        };
 
         let task = get_runtime().spawn(async move {
             tracing::debug!("Starting task 'blocks_feed");

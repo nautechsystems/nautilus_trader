@@ -21,6 +21,7 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.common.config import NautilusConfig
 
+from nautilus_trader.backtest.models cimport SpreadQuoteAggregator
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport MessageBus
@@ -64,9 +65,6 @@ from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.option_spread cimport OptionSpread
-from nautilus_trader.model.objects cimport Currency
-from nautilus_trader.model.objects cimport Price
-from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class BacktestDataClient(DataClient):
@@ -169,6 +167,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         )
 
         self.is_connected = False
+        self._spread_quote_aggregators = {} # type: dict[InstrumentId, SpreadQuoteAggregator]
 
     cpdef void _start(self):
         self._log.info(f"Connecting...")
@@ -177,8 +176,21 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
     cpdef void _stop(self):
         self._log.info(f"Disconnecting...")
+
+        # Stop all spread quote aggregators
+        if self._spread_quote_aggregators is not None:
+            for aggregator in self._spread_quote_aggregators.values():
+                aggregator.stop()
+
         self.is_connected = False
         self._log.info(f"Disconnected")
+
+    cpdef void _reset(self):
+        # Stop and clear all spread quote aggregators
+        for aggregator in self._spread_quote_aggregators.values():
+            aggregator.stop()
+
+        self._spread_quote_aggregators.clear()
 
 # -- SUBSCRIPTIONS --------------------------------------------------------------------------------
 
@@ -257,6 +269,11 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
     cpdef void subscribe_quote_ticks(self, SubscribeQuoteTicks command):
         Condition.not_none(command.instrument_id, "instrument_id")
+
+        # Handle spread instruments
+        if command.instrument_id.is_spread():
+            self._start_spread_quote_aggregator(command)
+            return
 
         if not self._cache.instrument(command.instrument_id):
             self._log.error(
@@ -370,6 +387,11 @@ cdef class BacktestMarketDataClient(MarketDataClient):
     cpdef void unsubscribe_quote_ticks(self, UnsubscribeQuoteTicks command):
         Condition.not_none(command.instrument_id, "instrument_id")
 
+        # Handle spread instruments
+        if command.instrument_id.is_spread():
+            self._stop_spread_quote_aggregator(command)
+            return
+
         self._remove_subscription_quote_ticks(command.instrument_id)
         self._msgbus.send(endpoint="BacktestEngine.execute", msg=command)
 
@@ -439,6 +461,8 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         self._handle_instrument(instrument, request.id, request.start, request.end, request.params)
 
     cdef Instrument _create_option_spread_from_components(self, InstrumentId spread_instrument_id):
+        min_expiration_ns = 0
+
         try:
             # Parse component instruments from spread ID
             components = spread_instrument_id.to_list()
@@ -455,13 +479,16 @@ cdef class BacktestMarketDataClient(MarketDataClient):
                 self._log.error(f"Cannot find first component instrument {first_component_id} for spread {spread_instrument_id}")
                 return None
 
-            # Validate all components exist
+            # Validate all components exist and find minimum expiration
             for component_id, ratio in components:
                 component = self._cache.instrument(component_id)
 
                 if component is None:
                     self._log.error(f"Cannot find component instrument {component_id} for spread {spread_instrument_id}")
                     return None
+
+                if min_expiration_ns == 0 or component.expiration_ns < min_expiration_ns:
+                    min_expiration_ns = component.expiration_ns
 
             # Create timestamp
             ts_event = self._clock.timestamp_ns()
@@ -479,7 +506,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
                 underlying="",
                 strategy_type="SPREAD",
                 activation_ns=0,
-                expiration_ns=0,
+                expiration_ns=min_expiration_ns,
                 ts_event=ts_event,
                 ts_init=ts_event,
                 margin_init=first_component.margin_init,
@@ -517,3 +544,90 @@ cdef class BacktestMarketDataClient(MarketDataClient):
     cpdef void request_bars(self, RequestBars request):
         # Do nothing else for backtest
         pass
+
+# -- SPREAD QUOTE AGGREGATORS --------------------------------------------------------------------
+
+    cpdef void _start_spread_quote_aggregator(self, SubscribeQuoteTicks command):
+        spread_instrument_id = command.instrument_id
+
+        # Ensure the dictionary is initialized
+        if self._spread_quote_aggregators is None:
+            self._spread_quote_aggregators = {}
+
+        if spread_instrument_id in self._spread_quote_aggregators:
+            return
+
+        update_interval_seconds = command.params.get("update_interval_seconds", 60)
+        aggregator = SpreadQuoteAggregator(
+            spread_instrument_id=spread_instrument_id,
+            handler=self._handle_spread_quote,
+            msgbus=self._msgbus,
+            cache=self._cache,
+            clock=self._clock,
+            update_interval_seconds=update_interval_seconds,
+        )
+        self._spread_quote_aggregators[spread_instrument_id] = aggregator
+
+        # Subscribe to quotes for component instruments
+        components = spread_instrument_id.to_list()
+
+        for component_id, _ in components:
+            subscribe = SubscribeQuoteTicks(
+                instrument_id=component_id,
+                client_id=command.client_id,
+                venue=command.venue,
+                command_id=command.id,
+                ts_init=command.ts_init,
+                params=command.params,
+            )
+
+            # Send command to message bus for normal treatment
+            self._msgbus.send(endpoint="DataEngine.execute", msg=subscribe)
+
+    cpdef void _stop_spread_quote_aggregator(self, UnsubscribeQuoteTicks command):
+        spread_instrument_id = command.instrument_id
+
+        # Ensure the dictionary is initialized
+        if self._spread_quote_aggregators is None:
+            self._spread_quote_aggregators = {}
+            return
+
+        aggregator = self._spread_quote_aggregators.get(spread_instrument_id)
+
+        if aggregator is None:
+            self._log.warning(
+                f"Cannot stop spread quote aggregator: no aggregator found for {spread_instrument_id}",
+            )
+            return
+
+        aggregator.stop()
+
+        # Unsubscribe from component instruments
+        components = spread_instrument_id.to_list()
+
+        for component_id, _ in components:
+            unsubscribe = UnsubscribeQuoteTicks(
+                instrument_id=component_id,
+                client_id=command.client_id,
+                venue=command.venue,
+                command_id=command.id,
+                ts_init=command.ts_init,
+                params=command.params,
+            )
+
+            # Send command to message bus for normal treatment
+            self._msgbus.send(endpoint="DataEngine.execute", msg=unsubscribe)
+
+        del self._spread_quote_aggregators[spread_instrument_id]
+
+    cdef void _handle_spread_quote(self, quote):
+        """
+        Handle a spread quote generated by the aggregator.
+
+        Parameters
+        ----------
+        quote : QuoteTick
+            The spread quote to handle.
+        """
+        # Send the quote to the data engine for processing
+        self._msgbus.send(endpoint="DataEngine.process", msg=quote)

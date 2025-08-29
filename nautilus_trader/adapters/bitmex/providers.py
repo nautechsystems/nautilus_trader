@@ -80,7 +80,9 @@ class BitmexInstrumentProvider(InstrumentProvider):
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading all instruments{filters_str}")
 
-        pyo3_instruments = await self._client.request_instruments(self._symbol_status)
+        pyo3_instruments = await self._client.request_instruments(
+            self._symbol_status or BitmexSymbolStatus.OPEN,
+        )
 
         self._instruments_pyo3 = pyo3_instruments
         instruments = instruments_from_pyo3(pyo3_instruments)
@@ -102,7 +104,9 @@ class BitmexInstrumentProvider(InstrumentProvider):
         for instrument_id in instrument_ids:
             PyCondition.equal(instrument_id.venue, BITMEX_VENUE, "instrument_id.venue", "BITMEX")
 
-        pyo3_instruments = await self._client.request_instruments(self._symbol_status)
+        pyo3_instruments = await self._client.request_instruments(
+            self._symbol_status or BitmexSymbolStatus.OPEN,
+        )
 
         self._instruments_pyo3 = pyo3_instruments
         instruments = instruments_from_pyo3(pyo3_instruments)

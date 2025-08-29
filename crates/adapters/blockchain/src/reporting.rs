@@ -17,6 +17,28 @@
 
 use std::{fmt::Display, time::Instant};
 
+/// Formats a number with comma separators for better readability.
+/// Works with both integers and floats (floats are rounded to integers).
+/// Example: 1234567 -> "1,234,567", 1234567.8 -> "1,234,568"
+fn format_number<T>(n: T) -> String
+where
+    T: Into<f64>,
+{
+    let num = n.into().round() as u64;
+    let mut result = String::new();
+    let s = num.to_string();
+    let chars: Vec<char> = s.chars().collect();
+
+    for (i, ch) in chars.iter().enumerate() {
+        if i > 0 && (chars.len() - i) % 3 == 0 {
+            result.push(',');
+        }
+        result.push(*ch);
+    }
+
+    result
+}
+
 #[derive(Debug, Clone)]
 pub enum BlockchainItem {
     Blocks,
@@ -91,12 +113,12 @@ impl BlockchainSyncReporter {
             (self.blocks_processed as f64 / self.total_blocks as f64 * 100.0).min(100.0);
 
         tracing::info!(
-            "Syncing {} progress: {:.1}% | Block: {} | Rate: {:.0} blocks/s | Avg: {:.0} blocks/s",
+            "Syncing {} progress: {:.1}% | Block: {} | Rate: {} blocks/s | Avg: {} blocks/s",
             self.item,
             progress_pct,
-            block_number,
-            current_rate,
-            avg_rate,
+            format_number(block_number as f64),
+            format_number(current_rate),
+            format_number(avg_rate),
         );
 
         self.next_progress_threshold = block_number + self.progress_update_interval;
@@ -108,11 +130,11 @@ impl BlockchainSyncReporter {
         let total_elapsed = self.start_time.elapsed();
         let avg_rate = self.blocks_processed as f64 / total_elapsed.as_secs_f64();
         tracing::info!(
-            "Finished syncing {} | Total: {} blocks in {:.1}s | Avg rate: {:.0} blocks/s",
+            "Finished syncing {} | Total: {} blocks in {:.1}s | Avg rate: {} blocks/s",
             self.item,
-            self.blocks_processed,
+            format_number(self.blocks_processed as f64),
             total_elapsed.as_secs_f64(),
-            avg_rate,
+            format_number(avg_rate),
         );
     }
 }

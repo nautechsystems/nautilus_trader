@@ -16,7 +16,7 @@
 from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.common.config import NautilusConfig
 
-from nautilus_trader.backtest.exchange cimport SimulatedExchange
+from nautilus_trader.backtest.engine cimport SimulatedExchange
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport MessageBus
 from nautilus_trader.common.component cimport TestClock

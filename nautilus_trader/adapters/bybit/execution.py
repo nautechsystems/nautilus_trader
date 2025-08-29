@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 from asyncio import TaskGroup
+from decimal import Decimal
 from typing import TYPE_CHECKING
 
 import msgspec
@@ -32,6 +33,7 @@ from nautilus_trader.adapters.bybit.common.enums import BybitStopOrderType
 from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
 from nautilus_trader.adapters.bybit.common.enums import BybitTpSlMode
 from nautilus_trader.adapters.bybit.common.enums import BybitTriggerDirection
+from nautilus_trader.adapters.bybit.common.fees import determine_fee_currency
 from nautilus_trader.adapters.bybit.common.symbol import BybitSymbol
 from nautilus_trader.adapters.bybit.endpoints.trade.batch_cancel_order import BybitBatchCancelOrder
 from nautilus_trader.adapters.bybit.endpoints.trade.batch_place_order import BybitBatchPlaceOrder
@@ -138,6 +140,14 @@ class BybitExecutionClient(LiveExecutionClient):
     name : str, optional
         The custom client ID.
 
+    Notes
+    -----
+    Time-In-Force (TIF) handling:
+    - GTD (Good-Till-Date) orders are converted to GTC (Good-Till-Cancel) when
+      `use_gtd` is False in the configuration, as Bybit does not support GTD.
+    - This conversion is logged for transparency and preserves the venue's TIF
+      value when possible rather than masking inconsistencies.
+
     """
 
     def __init__(
@@ -154,13 +164,12 @@ class BybitExecutionClient(LiveExecutionClient):
         config: BybitExecClientConfig,
         name: str | None,
     ) -> None:
-        if BybitProductType.SPOT in product_types:
-            if len(set(product_types)) > 1:
-                raise ValueError("Cannot configure SPOT with other product types")
+        if set(product_types) == {BybitProductType.SPOT}:
             account_type = AccountType.CASH
             # Bybit SPOT accounts support margin trading (borrowing)
             AccountFactory.register_cash_borrowing(BYBIT_VENUE.value)
         else:
+            # UTA (Unified Trading Account) for derivatives or mixed products
             account_type = AccountType.MARGIN
 
         super().__init__(
@@ -563,7 +572,11 @@ class BybitExecutionClient(LiveExecutionClient):
         return active_symbols
 
     def _determine_time_in_force(self, order: Order) -> BybitTimeInForce:
+        # GTD orders are converted to GTC if `use_gtd` is False (default),
+        # since Bybit does not natively support GTD. This conversion is logged
+        # for transparency.
         time_in_force: TimeInForce = order.time_in_force
+
         if order.time_in_force == TimeInForce.GTD:
             if not self._use_gtd:
                 time_in_force = TimeInForce.GTC
@@ -576,6 +589,7 @@ class BybitExecutionClient(LiveExecutionClient):
 
         if order.is_post_only:
             return BybitTimeInForce.POST_ONLY
+
         return self._enum_parser.parse_nautilus_time_in_force(time_in_force)
 
     async def _get_active_position_symbols(self, symbol: str | None) -> set[str]:
@@ -593,9 +607,11 @@ class BybitExecutionClient(LiveExecutionClient):
     async def _update_account_state(self) -> None:
         # positions = await self._http_account.query_position_info()
         (balances, ts_event) = await self._http_account.query_wallet_balance()
+
         if balances:
             self._log.info("Bybit API key authenticated", LogColor.GREEN)
             self._log.info(f"API key {self._http_account.client.api_key} has trading permissions")
+
         for balance in balances:
             balances = balance.parse_to_account_balance()
             margins = balance.parse_to_margin_balance()
@@ -757,6 +773,7 @@ class BybitExecutionClient(LiveExecutionClient):
 
         # Filter orders that are actually open
         valid_cancels: list[(CancelOrder)] = []
+
         for cancel in command.cancels:
             if cancel.client_order_id in open_order_ids:
                 valid_cancels.append(cancel)
@@ -1319,14 +1336,60 @@ class BybitExecutionClient(LiveExecutionClient):
                 f"Cannot handle trade event: instrument {instrument_id} not found",
             )
 
-        quote_currency = instrument.quote_currency
-        is_maker = execution.isMaker
-        fee = instrument.maker_fee if is_maker else instrument.taker_fee
-
         last_qty: Quantity = instrument.make_qty(execution.execQty)
         last_px: Price = instrument.make_price(execution.execPrice)
-        notional_value: Money = instrument.notional_value(last_qty, last_px)
-        commission: Money = Money(notional_value * fee, quote_currency)
+        quote_currency = instrument.quote_currency
+
+        is_maker = execution.isMaker
+
+        # Check if we have the actual fee to determine if it's a rebate
+        exec_fee = (
+            Decimal(execution.execFee)
+            if isinstance(execution, BybitWsAccountExecution) and execution.execFee
+            else None
+        )
+
+        # Use actual fee from execution if available, otherwise calculate
+        if exec_fee is not None:
+            # Determine fee currency based on whether this is a rebate
+            is_rebate = exec_fee < 0
+            fee_currency = determine_fee_currency(
+                execution.category,
+                instrument,
+                order_side,
+                is_maker,
+                is_rebate=is_rebate,
+            )
+            commission: Money = Money(exec_fee, fee_currency)
+        else:
+            # Fallback calculation when exec_fee is not available
+            fee_rate = instrument.maker_fee if is_maker else instrument.taker_fee
+            is_rebate = is_maker and fee_rate < 0
+
+            # Determine fee currency based on rebate status
+            fee_currency = determine_fee_currency(
+                execution.category,
+                instrument,
+                order_side,
+                is_maker,
+                is_rebate=is_rebate,
+            )
+
+            # Calculate fee amount based on product type and order side
+            if execution.category == BybitProductType.SPOT:
+                if order_side == OrderSide.BUY:
+                    # SPOT BUY: fee is on base currency amount
+                    fee_amount = last_qty.as_decimal() * fee_rate
+                else:
+                    # SPOT SELL: fee is on quote currency amount (notional)
+                    notional_value = instrument.notional_value(last_qty, last_px)
+                    fee_amount = notional_value * fee_rate
+            else:
+                # Derivatives: fee is on notional value in settlement currency
+                notional_value = instrument.notional_value(last_qty, last_px)
+                fee_amount = notional_value * fee_rate
+
+            commission = Money(fee_amount, fee_currency)
 
         self.generate_order_filled(
             strategy_id=strategy_id,

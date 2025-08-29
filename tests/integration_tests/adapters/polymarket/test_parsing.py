@@ -243,7 +243,7 @@ def test_parse_user_trade_to_dict() -> None:
     assert values == {
         "event_type": "trade",
         "asset_id": "21742633143463906290569050155826241533067272736897614950488156847949938836455",
-        "bucket_index": "0",
+        "bucket_index": 0,
         "fee_rate_bps": "0",
         "id": "83b5c849-620e-4c23-b63b-2e779c04a6e7",
         "last_update": "1725868885",
