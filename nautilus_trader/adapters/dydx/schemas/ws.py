@@ -667,6 +667,8 @@ class DYDXWsFillSubaccountMessageContents(msgspec.Struct, forbid_unknown_fields=
     affiliateRevShare: str | None = None
     builderFee: str | None = None
     builderAddress: str | None = None
+    orderRouterFee: str | None = None
+    orderRouterAddress: str | None = None
 
 
 class DYDXWsOrderSubaccountMessageContents(msgspec.Struct, forbid_unknown_fields=True):
@@ -700,6 +702,10 @@ class DYDXWsOrderSubaccountMessageContents(msgspec.Struct, forbid_unknown_fields
     updatedAtHeight: str | None = None
     builderAddress: str | None = None
     feePpm: str | None = None
+    duration: str | None = None
+    interval: str | None = None
+    priceTolerance: str | None = None
+    orderRouterAddress: str | None = None
 
     def parse_to_order_status_report(
         self,
