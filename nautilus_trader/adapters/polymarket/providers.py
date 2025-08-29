@@ -83,7 +83,7 @@ class PolymarketInstrumentProvider(InstrumentProvider):
 
         if len(instrument_ids) > 200:
             self._log.warning(
-                f"Loading {len(instrument_ids)} instruments, using bulk load of all markets as a faster alternative"
+                f"Loading {len(instrument_ids)} instruments, using bulk load of all markets as a faster alternative",
             )
             await self._load_markets(instrument_ids, filters)
         else:
