@@ -4752,6 +4752,7 @@ dependencies = [
  "dashmap",
  "derive_builder",
  "futures-util",
+ "hex",
  "indexmap 2.11.0",
  "log",
  "nautilus-common",
@@ -4777,8 +4778,10 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "tracing-test",
+ "url",
  "ustr",
  "uuid",
+ "zeroize",
 ]
 
 [[package]]

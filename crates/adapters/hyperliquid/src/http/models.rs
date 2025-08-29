@@ -12,3 +12,219 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
+
+//! HTTP request/response models for Hyperliquid API.
+
+use crate::common::{
+    enums::Side,
+    types::{Price, Qty, Usd},
+};
+use serde::{Deserialize, Serialize};
+
+// ============================================================================
+// /info endpoint models (minimal stubs for Phase 2)
+// ============================================================================
+
+/// Represents metadata about available markets from `POST /info`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Meta {
+    #[serde(default)]
+    pub universe: Vec<AssetInfo>,
+}
+
+/// Represents asset information from the meta endpoint.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AssetInfo {
+    /// Asset name (e.g., "BTC").
+    pub name: String,
+    /// Number of decimal places for size.
+    #[serde(rename = "szDecimals")]
+    pub sz_decimals: u32,
+}
+
+/// Represents an L2 order book snapshot from `POST /info`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct L2Book {
+    /// Coin symbol.
+    pub coin: String,
+    /// Order book levels: [bids, asks].
+    pub levels: Vec<Vec<Level>>,
+    /// Timestamp in milliseconds.
+    pub time: u64,
+}
+
+/// Represents an order book level with price and size.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Level {
+    /// Price level.
+    pub px: Price,
+    /// Size at this level.
+    pub sz: Qty,
+}
+
+/// Represents user fills response from `POST /info`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Fills {
+    #[serde(default)]
+    pub fills: Vec<Fill>,
+}
+
+/// Represents an individual fill from user fills.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Fill {
+    /// Coin symbol.
+    pub coin: String,
+    /// Fill price.
+    pub px: Price,
+    /// Fill size.
+    pub sz: Qty,
+    /// Order side (buy/sell).
+    pub side: Side,
+    /// Fill timestamp in milliseconds.
+    pub time: u64,
+    /// Position size before this fill.
+    #[serde(rename = "startPosition")]
+    pub start_position: Qty,
+    /// Direction string.
+    pub dir: String,
+    /// Closed PnL from this fill.
+    pub closed_pnl: Usd,
+    /// Fill hash.
+    pub hash: String,
+    /// Order ID.
+    pub oid: u64,
+    /// Whether the fill crossed the spread.
+    pub crossed: bool,
+    /// Fee paid for this fill.
+    pub fee: Usd,
+}
+
+/// Represents order status response from `POST /info`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrderStatus {
+    #[serde(default)]
+    pub statuses: Vec<OrderStatusEntry>,
+}
+
+/// Represents an individual order status entry.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrderStatusEntry {
+    /// Order information.
+    pub order: OrderInfo,
+    /// Current status string.
+    pub status: String,
+    /// Status timestamp in milliseconds.
+    #[serde(rename = "statusTimestamp")]
+    pub status_timestamp: u64,
+}
+
+/// Represents order information within an order status entry.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrderInfo {
+    /// Coin symbol.
+    pub coin: String,
+    /// Order side (buy/sell).
+    pub side: Side,
+    /// Limit price.
+    #[serde(rename = "limitPx")]
+    pub limit_px: Price,
+    /// Order size.
+    pub sz: Qty,
+    /// Order ID.
+    pub oid: u64,
+    /// Order timestamp in milliseconds.
+    pub timestamp: u64,
+    /// Original order size.
+    #[serde(rename = "origSz")]
+    pub orig_sz: Qty,
+}
+
+// ============================================================================
+// /exchange endpoint models (minimal action/status stubs)
+// ============================================================================
+
+/// Represents an exchange action request wrapper for `POST /exchange`.
+#[derive(Debug, Clone, Serialize)]
+pub struct ExchangeRequest<T> {
+    /// The action to perform.
+    pub action: T,
+    /// Request nonce for replay protection.
+    #[serde(rename = "nonce")]
+    pub nonce: u64,
+    /// ECC signature over the action.
+    #[serde(rename = "signature")]
+    pub signature: String,
+    /// Optional vault address for sub-account trading.
+    #[serde(rename = "vaultAddress", skip_serializing_if = "Option::is_none")]
+    pub vault_address: Option<String>,
+}
+
+/// Represents an exchange response wrapper from `POST /exchange`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ExchangeResponse {
+    /// Successful response with status.
+    Status {
+        /// Status message.
+        status: String,
+        /// Response payload.
+        response: serde_json::Value,
+    },
+    /// Error response.
+    Error {
+        /// Error message.
+        error: String,
+    },
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_meta_deserialization() {
+        // Arrange
+        let json = r#"{"universe": [{"name": "BTC", "szDecimals": 5}]}"#;
+
+        // Act
+        let meta: Meta = serde_json::from_str(json).unwrap();
+
+        // Assert
+        assert_eq!(meta.universe.len(), 1);
+        assert_eq!(meta.universe[0].name, "BTC");
+        assert_eq!(meta.universe[0].sz_decimals, 5);
+    }
+
+    #[test]
+    fn test_l2_book_deserialization() {
+        // Arrange
+        let json = r#"{"coin": "BTC", "levels": [[{"px": "50000", "sz": "1.5"}], [{"px": "50100", "sz": "2.0"}]], "time": 1234567890}"#;
+
+        // Act
+        let book: L2Book = serde_json::from_str(json).unwrap();
+
+        // Assert
+        assert_eq!(book.coin, "BTC");
+        assert_eq!(book.levels.len(), 2);
+        assert_eq!(book.time, 1234567890);
+    }
+
+    #[test]
+    fn test_exchange_response_deserialization() {
+        // Arrange
+        let json = r#"{"status": "ok", "response": {"type": "order"}}"#;
+
+        // Act
+        let response: ExchangeResponse = serde_json::from_str(json).unwrap();
+
+        // Assert
+        match response {
+            ExchangeResponse::Status { status, .. } => assert_eq!(status, "ok"),
+            _ => panic!("Expected status response"),
+        }
+    }
+}
