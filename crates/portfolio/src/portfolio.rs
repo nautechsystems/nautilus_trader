@@ -68,8 +68,7 @@ impl PortfolioState {
     ) -> Self {
         let min_account_state_logging_interval_ns = config
             .min_account_state_logging_interval_ms
-            .map(|ms| ms * NANOSECONDS_IN_MILLISECOND)
-            .unwrap_or(0);
+            .map_or(0, |ms| ms * NANOSECONDS_IN_MILLISECOND);
 
         Self {
             accounts: AccountsManager::new(clock, cache),
@@ -198,7 +197,7 @@ impl Portfolio {
         let update_order_handler = {
             let cache = cache;
             let clock = clock.clone();
-            let inner = inner_weak.clone();
+            let inner = inner_weak;
             ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
                 move |event: &OrderEventAny| {
                     if let Some(inner_rc) = inner.upgrade() {

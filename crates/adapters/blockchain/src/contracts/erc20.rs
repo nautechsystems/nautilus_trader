@@ -232,7 +232,7 @@ fn decode_revert_reason(data: &Bytes) -> String {
     if data.is_empty() {
         "Call failed without revert data".to_string()
     } else {
-        format!("Call failed with data: {}", data)
+        format!("Call failed with data: {data}")
     }
 }
 

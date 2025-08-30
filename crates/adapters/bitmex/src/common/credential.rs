@@ -52,6 +52,7 @@ impl Credential {
     }
 
     /// Signs a request message according to the BitMEX authentication scheme.
+    #[must_use]
     pub fn sign(&self, verb: &str, endpoint: &str, expires: i64, data: &str) -> String {
         let sign_message = format!("{verb}{endpoint}{expires}{data}");
         let key = hmac::Key::new(hmac::HMAC_SHA256, &self.api_secret[..]);
@@ -64,7 +65,7 @@ impl Credential {
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 
-/// Tests use examples from https://www.bitmex.com/app/apiKeysUsage.
+/// Tests use examples from <https://www.bitmex.com/app/apiKeysUsage>.
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -120,7 +121,7 @@ mod tests {
     #[rstest]
     fn test_debug_redacts_secret() {
         let credential = Credential::new(API_KEY.to_string(), API_SECRET.to_string());
-        let dbg_out = format!("{:?}", credential);
+        let dbg_out = format!("{credential:?}");
         assert!(dbg_out.contains("api_secret: \"<redacted>\""));
         assert!(!dbg_out.contains("chNOO"));
         let secret_bytes_dbg = format!("{:?}", API_SECRET.as_bytes());

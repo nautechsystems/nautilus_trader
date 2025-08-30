@@ -58,8 +58,8 @@ impl Side {
 impl From<Side> for crate::common::enums::BitmexSide {
     fn from(side: Side) -> Self {
         match side {
-            Side::Buy => crate::common::enums::BitmexSide::Buy,
-            Side::Sell => crate::common::enums::BitmexSide::Sell,
+            Side::Buy => Self::Buy,
+            Side::Sell => Self::Sell,
         }
     }
 }

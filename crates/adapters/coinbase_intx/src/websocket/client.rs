@@ -143,7 +143,11 @@ impl CoinbaseIntxWebSocketClient {
         self.inner
             .try_read()
             .ok()
-            .and_then(|guard| guard.as_ref().map(|inner| inner.is_active()))
+            .and_then(|guard| {
+                guard
+                    .as_ref()
+                    .map(nautilus_network::websocket::WebSocketClient::is_active)
+            })
             .unwrap_or(false)
     }
 
@@ -153,7 +157,11 @@ impl CoinbaseIntxWebSocketClient {
         self.inner
             .try_read()
             .ok()
-            .and_then(|guard| guard.as_ref().map(|inner| inner.is_closed()))
+            .and_then(|guard| {
+                guard
+                    .as_ref()
+                    .map(nautilus_network::websocket::WebSocketClient::is_closed)
+            })
             .unwrap_or(true)
     }
 
@@ -164,10 +172,11 @@ impl CoinbaseIntxWebSocketClient {
             instruments_cache.insert(inst.symbol().inner(), inst.clone());
         }
 
-        self.instruments_cache = Arc::new(instruments_cache)
+        self.instruments_cache = Arc::new(instruments_cache);
     }
 
     /// Get active subscriptions for a specific instrument.
+    #[must_use]
     pub fn get_subscriptions(&self, instrument_id: InstrumentId) -> Vec<CoinbaseIntxWsChannel> {
         let product_id = instrument_id.symbol.inner();
         let mut channels = Vec::new();

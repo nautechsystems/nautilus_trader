@@ -525,14 +525,13 @@ fn update_instrument_id_map(
     let symbol = Symbol::from_str_unchecked(raw_symbol);
 
     let publisher_id = header.publisher_id;
-    let venue = match symbol_venue_map.get(&symbol) {
-        Some(venue) => *venue,
-        None => {
-            let venue = publisher_venue_map.get(&publisher_id).ok_or_else(|| {
-                anyhow::anyhow!("No venue found for `publisher_id` {publisher_id}")
-            })?;
-            *venue
-        }
+    let venue = if let Some(venue) = symbol_venue_map.get(&symbol) {
+        *venue
+    } else {
+        let venue = publisher_venue_map
+            .get(&publisher_id)
+            .ok_or_else(|| anyhow::anyhow!("No venue found for `publisher_id` {publisher_id}"))?;
+        *venue
     };
     let instrument_id = InstrumentId::new(symbol, venue);
 

@@ -25,7 +25,7 @@ use crate::common::parse::parse_instrument_id;
 
 /// Maintains quote state for each instrument to handle partial quote updates.
 ///
-/// `BitMEX` quote messages may contain incomplete information (missing bid or ask side).
+/// BitMEX quote messages may contain incomplete information (missing bid or ask side).
 /// When this happens, we need to reference the last known complete quote to construct
 /// a valid `QuoteTick` which requires both sides.
 pub(crate) struct QuoteCache {

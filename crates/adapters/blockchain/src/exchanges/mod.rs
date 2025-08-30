@@ -51,6 +51,6 @@ pub fn get_supported_dexes_for_chain(blockchain: Blockchain) -> Vec<String> {
 
     dex_types
         .into_iter()
-        .map(|dex_type| format!("{}", dex_type))
+        .map(|dex_type| format!("{dex_type}"))
         .collect()
 }

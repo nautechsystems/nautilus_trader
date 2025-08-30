@@ -71,7 +71,7 @@ pub async fn run_blockchain_command(opt: BlockchainOpt) -> anyhow::Result<()> {
             let config = BlockchainDataClientConfig::new(
                 chain.clone(),
                 vec![],
-                "".to_string(), // we dont need to http rpc url for block syncing
+                String::new(), // we dont need to http rpc url for block syncing
                 None,
                 None,
                 true,
@@ -99,7 +99,7 @@ pub async fn run_blockchain_command(opt: BlockchainOpt) -> anyhow::Result<()> {
                 .ok_or_else(|| anyhow::anyhow!("Invalid chain name: {}", chain))?;
             let chain_arc = Arc::new(chain.to_owned());
 
-            let dex_type = find_dex_type_case_insensitive(&dex, &chain).ok_or_else(|| {
+            let dex_type = find_dex_type_case_insensitive(&dex, chain).ok_or_else(|| {
                 let supported_dexes = get_supported_dexes_for_chain(chain.name);
                 if supported_dexes.is_empty() {
                     anyhow::anyhow!(
@@ -128,7 +128,7 @@ pub async fn run_blockchain_command(opt: BlockchainOpt) -> anyhow::Result<()> {
                 .or_else(|| std::env::var("RPC_HTTP_URL").ok())
                 .unwrap_or_default();
 
-            log::info!("Using RPC HTTP URL: '{}'", rpc_http_url);
+            log::info!("Using RPC HTTP URL: '{rpc_http_url}'");
 
             if rpc_http_url.is_empty() {
                 log::warn!(

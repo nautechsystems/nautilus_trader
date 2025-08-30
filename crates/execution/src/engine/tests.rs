@@ -304,8 +304,7 @@ fn test_set_position_id_counts_updates_correctly(mut execution_engine: Execution
     let actual_count = execution_engine.position_id_count(strategy_id);
     assert_eq!(
         actual_count, 1,
-        "Expected position ID count to be 1 for strategy_id {:?}, but got {}",
-        strategy_id, actual_count
+        "Expected position ID count to be 1 for strategy_id {strategy_id:?}, but got {actual_count}"
     );
 }
 
@@ -679,7 +678,7 @@ fn test_submit_bracket_order_list_with_all_duplicate_client_order_id_logs_does_n
         instrument_id: instrument.id,
         client_order_id: ClientOrderId::from("OL-19700101-000000-001-001-1"),
         venue_order_id: VenueOrderId::from("VOID"),
-        order_list: order_list.clone(),
+        order_list,
         exec_algorith_id: None,
         position_id: None,
         command_id: UUID4::new(),
@@ -776,7 +775,7 @@ fn test_submit_order_successfully_processes_and_caches_order(
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client.clone()))
+        .register_client(Rc::new(stub_client))
         .unwrap();
 
     // Add instrument to cache
@@ -2280,8 +2279,8 @@ fn test_handle_order_fill_event(mut execution_engine: ExecutionEngine) {
     println!("Filtering parameters:");
     println!("  Venue: {:?}", Venue::from("STUB_VENUE"));
     println!("  Instrument ID: {:?}", instrument.id);
-    println!("  Strategy ID: {:?}", strategy_id);
-    println!("  Expected Position ID: {:?}", expected_position_id);
+    println!("  Strategy ID: {strategy_id:?}");
+    println!("  Expected Position ID: {expected_position_id:?}");
 
     // Also check what the position actually contains:
     let position = cache
@@ -2882,7 +2881,7 @@ fn test_add_to_existing_position_on_order_fill(mut execution_engine: ExecutionEn
         "Should have exactly one position after first fill"
     );
     let expected_position_id = *position_ids.iter().next().unwrap();
-    println!("Expected position ID: {:?}", expected_position_id);
+    println!("Expected position ID: {expected_position_id:?}");
     drop(cache);
 
     // Create second market order
@@ -3689,7 +3688,7 @@ fn test_flip_position_on_opposite_filled_same_position_sell(mut execution_engine
     // In Rust Netting OMS, position flipping behavior is different from Python
     // Let's check what actually happened:
     let all_position_ids = cache.position_ids(None, None, None);
-    println!("All position IDs after flip: {:?}", all_position_ids);
+    println!("All position IDs after flip: {all_position_ids:?}");
 
     // There should be at least one position (possibly 2 if a new flipped position was created)
     assert!(
@@ -3718,9 +3717,15 @@ fn test_flip_position_on_opposite_filled_same_position_sell(mut execution_engine
 
     // Look for a flipped position (either with 'F' suffix or just another position)
     let open_positions = cache.position_open_ids(None, None, None);
-    println!("Open position IDs after flip: {:?}", open_positions);
+    println!("Open position IDs after flip: {open_positions:?}");
 
-    if !open_positions.is_empty() {
+    if open_positions.is_empty() {
+        // If no open positions, the flip might have resulted in a flat position
+        // This could happen if the implementation is different
+        panic!(
+            "Expected to find at least one open position after flip, but found none. All positions: {all_position_ids:?}"
+        );
+    } else {
         // Find the open position (should be the flipped one)
         let flipped_position_id = open_positions
             .iter()
@@ -3775,13 +3780,6 @@ fn test_flip_position_on_opposite_filled_same_position_sell(mut execution_engine
             cache.positions_total_count(None, None, None, None),
             2,
             "Total position count should be 2 (original + flipped)"
-        );
-    } else {
-        // If no open positions, the flip might have resulted in a flat position
-        // This could happen if the implementation is different
-        panic!(
-            "Expected to find at least one open position after flip, but found none. All positions: {:?}",
-            all_position_ids
         );
     }
 }
@@ -3936,7 +3934,7 @@ fn test_flip_position_on_opposite_filled_same_position_buy(mut execution_engine:
 
     // Get all position IDs to see what was created
     let all_position_ids = cache.position_ids(None, None, None);
-    println!("All position IDs after flip: {:?}", all_position_ids);
+    println!("All position IDs after flip: {all_position_ids:?}");
 
     // There should be at least one position (possibly 2 if a new flipped position was created)
     assert!(
@@ -3965,9 +3963,15 @@ fn test_flip_position_on_opposite_filled_same_position_buy(mut execution_engine:
 
     // Look for a flipped position (either with 'F' suffix or just another position)
     let open_positions = cache.position_open_ids(None, None, None);
-    println!("Open position IDs after flip: {:?}", open_positions);
+    println!("Open position IDs after flip: {open_positions:?}");
 
-    if !open_positions.is_empty() {
+    if open_positions.is_empty() {
+        // If no open positions, the flip might have resulted in a flat position
+        // This could happen if the implementation is different
+        panic!(
+            "Expected to find at least one open position after flip, but found none. All positions: {all_position_ids:?}"
+        );
+    } else {
         // Find the open position (should be the flipped one)
         let flipped_position_id = open_positions
             .iter()
@@ -4022,13 +4026,6 @@ fn test_flip_position_on_opposite_filled_same_position_buy(mut execution_engine:
             cache.positions_total_count(None, None, None, None),
             2,
             "Total position count should be 2 (original + flipped)"
-        );
-    } else {
-        // If no open positions, the flip might have resulted in a flat position
-        // This could happen if the implementation is different
-        panic!(
-            "Expected to find at least one open position after flip, but found none. All positions: {:?}",
-            all_position_ids
         );
     }
 }
@@ -4577,8 +4574,7 @@ fn test_submit_order_with_quote_quantity_and_no_prices_denies(
     let last_event = cached_order.last_event();
     assert!(
         matches!(last_event, OrderEventAny::Denied(_)),
-        "Last event should be OrderDenied, but got: {:?}",
-        last_event
+        "Last event should be OrderDenied, but got: {last_event:?}"
     );
 
     // Verify the denial reason contains the expected message
@@ -5242,7 +5238,7 @@ fn test_submit_bracket_order_with_quote_quantity_and_ticks_converts_expected(
         instrument_id: instrument.id,
         client_order_id: ClientOrderId::from("O-20240101-000000-001-001-1"), // Use entry order's client order ID
         venue_order_id: VenueOrderId::from("VOID"),
-        order_list: order_list.clone(),
+        order_list,
         exec_algorith_id: None,
         position_id: None,
         command_id: UUID4::new(),
@@ -5544,8 +5540,7 @@ fn test_submit_ioc_fok_should_not_add_to_own_book(#[case] time_in_force: TimeInF
 
     assert!(
         own_order_book.is_none(),
-        "Orders with {} time in force should not be added to own order book even when order book management is enabled",
-        time_in_force
+        "Orders with {time_in_force} time in force should not be added to own order book even when order book management is enabled"
     );
 }
 
@@ -7614,8 +7609,7 @@ fn test_own_book_order_status_filtering_parameterized(
         assert!(!bids.is_empty(), "Expected orders in own book");
         assert!(
             bids.contains_key(&price_decimal),
-            "Expected order at price {}",
-            price_str
+            "Expected order at price {price_str}"
         );
 
         // Test status filtering
@@ -7623,9 +7617,7 @@ fn test_own_book_order_status_filtering_parameterized(
         let filtered_bids = own_book.bids_as_map(Some(status_filter), None, None);
         assert!(
             filtered_bids.contains_key(&price_decimal),
-            "Expected order at price {} with status {:?}",
-            price_str,
-            final_status
+            "Expected order at price {price_str} with status {final_status:?}"
         );
     } else {
         // If we expect the order not to be in the book, check that the price level doesn't exist
@@ -7774,7 +7766,7 @@ fn test_own_book_combined_status_filtering() {
         instrument_id: instrument.id,
         client_order_id: initialized_order.client_order_id(),
         venue_order_id: VenueOrderId::from("VOID"),
-        order: initialized_order.clone(),
+        order: initialized_order,
         position_id: None,
         client_id: ClientId::from("STUB"),
         exec_algorith_id: None,
@@ -7879,7 +7871,7 @@ fn test_own_book_combined_status_filtering() {
     // INITIALIZED + SUBMITTED
     let early_statuses = HashSet::from([OrderStatus::Initialized, OrderStatus::Submitted]);
     let early_orders = own_book.bids_as_map(Some(early_statuses), None, None);
-    let early_order_count: usize = early_orders.values().map(|orders| orders.len()).sum();
+    let early_order_count: usize = early_orders.values().map(std::vec::Vec::len).sum();
     assert_eq!(
         early_order_count, 2,
         "Expected 2 orders with INITIALIZED or SUBMITTED status"
@@ -7899,7 +7891,7 @@ fn test_own_book_combined_status_filtering() {
     // ACCEPTED + PARTIALLY_FILLED
     let active_statuses = HashSet::from([OrderStatus::Accepted, OrderStatus::PartiallyFilled]);
     let active_orders = own_book.bids_as_map(Some(active_statuses), None, None);
-    let active_order_count: usize = active_orders.values().map(|orders| orders.len()).sum();
+    let active_order_count: usize = active_orders.values().map(std::vec::Vec::len).sum();
     assert_eq!(
         active_order_count, 2,
         "Expected 2 orders with ACCEPTED or PARTIALLY_FILLED status"
@@ -7918,7 +7910,7 @@ fn test_own_book_combined_status_filtering() {
 
     // ALL orders (no filter)
     let all_orders = own_book.bids_as_map(None, None, None);
-    let all_order_count: usize = all_orders.values().map(|orders| orders.len()).sum();
+    let all_order_count: usize = all_orders.values().map(std::vec::Vec::len).sum();
     assert_eq!(all_order_count, 4, "Expected 4 total orders in own book");
 
     // Verify all expected prices are present
@@ -8048,8 +8040,7 @@ fn test_own_book_status_integrity_during_transitions() {
             let price_decimal = Decimal::from_str(price).unwrap();
             assert!(
                 accepted_orders.contains_key(&price_decimal),
-                "Expected order at price {}",
-                price
+                "Expected order at price {price}"
             );
 
             // Verify the specific order is in the book

@@ -41,7 +41,7 @@ pub enum NautilusWsMessage {
     AccountState(Box<nautilus_model::events::AccountState>),
 }
 
-/// Represents all possible message types from the `BitMEX` WebSocket API.
+/// Represents all possible message types from the BitMEX WebSocket API.
 #[derive(Debug, Display, Deserialize)]
 #[serde(untagged)]
 pub enum WsMessage {
@@ -86,7 +86,7 @@ pub struct HttpRequest {
     pub args: Vec<String>,
 }
 
-/// Rate limit information from `BitMEX` API.
+/// Rate limit information from BitMEX API.
 #[derive(Debug, Deserialize)]
 pub struct RateLimit {
     /// Number of requests remaining in the current time window.
@@ -172,7 +172,7 @@ pub enum TableMessage {
     },
 }
 
-/// Represents a single order book entry in the `BitMEX` order book.
+/// Represents a single order book entry in the BitMEX order book.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderBookMsg {
@@ -192,7 +192,7 @@ pub struct OrderBookMsg {
     pub transact_time: DateTime<Utc>,
 }
 
-/// Represents a single order book entry in the `BitMEX` order book.
+/// Represents a single order book entry in the BitMEX order book.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderBook10Msg {
@@ -224,7 +224,7 @@ pub struct QuoteMsg {
     pub timestamp: DateTime<Utc>,
 }
 
-/// Represents a single trade execution on `BitMEX`.
+/// Represents a single trade execution on BitMEX.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TradeMsg {
@@ -285,7 +285,7 @@ pub struct TradeBinMsg {
     pub foreign_notional: f64,
 }
 
-/// Represents a single order book entry in the `BitMEX` order book.
+/// Represents a single order book entry in the BitMEX order book.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InstrumentMsg {

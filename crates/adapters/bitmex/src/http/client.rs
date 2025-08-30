@@ -161,7 +161,7 @@ impl BitmexHttpInnerClient {
         let full_path = if endpoint.starts_with("/api/v1") {
             endpoint.to_string()
         } else {
-            format!("/api/v1{}", endpoint)
+            format!("/api/v1{endpoint}")
         };
 
         tracing::debug!("Signing with body: '{}'", body_str);
@@ -414,6 +414,7 @@ impl Default for BitmexHttpClient {
 
 impl BitmexHttpClient {
     /// Creates a new [`BitmexHttpClient`] instance.
+    #[must_use]
     pub fn new(
         base_url: Option<String>,
         api_key: Option<String>,
@@ -472,10 +473,7 @@ impl BitmexHttpClient {
         let api_secret = api_secret.or_else(|| get_env_var("BITMEX_API_SECRET").ok());
 
         // Determine testnet from URL if provided
-        let testnet = base_url
-            .as_ref()
-            .map(|url| url.contains("testnet"))
-            .unwrap_or(false);
+        let testnet = base_url.as_ref().is_some_and(|url| url.contains("testnet"));
 
         // If we're trying to create an authenticated client, we need both key and secret
         if api_key.is_some() && api_secret.is_none() {
@@ -495,11 +493,13 @@ impl BitmexHttpClient {
     }
 
     /// Returns the base url being used by the client.
+    #[must_use]
     pub fn base_url(&self) -> &str {
         self.inner.base_url.as_str()
     }
 
     /// Returns the public API key being used by the client.
+    #[must_use]
     pub fn api_key(&self) -> Option<&str> {
         self.inner.credential.as_ref().map(|c| c.api_key.as_str())
     }

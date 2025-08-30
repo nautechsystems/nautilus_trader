@@ -75,6 +75,7 @@ impl BlockchainDataClientCore {
     /// # Panics
     ///
     /// Panics if `use_hypersync_for_live_data` is false but `wss_rpc_url` is None.
+    #[must_use]
     pub fn new(
         config: BlockchainDataClientConfig,
         hypersync_tx: Option<tokio::sync::mpsc::UnboundedSender<BlockchainMessage>>,
@@ -652,7 +653,7 @@ impl BlockchainDataClientCore {
             to_block,
             total_blocks,
             if let Some(last_synced) = last_synced_block {
-                format!(" - resuming from last synced block {}", last_synced)
+                format!(" - resuming from last synced block {last_synced}")
             } else {
                 String::new()
             }

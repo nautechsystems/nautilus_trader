@@ -56,16 +56,11 @@ impl BitmexHttpClient {
         // Try to use with_credentials if we have any credentials or need env vars
         if api_key.is_none() && api_secret.is_none() && !testnet && base_url.is_none() {
             // Try to load from environment
-            match BitmexHttpClient::with_credentials(
-                None,
-                None,
-                base_url.map(String::from),
-                Some(60),
-            ) {
+            match Self::with_credentials(None, None, base_url.map(String::from), Some(60)) {
                 Ok(client) => Ok(client),
                 Err(_) => {
                     // Fall back to unauthenticated client
-                    Ok(BitmexHttpClient::new(
+                    Ok(Self::new(
                         base_url.map(String::from),
                         None,
                         None,
@@ -75,7 +70,7 @@ impl BitmexHttpClient {
                 }
             }
         } else {
-            Ok(BitmexHttpClient::new(
+            Ok(Self::new(
                 base_url.map(String::from),
                 api_key.map(String::from),
                 api_secret.map(String::from),
@@ -370,7 +365,7 @@ impl BitmexHttpClient {
             params.cl_ord_id(
                 client_order_ids
                     .iter()
-                    .map(|x| x.to_string())
+                    .map(std::string::ToString::to_string)
                     .collect::<Vec<_>>(),
             );
         }
@@ -378,7 +373,7 @@ impl BitmexHttpClient {
             params.cl_ord_id(
                 venue_order_ids
                     .iter()
-                    .map(|x| x.to_string())
+                    .map(std::string::ToString::to_string)
                     .collect::<Vec<_>>(),
             );
         }

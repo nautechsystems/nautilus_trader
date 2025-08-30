@@ -31,7 +31,7 @@ pub struct OrderEmulatorExecuteHandler {
 impl OrderEmulatorExecuteHandler {
     #[inline]
     #[must_use]
-    pub fn new(id: Ustr, emulator: WeakCell<OrderEmulator>) -> Self {
+    pub const fn new(id: Ustr, emulator: WeakCell<OrderEmulator>) -> Self {
         Self { id, emulator }
     }
 }
@@ -66,7 +66,7 @@ pub struct OrderEmulatorOnEventHandler {
 impl OrderEmulatorOnEventHandler {
     #[inline]
     #[must_use]
-    pub fn new(id: Ustr, emulator: WeakCell<OrderEmulator>) -> Self {
+    pub const fn new(id: Ustr, emulator: WeakCell<OrderEmulator>) -> Self {
         Self { id, emulator }
     }
 }

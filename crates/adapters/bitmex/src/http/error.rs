@@ -32,7 +32,7 @@ pub enum BuildError {
     /// Invalid start value.
     #[error("Invalid start: must be non-negative")]
     InvalidStart,
-    /// Invalid time range: start_time should be less than end_time.
+    /// Invalid time range: `start_time` should be less than `end_time`.
     #[error(
         "Invalid time range: start_time ({start_time}) must be less than end_time ({end_time})"
     )]
@@ -79,7 +79,7 @@ pub enum BitmexHttpError {
     /// Build error for query parameters.
     #[error("Build error: {0}")]
     BuildError(#[from] BuildError),
-    /// Wrapping the underlying HttpClientError from the network crate.
+    /// Wrapping the underlying `HttpClientError` from the network crate.
     #[error("Network error: {0}")]
     HttpClientError(#[from] HttpClientError),
     /// Any unknown HTTP status or unexpected response from BitMEX.
@@ -89,7 +89,7 @@ pub enum BitmexHttpError {
 
 impl From<String> for BitmexHttpError {
     fn from(error: String) -> Self {
-        BitmexHttpError::ValidationError(error)
+        Self::ValidationError(error)
     }
 }
 
@@ -97,13 +97,13 @@ impl From<String> for BitmexHttpError {
 // client implementation by converting them into our typed error.
 impl From<serde_json::Error> for BitmexHttpError {
     fn from(error: serde_json::Error) -> Self {
-        BitmexHttpError::JsonError(error.to_string())
+        Self::JsonError(error.to_string())
     }
 }
 
 impl From<BitmexErrorResponse> for BitmexHttpError {
     fn from(error: BitmexErrorResponse) -> Self {
-        BitmexHttpError::BitmexError {
+        Self::BitmexError {
             error_name: error.error.name,
             message: error.error.message,
         }
