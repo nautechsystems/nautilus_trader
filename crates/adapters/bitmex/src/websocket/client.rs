@@ -39,8 +39,7 @@ use nautilus_model::{
 };
 use nautilus_network::websocket::{Consumer, MessageReader, WebSocketClient, WebSocketConfig};
 use reqwest::header::USER_AGENT;
-use tokio::sync::RwLock;
-use tokio::time::Duration;
+use tokio::{sync::RwLock, time::Duration};
 use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
 
