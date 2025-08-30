@@ -797,6 +797,52 @@ class DatabentoDataClient(LiveMarketDataClient):
                 f"Cannot request {request.data_type.type} (not implemented)",
             )
 
+    async def _resolve_time_range_for_request(
+        self,
+        dataset: Dataset,
+        start: pd.Timestamp | None,
+        end: pd.Timestamp | None,
+    ) -> tuple[pd.Timestamp, pd.Timestamp]:
+        _, available_end = await self._get_dataset_range(dataset)
+        original_start, original_end = start, end
+
+        # Default end to dataset end when missing
+        end = end or available_end
+        if original_end is not None and end > available_end:
+            end = available_end
+            self._log.info(
+                f"Clamped end from {original_end} to dataset end {available_end}",
+                LogColor.BLUE,
+            )
+
+        # Default start to day boundary of end
+        start = start or end.floor("D")
+
+        if start > end:
+            prev_start = start
+            start = end
+            self._log.info(
+                f"Clamped start from {prev_start} to end {end} (start > end)",
+                LogColor.BLUE,
+            )
+
+        if start == end and end < available_end:
+            end += pd.Timedelta(1, "ns")
+            self._log.info(
+                "Adjusted end by +1ns to create non-empty interval",
+                LogColor.BLUE,
+            )
+        elif start == end:
+            self._log.warning(f"Zero-length interval at dataset boundary: {start}")
+
+        if original_start != start or (original_end is not None and original_end != end):
+            self._log.info(
+                f"Resolved time range: {original_start=}, {original_end=} -> {start=}, {end=}",
+                LogColor.BLUE,
+            )
+
+        return start, end
+
     async def _request_instrument_status(
         self,
         data_type: DataType,
@@ -807,17 +853,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         end = data_type.metadata.get("end")
 
         dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
-        available_end = None
-
-        if not end:
-            _, available_end = await self._get_dataset_range(dataset)
-
-        end = end or available_end
-        start = start or end - pd.Timedelta(days=1)
-
-        # Type assertions to help MyPy understand these cannot be None
-        assert start is not None
-        assert end is not None
+        start, end = await self._resolve_time_range_for_request(dataset, start, end)
 
         self._log.info(
             f"Requesting {instrument_id} instrument status: "
@@ -847,17 +883,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         end = data_type.metadata.get("end")
 
         dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
-        available_end = None
-
-        if not end:
-            _, available_end = await self._get_dataset_range(dataset)
-
-        end = end or available_end
-        start = start or end - pd.Timedelta(days=1)
-
-        # Type assertions to help MyPy understand these cannot be None
-        assert start is not None
-        assert end is not None
+        start, end = await self._resolve_time_range_for_request(dataset, start, end)
 
         self._log.info(
             f"Requesting {instrument_id} imbalance: "
@@ -886,17 +912,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         end = data_type.metadata.get("end")
 
         dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
-        available_end = None
-
-        if not end:
-            _, available_end = await self._get_dataset_range(dataset)
-
-        end = end or available_end
-        start = start or end - pd.Timedelta(days=1)
-
-        # Type assertions to help MyPy understand these cannot be None
-        assert start is not None
-        assert end is not None
+        start, end = await self._resolve_time_range_for_request(dataset, start, end)
 
         self._log.info(
             f"Requesting {instrument_id} statistics: "
@@ -921,15 +937,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
     async def _request_instrument(self, request: RequestInstrument) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(request.instrument_id.venue)
-
-        if request.end:
-            end = request.end
-        else:
-            _, available_end = await self._get_dataset_range(dataset)
-            end = available_end
-
-        # NOTE: instruments are "published" every day at midnight
-        start = request.start or end - pd.Timedelta(days=1)
+        start, end = await self._resolve_time_range_for_request(dataset, request.start, request.end)
 
         self._log.info(
             f"Requesting {request.instrument_id} instrument definition: "
@@ -955,22 +963,14 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._handle_instrument(
             instruments[0],
             request.id,
-            request.start,
-            request.end,
+            start,
+            end,
             request.params,
         )
 
     async def _request_instruments(self, request: RequestInstruments) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(request.venue)
-
-        if request.end:
-            end = request.end
-        else:
-            _, available_end = await self._get_dataset_range(dataset)
-            end = available_end
-
-        # NOTE: instruments are "published" every day at midnight
-        start = request.start or end - pd.Timedelta(days=1)
+        start, end = await self._resolve_time_range_for_request(dataset, request.start, request.end)
 
         self._log.info(
             f"Requesting {request.venue} instrument definitions: "
@@ -996,25 +996,14 @@ class DatabentoDataClient(LiveMarketDataClient):
             request.venue,
             instruments,
             request.id,
-            request.start,
-            request.end,
+            start,
+            end,
             request.params,
         )
 
     async def _request_quote_ticks(self, request: RequestQuoteTicks) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(request.instrument_id.venue)
-
-        if request.end:
-            end = request.end
-        else:
-            _, available_end = await self._get_dataset_range(dataset)
-            end = available_end
-
-        # NOTE: instruments are "published" every day at midnight
-        start = request.start
-
-        if start == end:
-            end += pd.Timedelta(1, "ns")
+        start, end = await self._resolve_time_range_for_request(dataset, request.start, request.end)
 
         if request.limit > 0:
             self._log.warning(
@@ -1054,25 +1043,14 @@ class DatabentoDataClient(LiveMarketDataClient):
             request.instrument_id,
             quotes,
             request.id,
-            request.start,
-            request.end,
+            start,
+            end,
             request.params,
         )
 
     async def _request_trade_ticks(self, request: RequestTradeTicks) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(request.instrument_id.venue)
-
-        if request.end:
-            end = request.end
-        else:
-            _, available_end = await self._get_dataset_range(dataset)
-            end = available_end
-
-        # NOTE: instruments are "published" every day at midnight
-        start = request.start
-
-        if start == end:
-            end += pd.Timedelta(1, "ns")
+        start, end = await self._resolve_time_range_for_request(dataset, request.start, request.end)
 
         if request.limit > 0:
             self._log.warning(
@@ -1096,25 +1074,14 @@ class DatabentoDataClient(LiveMarketDataClient):
             request.instrument_id,
             trades,
             request.id,
-            request.start,
-            request.end,
+            start,
+            end,
             request.params,
         )
 
     async def _request_bars(self, request: RequestBars) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(request.bar_type.instrument_id.venue)
-
-        if request.end:
-            end = request.end
-        else:
-            _, available_end = await self._get_dataset_range(dataset)
-            end = available_end
-
-        # NOTE: instruments are "published" every day at midnight
-        start = request.start
-
-        if start == end:
-            end += pd.Timedelta(1, "ns")
+        start, end = await self._resolve_time_range_for_request(dataset, request.start, request.end)
 
         if request.limit > 0:
             self._log.warning(
@@ -1144,8 +1111,8 @@ class DatabentoDataClient(LiveMarketDataClient):
             bars=bars,
             partial=None,  # No partials
             correlation_id=request.id,
-            start=request.start,
-            end=request.end,
+            start=start,
+            end=end,
             params=request.params,
         )
 
