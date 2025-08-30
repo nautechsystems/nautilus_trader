@@ -881,7 +881,18 @@ cdef class TimeBarAggregator(BarAggregator):
         cdef datetime now = self._clock.utc_now()
         cdef datetime start_time = self.get_start_time(now)
 
-        if start_time == now:
+        # Consider near-boundary starts within a small tolerance as on-boundary
+        cdef uint64_t now_ns = dt_to_unix_nanos(now)
+        cdef uint64_t start_ns = dt_to_unix_nanos(start_time)
+        cdef uint64_t diff_ns = now_ns - start_ns if now_ns >= start_ns else start_ns - now_ns
+
+        # Use a step-aware tolerance capped at 1 ms. For MONTH aggregation
+        # (where interval_ns == 0), default to 1 ms.
+        cdef uint64_t tolerance_ns = 1_000_000 if self.interval_ns == 0 else self.interval_ns // 1000
+        if tolerance_ns > 1_000_000:
+            tolerance_ns = 1_000_000
+
+        if diff_ns <= tolerance_ns:
             self._skip_first_non_full_bar = False
 
         start_time += timedelta(microseconds=self._bar_build_delay)

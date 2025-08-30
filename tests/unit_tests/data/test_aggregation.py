@@ -2056,6 +2056,160 @@ class TestTimeBarAggregator:
         assert initial_next_close == 180_000_000_001
         assert aggregator.next_close_ns == 180_000_000_001  # TODO: This didn't increment?
 
+    def test_skip_first_non_full_bar_when_starting_on_bar_boundary(self):
+        """
+        Test that when skip_first_non_full_bar=True and we start exactly on a bar
+        boundary, the first bar should NOT be skipped (reproduces issue #2605).
+        """
+        # Arrange
+        clock = TestClock()
+        handler = []
+        instrument_id = TestIdStubs.audusd_id()
+        bar_spec = BarSpecification(2, BarAggregation.SECOND, PriceType.LAST)
+        bar_type = BarType(instrument_id, bar_spec, AggregationSource.INTERNAL)
+
+        # Start exactly at a 2-second boundary (2024-12-01 00:00:00)
+        start_time_ns = dt_to_unix_nanos(pd.Timestamp("2024-12-01 00:00:00", tz="UTC"))
+        clock.set_time(start_time_ns)
+
+        # Create aggregator with skip_first_non_full_bar=True
+        aggregator = TimeBarAggregator(
+            AUDUSD_SIM,
+            bar_type,
+            handler.append,
+            clock,
+            skip_first_non_full_bar=True,
+        )
+
+        # Create trade ticks at 0.5 second intervals
+        tick1 = TradeTick(
+            instrument_id=instrument_id,
+            price=Price.from_str("1.00001"),
+            size=Quantity.from_int(100000),
+            aggressor_side=AggressorSide.BUYER,
+            trade_id=TradeId("1"),
+            ts_event=start_time_ns + 500_000_000,  # 0.5 seconds after start
+            ts_init=start_time_ns + 500_000_000,
+        )
+
+        tick2 = TradeTick(
+            instrument_id=instrument_id,
+            price=Price.from_str("1.00002"),
+            size=Quantity.from_int(100000),
+            aggressor_side=AggressorSide.BUYER,
+            trade_id=TradeId("2"),
+            ts_event=start_time_ns + 1_000_000_000,  # 1 second after start
+            ts_init=start_time_ns + 1_000_000_000,
+        )
+
+        tick3 = TradeTick(
+            instrument_id=instrument_id,
+            price=Price.from_str("1.00003"),
+            size=Quantity.from_int(100000),
+            aggressor_side=AggressorSide.BUYER,
+            trade_id=TradeId("3"),
+            ts_event=start_time_ns + 1_500_000_000,  # 1.5 seconds after start
+            ts_init=start_time_ns + 1_500_000_000,
+        )
+
+        # Act - process ticks and advance time to trigger first bar
+        aggregator.handle_trade_tick(tick1)
+        clock.set_time(tick1.ts_event)
+
+        aggregator.handle_trade_tick(tick2)
+        clock.set_time(tick2.ts_event)
+
+        aggregator.handle_trade_tick(tick3)
+        clock.set_time(tick3.ts_event)
+
+        # Advance to exactly 2 seconds to trigger the first bar
+        events = clock.advance_time(start_time_ns + 2_000_000_000)
+        if events:
+            events[0].handle()
+
+        # Assert - we should have received the first bar since we had data for the full period
+        assert len(handler) == 1, f"Expected 1 bar but got {len(handler)} bars"
+        assert handler[0].ts_event == start_time_ns + 2_000_000_000
+        assert handler[0].open == Price.from_str("1.00001")
+        assert handler[0].close == Price.from_str("1.00003")
+        assert handler[0].volume == Quantity.from_int(300000)
+
+    def test_skip_first_non_full_bar_when_starting_near_bar_boundary(self):
+        """
+        When skip_first_non_full_bar=True and we start within the tolerance of a bar
+        boundary (e.g., +100µs), the first bar should NOT be skipped.
+        """
+        # Arrange
+        clock = TestClock()
+        handler = []
+        instrument_id = TestIdStubs.audusd_id()
+        bar_spec = BarSpecification(2, BarAggregation.SECOND, PriceType.LAST)
+        bar_type = BarType(instrument_id, bar_spec, AggregationSource.INTERNAL)
+
+        # Base boundary at 2024-12-01 00:00:00; start +100µs after boundary
+        base_boundary_ns = dt_to_unix_nanos(pd.Timestamp("2024-12-01 00:00:00", tz="UTC"))
+        clock.set_time(base_boundary_ns + 100_000)  # +100µs (within 1ms tolerance)
+
+        aggregator = TimeBarAggregator(
+            AUDUSD_SIM,
+            bar_type,
+            handler.append,
+            clock,
+            skip_first_non_full_bar=True,
+        )
+
+        # Create trade ticks at 0.5s, 1.0s, 1.5s from the base boundary
+        tick1 = TradeTick(
+            instrument_id=instrument_id,
+            price=Price.from_str("1.00001"),
+            size=Quantity.from_int(100000),
+            aggressor_side=AggressorSide.BUYER,
+            trade_id=TradeId("1"),
+            ts_event=base_boundary_ns + 500_000_000,
+            ts_init=base_boundary_ns + 500_000_000,
+        )
+
+        tick2 = TradeTick(
+            instrument_id=instrument_id,
+            price=Price.from_str("1.00002"),
+            size=Quantity.from_int(100000),
+            aggressor_side=AggressorSide.BUYER,
+            trade_id=TradeId("2"),
+            ts_event=base_boundary_ns + 1_000_000_000,
+            ts_init=base_boundary_ns + 1_000_000_000,
+        )
+
+        tick3 = TradeTick(
+            instrument_id=instrument_id,
+            price=Price.from_str("1.00003"),
+            size=Quantity.from_int(100000),
+            aggressor_side=AggressorSide.BUYER,
+            trade_id=TradeId("3"),
+            ts_event=base_boundary_ns + 1_500_000_000,
+            ts_init=base_boundary_ns + 1_500_000_000,
+        )
+
+        # Act - process ticks and advance to the close boundary
+        aggregator.handle_trade_tick(tick1)
+        clock.set_time(tick1.ts_event)
+
+        aggregator.handle_trade_tick(tick2)
+        clock.set_time(tick2.ts_event)
+
+        aggregator.handle_trade_tick(tick3)
+        clock.set_time(tick3.ts_event)
+
+        events = clock.advance_time(base_boundary_ns + 2_000_000_000)
+        if events:
+            events[0].handle()
+
+        # Assert - first bar should be emitted
+        assert len(handler) == 1, f"Expected 1 bar but got {len(handler)} bars"
+        assert handler[0].ts_event == base_boundary_ns + 2_000_000_000
+        assert handler[0].open == Price.from_str("1.00001")
+        assert handler[0].close == Price.from_str("1.00003")
+        assert handler[0].volume == Quantity.from_int(300000)
+
     def test_update_timer_with_test_clock_sends_single_bar_to_handler_with_bars_and_time_origin(
         self,
     ):
