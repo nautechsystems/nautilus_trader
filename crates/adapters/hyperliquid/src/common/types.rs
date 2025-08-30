@@ -13,161 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use std::{fmt, ops::Deref, str::FromStr};
-
-/// Represents a price with lossless decimal precision.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct Price(
-    #[serde(
-        serialize_with = "crate::common::parse::serialize_decimal_as_str",
-        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
-    )]
-    pub Decimal,
-);
-
-impl Price {
-    pub fn new(value: Decimal) -> Self {
-        Self(value)
-    }
-}
-
-impl fmt::Debug for Price {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Price({})", self.0)
-    }
-}
-
-impl fmt::Display for Price {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl Deref for Price {
-    type Target = Decimal;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl From<Decimal> for Price {
-    fn from(value: Decimal) -> Self {
-        Self(value)
-    }
-}
-
-impl FromStr for Price {
-    type Err = rust_decimal::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Self(Decimal::from_str(s)?))
-    }
-}
-
-/// Represents a quantity with lossless decimal precision.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct Qty(
-    #[serde(
-        serialize_with = "crate::common::parse::serialize_decimal_as_str",
-        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
-    )]
-    pub Decimal,
-);
-
-impl Qty {
-    /// Creates a new quantity.
-    pub fn new(value: Decimal) -> Self {
-        Self(value)
-    }
-}
-
-impl fmt::Debug for Qty {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Qty({})", self.0)
-    }
-}
-
-impl fmt::Display for Qty {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl Deref for Qty {
-    type Target = Decimal;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl From<Decimal> for Qty {
-    fn from(value: Decimal) -> Self {
-        Self(value)
-    }
-}
-
-impl FromStr for Qty {
-    type Err = rust_decimal::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Self(Decimal::from_str(s)?))
-    }
-}
-
-/// Represents a USD amount with lossless decimal precision.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct Usd(
-    #[serde(
-        serialize_with = "crate::common::parse::serialize_decimal_as_str",
-        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
-    )]
-    pub Decimal,
-);
-
-impl Usd {
-    /// Creates a new USD amount.
-    pub fn new(value: Decimal) -> Self {
-        Self(value)
-    }
-}
-
-impl fmt::Debug for Usd {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Usd({})", self.0)
-    }
-}
-
-impl fmt::Display for Usd {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl Deref for Usd {
-    type Target = Decimal;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl From<Decimal> for Usd {
-    fn from(value: Decimal) -> Self {
-        Self(value)
-    }
-}
-
-impl FromStr for Usd {
-    type Err = rust_decimal::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Self(Decimal::from_str(s)?))
-    }
-}
+use std::fmt;
 
 /// Represents an asset ID for Hyperliquid.
 ///
@@ -229,45 +76,17 @@ impl fmt::Display for AssetId {
     }
 }
 
-// ============================================================================
+////////////////////////////////////////////////////////////////////////////////
 // Tests
-// ============================================================================
+////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
-    use rust_decimal::Decimal;
-    use std::str::FromStr;
 
-    #[test]
-    fn test_price_roundtrip() {
-        let decimal = Decimal::from_str("12345.678901234567890123").unwrap();
-        let price = Price::new(decimal);
-        let json = serde_json::to_string(&price).unwrap();
-        let parsed: Price = serde_json::from_str(&json).unwrap();
-        assert_eq!(price, parsed);
-        assert_eq!(json, "\"12345.678901234567890123\"");
-    }
-
-    #[test]
-    fn test_qty_roundtrip() {
-        let decimal = Decimal::from_str("0.00000001").unwrap();
-        let qty = Qty::new(decimal);
-        let json = serde_json::to_string(&qty).unwrap();
-        let parsed: Qty = serde_json::from_str(&json).unwrap();
-        assert_eq!(qty, parsed);
-    }
-
-    #[test]
-    fn test_usd_roundtrip() {
-        let decimal = Decimal::from_str("1000.50").unwrap();
-        let usd = Usd::new(decimal);
-        let json = serde_json::to_string(&usd).unwrap();
-        let parsed: Usd = serde_json::from_str(&json).unwrap();
-        assert_eq!(usd, parsed);
-    }
-
-    #[test]
+    #[rstest]
     fn test_asset_id_perp() {
         let asset_id = AssetId::perp(7);
         assert_eq!(asset_id.to_raw(), 7);
@@ -276,7 +95,7 @@ mod tests {
         assert_eq!(asset_id.base_index(), 7);
     }
 
-    #[test]
+    #[rstest]
     fn test_asset_id_spot() {
         let asset_id = AssetId::spot(7);
         assert_eq!(asset_id.to_raw(), 10_007);
@@ -285,7 +104,7 @@ mod tests {
         assert_eq!(asset_id.base_index(), 7);
     }
 
-    #[test]
+    #[rstest]
     fn test_asset_id_builder_perp() {
         let asset_id = AssetId::builder_perp(1, 7);
         assert_eq!(asset_id.to_raw(), 110_007);

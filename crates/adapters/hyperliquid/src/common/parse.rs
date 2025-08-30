@@ -65,12 +65,14 @@ where
     }
 }
 
-// ============================================================================
+////////////////////////////////////////////////////////////////////////////////
 // Tests
-// ============================================================================
+////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
     use serde::{Deserialize, Serialize};
 
@@ -88,7 +90,7 @@ mod tests {
         optional_value: Option<Decimal>,
     }
 
-    #[test]
+    #[rstest]
     fn test_decimal_serialization_roundtrip() {
         let original = TestStruct {
             value: Decimal::from_str("123.456789012345678901234567890").unwrap(),
@@ -107,7 +109,7 @@ mod tests {
         assert_eq!(original.optional_value, deserialized.optional_value);
     }
 
-    #[test]
+    #[rstest]
     fn test_decimal_precision_preservation() {
         let test_cases = [
             "0",
@@ -139,7 +141,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest]
     fn test_optional_none_handling() {
         let test_struct = TestStruct {
             value: Decimal::from_str("42.0").unwrap(),

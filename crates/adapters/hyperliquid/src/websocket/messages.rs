@@ -16,10 +16,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-// ============================================================================
-// OUTBOUND MESSAGES (Client -> Server)
-// ============================================================================
-
 /// Represents an outbound WebSocket message from client to Hyperliquid.
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "method")]
@@ -229,15 +225,11 @@ pub struct ModifyRequest {
     pub order: OrderRequest,
 }
 
-// ============================================================================
-// INBOUND MESSAGES (Server -> Client)
-// ============================================================================
-
 /// Inbound WebSocket message from Hyperliquid server
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "channel")]
 #[serde(rename_all = "camelCase")]
-pub enum HyperliquidWsResponse {
+pub enum HyperliquidWsMessage {
     /// Subscription confirmation
     SubscriptionResponse { data: SubscriptionRequest },
     /// Post request response
@@ -294,10 +286,6 @@ pub enum PostResponsePayload {
     Action { payload: serde_json::Value },
     Error { payload: String },
 }
-
-// ============================================================================
-// DATA STRUCTURES
-// ============================================================================
 
 /// All mid prices data
 #[derive(Debug, Clone, Deserialize)]
@@ -622,16 +610,18 @@ pub struct WsBboData {
     pub bbo: [Option<WsLevelData>; 2], // [bid, ask]
 }
 
-// ============================================================================
+////////////////////////////////////////////////////////////////////////////////
 // Tests
-// ============================================================================
+////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
     use serde_json;
 
-    #[test]
+    #[rstest]
     fn test_subscription_request_serialization() {
         let sub = SubscriptionRequest::L2Book {
             coin: "BTC".to_string(),
@@ -644,7 +634,7 @@ mod tests {
         assert!(json.contains(r#""coin":"BTC""#));
     }
 
-    #[test]
+    #[rstest]
     fn test_hyperliquid_ws_request_serialization() {
         let req = HyperliquidWsRequest::Subscribe {
             subscription: SubscriptionRequest::Trades {
@@ -657,7 +647,7 @@ mod tests {
         assert!(json.contains(r#""type":"trades""#));
     }
 
-    #[test]
+    #[rstest]
     fn test_order_request_serialization() {
         let order = OrderRequest {
             a: 0,    // BTC asset ID
@@ -677,7 +667,7 @@ mod tests {
         assert!(json.contains(r#""p":"50000.0""#));
     }
 
-    #[test]
+    #[rstest]
     fn test_ws_trade_data_deserialization() {
         let json = r#"{
             "coin": "BTC",
@@ -696,7 +686,7 @@ mod tests {
         assert_eq!(trade.px, "50000.0");
     }
 
-    #[test]
+    #[rstest]
     fn test_ws_book_data_deserialization() {
         let json = r#"{
             "coin": "ETH",

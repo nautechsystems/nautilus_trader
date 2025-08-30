@@ -16,7 +16,7 @@
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
 
-use crate::common::types::Price;
+use nautilus_model::enums::{AggressorSide, OrderSide};
 
 /// Represents the order side (Buy or Sell).
 ///
@@ -37,11 +37,39 @@ use crate::common::types::Price;
 )]
 #[serde(rename_all = "UPPERCASE")]
 #[strum(serialize_all = "UPPERCASE")]
-pub enum Side {
+pub enum HyperliquidSide {
     #[serde(rename = "B")]
     Buy,
     #[serde(rename = "A")]
     Sell,
+}
+
+impl From<OrderSide> for HyperliquidSide {
+    fn from(value: OrderSide) -> Self {
+        match value {
+            OrderSide::Buy => Self::Buy,
+            OrderSide::Sell => Self::Sell,
+            _ => panic!("Invalid `OrderSide`: {value:?}"),
+        }
+    }
+}
+
+impl From<HyperliquidSide> for OrderSide {
+    fn from(value: HyperliquidSide) -> Self {
+        match value {
+            HyperliquidSide::Buy => Self::Buy,
+            HyperliquidSide::Sell => Self::Sell,
+        }
+    }
+}
+
+impl From<HyperliquidSide> for AggressorSide {
+    fn from(value: HyperliquidSide) -> Self {
+        match value {
+            HyperliquidSide::Buy => Self::Buyer,
+            HyperliquidSide::Sell => Self::Seller,
+        }
+    }
 }
 
 /// Represents the time in force for limit orders.
@@ -84,7 +112,7 @@ pub enum OrderType {
         #[serde(rename = "isMarket")]
         is_market: bool,
         #[serde(rename = "triggerPx")]
-        trigger_px: Price,
+        trigger_px: String,
         tpsl: TpSl,
     },
 }
@@ -165,7 +193,6 @@ impl From<bool> for LiquidityFlag {
     }
 }
 
-/// Represents order reject codes from Hyperliquid.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum RejectCode {
@@ -203,13 +230,29 @@ pub enum RejectCode {
     PerpMaxPosition,
     /// Missing order.
     MissingOrder,
-    /// Unknown reject reason.
+    /// Unknown reject reason with raw error message.
     Unknown(String),
 }
 
 impl RejectCode {
-    /// Parses reject code from error string.
-    pub fn from_error_string(error: &str) -> Self {
+    pub fn from_api_error(error_message: &str) -> Self {
+        // TODO: Research Hyperliquid's actual error response format
+        // Check if they provide:
+        // - Numeric error codes
+        // - Error type/category fields
+        // - Structured error objects
+        // If so, parse those instead of string matching
+
+        // For now, we still fall back to string matching, but this method provides
+        // a clear migration path when better error information becomes available
+        Self::from_error_string_internal(error_message)
+    }
+
+    /// Internal string parsing method - not exposed publicly.
+    ///
+    /// This encapsulates the fragile string matching logic and makes it clear
+    /// that it should only be used internally until we have better error handling.
+    fn from_error_string_internal(error: &str) -> Self {
         match error {
             s if s.contains("tick size") => RejectCode::Tick,
             s if s.contains("minimum value of $10") => RejectCode::MinTradeNtl,
@@ -241,42 +284,87 @@ impl RejectCode {
             s => RejectCode::Unknown(s.to_string()),
         }
     }
+
+    /// Parses reject code from error string.
+    ///
+    /// **Deprecated**: This method uses substring matching which is fragile and not robust.
+    /// Use `from_api_error()` instead, which provides a migration path for structured error handling.
+    #[deprecated(
+        since = "0.50.0",
+        note = "String parsing is fragile; use RejectCode::from_api_error() instead"
+    )]
+    pub fn from_error_string(error: &str) -> Self {
+        Self::from_error_string_internal(error)
+    }
 }
 
-// ============================================================================
+////////////////////////////////////////////////////////////////////////////////
 // Tests
-// ============================================================================
+////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
     use serde_json;
 
-    #[test]
+    #[rstest]
     fn test_side_serde() {
-        // Arrange
-        let buy_side = Side::Buy;
-        let sell_side = Side::Sell;
+        let buy_side = HyperliquidSide::Buy;
+        let sell_side = HyperliquidSide::Sell;
 
-        // Act & Assert - Serialization
         assert_eq!(serde_json::to_string(&buy_side).unwrap(), "\"B\"");
         assert_eq!(serde_json::to_string(&sell_side).unwrap(), "\"A\"");
 
-        // Act & Assert - Deserialization
-        assert_eq!(serde_json::from_str::<Side>("\"B\"").unwrap(), Side::Buy);
-        assert_eq!(serde_json::from_str::<Side>("\"A\"").unwrap(), Side::Sell);
+        assert_eq!(
+            serde_json::from_str::<HyperliquidSide>("\"B\"").unwrap(),
+            HyperliquidSide::Buy
+        );
+        assert_eq!(
+            serde_json::from_str::<HyperliquidSide>("\"A\"").unwrap(),
+            HyperliquidSide::Sell
+        );
     }
 
-    #[test]
+    #[rstest]
+    fn test_side_from_order_side() {
+        // Test conversion from OrderSide to HyperliquidSide
+        assert_eq!(HyperliquidSide::from(OrderSide::Buy), HyperliquidSide::Buy);
+        assert_eq!(
+            HyperliquidSide::from(OrderSide::Sell),
+            HyperliquidSide::Sell
+        );
+    }
+
+    #[rstest]
+    fn test_order_side_from_hyperliquid_side() {
+        // Test conversion from HyperliquidSide to OrderSide
+        assert_eq!(OrderSide::from(HyperliquidSide::Buy), OrderSide::Buy);
+        assert_eq!(OrderSide::from(HyperliquidSide::Sell), OrderSide::Sell);
+    }
+
+    #[rstest]
+    fn test_aggressor_side_from_hyperliquid_side() {
+        // Test conversion from HyperliquidSide to AggressorSide
+        assert_eq!(
+            AggressorSide::from(HyperliquidSide::Buy),
+            AggressorSide::Buyer
+        );
+        assert_eq!(
+            AggressorSide::from(HyperliquidSide::Sell),
+            AggressorSide::Seller
+        );
+    }
+
+    #[rstest]
     fn test_time_in_force_serde() {
-        // Arrange
         let test_cases = [
             (TimeInForce::Alo, "\"Alo\""),
             (TimeInForce::Ioc, "\"Ioc\""),
             (TimeInForce::Gtc, "\"Gtc\""),
         ];
 
-        // Act & Assert
         for (tif, expected_json) in test_cases {
             assert_eq!(serde_json::to_string(&tif).unwrap(), expected_json);
             assert_eq!(
@@ -286,16 +374,15 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest]
     fn test_liquidity_flag_from_crossed() {
-        // Arrange, Act & Assert
         assert_eq!(LiquidityFlag::from(true), LiquidityFlag::Taker);
         assert_eq!(LiquidityFlag::from(false), LiquidityFlag::Maker);
     }
 
-    #[test]
+    #[rstest]
+    #[allow(deprecated)]
     fn test_reject_code_from_error_string() {
-        // Arrange
         let test_cases = [
             ("Price must be divisible by tick size.", RejectCode::Tick),
             (
@@ -316,18 +403,42 @@ mod tests {
             ),
         ];
 
-        // Act & Assert
         for (error_str, expected_code) in test_cases {
             assert_eq!(RejectCode::from_error_string(error_str), expected_code);
         }
     }
 
-    #[test]
+    #[rstest]
+    fn test_reject_code_from_api_error() {
+        let test_cases = [
+            ("Price must be divisible by tick size.", RejectCode::Tick),
+            (
+                "Order must have minimum value of $10.",
+                RejectCode::MinTradeNtl,
+            ),
+            (
+                "Insufficient margin to place order.",
+                RejectCode::PerpMargin,
+            ),
+            (
+                "Post only order would have immediately matched, bbo was 1.23",
+                RejectCode::BadAloPx,
+            ),
+            (
+                "Some unknown error",
+                RejectCode::Unknown("Some unknown error".to_string()),
+            ),
+        ];
+
+        for (error_str, expected_code) in test_cases {
+            assert_eq!(RejectCode::from_api_error(error_str), expected_code);
+        }
+    }
+
+    #[rstest]
     fn test_reduce_only() {
-        // Arrange
         let reduce_only = ReduceOnly::new(true);
 
-        // Act & Assert
         assert!(reduce_only.is_reduce_only());
 
         let json = serde_json::to_string(&reduce_only).unwrap();

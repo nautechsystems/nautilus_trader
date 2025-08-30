@@ -13,15 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::common::{
-    enums::Side,
-    types::{Price, Qty, Usd},
-};
 use serde::{Deserialize, Serialize};
 
-// ============================================================================
-// /info endpoint models (minimal stubs for Phase 2)
-// ============================================================================
+use crate::common::enums::HyperliquidSide;
 
 /// Represents metadata about available markets from `POST /info`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -55,9 +49,9 @@ pub struct L2Book {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Level {
     /// Price level.
-    pub px: Price,
+    pub px: String,
     /// Size at this level.
-    pub sz: Qty,
+    pub sz: String,
 }
 
 /// Represents user fills response from `POST /info`.
@@ -73,28 +67,29 @@ pub struct Fill {
     /// Coin symbol.
     pub coin: String,
     /// Fill price.
-    pub px: Price,
+    pub px: String,
     /// Fill size.
-    pub sz: Qty,
+    pub sz: String,
     /// Order side (buy/sell).
-    pub side: Side,
+    pub side: HyperliquidSide,
     /// Fill timestamp in milliseconds.
     pub time: u64,
     /// Position size before this fill.
     #[serde(rename = "startPosition")]
-    pub start_position: Qty,
-    /// Direction string.
+    pub start_position: String,
+    /// Directory (order book path).
     pub dir: String,
-    /// Closed PnL from this fill.
-    pub closed_pnl: Usd,
-    /// Fill hash.
+    /// Closed P&L from this fill.
+    #[serde(rename = "closedPnl")]
+    pub closed_pnl: String,
+    /// Hash reference.
     pub hash: String,
-    /// Order ID.
+    /// Order ID that generated this fill.
     pub oid: u64,
-    /// Whether the fill crossed the spread.
+    /// Crossed status.
     pub crossed: bool,
     /// Fee paid for this fill.
-    pub fee: Usd,
+    pub fee: String,
 }
 
 /// Represents order status response from `POST /info`.
@@ -122,24 +117,20 @@ pub struct OrderInfo {
     /// Coin symbol.
     pub coin: String,
     /// Order side (buy/sell).
-    pub side: Side,
+    pub side: HyperliquidSide,
     /// Limit price.
     #[serde(rename = "limitPx")]
-    pub limit_px: Price,
+    pub limit_px: String,
     /// Order size.
-    pub sz: Qty,
+    pub sz: String,
     /// Order ID.
     pub oid: u64,
     /// Order timestamp in milliseconds.
     pub timestamp: u64,
     /// Original order size.
     #[serde(rename = "origSz")]
-    pub orig_sz: Qty,
+    pub orig_sz: String,
 }
-
-// ============================================================================
-// /exchange endpoint models (minimal action/status stubs)
-// ============================================================================
 
 /// Represents an exchange action request wrapper for `POST /exchange`.
 #[derive(Debug, Clone, Serialize)]
@@ -175,51 +166,44 @@ pub enum ExchangeResponse {
     },
 }
 
-// ============================================================================
+////////////////////////////////////////////////////////////////////////////////
 // Tests
-// ============================================================================
+////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
-    #[test]
+    #[rstest]
     fn test_meta_deserialization() {
-        // Arrange
         let json = r#"{"universe": [{"name": "BTC", "szDecimals": 5}]}"#;
 
-        // Act
         let meta: Meta = serde_json::from_str(json).unwrap();
 
-        // Assert
         assert_eq!(meta.universe.len(), 1);
         assert_eq!(meta.universe[0].name, "BTC");
         assert_eq!(meta.universe[0].sz_decimals, 5);
     }
 
-    #[test]
+    #[rstest]
     fn test_l2_book_deserialization() {
-        // Arrange
         let json = r#"{"coin": "BTC", "levels": [[{"px": "50000", "sz": "1.5"}], [{"px": "50100", "sz": "2.0"}]], "time": 1234567890}"#;
 
-        // Act
         let book: L2Book = serde_json::from_str(json).unwrap();
 
-        // Assert
         assert_eq!(book.coin, "BTC");
         assert_eq!(book.levels.len(), 2);
         assert_eq!(book.time, 1234567890);
     }
 
-    #[test]
+    #[rstest]
     fn test_exchange_response_deserialization() {
-        // Arrange
         let json = r#"{"status": "ok", "response": {"type": "order"}}"#;
 
-        // Act
         let response: ExchangeResponse = serde_json::from_str(json).unwrap();
 
-        // Assert
         match response {
             ExchangeResponse::Status { status, .. } => assert_eq!(status, "ok"),
             _ => panic!("Expected status response"),

@@ -269,33 +269,35 @@ pub fn normalize_address(addr: &str) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
     const TEST_PRIVATE_KEY: &str =
         "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
     const TEST_VAULT_ADDRESS: &str = "0x1234567890123456789012345678901234567890";
 
-    #[test]
+    #[rstest]
     fn test_evm_private_key_creation() {
         let key = EvmPrivateKey::new(TEST_PRIVATE_KEY.to_string()).unwrap();
         assert_eq!(key.as_hex(), TEST_PRIVATE_KEY);
         assert_eq!(key.as_bytes().len(), 32);
     }
 
-    #[test]
+    #[rstest]
     fn test_evm_private_key_without_0x_prefix() {
         let key_without_prefix = &TEST_PRIVATE_KEY[2..]; // Remove 0x
         let key = EvmPrivateKey::new(key_without_prefix.to_string()).unwrap();
         assert_eq!(key.as_hex(), TEST_PRIVATE_KEY);
     }
 
-    #[test]
+    #[rstest]
     fn test_evm_private_key_invalid_length() {
         let result = EvmPrivateKey::new("0x123".to_string());
         assert!(result.is_err());
     }
 
-    #[test]
+    #[rstest]
     fn test_evm_private_key_invalid_hex() {
         let result = EvmPrivateKey::new(
             "0x123g567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".to_string(),
@@ -303,7 +305,7 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[test]
+    #[rstest]
     fn test_evm_private_key_debug_redacts() {
         let key = EvmPrivateKey::new(TEST_PRIVATE_KEY.to_string()).unwrap();
         let debug_str = format!("{:?}", key);
@@ -311,21 +313,21 @@ mod tests {
         assert!(!debug_str.contains("1234"));
     }
 
-    #[test]
+    #[rstest]
     fn test_vault_address_creation() {
         let addr = VaultAddress::parse(TEST_VAULT_ADDRESS).unwrap();
         assert_eq!(addr.to_hex(), TEST_VAULT_ADDRESS);
         assert_eq!(addr.as_bytes().len(), 20);
     }
 
-    #[test]
+    #[rstest]
     fn test_vault_address_without_0x_prefix() {
         let addr_without_prefix = &TEST_VAULT_ADDRESS[2..]; // Remove 0x
         let addr = VaultAddress::parse(addr_without_prefix).unwrap();
         assert_eq!(addr.to_hex(), TEST_VAULT_ADDRESS);
     }
 
-    #[test]
+    #[rstest]
     fn test_vault_address_debug_redacts_middle() {
         let addr = VaultAddress::parse(TEST_VAULT_ADDRESS).unwrap();
         let debug_str = format!("{:?}", addr);
@@ -334,7 +336,7 @@ mod tests {
         assert!(debug_str.contains("..."));
     }
 
-    #[test]
+    #[rstest]
     fn test_secrets_from_json() {
         let json = format!(
             r#"{{
@@ -352,7 +354,7 @@ mod tests {
         assert_eq!(secrets.network, Network::Testnet);
     }
 
-    #[test]
+    #[rstest]
     fn test_secrets_from_json_minimal() {
         let json = format!(
             r#"{{
@@ -367,7 +369,7 @@ mod tests {
         assert_eq!(secrets.network, Network::Mainnet);
     }
 
-    #[test]
+    #[rstest]
     fn test_normalize_address() {
         let test_cases = [
             (
@@ -389,7 +391,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest]
     #[ignore] // This test modifies environment variables - run manually if needed
     fn test_secrets_from_env() {
         // Note: This test requires setting environment variables manually

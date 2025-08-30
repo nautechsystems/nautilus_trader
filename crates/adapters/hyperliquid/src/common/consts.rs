@@ -79,21 +79,6 @@ pub fn exchange_url(network: Network) -> &'static str {
     }
 }
 
-/// WebSocket channel names from Hyperliquid docs
-pub mod channels {
-    pub const SUBSCRIPTION_RESPONSE: &str = "subscriptionResponse";
-    pub const TRADES: &str = "trades";
-    pub const L2_BOOK: &str = "l2Book";
-    pub const BBO: &str = "bbo";
-    pub const ORDER_UPDATES: &str = "orderUpdates";
-    pub const USER_EVENTS: &str = "userEvents";
-    pub const USER_FILLS: &str = "userFills";
-    pub const USER_FUNDINGS: &str = "userFundings";
-    pub const USER_NON_FUNDING_LEDGER_UPDATES: &str = "userNonFundingLedgerUpdates";
-    pub const POST: &str = "post";
-    pub const PONG: &str = "pong";
-}
-
 // Default configuration values
 // Server closes if no message in last 60s, so ping every 30s
 pub const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
@@ -107,42 +92,38 @@ pub const QUEUE_MAX: usize = 1000;
 // Tests
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
-    #[test]
+    #[rstest]
     fn test_network_variants() {
-        // Arrange & Act & Assert
         assert_eq!(Network::Mainnet, Network::Mainnet);
         assert_eq!(Network::Testnet, Network::Testnet);
         assert_ne!(Network::Mainnet, Network::Testnet);
     }
 
-    #[test]
+    #[rstest]
     fn test_network_from_env_handles_default() {
-        // Arrange & Act
         let network = Network::from_env();
 
-        // Assert - Should be either Mainnet or Testnet
         assert!(matches!(network, Network::Mainnet | Network::Testnet));
     }
 
-    #[test]
+    #[rstest]
     fn test_ws_url() {
-        // Arrange & Act & Assert
         assert_eq!(ws_url(Network::Mainnet), HYPERLIQUID_WS_URL);
         assert_eq!(ws_url(Network::Testnet), HYPERLIQUID_TESTNET_WS_URL);
     }
 
-    #[test]
+    #[rstest]
     fn test_info_url() {
-        // Arrange & Act & Assert
         assert_eq!(info_url(Network::Mainnet), HYPERLIQUID_INFO_URL);
         assert_eq!(info_url(Network::Testnet), HYPERLIQUID_TESTNET_INFO_URL);
     }
 
-    #[test]
+    #[rstest]
     fn test_exchange_url() {
-        // Arrange & Act & Assert
         assert_eq!(exchange_url(Network::Mainnet), HYPERLIQUID_EXCHANGE_URL);
         assert_eq!(
             exchange_url(Network::Testnet),
@@ -150,9 +131,8 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn test_constants_values() {
-        // Arrange & Act & Assert
         assert_eq!(HEARTBEAT_INTERVAL, Duration::from_secs(30));
         assert_eq!(RECONNECT_BASE_BACKOFF, Duration::from_millis(250));
         assert_eq!(RECONNECT_MAX_BACKOFF, Duration::from_secs(30));

@@ -16,10 +16,6 @@
 use serde::Serialize;
 use serde_json::Value;
 
-// ============================================================================
-// /info endpoint query types
-// ============================================================================
-
 /// Represents an info request wrapper for `POST /info`.
 #[derive(Debug, Clone, Serialize)]
 pub struct InfoRequest {
@@ -62,10 +58,6 @@ impl InfoRequest {
         }
     }
 }
-
-// ============================================================================
-// /exchange endpoint query types
-// ============================================================================
 
 /// Represents an exchange action wrapper for `POST /exchange`.
 #[derive(Debug, Clone, Serialize)]
@@ -134,59 +126,51 @@ impl ExchangeAction {
     }
 }
 
-// ============================================================================
+////////////////////////////////////////////////////////////////////////////////
 // Tests
-// ============================================================================
+////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
-    #[test]
+    #[rstest]
     fn test_info_request_meta() {
-        // Arrange, Act
         let req = InfoRequest::meta();
 
-        // Assert
         assert_eq!(req.request_type, "meta");
         assert_eq!(req.params, Value::Null);
     }
 
-    #[test]
+    #[rstest]
     fn test_info_request_l2_book() {
-        // Arrange, Act
         let req = InfoRequest::l2_book("BTC");
 
-        // Assert
         assert_eq!(req.request_type, "l2Book");
         let json = serde_json::to_string(&req).unwrap();
         assert!(json.contains("\"coin\":\"BTC\""));
     }
 
-    #[test]
+    #[rstest]
     fn test_exchange_action_order() {
-        // Arrange
         let orders =
             serde_json::json!([{"asset": 0, "isBuy": true, "sz": "1.0", "limitPx": "50000"}]);
 
-        // Act
         let action = ExchangeAction::order(orders);
 
-        // Assert
         assert_eq!(action.action_type, "order");
         let json = serde_json::to_string(&action).unwrap();
         assert!(json.contains("\"orders\""));
     }
 
-    #[test]
+    #[rstest]
     fn test_exchange_action_cancel() {
-        // Arrange
         let cancels = serde_json::json!([{"asset": 0, "oid": 123}]);
 
-        // Act
         let action = ExchangeAction::cancel(cancels);
 
-        // Assert
         assert_eq!(action.action_type, "cancel");
     }
 }

@@ -160,9 +160,11 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
-    #[test]
+    #[rstest]
     fn test_error_constructors() {
         let transport_err = Error::transport("Connection failed");
         assert!(matches!(transport_err, Error::Transport(_)));
@@ -182,7 +184,7 @@ mod tests {
         assert!(http_err.is_retryable());
     }
 
-    #[test]
+    #[rstest]
     fn test_error_display() {
         let err = Error::RateLimit {
             retry_after: Some(60),
@@ -193,7 +195,7 @@ mod tests {
         assert_eq!(err.to_string(), "nonce window error: Nonce too old");
     }
 
-    #[test]
+    #[rstest]
     fn test_retryable_errors() {
         assert!(Error::transport("test").is_retryable());
         assert!(Error::Timeout.is_retryable());
