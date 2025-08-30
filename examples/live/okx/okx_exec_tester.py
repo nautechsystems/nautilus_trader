@@ -44,7 +44,7 @@ instrument_type = OKXInstrumentType.SWAP  # SPOT, SWAP, FUTURES, OPTION
 if instrument_type == OKXInstrumentType.SPOT:
     symbol = "ETH-USDT"
     contract_types: tuple[OKXContractType, ...] | None = None  # SPOT doesn't use contract types
-    order_qty = Decimal("0.01")
+    order_qty = Decimal("0.005")
 elif instrument_type == OKXInstrumentType.SWAP:
     symbol = "ETH-USDT-SWAP"
     contract_types = (OKXContractType.LINEAR, OKXContractType.INVERSE)
@@ -152,7 +152,9 @@ config_tester = ExecTesterConfig(
     # subscribe_trades=False,
     # subscribe_book=True,
     # open_position_on_start_qty=order_qty,
-    tob_offset_ticks=1,
+    # enable_buys=False,
+    # enable_sells=False,
+    tob_offset_ticks=1000,
     order_qty=order_qty,
     use_post_only=True,
     # open_position_on_start_qty=order_qty,

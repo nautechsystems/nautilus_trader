@@ -44,7 +44,7 @@ impl PositionStatusReport {
         Ok(Self::new(
             account_id,
             instrument_id,
-            position_side,
+            position_side.as_specified(),
             quantity,
             venue_position_id,
             ts_last.into(),
@@ -95,8 +95,8 @@ impl PositionStatusReport {
 
     #[getter]
     #[pyo3(name = "position_side")]
-    const fn py_position_side(&self) -> PositionSide {
-        self.position_side
+    fn py_position_side(&self) -> PositionSide {
+        self.position_side.as_position_side()
     }
 
     #[getter]
@@ -125,7 +125,7 @@ impl PositionStatusReport {
 
     #[getter]
     #[pyo3(name = "is_flat")]
-    const fn py_is_flat(&self) -> bool {
+    fn py_is_flat(&self) -> bool {
         self.is_flat()
     }
 

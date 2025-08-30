@@ -509,7 +509,7 @@ pub fn parse_execution_msg(msg: ExecutionMsg, price_precision: u8) -> Option<Fil
 pub fn parse_position_msg(msg: PositionMsg) -> PositionStatusReport {
     let account_id = AccountId::new(format!("BITMEX-{}", msg.account));
     let instrument_id = parse_instrument_id(&msg.symbol);
-    let position_side = parse_position_side(msg.current_qty);
+    let position_side = parse_position_side(msg.current_qty).as_specified();
     let quantity = Quantity::from(msg.current_qty.map_or(0, i64::abs));
     let venue_position_id = None; // Not applicable on BitMEX
     let ts_last = parse_optional_datetime_to_unix_nanos(&msg.timestamp, "timestamp");
@@ -880,7 +880,7 @@ mod tests {
 
         assert_eq!(report.account_id.to_string(), "BITMEX-1234567");
         assert_eq!(report.instrument_id, InstrumentId::from("XBTUSD.BITMEX"));
-        assert_eq!(report.position_side, PositionSide::Long);
+        assert_eq!(report.position_side.as_position_side(), PositionSide::Long);
         assert_eq!(report.quantity, Quantity::from(1000));
         assert!(report.venue_position_id.is_none());
         assert_eq!(report.ts_last, 1732530900789000000); // 2024-11-25T10:35:00.789Z
@@ -893,7 +893,7 @@ mod tests {
         msg.current_qty = Some(-500);
 
         let report = parse_position_msg(msg);
-        assert_eq!(report.position_side, PositionSide::Short);
+        assert_eq!(report.position_side.as_position_side(), PositionSide::Short);
         assert_eq!(report.quantity, Quantity::from(500));
     }
 
@@ -904,7 +904,7 @@ mod tests {
         msg.current_qty = Some(0);
 
         let report = parse_position_msg(msg);
-        assert_eq!(report.position_side, PositionSide::Flat);
+        assert_eq!(report.position_side.as_position_side(), PositionSide::Flat);
         assert_eq!(report.quantity, Quantity::from(0));
     }
 

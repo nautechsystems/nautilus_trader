@@ -612,7 +612,7 @@ pub fn parse_fill_report(exec: Execution, price_precision: u8) -> anyhow::Result
 pub fn parse_position_report(position: Position) -> anyhow::Result<PositionStatusReport> {
     let account_id = AccountId::new(format!("BITMEX-{}", position.account));
     let instrument_id = parse_instrument_id(&position.symbol);
-    let position_side = parse_position_side(position.current_qty);
+    let position_side = parse_position_side(position.current_qty).as_specified();
     let quantity = Quantity::from(position.current_qty.map_or(0_i64, i64::abs));
     let venue_position_id = None; // Not applicable on BitMEX
     let ts_last = parse_optional_datetime_to_unix_nanos(&position.timestamp, "timestamp");
@@ -1009,7 +1009,7 @@ mod tests {
 
         assert_eq!(report.account_id.to_string(), "BITMEX-789012");
         assert_eq!(report.instrument_id.to_string(), "XBTUSD.BITMEX");
-        assert_eq!(report.position_side, PositionSide::Long);
+        assert_eq!(report.position_side.as_position_side(), PositionSide::Long);
         assert_eq!(report.quantity.as_f64(), 1000.0);
     }
 
@@ -1029,7 +1029,7 @@ mod tests {
 
         let report = parse_position_report(position).unwrap();
 
-        assert_eq!(report.position_side, PositionSide::Short);
+        assert_eq!(report.position_side.as_position_side(), PositionSide::Short);
         assert_eq!(report.quantity.as_f64(), 500.0); // Should be absolute value
     }
 
@@ -1049,7 +1049,7 @@ mod tests {
 
         let report = parse_position_report(position).unwrap();
 
-        assert_eq!(report.position_side, PositionSide::Flat);
+        assert_eq!(report.position_side.as_position_side(), PositionSide::Flat);
         assert_eq!(report.quantity.as_f64(), 0.0);
     }
 
