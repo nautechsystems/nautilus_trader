@@ -110,6 +110,8 @@ Released on TBD (UTC).
 - Improved DeFi pool event parsing and integrate Arbitrum Camelotv3 new pools signature (#2889), thanks @filipmacek
 - Improved Databento multiplier decoding to prevent precision loss (#2895), thanks @nicolad
 - Improved Bybit balance precision by avoiding float conversion (#2903), thanks @scoriiu
+- Improved dYdX message parsing robustness to allow unknown fields (#2911), thanks @davidblom
+- Improved Polymarket instrument provider bulk loading (#2913), thanks @DeirhX
 - Refined Rust catalog path handling (#2743), thanks @faysou
 - Refined Rust `GreeksCalculator` (#2760), thanks @faysou
 - Refined Databento bars timestamp decoding and backtest execution usage (#2800), thanks @faysou
@@ -146,12 +148,14 @@ Released on TBD (UTC).
 - Fixed catalog query of multiple instruments of same type (#2772), thanks @faysou
 - Fixed modification of contingent orders in backtest (#2761), thanks faysou
 - Fixed balance calculations on order fill to allow operating at near account balance capacity (#2752), thanks @petioptrv
+- Fixed cash account locked balance calculations for sell orders (#2906), thanks for reporting @GhostLee
 - Fixed time range end in some databento request functions (#2755), thanks @faysou
+- Fixed `skip_first_non_full_bar` tolerance for near-boundary starts (#2605), thanks for reporting @stastnypremysl
 - Fixed EOD bar for Interactive Brokers (#2764), thanks @faysou
 - Fixed dYdX Take Profit order type mapping error (#2758), thanks @nicolad
-- Fixed typo in logging for dYdX adapter (#2790), thanks @DeirhX
-- Fixed bars request pagination logic for OKX (#2798, #2825), thanks @nicolad
+- Fixed dYdX logging typo (#2790), thanks @DeirhX
 - Fixed dYdX order and fill message schemas (#2824), thanks @davidsblom
+- Fixed dYdX message schemas (#2910), thanks @davidblom
 - Fixed Binance Spot testnet streaming URL, thanks for reporting @Frzgunr1
 - Fixed Binance Ed25519 key handling
 - Fixed Bybit execution fee handling where the `execFee` field was not used when available as well as incorrect fee currency
@@ -160,6 +164,7 @@ Released on TBD (UTC).
 - Fixed Bybit positions pagination to handle more than 20 positions (#2879), thanks @scoriiu
 - Fixed Bybit REST model parsing balance precision errors for high-value tokens (#2898), thanks @scoriiu
 - Fixed Bybit WebSocket message parsing balance precision errors for high-value tokens (#2904), thanks @scoriiu
+- Fixed OKX bars request pagination logic (#2798, #2825), thanks @nicolad
 - Fixed RPC client content type header (#2828), thanks @filipmacek
 - Fixed `venue_order_id` handling for Polymarket order status request (#2848), thanks @DeirhX
 - Fixed race-condition on node shutdown in async `InteractiveBrokersDataClient._disconnect()` (#2865), thanks @ruvr
