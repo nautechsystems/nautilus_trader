@@ -21,17 +21,17 @@ use pyo3::prelude::*;
 
 use crate::factories::{ClientConfig, DataClientFactory};
 
-/// Function type for extracting a PyObject factory to a boxed DataClientFactory trait object.
+/// Function type for extracting a `PyObject` factory to a boxed `DataClientFactory` trait object.
 pub type FactoryExtractor =
     fn(py: Python<'_>, factory: PyObject) -> PyResult<Box<dyn DataClientFactory>>;
 
-/// Function type for extracting a PyObject config to a boxed ClientConfig trait object.
+/// Function type for extracting a `PyObject` config to a boxed `ClientConfig` trait object.
 pub type ConfigExtractor = fn(py: Python<'_>, config: PyObject) -> PyResult<Box<dyn ClientConfig>>;
 
 /// Registry for PyO3 factory and config extractors.
 ///
 /// This allows each adapter to register its own extraction logic for converting
-/// PyObjects to boxed trait objects without requiring the live crate to know
+/// `PyObjects` to boxed trait objects without requiring the live crate to know
 /// about specific implementations.
 #[derive(Debug)]
 pub struct FactoryRegistry {
@@ -95,7 +95,7 @@ impl FactoryRegistry {
         Ok(())
     }
 
-    /// Extracts a PyObject factory to a boxed DataClientFactory trait object.
+    /// Extracts a `PyObject` factory to a boxed `DataClientFactory` trait object.
     ///
     /// # Errors
     ///
@@ -125,7 +125,7 @@ impl FactoryRegistry {
         }
     }
 
-    /// Extracts a PyObject config to a boxed ClientConfig trait object.
+    /// Extracts a `PyObject` config to a boxed `ClientConfig` trait object.
     ///
     /// # Errors
     ///

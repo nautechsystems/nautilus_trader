@@ -39,6 +39,7 @@ impl Default for DefiDataSubscriptionManager {
 
 impl DefiDataSubscriptionManager {
     /// Creates a new [`DefiDataSubscriptionManager`] instance.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             subscribed_pool_burns: AHashMap::new(),
@@ -51,23 +52,25 @@ impl DefiDataSubscriptionManager {
     }
 
     /// Gets all unique contract addresses subscribed for any event type for a given DEX.
+    #[must_use]
     pub fn get_subscribed_dex_contract_addresses(&self, dex: &DexType) -> Vec<Address> {
         let mut unique_addresses = AHashSet::new();
 
         if let Some(addresses) = self.subscribed_pool_swaps.get(dex) {
-            unique_addresses.extend(addresses.iter().cloned());
+            unique_addresses.extend(addresses.iter().copied());
         }
         if let Some(addresses) = self.subscribed_pool_mints.get(dex) {
-            unique_addresses.extend(addresses.iter().cloned());
+            unique_addresses.extend(addresses.iter().copied());
         }
         if let Some(addresses) = self.subscribed_pool_burns.get(dex) {
-            unique_addresses.extend(addresses.iter().cloned());
+            unique_addresses.extend(addresses.iter().copied());
         }
 
         unique_addresses.into_iter().collect()
     }
 
     /// Gets all event signatures (keccak256 hashes) registered for a given DEX.
+    #[must_use]
     pub fn get_subscribed_dex_event_signatures(&self, dex: &DexType) -> Vec<String> {
         let mut result = Vec::new();
 
@@ -85,15 +88,18 @@ impl DefiDataSubscriptionManager {
     }
 
     /// Gets the swap event signature for a specific DEX.
+    #[must_use]
     pub fn get_dex_pool_swap_event_signature(&self, dex: &DexType) -> Option<String> {
         self.pool_swap_event_encoded.get(dex).cloned()
     }
 
     /// Gets the mint event signature for a specific DEX.
+    #[must_use]
     pub fn get_dex_pool_mint_event_signature(&self, dex: &DexType) -> Option<String> {
         self.pool_mint_event_encoded.get(dex).cloned()
     }
     /// Gets the burn event signature for a specific DEX.
+    #[must_use]
     pub fn get_dex_pool_burn_event_signature(&self, dex: &DexType) -> Option<String> {
         self.pool_burn_event_encoded.get(dex).cloned()
     }

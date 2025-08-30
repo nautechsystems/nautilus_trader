@@ -45,6 +45,7 @@ pub fn parse_instrument_id(symbol: &str) -> InstrumentId {
 /// # Panics
 ///
 /// Panics if the timestamp cannot be converted to nanoseconds (should never happen with valid timestamps).
+#[must_use]
 pub fn parse_optional_datetime_to_unix_nanos(
     value: &Option<DateTime<Utc>>,
     field: &str,
@@ -60,7 +61,10 @@ pub fn parse_optional_datetime_to_unix_nanos(
         .unwrap_or_default()
 }
 
-pub fn parse_aggressor_side(side: &Option<BitmexSide>) -> nautilus_model::enums::AggressorSide {
+#[must_use]
+pub const fn parse_aggressor_side(
+    side: &Option<BitmexSide>,
+) -> nautilus_model::enums::AggressorSide {
     match side {
         Some(BitmexSide::Buy) => nautilus_model::enums::AggressorSide::Buyer,
         Some(BitmexSide::Sell) => nautilus_model::enums::AggressorSide::Seller,
@@ -68,15 +72,17 @@ pub fn parse_aggressor_side(side: &Option<BitmexSide>) -> nautilus_model::enums:
     }
 }
 
+#[must_use]
 pub fn parse_liquidity_side(
     liquidity: &Option<BitmexLiquidityIndicator>,
 ) -> nautilus_model::enums::LiquiditySide {
     liquidity
-        .map(|l| l.into())
+        .map(std::convert::Into::into)
         .unwrap_or(nautilus_model::enums::LiquiditySide::NoLiquiditySide)
 }
 
-pub fn parse_position_side(current_qty: Option<i64>) -> nautilus_model::enums::PositionSide {
+#[must_use]
+pub const fn parse_position_side(current_qty: Option<i64>) -> PositionSide {
     match current_qty {
         Some(qty) if qty > 0 => PositionSide::Long,
         Some(qty) if qty < 0 => PositionSide::Short,
@@ -89,18 +95,22 @@ pub fn parse_position_side(current_qty: Option<i64>) -> nautilus_model::enums::P
 /// # Panics
 ///
 /// Panics if an unsupported `TimeInForce` variant is encountered.
+#[must_use]
 pub fn parse_time_in_force(tif: &BitmexTimeInForce) -> nautilus_model::enums::TimeInForce {
     (*tif).into()
 }
 
+#[must_use]
 pub fn parse_order_type(order_type: &BitmexOrderType) -> nautilus_model::enums::OrderType {
     (*order_type).into()
 }
 
+#[must_use]
 pub fn parse_order_status(order_status: &BitmexOrderStatus) -> nautilus_model::enums::OrderStatus {
     (*order_status).into()
 }
 
+#[must_use]
 pub fn parse_contingency_type(
     contingency_type: &BitmexContingencyType,
 ) -> nautilus_model::enums::ContingencyType {

@@ -27,7 +27,7 @@ use nautilus_system::{
 };
 use pyo3::prelude::*;
 
-/// Extractor function for BlockchainDataClientFactory.
+/// Extractor function for `BlockchainDataClientFactory`.
 #[cfg(feature = "hypersync")]
 fn extract_blockchain_factory(
     py: Python<'_>,
@@ -41,7 +41,7 @@ fn extract_blockchain_factory(
     }
 }
 
-/// Extractor function for BlockchainDataClientConfig.
+/// Extractor function for `BlockchainDataClientConfig`.
 #[cfg(feature = "hypersync")]
 fn extract_blockchain_config(py: Python<'_>, config: PyObject) -> PyResult<Box<dyn ClientConfig>> {
     match config.extract::<crate::config::BlockchainDataClientConfig>(py) {

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Python bindings for the BitmEX WebSocket client.
+//! Python bindings for the `BitmEX` WebSocket client.
 //!
 //! # Design Pattern: Clone and Share State
 //!
@@ -39,7 +39,7 @@
 //!
 //! - Never use `block_on()` - it blocks the runtime.
 //! - Always clone before async blocks for lifetime requirements.
-//! - RwLock is preferred over Mutex (many reads, few writes).
+//! - `RwLock` is preferred over Mutex (many reads, few writes).
 
 use futures_util::StreamExt;
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
@@ -75,7 +75,7 @@ impl BitmexWebSocketClient {
     #[getter]
     #[pyo3(name = "url")]
     #[must_use]
-    pub fn py_url(&self) -> &str {
+    pub const fn py_url(&self) -> &str {
         self.url()
     }
 

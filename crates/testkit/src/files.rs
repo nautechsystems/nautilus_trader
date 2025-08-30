@@ -127,10 +127,9 @@ fn download_file(filepath: &Path, url: &str) -> anyhow::Result<()> {
                     println!("Server error (HTTP {status}), retrying...");
                     last_error = Some(anyhow::anyhow!("Server error: HTTP {status}"));
                     continue;
-                } else {
-                    // 4xx errors are considered client side and not retried
-                    anyhow::bail!("Client error: HTTP {status}");
                 }
+                // 4xx errors are considered client side and not retried
+                anyhow::bail!("Client error: HTTP {status}");
             }
             Err(e) => {
                 println!("Request failed: {e}");

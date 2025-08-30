@@ -45,7 +45,7 @@ use nautilus_system::{
 
 use crate::{config::LiveNodeConfig, runner::AsyncRunner};
 
-/// A thread-safe handle to control a LiveNode from other threads.
+/// A thread-safe handle to control a `LiveNode` from other threads.
 /// This allows starting, stopping, and querying the node's state
 /// without requiring the node itself to be Send + Sync.
 #[derive(Clone, Debug)]
@@ -64,6 +64,7 @@ impl Default for LiveNodeHandle {
 
 impl LiveNodeHandle {
     /// Creates a new handle with default (stopped) state.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             stop_flag: Arc::new(AtomicBool::new(false)),
@@ -72,11 +73,13 @@ impl LiveNodeHandle {
     }
 
     /// Returns whether the node should stop.
+    #[must_use]
     pub fn should_stop(&self) -> bool {
         self.stop_flag.load(Ordering::Relaxed)
     }
 
     /// Returns whether the node is currently running.
+    #[must_use]
     pub fn is_running(&self) -> bool {
         self.running_flag.load(Ordering::Relaxed)
     }
@@ -117,6 +120,7 @@ pub struct LiveNode {
 
 impl LiveNode {
     /// Returns a thread-safe handle to control this node.
+    #[must_use]
     pub fn handle(&self) -> LiveNodeHandle {
         self.handle.clone()
     }
@@ -267,7 +271,7 @@ impl LiveNode {
 
     /// Gets an exclusive reference to the underlying kernel.
     #[must_use]
-    pub(crate) fn kernel_mut(&mut self) -> &mut NautilusKernel {
+    pub(crate) const fn kernel_mut(&mut self) -> &mut NautilusKernel {
         &mut self.kernel
     }
 

@@ -309,7 +309,7 @@ pub fn decode_multiplier(value: i64) -> anyhow::Result<Quantity> {
                 // Pure integer
                 Ok(Quantity::from(int_part as u64))
             } else {
-                let mut frac_str = format!("{:09}", frac_part);
+                let mut frac_str = format!("{frac_part:09}");
                 while frac_str.ends_with('0') {
                     frac_str.pop();
                 }

@@ -271,11 +271,11 @@ async fn handle_python_stream<S>(
                             funding_rate_cache.get(&funding_rate.instrument_id)
                         {
                             // Only emit if changed (uses custom PartialEq comparing rate and next_funding_ns)
-                            if cached_rate != &funding_rate {
+                            if cached_rate == &funding_rate {
+                                false // Skip unchanged rate
+                            } else {
                                 funding_rate_cache.insert(funding_rate.instrument_id, funding_rate);
                                 true
-                            } else {
-                                false // Skip unchanged rate
                             }
                         } else {
                             // First time seeing this instrument, cache and emit

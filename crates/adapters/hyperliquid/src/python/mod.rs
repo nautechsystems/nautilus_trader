@@ -24,6 +24,6 @@ use pyo3::prelude::*;
 
 /// Loaded as `nautilus_pyo3.hyperliquid`.
 #[pymodule]
-pub fn hyperliquid(_: Python<'_>, _m: &Bound<'_, PyModule>) -> PyResult<()> {
+pub const fn hyperliquid(_: Python<'_>, _m: &Bound<'_, PyModule>) -> PyResult<()> {
     Ok(())
 }

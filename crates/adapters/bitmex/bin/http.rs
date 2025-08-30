@@ -45,13 +45,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             for def in resp {
                 tracing::debug!("Parsing {def:?}");
                 if let Some(inst) = parse_instrument_any(&def, ts_init) {
-                    instruments.push(inst)
+                    instruments.push(inst);
                 } else {
                     tracing::warn!(
                         "Did not parse: symbol={}, type={}",
                         def.symbol,
                         def.instrument_type,
-                    )
+                    );
                 }
             }
         }

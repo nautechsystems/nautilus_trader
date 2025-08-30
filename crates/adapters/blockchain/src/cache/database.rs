@@ -74,7 +74,7 @@ impl BlockchainCacheDatabase {
     }
 
     /// Creates a table partition for the block table specific to the given chain
-    /// by calling the existing PostgreSQL function create_block_partition.
+    /// by calling the existing PostgreSQL function `create_block_partition`.
     ///
     /// # Errors
     ///
@@ -95,7 +95,7 @@ impl BlockchainCacheDatabase {
     }
 
     /// Creates a table partition for the token table specific to the given chain
-    /// by calling the existing PostgreSQL function create_token_partition.
+    /// by calling the existing PostgreSQL function `create_token_partition`.
     ///
     /// # Errors
     ///
@@ -127,11 +127,11 @@ impl BlockchainCacheDatabase {
         tracing::info!("Fetching block consistency status");
 
         let result: (i64, i64) = sqlx::query_as(
-            r#"
+            r"
             SELECT
                 COALESCE((SELECT number FROM block WHERE chain_id = $1 ORDER BY number DESC LIMIT 1), 0) as max_block,
                 get_last_continuous_block($1) as last_continuous_block
-            "#
+            "
         )
         .bind(chain.chain_id as i32)
         .fetch_one(&self.pool)
@@ -426,11 +426,8 @@ impl BlockchainCacheDatabase {
             token0_addresses.push(pool.token0.address.to_string());
             token1_chains.push(pool.token1.chain.chain_id as i32);
             token1_addresses.push(pool.token1.address.to_string());
-            fees.push(pool.fee.map_or(None, |fee| Some(fee as i32)));
-            tick_spacings.push(
-                pool.tick_spacing
-                    .map_or(None, |tick_spacing| Some(tick_spacing as i32)),
-            );
+            fees.push(pool.fee.map(|fee| fee as i32));
+            tick_spacings.push(pool.tick_spacing.map(|tick_spacing| tick_spacing as i32));
         }
 
         // Execute batch insert with UNNEST
@@ -685,12 +682,12 @@ impl BlockchainCacheDatabase {
     /// Toggles performance optimization settings for sync operations.
     ///
     /// When enabled (true), applies settings for maximum write performance:
-    /// - synchronous_commit = OFF
-    /// - work_mem increased for bulk operations
+    /// - `synchronous_commit` = OFF
+    /// - `work_mem` increased for bulk operations
     ///
     /// When disabled (false), restores default safe settings:
-    /// - synchronous_commit = ON (data safety)
-    /// - work_mem back to default
+    /// - `synchronous_commit` = ON (data safety)
+    /// - `work_mem` back to default
     ///
     /// # Errors
     ///

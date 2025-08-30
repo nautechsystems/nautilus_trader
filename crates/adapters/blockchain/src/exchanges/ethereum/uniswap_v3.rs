@@ -108,7 +108,7 @@ pub fn parse_pool_created_event(log: Log) -> anyhow::Result<PoolCreatedEvent> {
         let pool_address = Address::from_slice(&pool_address_bytes[12..32]);
 
         Ok(PoolCreatedEvent::new(
-            block_number.into(),
+            block_number,
             token,
             token1,
             pool_address,

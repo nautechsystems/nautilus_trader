@@ -32,9 +32,9 @@ pub struct TardisInstrumentInfo {
     pub id: Ustr,
     /// The instrument exchange.
     pub exchange: TardisExchange,
-    /// The instrument base currency (normalized, e.g., BTC for `BitMEX`, not XBT).
+    /// The instrument base currency (normalized, e.g., BTC for BitMEX, not XBT).
     pub base_currency: Ustr,
-    /// The instrument quote currency (normalized, e.g., BTC for `BitMEX`, not XBT).
+    /// The instrument quote currency (normalized, e.g., BTC for BitMEX, not XBT).
     pub quote_currency: Ustr,
     /// The instrument type e.g., spot, perpetual, future, option.
     #[serde(rename = "type")]

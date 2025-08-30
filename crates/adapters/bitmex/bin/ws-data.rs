@@ -35,9 +35,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt().with_max_level(log_level).init();
 
     let args: Vec<String> = env::args().collect();
-    let subscription_type = args.get(1).map(String::as_str).unwrap_or("all");
-    let symbol = args.get(2).map(String::as_str).unwrap_or("XBTUSD");
-    let testnet = args.get(3).map(|s| s == "testnet").unwrap_or(false);
+    let subscription_type = args.get(1).map_or("all", String::as_str);
+    let symbol = args.get(2).map_or("XBTUSD", String::as_str);
+    let testnet = args.get(3).is_some_and(|s| s == "testnet");
 
     tracing::info!("Starting Bitmex WebSocket test");
     tracing::info!("Subscription type: {subscription_type}");
@@ -89,7 +89,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Give the connection a moment to stabilize
     tokio::time::sleep(Duration::from_millis(500)).await;
 
-    let instrument_id = InstrumentId::from(format!("{}.BITMEX", symbol).as_str());
+    let instrument_id = InstrumentId::from(format!("{symbol}.BITMEX").as_str());
     tracing::info!("Using instrument_id: {instrument_id}");
 
     match subscription_type {
@@ -115,7 +115,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         "bars" => {
             let bar_type =
-                BarType::from(format!("{}.BITMEX-1-MINUTE-LAST-EXTERNAL", symbol).as_str());
+                BarType::from(format!("{symbol}.BITMEX-1-MINUTE-LAST-EXTERNAL").as_str());
             tracing::info!("Subscribing to bars: {bar_type}");
             ws_client.subscribe_bars(bar_type).await?;
         }
@@ -178,7 +178,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tokio::time::sleep(Duration::from_millis(100)).await;
 
             let bar_type =
-                BarType::from(format!("{}.BITMEX-1-MINUTE-LAST-EXTERNAL", symbol).as_str());
+                BarType::from(format!("{symbol}.BITMEX-1-MINUTE-LAST-EXTERNAL").as_str());
             tracing::info!("- Subscribing to bars: {bar_type}");
             if let Err(e) = ws_client.subscribe_bars(bar_type).await {
                 tracing::error!("Failed to subscribe to bars: {e}");

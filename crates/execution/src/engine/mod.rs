@@ -698,17 +698,14 @@ impl ExecutionEngine {
 
     fn apply_event_to_order(&self, order: &mut OrderAny, event: OrderEventAny) {
         if let Err(e) = order.apply(event.clone()) {
-            match e {
-                OrderError::InvalidStateTransition => {
-                    log::warn!("InvalidStateTrigger: {e}, did not apply {event}");
-                }
-                _ => {
-                    // ValueError: Protection against invalid IDs
-                    // KeyError: Protection against duplicate fills
-                    log::error!("Error applying event: {e}, did not apply {event}");
-                    if should_handle_own_book_order(order) {
-                        self.cache.borrow_mut().update_own_order_book(order);
-                    }
+            if matches!(e, OrderError::InvalidStateTransition) {
+                log::warn!("InvalidStateTrigger: {e}, did not apply {event}");
+            } else {
+                // ValueError: Protection against invalid IDs
+                // KeyError: Protection against duplicate fills
+                log::error!("Error applying event: {e}, did not apply {event}");
+                if should_handle_own_book_order(order) {
+                    self.cache.borrow_mut().update_own_order_book(order);
                 }
             }
             return;
@@ -748,12 +745,12 @@ impl ExecutionEngine {
 
         // Skip portfolio position updates for combo fills (spread instruments)
         // Combo fills are only used for order management, not portfolio updates
-        let position = if !instrument.is_spread() {
+        let position = if instrument.is_spread() {
+            None
+        } else {
             self.handle_position_update(instrument.clone(), fill, oms_type);
             let position_id = fill.position_id.unwrap();
             self.cache.borrow().position(&position_id).cloned()
-        } else {
-            None
         };
 
         // Handle contingent orders for both spread and non-spread instruments

@@ -39,7 +39,7 @@
 //!
 //! - Never use `block_on()` - it blocks the runtime.
 //! - Always clone before async blocks for lifetime requirements.
-//! - RwLock is preferred over Mutex (many reads, few writes).
+//! - `RwLock` is preferred over Mutex (many reads, few writes).
 
 use futures_util::StreamExt;
 use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err};

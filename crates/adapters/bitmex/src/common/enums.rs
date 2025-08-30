@@ -71,8 +71,8 @@ pub enum BitmexSide {
 impl From<OrderSide> for BitmexSide {
     fn from(value: OrderSide) -> Self {
         match value {
-            OrderSide::Buy => BitmexSide::Buy,
-            OrderSide::Sell => BitmexSide::Sell,
+            OrderSide::Buy => Self::Buy,
+            OrderSide::Sell => Self::Sell,
             _ => panic!("Invalid order side: {value:?}"),
         }
     }
@@ -87,7 +87,7 @@ impl From<BitmexSide> for OrderSide {
     }
 }
 
-/// Represents the available order types on `BitMEX`.
+/// Represents the available order types on BitMEX.
 #[derive(
     Copy,
     Clone,
@@ -232,7 +232,7 @@ impl From<BitmexTimeInForce> for TimeInForce {
     }
 }
 
-/// Represents the available contingency types on `BitMEX`.
+/// Represents the available contingency types on BitMEX.
 #[derive(
     Copy,
     Clone,
@@ -267,7 +267,7 @@ impl From<BitmexContingencyType> for ContingencyType {
     }
 }
 
-/// Represents the available peg price types on `BitMEX`.
+/// Represents the available peg price types on BitMEX.
 #[derive(
     Copy,
     Clone,
@@ -295,7 +295,7 @@ pub enum BitmexPegPriceType {
     Unknown, // Can be empty
 }
 
-/// Represents the available execution instruments on `BitMEX`.
+/// Represents the available execution instruments on BitMEX.
 #[derive(
     Copy,
     Clone,
@@ -323,10 +323,10 @@ pub enum BitmexExecInstruction {
 }
 
 impl BitmexExecInstruction {
-    pub fn join(instructions: &[BitmexExecInstruction]) -> String {
+    pub fn join(instructions: &[Self]) -> String {
         instructions
             .iter()
-            .map(|i| i.to_string())
+            .map(std::string::ToString::to_string)
             .collect::<Vec<_>>()
             .join(",")
     }
@@ -395,7 +395,7 @@ impl From<BitmexLiquidityIndicator> for LiquiditySide {
     }
 }
 
-/// Represents `BitMEX` instrument types.
+/// Represents BitMEX instrument types.
 #[derive(
     Copy,
     Clone,
@@ -436,28 +436,28 @@ pub enum BitmexInstrumentType {
     #[serde(rename = "FFCCSX")]
     Futures,
 
-    /// `BitMEX` Basket Index.
+    /// BitMEX Basket Index.
     #[serde(rename = "MRBXXX")]
     BasketIndex,
 
-    /// `BitMEX` Crypto Index.
+    /// BitMEX Crypto Index.
     #[serde(rename = "MRCXXX")]
     CryptoIndex,
 
-    /// `BitMEX` FX Index.
+    /// BitMEX FX Index.
     #[serde(rename = "MRFXXX")]
     FxIndex,
 
-    /// `BitMEX` Lending/Premium Index.
+    /// BitMEX Lending/Premium Index.
     #[serde(rename = "MRRXXX")]
     LendingIndex,
 
-    /// `BitMEX` Volatility Index.
+    /// BitMEX Volatility Index.
     #[serde(rename = "MRIXXX")]
     VolatilityIndex,
 }
 
-/// Represents the different types of instrument subscriptions available on `BitMEX`.
+/// Represents the different types of instrument subscriptions available on BitMEX.
 #[derive(Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize)]
 pub enum BitmexProductType {
     /// All instruments AND indices.

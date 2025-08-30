@@ -64,7 +64,7 @@ fn parse_camelot_v3_pool_created_event(log: Log) -> anyhow::Result<PoolCreatedEv
         let pool_address = Address::from_slice(&data_bytes[12..32]);
 
         Ok(PoolCreatedEvent::new(
-            block_number.into(),
+            block_number,
             token,
             token1,
             pool_address,

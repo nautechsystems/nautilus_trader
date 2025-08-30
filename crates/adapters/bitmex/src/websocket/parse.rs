@@ -31,7 +31,7 @@ use nautilus_model::{
     },
     enums::{AggregationSource, BarAggregation, OrderSide, PriceType, RecordFlag},
     identifiers::{AccountId, ClientOrderId, InstrumentId, OrderListId, TradeId, VenueOrderId},
-    instruments::{Instrument, InstrumentAny},
+    instruments::InstrumentAny,
     reports::{fill::FillReport, order::OrderStatusReport, position::PositionStatusReport},
     types::{
         currency::Currency,
@@ -63,6 +63,7 @@ use crate::common::parse::{
 /// - They don't have trades or quotes.
 /// - Their price is delivered via the `lastPrice` field.
 #[inline]
+#[must_use]
 pub fn is_index_symbol(symbol: &str) -> bool {
     symbol.starts_with('.')
 }
@@ -195,7 +196,7 @@ pub fn parse_book_msg(
     )
 }
 
-/// Parses an OrderBook10 message into an OrderBookDepth10 object.
+/// Parses an `OrderBook10` message into an `OrderBookDepth10` object.
 ///
 /// # Panics
 ///
@@ -308,8 +309,7 @@ pub fn parse_trade_msg(msg: &TradeMsg, price_precision: u8, ts_init: UnixNanos) 
     let aggressor_side = msg.side.as_aggressor_side();
     let trade_id = TradeId::new(
         msg.trd_match_id
-            .map(|uuid| uuid.to_string())
-            .unwrap_or_else(|| Uuid::new_v4().to_string()),
+            .map_or_else(|| Uuid::new_v4().to_string(), |uuid| uuid.to_string()),
     );
     let ts_event = UnixNanos::from(msg.timestamp);
 
@@ -349,7 +349,7 @@ pub fn parse_trade_bin_msg(
 ///
 /// # Panics
 ///
-/// Panics if the topic is not a valid bar topic (TradeBin1m, TradeBin5m, TradeBin1h, or TradeBin1d).
+/// Panics if the topic is not a valid bar topic (`TradeBin1m`, `TradeBin5m`, `TradeBin1h`, or `TradeBin1d`).
 #[must_use]
 pub fn bar_spec_from_topic(topic: &WsTopic) -> BarSpecification {
     match topic {
@@ -391,6 +391,7 @@ pub fn parse_quantity(value: u64) -> Quantity {
 /// # Panics
 ///
 /// Panics if required fields are missing or invalid.
+#[must_use]
 pub fn parse_order_msg(msg: &OrderMsg, price_precision: u8) -> OrderStatusReport {
     let account_id = AccountId::new(format!("BITMEX-{}", msg.account));
     let instrument_id = parse_instrument_id(&msg.symbol);
@@ -468,7 +469,7 @@ pub fn parse_execution_msg(msg: ExecutionMsg, price_precision: u8) -> Option<Fil
     let order_side: OrderSide = msg
         .side
         .map(crate::common::enums::BitmexSide::from)
-        .map_or(OrderSide::NoOrderSide, |s| s.into());
+        .map_or(OrderSide::NoOrderSide, std::convert::Into::into);
     let last_qty = Quantity::from(msg.last_qty?);
     let last_px = Price::new(msg.last_px?, price_precision);
     let settlement_currency = msg.settl_currency.unwrap_or("XBT".to_string());
@@ -504,11 +505,12 @@ pub fn parse_execution_msg(msg: ExecutionMsg, price_precision: u8) -> Option<Fil
 ///
 /// # References
 /// <https://www.bitmex.com/app/wsAPI#Position>
+#[must_use]
 pub fn parse_position_msg(msg: PositionMsg) -> PositionStatusReport {
     let account_id = AccountId::new(format!("BITMEX-{}", msg.account));
     let instrument_id = parse_instrument_id(&msg.symbol);
     let position_side = parse_position_side(msg.current_qty);
-    let quantity = Quantity::from(msg.current_qty.map(|qty| qty.abs()).unwrap_or(0));
+    let quantity = Quantity::from(msg.current_qty.map_or(0, i64::abs));
     let venue_position_id = None; // Not applicable on BitMEX
     let ts_last = parse_optional_datetime_to_unix_nanos(&msg.timestamp, "timestamp");
     let ts_init = get_atomic_clock_realtime().get_time_ns();
@@ -530,7 +532,8 @@ pub fn parse_position_msg(msg: PositionMsg) -> PositionStatusReport {
 /// # References
 /// <https://www.bitmex.com/app/wsAPI#Wallet>
 ///
-/// Returns the wallet data as a tuple of (account_id, currency, amount).
+/// Returns the wallet data as a tuple of (`account_id`, currency, amount).
+#[must_use]
 pub fn parse_wallet_msg(msg: WalletMsg) -> (AccountId, Currency, i64) {
     let account_id = AccountId::new(format!("BITMEX-{}", msg.account));
     let currency = Currency::from(msg.currency);
@@ -544,7 +547,8 @@ pub fn parse_wallet_msg(msg: WalletMsg) -> (AccountId, Currency, i64) {
 /// # References
 /// <https://www.bitmex.com/app/wsAPI#Margin>
 ///
-/// Returns the margin data as a tuple of (account_id, currency, available_margin).
+/// Returns the margin data as a tuple of (`account_id`, currency, `available_margin`).
+#[must_use]
 pub fn parse_margin_msg(msg: MarginMsg) -> (AccountId, Currency, i64) {
     let account_id = AccountId::new(format!("BITMEX-{}", msg.account));
     let currency = Currency::from(msg.currency);
@@ -565,6 +569,7 @@ pub fn parse_margin_msg(msg: MarginMsg) -> (AccountId, Currency, i64) {
 ///
 /// Returns a Vec of Data containing mark and/or index price updates.
 /// Returns an empty Vec if no relevant price is present.
+#[must_use]
 pub fn parse_instrument_msg(
     msg: InstrumentMsg,
     instruments_cache: &AHashMap<Ustr, InstrumentAny>,
@@ -594,8 +599,7 @@ pub fn parse_instrument_msg(
     // Look up instrument for proper precision
     let price_precision = instruments_cache
         .get(&Ustr::from(&msg.symbol))
-        .map(|inst| inst.price_precision())
-        .unwrap_or(1); // Default to 1 if instrument not found
+        .map_or(1, nautilus_model::instruments::Instrument::price_precision); // Default to 1 if instrument not found
 
     // Add mark price update if present
     // For index symbols, markPrice equals lastPrice and is valid to emit
@@ -626,7 +630,7 @@ pub fn parse_instrument_msg(
 /// Parse a BitMEX WebSocket funding message.
 ///
 /// Returns `Some(FundingRateUpdate)` containing funding rate information.
-/// Note: This returns FundingRateUpdate directly, not wrapped in Data enum,
+/// Note: This returns `FundingRateUpdate` directly, not wrapped in Data enum,
 /// to keep it separate from the FFI layer.
 pub fn parse_funding_msg(msg: FundingMsg) -> Option<FundingRateUpdate> {
     use std::str::FromStr;

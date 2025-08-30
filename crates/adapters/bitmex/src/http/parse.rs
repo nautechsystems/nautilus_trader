@@ -176,13 +176,10 @@ pub fn parse_perpetual_instrument(
     let raw_symbol = Symbol::new(&definition.symbol);
     let base_currency = get_currency(definition.underlying.to_uppercase());
     let quote_currency = get_currency(definition.quote_currency.to_uppercase());
-    let settlement_currency = get_currency(
-        definition
-            .settl_currency
-            .as_ref()
-            .map(|s| s.to_uppercase())
-            .unwrap_or_else(|| definition.quote_currency.to_uppercase()),
-    );
+    let settlement_currency = get_currency(definition.settl_currency.as_ref().map_or_else(
+        || definition.quote_currency.to_uppercase(),
+        |s| s.to_uppercase(),
+    ));
     let is_inverse = definition.is_inverse;
 
     let price_increment = Price::from(definition.tick_size.to_string());
@@ -273,13 +270,10 @@ pub fn parse_futures_instrument(
     let raw_symbol = Symbol::new(&definition.symbol);
     let underlying = get_currency(definition.underlying.to_uppercase());
     let quote_currency = get_currency(definition.quote_currency.to_uppercase());
-    let settlement_currency = get_currency(
-        definition
-            .settl_currency
-            .as_ref()
-            .map(|s| s.to_uppercase())
-            .unwrap_or_else(|| definition.quote_currency.to_uppercase()),
-    );
+    let settlement_currency = get_currency(definition.settl_currency.as_ref().map_or_else(
+        || definition.quote_currency.to_uppercase(),
+        |s| s.to_uppercase(),
+    ));
     let is_inverse = definition.is_inverse;
 
     let activation_ns = UnixNanos::from(definition.listing);
@@ -380,8 +374,7 @@ pub fn parse_trade(
     let trade_id = TradeId::new(
         trade
             .trd_match_id
-            .map(|uuid| uuid.to_string())
-            .unwrap_or_else(|| Uuid::new_v4().to_string()),
+            .map_or_else(|| Uuid::new_v4().to_string(), |uuid| uuid.to_string()),
     );
     let ts_event = UnixNanos::from(trade.timestamp);
 
@@ -407,7 +400,7 @@ pub fn parse_trade(
 ///
 /// Panics if:
 /// - Order is missing required fields: `symbol`, `ord_type`, `time_in_force`, `ord_status`, or `order_qty`
-/// - Unsupported `ExecInstruction` type is encountered (other than ParticipateDoNotInitiate or ReduceOnly)
+/// - Unsupported `ExecInstruction` type is encountered (other than `ParticipateDoNotInitiate` or `ReduceOnly`)
 pub fn parse_order_status_report(
     order: Order,
     price_precision: u8,
@@ -450,14 +443,14 @@ pub fn parse_order_status_report(
     );
     let filled_qty = Quantity::from(order.cum_qty.unwrap_or(0));
     let report_id = UUID4::new();
-    let ts_accepted = order
-        .transact_time
-        .map(UnixNanos::from)
-        .unwrap_or_else(|| get_atomic_clock_realtime().get_time_ns());
-    let ts_last = order
-        .timestamp
-        .map(UnixNanos::from)
-        .unwrap_or_else(|| get_atomic_clock_realtime().get_time_ns());
+    let ts_accepted = order.transact_time.map_or_else(
+        || get_atomic_clock_realtime().get_time_ns(),
+        UnixNanos::from,
+    );
+    let ts_last = order.timestamp.map_or_else(
+        || get_atomic_clock_realtime().get_time_ns(),
+        UnixNanos::from,
+    );
     let ts_init = get_atomic_clock_realtime().get_time_ns();
 
     let mut report = OrderStatusReport::new(
@@ -503,7 +496,7 @@ pub fn parse_order_status_report(
         for inst in exec_instructions {
             match inst {
                 BitmexExecInstruction::ParticipateDoNotInitiate => {
-                    report = report.with_post_only(true)
+                    report = report.with_post_only(true);
                 }
                 BitmexExecInstruction::ReduceOnly => report = report.with_reduce_only(true),
                 BitmexExecInstruction::LastPrice
@@ -586,10 +579,10 @@ pub fn parse_fill_report(exec: Execution, price_precision: u8) -> anyhow::Result
     let liquidity_side = parse_liquidity_side(&exec.last_liquidity_ind);
     let client_order_id = exec.cl_ord_id.map(ClientOrderId::new);
     let venue_position_id = None; // Not applicable on BitMEX
-    let ts_event = exec
-        .transact_time
-        .map(UnixNanos::from)
-        .unwrap_or_else(|| get_atomic_clock_realtime().get_time_ns());
+    let ts_event = exec.transact_time.map_or_else(
+        || get_atomic_clock_realtime().get_time_ns(),
+        UnixNanos::from,
+    );
     let ts_init = get_atomic_clock_realtime().get_time_ns();
 
     Ok(FillReport::new(
@@ -620,7 +613,7 @@ pub fn parse_position_report(position: Position) -> anyhow::Result<PositionStatu
     let account_id = AccountId::new(format!("BITMEX-{}", position.account));
     let instrument_id = parse_instrument_id(&position.symbol);
     let position_side = parse_position_side(position.current_qty);
-    let quantity = Quantity::from(position.current_qty.map(|qty| qty.abs()).unwrap_or(0_i64));
+    let quantity = Quantity::from(position.current_qty.map_or(0_i64, i64::abs));
     let venue_position_id = None; // Not applicable on BitMEX
     let ts_last = parse_optional_datetime_to_unix_nanos(&position.timestamp, "timestamp");
     let ts_init = get_atomic_clock_realtime().get_time_ns();

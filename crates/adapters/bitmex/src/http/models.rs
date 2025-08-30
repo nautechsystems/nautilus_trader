@@ -22,7 +22,7 @@ use crate::common::enums::{
     BitmexOrderStatus, BitmexOrderType, BitmexPegPriceType, BitmexSide, BitmexTimeInForce,
 };
 
-/// Custom deserializer for comma-separated ExecInstruction values
+/// Custom deserializer for comma-separated `ExecInstruction` values
 fn deserialize_exec_instructions<'de, D>(
     deserializer: D,
 ) -> Result<Option<Vec<BitmexExecInstruction>>, D::Error>
@@ -51,8 +51,7 @@ where
                         "Fixed" => Ok(BitmexExecInstruction::Fixed),
                         "" => Ok(BitmexExecInstruction::Unknown),
                         _ => Err(serde::de::Error::custom(format!(
-                            "Unknown ExecInstruction: {}",
-                            trimmed
+                            "Unknown ExecInstruction: {trimmed}"
                         ))),
                     }
                 })

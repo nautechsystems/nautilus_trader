@@ -266,10 +266,10 @@ impl BlockchainDataClient {
                                     tracing::warn!("RPC swap events are not yet supported");
                                 }
                                 Ok(BlockchainMessage::MintEvent(_)) => {
-                                    tracing::warn!("RPC mint events are not yet supported")
+                                    tracing::warn!("RPC mint events are not yet supported");
                                 }
                                 Ok(BlockchainMessage::BurnEvent(_)) => {
-                                    tracing::warn!("RPC burn events are not yet supported")
+                                    tracing::warn!("RPC burn events are not yet supported");
                                 }
                                 Err(e) => {
                                     tracing::error!("Error processing RPC message: {e}");

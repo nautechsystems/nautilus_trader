@@ -221,7 +221,7 @@ pub async fn init_postgres(
         let file_path = file.path();
         let sql_content = std::fs::read_to_string(file_path.clone())?;
         let sql_statements: Vec<String> = match file_name.to_str() {
-            Some("functions.sql") | Some("partitions.sql") => {
+            Some("functions.sql" | "partitions.sql") => {
                 let mut statements = Vec::new();
                 let mut last_end = 0;
 

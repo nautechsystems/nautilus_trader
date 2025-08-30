@@ -29,6 +29,7 @@ pub struct DexPoolFilters {
 
 impl DexPoolFilters {
     /// Creates a new [`DexPoolFilters`] instance.
+    #[must_use]
     pub fn new(remove_pools_with_empty_erc20fields: Option<bool>) -> Self {
         Self {
             remove_pools_with_empty_erc20fields: remove_pools_with_empty_erc20fields
