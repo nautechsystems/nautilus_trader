@@ -13,8 +13,36 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Python bindings for the BitmEX WebSocket client.
+//!
+//! # Design Pattern: Clone and Share State
+//!
+//! The WebSocket client must be cloned for async operations because PyO3's `future_into_py`
+//! requires `'static` futures (cannot borrow from `self`). To ensure clones share the same
+//! connection state, key fields use `Arc<RwLock<T>>`:
+//!
+//! - `inner: Arc<RwLock<Option<WebSocketClient>>>` - The WebSocket connection.
+//! - `instruments_cache: Arc<RwLock<AHashMap<...>>>` - Cached instrument data.
+//!
+//! Without shared state, clones would be independent, causing:
+//! - Lost WebSocket messages.
+//! - Missing instrument data.
+//! - Connection state desynchronization.
+//!
+//! ## Connection Flow
+//!
+//! 1. Clone the client for async operation.
+//! 2. Connect and populate shared state on the clone.
+//! 3. Spawn stream handler as background task.
+//! 4. Return immediately (non-blocking).
+//!
+//! ## Important Notes
+//!
+//! - Never use `block_on()` - it blocks the runtime.
+//! - Always clone before async blocks for lifetime requirements.
+//! - RwLock is preferred over Mutex (many reads, few writes).
+
 use futures_util::StreamExt;
-use nautilus_common::runtime::get_runtime;
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
     data::bar::BarType,
@@ -87,56 +115,58 @@ impl BitmexWebSocketClient {
             instruments_any.push(inst_any);
         }
 
-        get_runtime().block_on(async {
-            self.connect(instruments_any)
-                .await
-                .map_err(to_pyruntime_err)
-        })?;
+        self.initialize_instruments_cache(instruments_any);
 
-        let stream = self.stream();
+        let mut client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            tokio::pin!(stream);
+            client.connect().await.map_err(to_pyruntime_err)?;
 
-            while let Some(msg) = stream.next().await {
-                Python::with_gil(|py| match msg {
-                    NautilusWsMessage::Data(data_vec) => {
-                        for data in data_vec {
-                            let py_obj = data_to_pycapsule(py, data);
-                            call_python(py, &callback, py_obj);
-                        }
-                    }
-                    NautilusWsMessage::OrderStatusReport(report) => {
-                        if let Ok(py_obj) = (*report).into_py_any(py) {
-                            call_python(py, &callback, py_obj);
-                        }
-                    }
-                    NautilusWsMessage::FillReports(reports) => {
-                        for report in reports {
-                            if let Ok(py_obj) = report.into_py_any(py) {
+            let stream = client.stream();
+
+            tokio::spawn(async move {
+                tokio::pin!(stream);
+
+                while let Some(msg) = stream.next().await {
+                    Python::with_gil(|py| match msg {
+                        NautilusWsMessage::Data(data_vec) => {
+                            for data in data_vec {
+                                let py_obj = data_to_pycapsule(py, data);
                                 call_python(py, &callback, py_obj);
                             }
                         }
-                    }
-                    NautilusWsMessage::PositionStatusReport(report) => {
-                        if let Ok(py_obj) = (*report).into_py_any(py) {
-                            call_python(py, &callback, py_obj);
-                        }
-                    }
-                    NautilusWsMessage::FundingRateUpdates(updates) => {
-                        for update in updates {
-                            if let Ok(py_obj) = update.into_py_any(py) {
+                        NautilusWsMessage::OrderStatusReport(report) => {
+                            if let Ok(py_obj) = (*report).into_py_any(py) {
                                 call_python(py, &callback, py_obj);
                             }
                         }
-                    }
-                    NautilusWsMessage::AccountState(account_state) => {
-                        if let Ok(py_obj) = (*account_state).into_py_any(py) {
-                            call_python(py, &callback, py_obj);
+                        NautilusWsMessage::FillReports(reports) => {
+                            for report in reports {
+                                if let Ok(py_obj) = report.into_py_any(py) {
+                                    call_python(py, &callback, py_obj);
+                                }
+                            }
                         }
-                    }
-                });
-            }
+                        NautilusWsMessage::PositionStatusReport(report) => {
+                            if let Ok(py_obj) = (*report).into_py_any(py) {
+                                call_python(py, &callback, py_obj);
+                            }
+                        }
+                        NautilusWsMessage::FundingRateUpdates(updates) => {
+                            for update in updates {
+                                if let Ok(py_obj) = update.into_py_any(py) {
+                                    call_python(py, &callback, py_obj);
+                                }
+                            }
+                        }
+                        NautilusWsMessage::AccountState(account_state) => {
+                            if let Ok(py_obj) = (*account_state).into_py_any(py) {
+                                call_python(py, &callback, py_obj);
+                            }
+                        }
+                    });
+                }
+            });
 
             Ok(())
         })
