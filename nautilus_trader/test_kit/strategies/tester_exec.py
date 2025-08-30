@@ -222,7 +222,7 @@ class ExecTester(Strategy):
                 else:
                     price = self.instrument.make_price(best_ask + market_offset)
 
-                self.submit_sell_limit_order(best_ask)
+                self.submit_sell_limit_order(price)
             # elif self.sell_order.price != best_ask:
             #     self.cancel_order(self.sell_order)
             #     self.create_sell_order(best_ask)
