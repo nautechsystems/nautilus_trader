@@ -901,7 +901,7 @@ mod tests {
     }
 
     proptest! {
-        #[test]
+        #[rstest]
         fn prop_unix_nanos_construction_roundtrip(value in 0u64..=i64::MAX as u64) {
             let nanos = UnixNanos::from(value);
             prop_assert_eq!(nanos.as_u64(), value);
@@ -913,7 +913,7 @@ mod tests {
             }
         }
 
-        #[test]
+        #[rstest]
         fn prop_unix_nanos_addition_commutative(
             (nanos1, nanos2) in unix_nanos_pair_strategy()
         ) {
@@ -926,7 +926,7 @@ mod tests {
             }
         }
 
-        #[test]
+        #[rstest]
         fn prop_unix_nanos_addition_associative(
             nanos1 in unix_nanos_strategy(),
             nanos2 in unix_nanos_strategy(),
@@ -947,7 +947,7 @@ mod tests {
                 }
         }
 
-        #[test]
+        #[rstest]
         fn prop_unix_nanos_subtraction_inverse(
             (nanos1, nanos2) in unix_nanos_pair_strategy()
         ) {
@@ -958,7 +958,7 @@ mod tests {
             }
         }
 
-        #[test]
+        #[rstest]
         fn prop_unix_nanos_zero_identity(nanos in unix_nanos_strategy()) {
             // Zero should be additive identity
             let zero = UnixNanos::default();
@@ -967,7 +967,7 @@ mod tests {
             prop_assert!(zero.is_zero(), "Zero should be recognized as zero");
         }
 
-        #[test]
+        #[rstest]
         fn prop_unix_nanos_ordering_consistency(
             (nanos1, nanos2) in unix_nanos_pair_strategy()
         ) {
@@ -989,7 +989,7 @@ mod tests {
             prop_assert_eq!(le, nanos2 >= nanos1, "<= should be symmetric with >=");
         }
 
-        #[test]
+        #[rstest]
         fn prop_unix_nanos_string_roundtrip(nanos in unix_nanos_strategy()) {
             // String serialization should round-trip correctly
             let string_repr = nanos.to_string();
@@ -1000,7 +1000,7 @@ mod tests {
             }
         }
 
-        #[test]
+        #[rstest]
         fn prop_unix_nanos_datetime_conversion(nanos in unix_nanos_strategy()) {
             // DateTime conversion should be consistent (only test values within i64 range)
             if i64::try_from(nanos.as_u64()).is_ok() {
@@ -1016,7 +1016,7 @@ mod tests {
             }
         }
 
-        #[test]
+        #[rstest]
         fn prop_unix_nanos_duration_since(
             (nanos1, nanos2) in unix_nanos_pair_strategy()
         ) {
@@ -1038,7 +1038,7 @@ mod tests {
             }
         }
 
-        #[test]
+        #[rstest]
         fn prop_unix_nanos_checked_arithmetic(
             (nanos1, nanos2) in unix_nanos_pair_strategy()
         ) {
@@ -1059,7 +1059,7 @@ mod tests {
                 }
         }
 
-        #[test]
+        #[rstest]
         fn prop_unix_nanos_saturating_arithmetic(
             (nanos1, nanos2) in unix_nanos_pair_strategy()
         ) {

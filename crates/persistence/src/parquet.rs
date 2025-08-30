@@ -712,9 +712,11 @@ fn extract_host(url: &url::Url, error_msg: &str) -> anyhow::Result<String> {
 mod tests {
     use std::collections::HashMap;
 
+    use rstest::rstest;
+
     use super::*;
 
-    #[test]
+    #[rstest]
     fn test_create_object_store_from_path_local() {
         // Create a temporary directory for testing
         let temp_dir = std::env::temp_dir().join("nautilus_test");
@@ -734,7 +736,7 @@ mod tests {
         std::fs::remove_dir_all(&temp_dir).ok();
     }
 
-    #[test]
+    #[rstest]
     fn test_create_object_store_from_path_s3() {
         let mut options = HashMap::new();
         options.insert(
@@ -752,7 +754,7 @@ mod tests {
         assert_eq!(uri, "s3://test-bucket/path");
     }
 
-    #[test]
+    #[rstest]
     fn test_create_object_store_from_path_azure() {
         let mut options = HashMap::new();
         options.insert("account_name".to_string(), "testaccount".to_string());
@@ -770,7 +772,7 @@ mod tests {
         assert_eq!(uri, "azure://testaccount/container/path");
     }
 
-    #[test]
+    #[rstest]
     fn test_create_object_store_from_path_gcs() {
         // Test GCS without service account (will use default credentials or fail gracefully)
         let mut options = HashMap::new();
@@ -792,7 +794,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest]
     fn test_create_object_store_from_path_empty_options() {
         let result = create_object_store_from_path("s3://test-bucket/path", None);
         assert!(result.is_ok());
@@ -801,7 +803,7 @@ mod tests {
         assert_eq!(uri, "s3://test-bucket/path");
     }
 
-    #[test]
+    #[rstest]
     fn test_parse_url_and_path() {
         let result = parse_url_and_path("s3://bucket/path/to/file");
         assert!(result.is_ok());
@@ -811,7 +813,7 @@ mod tests {
         assert_eq!(path, "path/to/file");
     }
 
-    #[test]
+    #[rstest]
     fn test_extract_host() {
         let url = url::Url::parse("s3://test-bucket/path").unwrap();
         let result = extract_host(&url, "Test error");
@@ -819,7 +821,7 @@ mod tests {
         assert_eq!(result.unwrap(), "test-bucket");
     }
 
-    #[test]
+    #[rstest]
     fn test_normalize_path_to_uri() {
         // Unix absolute paths
         assert_eq!(normalize_path_to_uri("/tmp/test"), "file:///tmp/test");
@@ -856,7 +858,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn test_is_absolute_path() {
         // Unix absolute paths
         assert!(is_absolute_path("/tmp/test"));
@@ -885,7 +887,7 @@ mod tests {
         assert!(!is_absolute_path("\\"));
     }
 
-    #[test]
+    #[rstest]
     fn test_path_to_file_uri() {
         // Unix absolute paths
         assert_eq!(path_to_file_uri("/tmp/test"), "file:///tmp/test");

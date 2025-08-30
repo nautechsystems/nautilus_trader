@@ -669,7 +669,7 @@ mod tests {
             .build();
     }
 
-    #[test]
+    #[rstest]
     fn test_stop_market_order_update() {
         // Create and accept a basic stop market order
         let order = OrderTestBuilder::new(OrderType::StopMarket)
@@ -699,7 +699,7 @@ mod tests {
         assert_eq!(accepted_order.trigger_price(), Some(updated_trigger_price));
     }
 
-    #[test]
+    #[rstest]
     fn test_stop_market_order_expire_time() {
         // Create a stop market order with an expire time
         let expire_time = UnixNanos::from(1234567890);
@@ -714,7 +714,7 @@ mod tests {
         assert_eq!(order.expire_time(), Some(expire_time));
     }
 
-    #[test]
+    #[rstest]
     fn test_stop_market_order_trigger_instrument_id() {
         // Create a stop market order with a trigger instrument ID
         let trigger_instrument_id = InstrumentId::from("ETH-USDT.BINANCE");
@@ -729,7 +729,7 @@ mod tests {
         assert_eq!(order.trigger_instrument_id(), Some(trigger_instrument_id));
     }
 
-    #[test]
+    #[rstest]
     fn test_stop_market_order_from_order_initialized() {
         // Create an OrderInitialized event with required fields
         let order_initialized = OrderInitializedBuilder::default()
@@ -753,7 +753,7 @@ mod tests {
         assert_eq!(order.trigger_type(), order_initialized.trigger_type);
     }
 
-    #[test]
+    #[rstest]
     fn test_stop_market_order_is_triggered() {
         // Create a stop market order
         let order = OrderTestBuilder::new(OrderType::StopMarket)

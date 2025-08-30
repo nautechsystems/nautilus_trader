@@ -1106,7 +1106,7 @@ mod tests {
     }
 
     proptest! {
-        #[test]
+        #[rstest]
         fn make_price_qty_fuzz(input in 0.0001f64..1e8) {
             let instrument = currency_pair_btcusdt();
             let price = instrument.make_price(input);

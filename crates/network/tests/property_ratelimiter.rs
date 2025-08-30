@@ -25,10 +25,11 @@ use std::{num::NonZeroU32, time::Duration};
 
 use nautilus_network::ratelimiter::{RateLimiter, quota::Quota};
 use proptest::prelude::*;
+use rstest::rstest;
 
 proptest! {
     /// Property: Rate limiter should never allow more requests than quota permits initially.
-    #[test]
+    #[rstest]
     fn rate_limiter_respects_quota_bounds(
         rate in 1u32..=100u32,
         key in "[a-z]{1,10}",
@@ -75,7 +76,7 @@ proptest! {
     }
 
     /// Property: Rate limiter behavior should be consistent across multiple keys.
-    #[test]
+    #[rstest]
     fn rate_limiter_consistent_across_keys(
         keys in prop::collection::hash_set("[a-z]{3,8}", 2..=10).prop_map(|s| s.into_iter().collect::<Vec<_>>()),
         rate in 1u32..=20u32
@@ -130,7 +131,7 @@ proptest! {
     }
 
     /// Property: Quota calculations should respect mathematical bounds and not overflow.
-    #[test]
+    #[rstest]
     fn quota_calculations_bounded(
         rate in 1u32..=10000u32
     ) {
@@ -200,7 +201,7 @@ proptest! {
     }
 
     /// Property: Rate limiter should handle rapid sequential requests consistently.
-    #[test]
+    #[rstest]
     fn rate_limiter_handles_rapid_requests(
         rate in 1u32..=50u32,
         request_count in 1usize..=150
@@ -254,7 +255,7 @@ proptest! {
     }
 
     /// Property: Default quota should work when no specific key quota is set.
-    #[test]
+    #[rstest]
     fn default_quota_behavior(
         default_rate in 1u32..=20u32,
         key_rate in 1u32..=20u32,
@@ -299,7 +300,7 @@ proptest! {
     }
 
     /// Property: Quota with custom period should work correctly.
-    #[test]
+    #[rstest]
     fn custom_period_quota_behavior(
         period_ms in 1u64..=5000u64,
         burst_size in 1u32..=10u32

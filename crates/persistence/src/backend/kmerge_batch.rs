@@ -312,7 +312,7 @@ mod tests {
 
     proptest! {
         /// Property: K-way merge should produce the same result as sorting all data together
-        #[test]
+        #[rstest]
         fn prop_kmerge_equivalent_to_sort(
             all_data in prop::collection::vec(sorted_nested_vec_strategy(), 0..=10)
         ) {
@@ -336,7 +336,7 @@ mod tests {
         }
 
         /// Property: K-way merge should preserve sortedness when inputs are sorted
-        #[test]
+        #[rstest]
         fn prop_kmerge_preserves_sort_order(
             all_data in prop::collection::vec(sorted_nested_vec_strategy(), 1..=5)
         ) {
@@ -355,7 +355,7 @@ mod tests {
         }
 
         /// Property: Empty iterators should not affect the merge result
-        #[test]
+        #[rstest]
         fn prop_kmerge_handles_empty_iterators(
             data in sorted_nested_vec_strategy(),
             empty_count in 0usize..=5

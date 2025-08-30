@@ -89,21 +89,23 @@ pub fn get_ws_base_url(is_demo: bool) -> String {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
-    #[test]
+    #[rstest]
     fn test_endpoint_authentication() {
         assert!(!requires_authentication(OKXEndpointType::Public));
         assert!(requires_authentication(OKXEndpointType::Private));
         assert!(requires_authentication(OKXEndpointType::Business));
     }
 
-    #[test]
+    #[rstest]
     fn test_http_base_url() {
         assert_eq!(get_http_base_url(), "https://www.okx.com");
     }
 
-    #[test]
+    #[rstest]
     fn test_ws_urls_production() {
         assert_eq!(
             get_ws_base_url_public(false),
@@ -119,7 +121,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn test_ws_urls_demo() {
         assert_eq!(
             get_ws_base_url_public(true),
@@ -135,7 +137,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn test_get_ws_url_by_type() {
         assert_eq!(
             get_ws_url(OKXEndpointType::Public, false),

@@ -1672,7 +1672,7 @@ mod tests {
         assert_eq!(fill_report.liquidity_side, LiquiditySide::Taker);
     }
 
-    #[test]
+    #[rstest]
     fn test_bar_type_identity_preserved_through_parse() {
         use std::str::FromStr;
 

@@ -642,7 +642,7 @@ mod tests {
             .build();
     }
 
-    #[test]
+    #[rstest]
     fn test_market_if_touched_order_update() {
         // Create and accept a basic MarketIfTouchedOrder
         let order = OrderTestBuilder::new(OrderType::MarketIfTouched)
@@ -672,7 +672,7 @@ mod tests {
         assert_eq!(accepted_order.trigger_price(), Some(updated_trigger_price));
     }
 
-    #[test]
+    #[rstest]
     fn test_market_if_touched_order_from_order_initialized() {
         // Create an OrderInitialized event with all required fields for a MarketIfTouchedOrder
         let order_initialized = OrderInitializedBuilder::default()
@@ -701,7 +701,7 @@ mod tests {
         assert_eq!(order.trigger_type, order_initialized.trigger_type.unwrap());
     }
 
-    #[test]
+    #[rstest]
     fn test_market_if_touched_order_sets_slippage_when_filled() {
         // Create a MarketIfTouchedOrder
         let order = OrderTestBuilder::new(OrderType::MarketIfTouched)

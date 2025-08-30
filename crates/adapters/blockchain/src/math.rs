@@ -69,10 +69,11 @@ mod tests {
     use std::str::FromStr;
 
     use alloy::primitives::{I256, U256};
+    use rstest::rstest;
 
     use super::*;
 
-    #[test]
+    #[rstest]
     fn test_convert_positive_i256_to_f64() {
         // Test with 6 decimals (USDC-like)
         let amount = I256::from_str("1000000").unwrap();
@@ -85,7 +86,7 @@ mod tests {
         assert_eq!(result, 1.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_convert_negative_i256_to_f64() {
         // Test negative value with 6 decimals
         let amount = I256::from_str("-1000000").unwrap();
@@ -98,7 +99,7 @@ mod tests {
         assert_eq!(result, -2.5);
     }
 
-    #[test]
+    #[rstest]
     fn test_convert_zero_i256_to_f64() {
         let amount = I256::ZERO;
         let result = convert_i256_to_f64(amount, 6).unwrap();
@@ -108,7 +109,7 @@ mod tests {
         assert_eq!(result, 0.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_convert_fractional_amounts() {
         // Test 0.5 with 6 decimals
         let amount = I256::from_str("500000").unwrap();
@@ -126,7 +127,7 @@ mod tests {
         assert_eq!(result, -0.123456);
     }
 
-    #[test]
+    #[rstest]
     fn test_convert_large_i256_values() {
         // Test very large positive value
         let large_value = U256::from(10).pow(U256::from(30)); // 10^30
@@ -140,7 +141,7 @@ mod tests {
         assert_eq!(result, 9_007_199_254_740_991.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_convert_with_different_decimals() {
         let amount = I256::from_str("1000000000").unwrap();
 
@@ -157,7 +158,7 @@ mod tests {
         assert_eq!(result, 0.001);
     }
 
-    #[test]
+    #[rstest]
     fn test_convert_edge_cases() {
         // Test very small positive amount with high decimals
         let amount = I256::from_str("1").unwrap();
@@ -170,7 +171,7 @@ mod tests {
         assert_eq!(result, 0.0001);
     }
 
-    #[test]
+    #[rstest]
     fn test_convert_real_world_examples() {
         // Example: 1234.567890 USDC (6 decimals)
         let amount = I256::from_str("1234567890").unwrap();
@@ -188,7 +189,7 @@ mod tests {
         assert_eq!(result, 100_000.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_precision_boundaries() {
         // Test precision near f64 boundaries
         // f64 can accurately represent integers up to 2^53
@@ -203,7 +204,7 @@ mod tests {
     }
 
     // U256 Tests
-    #[test]
+    #[rstest]
     fn test_convert_positive_u256_to_f64() {
         // Test with 6 decimals (USDC-like)
         let amount = U256::from_str("1000000").unwrap();
@@ -216,7 +217,7 @@ mod tests {
         assert_eq!(result, 1.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_convert_zero_u256_to_f64() {
         let amount = U256::ZERO;
         let result = convert_u256_to_f64(amount, 6).unwrap();
@@ -226,7 +227,7 @@ mod tests {
         assert_eq!(result, 0.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_convert_fractional_u256_amounts() {
         // Test 0.5 with 6 decimals
         let amount = U256::from_str("500000").unwrap();
@@ -239,7 +240,7 @@ mod tests {
         assert_eq!(result, 0.123456);
     }
 
-    #[test]
+    #[rstest]
     fn test_convert_large_u256_values() {
         // Test very large positive value
         let large_value = U256::from(10).pow(U256::from(30)); // 10^30
@@ -252,7 +253,7 @@ mod tests {
         assert_eq!(result, 9_007_199_254_740_991.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_convert_u256_with_different_decimals() {
         let amount = U256::from_str("1000000000").unwrap();
 
@@ -269,7 +270,7 @@ mod tests {
         assert_eq!(result, 0.001);
     }
 
-    #[test]
+    #[rstest]
     fn test_convert_u256_edge_cases() {
         // Test very small positive amount with high decimals
         let amount = U256::from_str("1").unwrap();
@@ -282,7 +283,7 @@ mod tests {
         assert_eq!(result, 0.0001);
     }
 
-    #[test]
+    #[rstest]
     fn test_convert_u256_real_world_examples() {
         // Example: 1234.567890 USDC (6 decimals)
         let amount = U256::from_str("1234567890").unwrap();
@@ -300,7 +301,7 @@ mod tests {
         assert_eq!(result, 1e12);
     }
 
-    #[test]
+    #[rstest]
     fn test_convert_u256_precision_boundaries() {
         // Test precision near f64 boundaries
         // f64 can accurately represent integers up to 2^53
@@ -314,7 +315,7 @@ mod tests {
         assert!((result - 1_234_567_890.123_456_7).abs() < 1.0); // Some precision loss expected
     }
 
-    #[test]
+    #[rstest]
     fn test_convert_u256_vs_i256_consistency() {
         // Test that positive values give same results for U256 and I256
         let u256_amount = U256::from_str("1000000000000000000").unwrap();
@@ -327,7 +328,7 @@ mod tests {
         assert_eq!(u256_result, 1.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_convert_u256_max_values() {
         // Test very large U256 values that wouldn't fit in I256
         let large_u256 = U256::from(2).pow(U256::from(255)); // Close to U256::MAX

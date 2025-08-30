@@ -722,7 +722,7 @@ mod tests {
             .build();
     }
 
-    #[test]
+    #[rstest]
     fn test_trailing_stop_limit_order_update() {
         let order = OrderTestBuilder::new(OrderType::TrailingStopLimit)
             .instrument_id(InstrumentId::from("BTC-USDT.BINANCE"))
@@ -753,7 +753,7 @@ mod tests {
         assert_eq!(accepted_order.trigger_price(), Some(updated_trigger_price));
     }
 
-    #[test]
+    #[rstest]
     fn test_trailing_stop_limit_order_trigger_instrument_id() {
         let trigger_instrument_id = InstrumentId::from("ETH-USDT.BINANCE");
         let order = OrderTestBuilder::new(OrderType::TrailingStopLimit)
@@ -770,7 +770,7 @@ mod tests {
         assert_eq!(order.trigger_instrument_id(), Some(trigger_instrument_id));
     }
 
-    #[test]
+    #[rstest]
     fn test_trailing_stop_limit_order_from_order_initialized() {
         let order_initialized = OrderInitializedBuilder::default()
             .order_type(OrderType::TrailingStopLimit)
