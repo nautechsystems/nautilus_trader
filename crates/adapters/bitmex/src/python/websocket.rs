@@ -22,7 +22,6 @@
 //! connection state, key fields use `Arc<RwLock<T>>`:
 //!
 //! - `inner: Arc<RwLock<Option<WebSocketClient>>>` - The WebSocket connection.
-//! - `instruments_cache: Arc<RwLock<AHashMap<...>>>` - Cached instrument data.
 //!
 //! Without shared state, clones would be independent, causing:
 //! - Lost WebSocket messages.
