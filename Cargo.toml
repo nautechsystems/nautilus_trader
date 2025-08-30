@@ -141,7 +141,7 @@ object_store = { version = "0.12.3", default-features = false, features = [
 # Keep parquet major version in line with datafusion
 parquet = { version = "55.2.0", default-features = false, features = ["arrow", "async"] }
 pem = "3.0.5"
-procfs = "0.17.0"
+procfs = "0.18.0"
 pyo3 = { version = "0.25.1", default-features = false, features = [
   "chrono",
   "hashbrown",
@@ -219,7 +219,7 @@ tokio-util = { version = "0.7.16", default-features = false, features = ["io"] }
 toml = { version = "0.9.5", default-features = false, features = ["parse", "serde"] }
 tracing = { version = "0.1.41", default-features = false, features = ["std", "attributes"] }
 # Disable default feature "tracing-log" since it interferes with custom logging
-tracing-subscriber = { version = "0.3.19", default-features = false, features = [
+tracing-subscriber = { version = "0.3.20", default-features = false, features = [
   "smallvec",
   "fmt",
   "ansi",
