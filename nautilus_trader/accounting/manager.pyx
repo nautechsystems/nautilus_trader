@@ -214,7 +214,8 @@ cdef class AccountsManager:
         total_locked = Decimal(0)
         base_xrate  = Decimal(0)
 
-        cdef Currency currency = instrument.get_cost_currency()
+        cdef Currency currency = None
+        cdef Money balance_locked
 
         cdef:
             Order order
@@ -226,16 +227,24 @@ cdef class AccountsManager:
                 continue
 
             # Calculate balance locked
-            locked = account.calculate_balance_locked(
+            balance_locked = account.calculate_balance_locked(
                 instrument,
                 order.side,
                 order.quantity,
                 order.price if order.has_price_c() else order.trigger_price,
-            ).as_decimal()
+            )
+
+            # The currency is the output currency for the aggregated locked total,
+            # set currency from the first order's locked balance
+            if currency is None:
+                currency = balance_locked.currency
+
+            locked = balance_locked.as_decimal()
 
             if account.base_currency is not None:
                 if base_xrate == 0:
                     # Cache base currency and xrate
+                    # If account has a base currency then we convert and aggregate in base
                     currency = account.base_currency
                     base_xrate = self._calculate_xrate_to_base(
                         instrument=instrument,
@@ -254,8 +263,12 @@ cdef class AccountsManager:
                 # Apply base xrate
                 locked = round(locked * base_xrate, currency.get_precision())
 
-            # Increment total locked
             total_locked += locked
+
+        # No contributing orders (reduce-only/unpriced): clear any existing lock
+        if currency is None:
+            account.clear_balance_locked(instrument.id)
+            return True
 
         cdef Money locked_money = Money(total_locked, currency)
         account.update_balance_locked(instrument.id, locked_money)
