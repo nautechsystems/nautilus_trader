@@ -639,7 +639,7 @@ mod tests {
             .build();
     }
 
-    #[test]
+    #[rstest]
     fn test_market_to_limit_order_update() {
         // Create and accept a basic MarketToLimitOrder
         let order = OrderTestBuilder::new(OrderType::MarketToLimit)
@@ -668,7 +668,7 @@ mod tests {
         assert_eq!(accepted_order.price(), Some(updated_price));
     }
 
-    #[test]
+    #[rstest]
     fn test_market_to_limit_order_expire_time() {
         // Create a new MarketToLimitOrder with an expire time
         let expire_time = UnixNanos::from(1234567890);
@@ -682,7 +682,7 @@ mod tests {
         assert_eq!(order.expire_time(), Some(expire_time));
     }
 
-    #[test]
+    #[rstest]
     fn test_market_to_limit_order_from_order_initialized() {
         // Create an OrderInitialized event with all required fields for a MarketToLimitOrder
         let order_initialized = OrderInitializedBuilder::default()
@@ -702,7 +702,7 @@ mod tests {
         assert_eq!(order.quantity(), order_initialized.quantity);
     }
 
-    #[test]
+    #[rstest]
     fn test_market_to_limit_order_sets_slippage_when_filled() {
         // Create a MarketToLimitOrder
         let order = OrderTestBuilder::new(OrderType::MarketToLimit)

@@ -927,12 +927,12 @@ mod tests {
     }
 
     proptest! {
-        #[test]
+        #[rstest]
         fn prop_timer_advance_operations((operations, config) in timer_test_strategy()) {
             test_timer_with_operations(operations, config);
         }
 
-        #[test]
+        #[rstest]
         fn prop_timer_interval_consistency(
             interval_ns in 1u64..=100u64,
             start_time_ns in 0u64..=50u64,
