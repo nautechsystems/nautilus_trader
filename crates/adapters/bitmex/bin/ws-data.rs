@@ -22,10 +22,7 @@ use nautilus_bitmex::{
 };
 use nautilus_core::time::get_atomic_clock_realtime;
 use nautilus_model::{data::bar::BarType, identifiers::InstrumentId};
-use tokio::{
-    pin, signal,
-    time::{Duration, sleep},
-};
+use tokio::{pin, signal, time::Duration};
 use tracing::level_filters::LevelFilter;
 
 #[tokio::main]
@@ -78,7 +75,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("Fetched {} instruments", instruments.len());
 
     // Create WebSocket client
-    let mut client = BitmexWebSocketClient::new(
+    let mut ws_client = BitmexWebSocketClient::new(
         ws_url,  // url: defaults to wss://ws.bitmex.com/realtime
         None,    // No API key for public feeds
         None,    // No API secret
@@ -86,13 +83,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(5), // 5 second heartbeat
     )
     .unwrap();
-
-    tracing::info!("Connecting to WebSocket...");
-    client.connect(instruments).await?;
-    tracing::info!("Connected successfully");
+    ws_client.initialize_instruments_cache(instruments);
+    ws_client.connect().await?;
 
     // Give the connection a moment to stabilize
-    sleep(Duration::from_millis(500)).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
 
     let instrument_id = InstrumentId::from(format!("{}.BITMEX", symbol).as_str());
     tracing::info!("Using instrument_id: {instrument_id}");
@@ -100,29 +95,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     match subscription_type {
         "quotes" => {
             tracing::info!("Subscribing to quotes for {instrument_id}");
-            client.subscribe_quotes(instrument_id).await?;
+            ws_client.subscribe_quotes(instrument_id).await?;
         }
         "trades" => {
             tracing::info!("Subscribing to trades for {instrument_id}");
-            client.subscribe_trades(instrument_id).await?;
+            ws_client.subscribe_trades(instrument_id).await?;
         }
         "orderbook" | "book" => {
             tracing::info!("Subscribing to order book L2 for {instrument_id}");
-            client.subscribe_book(instrument_id).await?;
+            ws_client.subscribe_book(instrument_id).await?;
         }
         "orderbook25" | "book25" => {
             tracing::info!("Subscribing to order book L2_25 for {instrument_id}");
-            client.subscribe_book_25(instrument_id).await?;
+            ws_client.subscribe_book_25(instrument_id).await?;
         }
         "depth10" | "book10" => {
             tracing::info!("Subscribing to order book depth 10 for {instrument_id}");
-            client.subscribe_book_depth10(instrument_id).await?;
+            ws_client.subscribe_book_depth10(instrument_id).await?;
         }
         "bars" => {
             let bar_type =
                 BarType::from(format!("{}.BITMEX-1-MINUTE-LAST-EXTERNAL", symbol).as_str());
             tracing::info!("Subscribing to bars: {bar_type}");
-            client.subscribe_bars(bar_type).await?;
+            ws_client.subscribe_bars(bar_type).await?;
         }
         "funding" => {
             tracing::info!("Subscribing to funding rates");
@@ -138,54 +133,54 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tracing::info!("Subscribing to all available data types for {instrument_id}",);
 
             tracing::info!("- Subscribing to quotes");
-            if let Err(e) = client.subscribe_quotes(instrument_id).await {
+            if let Err(e) = ws_client.subscribe_quotes(instrument_id).await {
                 tracing::error!("Failed to subscribe to quotes: {e}");
             } else {
                 tracing::info!("  ✓ Quotes subscription successful");
             }
 
-            sleep(Duration::from_millis(100)).await;
+            tokio::time::sleep(Duration::from_millis(100)).await;
 
             tracing::info!("- Subscribing to trades");
-            if let Err(e) = client.subscribe_trades(instrument_id).await {
+            if let Err(e) = ws_client.subscribe_trades(instrument_id).await {
                 tracing::error!("Failed to subscribe to trades: {e}");
             } else {
                 tracing::info!("  ✓ Trades subscription successful");
             }
 
-            sleep(Duration::from_millis(100)).await;
+            tokio::time::sleep(Duration::from_millis(100)).await;
 
             tracing::info!("- Subscribing to order book L2");
-            if let Err(e) = client.subscribe_book(instrument_id).await {
+            if let Err(e) = ws_client.subscribe_book(instrument_id).await {
                 tracing::error!("Failed to subscribe to order book: {e}");
             } else {
                 tracing::info!("  ✓ Order book L2 subscription successful");
             }
 
-            sleep(Duration::from_millis(100)).await;
+            tokio::time::sleep(Duration::from_millis(100)).await;
 
             tracing::info!("- Subscribing to order book L2_25");
-            if let Err(e) = client.subscribe_book_25(instrument_id).await {
+            if let Err(e) = ws_client.subscribe_book_25(instrument_id).await {
                 tracing::error!("Failed to subscribe to order book 25: {e}");
             } else {
                 tracing::info!("  ✓ Order book L2_25 subscription successful");
             }
 
-            sleep(Duration::from_millis(100)).await;
+            tokio::time::sleep(Duration::from_millis(100)).await;
 
             tracing::info!("- Subscribing to order book depth 10");
-            if let Err(e) = client.subscribe_book_depth10(instrument_id).await {
+            if let Err(e) = ws_client.subscribe_book_depth10(instrument_id).await {
                 tracing::error!("Failed to subscribe to depth 10: {e}");
             } else {
                 tracing::info!("  ✓ Order book depth 10 subscription successful");
             }
 
-            sleep(Duration::from_millis(100)).await;
+            tokio::time::sleep(Duration::from_millis(100)).await;
 
             let bar_type =
                 BarType::from(format!("{}.BITMEX-1-MINUTE-LAST-EXTERNAL", symbol).as_str());
             tracing::info!("- Subscribing to bars: {bar_type}");
-            if let Err(e) = client.subscribe_bars(bar_type).await {
+            if let Err(e) = ws_client.subscribe_bars(bar_type).await {
                 tracing::error!("Failed to subscribe to bars: {e}");
             } else {
                 tracing::info!("  ✓ Bars subscription successful");
@@ -207,7 +202,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sigint = signal::ctrl_c();
     pin!(sigint);
 
-    let stream = client.stream();
+    let stream = ws_client.stream();
     tokio::pin!(stream); // Pin the stream to allow polling in the loop
 
     // Use a flag to track if we should close
@@ -234,7 +229,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if should_close {
         tracing::info!("Total messages received: {message_count}");
-        client.close().await?;
+        ws_client.close().await?;
         tracing::info!("Connection closed successfully");
     }
 

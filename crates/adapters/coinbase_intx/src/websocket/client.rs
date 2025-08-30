@@ -14,7 +14,6 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    collections::HashMap,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -22,7 +21,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use ahash::AHashSet;
+use ahash::{AHashMap, AHashSet};
 use chrono::Utc;
 use dashmap::DashMap;
 use futures_util::{Stream, StreamExt};
@@ -66,11 +65,12 @@ pub struct CoinbaseIntxWebSocketClient {
     url: String,
     credential: Credential,
     heartbeat: Option<u64>,
-    inner: Option<Arc<WebSocketClient>>,
+    inner: Arc<tokio::sync::RwLock<Option<WebSocketClient>>>,
     rx: Option<Arc<tokio::sync::mpsc::UnboundedReceiver<NautilusWsMessage>>>,
     signal: Arc<AtomicBool>,
     task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
     subscriptions: Arc<DashMap<CoinbaseIntxWsChannel, AHashSet<Ustr>>>,
+    instruments_cache: Arc<AHashMap<Ustr, InstrumentAny>>,
 }
 
 impl Default for CoinbaseIntxWebSocketClient {
@@ -100,16 +100,18 @@ impl CoinbaseIntxWebSocketClient {
         let credential = Credential::new(api_key, api_secret, api_passphrase);
         let signal = Arc::new(AtomicBool::new(false));
         let subscriptions = Arc::new(DashMap::new());
+        let instruments_cache = Arc::new(AHashMap::new());
 
         Ok(Self {
             url,
             credential,
             heartbeat,
-            inner: None,
+            inner: Arc::new(tokio::sync::RwLock::new(None)),
             rx: None,
             signal,
             task_handle: None,
             subscriptions,
+            instruments_cache,
         })
     }
 
@@ -138,19 +140,31 @@ impl CoinbaseIntxWebSocketClient {
     /// Returns a value indicating whether the client is active.
     #[must_use]
     pub fn is_active(&self) -> bool {
-        match &self.inner {
-            Some(inner) => inner.is_active(),
-            None => false,
-        }
+        self.inner
+            .try_read()
+            .ok()
+            .and_then(|guard| guard.as_ref().map(|inner| inner.is_active()))
+            .unwrap_or(false)
     }
 
     /// Returns a value indicating whether the client is closed.
     #[must_use]
     pub fn is_closed(&self) -> bool {
-        match &self.inner {
-            Some(inner) => inner.is_closed(),
-            None => true,
+        self.inner
+            .try_read()
+            .ok()
+            .and_then(|guard| guard.as_ref().map(|inner| inner.is_closed()))
+            .unwrap_or(true)
+    }
+
+    /// Initialize the instruments cache with the given `instruments`.
+    pub fn initialize_instruments_cache(&mut self, instruments: Vec<InstrumentAny>) {
+        let mut instruments_cache: AHashMap<Ustr, InstrumentAny> = AHashMap::new();
+        for inst in instruments {
+            instruments_cache.insert(inst.symbol().inner(), inst.clone());
         }
+
+        self.instruments_cache = Arc::new(instruments_cache)
     }
 
     /// Get active subscriptions for a specific instrument.
@@ -173,7 +187,7 @@ impl CoinbaseIntxWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if the WebSocket connection or initial subscription fails.
-    pub async fn connect(&mut self, instruments: Vec<InstrumentAny>) -> anyhow::Result<()> {
+    pub async fn connect(&mut self) -> anyhow::Result<()> {
         let client = self.clone();
         let post_reconnect = Arc::new(move || {
             let client = client.clone();
@@ -203,19 +217,17 @@ impl CoinbaseIntxWebSocketClient {
         let (reader, client) =
             WebSocketClient::connect_stream(config, vec![], None, Some(post_reconnect)).await?;
 
-        self.inner = Some(Arc::new(client));
-
-        let mut instruments_map: HashMap<Ustr, InstrumentAny> = HashMap::new();
-        for inst in instruments {
-            instruments_map.insert(inst.raw_symbol().inner(), inst);
-        }
+        *self.inner.write().await = Some(client);
 
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
         self.rx = Some(Arc::new(rx));
         let signal = self.signal.clone();
 
+        // TODO: For now just clone the entire cache out of the arc on connect
+        let instruments_cache = (*self.instruments_cache).clone();
+
         let stream_handle = get_runtime().spawn(async move {
-            CoinbaseIntxWsMessageHandler::new(instruments_map, reader, signal, tx)
+            CoinbaseIntxWsMessageHandler::new(reader, signal, tx, instruments_cache)
                 .run()
                 .await;
         });
@@ -278,7 +290,7 @@ impl CoinbaseIntxWebSocketClient {
         self.signal.store(true, Ordering::Relaxed);
 
         match tokio::time::timeout(Duration::from_secs(5), async {
-            if let Some(inner) = &self.inner {
+            if let Some(inner) = self.inner.read().await.as_ref() {
                 inner.disconnect().await;
             } else {
                 log::error!("Error on close: not connected");
@@ -337,7 +349,7 @@ impl CoinbaseIntxWebSocketClient {
         let json_txt = serde_json::to_string(&message)
             .map_err(|e| CoinbaseIntxWsError::JsonError(e.to_string()))?;
 
-        if let Some(inner) = &self.inner {
+        if let Some(inner) = self.inner.read().await.as_ref() {
             if let Err(err) = inner.send_text(json_txt, None).await {
                 tracing::error!("Error sending message: {err:?}");
             }
@@ -389,7 +401,7 @@ impl CoinbaseIntxWebSocketClient {
         let json_txt = serde_json::to_string(&message)
             .map_err(|e| CoinbaseIntxWsError::JsonError(e.to_string()))?;
 
-        if let Some(inner) = &self.inner {
+        if let Some(inner) = self.inner.read().await.as_ref() {
             if let Err(err) = inner.send_text(json_txt, None).await {
                 tracing::error!("Error sending message: {err:?}");
             }
@@ -782,24 +794,24 @@ impl CoinbaseIntxFeedHandler {
 
 /// Provides a Nautilus parser for the Coinbase International WebSocket feed.
 struct CoinbaseIntxWsMessageHandler {
-    instruments: HashMap<Ustr, InstrumentAny>,
     handler: CoinbaseIntxFeedHandler,
     tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
+    instruments_cache: AHashMap<Ustr, InstrumentAny>,
 }
 
 impl CoinbaseIntxWsMessageHandler {
     /// Creates a new [`CoinbaseIntxWsMessageHandler`] instance.
     pub const fn new(
-        instruments: HashMap<Ustr, InstrumentAny>,
         reader: MessageReader,
         signal: Arc<AtomicBool>,
         tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
+        instruments_cache: AHashMap<Ustr, InstrumentAny>,
     ) -> Self {
         let handler = CoinbaseIntxFeedHandler::new(reader, signal);
         Self {
-            instruments,
             handler,
             tx,
+            instruments_cache,
         }
     }
 
@@ -822,7 +834,7 @@ impl CoinbaseIntxWsMessageHandler {
                 CoinbaseIntxWsMessage::Instrument(msg) => {
                     if let Some(inst) = parse_instrument_any(&msg, clock.get_time_ns()) {
                         // Update instruments map
-                        self.instruments
+                        self.instruments_cache
                             .insert(inst.raw_symbol().inner(), inst.clone());
                         return Some(NautilusWsMessage::Instrument(inst));
                     }
@@ -831,7 +843,7 @@ impl CoinbaseIntxWsMessageHandler {
                     tracing::warn!("Received {msg:?}"); // TODO: Implement
                 }
                 CoinbaseIntxWsMessage::BookSnapshot(msg) => {
-                    if let Some(inst) = self.instruments.get(&msg.product_id) {
+                    if let Some(inst) = self.instruments_cache.get(&msg.product_id) {
                         match parse_orderbook_snapshot_msg(
                             &msg,
                             inst.id(),
@@ -854,7 +866,7 @@ impl CoinbaseIntxWsMessageHandler {
                     return None;
                 }
                 CoinbaseIntxWsMessage::BookUpdate(msg) => {
-                    if let Some(inst) = self.instruments.get(&msg.product_id) {
+                    if let Some(inst) = self.instruments_cache.get(&msg.product_id) {
                         match parse_orderbook_update_msg(
                             &msg,
                             inst.id(),
@@ -876,7 +888,7 @@ impl CoinbaseIntxWsMessageHandler {
                     }
                 }
                 CoinbaseIntxWsMessage::Quote(msg) => {
-                    if let Some(inst) = self.instruments.get(&msg.product_id) {
+                    if let Some(inst) = self.instruments_cache.get(&msg.product_id) {
                         match parse_quote_msg(
                             &msg,
                             inst.id(),
@@ -894,7 +906,7 @@ impl CoinbaseIntxWsMessageHandler {
                     }
                 }
                 CoinbaseIntxWsMessage::Trade(msg) => {
-                    if let Some(inst) = self.instruments.get(&msg.product_id) {
+                    if let Some(inst) = self.instruments_cache.get(&msg.product_id) {
                         match parse_trade_msg(
                             &msg,
                             inst.id(),
@@ -912,7 +924,7 @@ impl CoinbaseIntxWsMessageHandler {
                     }
                 }
                 CoinbaseIntxWsMessage::Risk(msg) => {
-                    if let Some(inst) = self.instruments.get(&msg.product_id) {
+                    if let Some(inst) = self.instruments_cache.get(&msg.product_id) {
                         let mark_price = match parse_mark_price_msg(
                             &msg,
                             inst.id(),
@@ -953,7 +965,7 @@ impl CoinbaseIntxWsMessageHandler {
                     tracing::error!("No instrument found for {}", msg.product_id);
                 }
                 CoinbaseIntxWsMessage::CandleSnapshot(msg) => {
-                    if let Some(inst) = self.instruments.get(&msg.product_id) {
+                    if let Some(inst) = self.instruments_cache.get(&msg.product_id) {
                         match parse_candle_msg(
                             &msg,
                             inst.id(),

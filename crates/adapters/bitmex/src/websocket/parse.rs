@@ -1036,7 +1036,6 @@ mod tests {
         msg.index_price = None;
 
         // Create instruments cache with proper precision for .BXBT
-        let mut instruments_cache = AHashMap::new();
         let instrument_id = InstrumentId::from(".BXBT.BITMEX");
         let instrument = CryptoPerpetual::new(
             instrument_id,
@@ -1064,6 +1063,7 @@ mod tests {
             UnixNanos::default(), // ts_event
             UnixNanos::default(), // ts_init
         );
+        let mut instruments_cache = AHashMap::new();
         instruments_cache.insert(
             Ustr::from(".BXBT"),
             InstrumentAny::CryptoPerpetual(instrument),

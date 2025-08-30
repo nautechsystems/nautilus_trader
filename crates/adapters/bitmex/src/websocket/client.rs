@@ -39,6 +39,7 @@ use nautilus_model::{
 };
 use nautilus_network::websocket::{Consumer, MessageReader, WebSocketClient, WebSocketConfig};
 use reqwest::header::USER_AGENT;
+use tokio::sync::RwLock;
 use tokio::time::Duration;
 use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
@@ -65,7 +66,7 @@ pub struct BitmexWebSocketClient {
     url: String,
     credential: Option<Credential>,
     heartbeat: Option<u64>,
-    inner: Option<Arc<WebSocketClient>>,
+    inner: Arc<RwLock<Option<WebSocketClient>>>,
     rx: Option<Arc<tokio::sync::mpsc::UnboundedReceiver<NautilusWsMessage>>>,
     signal: Arc<AtomicBool>,
     task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
@@ -99,7 +100,7 @@ impl BitmexWebSocketClient {
             url: url.unwrap_or(BITMEX_WS_URL.to_string()).to_string(),
             credential,
             heartbeat,
-            inner: None,
+            inner: Arc::new(RwLock::new(None)),
             rx: None,
             signal: Arc::new(AtomicBool::new(false)),
             task_handle: None,
@@ -134,41 +135,34 @@ impl BitmexWebSocketClient {
 
     /// Returns a value indicating whether the client is active.
     pub fn is_active(&self) -> bool {
-        match &self.inner {
-            Some(inner) => inner.is_active(),
-            None => false,
+        match self.inner.try_read() {
+            Ok(guard) => match &*guard {
+                Some(inner) => inner.is_active(),
+                None => false,
+            },
+            Err(_) => false,
         }
     }
 
     /// Returns a value indicating whether the client is closed.
     pub fn is_closed(&self) -> bool {
-        match &self.inner {
-            Some(inner) => inner.is_closed(),
-            None => true,
+        match self.inner.try_read() {
+            Ok(guard) => match &*guard {
+                Some(inner) => inner.is_closed(),
+                None => true,
+            },
+            Err(_) => true,
         }
     }
 
-    /// Wait until the WebSocket connection is active.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the connection times out.
-    pub async fn wait_until_active(&self, timeout_secs: f64) -> Result<(), BitmexWsError> {
-        let timeout = tokio::time::Duration::from_secs_f64(timeout_secs);
+    /// Initialize the instruments cache with the given `instruments`.
+    pub fn initialize_instruments_cache(&mut self, instruments: Vec<InstrumentAny>) {
+        let mut instruments_cache: AHashMap<Ustr, InstrumentAny> = AHashMap::new();
+        for inst in instruments {
+            instruments_cache.insert(inst.symbol().inner(), inst.clone());
+        }
 
-        tokio::time::timeout(timeout, async {
-            while !self.is_active() {
-                tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-            }
-        })
-        .await
-        .map_err(|_| {
-            BitmexWsError::ClientError(format!(
-                "WebSocket connection timeout after {timeout_secs} seconds"
-            ))
-        })?;
-
-        Ok(())
+        self.instruments_cache = Arc::new(instruments_cache)
     }
 
     /// Connect to the WebSocket for streaming.
@@ -176,21 +170,16 @@ impl BitmexWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if the WebSocket connection fails or authentication fails (if credentials provided).
-    pub async fn connect(&mut self, instruments: Vec<InstrumentAny>) -> Result<(), BitmexWsError> {
+    pub async fn connect(&mut self) -> Result<(), BitmexWsError> {
         let reader = self.connect_inner().await?;
-
-        let mut instruments_map: AHashMap<Ustr, InstrumentAny> = AHashMap::new();
-        for inst in instruments {
-            instruments_map.insert(inst.symbol().inner(), inst.clone());
-        }
-        self.instruments_cache = Arc::new(instruments_map.clone());
 
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
         self.rx = Some(Arc::new(rx));
         let signal = self.signal.clone();
-        let instruments_cache = self.instruments_cache.clone();
 
+        let instruments_cache = self.instruments_cache.clone();
         let account_id = self.account_id;
+
         let stream_handle = get_runtime().spawn(async move {
             BitmexWsMessageHandler::new(reader, signal, tx, instruments_cache, account_id)
                 .run()
@@ -199,16 +188,19 @@ impl BitmexWebSocketClient {
 
         self.task_handle = Some(Arc::new(stream_handle));
 
-        if let Some(inner) = &self.inner {
-            let subscribe_msg = serde_json::json!({
-                "op": "subscribe",
-                "args": ["instrument"]
-            });
+        {
+            let inner_guard = self.inner.read().await;
+            if let Some(inner) = &*inner_guard {
+                let subscribe_msg = serde_json::json!({
+                    "op": "subscribe",
+                    "args": ["instrument"]
+                });
 
-            if let Err(e) = inner.send_text(subscribe_msg.to_string(), None).await {
-                log::error!("Failed to subscribe to instruments: {e}");
-            } else {
-                log::debug!("Subscribed to all instruments");
+                if let Err(e) = inner.send_text(subscribe_msg.to_string(), None).await {
+                    log::error!("Failed to subscribe to instruments: {e}");
+                } else {
+                    log::debug!("Subscribed to all instruments");
+                }
             }
         }
 
@@ -247,7 +239,10 @@ impl BitmexWebSocketClient {
             .await
             .map_err(|e| BitmexWsError::ClientError(e.to_string()))?;
 
-        self.inner = Some(Arc::new(client));
+        {
+            let mut inner_guard = self.inner.write().await;
+            *inner_guard = Some(client);
+        }
 
         if self.credential.is_some() {
             self.authenticate().await?;
@@ -281,15 +276,41 @@ impl BitmexWebSocketClient {
             "args": [credential.api_key, expires, signature]
         });
 
-        if let Some(inner) = &self.inner {
-            inner
-                .send_text(auth_message.to_string(), None)
-                .await
-                .map_err(|e| BitmexWsError::AuthenticationError(e.to_string()))
-        } else {
-            log::error!("Cannot authenticate: not connected");
-            Ok(())
+        {
+            let inner_guard = self.inner.read().await;
+            if let Some(inner) = &*inner_guard {
+                inner
+                    .send_text(auth_message.to_string(), None)
+                    .await
+                    .map_err(|e| BitmexWsError::AuthenticationError(e.to_string()))
+            } else {
+                log::error!("Cannot authenticate: not connected");
+                Ok(())
+            }
         }
+    }
+
+    /// Wait until the WebSocket connection is active.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the connection times out.
+    pub async fn wait_until_active(&self, timeout_secs: f64) -> Result<(), BitmexWsError> {
+        let timeout = tokio::time::Duration::from_secs_f64(timeout_secs);
+
+        tokio::time::timeout(timeout, async {
+            while !self.is_active() {
+                tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .map_err(|_| {
+            BitmexWsError::ClientError(format!(
+                "WebSocket connection timeout after {timeout_secs} seconds"
+            ))
+        })?;
+
+        Ok(())
     }
 
     /// Provides the internal stream as a channel-based stream.
@@ -326,17 +347,22 @@ impl BitmexWebSocketClient {
 
         self.signal.store(true, Ordering::Relaxed);
 
-        if let Some(inner) = &self.inner {
-            log::debug!("Disconnecting websocket");
+        {
+            let inner_guard = self.inner.read().await;
+            if let Some(inner) = &*inner_guard {
+                log::debug!("Disconnecting websocket");
 
-            match tokio::time::timeout(Duration::from_secs(3), inner.disconnect()).await {
-                Ok(()) => log::debug!("Websocket disconnected successfully"),
-                Err(_) => {
-                    log::warn!("Timeout waiting for websocket disconnect, continuing with cleanup")
+                match tokio::time::timeout(Duration::from_secs(3), inner.disconnect()).await {
+                    Ok(()) => log::debug!("Websocket disconnected successfully"),
+                    Err(_) => {
+                        log::warn!(
+                            "Timeout waiting for websocket disconnect, continuing with cleanup"
+                        )
+                    }
                 }
+            } else {
+                log::debug!("No active connection to disconnect");
             }
-        } else {
-            log::debug!("No active connection to disconnect");
         }
 
         // Clean up stream handle with timeout
@@ -396,13 +422,16 @@ impl BitmexWebSocketClient {
             "args": topics
         });
 
-        if let Some(inner) = &self.inner {
-            inner
-                .send_text(message.to_string(), None)
-                .await
-                .map_err(|e| BitmexWsError::SubscriptionError(e.to_string()))?;
-        } else {
-            log::error!("Cannot send message: not connected");
+        {
+            let inner_guard = self.inner.read().await;
+            if let Some(inner) = &*inner_guard {
+                inner
+                    .send_text(message.to_string(), None)
+                    .await
+                    .map_err(|e| BitmexWsError::SubscriptionError(e.to_string()))?;
+            } else {
+                log::error!("Cannot send message: not connected");
+            }
         }
 
         Ok(())
@@ -440,12 +469,15 @@ impl BitmexWebSocketClient {
             "args": topics
         });
 
-        if let Some(inner) = &self.inner {
-            if let Err(e) = inner.send_text(message.to_string(), None).await {
-                log::debug!("Error sending unsubscribe message: {e}");
+        {
+            let inner_guard = self.inner.read().await;
+            if let Some(inner) = &*inner_guard {
+                if let Err(e) = inner.send_text(message.to_string(), None).await {
+                    log::debug!("Error sending unsubscribe message: {e}");
+                }
+            } else {
+                log::debug!("Cannot send unsubscribe message: not connected");
             }
-        } else {
-            log::debug!("Cannot send unsubscribe message: not connected");
         }
 
         Ok(())

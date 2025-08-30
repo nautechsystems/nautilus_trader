@@ -150,27 +150,19 @@ class OKXDataClient(LiveMarketDataClient):
 
         instruments = self.instrument_provider.instruments_pyo3()
 
-        # Connect public WebSocket client (non-blocking)
-        future = asyncio.ensure_future(
-            self._ws_client.connect(
-                instruments=instruments,
-                callback=self._handle_msg,
-            ),
+        await self._ws_client.connect(
+            instruments=instruments,
+            callback=self._handle_msg,
         )
-        self._ws_client_futures.add(future)
 
         # Wait for connection to be established
         await self._ws_client.wait_until_active(timeout_secs=10.0)
         self._log.info(f"Connected to public websocket {self._ws_client.url}", LogColor.BLUE)
 
-        # Connect business WebSocket client
-        business_future = asyncio.ensure_future(
-            self._ws_business_client.connect(
-                instruments=instruments,
-                callback=self._handle_msg,
-            ),
+        await self._ws_business_client.connect(
+            instruments=instruments,
+            callback=self._handle_msg,
         )
-        self._ws_business_client_futures.add(business_future)
 
         # Wait for connection to be established
         await self._ws_client.wait_until_active(timeout_secs=10.0)
@@ -180,7 +172,6 @@ class OKXDataClient(LiveMarketDataClient):
         )
         self._log.info("OKX API key authenticated", LogColor.GREEN)
 
-        # Subscribe to instruments for updates
         for instrument_type in self._instrument_provider.instrument_types:
             await self._ws_client.subscribe_instruments(instrument_type)
 

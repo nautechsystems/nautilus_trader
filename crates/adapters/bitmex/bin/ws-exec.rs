@@ -23,7 +23,7 @@ use nautilus_bitmex::{
     websocket::client::BitmexWebSocketClient,
 };
 use nautilus_core::time::get_atomic_clock_realtime;
-use tokio::{pin, signal};
+use tokio::{pin, signal, time::Duration};
 use tracing::level_filters::LevelFilter;
 
 #[tokio::main]
@@ -52,7 +52,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .collect();
     tracing::info!("Fetched {} instruments", instruments.len());
 
-    let mut client = BitmexWebSocketClient::new(
+    let mut ws_client = BitmexWebSocketClient::new(
         None, // url: defaults to wss://ws.bitmex.com/realtime
         None,
         None,
@@ -60,11 +60,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(5), // 5 second heartbeat
     )
     .unwrap();
+    ws_client.initialize_instruments_cache(instruments);
+    ws_client.connect().await?;
 
-    client.connect(instruments).await?;
+    // Give the connection a moment to stabilize
+    tokio::time::sleep(Duration::from_millis(500)).await;
 
     // Subscribe for all execution related topics
-    client
+    ws_client
         .subscribe(vec![
             "execution".to_string(),
             "order".to_string(),
@@ -78,7 +81,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sigint = signal::ctrl_c();
     pin!(sigint);
 
-    let stream = client.stream();
+    let stream = ws_client.stream();
     tokio::pin!(stream); // Pin the stream to allow polling in the loop
 
     // Use a flag to track if we should close
@@ -99,7 +102,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if should_close {
-        client.close().await?;
+        ws_client.close().await?;
     }
 
     Ok(())

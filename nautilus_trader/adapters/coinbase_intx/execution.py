@@ -157,14 +157,12 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
             f"sender_comp_id={self._fix_client.sender_comp_id}",
             LogColor.BLUE,
         )
-        future = asyncio.ensure_future(
-            self._fix_client.connect(
-                handler=self._handle_msg,
-            ),
+        await self._fix_client.connect(
+            handler=self._handle_msg,
         )
-        self._fix_client_futures.add(future)
 
         try:
+            # Wait for connection to be established
             await asyncio.wait_for(self._wait_for_logon(), 30.0)
         except TimeoutError:
             self._log.error("Timed out logging on to FIX Drop Copy server")

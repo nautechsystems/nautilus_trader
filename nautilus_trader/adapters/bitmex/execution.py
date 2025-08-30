@@ -167,14 +167,10 @@ class BitmexExecutionClient(LiveExecutionClient):
 
         instruments = self._instrument_provider.instruments_pyo3()  # type: ignore
 
-        # Connect WebSocket client (non-blocking)
-        future = asyncio.ensure_future(
-            self._ws_client.connect(
-                instruments,
-                self._handle_msg,
-            ),
+        await self._ws_client.connect(
+            instruments,
+            self._handle_msg,
         )
-        self._ws_client_futures.add(future)
 
         # Wait for connection to be established
         await self._ws_client.wait_until_active(timeout_secs=10.0)
