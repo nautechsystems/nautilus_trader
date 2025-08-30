@@ -96,7 +96,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         The cache for the client.
     clock : LiveClock
         The clock for the client.
-    instrument_provder : DatabentoInstrumentProvider
+    instrument_provider : DatabentoInstrumentProvider
         The instrument provider for the client.
     loader : DatabentoDataLoader, optional
         The loader for the client.
@@ -419,7 +419,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
     def subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
         if command.book_type != BookType.L3_MBO:
-            raise NotImplementedError("Use Booktype.L3_MBO for Databento")
+            raise NotImplementedError("Use BookType.L3_MBO for Databento")
 
         self.create_task(
             self._subscribe_order_book_deltas(command),
@@ -564,9 +564,6 @@ class DatabentoDataClient(LiveMarketDataClient):
                     "No subscriptions for order book deltas (`instrument_ids` was empty)",
                 )
                 return
-
-            if not instrument_ids:
-                return  # No subscribing instrument IDs were loaded in the cache
 
             dataset: Dataset = self._loader.get_dataset_for_venue(instrument_ids[0].venue)
             live_client = self._get_live_client_mbo(dataset)
@@ -962,10 +959,10 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         self._handle_instrument(
             instruments[0],
-            request.id,
-            start,
-            end,
-            request.params,
+            correlation_id=request.id,
+            start=request.start,
+            end=request.end,
+            params=request.params,
         )
 
     async def _request_instruments(self, request: RequestInstruments) -> None:
@@ -995,10 +992,10 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._handle_instruments(
             request.venue,
             instruments,
-            request.id,
-            start,
-            end,
-            request.params,
+            correlation_id=request.id,
+            start=request.start,
+            end=request.end,
+            params=request.params,
         )
 
     async def _request_quote_ticks(self, request: RequestQuoteTicks) -> None:
@@ -1007,7 +1004,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         if request.limit > 0:
             self._log.warning(
-                f"Ignoring limit {request.limit} because its applied from the start (instead of the end)",
+                f"Ignoring limit {request.limit} because it's applied from the start (instead of the end)",
             )
 
         self._log.info(
@@ -1042,10 +1039,10 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._handle_quote_ticks(
             request.instrument_id,
             quotes,
-            request.id,
-            start,
-            end,
-            request.params,
+            correlation_id=request.id,
+            start=request.start,
+            end=request.end,
+            params=request.params,
         )
 
     async def _request_trade_ticks(self, request: RequestTradeTicks) -> None:
@@ -1054,7 +1051,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         if request.limit > 0:
             self._log.warning(
-                f"Ignoring limit {request.limit} because its applied from the start (instead of the end)",
+                f"Ignoring limit {request.limit} because it's applied from the start (instead of the end)",
             )
 
         self._log.info(
@@ -1073,10 +1070,10 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._handle_trade_ticks(
             request.instrument_id,
             trades,
-            request.id,
-            start,
-            end,
-            request.params,
+            correlation_id=request.id,
+            start=request.start,
+            end=request.end,
+            params=request.params,
         )
 
     async def _request_bars(self, request: RequestBars) -> None:
@@ -1085,7 +1082,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         if request.limit > 0:
             self._log.warning(
-                f"Ignoring limit {request.limit} because its applied from the start (instead of the end)",
+                f"Ignoring limit {request.limit} because it's applied from the start (instead of the end)",
             )
 
         self._log.info(
@@ -1111,8 +1108,8 @@ class DatabentoDataClient(LiveMarketDataClient):
             bars=bars,
             partial=None,  # No partials
             correlation_id=request.id,
-            start=start,
-            end=end,
+            start=request.start,
+            end=request.end,
             params=request.params,
         )
 
