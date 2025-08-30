@@ -728,6 +728,24 @@ class PositionStatusReport(ExecutionReport):
         )
         self.ts_last = ts_last
 
+    @staticmethod
+    def create_flat(
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        size_precision: int,
+        ts_init: int,
+        report_id: UUID4 | None = None,
+    ) -> PositionStatusReport:
+        return PositionStatusReport(
+            account_id=account_id,
+            instrument_id=instrument_id,
+            position_side=PositionSide.FLAT,
+            quantity=Quantity.zero(size_precision),
+            report_id=report_id or UUID4(),
+            ts_last=ts_init,
+            ts_init=ts_init,
+        )
+
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("

@@ -13,8 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use serde::Deserialize;
 use std::{env, fmt, fs, path::Path};
+
+use serde::Deserialize;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{
