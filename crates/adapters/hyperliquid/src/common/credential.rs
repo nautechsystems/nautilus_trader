@@ -18,7 +18,7 @@ use std::{env, fmt, fs, path::Path};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{
-    common::consts::Network,
+    common::consts::HyperliquidNetwork,
     http::error::{Error, Result},
 };
 
@@ -150,7 +150,7 @@ impl fmt::Display for VaultAddress {
 pub struct Secrets {
     pub private_key: EvmPrivateKey,
     pub vault_address: Option<VaultAddress>,
-    pub network: Network,
+    pub network: HyperliquidNetwork,
 }
 
 impl fmt::Debug for Secrets {
@@ -181,7 +181,7 @@ impl Secrets {
             _ => None,
         };
 
-        let network = Network::from_env();
+        let network = HyperliquidNetwork::from_env();
 
         Ok(Self {
             private_key,
@@ -234,8 +234,8 @@ impl Secrets {
         };
 
         let network = match raw.network.as_deref() {
-            Some("testnet") | Some("test") => Network::Testnet,
-            _ => Network::Mainnet,
+            Some("testnet") | Some("test") => HyperliquidNetwork::Testnet,
+            _ => HyperliquidNetwork::Mainnet,
         };
 
         Ok(Self {
@@ -351,7 +351,7 @@ mod tests {
         assert_eq!(secrets.private_key.as_hex(), TEST_PRIVATE_KEY);
         assert!(secrets.vault_address.is_some());
         assert_eq!(secrets.vault_address.unwrap().to_hex(), TEST_VAULT_ADDRESS);
-        assert_eq!(secrets.network, Network::Testnet);
+        assert_eq!(secrets.network, HyperliquidNetwork::Testnet);
     }
 
     #[rstest]
@@ -366,7 +366,7 @@ mod tests {
         let secrets = Secrets::from_json(&json).unwrap();
         assert_eq!(secrets.private_key.as_hex(), TEST_PRIVATE_KEY);
         assert!(secrets.vault_address.is_none());
-        assert_eq!(secrets.network, Network::Mainnet);
+        assert_eq!(secrets.network, HyperliquidNetwork::Mainnet);
     }
 
     #[rstest]

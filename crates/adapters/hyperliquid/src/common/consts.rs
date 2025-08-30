@@ -24,12 +24,12 @@ pub static HYPERLIQUID_VENUE: LazyLock<Venue> =
 
 /// Represents the network configuration for Hyperliquid.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Network {
+pub enum HyperliquidNetwork {
     Mainnet,
     Testnet,
 }
 
-impl Network {
+impl HyperliquidNetwork {
     /// Loads network from environment variable `HYPERLIQUID_NET`.
     ///
     /// Defaults to `Mainnet` if not set or invalid.
@@ -39,8 +39,8 @@ impl Network {
             .to_lowercase()
             .as_str()
         {
-            "testnet" | "test" => Network::Testnet,
-            _ => Network::Mainnet,
+            "testnet" | "test" => HyperliquidNetwork::Testnet,
+            _ => HyperliquidNetwork::Mainnet,
         }
     }
 }
@@ -56,26 +56,26 @@ pub const HYPERLIQUID_TESTNET_INFO_URL: &str = "https://api.hyperliquid-testnet.
 pub const HYPERLIQUID_TESTNET_EXCHANGE_URL: &str = "https://api.hyperliquid-testnet.xyz/exchange";
 
 /// Gets WebSocket URL for the specified network.
-pub fn ws_url(network: Network) -> &'static str {
+pub fn ws_url(network: HyperliquidNetwork) -> &'static str {
     match network {
-        Network::Mainnet => HYPERLIQUID_WS_URL,
-        Network::Testnet => HYPERLIQUID_TESTNET_WS_URL,
+        HyperliquidNetwork::Mainnet => HYPERLIQUID_WS_URL,
+        HyperliquidNetwork::Testnet => HYPERLIQUID_TESTNET_WS_URL,
     }
 }
 
 /// Gets info API URL for the specified network.
-pub fn info_url(network: Network) -> &'static str {
+pub fn info_url(network: HyperliquidNetwork) -> &'static str {
     match network {
-        Network::Mainnet => HYPERLIQUID_INFO_URL,
-        Network::Testnet => HYPERLIQUID_TESTNET_INFO_URL,
+        HyperliquidNetwork::Mainnet => HYPERLIQUID_INFO_URL,
+        HyperliquidNetwork::Testnet => HYPERLIQUID_TESTNET_INFO_URL,
     }
 }
 
 /// Gets exchange API URL for the specified network.
-pub fn exchange_url(network: Network) -> &'static str {
+pub fn exchange_url(network: HyperliquidNetwork) -> &'static str {
     match network {
-        Network::Mainnet => HYPERLIQUID_EXCHANGE_URL,
-        Network::Testnet => HYPERLIQUID_TESTNET_EXCHANGE_URL,
+        HyperliquidNetwork::Mainnet => HYPERLIQUID_EXCHANGE_URL,
+        HyperliquidNetwork::Testnet => HYPERLIQUID_TESTNET_EXCHANGE_URL,
     }
 }
 
@@ -98,35 +98,47 @@ mod tests {
 
     #[rstest]
     fn test_network_variants() {
-        assert_eq!(Network::Mainnet, Network::Mainnet);
-        assert_eq!(Network::Testnet, Network::Testnet);
-        assert_ne!(Network::Mainnet, Network::Testnet);
+        assert_eq!(HyperliquidNetwork::Mainnet, HyperliquidNetwork::Mainnet);
+        assert_eq!(HyperliquidNetwork::Testnet, HyperliquidNetwork::Testnet);
+        assert_ne!(HyperliquidNetwork::Mainnet, HyperliquidNetwork::Testnet);
     }
 
     #[rstest]
     fn test_network_from_env_handles_default() {
-        let network = Network::from_env();
+        let network = HyperliquidNetwork::from_env();
 
-        assert!(matches!(network, Network::Mainnet | Network::Testnet));
+        assert!(matches!(
+            network,
+            HyperliquidNetwork::Mainnet | HyperliquidNetwork::Testnet
+        ));
     }
 
     #[rstest]
     fn test_ws_url() {
-        assert_eq!(ws_url(Network::Mainnet), HYPERLIQUID_WS_URL);
-        assert_eq!(ws_url(Network::Testnet), HYPERLIQUID_TESTNET_WS_URL);
+        assert_eq!(ws_url(HyperliquidNetwork::Mainnet), HYPERLIQUID_WS_URL);
+        assert_eq!(
+            ws_url(HyperliquidNetwork::Testnet),
+            HYPERLIQUID_TESTNET_WS_URL
+        );
     }
 
     #[rstest]
     fn test_info_url() {
-        assert_eq!(info_url(Network::Mainnet), HYPERLIQUID_INFO_URL);
-        assert_eq!(info_url(Network::Testnet), HYPERLIQUID_TESTNET_INFO_URL);
+        assert_eq!(info_url(HyperliquidNetwork::Mainnet), HYPERLIQUID_INFO_URL);
+        assert_eq!(
+            info_url(HyperliquidNetwork::Testnet),
+            HYPERLIQUID_TESTNET_INFO_URL
+        );
     }
 
     #[rstest]
     fn test_exchange_url() {
-        assert_eq!(exchange_url(Network::Mainnet), HYPERLIQUID_EXCHANGE_URL);
         assert_eq!(
-            exchange_url(Network::Testnet),
+            exchange_url(HyperliquidNetwork::Mainnet),
+            HYPERLIQUID_EXCHANGE_URL
+        );
+        assert_eq!(
+            exchange_url(HyperliquidNetwork::Testnet),
             HYPERLIQUID_TESTNET_EXCHANGE_URL
         );
     }

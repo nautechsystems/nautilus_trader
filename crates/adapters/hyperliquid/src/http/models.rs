@@ -19,14 +19,14 @@ use crate::common::enums::HyperliquidSide;
 
 /// Represents metadata about available markets from `POST /info`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Meta {
+pub struct HyperliquidMeta {
     #[serde(default)]
-    pub universe: Vec<AssetInfo>,
+    pub universe: Vec<HyperliquidAssetInfo>,
 }
 
 /// Represents asset information from the meta endpoint.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AssetInfo {
+pub struct HyperliquidAssetInfo {
     /// Asset name (e.g., "BTC").
     pub name: String,
     /// Number of decimal places for size.
@@ -36,18 +36,18 @@ pub struct AssetInfo {
 
 /// Represents an L2 order book snapshot from `POST /info`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct L2Book {
+pub struct HyperliquidL2Book {
     /// Coin symbol.
     pub coin: String,
     /// Order book levels: [bids, asks].
-    pub levels: Vec<Vec<Level>>,
+    pub levels: Vec<Vec<HyperliquidLevel>>,
     /// Timestamp in milliseconds.
     pub time: u64,
 }
 
 /// Represents an order book level with price and size.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Level {
+pub struct HyperliquidLevel {
     /// Price level.
     pub px: String,
     /// Size at this level.
@@ -56,14 +56,14 @@ pub struct Level {
 
 /// Represents user fills response from `POST /info`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Fills {
+pub struct HyperliquidFills {
     #[serde(default)]
-    pub fills: Vec<Fill>,
+    pub fills: Vec<HyperliquidFill>,
 }
 
 /// Represents an individual fill from user fills.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Fill {
+pub struct HyperliquidFill {
     /// Coin symbol.
     pub coin: String,
     /// Fill price.
@@ -94,16 +94,16 @@ pub struct Fill {
 
 /// Represents order status response from `POST /info`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OrderStatus {
+pub struct HyperliquidOrderStatus {
     #[serde(default)]
-    pub statuses: Vec<OrderStatusEntry>,
+    pub statuses: Vec<HyperliquidOrderStatusEntry>,
 }
 
 /// Represents an individual order status entry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OrderStatusEntry {
+pub struct HyperliquidOrderStatusEntry {
     /// Order information.
-    pub order: OrderInfo,
+    pub order: HyperliquidOrderInfo,
     /// Current status string.
     pub status: String,
     /// Status timestamp in milliseconds.
@@ -113,7 +113,7 @@ pub struct OrderStatusEntry {
 
 /// Represents order information within an order status entry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OrderInfo {
+pub struct HyperliquidOrderInfo {
     /// Coin symbol.
     pub coin: String,
     /// Order side (buy/sell).
@@ -134,7 +134,7 @@ pub struct OrderInfo {
 
 /// Represents an exchange action request wrapper for `POST /exchange`.
 #[derive(Debug, Clone, Serialize)]
-pub struct ExchangeRequest<T> {
+pub struct HyperliquidExchangeRequest<T> {
     /// The action to perform.
     pub action: T,
     /// Request nonce for replay protection.
@@ -151,7 +151,7 @@ pub struct ExchangeRequest<T> {
 /// Represents an exchange response wrapper from `POST /exchange`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum ExchangeResponse {
+pub enum HyperliquidExchangeResponse {
     /// Successful response with status.
     Status {
         /// Status message.
@@ -180,7 +180,7 @@ mod tests {
     fn test_meta_deserialization() {
         let json = r#"{"universe": [{"name": "BTC", "szDecimals": 5}]}"#;
 
-        let meta: Meta = serde_json::from_str(json).unwrap();
+        let meta: HyperliquidMeta = serde_json::from_str(json).unwrap();
 
         assert_eq!(meta.universe.len(), 1);
         assert_eq!(meta.universe[0].name, "BTC");
@@ -191,7 +191,7 @@ mod tests {
     fn test_l2_book_deserialization() {
         let json = r#"{"coin": "BTC", "levels": [[{"px": "50000", "sz": "1.5"}], [{"px": "50100", "sz": "2.0"}]], "time": 1234567890}"#;
 
-        let book: L2Book = serde_json::from_str(json).unwrap();
+        let book: HyperliquidL2Book = serde_json::from_str(json).unwrap();
 
         assert_eq!(book.coin, "BTC");
         assert_eq!(book.levels.len(), 2);
@@ -202,10 +202,10 @@ mod tests {
     fn test_exchange_response_deserialization() {
         let json = r#"{"status": "ok", "response": {"type": "order"}}"#;
 
-        let response: ExchangeResponse = serde_json::from_str(json).unwrap();
+        let response: HyperliquidExchangeResponse = serde_json::from_str(json).unwrap();
 
         match response {
-            ExchangeResponse::Status { status, .. } => assert_eq!(status, "ok"),
+            HyperliquidExchangeResponse::Status { status, .. } => assert_eq!(status, "ok"),
             _ => panic!("Expected status response"),
         }
     }

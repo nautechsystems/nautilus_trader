@@ -23,9 +23,9 @@ use std::fmt;
 /// - Spot: 10000 + index in spotMeta.universe
 /// - Builder perps: 100000 + dex_index * 10000 + meta_index
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct AssetId(pub u32);
+pub struct HyperliquidAssetId(pub u32);
 
-impl AssetId {
+impl HyperliquidAssetId {
     /// Creates a perpetual asset ID from raw index.
     pub fn perp(index: u32) -> Self {
         Self(index)
@@ -70,7 +70,7 @@ impl AssetId {
     }
 }
 
-impl fmt::Display for AssetId {
+impl fmt::Display for HyperliquidAssetId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }
@@ -88,7 +88,7 @@ mod tests {
 
     #[rstest]
     fn test_asset_id_perp() {
-        let asset_id = AssetId::perp(7);
+        let asset_id = HyperliquidAssetId::perp(7);
         assert_eq!(asset_id.to_raw(), 7);
         assert!(!asset_id.is_spot());
         assert!(!asset_id.is_builder_perp());
@@ -97,7 +97,7 @@ mod tests {
 
     #[rstest]
     fn test_asset_id_spot() {
-        let asset_id = AssetId::spot(7);
+        let asset_id = HyperliquidAssetId::spot(7);
         assert_eq!(asset_id.to_raw(), 10_007);
         assert!(asset_id.is_spot());
         assert!(!asset_id.is_builder_perp());
@@ -106,7 +106,7 @@ mod tests {
 
     #[rstest]
     fn test_asset_id_builder_perp() {
-        let asset_id = AssetId::builder_perp(1, 7);
+        let asset_id = HyperliquidAssetId::builder_perp(1, 7);
         assert_eq!(asset_id.to_raw(), 110_007);
         assert!(!asset_id.is_spot());
         assert!(asset_id.is_builder_perp());

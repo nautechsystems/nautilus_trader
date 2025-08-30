@@ -89,7 +89,7 @@ impl From<HyperliquidSide> for AggressorSide {
 )]
 #[serde(rename_all = "PascalCase")]
 #[strum(serialize_all = "PascalCase")]
-pub enum TimeInForce {
+pub enum HyperliquidTimeInForce {
     /// Add Liquidity Only - post-only order.
     Alo,
     /// Immediate or Cancel - fill immediately or cancel.
@@ -101,10 +101,10 @@ pub enum TimeInForce {
 /// Represents the order type configuration.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
-pub enum OrderType {
+pub enum HyperliquidOrderType {
     /// Limit order with time-in-force.
     #[serde(rename = "limit")]
-    Limit { tif: TimeInForce },
+    Limit { tif: HyperliquidTimeInForce },
 
     /// Trigger order (stop or take profit).
     #[serde(rename = "trigger")]
@@ -113,7 +113,7 @@ pub enum OrderType {
         is_market: bool,
         #[serde(rename = "triggerPx")]
         trigger_px: String,
-        tpsl: TpSl,
+        tpsl: HyperliquidTpSl,
     },
 }
 
@@ -134,7 +134,7 @@ pub enum OrderType {
 )]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
-pub enum TpSl {
+pub enum HyperliquidTpSl {
     /// Take Profit.
     Tp,
     /// Stop Loss.
@@ -144,9 +144,9 @@ pub enum TpSl {
 /// Represents the reduce only flag wrapper.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct ReduceOnly(pub bool);
+pub struct HyperliquidReduceOnly(pub bool);
 
-impl ReduceOnly {
+impl HyperliquidReduceOnly {
     /// Creates a new reduce only flag.
     pub fn new(reduce_only: bool) -> Self {
         Self(reduce_only)
@@ -175,27 +175,27 @@ impl ReduceOnly {
 )]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
-pub enum LiquidityFlag {
+pub enum HyperliquidLiquidityFlag {
     Maker,
     Taker,
 }
 
-impl From<bool> for LiquidityFlag {
+impl From<bool> for HyperliquidLiquidityFlag {
     /// Converts from `crossed` field in fill responses.
     ///
     /// `true` (crossed) -> Taker, `false` -> Maker
     fn from(crossed: bool) -> Self {
         if crossed {
-            LiquidityFlag::Taker
+            HyperliquidLiquidityFlag::Taker
         } else {
-            LiquidityFlag::Maker
+            HyperliquidLiquidityFlag::Maker
         }
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum RejectCode {
+pub enum HyperliquidRejectCode {
     /// Price must be divisible by tick size.
     Tick,
     /// Order must have minimum value of $10.
@@ -234,7 +234,7 @@ pub enum RejectCode {
     Unknown(String),
 }
 
-impl RejectCode {
+impl HyperliquidRejectCode {
     pub fn from_api_error(error_message: &str) -> Self {
         // TODO: Research Hyperliquid's actual error response format
         // Check if they provide:
@@ -254,34 +254,38 @@ impl RejectCode {
     /// that it should only be used internally until we have better error handling.
     fn from_error_string_internal(error: &str) -> Self {
         match error {
-            s if s.contains("tick size") => RejectCode::Tick,
-            s if s.contains("minimum value of $10") => RejectCode::MinTradeNtl,
-            s if s.contains("minimum value of 10") => RejectCode::MinTradeSpotNtl,
-            s if s.contains("Insufficient margin") => RejectCode::PerpMargin,
-            s if s.contains("Reduce only order would increase") => RejectCode::ReduceOnly,
-            s if s.contains("Post only order would have immediately matched") => {
-                RejectCode::BadAloPx
+            s if s.contains("tick size") => HyperliquidRejectCode::Tick,
+            s if s.contains("minimum value of $10") => HyperliquidRejectCode::MinTradeNtl,
+            s if s.contains("minimum value of 10") => HyperliquidRejectCode::MinTradeSpotNtl,
+            s if s.contains("Insufficient margin") => HyperliquidRejectCode::PerpMargin,
+            s if s.contains("Reduce only order would increase") => {
+                HyperliquidRejectCode::ReduceOnly
             }
-            s if s.contains("could not immediately match") => RejectCode::IocCancel,
-            s if s.contains("Invalid TP/SL price") => RejectCode::BadTriggerPx,
+            s if s.contains("Post only order would have immediately matched") => {
+                HyperliquidRejectCode::BadAloPx
+            }
+            s if s.contains("could not immediately match") => HyperliquidRejectCode::IocCancel,
+            s if s.contains("Invalid TP/SL price") => HyperliquidRejectCode::BadTriggerPx,
             s if s.contains("No liquidity available for market order") => {
-                RejectCode::MarketOrderNoLiquidity
+                HyperliquidRejectCode::MarketOrderNoLiquidity
             }
             s if s.contains("PositionIncreaseAtOpenInterestCap") => {
-                RejectCode::PositionIncreaseAtOpenInterestCap
+                HyperliquidRejectCode::PositionIncreaseAtOpenInterestCap
             }
             s if s.contains("PositionFlipAtOpenInterestCap") => {
-                RejectCode::PositionFlipAtOpenInterestCap
+                HyperliquidRejectCode::PositionFlipAtOpenInterestCap
             }
             s if s.contains("TooAggressiveAtOpenInterestCap") => {
-                RejectCode::TooAggressiveAtOpenInterestCap
+                HyperliquidRejectCode::TooAggressiveAtOpenInterestCap
             }
-            s if s.contains("OpenInterestIncrease") => RejectCode::OpenInterestIncrease,
-            s if s.contains("Insufficient spot balance") => RejectCode::InsufficientSpotBalance,
-            s if s.contains("Oracle") => RejectCode::Oracle,
-            s if s.contains("max position") => RejectCode::PerpMaxPosition,
-            s if s.contains("MissingOrder") => RejectCode::MissingOrder,
-            s => RejectCode::Unknown(s.to_string()),
+            s if s.contains("OpenInterestIncrease") => HyperliquidRejectCode::OpenInterestIncrease,
+            s if s.contains("Insufficient spot balance") => {
+                HyperliquidRejectCode::InsufficientSpotBalance
+            }
+            s if s.contains("Oracle") => HyperliquidRejectCode::Oracle,
+            s if s.contains("max position") => HyperliquidRejectCode::PerpMaxPosition,
+            s if s.contains("MissingOrder") => HyperliquidRejectCode::MissingOrder,
+            s => HyperliquidRejectCode::Unknown(s.to_string()),
         }
     }
 
@@ -291,7 +295,7 @@ impl RejectCode {
     /// Use `from_api_error()` instead, which provides a migration path for structured error handling.
     #[deprecated(
         since = "0.50.0",
-        note = "String parsing is fragile; use RejectCode::from_api_error() instead"
+        note = "String parsing is fragile; use HyperliquidRejectCode::from_api_error() instead"
     )]
     pub fn from_error_string(error: &str) -> Self {
         Self::from_error_string_internal(error)
@@ -360,15 +364,15 @@ mod tests {
     #[rstest]
     fn test_time_in_force_serde() {
         let test_cases = [
-            (TimeInForce::Alo, "\"Alo\""),
-            (TimeInForce::Ioc, "\"Ioc\""),
-            (TimeInForce::Gtc, "\"Gtc\""),
+            (HyperliquidTimeInForce::Alo, "\"Alo\""),
+            (HyperliquidTimeInForce::Ioc, "\"Ioc\""),
+            (HyperliquidTimeInForce::Gtc, "\"Gtc\""),
         ];
 
         for (tif, expected_json) in test_cases {
             assert_eq!(serde_json::to_string(&tif).unwrap(), expected_json);
             assert_eq!(
-                serde_json::from_str::<TimeInForce>(expected_json).unwrap(),
+                serde_json::from_str::<HyperliquidTimeInForce>(expected_json).unwrap(),
                 tif
             );
         }
@@ -376,75 +380,93 @@ mod tests {
 
     #[rstest]
     fn test_liquidity_flag_from_crossed() {
-        assert_eq!(LiquidityFlag::from(true), LiquidityFlag::Taker);
-        assert_eq!(LiquidityFlag::from(false), LiquidityFlag::Maker);
+        assert_eq!(
+            HyperliquidLiquidityFlag::from(true),
+            HyperliquidLiquidityFlag::Taker
+        );
+        assert_eq!(
+            HyperliquidLiquidityFlag::from(false),
+            HyperliquidLiquidityFlag::Maker
+        );
     }
 
     #[rstest]
     #[allow(deprecated)]
     fn test_reject_code_from_error_string() {
         let test_cases = [
-            ("Price must be divisible by tick size.", RejectCode::Tick),
+            (
+                "Price must be divisible by tick size.",
+                HyperliquidRejectCode::Tick,
+            ),
             (
                 "Order must have minimum value of $10.",
-                RejectCode::MinTradeNtl,
+                HyperliquidRejectCode::MinTradeNtl,
             ),
             (
                 "Insufficient margin to place order.",
-                RejectCode::PerpMargin,
+                HyperliquidRejectCode::PerpMargin,
             ),
             (
                 "Post only order would have immediately matched, bbo was 1.23",
-                RejectCode::BadAloPx,
+                HyperliquidRejectCode::BadAloPx,
             ),
             (
                 "Some unknown error",
-                RejectCode::Unknown("Some unknown error".to_string()),
+                HyperliquidRejectCode::Unknown("Some unknown error".to_string()),
             ),
         ];
 
         for (error_str, expected_code) in test_cases {
-            assert_eq!(RejectCode::from_error_string(error_str), expected_code);
+            assert_eq!(
+                HyperliquidRejectCode::from_error_string(error_str),
+                expected_code
+            );
         }
     }
 
     #[rstest]
     fn test_reject_code_from_api_error() {
         let test_cases = [
-            ("Price must be divisible by tick size.", RejectCode::Tick),
+            (
+                "Price must be divisible by tick size.",
+                HyperliquidRejectCode::Tick,
+            ),
             (
                 "Order must have minimum value of $10.",
-                RejectCode::MinTradeNtl,
+                HyperliquidRejectCode::MinTradeNtl,
             ),
             (
                 "Insufficient margin to place order.",
-                RejectCode::PerpMargin,
+                HyperliquidRejectCode::PerpMargin,
             ),
             (
                 "Post only order would have immediately matched, bbo was 1.23",
-                RejectCode::BadAloPx,
+                HyperliquidRejectCode::BadAloPx,
             ),
             (
                 "Some unknown error",
-                RejectCode::Unknown("Some unknown error".to_string()),
+                HyperliquidRejectCode::Unknown("Some unknown error".to_string()),
             ),
         ];
 
         for (error_str, expected_code) in test_cases {
-            assert_eq!(RejectCode::from_api_error(error_str), expected_code);
+            assert_eq!(
+                HyperliquidRejectCode::from_api_error(error_str),
+                expected_code
+            );
         }
     }
 
     #[rstest]
     fn test_reduce_only() {
-        let reduce_only = ReduceOnly::new(true);
+        let reduce_only = HyperliquidReduceOnly::new(true);
 
         assert!(reduce_only.is_reduce_only());
 
         let json = serde_json::to_string(&reduce_only).unwrap();
         assert_eq!(json, "true");
 
-        let parsed: ReduceOnly = serde_json::from_str(&json).unwrap();
+        let parsed: HyperliquidReduceOnly = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, reduce_only);
     }
 }
