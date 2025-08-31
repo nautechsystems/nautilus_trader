@@ -276,6 +276,12 @@ impl SimulatedExchange {
 
         self.instruments.insert(instrument.id(), instrument.clone());
 
+        let price_protection = if self.price_protection_points.is_zero() {
+            None
+        } else {
+            Some(self.price_protection_points)
+        };
+
         let matching_engine_config = OrderMatchingEngineConfig::new(
             self.bar_execution,
             self.reject_stop_orders,
@@ -284,7 +290,7 @@ impl SimulatedExchange {
             self.use_position_ids,
             self.use_random_ids,
             self.use_reduce_only,
-            self.price_protection_points,
+            price_protection,
         );
         let instrument_id = instrument.id();
         let matching_engine = OrderMatchingEngine::new(

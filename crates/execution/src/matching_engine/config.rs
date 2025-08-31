@@ -25,7 +25,7 @@ pub struct OrderMatchingEngineConfig {
     pub use_position_ids: bool,
     pub use_random_ids: bool,
     pub use_reduce_only: bool,
-    pub price_protection_points: Decimal,
+    pub price_protection_points: Option<Decimal>,
 }
 
 impl OrderMatchingEngineConfig {
@@ -39,7 +39,7 @@ impl OrderMatchingEngineConfig {
         use_position_ids: bool,
         use_random_ids: bool,
         use_reduce_only: bool,
-        price_protection_points: Decimal,
+        price_protection_points: Option<Decimal>,
     ) -> Self {
         Self {
             bar_execution,
@@ -66,7 +66,7 @@ impl Default for OrderMatchingEngineConfig {
             use_position_ids: false,
             use_random_ids: false,
             use_reduce_only: false,
-            price_protection_points: Decimal::ZERO,
+            price_protection_points: None,
         }
     }
 }
