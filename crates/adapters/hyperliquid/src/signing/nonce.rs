@@ -142,31 +142,14 @@ impl SignerState {
     fn validate_local(
         &self,
         nonce: TimeNonce,
-        policy: &NoncePolicy,
+        _policy: &NoncePolicy,
     ) -> std::result::Result<(), NonceError> {
-        let now_ms = TimeNonce::now_millis().0;
-
-        let window_start = now_ms - policy.past_ms as i128;
-        let window_end = now_ms + policy.future_ms as i128;
-
-        if nonce.0 < window_start {
-            return Err(NonceError::TooOld {
-                nonce,
-                window_start: TimeNonce::from_millis(window_start),
-            });
-        }
-
-        if nonce.0 > window_end {
-            return Err(NonceError::TooNew {
-                nonce,
-                window_end: TimeNonce::from_millis(window_end),
-            });
-        }
-
+        // Check for replay attacks
         if self.used_nonces.contains(&nonce) {
             return Err(NonceError::AlreadyUsed { nonce });
         }
 
+        // Check for monotonicity (nonce must be greater than the oldest tracked nonce)
         if let Some(&min_used) = self.used_nonces.front()
             && nonce.0 <= min_used.0
         {
@@ -240,11 +223,35 @@ impl NonceManager {
     /// Panics if the internal mutex is poisoned.
     pub fn validate_local(&self, signer: SignerId, nonce: TimeNonce) -> Result<()> {
         let states = self.signer_states.lock().unwrap();
+
+        // Always validate time window, even for new signers
+        let now_ms = TimeNonce::now_millis().0;
+        let window_start = now_ms - self.policy.past_ms as i128;
+        let window_end = now_ms + self.policy.future_ms as i128;
+
+        if nonce.0 < window_start {
+            return Err(Error::nonce_window(format!(
+                "Nonce too old: {} is before window start {}",
+                nonce,
+                TimeNonce::from_millis(window_start)
+            )));
+        }
+
+        if nonce.0 > window_end {
+            return Err(Error::nonce_window(format!(
+                "Nonce too new: {} is after window end {}",
+                nonce,
+                TimeNonce::from_millis(window_end)
+            )));
+        }
+
+        // If signer state exists, validate against used nonces and monotonicity
         if let Some(state) = states.get(&signer) {
             state
                 .validate_local(nonce, &self.policy)
                 .map_err(|e| Error::nonce_window(e.to_string()))?;
         }
+
         Ok(())
     }
 
