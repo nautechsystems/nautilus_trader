@@ -45,9 +45,9 @@ use ustr::Ustr;
 
 use super::{
     cache::QuoteCache,
-    enums::{Action, WsTopic},
+    enums::{BitmexAction, BitmexWsTopic},
     error::BitmexWsError,
-    messages::{NautilusWsMessage, TableMessage, WsMessage},
+    messages::{BitmexTableMessage, BitmexWsMessage, NautilusWsMessage},
     parse::{
         self, is_index_symbol, parse_book_msg_vec, parse_book10_msg_vec, parse_trade_bin_msg_vec,
         parse_trade_msg_vec, topic_from_bar_spec,
@@ -545,7 +545,7 @@ impl BitmexWebSocketClient {
     ///
     /// Returns an error if the WebSocket is not connected or if the subscription fails.
     pub async fn subscribe_book(&self, instrument_id: InstrumentId) -> Result<(), BitmexWsError> {
-        let topic = WsTopic::OrderBookL2;
+        let topic = BitmexWsTopic::OrderBookL2;
         let symbol = instrument_id.symbol.as_str();
         self.subscribe(vec![format!("{topic}:{symbol}")]).await
     }
@@ -559,7 +559,7 @@ impl BitmexWebSocketClient {
         &self,
         instrument_id: InstrumentId,
     ) -> Result<(), BitmexWsError> {
-        let topic = WsTopic::OrderBookL2_25;
+        let topic = BitmexWsTopic::OrderBookL2_25;
         let symbol = instrument_id.symbol.as_str();
         self.subscribe(vec![format!("{topic}:{symbol}")]).await
     }
@@ -573,7 +573,7 @@ impl BitmexWebSocketClient {
         &self,
         instrument_id: InstrumentId,
     ) -> Result<(), BitmexWsError> {
-        let topic = WsTopic::OrderBook10;
+        let topic = BitmexWsTopic::OrderBook10;
         let symbol = instrument_id.symbol.as_str();
         self.subscribe(vec![format!("{topic}:{symbol}")]).await
     }
@@ -594,7 +594,7 @@ impl BitmexWebSocketClient {
             return Ok(());
         }
 
-        let topic = WsTopic::Quote;
+        let topic = BitmexWsTopic::Quote;
         self.subscribe(vec![format!("{topic}:{symbol}")]).await
     }
 
@@ -614,7 +614,7 @@ impl BitmexWebSocketClient {
             return Ok(());
         }
 
-        let topic = WsTopic::Trade;
+        let topic = BitmexWsTopic::Trade;
         self.subscribe(vec![format!("{topic}:{symbol}")]).await
     }
 
@@ -651,7 +651,7 @@ impl BitmexWebSocketClient {
         &self,
         instrument_id: InstrumentId,
     ) -> Result<(), BitmexWsError> {
-        let topic = WsTopic::Funding;
+        let topic = BitmexWsTopic::Funding;
         let symbol = instrument_id.symbol.as_str();
         self.subscribe(vec![format!("{topic}:{symbol}")]).await
     }
@@ -702,7 +702,7 @@ impl BitmexWebSocketClient {
     ///
     /// Returns an error if the WebSocket is not connected or if the unsubscription fails.
     pub async fn unsubscribe_book(&self, instrument_id: InstrumentId) -> Result<(), BitmexWsError> {
-        let topic = WsTopic::OrderBookL2;
+        let topic = BitmexWsTopic::OrderBookL2;
         let symbol = instrument_id.symbol.as_str();
         self.unsubscribe(vec![format!("{topic}:{symbol}")]).await
     }
@@ -716,7 +716,7 @@ impl BitmexWebSocketClient {
         &self,
         instrument_id: InstrumentId,
     ) -> Result<(), BitmexWsError> {
-        let topic = WsTopic::OrderBookL2_25;
+        let topic = BitmexWsTopic::OrderBookL2_25;
         let symbol = instrument_id.symbol.as_str();
         self.unsubscribe(vec![format!("{topic}:{symbol}")]).await
     }
@@ -730,7 +730,7 @@ impl BitmexWebSocketClient {
         &self,
         instrument_id: InstrumentId,
     ) -> Result<(), BitmexWsError> {
-        let topic = WsTopic::OrderBook10;
+        let topic = BitmexWsTopic::OrderBook10;
         let symbol = instrument_id.symbol.as_str();
         self.unsubscribe(vec![format!("{topic}:{symbol}")]).await
     }
@@ -751,7 +751,7 @@ impl BitmexWebSocketClient {
             return Ok(());
         }
 
-        let topic = WsTopic::Quote;
+        let topic = BitmexWsTopic::Quote;
         self.unsubscribe(vec![format!("{topic}:{symbol}")]).await
     }
 
@@ -771,7 +771,7 @@ impl BitmexWebSocketClient {
             return Ok(());
         }
 
-        let topic = WsTopic::Trade;
+        let topic = BitmexWsTopic::Trade;
         self.unsubscribe(vec![format!("{topic}:{symbol}")]).await
     }
 
@@ -847,7 +847,7 @@ impl BitmexFeedHandler {
     }
 
     /// Get the next message from the WebSocket stream.
-    async fn next(&mut self) -> Option<WsMessage> {
+    async fn next(&mut self) -> Option<BitmexWsMessage> {
         // Timeout awaiting the next message before checking signal
         let timeout_duration = Duration::from_millis(10);
 
@@ -864,7 +864,7 @@ impl BitmexFeedHandler {
 
                         match serde_json::from_str(&text) {
                             Ok(msg) => match &msg {
-                                WsMessage::Welcome {
+                                BitmexWsMessage::Welcome {
                                     version,
                                     heartbeat_enabled,
                                     limit,
@@ -877,7 +877,7 @@ impl BitmexFeedHandler {
                                         "Welcome to the BitMEX Realtime API:",
                                     );
                                 }
-                                WsMessage::Subscription {
+                                BitmexWsMessage::Subscription {
                                     success,
                                     subscribe,
                                     error,
@@ -890,7 +890,7 @@ impl BitmexFeedHandler {
                                     }
                                     tracing::debug!("Success: {success}");
                                 }
-                                WsMessage::Error { status, error, .. } => {
+                                BitmexWsMessage::Error { status, error, .. } => {
                                     tracing::error!(status = status, error = error);
                                     break; // TODO: Break for now
                                 }
@@ -991,11 +991,11 @@ impl BitmexWsMessageHandler {
         let clock = get_atomic_clock_realtime();
 
         while let Some(msg) = self.handler.next().await {
-            if let WsMessage::Table(table_msg) = msg {
+            if let BitmexWsMessage::Table(table_msg) = msg {
                 let ts_init = clock.get_time_ns();
 
                 return Some(match table_msg {
-                    TableMessage::OrderBookL2 { action, data } => {
+                    BitmexTableMessage::OrderBookL2 { action, data } => {
                         if data.is_empty() {
                             continue;
                         }
@@ -1004,7 +1004,7 @@ impl BitmexWsMessageHandler {
 
                         NautilusWsMessage::Data(data)
                     }
-                    TableMessage::OrderBookL2_25 { action, data } => {
+                    BitmexTableMessage::OrderBookL2_25 { action, data } => {
                         if data.is_empty() {
                             continue;
                         }
@@ -1013,7 +1013,7 @@ impl BitmexWsMessageHandler {
 
                         NautilusWsMessage::Data(data)
                     }
-                    TableMessage::OrderBook10 { data, .. } => {
+                    BitmexTableMessage::OrderBook10 { data, .. } => {
                         if data.is_empty() {
                             continue;
                         }
@@ -1022,7 +1022,7 @@ impl BitmexWsMessageHandler {
 
                         NautilusWsMessage::Data(data)
                     }
-                    TableMessage::Quote { mut data, .. } => {
+                    BitmexTableMessage::Quote { mut data, .. } => {
                         // Index symbols may return empty quote data
                         if data.is_empty() {
                             continue;
@@ -1037,7 +1037,7 @@ impl BitmexWsMessageHandler {
                             continue;
                         }
                     }
-                    TableMessage::Trade { data, .. } => {
+                    BitmexTableMessage::Trade { data, .. } => {
                         if data.is_empty() {
                             continue;
                         }
@@ -1046,56 +1046,56 @@ impl BitmexWsMessageHandler {
 
                         NautilusWsMessage::Data(data)
                     }
-                    TableMessage::TradeBin1m { action, data } => {
-                        if action == Action::Partial || data.is_empty() {
+                    BitmexTableMessage::TradeBin1m { action, data } => {
+                        if action == BitmexAction::Partial || data.is_empty() {
                             continue;
                         }
                         let price_precision = self.get_price_precision(&data[0].symbol);
                         let data = parse_trade_bin_msg_vec(
                             data,
-                            WsTopic::TradeBin1m,
+                            BitmexWsTopic::TradeBin1m,
                             price_precision,
                             ts_init,
                         );
 
                         NautilusWsMessage::Data(data)
                     }
-                    TableMessage::TradeBin5m { action, data } => {
-                        if action == Action::Partial || data.is_empty() {
+                    BitmexTableMessage::TradeBin5m { action, data } => {
+                        if action == BitmexAction::Partial || data.is_empty() {
                             continue;
                         }
                         let price_precision = self.get_price_precision(&data[0].symbol);
                         let data = parse_trade_bin_msg_vec(
                             data,
-                            WsTopic::TradeBin5m,
+                            BitmexWsTopic::TradeBin5m,
                             price_precision,
                             ts_init,
                         );
 
                         NautilusWsMessage::Data(data)
                     }
-                    TableMessage::TradeBin1h { action, data } => {
-                        if action == Action::Partial || data.is_empty() {
+                    BitmexTableMessage::TradeBin1h { action, data } => {
+                        if action == BitmexAction::Partial || data.is_empty() {
                             continue;
                         }
                         let price_precision = self.get_price_precision(&data[0].symbol);
                         let data = parse_trade_bin_msg_vec(
                             data,
-                            WsTopic::TradeBin1h,
+                            BitmexWsTopic::TradeBin1h,
                             price_precision,
                             ts_init,
                         );
 
                         NautilusWsMessage::Data(data)
                     }
-                    TableMessage::TradeBin1d { action, data } => {
-                        if action == Action::Partial || data.is_empty() {
+                    BitmexTableMessage::TradeBin1d { action, data } => {
+                        if action == BitmexAction::Partial || data.is_empty() {
                             continue;
                         }
                         let price_precision = self.get_price_precision(&data[0].symbol);
                         let data = parse_trade_bin_msg_vec(
                             data,
-                            WsTopic::TradeBin1d,
+                            BitmexWsTopic::TradeBin1d,
                             price_precision,
                             ts_init,
                         );
@@ -1103,7 +1103,7 @@ impl BitmexWsMessageHandler {
                         NautilusWsMessage::Data(data)
                     }
                     // Execution messages
-                    TableMessage::Order { data, .. } => {
+                    BitmexTableMessage::Order { data, .. } => {
                         if let Some(order_msg) = data.into_iter().next() {
                             let price_precision = self.get_price_precision(&order_msg.symbol);
                             let report = parse::parse_order_msg(&order_msg, price_precision);
@@ -1112,7 +1112,7 @@ impl BitmexWsMessageHandler {
                             continue;
                         }
                     }
-                    TableMessage::Execution { data, .. } => {
+                    BitmexTableMessage::Execution { data, .. } => {
                         let mut fills = Vec::new();
 
                         for exec_msg in data {
@@ -1138,7 +1138,7 @@ impl BitmexWsMessageHandler {
                         }
                         NautilusWsMessage::FillReports(fills)
                     }
-                    TableMessage::Position { data, .. } => {
+                    BitmexTableMessage::Position { data, .. } => {
                         if let Some(pos_msg) = data.into_iter().next() {
                             let report = parse::parse_position_msg(pos_msg);
                             NautilusWsMessage::PositionStatusReport(Box::new(report))
@@ -1146,7 +1146,7 @@ impl BitmexWsMessageHandler {
                             continue;
                         }
                     }
-                    TableMessage::Wallet { .. } => {
+                    BitmexTableMessage::Wallet { .. } => {
                         continue; // TODO: Parse to account state update
                         // if let Some(wallet_msg) = data.into_iter().next() {
                         //     let (account_id, currency, amount) =
@@ -1160,7 +1160,7 @@ impl BitmexWsMessageHandler {
                         //     continue;
                         // }
                     }
-                    TableMessage::Margin { data, .. } => {
+                    BitmexTableMessage::Margin { data, .. } => {
                         if let Some(margin_msg) = data.into_iter().next() {
                             match crate::common::parse::parse_account_state(
                                 &margin_msg,
@@ -1180,7 +1180,7 @@ impl BitmexWsMessageHandler {
                         }
                         continue;
                     }
-                    TableMessage::Instrument { data, .. } => {
+                    BitmexTableMessage::Instrument { data, .. } => {
                         let mut data_msgs = Vec::new();
 
                         for msg in data {
@@ -1193,7 +1193,7 @@ impl BitmexWsMessageHandler {
                         }
                         NautilusWsMessage::Data(data_msgs)
                     }
-                    TableMessage::Funding { data, .. } => {
+                    BitmexTableMessage::Funding { data, .. } => {
                         let mut funding_updates = Vec::new();
 
                         for msg in data {

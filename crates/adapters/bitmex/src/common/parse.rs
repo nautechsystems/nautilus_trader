@@ -30,7 +30,7 @@ use crate::{
             BitmexSide, BitmexTimeInForce,
         },
     },
-    websocket::messages::MarginMsg,
+    websocket::messages::BitmexMarginMsg,
 };
 
 /// Parses a Nautilus instrument ID from the given BitMEX `symbol` value.
@@ -123,7 +123,7 @@ pub fn parse_contingency_type(
 ///
 /// Returns an error if the margin data cannot be parsed into valid balance values.
 pub fn parse_account_state(
-    margin: &MarginMsg,
+    margin: &BitmexMarginMsg,
     account_id: AccountId,
     ts_init: UnixNanos,
 ) -> anyhow::Result<AccountState> {
@@ -202,7 +202,7 @@ mod tests {
 
     #[rstest]
     fn test_parse_account_state() {
-        let margin_msg = MarginMsg {
+        let margin_msg = BitmexMarginMsg {
             account: 123456,
             currency: "XBt".to_string(),
             risk_limit: Some(1000000000),
@@ -254,7 +254,7 @@ mod tests {
 
     #[rstest]
     fn test_parse_account_state_usdt() {
-        let margin_msg = MarginMsg {
+        let margin_msg = BitmexMarginMsg {
             account: 123456,
             currency: "USDt".to_string(),
             risk_limit: Some(1000000000),
