@@ -13,8 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use serde::{Deserialize, Serialize};
 use std::fmt::Display;
+
+use serde::{Deserialize, Serialize};
 
 /// Unique identifier for a signer (API wallet or user address).
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]

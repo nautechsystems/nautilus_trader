@@ -202,8 +202,9 @@ pub enum HyperliquidExchangeResponse {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use rstest::rstest;
+
+    use super::*;
 
     #[rstest]
     fn test_meta_deserialization() {
