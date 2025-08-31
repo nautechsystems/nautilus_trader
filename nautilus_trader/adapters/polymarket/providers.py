@@ -213,7 +213,7 @@ class PolymarketInstrumentProvider(InstrumentProvider):
             outcome=outcome,
             ts_init=self._clock.timestamp_ns(),
         )
-        if instrument.expiration_ns == 0:
-            self._log.warning(f"{instrument.id} expiration was `None`")
+        if market_info["end_date_iso"] is None:
+            self._log.warning(f"{instrument.id} expiration is missing, assuming it is still active")
         self.add(instrument)
         return instrument
