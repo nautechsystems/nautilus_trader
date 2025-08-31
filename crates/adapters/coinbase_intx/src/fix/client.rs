@@ -184,21 +184,6 @@ impl CoinbaseIntxFixClient {
         #[cfg(feature = "python")] handler: PyObject,
         #[cfg(not(feature = "python"))] _handler: (),
     ) -> anyhow::Result<()> {
-        let config = SocketConfig {
-            url: self.endpoint.clone(),
-            mode: Mode::Tls,
-            suffix: vec![FIX_DELIMITER],
-            #[cfg(feature = "python")]
-            py_handler: None, // Using handler from arg (TODO: refactor this config pattern)
-            heartbeat: None, // Using FIX heartbeats
-            reconnect_timeout_ms: Some(10000),
-            reconnect_delay_initial_ms: Some(5000),
-            reconnect_delay_max_ms: Some(30000),
-            reconnect_backoff_factor: Some(1.5),
-            reconnect_jitter_ms: Some(500),
-            certs_dir: None,
-        };
-
         let logged_on = self.logged_on.clone();
         let seq_num = self.seq_num.clone();
         let received_seq_num = self.received_seq_num.clone();
@@ -307,15 +292,24 @@ impl CoinbaseIntxFixClient {
             }
         });
 
+        let config = SocketConfig {
+            url: self.endpoint.clone(),
+            mode: Mode::Tls,
+            suffix: vec![FIX_DELIMITER],
+            message_handler: Some(handle_message),
+            heartbeat: None, // Using FIX heartbeats
+            reconnect_timeout_ms: Some(10000),
+            reconnect_delay_initial_ms: Some(5000),
+            reconnect_delay_max_ms: Some(30000),
+            reconnect_backoff_factor: Some(1.5),
+            reconnect_jitter_ms: Some(500),
+            certs_dir: None,
+        };
+
         let socket = match SocketClient::connect(
-            config,
-            Some(handle_message),
-            #[cfg(feature = "python")]
-            None,
-            #[cfg(feature = "python")]
-            None,
-            #[cfg(feature = "python")]
-            None,
+            config, None, // post_connection
+            None, // post_reconnection
+            None, // post_disconnection
         )
         .await
         {

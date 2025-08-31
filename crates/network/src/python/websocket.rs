@@ -13,16 +13,19 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{sync::atomic::Ordering, time::Duration};
+use std::{
+    sync::{Arc, atomic::Ordering},
+    time::Duration,
+};
 
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
-use pyo3::{create_exception, exceptions::PyException, prelude::*};
+use pyo3::{create_exception, exceptions::PyException, prelude::*, types::PyBytes};
 use tokio_tungstenite::tungstenite::{Message, Utf8Bytes};
 
 use crate::{
     mode::ConnectionMode,
     ratelimiter::quota::Quota,
-    websocket::{Consumer, WebSocketClient, WebSocketConfig, WriterCommand},
+    websocket::{MessageHandler, PingHandler, WebSocketClient, WebSocketConfig, WriterCommand},
 };
 
 // Python exception class for websocket errors
@@ -37,7 +40,7 @@ impl WebSocketConfig {
     #[new]
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (url, handler, headers, heartbeat=None, heartbeat_msg=None, ping_handler=None, reconnect_timeout_ms=10_000, reconnect_delay_initial_ms=2_000, reconnect_delay_max_ms=30_000, reconnect_backoff_factor=1.5, reconnect_jitter_ms=100))]
-    const fn py_new(
+    fn py_new(
         url: String,
         handler: PyObject,
         headers: Vec<(String, String)>,
@@ -50,13 +53,39 @@ impl WebSocketConfig {
         reconnect_backoff_factor: Option<f64>,
         reconnect_jitter_ms: Option<u64>,
     ) -> Self {
+        // Create function pointer that calls Python handler
+        let message_handler: MessageHandler = Arc::new(move |msg: Message| {
+            Python::with_gil(|py| {
+                let data = match msg {
+                    Message::Binary(data) => data.to_vec(),
+                    Message::Text(text) => text.as_bytes().to_vec(),
+                    _ => return, // Skip other message types
+                };
+                if let Err(e) = handler.call1(py, (PyBytes::new(py, &data),)) {
+                    tracing::error!("Error calling Python message handler: {e}");
+                }
+            });
+        });
+
+        // Create function pointer for ping handler if provided
+        let ping_handler_fn = ping_handler.map(|ping_handler| {
+            let ping_handler_fn: PingHandler = std::sync::Arc::new(move |data: Vec<u8>| {
+                Python::with_gil(|py| {
+                    if let Err(e) = ping_handler.call1(py, (PyBytes::new(py, &data),)) {
+                        tracing::error!("Error calling Python ping handler: {e}");
+                    }
+                });
+            });
+            ping_handler_fn
+        });
+
         Self {
             url,
-            handler: Consumer::Python(Some(handler)),
+            message_handler: Some(message_handler),
             headers,
             heartbeat,
             heartbeat_msg,
-            ping_handler,
+            ping_handler: ping_handler_fn,
             reconnect_timeout_ms,
             reconnect_delay_initial_ms,
             reconnect_delay_max_ms,
@@ -74,27 +103,29 @@ impl WebSocketClient {
     ///
     /// - Throws an Exception if it is unable to make websocket connection.
     #[staticmethod]
-    #[pyo3(name = "connect", signature = (config, post_connection= None, post_reconnection= None, post_disconnection= None, keyed_quotas = Vec::new(), default_quota = None))]
+    #[pyo3(name = "connect", signature = (config, post_reconnection= None, keyed_quotas = Vec::new(), default_quota = None))]
     fn py_connect(
         config: WebSocketConfig,
-        post_connection: Option<PyObject>,
         post_reconnection: Option<PyObject>,
-        post_disconnection: Option<PyObject>,
         keyed_quotas: Vec<(String, Quota)>,
         default_quota: Option<Quota>,
         py: Python<'_>,
     ) -> PyResult<Bound<'_, PyAny>> {
+        // Convert Python callback to function pointer
+        let post_reconnection_fn = post_reconnection.map(|callback| {
+            Arc::new(move || {
+                Python::with_gil(|py| {
+                    if let Err(e) = callback.call0(py) {
+                        tracing::error!("Error calling post_reconnection handler: {e}");
+                    }
+                });
+            }) as std::sync::Arc<dyn Fn() + Send + Sync>
+        });
+
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            Self::connect(
-                config,
-                post_connection,
-                post_reconnection,
-                post_disconnection,
-                keyed_quotas,
-                default_quota,
-            )
-            .await
-            .map_err(to_websocket_pyerr)
+            Self::connect(config, post_reconnection_fn, keyed_quotas, default_quota)
+                .await
+                .map_err(to_websocket_pyerr)
         })
     }
 
@@ -459,7 +490,7 @@ counter = Counter()
             None,
             None,
         );
-        let client = WebSocketClient::connect(config, None, None, None, Vec::new(), None)
+        let client = WebSocketClient::connect(config, None, Vec::new(), None)
             .await
             .unwrap();
 
@@ -536,7 +567,7 @@ counter = Counter()
             None,
             None,
         );
-        let client = WebSocketClient::connect(config, None, None, None, Vec::new(), None)
+        let client = WebSocketClient::connect(config, None, Vec::new(), None)
             .await
             .unwrap();
 
