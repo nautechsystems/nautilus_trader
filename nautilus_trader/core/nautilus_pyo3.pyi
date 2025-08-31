@@ -4211,9 +4211,7 @@ class WebSocketClient:
     def connect(
         cls,
         config: WebSocketConfig,
-        post_connection: Callable[..., None] | None = None,
         post_reconnection: Callable[..., None] | None = None,
-        post_disconnection: Callable[..., None] | None = None,
         keyed_quotas: list[tuple[str, Quota]] = [],
         default_quota: Quota | None = None,
     ) -> Awaitable[WebSocketClient]: ...

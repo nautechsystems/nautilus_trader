@@ -125,8 +125,7 @@ fn test_turmoil_socket_with_dependency_injection() {
             url: "server:8080".to_string(),
             mode: Mode::Plain,
             suffix: b"\\r\\n".to_vec(),
-            #[cfg(feature = "python")]
-            py_handler: None,
+            message_handler: None,
             heartbeat: None,
             reconnect_timeout_ms: Some(2_000),
             reconnect_delay_initial_ms: Some(50),
@@ -166,8 +165,8 @@ fn test_turmoil_socket_network_partition() {
             url: "server:8080".to_string(),
             mode: Mode::Plain,
             suffix: b"\\r\\n".to_vec(),
-            #[cfg(feature = "python")]
-            py_handler: None,
+            message_handler: None,
+
             heartbeat: None,
             reconnect_timeout_ms: Some(2_000),
             reconnect_delay_initial_ms: Some(100),
@@ -232,8 +231,8 @@ fn test_exponential_backoff_under_network_instability() {
             url: "server:8080".to_string(),
             mode: Mode::Plain,
             suffix: b"\\r\\n".to_vec(),
-            #[cfg(feature = "python")]
-            py_handler: None,
+            message_handler: None,
+
             heartbeat: None,
             reconnect_timeout_ms: Some(5_000),
             reconnect_delay_initial_ms: Some(50),
@@ -298,8 +297,8 @@ fn test_multiple_clients_concurrent() {
                 url: "server:8080".to_string(),
                 mode: Mode::Plain,
                 suffix: b"\\r\\n".to_vec(),
-                #[cfg(feature = "python")]
-                py_handler: None,
+                message_handler: None,
+
                 heartbeat: None,
                 reconnect_timeout_ms: Some(2_000),
                 reconnect_delay_initial_ms: Some(50),

@@ -34,7 +34,7 @@ use nautilus_model::{
     identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
 };
-use nautilus_network::websocket::{Consumer, MessageReader, WebSocketClient, WebSocketConfig};
+use nautilus_network::websocket::{MessageReader, WebSocketClient, WebSocketConfig};
 use reqwest::header::USER_AGENT;
 use tokio_tungstenite::tungstenite::{Error, Message};
 use ustr::Ustr;
@@ -206,16 +206,9 @@ impl CoinbaseIntxWebSocketClient {
         let config = WebSocketConfig {
             url: self.url.clone(),
             headers: vec![(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())],
-            #[cfg(feature = "python")]
-            handler: Consumer::Python(None),
-            #[cfg(not(feature = "python"))]
-            handler: {
-                let (consumer, _rx) = Consumer::rust_consumer();
-                consumer
-            },
+            message_handler: None, // Will be handled by the returned reader
             heartbeat: self.heartbeat,
             heartbeat_msg: None,
-            #[cfg(feature = "python")]
             ping_handler: None,
             reconnect_timeout_ms: Some(5_000),
             reconnect_delay_initial_ms: None, // Use default
