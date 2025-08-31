@@ -196,6 +196,7 @@ class BacktestVenueConfig(NautilusConfig, frozen=True):
     trade_execution: bool = False
     allow_cash_borrowing: bool = False
     frozen_account: bool = False
+    price_protection_points: float = 0.0
 
 
 class BacktestDataConfig(NautilusConfig, frozen=True):
