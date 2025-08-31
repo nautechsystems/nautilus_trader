@@ -15,7 +15,7 @@
 
 //! Provides account management functionality.
 
-use std::{cell::RefCell, fmt::Debug, rc::Rc, collections::HashMap};
+use std::{cell::RefCell, collections::HashMap, fmt::Debug, rc::Rc};
 
 use nautilus_common::{cache::Cache, clock::Clock};
 use nautilus_core::{UUID4, UnixNanos};
