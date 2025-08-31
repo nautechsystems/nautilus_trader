@@ -148,6 +148,36 @@ pub struct HyperliquidExchangeRequest<T> {
     pub vault_address: Option<String>,
 }
 
+impl<T> HyperliquidExchangeRequest<T>
+where
+    T: Serialize,
+{
+    /// Create a new exchange request with the given action.
+    pub fn new(action: T, nonce: u64, signature: String) -> Self {
+        Self {
+            action,
+            nonce,
+            signature,
+            vault_address: None,
+        }
+    }
+
+    /// Create a new exchange request with vault address for sub-account trading.
+    pub fn with_vault(action: T, nonce: u64, signature: String, vault_address: String) -> Self {
+        Self {
+            action,
+            nonce,
+            signature,
+            vault_address: Some(vault_address),
+        }
+    }
+
+    /// Convert to JSON value for signing purposes.
+    pub fn to_sign_value(&self) -> serde_json::Result<serde_json::Value> {
+        serde_json::to_value(self)
+    }
+}
+
 /// Represents an exchange response wrapper from `POST /exchange`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -172,9 +202,8 @@ pub enum HyperliquidExchangeResponse {
 
 #[cfg(test)]
 mod tests {
-    use rstest::rstest;
-
     use super::*;
+    use rstest::rstest;
 
     #[rstest]
     fn test_meta_deserialization() {
