@@ -48,15 +48,21 @@ use ustr::Ustr;
 
 use super::{
     error::{BitmexErrorResponse, BitmexHttpError},
-    models::{Execution, Instrument, Margin, Order, Position, Trade, Wallet},
+    models::{
+        BitmexExecution, BitmexInstrument, BitmexMargin, BitmexOrder, BitmexPosition, BitmexTrade,
+        BitmexWallet,
+    },
     query::{
         DeleteOrderParams, GetExecutionParams, GetOrderParams, GetPositionParams, GetTradeParams,
         PostOrderParams, PutOrderParams,
     },
 };
-use crate::common::{
-    consts::{BITMEX_HTTP_TESTNET_URL, BITMEX_HTTP_URL},
-    credential::Credential,
+use crate::{
+    common::{
+        consts::{BITMEX_HTTP_TESTNET_URL, BITMEX_HTTP_URL},
+        credential::Credential,
+    },
+    websocket::messages::BitmexMarginMsg,
 };
 
 /// Default BitMEX REST API rate limit.
@@ -226,7 +232,7 @@ impl BitmexHttpInnerClient {
     pub async fn http_get_instruments(
         &self,
         active_only: bool,
-    ) -> Result<Vec<Instrument>, BitmexHttpError> {
+    ) -> Result<Vec<BitmexInstrument>, BitmexHttpError> {
         let path = if active_only {
             "/instrument/active"
         } else {
@@ -243,7 +249,7 @@ impl BitmexHttpInnerClient {
     pub async fn http_get_instrument(
         &self,
         symbol: &str,
-    ) -> Result<Vec<Instrument>, BitmexHttpError> {
+    ) -> Result<Vec<BitmexInstrument>, BitmexHttpError> {
         let path = &format!("/instrument?symbol={symbol}");
         self.send_request(Method::GET, path, None, false).await
     }
@@ -253,7 +259,7 @@ impl BitmexHttpInnerClient {
     /// # Errors
     ///
     /// Returns an error if credentials are missing, the request fails, or the API returns an error.
-    pub async fn http_get_wallet(&self) -> Result<Wallet, BitmexHttpError> {
+    pub async fn http_get_wallet(&self) -> Result<BitmexWallet, BitmexHttpError> {
         let endpoint = "/user/wallet";
         self.send_request(Method::GET, endpoint, None, true).await
     }
@@ -263,7 +269,7 @@ impl BitmexHttpInnerClient {
     /// # Errors
     ///
     /// Returns an error if credentials are missing, the request fails, or the API returns an error.
-    pub async fn http_get_margin(&self, currency: &str) -> Result<Margin, BitmexHttpError> {
+    pub async fn http_get_margin(&self, currency: &str) -> Result<BitmexMargin, BitmexHttpError> {
         let path = format!("/user/margin?currency={currency}");
         self.send_request(Method::GET, &path, None, true).await
     }
@@ -280,7 +286,7 @@ impl BitmexHttpInnerClient {
     pub async fn http_get_trades(
         &self,
         params: GetTradeParams,
-    ) -> Result<Vec<Trade>, BitmexHttpError> {
+    ) -> Result<Vec<BitmexTrade>, BitmexHttpError> {
         let query = serde_urlencoded::to_string(&params).expect("Invalid parameters");
         let path = format!("/trade?{query}");
         self.send_request(Method::GET, &path, None, true).await
@@ -298,7 +304,7 @@ impl BitmexHttpInnerClient {
     pub async fn http_get_orders(
         &self,
         params: GetOrderParams,
-    ) -> Result<Vec<Order>, BitmexHttpError> {
+    ) -> Result<Vec<BitmexOrder>, BitmexHttpError> {
         let query = serde_urlencoded::to_string(&params).expect("Invalid parameters");
         let path = format!("/order?{query}");
         self.send_request(Method::GET, &path, None, true).await
@@ -367,7 +373,7 @@ impl BitmexHttpInnerClient {
     pub async fn http_get_executions(
         &self,
         params: GetExecutionParams,
-    ) -> Result<Vec<Execution>, BitmexHttpError> {
+    ) -> Result<Vec<BitmexExecution>, BitmexHttpError> {
         let query = serde_urlencoded::to_string(&params).expect("Invalid parameters");
         let path = format!("/execution/tradeHistory?{query}");
         self.send_request(Method::GET, &path, None, true).await
@@ -385,7 +391,7 @@ impl BitmexHttpInnerClient {
     pub async fn http_get_positions(
         &self,
         params: GetPositionParams,
-    ) -> Result<Vec<Position>, BitmexHttpError> {
+    ) -> Result<Vec<BitmexPosition>, BitmexHttpError> {
         let query = serde_urlencoded::to_string(&params).expect("Invalid parameters");
         let path = format!("/position?{query}");
         self.send_request(Method::GET, &path, None, true).await
@@ -516,7 +522,7 @@ impl BitmexHttpClient {
     pub async fn get_instruments(
         &self,
         active_only: bool,
-    ) -> Result<Vec<Instrument>, BitmexHttpError> {
+    ) -> Result<Vec<BitmexInstrument>, BitmexHttpError> {
         let inner = self.inner.clone();
         inner.http_get_instruments(active_only).await
     }
@@ -533,7 +539,7 @@ impl BitmexHttpClient {
     pub async fn get_instrument(
         &self,
         symbol: &Symbol,
-    ) -> Result<Vec<Instrument>, BitmexHttpError> {
+    ) -> Result<Vec<BitmexInstrument>, BitmexHttpError> {
         let inner = self.inner.clone();
         inner.http_get_instrument(symbol.as_ref()).await
     }
@@ -547,7 +553,7 @@ impl BitmexHttpClient {
     /// # Panics
     ///
     /// Panics if the inner mutex is poisoned.
-    pub async fn get_wallet(&self) -> Result<Wallet, BitmexHttpError> {
+    pub async fn get_wallet(&self) -> Result<BitmexWallet, BitmexHttpError> {
         let inner = self.inner.clone();
         inner.http_get_wallet().await
     }
@@ -561,7 +567,10 @@ impl BitmexHttpClient {
     /// # Panics
     ///
     /// Panics if the inner mutex is poisoned.
-    pub async fn get_trades(&self, params: GetTradeParams) -> Result<Vec<Trade>, BitmexHttpError> {
+    pub async fn get_trades(
+        &self,
+        params: GetTradeParams,
+    ) -> Result<Vec<BitmexTrade>, BitmexHttpError> {
         let inner = self.inner.clone();
         inner.http_get_trades(params).await
     }
@@ -575,7 +584,10 @@ impl BitmexHttpClient {
     /// # Panics
     ///
     /// Panics if the inner mutex is poisoned.
-    pub async fn get_orders(&self, params: GetOrderParams) -> Result<Vec<Order>, BitmexHttpError> {
+    pub async fn get_orders(
+        &self,
+        params: GetOrderParams,
+    ) -> Result<Vec<BitmexOrder>, BitmexHttpError> {
         let inner = self.inner.clone();
         inner.http_get_orders(params).await
     }
@@ -634,7 +646,7 @@ impl BitmexHttpClient {
     pub async fn get_executions(
         &self,
         params: GetExecutionParams,
-    ) -> Result<Vec<Execution>, BitmexHttpError> {
+    ) -> Result<Vec<BitmexExecution>, BitmexHttpError> {
         let inner = self.inner.clone();
         inner.http_get_executions(params).await
     }
@@ -651,7 +663,7 @@ impl BitmexHttpClient {
     pub async fn get_positions(
         &self,
         params: GetPositionParams,
-    ) -> Result<Vec<Position>, BitmexHttpError> {
+    ) -> Result<Vec<BitmexPosition>, BitmexHttpError> {
         let inner = self.inner.clone();
         inner.http_get_positions(params).await
     }
@@ -673,7 +685,7 @@ impl BitmexHttpClient {
     /// # Errors
     ///
     /// Returns an error if credentials are missing, the request fails, or the API returns an error.
-    pub async fn http_get_margin(&self, currency: &str) -> anyhow::Result<Margin> {
+    pub async fn http_get_margin(&self, currency: &str) -> anyhow::Result<BitmexMargin> {
         self.inner
             .http_get_margin(currency)
             .await
@@ -701,7 +713,7 @@ impl BitmexHttpClient {
         );
 
         // Convert HTTP Margin to WebSocket MarginMsg for parsing
-        let margin_msg = crate::websocket::messages::MarginMsg {
+        let margin_msg = BitmexMarginMsg {
             account: margin.account,
             currency: margin.currency,
             risk_limit: margin.risk_limit,
