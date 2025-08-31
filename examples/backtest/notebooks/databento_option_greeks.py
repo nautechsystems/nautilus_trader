@@ -27,6 +27,8 @@ from nautilus_trader.adapters.databento.data_utils import databento_data
 from nautilus_trader.adapters.databento.data_utils import load_catalog
 from nautilus_trader.backtest.config import MarginModelConfig
 from nautilus_trader.backtest.node import BacktestNode
+from nautilus_trader.backtest.option_exercise import OptionExerciseConfig
+from nautilus_trader.backtest.option_exercise import OptionExerciseModule
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
@@ -392,6 +394,16 @@ margin_model = MarginModelConfig(
     model_type="standard",
 )  # Use standard margin model for options trading
 
+modules = [
+    ImportableActorConfig(
+        actor_path=OptionExerciseModule.fully_qualified_name(),
+        config_path=OptionExerciseConfig.fully_qualified_name(),
+        config={
+            "auto_exercise_enabled": True,
+        },
+    ),
+]
+
 venues = [
     BacktestVenueConfig(
         name="XCME",
@@ -401,6 +413,7 @@ venues = [
         starting_balances=["1_000_000 USD"],
         margin_model=margin_model,
         fill_model=fill_model,
+        modules=modules,
     ),
 ]
 
