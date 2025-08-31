@@ -13,13 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_model::enums::{
+    ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce,
+};
 use serde::{Deserialize, Deserializer, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
 
 /// Represents the status of a BitMEX symbol.
 #[derive(
-    Clone,
     Copy,
+    Clone,
     Debug,
     Display,
     PartialEq,
@@ -46,35 +49,59 @@ pub enum BitmexSymbolStatus {
 
 /// Represents the side of an order or trade (Buy/Sell).
 #[derive(
-    Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
 )]
-pub enum Side {
+pub enum BitmexSide {
     /// Buy side of a trade or order.
     Buy,
     /// Sell side of a trade or order.
     Sell,
 }
 
-impl Side {
-    /// Converts a Nautilus order side to a BitMEX side.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the order side is not Buy or Sell.
-    pub fn from_nautilus_order_side(value: nautilus_model::enums::OrderSide) -> Self {
+impl From<OrderSide> for BitmexSide {
+    fn from(value: OrderSide) -> Self {
         match value {
-            nautilus_model::enums::OrderSide::Buy => Side::Buy,
-            nautilus_model::enums::OrderSide::Sell => Side::Sell,
+            OrderSide::Buy => Self::Buy,
+            OrderSide::Sell => Self::Sell,
             _ => panic!("Invalid order side: {value:?}"),
         }
     }
 }
 
-/// Represents the available order types on `BitMEX`.
+impl From<BitmexSide> for OrderSide {
+    fn from(side: BitmexSide) -> Self {
+        match side {
+            BitmexSide::Buy => Self::Buy,
+            BitmexSide::Sell => Self::Sell,
+        }
+    }
+}
+
+/// Represents the available order types on BitMEX.
 #[derive(
-    Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
 )]
-pub enum OrderType {
+pub enum BitmexOrderType {
     /// Market order, executed immediately at current market price.
     Market,
     /// Limit order, executed only at specified price or better.
@@ -91,28 +118,51 @@ pub enum OrderType {
     Pegged,
 }
 
-impl OrderType {
-    pub fn from_nautilus(value: nautilus_model::enums::OrderType) -> Self {
+impl From<OrderType> for BitmexOrderType {
+    fn from(value: OrderType) -> Self {
         match value {
-            nautilus_model::enums::OrderType::Market => Self::Market,
-            nautilus_model::enums::OrderType::Limit => Self::LimitIfTouched,
-            nautilus_model::enums::OrderType::StopMarket => Self::Stop,
-            nautilus_model::enums::OrderType::StopLimit => Self::StopLimit,
-            nautilus_model::enums::OrderType::MarketIfTouched => Self::MarketIfTouched,
-            nautilus_model::enums::OrderType::LimitIfTouched => Self::LimitIfTouched,
-            nautilus_model::enums::OrderType::TrailingStopMarket => Self::Pegged,
-            nautilus_model::enums::OrderType::TrailingStopLimit => Self::Pegged,
-            nautilus_model::enums::OrderType::MarketToLimit => Self::Market, // TODO: Not
-                                                                             // supported
+            OrderType::Market => Self::Market,
+            OrderType::Limit => Self::Limit,
+            OrderType::StopMarket => Self::Stop,
+            OrderType::StopLimit => Self::StopLimit,
+            OrderType::MarketIfTouched => Self::MarketIfTouched,
+            OrderType::LimitIfTouched => Self::LimitIfTouched,
+            OrderType::TrailingStopMarket => Self::Pegged,
+            OrderType::TrailingStopLimit => Self::Pegged,
+            OrderType::MarketToLimit => Self::Market, // TODO: Not supported by BitMEX
+        }
+    }
+}
+
+impl From<BitmexOrderType> for OrderType {
+    fn from(value: BitmexOrderType) -> Self {
+        match value {
+            BitmexOrderType::Market => Self::Market,
+            BitmexOrderType::Limit => Self::Limit,
+            BitmexOrderType::Stop => Self::StopMarket,
+            BitmexOrderType::StopLimit => Self::StopLimit,
+            BitmexOrderType::MarketIfTouched => Self::MarketIfTouched,
+            BitmexOrderType::LimitIfTouched => Self::LimitIfTouched,
+            BitmexOrderType::Pegged => Self::Limit,
         }
     }
 }
 
 /// Represents the possible states of an order throughout its lifecycle.
 #[derive(
-    Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
 )]
-pub enum OrderStatus {
+pub enum BitmexOrderStatus {
     /// Order has been placed but not yet processed.
     New,
     /// Order has been partially filled.
@@ -127,11 +177,34 @@ pub enum OrderStatus {
     Expired,
 }
 
+impl From<BitmexOrderStatus> for OrderStatus {
+    fn from(value: BitmexOrderStatus) -> Self {
+        match value {
+            BitmexOrderStatus::New => Self::Accepted,
+            BitmexOrderStatus::PartiallyFilled => Self::PartiallyFilled,
+            BitmexOrderStatus::Filled => Self::Filled,
+            BitmexOrderStatus::Canceled => Self::Canceled,
+            BitmexOrderStatus::Rejected => Self::Rejected,
+            BitmexOrderStatus::Expired => Self::Expired,
+        }
+    }
+}
+
 /// Specifies how long an order should remain active.
 #[derive(
-    Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
 )]
-pub enum TimeInForce {
+pub enum BitmexTimeInForce {
     Day,
     GoodTillCancel,
     AtTheOpening,
@@ -144,11 +217,36 @@ pub enum TimeInForce {
     AtCrossing,
 }
 
-/// Represents the available contingency types on `BitMEX`.
+impl From<BitmexTimeInForce> for TimeInForce {
+    fn from(value: BitmexTimeInForce) -> Self {
+        match value {
+            BitmexTimeInForce::Day => Self::Day,
+            BitmexTimeInForce::GoodTillCancel => Self::Gtc,
+            BitmexTimeInForce::GoodTillDate => Self::Gtd,
+            BitmexTimeInForce::ImmediateOrCancel => Self::Ioc,
+            BitmexTimeInForce::FillOrKill => Self::Fok,
+            BitmexTimeInForce::AtTheOpening => Self::AtTheOpen,
+            BitmexTimeInForce::AtTheClose => Self::AtTheClose,
+            _ => panic!("Unsupported `BitmexTimeInForce`, was {value}"),
+        }
+    }
+}
+
+/// Represents the available contingency types on BitMEX.
 #[derive(
-    Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
 )]
-pub enum ContingencyType {
+pub enum BitmexContingencyType {
     OneCancelsTheOther,
     OneTriggersTheOther,
     OneUpdatesTheOtherAbsolute,
@@ -157,11 +255,33 @@ pub enum ContingencyType {
     Unknown, // Can be empty
 }
 
-/// Represents the available peg price types on `BitMEX`.
+impl From<BitmexContingencyType> for ContingencyType {
+    fn from(value: BitmexContingencyType) -> Self {
+        match value {
+            BitmexContingencyType::OneCancelsTheOther => Self::Oco,
+            BitmexContingencyType::OneTriggersTheOther => Self::Oto,
+            BitmexContingencyType::OneUpdatesTheOtherProportional => Self::Ouo,
+            BitmexContingencyType::OneUpdatesTheOtherAbsolute => Self::Ouo,
+            BitmexContingencyType::Unknown => Self::NoContingency,
+        }
+    }
+}
+
+/// Represents the available peg price types on BitMEX.
 #[derive(
-    Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
 )]
-pub enum PegPriceType {
+pub enum BitmexPegPriceType {
     LastPeg,
     OpeningPeg,
     MidPricePeg,
@@ -175,11 +295,21 @@ pub enum PegPriceType {
     Unknown, // Can be empty
 }
 
-/// Represents the available execution instruments on `BitMEX`.
+/// Represents the available execution instruments on BitMEX.
 #[derive(
-    Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
 )]
-pub enum ExecInstruction {
+pub enum BitmexExecInstruction {
     ParticipateDoNotInitiate,
     AllOrNone,
     MarkPrice,
@@ -192,11 +322,11 @@ pub enum ExecInstruction {
     Unknown, // Can be empty
 }
 
-impl ExecInstruction {
-    pub fn join(instructions: &[ExecInstruction]) -> String {
+impl BitmexExecInstruction {
+    pub fn join(instructions: &[Self]) -> String {
         instructions
             .iter()
-            .map(|i| i.to_string())
+            .map(std::string::ToString::to_string)
             .collect::<Vec<_>>()
             .join(",")
     }
@@ -204,9 +334,19 @@ impl ExecInstruction {
 
 /// Represents the type of execution that generated a trade.
 #[derive(
-    Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
 )]
-pub enum ExecType {
+pub enum BitmexExecType {
     /// Normal trade execution.
     Trade,
     /// Settlement execution.
@@ -221,23 +361,56 @@ pub enum ExecType {
 
 /// Indicates whether the execution was maker or taker.
 #[derive(
-    Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
 )]
-pub enum LiquidityIndicator {
+pub enum BitmexLiquidityIndicator {
     /// Provided liquidity to the order book (maker).
+    /// BitMEX returns "Added" in REST API responses and "AddedLiquidity" in WebSocket messages.
     #[serde(rename = "Added")]
+    #[serde(alias = "AddedLiquidity")]
     Maker,
     /// Took liquidity from the order book (taker).
+    /// BitMEX returns "Removed" in REST API responses and "RemovedLiquidity" in WebSocket messages.
     #[serde(rename = "Removed")]
+    #[serde(alias = "RemovedLiquidity")]
     Taker,
 }
 
-/// Represents `BitMEX` instrument types.
+impl From<BitmexLiquidityIndicator> for LiquiditySide {
+    fn from(value: BitmexLiquidityIndicator) -> Self {
+        match value {
+            BitmexLiquidityIndicator::Maker => Self::Maker,
+            BitmexLiquidityIndicator::Taker => Self::Taker,
+        }
+    }
+}
+
+/// Represents BitMEX instrument types.
 #[derive(
-    Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
 )]
 #[serde(rename_all = "UPPERCASE")]
-pub enum InstrumentType {
+pub enum BitmexInstrumentType {
     #[serde(rename = "FXXXS")]
     Unknown1, // TODO: Determine name (option)
 
@@ -263,28 +436,28 @@ pub enum InstrumentType {
     #[serde(rename = "FFCCSX")]
     Futures,
 
-    /// `BitMEX` Basket Index.
+    /// BitMEX Basket Index.
     #[serde(rename = "MRBXXX")]
     BasketIndex,
 
-    /// `BitMEX` Crypto Index.
+    /// BitMEX Crypto Index.
     #[serde(rename = "MRCXXX")]
     CryptoIndex,
 
-    /// `BitMEX` FX Index.
+    /// BitMEX FX Index.
     #[serde(rename = "MRFXXX")]
     FxIndex,
 
-    /// `BitMEX` Lending/Premium Index.
+    /// BitMEX Lending/Premium Index.
     #[serde(rename = "MRRXXX")]
     LendingIndex,
 
-    /// `BitMEX` Volatility Index.
+    /// BitMEX Volatility Index.
     #[serde(rename = "MRIXXX")]
     VolatilityIndex,
 }
 
-/// Represents the different types of instrument subscriptions available on `BitMEX`.
+/// Represents the different types of instrument subscriptions available on BitMEX.
 #[derive(Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize)]
 pub enum BitmexProductType {
     /// All instruments AND indices.
@@ -365,39 +538,39 @@ mod tests {
     #[rstest]
     fn test_instrument_type_serialization() {
         assert_eq!(
-            serde_json::to_string(&InstrumentType::PerpetualContract).unwrap(),
+            serde_json::to_string(&BitmexInstrumentType::PerpetualContract).unwrap(),
             r#""FFWCSX""#
         );
         assert_eq!(
-            serde_json::to_string(&InstrumentType::PerpetualContractFx).unwrap(),
+            serde_json::to_string(&BitmexInstrumentType::PerpetualContractFx).unwrap(),
             r#""FFWCSF""#
         );
         assert_eq!(
-            serde_json::to_string(&InstrumentType::Spot).unwrap(),
+            serde_json::to_string(&BitmexInstrumentType::Spot).unwrap(),
             r#""IFXXXP""#
         );
         assert_eq!(
-            serde_json::to_string(&InstrumentType::Futures).unwrap(),
+            serde_json::to_string(&BitmexInstrumentType::Futures).unwrap(),
             r#""FFCCSX""#
         );
         assert_eq!(
-            serde_json::to_string(&InstrumentType::BasketIndex).unwrap(),
+            serde_json::to_string(&BitmexInstrumentType::BasketIndex).unwrap(),
             r#""MRBXXX""#
         );
         assert_eq!(
-            serde_json::to_string(&InstrumentType::CryptoIndex).unwrap(),
+            serde_json::to_string(&BitmexInstrumentType::CryptoIndex).unwrap(),
             r#""MRCXXX""#
         );
         assert_eq!(
-            serde_json::to_string(&InstrumentType::FxIndex).unwrap(),
+            serde_json::to_string(&BitmexInstrumentType::FxIndex).unwrap(),
             r#""MRFXXX""#
         );
         assert_eq!(
-            serde_json::to_string(&InstrumentType::LendingIndex).unwrap(),
+            serde_json::to_string(&BitmexInstrumentType::LendingIndex).unwrap(),
             r#""MRRXXX""#
         );
         assert_eq!(
-            serde_json::to_string(&InstrumentType::VolatilityIndex).unwrap(),
+            serde_json::to_string(&BitmexInstrumentType::VolatilityIndex).unwrap(),
             r#""MRIXXX""#
         );
     }
@@ -405,44 +578,44 @@ mod tests {
     #[rstest]
     fn test_instrument_type_deserialization() {
         assert_eq!(
-            serde_json::from_str::<InstrumentType>(r#""FFWCSX""#).unwrap(),
-            InstrumentType::PerpetualContract
+            serde_json::from_str::<BitmexInstrumentType>(r#""FFWCSX""#).unwrap(),
+            BitmexInstrumentType::PerpetualContract
         );
         assert_eq!(
-            serde_json::from_str::<InstrumentType>(r#""FFWCSF""#).unwrap(),
-            InstrumentType::PerpetualContractFx
+            serde_json::from_str::<BitmexInstrumentType>(r#""FFWCSF""#).unwrap(),
+            BitmexInstrumentType::PerpetualContractFx
         );
         assert_eq!(
-            serde_json::from_str::<InstrumentType>(r#""IFXXXP""#).unwrap(),
-            InstrumentType::Spot
+            serde_json::from_str::<BitmexInstrumentType>(r#""IFXXXP""#).unwrap(),
+            BitmexInstrumentType::Spot
         );
         assert_eq!(
-            serde_json::from_str::<InstrumentType>(r#""FFCCSX""#).unwrap(),
-            InstrumentType::Futures
+            serde_json::from_str::<BitmexInstrumentType>(r#""FFCCSX""#).unwrap(),
+            BitmexInstrumentType::Futures
         );
         assert_eq!(
-            serde_json::from_str::<InstrumentType>(r#""MRBXXX""#).unwrap(),
-            InstrumentType::BasketIndex
+            serde_json::from_str::<BitmexInstrumentType>(r#""MRBXXX""#).unwrap(),
+            BitmexInstrumentType::BasketIndex
         );
         assert_eq!(
-            serde_json::from_str::<InstrumentType>(r#""MRCXXX""#).unwrap(),
-            InstrumentType::CryptoIndex
+            serde_json::from_str::<BitmexInstrumentType>(r#""MRCXXX""#).unwrap(),
+            BitmexInstrumentType::CryptoIndex
         );
         assert_eq!(
-            serde_json::from_str::<InstrumentType>(r#""MRFXXX""#).unwrap(),
-            InstrumentType::FxIndex
+            serde_json::from_str::<BitmexInstrumentType>(r#""MRFXXX""#).unwrap(),
+            BitmexInstrumentType::FxIndex
         );
         assert_eq!(
-            serde_json::from_str::<InstrumentType>(r#""MRRXXX""#).unwrap(),
-            InstrumentType::LendingIndex
+            serde_json::from_str::<BitmexInstrumentType>(r#""MRRXXX""#).unwrap(),
+            BitmexInstrumentType::LendingIndex
         );
         assert_eq!(
-            serde_json::from_str::<InstrumentType>(r#""MRIXXX""#).unwrap(),
-            InstrumentType::VolatilityIndex
+            serde_json::from_str::<BitmexInstrumentType>(r#""MRIXXX""#).unwrap(),
+            BitmexInstrumentType::VolatilityIndex
         );
 
         // Error case
-        assert!(serde_json::from_str::<InstrumentType>(r#""INVALID""#).is_err());
+        assert!(serde_json::from_str::<BitmexInstrumentType>(r#""INVALID""#).is_err());
     }
 
     #[rstest]

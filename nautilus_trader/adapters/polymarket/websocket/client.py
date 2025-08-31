@@ -19,6 +19,7 @@ from collections.abc import Callable
 from enum import Enum
 from enum import unique
 from typing import Any
+from weakref import WeakSet
 
 import msgspec
 
@@ -29,6 +30,7 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.nautilus_pyo3 import WebSocketClient
 from nautilus_trader.core.nautilus_pyo3 import WebSocketClientError
 from nautilus_trader.core.nautilus_pyo3 import WebSocketConfig
+from nautilus_trader.live.cancellation import cancel_tasks_with_timeout
 
 
 @unique
@@ -80,6 +82,7 @@ class PolymarketWebSocketClient:
         self._handler: Callable[[bytes], None] = handler
         self._handler_reconnect: Callable[..., Awaitable[None]] | None = handler_reconnect
         self._loop = loop
+        self._tasks: WeakSet[asyncio.Task] = WeakSet()
 
         self._markets: list[str] = []
         self._assets: list[str] = []
@@ -181,15 +184,19 @@ class PolymarketWebSocketClient:
         self._log.warning(f"Reconnected to {self._ws_url}")
 
         # Re-subscribe to all streams
-        self._loop.create_task(self._subscribe_all())
+        task = self._loop.create_task(self._subscribe_all())
+        self._tasks.add(task)
 
         if self._handler_reconnect:
-            self._loop.create_task(self._handler_reconnect())  # type: ignore
+            task = self._loop.create_task(self._handler_reconnect())  # type: ignore
+            self._tasks.add(task)
 
     async def disconnect(self) -> None:
         """
         Disconnect the client from the server.
         """
+        await cancel_tasks_with_timeout(self._tasks, self._log)
+
         if self._client is None:
             self._log.warning("Cannot disconnect: not connected")
             return

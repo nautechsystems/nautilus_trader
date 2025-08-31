@@ -211,14 +211,14 @@ mod tests {
     fn test_async_data_command_sender_creation() {
         let (tx, _rx) = mpsc::unbounded_channel();
         let sender = AsyncDataCommandSender::new(tx);
-        assert!(format!("{:?}", sender).contains("AsyncDataCommandSender"));
+        assert!(format!("{sender:?}").contains("AsyncDataCommandSender"));
     }
 
     #[rstest]
     fn test_async_time_event_sender_creation() {
         let (tx, _rx) = mpsc::unbounded_channel();
         let sender = AsyncTimeEventSender::new(tx);
-        assert!(format!("{:?}", sender).contains("AsyncTimeEventSender"));
+        assert!(format!("{sender:?}").contains("AsyncTimeEventSender"));
     }
 
     #[rstest]

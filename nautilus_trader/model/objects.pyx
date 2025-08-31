@@ -991,7 +991,8 @@ cdef class Money:
 
     def __eq__(self, Money other) -> bool:
         Condition.not_none(other, "other")
-        Condition.is_true(self._mem.currency.code == other._mem.currency.code, "currency != other.currency")
+        if self._mem.currency.code != other._mem.currency.code:
+            Condition.is_true(self._mem.currency.code == other._mem.currency.code, f"currency {self.currency.code} != other.currency {other.currency.code}")
         return self._mem.raw == other._mem.raw
 
     def __lt__(self, Money other) -> bool:
@@ -1626,7 +1627,7 @@ cdef class AccountBalance:
     ) -> None:
         Condition.equal(total.currency, locked.currency, "total.currency", "locked.currency")
         Condition.equal(total.currency, free.currency, "total.currency", "free.currency")
-        Condition.is_true(total.raw_int_c() - locked.raw_int_c() == free.raw_int_c(), "`total` - `locked` != `free` amount")
+        Condition.is_true(total.raw_int_c() - locked.raw_int_c() == free.raw_int_c(), f"`total` ({total}) - `locked` ({locked}) != `free` ({free})")
 
         self.total = total
         self.locked = locked
@@ -1741,8 +1742,8 @@ cdef class MarginBalance:
         InstrumentId instrument_id = None,
     ) -> None:
         Condition.equal(initial.currency, maintenance.currency, "initial.currency", "maintenance.currency")
-        Condition.is_true(initial.raw_int_c() >= 0, "initial margin was negative")
-        Condition.is_true(maintenance.raw_int_c() >= 0, "maintenance margin was negative")
+        Condition.is_true(initial.raw_int_c() >= 0, f"initial margin was negative ({initial})")
+        Condition.is_true(maintenance.raw_int_c() >= 0, f"maintenance margin was negative ({maintenance})")
 
         self.initial = initial
         self.maintenance = maintenance

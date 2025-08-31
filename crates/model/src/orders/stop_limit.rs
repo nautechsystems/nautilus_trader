@@ -680,7 +680,7 @@ mod tests {
             .quantity(Quantity::from(1))
             .build();
     }
-    #[test]
+    #[rstest]
     fn test_stop_limit_order_update() {
         // Create and accept a basic stop limit order
         let order = OrderTestBuilder::new(OrderType::StopLimit)
@@ -714,7 +714,7 @@ mod tests {
         assert_eq!(accepted_order.trigger_price(), Some(updated_trigger_price));
     }
 
-    #[test]
+    #[rstest]
     fn test_stop_limit_order_expire_time() {
         // Create a stop limit order with an expire time
         let expire_time = UnixNanos::from(1234567890);
@@ -730,7 +730,7 @@ mod tests {
         assert_eq!(order.expire_time(), Some(expire_time));
     }
 
-    #[test]
+    #[rstest]
     fn test_stop_limit_order_post_only() {
         // Create a stop limit order with post_only flag set to true
         let order = OrderTestBuilder::new(OrderType::StopLimit)
@@ -745,7 +745,7 @@ mod tests {
         assert!(order.is_post_only());
     }
 
-    #[test]
+    #[rstest]
     fn test_stop_limit_order_reduce_only() {
         // Create a stop limit order with reduce_only flag set to true
         let order = OrderTestBuilder::new(OrderType::StopLimit)
@@ -760,7 +760,7 @@ mod tests {
         assert!(order.is_reduce_only());
     }
 
-    #[test]
+    #[rstest]
     fn test_stop_limit_order_trigger_instrument_id() {
         // Create a stop limit order with a trigger instrument ID
         let trigger_instrument_id = InstrumentId::from("ETH-USDT.BINANCE");
@@ -776,7 +776,7 @@ mod tests {
         assert_eq!(order.trigger_instrument_id(), Some(trigger_instrument_id));
     }
 
-    #[test]
+    #[rstest]
     fn test_stop_limit_order_would_reduce_only() {
         // Create a stop limit order with a sell side
         let order = OrderTestBuilder::new(OrderType::StopLimit)
@@ -793,7 +793,7 @@ mod tests {
         assert!(!order.would_reduce_only(PositionSide::Long, Quantity::from(5)));
     }
 
-    #[test]
+    #[rstest]
     fn test_stop_limit_order_display_string() {
         // Create a stop limit order
         let order = OrderTestBuilder::new(OrderType::StopLimit)
@@ -813,7 +813,7 @@ mod tests {
         assert_eq!(format!("{order}"), expected);
     }
 
-    #[test]
+    #[rstest]
     fn test_stop_limit_order_from_order_initialized() {
         // Create an OrderInitialized event with all required fields for a StopLimitOrder
         let order_initialized = OrderInitializedBuilder::default()

@@ -170,6 +170,56 @@ class TestExecutionReports:
             == f"PositionStatusReport(account_id=SIM-001, instrument_id=AUD/USD.IDEALPRO, venue_position_id=2, position_side=SHORT, quantity=1_000_000, signed_decimal_qty=-1000000, report_id={report_id2}, ts_last=0, ts_init=0)"  # noqa
         )
 
+    def test_position_status_report_create_flat(self):
+        # Arrange
+        account_id = AccountId("SIM-001")
+        ts_init = 1_000_000
+        report_id = UUID4()
+
+        # Act
+        report = PositionStatusReport.create_flat(
+            account_id=account_id,
+            instrument_id=AUDUSD_IDEALPRO,
+            size_precision=6,
+            ts_init=ts_init,
+            report_id=report_id,
+        )
+
+        # Assert
+        assert report.account_id == account_id
+        assert report.instrument_id == AUDUSD_IDEALPRO
+        assert report.position_side == PositionSide.FLAT
+        assert report.quantity == Quantity.from_str("0.000000")
+        assert report.signed_decimal_qty == Decimal("0")
+        assert report.venue_position_id is None
+        assert report.id == report_id
+        assert report.ts_last == ts_init
+        assert report.ts_init == ts_init
+
+    def test_position_status_report_create_flat_without_report_id(self):
+        # Arrange
+        account_id = AccountId("SIM-001")
+        ts_init = 1_000_000
+
+        # Act
+        report = PositionStatusReport.create_flat(
+            account_id=account_id,
+            instrument_id=AUDUSD_IDEALPRO,
+            size_precision=2,
+            ts_init=ts_init,
+        )
+
+        # Assert
+        assert report.account_id == account_id
+        assert report.instrument_id == AUDUSD_IDEALPRO
+        assert report.position_side == PositionSide.FLAT
+        assert report.quantity == Quantity.from_str("0.00")
+        assert report.signed_decimal_qty == Decimal("0")
+        assert report.venue_position_id is None
+        assert isinstance(report.id, UUID4)
+        assert report.ts_last == ts_init
+        assert report.ts_init == ts_init
+
     def test_instantiate_execution_mass_status_report(self):
         # Arrange
         client_id = ClientId("IB")

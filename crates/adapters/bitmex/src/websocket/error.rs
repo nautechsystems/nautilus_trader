@@ -44,6 +44,6 @@ pub enum BitmexWsError {
 
 impl From<serde_json::Error> for BitmexWsError {
     fn from(error: serde_json::Error) -> Self {
-        BitmexWsError::JsonError(error.to_string())
+        Self::JsonError(error.to_string())
     }
 }

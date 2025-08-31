@@ -17,7 +17,7 @@ import asyncio
 
 import pytest
 
-from nautilus_trader.backtest.exchange import SimulatedExchange
+from nautilus_trader.backtest.engine import SimulatedExchange
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.model.data import QuoteTick

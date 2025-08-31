@@ -13,14 +13,37 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! The [Hyperliquid](https://hyperliquid.gitbook.io/hyperliquid-docs) integration adapter.
+//! [NautilusTrader](http://nautilustrader.io) adapter for the [Hyperliquid](https://hyperliquid.gitbook.io/hyperliquid-docs) decentralized exchange.
+//!
+//! The `nautilus-hyperliquid` crate provides integration with the Hyperliquid API for
+//! trading perpetual futures on a decentralized exchange.
+//!
+//! # Platform
+//!
+//! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
+//! algorithmic trading platform, providing quantitative traders with the ability to backtest
+//! portfolios of automated trading strategies on historical data with an event-driven engine,
+//! and also deploy those same strategies live, with no code changes.
+//!
+//! NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
+//! highest level, with the aim of supporting mission-critical, trading system backtesting and live deployment workloads.
+//!
+//! # Feature flags
+//!
+//! This crate provides feature flags to control source code inclusion during compilation,
+//! depending on the intended use case, i.e. whether to provide Python bindings
+//! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
+//! or as part of a Rust only build.
+//!
+//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//! - `extension-module`: Builds as a Python extension module (used with `python`).
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]
 #![deny(nonstandard_style)]
 #![deny(missing_debug_implementations)]
 // #![deny(clippy::missing_errors_doc)]
-// #![deny(clippy::missing_panics_doc)]
+#![deny(clippy::missing_panics_doc)]
 #![deny(rustdoc::broken_intra_doc_links)]
 
 pub mod common;

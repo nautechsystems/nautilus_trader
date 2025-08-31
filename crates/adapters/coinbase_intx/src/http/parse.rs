@@ -428,7 +428,7 @@ pub fn parse_position_status_report(
         .net_size
         .parse::<f64>()
         .map_err(|e| anyhow::anyhow!("Invalid value for `net_size`: {e}"))?;
-    let position_side = parse_position_side(Some(net_size));
+    let position_side = parse_position_side(Some(net_size)).as_specified();
     let quantity = Quantity::new(net_size.abs(), size_precision);
 
     Ok(PositionStatusReport::new(

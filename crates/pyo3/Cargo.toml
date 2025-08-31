@@ -21,9 +21,13 @@ crate-type = ["cdylib", "rlib"]
 [features]
 default = []
 cython-compat = []
+defi = [
+  "dep:nautilus-blockchain",
+  "nautilus-blockchain/python",
+]
 extension-module = [
   "nautilus-bitmex/extension-module",
-  "nautilus-blockchain/extension-module",
+  "nautilus-blockchain?/extension-module",
   "nautilus-coinbase-intx/extension-module",
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
@@ -52,9 +56,9 @@ high-precision = [
   "nautilus-model/high-precision",
   "nautilus-serialization/high-precision",
 ]
-redis = ["nautilus-infrastructure/redis"]
-postgres = ["nautilus-infrastructure/postgres"]
 hypersync = ["nautilus-blockchain/hypersync"]
+postgres = ["nautilus-infrastructure/postgres"]
+redis = ["nautilus-infrastructure/redis"]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -77,7 +81,7 @@ nautilus-trading = { workspace = true, features = ["python"] }
 
 # Adapters
 nautilus-bitmex = { workspace = true, features = ["python"] }
-nautilus-blockchain = { workspace = true, features = ["python"] }
+nautilus-blockchain = { workspace = true, features = ["python"], optional = true }
 nautilus-coinbase-intx = { workspace = true, features = ["python"] }
 nautilus-databento = { workspace = true, features = ["python"] }
 nautilus-hyperliquid = { workspace = true, features = ["python"] }

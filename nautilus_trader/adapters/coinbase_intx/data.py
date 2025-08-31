@@ -24,7 +24,6 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core import nautilus_pyo3
-from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
@@ -46,6 +45,8 @@ from nautilus_trader.data.messages import UnsubscribeMarkPrices
 from nautilus_trader.data.messages import UnsubscribeOrderBook
 from nautilus_trader.data.messages import UnsubscribeQuoteTicks
 from nautilus_trader.data.messages import UnsubscribeTradeTicks
+from nautilus_trader.live.cancellation import DEFAULT_FUTURE_CANCELLATION_TIMEOUT
+from nautilus_trader.live.cancellation import cancel_tasks_with_timeout
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import IndexPriceUpdate
 from nautilus_trader.model.data import MarkPriceUpdate
@@ -131,13 +132,13 @@ class CoinbaseIntxDataClient(LiveMarketDataClient):
         self._cache_instruments()
         self._send_all_instruments_to_data_engine()
 
-        future = asyncio.ensure_future(
-            self._ws_client.connect(
-                instruments=self.coinbase_intx_instrument_provider.instruments_pyo3(),
-                callback=self._handle_msg,
-            ),
+        await self._ws_client.connect(
+            instruments=self.coinbase_intx_instrument_provider.instruments_pyo3(),
+            callback=self._handle_msg,
         )
-        self._ws_client_futures.add(future)
+
+        # Wait for connection to be established
+        await self._ws_client.wait_until_active(timeout_secs=10.0)
         self._log.info(f"Connected to {self._ws_client.url}", LogColor.BLUE)
         self._log.info(f"WebSocket API key {self._ws_client.api_key}", LogColor.BLUE)
         self._log.info("Coinbase Intx API key authenticated", LogColor.GREEN)
@@ -157,19 +158,11 @@ class CoinbaseIntxDataClient(LiveMarketDataClient):
             self._log.info(f"Disconnected from {self._ws_client.url}", LogColor.BLUE)
 
         # Cancel any pending futures
-        for future in self._ws_client_futures:
-            if not future.done():
-                future.cancel()
-
-        if self._ws_client_futures:
-            try:
-                await asyncio.wait_for(
-                    asyncio.gather(*self._ws_client_futures, return_exceptions=True),
-                    timeout=2.0,
-                )
-            except TimeoutError:
-                self._log.warning("Timeout while waiting for websockets shutdown to complete")
-
+        await cancel_tasks_with_timeout(
+            self._ws_client_futures,
+            self._log,
+            timeout_secs=DEFAULT_FUTURE_CANCELLATION_TIMEOUT,
+        )
         self._ws_client_futures.clear()
 
     def _cache_instruments(self) -> None:
@@ -218,7 +211,7 @@ class CoinbaseIntxDataClient(LiveMarketDataClient):
             return
 
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        await self._ws_client.subscribe_order_book([pyo3_instrument_id])
+        await self._ws_client.subscribe_book([pyo3_instrument_id])
 
     async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
@@ -248,11 +241,11 @@ class CoinbaseIntxDataClient(LiveMarketDataClient):
 
     async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        await self._ws_client.unsubscribe_order_book([pyo3_instrument_id])
+        await self._ws_client.unsubscribe_book([pyo3_instrument_id])
 
     async def _unsubscribe_order_book_snapshots(self, command: UnsubscribeOrderBook) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        await self._ws_client.unsubscribe_order_book([pyo3_instrument_id])
+        await self._ws_client.unsubscribe_book([pyo3_instrument_id])
 
     async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
@@ -275,18 +268,12 @@ class CoinbaseIntxDataClient(LiveMarketDataClient):
         await self._ws_client.unsubscribe_bars(pyo3_bar_type)
 
     async def _request_instrument(self, request: RequestInstrument) -> None:
-        # Check if start/end times are too far from current time
-        now = self._clock.utc_now()
-        now_ns = dt_to_unix_nanos(now)
-        start_ns = dt_to_unix_nanos(request.start)
-        end_ns = dt_to_unix_nanos(request.end)
-
-        if abs(start_ns - now_ns) > 10_000_000:  # More than 10ms difference
+        if request.start is not None:
             self._log.warning(
                 f"Requesting instrument {request.instrument_id} with specified `start` which has no effect",
             )
 
-        if abs(end_ns - now_ns) > 10_000_000:  # More than 10ms difference
+        if request.end is not None:
             self._log.warning(
                 f"Requesting instrument {request.instrument_id} with specified `end` which has no effect",
             )
@@ -299,18 +286,12 @@ class CoinbaseIntxDataClient(LiveMarketDataClient):
         self._handle_instrument(instrument, request.id, request.start, request.end, request.params)
 
     async def _request_instruments(self, request: RequestInstruments) -> None:
-        # Check if start/end times are too far from current time
-        now = self._clock.utc_now()
-        now_ns = dt_to_unix_nanos(now)
-        start_ns = dt_to_unix_nanos(request.start)
-        end_ns = dt_to_unix_nanos(request.end)
-
-        if abs(start_ns - now_ns) > 10_000_000:  # More than 10ms difference
+        if request.start is not None:
             self._log.warning(
                 f"Requesting instruments for {request.venue} with specified `start` which has no effect",
             )
 
-        if abs(end_ns - now_ns) > 10_000_000:  # More than 10ms difference
+        if request.end is not None:
             self._log.warning(
                 f"Requesting instruments for {request.venue} with specified `end` which has no effect",
             )

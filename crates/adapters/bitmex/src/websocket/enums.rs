@@ -19,16 +19,26 @@ use strum::{AsRefStr, Display, EnumIter, EnumString};
 
 /// Side of an order or trade.
 #[derive(
-    Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
 )]
-pub enum Side {
+pub enum BitmexSide {
     /// Buy side of the trade/order.
     Buy,
     /// Sell side of the trade/order.
     Sell,
 }
 
-impl Side {
+impl BitmexSide {
     #[must_use]
     pub const fn as_order_side(&self) -> OrderSide {
         match self {
@@ -45,20 +55,30 @@ impl Side {
     }
 }
 
-impl From<Side> for crate::enums::Side {
-    fn from(side: Side) -> Self {
+impl From<BitmexSide> for crate::common::enums::BitmexSide {
+    fn from(side: BitmexSide) -> Self {
         match side {
-            Side::Buy => crate::enums::Side::Buy,
-            Side::Sell => crate::enums::Side::Sell,
+            BitmexSide::Buy => Self::Buy,
+            BitmexSide::Sell => Self::Sell,
         }
     }
 }
 
 /// Direction of price tick relative to previous trade.
 #[derive(
-    Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
 )]
-pub enum TickDirection {
+pub enum BitmexTickDirection {
     /// Price higher than previous trade.
     PlusTick,
     /// Price lower than previous trade.
@@ -71,10 +91,20 @@ pub enum TickDirection {
 
 /// Trading instrument state.
 #[derive(
-    Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
 )]
 #[serde(rename_all = "lowercase")]
-pub enum InstrumentState {
+pub enum BitmexInstrumentState {
     /// Instrument is available for trading.
     Open,
     /// Instrument is not currently trading.
@@ -87,10 +117,20 @@ pub enum InstrumentState {
 
 /// Action type for table data messages.
 #[derive(
-    Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
 )]
 #[serde(rename_all = "lowercase")]
-pub enum Action {
+pub enum BitmexAction {
     /// Initial snapshot of table data.
     Partial,
     /// New data inserted.
@@ -101,7 +141,7 @@ pub enum Action {
     Delete,
 }
 
-impl Action {
+impl BitmexAction {
     #[must_use]
     pub const fn as_book_action(&self) -> BookAction {
         match self {
@@ -118,7 +158,7 @@ impl Action {
     Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,
 )]
 #[serde(rename_all = "camelCase")]
-pub enum WsOperation {
+pub enum BitmexWsOperation {
     /// Subscribe to one or more topics.
     Subscribe,
     /// Unsubscribe from one or more topics.
@@ -130,7 +170,7 @@ pub enum WsOperation {
     Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,
 )]
 #[serde(rename_all = "camelCase")]
-pub enum WsAuthAction {
+pub enum BitmexWsAuthAction {
     /// Submit API key for authentication.
     AuthKey,
     /// Cancel all orders after n seconds.
@@ -143,7 +183,7 @@ pub enum WsAuthAction {
 )]
 #[serde(rename_all = "camelCase")]
 #[strum(serialize_all = "camelCase")]
-pub enum WsTopic {
+pub enum BitmexWsTopic {
     /// Site announcements.
     Announcement,
     /// Trollbox chat.
@@ -190,22 +230,4 @@ pub enum WsTopic {
     TradeBin1h,
     /// 1-day trade bins.
     TradeBin1d,
-}
-
-/// Error types that can be returned by the WebSocket API.
-#[derive(
-    Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,
-)]
-#[serde(rename_all = "camelCase")]
-pub enum WsErrorType {
-    /// General error.
-    Error,
-    /// Error during subscription.
-    SubscriptionError,
-    /// Error during unsubscription.
-    UnsubscriptionError,
-    /// Authentication failure.
-    AuthenticationError,
-    /// Rate limit exceeded.
-    RateLimit,
 }

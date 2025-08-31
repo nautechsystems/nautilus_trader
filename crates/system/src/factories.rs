@@ -23,7 +23,7 @@ use nautilus_execution::client::ExecutionClient;
 ///
 /// This trait allows different client types to provide their configuration
 /// in a type-safe manner while still being usable in generic factory contexts.
-pub trait ClientConfig: Send + Sync + std::fmt::Debug {
+pub trait ClientConfig: Send + Sync + Debug {
     /// Return the configuration as a trait object.
     fn as_any(&self) -> &dyn Any;
 }

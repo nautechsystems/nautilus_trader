@@ -13,9 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Risk engine [NautilusTrader](http://nautilustrader.io).
+//! Risk engine for [NautilusTrader](http://nautilustrader.io).
 //!
-//! The *risk* crate provides comprehensive risk management capabilities including pre-trade
+//! The `nautilus-risk` crate provides comprehensive risk management capabilities including pre-trade
 //! order validation, position sizing calculations, and trading controls. This system ensures
 //! trading operations remain within defined risk parameters and regulatory constraints:
 //!

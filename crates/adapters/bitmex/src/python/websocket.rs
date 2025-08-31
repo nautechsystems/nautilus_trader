@@ -13,27 +13,57 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Python bindings for the `BitmEX` WebSocket client.
+//!
+//! # Design Pattern: Clone and Share State
+//!
+//! The WebSocket client must be cloned for async operations because PyO3's `future_into_py`
+//! requires `'static` futures (cannot borrow from `self`). To ensure clones share the same
+//! connection state, key fields use `Arc<RwLock<T>>`:
+//!
+//! - `inner: Arc<RwLock<Option<WebSocketClient>>>` - The WebSocket connection.
+//!
+//! Without shared state, clones would be independent, causing:
+//! - Lost WebSocket messages.
+//! - Missing instrument data.
+//! - Connection state desynchronization.
+//!
+//! ## Connection Flow
+//!
+//! 1. Clone the client for async operation.
+//! 2. Connect and populate shared state on the clone.
+//! 3. Spawn stream handler as background task.
+//! 4. Return immediately (non-blocking).
+//!
+//! ## Important Notes
+//!
+//! - Never use `block_on()` - it blocks the runtime.
+//! - Always clone before async blocks for lifetime requirements.
+//! - `RwLock` is preferred over Mutex (many reads, few writes).
+
 use futures_util::StreamExt;
-use nautilus_core::python::to_pyvalue_err;
+use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
-    data::bar::BarType, identifiers::InstrumentId, python::data::data_to_pycapsule,
+    data::bar::BarType,
+    identifiers::{AccountId, InstrumentId},
+    python::{data::data_to_pycapsule, instruments::pyobject_to_instrument_any},
 };
-use pyo3::{IntoPyObjectExt, exceptions::PyRuntimeError, prelude::*};
-use pyo3_async_runtimes::tokio::get_runtime;
+use pyo3::{conversion::IntoPyObjectExt, exceptions::PyRuntimeError, prelude::*};
 
 use crate::websocket::{BitmexWebSocketClient, messages::NautilusWsMessage};
 
 #[pymethods]
 impl BitmexWebSocketClient {
     #[new]
-    #[pyo3(signature = (url=None, api_key=None, api_secret=None, heartbeat=None))]
+    #[pyo3(signature = (url=None, api_key=None, api_secret=None, account_id=None, heartbeat=None))]
     fn py_new(
         url: Option<String>,
         api_key: Option<String>,
         api_secret: Option<String>,
+        account_id: Option<AccountId>,
         heartbeat: Option<u64>,
     ) -> PyResult<Self> {
-        Self::new(url, api_key, api_secret, heartbeat).map_err(to_pyvalue_err)
+        Self::new(url, api_key, api_secret, account_id, heartbeat).map_err(to_pyvalue_err)
     }
 
     #[staticmethod]
@@ -45,7 +75,7 @@ impl BitmexWebSocketClient {
     #[getter]
     #[pyo3(name = "url")]
     #[must_use]
-    pub fn py_url(&self) -> &str {
+    pub const fn py_url(&self) -> &str {
         self.url()
     }
 
@@ -66,58 +96,94 @@ impl BitmexWebSocketClient {
         self.is_closed()
     }
 
+    #[pyo3(name = "get_subscriptions")]
+    fn py_get_subscriptions(&self, instrument_id: InstrumentId) -> Vec<String> {
+        self.get_subscriptions(instrument_id)
+    }
+
     #[pyo3(name = "connect")]
     fn py_connect<'py>(
         &mut self,
         py: Python<'py>,
+        instruments: Vec<PyObject>,
         callback: PyObject,
     ) -> PyResult<Bound<'py, PyAny>> {
-        get_runtime().block_on(async {
-            self.connect()
-                .await
-                .map_err(|e| PyRuntimeError::new_err(e.to_string()))
-        })?;
+        let mut instruments_any = Vec::new();
+        for inst in instruments {
+            let inst_any = pyobject_to_instrument_any(py, inst)?;
+            instruments_any.push(inst_any);
+        }
 
-        let stream = self.stream();
+        self.initialize_instruments_cache(instruments_any);
+
+        let mut client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            tokio::pin!(stream);
+            client.connect().await.map_err(to_pyruntime_err)?;
 
-            while let Some(msg) = stream.next().await {
-                Python::with_gil(|py| match msg {
-                    NautilusWsMessage::Data(data_vec) => {
-                        for data in data_vec {
-                            let py_obj = data_to_pycapsule(py, data);
-                            call_python(py, &callback, py_obj);
-                        }
-                    }
-                    NautilusWsMessage::OrderStatusReport(report) => {
-                        if let Ok(py_obj) = (*report).into_py_any(py) {
-                            call_python(py, &callback, py_obj);
-                        }
-                    }
-                    NautilusWsMessage::FillReports(reports) => {
-                        for report in reports {
-                            if let Ok(py_obj) = report.into_py_any(py) {
+            let stream = client.stream();
+
+            tokio::spawn(async move {
+                tokio::pin!(stream);
+
+                while let Some(msg) = stream.next().await {
+                    Python::with_gil(|py| match msg {
+                        NautilusWsMessage::Data(data_vec) => {
+                            for data in data_vec {
+                                let py_obj = data_to_pycapsule(py, data);
                                 call_python(py, &callback, py_obj);
                             }
                         }
-                    }
-                    NautilusWsMessage::PositionStatusReport(report) => {
-                        if let Ok(py_obj) = (*report).into_py_any(py) {
-                            call_python(py, &callback, py_obj);
-                        }
-                    }
-                    NautilusWsMessage::FundingRateUpdates(updates) => {
-                        for update in updates {
-                            if let Ok(py_obj) = update.into_py_any(py) {
+                        NautilusWsMessage::OrderStatusReport(report) => {
+                            if let Ok(py_obj) = (*report).into_py_any(py) {
                                 call_python(py, &callback, py_obj);
                             }
                         }
-                    }
-                });
-            }
+                        NautilusWsMessage::FillReports(reports) => {
+                            for report in reports {
+                                if let Ok(py_obj) = report.into_py_any(py) {
+                                    call_python(py, &callback, py_obj);
+                                }
+                            }
+                        }
+                        NautilusWsMessage::PositionStatusReport(report) => {
+                            if let Ok(py_obj) = (*report).into_py_any(py) {
+                                call_python(py, &callback, py_obj);
+                            }
+                        }
+                        NautilusWsMessage::FundingRateUpdates(updates) => {
+                            for update in updates {
+                                if let Ok(py_obj) = update.into_py_any(py) {
+                                    call_python(py, &callback, py_obj);
+                                }
+                            }
+                        }
+                        NautilusWsMessage::AccountState(account_state) => {
+                            if let Ok(py_obj) = (*account_state).into_py_any(py) {
+                                call_python(py, &callback, py_obj);
+                            }
+                        }
+                    });
+                }
+            });
 
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "wait_until_active")]
+    fn py_wait_until_active<'py>(
+        &self,
+        py: Python<'py>,
+        timeout_secs: f64,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .wait_until_active(timeout_secs)
+                .await
+                .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
             Ok(())
         })
     }
@@ -129,6 +195,18 @@ impl BitmexWebSocketClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             if let Err(e) = client.close().await {
                 log::error!("Error on close: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "subscribe_instruments")]
+    fn py_subscribe_instruments<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.subscribe_instruments().await {
+                log::error!("Failed to subscribe to instruments: {e}");
             }
             Ok(())
         })
@@ -150,8 +228,8 @@ impl BitmexWebSocketClient {
         })
     }
 
-    #[pyo3(name = "subscribe_order_book")]
-    fn py_subscribe_order_book<'py>(
+    #[pyo3(name = "subscribe_book")]
+    fn py_subscribe_book<'py>(
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
@@ -159,15 +237,15 @@ impl BitmexWebSocketClient {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            if let Err(e) = client.subscribe_order_book(instrument_id).await {
+            if let Err(e) = client.subscribe_book(instrument_id).await {
                 log::error!("Failed to subscribe to order book: {e}");
             }
             Ok(())
         })
     }
 
-    #[pyo3(name = "subscribe_order_book_25")]
-    fn py_subscribe_order_book_25<'py>(
+    #[pyo3(name = "subscribe_book_25")]
+    fn py_subscribe_book_25<'py>(
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
@@ -175,15 +253,15 @@ impl BitmexWebSocketClient {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            if let Err(e) = client.subscribe_order_book_25(instrument_id).await {
+            if let Err(e) = client.subscribe_book_25(instrument_id).await {
                 log::error!("Failed to subscribe to order book 25: {e}");
             }
             Ok(())
         })
     }
 
-    #[pyo3(name = "subscribe_order_book_depth10")]
-    fn py_subscribe_order_book_depth10<'py>(
+    #[pyo3(name = "subscribe_book_depth10")]
+    fn py_subscribe_book_depth10<'py>(
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
@@ -191,7 +269,7 @@ impl BitmexWebSocketClient {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            if let Err(e) = client.subscribe_order_book_depth10(instrument_id).await {
+            if let Err(e) = client.subscribe_book_depth10(instrument_id).await {
                 log::error!("Failed to subscribe to order book depth 10: {e}");
             }
             Ok(())
@@ -294,6 +372,18 @@ impl BitmexWebSocketClient {
         })
     }
 
+    #[pyo3(name = "unsubscribe_instruments")]
+    fn py_unsubscribe_instruments<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.unsubscribe_instruments().await {
+                log::error!("Failed to unsubscribe from instruments: {e}");
+            }
+            Ok(())
+        })
+    }
+
     #[pyo3(name = "unsubscribe_instrument")]
     fn py_unsubscribe_instrument<'py>(
         &self,
@@ -310,8 +400,8 @@ impl BitmexWebSocketClient {
         })
     }
 
-    #[pyo3(name = "unsubscribe_order_book")]
-    fn py_unsubscribe_order_book<'py>(
+    #[pyo3(name = "unsubscribe_book")]
+    fn py_unsubscribe_book<'py>(
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
@@ -319,15 +409,15 @@ impl BitmexWebSocketClient {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            if let Err(e) = client.unsubscribe_order_book(instrument_id).await {
+            if let Err(e) = client.unsubscribe_book(instrument_id).await {
                 log::error!("Failed to unsubscribe from order book: {e}");
             }
             Ok(())
         })
     }
 
-    #[pyo3(name = "unsubscribe_order_book_25")]
-    fn py_unsubscribe_order_book_25<'py>(
+    #[pyo3(name = "unsubscribe_book_25")]
+    fn py_unsubscribe_book_25<'py>(
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
@@ -335,15 +425,15 @@ impl BitmexWebSocketClient {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            if let Err(e) = client.unsubscribe_order_book_25(instrument_id).await {
+            if let Err(e) = client.unsubscribe_book_25(instrument_id).await {
                 log::error!("Failed to unsubscribe from order book 25: {e}");
             }
             Ok(())
         })
     }
 
-    #[pyo3(name = "unsubscribe_order_book_depth10")]
-    fn py_unsubscribe_order_book_depth10<'py>(
+    #[pyo3(name = "unsubscribe_book_depth10")]
+    fn py_unsubscribe_book_depth10<'py>(
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
@@ -351,7 +441,7 @@ impl BitmexWebSocketClient {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            if let Err(e) = client.unsubscribe_order_book_depth10(instrument_id).await {
+            if let Err(e) = client.unsubscribe_book_depth10(instrument_id).await {
                 log::error!("Failed to unsubscribe from order book depth 10: {e}");
             }
             Ok(())

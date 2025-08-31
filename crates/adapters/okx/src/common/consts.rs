@@ -15,7 +15,10 @@
 
 use std::sync::LazyLock;
 
-use nautilus_model::identifiers::Venue;
+use nautilus_model::{
+    enums::{OrderType, TimeInForce},
+    identifiers::Venue,
+};
 use ustr::Ustr;
 
 pub const OKX: &str = "OKX";
@@ -31,3 +34,26 @@ pub const OKX_WS_BUSINESS_URL: &str = "wss://ws.okx.com:8443/ws/v5/business";
 pub const OKX_WS_DEMO_PUBLIC_URL: &str = "wss://wspap.okx.com:8443/ws/v5/public";
 pub const OKX_WS_DEMO_PRIVATE_URL: &str = "wss://wspap.okx.com:8443/ws/v5/private";
 pub const OKX_WS_DEMO_BUSINESS_URL: &str = "wss://wspap.okx.com:8443/ws/v5/business";
+
+/// OKX supported order time in force for market orders.
+///
+/// # Notes
+///
+/// - OKX implements IOC and FOK as order types rather than separate time-in-force parameters.
+/// - GTD is supported via expire_time parameter.
+pub const OKX_SUPPORTED_TIME_IN_FORCE: &[TimeInForce] = &[
+    TimeInForce::Gtc, // Good Till Cancel (default)
+    TimeInForce::Ioc, // Immediate or Cancel (mapped to OKXOrderType::Ioc)
+    TimeInForce::Fok, // Fill or Kill (mapped to OKXOrderType::Fok)
+];
+
+/// OKX supported order types.
+///
+/// # Notes
+///
+/// - PostOnly is supported as a flag on limit orders.
+pub const OKX_SUPPORTED_ORDER_TYPES: &[OrderType] = &[
+    OrderType::Market,
+    OrderType::Limit,
+    OrderType::MarketToLimit, // Mapped to IOC when no price is specified
+];

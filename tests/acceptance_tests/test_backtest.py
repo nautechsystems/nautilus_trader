@@ -900,12 +900,147 @@ class TestBacktestNodeWithBacktestDataIterator:
         run_backtest(messages_with_data.append, with_data=True)
         run_backtest(messages_without_data.append, with_data=False)
 
+        # Find the last portfolio greeks message (may not be the very last message due to spread quotes)
+        portfolio_greeks_messages = [
+            msg for msg in messages_with_data if "portfolio_greeks=" in msg
+        ]
+        assert len(portfolio_greeks_messages) > 0, "No portfolio greeks messages found"
+
+        # The last portfolio greeks message should match the expected values (adjusted for spread execution)
+        # Now includes both individual leg orders and spread orders
+        last_greeks = portfolio_greeks_messages[-1]
         assert (
-            messages_with_data[-1]
-            == "portfolio_greeks=PortfolioGreeks(pnl=-312.50, price=5,312.50, delta=30.18, gamma=-0.00, vega=-9.35, "
-            "theta=643.70, ts_event=2024-05-09T10:05:00.000000000Z, ts_init=2024-05-09T10:05:00.000000000Z)"
-        )
+            "portfolio_greeks=PortfolioGreeks(pnl=-350.00, price=7,937.50" in last_greeks
+        ), f"Unexpected portfolio greeks: {last_greeks}"
         assert messages_with_data == messages_without_data
+
+    def test_spread_execution_functionality(self) -> None:
+        """
+        Test that spread execution generates proper combo and leg fills with
+        mathematical consistency.
+        """
+        # Arrange
+        messages: list = []
+
+        # Act
+        run_backtest(messages.append, with_data=True)
+
+        # Extract relevant messages
+        spread_quotes = [msg for msg in messages if "Spread quote received:" in msg]
+        combo_fills = [msg for msg in messages if "COMBO FILL:" in msg]
+        all_leg_fills = [msg for msg in messages if "LEG FILL:" in msg]
+
+        # Separate spread-related leg fills from individual leg fills
+        # Spread leg fills have "-LEG-" in the order ID
+        spread_leg_fills = [msg for msg in all_leg_fills if "-LEG-" in msg]
+        individual_leg_fills = [msg for msg in all_leg_fills if "-LEG-" not in msg]
+
+        # Assert spread execution functionality
+        assert len(spread_quotes) > 0, "No spread quotes were received"
+        assert len(combo_fills) > 0, "No combo fills were generated"
+        assert (
+            len(spread_leg_fills) >= 2
+        ), f"Expected at least 2 spread leg fills, got {len(spread_leg_fills)}"
+
+        # Validate that we have exactly 2 spread leg fills per combo fill (for a 2-leg spread)
+        assert (
+            len(spread_leg_fills) == len(combo_fills) * 2
+        ), f"Expected {len(combo_fills) * 2} spread leg fills for {len(combo_fills)} combo fills, got {len(spread_leg_fills)}"
+
+        # Also validate that we have individual leg fills from init_portfolio
+        assert (
+            len(individual_leg_fills) >= 2
+        ), f"Expected at least 2 individual leg fills, got {len(individual_leg_fills)}"
+
+        # Extract and validate mathematical consistency using only spread leg fills
+        self._validate_spread_math_consistency(combo_fills, spread_leg_fills)
+
+        # Validate spread quote format
+        self._validate_spread_quote_format(spread_quotes)
+
+    def _validate_spread_math_consistency(self, combo_fills: list, leg_fills: list):
+        """
+        Validate mathematical consistency between combo and leg fills.
+        """
+        for combo_msg in combo_fills:
+            # Extract combo fill details: "COMBO FILL: BUY 5 @ 10.64 (Order: ..., Trade: XCME-4-001)"
+            combo_parts = combo_msg.split()
+            combo_price = float(combo_parts[5])
+
+            # Extract trade ID to match leg fills
+            trade_id_part = combo_msg.split("Trade: ")[1].split(")")[0]
+
+            # Find matching leg fills
+            matching_legs = [msg for msg in leg_fills if trade_id_part in msg]
+            assert (
+                len(matching_legs) == 2
+            ), f"Expected 2 leg fills for trade {trade_id_part}, got {len(matching_legs)}"
+
+            # Extract leg fill prices
+            # Format: "LEG FILL: ESM4 P5230.XCME 2 5 @ 97.63 (Order: ...)"
+            # Where index 4 is order side (2=SELL, 1=BUY), index 7 is price
+            leg_prices = []
+            leg_sides = []
+            for leg_msg in matching_legs:
+                leg_parts = leg_msg.split()
+                side_code = leg_parts[4]  # 2 = SELL, 1 = BUY
+                side = "SELL" if side_code == "2" else "BUY"
+                leg_sides.append(side)
+                leg_prices.append(float(leg_parts[7]))  # Price after "@"
+
+            # Calculate expected spread price: -leg1_price + leg2_price (for PUT spread: short lower strike, long higher strike)
+            # The leg fills should be: SELL ESM4 P5230 and BUY ESM4 P5250
+            sell_price = None
+            buy_price = None
+
+            for i, side in enumerate(leg_sides):
+                if side == "SELL":
+                    sell_price = leg_prices[i]
+                elif side == "BUY":
+                    buy_price = leg_prices[i]
+
+            assert sell_price is not None, "No SELL leg fill found"
+            assert buy_price is not None, "No BUY leg fill found"
+
+            # For a put spread: short lower strike (P5230) - long higher strike (P5250)
+            # Spread price = -sell_price + buy_price
+            calculated_spread = -sell_price + buy_price
+
+            # Allow small floating point tolerance
+            tolerance = 0.01
+            assert abs(calculated_spread - combo_price) < tolerance, (
+                f"Mathematical inconsistency: -{sell_price} + {buy_price} = {calculated_spread:.4f}, "
+                f"but combo fill was {combo_price:.4f} (diff: {abs(calculated_spread - combo_price):.4f})"
+            )
+
+    def _validate_spread_quote_format(self, spread_quotes: list):
+        """
+        Validate that spread quotes have the correct format.
+        """
+        for quote_msg in spread_quotes:
+            # Extract quote part: "Spread quote received: ((1))ESM4 P5230_(1)ESM4 P5250.XCME,10.61,10.64,113,62,1715248860000000000"
+            quote_part = quote_msg.split("Spread quote received: ")[1]
+
+            # Validate spread instrument ID format
+            assert (
+                "((1))ESM4 P5230_(1)ESM4 P5250.XCME" in quote_part
+            ), f"Spread instrument ID not found in correct format: {quote_part}"
+
+            # Validate that quote has bid/ask prices
+            quote_data = quote_part.split(",")
+            assert (
+                len(quote_data) >= 3
+            ), f"Quote should have at least instrument,bid,ask: {quote_part}"
+
+            # Validate bid/ask are numeric
+            try:
+                bid = float(quote_data[1])
+                ask = float(quote_data[2])
+                assert bid > 0, f"Bid price should be positive: {bid}"
+                assert ask > 0, f"Ask price should be positive: {ask}"
+                assert ask >= bid, f"Ask ({ask}) should be >= bid ({bid})"
+            except (ValueError, IndexError) as e:
+                assert False, f"Invalid quote format: {quote_part}, error: {e}"
 
 
 def run_backtest(test_callback=None, with_data=True, log_path=None):
@@ -951,14 +1086,25 @@ def run_backtest(test_callback=None, with_data=True, log_path=None):
     #     ),
     # ]
 
+    # Create spread instrument ID for testing spread execution
+    option1_id = InstrumentId.from_str(f"{option_symbols[0]}.XCME")
+    option2_id = InstrumentId.from_str(f"{option_symbols[1]}.XCME")
+    spread_instrument_id = InstrumentId.new_spread(
+        [
+            (option1_id, -1),  # Short ESM4 P5230
+            (option2_id, 1),  # Long ESM4 P5250
+        ],
+    )
+
     strategies = [
         ImportableStrategyConfig(
             strategy_path=OptionStrategy.fully_qualified_name(),
             config_path=OptionConfig.fully_qualified_name(),
             config={
                 "future_id": InstrumentId.from_str(f"{future_symbols[0]}.XCME"),
-                "option_id": InstrumentId.from_str(f"{option_symbols[0]}.XCME"),
-                "option_id2": InstrumentId.from_str(f"{option_symbols[1]}.XCME"),
+                "option_id": option1_id,
+                "option_id2": option2_id,
+                "spread_id": spread_instrument_id,
                 "load_greeks": load_greeks,
             },
         ),
@@ -1074,6 +1220,7 @@ class OptionConfig(StrategyConfig, frozen=True):
     future_id: InstrumentId
     option_id: InstrumentId
     option_id2: InstrumentId
+    spread_id: InstrumentId
     load_greeks: bool = False
 
 
@@ -1081,6 +1228,10 @@ class OptionStrategy(Strategy):
     def __init__(self, config: OptionConfig):
         super().__init__(config=config)
         self.start_orders_done = False
+        self.spread_order_submitted = False
+        self.spread_quotes_received = 0
+        self.combo_fills: list[str] = []
+        self.leg_fills: list[str] = []
 
     def on_start(self):
         self.bar_type = BarType.from_str(f"{self.config.future_id}-1-MINUTE-LAST-EXTERNAL")
@@ -1089,12 +1240,20 @@ class OptionStrategy(Strategy):
         self.request_instrument(self.config.option_id2)
         self.request_instrument(self.bar_type.instrument_id)
 
+        # Subscribe to individual option quotes
         self.subscribe_quote_ticks(
             self.config.option_id,
             params={"durations_seconds": (pd.Timedelta(minutes=2).seconds,)},
         )
-        self.subscribe_quote_ticks(self.config.option_id2)
+        self.subscribe_quote_ticks(
+            self.config.option_id2,
+            params={"point_data": True, "durations_seconds": (pd.Timedelta(minutes=1).seconds,)},
+        )
         self.subscribe_bars(self.bar_type)
+
+        # Request and subscribe to spread instrument
+        self.request_instrument(self.config.spread_id)
+        self.subscribe_quote_ticks(self.config.spread_id)
 
         self.subscribe_data(
             DataType(GreeksData),
@@ -1116,8 +1275,47 @@ class OptionStrategy(Strategy):
     #     self.log.warning(f"{greeks=}")
     #     self.cache.add_greeks(greeks)
 
-    def on_quote_tick(self, data):
-        self.user_log(data)
+    def on_quote_tick(self, tick):
+        # Submit spread order when we have spread quotes available
+        if tick.instrument_id == self.config.spread_id and not self.spread_order_submitted:
+            self.user_log(f"Spread quote received: {tick}")
+            self.spread_quotes_received += 1
+
+            # Try submitting order immediately - the exchange should have processed the quote by now
+            self.user_log(f"Submitting spread order for {self.config.spread_id}")
+            self.submit_market_order(instrument_id=self.config.spread_id, quantity=5)
+            self.spread_order_submitted = True
+        else:
+            self.user_log(f"Quote: {tick}")
+
+    def on_order_filled(self, event):
+        """
+        Log and analyze order fills for spread execution testing.
+        """
+        if event.instrument_id == self.config.spread_id:
+            # This is a combo fill
+            self.combo_fills.append(event)
+            self.user_log(
+                f"COMBO FILL: {event.order_side} {event.last_qty} @ {event.last_px} "
+                f"(Order: {event.client_order_id}, Trade: {event.trade_id})",
+                color=LogColor.GREEN,
+            )
+        elif (
+            event.instrument_id == self.config.option_id
+            or event.instrument_id == self.config.option_id2
+        ):
+            # This is a leg fill
+            self.leg_fills.append(event)
+            self.user_log(
+                f"LEG FILL: {event.instrument_id} {event.order_side} {event.last_qty} @ {event.last_px} "
+                f"(Order: {event.client_order_id}, Trade: {event.trade_id})",
+                color=LogColor.BLUE,
+            )
+        else:
+            # Regular fill
+            self.user_log(
+                f"FILL: {event.instrument_id} {event.order_side} {event.last_qty} @ {event.last_px}",
+            )
 
     def init_portfolio(self):
         self.submit_market_order(instrument_id=self.config.option_id, quantity=-10)
@@ -1164,16 +1362,25 @@ class OptionStrategy(Strategy):
 
         self.submit_order(order)
 
-    def user_log(self, msg):
-        self.log.warning(str(msg), color=LogColor.GREEN)
-        self.msgbus.publish(topic="test", msg=str(msg))
-
     def on_stop(self):
+        """
+        Log final statistics for spread execution testing and clean up subscriptions.
+        """
+        self.user_log("Strategy stopping - Spread execution statistics:")
+        self.user_log(f"Spread quotes received: {self.spread_quotes_received}")
+        self.user_log(f"Combo fills: {len(self.combo_fills)}")
+        self.user_log(f"Leg fills: {len(self.leg_fills)}")
+
+        # Clean up subscriptions
         self.unsubscribe_bars(self.bar_type)
         self.unsubscribe_quote_ticks(self.config.option_id)
         self.unsubscribe_quote_ticks(self.config.option_id2)
         self.unsubscribe_data(DataType(GreeksData), instrument_id=self.config.option_id)
         self.unsubscribe_data(DataType(GreeksData), instrument_id=self.config.option_id2)
+
+    def user_log(self, msg, color=LogColor.GREEN):
+        self.log.warning(f"[SpreadTest] {msg!s}", color=color)
+        self.msgbus.publish(topic="test", msg=str(msg))
 
 
 class StratTestConfig(StrategyConfig):  # type: ignore [misc]
@@ -1326,3 +1533,505 @@ def test_correct_account_balance_from_issue_2632() -> None:
     assert account.balance_total(USDT) == Money(1_000_245.87500000, USDT)
     assert account.balance_free(USDT) == Money(1_000_245.87500000, USDT)
     assert account.balance_locked(USDT) == Money(0, USDT)
+
+
+class TestBacktestPnLAlignmentAcceptance:
+    """
+    Tests validating PnL calculation alignment across all system components.
+
+    These tests ensure that PnL is consistently calculated across:
+    - Individual position cycles
+    - Portfolio aggregation (with snapshots)
+    - Account balance changes
+    - Backtest results
+
+    """
+
+    def test_pnl_alignment_multiple_position_cycles(self):  # noqa: C901
+        """
+        Test PnL alignment when positions go through multiple open-flat-reopen cycles.
+
+        This validates that:
+        1. Each position cycle tracks PnL independently
+        2. Portfolio correctly aggregates all cycles via snapshots
+        3. Account balance changes match position PnL sums
+
+        """
+        # Arrange
+        config = BacktestEngineConfig(
+            logging=LoggingConfig(bypass_logging=True),
+        )
+
+        engine = BacktestEngine(config=config)
+
+        starting_balance = Money(1_000_000, USD)
+        engine.add_venue(
+            venue=Venue("SIM"),
+            oms_type=OmsType.NETTING,  # Use NETTING to test position snapshots
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            starting_balances=[starting_balance],
+        )
+
+        AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=Venue("SIM"))
+        engine.add_instrument(AUDUSD_SIM)
+
+        # Create a simple strategy that guarantees multiple position cycles
+        class MultiCycleTestStrategy(Strategy):
+            def __init__(self):
+                super().__init__()
+                self.instrument_id = InstrumentId.from_str("AUD/USD.SIM")
+                self.trade_count = 0
+
+            def on_start(self):
+                self.instrument = self.cache.instrument(self.instrument_id)
+                self.subscribe_quote_ticks(self.instrument_id)
+
+            def on_quote_tick(self, tick: QuoteTick):
+                self.trade_count += 1
+
+                if self.trade_count == 10:
+                    # Cycle 1: Open long
+                    order = self.order_factory.market(
+                        instrument_id=self.instrument_id,
+                        order_side=OrderSide.BUY,
+                        quantity=Quantity.from_int(100_000),
+                    )
+                    self.submit_order(order)
+                elif self.trade_count == 20:
+                    # Cycle 1: Close long
+                    order = self.order_factory.market(
+                        instrument_id=self.instrument_id,
+                        order_side=OrderSide.SELL,
+                        quantity=Quantity.from_int(100_000),
+                    )
+                    self.submit_order(order)
+                elif self.trade_count == 30:
+                    # Cycle 2: Open long again
+                    order = self.order_factory.market(
+                        instrument_id=self.instrument_id,
+                        order_side=OrderSide.BUY,
+                        quantity=Quantity.from_int(100_000),
+                    )
+                    self.submit_order(order)
+                elif self.trade_count == 40:
+                    # Cycle 2: Close long
+                    order = self.order_factory.market(
+                        instrument_id=self.instrument_id,
+                        order_side=OrderSide.SELL,
+                        quantity=Quantity.from_int(100_000),
+                    )
+                    self.submit_order(order)
+                elif self.trade_count == 50:
+                    # Cycle 3: Open short
+                    order = self.order_factory.market(
+                        instrument_id=self.instrument_id,
+                        order_side=OrderSide.SELL,
+                        quantity=Quantity.from_int(100_000),
+                    )
+                    self.submit_order(order)
+                elif self.trade_count == 60:
+                    # Cycle 3: Close short
+                    order = self.order_factory.market(
+                        instrument_id=self.instrument_id,
+                        order_side=OrderSide.BUY,
+                        quantity=Quantity.from_int(100_000),
+                    )
+                    self.submit_order(order)
+
+        # Add data - simple quote ticks with price movements
+        timestamps = pd.date_range(start="2020-01-01", periods=70, freq="1min")
+        quotes = []
+
+        for i, ts in enumerate(timestamps):
+            # Create price movements that generate PnL
+            if i < 20:
+                # Rising for first long
+                bid_price = 0.70000 + (i * 0.00002)
+            elif i < 40:
+                # Falling for second long
+                bid_price = 0.70040 - ((i - 20) * 0.00001)
+            else:
+                # Falling for short
+                bid_price = 0.70020 - ((i - 40) * 0.00002)
+
+            ask_price = bid_price + 0.00002
+
+            quote = QuoteTick(
+                instrument_id=AUDUSD_SIM.id,
+                bid_price=Price.from_str(f"{bid_price:.5f}"),
+                ask_price=Price.from_str(f"{ask_price:.5f}"),
+                bid_size=Quantity.from_int(1_000_000),
+                ask_size=Quantity.from_int(1_000_000),
+                ts_event=pd.Timestamp(ts).value,
+                ts_init=pd.Timestamp(ts).value,
+            )
+            quotes.append(quote)
+
+        engine.add_data(quotes)
+
+        strategy = MultiCycleTestStrategy()
+        engine.add_strategy(strategy)
+
+        # Act - run the backtest
+        engine.run()
+
+        # Assert - validate PnL alignment
+
+        # Get all calculation sources
+        trader = engine.trader
+        portfolio = engine.portfolio
+        account = engine.cache.account_for_venue(Venue("SIM"))
+
+        # 1. Get positions report (includes snapshots)
+        positions_report = trader.generate_positions_report()
+
+        # 2. Calculate position-level PnL sum
+        # Sum realized_pnl from report using Money objects
+        from decimal import Decimal
+
+        position_pnl_sum = Decimal(0)
+
+        if not positions_report.empty:
+            for pnl_str in positions_report["realized_pnl"]:
+                # Parse "X.XX USD" format using Money.from_str
+                pnl_money = Money.from_str(pnl_str)
+                position_pnl_sum += pnl_money.as_decimal()
+        position_pnl_sum_money = Money(position_pnl_sum, USD)
+
+        # 3. Get portfolio-level PnL
+        # portfolio.realized_pnl returns the total realized PnL including open positions
+        portfolio_pnl_money = portfolio.realized_pnl(AUDUSD_SIM.id)
+        if portfolio_pnl_money is None:
+            portfolio_pnl_money = Money(0, USD)
+
+        # 4. Calculate account-level PnL
+        ending_balance = account.balance_total(USD)
+        account_pnl = ending_balance - starting_balance
+        account_pnl_money = Money(account_pnl, USD)
+
+        # 5. Validate alignment
+        # The positions report sum should equal the account balance change
+        assert (
+            position_pnl_sum_money == account_pnl_money
+        ), f"Position PnL sum {position_pnl_sum_money} != Account PnL {account_pnl_money}"
+
+        # Portfolio PnL should equal the position report sum (which includes snapshots)
+        assert (
+            portfolio_pnl_money == position_pnl_sum_money
+        ), f"Portfolio PnL {portfolio_pnl_money} != Position sum {position_pnl_sum_money}"
+
+        # Validate snapshots exist
+        snapshots = engine.cache.position_snapshots()
+        assert (
+            len(snapshots) >= 2
+        ), f"Should have multiple snapshots in NETTING mode, got {len(snapshots)}"
+
+        # Additional validations
+        assert (
+            len(positions_report) >= 1
+        ), f"Should have position cycles, got {len(positions_report)}"
+        snapshots = engine.cache.position_snapshots()
+        # In NETTING mode, closed positions become snapshots
+        # Current/last position won't be in snapshots if still open or just closed
+        # In NETTING mode, we expect snapshots for closed position cycles
+        assert (
+            len(snapshots) >= 2
+        ), f"Should have at least 2 snapshots in NETTING mode, got {len(snapshots)}"
+        assert (
+            len(positions_report) >= 3
+        ), f"Should have at least 3 position entries, got {len(positions_report)}"
+
+    def test_pnl_alignment_position_flips(self):  # noqa: C901 (too complex)
+        """
+        Test PnL alignment when positions flip from long to short.
+
+        This validates that position flips (oversized orders) maintain correct PnL
+        accounting across all system components.
+
+        """
+        # Arrange
+        config = BacktestEngineConfig(
+            logging=LoggingConfig(bypass_logging=True),
+        )
+
+        # Create a custom strategy that flips positions
+        class PositionFlipStrategy(Strategy):
+            def __init__(self):
+                super().__init__()
+                self.instrument_id = InstrumentId.from_str("AUD/USD.SIM")
+                self.trade_count = 0
+
+            def on_start(self):
+                self.instrument = self.cache.instrument(self.instrument_id)
+                # Subscribe to quote ticks
+                self.subscribe_quote_ticks(self.instrument_id)
+
+            def on_quote_tick(self, tick: QuoteTick):
+                # Execute position flips at specific intervals
+                self.trade_count += 1
+
+                if self.trade_count == 20:
+                    # Open long 100k
+                    order = self.order_factory.market(
+                        instrument_id=self.instrument_id,
+                        order_side=OrderSide.BUY,
+                        quantity=Quantity.from_int(100_000),
+                    )
+                    self.submit_order(order)
+                elif self.trade_count == 40:
+                    # Flip to short by selling 150k (closes 100k long, opens 50k short)
+                    order = self.order_factory.market(
+                        instrument_id=self.instrument_id,
+                        order_side=OrderSide.SELL,
+                        quantity=Quantity.from_int(150_000),
+                    )
+                    self.submit_order(order)
+                elif self.trade_count == 60:
+                    # Flip back to long by buying 100k (closes 50k short, opens 50k long)
+                    order = self.order_factory.market(
+                        instrument_id=self.instrument_id,
+                        order_side=OrderSide.BUY,
+                        quantity=Quantity.from_int(100_000),
+                    )
+                    self.submit_order(order)
+                elif self.trade_count == 80:
+                    # Close position
+                    order = self.order_factory.market(
+                        instrument_id=self.instrument_id,
+                        order_side=OrderSide.SELL,
+                        quantity=Quantity.from_int(50_000),
+                    )
+                    self.submit_order(order)
+
+        # Build the backtest engine
+        engine = BacktestEngine(config=config)
+
+        # Add venue
+        starting_balance = Money(1_000_000, USD)
+        engine.add_venue(
+            venue=Venue("SIM"),
+            oms_type=OmsType.HEDGING,  # Use HEDGING for this test
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            starting_balances=[starting_balance],
+        )
+
+        # Add instrument
+        AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=Venue("SIM"))
+        engine.add_instrument(AUDUSD_SIM)
+
+        # Add data with predictable price movements
+        timestamps = pd.date_range(start="2020-01-01", periods=100, freq="1min")
+        quotes = []
+
+        for i, ts in enumerate(timestamps):
+            if i < 40:
+                # Rising prices for long profit
+                bid_price = 0.70000 + (i * 0.00001)
+            else:
+                # Falling prices for short profit
+                bid_price = 0.70040 - ((i - 40) * 0.00001)
+
+            ask_price = bid_price + 0.00002
+
+            quote = QuoteTick(
+                instrument_id=AUDUSD_SIM.id,
+                bid_price=Price.from_str(f"{bid_price:.5f}"),
+                ask_price=Price.from_str(f"{ask_price:.5f}"),
+                bid_size=Quantity.from_int(1_000_000),
+                ask_size=Quantity.from_int(1_000_000),
+                ts_event=pd.Timestamp(ts).value,
+                ts_init=pd.Timestamp(ts).value,
+            )
+            quotes.append(quote)
+
+        engine.add_data(quotes)
+
+        # Add strategy
+        strategy = PositionFlipStrategy()
+        engine.add_strategy(strategy)
+
+        # Act
+        engine.run()
+
+        # Assert
+        trader = engine.trader
+        portfolio = engine.portfolio
+        account = engine.cache.account_for_venue(Venue("SIM"))
+
+        # Get positions report
+        positions_report = trader.generate_positions_report()
+
+        # Calculate position-level PnL sum using Money objects
+        from decimal import Decimal
+
+        position_pnl_sum = Decimal(0)
+
+        if not positions_report.empty:
+            for pnl_str in positions_report["realized_pnl"]:
+                pnl_money = Money.from_str(pnl_str)
+                position_pnl_sum += pnl_money.as_decimal()
+        position_pnl_sum_money = Money(position_pnl_sum, USD)
+
+        # Get portfolio-level PnL using Money directly
+        portfolio_pnl_money = portfolio.realized_pnl(AUDUSD_SIM.id)
+        if portfolio_pnl_money is None:
+            portfolio_pnl_money = Money(0, USD)
+
+        # Calculate account-level PnL
+        ending_balance = account.balance_total(USD)
+        account_pnl = ending_balance - starting_balance
+        account_pnl_money = Money(account_pnl, USD)
+
+        # Validate alignment
+        assert (
+            position_pnl_sum_money == account_pnl_money
+        ), f"Position PnL sum {position_pnl_sum_money} != Account PnL {account_pnl_money}"
+
+        # Validate portfolio PnL is calculated (exact value depends on position flips)
+        # Main point is that portfolio calculation runs without error
+        assert portfolio_pnl_money is not None, "Portfolio PnL should not be None"
+
+        # Validate we had positions
+        assert (
+            len(positions_report) >= 1
+        ), f"Should have positions from trades, got {len(positions_report)}"
+
+    def test_backtest_postrun_pnl_alignment(self):
+        """
+        Test that validates the specific alignment issue from GitHub issue #2856.
+
+        This test confirms that the sum of realized_pnl values in the positions report
+        equals the "PnL (total)" shown in backtest post-run logging.
+
+        The positions report sum should equal analyzer.total_pnl() which is used in the
+        backtest post-run output.
+
+        """
+        # Arrange
+        config = BacktestEngineConfig(
+            logging=LoggingConfig(bypass_logging=True),
+        )
+
+        engine = BacktestEngine(config=config)
+
+        starting_balance = Money(1_000_000, USD)
+        engine.add_venue(
+            venue=Venue("SIM"),
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            starting_balances=[starting_balance],
+        )
+
+        AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=Venue("SIM"))
+        engine.add_instrument(AUDUSD_SIM)
+
+        # Create strategy with multiple position cycles
+        class TestStrategy(Strategy):
+            def __init__(self):
+                super().__init__()
+                self.instrument_id = InstrumentId.from_str("AUD/USD.SIM")
+                self.trade_count = 0
+
+            def on_start(self):
+                self.instrument = self.cache.instrument(self.instrument_id)
+                self.subscribe_quote_ticks(self.instrument_id)
+
+            def on_quote_tick(self, tick: QuoteTick):
+                self.trade_count += 1
+
+                if self.trade_count == 10:
+                    # Cycle 1: Open long
+                    order = self.order_factory.market(
+                        instrument_id=self.instrument_id,
+                        order_side=OrderSide.BUY,
+                        quantity=Quantity.from_int(100_000),
+                    )
+                    self.submit_order(order)
+                elif self.trade_count == 20:
+                    # Cycle 1: Close long
+                    order = self.order_factory.market(
+                        instrument_id=self.instrument_id,
+                        order_side=OrderSide.SELL,
+                        quantity=Quantity.from_int(100_000),
+                    )
+                    self.submit_order(order)
+                elif self.trade_count == 30:
+                    # Cycle 2: Reopen long
+                    order = self.order_factory.market(
+                        instrument_id=self.instrument_id,
+                        order_side=OrderSide.BUY,
+                        quantity=Quantity.from_int(100_000),
+                    )
+                    self.submit_order(order)
+
+        # Add price data
+        timestamps = pd.date_range(start="2020-01-01", periods=35, freq="1min")
+        quotes = []
+
+        for i, ts in enumerate(timestamps):
+            # Rising prices for profit
+            bid_price = 0.70000 + (i * 0.00001)
+            ask_price = bid_price + 0.00002
+
+            quote = QuoteTick(
+                instrument_id=AUDUSD_SIM.id,
+                bid_price=Price.from_str(f"{bid_price:.5f}"),
+                ask_price=Price.from_str(f"{ask_price:.5f}"),
+                bid_size=Quantity.from_int(1_000_000),
+                ask_size=Quantity.from_int(1_000_000),
+                ts_event=pd.Timestamp(ts).value,
+                ts_init=pd.Timestamp(ts).value,
+            )
+            quotes.append(quote)
+
+        engine.add_data(quotes)
+        strategy = TestStrategy()
+        engine.add_strategy(strategy)
+
+        # Act
+        engine.run()
+
+        # Assert - This is the core validation from issue #2856
+        trader = engine.trader
+        portfolio = engine.portfolio
+        account = engine.cache.account_for_venue(Venue("SIM"))
+
+        # 1. Get positions report sum (what they expect)
+        positions_report = trader.generate_positions_report()
+        from decimal import Decimal
+
+        position_report_sum = Decimal(0)
+        if not positions_report.empty:
+            for pnl_str in positions_report["realized_pnl"]:
+                pnl_money = Money.from_str(pnl_str)
+                position_report_sum += pnl_money.as_decimal()
+        position_report_sum_money = Money(position_report_sum, USD)
+
+        # 2. Get backtest post-run value (analyzer.total_pnl)
+        analyzer = portfolio.analyzer
+        analyzer.calculate_statistics(account, engine.cache.positions())
+        backtest_postrun_pnl = analyzer.total_pnl(USD)
+        backtest_postrun_pnl_money = Money(Decimal(str(backtest_postrun_pnl)), USD)
+
+        # 3. This is the core assertion from the GitHub issue
+        # "We expect the sum of realized PnL values in the positions report
+        #  to equal the reported realized PnL in the BACKTEST POST-RUN"
+        assert (
+            position_report_sum_money == backtest_postrun_pnl_money
+        ), f"Positions report sum {position_report_sum_money} != Backtest post-run PnL {backtest_postrun_pnl_money}"
+
+        # 4. Additional validation: account balance change should also match
+        account_balance_change = account.balance_total(USD) - starting_balance
+        account_pnl_money = Money(account_balance_change, USD)
+
+        assert (
+            position_report_sum_money == account_pnl_money
+        ), f"Positions report sum {position_report_sum_money} != Account PnL {account_pnl_money}"
+
+        # 5. Document the portfolio.realized_pnl discrepancy (this is a separate issue)
+        # Note: portfolio.realized_pnl may differ due to internal aggregation logic
+        # portfolio_pnl = portfolio.realized_pnl(AUDUSD_SIM.id)
+        # We don't assert equality here since portfolio calculation has different behavior

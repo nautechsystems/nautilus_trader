@@ -64,7 +64,9 @@ from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import DataType
+from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
@@ -788,9 +790,9 @@ class TestDataEngine:
         self.binance_client.start()
 
         subscribe = SubscribeOrderBook(
+            book_data_type=OrderBookDelta,
             client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
-            only_deltas=False,
             instrument_id=ETHUSDT_BINANCE.id,
             book_type=2,
             depth=10,
@@ -812,9 +814,9 @@ class TestDataEngine:
         self.binance_client.start()
 
         subscribe = SubscribeOrderBook(
+            book_data_type=OrderBookDelta,
             client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
-            only_deltas=True,
             instrument_id=ETHUSDT_BINANCE.id,
             book_type=2,
             depth=10,
@@ -836,9 +838,9 @@ class TestDataEngine:
         self.binance_client.start()
 
         subscribe = SubscribeOrderBook(
+            book_data_type=OrderBookDelta,
             client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
-            only_deltas=False,
             instrument_id=ETHUSDT_BINANCE.id,
             book_type=2,
             depth=25,
@@ -860,9 +862,9 @@ class TestDataEngine:
         self.binance_client.start()
 
         subscribe = SubscribeOrderBook(
+            book_data_type=OrderBookDelta,
             client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
-            only_deltas=True,
             instrument_id=ETHUSDT_BINANCE.id,
             book_type=2,
             depth=25,
@@ -876,9 +878,9 @@ class TestDataEngine:
         assert self.binance_client.subscribed_order_book_deltas() == [ETHUSDT_BINANCE.id]
 
         unsubscribe = UnsubscribeOrderBook(
+            book_data_type=OrderBookDelta,
             client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
-            only_deltas=True,
             instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
@@ -897,9 +899,9 @@ class TestDataEngine:
         self.binance_client.start()
 
         subscribe = SubscribeOrderBook(
+            book_data_type=OrderBookDelta,
             client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
-            only_deltas=False,
             instrument_id=ETHUSDT_BINANCE.id,
             book_type=2,
             depth=25,
@@ -917,7 +919,7 @@ class TestDataEngine:
         unsubscribe = UnsubscribeOrderBook(
             client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
-            only_deltas=False,
+            book_data_type=OrderBookDelta,
             instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
@@ -945,9 +947,9 @@ class TestDataEngine:
         )
 
         subscribe = SubscribeOrderBook(
+            book_data_type=OrderBookDelta,
             client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
-            only_deltas=False,
             instrument_id=ETHUSDT_BINANCE.id,
             book_type=BookType.L2_MBP,
             depth=20,
@@ -984,7 +986,7 @@ class TestDataEngine:
         subscribe = SubscribeOrderBook(
             client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
-            only_deltas=False,
+            book_data_type=OrderBookDelta,
             instrument_id=ETHUSDT_BINANCE.id,
             book_type=BookType.L2_MBP,
             depth=25,
@@ -1021,13 +1023,13 @@ class TestDataEngine:
         self.msgbus.subscribe(topic="data.book.deltas.BINANCE.ETHUSDT", handler=handler.append)
 
         subscribe = SubscribeOrderBook(
+            book_data_type=OrderBookDelta,
             client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             instrument_id=ETHUSDT_BINANCE.id,
             book_type=BookType.L3_MBO,
             depth=5,
             managed=True,
-            only_deltas=True,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -1054,13 +1056,13 @@ class TestDataEngine:
         self.msgbus.subscribe(topic="data.book.deltas.BINANCE.ETHUSDT", handler=handler.append)
 
         subscribe = SubscribeOrderBook(
+            book_data_type=OrderBookDelta,
             client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             instrument_id=ETHUSDT_BINANCE.id,
             book_type=BookType.L3_MBO,
             depth=5,
             managed=True,
-            only_deltas=True,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -1095,13 +1097,13 @@ class TestDataEngine:
         es_fut = InstrumentId.from_str("ES.FUT.GLBX")
 
         subscribe = SubscribeOrderBook(
+            book_data_type=OrderBookDelta,
             client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             instrument_id=es_fut,
             book_type=BookType.L3_MBO,
             depth=25,
             managed=True,
-            only_deltas=True,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -1149,7 +1151,7 @@ class TestDataEngine:
         subscribe1 = SubscribeOrderBook(
             client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
-            only_deltas=False,
+            book_data_type=OrderBookDelta,
             instrument_id=ETHUSDT_BINANCE.id,
             book_type=BookType.L2_MBP,
             depth=25,
@@ -1162,7 +1164,7 @@ class TestDataEngine:
         subscribe2 = SubscribeOrderBook(
             client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
-            only_deltas=False,
+            book_data_type=OrderBookDelta,
             instrument_id=ETHUSDT_BINANCE.id,
             book_type=BookType.L2_MBP,
             depth=25,
@@ -1217,7 +1219,7 @@ class TestDataEngine:
         subscribe1 = SubscribeOrderBook(
             client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
-            only_deltas=False,
+            book_data_type=OrderBookDepth10,
             instrument_id=ETHUSDT_BINANCE.id,
             book_type=BookType.L2_MBP,
             depth=10,
@@ -1230,7 +1232,7 @@ class TestDataEngine:
         subscribe2 = SubscribeOrderBook(
             client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
-            only_deltas=False,
+            book_data_type=OrderBookDepth10,
             instrument_id=BTCUSDT_PERP_BINANCE.id,
             book_type=BookType.L2_MBP,
             depth=10,
@@ -1271,7 +1273,7 @@ class TestDataEngine:
         subscribe = SubscribeOrderBook(
             client_id=None,  # Will route to the Binance venue
             venue=BETFAIR,
-            only_deltas=True,
+            book_data_type=OrderBookDelta,
             instrument_id=ETHUSDT_BINANCE.id,
             book_type=2,
             depth=25,
@@ -1296,6 +1298,51 @@ class TestDataEngine:
         assert isinstance(cached_book, OrderBook)
         assert cached_book.instrument_id == ETHUSDT_BINANCE.id
         assert cached_book.best_bid_price() == 100
+
+    def test_unsubscribe_order_book_interval_cancels_snapshot_timer(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+
+        self.data_engine.process(ETHUSDT_BINANCE)
+
+        subscribe = SubscribeOrderBook(
+            book_data_type=OrderBookDelta,
+            client_id=None,
+            venue=BINANCE,
+            instrument_id=ETHUSDT_BINANCE.id,
+            book_type=BookType.L2_MBP,
+            depth=10,
+            interval_ms=1000,
+            managed=True,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.data_engine.execute(subscribe)
+
+        # Sanity check timer created
+        timer_name = f"OrderBook|{ETHUSDT_BINANCE.id}|1000"
+        assert timer_name in self.data_engine._snapshot_info
+
+        unsubscribe = UnsubscribeOrderBook(
+            book_data_type=OrderBookDelta,
+            client_id=None,
+            venue=BINANCE,
+            instrument_id=ETHUSDT_BINANCE.id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.data_engine.execute(unsubscribe)
+
+        # Assert timer state cleared and no timer events fire
+        assert timer_name not in self.data_engine._snapshot_info
+        assert (ETHUSDT_BINANCE.id, 1000) not in self.data_engine._order_book_intervals
+
+        events = self.clock.advance_time(2_000_000_000)
+        assert events == []
 
     def test_execute_subscribe_quote_ticks(self):
         # Arrange
@@ -4108,8 +4155,9 @@ class TestDataEngine:
         self.data_engine.execute(subscribe)
 
         # Assert - Verify the command was processed without errors
-        assert self.data_engine.command_count == 1
-        # Note: The actual spread quote aggregator creation depends on the DataEngine implementation
+        # Command count is 3: 1 for spread + 2 for component instruments
+        assert self.data_engine.command_count == 3
+        # Note: The actual spread quote aggregator creation is now handled by the data client
         # This test verifies that the subscription command is processed correctly
 
     def test_unsubscribe_spread_quotes_removes_aggregator(self):
@@ -4183,7 +4231,8 @@ class TestDataEngine:
         self.data_engine.execute(subscribe)
 
         # Verify subscription was processed
-        assert self.data_engine.command_count == 1
+        # Command count is 3: 1 for spread + 2 for component instruments
+        assert self.data_engine.command_count == 3
 
         # Act - Unsubscribe
         unsubscribe = UnsubscribeQuoteTicks(
@@ -4196,7 +4245,9 @@ class TestDataEngine:
         self.data_engine.execute(unsubscribe)
 
         # Assert - Verify unsubscribe was processed
-        assert self.data_engine.command_count == 2
+        # Command count is 4: 3 for subscribe (spread + 2 components) + 1 for unsubscribe (spread only)
+        # Component instruments may not be unsubscribed if they have other subscribers
+        assert self.data_engine.command_count == 4
 
     def test_spread_quote_generation_and_distribution(self):
         # Arrange
@@ -4279,7 +4330,8 @@ class TestDataEngine:
         self.clock.advance_time(2_000_000_000)  # Advance 2 seconds
 
         # Assert - Verify the subscription was processed and handler is set up
-        assert self.data_engine.command_count == 1
+        # Command count is 3: 1 for spread + 2 for component instruments
+        assert self.data_engine.command_count == 3
         # The test verifies the infrastructure is in place for spread quote handling
 
 
@@ -4359,7 +4411,7 @@ class TestDataBufferEngine:
         subscribe = SubscribeOrderBook(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            only_deltas=True,
+            book_data_type=OrderBookDelta,
             instrument_id=ETHUSDT_BINANCE.id,
             book_type=BookType.L3_MBO,
             depth=5,
@@ -4399,7 +4451,7 @@ class TestDataBufferEngine:
         subscribe = SubscribeOrderBook(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            only_deltas=True,
+            book_data_type=OrderBookDelta,
             instrument_id=ETHUSDT_BINANCE.id,
             book_type=BookType.L3_MBO,
             depth=5,
@@ -4460,7 +4512,7 @@ class TestDataBufferEngine:
         subscribe = SubscribeOrderBook(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            only_deltas=True,
+            book_data_type=OrderBookDelta,
             instrument_id=ETHUSDT_BINANCE.id,
             book_type=BookType.L3_MBO,
             depth=5,
@@ -4499,7 +4551,7 @@ class TestDataBufferEngine:
         subscribe = SubscribeOrderBook(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            only_deltas=True,
+            book_data_type=OrderBookDelta,
             instrument_id=ETHUSDT_BINANCE.id,
             book_type=BookType.L3_MBO,
             depth=5,

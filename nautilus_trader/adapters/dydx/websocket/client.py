@@ -21,6 +21,7 @@ from collections import defaultdict
 from collections.abc import Awaitable
 from collections.abc import Callable
 from typing import Any
+from weakref import WeakSet
 
 import msgspec
 
@@ -35,6 +36,7 @@ from nautilus_trader.core.nautilus_pyo3 import Quota
 from nautilus_trader.core.nautilus_pyo3 import WebSocketClient
 from nautilus_trader.core.nautilus_pyo3 import WebSocketClientError
 from nautilus_trader.core.nautilus_pyo3 import WebSocketConfig
+from nautilus_trader.live.cancellation import cancel_tasks_with_timeout
 from nautilus_trader.live.retry import RetryManagerPool
 
 
@@ -85,6 +87,7 @@ class DYDXWebsocketClient:
         self._handler: Callable[[bytes], None] = handler
         self._handler_reconnect: Callable[..., Awaitable[None]] | None = handler_reconnect
         self._loop = loop
+        self._tasks: WeakSet[asyncio.Task] = WeakSet()
         self._client: WebSocketClient | None = None
         self._is_running = False
         self._subscriptions: dict[DYDXChannel, set[str | None]] = defaultdict(set)
@@ -218,7 +221,8 @@ class DYDXWebsocketClient:
             self._log.warning(
                 f"{ws_message.message} Resubscribe to channel {ws_message.channel} id {ws_message.id}",
             )
-            self._loop.create_task(self._send(msg, delay_secs=1.0))
+            task = self._loop.create_task(self._send(msg, delay_secs=1.0))
+            self._tasks.add(task)
 
             # Do not handle this message with the client handler.
             # The error is already handled by resubscribing to the channel
@@ -236,7 +240,8 @@ class DYDXWebsocketClient:
             The received ping in bytes.
 
         """
-        self._loop.create_task(self.send_pong(raw))
+        task = self._loop.create_task(self.send_pong(raw))
+        self._tasks.add(task)
 
     async def send_pong(self, raw: bytes) -> None:
         """
@@ -272,16 +277,20 @@ class DYDXWebsocketClient:
         self._log.warning(f"Reconnected to {self._base_url}")
 
         # Re-subscribe to all streams
-        self._loop.create_task(self._subscribe_all())
+        task = self._loop.create_task(self._subscribe_all())
+        self._tasks.add(task)
 
         if self._handler_reconnect:
-            self._loop.create_task(self._handler_reconnect())  # type: ignore
+            task = self._loop.create_task(self._handler_reconnect())  # type: ignore
+            self._tasks.add(task)
 
     async def disconnect(self) -> None:
         """
         Close the websocket connection.
         """
         self._is_running = False
+
+        await cancel_tasks_with_timeout(self._tasks, self._log)
 
         if self._client is None:
             self._log.warning("Cannot disconnect: not connected")

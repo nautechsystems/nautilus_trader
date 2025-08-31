@@ -36,8 +36,8 @@ use crate::{
     events::{burn::BurnEvent, mint::MintEvent, pool_created::PoolCreatedEvent, swap::SwapEvent},
     exchanges::extended::DexExtended,
     hypersync::helpers::{
-        extract_block_number, extract_log_index, extract_transaction_hash,
-        extract_transaction_index, validate_event_signature_hash,
+        extract_address_from_topic, extract_block_number, extract_log_index,
+        extract_transaction_hash, extract_transaction_index, validate_event_signature_hash,
     },
     math::convert_i256_to_f64,
 };
@@ -72,25 +72,22 @@ pub static UNISWAP_V3: LazyLock<DexExtended> = LazyLock::new(|| {
     dex
 });
 
+/// Parses a pool creation event from a Uniswap V3 log.
+///
+/// # Errors
+///
+/// Returns an error if the log parsing fails or if the event data is invalid.
+///
+/// # Panics
+///
+/// Panics if the block number is not set in the log.
 pub fn parse_pool_created_event(log: Log) -> anyhow::Result<PoolCreatedEvent> {
     validate_event_signature_hash("PoolCreatedEvent", POOL_CREATED_EVENT_SIGNATURE_HASH, &log)?;
 
-    let block_number = log
-        .block_number
-        .expect("Block number should be set in logs");
+    let block_number = extract_block_number(&log)?;
 
-    let token = if let Some(topic) = log.topics.get(1).and_then(|t| t.as_ref()) {
-        // Address is stored in the last 20 bytes of the 32-byte topic
-        Address::from_slice(&topic.as_ref()[12..32])
-    } else {
-        anyhow::bail!("Missing token0 address in topic1 when parsing pool created event");
-    };
-
-    let token1 = if let Some(topic) = log.topics.get(2).and_then(|t| t.as_ref()) {
-        Address::from_slice(&topic.as_ref()[12..32])
-    } else {
-        anyhow::bail!("Missing token1 address in topic2 when parsing pool created event");
-    };
+    let token = extract_address_from_topic(&log, 1, "token0")?;
+    let token1 = extract_address_from_topic(&log, 2, "token1")?;
 
     let fee = if let Some(topic) = log.topics.get(3).and_then(|t| t.as_ref()) {
         U256::from_be_slice(topic.as_ref()).as_limbs()[0] as u32
@@ -111,12 +108,12 @@ pub fn parse_pool_created_event(log: Log) -> anyhow::Result<PoolCreatedEvent> {
         let pool_address = Address::from_slice(&pool_address_bytes[12..32]);
 
         Ok(PoolCreatedEvent::new(
-            block_number.into(),
+            block_number,
             token,
             token1,
-            fee,
-            tick_spacing,
             pool_address,
+            Some(fee),
+            Some(tick_spacing),
         ))
     } else {
         Err(anyhow::anyhow!("Missing data in pool created event log"))
@@ -136,18 +133,20 @@ sol! {
     }
 }
 
+/// Parses a swap event from a Uniswap V3 log.
+///
+/// # Errors
+///
+/// Returns an error if the log parsing fails or if the event data is invalid.
+///
+/// # Panics
+///
+/// Panics if the contract address is not set in the log.
 pub fn parse_swap_event(dex: SharedDex, log: Log) -> anyhow::Result<SwapEvent> {
     validate_event_signature_hash("SwapEvent", SWAP_EVENT_SIGNATURE_HASH, &log)?;
 
-    let sender = match log.topics.get(1).and_then(|t| t.as_ref()) {
-        Some(topic) => Address::from_slice(&topic.as_ref()[12..32]),
-        None => anyhow::bail!("Missing sender address in topic1 when parsing swap event"),
-    };
-
-    let recipient = match log.topics.get(2).and_then(|t| t.as_ref()) {
-        Some(topic) => Address::from_slice(&topic.as_ref()[12..32]),
-        None => anyhow::bail!("Missing recipient address in topic2 when parsing swap event"),
-    };
+    let sender = extract_address_from_topic(&log, 1, "sender")?;
+    let recipient = extract_address_from_topic(&log, 2, "recipient")?;
 
     if let Some(data) = &log.data {
         let data_bytes = data.as_ref();
@@ -218,6 +217,11 @@ fn calculate_price_from_sqrt_price(
     price_raw * decimal_adjustment
 }
 
+/// Converts a Uniswap V3 swap event to trade data.
+///
+/// # Errors
+///
+/// Returns an error if price or quantity calculations fail or if values are invalid.
 pub fn convert_to_trade_data(
     token0: &Token,
     token1: &Token,
@@ -239,7 +243,7 @@ pub fn convert_to_trade_data(
     }
 
     // Additional validation for extremely small or large prices
-    if price_f64 < 1e-18 || price_f64 > 1e18 {
+    if !(1e-18..=1e18).contains(&price_f64) {
         anyhow::bail!(
             "Price outside reasonable bounds: {} (sqrt_price_x96: {})",
             price_f64,
@@ -291,13 +295,19 @@ sol! {
     }
 }
 
+/// Parses a mint event from a Uniswap V3 log.
+///
+/// # Errors
+///
+/// Returns an error if the log parsing fails or if the event data is invalid.
+///
+/// # Panics
+///
+/// Panics if the contract address is not set in the log.
 pub fn parse_mint_event(dex: SharedDex, log: Log) -> anyhow::Result<MintEvent> {
     validate_event_signature_hash("Mint", MINT_EVENT_SIGNATURE_HASH, &log)?;
 
-    let owner = match log.topics.get(1).and_then(|t| t.as_ref()) {
-        Some(topic) => Address::from_slice(&topic.as_ref()[12..32]),
-        None => anyhow::bail!("Missing owner address in topic1 when parsing mint event"),
-    };
+    let owner = extract_address_from_topic(&log, 1, "owner")?;
 
     // Extract int24 tickLower from topic2 (stored as a 32-byte padded value)
     let tick_lower = match log.topics.get(2).and_then(|t| t.as_ref()) {
@@ -368,13 +378,19 @@ sol! {
     }
 }
 
+/// Parses a burn event from a Uniswap V3 log.
+///
+/// # Errors
+///
+/// Returns an error if the log parsing fails or if the event data is invalid.
+///
+/// # Panics
+///
+/// Panics if the contract address is not set in the log.
 pub fn parse_burn_event(dex: SharedDex, log: Log) -> anyhow::Result<BurnEvent> {
     validate_event_signature_hash("Burn", BURN_EVENT_SIGNATURE_HASH, &log)?;
 
-    let owner = match log.topics.get(1).and_then(|t| t.as_ref()) {
-        Some(topic) => Address::from_slice(&topic.as_ref()[12..32]),
-        None => anyhow::bail!("Missing owner address in topic1 when parsing burn event"),
-    };
+    let owner = extract_address_from_topic(&log, 1, "owner")?;
 
     // Extract int24 tickLower from topic2 (stored as a 32-byte padded value)
     let tick_lower = match log.topics.get(2).and_then(|t| t.as_ref()) {

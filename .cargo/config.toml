@@ -5,6 +5,14 @@ rustflags = [
     "-Aclippy::drop_non_drop",
 ]
 
+[target.'cfg(target_os = "linux")']
+rustflags = [
+    "-C", "link-arg=-Wl,--gc-sections",
+    "-C", "link-arg=-Wl,--as-needed",
+    "-C", "link-arg=-Wl,-z,norelro",
+    "-C", "relocation-model=pic",
+]
+
 [target.x86_64-apple-darwin]
 rustflags = [
     "-C", "link-arg=-undefined",

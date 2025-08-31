@@ -45,10 +45,12 @@ nautilus-core = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
 
+ahash = { workspace = true }
 anyhow = { workspace = true }
 async-stream = { workspace = true }
 base64 = { workspace = true }
 chrono = { workspace = true }
+dashmap = { workspace = true }
 derive_builder = { workspace = true }
 futures-util = { workspace = true }
 indexmap = { workspace = true }
@@ -69,6 +71,7 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }  # Needed for example binaries
 ustr = { workspace = true }
 uuid = { workspace = true }
+zeroize = { workspace = true }
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }

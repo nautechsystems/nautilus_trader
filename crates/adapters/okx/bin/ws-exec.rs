@@ -45,7 +45,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let instruments = rest_client.request_instruments(inst_type).await?;
 
     let mut ws_client = OKXWebSocketClient::from_env().unwrap();
-    ws_client.connect(instruments.clone()).await?;
+    ws_client.initialize_instruments_cache(instruments.clone());
+    ws_client.connect().await?;
 
     // Subscribe to execution channels: orders and account updates
     ws_client.subscribe_orders(inst_type).await?;
@@ -72,6 +73,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             order_side,
             order_type,
             quantity,
+            None, // time_in_force
             None, // price
             None, // trigger_price
             None, // post_only

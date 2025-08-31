@@ -27,6 +27,7 @@ use crate::config::{BlockchainDataClientConfig, DexPoolFilters};
 impl DexPoolFilters {
     /// Creates a new `DexPoolFilters` instance.
     #[new]
+    #[must_use]
     pub fn py_new(remove_pools_with_empty_erc20_fields: Option<bool>) -> Self {
         Self::new(remove_pools_with_empty_erc20_fields)
     }

@@ -13,37 +13,40 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
-
-use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime};
+use ahash::AHashMap;
+use nautilus_core::UnixNanos;
 use nautilus_model::{data::quote::QuoteTick, identifiers::InstrumentId, types::price::Price};
 
 use super::{
-    messages::QuoteMsg,
+    messages::BitmexQuoteMsg,
     parse::{parse_quantity, parse_quote_msg},
 };
 use crate::common::parse::parse_instrument_id;
 
 /// Maintains quote state for each instrument to handle partial quote updates.
 ///
-/// `BitMEX` quote messages may contain incomplete information (missing bid or ask side).
+/// BitMEX quote messages may contain incomplete information (missing bid or ask side).
 /// When this happens, we need to reference the last known complete quote to construct
 /// a valid `QuoteTick` which requires both sides.
 pub(crate) struct QuoteCache {
-    last_quotes: HashMap<InstrumentId, QuoteTick>,
+    last_quotes: AHashMap<InstrumentId, QuoteTick>,
 }
 
 impl QuoteCache {
     /// Creates a new [`QuoteCache`] instance.
     pub fn new() -> Self {
         Self {
-            last_quotes: HashMap::new(),
+            last_quotes: AHashMap::new(),
         }
     }
 
-    pub fn process(&mut self, msg: QuoteMsg, price_precision: u8) -> Option<QuoteTick> {
+    pub fn process(
+        &mut self,
+        msg: &BitmexQuoteMsg,
+        price_precision: u8,
+        ts_init: UnixNanos,
+    ) -> Option<QuoteTick> {
         let instrument_id = parse_instrument_id(&msg.symbol);
-        let ts_init = get_atomic_clock_realtime().get_time_ns();
 
         let quote = if let Some(last_quote) = self.last_quotes.get(&instrument_id) {
             Some(parse_quote_msg(msg, last_quote, price_precision, ts_init))

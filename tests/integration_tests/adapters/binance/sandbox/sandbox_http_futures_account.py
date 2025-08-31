@@ -27,13 +27,13 @@ async def test_binance_futures_account_http_client():
 
     client = get_cached_binance_http_client(
         clock=clock,
-        account_type=BinanceAccountType.USDT_FUTURE,
+        account_type=BinanceAccountType.USDT_FUTURES,
     )
 
     http_account = BinanceFuturesAccountHttpAPI(
         clock=clock,
         client=client,
-        account_type=BinanceAccountType.USDT_FUTURE,
+        account_type=BinanceAccountType.USDT_FUTURES,
     )
 
     ############################################################################

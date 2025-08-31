@@ -80,7 +80,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         order_id : int
             The unique identifier for the order to be canceled.
         order_cancel : OrderCancel object, optional.
-            The Order cancellation parameters when cancelling an order, when subject to CME Rule 576.
+            The Order cancellation parameters when canceling an order, when subject to CME Rule 576.
 
         """
         if order_cancel is None:

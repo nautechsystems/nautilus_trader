@@ -691,7 +691,7 @@ mod tests {
             .quantity(Quantity::from(1))
             .build();
     }
-    #[test]
+    #[rstest]
     fn test_trailing_stop_market_order_update() {
         // Create and accept a basic trailing stop market order
         let order = OrderTestBuilder::new(OrderType::TrailingStopMarket)
@@ -723,7 +723,7 @@ mod tests {
         assert_eq!(accepted_order.trigger_price(), Some(updated_trigger_price));
     }
 
-    #[test]
+    #[rstest]
     fn test_trailing_stop_market_order_expire_time() {
         // Create a new TrailingStopMarketOrder with an expire time
         let expire_time = UnixNanos::from(1234567890);
@@ -740,7 +740,7 @@ mod tests {
         assert_eq!(order.expire_time(), Some(expire_time));
     }
 
-    #[test]
+    #[rstest]
     fn test_trailing_stop_market_order_trigger_instrument_id() {
         // Create a new TrailingStopMarketOrder with a trigger instrument ID
         let trigger_instrument_id = InstrumentId::from("ETH-USDT.BINANCE");
@@ -757,7 +757,7 @@ mod tests {
         assert_eq!(order.trigger_instrument_id(), Some(trigger_instrument_id));
     }
 
-    #[test]
+    #[rstest]
     fn test_trailing_stop_market_order_from_order_initialized() {
         // Create an OrderInitialized event with all required fields for a TrailingStopMarketOrder
         let order_initialized = OrderInitializedBuilder::default()
@@ -796,7 +796,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn test_trailing_stop_market_order_sets_slippage_when_filled() {
         // Create a trailing stop market order
         let order = OrderTestBuilder::new(OrderType::TrailingStopMarket)

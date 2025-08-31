@@ -16,7 +16,7 @@
 use std::{ffi::c_char, num::NonZeroUsize};
 
 use databento::dbn::{self};
-use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_SECOND};
+use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_SECOND, uuid::UUID4};
 use nautilus_model::{
     data::{
         Bar, BarSpecification, BarType, BookOrder, DEPTH10_LEN, Data, InstrumentStatus,
@@ -38,8 +38,6 @@ use super::{
     enums::{DatabentoStatisticType, DatabentoStatisticUpdateAction},
     types::{DatabentoImbalance, DatabentoStatistics},
 };
-
-const DATABENTO_FIXED_SCALAR: f64 = 1_000_000_000.0;
 
 // SAFETY: Known valid value
 const STEP_ONE: NonZeroUsize = NonZeroUsize::new(1).unwrap();
@@ -97,6 +95,8 @@ pub const fn parse_aggressor_side(c: c_char) -> AggressorSide {
     }
 }
 
+/// Parses a Databento book action character into a `BookAction` enum.
+///
 /// # Errors
 ///
 /// Returns an error if `c` is not a valid `BookAction` character.
@@ -111,6 +111,8 @@ pub fn parse_book_action(c: c_char) -> anyhow::Result<BookAction> {
     }
 }
 
+/// Parses a Databento option kind character into an `OptionKind` enum.
+///
 /// # Errors
 ///
 /// Returns an error if `c` is not a valid `OptionKind` character.
@@ -124,17 +126,20 @@ pub fn parse_option_kind(c: c_char) -> anyhow::Result<OptionKind> {
 
 fn parse_currency_or_usd_default(value: Result<&str, impl std::error::Error>) -> Currency {
     match value {
-        Ok(value) if !value.is_empty() => {
-            Currency::try_from_str(value).unwrap_or_else(Currency::USD)
-        }
+        Ok(value) if !value.is_empty() => Currency::try_from_str(value).unwrap_or_else(|| {
+            tracing::warn!("Unknown currency code '{value}', defaulting to USD");
+            Currency::USD()
+        }),
         Ok(_) => Currency::USD(),
         Err(e) => {
-            log::error!("Error parsing currency: {e}");
+            tracing::error!("Error parsing currency: {e}");
             Currency::USD()
         }
     }
 }
 
+/// Parses a CFI (Classification of Financial Instruments) code to extract asset and instrument classes.
+///
 /// # Errors
 ///
 /// Returns an error if `value` has fewer than 3 characters.
@@ -173,7 +178,10 @@ pub fn parse_cfi_iso10926(
     Ok((asset_class, instrument_class))
 }
 
-// https://databento.com/docs/schemas-and-data-formats/status#types-of-status-reasons
+/// Parses a Databento status reason code into a human-readable string.
+///
+/// See: <https://databento.com/docs/schemas-and-data-formats/status#types-of-status-reasons>
+///
 /// # Errors
 ///
 /// Returns an error if `value` is an invalid status reason code.
@@ -219,6 +227,8 @@ pub fn parse_status_reason(value: u16) -> anyhow::Result<Option<Ustr>> {
     Ok(Some(Ustr::from(value_str)))
 }
 
+/// Parses a Databento status trading event code into a human-readable string.
+///
 /// # Errors
 ///
 /// Returns an error if `value` is an invalid status trading event code.
@@ -265,7 +275,7 @@ pub fn decode_optional_price(value: i64, precision: u8) -> Option<Price> {
     }
 }
 
-/// Decodes a quantity from the given optional value, expressed in standard whole-number units.
+/// Decodes a quantity from the given optional value, where `i64::MAX` indicates missing data.
 #[must_use]
 pub fn decode_optional_quantity(value: i64) -> Option<Quantity> {
     match value {
@@ -275,11 +285,38 @@ pub fn decode_optional_quantity(value: i64) -> Option<Quantity> {
 }
 
 /// Decodes a multiplier from the given value, expressed in units of 1e-9.
-#[must_use]
-pub fn decode_multiplier(value: i64) -> Quantity {
+/// Uses exact integer arithmetic to avoid precision loss in financial calculations.
+///
+/// # Errors
+///
+/// Returns an error if value is negative (invalid multiplier).
+pub fn decode_multiplier(value: i64) -> anyhow::Result<Quantity> {
     match value {
-        0 | i64::MAX => Quantity::from(1),
-        _ => Quantity::from(format!("{}", value as f64 / DATABENTO_FIXED_SCALAR)),
+        0 | i64::MAX => Ok(Quantity::from(1)),
+        v if v < 0 => anyhow::bail!("Invalid negative multiplier: {v}"),
+        v => {
+            // Work in integers: v is fixed-point with 9 fractional digits.
+            // Build a canonical decimal string without floating-point.
+            let abs = v as u128;
+
+            const SCALE: u128 = 1_000_000_000;
+            let int_part = abs / SCALE;
+            let frac_part = abs % SCALE;
+
+            // Format fractional part with exactly 9 digits, then trim trailing zeros
+            // to keep a canonical representation.
+            if frac_part == 0 {
+                // Pure integer
+                Ok(Quantity::from(int_part as u64))
+            } else {
+                let mut frac_str = format!("{frac_part:09}");
+                while frac_str.ends_with('0') {
+                    frac_str.pop();
+                }
+                let s = format!("{int_part}.{frac_str}");
+                Ok(Quantity::from(s))
+            }
+        }
     }
 }
 
@@ -297,6 +334,11 @@ fn is_trade_msg(order_side: OrderSide, action: c_char) -> bool {
     order_side == OrderSide::NoOrderSide || action as u8 as char == 'T'
 }
 
+/// Decodes a Databento MBO (Market by Order) message into an order book delta or trade.
+///
+/// Returns a tuple containing either an `OrderBookDelta` or a `TradeTick`, depending on
+/// whether the message represents an order book update or a trade execution.
+///
 /// # Errors
 ///
 /// Returns an error if decoding the MBO message fails.
@@ -350,6 +392,8 @@ pub fn decode_mbo_msg(
     Ok((Some(delta), None))
 }
 
+/// Decodes a Databento Trade message into a `TradeTick`.
+///
 /// # Errors
 ///
 /// Returns an error if decoding the Trade message fails.
@@ -375,6 +419,8 @@ pub fn decode_trade_msg(
     Ok(trade)
 }
 
+/// Decodes a Databento TBBO (Top of Book with Trade) message into quote and trade ticks.
+///
 /// # Errors
 ///
 /// Returns an error if decoding the TBBO message fails.
@@ -411,6 +457,8 @@ pub fn decode_tbbo_msg(
     Ok((quote, trade))
 }
 
+/// Decodes a Databento MBP1 (Market by Price Level 1) message into quote and optional trade ticks.
+///
 /// # Errors
 ///
 /// Returns an error if decoding the MBP1 message fails.
@@ -452,6 +500,8 @@ pub fn decode_mbp1_msg(
     Ok((quote, maybe_trade))
 }
 
+/// Decodes a Databento BBO (Best Bid and Offer) message into a `QuoteTick`.
+///
 /// # Errors
 ///
 /// Returns an error if decoding the BBO message fails.
@@ -478,13 +528,11 @@ pub fn decode_bbo_msg(
     Ok(quote)
 }
 
+/// Decodes a Databento MBP10 (Market by Price 10 levels) message into an `OrderBookDepth10`.
+///
 /// # Errors
 ///
-/// Returns an error if decoding the MBP10 message fails.
-///
-/// # Panics
-///
-/// Panics if the number of levels in `msg.levels` is not exactly `DEPTH10_LEN`.
+/// Returns an error if the number of levels in `msg.levels` is not exactly `DEPTH10_LEN`.
 pub fn decode_mbp10_msg(
     msg: &dbn::Mbp10Msg,
     instrument_id: InstrumentId,
@@ -517,10 +565,34 @@ pub fn decode_mbp10_msg(
         ask_counts.push(level.ask_ct);
     }
 
-    let bids: [BookOrder; DEPTH10_LEN] = bids.try_into().expect("`bids` length != 10");
-    let asks: [BookOrder; DEPTH10_LEN] = asks.try_into().expect("`asks` length != 10");
-    let bid_counts: [u32; DEPTH10_LEN] = bid_counts.try_into().expect("`bid_counts` length != 10");
-    let ask_counts: [u32; DEPTH10_LEN] = ask_counts.try_into().expect("`ask_counts` length != 10");
+    let bids: [BookOrder; DEPTH10_LEN] = bids.try_into().map_err(|v: Vec<BookOrder>| {
+        anyhow::anyhow!(
+            "Expected exactly {DEPTH10_LEN} bid levels, received {}",
+            v.len()
+        )
+    })?;
+
+    let asks: [BookOrder; DEPTH10_LEN] = asks.try_into().map_err(|v: Vec<BookOrder>| {
+        anyhow::anyhow!(
+            "Expected exactly {DEPTH10_LEN} ask levels, received {}",
+            v.len()
+        )
+    })?;
+
+    let bid_counts: [u32; DEPTH10_LEN] = bid_counts.try_into().map_err(|v: Vec<u32>| {
+        anyhow::anyhow!(
+            "Expected exactly {DEPTH10_LEN} bid counts, received {}",
+            v.len()
+        )
+    })?;
+
+    let ask_counts: [u32; DEPTH10_LEN] = ask_counts.try_into().map_err(|v: Vec<u32>| {
+        anyhow::anyhow!(
+            "Expected exactly {DEPTH10_LEN} ask counts, received {}",
+            v.len()
+        )
+    })?;
+
     let ts_event = msg.ts_recv.into();
     let ts_init = ts_init.unwrap_or(ts_event);
 
@@ -539,6 +611,10 @@ pub fn decode_mbp10_msg(
     Ok(depth)
 }
 
+/// Decodes a Databento CMBP1 (Consolidated Market by Price Level 1) message.
+///
+/// Returns a tuple containing a `QuoteTick` and an optional `TradeTick` based on the message content.
+///
 /// # Errors
 ///
 /// Returns an error if decoding the CMBP1 message fails.
@@ -564,12 +640,13 @@ pub fn decode_cmbp1_msg(
     );
 
     let maybe_trade = if include_trades && msg.action as u8 as char == 'T' {
+        // Use UUID4 for trade ID as CMBP1 doesn't have a sequence field
         Some(TradeTick::new(
             instrument_id,
             Price::from_raw(decode_raw_price_i64(msg.price), price_precision),
             Quantity::from(msg.size),
             parse_aggressor_side(msg.side),
-            TradeId::new(itoa::Buffer::new().format(msg.hd.ts_event)),
+            TradeId::new(UUID4::new().to_string()),
             ts_event,
             ts_init,
         ))
@@ -580,6 +657,10 @@ pub fn decode_cmbp1_msg(
     Ok((quote, maybe_trade))
 }
 
+/// Decodes a Databento CBBO (Consolidated Best Bid and Offer) message.
+///
+/// Returns a `QuoteTick` representing the consolidated best bid and offer.
+///
 /// # Errors
 ///
 /// Returns an error if decoding the CBBO message fails.
@@ -606,6 +687,10 @@ pub fn decode_cbbo_msg(
     Ok(quote)
 }
 
+/// Decodes a Databento TCBBO (Consolidated Top of Book with Trade) message.
+///
+/// Returns a tuple containing both a `QuoteTick` and a `TradeTick`.
+///
 /// # Errors
 ///
 /// Returns an error if decoding the TCBBO message fails.
@@ -629,12 +714,13 @@ pub fn decode_tcbbo_msg(
         ts_init,
     );
 
+    // Use UUID4 for trade ID as TCBBO doesn't have a sequence field
     let trade = TradeTick::new(
         instrument_id,
         Price::from_raw(decode_raw_price_i64(msg.price), price_precision),
         Quantity::from(msg.size),
         parse_aggressor_side(msg.side),
-        TradeId::new(itoa::Buffer::new().format(msg.hd.ts_event)),
+        TradeId::new(UUID4::new().to_string()),
         ts_event,
         ts_init,
     );
@@ -746,13 +832,11 @@ pub fn decode_ohlcv_msg(
     Ok(bar)
 }
 
+/// Decodes a Databento status message into an `InstrumentStatus` event.
+///
 /// # Errors
 ///
-/// Returns an error if decoding the status message fails.
-///
-/// # Panics
-///
-/// Panics if `msg.action` is not a valid `MarketStatusAction`.
+/// Returns an error if decoding the status message fails or if `msg.action` is not a valid `MarketStatusAction`.
 pub fn decode_status_msg(
     msg: &dbn::StatusMsg,
     instrument_id: InstrumentId,
@@ -761,9 +845,12 @@ pub fn decode_status_msg(
     let ts_event = msg.hd.ts_event.into();
     let ts_init = ts_init.unwrap_or(ts_event);
 
+    let action = MarketStatusAction::from_u16(msg.action)
+        .ok_or_else(|| anyhow::anyhow!("Invalid `MarketStatusAction` value: {}", msg.action))?;
+
     let status = InstrumentStatus::new(
         instrument_id,
-        MarketStatusAction::from_u16(msg.action).expect("Invalid `MarketStatusAction`"),
+        action,
         ts_event,
         ts_init,
         parse_status_reason(msg.reason)?,
@@ -934,6 +1021,8 @@ pub fn decode_instrument_def_msg(
     }
 }
 
+/// Decodes a Databento instrument definition message into an `Equity` instrument.
+///
 /// # Errors
 ///
 /// Returns an error if parsing or constructing `Equity` fails.
@@ -969,6 +1058,8 @@ pub fn decode_equity(
     ))
 }
 
+/// Decodes a Databento instrument definition message into a `FuturesContract` instrument.
+///
 /// # Errors
 ///
 /// Returns an error if parsing or constructing `FuturesContract` fails.
@@ -982,7 +1073,7 @@ pub fn decode_futures_contract(
     let underlying = Ustr::from(msg.asset()?);
     let (asset_class, _) = parse_cfi_iso10926(msg.cfi()?)?;
     let price_increment = decode_price_increment(msg.min_price_increment, currency.precision);
-    let multiplier = decode_multiplier(msg.unit_of_measure_qty);
+    let multiplier = decode_multiplier(msg.unit_of_measure_qty)?;
     let lot_size = decode_lot_size(msg.min_lot_size_round_lot);
     let ts_event = UnixNanos::from(msg.ts_recv); // More accurate and reliable timestamp
     let ts_init = ts_init.unwrap_or(ts_event);
@@ -1013,6 +1104,8 @@ pub fn decode_futures_contract(
     )
 }
 
+/// Decodes a Databento instrument definition message into a `FuturesSpread` instrument.
+///
 /// # Errors
 ///
 /// Returns an error if parsing or constructing `FuturesSpread` fails.
@@ -1027,7 +1120,7 @@ pub fn decode_futures_spread(
     let strategy_type = Ustr::from(msg.secsubtype()?);
     let currency = parse_currency_or_usd_default(msg.currency());
     let price_increment = decode_price_increment(msg.min_price_increment, currency.precision);
-    let multiplier = decode_multiplier(msg.unit_of_measure_qty);
+    let multiplier = decode_multiplier(msg.unit_of_measure_qty)?;
     let lot_size = decode_lot_size(msg.min_lot_size_round_lot);
     let ts_event = UnixNanos::from(msg.ts_recv); // More accurate and reliable timestamp
     let ts_init = ts_init.unwrap_or(ts_event);
@@ -1059,6 +1152,8 @@ pub fn decode_futures_spread(
     )
 }
 
+/// Decodes a Databento instrument definition message into an `OptionContract` instrument.
+///
 /// # Errors
 ///
 /// Returns an error if parsing or constructing `OptionContract` fails.
@@ -1083,7 +1178,7 @@ pub fn decode_option_contract(
         strike_price_currency.precision,
     );
     let price_increment = decode_price_increment(msg.min_price_increment, currency.precision);
-    let multiplier = decode_multiplier(msg.unit_of_measure_qty);
+    let multiplier = decode_multiplier(msg.unit_of_measure_qty)?;
     let lot_size = decode_lot_size(msg.min_lot_size_round_lot);
     let ts_event = UnixNanos::from(msg.ts_recv); // More accurate and reliable timestamp
     let ts_init = ts_init.unwrap_or(ts_event);
@@ -1116,6 +1211,8 @@ pub fn decode_option_contract(
     )
 }
 
+/// Decodes a Databento instrument definition message into an `OptionSpread` instrument.
+///
 /// # Errors
 ///
 /// Returns an error if parsing or constructing `OptionSpread` fails.
@@ -1135,7 +1232,7 @@ pub fn decode_option_spread(
     let strategy_type = Ustr::from(msg.secsubtype()?);
     let currency = parse_currency_or_usd_default(msg.currency());
     let price_increment = decode_price_increment(msg.min_price_increment, currency.precision);
-    let multiplier = decode_multiplier(msg.unit_of_measure_qty);
+    let multiplier = decode_multiplier(msg.unit_of_measure_qty)?;
     let lot_size = decode_lot_size(msg.min_lot_size_round_lot);
     let ts_event = msg.ts_recv.into(); // More accurate and reliable timestamp
     let ts_init = ts_init.unwrap_or(ts_event);
@@ -1167,6 +1264,8 @@ pub fn decode_option_spread(
     )
 }
 
+/// Decodes a Databento imbalance message into a `DatabentoImbalance` event.
+///
 /// # Errors
 ///
 /// Returns an error if constructing `DatabentoImbalance` fails.
@@ -1179,7 +1278,7 @@ pub fn decode_imbalance_msg(
     let ts_event = msg.ts_recv.into();
     let ts_init = ts_init.unwrap_or(ts_event);
 
-    DatabentoImbalance::new(
+    Ok(DatabentoImbalance::new(
         instrument_id,
         Price::from_raw(decode_raw_price_i64(msg.ref_price), price_precision),
         Price::from_raw(
@@ -1197,16 +1296,15 @@ pub fn decode_imbalance_msg(
         msg.hd.ts_event.into(),
         ts_event,
         ts_init,
-    )
+    ))
 }
 
+/// Decodes a Databento statistics message into a `DatabentoStatistics` event.
+///
 /// # Errors
 ///
-/// Returns an error if constructing `DatabentoStatistics` fails.
-///
-/// # Panics
-///
-/// Panics if `msg.stat_type` or `msg.update_action` is not a valid enum variant.
+/// Returns an error if constructing `DatabentoStatistics` fails or if `msg.stat_type` or
+/// `msg.update_action` is not a valid enum variant.
 pub fn decode_statistics_msg(
     msg: &dbn::StatMsg,
     instrument_id: InstrumentId,
@@ -1214,13 +1312,15 @@ pub fn decode_statistics_msg(
     ts_init: Option<UnixNanos>,
 ) -> anyhow::Result<DatabentoStatistics> {
     let stat_type = DatabentoStatisticType::from_u8(msg.stat_type as u8)
-        .expect("Invalid value for `stat_type`");
-    let update_action = DatabentoStatisticUpdateAction::from_u8(msg.update_action)
-        .expect("Invalid value for `update_action`");
+        .ok_or_else(|| anyhow::anyhow!("Invalid value for `stat_type`: {}", msg.stat_type))?;
+    let update_action =
+        DatabentoStatisticUpdateAction::from_u8(msg.update_action).ok_or_else(|| {
+            anyhow::anyhow!("Invalid value for `update_action`: {}", msg.update_action)
+        })?;
     let ts_event = msg.ts_recv.into();
     let ts_init = ts_init.unwrap_or(ts_event);
 
-    DatabentoStatistics::new(
+    Ok(DatabentoStatistics::new(
         instrument_id,
         stat_type,
         update_action,
@@ -1234,7 +1334,7 @@ pub fn decode_statistics_msg(
         msg.hd.ts_event.into(),
         ts_event,
         ts_init,
-    )
+    ))
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1362,6 +1462,35 @@ mod tests {
     fn test_decode_optional_quantity(#[case] value: i64, #[case] expected: Option<Quantity>) {
         let actual = decode_optional_quantity(value);
         assert_eq!(actual, expected);
+    }
+
+    #[rstest]
+    #[case(0, Quantity::from(1))] // Default fallback for 0
+    #[case(i64::MAX, Quantity::from(1))] // Default fallback for i64::MAX
+    #[case(50_000_000_000, Quantity::from("50"))] // 50.0 exactly
+    #[case(12_500_000_000, Quantity::from("12.5"))] // 12.5 exactly
+    #[case(1_000_000_000, Quantity::from("1"))] // 1.0 exactly
+    #[case(1, Quantity::from("0.000000001"))] // Smallest positive value
+    #[case(1_000_000_001, Quantity::from("1.000000001"))] // Just over 1.0
+    #[case(999_999_999, Quantity::from("0.999999999"))] // Just under 1.0
+    #[case(123_456_789_000, Quantity::from("123.456789"))] // Trailing zeros trimmed
+    fn test_decode_multiplier_precise(#[case] raw: i64, #[case] expected: Quantity) {
+        assert_eq!(decode_multiplier(raw).unwrap(), expected);
+    }
+
+    #[rstest]
+    #[case(-1_500_000_000)] // Large negative value
+    #[case(-1)] // Small negative value
+    #[case(-999_999_999)] // Another negative value
+    fn test_decode_multiplier_negative_error(#[case] raw: i64) {
+        let result = decode_multiplier(raw);
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid negative multiplier")
+        );
     }
 
     #[rstest]
@@ -1715,18 +1844,80 @@ mod tests {
 
     // TODO: Re-enable this test once proper CBBO test data is available
     #[rstest]
+    fn test_decode_mbp10_msg_with_all_levels() {
+        let mut msg = dbn::Mbp10Msg::default();
+        for i in 0..10 {
+            msg.levels[i].bid_px = 100_000_000_000 - i as i64 * 10_000_000;
+            msg.levels[i].ask_px = 100_010_000_000 + i as i64 * 10_000_000;
+            msg.levels[i].bid_sz = 10 + i as u32;
+            msg.levels[i].ask_sz = 10 + i as u32;
+            msg.levels[i].bid_ct = 1 + i as u32;
+            msg.levels[i].ask_ct = 1 + i as u32;
+        }
+        msg.ts_recv = 1_609_160_400_000_704_060;
+
+        let instrument_id = InstrumentId::from("TEST.VENUE");
+        let result = decode_mbp10_msg(&msg, instrument_id, 2, None);
+
+        assert!(result.is_ok());
+        let depth = result.unwrap();
+        assert_eq!(depth.bids.len(), 10);
+        assert_eq!(depth.asks.len(), 10);
+        assert_eq!(depth.bid_counts.len(), 10);
+        assert_eq!(depth.ask_counts.len(), 10);
+    }
+
+    #[rstest]
+    fn test_array_conversion_error_handling() {
+        use nautilus_model::{data::BookOrder, enums::OrderSide};
+
+        let mut bids = Vec::new();
+        let mut asks = Vec::new();
+
+        // Intentionally create fewer than DEPTH10_LEN elements
+        for i in 0..5 {
+            bids.push(BookOrder::new(
+                OrderSide::Buy,
+                Price::from(format!("{}.00", 100 - i)),
+                Quantity::from(10),
+                i as u64,
+            ));
+            asks.push(BookOrder::new(
+                OrderSide::Sell,
+                Price::from(format!("{}.00", 101 + i)),
+                Quantity::from(10),
+                i as u64,
+            ));
+        }
+
+        let result: Result<[BookOrder; DEPTH10_LEN], _> =
+            bids.try_into().map_err(|v: Vec<BookOrder>| {
+                anyhow::anyhow!(
+                    "Expected exactly {DEPTH10_LEN} bid levels, received {}",
+                    v.len()
+                )
+            });
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Expected exactly 10 bid levels, received 5")
+        );
+    }
+
+    #[rstest]
     #[ignore]
     fn test_decode_tcbbo_msg() {
-        // Use the CBBO test data and create a message with trade data
         let path = test_data_path().join("test_data.cbbo.dbn.zst");
         let mut dbn_stream = Decoder::from_zstd_file(path)
             .unwrap()
             .decode_stream::<dbn::CbboMsg>();
         let msg = dbn_stream.next().unwrap().unwrap();
 
-        // Create a new message with trade data to simulate TCBBO
+        // Simulate TCBBO by adding trade data
         let mut tcbbo_msg = msg.clone();
-        tcbbo_msg.price = 372025; // Example trade price in fixed point
+        tcbbo_msg.price = 372025;
         tcbbo_msg.size = 10;
 
         let instrument_id = InstrumentId::from("ESM4.GLBX");

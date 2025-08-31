@@ -21,7 +21,7 @@ use nautilus_model::python::instruments::instrument_any_to_pyobject;
 use pyo3::prelude::*;
 
 use crate::{
-    enums::Exchange,
+    enums::TardisExchange,
     http::{TardisHttpClient, query::InstrumentFilterBuilder},
 };
 
@@ -57,7 +57,7 @@ impl TardisHttpClient {
         ts_init: Option<u64>,
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let exchange: Exchange = parse_enum(&exchange, stringify!(exchange))?;
+        let exchange: TardisExchange = parse_enum(&exchange, stringify!(exchange))?;
 
         let filter = InstrumentFilterBuilder::default()
             .base_currency(base_currency)

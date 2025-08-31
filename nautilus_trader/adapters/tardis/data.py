@@ -30,7 +30,6 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core import nautilus_pyo3
-from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
@@ -46,6 +45,8 @@ from nautilus_trader.data.messages import UnsubscribeFundingRates
 from nautilus_trader.data.messages import UnsubscribeOrderBook
 from nautilus_trader.data.messages import UnsubscribeQuoteTicks
 from nautilus_trader.data.messages import UnsubscribeTradeTicks
+from nautilus_trader.live.cancellation import DEFAULT_FUTURE_CANCELLATION_TIMEOUT
+from nautilus_trader.live.cancellation import cancel_tasks_with_timeout
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import FundingRateUpdate
@@ -115,7 +116,7 @@ class TardisDataClient(LiveMarketDataClient):
         self._ws_base_url = self._config.base_url_ws
         self._ws_client: nautilus_pyo3.TardisMachineClient = self._create_websocket_client()
         self._ws_clients: dict[str, nautilus_pyo3.TardisMachineClient] = {}
-        self._ws_pending_infos: list[nautilus_pyo3.InstrumentMiniInfo] = []
+        self._ws_pending_infos: list[nautilus_pyo3.TardisInstrumentMiniInfo] = []
         self._ws_pending_streams: list[nautilus_pyo3.StreamNormalizedRequestOptions] = []
         self._ws_client_futures: set[asyncio.Future] = set()
 
@@ -157,19 +158,11 @@ class TardisDataClient(LiveMarketDataClient):
         self._ws_clients.clear()
 
         # Cancel any pending futures
-        for future in self._ws_client_futures:
-            if not future.done():
-                future.cancel()
-
-        if self._ws_client_futures:
-            try:
-                await asyncio.wait_for(
-                    asyncio.gather(*self._ws_client_futures, return_exceptions=True),
-                    timeout=2.0,
-                )
-            except TimeoutError:
-                self._log.warning("Timeout while waiting for websockets shutdown to complete")
-
+        await cancel_tasks_with_timeout(
+            self._ws_client_futures,
+            self._log,
+            timeout_secs=DEFAULT_FUTURE_CANCELLATION_TIMEOUT,
+        )
         self._ws_client_futures.clear()
 
         self._main_ws_delay = True
@@ -342,18 +335,12 @@ class TardisDataClient(LiveMarketDataClient):
         self._dispose_websocket_client_by_key(ws_client_key)
 
     async def _request_instrument(self, request: RequestInstrument) -> None:
-        # Check if start/end times are too far from current time
-        now = self._clock.utc_now()
-        now_ns = dt_to_unix_nanos(now)
-        start_ns = dt_to_unix_nanos(request.start)
-        end_ns = dt_to_unix_nanos(request.end)
-
-        if abs(start_ns - now_ns) > 10_000_000:  # More than 10ms difference
+        if request.start is not None:
             self._log.warning(
                 f"Requesting instrument {request.instrument_id} with specified `start` which has no effect",
             )
 
-        if abs(end_ns - now_ns) > 10_000_000:  # More than 10ms difference
+        if request.end is not None:
             self._log.warning(
                 f"Requesting instrument {request.instrument_id} with specified `end` which has no effect",
             )
@@ -366,18 +353,12 @@ class TardisDataClient(LiveMarketDataClient):
         self._handle_instrument(instrument, request.id, request.start, request.end, request.params)
 
     async def _request_instruments(self, request: RequestInstruments) -> None:
-        # Check if start/end times are too far from current time
-        now = self._clock.utc_now()
-        now_ns = dt_to_unix_nanos(now)
-        start_ns = dt_to_unix_nanos(request.start)
-        end_ns = dt_to_unix_nanos(request.end)
-
-        if abs(start_ns - now_ns) > 10_000_000:  # More than 10ms difference
+        if request.start is not None:
             self._log.warning(
                 f"Requesting instruments for {request.venue} with specified `start` which has no effect",
             )
 
-        if abs(end_ns - now_ns) > 10_000_000:  # More than 10ms difference
+        if request.end is not None:
             self._log.warning(
                 f"Requesting instruments for {request.venue} with specified `end` which has no effect",
             )
@@ -444,6 +425,7 @@ class TardisDataClient(LiveMarketDataClient):
                 f"Cannot request bars: `start` cannot fall on the current UTC date, was {request.start.date()} (try an earlier `start`)",
             )
             return
+
         if request.start.date() == request.end.date():
             self._log.error(
                 f"Cannot request bars: `start` and `end` cannot fall on the same date, was {request.start.date()} (try an earlier `start`)",

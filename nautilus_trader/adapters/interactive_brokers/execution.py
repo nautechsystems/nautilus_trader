@@ -64,6 +64,7 @@ from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
@@ -163,6 +164,9 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             clock=clock,
             config=config,
         )
+
+        # Track known positions to detect external changes (like option exercises)
+        self._known_positions: dict[int, Decimal] = {}  # conId -> quantity
         self._connection_timeout = connection_timeout
         self._client: InteractiveBrokersClient = client
         self._set_account_id(account_id)
@@ -212,20 +216,46 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         self._client.subscribe_event(f"openOrder-{account}", self._on_open_order)
         self._client.subscribe_event(f"orderStatus-{account}", self._on_order_status)
         self._client.subscribe_event(f"execDetails-{account}", self._on_exec_details)
+        self._client.subscribe_event(f"positionUpdate-{account}", self._on_position_update)
 
         # Load account balance
         self._client.subscribe_account_summary()
         await self._account_summary_loaded.wait()
+
+        # Initialize known positions tracking to avoid duplicates from execDetails
+        await self._initialize_position_tracking()
+
+        # Subscribe to real-time position updates for external changes (option exercises)
+        self._client.subscribe_positions()
 
         self._set_connected(True)
 
     async def _disconnect(self):
         self._client.registered_nautilus_clients.discard(self.id)
 
+        # Unsubscribe from position updates when disconnecting
+        if self._client.is_running:
+            self._client.unsubscribe_positions()
+
         if self._client.is_running and self._client.registered_nautilus_clients == set():
             self._client.stop()
 
         self._set_connected(False)
+
+    async def _initialize_position_tracking(self) -> None:
+        """
+        Initialize position tracking to avoid processing duplicates from execDetails.
+        """
+        try:
+            positions = await self._client.get_positions(self.account_id.get_id())
+
+            if positions:
+                for position in positions:
+                    self._known_positions[position.contract.conId] = position.quantity
+
+                self._log.info(f"Initialized tracking for {len(positions)} existing positions")
+        except Exception as e:
+            self._log.warning(f"Failed to initialize position tracking: {e}")
 
     async def generate_order_status_report(
         self,
@@ -416,7 +446,6 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         command: GenerateFillReports,
     ) -> list[FillReport]:
         self._log.warning("Cannot generate `list[FillReport]`: not yet implemented")
-
         return []  # TODO: Implement
 
     async def generate_position_status_reports(
@@ -531,6 +560,61 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         ib_order.account = self.account_id.get_id()
         ib_order.clearingAccount = self.account_id.get_id()
 
+        # Handle OCA (One-Cancels-All) settings - check order tags first, then contingency types
+        oca_group_from_tags = None
+        oca_type_from_tags = None
+
+        # Check if OCA settings are specified in order tags
+        if order.tags:
+            for tag in order.tags:
+                if tag.startswith("IBOrderTags:"):
+                    try:
+                        tags_dict = IBOrderTags.parse(tag.replace("IBOrderTags:", "")).dict()
+
+                        if tags_dict.get("ocaGroup"):
+                            oca_group_from_tags = tags_dict["ocaGroup"]
+
+                        # Get ocaType from tags, including 0 as a valid value
+                        if "ocaType" in tags_dict:
+                            oca_type_from_tags = tags_dict["ocaType"]
+                    except Exception as e:
+                        self._log.warning(f"Failed to parse IBOrderTags: {e}")
+
+        # Apply OCA settings from tags if specified
+        if oca_group_from_tags:
+            ib_order.ocaGroup = oca_group_from_tags
+
+            # If ocaType is explicitly set in tags (even to 0), use it; otherwise default to 1
+            if oca_type_from_tags is not None and oca_type_from_tags > 0:
+                ib_order.ocaType = oca_type_from_tags
+            else:
+                ib_order.ocaType = 1  # Default to type 1 for safety
+
+            self._log.info(
+                f"Setting OCA from tags - Group: {oca_group_from_tags}, Type: {ib_order.ocaType}",
+            )
+        # Otherwise, handle OCO/OUO contingency types automatically for bracket orders
+        elif (
+            order.contingency_type in (ContingencyType.OCO, ContingencyType.OUO)
+            and order.linked_order_ids
+            and order.parent_order_id
+        ):  # Child orders in bracket
+
+            # Generate unique OCA group identifier using order list ID
+            if order.order_list_id:
+                oca_group = f"OCA_{order.order_list_id.value}"
+            else:
+                # Fallback to using parent order ID for consistency
+                oca_group = f"OCA_{order.parent_order_id.value}"
+
+            ib_order.ocaGroup = oca_group
+            # Use OCA type 1 (cancel all remaining orders with block) for safety
+            ib_order.ocaType = 1
+
+            self._log.info(
+                f"Setting {order.contingency_type.name} order {order.client_order_id} to OCA group: {oca_group}",
+            )
+
         if order.tags:
             return self._attach_order_tags(ib_order, order)
         else:
@@ -548,6 +632,9 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             if tag == "conditions":
                 for condition in tags[tag]:
                     pass  # TODO:
+            elif tag in ("ocaGroup", "ocaType"):
+                # Skip OCA tags as they're handled in the main transformation logic
+                continue
             else:
                 setattr(ib_order, tag, tags[tag])
 
@@ -591,13 +678,13 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                     if o == order:
                         self._handle_order_event(
                             status=OrderStatus.REJECTED,
-                            order=command.order,
+                            order=o,
                             reason=str(e),
                         )
                     else:
                         self._handle_order_event(
                             status=OrderStatus.REJECTED,
-                            order=command.order,
+                            order=o,
                             reason=f"The order has been rejected due to the rejection of the order with "
                             f"{order.client_order_id!r} in the list",
                         )
@@ -699,6 +786,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
     def _on_account_summary(self, tag: str, value: str, currency: str) -> None:
         if not self._account_summary.get(currency):
             self._account_summary[currency] = {}
+
         try:
             self._account_summary[currency][tag] = float(value)
         except ValueError:
@@ -952,7 +1040,6 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 execution,
                 contract,
                 commission_report,
-                instrument,
             )
             return
 
@@ -970,6 +1057,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             instrument_id=nautilus_order.instrument_id,
             client_order_id=nautilus_order.client_order_id,
             venue_order_id=VenueOrderId(str(execution.orderId)),
+            venue_position_id=None,
             trade_id=TradeId(execution.execId),
             order_side=OrderSide[ORDER_SIDE_TO_ORDER_ACTION[execution.side]],
             order_type=nautilus_order.order_type,
@@ -984,24 +1072,24 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             ts_event=timestring_to_timestamp(execution.time).value,
         )
 
+        # Update position tracking to avoid duplicate processing
+        self._update_position_tracking_from_execution(contract, execution)
+
     def _handle_spread_execution(
         self,
-        nautilus_order,
-        execution,
+        nautilus_order: Order,
+        execution: Execution,
         contract: IBContract,
-        commission_report,
-        instrument,
+        commission_report: CommissionReport,
     ) -> None:
         """
         Handle spread execution by translating leg fills to combo progress and
         individual leg fills.
         """
         try:
-            # Check for duplicate fills
             trade_id = TradeId(execution.execId)
             fill_id = str(trade_id)
             client_order_id = nautilus_order.client_order_id
-
             self._log.info(
                 f"Handling spread execution: client_order_id={client_order_id}, trade_id={trade_id}",
             )
@@ -1016,89 +1104,79 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             self._spread_fill_tracking[client_order_id].add(fill_id)
 
             if len(self._spread_fill_tracking[client_order_id]) == 1:
-                # Generate combo fill for order management FIRST
-                # This ensures the spread order gets filled with correct combo quantities
+                # Combo fill for order management, generated only once per combo
                 self._generate_combo_fill(
                     nautilus_order,
                     execution,
                     contract,
                     commission_report,
-                    instrument,
                 )
 
-            # Always generate leg fill for portfolio updates
-            # This creates positions for individual legs without affecting the spread order
+            # Leg fill to update leg position in nautilus
             self._generate_leg_fill(
                 nautilus_order,
                 execution,
                 contract,
                 commission_report,
-                instrument,
             )
-
         except Exception as e:
             self._log.error(f"Error handling spread execution: {e}")
-            # Fallback to sending original fill
-            price_magnifier = self.instrument_provider.get_price_magnifier(
-                nautilus_order.instrument_id,
-            )
-            converted_execution_price = ib_price_to_nautilus_price(execution.price, price_magnifier)
-
-            self.generate_order_filled(
-                strategy_id=nautilus_order.strategy_id,
-                instrument_id=nautilus_order.instrument_id,
-                client_order_id=nautilus_order.client_order_id,
-                venue_order_id=VenueOrderId(str(execution.orderId)),
-                venue_position_id=None,
-                trade_id=TradeId(execution.execId),
-                order_side=OrderSide[ORDER_SIDE_TO_ORDER_ACTION[execution.side]],
-                order_type=nautilus_order.order_type,
-                last_qty=Quantity(execution.shares, precision=instrument.size_precision),
-                last_px=Price(converted_execution_price, precision=instrument.price_precision),
-                quote_currency=instrument.quote_currency,
-                commission=Money(
-                    commission_report.commission,
-                    Currency.from_str(commission_report.currency),
-                ),
-                liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
-                ts_event=timestring_to_timestamp(execution.time).value,
-            )
 
     def _generate_combo_fill(
         self,
-        nautilus_order,
-        execution,
+        nautilus_order: Order,
+        execution: Execution,
         contract: IBContract,
-        commission_report,
-        instrument,
+        commission_report: CommissionReport,
     ) -> None:
         """
         Generate combo fill from leg fill for order management.
         """
         try:
+            spread_instrument = self._cache.instrument(nautilus_order.instrument_id)
+
             # Extract leg instrument ID and ratio to calculate proper combo quantity
-            leg_instrument_id, ratio = self._extract_leg_instrument_id(
+            leg_instrument_id, ratio = self._get_leg_instrument_id_and_ratio(
                 nautilus_order.instrument_id,
                 contract,
             )
 
-            # Prepare execution data
+            # Price
             price_magnifier = self.instrument_provider.get_price_magnifier(
                 nautilus_order.instrument_id,
             )
             converted_execution_price = ib_price_to_nautilus_price(execution.price, price_magnifier)
-            last_qty = Quantity(execution.shares, precision=instrument.size_precision)
-
-            # Calculate combo quantity: last_qty / abs(ratio)
-            # This gives us the number of combo units executed
-            combo_quantity_value = (
-                last_qty.as_double() / abs(ratio) if ratio != 0 else last_qty.as_double()
+            combo_price = Price(
+                converted_execution_price,
+                precision=spread_instrument.price_precision,
             )
-            combo_quantity = Quantity(combo_quantity_value, precision=last_qty.precision)
+
+            # Combo quantity
+            combo_quantity_value = execution.shares / abs(ratio)
+            combo_quantity = Quantity(
+                combo_quantity_value,
+                precision=spread_instrument.size_precision,
+            )
+
+            # Order side based on execution side and ratio
+            execution_side_numeric = (
+                1 if ORDER_SIDE_TO_ORDER_ACTION[execution.side] == "BUY" else -1
+            )
+            leg_side_numeric = 1 if ratio >= 0 else -1
+            combo_order_side = (
+                OrderSide.BUY if execution_side_numeric == leg_side_numeric else OrderSide.SELL
+            )
+
+            # Combo commission scaled to the number of legs of the combo
+            combo_commission = (
+                commission_report.commission * nautilus_order.instrument_id.n_legs() / abs(ratio)
+            )
+            commission = Money(combo_commission, Currency.from_str(commission_report.currency))
 
             # Generate combo fill with spread instrument ID
             self._log.info(
-                f"Generating combo fill: instrument_id={nautilus_order.instrument_id}, client_order_id={nautilus_order.client_order_id}",
+                f"Generating combo fill: instrument_id={nautilus_order.instrument_id}, client_order_id={nautilus_order.client_order_id}, "
+                f"execution_side={execution.side}, ratio={ratio}, combo_side={combo_order_side}",
             )
 
             self.generate_order_filled(
@@ -1108,15 +1186,12 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 venue_order_id=VenueOrderId(str(execution.orderId)),
                 venue_position_id=None,
                 trade_id=TradeId(execution.execId),
-                order_side=OrderSide.BUY,  # Normalize to BUY for combo tracking
+                order_side=combo_order_side,
                 order_type=nautilus_order.order_type,
                 last_qty=combo_quantity,
-                last_px=Price(converted_execution_price, precision=instrument.price_precision),
-                quote_currency=instrument.quote_currency,
-                commission=Money(
-                    commission_report.commission,
-                    Currency.from_str(commission_report.currency),
-                ),
+                last_px=combo_price,
+                quote_currency=spread_instrument.quote_currency,
+                commission=commission,
                 liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
                 ts_event=timestring_to_timestamp(execution.time).value,
             )
@@ -1125,18 +1200,16 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
     def _generate_leg_fill(
         self,
-        nautilus_order,
-        execution,
+        nautilus_order: Order,
+        execution: Execution,
         contract: IBContract,
-        commission_report,
-        instrument,
+        commission_report: CommissionReport,
     ) -> None:
         """
         Generate individual leg fill for portfolio updates.
         """
         try:
-            # Extract individual leg instrument ID from spread ID
-            leg_instrument_id, ratio = self._extract_leg_instrument_id(
+            leg_instrument_id, ratio = self._get_leg_instrument_id_and_ratio(
                 nautilus_order.instrument_id,
                 contract,
             )
@@ -1145,31 +1218,20 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 self._log.warning(f"No leg instrument ID found for contract {contract}")
                 return
 
-            # Get the leg instrument to access its precision
             leg_instrument = self._cache.instrument(leg_instrument_id)
 
             if not leg_instrument:
                 self._log.warning(f"Leg instrument not found in cache: {leg_instrument_id}")
                 return
 
-            # Prepare execution data
-            price_magnifier = self.instrument_provider.get_price_magnifier(leg_instrument_id)
-            converted_execution_price = ib_price_to_nautilus_price(execution.price, price_magnifier)
-
-            # Generate leg fill with individual instrument ID
-            # Use a unique client_order_id for leg fills so they don't conflict with spread order
+            # Unique client_order_id for leg fill so it doesn't conflict with spread order
             leg_client_order_id = ClientOrderId(
                 f"{nautilus_order.client_order_id.value}-LEG-{leg_instrument_id.symbol}",
             )
 
-            # Use a unique trade ID for leg fills to avoid conflicts with combo fills
-            # Use the position of the leg in the spread instrument ID list
-            spread_legs = (
-                nautilus_order.instrument_id.to_list()
-            )  # Returns [(instrument_id, ratio), ...]
-            spread_instrument_ids = [
-                leg[0] for leg in spread_legs
-            ]  # Extract just the instrument IDs
+            # Unique trade ID for leg fills to avoid conflicts with combo fills
+            spread_legs = nautilus_order.instrument_id.to_list()  # [(instrument_id, ratio), ...]
+            spread_instrument_ids = [leg[0] for leg in spread_legs]
             leg_position = (
                 spread_instrument_ids.index(leg_instrument_id)
                 if leg_instrument_id in spread_instrument_ids
@@ -1178,16 +1240,21 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             leg_trade_id_str = f"{execution.execId}-{leg_position}"
             leg_trade_id = TradeId(leg_trade_id_str)
 
-            # Convert to int if it's a float to avoid precision issues
-            leg_quantity = (
-                int(execution.shares) if isinstance(execution.shares, float) else execution.shares
-            )
-            quantity_obj = Quantity(leg_quantity, precision=leg_instrument.size_precision)
-
-            # Generate leg fill with unique client_order_id and venue_order_id
-            # so it gets handled as a leg fill without order
-            # This will trigger the _handle_leg_fill_without_order method in the execution engine
+            # Unique venue_order_id
             leg_venue_order_id = VenueOrderId(f"{execution.orderId}-LEG-{leg_position}")
+
+            price_magnifier = self.instrument_provider.get_price_magnifier(leg_instrument_id)
+            converted_execution_price = ib_price_to_nautilus_price(execution.price, price_magnifier)
+            price = Price(converted_execution_price, precision=leg_instrument.price_precision)
+
+            quantity = Quantity(execution.shares, precision=leg_instrument.size_precision)
+
+            order_side = order_side = OrderSide[ORDER_SIDE_TO_ORDER_ACTION[execution.side]]
+
+            commission = Money(
+                commission_report.commission,
+                Currency.from_str(commission_report.currency),
+            )
 
             self.generate_order_filled(
                 strategy_id=nautilus_order.strategy_id,
@@ -1196,44 +1263,133 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 venue_order_id=leg_venue_order_id,
                 venue_position_id=None,
                 trade_id=leg_trade_id,
-                order_side=OrderSide[
-                    ORDER_SIDE_TO_ORDER_ACTION[execution.side]
-                ],  # Keep original side
+                order_side=order_side,
                 order_type=nautilus_order.order_type,
-                last_qty=quantity_obj,  # Use the validated quantity object
-                last_px=Price(converted_execution_price, precision=leg_instrument.price_precision),
+                last_qty=quantity,
+                last_px=price,
                 quote_currency=leg_instrument.quote_currency,
-                commission=Money(
-                    commission_report.commission,
-                    Currency.from_str(commission_report.currency),
-                ),
+                commission=commission,
                 liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
                 ts_event=timestring_to_timestamp(execution.time).value,
             )
+
+            # Update position tracking to avoid duplicate processing
+            self._update_position_tracking_from_execution(contract, execution)
         except Exception as e:
             self._log.error(f"Error generating leg fill: {e}")
 
-    def _extract_leg_instrument_id(
+    def _get_leg_instrument_id_and_ratio(
         self,
         spread_instrument_id: InstrumentId,
         contract: IBContract,
     ) -> tuple[InstrumentId | None, int]:
-        """
-        Extract individual leg instrument ID and ratio from spread instrument ID.
-        """
-        # If we have contract information with ConId, use it for precise identification
-        if contract:
-            # Try to find the leg instrument using ConId
-            leg_instrument_id = self.instrument_provider.contract_id_to_instrument_id.get(
-                contract.conId,
-            )
+        leg_instrument_id = self.instrument_provider.contract_id_to_instrument_id.get(
+            contract.conId,
+        )
 
-            if leg_instrument_id:
-                # Get the ratio for this specific leg
-                leg_tuples = spread_instrument_id.to_list()
+        if leg_instrument_id:
+            leg_tuples = spread_instrument_id.to_list()
 
-                for leg_id, ratio in leg_tuples:
-                    if leg_id == leg_instrument_id:
-                        return leg_instrument_id, ratio
+            for leg_id, ratio in leg_tuples:
+                if leg_id == leg_instrument_id:
+                    return leg_instrument_id, ratio
 
         return None, 1
+
+    def _update_position_tracking_from_execution(self, contract: IBContract, execution) -> None:
+        """
+        Update position tracking based on execution to avoid duplicate processing.
+        """
+        try:
+            contract_id = contract.conId
+
+            if contract_id in self._known_positions:
+                # Update the tracked quantity based on the execution
+                side_multiplier = 1 if execution.side == "BOT" else -1
+                quantity_change = Decimal(execution.shares) * side_multiplier
+                self._known_positions[contract_id] += quantity_change
+        except Exception as e:
+            self._log.warning(f"Failed to update position tracking: {e}")
+
+    def _on_position_update(self, ib_position) -> None:
+        """
+        Handle real-time position updates from IB.
+
+        This is triggered when positions change due to option exercises, assignments, or
+        other external events.
+
+        """
+        self.create_task(self._handle_position_update(ib_position))
+
+    async def _handle_position_update(self, ib_position) -> None:
+        """
+        Process position update and generate position status report only for external
+        changes.
+
+        This filters out position updates that result from normal trading (execDetails)
+        and only processes external position changes like option exercises.
+
+        """
+        try:
+            contract_id = ib_position.contract.conId
+            new_quantity = ib_position.quantity
+
+            # Skip zero positions (IB may send these for closed positions)
+            if new_quantity == 0:
+                # Remove from tracking if position is closed
+                self._known_positions.pop(contract_id, None)
+                return
+
+            # Check if this is an external position change
+            known_quantity = self._known_positions.get(contract_id, Decimal(0))
+
+            # If quantities match, this is likely from normal trading - skip
+            if known_quantity == new_quantity:
+                return
+
+            # This is an external position change (likely option exercise)
+            self._log.info(
+                f"External position change detected (likely option exercise): "
+                f"Contract {contract_id} ({ib_position.contract.secType}), quantity change: {known_quantity} -> {new_quantity}",
+                LogColor.YELLOW,
+            )
+
+            # Get instrument for this position
+            instrument = await self.instrument_provider.get_instrument(ib_position.contract)
+
+            if instrument is None:
+                self._log.warning(
+                    f"Cannot process position update: instrument not found for contract ID {contract_id}",
+                )
+                return
+
+            # Ensure instrument is in cache
+            if not self._cache.instrument(instrument.id):
+                self._handle_data(instrument)
+
+            # Determine position side
+            side = PositionSide.LONG if new_quantity > 0 else PositionSide.SHORT
+
+            # Create position status report
+            position_report = PositionStatusReport(
+                account_id=self.account_id,
+                instrument_id=instrument.id,
+                position_side=side,
+                quantity=instrument.make_qty(new_quantity),
+                report_id=UUID4(),
+                ts_last=self._clock.timestamp_ns(),
+                ts_init=self._clock.timestamp_ns(),
+            )
+
+            self._log.info(
+                f"Option exercise position created: {instrument.id} {side} {abs(new_quantity)} @ {ib_position.avg_cost}",
+                LogColor.CYAN,
+            )
+
+            # Send position status report to execution engine
+            self._send_position_status_report(position_report)
+
+            # Update tracking
+            self._known_positions[contract_id] = new_quantity
+        except Exception as e:
+            self._log.exception(f"Error handling position update: {e}")

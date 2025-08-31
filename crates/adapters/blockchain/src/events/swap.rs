@@ -89,6 +89,7 @@ impl SwapEvent {
 
     /// Converts a swap event into a `PoolSwap`.
     #[allow(clippy::too_many_arguments)]
+    #[must_use]
     pub fn to_pool_swap(
         &self,
         chain: SharedChain,

@@ -942,6 +942,7 @@ mod tests {
 #[cfg(test)]
 mod property_tests {
     use proptest::prelude::*;
+    use rstest::rstest;
 
     use super::*;
 
@@ -968,7 +969,7 @@ mod property_tests {
 
     proptest! {
         /// Property: Price string serialization round-trip should preserve value and precision
-        #[test]
+        #[rstest]
         fn prop_price_serde_round_trip(
             value in price_value_strategy().prop_filter("Reasonable values", |&x| x.abs() < 1e6),
             precision in 0u8..=6u8  // Limit precision to avoid extreme floating-point cases
@@ -989,7 +990,7 @@ mod property_tests {
         }
 
         /// Property: Price arithmetic should be associative for same precision
-        #[test]
+        #[rstest]
         fn prop_price_arithmetic_associative(
             a in price_value_strategy().prop_filter("Reasonable values", |&x| x.abs() > 1e-3 && x.abs() < 1e6),
             b in price_value_strategy().prop_filter("Reasonable values", |&x| x.abs() > 1e-3 && x.abs() < 1e6),
@@ -1016,7 +1017,7 @@ mod property_tests {
         }
 
         /// Property: Price addition/subtraction should be inverse operations
-        #[test]
+        #[rstest]
         fn prop_price_addition_subtraction_inverse(
             base in price_value_strategy().prop_filter("Reasonable values", |&x| x.abs() < 1e6),
             delta in price_value_strategy().prop_filter("Reasonable values", |&x| x.abs() > 1e-3 && x.abs() < 1e6),
@@ -1034,7 +1035,7 @@ mod property_tests {
         }
 
         /// Property: Price ordering should be transitive
-        #[test]
+        #[rstest]
         fn prop_price_ordering_transitive(
             a in price_value_strategy(),
             b in price_value_strategy(),
@@ -1053,7 +1054,7 @@ mod property_tests {
         }
 
         /// Property: String parsing should be consistent with precision inference
-        #[test]
+        #[rstest]
         fn prop_price_string_parsing_precision(
             integral in 0u32..1000000,
             fractional in 0u32..1000000,
@@ -1073,7 +1074,7 @@ mod property_tests {
         }
 
         /// Property: Price with higher precision should contain more or equal information
-        #[test]
+        #[rstest]
         fn prop_price_precision_information_preservation(
             value in price_value_strategy().prop_filter("Reasonable values", |&x| x.abs() < 1e6),
             precision1 in 1u8..=6u8,  // Limit precision range for more predictable behavior
@@ -1101,7 +1102,7 @@ mod property_tests {
         }
 
         /// Property: Price arithmetic should never produce invalid values
-        #[test]
+        #[rstest]
         fn prop_price_arithmetic_bounds(
             a in price_value_strategy(),
             b in price_value_strategy(),

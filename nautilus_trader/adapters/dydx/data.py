@@ -199,12 +199,12 @@ class DYDXDataClient(LiveMarketDataClient):
 
     async def _disconnect(self) -> None:
         if self._update_instruments_task:
-            self._log.debug("Cancelling 'update_instruments' task")
+            self._log.debug("Canceling 'update_instruments' task")
             self._update_instruments_task.cancel()
             self._update_instruments_task = None
 
         if self._fetch_orderbook_task:
-            self._log.debug("Cancelling 'fetch_orderbook' task")
+            self._log.debug("Canceling 'fetch_orderbook' task")
             self._fetch_orderbook_task.cancel()
             self._fetch_orderbook_task = None
 
@@ -874,6 +874,7 @@ class DYDXDataClient(LiveMarketDataClient):
                 command_id=command.id,
                 instrument_id=command.instrument_id,
                 book_type=book_type,
+                book_data_type=OrderBookDelta,
                 client_id=command.client_id,
                 venue=command.venue,
                 ts_init=command.ts_init,
@@ -917,11 +918,11 @@ class DYDXDataClient(LiveMarketDataClient):
             order_book_command = UnsubscribeOrderBook(
                 command_id=command.id,
                 instrument_id=command.instrument_id,
+                book_data_type=OrderBookDelta,
                 client_id=command.client_id,
                 venue=command.venue,
                 ts_init=command.ts_init,
                 params=command.params,
-                only_deltas=True,  # not used
             )
             await self._unsubscribe_order_book_deltas(order_book_command)
 

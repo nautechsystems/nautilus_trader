@@ -14,9 +14,10 @@ jobs:
     env:
       BUILD_MODE: release
       RUST_BACKTRACE: 1
+      SCCACHE_CACHE_SIZE: 1G
     services:
       redis:
-        image: redis
+        image: redis:7-alpine
         ports:
           - 6379:6379
         options: >-
@@ -25,7 +26,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       postgres:
-        image: postgres
+        image: postgres:16-alpine
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: pass
@@ -42,6 +43,33 @@ jobs:
       - name: Checkout repository
         # https://github.com/actions/checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 1
+
+      - name: Aggressive disk cleanup (pre-setup)
+        if: runner.os == 'Linux'
+        run: |
+          set -euxo pipefail
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost || true
+          sudo rm -rf /usr/local/lib/android /usr/lib/jvm /usr/lib/mono || true
+          sudo rm -rf /opt/hostedtoolcache/go /opt/hostedtoolcache/node || true
+
+          if [ -n "${AGENT_TOOLSDIRECTORY:-}" ] && [ -d "$AGENT_TOOLSDIRECTORY" ]; then
+            # Remove big toolcache components but keep Python intact
+            sudo rm -rf "$AGENT_TOOLSDIRECTORY/CodeQL" \
+                        "$AGENT_TOOLSDIRECTORY/Go" \
+                        "$AGENT_TOOLSDIRECTORY/Node" \
+                        "$AGENT_TOOLSDIRECTORY/node" \
+                        "$AGENT_TOOLSDIRECTORY/Ruby" \
+                        "$AGENT_TOOLSDIRECTORY/PyPy" \
+                        "$AGENT_TOOLSDIRECTORY/R" \
+                        "$AGENT_TOOLSDIRECTORY"/Java* || true
+          fi
+
+          sudo apt-get clean
+          sudo apt-get autoremove -y
+          sudo rm -rf /var/lib/apt/lists/* /usr/share/man /usr/share/doc || true
+          df -h
 
       - name: Common setup
         uses: ./.github/actions/common-setup
@@ -49,12 +77,14 @@ jobs:
           python-version: "3.12"
           free-disk-space: "true"
 
-      - name: Run pre-commit # Runs again here to check pre-commit with Python 3.12
-        run: make pre-commit
+      - name: Prune unused Docker images
+        if: runner.os == 'Linux'
+        run: |
+          docker image prune -a -f || true
 
       - name: Install Nautilus CLI and run init postgres
         run: |
-          make install-cli
+          curl -fsSL https://packages.nautechsystems.io/cli/nautilus-cli/install.sh | bash -s -- -b "$HOME/.local/bin"
           nautilus database init --schema ${{ github.workspace }}/schema/sql
         env:
           POSTGRES_HOST: localhost
@@ -63,14 +93,16 @@ jobs:
           POSTGRES_PASSWORD: pass
           POSTGRES_DATABASE: nautilus
 
-      - name: Cached test data
-        uses: ./.github/actions/common-test-data
-
       - name: Run Rust tests
         run: make cargo-test
 
       # TODO: Add nautilus-persistence once required test data available
       - name: Run Rust benchmarks crate-by-crate
+        env:
+          # Shrink bench artifacts to reduce disk usage
+          RUSTFLAGS: -Cdebuginfo=0
+          CARGO_PROFILE_BENCH_DEBUG: 0
+          CARGO_PROFILE_BENCH_INCREMENTAL: false
         run: make cargo-ci-benches
 
       - name: Build and install wheel
@@ -78,6 +110,15 @@ jobs:
         with:
           python-version: "3.12"
           github_ref: ${{ github.ref }}
+
+      - name: Cleanup build artifacts and caches
+        if: runner.os == 'Linux'
+        run: |
+          set -euxo pipefail
+          rm -rf target || true
+          rm -rf ~/.cargo/registry ~/.cargo/git || true
+          uv cache prune || true
+          rm -rf dist build || true
 
       # Run codspeed once only
       - name: Run benchmarks

@@ -313,8 +313,8 @@ using the `BinanceAccountType` enum. The account type options are:
 - `SPOT`
 - `MARGIN` (Margin shared between open positions)
 - `ISOLATED_MARGIN` (Margin assigned to a single position)
-- `USDT_FUTURE` (USDT or BUSD stablecoins as collateral)
-- `COIN_FUTURE` (other cryptocurrency as collateral)
+- `USDT_FUTURES` (USDT or BUSD stablecoins as collateral)
+- `COIN_FUTURES` (other cryptocurrency as collateral)
 
 :::tip
 We recommend using environment variables to manage your credentials.
@@ -409,7 +409,7 @@ To use Binance Future Hedge mode, you need to follow the three items below:
             BINANCE: BinanceDataClientConfig(
                 api_key=None,  # 'BINANCE_API_KEY' env var
                 api_secret=None,  # 'BINANCE_API_SECRET' env var
-                account_type=BinanceAccountType.USDT_FUTURE,
+                account_type=BinanceAccountType.USDT_FUTURES,
                 base_url_http=None,  # Override with custom endpoint
                 base_url_ws=None,  # Override with custom endpoint
             ),
@@ -418,7 +418,7 @@ To use Binance Future Hedge mode, you need to follow the three items below:
             BINANCE: BinanceExecClientConfig(
                 api_key=None,  # 'BINANCE_API_KEY' env var
                 api_secret=None,  # 'BINANCE_API_SECRET' env var
-                account_type=BinanceAccountType.USDT_FUTURE,
+                account_type=BinanceAccountType.USDT_FUTURES,
                 base_url_http=None,  # Override with custom endpoint
                 base_url_ws=None,  # Override with custom endpoint
                 use_reduce_only=False,  # Must be disabled for Hedge mode

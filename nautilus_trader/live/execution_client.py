@@ -24,6 +24,7 @@ from asyncio import Task
 from collections.abc import Callable
 from collections.abc import Coroutine
 from datetime import timedelta
+from weakref import WeakSet
 
 import pandas as pd
 
@@ -52,6 +53,7 @@ from nautilus_trader.execution.reports import ExecutionMassStatus
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
+from nautilus_trader.live.cancellation import cancel_tasks_with_timeout
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import order_side_to_str
@@ -127,6 +129,7 @@ class LiveExecutionClient(ExecutionClient):
         )
 
         self._loop = loop
+        self._tasks: WeakSet[asyncio.Task] = WeakSet()
         self._instrument_provider = instrument_provider
 
         self.reconciliation_active = False
@@ -180,11 +183,11 @@ class LiveExecutionClient(ExecutionClient):
         asyncio.Task
 
         """
-        log_msg = log_msg or coro.__name__
-        self._log.debug(f"Creating task '{log_msg}'")
+        task_name = log_msg or getattr(coro, "__name__", None) or coro.__class__.__name__
+        self._log.debug(f"Creating task '{task_name}'")
         task = self._loop.create_task(
             coro,
-            name=coro.__name__,
+            name=task_name,
         )
         task.add_done_callback(
             functools.partial(
@@ -194,6 +197,7 @@ class LiveExecutionClient(ExecutionClient):
                 success_color,
             ),
         )
+        self._tasks.add(task)
         return task
 
     def _on_task_completed(
@@ -203,7 +207,12 @@ class LiveExecutionClient(ExecutionClient):
         success_color: LogColor,
         task: Task,
     ) -> None:
-        e: BaseException | None = task.exception()
+        try:
+            e: BaseException | None = task.exception()
+        except asyncio.CancelledError:
+            self._log.warning(f"Task '{task.get_name()}' was cancelled")
+            return
+
         if e:
             tb_str = "".join(traceback.format_exception(type(e), e, e.__traceback__))
             self._log.error(
@@ -238,12 +247,26 @@ class LiveExecutionClient(ExecutionClient):
         Disconnect the client.
         """
         self._log.info("Disconnecting...")
-        self.create_task(
-            self._disconnect(),
-            actions=lambda: self._set_connected(False),
-            success_msg="Disconnected",
-            success_color=LogColor.GREEN,
-        )
+
+        async def _disconnect_with_cleanup():
+            await self._disconnect()
+            await self.cancel_pending_tasks()
+            self._set_connected(False)
+            self._log.info("Disconnected", LogColor.GREEN)
+
+        self._loop.create_task(_disconnect_with_cleanup())
+
+    async def cancel_pending_tasks(self, timeout_secs: float = 5.0) -> None:
+        """
+        Cancel all pending tasks and await their cancellation.
+
+        Parameters
+        ----------
+        timeout_secs : float, default 5.0
+            The timeout in seconds to wait for tasks to cancel.
+
+        """
+        await cancel_tasks_with_timeout(self._tasks, self._log, timeout_secs)
 
     def submit_order(self, command: SubmitOrder) -> None:
         self._log.info(f"Submit {command.order}", LogColor.BLUE)

@@ -15,7 +15,6 @@
 
 from typing import Final
 
-from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
 
@@ -23,9 +22,3 @@ from nautilus_trader.model.identifiers import Venue
 OKX: Final[str] = "OKX"
 OKX_VENUE: Final[Venue] = Venue(OKX)
 OKX_CLIENT_ID: Final[ClientId] = ClientId(OKX)
-
-# TODO: WIP
-OKX_SUPPORTED_ORDER_TYPES: Final[set[OrderType]] = {
-    OrderType.MARKET,
-    OrderType.LIMIT,
-}

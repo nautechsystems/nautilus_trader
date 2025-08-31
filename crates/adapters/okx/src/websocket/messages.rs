@@ -80,6 +80,11 @@ pub struct OKXWsRequest<T> {
     pub id: Option<String>,
     /// Operation type (order, cancel-order, amend-order).
     pub op: OKXWsOperation,
+    /// Request effective deadline. Unix timestamp format in milliseconds.
+    /// This is when the request itself expires, not related to order expiration.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "expTime")]
+    pub exp_time: Option<String>,
     /// Arguments payload for the operation.
     pub args: Vec<T>,
 }
@@ -630,14 +635,8 @@ mod tests {
         let result: Result<OKXWebSocketArg, _> = serde_json::from_str(json_str);
         match result {
             Ok(arg) => {
-                assert_eq!(
-                    arg.channel,
-                    crate::websocket::enums::OKXWsChannel::Instruments
-                );
-                assert_eq!(
-                    arg.inst_type,
-                    Some(crate::common::enums::OKXInstrumentType::Spot)
-                );
+                assert_eq!(arg.channel, OKXWsChannel::Instruments);
+                assert_eq!(arg.inst_type, Some(OKXInstrumentType::Spot));
                 assert_eq!(arg.inst_id, None);
             }
             Err(e) => {
@@ -662,10 +661,7 @@ mod tests {
         match result {
             Ok(msg) => {
                 assert_eq!(msg.event, "subscribe");
-                assert_eq!(
-                    msg.arg.channel,
-                    crate::websocket::enums::OKXWsChannel::Instruments
-                );
+                assert_eq!(msg.arg.channel, OKXWsChannel::Instruments);
                 assert_eq!(msg.conn_id, "380cfa6a");
             }
             Err(e) => {
@@ -728,9 +724,6 @@ mod tests {
 
     #[rstest]
     fn test_channel_serialization_for_logging() {
-        // Test that we can serialize channel enums to their string representations for logging
-        use crate::websocket::enums::OKXWsChannel;
-
         let channel = OKXWsChannel::Candle1Minute;
         let serialized = serde_json::to_string(&channel).unwrap();
         let cleaned = serialized.trim_matches('"').to_string();
@@ -974,6 +967,7 @@ mod tests {
                 "ordType": "market",
                 "sz": "0.1"
             })],
+            exp_time: None,
         };
 
         let serialized = serde_json::to_string(&request).unwrap();
@@ -1233,6 +1227,7 @@ mod tests {
                 "ordType": "market",
                 "sz": "0.1"
             })],
+            exp_time: None,
         };
 
         let serialized = serde_json::to_string(&request).unwrap();

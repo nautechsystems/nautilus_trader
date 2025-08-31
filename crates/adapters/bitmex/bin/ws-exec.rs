@@ -18,8 +18,12 @@
 #![allow(unused_variables)]
 
 use futures_util::StreamExt;
-use nautilus_bitmex::websocket::client::BitmexWebSocketClient;
-use tokio::{pin, signal};
+use nautilus_bitmex::{
+    http::{client::BitmexHttpClient, parse::parse_instrument_any},
+    websocket::client::BitmexWebSocketClient,
+};
+use nautilus_core::time::get_atomic_clock_realtime;
+use tokio::{pin, signal, time::Duration};
 use tracing::level_filters::LevelFilter;
 
 #[tokio::main]
@@ -28,18 +32,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_max_level(LevelFilter::TRACE)
         .init();
 
-    let mut client = BitmexWebSocketClient::new(
+    tracing::info!("Fetching instruments from HTTP API...");
+    let http_client = BitmexHttpClient::new(
+        None,     // base_url: defaults to production
+        None,     // api_key
+        None,     // api_secret
+        false,    // testnet
+        Some(60), // timeout_secs
+    );
+
+    let instruments_result = http_client
+        .get_instruments(true) // active_only
+        .await?;
+
+    let ts_init = get_atomic_clock_realtime().get_time_ns();
+    let instruments: Vec<_> = instruments_result
+        .iter()
+        .filter_map(|inst| parse_instrument_any(inst, ts_init))
+        .collect();
+    tracing::info!("Fetched {} instruments", instruments.len());
+
+    let mut ws_client = BitmexWebSocketClient::new(
         None, // url: defaults to wss://ws.bitmex.com/realtime
+        None,
         None,
         None,
         Some(5), // 5 second heartbeat
     )
     .unwrap();
+    ws_client.initialize_instruments_cache(instruments);
+    ws_client.connect().await?;
 
-    client.connect().await?;
+    // Give the connection a moment to stabilize
+    tokio::time::sleep(Duration::from_millis(500)).await;
 
     // Subscribe for all execution related topics
-    client
+    ws_client
         .subscribe(vec![
             "execution".to_string(),
             "order".to_string(),
@@ -53,7 +81,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sigint = signal::ctrl_c();
     pin!(sigint);
 
-    let stream = client.stream();
+    let stream = ws_client.stream();
     tokio::pin!(stream); // Pin the stream to allow polling in the loop
 
     // Use a flag to track if we should close
@@ -74,7 +102,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if should_close {
-        client.close().await?;
+        ws_client.close().await?;
     }
 
     Ok(())

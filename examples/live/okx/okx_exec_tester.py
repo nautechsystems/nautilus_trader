@@ -44,7 +44,7 @@ instrument_type = OKXInstrumentType.SWAP  # SPOT, SWAP, FUTURES, OPTION
 if instrument_type == OKXInstrumentType.SPOT:
     symbol = "ETH-USDT"
     contract_types: tuple[OKXContractType, ...] | None = None  # SPOT doesn't use contract types
-    order_qty = Decimal("0.01")
+    order_qty = Decimal("0.005")
 elif instrument_type == OKXInstrumentType.SWAP:
     symbol = "ETH-USDT-SWAP"
     contract_types = (OKXContractType.LINEAR, OKXContractType.INVERSE)
@@ -68,7 +68,6 @@ config_node = TradingNodeConfig(
     logging=LoggingConfig(
         log_level="INFO",
         # log_level_file="DEBUG",
-        # log_file_max_size=1_000_000_000,
         use_pyo3=True,
     ),
     exec_engine=LiveExecEngineConfig(
@@ -153,8 +152,13 @@ config_tester = ExecTesterConfig(
     # subscribe_trades=False,
     # subscribe_book=True,
     # open_position_on_start_qty=order_qty,
+    # enable_buys=False,
+    # enable_sells=False,
+    tob_offset_ticks=1000,
     order_qty=order_qty,
     use_post_only=True,
+    # open_position_on_start_qty=order_qty,
+    # open_position_time_in_force=TimeInForce.FOK,
     cancel_orders_on_stop=True,
     close_positions_on_stop=True,
     log_data=False,

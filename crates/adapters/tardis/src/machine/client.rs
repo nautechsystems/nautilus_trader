@@ -31,8 +31,8 @@ use super::{
     message::WsMessage,
     replay_normalized, stream_normalized,
     types::{
-        InstrumentMiniInfo, ReplayNormalizedRequestOptions, StreamNormalizedRequestOptions,
-        TardisInstrumentKey,
+        ReplayNormalizedRequestOptions, StreamNormalizedRequestOptions, TardisInstrumentKey,
+        TardisInstrumentMiniInfo,
     },
 };
 use crate::machine::parse::parse_tardis_ws_message;
@@ -47,7 +47,7 @@ pub struct TardisMachineClient {
     pub base_url: String,
     pub replay_signal: Arc<AtomicBool>,
     pub stream_signal: Arc<AtomicBool>,
-    pub instruments: HashMap<TardisInstrumentKey, Arc<InstrumentMiniInfo>>,
+    pub instruments: HashMap<TardisInstrumentKey, Arc<TardisInstrumentMiniInfo>>,
     pub normalize_symbols: bool,
 }
 
@@ -76,7 +76,7 @@ impl TardisMachineClient {
         })
     }
 
-    pub fn add_instrument_info(&mut self, info: InstrumentMiniInfo) {
+    pub fn add_instrument_info(&mut self, info: TardisInstrumentMiniInfo) {
         let key = info.as_tardis_instrument_key();
         self.instruments.insert(key, Arc::new(info));
     }
@@ -120,7 +120,7 @@ impl TardisMachineClient {
     /// Panics if the WebSocket connection cannot be established.
     pub async fn stream(
         &self,
-        instrument: InstrumentMiniInfo,
+        instrument: TardisInstrumentMiniInfo,
         options: Vec<StreamNormalizedRequestOptions>,
     ) -> impl Stream<Item = Data> {
         let stream = stream_normalized(&self.base_url, options, self.stream_signal.clone())
@@ -135,8 +135,8 @@ impl TardisMachineClient {
 
 fn handle_ws_stream<S>(
     stream: S,
-    instrument: Option<Arc<InstrumentMiniInfo>>,
-    instrument_map: Option<HashMap<TardisInstrumentKey, Arc<InstrumentMiniInfo>>>,
+    instrument: Option<Arc<TardisInstrumentMiniInfo>>,
+    instrument_map: Option<HashMap<TardisInstrumentKey, Arc<TardisInstrumentMiniInfo>>>,
 ) -> impl Stream<Item = Data>
 where
     S: Stream<Item = Result<WsMessage, Error>> + Unpin,
@@ -173,23 +173,19 @@ where
 
 pub fn determine_instrument_info(
     msg: &WsMessage,
-    instrument_map: &HashMap<TardisInstrumentKey, Arc<InstrumentMiniInfo>>,
-) -> Option<Arc<InstrumentMiniInfo>> {
+    instrument_map: &HashMap<TardisInstrumentKey, Arc<TardisInstrumentMiniInfo>>,
+) -> Option<Arc<TardisInstrumentMiniInfo>> {
     let key = match msg {
         WsMessage::BookChange(msg) => {
-            TardisInstrumentKey::new(Ustr::from(&msg.symbol), msg.exchange.clone())
+            TardisInstrumentKey::new(Ustr::from(&msg.symbol), msg.exchange)
         }
         WsMessage::BookSnapshot(msg) => {
-            TardisInstrumentKey::new(Ustr::from(&msg.symbol), msg.exchange.clone())
+            TardisInstrumentKey::new(Ustr::from(&msg.symbol), msg.exchange)
         }
-        WsMessage::Trade(msg) => {
-            TardisInstrumentKey::new(Ustr::from(&msg.symbol), msg.exchange.clone())
-        }
-        WsMessage::TradeBar(msg) => {
-            TardisInstrumentKey::new(Ustr::from(&msg.symbol), msg.exchange.clone())
-        }
+        WsMessage::Trade(msg) => TardisInstrumentKey::new(Ustr::from(&msg.symbol), msg.exchange),
+        WsMessage::TradeBar(msg) => TardisInstrumentKey::new(Ustr::from(&msg.symbol), msg.exchange),
         WsMessage::DerivativeTicker(msg) => {
-            TardisInstrumentKey::new(Ustr::from(&msg.symbol), msg.exchange.clone())
+            TardisInstrumentKey::new(Ustr::from(&msg.symbol), msg.exchange)
         }
         WsMessage::Disconnect(_) => return None,
     };

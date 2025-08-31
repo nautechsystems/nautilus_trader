@@ -13,18 +13,33 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::fmt::Debug;
+
 use aws_lc_rs::hmac;
 use base64::prelude::*;
 use ustr::Ustr;
+use zeroize::ZeroizeOnDrop;
 
 /// OKX API credentials for signing requests.
 ///
 /// Uses HMAC SHA256 for request signing as per OKX API specifications.
-#[derive(Debug, Clone)]
+/// Secrets are automatically zeroized on drop for security.
+#[derive(Clone, ZeroizeOnDrop)]
 pub struct Credential {
+    #[zeroize(skip)]
     pub api_key: Ustr,
-    pub api_passphrase: Ustr,
-    api_secret: Vec<u8>,
+    pub api_passphrase: String,
+    api_secret: Box<[u8]>,
+}
+
+impl Debug for Credential {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Credential")
+            .field("api_key", &self.api_key)
+            .field("api_passphrase", &self.api_passphrase)
+            .field("api_secret", &"<redacted>")
+            .finish()
+    }
 }
 
 impl Credential {
@@ -33,15 +48,15 @@ impl Credential {
     pub fn new(api_key: String, api_secret: String, api_passphrase: String) -> Self {
         Self {
             api_key: api_key.into(),
-            api_passphrase: api_passphrase.into(),
-            api_secret: api_secret.into_bytes(),
+            api_passphrase,
+            api_secret: api_secret.into_bytes().into_boxed_slice(),
         }
     }
 
     /// Signs a request message according to the OKX authentication scheme.
     pub fn sign(&self, timestamp: &str, method: &str, endpoint: &str, body: &str) -> String {
         let message = format!("{timestamp}{method}{endpoint}{body}");
-        let key = hmac::Key::new(hmac::HMAC_SHA256, &self.api_secret);
+        let key = hmac::Key::new(hmac::HMAC_SHA256, &self.api_secret[..]);
         let tag = hmac::sign(&key, message.as_bytes());
         BASE64_STANDARD.encode(tag.as_ref())
     }
@@ -50,6 +65,7 @@ impl Credential {
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -76,5 +92,22 @@ mod tests {
         );
 
         assert_eq!(signature, "PJ61e1nb2F2Qd7D8SPiaIcx2gjdELc+o0ygzre9z33k=");
+    }
+
+    #[rstest]
+    fn test_debug_redacts_secret() {
+        let credential = Credential::new(
+            API_KEY.to_string(),
+            API_SECRET.to_string(),
+            API_PASSPHRASE.to_string(),
+        );
+        let dbg_out = format!("{:?}", credential);
+        assert!(dbg_out.contains("api_secret: \"<redacted>\""));
+        assert!(!dbg_out.contains("chNOO"));
+        let secret_bytes_dbg = format!("{:?}", API_SECRET.as_bytes());
+        assert!(
+            !dbg_out.contains(&secret_bytes_dbg),
+            "Debug output must not contain raw secret bytes"
+        );
     }
 }

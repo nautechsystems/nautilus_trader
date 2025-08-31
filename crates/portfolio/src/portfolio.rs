@@ -68,8 +68,7 @@ impl PortfolioState {
     ) -> Self {
         let min_account_state_logging_interval_ns = config
             .min_account_state_logging_interval_ms
-            .map(|ms| ms * NANOSECONDS_IN_MILLISECOND)
-            .unwrap_or(0);
+            .map_or(0, |ms| ms * NANOSECONDS_IN_MILLISECOND);
 
         Self {
             accounts: AccountsManager::new(clock, cache),
@@ -198,7 +197,7 @@ impl Portfolio {
         let update_order_handler = {
             let cache = cache;
             let clock = clock.clone();
-            let inner = inner_weak.clone();
+            let inner = inner_weak;
             ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
                 move |event: &OrderEventAny| {
                     if let Some(inner_rc) = inner.upgrade() {
@@ -1007,13 +1006,14 @@ impl Portfolio {
                     xrate
                 } else {
                     log::error!(
-                        // TODO: Improve logging
-                        "Cannot calculate realized PnL: insufficient data for {}/{}",
+                        "Cannot calculate realized PnL: insufficient exchange rate data for {}/{}, marking as pending calculation",
                         instrument.settlement_currency(),
                         base_currency
                     );
                     self.inner.borrow_mut().pending_calcs.insert(*instrument_id);
-                    return None; // Cannot calculate
+                    // Return zero instead of None to avoid null pointer dereference
+                    // The pending calculation will be retried when exchange rate data becomes available
+                    return Some(Money::new(0.0, currency));
                 };
 
                 let scale = 10f64.powi(currency.precision.into());

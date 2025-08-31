@@ -47,3 +47,4 @@ RUN find /usr/local/lib/python3.13/site-packages -name "*.pyc" -exec rm -f {} \;
 FROM base AS application
 
 COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
+COPY --from=builder /usr/local/bin/ /usr/local/bin/

@@ -1081,7 +1081,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
     async def _modify_order(self, command: ModifyOrder) -> None:
         if self._binance_account_type.is_spot_or_margin:
             self._log.error(
-                "Cannot modify order: only supported for `USDT_FUTURE` and `COIN_FUTURE` account types",
+                "Cannot modify order: only supported for `USDT_FUTURES` and `COIN_FUTURES` account types",
             )
             return
 

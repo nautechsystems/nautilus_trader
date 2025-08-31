@@ -30,6 +30,8 @@ pub struct NautilusCli {
 #[derive(Parser, Debug)]
 pub enum Commands {
     Database(DatabaseOpt),
+    #[cfg(feature = "hypersync")]
+    Blockchain(BlockchainOpt),
 }
 
 /// Database management options and subcommands.
@@ -71,4 +73,53 @@ pub enum DatabaseCommand {
     Init(DatabaseConfig),
     /// Drops roles, privileges and deletes all data from the database.
     Drop(DatabaseConfig),
+}
+
+#[cfg(feature = "hypersync")]
+/// Blockchain management options and subcommands.
+#[derive(Parser, Debug)]
+#[command(about = "Blockchain operations", long_about = None)]
+pub struct BlockchainOpt {
+    #[clap(subcommand)]
+    pub command: BlockchainCommand,
+}
+
+#[cfg(feature = "hypersync")]
+/// Available blockchain management commands.
+#[derive(Parser, Debug, Clone)]
+#[command(about = "Blockchain operations", long_about = None)]
+pub enum BlockchainCommand {
+    /// Syncs blockchain blocks.
+    SyncBlocks {
+        /// The blockchain chain name (case-insensitive). Examples: ethereum, arbitrum, base, polygon, bsc
+        #[arg(long)]
+        chain: String,
+        /// Starting block number to sync from (optional)
+        #[arg(long)]
+        from_block: Option<u64>,
+        /// Ending block number to sync to (optional, defaults to current chain head)
+        #[arg(long)]
+        to_block: Option<u64>,
+        /// Database configuration options
+        #[clap(flatten)]
+        database: DatabaseConfig,
+    },
+    /// Sync DEX pools.
+    SyncDex {
+        /// The blockchain chain name (case-insensitive). Examples: ethereum, arbitrum, base, polygon, bsc
+        #[arg(long)]
+        chain: String,
+        /// The DEX name (case-insensitive). Examples: `UniswapV3`, uniswapv3, `SushiSwapV2`, `PancakeSwapV3`
+        #[arg(long)]
+        dex: String,
+        /// RPC HTTP URL for blockchain calls (optional, falls back to `RPC_HTTP_URL` env var)
+        #[arg(long)]
+        rpc_url: Option<String>,
+        /// Reset sync progress and start from the beginning, ignoring last synced block
+        #[arg(long)]
+        reset: bool,
+        /// Database configuration options
+        #[clap(flatten)]
+        database: DatabaseConfig,
+    },
 }

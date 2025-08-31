@@ -803,7 +803,7 @@ mod tests {
     }
 
     proptest! {
-        #[test]
+        #[rstest]
         fn prop_money_construction_roundtrip(
             amount in money_amount_strategy(),
             currency in currency_strategy()
@@ -826,7 +826,7 @@ mod tests {
             }
         }
 
-        #[test]
+        #[rstest]
         fn prop_money_addition_commutative(
             money1 in money_strategy(),
             money2 in money_strategy(),
@@ -847,7 +847,7 @@ mod tests {
             }
         }
 
-        #[test]
+        #[rstest]
         fn prop_money_addition_associative(
             money1 in money_strategy(),
             money2 in money_strategy(),
@@ -872,7 +872,7 @@ mod tests {
             }
         }
 
-        #[test]
+        #[rstest]
         fn prop_money_subtraction_inverse(
             money1 in money_strategy(),
             money2 in money_strategy(),
@@ -888,7 +888,7 @@ mod tests {
             }
         }
 
-        #[test]
+        #[rstest]
         fn prop_money_zero_identity(money in money_strategy()) {
             // Zero should be additive identity
             let zero = Money::zero(money.currency);
@@ -897,7 +897,7 @@ mod tests {
             prop_assert!(zero.is_zero(), "Zero should be recognized as zero");
         }
 
-        #[test]
+        #[rstest]
         fn prop_money_negation_inverse(money in money_strategy()) {
             // Negation should be its own inverse
             let negated = -money;
@@ -912,7 +912,7 @@ mod tests {
             }
         }
 
-        #[test]
+        #[rstest]
         fn prop_money_comparison_consistency(
             money1 in money_strategy(),
             money2 in money_strategy(),
@@ -937,7 +937,7 @@ mod tests {
             }
         }
 
-        #[test]
+        #[rstest]
         fn prop_money_string_roundtrip(money in money_strategy()) {
             // String serialization should round-trip correctly
             let string_repr = money.to_string();
@@ -952,7 +952,7 @@ mod tests {
             }
         }
 
-        #[test]
+        #[rstest]
         fn prop_money_decimal_conversion(money in money_strategy()) {
             // Decimal conversion should preserve value within precision limits
             let decimal = money.as_decimal();
@@ -987,7 +987,7 @@ mod tests {
             }
         }
 
-        #[test]
+        #[rstest]
         fn prop_money_arithmetic_with_f64(
             money in money_strategy(),
             factor in -1000.0..1000.0_f64,

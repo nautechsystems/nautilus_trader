@@ -1089,6 +1089,68 @@ pub enum PositionSide {
     Short = 3,
 }
 
+impl PositionSide {
+    /// Returns the specified [`PositionSideSpecified`] (`Long`, `Short`, or `Flat`) for this side.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `self` is [`PositionSide::NoPositionSide`].
+    #[must_use]
+    pub fn as_specified(&self) -> PositionSideSpecified {
+        match &self {
+            Self::Long => PositionSideSpecified::Long,
+            Self::Short => PositionSideSpecified::Short,
+            Self::Flat => PositionSideSpecified::Flat,
+            _ => panic!("Position invariant failed: side must be `Long`, `Short`, or `Flat`"),
+        }
+    }
+}
+
+/// The market side for a specific position, or action related to positions.
+#[repr(C)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    AsRefStr,
+    FromRepr,
+    EnumIter,
+    EnumString,
+)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[allow(clippy::enum_variant_names)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
+pub enum PositionSideSpecified {
+    /// A neural/flat position, where no position is currently held in the market.
+    Flat = 1,
+    /// A long position in the market, typically acquired through one or many BUY orders.
+    Long = 2,
+    /// A short position in the market, typically acquired through one or many SELL orders.
+    Short = 3,
+}
+
+impl PositionSideSpecified {
+    /// Converts this specified side into a [`PositionSide`].
+    #[must_use]
+    pub fn as_position_side(&self) -> PositionSide {
+        match &self {
+            Self::Long => PositionSide::Long,
+            Self::Short => PositionSide::Short,
+            Self::Flat => PositionSide::Flat,
+        }
+    }
+}
+
 /// The type of price for an instrument in a market.
 #[repr(C)]
 #[derive(
@@ -1355,6 +1417,7 @@ enum_strum_serde!(OrderSideSpecified);
 enum_strum_serde!(OrderStatus);
 enum_strum_serde!(OrderType);
 enum_strum_serde!(PositionSide);
+enum_strum_serde!(PositionSideSpecified);
 enum_strum_serde!(PriceType);
 enum_strum_serde!(RecordFlag);
 enum_strum_serde!(TimeInForce);

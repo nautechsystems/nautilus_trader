@@ -153,7 +153,7 @@ mod tests {
         assert_eq!(pressure_10.name(), "Pressure");
     }
 
-    #[test]
+    #[rstest]
     fn test_str_repr_returns_expected_string() {
         let pressure = Pressure::new(10, Some(MovingAverageType::Exponential), None);
         assert_eq!(format!("{pressure}"), "Pressure(10,EXPONENTIAL)");
@@ -169,7 +169,7 @@ mod tests {
         assert!(!pressure_10.initialized());
     }
 
-    #[test]
+    #[rstest]
     fn test_value_with_all_higher_inputs_returns_expected_value() {
         let mut pressure = Pressure::new(10, Some(MovingAverageType::Exponential), None);
 
@@ -245,7 +245,7 @@ mod tests {
         assert!(!pressure_10.has_inputs);
     }
 
-    #[test]
+    #[rstest]
     fn test_ma_type_default_and_override() {
         let pressure_default = Pressure::new(10, None, None);
         assert_eq!(pressure_default.ma_type, MovingAverageType::Exponential);
@@ -254,7 +254,7 @@ mod tests {
         assert_eq!(pressure_simple.ma_type, MovingAverageType::Simple);
     }
 
-    #[test]
+    #[rstest]
     fn test_initialized_after_enough_inputs() {
         let mut pressure = Pressure::new(3, Some(MovingAverageType::Exponential), None);
         for _ in 0..3 {
@@ -263,7 +263,7 @@ mod tests {
         assert!(pressure.initialized());
     }
 
-    #[test]
+    #[rstest]
     fn test_atr_floor_applied_to_zero_range() {
         let mut pressure = Pressure::new(1, Some(MovingAverageType::Simple), Some(0.5));
         pressure.update_raw(1.5, 1.0, 1.2, 100.0);

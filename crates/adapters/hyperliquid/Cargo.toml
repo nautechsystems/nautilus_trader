@@ -77,6 +77,9 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }  # Needed for example binaries
 ustr = { workspace = true }
 uuid = { workspace = true }
+zeroize = { workspace = true }
+hex = { workspace = true }
+url = { workspace = true }
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }

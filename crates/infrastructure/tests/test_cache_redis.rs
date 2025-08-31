@@ -505,8 +505,23 @@ mod serial_tests {
         println!("\n=== DELETING ORDER ===");
         adapter.delete_order(&client_order_id).unwrap();
 
-        // Give some time for async operations
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        // Wait for deletion to be processed
+        wait_until_async(
+            || {
+                let mut conn = conn.clone();
+                let test_index_key = test_index_key.clone();
+                let order_id_str = order_id_str.clone();
+                async move {
+                    let exists: bool = conn
+                        .sismember(&test_index_key, &order_id_str)
+                        .await
+                        .unwrap_or(true);
+                    !exists
+                }
+            },
+            Duration::from_secs(2),
+        )
+        .await;
 
         println!("\n=== AFTER DELETION ===");
         let exists_after: bool = conn

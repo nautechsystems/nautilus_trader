@@ -21,7 +21,7 @@ use nautilus_core::python::to_pyvalue_err;
 use pyo3::{PyTypeInfo, prelude::*, types::PyType};
 use strum::IntoEnumIterator;
 
-use crate::enums::BitmexSymbolStatus;
+use crate::common::enums::BitmexSymbolStatus;
 
 #[pymethods]
 impl BitmexSymbolStatus {
@@ -31,7 +31,7 @@ impl BitmexSymbolStatus {
         Self::py_from_str(&t, value)
     }
 
-    fn __hash__(&self) -> isize {
+    const fn __hash__(&self) -> isize {
         *self as isize
     }
 
@@ -56,7 +56,7 @@ impl BitmexSymbolStatus {
 
     #[getter]
     #[must_use]
-    pub fn value(&self) -> u8 {
+    pub const fn value(&self) -> u8 {
         *self as u8
     }
 
@@ -74,19 +74,19 @@ impl BitmexSymbolStatus {
 
     #[classattr]
     #[pyo3(name = "OPEN")]
-    fn py_open() -> Self {
+    const fn py_open() -> Self {
         Self::Open
     }
 
     #[classattr]
     #[pyo3(name = "CLOSED")]
-    fn py_closed() -> Self {
+    const fn py_closed() -> Self {
         Self::Closed
     }
 
     #[classattr]
     #[pyo3(name = "UNLISTED")]
-    fn py_unlisted() -> Self {
+    const fn py_unlisted() -> Self {
         Self::Unlisted
     }
 }

@@ -15,7 +15,7 @@
 
 //! Data engine and market data processing for [NautilusTrader](http://nautilustrader.io).
 //!
-//! The *data* crate provides a comprehensive framework for handling market data ingestion,
+//! The `nautilus-data` crate provides a comprehensive framework for handling market data ingestion,
 //! processing, and aggregation within the NautilusTrader ecosystem. This includes real-time
 //! data streaming, historical data management, and various aggregation methodologies:
 //!

@@ -18,7 +18,10 @@ use derive_builder::Builder;
 use serde::{self, Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::enums::{ContingencyType, ExecInstruction, OrderType, PegPriceType, Side, TimeInForce};
+use crate::common::enums::{
+    BitmexContingencyType, BitmexExecInstruction, BitmexOrderType, BitmexPegPriceType, BitmexSide,
+    BitmexTimeInForce,
+};
 
 fn serialize_string_vec<S>(values: &Option<Vec<String>>, serializer: S) -> Result<S::Ok, S::Error>
 where
@@ -103,17 +106,17 @@ pub struct PostOrderParams {
     pub symbol: String,
     /// Order side. Valid options: Buy, Sell. Defaults to 'Buy' unless `orderQty` is negative.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub side: Option<Side>,
+    pub side: Option<BitmexSide>,
     /// Order quantity in units of the instrument (i.e. contracts).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub order_qty: Option<u32>,
-    /// Optional limit price for 'Limit', 'StopLimit', and 'LimitIfTouched' orders.
+    /// Optional limit price for `Limit`, `StopLimit`, and `LimitIfTouched` orders.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub price: Option<f64>,
     /// Optional quantity to display in the book. Use 0 for a fully hidden order.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub display_qty: Option<u32>,
-    /// Optional trigger price for 'Stop', 'StopLimit', 'MarketIfTouched', and 'LimitIfTouched' orders. Use a price below the current price for stop-sell orders and buy-if-touched orders. Use `execInst` of 'MarkPrice' or 'LastPrice' to define the current price used for triggering.
+    /// Optional trigger price for `Stop`, `StopLimit`, `MarketIfTouched`, and `LimitIfTouched` orders. Use a price below the current price for stop-sell orders and buy-if-touched orders. Use `execInst` of `MarkPrice` or `LastPrice` to define the current price used for triggering.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stop_px: Option<f64>,
     /// Optional Client Order ID. This clOrdID will come back on the order and any related executions.
@@ -124,34 +127,34 @@ pub struct PostOrderParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "clOrdLinkID")]
     pub cl_ord_link_id: Option<String>,
-    /// Optional trailing offset from the current price for 'Stop', 'StopLimit', 'MarketIfTouched', and 'LimitIfTouched' orders; use a negative offset for stop-sell orders and buy-if-touched orders. Optional offset from the peg price for 'Pegged' orders.
+    /// Optional trailing offset from the current price for `Stop`, `StopLimit`, `MarketIfTouched`, and `LimitIfTouched` orders; use a negative offset for stop-sell orders and buy-if-touched orders. Optional offset from the peg price for 'Pegged' orders.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub peg_offset_value: Option<f64>,
-    /// Optional peg price type. Valid options: LastPeg, MidPricePeg, MarketPeg, PrimaryPeg, TrailingStopPeg.
+    /// Optional peg price type. Valid options: `LastPeg`, `MidPricePeg`, `MarketPeg`, `PrimaryPeg`, `TrailingStopPeg`.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub peg_price_type: Option<PegPriceType>,
-    /// Order type. Valid options: Market, Limit, Stop, StopLimit, MarketIfTouched, LimitIfTouched, Pegged. Defaults to 'Limit' when `price` is specified. Defaults to 'Stop' when `stopPx` is specified. Defaults to 'StopLimit' when `price` and `stopPx` are specified.
+    pub peg_price_type: Option<BitmexPegPriceType>,
+    /// Order type. Valid options: Market, Limit, Stop, `StopLimit`, `MarketIfTouched`, `LimitIfTouched`, Pegged. Defaults to `Limit` when `price` is specified. Defaults to `Stop` when `stopPx` is specified. Defaults to `StopLimit` when `price` and `stopPx` are specified.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub ord_type: Option<OrderType>,
-    /// Time in force. Valid options: Day, GoodTillCancel, ImmediateOrCancel, FillOrKill. Defaults to 'GoodTillCancel' for 'Limit', 'StopLimit', and 'LimitIfTouched' orders.
+    pub ord_type: Option<BitmexOrderType>,
+    /// Time in force. Valid options: `Day`, `GoodTillCancel`, `ImmediateOrCancel`, `FillOrKill`. Defaults to `GoodTillCancel` for `Limit`, `StopLimit`, and `LimitIfTouched` orders.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub time_in_force: Option<TimeInForce>,
-    /// Optional execution instructions. Valid options: ParticipateDoNotInitiate, AllOrNone, MarkPrice, IndexPrice, LastPrice, Close, ReduceOnly, Fixed. 'AllOrNone' instruction requires `displayQty` to be 0. 'MarkPrice', 'IndexPrice' or 'LastPrice' instruction valid for 'Stop', 'StopLimit', 'MarketIfTouched', and 'LimitIfTouched' orders.
+    pub time_in_force: Option<BitmexTimeInForce>,
+    /// Optional execution instructions. Valid options: `ParticipateDoNotInitiate`, `AllOrNone`, `MarkPrice`, `IndexPrice`, `LastPrice`, `Close`, `ReduceOnly`, Fixed. `AllOrNone` instruction requires `displayQty` to be 0. `MarkPrice`, `IndexPrice` or `LastPrice` instruction valid for `Stop`, `StopLimit`, `MarketIfTouched`, and `LimitIfTouched` orders.
     #[serde(
         skip_serializing_if = "Option::is_none",
         serialize_with = "serialize_exec_instructions"
     )]
-    pub exec_inst: Option<Vec<ExecInstruction>>,
+    pub exec_inst: Option<Vec<BitmexExecInstruction>>,
     /// Deprecated: linked orders are not supported after 2018/11/10.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub contingency_type: Option<ContingencyType>,
+    pub contingency_type: Option<BitmexContingencyType>,
     /// Optional order annotation. e.g. 'Take profit'.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
 }
 
 fn serialize_exec_instructions<S>(
-    instructions: &Option<Vec<ExecInstruction>>,
+    instructions: &Option<Vec<BitmexExecInstruction>>,
     serializer: S,
 ) -> Result<S::Ok, S::Error>
 where
@@ -161,7 +164,7 @@ where
         Some(inst) => {
             let joined = inst
                 .iter()
-                .map(|i| i.to_string())
+                .map(std::string::ToString::to_string)
                 .collect::<Vec<_>>()
                 .join(",");
             serializer.serialize_str(&joined)
@@ -214,11 +217,11 @@ pub struct PutOrderParams {
     pub order_qty: Option<u32>,
     /// Optional leaves quantity in units of the instrument (i.e. contracts). Useful for amending partially filled orders.
     pub leaves_qty: Option<u32>,
-    /// Optional limit price for 'Limit', 'StopLimit', and 'LimitIfTouched' orders.
+    /// Optional limit price for `Limit`, `StopLimit`, and `LimitIfTouched` orders.
     pub price: Option<f64>,
-    /// Optional trigger price for 'Stop', 'StopLimit', 'MarketIfTouched', and 'LimitIfTouched' orders. Use a price below the current price for stop-sell orders and buy-if-touched orders.
+    /// Optional trigger price for `Stop`, `StopLimit`, `MarketIfTouched`, and `LimitIfTouched` orders. Use a price below the current price for stop-sell orders and buy-if-touched orders.
     pub stop_px: Option<f64>,
-    /// Optional trailing offset from the current price for 'Stop', 'StopLimit', 'MarketIfTouched', and 'LimitIfTouched' orders; use a negative offset for stop-sell orders and buy-if-touched orders. Optional offset from the peg price for 'Pegged' orders.
+    /// Optional trailing offset from the current price for `Stop`, `StopLimit`, `MarketIfTouched`, and `LimitIfTouched` orders; use a negative offset for stop-sell orders and buy-if-touched orders. Optional offset from the peg price for 'Pegged' orders.
     pub peg_offset_value: Option<f64>,
     /// Optional amend annotation. e.g. 'Adjust skew'.
     pub text: Option<String>,

@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pickle
 from decimal import Decimal
 
 import pytest
@@ -534,6 +535,20 @@ class TestCache:
         del position_dict["position_id"]
         assert snapshot_dict == position_dict
 
+        # Test position_snapshot_ids method
+        snapshot_ids = self.cache.position_snapshot_ids(AUDUSD_SIM.id)
+        assert position.id in snapshot_ids
+        all_snapshot_ids = self.cache.position_snapshot_ids()
+        assert position.id in all_snapshot_ids
+
+        # Test position_snapshot_bytes method
+        snapshot_bytes = self.cache.position_snapshot_bytes(position.id)
+        assert len(snapshot_bytes) == 2
+        assert all(isinstance(b, bytes) for b in snapshot_bytes)
+        # Verify the bytes can be unpickled back to Position objects
+        unpickled_snapshots = [pickle.loads(b) for b in snapshot_bytes]  # noqa: S301
+        assert all(hasattr(snap, "realized_pnl") for snap in unpickled_snapshots)
+
     def test_snapshot_multiple_netted_positions(self):
         # Arrange
         order1 = self.strategy.order_factory.market(
@@ -613,6 +628,10 @@ class TestCache:
         assert position2.realized_return == pytest.approx(0.1818181818)
         assert position1.realized_pnl == Money(9995.80, USD)
         assert position2.realized_pnl == Money(19995.20, USD)
+
+        # Test position_snapshot_ids method
+        snapshot_ids_for_instrument = self.cache.position_snapshot_ids(AUDUSD_SIM.id)
+        assert position_id in snapshot_ids_for_instrument
 
     def test_load_position(self):
         # Arrange
@@ -1494,6 +1513,84 @@ class TestCache:
         assert not self.cache.order_exists(child_order.client_order_id)
         assert self.cache.orders_closed_count() == 0
         assert self.cache.orders_open_count() == 0
+
+    def test_position_snapshot_bytes_empty_when_no_snapshots(self):
+        # Arrange
+        position_id = PositionId("P-NONEXISTENT")
+
+        # Act
+        snapshot_bytes = self.cache.position_snapshot_bytes(position_id)
+
+        # Assert
+        assert snapshot_bytes == []
+        assert len(snapshot_bytes) == 0
+
+    def test_position_snapshot_bytes_consistency_with_ids(self):
+        # Arrange - create position with snapshots
+        order = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-TEST"),
+            last_px=Price.from_str("1.00000"),
+        )
+
+        position = Position(instrument=AUDUSD_SIM, fill=fill)
+        self.cache.add_position(position, OmsType.NETTING)
+        self.cache.snapshot_position(position)
+
+        # Act
+        snapshot_ids = self.cache.position_snapshot_ids(AUDUSD_SIM.id)
+
+        # Assert - verify consistency
+        for position_id in snapshot_ids:
+            snapshot_bytes = self.cache.position_snapshot_bytes(position_id)
+            assert len(snapshot_bytes) > 0  # Should have snapshots for all IDs returned
+
+    def test_purge_position_also_purges_snapshots(self):
+        # Arrange
+        order = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        position_id = PositionId("P-1")
+        self.cache.add_order(order, position_id)
+
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("1.00000"),
+        )
+
+        position = Position(instrument=AUDUSD_SIM, fill=fill)
+
+        # Add position to cache (required for proper cleanup)
+        self.cache.add_position(position, OmsType.NETTING)
+
+        # Create snapshots
+        self.cache.snapshot_position(position)
+        self.cache.snapshot_position(position)
+
+        # Verify snapshots exist
+        assert len(self.cache.position_snapshots(position_id)) == 2
+        assert position_id in self.cache.position_snapshot_ids(AUDUSD_SIM.id)
+        assert position_id in self.cache.position_snapshot_ids()
+
+        # Act - purge the position
+        self.cache.purge_position(position_id)
+
+        # Assert - snapshots should also be purged
+        assert len(self.cache.position_snapshots(position_id)) == 0
+        assert position_id not in self.cache.position_snapshot_ids(AUDUSD_SIM.id)
+        assert position_id not in self.cache.position_snapshot_ids()
 
     def test_purge_closed_positions(self):
         # Arrange

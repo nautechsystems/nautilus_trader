@@ -22,6 +22,7 @@ mod serial_tests {
     use bytes::Bytes;
     use nautilus_common::{
         cache::CacheConfig, enums::SerializationEncoding, msgbus::database::DatabaseConfig,
+        testing::wait_until_async,
     };
     use nautilus_core::UUID4;
     use nautilus_infrastructure::redis::{
@@ -135,7 +136,7 @@ mod serial_tests {
         // Add many test keys to trigger multiple SCAN iterations
         let num_keys = 10000;
         for i in 0..num_keys {
-            let key = format!("test:large:{}", i);
+            let key = format!("test:large:{i}");
             let _: () = con.set(key, "value").await.unwrap();
         }
 
@@ -182,10 +183,8 @@ mod serial_tests {
         let _: () = redis::cmd("FLUSHDB").query_async(&mut con).await.unwrap();
 
         // Set up test data
-        let keys: Vec<String> = (0..5).map(|i| format!("test:bulk:multi:{}", i)).collect();
-        let values: Vec<Vec<u8>> = (0..5)
-            .map(|i| format!("value_{}", i).into_bytes())
-            .collect();
+        let keys: Vec<String> = (0..5).map(|i| format!("test:bulk:multi:{i}")).collect();
+        let values: Vec<Vec<u8>> = (0..5).map(|i| format!("value_{i}").into_bytes()).collect();
 
         for (key, value) in keys.iter().zip(values.iter()) {
             let _: () = con.set(key, value).await.unwrap();
@@ -207,7 +206,7 @@ mod serial_tests {
         let _: () = redis::cmd("FLUSHDB").query_async(&mut con).await.unwrap();
 
         // Set up partial data
-        let keys: Vec<String> = (0..5).map(|i| format!("test:bulk:missing:{}", i)).collect();
+        let keys: Vec<String> = (0..5).map(|i| format!("test:bulk:missing:{i}")).collect();
 
         // Only set some keys
         let _: () = con.set(&keys[0], b"value_0").await.unwrap();
@@ -233,10 +232,10 @@ mod serial_tests {
 
         // Set up test data
         let num_keys = 100;
-        let keys: Vec<String> = (0..num_keys).map(|i| format!("test:perf:{}", i)).collect();
+        let keys: Vec<String> = (0..num_keys).map(|i| format!("test:perf:{i}")).collect();
 
         for (i, key) in keys.iter().enumerate() {
-            let value = format!("value_{}", i);
+            let value = format!("value_{i}");
             let _: () = con.set(key, value.as_bytes()).await.unwrap();
         }
 
@@ -261,8 +260,8 @@ mod serial_tests {
         }
 
         // Bulk should be significantly faster
-        println!("Bulk read time: {:?}", bulk_duration);
-        println!("Individual read time: {:?}", individual_duration);
+        println!("Bulk read time: {bulk_duration:?}");
+        println!("Individual read time: {individual_duration:?}");
 
         // Bulk should be at least 2x faster for 100 keys
         assert!(
@@ -311,7 +310,21 @@ mod serial_tests {
         }
 
         // Wait for data to be written
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        wait_until_async(
+            || async {
+                // Check if we can read back at least one currency
+                let test_result = DatabaseQueries::load_currency(
+                    &database.con,
+                    &trader_key,
+                    &Ustr::from("USD"),
+                    SerializationEncoding::MsgPack,
+                )
+                .await;
+                test_result.is_ok() && test_result.unwrap().is_some()
+            },
+            std::time::Duration::from_secs(2),
+        )
+        .await;
 
         // Load currencies using bulk loading
         let result = DatabaseQueries::load_currencies(
@@ -362,7 +375,7 @@ mod serial_tests {
         let _: () = redis::cmd("FLUSHDB").query_async(&mut con).await.unwrap();
 
         // Create large values
-        let keys: Vec<String> = (0..10).map(|i| format!("test:large:value:{}", i)).collect();
+        let keys: Vec<String> = (0..10).map(|i| format!("test:large:value:{i}")).collect();
         let large_value = vec![0u8; 1024 * 1024]; // 1MB value
 
         for key in &keys {
@@ -417,7 +430,21 @@ mod serial_tests {
             .unwrap();
 
         // Wait for data to be written
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        wait_until_async(
+            || async {
+                DatabaseQueries::load_currency(
+                    &database.con,
+                    &trader_key,
+                    &Ustr::from("USD"),
+                    SerializationEncoding::MsgPack,
+                )
+                .await
+                .unwrap_or(None)
+                .is_some()
+            },
+            std::time::Duration::from_secs(2),
+        )
+        .await;
 
         let result = DatabaseQueries::load_currency(
             &database.con,

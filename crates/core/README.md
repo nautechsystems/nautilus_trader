@@ -8,7 +8,7 @@
 
 Core foundational types and utilities for [NautilusTrader](http://nautilustrader.io).
 
-The *core* crate is designed to be lightweight, efficient, and to provide zero-cost abstractions
+The `nautilus-core` crate is designed to be lightweight, efficient, and to provide zero-cost abstractions
 wherever possible. It supplies the essential building blocks used across the NautilusTrader
 ecosystem, including:
 
@@ -39,6 +39,7 @@ or as part of a Rust only build.
 
 - `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+- `extension-module`: Builds the crate as a Python extension module.
 
 ## Documentation
 

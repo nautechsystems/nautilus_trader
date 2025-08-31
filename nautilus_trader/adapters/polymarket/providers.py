@@ -81,7 +81,13 @@ class PolymarketInstrumentProvider(InstrumentProvider):
                 "POLYMARKET",
             )
 
-        await self._load_markets_seq(instrument_ids, filters)
+        if len(instrument_ids) > 200:
+            self._log.warning(
+                f"Loading {len(instrument_ids)} instruments, using bulk load of all markets as a faster alternative",
+            )
+            await self._load_markets(instrument_ids, filters)
+        else:
+            await self._load_markets_seq(instrument_ids, filters)
 
     async def load_async(self, instrument_id: InstrumentId, filters: dict | None = None) -> None:
         PyCondition.not_none(instrument_id, "instrument_id")
@@ -154,13 +160,14 @@ class PolymarketInstrumentProvider(InstrumentProvider):
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading {instruments_str}{filters_str}")
 
-        condition_ids = [str(x.symbol) for x in instrument_ids]
+        condition_ids = [get_polymarket_condition_id(x) for x in instrument_ids]
 
         filter_is_active = filters.get("is_active", False)
 
+        markets_visited = 0
         next_cursor = filters.get("next_cursor", "MA==")
         while next_cursor != "LTE=":
-            self._log.info(f"Cursor = '{next_cursor}'")
+            self._log.info(f"Cursor = '{next_cursor}', markets visited = {markets_visited}")
             response: dict[str, Any] | str = await asyncio.to_thread(
                 self._client.get_markets,
                 next_cursor=next_cursor,
@@ -192,6 +199,7 @@ class PolymarketInstrumentProvider(InstrumentProvider):
                     self._log.error(f"Unable to parse market: {e}, {market_info}")
                     continue
             next_cursor = response["next_cursor"]
+            markets_visited += len(response["data"])
 
     def _load_instrument(
         self,

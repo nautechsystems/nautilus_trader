@@ -33,6 +33,7 @@ from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.execution.messages import TradingCommand
 from nautilus_trader.model.currencies import ADA
+from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import USD
@@ -1232,6 +1233,103 @@ class TestRiskEngineWithCashAccount:
         assert order1.status == OrderStatus.DENIED
         assert order2.status == OrderStatus.DENIED
         assert self.exec_engine.command_count == 0  # <-- Command never reaches engine
+
+    def test_submit_sell_order_cash_account_checks_base_currency_not_quote(self):
+        """
+        Test that SELL orders for CASH accounts check base currency balance.
+
+        This test ensures we check AUD balance for AUD/USD sells, not USD balance.
+
+        """
+        # Arrange - Create a new multi-currency cash account
+        self.cache.add_instrument(_AUDUSD_SIM)
+
+        # Deregister existing client and create new one for multi-currency account
+        self.exec_engine.deregister_client(self.exec_client)
+
+        exec_client = MockExecutionClient(
+            client_id=ClientId("SIM"),
+            venue=Venue("SIM"),
+            account_type=AccountType.CASH,
+            base_currency=None,  # Multi-currency account
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        self.exec_engine.register_client(exec_client)
+        self.exec_client = exec_client  # Update reference
+
+        # Setup multi-currency cash account with plenty of USD but limited AUD
+        account_state = AccountState(
+            account_id=AccountId("SIM-001"),
+            account_type=AccountType.CASH,
+            base_currency=None,  # Multi-currency
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(1_000_000, USD),  # Plenty of USD
+                    Money(0, USD),
+                    Money(1_000_000, USD),
+                ),
+                AccountBalance(
+                    Money(100, AUD),  # Only 100 AUD available
+                    Money(0, AUD),
+                    Money(100, AUD),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.portfolio.update_account(account_state)
+
+        # Initialize market
+        quote = TestDataStubs.quote_tick(_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
+
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Create SELL order for 200 AUD (more than 100 available)
+        order = strategy.order_factory.market(
+            _AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(200),  # Try to sell 200 AUD when we only have 100
+        )
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        initial_command_count = self.risk_engine.command_count
+        self.risk_engine.execute(submit_order)
+
+        # Assert - First verify account balances are correct
+        account = self.cache.account_for_venue(self.venue)
+        assert account is not None
+        assert account.base_currency is None  # Multi-currency account
+        assert account.balance_free(AUD) == Money(100, AUD)  # Only 100 AUD available
+        assert account.balance_free(USD) == Money(1_000_000, USD)  # Plenty of USD
+
+        # Should be denied due to insufficient AUD (not USD)
+        assert self.risk_engine.command_count == initial_command_count + 1  # Command was processed
+        assert order.status == OrderStatus.DENIED
+        assert self.exec_engine.command_count == 0  # Order should not reach execution
 
     def test_submit_order_when_quote_quantity_buy_within_balance_then_allows(self):
         # Arrange - Setup crypto instrument for quote quantity orders

@@ -282,7 +282,7 @@ impl DataEngine {
         }
     }
 
-    /// Disposes the engine, stopping all clients and cancelling any timers.
+    /// Disposes the engine, stopping all clients and canceling any timers.
     pub fn dispose(&mut self) {
         for client in self.get_clients_mut() {
             if let Err(e) = client.dispose() {
@@ -1315,6 +1315,12 @@ impl DataEngine {
         let size_precision = instrument.size_precision();
 
         if bar_type.spec().is_time_aggregated() {
+            // Get time_bars_origin_offset from config
+            let time_bars_origin_offset = config
+                .time_bars_origins
+                .get(&bar_type.spec().aggregation)
+                .map(|duration| chrono::TimeDelta::from_std(*duration).unwrap_or_default());
+
             Box::new(TimeBarAggregator::new(
                 bar_type,
                 price_precision,
@@ -1325,7 +1331,7 @@ impl DataEngine {
                 config.time_bars_build_with_no_updates,
                 config.time_bars_timestamp_on_close,
                 config.time_bars_interval_type,
-                None,  // TODO: Implement
+                time_bars_origin_offset,
                 20,    // TODO: TBD, composite bar build delay
                 false, // TODO: skip_first_non_full_bar, make it config dependent
             ))

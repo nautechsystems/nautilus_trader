@@ -18,7 +18,7 @@ use serde::Deserialize;
 use ustr::Ustr;
 
 use crate::{
-    enums::{Exchange, InstrumentType, OptionType},
+    enums::{TardisExchange, TardisInstrumentType, TardisOptionType},
     parse::deserialize_uppercase,
 };
 
@@ -26,19 +26,19 @@ use crate::{
 #[serde(rename_all = "camelCase")]
 /// The metadata of a particular instrument.
 /// See <https://docs.tardis.dev/api/instruments-metadata-api>.
-pub struct InstrumentInfo {
+pub struct TardisInstrumentInfo {
     /// The instrument symbol.
     #[serde(deserialize_with = "deserialize_uppercase")]
     pub id: Ustr,
     /// The instrument exchange.
-    pub exchange: Exchange,
-    /// The instrument base currency (normalized, e.g., BTC for `BitMEX`, not XBT).
+    pub exchange: TardisExchange,
+    /// The instrument base currency (normalized, e.g., BTC for BitMEX, not XBT).
     pub base_currency: Ustr,
-    /// The instrument quote currency (normalized, e.g., BTC for `BitMEX`, not XBT).
+    /// The instrument quote currency (normalized, e.g., BTC for BitMEX, not XBT).
     pub quote_currency: Ustr,
     /// The instrument type e.g., spot, perpetual, future, option.
     #[serde(rename = "type")]
-    pub instrument_type: InstrumentType,
+    pub instrument_type: TardisInstrumentType,
     /// If the instrument is actively listed.
     pub active: bool,
     /// The listing date in ISO format.
@@ -70,15 +70,15 @@ pub struct InstrumentInfo {
     /// The instrument strike price (only for options).
     pub strike_price: Option<f64>,
     /// The option type (only for options).
-    pub option_type: Option<OptionType>,
+    pub option_type: Option<TardisOptionType>,
     /// The changes for the instrument (best-effort basis from Tardis).
-    pub changes: Option<Vec<InstrumentChanges>>,
+    pub changes: Option<Vec<TardisInstrumentChanges>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 /// The changes info returned by the exchanges API.
-pub struct InstrumentChanges {
+pub struct TardisInstrumentChanges {
     /// Date in ISO format.
     pub until: DateTime<Utc>,
     /// The minimum price increment (tick size).

@@ -31,7 +31,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Cache instruments first (required for correct websocket message parsing)
     let instruments = client.request_instruments().await?;
     let mut client = CoinbaseIntxWebSocketClient::default();
-    client.connect(instruments).await?;
+    client.initialize_instruments_cache(instruments);
+
+    client.connect().await?;
 
     let instrument_id = InstrumentId::from("BTC-PERP.COINBASE_INTX");
 
@@ -40,7 +42,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // client.subscribe_funding_rates(vec![instrument_id]).await?;
     // client.subscribe_trades(vec![instrument_id]).await?;
     // client.subscribe_quotes(vec![instrument_id]).await?;
-    client.subscribe_order_book(vec![instrument_id]).await?;
+    client.subscribe_book(vec![instrument_id]).await?;
 
     // let bar_type = BarType::from("ETH-PERP.COINBASE_INTX-1-MINUTE-LAST-EXTERNAL");
     // client.subscribe_bars(bar_type).await?;

@@ -33,8 +33,8 @@ use crate::{
         parse::{parse_tardis_ws_message, parse_tardis_ws_message_funding_rate},
         replay_normalized, stream_normalized,
         types::{
-            InstrumentMiniInfo, ReplayNormalizedRequestOptions, StreamNormalizedRequestOptions,
-            TardisInstrumentKey,
+            ReplayNormalizedRequestOptions, StreamNormalizedRequestOptions, TardisInstrumentKey,
+            TardisInstrumentMiniInfo,
         },
     },
     replay::run_tardis_machine_replay_from_config,
@@ -92,7 +92,7 @@ impl TardisMachineClient {
     #[pyo3(name = "replay")]
     fn py_replay<'py>(
         &self,
-        instruments: Vec<InstrumentMiniInfo>,
+        instruments: Vec<TardisInstrumentMiniInfo>,
         options: Vec<ReplayNormalizedRequestOptions>,
         callback: PyObject,
         py: Python<'py>,
@@ -100,7 +100,7 @@ impl TardisMachineClient {
         let map = if instruments.is_empty() {
             self.instruments.clone()
         } else {
-            let mut instrument_map: HashMap<TardisInstrumentKey, Arc<InstrumentMiniInfo>> =
+            let mut instrument_map: HashMap<TardisInstrumentKey, Arc<TardisInstrumentMiniInfo>> =
                 HashMap::new();
             for inst in instruments {
                 let key = inst.as_tardis_instrument_key();
@@ -127,7 +127,7 @@ impl TardisMachineClient {
     #[pyo3(name = "replay_bars")]
     fn py_replay_bars<'py>(
         &self,
-        instruments: Vec<InstrumentMiniInfo>,
+        instruments: Vec<TardisInstrumentMiniInfo>,
         options: Vec<ReplayNormalizedRequestOptions>,
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyAny>> {
@@ -182,12 +182,12 @@ impl TardisMachineClient {
     #[pyo3(name = "stream")]
     fn py_stream<'py>(
         &self,
-        instruments: Vec<InstrumentMiniInfo>,
+        instruments: Vec<TardisInstrumentMiniInfo>,
         options: Vec<StreamNormalizedRequestOptions>,
         callback: PyObject,
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let mut instrument_map: HashMap<TardisInstrumentKey, Arc<InstrumentMiniInfo>> =
+        let mut instrument_map: HashMap<TardisInstrumentKey, Arc<TardisInstrumentMiniInfo>> =
             HashMap::new();
         for inst in instruments {
             let key = inst.as_tardis_instrument_key();
@@ -238,8 +238,8 @@ pub fn py_run_tardis_machine_replay(
 async fn handle_python_stream<S>(
     stream: S,
     callback: PyObject,
-    instrument: Option<Arc<InstrumentMiniInfo>>,
-    instrument_map: Option<HashMap<TardisInstrumentKey, Arc<InstrumentMiniInfo>>>,
+    instrument: Option<Arc<TardisInstrumentMiniInfo>>,
+    instrument_map: Option<HashMap<TardisInstrumentKey, Arc<TardisInstrumentMiniInfo>>>,
 ) where
     S: Stream<Item = Result<WsMessage, Error>> + Unpin,
 {
@@ -271,11 +271,11 @@ async fn handle_python_stream<S>(
                             funding_rate_cache.get(&funding_rate.instrument_id)
                         {
                             // Only emit if changed (uses custom PartialEq comparing rate and next_funding_ns)
-                            if cached_rate != &funding_rate {
+                            if cached_rate == &funding_rate {
+                                false // Skip unchanged rate
+                            } else {
                                 funding_rate_cache.insert(funding_rate.instrument_id, funding_rate);
                                 true
-                            } else {
-                                false // Skip unchanged rate
                             }
                         } else {
                             // First time seeing this instrument, cache and emit

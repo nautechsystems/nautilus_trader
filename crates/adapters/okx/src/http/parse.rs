@@ -16,17 +16,19 @@
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use ustr::Ustr;
 
     use crate::{
         common::{
-            enums::{OKXInstrumentType, OKXMarginMode, OKXPositionSide, OKXSide},
+            enums::{OKXExecType, OKXInstrumentType, OKXMarginMode, OKXPositionSide, OKXSide},
             testing::load_test_json,
         },
         http::{
             client::OKXResponse,
             models::{
-                OKXAccount, OKXCandlestick, OKXIndexTicker, OKXMarkPrice, OKXOrderHistory,
-                OKXPosition, OKXPositionHistory, OKXPositionTier, OKXTrade,
+                OKXAccount, OKXBalanceDetail, OKXCandlestick, OKXIndexTicker, OKXMarkPrice,
+                OKXOrderHistory, OKXPlaceOrderResponse, OKXPosition, OKXPositionHistory,
+                OKXPositionTier, OKXTrade, OKXTransactionDetail,
             },
         },
     };
@@ -296,8 +298,6 @@ mod tests {
 
     #[rstest]
     fn test_parse_account_field_name_compatibility() {
-        use crate::http::models::OKXBalanceDetail;
-
         // Test with new field names (with Amt suffix)
         let json_new = r#"{
             "accAvgPx": "",
@@ -401,8 +401,6 @@ mod tests {
 
     #[rstest]
     fn test_parse_place_order_response() {
-        use crate::http::models::OKXPlaceOrderResponse;
-
         let json_data = r#"{
             "ordId": "12345678901234567890",
             "clOrdId": "client_order_123",
@@ -422,8 +420,6 @@ mod tests {
 
     #[rstest]
     fn test_parse_transaction_details() {
-        use crate::http::models::OKXTransactionDetail;
-
         let json_data = r#"{
             "instType": "SPOT",
             "instId": "BTC-USDT",
@@ -441,19 +437,16 @@ mod tests {
         }"#;
 
         let parsed: OKXTransactionDetail = serde_json::from_str(json_data).unwrap();
-        assert_eq!(
-            parsed.inst_type,
-            crate::common::enums::OKXInstrumentType::Spot
-        );
-        assert_eq!(parsed.inst_id, ustr::Ustr::from("BTC-USDT"));
-        assert_eq!(parsed.trade_id, ustr::Ustr::from("123456789"));
-        assert_eq!(parsed.ord_id, ustr::Ustr::from("987654321"));
-        assert_eq!(parsed.cl_ord_id, ustr::Ustr::from("client_123"));
-        assert_eq!(parsed.bill_id, ustr::Ustr::from("bill_456"));
+        assert_eq!(parsed.inst_type, OKXInstrumentType::Spot);
+        assert_eq!(parsed.inst_id, Ustr::from("BTC-USDT"));
+        assert_eq!(parsed.trade_id, Ustr::from("123456789"));
+        assert_eq!(parsed.ord_id, Ustr::from("987654321"));
+        assert_eq!(parsed.cl_ord_id, Ustr::from("client_123"));
+        assert_eq!(parsed.bill_id, Ustr::from("bill_456"));
         assert_eq!(parsed.fill_px, "42000.5");
         assert_eq!(parsed.fill_sz, "0.001");
-        assert_eq!(parsed.side, crate::common::enums::OKXSide::Buy);
-        assert_eq!(parsed.exec_type, crate::common::enums::OKXExecType::Taker);
+        assert_eq!(parsed.side, OKXSide::Buy);
+        assert_eq!(parsed.exec_type, OKXExecType::Taker);
         assert_eq!(parsed.fee_ccy, "USDT");
         assert_eq!(parsed.fee, Some("0.042".to_string()));
         assert_eq!(parsed.ts, 1625097600000);

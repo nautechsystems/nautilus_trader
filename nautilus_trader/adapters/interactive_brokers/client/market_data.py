@@ -419,7 +419,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         contract: IBContract,
         use_rth: bool,
         handle_revised_bars: bool,
-        start: pd.Timestamp | None = None,
+        params: dict,
     ) -> None:
         """
         Subscribe to historical bar data for a specified bar type and contract. It
@@ -435,11 +435,25 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             Whether to use regular trading hours (RTH) only.
         handle_revised_bars : bool
             Whether to handle revised bars or not.
-        start : pd.Timestamp, optional
-            The timestamp in ns of the last available bar in a used catalog.
+        params : dict
+            A dictionary of optional parameters.
 
         """
         name = str(bar_type)
+        now = self._clock.timestamp_ns()
+        start = params.get("start_ns")
+
+        if start is not None:
+            # start_time = pd.Timestamp(start)
+            duration_str = timedelta_to_duration_str(
+                pd.Timedelta(now - start, "ns"),
+            )
+        else:
+            start = now
+            duration_str = timedelta_to_duration_str(
+                pd.Timedelta(bar_type.spec.timedelta.total_seconds() * 300, "sec"),
+            )  # Download approx 300 bars
+
         subscription = await self._subscribe(
             name,
             self.subscribe_historical_bars,
@@ -448,14 +462,8 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             contract=contract,
             use_rth=use_rth,
             handle_revised_bars=handle_revised_bars,
+            start=start,
         )
-
-        if start is not None:
-            duration_str = timedelta_to_duration_str(
-                pd.Timedelta(self._clock.timestamp_ns() - start.value, "ns"),
-            )
-        else:
-            duration_str = "0 S"
 
         bar_size_setting: str = bar_spec_to_bar_size(bar_type.spec)
         self._eclient.reqHistoricalData(
@@ -885,11 +893,16 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             if bar:
                 request.result.append(bar)
         elif subscription := self._subscriptions.get(req_id=req_id):
+            start = None
+            if isinstance(subscription.handle, functools.partial):
+                start = subscription.handle.keywords.get("start")
+
             bar = await self._process_bar_data(
                 bar_type_str=str(subscription.name),
                 bar=bar,
                 handle_revised_bars=False,
                 historical=True,
+                start=start,
             )
 
             if bar:
@@ -1101,6 +1114,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         bar: BarData,
         handle_revised_bars: bool,
         historical: bool | None = False,
+        start: int | None = None,
     ) -> Bar | None:
         """
         Process received bar data and convert it into NautilusTrader's Bar format. This
@@ -1117,6 +1131,8 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             Indicates whether revised bars should be handled or not.
         historical : bool | None, optional
             Indicates whether the bar data is historical. Defaults to False.
+        start: int, optional
+            The start time of a subscription in ns.
 
         Returns
         -------
@@ -1136,6 +1152,12 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
 
         self._bar_type_to_last_bar[bar_type_str] = bar
         bar_type: BarType = BarType.from_str(bar_type_str)
+        bar_ts_init = await self._ib_bar_to_ts_init(bar, bar_type)
+
+        if start and bar_ts_init < start:
+            # Filtering bar out as it's historical data we don't want, see subscribe_historical_bars
+            return None
+
         ts_init = self._clock.timestamp_ns()
 
         if not handle_revised_bars:
