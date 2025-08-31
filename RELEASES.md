@@ -16,6 +16,7 @@ Released on TBD (UTC).
 - Added support for execution of option spreads in backtesting (#2853), thanks @faysou
 - Added support for option spread quotes in backtest (#2845), thanks @faysou
 - Added loading of options chain from `request_instruments` for Interactive Brokers (#2809), thanks @faysou
+- Added `OptionExerciseModule` (#2907), thanks @faysou
 - Added `MarginModel` concept, base models, config, and factory for backtesting (#2794), thanks @faysou and @stefansimik
 - Added additional built-in backtest fill models (#2795), thanks @faysou and @stefansimik
 - Added `OrderBookDepth10DataWrangler` (#2801), thanks @trylovetom
@@ -73,6 +74,7 @@ Released on TBD (UTC).
 - Implemented `LogGuard` reference counting for proper thread lifecycle management, ensuring all logs flushed before termination
 - Implemented live subscriptions for blockchain data client (#2832), thanks @filipmacek
 - Implemented initial Hyperliquid adapter (#2912), thanks @nicolad
+- Implemented Hyperliquid EIP-712 signing and nonce management (#2916), thanks @nicolad
 - Introduced `SharedCell` / `WeakCell` wrappers for ergonomic and safer handling of `Rc<RefCell<T>>` / `Weak<RefCell<T>>` pairs
 - Introduced efficient block syncing command in the `nautilus-cli` (#2861), thanks @filipmacek
 - Added stream iterators support `BacktestDataIterator`
