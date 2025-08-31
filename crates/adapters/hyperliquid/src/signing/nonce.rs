@@ -19,9 +19,8 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use crate::http::error::{Error, Result};
-
 use super::types::SignerId;
+use crate::http::error::{Error, Result};
 
 /// Time-based nonce in Unix milliseconds for Hyperliquid.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -272,9 +271,11 @@ impl Default for NonceManager {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use rstest::rstest;
     use std::thread;
+
+    use rstest::rstest;
+
+    use super::*;
 
     #[rstest]
     fn test_time_nonce_creation() {

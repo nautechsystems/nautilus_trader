@@ -15,9 +15,8 @@
 
 use serde_json::Value;
 
-use crate::{common::credential::EvmPrivateKey, http::error::Result};
-
 use super::{nonce::TimeNonce, types::HyperliquidActionType};
+use crate::{common::credential::EvmPrivateKey, http::error::Result};
 
 /// Request to be signed by the Hyperliquid EIP-712 signer.
 #[derive(Debug, Clone)]
@@ -139,9 +138,10 @@ impl HyperliquidEip712Signer {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use rstest::rstest;
     use serde_json::json;
+
+    use super::*;
 
     #[rstest]
     fn test_address_canonicalization() {
