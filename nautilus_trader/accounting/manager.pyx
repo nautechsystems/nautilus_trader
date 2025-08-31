@@ -212,7 +212,7 @@ cdef class AccountsManager:
         if not orders_open:
             account.clear_balance_locked(instrument.id)
 
-        total_locked = []
+        cdef dict[Currency, Money] total_locked = {}
         base_xrate  = Decimal(0)
 
         cdef Currency currency = instrument.get_cost_currency()
@@ -256,19 +256,12 @@ cdef class AccountsManager:
                 locked = Money(round(locked.as_decimal() * base_xrate, currency.get_precision()), currency)
 
             # Increment total locked
-            total_locked.append(locked)
-
-        cdef dict[Currency, Money] aggregated_locked = {}
-        cdef Money locked_item, total_locked_for_currency
-
-        for locked_item in total_locked:
-            currency = locked_item.currency
-            if currency in aggregated_locked:
-                aggregated_locked[currency] = Money(round(aggregated_locked[currency].as_decimal() + locked_item.as_decimal(), currency.get_precision()), currency)
+            if currency in total_locked:
+                total_locked[currency] = Money(round(total_locked[currency].as_decimal() + locked.as_decimal(), currency.get_precision()), currency)
             else:
-                aggregated_locked[currency] = locked_item
+                total_locked[currency] = locked
 
-        for (currency, locked_item) in aggregated_locked.items():
+        for (currency, locked_item) in total_locked.items():
             account.update_balance_locked(instrument.id, Money(locked_item, currency))
 
             self._log.info(f"{instrument.id} balance_locked={Money(locked_item, currency).to_formatted_str()}")

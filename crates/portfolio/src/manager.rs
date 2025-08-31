@@ -286,7 +286,7 @@ impl AccountsManager {
             ));
         }
 
-        let mut total_locked: Vec<Money> = vec![];
+        let mut total_locked: HashMap<Currency, Money> = HashMap::new();
         let mut base_xrate: Option<f64> = None;
 
         let mut currency = instrument.settlement_currency();
@@ -342,18 +342,13 @@ impl AccountsManager {
                 }
             }
 
-            total_locked.push(locked);
-        }
-
-        let mut aggregated_locked: HashMap<Currency, Money> = HashMap::new();
-        for locked in total_locked.into_iter() {
-            aggregated_locked
+            total_locked
                 .entry(locked.currency)
                 .and_modify(|total| *total += locked)
                 .or_insert(locked);
         }
 
-        for (_, balance_locked) in aggregated_locked {
+        for (_, balance_locked) in total_locked {
             if let Some(balance) = account.balances.get_mut(&balance_locked.currency) {
                 balance.locked = balance_locked;
                 let currency = balance.currency;
