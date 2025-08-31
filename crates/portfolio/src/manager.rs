@@ -26,7 +26,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     position::Position,
-    types::{AccountBalance, Money, Currency},
+    types::{AccountBalance, Currency, Money},
 };
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 /// Manages account balance updates and calculations for portfolio management.
