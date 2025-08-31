@@ -815,7 +815,11 @@ mod tests {
     use ustr::Ustr;
 
     use super::*;
-    use crate::{common::testing::load_test_json, websocket::messages::OKXWebSocketEvent};
+    use crate::{
+        common::{parse::parse_account_state, testing::load_test_json},
+        http::models::OKXAccount,
+        websocket::messages::{OKXWebSocketArg, OKXWebSocketEvent},
+    };
 
     #[rstest]
     fn test_parse_books_snapshot() {
@@ -1121,13 +1125,6 @@ mod tests {
 
     #[rstest]
     fn test_parse_book_message() {
-        use ustr::Ustr;
-
-        use crate::websocket::{
-            enums::OKXWsChannel,
-            messages::{OKXWebSocketArg, OKXWebSocketEvent},
-        };
-
         let json_data = load_test_json("ws_bbo_tbt.json");
         let msg: OKXWebSocketEvent = serde_json::from_str(&json_data).unwrap();
         let (okx_books, arg): (Vec<OKXBookMsg>, OKXWebSocketArg) = match msg {
@@ -1167,12 +1164,8 @@ mod tests {
 
     #[rstest]
     fn test_parse_ws_account_message() {
-        use nautilus_model::identifiers::AccountId;
-
-        // Load test data for WebSocket account message
         let json_data = load_test_json("ws_account.json");
-        let accounts: Vec<crate::http::models::OKXAccount> =
-            serde_json::from_str(&json_data).unwrap();
+        let accounts: Vec<OKXAccount> = serde_json::from_str(&json_data).unwrap();
 
         assert_eq!(accounts.len(), 1);
         let account = &accounts[0];
@@ -1195,7 +1188,7 @@ mod tests {
 
         let account_id = AccountId::new("OKX-001");
         let ts_init = nautilus_core::nanos::UnixNanos::default();
-        let account_state = crate::common::parse::parse_account_state(account, account_id, ts_init);
+        let account_state = parse_account_state(account, account_id, ts_init);
 
         assert!(account_state.is_ok());
         let state = account_state.unwrap();
@@ -1282,14 +1275,6 @@ mod tests {
 
     #[rstest]
     fn test_parse_order_status_report() {
-        use nautilus_core::nanos::UnixNanos;
-        use nautilus_model::{
-            enums::OrderStatus,
-            identifiers::Symbol,
-            instruments::CryptoPerpetual,
-            types::{Currency, Price, Quantity},
-        };
-
         let json_data = load_test_json("ws_orders.json");
         let ws_msg: serde_json::Value = serde_json::from_str(&json_data).unwrap();
         let data: Vec<OKXOrderMsg> = serde_json::from_value(ws_msg["data"].clone()).unwrap();
@@ -1354,13 +1339,6 @@ mod tests {
 
     #[rstest]
     fn test_parse_fill_report() {
-        use nautilus_core::nanos::UnixNanos;
-        use nautilus_model::{
-            identifiers::Symbol,
-            instruments::CryptoPerpetual,
-            types::{Currency, Price, Quantity},
-        };
-
         let json_data = load_test_json("ws_orders.json");
         let ws_msg: serde_json::Value = serde_json::from_str(&json_data).unwrap();
         let data: Vec<OKXOrderMsg> = serde_json::from_value(ws_msg["data"].clone()).unwrap();
@@ -1501,14 +1479,6 @@ mod tests {
 
     #[rstest]
     fn test_parse_fill_report_with_fee_cache() {
-        use nautilus_core::nanos::UnixNanos;
-        use nautilus_model::{
-            identifiers::Symbol,
-            instruments::CryptoPerpetual,
-            types::{Currency, Money, Price, Quantity},
-        };
-
-        // Create a mock instrument for testing
         let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
         let instrument = CryptoPerpetual::new(
             instrument_id,

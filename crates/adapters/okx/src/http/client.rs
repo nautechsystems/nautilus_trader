@@ -1802,9 +1802,19 @@ impl OKXHttpClient {
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
         let mut params = GetPositionsParamsBuilder::default();
 
-        if let Some(instrument_type) = instrument_type {
-            params.inst_type(instrument_type);
-        }
+        let instrument_type = if let Some(instrument_type) = instrument_type {
+            instrument_type
+        } else {
+            let instrument_id = instrument_id.ok_or_else(|| {
+                anyhow::anyhow!("Instrument ID required if `instrument_type` not provided")
+            })?;
+            let instrument = self
+                .instrument_or_fetch(instrument_id.symbol.inner())
+                .await?;
+            okx_instrument_type(&instrument)?
+        };
+
+        params.inst_type(instrument_type);
 
         instrument_id
             .as_ref()
@@ -1822,9 +1832,6 @@ impl OKXHttpClient {
         let mut reports = Vec::with_capacity(resp.len());
 
         for position in resp {
-            if position.pos_id.is_some() {
-                continue; // Skip hedge mode positions (not currently supported)
-            }
             let inst = self.instrument_or_fetch(position.inst_id).await?;
 
             let report = parse_position_status_report(

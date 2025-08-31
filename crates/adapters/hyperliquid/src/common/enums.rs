@@ -13,10 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_model::enums::{AggressorSide, OrderSide};
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
-
-use nautilus_model::enums::{AggressorSide, OrderSide};
 
 /// Represents the order side (Buy or Sell).
 ///
@@ -309,9 +308,9 @@ impl HyperliquidRejectCode {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use serde_json;
 
     use super::*;
-    use serde_json;
 
     #[rstest]
     fn test_side_serde() {

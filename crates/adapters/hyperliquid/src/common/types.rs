@@ -13,8 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use serde::{Deserialize, Serialize};
 use std::fmt;
+
+use serde::{Deserialize, Serialize};
 
 /// Represents an asset ID for Hyperliquid.
 ///

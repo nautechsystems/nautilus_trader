@@ -18,7 +18,7 @@ use nautilus_core::UnixNanos;
 use nautilus_model::{data::quote::QuoteTick, identifiers::InstrumentId, types::price::Price};
 
 use super::{
-    messages::QuoteMsg,
+    messages::BitmexQuoteMsg,
     parse::{parse_quantity, parse_quote_msg},
 };
 use crate::common::parse::parse_instrument_id;
@@ -42,7 +42,7 @@ impl QuoteCache {
 
     pub fn process(
         &mut self,
-        msg: &QuoteMsg,
+        msg: &BitmexQuoteMsg,
         price_precision: u8,
         ts_init: UnixNanos,
     ) -> Option<QuoteTick> {

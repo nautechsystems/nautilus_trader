@@ -53,7 +53,9 @@ use super::enums::OKXContractType;
 use crate::{
     common::{
         consts::OKX_VENUE,
-        enums::{OKXExecType, OKXInstrumentType, OKXOrderStatus, OKXOrderType, OKXSide},
+        enums::{
+            OKXExecType, OKXInstrumentType, OKXOrderStatus, OKXOrderType, OKXPositionSide, OKXSide,
+        },
         models::OKXInstrument,
     },
     http::models::{
@@ -484,6 +486,10 @@ pub fn parse_order_status_report(
 }
 
 /// Parses an OKX position into a Nautilus [`PositionStatusReport`].
+///
+/// # Panics
+///
+/// Panics if position quantity is invalid and cannot be parsed.
 #[allow(clippy::too_many_lines)]
 pub fn parse_position_status_report(
     position: OKXPosition,
@@ -492,13 +498,30 @@ pub fn parse_position_status_report(
     size_precision: u8,
     ts_init: UnixNanos,
 ) -> PositionStatusReport {
-    let position_side: PositionSide = position.pos_side.into();
-    let quantity = position
-        .pos
-        .parse::<f64>()
-        .ok()
-        .map(|v| Quantity::new(v, size_precision))
-        .unwrap_or_default();
+    let pos_value = position.pos.parse::<f64>().unwrap_or_else(|e| {
+        panic!(
+            "Failed to parse position quantity '{}' for instrument {}: {:?}",
+            position.pos, instrument_id, e
+        )
+    });
+
+    // For Net position mode, determine side based on position sign
+    let position_side = match position.pos_side {
+        OKXPositionSide::Net => {
+            if pos_value > 0.0 {
+                PositionSide::Long
+            } else if pos_value < 0.0 {
+                PositionSide::Short
+            } else {
+                PositionSide::Flat
+            }
+        }
+        _ => position.pos_side.into(),
+    }
+    .as_specified();
+
+    // Convert to absolute quantity (positions are always positive in Nautilus)
+    let quantity = Quantity::new(pos_value.abs(), size_precision);
     let venue_position_id = None; // TODO: Only support netting for now
     // let venue_position_id = Some(PositionId::new(position.pos_id));
     let ts_last = parse_millisecond_timestamp(position.u_time);

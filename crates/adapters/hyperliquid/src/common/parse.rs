@@ -13,9 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::str::FromStr;
+
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serializer};
-use std::str::FromStr;
 
 /// Serializes decimal as string (lossless, no scientific notation).
 pub fn serialize_decimal_as_str<S>(decimal: &Decimal, serializer: S) -> Result<S::Ok, S::Error>
@@ -72,9 +73,9 @@ where
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use serde::{Deserialize, Serialize};
 
     use super::*;
-    use serde::{Deserialize, Serialize};
 
     #[derive(Serialize, Deserialize)]
     struct TestStruct {

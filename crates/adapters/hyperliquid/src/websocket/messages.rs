@@ -13,8 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+use serde::{Deserialize, Serialize};
 
 /// Represents an outbound WebSocket message from client to Hyperliquid.
 #[derive(Debug, Clone, Serialize)]
@@ -617,9 +618,9 @@ pub struct WsBboData {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use serde_json;
 
     use super::*;
-    use serde_json;
 
     #[rstest]
     fn test_subscription_request_serialization() {

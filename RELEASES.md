@@ -16,6 +16,7 @@ Released on TBD (UTC).
 - Added support for execution of option spreads in backtesting (#2853), thanks @faysou
 - Added support for option spread quotes in backtest (#2845), thanks @faysou
 - Added loading of options chain from `request_instruments` for Interactive Brokers (#2809), thanks @faysou
+- Added `OptionExerciseModule` (#2907), thanks @faysou
 - Added `MarginModel` concept, base models, config, and factory for backtesting (#2794), thanks @faysou and @stefansimik
 - Added additional built-in backtest fill models (#2795), thanks @faysou and @stefansimik
 - Added `OrderBookDepth10DataWrangler` (#2801), thanks @trylovetom
@@ -72,6 +73,8 @@ Released on TBD (UTC).
 - Refactored `BacktestDataIterator` (#2791) to consolidate data generator usage, thanks @faysou
 - Implemented `LogGuard` reference counting for proper thread lifecycle management, ensuring all logs flushed before termination
 - Implemented live subscriptions for blockchain data client (#2832), thanks @filipmacek
+- Implemented initial Hyperliquid adapter (#2912), thanks @nicolad
+- Implemented Hyperliquid EIP-712 signing and nonce management (#2916), thanks @nicolad
 - Introduced `SharedCell` / `WeakCell` wrappers for ergonomic and safer handling of `Rc<RefCell<T>>` / `Weak<RefCell<T>>` pairs
 - Introduced efficient block syncing command in the `nautilus-cli` (#2861), thanks @filipmacek
 - Added stream iterators support `BacktestDataIterator`
@@ -170,6 +173,7 @@ Released on TBD (UTC).
 - Fixed race-condition on node shutdown in async `InteractiveBrokersDataClient._disconnect()` (#2865), thanks @ruvr
 - Fixed `AttributeError` when loading cached `IBContract` objects (#2862), thanks @ruvr
 - Fixed `PolymarketUserTrade.bucket_index` field type that changed from `str` to `int` (#2872), thanks for reporting @thefabus
+- Fixed Polymarket websocket 500 tokens per connection limitation (#2915), thanks @odobias and @DeirhX
 - Fixed Interactive Brokers `submit_order_list` rejection (#2892), thanks @faysou
 - Fixed missing `funding_rates` for Cache Debug impl (#2894), thanks @MK27MK
 

@@ -435,12 +435,30 @@ class OKXExecutionClient(LiveExecutionClient):
                     account_id=self.pyo3_account_id,
                     instrument_id=pyo3_instrument_id,
                 )
-                pyo3_reports.extend(response)
+
+                if not response:
+                    instrument = self._cache.instrument(command.instrument_id)
+                    if instrument is None:
+                        raise RuntimeError(
+                            f"Cannot create FLAT position report - instrument {command.instrument_id} not found",
+                        )
+
+                    report = PositionStatusReport.create_flat(
+                        account_id=self.account_id,
+                        instrument_id=command.instrument_id,
+                        size_precision=instrument.size_precision,
+                        ts_init=self._clock.timestamp_ns(),
+                    )
+                    reports.append(report)
+                else:
+                    pyo3_reports.extend(response)
             else:
-                response = await self._http_client.request_position_status_reports(
-                    account_id=self.pyo3_account_id,
-                )
-                pyo3_reports.extend(response)
+                for instrument_type in self._config.instrument_types:
+                    response = await self._http_client.request_position_status_reports(
+                        account_id=self.pyo3_account_id,
+                        instrument_type=instrument_type,
+                    )
+                    pyo3_reports.extend(response)
 
             for pyo3_report in pyo3_reports:
                 report = PositionStatusReport.from_pyo3(pyo3_report)

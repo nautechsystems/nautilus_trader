@@ -22,7 +22,7 @@ use thiserror::Error;
 
 /// Build error for query parameter validation.
 #[derive(Debug, Error)]
-pub enum BuildError {
+pub enum BitmexBuildError {
     /// Missing required symbol.
     #[error("Missing required symbol")]
     MissingSymbol,
@@ -78,7 +78,7 @@ pub enum BitmexHttpError {
     ValidationError(String),
     /// Build error for query parameters.
     #[error("Build error: {0}")]
-    BuildError(#[from] BuildError),
+    BuildError(#[from] BitmexBuildError),
     /// Wrapping the underlying `HttpClientError` from the network crate.
     #[error("Network error: {0}")]
     HttpClientError(#[from] HttpClientError),

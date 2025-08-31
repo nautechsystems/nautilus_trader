@@ -31,7 +31,7 @@ use strum::{AsRefStr, Display, EnumIter, EnumString};
     Deserialize,
 )]
 #[serde(rename_all = "camelCase")]
-pub enum WsErrorType {
+pub enum OKXWsErrorType {
     /// General error.
     Error,
     /// Error during subscription.
