@@ -15,7 +15,7 @@
 
 //! Provides account management functionality.
 
-use std::{cell::RefCell, fmt::Debug, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, fmt::Debug, rc::Rc};
 
 use nautilus_common::{cache::Cache, clock::Clock};
 use nautilus_core::{UUID4, UnixNanos};
@@ -26,7 +26,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     position::Position,
-    types::{AccountBalance, Money},
+    types::{AccountBalance, Currency, Money},
 };
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 /// Manages account balance updates and calculations for portfolio management.
@@ -286,7 +286,7 @@ impl AccountsManager {
             ));
         }
 
-        let mut total_locked = 0.0;
+        let mut total_locked: HashMap<Currency, Money> = HashMap::new();
         let mut base_xrate: Option<f64> = None;
 
         let mut currency = instrument.settlement_currency();
@@ -322,8 +322,7 @@ impl AccountsManager {
                     price?,
                     None,
                 )
-                .unwrap()
-                .as_f64();
+                .unwrap();
 
             if let Some(base_curr) = account.base_currency() {
                 if base_xrate.is_none() {
@@ -336,25 +335,28 @@ impl AccountsManager {
                 }
 
                 if let Some(xrate) = base_xrate {
-                    locked *= xrate;
+                    locked = Money::new(locked.as_f64() * xrate, currency);
                 } else {
                     // TODO: Revisit error handling
                     panic!("Cannot calculate base xrate");
                 }
             }
 
-            total_locked += locked;
+            total_locked
+                .entry(locked.currency)
+                .and_modify(|total| *total += locked)
+                .or_insert(locked);
         }
 
-        let balance_locked = Money::new(total_locked.to_f64()?, currency);
+        for (_, balance_locked) in total_locked {
+            if let Some(balance) = account.balances.get_mut(&balance_locked.currency) {
+                balance.locked = balance_locked;
+                let currency = balance.currency;
+                account.recalculate_balance(currency);
+            }
 
-        if let Some(balance) = account.balances.get_mut(&instrument.quote_currency()) {
-            balance.locked = balance_locked;
-            let currency = balance.currency;
-            account.recalculate_balance(currency);
+            log::info!("{} balance_locked={balance_locked}", instrument.id());
         }
-
-        log::info!("{} balance_locked={balance_locked}", instrument.id());
 
         Some((
             account.clone(),

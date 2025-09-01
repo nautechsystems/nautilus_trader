@@ -211,22 +211,18 @@ cdef class AccountsManager:
         if not orders_open:
             account.clear_balance_locked(instrument.id)
 
-        total_locked = Decimal(0)
+        cdef dict[Currency, Money] total_locked = {}
         base_xrate  = Decimal(0)
 
-        cdef Currency currency = None
-        cdef Money balance_locked
-
         cdef:
+            Currency currency = None
+            Money balance_locked
             Order order
         for order in orders_open:
             assert order.instrument_id == instrument.id
-
             if not order.is_open_c() or order.is_reduce_only or (not order.has_price_c() and not order.has_trigger_price_c()):
                 # Does not contribute to locked balance
                 continue
-
-            # Calculate balance locked
             balance_locked = account.calculate_balance_locked(
                 instrument,
                 order.side,
@@ -234,13 +230,8 @@ cdef class AccountsManager:
                 order.price if order.has_price_c() else order.trigger_price,
             )
 
-            # The currency is the output currency for the aggregated locked total,
-            # set currency from the first order's locked balance
-            if currency is None:
-                currency = balance_locked.currency
-
+            currency = balance_locked.currency
             locked = balance_locked.as_decimal()
-
             if account.base_currency is not None:
                 if base_xrate == 0:
                     # Cache base currency and xrate
@@ -262,18 +253,26 @@ cdef class AccountsManager:
 
                 # Apply base xrate
                 locked = round(locked * base_xrate, currency.get_precision())
+                balance_locked = Money(locked, currency)
 
-            total_locked += locked
+            if currency in total_locked:
+                total_locked[currency] = Money(round(total_locked[currency].as_decimal() + balance_locked.as_decimal(), currency.get_precision()), currency)
+            else:
+                total_locked[currency] = balance_locked
 
         # No contributing orders (reduce-only/unpriced): clear any existing lock
-        if currency is None:
+        if len(total_locked) == 0:
             account.clear_balance_locked(instrument.id)
             return True
 
-        cdef Money locked_money = Money(total_locked, currency)
-        account.update_balance_locked(instrument.id, locked_money)
-
-        self._log.info(f"{instrument.id} balance_locked={locked_money.to_formatted_str()}")
+        cdef:
+            Currency currency_item
+            Money locked_item
+            cdef Money locked_money
+        for (currency_item, locked_item) in total_locked.items():
+            locked_money = Money(locked_item, currency_item)
+            account.update_balance_locked(instrument.id, locked_money)
+            self._log.info(f"{instrument.id} balance_locked={locked_money.to_formatted_str()}")
 
         return True
 
