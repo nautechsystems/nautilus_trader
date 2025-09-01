@@ -115,6 +115,7 @@ Released on TBD (UTC).
 - Improved Bybit balance precision by avoiding float conversion (#2903), thanks @scoriiu
 - Improved dYdX message parsing robustness to allow unknown fields (#2911), thanks @davidblom
 - Improved Polymarket instrument provider bulk loading (#2913), thanks @DeirhX
+- Improved Polymarket binary options parsing with no `endDate` (#2919), thanks @DeirhX
 - Refined Rust catalog path handling (#2743), thanks @faysou
 - Refined Rust `GreeksCalculator` (#2760), thanks @faysou
 - Refined Databento bars timestamp decoding and backtest execution usage (#2800), thanks @faysou
@@ -178,6 +179,8 @@ Released on TBD (UTC).
 - Fixed missing `funding_rates` for Cache Debug impl (#2894), thanks @MK27MK
 
 ### Documentation Updates
+- Added Positions concept guide
+- Added Reports concept guide
 - Added FFI Memory Contract developer guide
 - Added Windows signal handling guidance
 - Added mixed debugging instructions and example (#2806), thanks @faysou
