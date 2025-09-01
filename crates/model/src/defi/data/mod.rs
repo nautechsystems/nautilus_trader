@@ -25,12 +25,14 @@ use serde::{Deserialize, Serialize};
 use crate::{defi::Pool, identifiers::InstrumentId};
 
 pub mod block;
+pub mod collect;
 pub mod liquidity;
 pub mod swap;
 pub mod transaction;
 
 // Re-exports
 pub use block::Block;
+pub use collect::PoolFeeCollect;
 pub use liquidity::{PoolLiquidityUpdate, PoolLiquidityUpdateType};
 pub use swap::PoolSwap;
 pub use transaction::Transaction;
@@ -51,6 +53,8 @@ pub enum DefiData {
     PoolSwap(PoolSwap),
     /// A liquidity update event (mint/burn) in a DEX pool.
     PoolLiquidityUpdate(PoolLiquidityUpdate),
+    /// A fee collection event from a DEX pool position.
+    PoolFeeCollect(PoolFeeCollect),
 }
 
 impl DefiData {
@@ -65,6 +69,7 @@ impl DefiData {
             Self::Block(_) => panic!("`InstrumentId` not applicable to `Block`"), // TBD?
             Self::PoolSwap(swap) => swap.instrument_id,
             Self::PoolLiquidityUpdate(update) => update.instrument_id,
+            Self::PoolFeeCollect(collect) => collect.instrument_id,
             Self::Pool(pool) => pool.instrument_id,
         }
     }
@@ -76,6 +81,7 @@ impl Display for DefiData {
             Self::Block(b) => write!(f, "{b}"),
             Self::PoolSwap(s) => write!(f, "{s}"),
             Self::PoolLiquidityUpdate(u) => write!(f, "{u}"),
+            Self::PoolFeeCollect(c) => write!(f, "{c}"),
             Self::Pool(p) => write!(f, "{p}"),
         }
     }
@@ -96,5 +102,11 @@ impl From<PoolLiquidityUpdate> for DefiData {
 impl From<Pool> for DefiData {
     fn from(value: Pool) -> Self {
         Self::Pool(value)
+    }
+}
+
+impl From<PoolFeeCollect> for DefiData {
+    fn from(value: PoolFeeCollect) -> Self {
+        Self::PoolFeeCollect(value)
     }
 }

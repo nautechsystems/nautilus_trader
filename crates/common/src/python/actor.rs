@@ -2212,6 +2212,7 @@ mod tests {
             "Swap",
             "Mint",
             "Burn",
+            "Collect",
         ));
         let token0 = Token::new(
             chain.clone(),
