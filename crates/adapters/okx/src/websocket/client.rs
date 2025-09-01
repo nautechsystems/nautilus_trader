@@ -1606,7 +1606,7 @@ impl OKXWebSocketClient {
         trader_id: TraderId,
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
-        client_order_id: ClientOrderId,
+        client_order_id: Option<ClientOrderId>,
         venue_order_id: Option<VenueOrderId>,
         position_side: Option<PositionSide>,
     ) -> Result<(), OKXWsError> {
@@ -1614,9 +1614,13 @@ impl OKXWebSocketClient {
         // Note: instType should NOT be included in cancel order requests
         // For WebSocket orders, use the full symbol (including SWAP/FUTURES suffix if present)
         builder.inst_id(instrument_id.symbol.as_str());
-        builder.cl_ord_id(client_order_id.as_str());
-        if let Some(ps) = position_side {
-            builder.pos_side(OKXPositionSide::from(ps));
+
+        if let Some(venue_order_id) = venue_order_id {
+            builder.ord_id(venue_order_id.as_str());
+        }
+
+        if let Some(pos_side) = position_side {
+            builder.pos_side(OKXPositionSide::from(pos_side));
         }
 
         let params = builder
@@ -1625,16 +1629,22 @@ impl OKXWebSocketClient {
 
         let request_id = self.generate_unique_request_id();
 
-        self.pending_cancel_requests.insert(
-            request_id.clone(),
-            (
-                client_order_id,
-                trader_id,
-                strategy_id,
-                instrument_id,
-                venue_order_id,
-            ),
-        );
+        // External orders may not have a client order ID,
+        // for now we just track those with a client order ID as pending requests.
+        if let Some(client_order_id) = client_order_id {
+            builder.cl_ord_id(client_order_id.as_str());
+
+            self.pending_cancel_requests.insert(
+                request_id.clone(),
+                (
+                    client_order_id,
+                    trader_id,
+                    strategy_id,
+                    instrument_id,
+                    venue_order_id,
+                ),
+            );
+        }
 
         self.ws_cancel_order(params, Some(request_id)).await
     }
@@ -1684,8 +1694,8 @@ impl OKXWebSocketClient {
         trader_id: TraderId,
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
-        client_order_id: ClientOrderId,
-        new_client_order_id: ClientOrderId,
+        client_order_id: Option<ClientOrderId>,
+        new_client_order_id: Option<ClientOrderId>,
         price: Option<Price>,
         quantity: Option<Quantity>,
         venue_order_id: Option<VenueOrderId>,
@@ -1694,8 +1704,19 @@ impl OKXWebSocketClient {
         let mut builder = WsAmendOrderParamsBuilder::default();
 
         builder.inst_id(instrument_id.symbol.as_str());
-        builder.cl_ord_id(client_order_id.as_str());
-        builder.new_cl_ord_id(new_client_order_id.as_str());
+
+        if let Some(venue_order_id) = venue_order_id {
+            builder.ord_id(venue_order_id.as_str());
+        }
+
+        if let Some(client_order_id) = client_order_id {
+            builder.cl_ord_id(client_order_id.as_str());
+        }
+
+        if let Some(new_client_order_id) = new_client_order_id {
+            builder.new_cl_ord_id(new_client_order_id.as_str());
+        }
+
         if let Some(p) = price {
             builder.px(p.to_string());
         }
@@ -1716,16 +1737,20 @@ impl OKXWebSocketClient {
             .fetch_add(1, Ordering::SeqCst)
             .to_string();
 
-        self.pending_amend_requests.insert(
-            request_id.clone(),
-            (
-                client_order_id,
-                trader_id,
-                strategy_id,
-                instrument_id,
-                venue_order_id,
-            ),
-        );
+        // External orders may not have a client order ID,
+        // for now we just track those with a client order ID as pending requests.
+        if let Some(client_order_id) = client_order_id {
+            self.pending_amend_requests.insert(
+                request_id.clone(),
+                (
+                    client_order_id,
+                    trader_id,
+                    strategy_id,
+                    instrument_id,
+                    venue_order_id,
+                ),
+            );
+        }
 
         self.ws_amend_order(params, Some(request_id)).await
     }
