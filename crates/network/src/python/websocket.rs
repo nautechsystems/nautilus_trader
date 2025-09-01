@@ -18,7 +18,7 @@ use std::{
     time::Duration,
 };
 
-use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
+use nautilus_core::python::{clone_py_object, to_pyruntime_err, to_pyvalue_err};
 use pyo3::{create_exception, exceptions::PyException, prelude::*, types::PyBytes};
 use tokio_tungstenite::tungstenite::{Message, Utf8Bytes};
 
@@ -54,6 +54,7 @@ impl WebSocketConfig {
         reconnect_jitter_ms: Option<u64>,
     ) -> Self {
         // Create function pointer that calls Python handler
+        let handler_clone = clone_py_object(&handler);
         let message_handler: MessageHandler = Arc::new(move |msg: Message| {
             Python::with_gil(|py| {
                 let data = match msg {
@@ -61,7 +62,7 @@ impl WebSocketConfig {
                     Message::Text(text) => text.as_bytes().to_vec(),
                     _ => return, // Skip other message types
                 };
-                if let Err(e) = handler.call1(py, (PyBytes::new(py, &data),)) {
+                if let Err(e) = handler_clone.call1(py, (PyBytes::new(py, &data),)) {
                     tracing::error!("Error calling Python message handler: {e}");
                 }
             });
@@ -69,9 +70,10 @@ impl WebSocketConfig {
 
         // Create function pointer for ping handler if provided
         let ping_handler_fn = ping_handler.map(|ping_handler| {
+            let ping_handler_clone = clone_py_object(&ping_handler);
             let ping_handler_fn: PingHandler = std::sync::Arc::new(move |data: Vec<u8>| {
                 Python::with_gil(|py| {
-                    if let Err(e) = ping_handler.call1(py, (PyBytes::new(py, &data),)) {
+                    if let Err(e) = ping_handler_clone.call1(py, (PyBytes::new(py, &data),)) {
                         tracing::error!("Error calling Python ping handler: {e}");
                     }
                 });
@@ -113,9 +115,10 @@ impl WebSocketClient {
     ) -> PyResult<Bound<'_, PyAny>> {
         // Convert Python callback to function pointer
         let post_reconnection_fn = post_reconnection.map(|callback| {
+            let callback_clone = clone_py_object(&callback);
             Arc::new(move || {
                 Python::with_gil(|py| {
-                    if let Err(e) = callback.call0(py) {
+                    if let Err(e) = callback_clone.call0(py) {
                         tracing::error!("Error calling post_reconnection handler: {e}");
                     }
                 });
