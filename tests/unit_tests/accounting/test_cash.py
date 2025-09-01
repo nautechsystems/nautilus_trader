@@ -1422,7 +1422,7 @@ def test_accounts_manager_locks_correct_currency_for_multiple_crypto_spot_orders
     sell_order = TestExecStubs.limit_order(
         instrument=BTCUSDT_BINANCE,
         order_side=OrderSide.SELL,
-        quantity=Quantity.from_str('0.00014'),
+        quantity=Quantity.from_str("0.00014"),
         price=Price.from_str("115_978.72"),
         client_order_id=ClientOrderId("O-20210410-022422-001-001-2"),
     )
