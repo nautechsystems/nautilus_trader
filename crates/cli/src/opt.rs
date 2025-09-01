@@ -122,4 +122,31 @@ pub enum BlockchainCommand {
         #[clap(flatten)]
         database: DatabaseConfig,
     },
+    /// Analyze a specific DEX pool.
+    AnalyzePool {
+        /// The blockchain chain name (case-insensitive). Examples: ethereum, arbitrum, base, polygon, bsc
+        #[arg(long)]
+        chain: String,
+        /// The DEX name (case-insensitive). Examples: UniswapV3, uniswapv3, SushiSwapV2, PancakeSwapV3
+        #[arg(long)]
+        dex: String,
+        /// The pool contract address
+        #[arg(long)]
+        address: String,
+        /// Starting block number to sync from (optional)
+        #[arg(long)]
+        from_block: Option<u64>,
+        /// Ending block number to sync to (optional, defaults to current chain head)
+        #[arg(long)]
+        to_block: Option<u64>,
+        /// RPC HTTP URL for blockchain calls (optional, falls back to RPC_HTTP_URL env var)
+        #[arg(long)]
+        rpc_url: Option<String>,
+        /// Reset sync progress and start from the beginning, ignoring last synced block
+        #[arg(long)]
+        reset: bool,
+        /// Database configuration options
+        #[clap(flatten)]
+        database: DatabaseConfig,
+    },
 }
