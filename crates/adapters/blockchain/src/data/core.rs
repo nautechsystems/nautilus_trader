@@ -68,7 +68,7 @@ pub struct BlockchainDataClientCore {
     /// Manages subscriptions for various DEX events (swaps, mints, burns).
     pub subscription_manager: DefiDataSubscriptionManager,
     /// Channel sender for data events.
-    data_tx: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_tx: Option<tokio::sync::mpsc::UnboundedSender<DataEvent>>,
 }
 
 impl BlockchainDataClientCore {
@@ -81,7 +81,7 @@ impl BlockchainDataClientCore {
     pub fn new(
         config: BlockchainDataClientConfig,
         hypersync_tx: Option<tokio::sync::mpsc::UnboundedSender<BlockchainMessage>>,
-        data_tx: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+        data_tx: Option<tokio::sync::mpsc::UnboundedSender<DataEvent>>,
     ) -> Self {
         let chain = config.chain.clone();
         let cache = BlockchainCache::new(chain.clone());
@@ -949,10 +949,14 @@ impl BlockchainDataClientCore {
 
     /// Sends a data event to all subscribers through the data channel.
     pub fn send_data(&self, data: DataEvent) {
-        tracing::debug!("Sending {data}");
+        if let Some(data_tx) = &self.data_tx {
+            tracing::debug!("Sending {data}");
 
-        if let Err(e) = self.data_tx.send(data) {
-            tracing::error!("Failed to send data: {e}");
+            if let Err(e) = data_tx.send(data) {
+                tracing::error!("Failed to send data: {e}");
+            }
+        } else {
+            tracing::error!("No data event channel for sending data");
         }
     }
 

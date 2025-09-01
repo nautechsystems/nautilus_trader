@@ -79,7 +79,7 @@ pub async fn run_blockchain_command(opt: BlockchainOpt) -> anyhow::Result<()> {
                 None,
                 Some(postgres_connect_options),
             );
-            let mut data_client = BlockchainDataClientCore::new(config, None);
+            let mut data_client = BlockchainDataClientCore::new(config, None, None);
             data_client.initialize_cache_database().await;
 
             data_client.cache.initialize_chain().await;
@@ -147,7 +147,7 @@ pub async fn run_blockchain_command(opt: BlockchainOpt) -> anyhow::Result<()> {
                 None,
                 Some(postgres_connect_options),
             );
-            let mut data_client = BlockchainDataClientCore::new(config, None);
+            let mut data_client = BlockchainDataClientCore::new(config, None, None);
             data_client.initialize_cache_database().await;
 
             data_client.cache.initialize_chain().await;

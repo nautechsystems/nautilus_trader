@@ -240,6 +240,12 @@ else
 	cargo nextest run --workspace --features "ffi,python,high-precision,defi" $(FAIL_FAST_FLAG) --cargo-profile nextest --status-level fail --final-status-level flaky
 endif
 
+.PHONY: cargo-test-hypersync
+cargo-test-hypersync: RUST_BACKTRACE=1
+cargo-test-hypersync: check-nextest-installed
+cargo-test-hypersync:  #-- Run all Rust tests with ffi,python,high-precision,defi,hypersync features
+	cargo nextest run --workspace --features "ffi,python,high-precision,defi,hypersync" --cargo-profile nextest
+
 .PHONY: cargo-test-lib
 cargo-test-lib: RUST_BACKTRACE=1
 cargo-test-lib: HIGH_PRECISION=true
