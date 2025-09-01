@@ -512,7 +512,6 @@ class OKXExecutionClient(LiveExecutionClient):
             instrument_id=pyo3_instrument_id,
             client_order_id=pyo3_client_order_id,
             venue_order_id=pyo3_venue_order_id,
-            position_side=None,  # Will be determined by the Rust client
         )
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
@@ -546,9 +545,6 @@ class OKXExecutionClient(LiveExecutionClient):
             )
             return
 
-        # Generate a new client order ID for the amended order
-        new_client_order_id = self._cache.client_order_id_generator.generate()
-
         pyo3_trader_id = nautilus_pyo3.TraderId.from_str(order.trader_id.value)
         pyo3_strategy_id = nautilus_pyo3.StrategyId.from_str(order.strategy_id.value)
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
@@ -557,7 +553,6 @@ class OKXExecutionClient(LiveExecutionClient):
             if command.client_order_id is not None
             else None
         )
-        pyo3_new_client_order_id = nautilus_pyo3.ClientOrderId(new_client_order_id.value)
         pyo3_venue_order_id = (
             nautilus_pyo3.VenueOrderId(command.venue_order_id.value)
             if command.venue_order_id
@@ -575,9 +570,7 @@ class OKXExecutionClient(LiveExecutionClient):
             price=pyo3_price,
             quantity=pyo3_quantity,
             client_order_id=pyo3_client_order_id,
-            new_client_order_id=pyo3_new_client_order_id,
             venue_order_id=pyo3_venue_order_id,
-            position_side=None,  # Will be determined by the Rust client
         )
 
     async def _submit_order(self, command: SubmitOrder) -> None:
@@ -717,13 +710,25 @@ class OKXExecutionClient(LiveExecutionClient):
                 ts_event=report.ts_last,
             )
         elif report.order_status == OrderStatus.ACCEPTED:
-            self.generate_order_accepted(
-                strategy_id=order.strategy_id,
-                instrument_id=report.instrument_id,
-                client_order_id=report.client_order_id,
-                venue_order_id=report.venue_order_id,
-                ts_event=report.ts_last,
-            )
+            if is_order_updated(order, report):
+                self.generate_order_updated(
+                    strategy_id=order.strategy_id,
+                    instrument_id=report.instrument_id,
+                    client_order_id=report.client_order_id,
+                    venue_order_id=report.venue_order_id,
+                    quantity=report.quantity,
+                    price=report.price,
+                    trigger_price=report.trigger_price,
+                    ts_event=report.ts_last,
+                )
+            else:
+                self.generate_order_accepted(
+                    strategy_id=order.strategy_id,
+                    instrument_id=report.instrument_id,
+                    client_order_id=report.client_order_id,
+                    venue_order_id=report.venue_order_id,
+                    ts_event=report.ts_last,
+                )
         elif report.order_status == OrderStatus.CANCELED:
             self.generate_order_canceled(
                 strategy_id=order.strategy_id,
@@ -804,3 +809,17 @@ class OKXExecutionClient(LiveExecutionClient):
             liquidity_side=report.liquidity_side,
             ts_event=report.ts_event,
         )
+
+
+def is_order_updated(order: Order, report: OrderStatusReport) -> bool:
+    if order.has_price and report.price and order.price != report.price:
+        return True
+
+    if (
+        order.has_trigger_price
+        and report.trigger_price
+        and order.trigger_price != report.trigger_price
+    ):
+        return True
+
+    return order.quantity != report.quantity

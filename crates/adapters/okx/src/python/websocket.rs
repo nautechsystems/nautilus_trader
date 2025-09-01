@@ -840,8 +840,7 @@ impl OKXWebSocketClient {
                     position_side,
                 )
                 .await
-                .map_err(to_pyvalue_err)?;
-            Ok(())
+                .map_err(to_pyvalue_err)
         })
     }
 
@@ -853,7 +852,6 @@ impl OKXWebSocketClient {
         instrument_id,
         client_order_id=None,
         venue_order_id=None,
-        position_side=None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn py_cancel_order<'py>(
@@ -864,7 +862,6 @@ impl OKXWebSocketClient {
         instrument_id: InstrumentId,
         client_order_id: Option<ClientOrderId>,
         venue_order_id: Option<VenueOrderId>,
-        position_side: Option<PositionSide>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
@@ -876,11 +873,9 @@ impl OKXWebSocketClient {
                     instrument_id,
                     client_order_id,
                     venue_order_id,
-                    position_side,
                 )
                 .await
-                .map_err(to_pyvalue_err)?;
-            Ok(())
+                .map_err(to_pyvalue_err)
         })
     }
 
@@ -891,11 +886,9 @@ impl OKXWebSocketClient {
         strategy_id,
         instrument_id,
         client_order_id=None,
-        new_client_order_id=None,
         venue_order_id=None,
         price=None,
         quantity=None,
-        position_side=None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn py_modify_order<'py>(
@@ -905,11 +898,9 @@ impl OKXWebSocketClient {
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
         client_order_id: Option<ClientOrderId>,
-        new_client_order_id: Option<ClientOrderId>,
         venue_order_id: Option<VenueOrderId>,
         price: Option<Price>,
         quantity: Option<Quantity>,
-        position_side: Option<PositionSide>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
@@ -920,15 +911,12 @@ impl OKXWebSocketClient {
                     strategy_id,
                     instrument_id,
                     client_order_id,
-                    new_client_order_id,
                     price,
                     quantity,
                     venue_order_id,
-                    position_side,
                 )
                 .await
-                .map_err(to_pyvalue_err)?;
-            Ok(())
+                .map_err(to_pyvalue_err)
         })
     }
 
@@ -999,8 +987,7 @@ impl OKXWebSocketClient {
             client
                 .batch_submit_orders(domain_orders)
                 .await
-                .map_err(to_pyvalue_err)?;
-            Ok(())
+                .map_err(to_pyvalue_err)
         })
     }
 
@@ -1014,24 +1001,17 @@ impl OKXWebSocketClient {
         let mut domain_orders = Vec::with_capacity(orders.len());
 
         for obj in orders {
-            let (instrument_type, instrument_id, client_order_id, order_id, position_side): (
+            let (instrument_type, instrument_id, client_order_id, order_id): (
                 String,
                 InstrumentId,
                 Option<ClientOrderId>,
                 Option<String>,
-                Option<PositionSide>,
             ) = obj
                 .extract(py)
                 .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
             let inst_type =
                 OKXInstrumentType::from_str(&instrument_type).map_err(to_pyvalue_err)?;
-            domain_orders.push((
-                inst_type,
-                instrument_id,
-                client_order_id,
-                order_id,
-                position_side,
-            ));
+            domain_orders.push((inst_type, instrument_id, client_order_id, order_id));
         }
 
         let client = self.clone();
@@ -1040,8 +1020,7 @@ impl OKXWebSocketClient {
             client
                 .batch_cancel_orders(domain_orders)
                 .await
-                .map_err(to_pyvalue_err)?;
-            Ok(())
+                .map_err(to_pyvalue_err)
         })
     }
 
@@ -1062,7 +1041,6 @@ impl OKXWebSocketClient {
                 new_client_order_id,
                 price,
                 quantity,
-                position_side,
             ): (
                 String,
                 InstrumentId,
@@ -1070,7 +1048,6 @@ impl OKXWebSocketClient {
                 ClientOrderId,
                 Option<Price>,
                 Option<Quantity>,
-                Option<PositionSide>,
             ) = obj
                 .extract(py)
                 .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
@@ -1083,7 +1060,6 @@ impl OKXWebSocketClient {
                 new_client_order_id,
                 price,
                 quantity,
-                position_side,
             ));
         }
 
@@ -1093,8 +1069,7 @@ impl OKXWebSocketClient {
             client
                 .batch_modify_orders(domain_orders)
                 .await
-                .map_err(to_pyvalue_err)?;
-            Ok(())
+                .map_err(to_pyvalue_err)
         })
     }
 }

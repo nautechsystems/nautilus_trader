@@ -579,12 +579,6 @@ pub struct WsCancelOrderParams {
     /// User-assigned client order ID.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cl_ord_id: Option<String>,
-    /// Position side: long, short, net (optional).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub pos_side: Option<OKXPositionSide>,
-    /// Margin currency (only for margin trades).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ccy: Option<String>,
 }
 
 /// Parameters for WebSocket amend order operation (instType not included).
@@ -606,16 +600,10 @@ pub struct WsAmendOrderParams {
     pub new_cl_ord_id: Option<String>,
     /// New order price (optional).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub px: Option<String>,
+    pub new_px: Option<String>,
     /// New order size (optional).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub sz: Option<String>,
-    /// Position side: long, short, net (optional).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub pos_side: Option<OKXPositionSide>,
-    /// Margin currency (only for margin trades).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ccy: Option<String>,
+    pub new_sz: Option<String>,
 }
 
 ////////////////////////////////////////////////////////////////////////////////

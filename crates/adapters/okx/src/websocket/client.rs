@@ -1608,7 +1608,6 @@ impl OKXWebSocketClient {
         instrument_id: InstrumentId,
         client_order_id: Option<ClientOrderId>,
         venue_order_id: Option<VenueOrderId>,
-        position_side: Option<PositionSide>,
     ) -> Result<(), OKXWsError> {
         let mut builder = WsCancelOrderParamsBuilder::default();
         // Note: instType should NOT be included in cancel order requests
@@ -1617,10 +1616,6 @@ impl OKXWebSocketClient {
 
         if let Some(venue_order_id) = venue_order_id {
             builder.ord_id(venue_order_id.as_str());
-        }
-
-        if let Some(pos_side) = position_side {
-            builder.pos_side(OKXPositionSide::from(pos_side));
         }
 
         let params = builder
@@ -1695,11 +1690,9 @@ impl OKXWebSocketClient {
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
         client_order_id: Option<ClientOrderId>,
-        new_client_order_id: Option<ClientOrderId>,
         price: Option<Price>,
         quantity: Option<Quantity>,
         venue_order_id: Option<VenueOrderId>,
-        position_side: Option<PositionSide>,
     ) -> Result<(), OKXWsError> {
         let mut builder = WsAmendOrderParamsBuilder::default();
 
@@ -1713,18 +1706,12 @@ impl OKXWebSocketClient {
             builder.cl_ord_id(client_order_id.as_str());
         }
 
-        if let Some(new_client_order_id) = new_client_order_id {
-            builder.new_cl_ord_id(new_client_order_id.as_str());
+        if let Some(price) = price {
+            builder.new_px(price.to_string());
         }
 
-        if let Some(p) = price {
-            builder.px(p.to_string());
-        }
-        if let Some(q) = quantity {
-            builder.sz(q.to_string());
-        }
-        if let Some(ps) = position_side {
-            builder.pos_side(OKXPositionSide::from(ps));
+        if let Some(quantity) = quantity {
+            builder.new_sz(quantity.to_string());
         }
 
         let params = builder
@@ -1843,22 +1830,20 @@ impl OKXWebSocketClient {
             InstrumentId,
             Option<ClientOrderId>,
             Option<String>,
-            Option<PositionSide>,
         )>,
     ) -> Result<(), OKXWsError> {
         let mut args: Vec<Value> = Vec::with_capacity(orders.len());
-        for (_inst_type, inst_id, cl_ord_id, ord_id, pos_side) in orders {
+        for (_inst_type, inst_id, cl_ord_id, ord_id) in orders {
             let mut builder = WsCancelOrderParamsBuilder::default();
             // Note: instType should NOT be included in cancel order requests
             builder.inst_id(inst_id.symbol.inner());
+
             if let Some(c) = cl_ord_id {
                 builder.cl_ord_id(c.as_str());
             }
+
             if let Some(o) = ord_id {
                 builder.ord_id(o);
-            }
-            if let Some(ps) = pos_side {
-                builder.pos_side(OKXPositionSide::from(ps));
             }
 
             let params = builder.build().map_err(|e| {
@@ -1884,29 +1869,22 @@ impl OKXWebSocketClient {
             ClientOrderId,
             Option<Price>,
             Option<Quantity>,
-            Option<PositionSide>,
         )>,
     ) -> Result<(), OKXWsError> {
         let mut args: Vec<Value> = Vec::with_capacity(orders.len());
-        for (_inst_type, inst_id, cl_ord_id, new_cl_ord_id, pr, sz, ps) in orders {
+        for (_inst_type, inst_id, cl_ord_id, new_cl_ord_id, pr, sz) in orders {
             let mut builder = WsAmendOrderParamsBuilder::default();
             // Note: instType should NOT be included in amend order requests
             builder.inst_id(inst_id.symbol.inner());
             builder.cl_ord_id(cl_ord_id.as_str());
             builder.new_cl_ord_id(new_cl_ord_id.as_str());
+
             if let Some(p) = pr {
-                builder.px(p.to_string());
+                builder.new_px(p.to_string());
             }
+
             if let Some(q) = sz {
-                builder.sz(q.to_string());
-            }
-            if let Some(side) = ps {
-                let okx_ps = match side {
-                    PositionSide::Long => OKXPositionSide::Long,
-                    PositionSide::Short => OKXPositionSide::Short,
-                    _ => OKXPositionSide::None,
-                };
-                builder.pos_side(okx_ps);
+                builder.new_sz(q.to_string());
             }
 
             let params = builder.build().map_err(|e| {
