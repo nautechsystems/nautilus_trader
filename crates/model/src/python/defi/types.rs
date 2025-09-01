@@ -207,7 +207,7 @@ impl Dex {
         Ok(Self::new(
             chain,
             dex_type,
-            factory,
+            &factory,
             factory_creation_block,
             amm_type,
             pool_created_event,
@@ -232,8 +232,8 @@ impl Dex {
 
     #[getter]
     #[pyo3(name = "factory")]
-    fn py_factory(&self) -> &str {
-        &self.factory
+    fn py_factory(&self) -> String {
+        self.factory.to_string()
     }
 
     #[getter]

@@ -15,12 +15,12 @@
 
 use std::{borrow::Cow, fmt::Display, str::FromStr, sync::Arc};
 
-use alloy_primitives::keccak256;
+use alloy_primitives::{Address, keccak256};
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumIter, EnumString};
 
 use crate::{
-    defi::{amm::Pool, chain::Chain},
+    defi::{amm::Pool, chain::Chain, validation::validate_address},
     identifiers::{InstrumentId, Symbol, Venue},
     instruments::{Instrument, any::InstrumentAny, currency_pair::CurrencyPair},
     types::{currency::Currency, fixed::FIXED_PRECISION, price::Price, quantity::Quantity},
@@ -117,7 +117,7 @@ pub struct Dex {
     /// The variant of the DEX protocol.
     pub name: DexType,
     /// The blockchain address of the DEX factory contract.
-    pub factory: Cow<'static, str>,
+    pub factory: Address,
     /// The block number at which the DEX factory contract was deployed.
     pub factory_creation_block: u64,
     /// The event signature or identifier used to detect pool creation events.
@@ -144,12 +144,16 @@ pub type SharedDex = Arc<Dex>;
 
 impl Dex {
     /// Creates a new [`Dex`] instance with the specified properties.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the provided factory address is invalid.
     #[must_use]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         chain: Chain,
         name: DexType,
-        factory: impl Into<Cow<'static, str>>,
+        factory: &str,
         factory_creation_block: u64,
         amm_type: AmmType,
         pool_created_event: &str,
@@ -183,10 +187,11 @@ impl Dex {
             "0x{encoded_hash}",
             encoded_hash = hex::encode(collect_event_hash)
         );
+        let factory_address = validate_address(factory).unwrap();
         Self {
             chain,
             name,
-            factory: factory.into(),
+            factory: factory_address,
             factory_creation_block,
             pool_created_event: encoded_pool_created_event.into(),
             initialize_event: None,
