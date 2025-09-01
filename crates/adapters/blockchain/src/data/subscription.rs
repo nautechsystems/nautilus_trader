@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use ahash::{AHashMap, AHashSet};
-use alloy::primitives::{Address, keccak256};
+use alloy::primitives::Address;
 use nautilus_model::defi::DexType;
 
 /// Manages subscriptions to DeFi protocol events (swaps, mints, burns) across different DEXs.
@@ -116,28 +116,16 @@ impl DefiDataSubscriptionManager {
         burn_event_signature: &str,
     ) {
         self.subscribed_pool_swaps.insert(dex, AHashSet::new());
-        let swap_event_hash = keccak256(swap_event_signature.as_bytes());
-        let encoded_swap_event = format!(
-            "0x{encoded_hash}",
-            encoded_hash = hex::encode(swap_event_hash)
-        );
-        self.pool_swap_event_encoded.insert(dex, encoded_swap_event);
+        self.pool_swap_event_encoded
+            .insert(dex, swap_event_signature.to_string());
 
         self.subscribed_pool_mints.insert(dex, AHashSet::new());
-        let mint_event_hash = keccak256(mint_event_signature.as_bytes());
-        let encoded_mint_event = format!(
-            "0x{encoded_hash}",
-            encoded_hash = hex::encode(mint_event_hash)
-        );
-        self.pool_mint_event_encoded.insert(dex, encoded_mint_event);
+        self.pool_mint_event_encoded
+            .insert(dex, mint_event_signature.to_string());
 
         self.subscribed_pool_burns.insert(dex, AHashSet::new());
-        let burn_event_hash = keccak256(burn_event_signature.as_bytes());
-        let encoded_burn_event = format!(
-            "0x{encoded_hash}",
-            encoded_hash = hex::encode(burn_event_hash)
-        );
-        self.pool_burn_event_encoded.insert(dex, encoded_burn_event);
+        self.pool_burn_event_encoded
+            .insert(dex, burn_event_signature.to_string());
 
         tracing::info!("Registered DEX for subscriptions: {dex:?}");
     }
