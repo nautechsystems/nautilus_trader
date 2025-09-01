@@ -495,7 +495,11 @@ class OKXExecutionClient(LiveExecutionClient):
         pyo3_trader_id = nautilus_pyo3.TraderId.from_str(order.trader_id.value)
         pyo3_strategy_id = nautilus_pyo3.StrategyId.from_str(order.strategy_id.value)
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        pyo3_client_order_id = nautilus_pyo3.ClientOrderId(command.client_order_id.value)
+        pyo3_client_order_id = (
+            nautilus_pyo3.ClientOrderId(command.client_order_id.value)
+            if command.client_order_id is not None
+            else None
+        )
         pyo3_venue_order_id = (
             nautilus_pyo3.VenueOrderId(command.venue_order_id.value)
             if command.venue_order_id
@@ -548,26 +552,30 @@ class OKXExecutionClient(LiveExecutionClient):
         pyo3_trader_id = nautilus_pyo3.TraderId.from_str(order.trader_id.value)
         pyo3_strategy_id = nautilus_pyo3.StrategyId.from_str(order.strategy_id.value)
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        pyo3_client_order_id = nautilus_pyo3.ClientOrderId(command.client_order_id.value)
-        pyo3_new_client_order_id = nautilus_pyo3.ClientOrderId(new_client_order_id.value)
-        pyo3_price = nautilus_pyo3.Price.from_str(str(command.price)) if command.price else None
-        pyo3_quantity = (
-            nautilus_pyo3.Quantity.from_str(str(command.quantity)) if command.quantity else None
+        pyo3_client_order_id = (
+            nautilus_pyo3.ClientOrderId(command.client_order_id.value)
+            if command.client_order_id is not None
+            else None
         )
+        pyo3_new_client_order_id = nautilus_pyo3.ClientOrderId(new_client_order_id.value)
         pyo3_venue_order_id = (
             nautilus_pyo3.VenueOrderId(command.venue_order_id.value)
             if command.venue_order_id
             else None
+        )
+        pyo3_price = nautilus_pyo3.Price.from_str(str(command.price)) if command.price else None
+        pyo3_quantity = (
+            nautilus_pyo3.Quantity.from_str(str(command.quantity)) if command.quantity else None
         )
 
         await self._ws_client.modify_order(
             trader_id=pyo3_trader_id,
             strategy_id=pyo3_strategy_id,
             instrument_id=pyo3_instrument_id,
-            client_order_id=pyo3_client_order_id,
-            new_client_order_id=pyo3_new_client_order_id,
             price=pyo3_price,
             quantity=pyo3_quantity,
+            client_order_id=pyo3_client_order_id,
+            new_client_order_id=pyo3_new_client_order_id,
             venue_order_id=pyo3_venue_order_id,
             position_side=None,  # Will be determined by the Rust client
         )

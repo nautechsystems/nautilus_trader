@@ -5954,7 +5954,7 @@ class OKXWebSocketClient:
         trader_id: TraderId,
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
-        client_order_id: ClientOrderId,
+        client_order_id: ClientOrderId | None = None,
         venue_order_id: VenueOrderId | None = None,
         position_side: PositionSide | None = None,
     ) -> None: ...
@@ -5963,11 +5963,11 @@ class OKXWebSocketClient:
         trader_id: TraderId,
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
-        client_order_id: ClientOrderId,
-        new_client_order_id: ClientOrderId,
+        client_order_id: ClientOrderId | None = None,
+        new_client_order_id: ClientOrderId | None = None,
+        venue_order_id: VenueOrderId | None = None,
         price: Price | None = None,
         quantity: Quantity | None = None,
-        venue_order_id: VenueOrderId | None = None,
         position_side: PositionSide | None = None,
     ) -> None: ...
     async def batch_submit_orders(

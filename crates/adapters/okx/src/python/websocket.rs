@@ -851,7 +851,7 @@ impl OKXWebSocketClient {
         trader_id,
         strategy_id,
         instrument_id,
-        client_order_id,
+        client_order_id=None,
         venue_order_id=None,
         position_side=None,
     ))]
@@ -862,7 +862,7 @@ impl OKXWebSocketClient {
         trader_id: TraderId,
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
-        client_order_id: ClientOrderId,
+        client_order_id: Option<ClientOrderId>,
         venue_order_id: Option<VenueOrderId>,
         position_side: Option<PositionSide>,
     ) -> PyResult<Bound<'py, PyAny>> {
@@ -890,11 +890,11 @@ impl OKXWebSocketClient {
         trader_id,
         strategy_id,
         instrument_id,
-        client_order_id,
-        new_client_order_id,
+        client_order_id=None,
+        new_client_order_id=None,
+        venue_order_id=None,
         price=None,
         quantity=None,
-        venue_order_id=None,
         position_side=None,
     ))]
     #[allow(clippy::too_many_arguments)]
@@ -904,11 +904,11 @@ impl OKXWebSocketClient {
         trader_id: TraderId,
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
-        client_order_id: ClientOrderId,
-        new_client_order_id: ClientOrderId,
+        client_order_id: Option<ClientOrderId>,
+        new_client_order_id: Option<ClientOrderId>,
+        venue_order_id: Option<VenueOrderId>,
         price: Option<Price>,
         quantity: Option<Quantity>,
-        venue_order_id: Option<VenueOrderId>,
         position_side: Option<PositionSide>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
