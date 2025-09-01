@@ -1392,7 +1392,7 @@ def test_accounts_manager_locks_correct_currency_for_multiple_crypto_spot_orders
     buy_order = TestExecStubs.limit_order(
         instrument=BTCUSDT_BINANCE,
         order_side=OrderSide.BUY,
-        quantity=Quantity.from_str('0.0005'),
+        quantity=Quantity.from_str("0.0005"),
         price=Price.from_str("115_972.65"),
     )
 
