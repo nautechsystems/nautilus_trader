@@ -67,6 +67,8 @@ class ExecTesterConfig(StrategyConfig, frozen=True):
     open_position_on_start_qty: Decimal | None = None
     open_position_time_in_force: TimeInForce = TimeInForce.GTC
     tob_offset_ticks: PositiveInt = 500  # Definitely out of the market
+    modify_orders_to_maintain_tob_offset: bool = False
+    cancel_replace_orders_to_maintain_tob_offset: bool = False
     use_post_only: bool = True
     use_quote_quantity: bool = False
     emulation_trigger: str = "NO_TRIGGER"
@@ -115,6 +117,8 @@ class ExecTester(Strategy):
             self.stop()
             return
 
+        self.price_offset = self.get_price_offset(self.instrument)
+
         # Subscribe to live data
         if self.config.subscribe_quotes:
             self.subscribe_quote_ticks(self.config.instrument_id, client_id=self.client_id)
@@ -145,7 +149,12 @@ class ExecTester(Strategy):
                 LogColor.CYAN,
             )
 
-        self.maintain_orders(book.best_bid_price(), book.best_ask_price())
+        best_bid = book.best_bid_price()
+        best_ask = book.best_ask_price()
+        if best_bid is None or best_ask is None:
+            return  # Wait for market
+
+        self.maintain_orders(best_bid, best_ask)
 
     def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
         """
@@ -197,35 +206,63 @@ class ExecTester(Strategy):
         if self.instrument is None or self.config.dry_run:
             return
 
-        # Maintain BUY orders
         if self.config.enable_buys:
-            if not self.buy_order or not self.is_order_active(self.buy_order):
-                market_offset = self.get_price_offset(self.instrument)
+            self.maintain_buy_orders(self.instrument, best_bid, best_ask)
 
-                if self.config.use_post_only and self.config.test_reject_post_only:
-                    price = self.instrument.make_price(best_ask + market_offset)
-                else:
-                    price = self.instrument.make_price(best_bid - market_offset)
-
-                self.submit_buy_limit_order(price)
-            # elif self.buy_order.price != best_bid:
-            #     self.cancel_order(self.buy_order)
-            #     self.create_buy_order(best_bid)
-
-        # Maintain SELL orders
         if self.config.enable_sells:
-            if not self.sell_order or not self.is_order_active(self.sell_order):
-                market_offset = self.get_price_offset(self.instrument)
+            self.maintain_sell_orders(self.instrument, best_bid, best_ask)
 
-                if self.config.use_post_only and self.config.test_reject_post_only:
-                    price = self.instrument.make_price(best_bid - market_offset)
-                else:
-                    price = self.instrument.make_price(best_ask + market_offset)
+    def maintain_buy_orders(
+        self,
+        instrument: Instrument,
+        best_bid: Price,
+        best_ask: Price,
+    ) -> None:
+        price = instrument.make_price(best_bid - self.price_offset)
 
+        if not self.buy_order or not self.is_order_active(self.buy_order):
+            if self.config.use_post_only and self.config.test_reject_post_only:
+                price = instrument.make_price(best_ask + self.price_offset)
+
+            self.submit_buy_limit_order(price)
+        elif (
+            self.buy_order
+            and self.buy_order.venue_order_id
+            and not self.buy_order.is_pending_update
+            and not self.buy_order.is_pending_cancel
+            and self.buy_order.price < price
+        ):
+            if self.config.modify_orders_to_maintain_tob_offset:
+                self.modify_order(self.buy_order, price=price)
+            elif self.config.cancel_replace_orders_to_maintain_tob_offset:
+                self.cancel_order(self.buy_order)
+                self.submit_buy_limit_order(price)
+
+    def maintain_sell_orders(
+        self,
+        instrument: Instrument,
+        best_bid: Price,
+        best_ask: Price,
+    ) -> None:
+        price = instrument.make_price(best_ask + self.price_offset)
+
+        if not self.sell_order or not self.is_order_active(self.sell_order):
+            if self.config.use_post_only and self.config.test_reject_post_only:
+                price = instrument.make_price(best_bid - self.price_offset)
+
+            self.submit_sell_limit_order(price)
+        elif (
+            self.sell_order
+            and self.sell_order.venue_order_id
+            and not self.sell_order.is_pending_update
+            and not self.sell_order.is_pending_cancel
+            and self.sell_order.price > price
+        ):
+            if self.config.modify_orders_to_maintain_tob_offset:
+                self.modify_order(self.sell_order, price=price)
+            elif self.config.cancel_replace_orders_to_maintain_tob_offset:
+                self.cancel_order(self.sell_order)
                 self.submit_sell_limit_order(price)
-            # elif self.sell_order.price != best_ask:
-            #     self.cancel_order(self.sell_order)
-            #     self.create_sell_order(best_ask)
 
     def open_position(self, net_qty: Decimal) -> None:
         if not self.instrument:
@@ -348,10 +385,16 @@ class ExecTester(Strategy):
 
         if self.config.cancel_orders_on_stop:
             if self.config.use_individual_cancels_on_stop:
-                for order in self.cache.orders_open(instrument_id=self.config.instrument_id):
+                for order in self.cache.orders_open(
+                    instrument_id=self.config.instrument_id,
+                    strategy_id=self.strategy_id,
+                ):
                     self.cancel_order(order)
             elif self.config.use_batch_cancel_on_stop:
-                open_orders = self.cache.orders_open(instrument_id=self.config.instrument_id)
+                open_orders = self.cache.orders_open(
+                    instrument_id=self.config.instrument_id,
+                    strategy_id=self.strategy_id,
+                )
                 if open_orders:
                     self.cancel_orders(open_orders, client_id=self.client_id)
             else:
