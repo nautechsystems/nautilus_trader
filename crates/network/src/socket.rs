@@ -422,9 +422,16 @@ impl SocketClientInner {
                     Ok(Ok(bytes)) => {
                         tracing::trace!("Received <binary> {bytes} bytes");
 
-                        if let Some(handler) = &handler {
-                            process_fix_buffer(&mut buf, handler);
+                        // Check if buffer contains FIX protocol messages (starts with "8=FIX")
+                        let is_fix = buf.len() >= 5 && buf.starts_with(b"8=FIX");
+
+                        if is_fix && handler.is_some() {
+                            // FIX protocol processing
+                            if let Some(ref handler) = handler {
+                                process_fix_buffer(&mut buf, handler);
+                            }
                         } else {
+                            // Regular suffix-based message processing
                             while let Some((i, _)) = &buf
                                 .windows(suffix.len())
                                 .enumerate()

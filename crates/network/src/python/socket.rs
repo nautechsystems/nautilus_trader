@@ -15,7 +15,7 @@
 
 use std::{sync::atomic::Ordering, time::Duration};
 
-use nautilus_core::python::to_pyruntime_err;
+use nautilus_core::python::{clone_py_object, to_pyruntime_err};
 use pyo3::prelude::*;
 use tokio_tungstenite::tungstenite::stream::Mode;
 
@@ -45,9 +45,10 @@ impl SocketConfig {
         let mode = if ssl { Mode::Tls } else { Mode::Plain };
 
         // Create function pointer that calls Python handler
+        let handler_clone = clone_py_object(&handler);
         let message_handler: TcpMessageHandler = std::sync::Arc::new(move |data: &[u8]| {
             Python::with_gil(|py| {
-                if let Err(e) = handler.call1(py, (data,)) {
+                if let Err(e) = handler_clone.call1(py, (data,)) {
                     tracing::error!("Error calling Python message handler: {e}");
                 }
             });
@@ -88,9 +89,10 @@ impl SocketClient {
     ) -> PyResult<Bound<'_, PyAny>> {
         // Convert Python callbacks to function pointers
         let post_connection_fn = post_connection.map(|callback| {
+            let callback_clone = clone_py_object(&callback);
             std::sync::Arc::new(move || {
                 Python::with_gil(|py| {
-                    if let Err(e) = callback.call0(py) {
+                    if let Err(e) = callback_clone.call0(py) {
                         tracing::error!("Error calling post_connection handler: {e}");
                     }
                 });
@@ -98,9 +100,10 @@ impl SocketClient {
         });
 
         let post_reconnection_fn = post_reconnection.map(|callback| {
+            let callback_clone = clone_py_object(&callback);
             std::sync::Arc::new(move || {
                 Python::with_gil(|py| {
-                    if let Err(e) = callback.call0(py) {
+                    if let Err(e) = callback_clone.call0(py) {
                         tracing::error!("Error calling post_reconnection handler: {e}");
                     }
                 });
@@ -108,9 +111,10 @@ impl SocketClient {
         });
 
         let post_disconnection_fn = post_disconnection.map(|callback| {
+            let callback_clone = clone_py_object(&callback);
             std::sync::Arc::new(move || {
                 Python::with_gil(|py| {
-                    if let Err(e) = callback.call0(py) {
+                    if let Err(e) = callback_clone.call0(py) {
                         tracing::error!("Error calling post_disconnection handler: {e}");
                     }
                 });
