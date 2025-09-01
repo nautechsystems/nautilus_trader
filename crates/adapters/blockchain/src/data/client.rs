@@ -113,7 +113,7 @@ impl BlockchainDataClient {
         let hypersync_tx = self.hypersync_tx.take();
 
         let mut core_client =
-            BlockchainDataClientCore::new(self.config.clone(), hypersync_tx, data_tx);
+            BlockchainDataClientCore::new(self.config.clone(), hypersync_tx, Some(data_tx));
 
         let handle = get_runtime().spawn(async move {
             tracing::debug!("Started task 'process'");

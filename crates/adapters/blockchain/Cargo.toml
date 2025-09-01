@@ -28,8 +28,15 @@ extension-module = [
   "nautilus-network/extension-module",
   "pyo3/extension-module",
 ]
-hypersync = ["hypersync-client", "hypersync-schema"]
-python = ["nautilus-network/python", "pyo3"]
+hypersync = [
+  "hypersync-client",
+  "hypersync-schema",
+]
+python = [
+  "nautilus-network/python",
+  "nautilus-system/python",
+  "pyo3",
+]
 
 [package.metadata.docs.rs]
 features = ["python"]
