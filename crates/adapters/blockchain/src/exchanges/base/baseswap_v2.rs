@@ -34,6 +34,7 @@ pub static BASESWAP_V2: LazyLock<DexExtended> = LazyLock::new(|| {
         "",
         "",
         "",
+        "",
     );
     DexExtended::new(dex)
 });
