@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use ahash::{AHashMap, AHashSet};
-use alloy::primitives::Address;
+use alloy::primitives::{Address, keccak256};
 use nautilus_model::defi::DexType;
 
 /// Manages subscriptions to DeFi protocol events (swaps, mints, burns) across different DEXs.
@@ -104,10 +104,37 @@ impl DefiDataSubscriptionManager {
         self.pool_burn_event_encoded.get(dex).cloned()
     }
 
+    /// Normalizes an event signature to a consistent format.
+    ///
+    /// Accepts:
+    /// - A raw event signature like "Swap(address,address,int256,int256,uint160,uint128,int24)".
+    /// - A pre-encoded topic like "0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67".
+    /// - A hex string without 0x prefix.
+    ///
+    /// Returns a normalized "0x..." format string.
+    fn normalize_topic(sig: &str) -> String {
+        let s = sig.trim();
+
+        // Check if it's already a properly formatted hex string with 0x prefix
+        if let Some(rest) = s.strip_prefix("0x") {
+            if rest.len() == 64 && rest.chars().all(|c| c.is_ascii_hexdigit()) {
+                return format!("0x{}", rest.to_ascii_lowercase());
+            }
+        }
+
+        // Check if it's a hex string without 0x prefix
+        if s.len() == 64 && s.chars().all(|c| c.is_ascii_hexdigit()) {
+            return format!("0x{}", s.to_ascii_lowercase());
+        }
+
+        // Otherwise, it's a raw signature that needs hashing
+        format!("0x{}", hex::encode(keccak256(s.as_bytes())))
+    }
+
     /// Registers a DEX with its event signatures for subscription management.
     ///
     /// This must be called before subscribing to any events for a DEX.
-    /// The event signatures are hashed using keccak256 and stored in encoded format.
+    /// Event signatures can be either raw signatures or pre-encoded keccak256 hashes.
     pub fn register_dex_for_subscriptions(
         &mut self,
         dex: DexType,
@@ -117,15 +144,15 @@ impl DefiDataSubscriptionManager {
     ) {
         self.subscribed_pool_swaps.insert(dex, AHashSet::new());
         self.pool_swap_event_encoded
-            .insert(dex, swap_event_signature.to_string());
+            .insert(dex, Self::normalize_topic(swap_event_signature));
 
         self.subscribed_pool_mints.insert(dex, AHashSet::new());
         self.pool_mint_event_encoded
-            .insert(dex, mint_event_signature.to_string());
+            .insert(dex, Self::normalize_topic(mint_event_signature));
 
         self.subscribed_pool_burns.insert(dex, AHashSet::new());
         self.pool_burn_event_encoded
-            .insert(dex, burn_event_signature.to_string());
+            .insert(dex, Self::normalize_topic(burn_event_signature));
 
         tracing::info!("Registered DEX for subscriptions: {dex:?}");
     }
@@ -429,5 +456,117 @@ mod tests {
         let remaining = manager.get_subscribed_dex_contract_addresses(&dex_type);
         assert!(remaining.contains(&pool1)); // Still has mint subscription
         assert!(remaining.contains(&pool2)); // Still has swap subscription
+    }
+
+    #[rstest]
+    fn test_register_with_raw_signatures() {
+        let mut manager = DefiDataSubscriptionManager::new();
+
+        // Register with raw event signatures
+        manager.register_dex_for_subscriptions(
+            DexType::UniswapV3,
+            "Swap(address,address,int256,int256,uint160,uint128,int24)",
+            "Mint(address,address,int24,int24,uint128,uint256,uint256)",
+            "Burn(address,int24,int24,uint128,uint256,uint256)",
+        );
+
+        // Known keccak256 hashes for UniswapV3 events
+        let swap_sig = manager
+            .get_dex_pool_swap_event_signature(&DexType::UniswapV3)
+            .unwrap();
+        let mint_sig = manager
+            .get_dex_pool_mint_event_signature(&DexType::UniswapV3)
+            .unwrap();
+        let burn_sig = manager
+            .get_dex_pool_burn_event_signature(&DexType::UniswapV3)
+            .unwrap();
+
+        // Verify the exact hash values
+        assert_eq!(
+            swap_sig,
+            "0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67"
+        );
+        assert_eq!(
+            mint_sig,
+            "0x7a53080ba414158be7ec69b987b5fb7d07dee101fe85488f0853ae16239d0bde"
+        );
+        assert_eq!(
+            burn_sig,
+            "0x0c396cd989a39f4459b5fa1aed6a9a8dcdbc45908acfd67e028cd568da98982c"
+        );
+    }
+
+    #[rstest]
+    fn test_register_with_pre_encoded_signatures() {
+        let mut manager = DefiDataSubscriptionManager::new();
+
+        // Register with pre-encoded keccak256 hashes (with 0x prefix)
+        manager.register_dex_for_subscriptions(
+            DexType::UniswapV3,
+            "0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67",
+            "0x7a53080ba414158be7ec69b987b5fb7d07dee101fe85488f0853ae16239d0bde",
+            "0x0c396cd989a39f4459b5fa1aed6a9a8dcdbc45908acfd67e028cd568da98982c",
+        );
+
+        // Should store them unchanged (normalized to lowercase)
+        let swap_sig = manager
+            .get_dex_pool_swap_event_signature(&DexType::UniswapV3)
+            .unwrap();
+        let mint_sig = manager
+            .get_dex_pool_mint_event_signature(&DexType::UniswapV3)
+            .unwrap();
+        let burn_sig = manager
+            .get_dex_pool_burn_event_signature(&DexType::UniswapV3)
+            .unwrap();
+
+        assert_eq!(
+            swap_sig,
+            "0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67"
+        );
+        assert_eq!(
+            mint_sig,
+            "0x7a53080ba414158be7ec69b987b5fb7d07dee101fe85488f0853ae16239d0bde"
+        );
+        assert_eq!(
+            burn_sig,
+            "0x0c396cd989a39f4459b5fa1aed6a9a8dcdbc45908acfd67e028cd568da98982c"
+        );
+    }
+
+    #[rstest]
+    fn test_register_with_pre_encoded_signatures_no_prefix() {
+        let mut manager = DefiDataSubscriptionManager::new();
+
+        // Register with pre-encoded hashes without 0x prefix
+        manager.register_dex_for_subscriptions(
+            DexType::UniswapV3,
+            "c42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67",
+            "7a53080ba414158be7ec69b987b5fb7d07dee101fe85488f0853ae16239d0bde",
+            "0c396cd989a39f4459b5fa1aed6a9a8dcdbc45908acfd67e028cd568da98982c",
+        );
+
+        // Should add 0x prefix and normalize to lowercase
+        let swap_sig = manager
+            .get_dex_pool_swap_event_signature(&DexType::UniswapV3)
+            .unwrap();
+        let mint_sig = manager
+            .get_dex_pool_mint_event_signature(&DexType::UniswapV3)
+            .unwrap();
+        let burn_sig = manager
+            .get_dex_pool_burn_event_signature(&DexType::UniswapV3)
+            .unwrap();
+
+        assert_eq!(
+            swap_sig,
+            "0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67"
+        );
+        assert_eq!(
+            mint_sig,
+            "0x7a53080ba414158be7ec69b987b5fb7d07dee101fe85488f0853ae16239d0bde"
+        );
+        assert_eq!(
+            burn_sig,
+            "0x0c396cd989a39f4459b5fa1aed6a9a8dcdbc45908acfd67e028cd568da98982c"
+        );
     }
 }
