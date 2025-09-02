@@ -45,7 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .price(100_000.0)
         .exec_inst(vec![BitmexExecInstruction::ParticipateDoNotInitiate])
         .build()?;
-    match client.place_order(params).await {
+    match client.http_place_order(params).await {
         Ok(resp) => tracing::debug!("{:?}", resp),
         Err(e) => tracing::error!("{e:?}"),
     }
@@ -53,7 +53,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let params = DeleteOrderParamsBuilder::default()
         .cl_ord_id(vec![cl_ord_id.to_string()])
         .build()?;
-    match client.cancel_orders(params).await {
+    match client.http_cancel_orders(params).await {
         Ok(resp) => tracing::debug!("{:?}", resp),
         Err(e) => tracing::error!("{e:?}"),
     }

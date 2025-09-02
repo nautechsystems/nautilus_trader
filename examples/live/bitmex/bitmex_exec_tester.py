@@ -49,10 +49,10 @@ config_node = TradingNodeConfig(
     trader_id=TraderId("TESTER-001"),
     logging=LoggingConfig(log_level="INFO", use_pyo3=True),
     exec_engine=LiveExecEngineConfig(
-        reconciliation=True,
-        snapshot_orders=True,
-        snapshot_positions=True,
-        snapshot_positions_interval_secs=5.0,
+        reconciliation=False,
+        # snapshot_orders=True,
+        # snapshot_positions=True,
+        # snapshot_positions_interval_secs=5.0,
     ),
     data_clients={
         BITMEX: BitmexDataClientConfig(

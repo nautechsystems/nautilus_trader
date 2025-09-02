@@ -15,8 +15,19 @@
 
 use chrono::{DateTime, Utc};
 use derive_builder::Builder;
-use serde::{self, Deserialize, Serialize};
+use serde::{self, Deserialize, Serialize, Serializer};
 use serde_json::Value;
+
+/// Serialize a JSON Value as a string for URL encoding.
+fn serialize_json_as_string<S>(value: &Option<Value>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match value {
+        Some(v) => serializer.serialize_str(&v.to_string()),
+        None => serializer.serialize_none(),
+    }
+}
 
 use crate::common::enums::{
     BitmexContingencyType, BitmexExecInstruction, BitmexOrderType, BitmexPegPriceType, BitmexSide,
@@ -42,10 +53,16 @@ pub struct GetTradeParams {
     /// Instrument symbol. Send a bare series (e.g., XBT) to get data for the nearest expiring contract in that series.  You can also send a timeframe, e.g. `XBT:quarterly`. Timeframes are `nearest`, `daily`, `weekly`, `monthly`, `quarterly`, `biquarterly`, and `perpetual`.
     pub symbol: Option<String>,
     /// Generic table filter. Send JSON key/value pairs, such as `{"key": "value"}`. You can key on individual fields, and do more advanced querying on timestamps. See the [Timestamp Docs](https://www.bitmex.com/app/restAPI#Timestamp-Filters) for more details.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_json_as_string"
+    )]
     pub filter: Option<Value>,
     /// Array of column names to fetch. If omitted, will return all columns.  Note that this method will always return item keys, even when not specified, so you may receive more columns that you expect.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_json_as_string"
+    )]
     pub columns: Option<Value>,
     /// Number of results to fetch.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -74,10 +91,16 @@ pub struct GetOrderParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub symbol: Option<String>,
     /// Generic table filter. Send JSON key/value pairs, such as `{"key": "value"}`. You can key on individual fields, and do more advanced querying on timestamps. See the [Timestamp Docs](https://www.bitmex.com/app/restAPI#Timestamp-Filters) for more details.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_json_as_string"
+    )]
     pub filter: Option<Value>,
     /// Array of column names to fetch. If omitted, will return all columns.  Note that this method will always return item keys, even when not specified, so you may receive more columns that you expect.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_json_as_string"
+    )]
     pub columns: Option<Value>,
     /// Number of results to fetch.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -179,7 +202,7 @@ where
 #[builder(setter(into, strip_option))]
 #[serde(rename_all = "camelCase")]
 pub struct DeleteOrderParams {
-    /// Client Order ID(s). See POST /order.
+    /// Order ID(s) (venue-assigned).
     #[serde(
         skip_serializing_if = "Option::is_none",
         serialize_with = "serialize_string_vec",
@@ -195,6 +218,30 @@ pub struct DeleteOrderParams {
     pub cl_ord_id: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     /// Optional cancellation annotation. e.g. 'Spread Exceeded'.
+    pub text: Option<String>,
+}
+
+/// Parameters for the DELETE /order/all endpoint.
+///
+/// # References
+///
+/// <https://www.bitmex.com/api/explorer/#!/Order/Order_cancelAll>
+#[derive(Clone, Debug, Deserialize, Serialize, Default, Builder)]
+#[builder(default)]
+#[builder(setter(into, strip_option))]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteAllOrdersParams {
+    /// Optional symbol. If provided, only cancels orders for that symbol.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub symbol: Option<String>,
+    /// Optional filter for cancellation. Send JSON key/value pairs, such as `{"side": "Buy"}`.
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_json_as_string"
+    )]
+    pub filter: Option<Value>,
+    /// Optional cancellation annotation. e.g. 'Spread Exceeded'.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
 }
 
@@ -237,10 +284,16 @@ pub struct GetExecutionParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub symbol: Option<String>,
     /// Generic table filter. Send JSON key/value pairs, such as `{"key": "value"}`. You can key on individual fields, and do more advanced querying on timestamps. See the [Timestamp Docs](https://www.bitmex.com/app/restAPI#Timestamp-Filters) for more details.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_json_as_string"
+    )]
     pub filter: Option<Value>,
     /// Array of column names to fetch. If omitted, will return all columns.  Note that this method will always return item keys, even when not specified, so you may receive more columns that you expect.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_json_as_string"
+    )]
     pub columns: Option<Value>,
     /// Number of results to fetch.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -266,10 +319,16 @@ pub struct GetExecutionParams {
 #[serde(rename_all = "camelCase")]
 pub struct GetPositionParams {
     /// Generic table filter. Send JSON key/value pairs, such as `{"key": "value"}`. You can key on individual fields, and do more advanced querying on timestamps. See the [Timestamp Docs](https://www.bitmex.com/app/restAPI#Timestamp-Filters) for more details.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_json_as_string"
+    )]
     pub filter: Option<Value>,
     /// Array of column names to fetch. If omitted, will return all columns.  Note that this method will always return item keys, even when not specified, so you may receive more columns that you expect.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_json_as_string"
+    )]
     pub columns: Option<Value>,
     /// Number of results to fetch.
     #[serde(skip_serializing_if = "Option::is_none")]
