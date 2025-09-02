@@ -32,8 +32,12 @@ use ahash::AHashMap;
 use chrono::Utc;
 use nautilus_core::{consts::NAUTILUS_USER_AGENT, env::get_env_var};
 use nautilus_model::{
-    identifiers::Symbol,
+    enums::{OrderSide, OrderType, TimeInForce},
+    events::AccountState,
+    identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, VenueOrderId},
     instruments::{Instrument as InstrumentTrait, InstrumentAny},
+    reports::OrderStatusReport,
+    types::{Price, Quantity},
 };
 use nautilus_network::{http::HttpClient, ratelimiter::quota::Quota};
 use reqwest::{Method, StatusCode, header::USER_AGENT};
@@ -48,8 +52,8 @@ use super::{
         BitmexWallet,
     },
     query::{
-        DeleteOrderParams, GetExecutionParams, GetOrderParams, GetPositionParams, GetTradeParams,
-        PostOrderParams, PutOrderParams,
+        DeleteAllOrdersParams, DeleteOrderParams, GetExecutionParams, GetOrderParams,
+        GetPositionParams, GetTradeParams, PostOrderParams, PutOrderParams,
     },
 };
 use crate::{
@@ -352,6 +356,28 @@ impl BitmexHttpInnerClient {
         self.send_request(Method::PUT, &path, None, true).await
     }
 
+    /// Cancel all orders.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing, the request fails, or the API returns an error.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the parameters cannot be serialized (should never happen with valid builder-generated params).
+    ///
+    /// # References
+    ///
+    /// <https://www.bitmex.com/api/explorer/#!/Order/Order_cancelAll>
+    pub async fn http_cancel_all_orders(
+        &self,
+        params: DeleteAllOrdersParams,
+    ) -> Result<Value, BitmexHttpError> {
+        let query = serde_urlencoded::to_string(&params).expect("Invalid parameters");
+        let path = format!("/order/all?{query}");
+        self.send_request(Method::DELETE, &path, None, true).await
+    }
+
     /// Get user executions.
     ///
     /// # Errors
@@ -583,7 +609,7 @@ impl BitmexHttpClient {
         inner.http_get_orders(params).await
     }
 
-    /// Place a new order.
+    /// Place a new order with raw API params.
     ///
     /// # Errors
     ///
@@ -592,12 +618,15 @@ impl BitmexHttpClient {
     /// # Panics
     ///
     /// Panics if the inner mutex is poisoned.
-    pub async fn place_order(&self, params: PostOrderParams) -> Result<Value, BitmexHttpError> {
+    pub async fn http_place_order(
+        &self,
+        params: PostOrderParams,
+    ) -> Result<Value, BitmexHttpError> {
         let inner = self.inner.clone();
         inner.http_place_order(params).await
     }
 
-    /// Cancel user orders.
+    /// Cancel user orders with raw API params.
     ///
     /// # Errors
     ///
@@ -606,12 +635,15 @@ impl BitmexHttpClient {
     /// # Panics
     ///
     /// Panics if the inner mutex is poisoned.
-    pub async fn cancel_orders(&self, params: DeleteOrderParams) -> Result<Value, BitmexHttpError> {
+    pub async fn http_cancel_orders(
+        &self,
+        params: DeleteOrderParams,
+    ) -> Result<Value, BitmexHttpError> {
         let inner = self.inner.clone();
         inner.http_cancel_orders(params).await
     }
 
-    /// Amend an existing order.
+    /// Amend an existing order with raw API params.
     ///
     /// # Errors
     ///
@@ -620,9 +652,30 @@ impl BitmexHttpClient {
     /// # Panics
     ///
     /// Panics if the inner mutex is poisoned.
-    pub async fn amend_order(&self, params: PutOrderParams) -> Result<Value, BitmexHttpError> {
+    pub async fn http_amend_order(&self, params: PutOrderParams) -> Result<Value, BitmexHttpError> {
         let inner = self.inner.clone();
         inner.http_amend_order(params).await
+    }
+
+    /// Cancel all orders with raw API params.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing, the request fails, or the API returns an error.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the inner mutex is poisoned.
+    ///
+    /// # References
+    ///
+    /// <https://www.bitmex.com/api/explorer/#!/Order/Order_cancelAll>
+    pub async fn http_cancel_all_orders(
+        &self,
+        params: DeleteAllOrdersParams,
+    ) -> Result<Value, BitmexHttpError> {
+        let inner = self.inner.clone();
+        inner.http_cancel_all_orders(params).await
     }
 
     /// Get user executions.
@@ -671,6 +724,17 @@ impl BitmexHttpClient {
             .insert(instrument.raw_symbol().inner(), instrument);
     }
 
+    /// Get price precision for a symbol from the instruments cache.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the instruments cache mutex is poisoned.
+    pub fn get_price_precision(&self, symbol: &str) -> Option<u8> {
+        let cache = self.instruments_cache.lock().unwrap();
+        let symbol_ustr = Ustr::from(symbol);
+        cache.get(&symbol_ustr).map(|inst| inst.price_precision())
+    }
+
     /// Get user margin information.
     ///
     /// # Errors
@@ -690,8 +754,8 @@ impl BitmexHttpClient {
     /// Returns an error if the HTTP request fails or no account state is returned.
     pub async fn request_account_state(
         &self,
-        account_id: nautilus_model::identifiers::AccountId,
-    ) -> anyhow::Result<nautilus_model::events::AccountState> {
+        account_id: AccountId,
+    ) -> anyhow::Result<AccountState> {
         // Get margin data for XBt (Bitcoin) by default
         let margin = self
             .inner
@@ -736,5 +800,327 @@ impl BitmexHttpClient {
         };
 
         crate::common::parse::parse_account_state(&margin_msg, account_id, ts_init)
+    }
+
+    // ========================================================================
+    // Domain-level methods (take domain types, return domain types)
+    // ========================================================================
+
+    /// Submit a new order using domain types.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing, the request fails, order validation fails, or the API returns an error.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn submit_order(
+        &self,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        quantity: Quantity,
+        time_in_force: TimeInForce,
+        price: Option<Price>,
+        trigger_price: Option<Price>,
+        reduce_only: bool,
+        display_qty: Option<Quantity>,
+    ) -> anyhow::Result<OrderStatusReport> {
+        use crate::common::enums::{
+            BitmexExecInstruction, BitmexOrderType, BitmexSide, BitmexTimeInForce,
+        };
+
+        // Build PostOrderParams
+        let mut params = super::query::PostOrderParamsBuilder::default();
+        params.symbol(instrument_id.symbol.as_str());
+        params.cl_ord_id(client_order_id.as_str());
+
+        // Convert and set order side
+        let side: BitmexSide = order_side.into();
+        params.side(side);
+
+        // Convert and set order type
+        let ord_type: BitmexOrderType = order_type.into();
+        params.ord_type(ord_type);
+
+        // Set quantity
+        params.order_qty(quantity.as_f64() as u32);
+
+        // Convert and set time in force
+        let tif: BitmexTimeInForce = time_in_force.into();
+        params.time_in_force(tif);
+
+        // Set price for limit orders
+        if let Some(price) = price {
+            params.price(price.as_f64());
+        }
+
+        // Set trigger price for stop orders
+        if let Some(trigger_price) = trigger_price {
+            params.stop_px(trigger_price.as_f64());
+        }
+
+        // Set display quantity
+        if let Some(display_qty) = display_qty {
+            params.display_qty(display_qty.as_f64() as u32);
+        }
+
+        // Set execution instructions
+        let mut exec_inst = Vec::new();
+        if reduce_only {
+            exec_inst.push(BitmexExecInstruction::ReduceOnly);
+        }
+        if !exec_inst.is_empty() {
+            params.exec_inst(exec_inst);
+        }
+
+        let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
+
+        // Submit the order
+        let response = self.inner.http_place_order(params).await?;
+
+        // Parse the response to OrderStatusReport
+        let order: BitmexOrder = serde_json::from_value(response)?;
+        let price_precision = self
+            .get_price_precision(instrument_id.symbol.as_str())
+            .unwrap_or(2);
+
+        crate::http::parse::parse_order_status_report(order, price_precision)
+    }
+
+    /// Cancel an order using domain types.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing, the request fails, the order doesn't exist, or the API returns an error.
+    pub async fn cancel_order(
+        &self,
+        instrument_id: InstrumentId,
+        client_order_id: Option<ClientOrderId>,
+        venue_order_id: Option<VenueOrderId>,
+    ) -> anyhow::Result<OrderStatusReport> {
+        // Build DeleteOrderParams
+        let mut params = super::query::DeleteOrderParamsBuilder::default();
+
+        // Set order ID - prefer venue_order_id if available
+        if let Some(venue_order_id) = venue_order_id {
+            params.order_id(vec![venue_order_id.as_str().to_string()]);
+        } else if let Some(client_order_id) = client_order_id {
+            params.cl_ord_id(vec![client_order_id.as_str().to_string()]);
+        } else {
+            return Err(anyhow::anyhow!(
+                "Either client_order_id or venue_order_id must be provided"
+            ));
+        }
+
+        let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
+
+        // Cancel the order
+        let response = self.inner.http_cancel_orders(params).await?;
+
+        // Parse the response - BitMEX returns an array
+        let orders: Vec<BitmexOrder> = serde_json::from_value(response)?;
+        let order = orders
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("No order returned in cancel response"))?;
+
+        let price_precision = self
+            .get_price_precision(instrument_id.symbol.as_str())
+            .unwrap_or(2);
+
+        crate::http::parse::parse_order_status_report(order, price_precision)
+    }
+
+    /// Cancel all orders for an instrument using domain types.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing, the request fails, or the API returns an error.
+    pub async fn cancel_all_orders(
+        &self,
+        instrument_id: InstrumentId,
+        order_side: Option<OrderSide>,
+    ) -> anyhow::Result<Vec<OrderStatusReport>> {
+        use crate::common::enums::BitmexSide;
+
+        // Build DeleteAllOrdersParams
+        let mut params = super::query::DeleteAllOrdersParamsBuilder::default();
+        params.symbol(instrument_id.symbol.as_str());
+
+        // Set side filter if specified
+        if let Some(side) = order_side {
+            let side: BitmexSide = side.into();
+            params.filter(serde_json::json!({
+                "side": side
+            }));
+        }
+
+        let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
+
+        // Cancel all orders
+        let response = self.inner.http_cancel_all_orders(params).await?;
+
+        // Parse the response
+        let orders: Vec<BitmexOrder> = serde_json::from_value(response)?;
+        let price_precision = self
+            .get_price_precision(instrument_id.symbol.as_str())
+            .unwrap_or(2);
+
+        let mut reports = Vec::new();
+        for order in orders {
+            reports.push(crate::http::parse::parse_order_status_report(
+                order,
+                price_precision,
+            )?);
+        }
+
+        Ok(reports)
+    }
+
+    /// Modify an existing order using domain types.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing, the request fails, the order doesn't exist, or the API returns an error.
+    pub async fn modify_order(
+        &self,
+        instrument_id: InstrumentId,
+        client_order_id: Option<ClientOrderId>,
+        venue_order_id: Option<VenueOrderId>,
+        quantity: Option<Quantity>,
+        price: Option<Price>,
+        trigger_price: Option<Price>,
+    ) -> anyhow::Result<OrderStatusReport> {
+        // Build PutOrderParams
+        let mut params = super::query::PutOrderParamsBuilder::default();
+
+        // Set order ID - prefer venue_order_id if available
+        if let Some(venue_order_id) = venue_order_id {
+            params.order_id(venue_order_id.as_str());
+        } else if let Some(client_order_id) = client_order_id {
+            params.orig_cl_ord_id(client_order_id.as_str());
+        } else {
+            return Err(anyhow::anyhow!(
+                "Either client_order_id or venue_order_id must be provided"
+            ));
+        }
+
+        // Set new values if provided
+        if let Some(quantity) = quantity {
+            params.order_qty(quantity.as_f64() as u32);
+        }
+
+        if let Some(price) = price {
+            params.price(price.as_f64());
+        }
+
+        if let Some(trigger_price) = trigger_price {
+            params.stop_px(trigger_price.as_f64());
+        }
+
+        let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
+
+        // Amend the order
+        let response = self.inner.http_amend_order(params).await?;
+
+        // Parse the response
+        let order: BitmexOrder = serde_json::from_value(response)?;
+        let price_precision = self
+            .get_price_precision(instrument_id.symbol.as_str())
+            .unwrap_or(2);
+
+        crate::http::parse::parse_order_status_report(order, price_precision)
+    }
+
+    /// Request a single order status report using domain types.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing, the request fails, or the API returns an error.
+    pub async fn request_order_status_report(
+        &self,
+        instrument_id: InstrumentId,
+        client_order_id: Option<ClientOrderId>,
+        venue_order_id: Option<VenueOrderId>,
+    ) -> anyhow::Result<OrderStatusReport> {
+        // Build GetOrderParams
+        let mut params = super::query::GetOrderParamsBuilder::default();
+        params.symbol(instrument_id.symbol.as_str());
+
+        // Filter by order ID
+        if let Some(venue_order_id) = venue_order_id {
+            params.filter(serde_json::json!({
+                "orderID": venue_order_id.as_str()
+            }));
+        } else if let Some(client_order_id) = client_order_id {
+            params.filter(serde_json::json!({
+                "clOrdID": client_order_id.as_str()
+            }));
+        }
+
+        params.count(1i32);
+        let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
+
+        // Get the order
+        let orders = self.inner.http_get_orders(params).await?;
+        let order = orders
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("Order not found"))?;
+
+        let price_precision = self
+            .get_price_precision(instrument_id.symbol.as_str())
+            .unwrap_or(2);
+
+        crate::http::parse::parse_order_status_report(order, price_precision)
+    }
+
+    /// Request multiple order status reports using domain types.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing, the request fails, or the API returns an error.
+    pub async fn request_order_status_reports(
+        &self,
+        instrument_id: Option<InstrumentId>,
+        open_only: bool,
+        limit: Option<u32>,
+    ) -> anyhow::Result<Vec<OrderStatusReport>> {
+        // Build GetOrderParams
+        let mut params = super::query::GetOrderParamsBuilder::default();
+
+        // Filter by symbol if provided
+        if let Some(instrument_id) = &instrument_id {
+            params.symbol(instrument_id.symbol.as_str());
+        }
+
+        // Filter by open status if requested
+        if open_only {
+            params.filter(serde_json::json!({
+                "open": true
+            }));
+        }
+
+        // Set limit
+        if let Some(limit) = limit {
+            params.count(limit as i32);
+        }
+
+        let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
+
+        // Get the orders
+        let orders = self.inner.http_get_orders(params).await?;
+
+        let mut reports = Vec::new();
+        for order in orders {
+            let symbol = order.symbol.as_ref().map(|s| s.as_str()).unwrap_or("");
+            let price_precision = self.get_price_precision(symbol).unwrap_or(2);
+            reports.push(crate::http::parse::parse_order_status_report(
+                order,
+                price_precision,
+            )?);
+        }
+
+        Ok(reports)
     }
 }

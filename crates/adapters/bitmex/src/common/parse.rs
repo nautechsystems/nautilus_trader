@@ -197,6 +197,7 @@ mod tests {
     use chrono::TimeZone;
     use nautilus_model::enums::AccountType;
     use rstest::rstest;
+    use ustr::Ustr;
 
     use super::*;
 
@@ -204,7 +205,7 @@ mod tests {
     fn test_parse_account_state() {
         let margin_msg = BitmexMarginMsg {
             account: 123456,
-            currency: "XBt".to_string(),
+            currency: Ustr::from("XBt"),
             risk_limit: Some(1000000000),
             amount: Some(5000000),
             prev_realised_pnl: Some(100000),
@@ -256,7 +257,7 @@ mod tests {
     fn test_parse_account_state_usdt() {
         let margin_msg = BitmexMarginMsg {
             account: 123456,
-            currency: "USDt".to_string(),
+            currency: Ustr::from("USDt"),
             risk_limit: Some(1000000000),
             amount: Some(10000000000), // 10000 USDT in microunits
             prev_realised_pnl: None,

@@ -63,8 +63,10 @@ pub enum BitmexSymbolStatus {
 )]
 pub enum BitmexSide {
     /// Buy side of a trade or order.
+    #[serde(rename = "Buy", alias = "BUY", alias = "buy")]
     Buy,
     /// Sell side of a trade or order.
+    #[serde(rename = "Sell", alias = "SELL", alias = "sell")]
     Sell,
 }
 
@@ -228,6 +230,20 @@ impl From<BitmexTimeInForce> for TimeInForce {
             BitmexTimeInForce::AtTheOpening => Self::AtTheOpen,
             BitmexTimeInForce::AtTheClose => Self::AtTheClose,
             _ => panic!("Unsupported `BitmexTimeInForce`, was {value}"),
+        }
+    }
+}
+
+impl From<TimeInForce> for BitmexTimeInForce {
+    fn from(value: TimeInForce) -> Self {
+        match value {
+            TimeInForce::Day => Self::Day,
+            TimeInForce::Gtc => Self::GoodTillCancel,
+            TimeInForce::Gtd => Self::GoodTillDate,
+            TimeInForce::Ioc => Self::ImmediateOrCancel,
+            TimeInForce::Fok => Self::FillOrKill,
+            TimeInForce::AtTheOpen => Self::AtTheOpening,
+            TimeInForce::AtTheClose => Self::AtTheClose,
         }
     }
 }

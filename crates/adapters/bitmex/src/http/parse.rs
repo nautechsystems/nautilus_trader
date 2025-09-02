@@ -29,6 +29,7 @@ use nautilus_model::{
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 use rust_decimal::Decimal;
+use ustr::Ustr;
 use uuid::Uuid;
 
 use super::models::{BitmexExecution, BitmexInstrument, BitmexOrder, BitmexPosition, BitmexTrade};
@@ -57,16 +58,19 @@ pub fn parse_instrument_any(
                 e
             })
             .ok(),
-        BitmexInstrumentType::PerpetualContract => parse_perpetual_instrument(instrument, ts_init)
-            .map_err(|e| {
-                tracing::warn!(
-                    "Failed to parse perpetual instrument {}: {}",
-                    instrument.symbol,
+        BitmexInstrumentType::PerpetualContract | BitmexInstrumentType::PerpetualContractFx => {
+            // Handle both crypto and FX perpetuals the same way
+            parse_perpetual_instrument(instrument, ts_init)
+                .map_err(|e| {
+                    tracing::warn!(
+                        "Failed to parse perpetual instrument {}: {}",
+                        instrument.symbol,
+                        e
+                    );
                     e
-                );
-                e
-            })
-            .ok(),
+                })
+                .ok()
+        }
         BitmexInstrumentType::Futures => parse_futures_instrument(instrument, ts_init)
             .map_err(|e| {
                 tracing::warn!(
@@ -77,8 +81,84 @@ pub fn parse_instrument_any(
                 e
             })
             .ok(),
-        _ => None,
+        BitmexInstrumentType::BasketIndex
+        | BitmexInstrumentType::CryptoIndex
+        | BitmexInstrumentType::FxIndex
+        | BitmexInstrumentType::LendingIndex
+        | BitmexInstrumentType::VolatilityIndex => {
+            // Parse index instruments as perpetuals for cache purposes
+            // They need to be in cache for WebSocket price updates
+            parse_index_instrument(instrument, ts_init)
+                .map_err(|e| {
+                    tracing::warn!(
+                        "Failed to parse index instrument {}: {}",
+                        instrument.symbol,
+                        e
+                    );
+                    e
+                })
+                .ok()
+        }
+        _ => {
+            tracing::warn!(
+                "Unsupported instrument type {:?} for symbol {}",
+                instrument.instrument_type,
+                instrument.symbol
+            );
+            None
+        }
     }
+}
+
+/// Parse a BitMEX index instrument into a Nautilus `InstrumentAny`.
+///
+/// Index instruments are parsed as perpetuals with minimal fields to support
+/// price update lookups in the WebSocket.
+///
+/// # Errors
+///
+/// Returns an error if values are out of valid range or cannot be parsed.
+pub fn parse_index_instrument(
+    definition: &BitmexInstrument,
+    ts_init: UnixNanos,
+) -> anyhow::Result<InstrumentAny> {
+    let instrument_id = parse_instrument_id(&definition.symbol);
+    let raw_symbol = Symbol::new(definition.symbol);
+
+    // Use USD for indices
+    let base_currency = Currency::USD();
+    let quote_currency = Currency::USD();
+    let settlement_currency = Currency::USD();
+
+    let price_increment = Price::from(definition.tick_size.to_string());
+    let size_increment = Quantity::from(1); // Indices don't have tradeable sizes
+
+    Ok(InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
+        instrument_id,
+        raw_symbol,
+        base_currency,
+        quote_currency,
+        settlement_currency,
+        false, // is_inverse
+        price_increment.precision,
+        size_increment.precision,
+        price_increment,
+        size_increment,
+        None, // multiplier
+        None, // lot_size
+        None, // max_quantity
+        None, // min_quantity
+        None, // max_notional
+        None, // min_notional
+        None, // max_price
+        None, // min_price
+        None, // margin_init
+        None, // margin_maint
+        None, // maker_fee
+        None, // taker_fee
+        ts_init,
+        ts_init,
+    )))
 }
 
 /// Parse a BitMEX spot instrument into a Nautilus `InstrumentAny`.
@@ -91,12 +171,19 @@ pub fn parse_spot_instrument(
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
     let instrument_id = parse_instrument_id(&definition.symbol);
-    let raw_symbol = Symbol::new(&definition.symbol);
+    let raw_symbol = Symbol::new(definition.symbol);
     let base_currency = get_currency(definition.underlying.to_uppercase());
     let quote_currency = get_currency(definition.quote_currency.to_uppercase());
 
     let price_increment = Price::from(definition.tick_size.to_string());
-    let size_increment = Quantity::from(1);
+
+    // Require lot_size for proper size increment
+    let size_increment = definition
+        .lot_size
+        .map(|lot_size| Quantity::from(lot_size.to_string()))
+        .ok_or_else(|| {
+            anyhow::anyhow!("Missing lot_size for spot instrument {}", definition.symbol)
+        })?;
 
     let taker_fee = definition
         .taker_fee
@@ -176,7 +263,7 @@ pub fn parse_perpetual_instrument(
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
     let instrument_id = parse_instrument_id(&definition.symbol);
-    let raw_symbol = Symbol::new(&definition.symbol);
+    let raw_symbol = Symbol::new(definition.symbol);
     let base_currency = get_currency(definition.underlying.to_uppercase());
     let quote_currency = get_currency(definition.quote_currency.to_uppercase());
     let settlement_currency = get_currency(definition.settl_currency.as_ref().map_or_else(
@@ -186,7 +273,17 @@ pub fn parse_perpetual_instrument(
     let is_inverse = definition.is_inverse;
 
     let price_increment = Price::from(definition.tick_size.to_string());
-    let size_increment = Quantity::from(1);
+
+    // Require lot_size for proper size increment
+    let size_increment = definition
+        .lot_size
+        .map(|lot_size| Quantity::from(lot_size.to_string()))
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Missing lot_size for perpetual instrument {}",
+                definition.symbol
+            )
+        })?;
 
     let taker_fee = definition
         .taker_fee
@@ -270,7 +367,7 @@ pub fn parse_futures_instrument(
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
     let instrument_id = parse_instrument_id(&definition.symbol);
-    let raw_symbol = Symbol::new(&definition.symbol);
+    let raw_symbol = Symbol::new(definition.symbol);
     let underlying = get_currency(definition.underlying.to_uppercase());
     let quote_currency = get_currency(definition.quote_currency.to_uppercase());
     let settlement_currency = get_currency(definition.settl_currency.as_ref().map_or_else(
@@ -282,7 +379,17 @@ pub fn parse_futures_instrument(
     let activation_ns = UnixNanos::from(definition.listing);
     let expiration_ns = parse_optional_datetime_to_unix_nanos(&definition.expiry, "expiry");
     let price_increment = Price::from(definition.tick_size.to_string());
-    let size_increment = Quantity::from(1);
+
+    // Require lot_size for proper size increment
+    let size_increment = definition
+        .lot_size
+        .map(|lot_size| Quantity::from(lot_size.to_string()))
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Missing lot_size for futures instrument {}",
+                definition.symbol
+            )
+        })?;
 
     let taker_fee = definition
         .taker_fee
@@ -538,6 +645,17 @@ pub fn parse_order_status_report(
 /// Panics if:
 /// - Execution is missing required fields: `symbol`, `order_id`, `trd_match_id`, `last_qty`, `last_px`, or `transact_time`
 pub fn parse_fill_report(exec: BitmexExecution, price_precision: u8) -> anyhow::Result<FillReport> {
+    // Skip non-trade executions (funding, settlements, etc.)
+    // Trade executions have exec_type of "Trade" or None (for backwards compatibility)
+    if let Some(exec_type) = &exec.exec_type
+        && exec_type != "Trade"
+    {
+        return Err(anyhow::anyhow!(
+            "Skipping non-trade execution: {}",
+            exec_type
+        ));
+    }
+
     // BitMEX returns account as a number, but AccountId needs format like "BITMEX-123"
     let account_id = AccountId::new(format!("BITMEX-{}", exec.account.unwrap_or(0)));
     let instrument_id = parse_instrument_id(
@@ -573,7 +691,7 @@ pub fn parse_fill_report(exec: BitmexExecution, price_precision: u8) -> anyhow::
     // BitMEX uses "XBt" but we need "XBT" for Currency
     let settlement_currency = exec
         .settl_currency
-        .unwrap_or("XBT".to_string())
+        .unwrap_or(Ustr::from("XBT"))
         .to_uppercase();
     let commission = Money::new(
         exec.commission.unwrap_or(0.0),
@@ -695,7 +813,7 @@ mod tests {
 
         // Test first order (New)
         let order1 = &orders[0];
-        assert_eq!(order1.symbol, Some("XBTUSD".to_string()));
+        assert_eq!(order1.symbol, Some(Ustr::from("XBTUSD")));
         assert_eq!(order1.side, Some(BitmexSide::Buy));
         assert_eq!(order1.order_qty, Some(100));
         assert_eq!(order1.price, Some(98000.0));
@@ -705,7 +823,7 @@ mod tests {
 
         // Test second order (Filled)
         let order2 = &orders[1];
-        assert_eq!(order2.symbol, Some("XBTUSD".to_string()));
+        assert_eq!(order2.symbol, Some(Ustr::from("XBTUSD")));
         assert_eq!(order2.side, Some(BitmexSide::Sell));
         assert_eq!(order2.order_qty, Some(200));
         assert_eq!(order2.ord_status, Some(BitmexOrderStatus::Filled));
@@ -723,7 +841,7 @@ mod tests {
 
         // Test first execution (Maker)
         let exec1 = &executions[0];
-        assert_eq!(exec1.symbol, Some("XBTUSD".to_string()));
+        assert_eq!(exec1.symbol, Some(Ustr::from("XBTUSD")));
         assert_eq!(exec1.side, Some(BitmexSide::Sell));
         assert_eq!(exec1.last_qty, Some(100));
         assert_eq!(exec1.last_px, Some(98950.0));
@@ -825,9 +943,9 @@ mod tests {
     fn test_parse_order_status_report() {
         let order = BitmexOrder {
             account: Some(123456),
-            symbol: Some("XBTUSD".to_string()),
+            symbol: Some(Ustr::from("XBTUSD")),
             order_id: Uuid::parse_str("a1b2c3d4-e5f6-7890-abcd-ef1234567890").unwrap(),
-            cl_ord_id: Some("client-123".to_string()),
+            cl_ord_id: Some(Ustr::from("client-123")),
             side: Some(BitmexSide::Buy),
             ord_type: Some(BitmexOrderType::Limit),
             time_in_force: Some(BitmexTimeInForce::GoodTillCancel),
@@ -875,7 +993,7 @@ mod tests {
     fn test_parse_order_status_report_minimal() {
         let order = BitmexOrder {
             account: None,
-            symbol: Some("ETHUSD".to_string()),
+            symbol: Some(Ustr::from("ETHUSD")),
             order_id: Uuid::parse_str("11111111-2222-3333-4444-555555555555").unwrap(),
             cl_ord_id: None,
             side: Some(BitmexSide::Sell),
@@ -923,14 +1041,14 @@ mod tests {
         let exec = BitmexExecution {
             exec_id: Uuid::parse_str("f1f2f3f4-e5e6-d7d8-c9c0-b1b2b3b4b5b6").unwrap(),
             account: Some(654321),
-            symbol: Some("XBTUSD".to_string()),
+            symbol: Some(Ustr::from("XBTUSD")),
             order_id: Some(Uuid::parse_str("a1a2a3a4-b5b6-c7c8-d9d0-e1e2e3e4e5e6").unwrap()),
-            cl_ord_id: Some("client-456".to_string()),
+            cl_ord_id: Some(Ustr::from("client-456")),
             side: Some(BitmexSide::Buy),
             last_qty: Some(50),
             last_px: Some(50100.5),
             commission: Some(0.00075),
-            settl_currency: Some("XBt".to_string()),
+            settl_currency: Some(Ustr::from("XBt")),
             last_liquidity_ind: Some(BitmexLiquidityIndicator::Taker),
             trd_match_id: Some(Uuid::parse_str("99999999-8888-7777-6666-555555555555").unwrap()),
             transact_time: Some(
@@ -966,7 +1084,7 @@ mod tests {
         let exec = BitmexExecution {
             exec_id: Uuid::parse_str("f1f2f3f4-e5e6-d7d8-c9c0-b1b2b3b4b5b6").unwrap(),
             account: Some(111111),
-            symbol: Some("ETHUSD".to_string()),
+            symbol: Some(Ustr::from("ETHUSD")),
             order_id: Some(Uuid::parse_str("a1a2a3a4-b5b6-c7c8-d9d0-e1e2e3e4e5e6").unwrap()),
             cl_ord_id: None,
             side: Some(BitmexSide::Sell),
@@ -1001,7 +1119,7 @@ mod tests {
     fn test_parse_position_report() {
         let position = BitmexPosition {
             account: 789012,
-            symbol: "XBTUSD".to_string(),
+            symbol: Ustr::from("XBTUSD"),
             current_qty: Some(1000),
             timestamp: Some(
                 DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
@@ -1023,7 +1141,7 @@ mod tests {
     fn test_parse_position_report_short() {
         let position = BitmexPosition {
             account: 789012,
-            symbol: "ETHUSD".to_string(),
+            symbol: Ustr::from("ETHUSD"),
             current_qty: Some(-500),
             timestamp: Some(
                 DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
@@ -1043,7 +1161,7 @@ mod tests {
     fn test_parse_position_report_flat() {
         let position = BitmexPosition {
             account: 789012,
-            symbol: "SOLUSD".to_string(),
+            symbol: Ustr::from("SOLUSD"),
             current_qty: Some(0),
             timestamp: Some(
                 DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
@@ -1065,9 +1183,9 @@ mod tests {
 
     fn create_test_spot_instrument() -> BitmexInstrument {
         BitmexInstrument {
-            symbol: "XBTUSD".to_string(),
-            root_symbol: "XBT".to_string(),
-            state: "Open".to_string(),
+            symbol: Ustr::from("XBTUSD"),
+            root_symbol: Ustr::from("XBT"),
+            state: Ustr::from("Open"),
             instrument_type: BitmexInstrumentType::Spot,
             listing: DateTime::parse_from_rfc3339("2016-05-13T12:00:00.000Z")
                 .unwrap()
@@ -1080,16 +1198,16 @@ mod tests {
             expiry: None,
             settle: None,
             listed_settle: None,
-            position_currency: Some("USD".to_string()),
-            underlying: "XBT".to_string(),
-            quote_currency: "USD".to_string(),
-            underlying_symbol: Some("XBT=".to_string()),
-            reference: Some("BMEX".to_string()),
-            reference_symbol: Some(".BXBT".to_string()),
+            position_currency: Some(Ustr::from("USD")),
+            underlying: Ustr::from("XBT"),
+            quote_currency: Ustr::from("USD"),
+            underlying_symbol: Some(Ustr::from("XBT=")),
+            reference: Some(Ustr::from("BMEX")),
+            reference_symbol: Some(Ustr::from(".BXBT")),
             lot_size: Some(1.0),
             tick_size: 0.01,
             multiplier: 1.0,
-            settl_currency: Some("USD".to_string()),
+            settl_currency: Some(Ustr::from("USD")),
             is_quanto: false,
             is_inverse: false,
             maker_fee: Some(-0.00025),
@@ -1148,7 +1266,7 @@ mod tests {
             high_price: Some(51000.0),
             low_price: Some(49000.0),
             last_price_protected: Some(50500.0),
-            last_tick_direction: Some("PlusTick".to_string()),
+            last_tick_direction: Some(Ustr::from("PlusTick")),
             last_change_pcnt: Some(0.0202),
             mid_price: Some(50500.0),
             impact_bid_price: Some(50490.0),
@@ -1158,7 +1276,7 @@ mod tests {
             fair_basis_rate: None,
             fair_basis: None,
             fair_price: None,
-            mark_method: Some("LastPrice".to_string()),
+            mark_method: Some(Ustr::from("LastPrice")),
             indicative_settle_price: None,
             settled_price_adjustment_rate: None,
             settled_price: None,
@@ -1171,9 +1289,9 @@ mod tests {
 
     fn create_test_perpetual_instrument() -> BitmexInstrument {
         BitmexInstrument {
-            symbol: "XBTUSD".to_string(),
-            root_symbol: "XBT".to_string(),
-            state: "Open".to_string(),
+            symbol: Ustr::from("XBTUSD"),
+            root_symbol: Ustr::from("XBT"),
+            state: Ustr::from("Open"),
             instrument_type: BitmexInstrumentType::PerpetualContract,
             listing: DateTime::parse_from_rfc3339("2016-05-13T12:00:00.000Z")
                 .unwrap()
@@ -1186,16 +1304,16 @@ mod tests {
             expiry: None,
             settle: None,
             listed_settle: None,
-            position_currency: Some("USD".to_string()),
-            underlying: "XBT".to_string(),
-            quote_currency: "USD".to_string(),
-            underlying_symbol: Some("XBT=".to_string()),
-            reference: Some("BMEX".to_string()),
-            reference_symbol: Some(".BXBT".to_string()),
+            position_currency: Some(Ustr::from("USD")),
+            underlying: Ustr::from("XBT"),
+            quote_currency: Ustr::from("USD"),
+            underlying_symbol: Some(Ustr::from("XBT=")),
+            reference: Some(Ustr::from("BMEX")),
+            reference_symbol: Some(Ustr::from(".BXBT")),
             lot_size: Some(1.0),
             tick_size: 0.5,
             multiplier: -1.0,
-            settl_currency: Some("XBT".to_string()),
+            settl_currency: Some(Ustr::from("XBT")),
             is_quanto: false,
             is_inverse: true,
             maker_fee: Some(-0.00025),
@@ -1221,9 +1339,9 @@ mod tests {
             turnover_24h: Some(7500000000.0),
             has_liquidity: Some(true),
             // Perpetual specific fields
-            funding_base_symbol: Some(".XBTBON8H".to_string()),
-            funding_quote_symbol: Some(".USDBON8H".to_string()),
-            funding_premium_symbol: Some(".XBTUSDPI8H".to_string()),
+            funding_base_symbol: Some(Ustr::from(".XBTBON8H")),
+            funding_quote_symbol: Some(Ustr::from(".USDBON8H")),
+            funding_premium_symbol: Some(Ustr::from(".XBTUSDPI8H")),
             funding_timestamp: Some(
                 DateTime::parse_from_rfc3339("2024-01-01T08:00:00.000Z")
                     .unwrap()
@@ -1265,17 +1383,17 @@ mod tests {
             high_price: Some(51000.0),
             low_price: Some(49000.0),
             last_price_protected: Some(50500.0),
-            last_tick_direction: Some("PlusTick".to_string()),
+            last_tick_direction: Some(Ustr::from("PlusTick")),
             last_change_pcnt: Some(0.0202),
             mid_price: Some(50500.0),
             impact_bid_price: Some(50490.0),
             impact_mid_price: Some(50495.0),
             impact_ask_price: Some(50500.0),
-            fair_method: Some("FundingRate".to_string()),
+            fair_method: Some(Ustr::from("FundingRate")),
             fair_basis_rate: Some(0.1095),
             fair_basis: Some(0.01),
             fair_price: Some(50500.01),
-            mark_method: Some("FairPrice".to_string()),
+            mark_method: Some(Ustr::from("FairPrice")),
             indicative_settle_price: Some(50500.0),
             settled_price_adjustment_rate: None,
             settled_price: None,
@@ -1286,9 +1404,9 @@ mod tests {
 
     fn create_test_futures_instrument() -> BitmexInstrument {
         BitmexInstrument {
-            symbol: "XBTH25".to_string(),
-            root_symbol: "XBT".to_string(),
-            state: "Open".to_string(),
+            symbol: Ustr::from("XBTH25"),
+            root_symbol: Ustr::from("XBT"),
+            state: Ustr::from("Open"),
             instrument_type: BitmexInstrumentType::Futures,
             listing: DateTime::parse_from_rfc3339("2024-09-27T12:00:00.000Z")
                 .unwrap()
@@ -1309,16 +1427,16 @@ mod tests {
                     .with_timezone(&Utc),
             ),
             listed_settle: None,
-            position_currency: Some("USD".to_string()),
-            underlying: "XBT".to_string(),
-            quote_currency: "USD".to_string(),
-            underlying_symbol: Some("XBT=".to_string()),
-            reference: Some("BMEX".to_string()),
-            reference_symbol: Some(".BXBT30M".to_string()),
+            position_currency: Some(Ustr::from("USD")),
+            underlying: Ustr::from("XBT"),
+            quote_currency: Ustr::from("USD"),
+            underlying_symbol: Some(Ustr::from("XBT=")),
+            reference: Some(Ustr::from("BMEX")),
+            reference_symbol: Some(Ustr::from(".BXBT30M")),
             lot_size: Some(1.0),
             tick_size: 0.5,
             multiplier: -1.0,
-            settl_currency: Some("XBT".to_string()),
+            settl_currency: Some(Ustr::from("XBT")),
             is_quanto: false,
             is_inverse: true,
             maker_fee: Some(-0.00025),
@@ -1380,17 +1498,17 @@ mod tests {
             high_price: Some(56000.0),
             low_price: Some(54000.0),
             last_price_protected: Some(55500.0),
-            last_tick_direction: Some("PlusTick".to_string()),
+            last_tick_direction: Some(Ustr::from("PlusTick")),
             last_change_pcnt: Some(0.0183),
             mid_price: Some(55500.0),
             impact_bid_price: Some(55490.0),
             impact_mid_price: Some(55495.0),
             impact_ask_price: Some(55500.0),
-            fair_method: Some("ImpactMidPrice".to_string()),
+            fair_method: Some(Ustr::from("ImpactMidPrice")),
             fair_basis_rate: Some(1.8264),
             fair_basis: Some(1000.0),
             fair_price: Some(55500.0),
-            mark_method: Some("FairPrice".to_string()),
+            mark_method: Some(Ustr::from("FairPrice")),
             indicative_settle_price: Some(55500.0),
             settled_price_adjustment_rate: None,
             settled_price: None,

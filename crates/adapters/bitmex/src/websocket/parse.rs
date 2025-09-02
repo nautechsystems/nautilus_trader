@@ -31,7 +31,7 @@ use nautilus_model::{
     },
     enums::{AggregationSource, BarAggregation, OrderSide, PriceType, RecordFlag},
     identifiers::{AccountId, ClientOrderId, InstrumentId, OrderListId, TradeId, VenueOrderId},
-    instruments::InstrumentAny,
+    instruments::{Instrument, InstrumentAny},
     reports::{fill::FillReport, order::OrderStatusReport, position::PositionStatusReport},
     types::{
         currency::Currency,
@@ -473,7 +473,7 @@ pub fn parse_execution_msg(msg: BitmexExecutionMsg, price_precision: u8) -> Opti
         .map_or(OrderSide::NoOrderSide, std::convert::Into::into);
     let last_qty = Quantity::from(msg.last_qty?);
     let last_px = Price::new(msg.last_px?, price_precision);
-    let settlement_currency = msg.settl_currency.unwrap_or("XBT".to_string());
+    let settlement_currency = msg.settl_currency.unwrap_or(Ustr::from("XBT"));
     let commission = Money::new(
         msg.commission.unwrap_or(0.0),
         Currency::from(settlement_currency),
@@ -598,9 +598,16 @@ pub fn parse_instrument_msg(
     let ts_init = get_atomic_clock_realtime().get_time_ns();
 
     // Look up instrument for proper precision
-    let price_precision = instruments_cache
-        .get(&Ustr::from(&msg.symbol))
-        .map_or(1, nautilus_model::instruments::Instrument::price_precision); // Default to 1 if instrument not found
+    let price_precision = match instruments_cache.get(&Ustr::from(&msg.symbol)) {
+        Some(instrument) => instrument.price_precision(),
+        None => {
+            tracing::error!(
+                "Instrument {} not found in cache, skipping price updates",
+                msg.symbol
+            );
+            return updates;
+        }
+    };
 
     // Add mark price update if present
     // For index symbols, markPrice equals lastPrice and is valid to emit
@@ -673,13 +680,43 @@ mod tests {
             TimeInForce,
         },
         identifiers::{InstrumentId, Symbol},
-        instruments::CryptoPerpetual,
-        types::Currency,
+        instruments::{CryptoPerpetual, any::InstrumentAny},
+        types::{Currency, Price, Quantity},
     };
     use rstest::rstest;
 
     use super::*;
     use crate::common::testing::load_test_json;
+
+    // Helper function to create a test perpetual instrument for tests
+    fn create_test_perpetual_instrument() -> InstrumentAny {
+        InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
+            InstrumentId::from("XBTUSD.BITMEX"),
+            Symbol::new("XBTUSD"),
+            Currency::BTC(),
+            Currency::USD(),
+            Currency::BTC(),
+            true, // is_inverse
+            1,    // price_precision
+            0,    // size_precision
+            Price::from("0.5"),
+            Quantity::from(1),
+            None, // multiplier
+            None, // lot_size
+            None, // max_quantity
+            None, // min_quantity
+            None, // max_notional
+            None, // min_notional
+            None, // max_price
+            None, // min_price
+            None, // margin_init
+            None, // margin_maint
+            None, // maker_fee
+            None, // taker_fee
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ))
+    }
 
     #[rstest]
     fn test_orderbook_l2_message() {
@@ -955,7 +992,12 @@ mod tests {
     fn test_parse_instrument_msg_both_prices() {
         let json_data = load_test_json("ws_instrument.json");
         let msg: BitmexInstrumentMsg = serde_json::from_str(&json_data).unwrap();
-        let instruments_cache = AHashMap::new();
+
+        // Create cache with test instrument
+        let mut instruments_cache = AHashMap::new();
+        let test_instrument = create_test_perpetual_instrument();
+        instruments_cache.insert(Ustr::from("XBTUSD"), test_instrument);
+
         let updates = parse_instrument_msg(msg, &instruments_cache);
 
         // XBTUSD is not an index symbol, so it should have both mark and index prices
@@ -986,7 +1028,11 @@ mod tests {
             serde_json::from_str(&load_test_json("ws_instrument.json")).unwrap();
         msg.index_price = None;
 
-        let instruments_cache = AHashMap::new();
+        // Create cache with test instrument
+        let mut instruments_cache = AHashMap::new();
+        let test_instrument = create_test_perpetual_instrument();
+        instruments_cache.insert(Ustr::from("XBTUSD"), test_instrument);
+
         let updates = parse_instrument_msg(msg, &instruments_cache);
 
         assert_eq!(updates.len(), 1);
@@ -1005,7 +1051,11 @@ mod tests {
             serde_json::from_str(&load_test_json("ws_instrument.json")).unwrap();
         msg.mark_price = None;
 
-        let instruments_cache = AHashMap::new();
+        // Create cache with test instrument
+        let mut instruments_cache = AHashMap::new();
+        let test_instrument = create_test_perpetual_instrument();
+        instruments_cache.insert(Ustr::from("XBTUSD"), test_instrument);
+
         let updates = parse_instrument_msg(msg, &instruments_cache);
 
         assert_eq!(updates.len(), 1);
@@ -1026,7 +1076,11 @@ mod tests {
         msg.index_price = None;
         msg.last_price = None;
 
-        let instruments_cache = AHashMap::new();
+        // Create cache with test instrument
+        let mut instruments_cache = AHashMap::new();
+        let test_instrument = create_test_perpetual_instrument();
+        instruments_cache.insert(Ustr::from("XBTUSD"), test_instrument);
+
         let updates = parse_instrument_msg(msg, &instruments_cache);
         assert_eq!(updates.len(), 0);
     }
@@ -1037,7 +1091,7 @@ mod tests {
         // and markPrice equals lastPrice
         let mut msg: BitmexInstrumentMsg =
             serde_json::from_str(&load_test_json("ws_instrument.json")).unwrap();
-        msg.symbol = ".BXBT".to_string();
+        msg.symbol = Ustr::from(".BXBT");
         msg.last_price = Some(119163.05);
         msg.mark_price = Some(119163.05); // Index symbols have mark price equal to last price
         msg.index_price = None;

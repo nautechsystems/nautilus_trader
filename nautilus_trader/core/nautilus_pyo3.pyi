@@ -6053,6 +6053,11 @@ class BitmexHttpClient:
         self,
         symbol: str | None = None,
     ) -> list[TradeTick]: ...
+    async def query_order(
+        self,
+        client_order_id: ClientOrderId | None = None,
+        venue_order_id: VenueOrderId | None = None,
+    ) -> OrderStatusReport | None: ...
     async def get_order_reports(
         self,
         symbol: str | None = None,
@@ -6082,6 +6087,11 @@ class BitmexHttpClient:
         self,
         client_order_ids: list[ClientOrderId] | None = None,
         venue_order_ids: list[VenueOrderId] | None = None,
+    ) -> None: ...
+    async def cancel_all_orders(
+        self,
+        instrument_id: InstrumentId,
+        order_side: OrderSide,
     ) -> None: ...
     async def modify_order(
         self,
@@ -6143,6 +6153,7 @@ class BitmexHttpClient:
         count: int | None = None,
     ) -> list[PositionStatusReport]: ...
     def add_instrument(self, instrument: Any) -> None: ...
+    async def http_get_margin(self, currency: str) -> int: ...
 
 class BitmexWebSocketClient:
     def __init__(

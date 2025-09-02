@@ -43,11 +43,18 @@ from nautilus_trader.live.cancellation import cancel_tasks_with_timeout
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.events import AccountState
+from nautilus_trader.model.events import OrderCancelRejected
+from nautilus_trader.model.events import OrderModifyRejected
+from nautilus_trader.model.events import OrderRejected
+from nautilus_trader.model.functions import order_side_to_pyo3
+from nautilus_trader.model.functions import order_type_to_pyo3
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.orders import Order
 
 
 class BitmexExecutionClient(LiveExecutionClient):
@@ -182,7 +189,7 @@ class BitmexExecutionClient(LiveExecutionClient):
     async def _update_account_state(self) -> None:
         try:
             # First get the margin data to extract the actual account number
-            account_number = await self._http_client.http_get_margin("XBt")  # type: ignore[attr-defined]
+            account_number = await self._http_client.http_get_margin("XBt")
 
             # Update account ID with actual account number from BitMEX
             if account_number:
@@ -227,25 +234,190 @@ class BitmexExecutionClient(LiveExecutionClient):
         self._ws_client_futures.clear()
 
     async def _submit_order(self, command: SubmitOrder) -> None:
-        self._log.warning("Order submission not yet implemented")
+        order = command.order
+
+        if order.is_closed:
+            self._log.warning(f"Cannot submit already closed order: {order}")
+            return
+
+        # Generate OrderSubmitted event here to ensure correct event sequencing
+        self.generate_order_submitted(
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            ts_event=self._clock.timestamp_ns(),
+        )
+
+        pyo3_symbol = nautilus_pyo3.Symbol(order.instrument_id.symbol.value)
+        pyo3_client_order_id = nautilus_pyo3.ClientOrderId(order.client_order_id.value)
+        pyo3_order_type = order_type_to_pyo3(order.order_type)
+        pyo3_order_side = order_side_to_pyo3(order.side)
+        pyo3_quantity = nautilus_pyo3.Quantity.from_str(str(order.quantity))
+        pyo3_price = nautilus_pyo3.Price.from_str(str(order.price)) if order.has_price else None
+        pyo3_trigger_price = (
+            nautilus_pyo3.Price.from_str(str(order.trigger_price))
+            if order.has_trigger_price
+            else None
+        )
+        pyo3_display_qty = (
+            nautilus_pyo3.Quantity.from_str(str(order.display_qty)) if order.display_qty else None
+        )
+
+        try:
+            await self._http_client.submit_order(
+                symbol=pyo3_symbol,
+                client_order_id=pyo3_client_order_id,
+                order_type=pyo3_order_type,
+                order_side=pyo3_order_side,
+                quantity=pyo3_quantity,
+                price=pyo3_price,
+                trigger_price=pyo3_trigger_price,
+                display_qty=pyo3_display_qty,
+            )
+
+            self._log.info(f"Submitted order {order.client_order_id}")
+        except Exception as e:
+            self._log.error(f"Failed to submit order {order.client_order_id}: {e}")
+            self.generate_order_rejected(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                reason=str(e),
+                ts_event=self._clock.timestamp_ns(),
+            )
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
         self._log.warning("Order list submission not yet implemented")
 
     async def _modify_order(self, command: ModifyOrder) -> None:
-        self._log.warning("Order modification not yet implemented")
+        order: Order | None = self._cache.order(command.client_order_id)
+        if order is None:
+            self._log.error(f"{command.client_order_id!r} not found in cache")
+            return
+
+        if order.is_closed:
+            self._log.warning(
+                f"`ModifyOrder` command for {command.client_order_id!r} when order already {order.status_string()} "
+                "(will not send to exchange)",
+            )
+            return
+
+        pyo3_client_order_id = (
+            nautilus_pyo3.ClientOrderId(command.client_order_id.value)
+            if command.client_order_id
+            else None
+        )
+        pyo3_venue_order_id = (
+            nautilus_pyo3.VenueOrderId(command.venue_order_id.value)
+            if command.venue_order_id
+            else None
+        )
+        pyo3_quantity = (
+            nautilus_pyo3.Quantity.from_str(str(command.quantity)) if command.quantity else None
+        )
+        pyo3_price = nautilus_pyo3.Price.from_str(str(command.price)) if command.price else None
+        pyo3_trigger_price = (
+            nautilus_pyo3.Price.from_str(str(command.trigger_price))
+            if command.trigger_price
+            else None
+        )
+
+        try:
+            await self._http_client.modify_order(
+                client_order_id=pyo3_client_order_id,
+                venue_order_id=pyo3_venue_order_id,
+                quantity=pyo3_quantity,
+                leaves_qty=None,  # BitMEX uses leaves_qty in modify
+                price=pyo3_price,
+                trigger_price=pyo3_trigger_price,
+            )
+
+            self._log.info(f"Modified order {command.client_order_id}")
+        except Exception as e:
+            self._log.error(f"Failed to modify order {command.client_order_id}: {e}")
 
     async def _cancel_order(self, command: CancelOrder) -> None:
-        self._log.warning("Order cancellation not yet implemented")
+        order: Order | None = self._cache.order(command.client_order_id)
+        if order is None:
+            self._log.error(f"{command.client_order_id!r} not found in cache")
+            return
+
+        if order.is_closed:
+            self._log.warning(
+                f"`CancelOrder` command for {command.client_order_id!r} when order already {order.status_string()} "
+                "(will not send to exchange)",
+            )
+            return
+
+        pyo3_client_order_id = (
+            nautilus_pyo3.ClientOrderId(command.client_order_id.value)
+            if command.client_order_id
+            else None
+        )
+        pyo3_venue_order_id = (
+            nautilus_pyo3.VenueOrderId(command.venue_order_id.value)
+            if command.venue_order_id
+            else None
+        )
+
+        try:
+            await self._http_client.cancel_order(
+                client_order_id=pyo3_client_order_id,
+                venue_order_id=pyo3_venue_order_id,
+            )
+
+            self._log.info(f"Cancelled order {command.client_order_id}")
+        except Exception as e:
+            self._log.error(f"Failed to cancel order {command.client_order_id}: {e}")
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
-        self._log.warning("Cancel all orders not yet implemented")
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        pyo3_order_side = order_side_to_pyo3(command.order_side)
+
+        try:
+            await self._http_client.cancel_all_orders(
+                instrument_id=pyo3_instrument_id,
+                order_side=pyo3_order_side,
+            )
+            self._log.info(f"Cancelled all orders for {command.instrument_id.value}")
+        except Exception as e:
+            self._log.error(f"Failed to cancel all orders: {e}")
 
     async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None:
         self._log.warning("Batch cancel orders not yet implemented")
 
     async def _query_order(self, command: QueryOrder) -> None:
-        self._log.warning("Query order not yet implemented")
+        pyo3_client_order_id = (
+            nautilus_pyo3.ClientOrderId(command.client_order_id.value)
+            if command.client_order_id
+            else None
+        )
+        pyo3_venue_order_id = (
+            nautilus_pyo3.VenueOrderId(command.venue_order_id.value)
+            if command.venue_order_id
+            else None
+        )
+
+        try:
+            # Query the order from BitMEX
+            pyo3_report = await self._http_client.query_order(
+                client_order_id=pyo3_client_order_id,
+                venue_order_id=pyo3_venue_order_id,
+            )
+
+            if pyo3_report is None:
+                self._log.warning(
+                    f"Order not found: client_order_id={command.client_order_id}, "
+                    f"venue_order_id={command.venue_order_id}",
+                )
+                return
+
+            report = OrderStatusReport.from_dict(pyo3_report.to_dict())
+            self._send_order_status_report(report)
+            self._log.info(f"Queried order {command.client_order_id}")
+
+        except Exception as e:
+            self._log.error(f"Failed to query order {command.client_order_id}: {e}")
 
     async def generate_order_status_reports(
         self,
@@ -261,13 +433,13 @@ class BitmexExecutionClient(LiveExecutionClient):
                 symbol = command.instrument_id.symbol.value
 
             # Fetch order reports from BitMEX
-            reports = await self._http_client.get_order_reports(symbol)
+            pyo3_reports = await self._http_client.get_order_reports(symbol)
 
-            # Convert from pyo3 reports to Python reports
-            result = []
-            for report in reports:
+            result: list[OrderStatusReport] = []
+
+            for pyo3_report in pyo3_reports:
                 # Convert pyo3 report to Python OrderStatusReport
-                result.append(OrderStatusReport.from_pyo3(report))
+                result.append(OrderStatusReport.from_pyo3(pyo3_report))
 
             self._log.info(f"Generated {len(result)} order status reports")
             return result
@@ -337,37 +509,205 @@ class BitmexExecutionClient(LiveExecutionClient):
             self._log.error(f"Failed to generate fill reports: {e}")
             return []
 
+    def _handle_account_state(self, msg: nautilus_pyo3.AccountState) -> None:
+        account_state = AccountState.from_dict(msg.to_dict())
+        self.generate_account_state(
+            balances=account_state.balances,
+            margins=account_state.margins,
+            reported=account_state.is_reported,
+            ts_event=account_state.ts_event,
+        )
+
+    def _handle_fill_reports_list(self, reports: list) -> None:
+        """
+        Handle a list of fill reports from BitMEX.
+        """
+        for fill_report in reports:
+            self._handle_fill_report_pyo3(fill_report)
+
     def _handle_msg(self, msg: Any) -> None:
         try:
             if isinstance(msg, nautilus_pyo3.AccountState):
-                account_state = AccountState.from_dict(msg.to_dict())
-
-                self.generate_account_state(
-                    balances=account_state.balances,
-                    margins=account_state.margins,
-                    reported=account_state.is_reported,
-                    ts_event=account_state.ts_event,
-                )
+                self._handle_account_state(msg)
+            elif isinstance(msg, nautilus_pyo3.OrderRejected):
+                self._handle_order_rejected_pyo3(msg)
+            elif isinstance(msg, nautilus_pyo3.OrderCancelRejected):
+                self._handle_order_cancel_rejected_pyo3(msg)
+            elif isinstance(msg, nautilus_pyo3.OrderModifyRejected):
+                self._handle_order_modify_rejected_pyo3(msg)
+            elif isinstance(msg, nautilus_pyo3.OrderStatusReport):
+                self._handle_order_status_report_pyo3(msg)
+            elif isinstance(msg, list) and msg and isinstance(msg[0], nautilus_pyo3.FillReport):
+                self._handle_fill_reports_list(msg)
+            elif isinstance(msg, nautilus_pyo3.FillReport):
+                self._handle_fill_report_pyo3(msg)
+            elif isinstance(msg, nautilus_pyo3.PositionStatusReport):
+                self._handle_position_status_report_pyo3(msg)
             else:
-                # TODO: Implement other message handling for execution messages
-                self._log.debug(f"Received message: {msg}")
+                self._log.debug(f"Received unhandled message type: {type(msg)}")
+
         except Exception as e:
             self._log.exception("Error handling websocket message", e)
 
-    def _handle_order_status_report(self, report: Any) -> None:
+    def _handle_order_rejected_pyo3(self, pyo3_event: nautilus_pyo3.OrderRejected) -> None:
+        event = OrderRejected.from_dict(pyo3_event.to_dict())
+        self._send_order_event(event)
+
+    def _handle_order_cancel_rejected_pyo3(
+        self,
+        pyo3_event: nautilus_pyo3.OrderCancelRejected,
+    ) -> None:
+        event = OrderCancelRejected.from_dict(pyo3_event.to_dict())
+        self._send_order_event(event)
+
+    def _handle_order_modify_rejected_pyo3(
+        self,
+        pyo3_event: nautilus_pyo3.OrderModifyRejected,
+    ) -> None:
+        event = OrderModifyRejected.from_dict(pyo3_event.to_dict())
+        self._send_order_event(event)
+
+    def _handle_order_status_report_pyo3(
+        self,
+        pyo3_report: nautilus_pyo3.OrderStatusReport,
+    ) -> None:
         """
         Handle an order status report from the exchange.
         """
-        # TODO: Implement
+        report = OrderStatusReport.from_pyo3(pyo3_report)
 
-    def _handle_trade_report(self, report: Any) -> None:
-        """
-        Handle a trade report from the exchange.
-        """
-        # TODO: Implement
+        if self._is_external_order(report.client_order_id):
+            self._send_order_status_report(report)
+            return
 
-    def _handle_position_report(self, report: Any) -> None:
+        order = self._cache.order(report.client_order_id)
+        if order is None:
+            self._log.error(
+                f"Cannot process order status report - order for {report.client_order_id!r} not found",
+            )
+            return
+
+        if report.order_status == OrderStatus.REJECTED:
+            self.generate_order_rejected(
+                strategy_id=order.strategy_id,
+                instrument_id=report.instrument_id,
+                client_order_id=report.client_order_id,
+                reason=report.reason,
+                ts_event=report.ts_last,
+            )
+        elif report.order_status == OrderStatus.ACCEPTED:
+            if is_order_updated(order, report):
+                self.generate_order_updated(
+                    strategy_id=order.strategy_id,
+                    instrument_id=report.instrument_id,
+                    client_order_id=report.client_order_id,
+                    venue_order_id=report.venue_order_id,
+                    quantity=report.quantity,
+                    price=report.price,
+                    trigger_price=report.trigger_price,
+                    ts_event=report.ts_last,
+                )
+            else:
+                self.generate_order_accepted(
+                    strategy_id=order.strategy_id,
+                    instrument_id=report.instrument_id,
+                    client_order_id=report.client_order_id,
+                    venue_order_id=report.venue_order_id,
+                    ts_event=report.ts_last,
+                )
+        elif report.order_status == OrderStatus.CANCELED:
+            self.generate_order_canceled(
+                strategy_id=order.strategy_id,
+                instrument_id=report.instrument_id,
+                client_order_id=report.client_order_id,
+                venue_order_id=report.venue_order_id,
+                ts_event=report.ts_last,
+            )
+        elif report.order_status == OrderStatus.EXPIRED:
+            self.generate_order_expired(
+                strategy_id=order.strategy_id,
+                instrument_id=report.instrument_id,
+                client_order_id=report.client_order_id,
+                venue_order_id=report.venue_order_id,
+                ts_event=report.ts_last,
+            )
+        elif report.order_status == OrderStatus.TRIGGERED:
+            self.generate_order_triggered(
+                strategy_id=order.strategy_id,
+                instrument_id=report.instrument_id,
+                client_order_id=report.client_order_id,
+                venue_order_id=report.venue_order_id,
+                ts_event=report.ts_last,
+            )
+        else:
+            # Fills should be handled from FillReports
+            self._log.warning(f"Received unhandled OrderStatusReport: {report}")
+
+    def _handle_fill_report_pyo3(self, pyo3_report: nautilus_pyo3.FillReport) -> None:
         """
-        Handle a position report from the exchange.
+        Handle a fill report from the exchange.
         """
-        # TODO: Implement
+        report = FillReport.from_pyo3(pyo3_report)
+
+        if self._is_external_order(report.client_order_id):
+            self._send_fill_report(report)
+            return
+
+        order = self._cache.order(report.client_order_id)
+        if order is None:
+            self._log.error(
+                f"Cannot process fill report - order for {report.client_order_id!r} not found",
+            )
+            return
+
+        instrument = self._cache.instrument(order.instrument_id)
+        if instrument is None:
+            self._log.error(
+                f"Cannot process fill report - instrument {order.instrument_id} not found",
+            )
+            return
+
+        self.generate_order_filled(
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=report.venue_order_id,
+            venue_position_id=report.venue_position_id,
+            trade_id=report.trade_id,
+            order_side=order.side,
+            order_type=order.order_type,
+            last_qty=report.last_qty,
+            last_px=report.last_px,
+            quote_currency=instrument.quote_currency,
+            commission=report.commission,
+            liquidity_side=report.liquidity_side,
+            ts_event=report.ts_event,
+        )
+
+    def _handle_position_status_report_pyo3(
+        self,
+        pyo3_report: nautilus_pyo3.PositionStatusReport,
+    ) -> None:
+        """
+        Handle a position status report from the exchange.
+        """
+        report = PositionStatusReport.from_dict(pyo3_report.to_dict())
+        self._send_position_status_report(report)
+        self._log.debug(f"Received position status report: {report.instrument_id}")
+
+    def _is_external_order(self, client_order_id: ClientOrderId) -> bool:
+        return not client_order_id or not self._cache.strategy_id_for_order(client_order_id)
+
+
+def is_order_updated(order: Order, report: OrderStatusReport) -> bool:
+    if order.has_price and report.price and order.price != report.price:
+        return True
+
+    if (
+        order.has_trigger_price
+        and report.trigger_price
+        and order.trigger_price != report.trigger_price
+    ):
+        return True
+
+    return order.quantity != report.quantity
