@@ -28,18 +28,14 @@ from datetime import timedelta
 
 from nautilus_trader.core.datetime import unix_nanos_to_dt
 
-from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.component cimport Clock
-from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.component cimport Logger
-from nautilus_trader.common.component cimport MessageBus
 from nautilus_trader.common.component cimport TimeEvent
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.rust.core cimport millis_to_nanos
 from nautilus_trader.core.rust.core cimport secs_to_nanos
 from nautilus_trader.core.rust.model cimport FIXED_SCALAR
-from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.core.rust.model cimport QuantityRaw
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarAggregation
@@ -47,10 +43,7 @@ from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.functions cimport bar_aggregation_to_str
-from nautilus_trader.model.greeks cimport GreeksCalculator
-from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
-from nautilus_trader.model.instruments.option_spread cimport OptionSpread
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
@@ -140,7 +133,7 @@ cdef class BarBuilder:
         self._partial_set = True
         self.initialized = True
 
-    cpdef void update(self, Price price, Quantity size, uint64_t ts_event):
+    cpdef void update(self, Price price, Quantity size, uint64_t ts_init):
         """
         Update the bar builder.
 
@@ -150,7 +143,7 @@ cdef class BarBuilder:
             The update price.
         size : Decimal
             The update size.
-        ts_event : uint64_t
+        ts_init : uint64_t
             UNIX timestamp (nanoseconds) of the update.
 
         """
@@ -158,7 +151,7 @@ cdef class BarBuilder:
         Condition.not_none(size, "size")
 
         # TODO: What happens if the first tick updates before a partial bar is applied?
-        if ts_event < self.ts_last:
+        if ts_init < self.ts_last:
             return  # Not applicable
 
         if self._open is None:
@@ -175,7 +168,7 @@ cdef class BarBuilder:
         self._close = price
         self.volume._mem.raw += size._mem.raw
         self.count += 1
-        self.ts_last = ts_event
+        self.ts_last = ts_init
 
     cpdef void update_bar(self, Bar bar, Quantity volume, uint64_t ts_init):
         """
@@ -256,7 +249,6 @@ cdef class BarBuilder:
             self._high = self._last_close
             self._low = self._last_close
             self._close = self._last_close
-
 
         self._low._mem.raw = min(self._close._mem.raw, self._low._mem.raw)
         self._high._mem.raw = max(self._close._mem.raw, self._high._mem.raw)
@@ -351,7 +343,7 @@ cdef class BarAggregator:
             self._apply_update(
                 price=tick.extract_price(self.bar_type.spec.price_type),
                 size=tick.extract_size(self.bar_type.spec.price_type),
-                ts_event=tick.ts_event,
+                ts_init=tick.ts_init,
             )
 
     cpdef void handle_trade_tick(self, TradeTick tick):
@@ -370,7 +362,7 @@ cdef class BarAggregator:
             self._apply_update(
                 price=tick.price,
                 size=tick.size,
-                ts_event=tick.ts_event,
+                ts_init=tick.ts_init,
             )
 
     cpdef void handle_bar(self, Bar bar):
@@ -406,7 +398,7 @@ cdef class BarAggregator:
         """
         self._builder.set_partial(partial_bar)
 
-    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event):
+    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_init):
         raise NotImplementedError("method `_apply_update` must be implemented in the subclass")
 
     cdef void _apply_update_bar(self, Bar bar, Quantity volume, uint64_t ts_init):
@@ -455,8 +447,8 @@ cdef class TickBarAggregator(BarAggregator):
             handler=handler,
         )
 
-    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event):
-        self._builder.update(price, size, ts_event)
+    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_init):
+        self._builder.update(price, size, ts_init)
 
         if self._builder.count == self.bar_type.spec.step:
             self._build_now_and_send()
@@ -502,7 +494,7 @@ cdef class VolumeBarAggregator(BarAggregator):
             handler=handler,
         )
 
-    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event):
+    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_init):
         cdef QuantityRaw raw_size_update = size._mem.raw
         cdef QuantityRaw raw_step = <QuantityRaw>(self.bar_type.spec.step * <QuantityRaw>FIXED_SCALAR)
         cdef QuantityRaw raw_size_diff = 0
@@ -513,7 +505,7 @@ cdef class VolumeBarAggregator(BarAggregator):
                 self._builder.update(
                     price=price,
                     size=Quantity.from_raw_c(raw_size_update, precision=size._mem.precision),
-                    ts_event=ts_event,
+                    ts_init=ts_init,
                 )
                 break
 
@@ -522,7 +514,7 @@ cdef class VolumeBarAggregator(BarAggregator):
             self._builder.update(
                 price=price,
                 size=Quantity.from_raw_c(raw_size_diff, precision=size._mem.precision),
-                ts_event=ts_event,
+                ts_init=ts_init,
             )
 
             # Build a bar and reset builder
@@ -610,7 +602,7 @@ cdef class ValueBarAggregator(BarAggregator):
         """
         return self._cum_value
 
-    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event):
+    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_init):
         size_update = size
 
         while size_update > 0:  # While there is value to apply
@@ -621,7 +613,7 @@ cdef class ValueBarAggregator(BarAggregator):
                 self._builder.update(
                     price=price,
                     size=Quantity(size_update, precision=size._mem.precision),
-                    ts_event=ts_event,
+                    ts_init=ts_init,
                 )
                 break
 
@@ -631,7 +623,7 @@ cdef class ValueBarAggregator(BarAggregator):
             self._builder.update(
                 price=price,
                 size=Quantity(size_diff, precision=size._mem.precision),
-                ts_event=ts_event,
+                ts_init=ts_init,
             )
 
             # Build a bar and reset builder and cumulative value
@@ -1003,16 +995,14 @@ cdef class TimeBarAggregator(BarAggregator):
         if not self._batch_mode:
             self._batch_next_close_ns = 0
 
-    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event):
+    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_init):
         if self._batch_next_close_ns != 0:
-            self._batch_pre_update(ts_event)
+            self._batch_pre_update(ts_init)
 
-        self._builder.update(price, size, ts_event)
+        self._builder.update(price, size, ts_init)
 
         if self._build_on_next_tick:
-            if ts_event <= self._stored_close_ns:
-                ts_init = ts_event
-
+            if ts_init <= self._stored_close_ns:
                 # Adjusting the timestamp logic based on interval_type
                 if self._is_left_open:
                     ts_event = self._stored_close_ns if self._timestamp_on_close else self._stored_open_ns
@@ -1026,7 +1016,7 @@ cdef class TimeBarAggregator(BarAggregator):
             self._stored_close_ns = 0
 
         if self._batch_next_close_ns != 0:
-            self._batch_post_update(ts_event)
+            self._batch_post_update(ts_init)
 
     cdef void _apply_update_bar(self, Bar bar, Quantity volume, uint64_t ts_init):
         if self._batch_next_close_ns != 0:
