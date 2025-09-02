@@ -48,6 +48,7 @@ pub enum NautilusWsMessage {
     ExecutionReports(Vec<ExecutionReport>),
     Error(OKXWebSocketError),
     Raw(serde_json::Value), // Unhandled channels
+    Reconnected,
 }
 
 /// Represents an OKX WebSocket error.
@@ -89,6 +90,23 @@ pub struct OKXWsRequest<T> {
     pub args: Vec<T>,
 }
 
+/// OKX WebSocket authentication message.
+#[derive(Debug, Serialize)]
+pub struct OKXAuthentication {
+    pub op: &'static str,
+    pub args: Vec<OKXAuthenticationArg>,
+}
+
+/// OKX WebSocket authentication arguments.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OKXAuthenticationArg {
+    pub api_key: String,
+    pub passphrase: String,
+    pub timestamp: String,
+    pub sign: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct OKXSubscription {
     pub op: OKXWsOperation,
@@ -107,16 +125,16 @@ pub struct OKXSubscriptionArg {
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 pub enum OKXWebSocketEvent {
-    Subscription {
-        event: OKXSubscriptionEvent,
-        arg: OKXWebSocketArg,
-        #[serde(rename = "connId")]
-        conn_id: String,
-    },
     Login {
         event: String,
         code: String,
         msg: String,
+        #[serde(rename = "connId")]
+        conn_id: String,
+    },
+    Subscription {
+        event: OKXSubscriptionEvent,
+        arg: OKXWebSocketArg,
         #[serde(rename = "connId")]
         conn_id: String,
     },
@@ -148,6 +166,8 @@ pub enum OKXWebSocketEvent {
         code: String,
         msg: String,
     },
+    #[serde(skip)]
+    Reconnected,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -921,7 +941,7 @@ mod tests {
                 assert_eq!(msg, "Login successful");
                 assert_eq!(conn_id, "a4d3ae55");
             }
-            _ => panic!("Expected Login variant"),
+            _ => panic!("Expected Login variant, got: {:?}", parsed),
         }
     }
 

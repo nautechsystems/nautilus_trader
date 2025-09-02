@@ -23,6 +23,7 @@ use pyo3::{create_exception, exceptions::PyException, prelude::*, types::PyBytes
 use tokio_tungstenite::tungstenite::{Message, Utf8Bytes};
 
 use crate::{
+    RECONNECTED,
     mode::ConnectionMode,
     ratelimiter::quota::Quota,
     websocket::{MessageHandler, PingHandler, WebSocketClient, WebSocketConfig, WriterCommand},
@@ -59,7 +60,13 @@ impl WebSocketConfig {
             Python::with_gil(|py| {
                 let data = match msg {
                     Message::Binary(data) => data.to_vec(),
-                    Message::Text(text) => text.as_bytes().to_vec(),
+                    Message::Text(text) => {
+                        // Disregard the RECONNECTED sentinel message used for Rust flows
+                        if text == RECONNECTED {
+                            return;
+                        }
+                        text.as_bytes().to_vec()
+                    }
                     _ => return, // Skip other message types
                 };
                 if let Err(e) = handler_clone.call1(py, (PyBytes::new(py, &data),)) {

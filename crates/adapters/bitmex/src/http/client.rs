@@ -20,12 +20,7 @@
 //! (when credentials are provided), constructs valid HTTP requests
 //! using the [`HttpClient`], and parses the responses back into structured data or a [`BitmexHttpError`].
 //!
-//! # Quick links to official docs
-//! | Domain                               | BitMEX reference                                                          |
-//! |--------------------------------------|---------------------------------------------------------------------------|
-//! | Market data                          | <https://www.bitmex.com/api/explorer/#/default>                          |
-//! | Account & positions                  | <https://www.bitmex.com/api/explorer/#/default>                          |
-//! | Order management                     | <https://www.bitmex.com/api/explorer/#/default>                          |
+//! BitMEX API reference <https://www.bitmex.com/api/explorer/#/default>.
 
 use std::{
     collections::HashMap,
@@ -41,7 +36,7 @@ use nautilus_model::{
     instruments::{Instrument as InstrumentTrait, InstrumentAny},
 };
 use nautilus_network::{http::HttpClient, ratelimiter::quota::Quota};
-use reqwest::{Method, StatusCode};
+use reqwest::{Method, StatusCode, header::USER_AGENT};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use ustr::Ustr;
@@ -68,9 +63,9 @@ use crate::{
 /// Default BitMEX REST API rate limit.
 ///
 /// BitMEX rate limits are complex and vary by endpoint:
-/// - Public endpoints: 150 requests per 5 minutes
-/// - Private endpoints: 300 requests per 5 minutes
-/// - Order placement: 200 requests per minute
+/// - Public endpoints: 150 requests per 5 minutes.
+/// - Private endpoints: 300 requests per 5 minutes.
+/// - Order placement: 200 requests per minute.
 ///
 /// We use a conservative 10 requests per second as a general limit.
 pub static BITMEX_REST_QUOTA: LazyLock<Quota> =
@@ -145,7 +140,7 @@ impl BitmexHttpInnerClient {
     }
 
     fn default_headers() -> HashMap<String, String> {
-        HashMap::from([("user-agent".to_string(), NAUTILUS_USER_AGENT.to_string())])
+        HashMap::from([(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())])
     }
 
     fn sign_request(
@@ -170,10 +165,10 @@ impl BitmexHttpInnerClient {
             format!("/api/v1{endpoint}")
         };
 
-        tracing::debug!("Signing with body: '{}'", body_str);
+        tracing::debug!("Signing with body: '{body_str}'");
         tracing::debug!("Method: {}", method.as_str());
-        tracing::debug!("Path: {}", full_path);
-        tracing::debug!("Expires: {}", expires);
+        tracing::debug!("Path: {full_path}");
+        tracing::debug!("Expires: {expires}");
 
         let signature = credential.sign(method.as_str(), &full_path, expires, &body_str);
 
@@ -219,10 +214,6 @@ impl BitmexHttpInnerClient {
             }
         }
     }
-
-    // ========================================================================
-    // Raw HTTP API methods
-    // ========================================================================
 
     /// Get all instruments.
     ///

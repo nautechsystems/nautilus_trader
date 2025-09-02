@@ -84,9 +84,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let stream = ws_client.stream();
     tokio::pin!(stream); // Pin the stream to allow polling in the loop
 
-    // Use a flag to track if we should close
-    let mut should_close = false;
-
     loop {
         tokio::select! {
             Some(event) = stream.next() => {
@@ -94,15 +91,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             _ = &mut sigint => {
                 tracing::info!("Received SIGINT, closing connection...");
-                should_close = true;
+                ws_client.close().await?;
                 break;
             }
             else => break,
         }
-    }
-
-    if should_close {
-        ws_client.close().await?;
     }
 
     Ok(())

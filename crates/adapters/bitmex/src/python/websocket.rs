@@ -163,6 +163,7 @@ impl BitmexWebSocketClient {
                                 call_python(py, &callback, py_obj);
                             }
                         }
+                        NautilusWsMessage::Reconnected => {} // Nothing to handle
                     });
                 }
             });
