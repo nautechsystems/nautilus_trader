@@ -196,7 +196,7 @@ sysinfo = { version = "0.37.0", default-features = false, features = ["system"] 
 tabled = { version = "0.20.0", default-features = false, features = ["std", "derive"] }
 thiserror = "2.0.16"
 thousands = "0.2.0"
-time = { version = "0.3.41", default-features = false, features = [
+time = { version = "0.3.42", default-features = false, features = [
   "macros",
   "parsing",
   "serde",
