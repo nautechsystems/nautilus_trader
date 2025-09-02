@@ -163,6 +163,7 @@ Released on TBD (UTC).
 - Fixed dYdX order and fill message schemas (#2824), thanks @davidsblom
 - Fixed dYdX message schemas (#2910), thanks @davidblom
 - Fixed Binance Spot testnet streaming URL, thanks for reporting @Frzgunr1
+- Fixed Binance US trading fee endpoint URL (#2914), thanks for reporting @bmlquant
 - Fixed Binance Ed25519 key handling
 - Fixed Bybit execution fee handling where the `execFee` field was not used when available as well as incorrect fee currency
 - Fixed Bybit instrument provider fee rate handling during parsing
