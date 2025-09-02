@@ -13,8 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+pub mod adapter;
 pub mod client;
+pub mod codec;
 pub mod enums;
 pub mod error;
+pub mod exchange;
 pub mod messages;
 pub mod parse;
