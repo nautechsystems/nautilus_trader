@@ -1630,7 +1630,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                 .replace(".", "_")
                 .replace("-", "_")
                 .replace(" ", "_")
-                .replace("^", "_")                
+                .replace("^", "_")
                 .lower()
             )
             safe_filename = _extract_sql_safe_filename(file)
