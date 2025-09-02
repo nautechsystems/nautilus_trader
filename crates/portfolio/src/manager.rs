@@ -737,3 +737,203 @@ impl AccountsManager {
         }
     }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+
+#[cfg(test)]
+mod tests {
+    use std::{cell::RefCell, rc::Rc};
+
+    use nautilus_common::{cache::Cache, clock::TestClock};
+    use nautilus_model::{
+        accounts::CashAccount,
+        enums::{AccountType, OrderSide, OrderType},
+        events::{AccountState, OrderAccepted, OrderEventAny, OrderSubmitted},
+        identifiers::{AccountId, VenueOrderId},
+        instruments::{InstrumentAny, stubs::audusd_sim},
+        orders::{OrderAny, OrderTestBuilder},
+        types::{AccountBalance, Currency, Money, Price, Quantity},
+    };
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_update_balance_locked_with_base_currency_multiple_orders() {
+        // Arrange - Create account with USD base currency
+        let usd = Currency::USD();
+        let account_state = AccountState::new(
+            AccountId::new("SIM-001"),
+            AccountType::Cash,
+            vec![AccountBalance::new(
+                Money::new(1_000_000.0, usd),
+                Money::new(0.0, usd),
+                Money::new(1_000_000.0, usd),
+            )],
+            Vec::new(),
+            true,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            Some(usd), // Base currency set to USD
+        );
+
+        let account = CashAccount::new(account_state, true, false);
+
+        // Create cache and manager
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+        cache
+            .borrow_mut()
+            .add_account(AccountAny::Cash(account.clone()))
+            .unwrap();
+
+        let manager = AccountsManager::new(clock.clone(), cache.clone());
+
+        // Create instrument
+        let instrument = audusd_sim();
+
+        // Create multiple orders for the same instrument
+        let order1 = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("100000"))
+            .price(Price::from("0.75000"))
+            .build();
+
+        let order2 = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("50000"))
+            .price(Price::from("0.74500"))
+            .build();
+
+        let order3 = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("75000"))
+            .price(Price::from("0.74000"))
+            .build();
+
+        // Submit and accept orders to mark them as open
+        let mut order1 = order1;
+        let mut order2 = order2;
+        let mut order3 = order3;
+
+        let submitted1 = OrderSubmitted::new(
+            order1.trader_id(),
+            order1.strategy_id(),
+            order1.instrument_id(),
+            order1.client_order_id(),
+            AccountId::new("SIM-001"),
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        let accepted1 = OrderAccepted::new(
+            order1.trader_id(),
+            order1.strategy_id(),
+            order1.instrument_id(),
+            order1.client_order_id(),
+            order1.venue_order_id().unwrap_or(VenueOrderId::new("1")),
+            AccountId::new("SIM-001"),
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            false,
+        );
+
+        order1.apply(OrderEventAny::Submitted(submitted1)).unwrap();
+        order1.apply(OrderEventAny::Accepted(accepted1)).unwrap();
+
+        let submitted2 = OrderSubmitted::new(
+            order2.trader_id(),
+            order2.strategy_id(),
+            order2.instrument_id(),
+            order2.client_order_id(),
+            AccountId::new("SIM-001"),
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        let accepted2 = OrderAccepted::new(
+            order2.trader_id(),
+            order2.strategy_id(),
+            order2.instrument_id(),
+            order2.client_order_id(),
+            order2.venue_order_id().unwrap_or(VenueOrderId::new("2")),
+            AccountId::new("SIM-001"),
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            false,
+        );
+
+        order2.apply(OrderEventAny::Submitted(submitted2)).unwrap();
+        order2.apply(OrderEventAny::Accepted(accepted2)).unwrap();
+
+        let submitted3 = OrderSubmitted::new(
+            order3.trader_id(),
+            order3.strategy_id(),
+            order3.instrument_id(),
+            order3.client_order_id(),
+            AccountId::new("SIM-001"),
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        let accepted3 = OrderAccepted::new(
+            order3.trader_id(),
+            order3.strategy_id(),
+            order3.instrument_id(),
+            order3.client_order_id(),
+            order3.venue_order_id().unwrap_or(VenueOrderId::new("3")),
+            AccountId::new("SIM-001"),
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            false,
+        );
+
+        order3.apply(OrderEventAny::Submitted(submitted3)).unwrap();
+        order3.apply(OrderEventAny::Accepted(accepted3)).unwrap();
+
+        let orders: Vec<&OrderAny> = vec![&order1, &order2, &order3];
+
+        // Act
+        let result = manager.update_orders(
+            &AccountAny::Cash(account.clone()),
+            InstrumentAny::CurrencyPair(instrument),
+            orders,
+            UnixNanos::default(),
+        );
+
+        // Assert
+        assert!(result.is_some());
+        let (updated_account, _state) = result.unwrap();
+
+        if let AccountAny::Cash(cash_account) = updated_account {
+            let locked_balance = cash_account.balance_locked(Some(usd));
+
+            // Calculate expected locked balance in USD
+            // Order 1: 100,000 * 0.75000 = 75,000 USD
+            // Order 2: 50,000 * 0.74500 = 37,250 USD
+            // Order 3: 75,000 * 0.74000 = 55,500 USD
+            // Total: 167,750 USD
+            let expected_locked = Money::new(167_750.0, usd);
+
+            assert_eq!(locked_balance, Some(expected_locked));
+
+            // Verify no locked balance in AUD (should all be converted to base USD)
+            let aud = Currency::AUD();
+            assert_eq!(cash_account.balance_locked(Some(aud)), None);
+        } else {
+            panic!("Expected CashAccount");
+        }
+    }
+}

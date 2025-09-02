@@ -19,6 +19,7 @@ import pytest
 
 from nautilus_trader.accounting.accounts.cash import CashAccount
 from nautilus_trader.accounting.manager import AccountsManager
+from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import Logger
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.factories import OrderFactory
@@ -887,6 +888,101 @@ def test_cash_account_clear_balance_locked_resets_locked_balance():
 
     # Assert
     assert account.balance_locked(USD) == Money(0, USD)
+
+
+def test_accounts_manager_update_balance_locked_with_base_currency_multiple_orders():
+    """
+    Test that AccountsManager correctly aggregates locked balances for multiple orders
+    when the account has a base currency, ensuring proper currency conversion.
+    """
+    # Arrange - Create account with USD base currency
+    event = AccountState(
+        account_id=AccountId("SIM-001"),
+        account_type=AccountType.CASH,
+        base_currency=USD,  # Base currency set
+        reported=True,
+        balances=[
+            AccountBalance(
+                Money(1_000_000.00, USD),
+                Money(0.00, USD),
+                Money(1_000_000.00, USD),
+            ),
+        ],
+        margins=[],
+        info={},
+        event_id=UUID4(),
+        ts_event=0,
+        ts_init=0,
+    )
+
+    account = CashAccount(event)
+
+    # Create cache and manager
+    cache = Cache()
+    cache.add_account(account)
+
+    clock = TestClock()
+    logger = Logger("AccountManager")
+    manager = AccountsManager(cache, logger, clock)
+
+    # Create multiple orders for the same instrument
+    order_factory = OrderFactory(
+        trader_id=TraderId("TRADER-001"),
+        strategy_id=StrategyId("S-001"),
+        clock=clock,
+    )
+
+    orders = [
+        order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("0.75000"),
+        ),
+        order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(50_000),
+            price=Price.from_str("0.74500"),
+        ),
+        order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(75_000),
+            price=Price.from_str("0.74000"),
+        ),
+    ]
+
+    # Submit orders to mark them as open
+    for order in orders:
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
+
+    # Act
+    result = manager.update_orders(
+        account=account,
+        instrument=AUDUSD_SIM,
+        orders_open=orders,
+        ts_event=clock.timestamp_ns(),
+    )
+
+    # Assert
+    assert result is True
+
+    # Check that locked balance is correctly aggregated in base currency (USD)
+    locked_balance = account.balance_locked(USD)
+
+    # Expected locked amounts (all converted to USD base currency):
+    # Order 1: 100,000 * 0.75000 = 75,000 USD
+    # Order 2: 50,000 * 0.74500 = 37,250 USD
+    # Order 3: 75,000 * 0.74000 = 55,500 USD
+    # Total: 167,750 USD
+    expected_locked = Money(167_750.00, USD)
+
+    assert locked_balance == expected_locked
+
+    # Verify no locked balance in AUD (should all be converted to base USD)
+    assert account.balance_locked(AUD) is None
 
 
 class TestCashAccountPurge:
