@@ -20,15 +20,31 @@ use nautilus_model::{
     data::{Data, funding::FundingRateUpdate},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use strum::Display;
 use uuid::Uuid;
 
-use super::enums::{BitmexAction, BitmexSide, BitmexTickDirection};
+use super::enums::{
+    BitmexAction, BitmexSide, BitmexTickDirection, BitmexWsAuthAction, BitmexWsOperation,
+};
 use crate::common::enums::{
     BitmexContingencyType, BitmexExecInstruction, BitmexExecType, BitmexLiquidityIndicator,
     BitmexOrderStatus, BitmexOrderType, BitmexPegPriceType, BitmexTimeInForce,
 };
+
+/// BitMEX WebSocket authentication message.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BitmexAuthentication {
+    pub op: BitmexWsAuthAction,
+    pub args: Vec<String>,
+}
+
+/// BitMEX WebSocket subscription message.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BitmexSubscription {
+    pub op: BitmexWsOperation,
+    pub args: Vec<String>,
+}
 
 /// Unified WebSocket message type for BitMEX.
 #[derive(Clone, Debug)]
@@ -39,6 +55,7 @@ pub enum NautilusWsMessage {
     PositionStatusReport(Box<PositionStatusReport>),
     FundingRateUpdates(Vec<FundingRateUpdate>),
     AccountState(Box<nautilus_model::events::AccountState>),
+    Reconnected,
 }
 
 /// Represents all possible message types from the BitMEX WebSocket API.
@@ -72,12 +89,16 @@ pub enum BitmexWsMessage {
         /// Error message if subscription failed.
         error: Option<String>,
     },
+    /// WebSocket error message.
     Error {
         status: u16,
         error: String,
         meta: HashMap<String, String>,
         request: BitmexHttpRequest,
     },
+    /// Indicates a WebSocket reconnection has occurred.
+    #[serde(skip)]
+    Reconnected,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]

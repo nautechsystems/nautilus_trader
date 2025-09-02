@@ -51,6 +51,7 @@ use tokio_tungstenite::{
 };
 
 use crate::{
+    RECONNECTED,
     backoff::ExponentialBackoff,
     error::SendError,
     logging::{log_task_aborted, log_task_started, log_task_stopped},
@@ -199,6 +200,53 @@ struct WebSocketClientInner {
 }
 
 impl WebSocketClientInner {
+    /// Create an inner websocket client with an existing writer.
+    pub async fn new_with_writer(
+        config: WebSocketConfig,
+        writer: MessageWriter,
+    ) -> Result<Self, Error> {
+        install_cryptographic_provider();
+
+        let connection_mode = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
+
+        // Note: We don't spawn a read task here since the reader is handled externally
+        let read_task = None;
+
+        let backoff = ExponentialBackoff::new(
+            Duration::from_millis(config.reconnect_delay_initial_ms.unwrap_or(2_000)),
+            Duration::from_millis(config.reconnect_delay_max_ms.unwrap_or(30_000)),
+            config.reconnect_backoff_factor.unwrap_or(1.5),
+            config.reconnect_jitter_ms.unwrap_or(100),
+            true, // immediate-first
+        )
+        .map_err(|e| Error::Io(std::io::Error::new(std::io::ErrorKind::InvalidInput, e)))?;
+
+        let (writer_tx, writer_rx) = tokio::sync::mpsc::unbounded_channel::<WriterCommand>();
+        let write_task = Self::spawn_write_task(connection_mode.clone(), writer, writer_rx);
+
+        let heartbeat_task = if let Some(heartbeat_interval) = config.heartbeat {
+            Some(Self::spawn_heartbeat_task(
+                connection_mode.clone(),
+                heartbeat_interval,
+                config.heartbeat_msg.clone(),
+                writer_tx.clone(),
+            ))
+        } else {
+            None
+        };
+
+        Ok(Self {
+            config: config.clone(),
+            writer_tx,
+            connection_mode,
+            reconnect_timeout: Duration::from_millis(config.reconnect_timeout_ms.unwrap_or(10000)),
+            heartbeat_task,
+            read_task,
+            write_task,
+            backoff,
+        })
+    }
+
     /// Create an inner websocket client.
     pub async fn connect_url(config: WebSocketConfig) -> Result<Self, Error> {
         install_cryptographic_provider();
@@ -644,16 +692,16 @@ impl WebSocketClient {
         post_reconnect: Option<Arc<dyn Fn() + Send + Sync>>,
     ) -> Result<(MessageReader, Self), Error> {
         install_cryptographic_provider();
+
+        // Create a single connection and split it
         let (ws_stream, _) = connect_async(config.url.clone().into_client_request()?).await?;
         let (writer, reader) = ws_stream.split();
-        let inner = WebSocketClientInner::connect_url(config).await?;
+
+        // Create inner without connecting (we'll provide the writer)
+        let inner = WebSocketClientInner::new_with_writer(config, writer).await?;
 
         let connection_mode = inner.connection_mode.clone();
-
         let writer_tx = inner.writer_tx.clone();
-        if let Err(e) = writer_tx.send(WriterCommand::Update(writer)) {
-            tracing::error!("{e}");
-        }
 
         let controller_task =
             Self::spawn_controller_task(inner, connection_mode.clone(), post_reconnect);
@@ -904,6 +952,14 @@ impl WebSocketClient {
 
                             // Only invoke callbacks if not in disconnect state
                             if ConnectionMode::from_atomic(&connection_mode).is_active() {
+                                if let Some(ref handler) = inner.config.message_handler {
+                                    let reconnected_msg =
+                                        Message::Text(RECONNECTED.to_string().into());
+                                    handler(reconnected_msg);
+                                    tracing::debug!("Sent reconnected message to handler");
+                                }
+
+                                // TODO: Retain this legacy callback for use from Python
                                 if let Some(ref callback) = post_reconnection {
                                     callback();
                                     tracing::debug!("Called `post_reconnection` handler");

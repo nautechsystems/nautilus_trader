@@ -54,7 +54,7 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
 };
 use nautilus_network::{http::HttpClient, ratelimiter::quota::Quota};
-use reqwest::{Method, StatusCode};
+use reqwest::{Method, StatusCode, header::USER_AGENT};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use ustr::Ustr;
 
@@ -188,7 +188,7 @@ impl OKXHttpInnerClient {
 
     /// Builds the default headers to include with each request (e.g., `User-Agent`).
     fn default_headers() -> HashMap<String, String> {
-        HashMap::from([("user-agent".to_string(), NAUTILUS_USER_AGENT.to_string())])
+        HashMap::from([(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())])
     }
 
     /// Combine a base path with a `serde_urlencoded` query string if one exists.
