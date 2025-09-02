@@ -122,7 +122,6 @@ impl BlockchainDataClient {
                 tracing::error!("Failed to connect blockchain core client: {e}");
                 return;
             }
-            core_client.initialize_cache_database().await;
 
             let mut command_rx = command_rx;
             let mut shutdown_rx = shutdown_rx;

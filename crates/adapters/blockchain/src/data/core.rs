@@ -162,6 +162,7 @@ impl BlockchainDataClientCore {
             "Connecting blockchain data client for '{}'",
             self.chain.name
         );
+        self.initialize_cache_database().await;
 
         if let Some(ref mut rpc_client) = self.rpc_client {
             rpc_client.connect().await?;
