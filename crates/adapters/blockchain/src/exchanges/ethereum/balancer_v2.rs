@@ -34,6 +34,7 @@ pub static BALANCER_V2: LazyLock<DexExtended> = LazyLock::new(|| {
         "",
         "",
         "",
+        "",
     );
     DexExtended::new(dex)
 });

@@ -60,6 +60,7 @@ tabled = { workspace = true }
 thiserror = { workspace = true }
 thousands = { workspace = true }
 ustr = { workspace = true }
+hex = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

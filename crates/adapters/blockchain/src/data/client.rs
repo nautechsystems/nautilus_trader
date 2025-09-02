@@ -122,7 +122,6 @@ impl BlockchainDataClient {
                 tracing::error!("Failed to connect blockchain core client: {e}");
                 return;
             }
-            core_client.initialize_cache_database().await;
 
             let mut command_rx = command_rx;
             let mut shutdown_rx = shutdown_rx;
@@ -194,7 +193,7 @@ impl BlockchainDataClient {
                                                 &swap_event,
                                                 pool,
                                                 dex_extended,
-                                            ).await{
+                                            ){
                                                 Ok(swap) => Some(DataEvent::DeFi(DefiData::PoolSwap(swap))),
                                                 Err(e) => {
                                                     tracing::error!("Error processing pool swap event: {e}");
@@ -216,7 +215,7 @@ impl BlockchainDataClient {
                                                 &burn_event,
                                                 pool,
                                                 dex_extended,
-                                            ).await{
+                                            ){
                                                 Ok(update) => Some(DataEvent::DeFi(DefiData::PoolLiquidityUpdate(update))),
                                                 Err(e) => {
                                                     tracing::error!("Error processing pool burn event: {e}");
@@ -238,7 +237,7 @@ impl BlockchainDataClient {
                                                 &mint_event,
                                                 pool,
                                                 dex_extended,
-                                            ).await{
+                                            ){
                                                 Ok(update) => Some(DataEvent::DeFi(DefiData::PoolLiquidityUpdate(update))),
                                                 Err(e) => {
                                                     tracing::error!("Error processing pool mint event: {e}");
@@ -248,6 +247,28 @@ impl BlockchainDataClient {
                                         }
                                         Err(e) => {
                                             tracing::error!("Failed to get pool {} with error {:?}", mint_event.pool_address, e);
+                                            None
+                                        }
+                                    }
+                                }
+                                BlockchainMessage::CollectEvent(collect_event) => {
+                                    match core_client.get_pool(&collect_event.pool_address) {
+                                        Ok(pool) => {
+                                            let dex_extended = get_dex_extended(core_client.chain.name, &pool.dex.name).expect("Failed to get dex extended");
+                                            match core_client.process_pool_collect_event(
+                                                &collect_event,
+                                                pool,
+                                                dex_extended,
+                                            ){
+                                                Ok(update) => Some(DataEvent::DeFi(DefiData::PoolFeeCollect(update))),
+                                                Err(e) => {
+                                                    tracing::error!("Error processing pool collect event: {e}");
+                                                    None
+                                                }
+                                            }
+                                        }
+                                        Err(e) => {
+                                            tracing::error!("Failed to get pool {} with error {:?}", collect_event.pool_address, e);
                                             None
                                         }
                                     }
@@ -283,6 +304,9 @@ impl BlockchainDataClient {
                                 }
                                 Ok(BlockchainMessage::BurnEvent(_)) => {
                                     tracing::warn!("RPC burn events are not yet supported");
+                                }
+                                Ok(BlockchainMessage::CollectEvent(_)) => {
+                                    tracing::warn!("RPC collect events are not yet supported")
                                 }
                                 Err(e) => {
                                     tracing::error!("Error processing RPC message: {e}");

@@ -20,7 +20,7 @@ use nautilus_model::defi::{
     dex::{AmmType, Dex, DexType},
 };
 
-use crate::exchanges::extended::DexExtended;
+use crate::exchanges::{extended::DexExtended, parsing::uniswap_v3};
 
 /// PancakeSwap V3 DEX on Arbitrum.
 pub static PANCAKESWAP_V3: LazyLock<DexExtended> = LazyLock::new(|| {
@@ -34,9 +34,8 @@ pub static PANCAKESWAP_V3: LazyLock<DexExtended> = LazyLock::new(|| {
         "",
         "",
         "",
+        "",
     ));
-    dex.set_pool_created_event_parsing(
-        crate::exchanges::ethereum::uniswap_v3::parse_pool_created_event,
-    );
+    dex.set_pool_created_event_parsing(uniswap_v3::pool_created::parse_pool_created_event);
     dex
 });

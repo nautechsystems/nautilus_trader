@@ -1847,6 +1847,7 @@ fn test_process_pool_swap(data_engine: Rc<RefCell<DataEngine>>, data_client: Dat
         "Swap",
         "Mint",
         "Burn",
+        "Collect",
     ));
     let token0 = Token::new(
         chain.clone(),

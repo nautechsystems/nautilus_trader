@@ -40,12 +40,13 @@ where
 }
 
 #[derive(Debug, Clone)]
-pub enum BlockchainItem {
+pub enum BlockchainSyncReportItems {
     Blocks,
     PoolCreatedEvents,
+    PoolEvents,
 }
 
-impl Display for BlockchainItem {
+impl Display for BlockchainSyncReportItems {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{self:?}")
     }
@@ -54,10 +55,11 @@ impl Display for BlockchainItem {
 /// Tracks performance metrics during block synchronization
 #[derive(Debug)]
 pub struct BlockchainSyncReporter {
-    item: BlockchainItem,
+    item: BlockchainSyncReportItems,
     start_time: Instant,
     last_progress_time: Instant,
     blocks_processed: u64,
+    blocks_since_last_report: u64,
     total_blocks: u64,
     progress_update_interval: u64,
     next_progress_threshold: u64,
@@ -67,7 +69,7 @@ impl BlockchainSyncReporter {
     /// Creates a new metrics tracker for block synchronization
     #[must_use]
     pub fn new(
-        item: BlockchainItem,
+        item: BlockchainSyncReportItems,
         from_block: u64,
         total_blocks: u64,
         update_interval: u64,
@@ -78,6 +80,7 @@ impl BlockchainSyncReporter {
             start_time: now,
             last_progress_time: now,
             blocks_processed: 0,
+            blocks_since_last_report: 0,
             total_blocks,
             progress_update_interval: update_interval,
             next_progress_threshold: from_block + update_interval,
@@ -85,30 +88,41 @@ impl BlockchainSyncReporter {
     }
 
     /// Updates metrics after a database operation
-    pub const fn update(&mut self, batch_size: usize) {
+    pub fn update(&mut self, batch_size: usize) {
         self.blocks_processed += batch_size as u64;
+        self.blocks_since_last_report += batch_size as u64;
     }
 
     /// Checks if progress should be logged based on the current block number
     #[must_use]
-    pub const fn should_log_progress(&self, block_number: u64, current_block: u64) -> bool {
-        block_number >= self.next_progress_threshold || block_number >= current_block
+    pub fn should_log_progress(&self, block_number: u64, current_block: u64) -> bool {
+        let block_threshold_reached =
+            block_number >= self.next_progress_threshold || block_number >= current_block;
+        // Minimum 1 second between logs
+        let time_threshold_reached = self.last_progress_time.elapsed().as_secs_f64() >= 1.0;
+
+        block_threshold_reached && time_threshold_reached
     }
 
     /// Logs current progress with detailed metrics
     pub fn log_progress(&mut self, block_number: u64) {
         let elapsed = self.start_time.elapsed();
         let interval_elapsed = self.last_progress_time.elapsed();
-        let interval_blocks =
-            if block_number > self.next_progress_threshold - self.progress_update_interval {
-                block_number - (self.next_progress_threshold - self.progress_update_interval)
-            } else {
-                self.progress_update_interval
-            };
 
-        // Calculate rates
-        let avg_rate = self.blocks_processed as f64 / elapsed.as_secs_f64();
-        let current_rate = interval_blocks as f64 / interval_elapsed.as_secs_f64();
+        // Calculate rates - avoid division by zero
+        let avg_rate = if elapsed.as_secs_f64() > 0.0 {
+            self.blocks_processed as f64 / elapsed.as_secs_f64()
+        } else {
+            0.0
+        };
+
+        let current_rate = if interval_elapsed.as_secs_f64() > 0.001 {
+            // Minimum 1ms
+            self.blocks_since_last_report as f64 / interval_elapsed.as_secs_f64()
+        } else {
+            0.0
+        };
+
         let progress_pct =
             (self.blocks_processed as f64 / self.total_blocks as f64 * 100.0).min(100.0);
 
@@ -123,6 +137,7 @@ impl BlockchainSyncReporter {
 
         self.next_progress_threshold = block_number + self.progress_update_interval;
         self.last_progress_time = Instant::now();
+        self.blocks_since_last_report = 0;
     }
 
     /// Logs final statistics summary

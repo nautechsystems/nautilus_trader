@@ -34,6 +34,7 @@ pub static FLUID_DEX: LazyLock<DexExtended> = LazyLock::new(|| {
         "",
         "",
         "",
+        "",
     );
     DexExtended::new(dex)
 });

@@ -2205,13 +2205,14 @@ mod tests {
         let dex = Arc::new(Dex::new(
             Chain::new(Blockchain::Ethereum, 1),
             DexType::UniswapV3,
-            "0x1f98431c8ad98523631ae4a59f267346ea31f984",
+            "0x1F98431c8aD98523631AE4a59f267346ea31F984",
             0,
             AmmType::CLAMM,
             "PoolCreated",
             "Swap",
             "Mint",
             "Burn",
+            "Collect",
         ));
         let token0 = Token::new(
             chain.clone(),

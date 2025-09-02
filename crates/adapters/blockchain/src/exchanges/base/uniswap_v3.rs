@@ -34,6 +34,7 @@ pub static UNISWAP_V3: LazyLock<DexExtended> = LazyLock::new(|| {
         "Swap(address,address,int256,int256,uint160,uint128,int24)",
         "Mint(address,address,int24,int24,uint128,uint256,uint256)",
         "Burn(address,int24,int24,uint128,uint256,uint256)",
+        "Collect(address,int24,int24,uint128,uint128)",
     );
     DexExtended::new(dex)
 });

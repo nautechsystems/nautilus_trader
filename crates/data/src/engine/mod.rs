@@ -760,6 +760,10 @@ impl DataEngine {
                 let topic = switchboard::get_defi_liquidity_topic(update.instrument_id);
                 msgbus::publish(topic, &update as &dyn Any);
             }
+            DefiData::PoolFeeCollect(collect) => {
+                let topic = switchboard::get_defi_collect_topic(collect.instrument_id);
+                msgbus::publish(topic, &collect as &dyn Any);
+            }
         }
     }
 

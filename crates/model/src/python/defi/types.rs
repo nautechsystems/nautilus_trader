@@ -195,10 +195,11 @@ impl Dex {
         factory: String,
         factory_creation_block: u64,
         amm_type: String,
-        pool_created_event: String,
-        swap_event: String,
-        mint_event: String,
-        burn_event: String,
+        pool_created_event: &str,
+        swap_event: &str,
+        mint_event: &str,
+        burn_event: &str,
+        collect_event: &str,
     ) -> PyResult<Self> {
         let amm_type = AmmType::from_str(&amm_type).map_err(to_pyvalue_err)?;
         let dex_type = DexType::from_dex_name(&name)
@@ -206,13 +207,14 @@ impl Dex {
         Ok(Self::new(
             chain,
             dex_type,
-            factory,
+            &factory,
             factory_creation_block,
             amm_type,
             pool_created_event,
             swap_event,
             mint_event,
             burn_event,
+            collect_event,
         ))
     }
 
@@ -230,8 +232,8 @@ impl Dex {
 
     #[getter]
     #[pyo3(name = "factory")]
-    fn py_factory(&self) -> &str {
-        &self.factory
+    fn py_factory(&self) -> String {
+        self.factory.to_string()
     }
 
     #[getter]
