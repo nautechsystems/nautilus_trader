@@ -142,6 +142,7 @@ Released on TBD (UTC).
 - Fixed `TimeEventHandler` memory leaks with Python callback references in FFI layer
 - Fixed `PyCapsule` memory leaks by adding destructors to enable proper Rust value cleanup
 - Fixed multiple circular-dependency memory leaks for network and bar Python callbacks using new `SharedCell`/`WeakCell` helpers
+- Fixed precision preservation for value types (`Price`, `Quantity`, `Money`)
 - Fixed incorrect raw price type for matching engine in high-precision mode that could overflow during trades processing (#2810), thanks for reporting @Frzgunr1 and @happysammy
 - Fixed incorrect currency used for cash account SELL orders pre-trade risk check
 - Fixed accounting for locked balance with multiple currencies (#2918), thanks @GhostLee

@@ -1300,7 +1300,7 @@ fn test_submit_order_when_invalid_negative_price_and_not_option_then_denies(
     );
     assert_eq!(
         saved_process_messages.first().unwrap().message().unwrap(),
-        Ustr::from("price -0.0 invalid (<= 0)") // TODO: fix
+        Ustr::from("price 0.0 invalid (<= 0)")
     );
 }
 
