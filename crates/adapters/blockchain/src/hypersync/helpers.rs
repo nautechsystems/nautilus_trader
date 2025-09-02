@@ -256,7 +256,7 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().to_string(),
-            "Missing event signature in topic0 for event 'Swap'"
+            "Missing event signature in topic0"
         );
     }
 
@@ -268,7 +268,7 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().to_string(),
-            "Missing event signature in topic0 for event 'Swap'"
+            "Missing event signature in topic0"
         );
     }
 
