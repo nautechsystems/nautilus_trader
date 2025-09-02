@@ -65,6 +65,56 @@ jobs:
           name: nautilus-x86_64-unknown-linux-gnu.tar.gz
           path: dist/nautilus-x86_64-unknown-linux-gnu.tar.gz
 
+  build-linux-arm64:
+    name: build cli (linux aarch64)
+    runs-on: ubuntu-22.04-arm
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Common setup
+        uses: ./.github/actions/common-setup
+        with:
+          python-version: "3.13"
+          free-disk-space: "true"
+
+      - name: Build CLI (all features)
+        run: |
+          cargo build --release -p nautilus-cli --bin nautilus --all-features
+
+      - name: Strip binary
+        run: |
+          strip target/release/nautilus || true
+
+      - name: Package artifact
+        run: |
+          set -euo pipefail
+          TARGET_TRIPLE="aarch64-unknown-linux-gnu"
+          STAGE_DIR="stage-cli"
+          mkdir -p "$STAGE_DIR" dist
+          cp target/release/nautilus "$STAGE_DIR/nautilus"
+          cp -L crates/cli/LICENSE "$STAGE_DIR/LICENSE" || cp -L LICENSE "$STAGE_DIR/LICENSE"
+          cp crates/cli/README.md "$STAGE_DIR/README.md"
+          tar -C "$STAGE_DIR" -czf "dist/nautilus-${TARGET_TRIPLE}.tar.gz" .
+          rm -rf "$STAGE_DIR"
+
+      - name: Smoke test --version
+        run: |
+          target/release/nautilus --version || (echo "Smoke test failed" && exit 1)
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nautilus-aarch64-unknown-linux-gnu.tar.gz
+          path: dist/nautilus-aarch64-unknown-linux-gnu.tar.gz
+
   build-macos-arm64:
     name: build cli (macOS arm64)
     runs-on: macos-latest
@@ -114,8 +164,6 @@ jobs:
           name: nautilus-aarch64-apple-darwin.tar.gz
           path: dist/nautilus-aarch64-apple-darwin.tar.gz
 
-
-
   build-windows-x86_64:
     name: build cli (windows x86_64)
     runs-on: windows-latest
@@ -136,9 +184,9 @@ jobs:
           python-version: "3.13"
           free-disk-space: "true"
 
-      - name: Build CLI (all features)
+      - name: Build CLI (no hypersync)
         run: |
-          cargo build --release -p nautilus-cli --bin nautilus --all-features
+          cargo build --release -p nautilus-cli --bin nautilus --no-default-features
 
       - name: Package artifact
         shell: pwsh
@@ -232,52 +280,3 @@ jobs:
         shell: bash
         run: |
           bash ./scripts/ci/publish-cli-r2-verify.sh
-  build-linux-arm64:
-    name: build cli (linux aarch64)
-    runs-on: ubuntu-22.04-arm
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
-        with:
-          egress-policy: audit
-
-      - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      - name: Common setup
-        uses: ./.github/actions/common-setup
-        with:
-          python-version: "3.13"
-          free-disk-space: "true"
-
-      - name: Build CLI (all features)
-        run: |
-          cargo build --release -p nautilus-cli --bin nautilus --all-features
-
-      - name: Strip binary
-        run: |
-          strip target/release/nautilus || true
-
-      - name: Package artifact
-        run: |
-          set -euo pipefail
-          TARGET_TRIPLE="aarch64-unknown-linux-gnu"
-          STAGE_DIR="stage-cli"
-          mkdir -p "$STAGE_DIR" dist
-          cp target/release/nautilus "$STAGE_DIR/nautilus"
-          cp -L crates/cli/LICENSE "$STAGE_DIR/LICENSE" || cp -L LICENSE "$STAGE_DIR/LICENSE"
-          cp crates/cli/README.md "$STAGE_DIR/README.md"
-          tar -C "$STAGE_DIR" -czf "dist/nautilus-${TARGET_TRIPLE}.tar.gz" .
-          rm -rf "$STAGE_DIR"
-
-      - name: Smoke test --version
-        run: |
-          target/release/nautilus --version || (echo "Smoke test failed" && exit 1)
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: nautilus-aarch64-unknown-linux-gnu.tar.gz
-          path: dist/nautilus-aarch64-unknown-linux-gnu.tar.gz
