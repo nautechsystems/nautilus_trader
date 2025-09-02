@@ -144,6 +144,7 @@ Released on TBD (UTC).
 - Fixed multiple circular-dependency memory leaks for network and bar Python callbacks using new `SharedCell`/`WeakCell` helpers
 - Fixed incorrect raw price type for matching engine in high-precision mode that could overflow during trades processing (#2810), thanks for reporting @Frzgunr1 and @happysammy
 - Fixed incorrect currency used for cash account SELL orders pre-trade risk check
+- Fixed accounting for locked balance with multiple currencies (#2918), thanks @GhostLee
 - Fixed decoding zero-sized trades for Databento MBO data
 - Fixed purging of contingent orders where open linked orders would still be purged
 - Fixed Tardis Machine replay processing and Parquet file writing
