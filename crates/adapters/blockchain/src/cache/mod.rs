@@ -28,10 +28,14 @@ use alloy::primitives::Address;
 use nautilus_core::UnixNanos;
 use nautilus_model::defi::{
     Block, DexType, Pool, PoolLiquidityUpdate, PoolSwap, SharedChain, SharedDex, SharedPool, Token,
+    data::PoolFeeCollect,
 };
 use sqlx::postgres::PgConnectOptions;
 
-use crate::cache::{consistency::CachedBlocksConsistencyStatus, database::BlockchainCacheDatabase};
+use crate::{
+    cache::{consistency::CachedBlocksConsistencyStatus, database::BlockchainCacheDatabase},
+    events::initialize::InitializeEvent,
+};
 
 pub mod consistency;
 pub mod copy;
@@ -462,6 +466,94 @@ impl BlockchainCache {
         Ok(())
     }
 
+    /// Adds multiple [`PoolSwap`]s to the cache database in a single batch operation if available.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if adding the swaps to the database fails.
+    pub async fn add_pool_swaps_batch(
+        &self,
+        swaps: &[PoolSwap],
+        use_copy_command: bool,
+    ) -> anyhow::Result<()> {
+        if let Some(database) = &self.database {
+            if use_copy_command {
+                database
+                    .add_pool_swaps_copy(self.chain.chain_id, swaps)
+                    .await?;
+            } else {
+                database
+                    .add_pool_swaps_batch(self.chain.chain_id, swaps)
+                    .await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Adds multiple [`PoolLiquidityUpdate`]s to the cache database in a single batch operation if available.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if adding the liquidity updates to the database fails.
+    pub async fn add_pool_liquidity_updates_batch(
+        &self,
+        updates: &[PoolLiquidityUpdate],
+        use_copy_command: bool,
+    ) -> anyhow::Result<()> {
+        if let Some(database) = &self.database {
+            if use_copy_command {
+                database
+                    .add_pool_liquidity_updates_copy(self.chain.chain_id, updates)
+                    .await?;
+            } else {
+                database
+                    .add_pool_liquidity_updates_batch(self.chain.chain_id, updates)
+                    .await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Adds a batch of pool fee collect events to the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if adding the fee collects to the database fails.
+    pub async fn add_pool_fee_collects_batch(
+        &self,
+        collects: &[PoolFeeCollect],
+        use_copy_command: bool,
+    ) -> anyhow::Result<()> {
+        if let Some(database) = &self.database {
+            if use_copy_command {
+                database
+                    .copy_pool_fee_collects_batch(self.chain.chain_id, collects)
+                    .await?;
+            } else {
+                database
+                    .add_pool_collects_batch(self.chain.chain_id, collects)
+                    .await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    pub async fn update_pool_initialize_price_tick(
+        &self,
+        initialize_event: &InitializeEvent,
+    ) -> anyhow::Result<()> {
+        if let Some(database) = &self.database {
+            database
+                .update_pool_initial_price_tick(self.chain.chain_id, initialize_event)
+                .await?;
+        }
+
+        Ok(())
+    }
+
     /// Returns a reference to the `DexExtended` associated with the given name.
     #[must_use]
     pub fn get_dex(&self, dex_id: &DexType) -> Option<SharedDex> {
@@ -502,12 +594,27 @@ impl BlockchainCache {
     /// Returns an error if the database operation fails.
     pub async fn update_dex_last_synced_block(
         &self,
-        dex_name: &str,
+        dex: &DexType,
         block_number: u64,
     ) -> anyhow::Result<()> {
         if let Some(database) = &self.database {
             database
-                .update_dex_last_synced_block(self.chain.chain_id, dex_name, block_number)
+                .update_dex_last_synced_block(self.chain.chain_id, dex, block_number)
+                .await
+        } else {
+            Ok(())
+        }
+    }
+
+    pub async fn update_pool_last_synced_block(
+        &self,
+        dex: &DexType,
+        pool_address: &Address,
+        block_number: u64,
+    ) -> anyhow::Result<()> {
+        if let Some(database) = &self.database {
+            database
+                .update_pool_last_synced_block(self.chain.chain_id, dex, pool_address, block_number)
                 .await
         } else {
             Ok(())
@@ -519,11 +626,59 @@ impl BlockchainCache {
     /// # Errors
     ///
     /// Returns an error if the database query fails.
-    pub async fn get_dex_last_synced_block(&self, dex_name: &str) -> anyhow::Result<Option<u64>> {
+    pub async fn get_dex_last_synced_block(&self, dex: &DexType) -> anyhow::Result<Option<u64>> {
         if let Some(database) = &self.database {
             database
-                .get_dex_last_synced_block(self.chain.chain_id, dex_name)
+                .get_dex_last_synced_block(self.chain.chain_id, dex)
                 .await
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub async fn get_pool_last_synced_block(
+        &self,
+        dex: &DexType,
+        pool_address: &Address,
+    ) -> anyhow::Result<Option<u64>> {
+        if let Some(database) = &self.database {
+            database
+                .get_pool_last_synced_block(self.chain.chain_id, dex, pool_address)
+                .await
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Retrieves the maximum block number across all pool event tables for a given pool.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any of the database queries fail.
+    pub async fn get_pool_event_tables_last_block(
+        &self,
+        pool_address: &Address,
+    ) -> anyhow::Result<Option<u64>> {
+        if let Some(database) = &self.database {
+            let (swaps_last_block, liquidity_last_block, collect_last_block) = tokio::try_join!(
+                database.get_table_last_block(self.chain.chain_id, "pool_swap_event", pool_address),
+                database.get_table_last_block(
+                    self.chain.chain_id,
+                    "pool_liquidity_event",
+                    pool_address
+                ),
+                database.get_table_last_block(
+                    self.chain.chain_id,
+                    "pool_collect_event",
+                    pool_address
+                ),
+            )?;
+
+            let max_block = [swaps_last_block, liquidity_last_block, collect_last_block]
+                .into_iter()
+                .filter_map(|x| x)
+                .max();
+            Ok(max_block)
         } else {
             Ok(None)
         }

@@ -13,66 +13,63 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::sync::LazyLock;
-
-use alloy::primitives::Address;
+use alloy::primitives::{Address, U256};
 use hypersync_client::simple_types::Log;
-use nautilus_model::defi::{
-    chain::chains,
-    dex::{AmmType, Dex, DexType},
-};
 
 use crate::{
     events::pool_created::PoolCreatedEvent,
-    exchanges::extended::DexExtended,
     hypersync::helpers::{
         extract_address_from_topic, extract_block_number, validate_event_signature_hash,
     },
 };
 
 const POOL_CREATED_EVENT_SIGNATURE_HASH: &str =
-    "91ccaa7a278130b65168c3a0c8d3bcae84cf5e43704342bd3ec0b59e59c036db";
+    "783cca1c0412dd0d695e784568c96da2e9c22ff989357a2e8b1d9b2b4e6b7118";
 
-/// Camelot V3 DEX on Arbitrum.
-pub static CAMELOT_V3: LazyLock<DexExtended> = LazyLock::new(|| {
-    let mut dex = DexExtended::new(Dex::new(
-        chains::ARBITRUM.clone(),
-        DexType::CamelotV3,
-        "0x1a3c9B1d2F0529D97f2afC5136Cc23e58f1FD35B",
-        102286676,
-        AmmType::CLAMM,
-        "Pool(address,address,address)",
-        "",
-        "",
-        "",
-        "",
-    ));
-    dex.set_pool_created_event_parsing(parse_camelot_v3_pool_created_event);
-    dex
-});
-
-fn parse_camelot_v3_pool_created_event(log: Log) -> anyhow::Result<PoolCreatedEvent> {
-    validate_event_signature_hash("Pool", POOL_CREATED_EVENT_SIGNATURE_HASH, &log)?;
+/// Parses a pool creation event from a Uniswap V3 log.
+///
+/// # Errors
+///
+/// Returns an error if the log parsing fails or if the event data is invalid.
+///
+/// # Panics
+///
+/// Panics if the block number is not set in the log.
+pub fn parse_pool_created_event(log: Log) -> anyhow::Result<PoolCreatedEvent> {
+    validate_event_signature_hash("PoolCreatedEvent", POOL_CREATED_EVENT_SIGNATURE_HASH, &log)?;
 
     let block_number = extract_block_number(&log)?;
+
     let token = extract_address_from_topic(&log, 1, "token0")?;
     let token1 = extract_address_from_topic(&log, 2, "token1")?;
 
+    let fee = if let Some(topic) = log.topics.get(3).and_then(|t| t.as_ref()) {
+        U256::from_be_slice(topic.as_ref()).as_limbs()[0] as u32
+    } else {
+        anyhow::bail!("Missing fee in topic3 when parsing pool created event");
+    };
+
     if let Some(data) = log.data {
+        // Data contains: [tick_spacing (32 bytes), pool_address (32 bytes)]
         let data_bytes = data.as_ref();
 
-        // Extract pool address (only 32 bytes)
-        let pool_address = Address::from_slice(&data_bytes[12..32]);
+        // Extract tick_spacing (first 32 bytes)
+        let tick_spacing_bytes: [u8; 32] = data_bytes[0..32].try_into()?;
+        let tick_spacing = u32::from_be_bytes(tick_spacing_bytes[28..32].try_into()?);
+
+        // Extract pool_address (next 32 bytes)
+        let pool_address_bytes: [u8; 32] = data_bytes[32..64].try_into()?;
+        let pool_address = Address::from_slice(&pool_address_bytes[12..32]);
 
         Ok(PoolCreatedEvent::new(
-            block_number,
+            block_number.into(),
             token,
             token1,
             pool_address,
-            None,
-            None,
+            Some(fee),
+            Some(tick_spacing),
         ))
     } else {
-        anyhow::bail!("Missing data in the pool created event log")
+        Err(anyhow::anyhow!("Missing data in pool created event log"))
     }
 }

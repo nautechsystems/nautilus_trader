@@ -34,6 +34,7 @@ pub static UNISWAP_V2: LazyLock<DexExtended> = LazyLock::new(|| {
         "",
         "",
         "",
+        "",
     );
     DexExtended::new(dex)
 });

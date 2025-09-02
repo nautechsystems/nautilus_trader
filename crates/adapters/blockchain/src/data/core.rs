@@ -20,8 +20,8 @@ use futures_util::StreamExt;
 use nautilus_common::messages::DataEvent;
 use nautilus_core::UnixNanos;
 use nautilus_model::defi::{
-    Block, Blockchain, DefiData, DexType, Pool, PoolLiquidityUpdate, PoolSwap, SharedChain,
-    SharedDex, SharedPool, Token, validation::validate_address,
+    Block, Blockchain, DexType, Pool, PoolLiquidityUpdate, PoolSwap, SharedChain, SharedDex,
+    SharedPool, Token, data::PoolFeeCollect,
 };
 
 use crate::{
@@ -30,10 +30,16 @@ use crate::{
     contracts::erc20::{Erc20Contract, TokenInfoError},
     data::subscription::DefiDataSubscriptionManager,
     decode::u256_to_quantity,
-    events::{burn::BurnEvent, mint::MintEvent, pool_created::PoolCreatedEvent, swap::SwapEvent},
+    events::{
+        burn::BurnEvent, collect::CollectEvent, mint::MintEvent, pool_created::PoolCreatedEvent,
+        swap::SwapEvent,
+    },
     exchanges::{extended::DexExtended, get_dex_extended},
-    hypersync::{client::HyperSyncClient, helpers::extract_block_number},
-    reporting::{BlockchainItem, BlockchainSyncReporter},
+    hypersync::{
+        client::HyperSyncClient,
+        helpers::{extract_block_number, extract_event_signature_bytes},
+    },
+    reporting::{BlockchainSyncReportItems, BlockchainSyncReporter},
     rpc::{
         BlockchainRpcClient, BlockchainRpcClientAny,
         chains::{
@@ -156,6 +162,7 @@ impl BlockchainDataClientCore {
             "Connecting blockchain data client for '{}'",
             self.chain.name
         );
+        self.initialize_cache_database().await;
 
         if let Some(ref mut rpc_client) = self.rpc_client {
             rpc_client.connect().await?;
@@ -273,7 +280,7 @@ impl BlockchainDataClientCore {
         tokio::pin!(blocks_stream);
 
         let mut metrics = BlockchainSyncReporter::new(
-            BlockchainItem::Blocks,
+            BlockchainSyncReportItems::Blocks,
             from_block,
             total_blocks,
             BLOCKS_PROCESS_IN_SYNC_REPORT,
@@ -324,74 +331,301 @@ impl BlockchainDataClientCore {
         Ok(())
     }
 
-    /// Fetches and caches all swap events for a specific liquidity pool within the given block range.
+    /// Synchronizes all events for a specific pool within the given block range.
     ///
     /// # Errors
     ///
-    /// Returns an error if fetching swap events fails or if caching operations fail.
-    ///
-    /// # Panics
-    ///
-    /// Panics if swap event conversion to trade data fails.
-    pub async fn sync_pool_swaps(
+    /// Returns an error if event syncing, parsing, or database operations fail.
+    pub async fn sync_pool_events(
         &mut self,
-        dex_id: &DexType,
-        pool_address: &str,
+        dex: &DexType,
+        pool_address: Address,
         from_block: Option<u64>,
         to_block: Option<u64>,
+        reset: bool,
     ) -> anyhow::Result<()> {
-        let dex_extended = self.get_dex_extended(dex_id)?;
-        let pool_address = validate_address(pool_address)?;
-        let pool = self.get_pool(&pool_address)?;
-        let from_block =
-            from_block.map_or(pool.creation_block, |block| max(block, pool.creation_block));
+        let pool: SharedPool = self.get_pool(&pool_address)?.clone();
+        let pool_display = pool.to_full_spec_string();
+        let from_block = from_block.unwrap_or(pool.creation_block);
 
-        tracing::info!(
-            "Syncing pool swaps for {} on Dex {} from block {}{}",
-            pool.instrument_id,
-            dex_extended.name,
-            from_block,
-            to_block.map_or(String::new(), |block| format!(" to {block}"))
-        );
-
-        let swap_event_signature = dex_extended.swap_created_event.as_ref();
-        let stream = self
-            .hypersync_client
-            .request_contract_events_stream(
-                from_block,
-                to_block,
-                &pool.address.to_string(),
-                swap_event_signature,
-                Vec::new(),
-            )
-            .await;
-
-        tokio::pin!(stream);
-
-        while let Some(log) = stream.next().await {
-            let swap_event = dex_extended.parse_swap_event(log)?;
-            let swap = self
-                .process_pool_swap_event(&swap_event, pool, dex_extended)
+        let (last_synced_block, effective_from_block) = if reset {
+            (None, from_block)
+        } else {
+            let last_synced_block = self
+                .cache
+                .get_pool_last_synced_block(dex, &pool_address)
                 .await?;
+            let effective_from_block = last_synced_block
+                .map_or(from_block, |last_synced| max(from_block, last_synced + 1));
+            (last_synced_block, effective_from_block)
+        };
 
-            let data = DataEvent::DeFi(DefiData::PoolSwap(swap));
-            self.send_data(data);
+        let to_block = match to_block {
+            Some(block) => block,
+            None => self.hypersync_client.current_block().await,
+        };
+
+        // Skip sync if we're already up to date
+        if effective_from_block > to_block {
+            tracing::info!(
+                "D {} already synced to block {} (current: {}), skipping sync",
+                dex,
+                last_synced_block.unwrap_or(0),
+                to_block
+            );
+            return Ok(());
         }
 
-        tracing::info!("Finished syncing pool swaps");
+        // Query table max blocks to detect last blocks to use batch insert before that, then COPY command.
+        let last_block_across_pool_events_table = self
+            .cache
+            .get_pool_event_tables_last_block(&pool_address)
+            .await?;
+
+        let total_blocks = to_block.saturating_sub(effective_from_block) + 1;
+        tracing::info!(
+            "Syncing Pool: '{}' events from {} to {} (total: {} blocks){}",
+            pool_display,
+            effective_from_block,
+            to_block,
+            total_blocks,
+            if let Some(last_synced) = last_synced_block {
+                format!(" - resuming from last synced block {}", last_synced)
+            } else {
+                String::new()
+            }
+        );
+
+        let mut metrics = BlockchainSyncReporter::new(
+            BlockchainSyncReportItems::PoolEvents,
+            effective_from_block,
+            total_blocks,
+            BLOCKS_PROCESS_IN_SYNC_REPORT,
+        );
+        let dex_extended = self.get_dex_extended(dex)?.clone();
+        let swap_event_signature = dex_extended.swap_created_event.as_ref();
+        let mint_event_signature = dex_extended.mint_created_event.as_ref();
+        let burn_event_signature = dex_extended.burn_created_event.as_ref();
+        let collect_event_signature = dex_extended.collect_created_event.as_ref();
+        let initialize_event_signature: Option<&str> =
+            dex_extended.initialize_event.as_ref().map(|s| s.as_ref());
+
+        // Pre-decode event signatures to bytes for efficient comparison
+        let swap_sig_bytes = hex::decode(
+            swap_event_signature
+                .strip_prefix("0x")
+                .unwrap_or(swap_event_signature),
+        )?;
+        let mint_sig_bytes = hex::decode(
+            mint_event_signature
+                .strip_prefix("0x")
+                .unwrap_or(mint_event_signature),
+        )?;
+        let burn_sig_bytes = hex::decode(
+            burn_event_signature
+                .strip_prefix("0x")
+                .unwrap_or(burn_event_signature),
+        )?;
+        let collect_sig_bytes = hex::decode(
+            collect_event_signature
+                .strip_prefix("0x")
+                .unwrap_or(collect_event_signature),
+        )?;
+        let initialize_sig_bytes = initialize_event_signature
+            .map(|s| hex::decode(s.strip_prefix("0x").unwrap_or(s)).unwrap_or_default());
+
+        let mut event_signatures = vec![
+            swap_event_signature,
+            mint_event_signature,
+            burn_event_signature,
+            collect_event_signature,
+        ];
+        if let Some(event) = dex_extended.initialize_event.as_ref() {
+            event_signatures.push(event);
+        }
+        let pool_events_stream = self
+            .hypersync_client
+            .request_contract_events_stream(
+                effective_from_block,
+                Some(to_block),
+                &pool_address,
+                event_signatures,
+            )
+            .await;
+        tokio::pin!(pool_events_stream);
+
+        let mut last_block_saved = effective_from_block;
+        let mut blocks_processed = 0;
+
+        // Batch configuration for events
+        const EVENT_BATCH_SIZE: usize = 20000;
+        let mut swap_batch: Vec<PoolSwap> = Vec::with_capacity(EVENT_BATCH_SIZE);
+        let mut liquidity_batch: Vec<PoolLiquidityUpdate> = Vec::with_capacity(EVENT_BATCH_SIZE);
+        let mut collect_batch: Vec<PoolFeeCollect> = Vec::with_capacity(EVENT_BATCH_SIZE);
+
+        // Track when we've moved beyond stale data and can use COPY
+        let mut beyond_stale_data = last_block_across_pool_events_table
+            .map_or(true, |tables_max| effective_from_block > tables_max);
+        while let Some(log) = pool_events_stream.next().await {
+            let block_number = extract_block_number(&log)?;
+            blocks_processed += block_number - last_block_saved;
+            last_block_saved = block_number;
+
+            let event_sig_bytes = extract_event_signature_bytes(&log)?;
+            if event_sig_bytes == swap_sig_bytes.as_slice() {
+                let swap_event = dex_extended.parse_swap_event(log)?;
+                match self.process_pool_swap_event(&swap_event, &pool, &dex_extended) {
+                    Ok(swap) => swap_batch.push(swap),
+                    Err(e) => tracing::error!("Failed to process swap event: {e}"),
+                }
+            } else if event_sig_bytes == mint_sig_bytes.as_slice() {
+                let mint_event = dex_extended.parse_mint_event(log)?;
+                match self.process_pool_mint_event(&mint_event, &pool, &dex_extended) {
+                    Ok(liquidity_update) => liquidity_batch.push(liquidity_update),
+                    Err(e) => tracing::error!("Failed to process mint event: {e}"),
+                }
+            } else if event_sig_bytes == burn_sig_bytes.as_slice() {
+                let burn_event = dex_extended.parse_burn_event(log)?;
+                match self.process_pool_burn_event(&burn_event, &pool, &dex_extended) {
+                    Ok(liquidity_update) => liquidity_batch.push(liquidity_update),
+                    Err(e) => tracing::error!("Failed to process burn event: {e}"),
+                }
+            } else if event_sig_bytes == collect_sig_bytes.as_slice() {
+                let collect_event = dex_extended.parse_collect_event(log)?;
+                match self.process_pool_collect_event(&collect_event, &pool, &dex_extended) {
+                    Ok(fee_collect) => collect_batch.push(fee_collect),
+                    Err(e) => tracing::error!("Failed to process collect event: {e}"),
+                }
+            } else if let Some(init_sig_bytes) = &initialize_sig_bytes {
+                if event_sig_bytes == init_sig_bytes.as_slice() {
+                    let initialize_event = dex_extended.parse_initialize_event(log)?;
+                    self.cache
+                        .update_pool_initialize_price_tick(&initialize_event)
+                        .await?;
+                }
+            } else {
+                let event_signature = hex::encode(event_sig_bytes);
+                tracing::error!(
+                    "Unexpected event signature: {} for log {:?}",
+                    event_signature,
+                    log
+                );
+            }
+
+            // Check if we've moved beyond stale data (transition point for strategy change)
+            if !beyond_stale_data
+                && last_block_across_pool_events_table
+                    .map_or(false, |table_max| block_number > table_max)
+            {
+                tracing::info!(
+                    "Crossed beyond stale data at block {} - flushing current batches with ON CONFLICT, then switching to COPY",
+                    block_number
+                );
+
+                // Flush all batches with ON CONFLICT to handle any remaining duplicates
+                self.flush_event_batches(
+                    EVENT_BATCH_SIZE,
+                    &mut swap_batch,
+                    &mut liquidity_batch,
+                    &mut collect_batch,
+                    false,
+                    true,
+                )
+                .await?;
+
+                beyond_stale_data = true;
+                tracing::info!("Switched to COPY mode - future batches will use COPY command");
+            } else {
+                // Process batches when they reach batch size
+                self.flush_event_batches(
+                    EVENT_BATCH_SIZE,
+                    &mut swap_batch,
+                    &mut liquidity_batch,
+                    &mut collect_batch,
+                    beyond_stale_data,
+                    false,
+                )
+                .await?;
+            }
+
+            metrics.update(blocks_processed as usize);
+            blocks_processed = 0;
+
+            // Log progress if needed
+            if metrics.should_log_progress(block_number, to_block) {
+                metrics.log_progress(block_number);
+                self.cache
+                    .update_pool_last_synced_block(dex, &pool_address, block_number)
+                    .await?;
+            }
+        }
+
+        self.flush_event_batches(
+            EVENT_BATCH_SIZE,
+            &mut swap_batch,
+            &mut liquidity_batch,
+            &mut collect_batch,
+            beyond_stale_data,
+            true,
+        )
+        .await?;
+
+        metrics.log_final_stats();
+        self.cache
+            .update_pool_last_synced_block(dex, &pool_address, to_block)
+            .await?;
+
+        tracing::info!(
+            "Successfully synced Dex '{}' Pool '{}' up to block {}",
+            dex,
+            pool_display,
+            to_block
+        );
         Ok(())
     }
 
-    /// Processes a swap event from a liquidity pool and converts it to a `PoolSwap` data structure.
-    ///
-    /// # Errors
-    ///
+    async fn flush_event_batches(
+        &mut self,
+        event_batch_size: usize,
+        swap_batch: &mut Vec<PoolSwap>,
+        liquidity_batch: &mut Vec<PoolLiquidityUpdate>,
+        collect_batch: &mut Vec<PoolFeeCollect>,
+        use_copy_command: bool,
+        force_flush_all: bool,
+    ) -> anyhow::Result<()> {
+        if force_flush_all || swap_batch.len() >= event_batch_size {
+            if !swap_batch.is_empty() {
+                self.cache
+                    .add_pool_swaps_batch(swap_batch, use_copy_command)
+                    .await?;
+                swap_batch.clear();
+            }
+        }
+        if force_flush_all || liquidity_batch.len() >= event_batch_size {
+            if !liquidity_batch.is_empty() {
+                self.cache
+                    .add_pool_liquidity_updates_batch(liquidity_batch, use_copy_command)
+                    .await?;
+                liquidity_batch.clear();
+            }
+        }
+        if force_flush_all || collect_batch.len() >= event_batch_size {
+            if !collect_batch.is_empty() {
+                self.cache
+                    .add_pool_fee_collects_batch(collect_batch, use_copy_command)
+                    .await?;
+                collect_batch.clear();
+            }
+        }
+        Ok(())
+    }
+
     /// Returns an error if swap event processing fails.
     ///
     /// # Panics
     ///
     /// Panics if swap event conversion to trade data fails.
-    pub async fn process_pool_swap_event(
+    pub fn process_pool_swap_event(
         &self,
         swap_event: &SwapEvent,
         pool: &SharedPool,
@@ -421,65 +655,12 @@ impl BlockchainDataClientCore {
         Ok(swap)
     }
 
-    /// Fetches and caches all mint events for a specific liquidity pool within the given block range.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if fetching mint events fails or if caching operations fail.
-    pub async fn sync_pool_mints(
-        &self,
-        dex_id: &DexType,
-        pool_address: &str,
-        from_block: Option<u64>,
-        to_block: Option<u64>,
-    ) -> anyhow::Result<()> {
-        let dex_extended = self.get_dex_extended(dex_id)?;
-        let pool_address = validate_address(pool_address)?;
-        let pool = self.get_pool(&pool_address)?.clone();
-        let from_block =
-            from_block.map_or(pool.creation_block, |block| max(block, pool.creation_block));
-
-        tracing::info!(
-            "Syncing pool mints for {} on Dex {} from block {from_block}{}",
-            pool.instrument_id,
-            dex_extended.name,
-            to_block.map_or(String::new(), |block| format!(" to {block}"))
-        );
-
-        let mint_event_signature = dex_extended.mint_created_event.as_ref();
-        let stream = self
-            .hypersync_client
-            .request_contract_events_stream(
-                from_block,
-                to_block,
-                &pool.address.to_string(),
-                mint_event_signature,
-                Vec::new(),
-            )
-            .await;
-
-        tokio::pin!(stream);
-
-        while let Some(log) = stream.next().await {
-            let mint_event = dex_extended.parse_mint_event(log)?;
-            let liquidity_update = self
-                .process_pool_mint_event(&mint_event, &pool, dex_extended)
-                .await?;
-
-            let data = DataEvent::DeFi(DefiData::PoolLiquidityUpdate(liquidity_update));
-            self.send_data(data);
-        }
-
-        tracing::info!("Finished syncing pool mints");
-        Ok(())
-    }
-
     /// Processes a mint event (liquidity addition) and converts it to a `PoolLiquidityUpdate`.
     ///
     /// # Errors
     ///
     /// Returns an error if mint event processing fails or if the liquidity update creation fails.
-    pub async fn process_pool_mint_event(
+    pub fn process_pool_mint_event(
         &self,
         mint_event: &MintEvent,
         pool: &SharedPool,
@@ -512,66 +693,13 @@ impl BlockchainDataClientCore {
         Ok(liquidity_update)
     }
 
-    /// Fetches and caches all burn events for a specific liquidity pool within the given block range.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if fetching burn events fails or if caching operations fail.
-    pub async fn sync_pool_burns(
-        &self,
-        dex_id: &DexType,
-        pool_address: &str,
-        from_block: Option<u64>,
-        to_block: Option<u64>,
-    ) -> anyhow::Result<()> {
-        let dex_extended = self.get_dex_extended(dex_id)?;
-        let pool_address = validate_address(pool_address)?;
-        let pool = self.get_pool(&pool_address)?.clone();
-        let from_block =
-            from_block.map_or(pool.creation_block, |block| max(block, pool.creation_block));
-
-        tracing::info!(
-            "Syncing pool burns for {} on Dex {} from block {from_block}{}",
-            pool.instrument_id,
-            dex_extended.name,
-            to_block.map_or(String::new(), |block| format!(" to {block}"))
-        );
-
-        let burn_event_signature = dex_extended.burn_created_event.as_ref();
-        let stream = self
-            .hypersync_client
-            .request_contract_events_stream(
-                from_block,
-                to_block,
-                &pool.address.to_string(),
-                burn_event_signature,
-                Vec::new(),
-            )
-            .await;
-
-        tokio::pin!(stream);
-
-        while let Some(log) = stream.next().await {
-            let burn_event = dex_extended.parse_burn_event(log)?;
-            let liquidity_update = self
-                .process_pool_burn_event(&burn_event, &pool, dex_extended)
-                .await?;
-
-            let data = DataEvent::DeFi(DefiData::PoolLiquidityUpdate(liquidity_update));
-            self.send_data(data);
-        }
-
-        tracing::info!("Finished syncing pool burns");
-        Ok(())
-    }
-
     /// Processes a burn event (liquidity removal) and converts it to a `PoolLiquidityUpdate`.
     /// Processes a pool burn event and converts it to a liquidity update.
     ///
     /// # Errors
     ///
     /// Returns an error if the burn event processing fails or if the liquidity update creation fails.
-    pub async fn process_pool_burn_event(
+    pub fn process_pool_burn_event(
         &self,
         burn_event: &BurnEvent,
         pool: &SharedPool,
@@ -599,9 +727,40 @@ impl BlockchainDataClientCore {
             timestamp,
         );
 
-        self.cache.add_liquidity_update(&liquidity_update).await?;
+        // self.cache.add_liquidity_update(&liquidity_update).await?;
 
         Ok(liquidity_update)
+    }
+
+    /// Processes a pool collect event and converts it to a fee collection.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the collect event processing fails or if the fee collection creation fails.
+    pub fn process_pool_collect_event(
+        &self,
+        collect_event: &CollectEvent,
+        pool: &SharedPool,
+        dex_extended: &DexExtended,
+    ) -> anyhow::Result<PoolFeeCollect> {
+        let timestamp = self
+            .cache
+            .get_block_timestamp(collect_event.block_number)
+            .copied();
+        let fee0 = u256_to_quantity(collect_event.amount0, pool.token0.decimals)?;
+        let fee1 = u256_to_quantity(collect_event.amount1, pool.token1.decimals)?;
+
+        let fee_collect = collect_event.to_pool_fee_collect(
+            self.chain.clone(),
+            dex_extended.dex.clone(),
+            pool.instrument_id,
+            pool.address,
+            fee0,
+            fee1,
+            timestamp,
+        );
+
+        Ok(fee_collect)
     }
 
     /// Synchronizes all pools and their tokens for a specific DEX within the given block range.
@@ -625,10 +784,7 @@ impl BlockchainDataClientCore {
         let (last_synced_block, effective_from_block) = if reset {
             (None, from_block)
         } else {
-            let last_synced_block = self
-                .cache
-                .get_dex_last_synced_block(&dex.to_string())
-                .await?;
+            let last_synced_block = self.cache.get_dex_last_synced_block(dex).await?;
             let effective_from_block = last_synced_block
                 .map_or(from_block, |last_synced| max(from_block, last_synced + 1));
             (last_synced_block, effective_from_block)
@@ -664,14 +820,14 @@ impl BlockchainDataClientCore {
         );
 
         let mut metrics = BlockchainSyncReporter::new(
-            BlockchainItem::PoolCreatedEvents,
+            BlockchainSyncReportItems::PoolCreatedEvents,
             effective_from_block,
             total_blocks,
             BLOCKS_PROCESS_IN_SYNC_REPORT,
         );
 
         let dex = self.get_dex_extended(dex)?.clone();
-        let factory_address = dex.factory.as_ref();
+        let factory_address = &dex.factory;
         let pair_created_event_signature = dex.pool_created_event.as_ref();
         let pools_stream = self
             .hypersync_client
@@ -679,22 +835,21 @@ impl BlockchainDataClientCore {
                 effective_from_block,
                 Some(to_block),
                 factory_address,
-                pair_created_event_signature,
-                Vec::new(),
+                vec![pair_created_event_signature],
             )
             .await;
 
         tokio::pin!(pools_stream);
 
         const TOKEN_BATCH_SIZE: usize = 100;
+        const POOL_BATCH_SIZE: usize = 1000;
         let mut token_buffer: HashSet<Address> = HashSet::new();
         let mut pool_buffer: Vec<PoolCreatedEvent> = Vec::new();
         let mut last_block_saved = effective_from_block;
-        let mut blocks_processed = 0;
 
         while let Some(log) = pools_stream.next().await {
             let block_number = extract_block_number(&log)?;
-            blocks_processed += block_number - last_block_saved;
+            let blocks_progress = block_number - last_block_saved;
             last_block_saved = block_number;
 
             let pool = dex.parse_pool_created_event(log)?;
@@ -719,20 +874,19 @@ impl BlockchainDataClientCore {
             // Buffer the pool for later processing
             pool_buffer.push(pool);
 
-            if token_buffer.len() >= TOKEN_BATCH_SIZE {
+            if token_buffer.len() >= TOKEN_BATCH_SIZE || pool_buffer.len() >= POOL_BATCH_SIZE {
                 self.flush_tokens_and_process_pools(
                     &mut token_buffer,
                     &mut pool_buffer,
                     dex.dex.clone(),
                 )
                 .await?;
-                metrics.update(blocks_processed as usize);
-                blocks_processed = 0;
+            }
 
-                // Log progress if needed
-                if metrics.should_log_progress(block_number, to_block) {
-                    metrics.log_progress(block_number);
-                }
+            metrics.update(blocks_progress as usize);
+            // Log progress if needed
+            if metrics.should_log_progress(block_number, to_block) {
+                metrics.log_progress(block_number);
             }
         }
 
@@ -743,15 +897,13 @@ impl BlockchainDataClientCore {
                 dex.dex.clone(),
             )
             .await?;
-            blocks_processed += (to_block) - last_block_saved;
-            metrics.update(blocks_processed as usize);
         }
 
         metrics.log_final_stats();
 
         // Update the last synced block after successful completion.
         self.cache
-            .update_dex_last_synced_block(&dex.dex.name.to_string(), to_block)
+            .update_dex_last_synced_block(&dex.dex.name, to_block)
             .await?;
 
         tracing::info!(

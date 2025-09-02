@@ -13,29 +13,32 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_model::defi::Block;
-use serde::{Deserialize, Serialize};
-use strum::{Display, EnumString};
+use alloy::primitives::{Address, U160};
+use nautilus_model::defi::SharedDex;
 
-use crate::events::{burn::BurnEvent, collect::CollectEvent, mint::MintEvent, swap::SwapEvent};
-
-/// Represents normalized blockchain messages.
+/// Event emitted when a liquidity pool is initialized on a DEX.
+///
+/// This event typically occurs when a new pool is created and
+/// the initial price and tick are set.
 #[derive(Debug, Clone)]
-pub enum BlockchainMessage {
-    Block(Block),
-    SwapEvent(SwapEvent),
-    MintEvent(MintEvent),
-    BurnEvent(BurnEvent),
-    CollectEvent(CollectEvent),
+pub struct InitializeEvent {
+    /// The decentralized exchange where the event happened.
+    pub dex: SharedDex,
+    /// The address of the smart contract which emitted the event.
+    pub pool_address: Address,
+    /// The square root of the price ratio encoded as a fixed point number with 96 fractional bits.
+    pub sqrt_price_x96: U160,
+    /// The current tick of the pool.
+    pub tick: i32,
 }
 
-/// Represents the types of events that can be subscribed to via the blockchain RPC interface.
-///
-/// This enum defines the various event types that the application can subscribe to using
-/// the WebSocket-based RPC subscription.
-#[derive(
-    Debug, Clone, PartialOrd, Ord, PartialEq, Eq, Display, EnumString, Serialize, Deserialize,
-)]
-pub enum RpcEventType {
-    NewBlock,
+impl InitializeEvent {
+    pub fn new(dex: SharedDex, pool_address: Address, sqrt_price_x96: U160, tick: i32) -> Self {
+        Self {
+            dex,
+            pool_address,
+            sqrt_price_x96,
+            tick,
+        }
+    }
 }
