@@ -18,6 +18,5 @@ pub mod client;
 pub mod codec;
 pub mod enums;
 pub mod error;
-pub mod exchange;
 pub mod messages;
 pub mod parse;

@@ -13,10 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Normalized message types and conversion functions for Hyperliquid WebSocket adapter.
-//! This module provides a stable, OKX/BitMEX-style interface while converting to/from
-//! Hyperliquid's native message formats.
-
 use std::str::FromStr;
 
 use rust_decimal::Decimal;
