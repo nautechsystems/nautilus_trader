@@ -18,15 +18,12 @@ use std::str::FromStr;
 use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime, uuid::UUID4};
 use nautilus_model::{
     currencies::CURRENCY_MAP,
-    data::trade::TradeTick,
+    data::TradeTick,
     enums::{CurrencyType, OrderSide, TriggerType},
     identifiers::{AccountId, ClientOrderId, OrderListId, Symbol, TradeId, VenueOrderId},
-    instruments::{
-        any::InstrumentAny, crypto_future::CryptoFuture, crypto_perpetual::CryptoPerpetual,
-        currency_pair::CurrencyPair,
-    },
-    reports::{fill::FillReport, order::OrderStatusReport, position::PositionStatusReport},
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    instruments::{CryptoFuture, CryptoPerpetual, CurrencyPair, InstrumentAny},
+    reports::{FillReport, OrderStatusReport, PositionStatusReport},
+    types::{Currency, Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
 use ustr::Ustr;
@@ -50,11 +47,7 @@ pub fn parse_instrument_any(
     match instrument.instrument_type {
         BitmexInstrumentType::Spot => parse_spot_instrument(instrument, ts_init)
             .map_err(|e| {
-                tracing::warn!(
-                    "Failed to parse spot instrument {}: {}",
-                    instrument.symbol,
-                    e
-                );
+                tracing::warn!("Failed to parse spot instrument {}: {e}", instrument.symbol);
                 e
             })
             .ok(),
@@ -63,9 +56,8 @@ pub fn parse_instrument_any(
             parse_perpetual_instrument(instrument, ts_init)
                 .map_err(|e| {
                     tracing::warn!(
-                        "Failed to parse perpetual instrument {}: {}",
+                        "Failed to parse perpetual instrument {}: {e}",
                         instrument.symbol,
-                        e
                     );
                     e
                 })
@@ -74,9 +66,8 @@ pub fn parse_instrument_any(
         BitmexInstrumentType::Futures => parse_futures_instrument(instrument, ts_init)
             .map_err(|e| {
                 tracing::warn!(
-                    "Failed to parse futures instrument {}: {}",
+                    "Failed to parse futures instrument {}: {e}",
                     instrument.symbol,
-                    e
                 );
                 e
             })
@@ -122,7 +113,7 @@ pub fn parse_index_instrument(
     definition: &BitmexInstrument,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
-    let instrument_id = parse_instrument_id(&definition.symbol);
+    let instrument_id = parse_instrument_id(definition.symbol);
     let raw_symbol = Symbol::new(definition.symbol);
 
     // Use USD for indices
@@ -170,20 +161,22 @@ pub fn parse_spot_instrument(
     definition: &BitmexInstrument,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
-    let instrument_id = parse_instrument_id(&definition.symbol);
+    let instrument_id = parse_instrument_id(definition.symbol);
     let raw_symbol = Symbol::new(definition.symbol);
     let base_currency = get_currency(definition.underlying.to_uppercase());
     let quote_currency = get_currency(definition.quote_currency.to_uppercase());
 
     let price_increment = Price::from(definition.tick_size.to_string());
 
-    // Require lot_size for proper size increment
-    let size_increment = definition
-        .lot_size
-        .map(|lot_size| Quantity::from(lot_size.to_string()))
-        .ok_or_else(|| {
-            anyhow::anyhow!("Missing lot_size for spot instrument {}", definition.symbol)
-        })?;
+    // For spot instruments, calculate the actual lot size using underlyingToPositionMultiplier
+    // BitMEX spot uses lot_size / underlyingToPositionMultiplier for the actual minimum size
+    let actual_lot_size = if let Some(multiplier) = definition.underlying_to_position_multiplier {
+        definition.lot_size.unwrap_or(1.0) / multiplier
+    } else {
+        definition.lot_size.unwrap_or(1.0)
+    };
+
+    let size_increment = Quantity::from(actual_lot_size.to_string());
 
     let taker_fee = definition
         .taker_fee
@@ -262,7 +255,7 @@ pub fn parse_perpetual_instrument(
     definition: &BitmexInstrument,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
-    let instrument_id = parse_instrument_id(&definition.symbol);
+    let instrument_id = parse_instrument_id(definition.symbol);
     let raw_symbol = Symbol::new(definition.symbol);
     let base_currency = get_currency(definition.underlying.to_uppercase());
     let quote_currency = get_currency(definition.quote_currency.to_uppercase());
@@ -274,16 +267,15 @@ pub fn parse_perpetual_instrument(
 
     let price_increment = Price::from(definition.tick_size.to_string());
 
-    // Require lot_size for proper size increment
-    let size_increment = definition
-        .lot_size
-        .map(|lot_size| Quantity::from(lot_size.to_string()))
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "Missing lot_size for perpetual instrument {}",
-                definition.symbol
-            )
-        })?;
+    // For perpetual instruments, lot_size is typically already correct (usually 1.0)
+    // But we should still check underlyingToPositionMultiplier for consistency
+    let actual_lot_size = if let Some(multiplier) = definition.underlying_to_position_multiplier {
+        definition.lot_size.unwrap_or(1.0) / multiplier
+    } else {
+        definition.lot_size.unwrap_or(1.0)
+    };
+
+    let size_increment = Quantity::from(actual_lot_size.to_string());
 
     let taker_fee = definition
         .taker_fee
@@ -366,7 +358,7 @@ pub fn parse_futures_instrument(
     definition: &BitmexInstrument,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
-    let instrument_id = parse_instrument_id(&definition.symbol);
+    let instrument_id = parse_instrument_id(definition.symbol);
     let raw_symbol = Symbol::new(definition.symbol);
     let underlying = get_currency(definition.underlying.to_uppercase());
     let quote_currency = get_currency(definition.quote_currency.to_uppercase());
@@ -380,16 +372,15 @@ pub fn parse_futures_instrument(
     let expiration_ns = parse_optional_datetime_to_unix_nanos(&definition.expiry, "expiry");
     let price_increment = Price::from(definition.tick_size.to_string());
 
-    // Require lot_size for proper size increment
-    let size_increment = definition
-        .lot_size
-        .map(|lot_size| Quantity::from(lot_size.to_string()))
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "Missing lot_size for futures instrument {}",
-                definition.symbol
-            )
-        })?;
+    // For futures instruments, lot_size is typically already correct (usually 1.0)
+    // But we should still check underlyingToPositionMultiplier for consistency
+    let actual_lot_size = if let Some(multiplier) = definition.underlying_to_position_multiplier {
+        definition.lot_size.unwrap_or(1.0) / multiplier
+    } else {
+        definition.lot_size.unwrap_or(1.0)
+    };
+
+    let size_increment = Quantity::from(actual_lot_size.to_string());
 
     let taker_fee = definition
         .taker_fee
@@ -477,7 +468,7 @@ pub fn parse_trade(
     price_precision: u8,
     ts_init: UnixNanos,
 ) -> anyhow::Result<TradeTick> {
-    let instrument_id = parse_instrument_id(&trade.symbol);
+    let instrument_id = parse_instrument_id(trade.symbol);
     let price = Price::new(trade.price.unwrap_or(0.0), price_precision);
     let size = Quantity::from(trade.size.unwrap_or(0));
     let aggressor_side = parse_aggressor_side(&trade.side);
@@ -520,7 +511,6 @@ pub fn parse_order_status_report(
     let instrument_id = parse_instrument_id(
         order
             .symbol
-            .as_deref()
             .ok_or_else(|| anyhow::anyhow!("Order missing symbol"))?,
     );
     let venue_order_id = VenueOrderId::new(order.order_id.to_string());
@@ -660,7 +650,6 @@ pub fn parse_fill_report(exec: BitmexExecution, price_precision: u8) -> anyhow::
     let account_id = AccountId::new(format!("BITMEX-{}", exec.account.unwrap_or(0)));
     let instrument_id = parse_instrument_id(
         exec.symbol
-            .as_deref()
             .ok_or_else(|| anyhow::anyhow!("Fill missing symbol"))?,
     );
     let venue_order_id = VenueOrderId::new(
@@ -732,7 +721,7 @@ pub fn parse_fill_report(exec: BitmexExecution, price_precision: u8) -> anyhow::
 /// but returns `Result` for future error handling compatibility.
 pub fn parse_position_report(position: BitmexPosition) -> anyhow::Result<PositionStatusReport> {
     let account_id = AccountId::new(format!("BITMEX-{}", position.account));
-    let instrument_id = parse_instrument_id(&position.symbol);
+    let instrument_id = parse_instrument_id(position.symbol);
     let position_side = parse_position_side(position.current_qty).as_specified();
     let quantity = Quantity::from(position.current_qty.map_or(0_i64, i64::abs));
     let venue_position_id = None; // Not applicable on BitMEX

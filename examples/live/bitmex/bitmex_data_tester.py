@@ -39,6 +39,7 @@ from nautilus_trader.test_kit.strategies.tester_data import DataTesterConfig
 # Alt perpetuals: ETHUSD, SOLUSD, etc.
 
 symbol = "XBTUSD"  # Bitcoin perpetual swap
+# symbol = "SOLUSDT"  # Solana spot
 # symbol = ".BXBT"  # Bitcoin index
 
 # Configure the trading node

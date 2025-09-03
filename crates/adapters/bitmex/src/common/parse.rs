@@ -19,8 +19,9 @@ use nautilus_model::{
     enums::{AccountType, PositionSide},
     events::AccountState,
     identifiers::{AccountId, InstrumentId, Symbol},
-    types::{AccountBalance, Currency, Money},
+    types::{AccountBalance, Currency, Money, QUANTITY_MAX, Quantity},
 };
+use ustr::Ustr;
 
 use crate::{
     common::{
@@ -35,8 +36,33 @@ use crate::{
 
 /// Parses a Nautilus instrument ID from the given BitMEX `symbol` value.
 #[must_use]
-pub fn parse_instrument_id(symbol: &str) -> InstrumentId {
-    InstrumentId::new(Symbol::from_str_unchecked(symbol), *BITMEX_VENUE)
+pub fn parse_instrument_id(symbol: Ustr) -> InstrumentId {
+    InstrumentId::new(Symbol::from_ustr_unchecked(symbol), *BITMEX_VENUE)
+}
+
+#[must_use]
+pub fn parse_contracts_quantity(value: u64) -> Quantity {
+    let size_workaround = std::cmp::min(QUANTITY_MAX as u64, value);
+    // TODO: Log with more visibility for now
+    if value > QUANTITY_MAX as u64 {
+        tracing::warn!(
+            "Quantity value {value} exceeds QUANTITY_MAX {QUANTITY_MAX}, clamping to maximum",
+        );
+    }
+    Quantity::new(size_workaround as f64, 0)
+}
+
+#[must_use]
+pub fn parse_frac_quantity(value: f64, size_precision: u8) -> Quantity {
+    let value_u64 = value as u64;
+    let size_workaround = std::cmp::min(QUANTITY_MAX as u64, value as u64);
+    // TODO: Log with more visibility for now
+    if value_u64 > QUANTITY_MAX as u64 {
+        tracing::warn!(
+            "Quantity value {value} exceeds QUANTITY_MAX {QUANTITY_MAX}, clamping to maximum",
+        );
+    }
+    Quantity::new(size_workaround as f64, size_precision)
 }
 
 /// Parses the given datetime (UTC) into a `UnixNanos` timestamp.

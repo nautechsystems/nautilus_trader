@@ -59,7 +59,10 @@ use super::{
         parse_trade_msg_vec, topic_from_bar_spec,
     },
 };
-use crate::common::{consts::BITMEX_WS_URL, credential::Credential};
+use crate::{
+    common::{consts::BITMEX_WS_URL, credential::Credential},
+    websocket::parse::{parse_funding_msg, parse_instrument_msg},
+};
 
 /// Provides a WebSocket client for connecting to the [BitMEX](https://bitmex.com) real-time API.
 #[derive(Clone, Debug)]
@@ -719,10 +722,10 @@ impl BitmexWebSocketClient {
     ///
     /// Returns an error if the WebSocket is not connected or if the subscription fails.
     pub async fn subscribe_quotes(&self, instrument_id: InstrumentId) -> Result<(), BitmexWsError> {
-        let symbol = instrument_id.symbol.as_str();
+        let symbol = instrument_id.symbol.inner();
 
         // Index symbols don't have quotes (bid/ask), only a single price
-        if is_index_symbol(symbol) {
+        if is_index_symbol(&instrument_id.symbol.inner()) {
             tracing::warn!("Ignoring quote subscription for index symbol: {symbol}");
             return Ok(());
         }
@@ -739,10 +742,10 @@ impl BitmexWebSocketClient {
     ///
     /// Returns an error if the WebSocket is not connected or if the subscription fails.
     pub async fn subscribe_trades(&self, instrument_id: InstrumentId) -> Result<(), BitmexWsError> {
-        let symbol = instrument_id.symbol.as_str();
+        let symbol = instrument_id.symbol.inner();
 
         // Index symbols don't have trades
-        if is_index_symbol(symbol) {
+        if is_index_symbol(&symbol) {
             tracing::warn!("Ignoring trade subscription for index symbol: {symbol}");
             return Ok(());
         }
@@ -877,10 +880,10 @@ impl BitmexWebSocketClient {
         &self,
         instrument_id: InstrumentId,
     ) -> Result<(), BitmexWsError> {
-        let symbol = instrument_id.symbol.as_str();
+        let symbol = instrument_id.symbol.inner();
 
         // Index symbols don't have quotes
-        if is_index_symbol(symbol) {
+        if is_index_symbol(&symbol) {
             return Ok(());
         }
 
@@ -897,10 +900,10 @@ impl BitmexWebSocketClient {
         &self,
         instrument_id: InstrumentId,
     ) -> Result<(), BitmexWsError> {
-        let symbol = instrument_id.symbol.as_str();
+        let symbol = instrument_id.symbol.inner();
 
         // Index symbols don't have trades
-        if is_index_symbol(symbol) {
+        if is_index_symbol(&symbol) {
             return Ok(());
         }
 
@@ -1109,14 +1112,14 @@ impl BitmexWsMessageHandler {
     ///
     /// Panics if the instrument is not found in the cache.
     #[inline]
-    fn get_price_precision(&self, symbol: &str) -> u8 {
+    fn get_price_precision(&self, symbol: &Ustr) -> u8 {
         self.instruments_cache
-            .get(&Ustr::from(symbol)).map_or_else(|| panic!("Instrument '{symbol}' not found in cache; ensure all instruments are loaded before starting websocket"), nautilus_model::instruments::Instrument::price_precision)
+            .get(symbol).map_or_else(|| panic!("Instrument '{symbol}' not found in cache; ensure all instruments are loaded before starting websocket"), Instrument::price_precision)
     }
 
     async fn next(&mut self) -> Option<NautilusWsMessage> {
-        let mut quote_cache = QuoteCache::new();
         let clock = get_atomic_clock_realtime();
+        let mut quote_cache = QuoteCache::new();
 
         while let Some(msg) = self.handler.next().await {
             match msg {
@@ -1316,11 +1319,12 @@ impl BitmexWsMessageHandler {
                             }
                         }
                         BitmexTableMessage::Instrument { data, .. } => {
+                            let ts_init = clock.get_time_ns();
                             let mut data_msgs = Vec::new();
 
                             for msg in data {
                                 let parsed =
-                                    parse::parse_instrument_msg(msg, &self.instruments_cache);
+                                    parse_instrument_msg(msg, &self.instruments_cache, ts_init);
                                 data_msgs.extend(parsed);
                             }
 
@@ -1330,10 +1334,11 @@ impl BitmexWsMessageHandler {
                             NautilusWsMessage::Data(data_msgs)
                         }
                         BitmexTableMessage::Funding { data, .. } => {
+                            let ts_init = clock.get_time_ns();
                             let mut funding_updates = Vec::new();
 
                             for msg in data {
-                                if let Some(parsed) = parse::parse_funding_msg(msg) {
+                                if let Some(parsed) = parse_funding_msg(msg, ts_init) {
                                     funding_updates.push(parsed);
                                 }
                             }
