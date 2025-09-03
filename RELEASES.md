@@ -77,6 +77,7 @@ Released on TBD (UTC).
 - Implemented Hyperliquid EIP-712 signing and nonce management (#2916), thanks @nicolad
 - Introduced `SharedCell` / `WeakCell` wrappers for ergonomic and safer handling of `Rc<RefCell<T>>` / `Weak<RefCell<T>>` pairs
 - Introduced efficient block syncing command in the `nautilus-cli` (#2861), thanks @filipmacek
+- Introduced pool events syncing command in blockchain data client (#2920), thanks @filipmacek
 - Added stream iterators support `BacktestDataIterator`
 - Added serialization support for execution reports
 - Added serialization support for execution report commands
@@ -179,6 +180,7 @@ Released on TBD (UTC).
 - Fixed `PolymarketUserTrade.bucket_index` field type that changed from `str` to `int` (#2872), thanks for reporting @thefabus
 - Fixed Polymarket websocket 500 tokens per connection limitation (#2915), thanks @odobias and @DeirhX
 - Fixed Interactive Brokers `submit_order_list` rejection (#2892), thanks @faysou
+- Fixed Interactive Brokers bars query for indices (#2921), thanks @ms32035
 - Fixed missing `funding_rates` for Cache Debug impl (#2894), thanks @MK27MK
 
 ### Documentation Updates
