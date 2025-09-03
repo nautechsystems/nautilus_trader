@@ -202,6 +202,29 @@ cdef inline TradeTick trade_from_mem_c(TradeTick_t mem):
     return trade
 
 
+cdef inline str data_tag_to_str(Data_t_Tag tag):
+    if tag == Data_t_Tag.DELTA:
+        return "DELTA"
+    elif tag == Data_t_Tag.DELTAS:
+        return "DELTAS"
+    elif tag == Data_t_Tag.DEPTH10:
+        return "DEPTH10"
+    elif tag == Data_t_Tag.QUOTE:
+        return "QUOTE"
+    elif tag == Data_t_Tag.TRADE:
+        return "TRADE"
+    elif tag == Data_t_Tag.BAR:
+        return "BAR"
+    elif tag == Data_t_Tag.MARK_PRICE_UPDATE:
+        return "MARK_PRICE_UPDATE"
+    elif tag == Data_t_Tag.INDEX_PRICE_UPDATE:
+        return "INDEX_PRICE_UPDATE"
+    elif tag == Data_t_Tag.INSTRUMENT_CLOSE:
+        return "INSTRUMENT_CLOSE"
+    else:
+        return f"UNKNOWN({int(tag)})"
+
+
 cdef inline Bar bar_from_mem_c(Bar_t mem):
     cdef Bar bar = Bar.__new__(Bar)
     bar._mem = mem
@@ -1741,6 +1764,13 @@ cdef class Bar(Data):
         # It is supposed to be deallocated by the creator
         capsule = pyo3_bar.as_pycapsule()
         cdef Data_t* ptr = <Data_t*>PyCapsule_GetPointer(capsule, NULL)
+        if ptr == NULL:
+            raise ValueError("Invalid Data_t PyCapsule (NULL)")
+
+        # Validate the tag to prevent segfault
+        if ptr.tag != Data_t_Tag.BAR:
+            raise ValueError(f"Invalid Data_t tag: expected BAR, was {data_tag_to_str(ptr.tag)}")
+
         return bar_from_mem_c(ptr.bar)
 
     @staticmethod
@@ -2586,6 +2616,13 @@ cdef class OrderBookDelta(Data):
         # It is supposed to be deallocated by the creator
         capsule = pyo3_delta.as_pycapsule()
         cdef Data_t* ptr = <Data_t*>PyCapsule_GetPointer(capsule, NULL)
+        if ptr == NULL:
+            raise ValueError("Invalid Data_t PyCapsule (NULL)")
+
+        # Validate the tag to prevent segfault
+        if ptr.tag != Data_t_Tag.DELTA:
+            raise ValueError(f"Invalid Data_t tag: expected DELTA, was {data_tag_to_str(ptr.tag)}")
+
         return delta_from_mem_c(ptr.delta)
 
     @staticmethod
@@ -3549,6 +3586,13 @@ cdef class OrderBookDepth10(Data):
         # It is supposed to be deallocated by the creator
         capsule = pyo3_depth10.as_pycapsule()
         cdef Data_t* ptr = <Data_t*>PyCapsule_GetPointer(capsule, NULL)
+        if ptr == NULL:
+            raise ValueError("Invalid Data_t PyCapsule (NULL)")
+
+        # Validate the tag to prevent segfault
+        if ptr.tag != Data_t_Tag.DEPTH10:
+            raise ValueError(f"Invalid Data_t tag: expected DEPTH10, was {data_tag_to_str(ptr.tag)}")
+
         return depth10_from_mem_c(orderbook_depth10_clone(ptr.depth10))
 
     @staticmethod
@@ -4323,6 +4367,13 @@ cdef class QuoteTick(Data):
         # It is supposed to be deallocated by the creator
         capsule = pyo3_quote.as_pycapsule()
         cdef Data_t* ptr = <Data_t*>PyCapsule_GetPointer(capsule, NULL)
+        if ptr == NULL:
+            raise ValueError("Invalid Data_t PyCapsule (NULL)")
+
+        # Validate the tag to prevent segfault
+        if ptr.tag != Data_t_Tag.QUOTE:
+            raise ValueError(f"Invalid Data_t tag: expected QUOTE, was {data_tag_to_str(ptr.tag)}")
+
         return quote_from_mem_c(ptr.quote)
 
     @staticmethod
@@ -4937,6 +4988,13 @@ cdef class TradeTick(Data):
         # It is supposed to be deallocated by the creator
         capsule = pyo3_trade.as_pycapsule()
         cdef Data_t* ptr = <Data_t*>PyCapsule_GetPointer(capsule, NULL)
+        if ptr == NULL:
+            raise ValueError("Invalid Data_t PyCapsule (NULL)")
+
+        # Validate the tag to prevent segfault
+        if ptr.tag != Data_t_Tag.TRADE:
+            raise ValueError(f"Invalid Data_t tag: expected TRADE, was {data_tag_to_str(ptr.tag)}")
+
         return trade_from_mem_c(ptr.trade)
 
     @staticmethod
