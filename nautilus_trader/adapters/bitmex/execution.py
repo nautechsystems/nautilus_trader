@@ -182,7 +182,16 @@ class BitmexExecutionClient(LiveExecutionClient):
         await self._ws_client.wait_until_active(timeout_secs=10.0)
         self._log.info(f"Connected to WebSocket {self._ws_client.url}", LogColor.BLUE)
 
-        # Update account state on connection
+        try:
+            # Subscribe to authenticated channels for execution updates
+            await self._ws_client.subscribe_orders()
+            await self._ws_client.subscribe_executions()
+            await self._ws_client.subscribe_positions()
+            await self._ws_client.subscribe_margin()
+            await self._ws_client.subscribe_wallet()
+        except Exception as e:
+            self._log.error(f"Failed to subscribe to authenticated channels: {e}")
+
         await self._update_account_state()
 
     async def _update_account_state(self) -> None:
@@ -211,8 +220,20 @@ class BitmexExecutionClient(LiveExecutionClient):
             self._log.error(f"Failed to update account state: {e}")
 
     async def _disconnect(self) -> None:
+        if not self._ws_client.is_closed():
+            try:
+                # Unsubscribe from authenticated channels before disconnecting
+                await self._ws_client.unsubscribe_orders()
+                await self._ws_client.unsubscribe_executions()
+                await self._ws_client.unsubscribe_positions()
+                await self._ws_client.unsubscribe_margin()
+                await self._ws_client.unsubscribe_wallet()
+            except Exception as e:
+                self._log.error(f"Failed to unsubscribe from channels: {e}")
+
         # Delay to allow websocket to send any unsubscribe messages
         await asyncio.sleep(1.0)
+
         # Shutdown websocket
         if not self._ws_client.is_closed():
             self._log.info("Disconnecting websocket")
@@ -260,7 +281,9 @@ class BitmexExecutionClient(LiveExecutionClient):
             else None
         )
         pyo3_display_qty = (
-            nautilus_pyo3.Quantity.from_str(str(order.display_qty)) if order.display_qty else None
+            nautilus_pyo3.Quantity.from_str(str(order.display_qty))
+            if hasattr(order, "display_qty") and order.display_qty
+            else None
         )
         reduce_only = order.is_reduce_only
 
@@ -374,14 +397,10 @@ class BitmexExecutionClient(LiveExecutionClient):
         pyo3_order_side = order_side_to_pyo3(command.order_side) if command.order_side else None
 
         try:
-            reports = await self._http_client.cancel_all_orders(
+            await self._http_client.cancel_all_orders(
                 instrument_id=pyo3_instrument_id,
                 order_side=pyo3_order_side,
             )
-            for report in reports:
-                self._handle_order_status_report_pyo3(report)
-
-            self._log.info(f"Cancelled {len(reports)} orders for {command.instrument_id.value}")
         except Exception as e:
             self._log.error(f"Failed to cancel all orders: {e}")
 
@@ -467,14 +486,11 @@ class BitmexExecutionClient(LiveExecutionClient):
         Generate a list of `PositionStatusReport`s with optional query filters.
         """
         try:
-            # Fetch position reports from BitMEX
-            reports = await self._http_client.get_position_reports()
+            pyo3_reports = await self._http_client.get_position_reports()
 
-            # Convert from pyo3 reports to Python reports if needed
             result = []
-            for report in reports:
-                # Convert pyo3 report to Python PositionStatusReport
-                result.append(PositionStatusReport.from_pyo3(report))
+            for pyo3_report in pyo3_reports:
+                result.append(PositionStatusReport.from_pyo3(pyo3_report))
 
             self._log.info(f"Generated {len(result)} position status reports")
             return result
@@ -490,17 +506,15 @@ class BitmexExecutionClient(LiveExecutionClient):
         Generate a list of `FillReport`s with optional query filters.
         """
         try:
-            # Fetch fill reports from BitMEX
-            reports = await self._http_client.get_fill_reports(
+            pyo3_reports = await self._http_client.get_fill_reports(
                 instrument_id=command.instrument_id,
                 limit=None,
             )
 
-            # Convert from pyo3 reports to Python reports if needed
-            result = []
-            for report in reports:
-                # Convert pyo3 report to Python FillReport
-                result.append(FillReport.from_pyo3(report))
+            result: list[FillReport] = []
+
+            for pyo3_report in pyo3_reports:
+                result.append(FillReport.from_pyo3(pyo3_report))
 
             self._log.info(f"Generated {len(result)} fill reports")
             return result
@@ -517,13 +531,6 @@ class BitmexExecutionClient(LiveExecutionClient):
             ts_event=account_state.ts_event,
         )
 
-    def _handle_fill_reports_list(self, reports: list) -> None:
-        """
-        Handle a list of fill reports from BitMEX.
-        """
-        for fill_report in reports:
-            self._handle_fill_report_pyo3(fill_report)
-
     def _handle_msg(self, msg: Any) -> None:
         try:
             if isinstance(msg, nautilus_pyo3.AccountState):
@@ -536,17 +543,18 @@ class BitmexExecutionClient(LiveExecutionClient):
                 self._handle_order_modify_rejected_pyo3(msg)
             elif isinstance(msg, nautilus_pyo3.OrderStatusReport):
                 self._handle_order_status_report_pyo3(msg)
-            elif isinstance(msg, list) and msg and isinstance(msg[0], nautilus_pyo3.FillReport):
-                self._handle_fill_reports_list(msg)
             elif isinstance(msg, nautilus_pyo3.FillReport):
                 self._handle_fill_report_pyo3(msg)
             elif isinstance(msg, nautilus_pyo3.PositionStatusReport):
                 self._handle_position_status_report_pyo3(msg)
             else:
                 self._log.debug(f"Received unhandled message type: {type(msg)}")
-
         except Exception as e:
             self._log.exception("Error handling websocket message", e)
+
+    def _handle_fill_reports_list(self, reports: list) -> None:
+        for fill_report in reports:
+            self._handle_fill_report_pyo3(fill_report)
 
     def _handle_order_rejected_pyo3(self, pyo3_event: nautilus_pyo3.OrderRejected) -> None:
         event = OrderRejected.from_dict(pyo3_event.to_dict())
@@ -570,9 +578,6 @@ class BitmexExecutionClient(LiveExecutionClient):
         self,
         pyo3_report: nautilus_pyo3.OrderStatusReport,
     ) -> None:
-        """
-        Handle an order status report from the exchange.
-        """
         report = OrderStatusReport.from_pyo3(pyo3_report)
 
         if self._is_external_order(report.client_order_id):
@@ -591,7 +596,7 @@ class BitmexExecutionClient(LiveExecutionClient):
                 strategy_id=order.strategy_id,
                 instrument_id=report.instrument_id,
                 client_order_id=report.client_order_id,
-                reason=report.reason,
+                reason="UNKNOWN",
                 ts_event=report.ts_last,
             )
         elif report.order_status == OrderStatus.ACCEPTED:
@@ -640,12 +645,9 @@ class BitmexExecutionClient(LiveExecutionClient):
             )
         else:
             # Fills should be handled from FillReports
-            self._log.warning(f"Received unhandled OrderStatusReport: {report}")
+            self._log.debug(f"Received unhandled OrderStatusReport: {report}")
 
     def _handle_fill_report_pyo3(self, pyo3_report: nautilus_pyo3.FillReport) -> None:
-        """
-        Handle a fill report from the exchange.
-        """
         report = FillReport.from_pyo3(pyo3_report)
 
         if self._is_external_order(report.client_order_id):
@@ -687,12 +689,7 @@ class BitmexExecutionClient(LiveExecutionClient):
         self,
         pyo3_report: nautilus_pyo3.PositionStatusReport,
     ) -> None:
-        """
-        Handle a position status report from the exchange.
-        """
-        report = PositionStatusReport.from_dict(pyo3_report.to_dict())
-        self._send_position_status_report(report)
-        self._log.debug(f"Received position status report: {report.instrument_id}")
+        _report = PositionStatusReport.from_pyo3(pyo3_report)
 
     def _is_external_order(self, client_order_id: ClientOrderId) -> bool:
         return not client_order_id or not self._cache.strategy_id_for_order(client_order_id)

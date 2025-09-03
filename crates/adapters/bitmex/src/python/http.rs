@@ -418,4 +418,94 @@ impl BitmexHttpClient {
             Python::with_gil(|py| account_state.into_py_any(py).map_err(to_pyvalue_err))
         })
     }
+
+    #[pyo3(name = "submit_orders_bulk")]
+    fn py_submit_orders_bulk<'py>(
+        &self,
+        py: Python<'py>,
+        orders: Vec<PyObject>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let _client = self.clone();
+
+        // Convert Python objects to PostOrderParams
+        let _params = Python::with_gil(|_py| {
+            orders
+                .into_iter()
+                .map(|obj| {
+                    // Extract order parameters from Python dict
+                    // This is a placeholder - actual implementation would need proper conversion
+                    Ok(obj)
+                })
+                .collect::<PyResult<Vec<_>>>()
+        })?;
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            // Call the bulk order method once it's implemented
+            // let reports = client.submit_orders_bulk(params).await.map_err(to_pyvalue_err)?;
+
+            Python::with_gil(|py| -> PyResult<PyObject> {
+                let py_list = PyList::new(py, Vec::<PyObject>::new())?;
+                // for report in reports {
+                //     py_list.append(report.into_py_any(py)?)?;
+                // }
+                Ok(py_list.into())
+            })
+        })
+    }
+
+    #[pyo3(name = "modify_orders_bulk")]
+    fn py_modify_orders_bulk<'py>(
+        &self,
+        py: Python<'py>,
+        orders: Vec<PyObject>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let _client = self.clone();
+
+        // Convert Python objects to PutOrderParams
+        let _params = Python::with_gil(|_py| {
+            orders
+                .into_iter()
+                .map(|obj| {
+                    // Extract order parameters from Python dict
+                    // This is a placeholder - actual implementation would need proper conversion
+                    Ok(obj)
+                })
+                .collect::<PyResult<Vec<_>>>()
+        })?;
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            // Call the bulk amend method once it's implemented
+            // let reports = client.modify_orders_bulk(params).await.map_err(to_pyvalue_err)?;
+
+            Python::with_gil(|py| -> PyResult<PyObject> {
+                let py_list = PyList::new(py, Vec::<PyObject>::new())?;
+                // for report in reports {
+                //     py_list.append(report.into_py_any(py)?)?;
+                // }
+                Ok(py_list.into())
+            })
+        })
+    }
+
+    #[pyo3(name = "update_position_leverage")]
+    fn py_update_position_leverage<'py>(
+        &self,
+        py: Python<'py>,
+        _symbol: String,
+        _leverage: f64,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let _client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            // Call the leverage update method once it's implemented
+            // let report = client.update_position_leverage(&symbol, leverage)
+            //     .await
+            //     .map_err(to_pyvalue_err)?;
+
+            Python::with_gil(|py| -> PyResult<PyObject> {
+                // report.into_py_any(py).map_err(to_pyvalue_err)
+                Ok(py.None())
+            })
+        })
+    }
 }

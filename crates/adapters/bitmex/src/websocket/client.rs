@@ -48,20 +48,25 @@ use ustr::Ustr;
 
 use super::{
     cache::QuoteCache,
-    enums::{BitmexAction, BitmexWsAuthAction, BitmexWsOperation, BitmexWsTopic},
+    enums::{
+        BitmexAction, BitmexWsAuthAction, BitmexWsAuthChannel, BitmexWsOperation, BitmexWsTopic,
+    },
     error::BitmexWsError,
     messages::{
         BitmexAuthentication, BitmexSubscription, BitmexTableMessage, BitmexWsMessage,
         NautilusWsMessage,
     },
     parse::{
-        self, is_index_symbol, parse_book_msg_vec, parse_book10_msg_vec, parse_trade_bin_msg_vec,
-        parse_trade_msg_vec, topic_from_bar_spec,
+        is_index_symbol, parse_book_msg_vec, parse_book10_msg_vec, parse_trade_bin_msg_vec,
+        parse_trade_msg_vec, parse_wallet_msg, topic_from_bar_spec,
     },
 };
 use crate::{
     common::{consts::BITMEX_WS_URL, credential::Credential},
-    websocket::parse::{parse_funding_msg, parse_instrument_msg},
+    websocket::parse::{
+        parse_execution_msg, parse_funding_msg, parse_instrument_msg, parse_order_msg,
+        parse_position_msg,
+    },
 };
 
 /// Provides a WebSocket client for connecting to the [BitMEX](https://bitmex.com) real-time API.
@@ -218,12 +223,8 @@ impl BitmexWebSocketClient {
                                 let signature = cred.sign("GET", "/realtime", expires, "");
 
                                 let auth_message = BitmexAuthentication {
-                                    op: BitmexWsAuthAction::AuthKey,
-                                    args: vec![
-                                        cred.api_key.to_string(),
-                                        expires.to_string(),
-                                        signature,
-                                    ],
+                                    op: BitmexWsAuthAction::AuthKeyExpires,
+                                    args: (cred.api_key.to_string(), expires, signature),
                                 };
 
                                 if let Err(e) = inner
@@ -399,12 +400,8 @@ impl BitmexWebSocketClient {
         let signature = credential.sign("GET", "/realtime", expires, "");
 
         let auth_message = BitmexAuthentication {
-            op: BitmexWsAuthAction::AuthKey,
-            args: vec![
-                credential.api_key.to_string(),
-                expires.to_string(),
-                signature,
-            ],
+            op: BitmexWsAuthAction::AuthKeyExpires,
+            args: (credential.api_key.to_string(), expires, signature),
         };
 
         {
@@ -969,6 +966,121 @@ impl BitmexWebSocketClient {
         let symbol = bar_type.instrument_id().symbol.to_string();
         self.unsubscribe(vec![format!("{topic}:{symbol}")]).await
     }
+
+    /// Subscribe to order updates for the authenticated account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the WebSocket is not connected, not authenticated, or if the subscription fails.
+    pub async fn subscribe_orders(&self) -> Result<(), BitmexWsError> {
+        if self.credential.is_none() {
+            return Err(BitmexWsError::MissingCredentials);
+        }
+        self.subscribe(vec![BitmexWsAuthChannel::Order.to_string()])
+            .await
+    }
+
+    /// Subscribe to execution updates for the authenticated account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the WebSocket is not connected, not authenticated, or if the subscription fails.
+    pub async fn subscribe_executions(&self) -> Result<(), BitmexWsError> {
+        if self.credential.is_none() {
+            return Err(BitmexWsError::MissingCredentials);
+        }
+        self.subscribe(vec![BitmexWsAuthChannel::Execution.to_string()])
+            .await
+    }
+
+    /// Subscribe to position updates for the authenticated account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the WebSocket is not connected, not authenticated, or if the subscription fails.
+    pub async fn subscribe_positions(&self) -> Result<(), BitmexWsError> {
+        if self.credential.is_none() {
+            return Err(BitmexWsError::MissingCredentials);
+        }
+        self.subscribe(vec![BitmexWsAuthChannel::Position.to_string()])
+            .await
+    }
+
+    /// Subscribe to margin updates for the authenticated account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the WebSocket is not connected, not authenticated, or if the subscription fails.
+    pub async fn subscribe_margin(&self) -> Result<(), BitmexWsError> {
+        if self.credential.is_none() {
+            return Err(BitmexWsError::MissingCredentials);
+        }
+        self.subscribe(vec![BitmexWsAuthChannel::Margin.to_string()])
+            .await
+    }
+
+    /// Subscribe to wallet updates for the authenticated account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the WebSocket is not connected, not authenticated, or if the subscription fails.
+    pub async fn subscribe_wallet(&self) -> Result<(), BitmexWsError> {
+        if self.credential.is_none() {
+            return Err(BitmexWsError::MissingCredentials);
+        }
+        self.subscribe(vec![BitmexWsAuthChannel::Wallet.to_string()])
+            .await
+    }
+
+    /// Unsubscribe from order updates for the authenticated account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the WebSocket is not connected or if the unsubscription fails.
+    pub async fn unsubscribe_orders(&self) -> Result<(), BitmexWsError> {
+        self.unsubscribe(vec![BitmexWsAuthChannel::Order.to_string()])
+            .await
+    }
+
+    /// Unsubscribe from execution updates for the authenticated account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the WebSocket is not connected or if the unsubscription fails.
+    pub async fn unsubscribe_executions(&self) -> Result<(), BitmexWsError> {
+        self.unsubscribe(vec![BitmexWsAuthChannel::Execution.to_string()])
+            .await
+    }
+
+    /// Unsubscribe from position updates for the authenticated account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the WebSocket is not connected or if the unsubscription fails.
+    pub async fn unsubscribe_positions(&self) -> Result<(), BitmexWsError> {
+        self.unsubscribe(vec![BitmexWsAuthChannel::Position.to_string()])
+            .await
+    }
+
+    /// Unsubscribe from margin updates for the authenticated account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the WebSocket is not connected or if the unsubscription fails.
+    pub async fn unsubscribe_margin(&self) -> Result<(), BitmexWsError> {
+        self.unsubscribe(vec![BitmexWsAuthChannel::Margin.to_string()])
+            .await
+    }
+
+    /// Unsubscribe from wallet updates for the authenticated account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the WebSocket is not connected or if the unsubscription fails.
+    pub async fn unsubscribe_wallet(&self) -> Result<(), BitmexWsError> {
+        self.unsubscribe(vec![BitmexWsAuthChannel::Wallet.to_string()])
+            .await
+    }
 }
 
 struct BitmexFeedHandler {
@@ -1083,6 +1195,7 @@ struct BitmexWsMessageHandler {
     handler: BitmexFeedHandler,
     tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
     instruments_cache: Arc<AHashMap<Ustr, InstrumentAny>>,
+    #[allow(dead_code)] // May be needed for future account-specific processing
     account_id: AccountId,
 }
 
@@ -1240,14 +1353,23 @@ impl BitmexWsMessageHandler {
                             NautilusWsMessage::Data(data)
                         }
                         // Execution messages
+                        // Note: BitMEX may send duplicate order status updates for the same order
+                        // (e.g., immediate response + stream update). This is expected behavior.
                         BitmexTableMessage::Order { data, .. } => {
-                            if let Some(order_msg) = data.into_iter().next() {
+                            // Process all orders in the message
+                            let mut reports = Vec::new();
+
+                            for order_msg in data {
                                 let price_precision = self.get_price_precision(&order_msg.symbol);
-                                let report = parse::parse_order_msg(&order_msg, price_precision);
-                                NautilusWsMessage::OrderStatusReport(Box::new(report))
-                            } else {
+                                let report = parse_order_msg(&order_msg, price_precision);
+                                reports.push(report);
+                            }
+
+                            if reports.is_empty() {
                                 continue;
                             }
+
+                            NautilusWsMessage::OrderStatusReports(reports)
                         }
                         BitmexTableMessage::Execution { data, .. } => {
                             let mut fills = Vec::new();
@@ -1263,9 +1385,7 @@ impl BitmexWsMessageHandler {
                                 };
                                 let price_precision = self.get_price_precision(symbol);
 
-                                if let Some(fill) =
-                                    parse::parse_execution_msg(exec_msg, price_precision)
-                                {
+                                if let Some(fill) = parse_execution_msg(exec_msg, price_precision) {
                                     fills.push(fill);
                                 }
                             }
@@ -1277,46 +1397,25 @@ impl BitmexWsMessageHandler {
                         }
                         BitmexTableMessage::Position { data, .. } => {
                             if let Some(pos_msg) = data.into_iter().next() {
-                                let report = parse::parse_position_msg(pos_msg);
+                                let report = parse_position_msg(pos_msg);
                                 NautilusWsMessage::PositionStatusReport(Box::new(report))
                             } else {
                                 continue;
                             }
                         }
-                        BitmexTableMessage::Wallet { .. } => {
-                            continue; // TODO: Parse to account state update
-                            // if let Some(wallet_msg) = data.into_iter().next() {
-                            //     let (account_id, currency, amount) =
-                            //         parse::parse_wallet_msg(wallet_msg);
-                            //     NautilusWsMessage::WalletUpdate {
-                            //         account_id,
-                            //         currency,
-                            //         amount,
-                            //     }
-                            // } else {
-                            //     continue;
-                            // }
-                        }
-                        BitmexTableMessage::Margin { data, .. } => {
-                            if let Some(margin_msg) = data.into_iter().next() {
-                                match crate::common::parse::parse_account_state(
-                                    &margin_msg,
-                                    self.account_id,
-                                    ts_init,
-                                ) {
-                                    Ok(account_state) => {
-                                        return Some(NautilusWsMessage::AccountState(Box::new(
-                                            account_state,
-                                        )));
-                                    }
-                                    Err(e) => {
-                                        tracing::error!("Failed to parse margin message: {e}");
-                                        continue;
-                                    }
-                                }
+                        BitmexTableMessage::Wallet { data, .. } => {
+                            if let Some(wallet_msg) = data.into_iter().next() {
+                                let account_state = parse_wallet_msg(wallet_msg, ts_init);
+                                NautilusWsMessage::AccountState(Box::new(account_state))
                             } else {
                                 continue;
                             }
+                        }
+                        BitmexTableMessage::Margin { .. } => {
+                            // TODO: Implement proper margin parsing with instrument_id
+                            // For now, we'll skip margin messages as they need an instrument_id
+                            // which requires more context about the position
+                            continue;
                         }
                         BitmexTableMessage::Instrument { data, .. } => {
                             let ts_init = clock.get_time_ns();

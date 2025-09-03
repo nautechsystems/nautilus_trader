@@ -23,6 +23,24 @@ use nautilus_model::{
 };
 use ustr::Ustr;
 
+/// Maps BitMEX currency codes to standard Nautilus currency codes.
+///
+/// BitMEX uses some non-standard currency codes:
+/// - "XBt" -> "XBT" (Bitcoin)
+/// - "USDt" -> "USDT" (Tether)
+/// - "LAMp" -> "USDT" (Test currency, mapped to USDT)
+///
+/// For other currencies, converts to uppercase.
+#[must_use]
+pub fn map_bitmex_currency(bitmex_currency: &str) -> String {
+    match bitmex_currency {
+        "XBt" => "XBT".to_string(),
+        "USDt" => "USDT".to_string(),
+        "LAMp" => "USDT".to_string(), // Map test currency to USDT
+        other => other.to_uppercase(),
+    }
+}
+
 use crate::{
     common::{
         consts::BITMEX_VENUE,
@@ -153,22 +171,15 @@ pub fn parse_account_state(
     account_id: AccountId,
     ts_init: UnixNanos,
 ) -> anyhow::Result<AccountState> {
-    // BitMEX uses "XBt" but we need "XBT" for Currency
-    // BitMEX uses "USDt" but we need "USDT" for Currency
-    let currency_str = if margin.currency == "XBt" {
-        "XBT"
-    } else if margin.currency == "USDt" {
-        "USDT"
-    } else {
-        &margin.currency
-    };
-    let currency = Currency::from(currency_str);
+    // Map BitMEX currency to standard currency code
+    let currency_str = map_bitmex_currency(&margin.currency);
+    let currency = Currency::from(currency_str.as_str());
 
-    // BitMEX returns values in satoshis for BTC (XBt) or cents for USD
+    // BitMEX returns values in satoshis for BTC (XBt) or microunits for USDT/LAMp
     // We need to convert to the actual value
     let divisor = if margin.currency == "XBt" {
         100_000_000.0 // Satoshis to BTC
-    } else if margin.currency == "USDt" {
+    } else if margin.currency == "USDt" || margin.currency == "LAMp" {
         1_000_000.0 // Microunits to units
     } else {
         1.0

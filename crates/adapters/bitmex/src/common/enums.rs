@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_model::enums::{
-    ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce,
+    ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
 };
 use serde::{Deserialize, Deserializer, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
@@ -85,6 +85,56 @@ impl From<BitmexSide> for OrderSide {
         match side {
             BitmexSide::Buy => Self::Buy,
             BitmexSide::Sell => Self::Sell,
+        }
+    }
+}
+
+/// Represents the position side for BitMEX positions.
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bitmex", eq, eq_int)
+)]
+pub enum BitmexPositionSide {
+    /// Long position.
+    #[serde(rename = "LONG", alias = "Long", alias = "long")]
+    Long,
+    /// Short position.
+    #[serde(rename = "SHORT", alias = "Short", alias = "short")]
+    Short,
+    /// No position.
+    #[serde(rename = "FLAT", alias = "Flat", alias = "flat")]
+    Flat,
+}
+
+impl From<BitmexPositionSide> for PositionSide {
+    fn from(side: BitmexPositionSide) -> Self {
+        match side {
+            BitmexPositionSide::Long => Self::Long,
+            BitmexPositionSide::Short => Self::Short,
+            BitmexPositionSide::Flat => Self::Flat,
+        }
+    }
+}
+
+impl From<PositionSide> for BitmexPositionSide {
+    fn from(side: PositionSide) -> Self {
+        match side {
+            PositionSide::Long => Self::Long,
+            PositionSide::Short => Self::Short,
+            PositionSide::Flat | PositionSide::NoPositionSide => Self::Flat,
         }
     }
 }

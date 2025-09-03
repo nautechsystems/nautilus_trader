@@ -1,6 +1,6 @@
 {
     "account": 1234567,
-    "currency": "XBT",
+    "currency": "XBt",
     "riskLimit": 20000000000,
     "amount": 100005180,
     "prevRealisedPnl": 0,

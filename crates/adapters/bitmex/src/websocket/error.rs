@@ -40,6 +40,9 @@ pub enum BitmexWsError {
     /// WebSocket transport error.
     #[error("Tungstenite error: {0}")]
     TungsteniteError(#[from] tungstenite::Error),
+    /// Missing credentials for authenticated operation.
+    #[error("Missing credentials: API authentication required for this operation")]
+    MissingCredentials,
 }
 
 impl From<serde_json::Error> for BitmexWsError {

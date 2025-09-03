@@ -34,10 +34,13 @@ use crate::common::enums::{
 };
 
 /// BitMEX WebSocket authentication message.
+///
+/// The args array contains [api_key, expires/nonce, signature].
+/// The second element must be a number (not a string) for proper authentication.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BitmexAuthentication {
     pub op: BitmexWsAuthAction,
-    pub args: Vec<String>,
+    pub args: (String, i64, String),
 }
 
 /// BitMEX WebSocket subscription message.
@@ -51,7 +54,7 @@ pub struct BitmexSubscription {
 #[derive(Clone, Debug)]
 pub enum NautilusWsMessage {
     Data(Vec<Data>),
-    OrderStatusReport(Box<OrderStatusReport>),
+    OrderStatusReports(Vec<OrderStatusReport>),
     FillReports(Vec<FillReport>),
     PositionStatusReport(Box<PositionStatusReport>),
     FundingRateUpdates(Vec<FundingRateUpdate>),

@@ -26,6 +26,7 @@ from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.test_kit.strategies.tester_exec import ExecTester
@@ -82,6 +83,10 @@ config_node = TradingNodeConfig(
 config_tester = ExecTesterConfig(
     instrument_id=InstrumentId.from_str(f"{symbol}.BITMEX"),
     order_qty=order_qty,
+    open_position_on_start_qty=order_qty,
+    open_position_time_in_force=TimeInForce.IOC,
+    close_positions_time_in_force=TimeInForce.IOC,
+    # dry_run=True,
 )
 tester = ExecTester(config=config_tester)
 

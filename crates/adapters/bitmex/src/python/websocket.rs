@@ -63,7 +63,18 @@ impl BitmexWebSocketClient {
         account_id: Option<AccountId>,
         heartbeat: Option<u64>,
     ) -> PyResult<Self> {
-        Self::new(url, api_key, api_secret, account_id, heartbeat).map_err(to_pyvalue_err)
+        // If both api_key and api_secret are None, try to load from environment
+        let (final_api_key, final_api_secret) = if api_key.is_none() && api_secret.is_none() {
+            // Try to load from environment variables
+            let env_key = std::env::var("BITMEX_API_KEY").ok();
+            let env_secret = std::env::var("BITMEX_API_SECRET").ok();
+            (env_key, env_secret)
+        } else {
+            (api_key, api_secret)
+        };
+
+        Self::new(url, final_api_key, final_api_secret, account_id, heartbeat)
+            .map_err(to_pyvalue_err)
     }
 
     #[staticmethod]
@@ -134,9 +145,11 @@ impl BitmexWebSocketClient {
                                 call_python(py, &callback, py_obj);
                             }
                         }
-                        NautilusWsMessage::OrderStatusReport(report) => {
-                            if let Ok(py_obj) = (*report).into_py_any(py) {
-                                call_python(py, &callback, py_obj);
+                        NautilusWsMessage::OrderStatusReports(reports) => {
+                            for report in reports {
+                                if let Ok(py_obj) = report.into_py_any(py) {
+                                    call_python(py, &callback, py_obj);
+                                }
                             }
                         }
                         NautilusWsMessage::FillReports(reports) => {
@@ -539,6 +552,126 @@ impl BitmexWebSocketClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             if let Err(e) = client.unsubscribe_bars(bar_type).await {
                 log::error!("Failed to unsubscribe from bars: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "subscribe_orders")]
+    fn py_subscribe_orders<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.subscribe_orders().await {
+                log::error!("Failed to subscribe to orders: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "subscribe_executions")]
+    fn py_subscribe_executions<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.subscribe_executions().await {
+                log::error!("Failed to subscribe to executions: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "subscribe_positions")]
+    fn py_subscribe_positions<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.subscribe_positions().await {
+                log::error!("Failed to subscribe to positions: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "subscribe_margin")]
+    fn py_subscribe_margin<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.subscribe_margin().await {
+                log::error!("Failed to subscribe to margin: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "subscribe_wallet")]
+    fn py_subscribe_wallet<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.subscribe_wallet().await {
+                log::error!("Failed to subscribe to wallet: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "unsubscribe_orders")]
+    fn py_unsubscribe_orders<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.unsubscribe_orders().await {
+                log::error!("Failed to unsubscribe from orders: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "unsubscribe_executions")]
+    fn py_unsubscribe_executions<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.unsubscribe_executions().await {
+                log::error!("Failed to unsubscribe from executions: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "unsubscribe_positions")]
+    fn py_unsubscribe_positions<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.unsubscribe_positions().await {
+                log::error!("Failed to unsubscribe from positions: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "unsubscribe_margin")]
+    fn py_unsubscribe_margin<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.unsubscribe_margin().await {
+                log::error!("Failed to unsubscribe from margin: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "unsubscribe_wallet")]
+    fn py_unsubscribe_wallet<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.unsubscribe_wallet().await {
+                log::error!("Failed to unsubscribe from wallet: {e}");
             }
             Ok(())
         })
