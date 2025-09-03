@@ -236,7 +236,9 @@ impl BitmexHttpClient {
                 )
             });
 
-            match parse_order_status_report(order.clone(), price_precision) {
+            let ts_init = get_atomic_clock_realtime().get_time_ns();
+
+            match parse_order_status_report(order.clone(), price_precision, ts_init) {
                 Ok(report) => Python::with_gil(|py| report.into_py_any(py)),
                 Err(e) => Err(to_pyvalue_err(e)),
             }
@@ -262,6 +264,7 @@ impl BitmexHttpClient {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let resp = client.get_orders(params).await.map_err(to_pyvalue_err)?;
+            let ts_init = get_atomic_clock_realtime().get_time_ns();
 
             let mut reports: Vec<OrderStatusReport> = Vec::new();
             for order in resp {
@@ -276,7 +279,7 @@ impl BitmexHttpClient {
                         symbol
                     )
                 });
-                match parse_order_status_report(order, price_precision) {
+                match parse_order_status_report(order, price_precision, ts_init) {
                     Ok(report) => reports.push(report),
                     Err(e) => tracing::error!("Failed to parse order status report: {e}"),
                 }
@@ -309,6 +312,8 @@ impl BitmexHttpClient {
             params_builder.symbol(symbol);
         }
 
+        let clock = get_atomic_clock_realtime();
+        let ts_init = clock.get_time_ns();
         let params = params_builder.build().map_err(to_pyvalue_err)?;
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
@@ -330,7 +335,7 @@ impl BitmexHttpClient {
                         symbol
                     )
                 });
-                match parse_fill_report(exec, price_precision) {
+                match parse_fill_report(exec, price_precision, ts_init) {
                     Ok(report) => reports.push(report),
                     Err(e) => {
                         // Log at debug level for skipped non-trade executions
@@ -366,8 +371,11 @@ impl BitmexHttpClient {
             let resp = client.get_positions(params).await.map_err(to_pyvalue_err)?;
 
             let mut reports: Vec<PositionStatusReport> = Vec::new();
+            let clock = get_atomic_clock_realtime();
+            let ts_init = clock.get_time_ns();
+
             for pos in resp {
-                match parse_position_report(pos) {
+                match parse_position_report(pos, ts_init) {
                     Ok(report) => reports.push(report),
                     Err(e) => tracing::error!("Failed to parse position report: {e}"),
                 }

@@ -363,16 +363,34 @@ impl BitmexExecInstruction {
     Deserialize,
 )]
 pub enum BitmexExecType {
+    /// New order placed.
+    New,
     /// Normal trade execution.
     Trade,
-    /// Settlement execution.
-    Settlement,
+    /// Order canceled.
+    Canceled,
+    /// Order replaced.
+    Replaced,
+    /// Order rejected.
+    Rejected,
     /// Funding rate execution.
     Funding,
+    /// Settlement execution.
+    Settlement,
+    /// Order suspended.
+    Suspended,
+    /// Order released.
+    Released,
+    /// Insurance payment.
+    Insurance,
+    /// Rebalance.
+    Rebalance,
     /// Liquidation execution.
     Liquidation,
     /// Bankruptcy execution.
     Bankruptcy,
+    /// Trial fill (testnet only).
+    TrialFill,
 }
 
 /// Indicates whether the execution was maker or taker.
@@ -541,6 +559,72 @@ impl<'de> Deserialize<'de> for BitmexProductType {
     }
 }
 
+/// Represents the tick direction of the last trade.
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
+pub enum BitmexTickDirection {
+    /// Price increased on last trade.
+    PlusTick,
+    /// Price decreased on last trade.
+    MinusTick,
+    /// Price unchanged, but previous tick was plus.
+    ZeroPlusTick,
+    /// Price unchanged, but previous tick was minus.
+    ZeroMinusTick,
+}
+
+/// Represents the state of an instrument.
+#[derive(
+    Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,
+)]
+pub enum BitmexInstrumentState {
+    /// Instrument is open for trading.
+    Open,
+    /// Instrument is closed for trading.
+    Closed,
+    /// Instrument is unlisted.
+    Unlisted,
+    /// Instrument is settled.
+    Settled,
+}
+
+/// Represents the fair price calculation method.
+#[derive(
+    Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,
+)]
+pub enum BitmexFairMethod {
+    /// Funding rate based.
+    FundingRate,
+    /// Impact mid price.
+    ImpactMidPrice,
+    /// Last price.
+    LastPrice,
+}
+
+/// Represents the mark price calculation method.
+#[derive(
+    Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,
+)]
+pub enum BitmexMarkMethod {
+    /// Fair price.
+    FairPrice,
+    /// Last price.
+    LastPrice,
+    /// Composite index.
+    CompositeIndex,
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
@@ -550,6 +634,35 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn test_bitmex_side_deserialization() {
+        // Test all case variations
+        assert_eq!(
+            serde_json::from_str::<BitmexSide>(r#""Buy""#).unwrap(),
+            BitmexSide::Buy
+        );
+        assert_eq!(
+            serde_json::from_str::<BitmexSide>(r#""BUY""#).unwrap(),
+            BitmexSide::Buy
+        );
+        assert_eq!(
+            serde_json::from_str::<BitmexSide>(r#""buy""#).unwrap(),
+            BitmexSide::Buy
+        );
+        assert_eq!(
+            serde_json::from_str::<BitmexSide>(r#""Sell""#).unwrap(),
+            BitmexSide::Sell
+        );
+        assert_eq!(
+            serde_json::from_str::<BitmexSide>(r#""SELL""#).unwrap(),
+            BitmexSide::Sell
+        );
+        assert_eq!(
+            serde_json::from_str::<BitmexSide>(r#""sell""#).unwrap(),
+            BitmexSide::Sell
+        );
+    }
 
     #[rstest]
     fn test_instrument_type_serialization() {

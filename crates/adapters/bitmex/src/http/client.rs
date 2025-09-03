@@ -30,7 +30,9 @@ use std::{
 
 use ahash::AHashMap;
 use chrono::Utc;
-use nautilus_core::{consts::NAUTILUS_USER_AGENT, env::get_env_var};
+use nautilus_core::{
+    UnixNanos, consts::NAUTILUS_USER_AGENT, env::get_env_var, time::get_atomic_clock_realtime,
+};
 use nautilus_model::{
     enums::{OrderSide, OrderType, TimeInForce},
     events::AccountState,
@@ -61,6 +63,7 @@ use crate::{
         consts::{BITMEX_HTTP_TESTNET_URL, BITMEX_HTTP_URL},
         credential::Credential,
     },
+    http::parse::parse_order_status_report,
     websocket::messages::BitmexMarginMsg,
 };
 
@@ -169,11 +172,6 @@ impl BitmexHttpInnerClient {
             format!("/api/v1{endpoint}")
         };
 
-        tracing::debug!("Signing with body: '{body_str}'");
-        tracing::debug!("Method: {}", method.as_str());
-        tracing::debug!("Path: {full_path}");
-        tracing::debug!("Expires: {expires}");
-
         let signature = credential.sign(method.as_str(), &full_path, expires, &body_str);
 
         let mut headers = HashMap::new();
@@ -191,7 +189,7 @@ impl BitmexHttpInnerClient {
         body: Option<Vec<u8>>,
         authenticate: bool,
     ) -> Result<T, BitmexHttpError> {
-        let url = format!("{}{}", self.base_url, endpoint);
+        let url = format!("{}{endpoint}", self.base_url);
 
         let headers = if authenticate {
             Some(self.sign_request(&method, endpoint, body.as_deref())?)
@@ -525,6 +523,11 @@ impl BitmexHttpClient {
     #[must_use]
     pub fn api_key(&self) -> Option<&str> {
         self.inner.credential.as_ref().map(|c| c.api_key.as_str())
+    }
+
+    /// Generates a timestamp for initialization.
+    fn generate_ts_init(&self) -> UnixNanos {
+        get_atomic_clock_realtime().get_time_ns()
     }
 
     /// Get all instruments.
@@ -884,7 +887,9 @@ impl BitmexHttpClient {
             .get_price_precision(instrument_id.symbol.as_str())
             .unwrap_or(2);
 
-        crate::http::parse::parse_order_status_report(order, price_precision)
+        let ts_init = self.generate_ts_init();
+
+        parse_order_status_report(order, price_precision, ts_init)
     }
 
     /// Cancel an order using domain types.
@@ -928,7 +933,9 @@ impl BitmexHttpClient {
             .get_price_precision(instrument_id.symbol.as_str())
             .unwrap_or(2);
 
-        crate::http::parse::parse_order_status_report(order, price_precision)
+        let ts_init = self.generate_ts_init();
+
+        parse_order_status_report(order, price_precision, ts_init)
     }
 
     /// Cancel all orders for an instrument using domain types.
@@ -966,12 +973,11 @@ impl BitmexHttpClient {
             .get_price_precision(instrument_id.symbol.as_str())
             .unwrap_or(2);
 
+        let ts_init = self.generate_ts_init();
+
         let mut reports = Vec::new();
         for order in orders {
-            reports.push(crate::http::parse::parse_order_status_report(
-                order,
-                price_precision,
-            )?);
+            reports.push(parse_order_status_report(order, price_precision, ts_init)?);
         }
 
         Ok(reports)
@@ -1029,7 +1035,9 @@ impl BitmexHttpClient {
             .get_price_precision(instrument_id.symbol.as_str())
             .unwrap_or(2);
 
-        crate::http::parse::parse_order_status_report(order, price_precision)
+        let ts_init = self.generate_ts_init();
+
+        parse_order_status_report(order, price_precision, ts_init)
     }
 
     /// Request a single order status report using domain types.
@@ -1072,7 +1080,9 @@ impl BitmexHttpClient {
             .get_price_precision(instrument_id.symbol.as_str())
             .unwrap_or(2);
 
-        crate::http::parse::parse_order_status_report(order, price_precision)
+        let ts_init = self.generate_ts_init();
+
+        parse_order_status_report(order, price_precision, ts_init)
     }
 
     /// Request multiple order status reports using domain types.
@@ -1111,14 +1121,13 @@ impl BitmexHttpClient {
         // Get the orders
         let orders = self.inner.http_get_orders(params).await?;
 
+        let ts_init = self.generate_ts_init();
+
         let mut reports = Vec::new();
         for order in orders {
             let symbol = order.symbol.as_ref().map(|s| s.as_str()).unwrap_or("");
             let price_precision = self.get_price_precision(symbol).unwrap_or(2);
-            reports.push(crate::http::parse::parse_order_status_report(
-                order,
-                price_precision,
-            )?);
+            reports.push(parse_order_status_report(order, price_precision, ts_init)?);
         }
 
         Ok(reports)
