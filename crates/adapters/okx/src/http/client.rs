@@ -319,7 +319,7 @@ impl OKXHttpInnerClient {
         }
     }
 
-    /// Set the position mode for an account.
+    /// Sets the position mode for an account.
     ///
     /// # Errors
     ///
@@ -357,7 +357,7 @@ impl OKXHttpInnerClient {
         self.send_request(Method::GET, &path, None, false).await
     }
 
-    /// Request a list of instruments with open contracts.
+    /// Requests a list of instruments with open contracts.
     ///
     /// # Errors
     ///
@@ -513,7 +513,7 @@ impl OKXHttpInnerClient {
 
     /// Requests information on your positions. When the account is in net mode, net positions will
     /// be displayed, and when the account is in long/short mode, long or short positions will be
-    /// displayed. Return in reverse chronological order using ctime.
+    /// displayed. Returns in reverse chronological order using ctime.
     ///
     /// # References
     ///

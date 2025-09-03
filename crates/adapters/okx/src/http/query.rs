@@ -170,37 +170,37 @@ pub struct GetCandlesticksParamsBuilder {
 }
 
 impl GetCandlesticksParamsBuilder {
-    /// Set the instrument ID.
+    /// Sets the instrument ID.
     pub fn inst_id(&mut self, inst_id: impl Into<String>) -> &mut Self {
         self.inst_id = Some(inst_id.into());
         self
     }
 
-    /// Set the bar interval.
+    /// Sets the bar interval.
     pub fn bar(&mut self, bar: impl Into<String>) -> &mut Self {
         self.bar = Some(bar.into());
         self
     }
 
-    /// Set the after timestamp (milliseconds).
+    /// Sets the after timestamp (milliseconds).
     pub fn after_ms(&mut self, after_ms: i64) -> &mut Self {
         self.after_ms = Some(after_ms);
         self
     }
 
-    /// Set the before timestamp (milliseconds).
+    /// Sets the before timestamp (milliseconds).
     pub fn before_ms(&mut self, before_ms: i64) -> &mut Self {
         self.before_ms = Some(before_ms);
         self
     }
 
-    /// Set the limit.
+    /// Sets the limit.
     pub fn limit(&mut self, limit: u32) -> &mut Self {
         self.limit = Some(limit);
         self
     }
 
-    /// Build the parameters with embedded invariant validation.
+    /// Builds the parameters with embedded invariant validation.
     pub fn build(&mut self) -> Result<GetCandlesticksParams, BuildError> {
         // Extract values from builder
         let inst_id = self.inst_id.clone().ok_or(BuildError::MissingInstId)?;

@@ -993,8 +993,11 @@ impl OKXWebSocketClient {
         }
     }
 
-    /// Subscribe to instrument updates for a specific instrument type.
+    /// Subscribes to instrument updates for a specific instrument type.
+    ///
     /// Provides updates when instrument specifications change.
+    ///
+    /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#public-data-websocket-instruments-channel>.
     pub async fn subscribe_instruments(
@@ -1010,8 +1013,11 @@ impl OKXWebSocketClient {
         self.subscribe(vec![arg]).await
     }
 
-    /// Subscribe to instrument updates for a specific instrument.
+    /// Subscribes to instrument updates for a specific instrument.
+    ///
     /// Provides updates when instrument specifications change.
+    ///
+    /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#public-data-websocket-instruments-channel>.
     pub async fn subscribe_instrument(
@@ -1027,7 +1033,9 @@ impl OKXWebSocketClient {
         self.subscribe(vec![arg]).await
     }
 
-    /// Subscribe to full order book data (400 depth levels) for an instrument.
+    /// Subscribes to full order book data (400 depth levels) for an instrument.
+    ///
+    /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-market-data-ws-order-book-channel>.
     pub async fn subscribe_book(&self, instrument_id: InstrumentId) -> Result<(), OKXWsError> {
@@ -1040,8 +1048,11 @@ impl OKXWebSocketClient {
         self.subscribe(vec![arg]).await
     }
 
-    /// Subscribe to 5-level order book snapshot data for an instrument.
+    /// Subscribes to 5-level order book snapshot data for an instrument.
+    ///
     /// Updates every 100ms when there are changes.
+    ///
+    /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-market-data-ws-order-book-5-depth-channel>.
     pub async fn subscribe_book_depth5(
@@ -1057,8 +1068,11 @@ impl OKXWebSocketClient {
         self.subscribe(vec![arg]).await
     }
 
-    /// Subscribe to 50-level tick-by-tick order book data for an instrument.
+    /// Subscribes to 50-level tick-by-tick order book data for an instrument.
+    ///
     /// Provides real-time updates whenever order book changes.
+    ///
+    /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-market-data-ws-order-book-50-depth-tbt-channel>.
     pub async fn subscribe_books50_l2_tbt(
@@ -1074,8 +1088,11 @@ impl OKXWebSocketClient {
         self.subscribe(vec![arg]).await
     }
 
-    /// Subscribe to tick-by-tick full depth (400 levels) order book data for an instrument.
+    /// Subscribes to tick-by-tick full depth (400 levels) order book data for an instrument.
+    ///
     /// Provides real-time updates with all depth levels whenever order book changes.
+    ///
+    /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-market-data-ws-order-book-400-depth-tbt-channel>.
     pub async fn subscribe_book_l2_tbt(
@@ -1091,8 +1108,11 @@ impl OKXWebSocketClient {
         self.subscribe(vec![arg]).await
     }
 
-    /// Subscribe to best bid/ask quote data for an instrument.
+    /// Subscribes to best bid/ask quote data for an instrument.
+    ///
     /// Provides tick-by-tick updates of the best bid and ask prices.
+    ///
+    /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-market-data-ws-bbo-tbt-channel>.
     pub async fn subscribe_quotes(&self, instrument_id: InstrumentId) -> Result<(), OKXWsError> {
@@ -1106,7 +1126,9 @@ impl OKXWebSocketClient {
         self.subscribe(vec![arg]).await
     }
 
-    /// Subscribe to trade data for an instrument.
+    /// Subscribes to trade data for an instrument.
+    ///
+    /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-market-data-ws-trades-channel>.
     pub async fn subscribe_trades(
@@ -1129,8 +1151,11 @@ impl OKXWebSocketClient {
         self.subscribe(vec![arg]).await
     }
 
-    /// Subscribe to 24hr rolling ticker data for an instrument.
+    /// Subscribes to 24hr rolling ticker data for an instrument.
+    ///
     /// Updates every 100ms with trading statistics.
+    ///
+    /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-market-data-ws-tickers-channel>.
     pub async fn subscribe_ticker(&self, instrument_id: InstrumentId) -> Result<(), OKXWsError> {
@@ -1143,8 +1168,11 @@ impl OKXWebSocketClient {
         self.subscribe(vec![arg]).await
     }
 
-    /// Subscribe to mark price data for derivatives instruments.
+    /// Subscribes to mark price data for derivatives instruments.
+    ///
     /// Updates every 200ms for perpetual swaps, or at settlement for futures.
+    ///
+    /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#public-data-websocket-mark-price-channel>.
     pub async fn subscribe_mark_prices(
@@ -1160,8 +1188,11 @@ impl OKXWebSocketClient {
         self.subscribe(vec![arg]).await
     }
 
-    /// Subscribe to index price data for an instrument.
+    /// Subscribes to index price data for an instrument.
+    ///
     /// Updates every second with the underlying index price.
+    ///
+    /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#public-data-websocket-index-tickers-channel>.
     pub async fn subscribe_index_prices(
@@ -1177,8 +1208,11 @@ impl OKXWebSocketClient {
         self.subscribe(vec![arg]).await
     }
 
-    /// Subscribe to funding rate data for perpetual swap instruments.
+    /// Subscribes to funding rate data for perpetual swap instruments.
+    ///
     /// Updates when funding rate changes or at funding intervals.
+    ///
+    /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#public-data-websocket-funding-rate-channel>.
     pub async fn subscribe_funding_rates(
@@ -1194,8 +1228,11 @@ impl OKXWebSocketClient {
         self.subscribe(vec![arg]).await
     }
 
-    /// Subscribe to candlestick/bar data for an instrument.
+    /// Subscribes to candlestick/bar data for an instrument.
+    ///
     /// Supports various time intervals from 1s to 3M.
+    ///
+    /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-market-data-ws-candlesticks-channel>.
     pub async fn subscribe_bars(&self, bar_type: BarType) -> Result<(), OKXWsError> {
@@ -1212,7 +1249,7 @@ impl OKXWebSocketClient {
         self.subscribe(vec![arg]).await
     }
 
-    /// Unsubscribe from instrument updates for a specific instrument type.
+    /// Unsubscribes from instrument updates for a specific instrument type.
     pub async fn unsubscribe_instruments(
         &self,
         instrument_type: OKXInstrumentType,
@@ -1661,7 +1698,7 @@ impl OKXWebSocketClient {
         }
     }
 
-    /// Submits a new order using Nautilus domain types via WebSocket.
+    /// Submits a new order.
     ///
     /// # References
     ///
@@ -1805,7 +1842,7 @@ impl OKXWebSocketClient {
         self.ws_place_order(params, Some(request_id)).await
     }
 
-    /// Cancels an existing order via WebSocket using Nautilus domain types.
+    /// Cancels an existing order.
     ///
     /// # References
     ///
@@ -1888,7 +1925,7 @@ impl OKXWebSocketClient {
         }
     }
 
-    /// Modifies an existing order via WebSocket using Nautilus domain types.
+    /// Modifies an existing order.
     ///
     /// # References
     ///
@@ -1952,7 +1989,7 @@ impl OKXWebSocketClient {
         self.ws_amend_order(params, Some(request_id)).await
     }
 
-    /// Submits multiple orders via WebSocket using Nautilus domain types.
+    /// Submits multiple orders.
     #[allow(clippy::type_complexity)]
     #[allow(clippy::too_many_arguments)]
     pub async fn batch_submit_orders(
@@ -2031,7 +2068,7 @@ impl OKXWebSocketClient {
         self.ws_batch_place_orders(args).await
     }
 
-    /// Cancels multiple orders via WebSocket using Nautilus domain types.
+    /// Cancels multiple orders.
     #[allow(clippy::type_complexity)]
     pub async fn batch_cancel_orders(
         &self,
@@ -2120,7 +2157,7 @@ impl OKXFeedHandler {
         Self { receiver, signal }
     }
 
-    /// Get the next message from the WebSocket stream.
+    /// Gets the next message from the WebSocket stream.
     async fn next(&mut self) -> Option<OKXWebSocketEvent> {
         loop {
             tokio::select! {
