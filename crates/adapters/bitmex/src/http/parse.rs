@@ -31,7 +31,7 @@ use uuid::Uuid;
 
 use super::models::{BitmexExecution, BitmexInstrument, BitmexOrder, BitmexPosition, BitmexTrade};
 use crate::common::{
-    enums::{BitmexExecInstruction, BitmexInstrumentType},
+    enums::{BitmexExecInstruction, BitmexExecType, BitmexInstrumentType},
     parse::{
         parse_aggressor_side, parse_contingency_type, parse_instrument_id, parse_liquidity_side,
         parse_optional_datetime_to_unix_nanos, parse_order_status, parse_order_type,
@@ -505,6 +505,7 @@ pub fn parse_trade(
 pub fn parse_order_status_report(
     order: BitmexOrder,
     price_precision: u8,
+    ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
     // BitMEX returns account as a number, but AccountId needs format like "BITMEX-123"
     let account_id = AccountId::new(format!("BITMEX-{}", order.account.unwrap_or(0)));
@@ -551,7 +552,6 @@ pub fn parse_order_status_report(
         || get_atomic_clock_realtime().get_time_ns(),
         UnixNanos::from,
     );
-    let ts_init = get_atomic_clock_realtime().get_time_ns();
 
     let mut report = OrderStatusReport::new(
         account_id,
@@ -634,15 +634,18 @@ pub fn parse_order_status_report(
 ///
 /// Panics if:
 /// - Execution is missing required fields: `symbol`, `order_id`, `trd_match_id`, `last_qty`, `last_px`, or `transact_time`
-pub fn parse_fill_report(exec: BitmexExecution, price_precision: u8) -> anyhow::Result<FillReport> {
+pub fn parse_fill_report(
+    exec: BitmexExecution,
+    price_precision: u8,
+    ts_init: UnixNanos,
+) -> anyhow::Result<FillReport> {
     // Skip non-trade executions (funding, settlements, etc.)
-    // Trade executions have exec_type of "Trade" or None (for backwards compatibility)
+    // Trade executions have exec_type of Trade or None (for backwards compatibility)
     if let Some(exec_type) = &exec.exec_type
-        && exec_type != "Trade"
+        && !matches!(exec_type, BitmexExecType::Trade)
     {
         return Err(anyhow::anyhow!(
-            "Skipping non-trade execution: {}",
-            exec_type
+            "Skipping non-trade execution: {exec_type:?}",
         ));
     }
 
@@ -693,7 +696,6 @@ pub fn parse_fill_report(exec: BitmexExecution, price_precision: u8) -> anyhow::
         || get_atomic_clock_realtime().get_time_ns(),
         UnixNanos::from,
     );
-    let ts_init = get_atomic_clock_realtime().get_time_ns();
 
     Ok(FillReport::new(
         account_id,
@@ -719,14 +721,16 @@ pub fn parse_fill_report(exec: BitmexExecution, price_precision: u8) -> anyhow::
 ///
 /// Currently this function does not return errors as all fields are handled gracefully,
 /// but returns `Result` for future error handling compatibility.
-pub fn parse_position_report(position: BitmexPosition) -> anyhow::Result<PositionStatusReport> {
+pub fn parse_position_report(
+    position: BitmexPosition,
+    ts_init: UnixNanos,
+) -> anyhow::Result<PositionStatusReport> {
     let account_id = AccountId::new(format!("BITMEX-{}", position.account));
     let instrument_id = parse_instrument_id(position.symbol);
     let position_side = parse_position_side(position.current_qty).as_specified();
     let quantity = Quantity::from(position.current_qty.map_or(0_i64, i64::abs));
     let venue_position_id = None; // Not applicable on BitMEX
     let ts_last = parse_optional_datetime_to_unix_nanos(&position.timestamp, "timestamp");
-    let ts_init = get_atomic_clock_realtime().get_time_ns();
 
     Ok(PositionStatusReport::new(
         account_id,
@@ -766,8 +770,10 @@ mod tests {
     use crate::{
         common::{
             enums::{
-                BitmexContingencyType, BitmexInstrumentType, BitmexLiquidityIndicator,
-                BitmexOrderStatus, BitmexOrderType, BitmexSide, BitmexTimeInForce,
+                BitmexContingencyType, BitmexFairMethod, BitmexInstrumentState,
+                BitmexInstrumentType, BitmexLiquidityIndicator, BitmexMarkMethod,
+                BitmexOrderStatus, BitmexOrderType, BitmexSide, BitmexTickDirection,
+                BitmexTimeInForce,
             },
             testing::load_test_json,
         },
@@ -784,7 +790,7 @@ mod tests {
 
         assert_eq!(instrument.symbol, "XBTUSD");
         assert_eq!(instrument.root_symbol, "XBT");
-        assert_eq!(instrument.state, "Open");
+        assert_eq!(instrument.state, BitmexInstrumentState::Open);
         assert!(instrument.is_inverse);
         assert_eq!(instrument.maker_fee, Some(0.0005));
         assert_eq!(
@@ -961,7 +967,7 @@ mod tests {
             ..Default::default()
         };
 
-        let report = parse_order_status_report(order, 2).unwrap();
+        let report = parse_order_status_report(order, 2, UnixNanos::from(1)).unwrap();
 
         assert_eq!(report.account_id.to_string(), "BITMEX-123456");
         assert_eq!(report.instrument_id.to_string(), "XBTUSD.BITMEX");
@@ -1008,7 +1014,7 @@ mod tests {
             ..Default::default()
         };
 
-        let report = parse_order_status_report(order, 2).unwrap();
+        let report = parse_order_status_report(order, 2, UnixNanos::from(1)).unwrap();
 
         assert_eq!(report.account_id.to_string(), "BITMEX-0");
         assert_eq!(report.instrument_id.to_string(), "ETHUSD.BITMEX");
@@ -1048,7 +1054,7 @@ mod tests {
             ..Default::default()
         };
 
-        let report = parse_fill_report(exec, 2).unwrap();
+        let report = parse_fill_report(exec, 2, UnixNanos::from(1)).unwrap();
 
         assert_eq!(report.account_id.to_string(), "BITMEX-654321");
         assert_eq!(report.instrument_id.to_string(), "XBTUSD.BITMEX");
@@ -1091,7 +1097,7 @@ mod tests {
             ..Default::default()
         };
 
-        let report = parse_fill_report(exec, 2).unwrap();
+        let report = parse_fill_report(exec, 2, UnixNanos::from(1)).unwrap();
 
         assert_eq!(report.account_id.to_string(), "BITMEX-111111");
         assert_eq!(
@@ -1118,7 +1124,7 @@ mod tests {
             ..Default::default()
         };
 
-        let report = parse_position_report(position).unwrap();
+        let report = parse_position_report(position, UnixNanos::from(1)).unwrap();
 
         assert_eq!(report.account_id.to_string(), "BITMEX-789012");
         assert_eq!(report.instrument_id.to_string(), "XBTUSD.BITMEX");
@@ -1140,7 +1146,7 @@ mod tests {
             ..Default::default()
         };
 
-        let report = parse_position_report(position).unwrap();
+        let report = parse_position_report(position, UnixNanos::from(1)).unwrap();
 
         assert_eq!(report.position_side.as_position_side(), PositionSide::Short);
         assert_eq!(report.quantity.as_f64(), 500.0); // Should be absolute value
@@ -1160,7 +1166,7 @@ mod tests {
             ..Default::default()
         };
 
-        let report = parse_position_report(position).unwrap();
+        let report = parse_position_report(position, UnixNanos::from(1)).unwrap();
 
         assert_eq!(report.position_side.as_position_side(), PositionSide::Flat);
         assert_eq!(report.quantity.as_f64(), 0.0);
@@ -1174,7 +1180,7 @@ mod tests {
         BitmexInstrument {
             symbol: Ustr::from("XBTUSD"),
             root_symbol: Ustr::from("XBT"),
-            state: Ustr::from("Open"),
+            state: BitmexInstrumentState::Open,
             instrument_type: BitmexInstrumentType::Spot,
             listing: DateTime::parse_from_rfc3339("2016-05-13T12:00:00.000Z")
                 .unwrap()
@@ -1255,7 +1261,7 @@ mod tests {
             high_price: Some(51000.0),
             low_price: Some(49000.0),
             last_price_protected: Some(50500.0),
-            last_tick_direction: Some(Ustr::from("PlusTick")),
+            last_tick_direction: Some(BitmexTickDirection::PlusTick),
             last_change_pcnt: Some(0.0202),
             mid_price: Some(50500.0),
             impact_bid_price: Some(50490.0),
@@ -1265,7 +1271,7 @@ mod tests {
             fair_basis_rate: None,
             fair_basis: None,
             fair_price: None,
-            mark_method: Some(Ustr::from("LastPrice")),
+            mark_method: Some(BitmexMarkMethod::LastPrice),
             indicative_settle_price: None,
             settled_price_adjustment_rate: None,
             settled_price: None,
@@ -1280,7 +1286,7 @@ mod tests {
         BitmexInstrument {
             symbol: Ustr::from("XBTUSD"),
             root_symbol: Ustr::from("XBT"),
-            state: Ustr::from("Open"),
+            state: BitmexInstrumentState::Open,
             instrument_type: BitmexInstrumentType::PerpetualContract,
             listing: DateTime::parse_from_rfc3339("2016-05-13T12:00:00.000Z")
                 .unwrap()
@@ -1372,17 +1378,17 @@ mod tests {
             high_price: Some(51000.0),
             low_price: Some(49000.0),
             last_price_protected: Some(50500.0),
-            last_tick_direction: Some(Ustr::from("PlusTick")),
+            last_tick_direction: Some(BitmexTickDirection::PlusTick),
             last_change_pcnt: Some(0.0202),
             mid_price: Some(50500.0),
             impact_bid_price: Some(50490.0),
             impact_mid_price: Some(50495.0),
             impact_ask_price: Some(50500.0),
-            fair_method: Some(Ustr::from("FundingRate")),
+            fair_method: Some(BitmexFairMethod::FundingRate),
             fair_basis_rate: Some(0.1095),
             fair_basis: Some(0.01),
             fair_price: Some(50500.01),
-            mark_method: Some(Ustr::from("FairPrice")),
+            mark_method: Some(BitmexMarkMethod::FairPrice),
             indicative_settle_price: Some(50500.0),
             settled_price_adjustment_rate: None,
             settled_price: None,
@@ -1395,7 +1401,7 @@ mod tests {
         BitmexInstrument {
             symbol: Ustr::from("XBTH25"),
             root_symbol: Ustr::from("XBT"),
-            state: Ustr::from("Open"),
+            state: BitmexInstrumentState::Open,
             instrument_type: BitmexInstrumentType::Futures,
             listing: DateTime::parse_from_rfc3339("2024-09-27T12:00:00.000Z")
                 .unwrap()
@@ -1487,17 +1493,17 @@ mod tests {
             high_price: Some(56000.0),
             low_price: Some(54000.0),
             last_price_protected: Some(55500.0),
-            last_tick_direction: Some(Ustr::from("PlusTick")),
+            last_tick_direction: Some(BitmexTickDirection::PlusTick),
             last_change_pcnt: Some(0.0183),
             mid_price: Some(55500.0),
             impact_bid_price: Some(55490.0),
             impact_mid_price: Some(55495.0),
             impact_ask_price: Some(55500.0),
-            fair_method: Some(Ustr::from("ImpactMidPrice")),
+            fair_method: Some(BitmexFairMethod::ImpactMidPrice),
             fair_basis_rate: Some(1.8264),
             fair_basis: Some(1000.0),
             fair_price: Some(55500.0),
-            mark_method: Some(Ustr::from("FairPrice")),
+            mark_method: Some(BitmexMarkMethod::FairPrice),
             indicative_settle_price: Some(55500.0),
             settled_price_adjustment_rate: None,
             settled_price: None,

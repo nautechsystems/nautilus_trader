@@ -19,8 +19,10 @@ use ustr::Ustr;
 use uuid::Uuid;
 
 use crate::common::enums::{
-    BitmexContingencyType, BitmexExecInstruction, BitmexInstrumentType, BitmexLiquidityIndicator,
-    BitmexOrderStatus, BitmexOrderType, BitmexPegPriceType, BitmexSide, BitmexTimeInForce,
+    BitmexContingencyType, BitmexExecInstruction, BitmexExecType, BitmexFairMethod,
+    BitmexInstrumentState, BitmexInstrumentType, BitmexLiquidityIndicator, BitmexMarkMethod,
+    BitmexOrderStatus, BitmexOrderType, BitmexPegPriceType, BitmexSide, BitmexTickDirection,
+    BitmexTimeInForce,
 };
 
 /// Custom deserializer for comma-separated `ExecInstruction` values
@@ -67,7 +69,7 @@ where
 pub struct BitmexInstrument {
     pub symbol: Ustr,
     pub root_symbol: Ustr,
-    pub state: Ustr,
+    pub state: BitmexInstrumentState,
     #[serde(rename = "typ")]
     pub instrument_type: BitmexInstrumentType,
     pub listing: DateTime<Utc>,
@@ -132,7 +134,7 @@ pub struct BitmexInstrument {
     pub low_price: Option<f64>,
     pub last_price: Option<f64>,
     pub last_price_protected: Option<f64>,
-    pub last_tick_direction: Option<Ustr>,
+    pub last_tick_direction: Option<BitmexTickDirection>,
     pub last_change_pcnt: Option<f64>,
     pub bid_price: Option<f64>,
     pub mid_price: Option<f64>,
@@ -143,11 +145,11 @@ pub struct BitmexInstrument {
     pub has_liquidity: Option<bool>,
     pub open_interest: Option<f64>,
     pub open_value: Option<f64>,
-    pub fair_method: Option<Ustr>,
+    pub fair_method: Option<BitmexFairMethod>,
     pub fair_basis_rate: Option<f64>,
     pub fair_basis: Option<f64>,
     pub fair_price: Option<f64>,
-    pub mark_method: Option<Ustr>,
+    pub mark_method: Option<BitmexMarkMethod>,
     pub mark_price: Option<f64>,
     pub indicative_settle_price: Option<f64>,
     pub settled_price_adjustment_rate: Option<f64>,
@@ -187,7 +189,7 @@ pub struct BitmexExecution {
     pub peg_price_type: Option<BitmexPegPriceType>,
     pub currency: Option<Ustr>,
     pub settl_currency: Option<Ustr>,
-    pub exec_type: Option<Ustr>,
+    pub exec_type: Option<BitmexExecType>,
     pub ord_type: Option<BitmexOrderType>,
     pub time_in_force: Option<BitmexTimeInForce>,
     #[serde(default, deserialize_with = "deserialize_exec_instructions")]
