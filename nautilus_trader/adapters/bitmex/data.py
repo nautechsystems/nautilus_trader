@@ -99,8 +99,7 @@ class BitmexDataClient(LiveMarketDataClient):
 
         # Configuration
         self._config = config
-        self._symbol_status = config.symbol_status
-        self._log.info(f"config.symbol_status={config.symbol_status}", LogColor.BLUE)
+        self._active_only = True  # Always use active instruments for live clients
         self._log.info(f"config.testnet={config.testnet}", LogColor.BLUE)
         self._log.info(f"config.http_timeout_secs={config.http_timeout_secs}", LogColor.BLUE)
         self._log.info(
@@ -313,7 +312,7 @@ class BitmexDataClient(LiveMarketDataClient):
         await self._ws_client.unsubscribe_funding_rates(pyo3_instrument_id)
 
     async def _request_instruments(self, request: RequestInstruments) -> None:
-        instruments = await self._http_client.request_instruments(self._symbol_status)
+        instruments = await self._http_client.request_instruments(self._active_only)
         for instrument in instruments:
             self._handle_instrument(instrument)
         self._send_response(
@@ -322,7 +321,7 @@ class BitmexDataClient(LiveMarketDataClient):
         )
 
     async def _request_instrument(self, request: RequestInstrument) -> None:
-        instruments = await self._http_client.request_instruments(self._symbol_status)
+        instruments = await self._http_client.request_instruments(self._active_only)
         for instrument in instruments:
             if instrument.id == request.instrument_id:
                 self._handle_instrument(instrument)

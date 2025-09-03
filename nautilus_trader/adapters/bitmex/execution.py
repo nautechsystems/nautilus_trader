@@ -50,6 +50,7 @@ from nautilus_trader.model.events import OrderModifyRejected
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.functions import order_side_to_pyo3
 from nautilus_trader.model.functions import order_type_to_pyo3
+from nautilus_trader.model.functions import time_in_force_to_pyo3
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -108,8 +109,6 @@ class BitmexExecutionClient(LiveExecutionClient):
 
         # Configuration
         self._config = config
-        self._symbol_status = config.symbol_status
-        self._log.info(f"config.symbol_status={config.symbol_status}", LogColor.BLUE)
         self._log.info(f"config.testnet={config.testnet}", LogColor.BLUE)
         self._log.info(f"config.http_timeout_secs={config.http_timeout_secs}", LogColor.BLUE)
 
@@ -248,11 +247,12 @@ class BitmexExecutionClient(LiveExecutionClient):
             ts_event=self._clock.timestamp_ns(),
         )
 
-        pyo3_symbol = nautilus_pyo3.Symbol(order.instrument_id.symbol.value)
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(order.instrument_id.value)
         pyo3_client_order_id = nautilus_pyo3.ClientOrderId(order.client_order_id.value)
         pyo3_order_type = order_type_to_pyo3(order.order_type)
         pyo3_order_side = order_side_to_pyo3(order.side)
         pyo3_quantity = nautilus_pyo3.Quantity.from_str(str(order.quantity))
+        pyo3_time_in_force = time_in_force_to_pyo3(order.time_in_force)
         pyo3_price = nautilus_pyo3.Price.from_str(str(order.price)) if order.has_price else None
         pyo3_trigger_price = (
             nautilus_pyo3.Price.from_str(str(order.trigger_price))
@@ -262,20 +262,22 @@ class BitmexExecutionClient(LiveExecutionClient):
         pyo3_display_qty = (
             nautilus_pyo3.Quantity.from_str(str(order.display_qty)) if order.display_qty else None
         )
+        reduce_only = order.is_reduce_only
 
         try:
             await self._http_client.submit_order(
-                symbol=pyo3_symbol,
+                instrument_id=pyo3_instrument_id,
                 client_order_id=pyo3_client_order_id,
-                order_type=pyo3_order_type,
                 order_side=pyo3_order_side,
+                order_type=pyo3_order_type,
                 quantity=pyo3_quantity,
+                time_in_force=pyo3_time_in_force,
                 price=pyo3_price,
                 trigger_price=pyo3_trigger_price,
                 display_qty=pyo3_display_qty,
+                reduce_only=reduce_only,
             )
 
-            self._log.info(f"Submitted order {order.client_order_id}")
         except Exception as e:
             self._log.error(f"Failed to submit order {order.client_order_id}: {e}")
             self.generate_order_rejected(
@@ -302,6 +304,7 @@ class BitmexExecutionClient(LiveExecutionClient):
             )
             return
 
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(order.instrument_id.value)
         pyo3_client_order_id = (
             nautilus_pyo3.ClientOrderId(command.client_order_id.value)
             if command.client_order_id
@@ -324,15 +327,13 @@ class BitmexExecutionClient(LiveExecutionClient):
 
         try:
             await self._http_client.modify_order(
+                instrument_id=pyo3_instrument_id,
                 client_order_id=pyo3_client_order_id,
                 venue_order_id=pyo3_venue_order_id,
                 quantity=pyo3_quantity,
-                leaves_qty=None,  # BitMEX uses leaves_qty in modify
                 price=pyo3_price,
                 trigger_price=pyo3_trigger_price,
             )
-
-            self._log.info(f"Modified order {command.client_order_id}")
         except Exception as e:
             self._log.error(f"Failed to modify order {command.client_order_id}: {e}")
 
@@ -365,21 +366,22 @@ class BitmexExecutionClient(LiveExecutionClient):
                 client_order_id=pyo3_client_order_id,
                 venue_order_id=pyo3_venue_order_id,
             )
-
-            self._log.info(f"Cancelled order {command.client_order_id}")
         except Exception as e:
             self._log.error(f"Failed to cancel order {command.client_order_id}: {e}")
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        pyo3_order_side = order_side_to_pyo3(command.order_side)
+        pyo3_order_side = order_side_to_pyo3(command.order_side) if command.order_side else None
 
         try:
-            await self._http_client.cancel_all_orders(
+            reports = await self._http_client.cancel_all_orders(
                 instrument_id=pyo3_instrument_id,
                 order_side=pyo3_order_side,
             )
-            self._log.info(f"Cancelled all orders for {command.instrument_id.value}")
+            for report in reports:
+                self._handle_order_status_report_pyo3(report)
+
+            self._log.info(f"Cancelled {len(reports)} orders for {command.instrument_id.value}")
         except Exception as e:
             self._log.error(f"Failed to cancel all orders: {e}")
 
@@ -427,13 +429,12 @@ class BitmexExecutionClient(LiveExecutionClient):
         Generate a list of `OrderStatusReport`s with optional query filters.
         """
         try:
-            # Get the symbol filter if an instrument_id is provided
-            symbol = None
-            if command.instrument_id:
-                symbol = command.instrument_id.symbol.value
-
             # Fetch order reports from BitMEX
-            pyo3_reports = await self._http_client.get_order_reports(symbol)
+            pyo3_reports = await self._http_client.get_order_reports(
+                instrument_id=command.instrument_id,
+                open_only=False,
+                limit=None,
+            )
 
             result: list[OrderStatusReport] = []
 
@@ -489,13 +490,11 @@ class BitmexExecutionClient(LiveExecutionClient):
         Generate a list of `FillReport`s with optional query filters.
         """
         try:
-            # Get the symbol filter if an instrument_id is provided
-            symbol = None
-            if command.instrument_id:
-                symbol = command.instrument_id.symbol.value
-
             # Fetch fill reports from BitMEX
-            reports = await self._http_client.get_fill_reports(symbol)
+            reports = await self._http_client.get_fill_reports(
+                instrument_id=command.instrument_id,
+                limit=None,
+            )
 
             # Convert from pyo3 reports to Python reports if needed
             result = []
