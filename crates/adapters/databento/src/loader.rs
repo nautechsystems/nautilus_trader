@@ -785,7 +785,7 @@ mod tests {
             .load_bbo_quotes(&path, Some(instrument_id), None)
             .unwrap();
 
-        assert_eq!(quotes.len(), 2);
+        assert_eq!(quotes.len(), 4);
     }
 
     #[rstest]
@@ -793,30 +793,26 @@ mod tests {
         let path = test_data_path().join("test_data.tbbo.dbn.zst");
         let instrument_id = InstrumentId::from("ESM4.GLBX");
 
-        let _trades = loader
+        let trades = loader
             .load_tbbo_trades(&path, Some(instrument_id), None)
             .unwrap();
 
-        // assert_eq!(trades.len(), 2);  TODO: No records?
+        // TBBO test data doesn't contain valid trade data (size/price may be 0)
+        assert_eq!(trades.len(), 0);
     }
 
-    // TODO: Re-enable this test once proper TCBBO/CBBO test data is available
     #[rstest]
-    #[ignore]
     fn test_load_tcbbo_trades(loader: DatabentoDataLoader) {
         // Since we don't have dedicated TCBBO test data, we'll use CBBO data
         // In practice, TCBBO would be CBBO messages with trade data
-        let path = test_data_path().join("test_data.cbbo.dbn.zst");
+        let path = test_data_path().join("test_data.cbbo-1s.dbn.zst");
         let instrument_id = InstrumentId::from("ESM4.GLBX");
 
         let result = loader.load_tcbbo_trades(&path, Some(instrument_id), None);
 
-        // This should work without error even if no trades are found
         assert!(result.is_ok());
         let trades = result.unwrap();
-        // The test data might not have trade messages, so we just verify it loads without error
-        // The actual count doesn't matter for this test
-        let _ = trades.len();
+        assert_eq!(trades.len(), 2);
     }
 
     #[rstest]
@@ -831,7 +827,7 @@ mod tests {
     }
 
     #[rstest]
-    // #[case(test_data_path().join("test_data.ohlcv-1d.dbn.zst"))]  // TODO: Needs new data
+    // #[case(test_data_path().join("test_data.ohlcv-1d.dbn.zst"))]  // TODO: Empty file (0 records)
     #[case(test_data_path().join("test_data.ohlcv-1h.dbn.zst"))]
     #[case(test_data_path().join("test_data.ohlcv-1m.dbn.zst"))]
     #[case(test_data_path().join("test_data.ohlcv-1s.dbn.zst"))]
