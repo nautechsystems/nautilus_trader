@@ -182,6 +182,7 @@ Released on TBD (UTC).
 - Fixed Interactive Brokers `submit_order_list` rejection (#2892), thanks @faysou
 - Fixed Interactive Brokers bars query for indices (#2921), thanks @ms32035
 - Fixed missing `funding_rates` for Cache Debug impl (#2894), thanks @MK27MK
+- Fixed missing `log_component_levels` for PyO3 logging initialization
 
 ### Documentation Updates
 - Added Positions concept guide
