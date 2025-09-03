@@ -382,17 +382,26 @@ cdef class Quantity:
         value = value.replace('_', '')
 
         cdef uint8_t precision = precision_from_cstr(pystr_to_cstr(value))
+        if precision > FIXED_PRECISION:
+            raise ValueError(
+                f"invalid `precision` greater than max {FIXED_PRECISION}, was {precision}"
+            )
+
         decimal_value = decimal.Decimal(value)
 
         if decimal_value < 0:
-            raise ValueError(f"Quantity cannot be negative: {value}")
+            raise ValueError(
+                f"invalid negative quantity, was {value}"
+            )
 
         scaled = decimal_value * (10 ** precision)
         integral = scaled.to_integral_value(rounding=decimal.ROUND_HALF_EVEN)
 
         raw_py = int(integral) * (10 ** (FIXED_PRECISION - precision))
         if raw_py > QUANTITY_RAW_MAX:
-            raise ValueError(f"Raw quantity value out of range: {raw_py}")
+            raise ValueError(
+                f"invalid raw quantity value exceeds max {QUANTITY_RAW_MAX}, was {raw_py}"
+            )
 
         cdef QuantityRaw raw = <QuantityRaw>(raw_py)
         return Quantity.from_raw_c(raw, precision)
@@ -788,13 +797,20 @@ cdef class Price:
         value = value.replace('_', '')
 
         cdef uint8_t precision = precision_from_cstr(pystr_to_cstr(value))
+        if precision > FIXED_PRECISION:
+            raise ValueError(
+                f"invalid `precision` greater than max {FIXED_PRECISION}, was {precision}"
+            )
+
         decimal_value = decimal.Decimal(value)
         scaled = decimal_value * (10 ** precision)
         integral = scaled.to_integral_value(rounding=decimal.ROUND_HALF_EVEN)
 
         raw_py = int(integral) * (10 ** (FIXED_PRECISION - precision))
         if raw_py < PRICE_RAW_MIN or raw_py > PRICE_RAW_MAX:
-            raise ValueError(f"Raw price value out of range: {raw_py}")
+            raise ValueError(
+                f"invalid raw price value outside range [{PRICE_RAW_MIN}, {PRICE_RAW_MAX}], was {raw_py}"
+            )
 
         cdef PriceRaw raw = <PriceRaw>(raw_py)
         return Price.from_raw_c(raw, precision)
@@ -1201,7 +1217,9 @@ cdef class Money:
 
         raw_py = int(integral) * (10 ** (FIXED_PRECISION - precision))
         if raw_py < MONEY_RAW_MIN or raw_py > MONEY_RAW_MAX:
-            raise ValueError(f"Raw money value out of range: {raw_py}")
+            raise ValueError(
+                f"invalid raw money value outside range [{MONEY_RAW_MIN}, {MONEY_RAW_MAX}], was {raw_py}"
+            )
 
         cdef MoneyRaw raw = <MoneyRaw>(raw_py)
         return Money.from_raw_c(raw, currency)
