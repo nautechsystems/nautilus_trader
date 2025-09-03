@@ -201,6 +201,7 @@ class NautilusKernel:
                         instance_id=nautilus_pyo3.UUID4.from_str(self._instance_id.value),
                         level_stdout=nautilus_pyo3.LogLevel(logging.log_level),
                         level_file=nautilus_pyo3.LogLevel(logging.log_level_file or "OFF"),
+                        component_levels=logging.log_component_levels,
                         directory=logging.log_directory,
                         file_name=logging.log_file_name,
                         file_format=logging.log_file_format,
