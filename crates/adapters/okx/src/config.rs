@@ -12,3 +12,7 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
+
+//! Configuration structures for the OKX adapter.
+//!
+//! This module will contain configuration options for the OKX data and execution clients.

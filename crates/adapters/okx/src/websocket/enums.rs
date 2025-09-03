@@ -60,7 +60,7 @@ pub enum OKXWsErrorType {
 )]
 #[serde(rename_all = "kebab-case")]
 pub enum OKXWsOperation {
-    /// Subscribe to one or more topics.
+    /// Subscribes to one or more topics.
     Subscribe,
     /// Unsubscribe from one or more topics.
     Unsubscribe,
