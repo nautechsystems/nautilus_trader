@@ -17,11 +17,8 @@ use ahash::AHashMap;
 use nautilus_core::UnixNanos;
 use nautilus_model::{data::quote::QuoteTick, identifiers::InstrumentId, types::price::Price};
 
-use super::{
-    messages::BitmexQuoteMsg,
-    parse::{parse_quantity, parse_quote_msg},
-};
-use crate::common::parse::parse_instrument_id;
+use super::{messages::BitmexQuoteMsg, parse::parse_quote_msg};
+use crate::common::parse::{parse_contracts_quantity, parse_instrument_id};
 
 /// Maintains quote state for each instrument to handle partial quote updates.
 ///
@@ -46,7 +43,7 @@ impl QuoteCache {
         price_precision: u8,
         ts_init: UnixNanos,
     ) -> Option<QuoteTick> {
-        let instrument_id = parse_instrument_id(&msg.symbol);
+        let instrument_id = parse_instrument_id(msg.symbol);
 
         let quote = if let Some(last_quote) = self.last_quotes.get(&instrument_id) {
             Some(parse_quote_msg(msg, last_quote, price_precision, ts_init))
@@ -57,8 +54,8 @@ impl QuoteCache {
                         instrument_id,
                         Price::new(bid_price, price_precision),
                         Price::new(ask_price, price_precision),
-                        parse_quantity(bid_size),
-                        parse_quantity(ask_size),
+                        parse_contracts_quantity(bid_size),
+                        parse_contracts_quantity(ask_size),
                         UnixNanos::from(msg.timestamp),
                         ts_init,
                     ))
