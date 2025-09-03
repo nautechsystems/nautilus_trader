@@ -661,11 +661,6 @@ impl OKXHttpClient {
         anyhow::bail!("Instrument {symbol} not in cache and fetch failed");
     }
 
-    /// Generates a timestamp for initialization.
-    fn generate_ts_init(&self) -> UnixNanos {
-        get_atomic_clock_realtime().get_time_ns()
-    }
-
     /// Returns the base url being used by the client.
     pub fn base_url(&self) -> &str {
         self.inner.base_url.as_str()
@@ -682,6 +677,11 @@ impl OKXHttpClient {
     #[must_use]
     pub const fn is_initialized(&self) -> bool {
         self.cache_initialized
+    }
+
+    /// Generates a timestamp for initialization.
+    fn generate_ts_init(&self) -> UnixNanos {
+        get_atomic_clock_realtime().get_time_ns()
     }
 
     /// Returns the cached instrument symbols.
