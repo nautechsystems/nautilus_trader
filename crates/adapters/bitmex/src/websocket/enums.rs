@@ -171,8 +171,10 @@ pub enum BitmexWsOperation {
 )]
 #[serde(rename_all = "camelCase")]
 pub enum BitmexWsAuthAction {
-    /// Submit API key for authentication.
+    /// Submit API key for authentication (legacy, deprecated).
     AuthKey,
+    /// Submit API key with expires for authentication (recommended).
+    AuthKeyExpires,
     /// Cancel all orders after n seconds.
     CancelAllAfter,
 }
@@ -230,4 +232,23 @@ pub enum BitmexWsTopic {
     TradeBin1h,
     /// 1-day trade bins.
     TradeBin1d,
+}
+
+/// Represents authenticated WebSocket channels for account updates.
+#[derive(
+    Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,
+)]
+#[serde(rename_all = "camelCase")]
+#[strum(serialize_all = "camelCase")]
+pub enum BitmexWsAuthChannel {
+    /// Order updates for the authenticated account.
+    Order,
+    /// Execution/fill updates for the authenticated account.
+    Execution,
+    /// Position updates for the authenticated account.
+    Position,
+    /// Margin updates for the authenticated account.
+    Margin,
+    /// Wallet updates for the authenticated account.
+    Wallet,
 }

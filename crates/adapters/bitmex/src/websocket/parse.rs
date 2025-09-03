@@ -23,13 +23,14 @@ use nautilus_model::{
         MarkPriceUpdate, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick,
         depth::DEPTH10_LEN,
     },
-    enums::{AggregationSource, BarAggregation, OrderSide, PriceType, RecordFlag},
+    enums::{AccountType, AggregationSource, BarAggregation, OrderSide, PriceType, RecordFlag},
+    events::account::state::AccountState,
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, Symbol, TradeId, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
-    types::{Currency, Money, Price, Quantity},
+    types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
 use ustr::Ustr;
@@ -47,9 +48,9 @@ use crate::common::{
     consts::BITMEX_VENUE,
     enums::{BitmexExecType, BitmexSide},
     parse::{
-        parse_contracts_quantity, parse_frac_quantity, parse_instrument_id, parse_liquidity_side,
-        parse_optional_datetime_to_unix_nanos, parse_order_status, parse_order_type,
-        parse_position_side, parse_time_in_force,
+        map_bitmex_currency, parse_contracts_quantity, parse_frac_quantity, parse_instrument_id,
+        parse_liquidity_side, parse_optional_datetime_to_unix_nanos, parse_order_status,
+        parse_order_type, parse_position_side, parse_time_in_force,
     },
 };
 
@@ -377,12 +378,14 @@ pub fn topic_from_bar_spec(spec: BarSpecification) -> BitmexWsTopic {
 
 /// Parse a BitMEX WebSocket order message into a Nautilus `OrderStatusReport`.
 ///
-/// # References
-/// <https://www.bitmex.com/app/wsAPI#Order>
-///
 /// # Panics
 ///
 /// Panics if required fields are missing or invalid.
+///
+/// # References
+///
+/// <https://www.bitmex.com/app/wsAPI#Order>
+///
 #[must_use]
 pub fn parse_order_msg(msg: &BitmexOrderMsg, price_precision: u8) -> OrderStatusReport {
     let account_id = AccountId::new(format!("BITMEX-{}", msg.account)); // TODO: Revisit
@@ -442,14 +445,15 @@ pub fn parse_order_msg(msg: &BitmexOrderMsg, price_precision: u8) -> OrderStatus
 
 /// Parse a BitMEX WebSocket execution message into a Nautilus `FillReport`.
 ///
-/// # References
-/// <https://www.bitmex.com/app/wsAPI#Execution>
-///
 /// # Panics
 ///
 /// Panics if required fields are missing or invalid.
+///
+/// # References
+///
+/// <https://www.bitmex.com/app/wsAPI#Execution>
+///
 pub fn parse_execution_msg(msg: BitmexExecutionMsg, price_precision: u8) -> Option<FillReport> {
-    // Skip non-trade executions
     if msg.exec_type != Some(BitmexExecType::Trade) {
         return None;
     }
@@ -464,10 +468,11 @@ pub fn parse_execution_msg(msg: BitmexExecutionMsg, price_precision: u8) -> Opti
         .map_or(OrderSide::NoOrderSide, std::convert::Into::into);
     let last_qty = Quantity::from(msg.last_qty?);
     let last_px = Price::new(msg.last_px?, price_precision);
-    let settlement_currency = msg.settl_currency.unwrap_or(Ustr::from("XBT"));
+    let settlement_currency_str = msg.settl_currency.unwrap_or(Ustr::from("XBT"));
+    let mapped_currency = map_bitmex_currency(settlement_currency_str.as_str());
     let commission = Money::new(
         msg.commission.unwrap_or(0.0),
-        Currency::from(settlement_currency),
+        Currency::from(mapped_currency.as_str()),
     );
     let liquidity_side = parse_liquidity_side(&msg.last_liquidity_ind);
     let client_order_id = msg.cl_ord_id.map(ClientOrderId::new);
@@ -496,6 +501,7 @@ pub fn parse_execution_msg(msg: BitmexExecutionMsg, price_precision: u8) -> Opti
 /// Parse a BitMEX WebSocket position message into a Nautilus `PositionStatusReport`.
 ///
 /// # References
+///
 /// <https://www.bitmex.com/app/wsAPI#Position>
 #[must_use]
 pub fn parse_position_msg(msg: BitmexPositionMsg) -> PositionStatusReport {
@@ -519,36 +525,6 @@ pub fn parse_position_msg(msg: BitmexPositionMsg) -> PositionStatusReport {
     )
 }
 
-/// Parse a BitMEX WebSocket wallet message.
-///
-/// # References
-/// <https://www.bitmex.com/app/wsAPI#Wallet>
-///
-/// Returns the wallet data as a tuple of (`account_id`, currency, amount).
-#[must_use]
-pub fn parse_wallet_msg(msg: BitmexWalletMsg) -> (AccountId, Currency, i64) {
-    let account_id = AccountId::new(format!("BITMEX-{}", msg.account));
-    let currency = Currency::from(msg.currency);
-    let amount = msg.amount.unwrap_or(0);
-
-    (account_id, currency, amount)
-}
-
-/// Parse a BitMEX WebSocket margin message.
-///
-/// # References
-/// <https://www.bitmex.com/app/wsAPI#Margin>
-///
-/// Returns the margin data as a tuple of (`account_id`, currency, `available_margin`).
-#[must_use]
-pub fn parse_margin_msg(msg: BitmexMarginMsg) -> (AccountId, Currency, i64) {
-    let account_id = AccountId::new(format!("BITMEX-{}", msg.account));
-    let currency = Currency::from(msg.currency);
-    let available_margin = msg.available_margin.unwrap_or(0);
-
-    (account_id, currency, available_margin)
-}
-
 /// Parse a BitMEX WebSocket instrument message for mark and index prices.
 ///
 /// For index symbols (e.g., `.BXBT`):
@@ -559,8 +535,8 @@ pub fn parse_margin_msg(msg: BitmexMarginMsg) -> (AccountId, Currency, i64) {
 /// - Uses the `index_price` field for index price updates.
 /// - Uses the `mark_price` field for mark price updates.
 ///
-/// Returns a Vec of Data containing mark and/or index price updates.
-/// Returns an empty Vec if no relevant price is present.
+/// Returns a Vec of Data containing mark and/or index price updates
+/// or an empty Vec if no relevant price is present.
 #[must_use]
 pub fn parse_instrument_msg(
     msg: BitmexInstrumentMsg,
@@ -661,6 +637,81 @@ pub fn parse_funding_msg(msg: BitmexFundingMsg, ts_init: UnixNanos) -> Option<Fu
         ts_event,
         ts_init,
     ))
+}
+
+/// Parse a BitMEX wallet message into an AccountState.
+///
+/// BitMEX uses XBT (satoshis) as the base unit for Bitcoin.
+/// 1 XBT = 0.00000001 BTC (1 satoshi).
+///
+/// # Panics
+///
+/// Panics if the balance calculation is invalid (total != locked + free).
+#[must_use]
+pub fn parse_wallet_msg(msg: BitmexWalletMsg, ts_init: UnixNanos) -> AccountState {
+    let account_id = AccountId::new(format!("BITMEX-{}", msg.account));
+
+    // Map BitMEX currency to standard currency code
+    let currency_str = crate::common::parse::map_bitmex_currency(msg.currency.as_str());
+    let currency = Currency::from(currency_str.as_str());
+
+    // BitMEX returns values in satoshis for BTC (XBt) or microunits for USDT/LAMp
+    let divisor = if msg.currency == "XBt" {
+        100_000_000.0 // Satoshis to BTC
+    } else if msg.currency == "USDt" || msg.currency == "LAMp" {
+        1_000_000.0 // Microunits to units
+    } else {
+        1.0
+    };
+    let amount = msg.amount.unwrap_or(0) as f64 / divisor;
+
+    let total = Money::new(amount, currency);
+    let locked = Money::new(0.0, currency); // No locked amount info available
+    let free = total - locked;
+
+    let balance = AccountBalance::new_checked(total, locked, free)
+        .expect("Balance calculation should be valid");
+
+    AccountState::new(
+        account_id,
+        AccountType::Margin,
+        vec![balance],
+        vec![], // margins will be added separately
+        true,   // is_reported
+        UUID4::new(),
+        ts_init,
+        ts_init,
+        None,
+    )
+}
+
+/// Parse a BitMEX margin message into margin balance information.
+///
+/// This creates a MarginBalance that can be added to an AccountState.
+#[must_use]
+pub fn parse_margin_msg(msg: BitmexMarginMsg, instrument_id: InstrumentId) -> MarginBalance {
+    // Map BitMEX currency to standard currency code
+    let currency_str = crate::common::parse::map_bitmex_currency(msg.currency.as_str());
+    let currency = Currency::from(currency_str.as_str());
+
+    // BitMEX returns values in satoshis for BTC (XBt) or microunits for USDT/LAMp
+    let divisor = if msg.currency == "XBt" {
+        100_000_000.0 // Satoshis to BTC
+    } else if msg.currency == "USDt" || msg.currency == "LAMp" {
+        1_000_000.0 // Microunits to units
+    } else {
+        1.0
+    };
+
+    let initial = (msg.init_margin.unwrap_or(0) as f64 / divisor).max(0.0);
+    let maintenance = (msg.maint_margin.unwrap_or(0) as f64 / divisor).max(0.0);
+    let _unrealized = msg.unrealised_pnl.unwrap_or(0) as f64 / divisor;
+
+    MarginBalance::new(
+        Money::new(initial, currency),
+        Money::new(maintenance, currency),
+        instrument_id,
+    )
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -946,11 +997,15 @@ mod tests {
     fn test_parse_wallet_msg() {
         let json_data = load_test_json("ws_wallet.json");
         let msg: BitmexWalletMsg = serde_json::from_str(&json_data).unwrap();
-        let (account_id, currency, amount) = parse_wallet_msg(msg);
+        let ts_init = UnixNanos::from(1);
+        let account_state = parse_wallet_msg(msg, ts_init);
 
-        assert_eq!(account_id.to_string(), "BITMEX-1234567");
-        assert_eq!(currency.code.to_string(), "XBT");
-        assert_eq!(amount, 100005180);
+        assert_eq!(account_state.account_id.to_string(), "BITMEX-1234567");
+        assert!(!account_state.balances.is_empty());
+        let balance = &account_state.balances[0];
+        assert_eq!(balance.currency.code.to_string(), "XBT");
+        // Amount should be converted from satoshis (100005180 / 100_000_000.0 = 1.0000518)
+        assert!((balance.total.as_f64() - 1.0000518).abs() < 1e-7);
     }
 
     #[rstest]
@@ -959,19 +1014,26 @@ mod tests {
             serde_json::from_str(&load_test_json("ws_wallet.json")).unwrap();
         msg.amount = None;
 
-        let (_, _, amount) = parse_wallet_msg(msg);
-        assert_eq!(amount, 0);
+        let ts_init = UnixNanos::from(1);
+        let account_state = parse_wallet_msg(msg, ts_init);
+        let balance = &account_state.balances[0];
+        assert_eq!(balance.total.as_f64(), 0.0);
     }
 
     #[rstest]
     fn test_parse_margin_msg() {
         let json_data = load_test_json("ws_margin.json");
         let msg: BitmexMarginMsg = serde_json::from_str(&json_data).unwrap();
-        let (account_id, currency, available_margin) = parse_margin_msg(msg);
+        let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
+        let margin_balance = parse_margin_msg(msg, instrument_id);
 
-        assert_eq!(account_id.to_string(), "BITMEX-1234567");
-        assert_eq!(currency.code.to_string(), "XBT");
-        assert_eq!(available_margin, 99994411);
+        assert_eq!(margin_balance.currency.code.to_string(), "XBT");
+        assert_eq!(margin_balance.instrument_id, instrument_id);
+        // Values should be converted from satoshis to BTC
+        // initMargin is 0 in test data, so should be 0.0
+        assert_eq!(margin_balance.initial.as_f64(), 0.0);
+        // maintMargin is 15949 satoshis = 0.00015949 BTC
+        assert!((margin_balance.maintenance.as_f64() - 0.00015949).abs() < 1e-8);
     }
 
     #[rstest]
@@ -980,8 +1042,11 @@ mod tests {
             serde_json::from_str(&load_test_json("ws_margin.json")).unwrap();
         msg.available_margin = None;
 
-        let (_, _, available_margin) = parse_margin_msg(msg);
-        assert_eq!(available_margin, 0);
+        let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
+        let margin_balance = parse_margin_msg(msg, instrument_id);
+        // Should still have valid margin values even if available_margin is None
+        assert!(margin_balance.initial.as_f64() >= 0.0);
+        assert!(margin_balance.maintenance.as_f64() >= 0.0);
     }
 
     #[rstest]

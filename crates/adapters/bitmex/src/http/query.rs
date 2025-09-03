@@ -312,6 +312,37 @@ pub struct GetExecutionParams {
     pub end_time: Option<DateTime<Utc>>,
 }
 
+/// Parameters for the POST /order/bulk endpoint.
+#[derive(Clone, Debug, Deserialize, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PostOrderBulkParams {
+    /// Array of order parameters.
+    pub orders: Vec<PostOrderParams>,
+}
+
+/// Parameters for the PUT /order/bulk endpoint.
+#[derive(Clone, Debug, Deserialize, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PutOrderBulkParams {
+    /// Array of order amendment parameters.
+    pub orders: Vec<PutOrderParams>,
+}
+
+/// Parameters for the POST /position/leverage endpoint.
+#[derive(Clone, Debug, Deserialize, Serialize, Default, Builder)]
+#[builder(default)]
+#[builder(setter(into, strip_option))]
+#[serde(rename_all = "camelCase")]
+pub struct PostPositionLeverageParams {
+    /// Symbol to set leverage for.
+    pub symbol: String,
+    /// Leverage value (0.01 to 100).
+    pub leverage: f64,
+    /// Optional leverage for long position (isolated margin only).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_account_id: Option<i64>,
+}
+
 /// Parameters for the GET /position endpoint.
 #[derive(Clone, Debug, Deserialize, Serialize, Default, Builder)]
 #[builder(default)]

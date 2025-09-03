@@ -60,7 +60,8 @@ use super::{
     query::{
         DeleteAllOrdersParams, DeleteOrderParams, GetExecutionParams, GetExecutionParamsBuilder,
         GetOrderParams, GetPositionParams, GetPositionParamsBuilder, GetTradeParams,
-        GetTradeParamsBuilder, PostOrderParams, PutOrderParams,
+        GetTradeParamsBuilder, PostOrderBulkParams, PostOrderParams, PostPositionLeverageParams,
+        PutOrderBulkParams, PutOrderParams,
     },
 };
 use crate::{
@@ -422,6 +423,61 @@ impl BitmexHttpInnerClient {
         let query = serde_urlencoded::to_string(&params).expect("Invalid parameters");
         let path = format!("/position?{query}");
         self.send_request(Method::GET, &path, None, true).await
+    }
+
+    /// Place multiple orders in bulk.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing, the request fails, order validation fails, or the API returns an error.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the parameters cannot be serialized (should never happen with valid builder-generated params).
+    pub async fn http_place_orders_bulk(
+        &self,
+        params: PostOrderBulkParams,
+    ) -> Result<Vec<BitmexOrder>, BitmexHttpError> {
+        let body = serde_json::to_vec(&params).expect("Invalid parameters");
+        let path = "/order/bulk";
+        self.send_request(Method::POST, path, Some(body), true)
+            .await
+    }
+
+    /// Amend multiple orders in bulk.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing, the request fails, the orders don't exist, or the API returns an error.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the parameters cannot be serialized (should never happen with valid builder-generated params).
+    pub async fn http_amend_orders_bulk(
+        &self,
+        params: PutOrderBulkParams,
+    ) -> Result<Vec<BitmexOrder>, BitmexHttpError> {
+        let body = serde_json::to_vec(&params).expect("Invalid parameters");
+        let path = "/order/bulk";
+        self.send_request(Method::PUT, path, Some(body), true).await
+    }
+
+    /// Update position leverage.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing, the request fails, or the API returns an error.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the parameters cannot be serialized (should never happen with valid builder-generated params).
+    pub async fn http_update_position_leverage(
+        &self,
+        params: PostPositionLeverageParams,
+    ) -> Result<BitmexPosition, BitmexHttpError> {
+        let query = serde_urlencoded::to_string(&params).expect("Invalid parameters");
+        let path = format!("/position/leverage?{query}");
+        self.send_request(Method::POST, &path, None, true).await
     }
 }
 
@@ -1396,5 +1452,94 @@ impl BitmexHttpClient {
         }
 
         Ok(reports)
+    }
+
+    /// Submit multiple orders in bulk.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing, the request fails, order validation fails, or the API returns an error.
+    pub async fn submit_orders_bulk(
+        &self,
+        orders: Vec<PostOrderParams>,
+    ) -> anyhow::Result<Vec<OrderStatusReport>> {
+        let params = PostOrderBulkParams { orders };
+
+        let response = self.inner.http_place_orders_bulk(params).await?;
+
+        let ts_init = self.generate_ts_init();
+        let mut reports = Vec::new();
+
+        for order in response {
+            let symbol = order.symbol.as_ref().map(|s| s.as_str()).unwrap_or("");
+            if symbol.is_empty() {
+                tracing::warn!("Order missing symbol, skipping");
+                continue;
+            }
+            let price_precision = self.get_price_precision(symbol).unwrap_or(2);
+
+            match parse_order_status_report(order, price_precision, ts_init) {
+                Ok(report) => reports.push(report),
+                Err(e) => tracing::error!("Failed to parse order status report: {e}"),
+            }
+        }
+
+        Ok(reports)
+    }
+
+    /// Amend multiple orders in bulk.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing, the request fails, the orders don't exist, or the API returns an error.
+    pub async fn modify_orders_bulk(
+        &self,
+        orders: Vec<PutOrderParams>,
+    ) -> anyhow::Result<Vec<OrderStatusReport>> {
+        let params = PutOrderBulkParams { orders };
+
+        let response = self.inner.http_amend_orders_bulk(params).await?;
+
+        let ts_init = self.generate_ts_init();
+        let mut reports = Vec::new();
+
+        for order in response {
+            let symbol = order.symbol.as_ref().map(|s| s.as_str()).unwrap_or("");
+            if symbol.is_empty() {
+                tracing::warn!("Order missing symbol, skipping");
+                continue;
+            }
+            let price_precision = self.get_price_precision(symbol).unwrap_or(2);
+
+            match parse_order_status_report(order, price_precision, ts_init) {
+                Ok(report) => reports.push(report),
+                Err(e) => tracing::error!("Failed to parse order status report: {e}"),
+            }
+        }
+
+        Ok(reports)
+    }
+
+    /// Update position leverage.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing, the request fails, or the API returns an error.
+    pub async fn update_position_leverage(
+        &self,
+        symbol: &str,
+        leverage: f64,
+    ) -> anyhow::Result<PositionStatusReport> {
+        let params = PostPositionLeverageParams {
+            symbol: symbol.to_string(),
+            leverage,
+            target_account_id: None,
+        };
+
+        let response = self.inner.http_update_position_leverage(params).await?;
+
+        let ts_init = self.generate_ts_init();
+
+        parse_position_report(response, ts_init)
     }
 }

@@ -33,9 +33,9 @@ use super::models::{BitmexExecution, BitmexInstrument, BitmexOrder, BitmexPositi
 use crate::common::{
     enums::{BitmexExecInstruction, BitmexExecType, BitmexInstrumentType},
     parse::{
-        parse_aggressor_side, parse_contingency_type, parse_instrument_id, parse_liquidity_side,
-        parse_optional_datetime_to_unix_nanos, parse_order_status, parse_order_type,
-        parse_position_side, parse_time_in_force,
+        map_bitmex_currency, parse_aggressor_side, parse_contingency_type, parse_instrument_id,
+        parse_liquidity_side, parse_optional_datetime_to_unix_nanos, parse_order_status,
+        parse_order_type, parse_position_side, parse_time_in_force,
     },
 };
 
@@ -680,14 +680,12 @@ pub fn parse_fill_report(
             .ok_or_else(|| anyhow::anyhow!("Fill missing last_px"))?,
         price_precision,
     );
-    // BitMEX uses "XBt" but we need "XBT" for Currency
-    let settlement_currency = exec
-        .settl_currency
-        .unwrap_or(Ustr::from("XBT"))
-        .to_uppercase();
+    // Map BitMEX currency to standard currency code
+    let settlement_currency_str = exec.settl_currency.unwrap_or(Ustr::from("XBT")).as_str();
+    let mapped_currency = map_bitmex_currency(settlement_currency_str);
     let commission = Money::new(
         exec.commission.unwrap_or(0.0),
-        Currency::from(settlement_currency),
+        Currency::from(mapped_currency.as_str()),
     );
     let liquidity_side = parse_liquidity_side(&exec.last_liquidity_ind);
     let client_order_id = exec.cl_ord_id.map(ClientOrderId::new);
