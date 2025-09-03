@@ -694,7 +694,11 @@ class TestPrice:
             ["1_000e3", "1000000", 0],
             ["1_234.5e-2", "12.34", 2],
             # Edge cases for precision
-            ["0.123456789012345", "0.123456789012345", 15],
+            [
+                "0.123456789012345" if FIXED_PRECISION > 9 else "0.123456789",
+                "0.123456789012345" if FIXED_PRECISION > 9 else "0.123456789",
+                min(15, FIXED_PRECISION),
+            ],
             ["1234567890.123456789", "1234567890.123456789", 9],
             # Rounding behavior verification
             ["1.115", "1.115", 3],
@@ -709,10 +713,12 @@ class TestPrice:
             ["0e0", "0", 0],
             ["0.0e10", "0.0000", 4],
             ["0E-5", "0.00000", 5],
-            # Large numbers
-            # ["9.99999999999999e14", "999999999999999", 0],  # Out of range
             # Small numbers
-            ["1e-15", "0.000000000000001", 15],
+            [
+                "1e-15" if FIXED_PRECISION > 9 else "1e-9",
+                "0.000000000000001" if FIXED_PRECISION > 9 else "0.000000001",
+                min(15, FIXED_PRECISION) if FIXED_PRECISION > 9 else 9,
+            ],
         ],
     )
     def test_from_str_comprehensive(self, value, expected_str, expected_precision):
@@ -745,8 +751,17 @@ class TestPrice:
         with pytest.raises(Exception):  # Various exceptions can be raised for invalid input
             Price.from_str(invalid_input)
 
+    def test_from_str_with_precision_exceeding_max_raises_value_error(self):
+        if FIXED_PRECISION <= 9:
+            # On Windows with 9 decimal max
+            with pytest.raises(ValueError, match="invalid `precision` greater than max"):
+                Price.from_str("1." + "0" * 10)  # 10 decimals > 9
+        else:
+            # On Linux/Mac with 16 decimal max
+            with pytest.raises(ValueError, match="invalid `precision` greater than max"):
+                Price.from_str("1." + "0" * 17)  # 17 decimals > 16
+
     def test_from_str_precision_preservation(self):
-        # Test that precision is correctly inferred from the string representation
 
         # Whole numbers should have precision 0
         assert Price.from_str("100").precision == 0
@@ -775,12 +790,17 @@ class TestPrice:
             ("1.135", "1.135"),  # Exact representation
             ("1.145", "1.145"),  # Exact representation
             # High precision values are preserved exactly up to FIXED_PRECISION
-            ("0.9999999999999999", "0.9999999999999999"),
-            ("1.0000000000000001", "1.0000000000000001"),
+            (
+                "0.9999999999999999" if FIXED_PRECISION > 9 else "0.999999999",
+                "0.9999999999999999" if FIXED_PRECISION > 9 else "0.999999999",
+            ),
+            (
+                "1.0000000000000001" if FIXED_PRECISION > 9 else "1.000000001",
+                "1.0000000000000001" if FIXED_PRECISION > 9 else "1.000000001",
+            ),
         ],
     )
     def test_from_str_rounding_behavior(self, input_val, expected):
-        # Test that values are preserved exactly (no premature rounding)
         price = Price.from_str(input_val)
         assert str(price) == expected
 
@@ -792,7 +812,6 @@ class TestPrice:
         ],
     )
     def test_from_str_boundary_values(self, input_val, expected_str):
-        # Test values at various boundaries
         price = Price.from_str(input_val)
         assert str(price) == expected_str
 
@@ -805,7 +824,6 @@ class TestPrice:
         ],
     )
     def test_from_str_zero_values(self, input_val, expected_str):
-        # Test various representations of zero
         price = Price.from_str(input_val)
         assert str(price) == expected_str
         assert price.as_double() == 0

@@ -21,6 +21,9 @@ built around this domain model.
 
 """
 
+from decimal import ROUND_HALF_UP
+from decimal import Decimal
+
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.model.book import BookLevel
 from nautilus_trader.model.book import OrderBook
@@ -82,7 +85,11 @@ NAUTILUS_PYO3_DATA_TYPES: tuple[type, ...] = (
 # Convert the given value into the raw integer representation based on the given precision
 # and currently compiled precision mode (128-bit for HIGH_PRECISION or 64-bit).
 def convert_to_raw_int(value, precision: int) -> int:
-    return int(round(float(value), precision) * (10**FIXED_PRECISION))
+    # Use Decimal for exact decimal arithmetic to avoid platform-specific
+    # floating-point rounding differences.
+    decimal_value = Decimal(str(value))
+    quantized = decimal_value.quantize(Decimal(10) ** -precision, rounding=ROUND_HALF_UP)
+    return int(quantized * (10**FIXED_PRECISION))
 
 
 __all__ = [

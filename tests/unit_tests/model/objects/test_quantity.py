@@ -634,7 +634,11 @@ class TestQuantity:
             ["1_000e2", "100000", 0],
             ["2_345.6e-3", "2.346", 3],
             # Edge cases for precision
-            ["0.123456789012345", "0.123456789012345", 15],
+            [
+                "0.123456789012345" if FIXED_PRECISION > 9 else "0.123456789",
+                "0.123456789012345" if FIXED_PRECISION > 9 else "0.123456789",
+                min(15, FIXED_PRECISION),
+            ],
             ["987654321.123456789", "987654321.123456789", 9],  # Full precision preserved
             # Rounding behavior verification
             ["2.115", "2.115", 3],
@@ -646,10 +650,12 @@ class TestQuantity:
             ["0e0", "0", 0],
             ["0.0e5", "0.000", 3],
             ["0E-3", "0.000", 3],
-            # Large numbers
-            # ["9.99999999999999e13", "99999999999999.9", 1],  # May be out of range
             # Small numbers
-            ["1e-15", "0.000000000000001", 15],
+            [
+                "1e-15" if FIXED_PRECISION > 9 else "1e-9",
+                "0.000000000000001" if FIXED_PRECISION > 9 else "0.000000001",
+                min(15, FIXED_PRECISION) if FIXED_PRECISION > 9 else 9,
+            ],
         ],
     )
     def test_from_str_comprehensive(self, value, expected_str, expected_precision):
@@ -685,8 +691,23 @@ class TestQuantity:
         with pytest.raises(Exception):  # Various exceptions can be raised for invalid input
             Quantity.from_str(invalid_input)
 
+    def test_from_str_with_negative_value_raises_value_error(self):
+        with pytest.raises(ValueError, match="invalid negative quantity"):
+            Quantity.from_str("-1.0")
+        with pytest.raises(ValueError, match="invalid negative quantity"):
+            Quantity.from_str("-0.001")
+
+    def test_from_str_with_precision_exceeding_max_raises_value_error(self):
+        if FIXED_PRECISION <= 9:
+            # On Windows with 9 decimal max
+            with pytest.raises(ValueError, match="invalid `precision` greater than max"):
+                Quantity.from_str("1." + "0" * 10)  # 10 decimals > 9
+        else:
+            # On Linux/Mac with 16 decimal max
+            with pytest.raises(ValueError, match="invalid `precision` greater than max"):
+                Quantity.from_str("1." + "0" * 17)  # 17 decimals > 16
+
     def test_from_str_precision_preservation(self):
-        # Test that precision is correctly inferred from the string representation
 
         # Whole numbers should have precision 0
         assert Quantity.from_str("100").precision == 0
@@ -715,12 +736,17 @@ class TestQuantity:
             ("1.135", "1.135"),
             ("1.145", "1.145"),
             # High precision values preserved up to FIXED_PRECISION
-            ("0.9999999999999999", "0.9999999999999999"),
-            ("1.0000000000000001", "1.0000000000000001"),
+            (
+                "0.9999999999999999" if FIXED_PRECISION > 9 else "0.999999999",
+                "0.9999999999999999" if FIXED_PRECISION > 9 else "0.999999999",
+            ),
+            (
+                "1.0000000000000001" if FIXED_PRECISION > 9 else "1.000000001",
+                "1.0000000000000001" if FIXED_PRECISION > 9 else "1.000000001",
+            ),
         ],
     )
     def test_from_str_rounding_behavior(self, input_val, expected):
-        # Test that values are preserved exactly (no premature rounding)
         qty = Quantity.from_str(input_val)
         assert str(qty) == expected
 

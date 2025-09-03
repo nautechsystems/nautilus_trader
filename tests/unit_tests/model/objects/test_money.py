@@ -256,8 +256,6 @@ class TestMoney:
             ["0.145 USD", "0.14", USD],
             ["0.155 USD", "0.16", USD],
             ["0.165 USD", "0.16", USD],
-            # Large numbers
-            # ["9.99999999999999e13 USD", "99999999999999.00", USD],  # Out of range
             # Small numbers with high precision currency
             ["1e-6 USDT", "0.00000100", USDT],
             ["1.234567e-3 USDT", "0.00123457", USDT],
