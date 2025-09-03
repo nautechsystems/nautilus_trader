@@ -6047,11 +6047,12 @@ class BitmexHttpClient:
     def api_key(self) -> str | None: ...
     async def request_instruments(
         self,
-        symbol_status: BitmexSymbolStatus,
+        active_only: bool,
     ) -> list[Instrument]: ...
     async def get_trades(
         self,
-        symbol: str | None = None,
+        instrument_id: InstrumentId | None = None,
+        limit: int | None = None,
     ) -> list[TradeTick]: ...
     async def query_order(
         self,
@@ -6060,48 +6061,53 @@ class BitmexHttpClient:
     ) -> OrderStatusReport | None: ...
     async def get_order_reports(
         self,
-        symbol: str | None = None,
+        instrument_id: InstrumentId | None = None,
+        open_only: bool = False,
+        limit: int | None = None,
     ) -> list[OrderStatusReport]: ...
     async def get_fill_reports(
         self,
-        symbol: str | None = None,
+        instrument_id: InstrumentId | None = None,
+        limit: int | None = None,
     ) -> list[FillReport]: ...
     async def get_position_reports(self) -> list[PositionStatusReport]: ...
     async def submit_order(
         self,
-        symbol: Symbol,
+        instrument_id: InstrumentId,
         client_order_id: ClientOrderId,
-        order_type: OrderType,
         order_side: OrderSide,
+        order_type: OrderType,
         quantity: Quantity,
+        time_in_force: TimeInForce,
         price: Price | None = None,
         trigger_price: Price | None = None,
         display_qty: Quantity | None = None,
-    ) -> None: ...
+        reduce_only: bool = False,
+    ) -> OrderStatusReport: ...
     async def cancel_order(
         self,
         client_order_id: ClientOrderId | None = None,
         venue_order_id: VenueOrderId | None = None,
-    ) -> None: ...
+    ) -> OrderStatusReport: ...
     async def cancel_orders(
         self,
         client_order_ids: list[ClientOrderId] | None = None,
         venue_order_ids: list[VenueOrderId] | None = None,
-    ) -> None: ...
+    ) -> list[OrderStatusReport]: ...
     async def cancel_all_orders(
         self,
         instrument_id: InstrumentId,
-        order_side: OrderSide,
-    ) -> None: ...
+        order_side: OrderSide | None,
+    ) -> list[OrderStatusReport]: ...
     async def modify_order(
         self,
+        instrument_id: InstrumentId,
         client_order_id: ClientOrderId | None = None,
         venue_order_id: VenueOrderId | None = None,
         quantity: Quantity | None = None,
-        leaves_qty: Quantity | None = None,
         price: Price | None = None,
         trigger_price: Price | None = None,
-    ) -> None: ...
+    ) -> OrderStatusReport: ...
     async def request_account_state(
         self,
         account_id: AccountId,
@@ -6207,10 +6213,6 @@ class BitmexWebSocketClient:
         stop_px: float | None = None,
     ) -> None: ...
 
-class BitmexSymbolStatus(Enum):
-    OPEN = "OPEN"
-    CLOSED = "CLOSED"
-    UNLISTED = "UNLISTED"
 
 # Greeks
 

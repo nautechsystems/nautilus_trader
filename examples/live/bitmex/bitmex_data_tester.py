@@ -21,7 +21,6 @@ from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.core.nautilus_pyo3 import BitmexSymbolStatus
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import InstrumentId
@@ -56,7 +55,6 @@ config_node = TradingNodeConfig(
             base_url_http=None,  # Override with custom endpoint
             base_url_ws=None,  # Override with custom endpoint
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            symbol_status=BitmexSymbolStatus.OPEN,  # Filter for open instruments
             testnet=False,  # If client uses the testnet API
         ),
     },

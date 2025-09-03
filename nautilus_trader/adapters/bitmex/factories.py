@@ -26,7 +26,6 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core import nautilus_pyo3
-from nautilus_trader.core.nautilus_pyo3 import BitmexSymbolStatus
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
 
@@ -71,7 +70,7 @@ def get_bitmex_http_client(
 @lru_cache(maxsize=1)
 def get_bitmex_instrument_provider(
     client: nautilus_pyo3.BitmexHttpClient,
-    symbol_status: BitmexSymbolStatus | None,
+    active_only: bool,
     config: InstrumentProviderConfig,
 ) -> BitmexInstrumentProvider:
     """
@@ -81,8 +80,8 @@ def get_bitmex_instrument_provider(
     ----------
     client : nautilus_pyo3.BitmexHttpClient
         The BitMEX HTTP client.
-    symbol_status : BitmexSymbolStatus | None
-        The symbol status to filter instruments.
+    active_only : bool
+        Whether to only load active instruments.
     config : InstrumentProviderConfig
         The instrument provider configuration.
 
@@ -93,7 +92,7 @@ def get_bitmex_instrument_provider(
     """
     return BitmexInstrumentProvider(
         client=client,
-        symbol_status=symbol_status,
+        active_only=active_only,
         config=config,
     )
 
@@ -144,7 +143,7 @@ class BitmexLiveDataClientFactory(LiveDataClientFactory):
 
         provider = get_bitmex_instrument_provider(
             client=client,
-            symbol_status=config.symbol_status,
+            active_only=True,  # Always use active instruments for live clients
             config=config.instrument_provider,
         )
 
@@ -206,7 +205,7 @@ class BitmexLiveExecClientFactory(LiveExecClientFactory):
 
         provider = get_bitmex_instrument_provider(
             client=client,
-            symbol_status=config.symbol_status,
+            active_only=True,  # Always use active instruments for live clients
             config=config.instrument_provider,
         )
 

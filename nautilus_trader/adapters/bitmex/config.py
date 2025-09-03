@@ -16,7 +16,6 @@
 from nautilus_trader.common.config import PositiveInt
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
-from nautilus_trader.core.nautilus_pyo3 import BitmexSymbolStatus
 
 
 class BitmexDataClientConfig(LiveDataClientConfig, frozen=True):
@@ -31,8 +30,6 @@ class BitmexDataClientConfig(LiveDataClientConfig, frozen=True):
     api_secret : str, [default=None]
         The BitMEX API secret key.
         If ``None`` then will source the `BITMEX_API_SECRET` environment variable.
-    symbol_status : BitmexSymbolStatus, default BitmexSymbolStatus.OPEN
-        The BitMEX symbol status to filter instruments.
     base_url_http : str, optional
         The base url to BitMEX's HTTP API.
         If ``None`` then will use the default production URL.
@@ -50,7 +47,6 @@ class BitmexDataClientConfig(LiveDataClientConfig, frozen=True):
 
     api_key: str | None = None
     api_secret: str | None = None
-    symbol_status: BitmexSymbolStatus = BitmexSymbolStatus.OPEN
     base_url_http: str | None = None
     base_url_ws: str | None = None
     testnet: bool = False
@@ -70,8 +66,6 @@ class BitmexExecClientConfig(LiveExecClientConfig, frozen=True):
     api_secret : str, [default=None]
         The BitMEX API secret key.
         If ``None`` then will source the `BITMEX_API_SECRET` environment variable.
-    symbol_status : BitmexSymbolStatus, default BitmexSymbolStatus.OPEN
-        The BitMEX symbol status to filter instruments.
     base_url_http : str, optional
         The base url to BitMEX's HTTP API.
         If ``None`` then will use the default production URL.
@@ -87,7 +81,6 @@ class BitmexExecClientConfig(LiveExecClientConfig, frozen=True):
 
     api_key: str | None = None
     api_secret: str | None = None
-    symbol_status: BitmexSymbolStatus = BitmexSymbolStatus.OPEN
     base_url_http: str | None = None
     base_url_ws: str | None = None
     testnet: bool = False
