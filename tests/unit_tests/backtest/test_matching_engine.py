@@ -26,6 +26,7 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import InstrumentCloseType
+from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import MarketStatusAction
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
@@ -383,3 +384,74 @@ class TestOrderMatchingEngine:
         # Assert - Both should have same result for L1_MBP
         assert self.matching_engine.best_bid_price() == matching_engine.best_bid_price()
         assert self.matching_engine.best_ask_price() == matching_engine.best_ask_price()
+
+    def test_fill_order_with_non_positive_qty_returns_early(self) -> None:
+        # Arrange - Set initial bid/ask
+        quote = TestDataStubs.quote_tick(
+            instrument=self.instrument,
+            bid_price=999.0,
+            ask_price=1001.0,
+        )
+        self.matching_engine.process_quote_tick(quote)
+
+        # Register to receive exec engine messages
+        messages: list[Any] = []
+        self.msgbus.register("ExecEngine.process", messages.append)
+
+        # Create a limit order that won't immediately fill
+        order = TestExecStubs.limit_order(
+            instrument=self.instrument,
+            order_side=OrderSide.BUY,
+            price=Price.from_str("998.0"),  # Below ask so won't fill immediately
+            quantity=self.instrument.make_qty(100.0),
+        )
+
+        # Process to register the order with the matching engine
+        self.matching_engine.process_order(order, self.account_id)
+
+        # Clear any initial order processing messages
+        messages.clear()
+
+        # Manually fill the order partially
+        self.matching_engine.fill_order(
+            order=order,
+            last_px=Price.from_str("998.0"),
+            last_qty=self.instrument.make_qty(50.0),
+            liquidity_side=LiquiditySide.TAKER,
+        )
+
+        # Verify first fill was processed
+        filled_events = [m for m in messages if isinstance(m, OrderFilled)]
+        assert len(filled_events) == 1
+        assert filled_events[0].last_qty == self.instrument.make_qty(50.0)
+
+        # Clear messages
+        messages.clear()
+
+        # Act - Attempt to fill with quantity that would exceed remaining (should be clamped to 50)
+        self.matching_engine.fill_order(
+            order=order,
+            last_px=Price.from_str("998.0"),
+            last_qty=self.instrument.make_qty(60.0),  # 50 already filled, only 50 remains
+            liquidity_side=LiquiditySide.TAKER,
+        )
+
+        # Should get a fill for remaining 50
+        filled_events = [m for m in messages if isinstance(m, OrderFilled)]
+        assert len(filled_events) == 1
+        assert filled_events[0].last_qty == self.instrument.make_qty(50.0)
+
+        # Clear messages
+        messages.clear()
+
+        # Act - Now try to fill again (should trigger early return due to non-positive qty)
+        self.matching_engine.fill_order(
+            order=order,
+            last_px=Price.from_str("998.0"),
+            last_qty=self.instrument.make_qty(10.0),
+            liquidity_side=LiquiditySide.TAKER,
+        )
+
+        # Assert - No fill event should be emitted due to early return
+        filled_events = [m for m in messages if isinstance(m, OrderFilled)]
+        assert len(filled_events) == 0  # No fill should have been generated
