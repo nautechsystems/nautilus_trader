@@ -321,16 +321,17 @@ streaming = StreamingConfig(
 )
 
 logging = LoggingConfig(
-    log_level="WARNING",
+    log_level="WARNING",  # "DEBUG"
     log_level_file="WARNING",
     log_directory=".",
     log_file_name="databento_option_greeks",
     log_file_format=None,  # "json" or None
-    # log_component_levels={"SpreadQuoteAggregator": "WARNING"},
+    # log_component_levels={"SpreadQuoteAggregator": "DEBUG"},
     bypass_logging=False,
     print_config=False,
     use_pyo3=False,
     clear_log_file=True,
+    # log_components_only=True,
 )
 
 catalogs = [

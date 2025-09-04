@@ -101,7 +101,7 @@ pub fn py_init_tracing() -> PyResult<()> {
 #[pyfunction]
 #[pyo3(name = "init_logging")]
 #[allow(clippy::too_many_arguments)]
-#[pyo3(signature = (trader_id, instance_id, level_stdout, level_file=None, component_levels=None, directory=None, file_name=None, file_format=None, file_rotate=None, is_colored=None, is_bypassed=None, print_config=None))]
+#[pyo3(signature = (trader_id, instance_id, level_stdout, level_file=None, component_levels=None, directory=None, file_name=None, file_format=None, file_rotate=None, is_colored=None, is_bypassed=None, print_config=None, log_components_only=None))]
 pub fn py_init_logging(
     trader_id: TraderId,
     instance_id: UUID4,
@@ -115,6 +115,7 @@ pub fn py_init_logging(
     is_colored: Option<bool>,
     is_bypassed: Option<bool>,
     print_config: Option<bool>,
+    log_components_only: Option<bool>,
 ) -> PyResult<LogGuard> {
     let level_file = level_file.map_or(LevelFilter::Off, map_log_level_to_filter);
 
@@ -124,6 +125,7 @@ pub fn py_init_logging(
         parse_component_levels(component_levels),
         is_colored.unwrap_or(true),
         print_config.unwrap_or(false),
+        log_components_only.unwrap_or(false),
     );
 
     let file_config = FileWriterConfig::new(directory, file_name, file_format, file_rotate);
