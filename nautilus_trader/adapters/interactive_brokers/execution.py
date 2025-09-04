@@ -1392,4 +1392,4 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             # Update tracking
             self._known_positions[contract_id] = new_quantity
         except Exception as e:
-            self._log.exception(f"Error handling position update: {e}")
+            self._log.error(f"Error handling position update: {e}")

@@ -193,3 +193,4 @@ cdef class ExecutionClient(Component):
     cpdef void _send_mass_status_report(self, report)
     cpdef void _send_order_status_report(self, report)
     cpdef void _send_fill_report(self, report)
+    cpdef void _send_position_status_report(self, report)
