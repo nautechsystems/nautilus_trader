@@ -578,7 +578,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             ticks = await self._http_market.request_trade_ticks(
                 instrument_id=request.instrument_id,
                 limit=limit,
-                ts_init=self._clock.timestamp_ns(),
             )
         else:
             # Convert from timestamps to milliseconds
@@ -589,7 +588,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                 limit=limit,
                 start_time=start_time_ms,
                 end_time=end_time_ms,
-                ts_init=self._clock.timestamp_ns(),
             )
 
         self._handle_trade_ticks(
@@ -645,7 +643,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                 start_time=start_time_ms,
                 end_time=end_time_ms,
                 limit=request.limit if request.limit > 0 else None,
-                ts_init=self._clock.timestamp_ns(),
             )
 
             if request.bar_type.is_internally_aggregated():
@@ -743,7 +740,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             interval=BinanceKlineInterval.MINUTE_1,
             start_time=start_time_ms,
             end_time=end_time_ms,
-            ts_init=self._clock.timestamp_ns(),
             limit=limit,
         )
 
@@ -880,7 +876,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             instrument_id=instrument.id,
             start_time=start_time_ms,
             end_time=end_time_ms,
-            ts_init=self._clock.timestamp_ns(),
             limit=limit,
         )
 

@@ -198,7 +198,7 @@ class TestBarBuilder:
         )
 
         # Act
-        builder.update_bar(input_bar, input_bar.volume, input_bar.ts_event)
+        builder.update_bar(input_bar, input_bar.volume, input_bar.ts_init)
 
         # Assert
         assert builder.initialized
@@ -241,7 +241,7 @@ class TestBarBuilder:
             ts_event=1_000,
             ts_init=1_000,
         )
-        builder.update_bar(bar1, bar1.volume, bar1.ts_event)
+        builder.update_bar(bar1, bar1.volume, bar1.ts_init)
 
         bar2 = Bar(
             bar_type=bar_type,
@@ -255,7 +255,7 @@ class TestBarBuilder:
         )
 
         # Act
-        builder.update_bar(bar2, bar2.volume, bar2.ts_event)
+        builder.update_bar(bar2, bar2.volume, bar2.ts_init)
 
         # Assert
         assert builder.initialized
