@@ -23,6 +23,68 @@ use tracing::{debug, error, info, warn};
 
 use crate::websocket::messages::{HyperliquidWsMessage, HyperliquidWsRequest, SubscriptionRequest};
 
+/// Errors that can occur during Hyperliquid WebSocket operations.
+#[derive(Debug, Clone, thiserror::Error)]
+pub enum HyperliquidError {
+    #[error("URL parsing failed: {0}")]
+    UrlParsing(String),
+
+    #[error("Message serialization failed: {0}")]
+    MessageSerialization(String),
+
+    #[error("Message deserialization failed: {0}")]
+    MessageDeserialization(String),
+
+    #[error("WebSocket connection failed: {0}")]
+    Connection(String),
+
+    #[error("Channel send failed: {0}")]
+    ChannelSend(String),
+}
+
+/// Codec for encoding and decoding Hyperliquid WebSocket messages.
+///
+/// This struct provides methods to validate URLs and serialize/deserialize messages
+/// according to the Hyperliquid WebSocket protocol.
+#[derive(Debug, Default)]
+pub struct HyperliquidCodec;
+
+impl HyperliquidCodec {
+    /// Creates a new Hyperliquid codec instance.
+    pub fn new() -> Self {
+        Self
+    }
+
+    /// Validates that a URL is a proper WebSocket URL.
+    pub fn validate_url(url: &str) -> Result<(), HyperliquidError> {
+        if url.starts_with("ws://") || url.starts_with("wss://") {
+            Ok(())
+        } else {
+            Err(HyperliquidError::UrlParsing(format!(
+                "URL must start with ws:// or wss://, got: {}",
+                url
+            )))
+        }
+    }
+
+    /// Encodes a WebSocket request to JSON bytes.
+    pub fn encode(&self, request: &HyperliquidWsRequest) -> Result<Vec<u8>, HyperliquidError> {
+        serde_json::to_vec(request).map_err(|e| {
+            HyperliquidError::MessageSerialization(format!("Failed to serialize request: {}", e))
+        })
+    }
+
+    /// Decodes JSON bytes to a WebSocket message.
+    pub fn decode(&self, data: &[u8]) -> Result<HyperliquidWsMessage, HyperliquidError> {
+        serde_json::from_slice(data).map_err(|e| {
+            HyperliquidError::MessageDeserialization(format!(
+                "Failed to deserialize message: {}",
+                e
+            ))
+        })
+    }
+}
+
 /// Low-level Hyperliquid WebSocket client that wraps Nautilus WebSocketClient.
 ///
 /// This is the inner client that handles the transport layer and provides low-level
