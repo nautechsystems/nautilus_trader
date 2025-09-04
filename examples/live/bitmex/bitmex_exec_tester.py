@@ -77,15 +77,20 @@ config_node = TradingNodeConfig(
     timeout_connection=30.0,
     timeout_reconciliation=10.0,
     timeout_disconnection=10.0,
+    timeout_post_stop=5.0,
+    timeout_shutdown=2.0,
 )
 
 # Configure the execution tester strategy
 config_tester = ExecTesterConfig(
-    instrument_id=InstrumentId.from_str(f"{symbol}.BITMEX"),
+    instrument_id=InstrumentId.from_str(f"{symbol}.{BITMEX}"),
     order_qty=order_qty,
+    use_post_only=True,
     open_position_on_start_qty=order_qty,
     open_position_time_in_force=TimeInForce.IOC,
     close_positions_time_in_force=TimeInForce.IOC,
+    log_data=False,
+    # test_reject_post_only=True,
     # dry_run=True,
 )
 tester = ExecTester(config=config_tester)
