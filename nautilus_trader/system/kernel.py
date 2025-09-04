@@ -213,6 +213,7 @@ class NautilusKernel:
                         is_colored=logging.log_colors,
                         is_bypassed=logging.bypass_logging,
                         print_config=logging.print_config,
+                        log_components_only=logging.log_components_only,
                     )
                     nautilus_pyo3.log_header(
                         trader_id=nautilus_pyo3.TraderId(self._trader_id.value),
@@ -239,6 +240,7 @@ class NautilusKernel:
                         colors=logging.log_colors,
                         bypass=logging.bypass_logging,
                         print_config=logging.print_config,
+                        log_components_only=logging.log_components_only,
                         max_file_size=logging.log_file_max_size or 0,
                         max_backup_count=logging.log_file_max_backup_count,
                     )

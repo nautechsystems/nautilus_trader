@@ -68,6 +68,8 @@ pub struct LoggerConfig {
     pub is_colored: bool,
     /// If the configuration should be printed to stdout at initialization.
     pub print_config: bool,
+    /// If only components with explicit component-level filters should be logged.
+    pub log_components_only: bool,
 }
 
 impl Default for LoggerConfig {
@@ -79,6 +81,7 @@ impl Default for LoggerConfig {
             component_level: HashMap::new(),
             is_colored: true,
             print_config: false,
+            log_components_only: false,
         }
     }
 }
@@ -92,6 +95,7 @@ impl LoggerConfig {
         component_level: HashMap<Ustr, LevelFilter>,
         is_colored: bool,
         print_config: bool,
+        log_components_only: bool,
     ) -> Self {
         Self {
             stdout_level,
@@ -99,6 +103,7 @@ impl LoggerConfig {
             component_level,
             is_colored,
             print_config,
+            log_components_only,
         }
     }
 
@@ -117,6 +122,8 @@ impl LoggerConfig {
                 config.is_colored = true;
             } else if kv_lower == "print_config" {
                 config.print_config = true;
+            } else if kv_lower == "log_components_only" {
+                config.log_components_only = true;
             } else {
                 let parts: Vec<&str> = kv.split('=').collect();
                 if parts.len() != 2 {
@@ -451,6 +458,7 @@ impl Logger {
             component_level,
             is_colored,
             print_config: _,
+            log_components_only,
         } = config;
 
         let trader_id_cache = Ustr::from(&trader_id);
@@ -477,7 +485,13 @@ impl Logger {
                              file_writer_opt: &mut Option<FileWriter>| {
             match event {
                 LogEvent::Log(line) => {
-                    if let Some(&filter_level) = component_level.get(&line.component)
+                    let component_filter_level = component_level.get(&line.component);
+
+                    if log_components_only && component_filter_level.is_none() {
+                        return;
+                    }
+
+                    if let Some(&filter_level) = component_filter_level
                         && line.level > filter_level
                     {
                         return;
@@ -770,6 +784,7 @@ mod tests {
                 )]),
                 is_colored: true,
                 print_config: false,
+                log_components_only: false,
             }
         );
     }
@@ -785,6 +800,27 @@ mod tests {
                 component_level: HashMap::new(),
                 is_colored: true,
                 print_config: true,
+                log_components_only: false,
+            }
+        );
+    }
+
+    #[rstest]
+    fn log_config_parsing_with_log_components_only() {
+        let config =
+            LoggerConfig::from_spec("stdout=Info;log_components_only;RiskEngine=Debug").unwrap();
+        assert_eq!(
+            config,
+            LoggerConfig {
+                stdout_level: LevelFilter::Info,
+                fileout_level: LevelFilter::Off,
+                component_level: HashMap::from_iter(vec![(
+                    Ustr::from("RiskEngine"),
+                    LevelFilter::Debug
+                )]),
+                is_colored: true,
+                print_config: false,
+                log_components_only: true,
             }
         );
     }

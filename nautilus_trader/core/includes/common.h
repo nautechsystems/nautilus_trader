@@ -604,6 +604,7 @@ struct LogGuard_API logging_init(TraderId_t trader_id,
                                  uint8_t is_colored,
                                  uint8_t is_bypassed,
                                  uint8_t print_config,
+                                 uint8_t log_components_only,
                                  uint64_t max_file_size,
                                  uint32_t max_backup_count);
 
