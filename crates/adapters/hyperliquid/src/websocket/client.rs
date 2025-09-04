@@ -13,25 +13,32 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::collections::HashSet;
+
 use anyhow::Result;
 use nautilus_network::websocket::{WebSocketClient, WebSocketConfig, channel_message_handler};
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 use tracing::{debug, error, info, warn};
 
-use crate::websocket::messages::{HyperliquidWsMessage, HyperliquidWsRequest};
+use crate::websocket::messages::{HyperliquidWsMessage, HyperliquidWsRequest, SubscriptionRequest};
 
-/// Hyperliquid WebSocket client that wraps Nautilus WebSocketClient for lifecycle management.
+/// Low-level Hyperliquid WebSocket client that wraps Nautilus WebSocketClient.
+///
+/// This is the inner client that handles the transport layer and provides low-level
+/// WebSocket methods with `ws_*` prefixes.
 #[derive(Debug)]
-pub struct HyperliquidWebSocketClient {
-    client: WebSocketClient,
+pub struct HyperliquidWebSocketInnerClient {
+    inner: WebSocketClient,
+    rx_inbound: mpsc::Receiver<HyperliquidWsMessage>,
+    sent_subscriptions: HashSet<String>,
     _reader_task: tokio::task::JoinHandle<()>,
 }
 
-impl HyperliquidWebSocketClient {
-    /// Creates a new Hyperliquid WebSocket client with Nautilus' reconnection/backoff/heartbeat.
-    /// Returns (client, rx) where `rx` yields Hyperliquid-native `HyperliquidWsMessage` events.
-    pub async fn connect(url: &str) -> Result<(Self, mpsc::Receiver<HyperliquidWsMessage>)> {
+impl HyperliquidWebSocketInnerClient {
+    /// Creates a new Hyperliquid WebSocket inner client with Nautilus' reconnection/backoff/heartbeat.
+    /// Returns a client that owns the inbound message receiver.
+    pub async fn connect(url: &str) -> Result<Self> {
         // Create message handler for receiving raw WebSocket messages
         let (message_handler, mut raw_rx) = channel_message_handler();
 
@@ -99,46 +106,154 @@ impl HyperliquidWebSocketClient {
         });
 
         let hl_client = Self {
-            client,
+            inner: client,
+            rx_inbound,
+            sent_subscriptions: HashSet::new(),
             _reader_task: reader_task,
         };
 
-        Ok((hl_client, rx_inbound))
+        Ok(hl_client)
     }
 
-    /// Sends a Hyperliquid WebSocket request via the Nautilus WebSocket client.
-    pub async fn send(&self, request: &HyperliquidWsRequest) -> Result<()> {
+    /// Low-level method to send a Hyperliquid WebSocket request.
+    pub async fn ws_send(&self, request: &HyperliquidWsRequest) -> Result<()> {
         let json = serde_json::to_string(request)?;
         debug!("Sending WS message: {}", json);
-        self.client
+        self.inner
             .send_text(json, None)
             .await
             .map_err(|e| anyhow::anyhow!(e))
     }
 
+    /// Low-level method to send a request only once (dedup by JSON serialization).
+    pub async fn ws_send_once(&mut self, request: &HyperliquidWsRequest) -> Result<()> {
+        let json = serde_json::to_string(request)?;
+        if self.sent_subscriptions.contains(&json) {
+            debug!("Skipping duplicate request: {}", json);
+            return Ok(());
+        }
+
+        debug!("Sending WS message: {}", json);
+        self.inner
+            .send_text(json.clone(), None)
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+
+        self.sent_subscriptions.insert(json);
+        Ok(())
+    }
+
+    /// Low-level method to subscribe to a specific channel.
+    pub async fn ws_subscribe(&mut self, subscription: SubscriptionRequest) -> Result<()> {
+        let request = HyperliquidWsRequest::Subscribe { subscription };
+        self.ws_send_once(&request).await
+    }
+
+    /// Get the next event from the WebSocket stream.
+    /// Returns None when the connection is closed or the receiver is exhausted.
+    pub async fn ws_next_event(&mut self) -> Option<HyperliquidWsMessage> {
+        self.rx_inbound.recv().await
+    }
+
     /// Returns true if the WebSocket connection is active.
     pub fn is_active(&self) -> bool {
-        self.client.is_active()
+        self.inner.is_active()
     }
 
     /// Returns true if the WebSocket is reconnecting.
     pub fn is_reconnecting(&self) -> bool {
-        self.client.is_reconnecting()
+        self.inner.is_reconnecting()
     }
 
     /// Returns true if the WebSocket is disconnecting.
     pub fn is_disconnecting(&self) -> bool {
-        self.client.is_disconnecting()
+        self.inner.is_disconnecting()
     }
 
     /// Returns true if the WebSocket is closed.
     pub fn is_closed(&self) -> bool {
-        self.client.is_closed()
+        self.inner.is_closed()
+    }
+
+    /// Disconnect the WebSocket client.
+    pub async fn ws_disconnect(&mut self) -> Result<()> {
+        self.inner.disconnect().await;
+        Ok(())
+    }
+}
+
+/// High-level Hyperliquid WebSocket client that provides standardized domain methods.
+///
+/// This is the outer client that wraps the inner client and provides Nautilus-specific
+/// functionality for WebSocket operations using standard domain methods.
+#[derive(Debug)]
+pub struct HyperliquidWebSocketClient {
+    inner: HyperliquidWebSocketInnerClient,
+}
+
+impl HyperliquidWebSocketClient {
+    /// Creates a new Hyperliquid WebSocket client.
+    pub async fn connect(url: &str) -> Result<Self> {
+        let inner = HyperliquidWebSocketInnerClient::connect(url).await?;
+        Ok(Self { inner })
+    }
+
+    /// Subscribe to order updates for a specific user address.
+    pub async fn subscribe_order_updates(&mut self, user: &str) -> Result<()> {
+        let subscription = SubscriptionRequest::OrderUpdates {
+            user: user.to_string(),
+        };
+        self.inner.ws_subscribe(subscription).await
+    }
+
+    /// Subscribe to user events (fills, funding, liquidations) for a specific user address.
+    pub async fn subscribe_user_events(&mut self, user: &str) -> Result<()> {
+        let subscription = SubscriptionRequest::UserEvents {
+            user: user.to_string(),
+        };
+        self.inner.ws_subscribe(subscription).await
+    }
+
+    /// Subscribe to all user channels (order updates + user events) for convenience.
+    pub async fn subscribe_all_user_channels(&mut self, user: &str) -> Result<()> {
+        self.subscribe_order_updates(user).await?;
+        self.subscribe_user_events(user).await?;
+        Ok(())
+    }
+
+    /// Get the next event from the WebSocket stream.
+    /// Returns None when the connection is closed or the receiver is exhausted.
+    pub async fn next_event(&mut self) -> Option<HyperliquidWsMessage> {
+        self.inner.ws_next_event().await
+    }
+
+    /// Returns true if the WebSocket connection is active.
+    pub fn is_active(&self) -> bool {
+        self.inner.is_active()
+    }
+
+    /// Returns true if the WebSocket is reconnecting.
+    pub fn is_reconnecting(&self) -> bool {
+        self.inner.is_reconnecting()
+    }
+
+    /// Returns true if the WebSocket is disconnecting.
+    pub fn is_disconnecting(&self) -> bool {
+        self.inner.is_disconnecting()
+    }
+
+    /// Returns true if the WebSocket is closed.
+    pub fn is_closed(&self) -> bool {
+        self.inner.is_closed()
     }
 
     /// Disconnect the WebSocket client.
     pub async fn disconnect(&mut self) -> Result<()> {
-        self.client.disconnect().await;
-        Ok(())
+        self.inner.ws_disconnect().await
+    }
+
+    /// Escape hatch: send raw requests for tests/power users.
+    pub async fn send_raw(&mut self, request: &HyperliquidWsRequest) -> Result<()> {
+        self.inner.ws_send(request).await
     }
 }

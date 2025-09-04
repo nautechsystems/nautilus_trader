@@ -17,10 +17,7 @@ use std::time::Duration;
 
 use nautilus_hyperliquid::{
     common::consts::{HyperliquidNetwork, ws_url},
-    websocket::{
-        client::HyperliquidWebSocketClient,
-        messages::{HyperliquidWsRequest, SubscriptionRequest},
-    },
+    websocket::client::HyperliquidWebSocketClient,
 };
 use tokio::{pin, signal};
 use tracing::level_filters::LevelFilter;
@@ -37,28 +34,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let network = HyperliquidNetwork::from_env();
     let ws_url = ws_url(network);
 
-    let (mut client, message_rx) = HyperliquidWebSocketClient::connect(ws_url).await?;
+    let mut client = HyperliquidWebSocketClient::connect(ws_url).await?;
     tracing::info!("Connected to Hyperliquid WebSocket");
 
     // Subscribe to execution channels
     let user_addr = std::env::var("HYPERLIQUID_USER_ADDRESS")
         .unwrap_or_else(|_| "0x0000000000000000000000000000000000000000".to_string());
 
-    // Subscribe to order updates
-    let order_updates_request = HyperliquidWsRequest::Subscribe {
-        subscription: SubscriptionRequest::OrderUpdates {
-            user: user_addr.clone(),
-        },
-    };
-    client.send(&order_updates_request).await?;
-
-    // Subscribe to user events
-    let user_events_request = HyperliquidWsRequest::Subscribe {
-        subscription: SubscriptionRequest::UserEvents {
-            user: user_addr.clone(),
-        },
-    };
-    client.send(&user_events_request).await?;
+    // Subscribe to all user channels using the convenience method
+    client.subscribe_all_user_channels(&user_addr).await?;
+    tracing::info!("Subscribed to all user channels for {}", user_addr);
 
     // Wait briefly to ensure subscriptions are active
     tokio::time::sleep(Duration::from_secs(1)).await;
@@ -67,12 +52,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sigint = signal::ctrl_c();
     pin!(sigint);
 
-    let stream = message_rx;
-    tokio::pin!(stream);
-
     loop {
         tokio::select! {
-            Some(message) = stream.recv() => {
+            Some(message) = client.next_event() => {
                 tracing::debug!("{message:?}");
             }
             _ = &mut sigint => {
