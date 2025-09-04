@@ -5846,21 +5846,54 @@ cdef class OrderMatchingEngine:
             return  # Fill completed
 
         # Check reduce only orders for position
-        for order in self.cache.orders_for_position(position.id):
+        # Previously all reduce-only orders were force-synced to the net position size,
+        # which incorrectly merged quantities across independent bracket orders.
+        # Instead, prefer syncing each reduce-only child (TP/SL) to its own parent
+        # entry order's filled quantity when available; fall back to position size
+        # only for standalone reduce-only orders without a parent.
+        cdef:
+            Order ro_order
+            Order parent_order
+            Quantity target_qty
+        for ro_order in self.cache.orders_for_position(position.id):
             if (
                 self._use_reduce_only
-                and order.is_reduce_only
-                and order.is_open_c()
-                and order.is_passive_c()
+                and ro_order.is_reduce_only
+                and ro_order.is_open_c()
+                and ro_order.is_passive_c()
             ):
                 if position.quantity._mem.raw == 0:
-                    self.cancel_order(order)
-                elif order.leaves_qty._mem.raw != position.quantity._mem.raw:
+                    self.cancel_order(ro_order)
+                    continue
+
+                # Determine target quantity for this reduce-only order
+                parent_order = None
+
+                if ro_order.parent_order_id is not None:
+                    parent_order = self.cache.order(ro_order.parent_order_id)
+
+                # Start with position quantity as default
+                target_qty = position.quantity
+
+                if parent_order is not None:
+                    # Use the minimum of parent's filled quantity and position quantity
+                    # This ensures bracket independence while respecting position reductions
+                    if parent_order.filled_qty._mem.raw < position.quantity._mem.raw:
+                        target_qty = parent_order.filled_qty
+                    else:
+                        target_qty = position.quantity
+
+                # Safety clamp: never update total below what's already filled
+                # This avoids invalid updates or modify-rejects
+                if ro_order.filled_qty._mem.raw > target_qty._mem.raw:
+                    target_qty = ro_order.filled_qty
+
+                if ro_order.quantity._mem.raw != target_qty._mem.raw:
                     self.update_order(
-                        order,
-                        position.quantity,
-                        price=order.price if order.has_price_c() else None,
-                        trigger_price=order.trigger_price if order.has_trigger_price_c() else None,
+                        ro_order,
+                        target_qty,
+                        price=ro_order.price if ro_order.has_price_c() else None,
+                        trigger_price=ro_order.trigger_price if ro_order.has_trigger_price_c() else None,
                     )
 
 # -- IDENTIFIER GENERATORS ------------------------------------------------------------------------

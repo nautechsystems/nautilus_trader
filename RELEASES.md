@@ -149,6 +149,7 @@ Released on TBD (UTC).
 - Fixed accounting for locked balance with multiple currencies (#2918), thanks @GhostLee
 - Fixed decoding zero-sized trades for Databento MBO data
 - Fixed purging of contingent orders where open linked orders would still be purged
+- Fixed backtest bracket order quantity independence, preventing child orders from incorrectly syncing to net position size
 - Fixed Tardis Machine replay processing and Parquet file writing
 - Fixed Tardis exchange-venue mapping for Kraken Futures (should map to `cryptofacilities`)
 - Fixed Polymarket reconciliation for signature type 2 trades where wallet address differs from funder address
