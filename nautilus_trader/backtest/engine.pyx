@@ -5753,6 +5753,8 @@ cdef class OrderMatchingEngine:
             leaves_qty = Quantity.from_raw_c(order.quantity._mem.raw - cached_filled_qty._mem.raw, last_qty._mem.precision)
             last_qty = Quantity.from_raw_c(min(leaves_qty._mem.raw, last_qty._mem.raw), last_qty._mem.precision)
             cached_filled_qty._mem.raw += last_qty._mem.raw
+        if last_qty <= 0:
+            return
 
         # Calculate commission
         cdef Money commission = self._fee_model.get_commission(
