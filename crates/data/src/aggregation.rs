@@ -52,7 +52,7 @@ pub trait BarAggregator: Any + Debug {
     fn set_is_running(&mut self, value: bool);
     /// Sets the running state of the aggregator (receiving updates when `true`).
     /// Updates the aggregator  with the given price and size.
-    fn update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos);
+    fn update(&mut self, price: Price, size: Quantity, ts_init: UnixNanos);
     /// Updates the aggregator with the given quote.
     fn handle_quote(&mut self, quote: QuoteTick) {
         let spec = self.bar_type().spec();
@@ -60,14 +60,14 @@ pub trait BarAggregator: Any + Debug {
             self.update(
                 quote.extract_price(spec.price_type),
                 quote.extract_size(spec.price_type),
-                quote.ts_event,
+                quote.ts_init,
             );
         }
     }
     /// Updates the aggregator with the given trade.
     fn handle_trade(&mut self, trade: TradeTick) {
         if !self.await_partial() {
-            self.update(trade.price, trade.size, trade.ts_event);
+            self.update(trade.price, trade.size, trade.ts_init);
         }
     }
     /// Updates the aggregator with the given bar.
@@ -188,13 +188,13 @@ impl BarBuilder {
         self.initialized = true;
     }
 
-    /// Updates the builder state with the given price, size, and event timestamp.
+    /// Updates the builder state with the given price, size, and init timestamp.
     ///
     /// # Panics
     ///
     /// Panics if `high` or `low` values are unexpectedly `None` when updating.
-    pub fn update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos) {
-        if ts_event < self.ts_last {
+    pub fn update(&mut self, price: Price, size: Quantity, ts_init: UnixNanos) {
+        if ts_init < self.ts_last {
             return; // Not applicable
         }
 
@@ -215,7 +215,7 @@ impl BarBuilder {
         self.close = Some(price);
         self.volume = self.volume.add(size);
         self.count += 1;
-        self.ts_last = ts_event;
+        self.ts_last = ts_init;
     }
 
     /// Updates the builder state with a completed bar, its volume, and the bar init timestamp.
@@ -384,8 +384,8 @@ where
         self.builder.set_partial(partial_bar);
     }
 
-    fn apply_update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos) {
-        self.builder.update(price, size, ts_event);
+    fn apply_update(&mut self, price: Price, size: Quantity, ts_init: UnixNanos) {
+        self.builder.update(price, size, ts_init);
     }
 
     fn build_now_and_send(&mut self) {
@@ -498,8 +498,8 @@ where
     }
 
     /// Apply the given update to the aggregator.
-    fn update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos) {
-        self.core.apply_update(price, size, ts_event);
+    fn update(&mut self, price: Price, size: Quantity, ts_init: UnixNanos) {
+        self.core.apply_update(price, size, ts_init);
         let spec = self.core.bar_type.spec();
 
         if self.core.builder.count >= spec.step.get() {
@@ -623,7 +623,7 @@ where
     }
 
     /// Apply the given update to the aggregator.
-    fn update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos) {
+    fn update(&mut self, price: Price, size: Quantity, ts_init: UnixNanos) {
         let mut raw_size_update = size.raw;
         let spec = self.core.bar_type.spec();
         let raw_step = (spec.step.get() as f64 * FIXED_SCALAR) as QuantityRaw;
@@ -633,7 +633,7 @@ where
                 self.core.apply_update(
                     price,
                     Quantity::from_raw(raw_size_update, size.precision),
-                    ts_event,
+                    ts_init,
                 );
                 break;
             }
@@ -642,7 +642,7 @@ where
             self.core.apply_update(
                 price,
                 Quantity::from_raw(raw_size_diff, size.precision),
-                ts_event,
+                ts_init,
             );
 
             self.core.build_now_and_send();
@@ -773,7 +773,7 @@ where
     }
 
     /// Apply the given update to the aggregator.
-    fn update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos) {
+    fn update(&mut self, price: Price, size: Quantity, ts_init: UnixNanos) {
         let mut size_update = size.as_f64();
         let spec = self.core.bar_type.spec();
 
@@ -782,14 +782,14 @@ where
             if self.cum_value + value_update < spec.step.get() as f64 {
                 self.cum_value += value_update;
                 self.core
-                    .apply_update(price, Quantity::new(size_update, size.precision), ts_event);
+                    .apply_update(price, Quantity::new(size_update, size.precision), ts_init);
                 break;
             }
 
             let value_diff = spec.step.get() as f64 - self.cum_value;
             let size_diff = size_update * (value_diff / value_update);
             self.core
-                .apply_update(price, Quantity::new(size_diff, size.precision), ts_event);
+                .apply_update(price, Quantity::new(size_diff, size.precision), ts_init);
 
             self.core.build_now_and_send();
             self.cum_value = 0.0;
@@ -1203,16 +1203,15 @@ where
         Self::stop(self);
     }
 
-    fn update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos) {
+    fn update(&mut self, price: Price, size: Quantity, ts_init: UnixNanos) {
         if self.batch_next_close_ns != UnixNanos::default() {
-            self.batch_pre_update(ts_event);
+            self.batch_pre_update(ts_init);
         }
 
-        self.core.apply_update(price, size, ts_event);
+        self.core.apply_update(price, size, ts_init);
 
         if self.build_on_next_tick {
-            if ts_event <= self.stored_close_ns {
-                let ts_init = ts_event;
+            if ts_init <= self.stored_close_ns {
                 let ts_event = self.bar_ts_event(self.stored_open_ns, self.stored_close_ns);
                 self.build_and_send(ts_event, ts_init);
             }
@@ -1222,7 +1221,7 @@ where
         }
 
         if self.batch_next_close_ns != UnixNanos::default() {
-            self.batch_post_update(ts_event);
+            self.batch_post_update(ts_init);
         }
     }
 

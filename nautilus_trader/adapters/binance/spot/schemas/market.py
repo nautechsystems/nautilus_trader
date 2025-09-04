@@ -202,16 +202,18 @@ class BinanceSpotTradeData(msgspec.Struct):
     def parse_to_trade_tick(
         self,
         instrument_id: InstrumentId,
-        ts_init: int,
+        ts_init: int | None = None,
     ) -> TradeTick:
+        ts_event = millis_to_nanos(self.T)
+
         return TradeTick(
             instrument_id=instrument_id,
             price=Price.from_str(self.p),
             size=Quantity.from_str(self.q),
             aggressor_side=AggressorSide.SELLER if self.m else AggressorSide.BUYER,
             trade_id=TradeId(str(self.t)),
-            ts_event=millis_to_nanos(self.T),
-            ts_init=ts_init,
+            ts_event=ts_event,
+            ts_init=(ts_init or ts_event),
         )
 
 

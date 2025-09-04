@@ -711,7 +711,6 @@ class BinanceMarketHttpAPI:
     async def request_trade_ticks(
         self,
         instrument_id: InstrumentId,
-        ts_init: int,
         limit: int | None = None,
     ) -> list[TradeTick]:
         """
@@ -721,7 +720,6 @@ class BinanceMarketHttpAPI:
         return [
             trade.parse_to_trade_tick(
                 instrument_id=instrument_id,
-                ts_init=ts_init,
             )
             for trade in trades
         ]
@@ -750,7 +748,6 @@ class BinanceMarketHttpAPI:
     async def request_agg_trade_ticks(
         self,
         instrument_id: InstrumentId,
-        ts_init: int,
         limit: int | None = 1000,
         start_time: int | None = None,
         end_time: int | None = None,
@@ -806,7 +803,6 @@ class BinanceMarketHttpAPI:
                 ticks.append(
                     trade.parse_to_trade_tick(
                         instrument_id=instrument_id,
-                        ts_init=ts_init,
                     ),
                 )
 
@@ -851,7 +847,6 @@ class BinanceMarketHttpAPI:
     async def request_historical_trade_ticks(
         self,
         instrument_id: InstrumentId,
-        ts_init: int,
         limit: int | None = None,
         from_id: int | None = None,
     ) -> list[TradeTick]:
@@ -866,7 +861,6 @@ class BinanceMarketHttpAPI:
         return [
             trade.parse_to_trade_tick(
                 instrument_id=instrument_id,
-                ts_init=ts_init,
             )
             for trade in historical_trades
         ]
@@ -895,7 +889,6 @@ class BinanceMarketHttpAPI:
     async def request_binance_bars(
         self,
         bar_type: BarType,
-        ts_init: int,
         interval: BinanceKlineInterval,
         limit: int | None = None,
         start_time: int | None = None,
@@ -914,9 +907,7 @@ class BinanceMarketHttpAPI:
                 start_time=start_time,
                 end_time=end_time,
             )
-            bars: list[BinanceBar] = [
-                kline.parse_to_binance_bar(bar_type, ts_init) for kline in klines
-            ]
+            bars: list[BinanceBar] = [kline.parse_to_binance_bar(bar_type) for kline in klines]
             all_bars.extend(bars)
 
             # Update the start_time to fetch the next set of bars
