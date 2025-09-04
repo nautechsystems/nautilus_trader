@@ -722,6 +722,7 @@ cdef class TimeBarAggregator(BarAggregator):
         bint build_with_no_updates = True,
         object time_bars_origin_offset: pd.Timedelta | pd.DateOffset = None,
         int bar_build_delay = 0,
+        bint passthrough_bar_type: bool = False,
     ) -> None:
         super().__init__(
             instrument=instrument,
@@ -744,6 +745,7 @@ cdef class TimeBarAggregator(BarAggregator):
         self._build_with_no_updates = build_with_no_updates
         self._bar_build_delay = bar_build_delay
         self._time_bars_origin_offset = time_bars_origin_offset or 0
+        self._passthrough_bar_type = passthrough_bar_type
 
         if type(self._time_bars_origin_offset) is int:
             self._time_bars_origin_offset = pd.Timedelta(self._time_bars_origin_offset)
@@ -755,11 +757,8 @@ cdef class TimeBarAggregator(BarAggregator):
 
         self.interval = self._get_interval()
         self.interval_ns = self._get_interval_ns()
-        self._set_build_timer()
-        self.next_close_ns = self._clock.next_time_ns(self._timer_name)
-
-        cdef datetime now = self._clock.utc_now()
-        self._stored_open_ns = dt_to_unix_nanos(self.get_start_time(now))
+        self.next_close_ns = 0
+        self._stored_open_ns = 0
         self._stored_close_ns = 0
 
     def __str__(self):
@@ -867,11 +866,15 @@ cdef class TimeBarAggregator(BarAggregator):
                 f"Aggregation not time based, was {bar_aggregation_to_str(aggregation)}",
             )
 
-    cpdef void _set_build_timer(self):
+    cpdef void start(self):
         cdef int step = self.bar_type.spec.step
         self._timer_name = str(self.bar_type)
         cdef datetime now = self._clock.utc_now()
         cdef datetime start_time = self.get_start_time(now)
+
+        # Initialize stored open time based on current time
+        self._stored_open_ns = dt_to_unix_nanos(start_time)
+        self._stored_close_ns = 0
 
         # Consider near-boundary starts within a small tolerance as on-boundary
         cdef uint64_t now_ns = dt_to_unix_nanos(now)
@@ -898,6 +901,7 @@ cdef class TimeBarAggregator(BarAggregator):
                 stop_time=None,
                 callback=self._build_bar,
             )
+            self.next_close_ns = self._clock.next_time_ns(self._timer_name)
         else:
             # The monthly alert time is defined iteratively at each alert time as there is no regular interval
             alert_time = start_time + pd.DateOffset(months=step)
@@ -908,6 +912,7 @@ cdef class TimeBarAggregator(BarAggregator):
                 callback=self._build_bar,
                 override=True,
             )
+            self.next_close_ns = dt_to_unix_nanos(alert_time)
 
         self._log.debug(f"Started timer {self._timer_name}")
 
@@ -1019,6 +1024,22 @@ cdef class TimeBarAggregator(BarAggregator):
             self._batch_post_update(ts_init)
 
     cdef void _apply_update_bar(self, Bar bar, Quantity volume, uint64_t ts_init):
+        cdef Bar passthrough_bar
+
+        if self._passthrough_bar_type:
+            passthrough_bar = Bar(
+                bar_type=self.bar_type,
+                open=bar.open,
+                high=bar.high,
+                low=bar.low,
+                close=bar.close,
+                volume=bar.volume,
+                ts_event=bar.ts_event,
+                ts_init=bar.ts_init,
+            )
+            self._handler(passthrough_bar)
+            return
+
         if self._batch_next_close_ns != 0:
             self._batch_pre_update(ts_init)
 
