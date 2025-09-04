@@ -1218,6 +1218,7 @@ cpdef LogGuard init_logging(
     bint colors = True,
     bint bypass = False,
     bint print_config = False,
+    bint log_components_only = False,
     uint64_t max_file_size = 0,
     uint32_t max_backup_count = 5,
 ):
@@ -1298,6 +1299,7 @@ cpdef LogGuard init_logging(
         colors,
         bypass,
         print_config,
+        log_components_only,
         max_file_size,
         max_backup_count,
     )

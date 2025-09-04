@@ -99,6 +99,7 @@ def init_logging(
     is_colored: bool | None = None,
     is_bypassed: bool | None = None,
     print_config: bool | None = None,
+    log_components_only: bool | None = None,
 ) -> LogGuard: ...
 
 def log_header(

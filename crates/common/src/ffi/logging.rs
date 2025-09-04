@@ -97,6 +97,7 @@ pub unsafe extern "C" fn logging_init(
     is_colored: u8,
     is_bypassed: u8,
     print_config: u8,
+    log_components_only: u8,
     max_file_size: u64,
     max_backup_count: u32,
 ) -> LogGuard_API {
@@ -112,6 +113,7 @@ pub unsafe extern "C" fn logging_init(
         component_levels,
         u8_as_bool(is_colored),
         u8_as_bool(print_config),
+        u8_as_bool(log_components_only),
     );
 
     // Configure file rotation if max_file_size > 0
