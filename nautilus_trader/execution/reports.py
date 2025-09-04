@@ -833,7 +833,7 @@ class PositionStatusReport(ExecutionReport):
             ),
             avg_px_open=(
                 Price.from_str(str(pyo3_report.avg_px_open))
-                if hasattr(pyo3_report, 'avg_px_open') and pyo3_report.avg_px_open
+                if hasattr(pyo3_report, "avg_px_open") and pyo3_report.avg_px_open
                 else None
             ),
         )

@@ -1513,7 +1513,7 @@ class LiveExecutionEngine(ExecutionEngine):
             target_avg_px = None
             if report.avg_px_open is not None:
                 target_avg_px = report.avg_px_open.as_decimal()
-            
+
             reconciliation_price = calculate_reconciliation_price(
                 current_position_qty=position_signed_decimal_qty,
                 current_position_avg_px=current_avg_px,

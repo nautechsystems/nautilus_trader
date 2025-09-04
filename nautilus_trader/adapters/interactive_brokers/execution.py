@@ -485,7 +485,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             avg_px_open = None
             if position.avg_cost and position.avg_cost > 0:
                 avg_px_open = instrument.make_price(position.avg_cost)
-            
+
             position_status = PositionStatusReport(
                 account_id=self.account_id,
                 instrument_id=instrument.id,
@@ -1380,7 +1380,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             avg_px_open = None
             if ib_position.avg_cost and ib_position.avg_cost > 0:
                 avg_px_open = instrument.make_price(ib_position.avg_cost)
-            
+
             # Create position status report
             position_report = PositionStatusReport(
                 account_id=self.account_id,
