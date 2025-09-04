@@ -285,7 +285,6 @@ class BitmexExecutionClient(LiveExecutionClient):
             if hasattr(order, "display_qty") and order.display_qty
             else None
         )
-        reduce_only = order.is_reduce_only
 
         try:
             await self._http_client.submit_order(
@@ -298,7 +297,8 @@ class BitmexExecutionClient(LiveExecutionClient):
                 price=pyo3_price,
                 trigger_price=pyo3_trigger_price,
                 display_qty=pyo3_display_qty,
-                reduce_only=reduce_only,
+                post_only=order.is_post_only,
+                reduce_only=order.is_reduce_only,
             )
 
         except Exception as e:
@@ -449,7 +449,7 @@ class BitmexExecutionClient(LiveExecutionClient):
         """
         try:
             # Fetch order reports from BitMEX
-            pyo3_reports = await self._http_client.get_order_reports(
+            pyo3_reports = await self._http_client.request_order_status_reports(
                 instrument_id=command.instrument_id,
                 open_only=False,
                 limit=None,
@@ -486,7 +486,7 @@ class BitmexExecutionClient(LiveExecutionClient):
         Generate a list of `PositionStatusReport`s with optional query filters.
         """
         try:
-            pyo3_reports = await self._http_client.get_position_reports()
+            pyo3_reports = await self._http_client.request_position_status_reports()
 
             result = []
             for pyo3_report in pyo3_reports:
@@ -506,7 +506,7 @@ class BitmexExecutionClient(LiveExecutionClient):
         Generate a list of `FillReport`s with optional query filters.
         """
         try:
-            pyo3_reports = await self._http_client.get_fill_reports(
+            pyo3_reports = await self._http_client.request_fill_reports(
                 instrument_id=command.instrument_id,
                 limit=None,
             )

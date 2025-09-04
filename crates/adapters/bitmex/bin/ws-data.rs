@@ -16,13 +16,9 @@
 use std::env;
 
 use futures_util::StreamExt;
-use nautilus_bitmex::{
-    http::{client::BitmexHttpClient, parse::parse_instrument_any},
-    websocket::client::BitmexWebSocketClient,
-};
-use nautilus_core::time::get_atomic_clock_realtime;
+use nautilus_bitmex::{http::client::BitmexHttpClient, websocket::client::BitmexWebSocketClient};
 use nautilus_model::{data::bar::BarType, identifiers::InstrumentId};
-use tokio::{pin, signal, time::Duration};
+use tokio::time::Duration;
 use tracing::level_filters::LevelFilter;
 
 #[tokio::main]
@@ -63,15 +59,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(60), // timeout_secs
     );
 
-    let instruments_result = http_client
-        .get_instruments(true) // active_only
+    let instruments = http_client
+        .request_instruments(true) // active_only
         .await?;
 
-    let ts_init = get_atomic_clock_realtime().get_time_ns();
-    let instruments: Vec<_> = instruments_result
-        .iter()
-        .filter_map(|inst| parse_instrument_any(inst, ts_init))
-        .collect();
     tracing::info!("Fetched {} instruments", instruments.len());
 
     // Create WebSocket client
@@ -199,8 +190,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("Press CTRL+C to stop");
 
     // Create a future that completes on CTRL+C
-    let sigint = signal::ctrl_c();
-    pin!(sigint);
+    let sigint = tokio::signal::ctrl_c();
+    tokio::pin!(sigint);
 
     let stream = ws_client.stream();
     tokio::pin!(stream); // Pin the stream to allow polling in the loop

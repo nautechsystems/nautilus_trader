@@ -81,6 +81,49 @@ impl BitmexHttpClient {
         self.api_key()
     }
 
+    #[pyo3(name = "update_position_leverage")]
+    fn py_update_position_leverage<'py>(
+        &self,
+        py: Python<'py>,
+        _symbol: String,
+        _leverage: f64,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let _client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            // Call the leverage update method once it's implemented
+            // let report = client.update_position_leverage(&symbol, leverage)
+            //     .await
+            //     .map_err(to_pyvalue_err)?;
+
+            Python::with_gil(|py| -> PyResult<PyObject> {
+                // report.into_py_any(py).map_err(to_pyvalue_err)
+                Ok(py.None())
+            })
+        })
+    }
+
+    #[pyo3(name = "request_instrument")]
+    fn py_request_instrument<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let instrument = client
+                .request_instrument(instrument_id)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::with_gil(|py| match instrument {
+                Some(inst) => instrument_any_to_pyobject(py, inst),
+                None => Ok(py.None()),
+            })
+        })
+    }
+
     #[pyo3(name = "request_instruments")]
     fn py_request_instruments<'py>(
         &self,
@@ -109,12 +152,12 @@ impl BitmexHttpClient {
         })
     }
 
-    #[pyo3(name = "get_trades")]
-    #[pyo3(signature = (instrument_id=None, limit=None))]
-    fn py_get_trades<'py>(
+    #[pyo3(name = "request_trades")]
+    #[pyo3(signature = (instrument_id, limit=None))]
+    fn py_request_trades<'py>(
         &self,
         py: Python<'py>,
-        instrument_id: Option<InstrumentId>,
+        instrument_id: InstrumentId,
         limit: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -155,9 +198,9 @@ impl BitmexHttpClient {
         })
     }
 
-    #[pyo3(name = "get_order_reports")]
+    #[pyo3(name = "request_order_status_reports")]
     #[pyo3(signature = (instrument_id=None, open_only=false, limit=None))]
-    fn py_get_order_reports<'py>(
+    fn py_request_order_status_reports<'py>(
         &self,
         py: Python<'py>,
         instrument_id: Option<InstrumentId>,
@@ -183,9 +226,9 @@ impl BitmexHttpClient {
         })
     }
 
-    #[pyo3(name = "get_fill_reports")]
+    #[pyo3(name = "request_fill_reports")]
     #[pyo3(signature = (instrument_id=None, limit=None))]
-    fn py_get_fill_reports<'py>(
+    fn py_request_fill_reports<'py>(
         &self,
         py: Python<'py>,
         instrument_id: Option<InstrumentId>,
@@ -210,13 +253,16 @@ impl BitmexHttpClient {
         })
     }
 
-    #[pyo3(name = "get_position_reports")]
-    fn py_get_position_reports<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+    #[pyo3(name = "request_position_status_reports")]
+    fn py_request_position_status_reports<'py>(
+        &self,
+        py: Python<'py>,
+    ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let reports = client
-                .request_position_reports()
+                .request_position_status_reports()
                 .await
                 .map_err(to_pyvalue_err)?;
 
@@ -232,7 +278,19 @@ impl BitmexHttpClient {
     }
 
     #[pyo3(name = "submit_order")]
-    #[pyo3(signature = (instrument_id, client_order_id, order_side, order_type, quantity, time_in_force, price = None, trigger_price = None, display_qty = None, reduce_only = false))]
+    #[pyo3(signature = (
+        instrument_id,
+        client_order_id,
+        order_side,
+        order_type,
+        quantity,
+        time_in_force,
+        price = None,
+        trigger_price = None,
+        display_qty = None,
+        post_only = false,
+        reduce_only = false
+    ))]
     #[allow(clippy::too_many_arguments)]
     fn py_submit_order<'py>(
         &self,
@@ -246,6 +304,7 @@ impl BitmexHttpClient {
         price: Option<Price>,
         trigger_price: Option<Price>,
         display_qty: Option<Quantity>,
+        post_only: bool,
         reduce_only: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -261,11 +320,13 @@ impl BitmexHttpClient {
                     time_in_force,
                     price,
                     trigger_price,
-                    reduce_only,
                     display_qty,
+                    post_only,
+                    reduce_only,
                 )
                 .await
                 .map_err(to_pyvalue_err)?;
+
             Python::with_gil(|py| report.into_py_any(py))
         })
     }
@@ -285,6 +346,7 @@ impl BitmexHttpClient {
                 .cancel_order(client_order_id, venue_order_id)
                 .await
                 .map_err(to_pyvalue_err)?;
+
             Python::with_gil(|py| report.into_py_any(py))
         })
     }
@@ -304,6 +366,7 @@ impl BitmexHttpClient {
                 .cancel_orders(client_order_ids, venue_order_ids)
                 .await
                 .map_err(to_pyvalue_err)?;
+
             Python::with_gil(|py| {
                 let py_reports: PyResult<Vec<_>> = reports
                     .into_iter()
@@ -330,6 +393,7 @@ impl BitmexHttpClient {
                 .cancel_all_orders(instrument_id, order_side)
                 .await
                 .map_err(to_pyvalue_err)?;
+
             Python::with_gil(|py| {
                 let py_reports: PyResult<Vec<_>> = reports
                     .into_iter()
@@ -342,7 +406,14 @@ impl BitmexHttpClient {
     }
 
     #[pyo3(name = "modify_order")]
-    #[pyo3(signature = (instrument_id, client_order_id=None, venue_order_id=None, quantity=None, price=None, trigger_price=None))]
+    #[pyo3(signature = (
+        instrument_id,
+        client_order_id=None,
+        venue_order_id=None,
+        quantity=None,
+        price=None,
+        trigger_price=None
+    ))]
     #[allow(clippy::too_many_arguments)]
     fn py_modify_order<'py>(
         &self,
@@ -368,6 +439,7 @@ impl BitmexHttpClient {
                 )
                 .await
                 .map_err(to_pyvalue_err)?;
+
             Python::with_gil(|py| report.into_py_any(py))
         })
     }
@@ -415,6 +487,7 @@ impl BitmexHttpClient {
                 .request_account_state(account_id)
                 .await
                 .map_err(to_pyvalue_err)?;
+
             Python::with_gil(|py| account_state.into_py_any(py).map_err(to_pyvalue_err))
         })
     }
@@ -483,28 +556,6 @@ impl BitmexHttpClient {
                 //     py_list.append(report.into_py_any(py)?)?;
                 // }
                 Ok(py_list.into())
-            })
-        })
-    }
-
-    #[pyo3(name = "update_position_leverage")]
-    fn py_update_position_leverage<'py>(
-        &self,
-        py: Python<'py>,
-        _symbol: String,
-        _leverage: f64,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let _client = self.clone();
-
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            // Call the leverage update method once it's implemented
-            // let report = client.update_position_leverage(&symbol, leverage)
-            //     .await
-            //     .map_err(to_pyvalue_err)?;
-
-            Python::with_gil(|py| -> PyResult<PyObject> {
-                // report.into_py_any(py).map_err(to_pyvalue_err)
-                Ok(py.None())
             })
         })
     }

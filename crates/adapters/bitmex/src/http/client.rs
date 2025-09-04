@@ -40,7 +40,7 @@ use nautilus_model::{
     data::TradeTick,
     enums::{OrderSide, OrderType, TimeInForce},
     events::AccountState,
-    identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
     instruments::{Instrument as InstrumentTrait, InstrumentAny},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{Price, Quantity},
@@ -69,6 +69,7 @@ use crate::{
         consts::{BITMEX_HTTP_TESTNET_URL, BITMEX_HTTP_URL},
         credential::Credential,
         enums::BitmexSide,
+        parse::{parse_account_state, parse_instrument_id},
     },
     http::{
         parse::{
@@ -255,7 +256,7 @@ impl BitmexHttpInnerClient {
     pub async fn http_get_instrument(
         &self,
         symbol: &str,
-    ) -> Result<Vec<BitmexInstrument>, BitmexHttpError> {
+    ) -> Result<BitmexInstrument, BitmexHttpError> {
         let path = &format!("/instrument?symbol={symbol}");
         self.send_request(Method::GET, path, None, false).await
     }
@@ -598,38 +599,57 @@ impl BitmexHttpClient {
         get_atomic_clock_realtime().get_time_ns()
     }
 
-    /// Get all instruments.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the request fails, the response cannot be parsed, or the API returns an error.
+    /// Add an instrument to the cache for precision lookups.
     ///
     /// # Panics
     ///
-    /// Panics if the inner mutex is poisoned.
-    pub async fn get_instruments(
-        &self,
-        active_only: bool,
-    ) -> Result<Vec<BitmexInstrument>, BitmexHttpError> {
-        let inner = self.inner.clone();
-        inner.http_get_instruments(active_only).await
+    /// Panics if the instruments cache mutex is poisoned.
+    pub fn add_instrument(&mut self, instrument: InstrumentAny) {
+        self.instruments_cache
+            .lock()
+            .unwrap()
+            .insert(instrument.raw_symbol().inner(), instrument);
     }
 
-    /// Get instrument by symbol.
+    /// Request all available instruments and parse them into Nautilus types.
     ///
     /// # Errors
     ///
-    /// Returns an error if the request fails, the response cannot be parsed, or the API returns an error.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the inner mutex is poisoned.
-    pub async fn get_instrument(
+    /// Returns an error if the HTTP request fails or parsing fails.
+    pub async fn request_instrument(
         &self,
-        symbol: &Symbol,
-    ) -> Result<Vec<BitmexInstrument>, BitmexHttpError> {
-        let inner = self.inner.clone();
-        inner.http_get_instrument(symbol.as_ref()).await
+        instrument_id: InstrumentId,
+    ) -> anyhow::Result<Option<InstrumentAny>> {
+        let response = self
+            .inner
+            .http_get_instrument(instrument_id.symbol.as_str())
+            .await?;
+
+        let ts_init = self.generate_ts_init();
+
+        Ok(parse_instrument_any(&response, ts_init))
+    }
+
+    /// Request all available instruments and parse them into Nautilus types.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or parsing fails.
+    pub async fn request_instruments(
+        &self,
+        active_only: bool,
+    ) -> anyhow::Result<Vec<InstrumentAny>> {
+        let instruments = self.inner.http_get_instruments(active_only).await?;
+        let ts_init = self.generate_ts_init();
+
+        let mut parsed_instruments = Vec::new();
+        for inst in instruments {
+            if let Some(instrument_any) = parse_instrument_any(&inst, ts_init) {
+                parsed_instruments.push(instrument_any);
+            }
+        }
+
+        Ok(parsed_instruments)
     }
 
     /// Get user wallet information.
@@ -644,23 +664,6 @@ impl BitmexHttpClient {
     pub async fn get_wallet(&self) -> Result<BitmexWallet, BitmexHttpError> {
         let inner = self.inner.clone();
         inner.http_get_wallet().await
-    }
-
-    /// Get historical trades.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if credentials are missing, the request fails, or the API returns an error.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the inner mutex is poisoned.
-    pub async fn get_trades(
-        &self,
-        params: GetTradeParams,
-    ) -> Result<Vec<BitmexTrade>, BitmexHttpError> {
-        let inner = self.inner.clone();
-        inner.http_get_trades(params).await
     }
 
     /// Get user orders.
@@ -749,61 +752,25 @@ impl BitmexHttpClient {
         inner.http_cancel_all_orders(params).await
     }
 
-    /// Get user executions.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if credentials are missing, the request fails, or the API returns an error.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the inner mutex is poisoned.
-    pub async fn get_executions(
-        &self,
-        params: GetExecutionParams,
-    ) -> Result<Vec<BitmexExecution>, BitmexHttpError> {
-        let inner = self.inner.clone();
-        inner.http_get_executions(params).await
-    }
-
-    /// Get user positions.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if credentials are missing, the request fails, or the API returns an error.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the inner mutex is poisoned.
-    pub async fn get_positions(
-        &self,
-        params: GetPositionParams,
-    ) -> Result<Vec<BitmexPosition>, BitmexHttpError> {
-        let inner = self.inner.clone();
-        inner.http_get_positions(params).await
-    }
-
-    /// Add an instrument to the cache for precision lookups.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the instruments cache mutex is poisoned.
-    pub fn add_instrument(&mut self, instrument: InstrumentAny) {
-        self.instruments_cache
-            .lock()
-            .unwrap()
-            .insert(instrument.raw_symbol().inner(), instrument);
-    }
-
     /// Get price precision for a symbol from the instruments cache (if found).
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the instrument is not found in the cache.
+    ///
     /// # Panics
     ///
     /// Panics if the instruments cache mutex is poisoned.
-    pub fn get_price_precision(&self, symbol: &str) -> Option<u8> {
+    pub fn get_price_precision(&self, symbol: Ustr) -> anyhow::Result<u8> {
         let cache = self.instruments_cache.lock().unwrap();
-        let symbol_ustr = Ustr::from(symbol);
-        cache.get(&symbol_ustr).map(|inst| inst.price_precision())
+        cache
+            .get(&symbol)
+            .map(|inst| inst.price_precision())
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Instrument {symbol} not found in cache, ensure instruments loaded first"
+                )
+            })
     }
 
     /// Get user margin information.
@@ -870,7 +837,7 @@ impl BitmexHttpClient {
             foreign_requirement: None,
         };
 
-        crate::common::parse::parse_account_state(&margin_msg, account_id, ts_init)
+        parse_account_state(&margin_msg, account_id, ts_init)
     }
 
     /// Submit a new order.
@@ -889,8 +856,9 @@ impl BitmexHttpClient {
         time_in_force: TimeInForce,
         price: Option<Price>,
         trigger_price: Option<Price>,
-        reduce_only: bool,
         display_qty: Option<Quantity>,
+        post_only: bool,
+        reduce_only: bool,
     ) -> anyhow::Result<OrderStatusReport> {
         use crate::common::enums::{
             BitmexExecInstruction, BitmexOrderType, BitmexSide, BitmexTimeInForce,
@@ -925,9 +893,15 @@ impl BitmexHttpClient {
         }
 
         let mut exec_inst = Vec::new();
+
+        if post_only {
+            exec_inst.push(BitmexExecInstruction::ParticipateDoNotInitiate);
+        }
+
         if reduce_only {
             exec_inst.push(BitmexExecInstruction::ReduceOnly);
         }
+
         if !exec_inst.is_empty() {
             params.exec_inst(exec_inst);
         }
@@ -937,13 +911,11 @@ impl BitmexHttpClient {
         let response = self.inner.http_place_order(params).await?;
 
         let order: BitmexOrder = serde_json::from_value(response)?;
-        let price_precision = self
-            .get_price_precision(instrument_id.symbol.as_str())
-            .unwrap_or(2);
 
+        let price_precision = self.get_price_precision(order.symbol)?;
         let ts_init = self.generate_ts_init();
 
-        parse_order_status_report(order, price_precision, ts_init)
+        parse_order_status_report(&order, instrument_id, price_precision, ts_init)
     }
 
     /// Cancel an order.
@@ -979,16 +951,11 @@ impl BitmexHttpClient {
             .next()
             .ok_or_else(|| anyhow::anyhow!("No order returned in cancel response"))?;
 
-        let symbol = order
-            .symbol
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Order response missing symbol"))?;
-
-        let price_precision = self.get_price_precision(symbol.as_str()).unwrap_or(2);
-
+        let instrument_id = parse_instrument_id(order.symbol);
+        let price_precision = self.get_price_precision(order.symbol)?;
         let ts_init = self.generate_ts_init();
 
-        parse_order_status_report(order, price_precision, ts_init)
+        parse_order_status_report(&order, instrument_id, price_precision, ts_init)
     }
 
     /// Cancel multiple orders.
@@ -1033,16 +1000,15 @@ impl BitmexHttpClient {
         let mut reports = Vec::new();
 
         for order in orders {
-            let symbol = order.symbol.as_ref().map(|s| s.as_str()).unwrap_or("");
-            if symbol.is_empty() {
-                tracing::warn!("Order missing symbol, skipping");
-                continue;
-            }
-            let price_precision = self
-                .get_price_precision(symbol)
-                .ok_or_else(|| anyhow::anyhow!("Instrument {symbol} not found in cache"))?;
+            let instrument_id = parse_instrument_id(order.symbol);
+            let price_precision = self.get_price_precision(order.symbol)?;
 
-            reports.push(parse_order_status_report(order, price_precision, ts_init)?);
+            reports.push(parse_order_status_report(
+                &order,
+                instrument_id,
+                price_precision,
+                ts_init,
+            )?);
         }
 
         Ok(reports)
@@ -1074,16 +1040,19 @@ impl BitmexHttpClient {
         let response = self.inner.http_cancel_all_orders(params).await?;
 
         let orders: Vec<BitmexOrder> = serde_json::from_value(response)?;
-        let price_precision = self
-            .get_price_precision(instrument_id.symbol.as_str())
-            .unwrap_or(2);
 
+        let price_precision = self.get_price_precision(instrument_id.symbol.inner())?;
         let ts_init = self.generate_ts_init();
 
         let mut reports = Vec::new();
 
         for order in orders {
-            reports.push(parse_order_status_report(order, price_precision, ts_init)?);
+            reports.push(parse_order_status_report(
+                &order,
+                instrument_id,
+                price_precision,
+                ts_init,
+            )?);
         }
 
         Ok(reports)
@@ -1117,7 +1086,6 @@ impl BitmexHttpClient {
             ));
         }
 
-        // Set new values if provided
         if let Some(quantity) = quantity {
             params.order_qty(quantity.as_f64() as u32);
         }
@@ -1135,13 +1103,11 @@ impl BitmexHttpClient {
         let response = self.inner.http_amend_order(params).await?;
 
         let order: BitmexOrder = serde_json::from_value(response)?;
-        let price_precision = self
-            .get_price_precision(instrument_id.symbol.as_str())
-            .unwrap_or(2);
 
+        let price_precision = self.get_price_precision(instrument_id.symbol.inner())?;
         let ts_init = self.generate_ts_init();
 
-        parse_order_status_report(order, price_precision, ts_init)
+        parse_order_status_report(&order, instrument_id, price_precision, ts_init)
     }
 
     /// Query a single order by client order ID or venue order ID.
@@ -1182,20 +1148,12 @@ impl BitmexHttpClient {
         }
 
         let order = &response[0];
-        let symbol = order.symbol.as_ref().map(|s| s.as_str()).unwrap_or("");
-        if symbol.is_empty() {
-            return Err(anyhow::anyhow!("Order missing symbol"));
-        }
 
-        let price_precision = self.get_price_precision(symbol).ok_or_else(|| {
-            anyhow::anyhow!(
-                "Instrument {} not found in cache. Ensure instruments are loaded first.",
-                symbol
-            )
-        })?;
-
+        let instrument_id = parse_instrument_id(order.symbol);
+        let price_precision = self.get_price_precision(order.symbol)?;
         let ts_init = self.generate_ts_init();
-        let report = parse_order_status_report(order.clone(), price_precision, ts_init)?;
+
+        let report = parse_order_status_report(order, instrument_id, price_precision, ts_init)?;
 
         Ok(Some(report))
     }
@@ -1234,13 +1192,10 @@ impl BitmexHttpClient {
             .next()
             .ok_or_else(|| anyhow::anyhow!("Order not found"))?;
 
-        let price_precision = self
-            .get_price_precision(instrument_id.symbol.as_str())
-            .unwrap_or(2);
-
+        let price_precision = self.get_price_precision(order.symbol)?;
         let ts_init = self.generate_ts_init();
 
-        parse_order_status_report(order, price_precision, ts_init)
+        parse_order_status_report(&order, instrument_id, price_precision, ts_init)
     }
 
     /// Request multiple order status reports.
@@ -1283,46 +1238,16 @@ impl BitmexHttpClient {
         let mut reports = Vec::new();
 
         for order in response {
-            let symbol = order.symbol.as_ref().map(|s| s.as_str()).unwrap_or("");
-            if symbol.is_empty() {
-                tracing::warn!("Order missing symbol, skipping");
-                continue;
-            }
-            let price_precision = self.get_price_precision(symbol).ok_or_else(|| {
-                anyhow::anyhow!(
-                    "Instrument {} not found in cache. Ensure instruments are loaded first.",
-                    symbol
-                )
-            })?;
-            match parse_order_status_report(order, price_precision, ts_init) {
+            let instrument_id = parse_instrument_id(order.symbol);
+            let price_precision = self.get_price_precision(order.symbol)?;
+
+            match parse_order_status_report(&order, instrument_id, price_precision, ts_init) {
                 Ok(report) => reports.push(report),
                 Err(e) => tracing::error!("Failed to parse order status report: {e}"),
             }
         }
 
         Ok(reports)
-    }
-
-    /// Request all available instruments and parse them into Nautilus types.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the HTTP request fails or parsing fails.
-    pub async fn request_instruments(
-        &self,
-        active_only: bool,
-    ) -> anyhow::Result<Vec<InstrumentAny>> {
-        let instruments = self.inner.http_get_instruments(active_only).await?;
-        let ts_init = self.generate_ts_init();
-
-        let mut parsed_instruments = Vec::new();
-        for inst in instruments {
-            if let Some(instrument_any) = parse_instrument_any(&inst, ts_init) {
-                parsed_instruments.push(instrument_any);
-            }
-        }
-
-        Ok(parsed_instruments)
     }
 
     /// Request trades for the given instrument.
@@ -1332,13 +1257,12 @@ impl BitmexHttpClient {
     /// Returns an error if the HTTP request fails or parsing fails.
     pub async fn request_trades(
         &self,
-        instrument_id: Option<InstrumentId>,
+        instrument_id: InstrumentId,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<TradeTick>> {
         let mut params = GetTradeParamsBuilder::default();
-        if let Some(instrument_id) = &instrument_id {
-            params.symbol(instrument_id.symbol.as_str());
-        }
+        params.symbol(instrument_id.symbol.as_str());
+
         if let Some(limit) = limit {
             params.count(limit as i32);
         }
@@ -1349,18 +1273,10 @@ impl BitmexHttpClient {
         let ts_init = self.generate_ts_init();
 
         let mut parsed_trades = Vec::new();
+
         for trade in response {
-            let symbol = instrument_id
-                .as_ref()
-                .ok_or_else(|| anyhow::anyhow!("InstrumentId required for trade parsing"))?
-                .symbol
-                .as_str();
-            let price_precision = self.get_price_precision(symbol).ok_or_else(|| {
-                anyhow::anyhow!(
-                    "Instrument {} not found in cache. Ensure instruments are loaded first.",
-                    symbol
-                )
-            })?;
+            let price_precision = self.get_price_precision(trade.symbol)?;
+
             match parse_trade(trade, price_precision, ts_init) {
                 Ok(trade) => parsed_trades.push(trade),
                 Err(e) => tracing::error!("Failed to parse trade: {e}"),
@@ -1400,17 +1316,13 @@ impl BitmexHttpClient {
         let mut reports = Vec::new();
 
         for exec in response {
-            let symbol = exec.symbol.as_ref().map(|s| s.as_str()).unwrap_or("");
-            if symbol.is_empty() {
-                tracing::warn!("Execution missing symbol, skipping");
+            // Skip executions without symbol (e.g., CancelReject)
+            let Some(symbol) = exec.symbol else {
+                tracing::debug!("Skipping execution without symbol: {:?}", exec.exec_type);
                 continue;
-            }
-            let price_precision = self.get_price_precision(symbol).ok_or_else(|| {
-                anyhow::anyhow!(
-                    "Instrument {} not found in cache. Ensure instruments are loaded first.",
-                    symbol
-                )
-            })?;
+            };
+            let price_precision = self.get_price_precision(symbol)?;
+
             match parse_fill_report(exec, price_precision, ts_init) {
                 Ok(report) => reports.push(report),
                 Err(e) => {
@@ -1432,7 +1344,9 @@ impl BitmexHttpClient {
     /// # Errors
     ///
     /// Returns an error if the HTTP request fails or parsing fails.
-    pub async fn request_position_reports(&self) -> anyhow::Result<Vec<PositionStatusReport>> {
+    pub async fn request_position_status_reports(
+        &self,
+    ) -> anyhow::Result<Vec<PositionStatusReport>> {
         let params = GetPositionParamsBuilder::default()
             .count(500) // Default count
             .build()
@@ -1471,14 +1385,10 @@ impl BitmexHttpClient {
         let mut reports = Vec::new();
 
         for order in response {
-            let symbol = order.symbol.as_ref().map(|s| s.as_str()).unwrap_or("");
-            if symbol.is_empty() {
-                tracing::warn!("Order missing symbol, skipping");
-                continue;
-            }
-            let price_precision = self.get_price_precision(symbol).unwrap_or(2);
+            let instrument_id = parse_instrument_id(order.symbol);
+            let price_precision = self.get_price_precision(order.symbol)?;
 
-            match parse_order_status_report(order, price_precision, ts_init) {
+            match parse_order_status_report(&order, instrument_id, price_precision, ts_init) {
                 Ok(report) => reports.push(report),
                 Err(e) => tracing::error!("Failed to parse order status report: {e}"),
             }
@@ -1504,14 +1414,10 @@ impl BitmexHttpClient {
         let mut reports = Vec::new();
 
         for order in response {
-            let symbol = order.symbol.as_ref().map(|s| s.as_str()).unwrap_or("");
-            if symbol.is_empty() {
-                tracing::warn!("Order missing symbol, skipping");
-                continue;
-            }
-            let price_precision = self.get_price_precision(symbol).unwrap_or(2);
+            let instrument_id = parse_instrument_id(order.symbol);
+            let price_precision = self.get_price_precision(order.symbol)?;
 
-            match parse_order_status_report(order, price_precision, ts_init) {
+            match parse_order_status_report(&order, instrument_id, price_precision, ts_init) {
                 Ok(report) => reports.push(report),
                 Err(e) => tracing::error!("Failed to parse order status report: {e}"),
             }

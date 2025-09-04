@@ -164,8 +164,8 @@ pub struct PostOrderParams {
     pub time_in_force: Option<BitmexTimeInForce>,
     /// Optional execution instructions. Valid options: `ParticipateDoNotInitiate`, `AllOrNone`, `MarkPrice`, `IndexPrice`, `LastPrice`, `Close`, `ReduceOnly`, Fixed. `AllOrNone` instruction requires `displayQty` to be 0. `MarkPrice`, `IndexPrice` or `LastPrice` instruction valid for `Stop`, `StopLimit`, `MarketIfTouched`, and `LimitIfTouched` orders.
     #[serde(
-        skip_serializing_if = "Option::is_none",
-        serialize_with = "serialize_exec_instructions"
+        serialize_with = "serialize_exec_instructions_optional",
+        skip_serializing_if = "is_exec_inst_empty"
     )]
     pub exec_inst: Option<Vec<BitmexExecInstruction>>,
     /// Deprecated: linked orders are not supported after 2018/11/10.
@@ -176,7 +176,11 @@ pub struct PostOrderParams {
     pub text: Option<String>,
 }
 
-fn serialize_exec_instructions<S>(
+fn is_exec_inst_empty(exec_inst: &Option<Vec<BitmexExecInstruction>>) -> bool {
+    exec_inst.as_ref().is_none_or(Vec::is_empty)
+}
+
+fn serialize_exec_instructions_optional<S>(
     instructions: &Option<Vec<BitmexExecInstruction>>,
     serializer: S,
 ) -> Result<S::Ok, S::Error>
@@ -184,15 +188,15 @@ where
     S: serde::Serializer,
 {
     match instructions {
-        Some(inst) => {
+        Some(inst) if !inst.is_empty() => {
             let joined = inst
                 .iter()
                 .map(std::string::ToString::to_string)
                 .collect::<Vec<_>>()
                 .join(",");
-            serializer.serialize_str(&joined)
+            serializer.serialize_some(&joined)
         }
-        None => serializer.serialize_none(),
+        _ => serializer.serialize_none(),
     }
 }
 

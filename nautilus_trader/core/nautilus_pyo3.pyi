@@ -6045,32 +6045,55 @@ class BitmexHttpClient:
     def base_url(self) -> str: ...
     @property
     def api_key(self) -> str | None: ...
+    def add_instrument(self, instrument: Any) -> None: ...
+    async def http_get_margin(self, currency: str) -> int: ...
+    async def update_position_leverage(
+        self,
+        symbol: str,
+        leverage: float,
+    ) -> PositionStatusReport: ...
+    async def request_instrument(
+        self,
+        instrument_id: InstrumentId,
+    ) -> Instrument | None: ...
     async def request_instruments(
         self,
         active_only: bool,
     ) -> list[Instrument]: ...
-    async def get_trades(
+    async def request_trades(
         self,
-        instrument_id: InstrumentId | None = None,
+        instrument_id: InstrumentId,
         limit: int | None = None,
     ) -> list[TradeTick]: ...
+    async def request_bars(
+        self,
+        bar_type: BarType,
+        count: int | None = None,
+        start: dt.datetime | None = None,
+        end: dt.datetime | None = None,
+        partial: bool = False,
+    ) -> list[Bar]: ...
+    async def request_account_state(
+        self,
+        account_id: AccountId,
+    ) -> AccountState: ...
     async def query_order(
         self,
         client_order_id: ClientOrderId | None = None,
         venue_order_id: VenueOrderId | None = None,
     ) -> OrderStatusReport | None: ...
-    async def get_order_reports(
+    async def request_order_status_reports(
         self,
         instrument_id: InstrumentId | None = None,
         open_only: bool = False,
         limit: int | None = None,
     ) -> list[OrderStatusReport]: ...
-    async def get_fill_reports(
+    async def request_fill_reports(
         self,
         instrument_id: InstrumentId | None = None,
         limit: int | None = None,
     ) -> list[FillReport]: ...
-    async def get_position_reports(self) -> list[PositionStatusReport]: ...
+    async def request_position_status_reports(self) -> list[PositionStatusReport]: ...
     async def submit_order(
         self,
         instrument_id: InstrumentId,
@@ -6082,6 +6105,7 @@ class BitmexHttpClient:
         price: Price | None = None,
         trigger_price: Price | None = None,
         display_qty: Quantity | None = None,
+        post_only: bool = False,
         reduce_only: bool = False,
     ) -> OrderStatusReport: ...
     async def cancel_order(
@@ -6108,58 +6132,6 @@ class BitmexHttpClient:
         price: Price | None = None,
         trigger_price: Price | None = None,
     ) -> OrderStatusReport: ...
-    async def request_account_state(
-        self,
-        account_id: AccountId,
-    ) -> AccountState: ...
-    async def request_trades(
-        self,
-        symbol: str,
-        count: int | None = None,
-        start: int | None = None,
-        reverse: bool = False,
-        start_time: dt.datetime | None = None,
-        end_time: dt.datetime | None = None,
-    ) -> list[TradeTick]: ...
-    async def request_bars(
-        self,
-        bar_type: BarType,
-        count: int | None = None,
-        start: dt.datetime | None = None,
-        end: dt.datetime | None = None,
-        partial: bool = False,
-    ) -> list[Bar]: ...
-    async def request_order_status_reports(
-        self,
-        account_id: AccountId,
-        symbol: str | None = None,
-        filter: dict[str, Any] | None = None,
-        count: int | None = None,
-        start: int | None = None,
-        reverse: bool = False,
-        start_time: dt.datetime | None = None,
-        end_time: dt.datetime | None = None,
-    ) -> list[OrderStatusReport]: ...
-    async def request_fill_reports(
-        self,
-        account_id: AccountId,
-        symbol: str | None = None,
-        filter: dict[str, Any] | None = None,
-        count: int | None = None,
-        start: int | None = None,
-        reverse: bool = False,
-        start_time: dt.datetime | None = None,
-        end_time: dt.datetime | None = None,
-    ) -> list[FillReport]: ...
-    async def request_position_status_reports(
-        self,
-        account_id: AccountId,
-        filter: dict[str, Any] | None = None,
-        columns: list[str] | None = None,
-        count: int | None = None,
-    ) -> list[PositionStatusReport]: ...
-    def add_instrument(self, instrument: Any) -> None: ...
-    async def http_get_margin(self, currency: str) -> int: ...
     async def submit_orders_bulk(
         self,
         orders: list[dict[str, Any]],
@@ -6168,11 +6140,7 @@ class BitmexHttpClient:
         self,
         orders: list[dict[str, Any]],
     ) -> list[OrderStatusReport]: ...
-    async def update_position_leverage(
-        self,
-        symbol: str,
-        leverage: float,
-    ) -> PositionStatusReport: ...
+
 
 class BitmexWebSocketClient:
     def __init__(
@@ -6410,7 +6378,7 @@ class GreeksData(Data):
     ): ...
 
     @classmethod
-    def from_delta(cls, instrument_id: InstrumentId, delta: float, ts_event = 0) -> GreeksData: ...
+    def from_delta(cls, instrument_id: InstrumentId, delta: float, ts_event: int = 0) -> GreeksData: ...
 
 
 class PortfolioGreeks(Data):
@@ -6452,7 +6420,7 @@ class YieldCurveData(Data):
 # Test Kit
 ###################################################################################################
 
-def ensure_file_exists_or_download_http(filepath: str, url: str, checksums: str | None = None): ...
+def ensure_file_exists_or_download_http(filepath: str, url: str, checksums: str | None = None) -> None: ...
 
 ###################################################################################################
 # Trading
