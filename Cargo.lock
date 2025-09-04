@@ -4811,6 +4811,7 @@ dependencies = [
  "strum",
  "thiserror 2.0.16",
  "tokio",
+ "tokio-stream",
  "tokio-tungstenite",
  "tracing",
  "tracing-subscriber",

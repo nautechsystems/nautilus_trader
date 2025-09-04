@@ -14,7 +14,10 @@
 // -------------------------------------------------------------------------------------------------
 
 pub mod client;
+pub mod codec;
 pub mod enums;
 pub mod error;
 pub mod messages;
 pub mod parse;
+
+pub use client::{HyperliquidWebSocketClient, HyperliquidWebSocketInnerClient};
