@@ -45,10 +45,11 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Nautilus CLI and run init postgres
-        run: |
-          curl -fsSL https://packages.nautechsystems.io/cli/nautilus-cli/install.sh | bash -s -- -b "$HOME/.local/bin"
-          nautilus database init --schema ${{ github.workspace }}/schema/sql
+      - name: Install Nautilus CLI
+        run: bash scripts/ci/install-nautilus-cli.sh
+
+      - name: Init postgres schema
+        run: nautilus database init --schema ${{ github.workspace }}/schema/sql
         env:
           POSTGRES_HOST: localhost
           POSTGRES_PORT: 5432
