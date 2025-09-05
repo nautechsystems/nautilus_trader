@@ -103,6 +103,8 @@ BASE_HTTP="https://packages.nautechsystems.io/${PREFIX}/latest"
 } > "$MANIFEST"
 
 # Prepare versioned filenames and upload both versioned and latest
+LATEST_CACHE_CONTROL="no-cache, max-age=60, must-revalidate"
+
 for latest_file in "${LATEST_LIST[@]}"; do
   b=$(basename "$latest_file")
   ext="${b##*.}"
@@ -115,14 +117,13 @@ for latest_file in "${LATEST_LIST[@]}"; do
     --endpoint-url="$R2_URL" --content-type application/octet-stream
   echo "Uploading latest: $b"
   aws s3 cp "$latest_file" "s3://${BUCKET}/${PREFIX}/latest/${b}" \
-    --endpoint-url="$R2_URL" --content-type application/octet-stream
+    --endpoint-url="$R2_URL" --content-type application/octet-stream --cache-control "$LATEST_CACHE_CONTROL"
 done
 
 echo "Uploading latest checksums and manifest"
 aws s3 cp "$ART_DIR/latest/checksums.txt" "s3://${BUCKET}/${PREFIX}/latest/checksums.txt" \
-  --endpoint-url="$R2_URL" --content-type text/plain
+  --endpoint-url="$R2_URL" --content-type text/plain --cache-control "$LATEST_CACHE_CONTROL"
 aws s3 cp "$MANIFEST" "s3://${BUCKET}/${PREFIX}/latest/manifest.json" \
-  --endpoint-url="$R2_URL" --content-type application/json
+  --endpoint-url="$R2_URL" --content-type application/json --cache-control "$LATEST_CACHE_CONTROL"
 
 echo "Publish complete"
-
