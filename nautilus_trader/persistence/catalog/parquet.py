@@ -654,7 +654,8 @@ class ParquetDataCatalog(BaseDataCatalog):
         pq.write_table(combined_table, where=new_file)
 
         for file in file_list:
-            self.fs.rm(file)
+            if file != new_file:
+                self.fs.rm(file)
 
     def consolidate_catalog_by_period(
         self,
