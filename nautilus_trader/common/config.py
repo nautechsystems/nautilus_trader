@@ -564,6 +564,10 @@ class LoggingConfig(NautilusConfig, frozen=True):
     log_component_levels : dict[str, LogLevel]
         The additional per component log level filters, where keys are component
         IDs (e.g. actor/strategy IDs) and values are log levels.
+    log_components_only : bool, default False
+        If only components with explicit component-level filters should be logged.
+        When enabled, only log messages from components that have been explicitly
+        configured in `log_component_levels` will be output.
     bypass_logging : bool, default False
         If all logging should be bypassed.
     print_config : bool, default False
@@ -575,10 +579,6 @@ class LoggingConfig(NautilusConfig, frozen=True):
     clear_log_file : bool, default False
         If the log file name should be cleared before being used (e.g. for testing).
         Only applies if `log_file_name` is not ``None``.
-    log_components_only : bool, default False
-        If only components with explicit component-level filters should be logged.
-        When enabled, only log messages from components that have been explicitly
-        configured in `log_component_levels` will be output.
 
     """
 
@@ -591,11 +591,11 @@ class LoggingConfig(NautilusConfig, frozen=True):
     log_file_max_backup_count: NonNegativeInt = 5
     log_colors: bool = True
     log_component_levels: dict[str, str] | None = None
+    log_components_only: bool = False
     bypass_logging: bool = False
     print_config: bool = False
     use_pyo3: bool = False
     clear_log_file: bool = False
-    log_components_only: bool = False
 
 
 class ImportableFactoryConfig(NautilusConfig, frozen=True):
