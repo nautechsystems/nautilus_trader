@@ -1215,10 +1215,10 @@ cpdef LogGuard init_logging(
     str file_name = None,
     str file_format = None,
     dict component_levels: dict[ComponentId, LogLevel] = None,
+    bint log_components_only = False,
     bint colors = True,
     bint bypass = False,
     bint print_config = False,
-    bint log_components_only = False,
     uint64_t max_file_size = 0,
     uint32_t max_backup_count = 5,
 ):
@@ -1255,6 +1255,10 @@ cpdef LogGuard init_logging(
     component_levels : dict[ComponentId, LogLevel]
         The additional per component log level filters, where keys are component
         IDs (e.g. actor/strategy IDs) and values are log levels.
+    log_components_only : bool, default False
+        If only components with explicit component-level filters should be logged.
+        When enabled, only log messages from components that have been explicitly
+        configured in `log_component_levels` will be output.
     colors : bool, default True
         If ANSI codes should be used to produce colored log lines.
     bypass : bool, default False

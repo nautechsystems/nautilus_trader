@@ -139,6 +139,33 @@ config_node = TradingNodeConfig(
 
 For backtesting, the `BacktestEngineConfig` class can be used instead of `TradingNodeConfig`, as the same options are available.
 
+### Components-only logging
+
+When focusing on a subset of noisy systems, enable `log_components_only` to log messages only from components explicitly listed in `log_component_levels`. All other components are suppressed regardless of the global `log_level` or file level.
+
+Example (Python configuration):
+
+```python
+logging = LoggingConfig(
+    log_level="INFO",
+    log_component_levels={
+        "RiskEngine": "DEBUG",
+        "Portfolio": "INFO",
+    },
+    log_components_only=True,
+)
+```
+
+If configuring via the environment using the Rust spec string, include `log_components_only` alongside component filters, for example:
+
+```bash
+export NAUTILUS_LOG="stdout=Info;log_components_only;RiskEngine=Debug;Portfolio=Info"
+```
+
+:::warning
+If `log_components_only=True` (or `log_components_only` is present in the spec string) and `log_component_levels` is empty, no log messages will be emitted to stdout/stderr or files. Add at least one component filter or disable components-only logging.
+:::
+
 ### Log Colors
 
 ANSI color codes are utilized to enhance the readability of logs when viewed in a terminal.

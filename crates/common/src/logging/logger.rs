@@ -64,12 +64,12 @@ pub struct LoggerConfig {
     pub fileout_level: LevelFilter,
     /// Per-component log levels, allowing finer-grained control.
     component_level: HashMap<Ustr, LevelFilter>,
+    /// If only components with explicit component-level filters should be logged.
+    pub log_components_only: bool,
     /// If logger is using ANSI color codes.
     pub is_colored: bool,
     /// If the configuration should be printed to stdout at initialization.
     pub print_config: bool,
-    /// If only components with explicit component-level filters should be logged.
-    pub log_components_only: bool,
 }
 
 impl Default for LoggerConfig {
@@ -79,9 +79,9 @@ impl Default for LoggerConfig {
             stdout_level: LevelFilter::Info,
             fileout_level: LevelFilter::Off,
             component_level: HashMap::new(),
+            log_components_only: false,
             is_colored: true,
             print_config: false,
-            log_components_only: false,
         }
     }
 }
@@ -93,17 +93,17 @@ impl LoggerConfig {
         stdout_level: LevelFilter,
         fileout_level: LevelFilter,
         component_level: HashMap<Ustr, LevelFilter>,
+        log_components_only: bool,
         is_colored: bool,
         print_config: bool,
-        log_components_only: bool,
     ) -> Self {
         Self {
             stdout_level,
             fileout_level,
             component_level,
+            log_components_only,
             is_colored,
             print_config,
-            log_components_only,
         }
     }
 
@@ -118,12 +118,13 @@ impl LoggerConfig {
                 continue;
             }
             let kv_lower = kv.to_lowercase(); // For case-insensitive comparison
-            if kv_lower == "is_colored" {
+
+            if kv_lower == "log_components_only" {
+                config.log_components_only = true;
+            } else if kv_lower == "is_colored" {
                 config.is_colored = true;
             } else if kv_lower == "print_config" {
                 config.print_config = true;
-            } else if kv_lower == "log_components_only" {
-                config.log_components_only = true;
             } else {
                 let parts: Vec<&str> = kv.split('=').collect();
                 if parts.len() != 2 {
@@ -456,9 +457,9 @@ impl Logger {
             stdout_level,
             fileout_level,
             component_level,
+            log_components_only,
             is_colored,
             print_config: _,
-            log_components_only,
         } = config;
 
         let trader_id_cache = Ustr::from(&trader_id);
@@ -782,9 +783,9 @@ mod tests {
                     Ustr::from("RiskEngine"),
                     LevelFilter::Error
                 )]),
+                log_components_only: false,
                 is_colored: true,
                 print_config: false,
-                log_components_only: false,
             }
         );
     }
@@ -798,9 +799,9 @@ mod tests {
                 stdout_level: LevelFilter::Warn,
                 fileout_level: LevelFilter::Error,
                 component_level: HashMap::new(),
+                log_components_only: false,
                 is_colored: true,
                 print_config: true,
-                log_components_only: false,
             }
         );
     }
@@ -818,9 +819,9 @@ mod tests {
                     Ustr::from("RiskEngine"),
                     LevelFilter::Debug
                 )]),
+                log_components_only: true,
                 is_colored: true,
                 print_config: false,
-                log_components_only: true,
             }
         );
     }

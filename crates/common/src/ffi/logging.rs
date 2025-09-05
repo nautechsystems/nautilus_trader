@@ -111,9 +111,9 @@ pub unsafe extern "C" fn logging_init(
         level_stdout,
         level_file,
         component_levels,
+        u8_as_bool(log_components_only),
         u8_as_bool(is_colored),
         u8_as_bool(print_config),
-        u8_as_bool(log_components_only),
     );
 
     // Configure file rotation if max_file_size > 0
