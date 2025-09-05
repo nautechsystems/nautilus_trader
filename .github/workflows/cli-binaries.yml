@@ -259,12 +259,15 @@ jobs:
       - name: Upload install.sh to R2 (stable + latest)
         shell: bash
         run: |
+          CACHE_CONTROL="no-cache, max-age=60, must-revalidate"
           aws s3 cp scripts/cli/install.sh "s3://${CLOUDFLARE_R2_BUCKET_NAME}/${CLOUDFLARE_R2_PREFIX}/install.sh" \
             --endpoint-url="${CLOUDFLARE_R2_URL}" \
-            --content-type "text/x-shellscript"
+            --content-type "text/x-shellscript" \
+            --cache-control "$CACHE_CONTROL"
           aws s3 cp scripts/cli/install.sh "s3://${CLOUDFLARE_R2_BUCKET_NAME}/${CLOUDFLARE_R2_PREFIX}/latest/install.sh" \
             --endpoint-url="${CLOUDFLARE_R2_URL}" \
-            --content-type "text/x-shellscript"
+            --content-type "text/x-shellscript" \
+            --cache-control "$CACHE_CONTROL"
 
       - name: Publish CLI binaries to R2 (versioned + latest) and generate manifest
         shell: bash
