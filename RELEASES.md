@@ -11,7 +11,7 @@ Released on TBD (UTC).
 - Added `log_rejected_due_post_only_as_warning` config option for `StrategyConfig` (default `True` to retain current behavior)
 - Added `log_rejected_due_post_only_as_warning` config option for `BinanceExecClientConfig` (default `True` to retain current behavior)
 - Added `log_components_only` config option for Logger (#2931), thanks @faysou
-- Added support for additional Databento schemas: `OHLCV_EOD`, `CMBP_1`, `CBBO_1S`, `CBBO_1M`, and `TCBBO`
+- Added support for additional Databento schemas: `CMBP_1`, `CBBO_1S`, `CBBO_1M`, `TCBBO`, and `OHLCV_EOD`
 - Added configurable schema parameters for Databento quote and trade subscriptions, allowing `TBBO`/`TCBBO` for efficient combined data feeds
 - Added support for option combos for Interactive Brokers (#2812), thanks @faysou
 - Added support for execution of option spreads in backtesting (#2853), thanks @faysou

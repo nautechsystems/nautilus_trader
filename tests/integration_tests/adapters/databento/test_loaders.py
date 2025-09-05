@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pathlib
+
 import pytest
 
 from nautilus_trader import TEST_DATA_DIR
@@ -1011,3 +1013,129 @@ def test_load_status_pyo3_large() -> None:
 
     # Assert
     assert len(data) == 4_673_675
+
+
+def test_loader_cmbp_1() -> None:
+    # Arrange
+    loader = DatabentoDataLoader()
+    # Use the test data from the Rust crate
+    path = (
+        pathlib.Path(__file__).parent.parent.parent.parent.parent
+        / "crates"
+        / "adapters"
+        / "databento"
+        / "test_data"
+        / "test_data.cmbp-1.dbn.zst"
+    )
+
+    # Act
+    instrument_id = InstrumentId.from_str("ESM4.GLBX")
+    data = loader.from_dbn_file(path, instrument_id=instrument_id, as_legacy_cython=True)
+
+    # Assert
+    assert len(data) == 2
+    assert isinstance(data[0], QuoteTick)
+    assert isinstance(data[1], QuoteTick)
+    quote = data[0]
+    assert quote.instrument_id == InstrumentId.from_str("ESM4.GLBX")
+    assert quote.bid_price == Price.from_str("3720.25")
+    assert quote.ask_price == Price.from_str("3720.50")
+    assert quote.bid_size == Quantity.from_int(24)
+    assert quote.ask_size == Quantity.from_int(11)
+    assert quote.ts_event == 1609160400006136329
+    assert quote.ts_init == 1609160400006136329
+
+
+def test_loader_cmbp_1_pyo3() -> None:
+    # Arrange
+    loader = DatabentoDataLoader()
+    # Use the test data from the Rust crate
+    path = (
+        pathlib.Path(__file__).parent.parent.parent.parent.parent
+        / "crates"
+        / "adapters"
+        / "databento"
+        / "test_data"
+        / "test_data.cmbp-1.dbn.zst"
+    )
+
+    # Act
+    instrument_id = nautilus_pyo3.InstrumentId.from_str("ESM4.GLBX")
+    data = loader.from_dbn_file(path, instrument_id=instrument_id, as_legacy_cython=False)
+
+    # Assert
+    assert len(data) == 2
+    assert isinstance(data[0], nautilus_pyo3.QuoteTick)
+    assert isinstance(data[1], nautilus_pyo3.QuoteTick)
+    quote = data[0]
+    assert quote.instrument_id == nautilus_pyo3.InstrumentId.from_str("ESM4.GLBX")
+    assert quote.bid_price == nautilus_pyo3.Price.from_str("3720.25")
+    assert quote.ask_price == nautilus_pyo3.Price.from_str("3720.50")
+    assert quote.bid_size == nautilus_pyo3.Quantity.from_int(24)
+    assert quote.ask_size == nautilus_pyo3.Quantity.from_int(11)
+    assert quote.ts_event == 1609160400006136329
+    assert quote.ts_init == 1609160400006136329
+
+
+def test_loader_cbbo_1s() -> None:
+    # Arrange
+    loader = DatabentoDataLoader()
+    # Use the test data from the Rust crate
+    path = (
+        pathlib.Path(__file__).parent.parent.parent.parent.parent
+        / "crates"
+        / "adapters"
+        / "databento"
+        / "test_data"
+        / "test_data.cbbo-1s.dbn.zst"
+    )
+
+    # Act
+    instrument_id = InstrumentId.from_str("ESM4.GLBX")
+    data = loader.from_dbn_file(path, instrument_id=instrument_id, as_legacy_cython=True)
+
+    # Assert
+    assert len(data) == 4  # 2 quotes + 2 trades from CBBO
+    assert isinstance(data[0], QuoteTick)
+    assert isinstance(data[1], TradeTick)
+    assert isinstance(data[2], QuoteTick)
+    assert isinstance(data[3], TradeTick)
+    quote = data[0]
+    assert quote.instrument_id == InstrumentId.from_str("ESM4.GLBX")
+    assert quote.bid_price == Price.from_str("3720.25")
+    assert quote.ask_price == Price.from_str("3720.50")
+    assert quote.bid_size == Quantity.from_int(24)
+    assert quote.ask_size == Quantity.from_int(11)
+    assert quote.ts_event == 1609160400006136329
+    assert quote.ts_init == 1609160400006136329
+
+
+def test_loader_cbbo_1s_pyo3() -> None:
+    # Arrange
+    loader = DatabentoDataLoader()
+    # Use the test data from the Rust crate
+    path = (
+        pathlib.Path(__file__).parent.parent.parent.parent.parent
+        / "crates"
+        / "adapters"
+        / "databento"
+        / "test_data"
+        / "test_data.cbbo-1s.dbn.zst"
+    )
+
+    # Act
+    instrument_id = nautilus_pyo3.InstrumentId.from_str("ESM4.GLBX")
+    data = loader.from_dbn_file(path, instrument_id=instrument_id, as_legacy_cython=False)
+
+    # Assert
+    assert len(data) == 2
+    assert isinstance(data[0], nautilus_pyo3.QuoteTick)
+    assert isinstance(data[1], nautilus_pyo3.QuoteTick)
+    quote = data[0]
+    assert quote.instrument_id == nautilus_pyo3.InstrumentId.from_str("ESM4.GLBX")
+    assert quote.bid_price == nautilus_pyo3.Price.from_str("3720.25")
+    assert quote.ask_price == nautilus_pyo3.Price.from_str("3720.50")
+    assert quote.bid_size == nautilus_pyo3.Quantity.from_int(24)
+    assert quote.ask_size == nautilus_pyo3.Quantity.from_int(11)
+    assert quote.ts_event == 1609160400006136329
+    assert quote.ts_init == 1609160400006136329
