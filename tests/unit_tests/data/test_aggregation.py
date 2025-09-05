@@ -2453,6 +2453,86 @@ class TestTimeBarAggregator:
         assert bar.volume == Quantity.from_int(3)
         assert bar.ts_init == pd.Timestamp("2024-3-25").value
 
+    def test_time_bar_aggregator_passthrough_preserves_is_revision(self):
+        # Arrange
+        clock = TestClock()
+        clock.set_time(0)
+        handler = []
+
+        # Create composite bar type where step and aggregation match to trigger passthrough
+        instrument_id = TestIdStubs.audusd_id()
+        bar_spec1 = BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST)
+        bar_type = BarType.new_composite(
+            instrument_id,
+            bar_spec1,
+            AggregationSource.INTERNAL,
+            bar_spec1.step,  # Same step
+            bar_spec1.aggregation,  # Same aggregation
+            AggregationSource.EXTERNAL,
+        )
+
+        # Pass passthrough_bar_type=True since we're matching step and aggregation
+        aggregator = TimeBarAggregator(
+            AUDUSD_SIM,
+            bar_type,
+            handler.append,
+            clock,
+            passthrough_bar_type=True,  # Enable passthrough explicitly
+        )
+        aggregator.start()  # Start the aggregator to enable passthrough
+
+        composite_bar_type = bar_type.composite()
+
+        # Create initial bar
+        bar1 = Bar(
+            bar_type=composite_bar_type,
+            open=Price.from_str("1.00005"),
+            high=Price.from_str("1.00010"),
+            low=Price.from_str("1.00004"),
+            close=Price.from_str("1.00007"),
+            volume=Quantity.from_int(100),
+            ts_event=60_000_000_000,  # 1 minute
+            ts_init=60_000_000_000,
+            is_revision=False,
+        )
+
+        # Create revision bar with same ts_event
+        bar2 = Bar(
+            bar_type=composite_bar_type,
+            open=Price.from_str("1.00005"),
+            high=Price.from_str("1.00015"),  # Higher high
+            low=Price.from_str("1.00004"),
+            close=Price.from_str("1.00012"),  # Different close
+            volume=Quantity.from_int(150),  # More volume
+            ts_event=60_000_000_000,  # Same ts_event
+            ts_init=61_000_000_000,  # Later ts_init
+            is_revision=True,  # This is a revision
+        )
+
+        # Act
+        aggregator.handle_bar(bar1)
+        aggregator.handle_bar(bar2)
+
+        # Assert
+        assert len(handler) == 2
+
+        # First bar should not be a revision
+        first_bar = handler[0]
+        assert first_bar.bar_type == bar_type.standard()
+        assert first_bar.is_revision is False
+        assert first_bar.close == Price.from_str("1.00007")
+        assert first_bar.volume == Quantity.from_int(100)
+
+        # Second bar should be a revision with updated values
+        revision_bar = handler[1]
+        assert revision_bar.bar_type == bar_type.standard()
+        assert revision_bar.is_revision is True
+        assert revision_bar.high == Price.from_str("1.00015")
+        assert revision_bar.close == Price.from_str("1.00012")
+        assert revision_bar.volume == Quantity.from_int(150)
+        assert revision_bar.ts_event == 60_000_000_000  # Same ts_event
+        assert revision_bar.ts_init == 61_000_000_000  # Later ts_init
+
     def test_batch_update_sends_single_bar_to_handler_with_bars(self):
         # Arrange
         clock = TestClock()
