@@ -1127,17 +1127,13 @@ impl BitmexFeedHandler {
                                         );
                                     }
                                     BitmexWsMessage::Subscription {
-                                        success,
-                                        subscribe,
+                                        success: _,
+                                        subscribe: _,
                                         error,
                                     } => {
-                                        if let Some(subscribe) = subscribe {
-                                            tracing::debug!("Subscribed to: {subscribe}");
-                                        }
                                         if let Some(error) = error {
-                                            tracing::error!(error);
+                                            tracing::error!("Subscription error: {error}");
                                         }
-                                        tracing::debug!("Success: {success}");
                                     }
                                     BitmexWsMessage::Error { status, error, .. } => {
                                         tracing::error!(

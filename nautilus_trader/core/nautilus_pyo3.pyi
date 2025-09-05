@@ -6088,6 +6088,7 @@ class BitmexHttpClient:
     ) -> AccountState: ...
     async def query_order(
         self,
+        instrument_id: InstrumentId,
         client_order_id: ClientOrderId | None = None,
         venue_order_id: VenueOrderId | None = None,
     ) -> OrderStatusReport | None: ...
@@ -6119,11 +6120,13 @@ class BitmexHttpClient:
     ) -> OrderStatusReport: ...
     async def cancel_order(
         self,
+        instrument_id: InstrumentId,
         client_order_id: ClientOrderId | None = None,
         venue_order_id: VenueOrderId | None = None,
     ) -> OrderStatusReport: ...
     async def cancel_orders(
         self,
+        instrument_id: InstrumentId,
         client_order_ids: list[ClientOrderId] | None = None,
         venue_order_ids: list[VenueOrderId] | None = None,
     ) -> list[OrderStatusReport]: ...

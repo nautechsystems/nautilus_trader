@@ -415,7 +415,7 @@ pub struct BitmexExecutionMsg {
     pub exec_inst: Option<BitmexExecInstruction>,
     pub contingency_type: Option<BitmexContingencyType>,
     pub ex_destination: Option<Ustr>,
-    pub ord_status: Option<Ustr>,
+    pub ord_status: Option<BitmexOrderStatus>,
     pub triggered: Option<Ustr>,
     pub working_indicator: Option<bool>,
     pub ord_rej_reason: Option<Ustr>,

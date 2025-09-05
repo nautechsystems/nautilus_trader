@@ -58,13 +58,13 @@ NautilusTrader integration guide.
 
 ## Product support
 
-| Product Type      | Data Feed | Trading | Notes                                          |
-|-------------------|-----------|---------|------------------------------------------------|
-| Spot              | ✓         | ✓       | Limited pairs, unified wallet with derivatives.|
-| Perpetual Swaps   | ✓         | ✓       | Inverse and linear contracts available.        |
-| Futures           | ✓         | ✓       | Traditional fixed expiration contracts.        |
-| Quanto Futures    | ✓         | ✓       | Settled in different currency than underlying. |
-| Options           | -         | -       | *Discontinued by BitMEX in April 2025*.        |
+| Product Type      | Data Feed | Trading | Notes                                           |
+|-------------------|-----------|---------|-------------------------------------------------|
+| Spot              | ✓         | ✓       | Limited pairs, unified wallet with derivatives. |
+| Perpetual Swaps   | ✓         | ✓       | Inverse and linear contracts available.         |
+| Futures           | ✓         | ✓       | Traditional fixed expiration contracts.         |
+| Quanto Futures    | ✓         | ✓       | Settled in different currency than underlying.  |
+| Options           | -         | -       | *Discontinued by BitMEX in April 2025*.         |
 
 :::info
 BitMEX discontinued their options products in April 2025 to focus on their core derivatives and spot offerings.
@@ -150,8 +150,8 @@ with additional functionality being actively developed.
 
 ### Order types
 
-| Order Type             | Supported | Notes                                          |
-|------------------------|-----------|------------------------------------------------|
+| Order Type             | Supported | Notes                                         |
+|------------------------|-----------|-----------------------------------------------|
 | `MARKET`               | ✓         | Executed immediately at current market price. |
 | `LIMIT`                | ✓         | Executed only at specified price or better.   |
 | `STOP_MARKET`          | -         | *Currently under development*.                |
@@ -162,10 +162,10 @@ with additional functionality being actively developed.
 
 ### Execution instructions
 
-| Instruction   | Supported | Notes                                                            |
-|---------------|-----------|------------------------------------------------------------------|
-| `post_only`   | ✓         | Supported via `ParticipateDoNotInitiate` on `LIMIT` orders.     |
-| `reduce_only` | -         | *Currently under development*.                                  |
+| Instruction   | Supported | Notes                                                       |
+|---------------|-----------|-------------------------------------------------------------|
+| `post_only`   | ✓         | Supported via `ParticipateDoNotInitiate` on `LIMIT` orders. |
+| `reduce_only` | -         | *Currently under development*.                              |
 
 :::note
 Post-only orders are implemented using BitMEX's `ParticipateDoNotInitiate` execution
@@ -174,7 +174,7 @@ instruction, which ensures orders are added to the order book as maker orders on
 
 ### Time in force
 
-| Time in force | Supported | Notes                                           |
+| Time in force | Supported | Notes                                          |
 |---------------|-----------|------------------------------------------------|
 | `GTC`         | ✓         | Good Till Canceled (default).                  |
 | `GTD`         | -         | *Not supported by BitMEX*.                     |
@@ -183,11 +183,11 @@ instruction, which ensures orders are added to the order book as maker orders on
 
 ### Advanced order features
 
-| Feature            | Supported | Notes                                        |
-|--------------------|-----------|----------------------------------------------|
-| Order Modification | -         | *Currently under development*.               |
-| Bracket Orders     | -         | *Not yet implemented*.                       |
-| Iceberg Orders     | -         | *Supported by BitMEX, not yet implemented*.  |
+| Feature            | Supported | Notes                                       |
+|--------------------|-----------|---------------------------------------------|
+| Order Modification | -         | *Currently under development*.              |
+| Bracket Orders     | -         | *Not yet implemented*.                      |
+| Iceberg Orders     | -         | *Supported by BitMEX, not yet implemented*. |
 
 ### Batch operations
 
@@ -199,35 +199,82 @@ instruction, which ensures orders are added to the order book as maker orders on
 
 ### Position management
 
-| Feature              | Supported | Notes                                          |
-|---------------------|-----------|------------------------------------------------|
-| Query positions     | ✓         | Real-time position updates via WebSocket.      |
-| Leverage control    | -         | *Currently under development*.                |
-| Cross margin        | ✓         | Default margin mode.                          |
-| Isolated margin     | -         | *Currently under development*.                |
+| Feature             | Supported | Notes                                        |
+|---------------------|-----------|----------------------------------------------|
+| Query positions     | ✓         | Real-time position updates via WebSocket.    |
+| Leverage control    | -         | *Currently under development*.               |
+| Cross margin        | ✓         | Default margin mode.                         |
+| Isolated margin     | -         | *Currently under development*.               |
 
 ### Order querying
 
-| Feature              | Supported | Notes                                          |
-|---------------------|-----------|------------------------------------------------|
-| Query open orders   | ✓         | List all active orders.                        |
-| Query order history | ✓         | Historical order data.                         |
-| Order status updates| ✓         | Real-time order state changes via WebSocket.   |
-| Trade history       | ✓         | Execution and fill reports.                    |
+| Feature             | Supported | Notes                                        |
+|---------------------|-----------|----------------------------------------------|
+| Query open orders   | ✓         | List all active orders.                      |
+| Query order history | ✓         | Historical order data.                       |
+| Order status updates| ✓         | Real-time order state changes via WebSocket. |
+| Trade history       | ✓         | Execution and fill reports.                  |
 
 ## Rate limits
 
-BitMEX implements rate limiting to ensure fair usage of their API:
+BitMEX implements a dual-layer rate limiting system:
 
-- **REST API**: 300 requests per 5 minutes for most endpoints.
-- **WebSocket**: Connection limits apply.
-- **Order submission**: 200 open orders per symbol per account.
-- **Stop orders**: Maximum 10 stop orders per symbol per account.
+### REST API limits
+
+- **Primary rate limit**:
+  - 120 requests per minute for authenticated users.
+  - 30 requests per minute for unauthenticated users.
+  - Uses a token bucket mechanism with continuous refill.
+- **Secondary rate limit**:
+  - 10 requests per second burst limit for specific endpoints (order management).
+  - Applies to order placement, modification, and cancellation.
+- **Order limits**:
+  - 200 open orders per symbol per account.
+  - 10 stop orders per symbol per account.
+
+The adapter automatically respects these limits through built-in rate limiting with a
+10 requests/second quota that handles both the burst limit and average rate requirements.
+
+### WebSocket limits
+
+- 20 connections per hour per IP address
+- Authentication required for private data streams
+
+### Rate limit headers
+
+BitMEX provides rate limit information in response headers:
+
+- `x-ratelimit-limit`: Total allowed requests
+- `x-ratelimit-remaining`: Remaining requests in current window
+- `x-ratelimit-reset`: Unix timestamp when limits reset
+- `retry-after`: Seconds to wait if rate limited (429 response)
 
 :::warning
-Exceeding rate limits will result in temporary bans. The adapter includes built-in
-rate limiting awareness, but users should monitor their usage patterns.
+Exceeding rate limits will result in HTTP 429 responses and potential temporary IP bans.
+Multiple 4xx/5xx errors in quick succession may trigger longer bans.
 :::
+
+## Connection management
+
+### HTTP Keep-Alive
+
+The BitMEX adapter utilizes HTTP keep-alive for optimal performance:
+
+- **Connection pooling**: Connections are automatically pooled and reused.
+- **Keep-alive timeout**: 90 seconds (matches BitMEX server-side timeout).
+- **Automatic reconnection**: Failed connections are automatically re-established.
+- **SSL session caching**: Reduces handshake overhead for subsequent requests.
+
+This configuration ensures low-latency communication with BitMEX servers by maintaining
+persistent connections and avoiding the overhead of establishing new connections for each request.
+
+### Request expiration
+
+BitMEX uses an `api-expires` header for request authentication:
+
+- Requests include a UNIX timestamp indicating when they expire.
+- Default expiration window is 10 seconds from request creation.
+- Prevents replay attacks and ensures request freshness.
 
 ## Configuration
 
