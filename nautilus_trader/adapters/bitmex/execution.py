@@ -45,6 +45,7 @@ from nautilus_trader.live.retry import RetryManagerPool
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderStatus
+from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderCancelRejected
 from nautilus_trader.model.events import OrderModifyRejected
@@ -650,6 +651,14 @@ class BitmexExecutionClient(LiveExecutionClient):
         self,
         pyo3_report: nautilus_pyo3.OrderStatusReport,
     ) -> None:
+        # Discard order status reports until account is properly initialized
+        # Reconciliation will handle getting the current state of open orders
+        if not self.is_connected or not self.account_id or not self._cache.account(self.account_id):
+            self._log.debug(
+                f"Discarding order status report during connection sequence: {pyo3_report.client_order_id!r}",
+            )
+            return
+
         report = OrderStatusReport.from_pyo3(pyo3_report)
 
         if self._is_external_order(report.client_order_id):
@@ -664,8 +673,10 @@ class BitmexExecutionClient(LiveExecutionClient):
             return
 
         if report.order_status == OrderStatus.REJECTED:
-            pass  # Handled by submit order
+            return  # Handled by submit order
         elif report.order_status == OrderStatus.ACCEPTED:
+            if order.order_type == OrderType.MARKET or order.is_closed:
+                return  # Occasional race conditions
             if is_order_updated(order, report):
                 self.generate_order_updated(
                     strategy_id=order.strategy_id,
