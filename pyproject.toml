@@ -108,7 +108,7 @@ dev = [
     "pandas-stubs>=2.3.2,<3.0.0",
     "pre-commit>=4.3.0,<5.0.0",
     "requests>=2.32.5,<3.0.0",
-    "ruff>=0.12.11,<1.0.0",
+    "ruff>=0.12.12,<1.0.0",
     "types-pytz>=2024.2,<2025.0",
     "types-requests>=2.32,<3.0",
     "types-toml>=0.10.2,<1.0.0",
@@ -122,7 +122,7 @@ test = [
     "pytest-benchmark>=4.0.0,<5.0.0",
     "pytest-codspeed>=3.2.0,<4.0.0",
     "pytest-cov>=4.1.0,<5.0.0",
-    "pytest-mock>=3.14.1,<4.0.0",
+    "pytest-mock>=3.15.0,<4.0.0",
     "pytest-xdist[psutil]>=3.8.0,<4.0.0",
 ]
 docs = [
