@@ -39,6 +39,7 @@ pub async fn run_analyze_pool(
     rpc_url: Option<String>,
     database: DatabaseConfig,
     reset: bool,
+    multicall_calls_per_rpc_request: Option<u32>,
 ) -> anyhow::Result<()> {
     let chain = Chain::from_chain_name(&chain)
         .ok_or_else(|| anyhow::anyhow!("Invalid chain name: {}", chain))?;
@@ -85,6 +86,7 @@ pub async fn run_analyze_pool(
         vec![dex_type],
         rpc_http_url,
         None,
+        multicall_calls_per_rpc_request,
         None,
         true,
         None,
