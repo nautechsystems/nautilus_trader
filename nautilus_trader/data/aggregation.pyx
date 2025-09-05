@@ -676,6 +676,25 @@ cdef class TimeBarAggregator(BarAggregator):
     When the time reaches the next time interval of the bar specification, then
     a bar is created and sent to the handler.
 
+    Bar Timestamps
+    --------------
+    - **Backtesting/External bars**: `ts_init` should represent bar close;
+      `ts_event` typically also set to close (as per convention).
+    - **Internal time aggregation**:
+      - Timer-built bars: `ts_init` = timer event time, `ts_event` = close (or open for right-open).
+      - Build-on-next-tick bars (no prior data): `ts_init` = triggering tick's `ts_init`,
+        `ts_event` = close (or open). This preserves causal ordering in the message bus.
+
+    Monotonicity
+    ------------
+    Out-of-order inputs by `ts_init` are ignored. Ensure upstream adapters provide
+    non-decreasing `ts_init` for expected results.
+
+    Boundary Tolerance
+    ------------------
+    When starting near an interval boundary (<= min(interval_ns/1000, 1ms)), the aggregator
+    treats this as on-boundary and disables `skip_first_non_full_bar`.
+
     Parameters
     ----------
     instrument : Instrument
@@ -689,14 +708,20 @@ cdef class TimeBarAggregator(BarAggregator):
     interval_type : str, default 'left-open'
         Determines the type of interval used for time aggregation.
         - 'left-open': start time is excluded and end time is included (default).
+          `ts_event` is the close time (or open if `timestamp_on_close=False`).
         - 'right-open': start time is included and end time is excluded.
+          `ts_event` is always the interval open (`timestamp_on_close` has no effect).
     timestamp_on_close : bool, default True
-        If True, then timestamp will be the bar close time.
+        If True, then timestamp will be the bar close time (only for left-open intervals).
         If False, then timestamp will be the bar open time.
+        Note: Has no effect for right-open intervals.
     skip_first_non_full_bar : bool, default False
         If will skip emitting a bar if the aggregation starts mid-interval.
     build_with_no_updates : bool, default True
         If build and emit bars with no new market updates.
+        - True: Empty bars repeat last close for OHLC (if builder initialized).
+        - False: Empty bars are skipped.
+        Note: If not initialized at timer event, bar is deferred until next tick.
     time_bars_origin_offset : pd.Timedelta or pd.DateOffset, optional
         The origin time offset.
     bar_build_delay : int, default 0
@@ -708,6 +733,12 @@ cdef class TimeBarAggregator(BarAggregator):
     ------
     ValueError
         If `instrument.id` != `bar_type.instrument_id`.
+
+    Notes
+    -----
+    **Batch Mode**: The `start_batch_update/stop_batch_update` methods enable
+    historical aggregation where bars are cut at close boundaries with `ts_init`
+    set to the close time. WEEK/MONTH use date offsets not fixed seconds.
     """
 
     def __init__(
@@ -1036,6 +1067,7 @@ cdef class TimeBarAggregator(BarAggregator):
                 volume=bar.volume,
                 ts_event=bar.ts_event,
                 ts_init=bar.ts_init,
+                is_revision=bar.is_revision,
             )
             self._handler(passthrough_bar)
             return
