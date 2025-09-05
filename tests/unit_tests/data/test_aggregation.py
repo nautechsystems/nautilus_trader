@@ -1775,7 +1775,6 @@ class TestTimeBarAggregator:
             handler.append,
             clock,
         )
-        aggregator.start()
 
         # Assert
         assert aggregator.next_close_ns == expected
@@ -1793,7 +1792,6 @@ class TestTimeBarAggregator:
             handler.append,
             clock,
         )
-        aggregator.start()
 
         tick1 = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
@@ -1860,7 +1858,6 @@ class TestTimeBarAggregator:
             handler.append,
             clock,
         )
-        aggregator.start()
 
         tick1 = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
@@ -1930,7 +1927,6 @@ class TestTimeBarAggregator:
             handler.append,
             clock,
         )
-        aggregator.start()
         initial_next_close = aggregator.next_close_ns
         composite_bar_type = bar_type.composite()
 
@@ -2013,7 +2009,6 @@ class TestTimeBarAggregator:
             clock,
             skip_first_non_full_bar=True,
         )
-        aggregator.start()
         composite_bar_type = bar_type.composite()
         initial_next_close = aggregator.next_close_ns
 
@@ -2085,7 +2080,6 @@ class TestTimeBarAggregator:
             clock,
             skip_first_non_full_bar=True,
         )
-        aggregator.start()
 
         # Create trade ticks at 0.5 second intervals
         tick1 = TradeTick(
@@ -2163,7 +2157,6 @@ class TestTimeBarAggregator:
             clock,
             skip_first_non_full_bar=True,
         )
-        aggregator.start()
 
         # Create trade ticks at 0.5s, 1.0s, 1.5s from the base boundary
         tick1 = TradeTick(
@@ -2243,7 +2236,6 @@ class TestTimeBarAggregator:
             time_bars_origin_offset=pd.Timedelta(seconds=30),
             bar_build_delay=10,
         )
-        aggregator.start()
         composite_bar_type = bar_type.composite()
 
         bar1 = Bar(
@@ -2323,7 +2315,6 @@ class TestTimeBarAggregator:
             handler.append,
             clock,
         )
-        aggregator.start()
         composite_bar_type = bar_type.composite()
 
         bar1 = Bar(
@@ -2399,7 +2390,6 @@ class TestTimeBarAggregator:
             handler.append,
             clock,
         )
-        aggregator.start()
         composite_bar_type = bar_type.composite()
 
         bar1 = Bar(
@@ -2453,86 +2443,6 @@ class TestTimeBarAggregator:
         assert bar.volume == Quantity.from_int(3)
         assert bar.ts_init == pd.Timestamp("2024-3-25").value
 
-    def test_time_bar_aggregator_passthrough_preserves_is_revision(self):
-        # Arrange
-        clock = TestClock()
-        clock.set_time(0)
-        handler = []
-
-        # Create composite bar type where step and aggregation match to trigger passthrough
-        instrument_id = TestIdStubs.audusd_id()
-        bar_spec1 = BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST)
-        bar_type = BarType.new_composite(
-            instrument_id,
-            bar_spec1,
-            AggregationSource.INTERNAL,
-            bar_spec1.step,  # Same step
-            bar_spec1.aggregation,  # Same aggregation
-            AggregationSource.EXTERNAL,
-        )
-
-        # Pass passthrough_bar_type=True since we're matching step and aggregation
-        aggregator = TimeBarAggregator(
-            AUDUSD_SIM,
-            bar_type,
-            handler.append,
-            clock,
-            passthrough_bar_type=True,  # Enable passthrough explicitly
-        )
-        aggregator.start()  # Start the aggregator to enable passthrough
-
-        composite_bar_type = bar_type.composite()
-
-        # Create initial bar
-        bar1 = Bar(
-            bar_type=composite_bar_type,
-            open=Price.from_str("1.00005"),
-            high=Price.from_str("1.00010"),
-            low=Price.from_str("1.00004"),
-            close=Price.from_str("1.00007"),
-            volume=Quantity.from_int(100),
-            ts_event=60_000_000_000,  # 1 minute
-            ts_init=60_000_000_000,
-            is_revision=False,
-        )
-
-        # Create revision bar with same ts_event
-        bar2 = Bar(
-            bar_type=composite_bar_type,
-            open=Price.from_str("1.00005"),
-            high=Price.from_str("1.00015"),  # Higher high
-            low=Price.from_str("1.00004"),
-            close=Price.from_str("1.00012"),  # Different close
-            volume=Quantity.from_int(150),  # More volume
-            ts_event=60_000_000_000,  # Same ts_event
-            ts_init=61_000_000_000,  # Later ts_init
-            is_revision=True,  # This is a revision
-        )
-
-        # Act
-        aggregator.handle_bar(bar1)
-        aggregator.handle_bar(bar2)
-
-        # Assert
-        assert len(handler) == 2
-
-        # First bar should not be a revision
-        first_bar = handler[0]
-        assert first_bar.bar_type == bar_type.standard()
-        assert first_bar.is_revision is False
-        assert first_bar.close == Price.from_str("1.00007")
-        assert first_bar.volume == Quantity.from_int(100)
-
-        # Second bar should be a revision with updated values
-        revision_bar = handler[1]
-        assert revision_bar.bar_type == bar_type.standard()
-        assert revision_bar.is_revision is True
-        assert revision_bar.high == Price.from_str("1.00015")
-        assert revision_bar.close == Price.from_str("1.00012")
-        assert revision_bar.volume == Quantity.from_int(150)
-        assert revision_bar.ts_event == 60_000_000_000  # Same ts_event
-        assert revision_bar.ts_init == 61_000_000_000  # Later ts_init
-
     def test_batch_update_sends_single_bar_to_handler_with_bars(self):
         # Arrange
         clock = TestClock()
@@ -2555,7 +2465,6 @@ class TestTimeBarAggregator:
             handler.append,
             clock,
         )
-        aggregator.start()
         composite_bar_type = bar_type.composite()
 
         bar1 = Bar(
@@ -2628,7 +2537,6 @@ class TestTimeBarAggregator:
             handler.append,
             clock,
         )
-        aggregator.start()
 
         # Act - mini backtest loop
         for tick in ticks:
@@ -2671,7 +2579,6 @@ class TestTimeBarAggregator:
             clock,
             build_with_no_updates=False,  # <-- set this True and test will fail
         )
-        aggregator.start()
         aggregator.handle_quote_tick(ticks[0])
 
         events = clock.advance_time(dt_to_unix_nanos(UNIX_EPOCH + timedelta(minutes=5)))
@@ -2703,7 +2610,6 @@ class TestTimeBarAggregator:
             clock,
             timestamp_on_close=False,  # <-- set this True and test will fail
         )
-        aggregator.start()
         aggregator.handle_quote_tick(ticks[0])
 
         events = clock.advance_time(dt_to_unix_nanos(UNIX_EPOCH + timedelta(minutes=2)))
@@ -2755,7 +2661,6 @@ class TestTimeBarAggregator:
             interval_type=interval_type,
             timestamp_on_close=timestamp_on_close,
         )
-        aggregator.start()
         aggregator.handle_quote_tick(ticks[0])
 
         events = clock.advance_time(dt_to_unix_nanos(UNIX_EPOCH + timedelta(minutes=2)))
@@ -2766,78 +2671,6 @@ class TestTimeBarAggregator:
         assert len(handler) == 2
         assert handler[0].ts_event == ts_event1
         assert handler[1].ts_event == ts_event2
-
-    def test_composite_bar_with_equal_step_and_aggregation_changes_source_to_internal(self):
-        """
-        Test that when a composite bar has the same step and aggregation as its standard
-        bar, the resulting bar from the time aggregator contains the same information
-        but with the bar type changed from EXTERNAL to INTERNAL aggregation source.
-        """
-        # Arrange
-        clock = TestClock()  # Fresh clock to avoid timer name conflicts
-        handler = []
-        instrument_id = TestIdStubs.gbpusd_id()  # Use different instrument to avoid timer conflicts
-
-        # Create composite bar type where standard and composite have same step and aggregation
-        bar_spec_1min = BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST)
-        composite_bar_type = BarType.new_composite(
-            instrument_id,
-            bar_spec_1min,  # Standard bar: 1-MINUTE-LAST-INTERNAL
-            AggregationSource.INTERNAL,
-            bar_spec_1min.step,  # Composite step: 1 (same as standard)
-            bar_spec_1min.aggregation,  # Composite aggregation: MINUTE (same as standard)
-            AggregationSource.EXTERNAL,  # Composite source: EXTERNAL
-        )
-
-        aggregator = TimeBarAggregator(
-            TestInstrumentProvider.default_fx_ccy("GBP/USD"),
-            composite_bar_type,
-            handler.append,
-            clock,
-            passthrough_bar_type=True,
-        )
-        aggregator.start()
-
-        # Create a composite bar with EXTERNAL source
-        composite_bar = Bar(
-            bar_type=composite_bar_type.composite(),  # This should be EXTERNAL
-            open=Price.from_str("1.00005"),
-            high=Price.from_str("1.00010"),
-            low=Price.from_str("1.00004"),
-            close=Price.from_str("1.00007"),
-            volume=Quantity.from_int(100),
-            ts_event=1 * 60 * NANOSECONDS_IN_SECOND,
-            ts_init=1 * 60 * NANOSECONDS_IN_SECOND,
-        )
-
-        # Act
-        aggregator.handle_bar(composite_bar)
-
-        # Advance time to trigger bar completion
-        clock.advance_time(2 * 60 * NANOSECONDS_IN_SECOND)
-        events = clock.advance_time(2 * 60 * NANOSECONDS_IN_SECOND)
-        for event in events:
-            event.handle()
-
-        # Assert
-        assert len(handler) == 1
-        result_bar = handler[0]
-
-        # Verify the bar data is the same
-        assert result_bar.open == composite_bar.open
-        assert result_bar.high == composite_bar.high
-        assert result_bar.low == composite_bar.low
-        assert result_bar.close == composite_bar.close
-        assert result_bar.volume == composite_bar.volume
-
-        # Verify the bar type has changed from EXTERNAL to INTERNAL
-        assert result_bar.bar_type == composite_bar_type.standard()
-        assert result_bar.bar_type.aggregation_source == AggregationSource.INTERNAL
-        assert composite_bar.bar_type.aggregation_source == AggregationSource.EXTERNAL
-
-        # Verify the bar specifications are the same
-        assert result_bar.bar_type.spec == composite_bar.bar_type.spec
-        assert result_bar.bar_type.instrument_id == composite_bar.bar_type.instrument_id
 
 
 class TestSpreadQuoteAggregator:

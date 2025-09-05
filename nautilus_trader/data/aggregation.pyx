@@ -676,25 +676,6 @@ cdef class TimeBarAggregator(BarAggregator):
     When the time reaches the next time interval of the bar specification, then
     a bar is created and sent to the handler.
 
-    Bar Timestamps
-    --------------
-    - **Backtesting/External bars**: `ts_init` should represent bar close;
-      `ts_event` typically also set to close (as per convention).
-    - **Internal time aggregation**:
-      - Timer-built bars: `ts_init` = timer event time, `ts_event` = close (or open for right-open).
-      - Build-on-next-tick bars (no prior data): `ts_init` = triggering tick's `ts_init`,
-        `ts_event` = close (or open). This preserves causal ordering in the message bus.
-
-    Monotonicity
-    ------------
-    Out-of-order inputs by `ts_init` are ignored. Ensure upstream adapters provide
-    non-decreasing `ts_init` for expected results.
-
-    Boundary Tolerance
-    ------------------
-    When starting near an interval boundary (<= min(interval_ns/1000, 1ms)), the aggregator
-    treats this as on-boundary and disables `skip_first_non_full_bar`.
-
     Parameters
     ----------
     instrument : Instrument
@@ -708,20 +689,14 @@ cdef class TimeBarAggregator(BarAggregator):
     interval_type : str, default 'left-open'
         Determines the type of interval used for time aggregation.
         - 'left-open': start time is excluded and end time is included (default).
-          `ts_event` is the close time (or open if `timestamp_on_close=False`).
         - 'right-open': start time is included and end time is excluded.
-          `ts_event` is always the interval open (`timestamp_on_close` has no effect).
     timestamp_on_close : bool, default True
-        If True, then timestamp will be the bar close time (only for left-open intervals).
+        If True, then timestamp will be the bar close time.
         If False, then timestamp will be the bar open time.
-        Note: Has no effect for right-open intervals.
     skip_first_non_full_bar : bool, default False
         If will skip emitting a bar if the aggregation starts mid-interval.
     build_with_no_updates : bool, default True
         If build and emit bars with no new market updates.
-        - True: Empty bars repeat last close for OHLC (if builder initialized).
-        - False: Empty bars are skipped.
-        Note: If not initialized at timer event, bar is deferred until next tick.
     time_bars_origin_offset : pd.Timedelta or pd.DateOffset, optional
         The origin time offset.
     bar_build_delay : int, default 0
@@ -733,12 +708,6 @@ cdef class TimeBarAggregator(BarAggregator):
     ------
     ValueError
         If `instrument.id` != `bar_type.instrument_id`.
-
-    Notes
-    -----
-    **Batch Mode**: The `start_batch_update/stop_batch_update` methods enable
-    historical aggregation where bars are cut at close boundaries with `ts_init`
-    set to the close time. WEEK/MONTH use date offsets not fixed seconds.
     """
 
     def __init__(
@@ -753,7 +722,6 @@ cdef class TimeBarAggregator(BarAggregator):
         bint build_with_no_updates = True,
         object time_bars_origin_offset: pd.Timedelta | pd.DateOffset = None,
         int bar_build_delay = 0,
-        bint passthrough_bar_type: bool = False,
     ) -> None:
         super().__init__(
             instrument=instrument,
@@ -776,7 +744,6 @@ cdef class TimeBarAggregator(BarAggregator):
         self._build_with_no_updates = build_with_no_updates
         self._bar_build_delay = bar_build_delay
         self._time_bars_origin_offset = time_bars_origin_offset or 0
-        self._passthrough_bar_type = passthrough_bar_type
 
         if type(self._time_bars_origin_offset) is int:
             self._time_bars_origin_offset = pd.Timedelta(self._time_bars_origin_offset)
@@ -788,8 +755,11 @@ cdef class TimeBarAggregator(BarAggregator):
 
         self.interval = self._get_interval()
         self.interval_ns = self._get_interval_ns()
-        self.next_close_ns = 0
-        self._stored_open_ns = 0
+        self._set_build_timer()
+        self.next_close_ns = self._clock.next_time_ns(self._timer_name)
+
+        cdef datetime now = self._clock.utc_now()
+        self._stored_open_ns = dt_to_unix_nanos(self.get_start_time(now))
         self._stored_close_ns = 0
 
     def __str__(self):
@@ -897,15 +867,11 @@ cdef class TimeBarAggregator(BarAggregator):
                 f"Aggregation not time based, was {bar_aggregation_to_str(aggregation)}",
             )
 
-    cpdef void start(self):
+    cpdef void _set_build_timer(self):
         cdef int step = self.bar_type.spec.step
         self._timer_name = str(self.bar_type)
         cdef datetime now = self._clock.utc_now()
         cdef datetime start_time = self.get_start_time(now)
-
-        # Initialize stored open time based on current time
-        self._stored_open_ns = dt_to_unix_nanos(start_time)
-        self._stored_close_ns = 0
 
         # Consider near-boundary starts within a small tolerance as on-boundary
         cdef uint64_t now_ns = dt_to_unix_nanos(now)
@@ -932,7 +898,6 @@ cdef class TimeBarAggregator(BarAggregator):
                 stop_time=None,
                 callback=self._build_bar,
             )
-            self.next_close_ns = self._clock.next_time_ns(self._timer_name)
         else:
             # The monthly alert time is defined iteratively at each alert time as there is no regular interval
             alert_time = start_time + pd.DateOffset(months=step)
@@ -943,7 +908,6 @@ cdef class TimeBarAggregator(BarAggregator):
                 callback=self._build_bar,
                 override=True,
             )
-            self.next_close_ns = dt_to_unix_nanos(alert_time)
 
         self._log.debug(f"Started timer {self._timer_name}")
 
@@ -1055,23 +1019,6 @@ cdef class TimeBarAggregator(BarAggregator):
             self._batch_post_update(ts_init)
 
     cdef void _apply_update_bar(self, Bar bar, Quantity volume, uint64_t ts_init):
-        cdef Bar passthrough_bar
-
-        if self._passthrough_bar_type:
-            passthrough_bar = Bar(
-                bar_type=self.bar_type,
-                open=bar.open,
-                high=bar.high,
-                low=bar.low,
-                close=bar.close,
-                volume=bar.volume,
-                ts_event=bar.ts_event,
-                ts_init=bar.ts_init,
-                is_revision=bar.is_revision,
-            )
-            self._handler(passthrough_bar)
-            return
-
         if self._batch_next_close_ns != 0:
             self._batch_pre_update(ts_init)
 
