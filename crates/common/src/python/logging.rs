@@ -123,9 +123,9 @@ pub fn py_init_logging(
         map_log_level_to_filter(level_stdout),
         level_file,
         parse_component_levels(component_levels),
+        log_components_only.unwrap_or(false),
         is_colored.unwrap_or(true),
         print_config.unwrap_or(false),
-        log_components_only.unwrap_or(false),
     );
 
     let file_config = FileWriterConfig::new(directory, file_name, file_format, file_rotate);
