@@ -104,6 +104,7 @@ mod tests {
             "https://eth-mainnet.example.com".to_string(),
             None,
             None,
+            None,
             false,
             None,
             None,

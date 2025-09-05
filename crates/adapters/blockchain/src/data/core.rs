@@ -841,7 +841,8 @@ impl BlockchainDataClientCore {
 
         tokio::pin!(pools_stream);
 
-        const TOKEN_BATCH_SIZE: usize = 100;
+        // Get the token batch by diving max multicall calls by 3, as each token will yield 3 calls (name, decimals, symbol).
+        let token_batch_size = (self.config.multicall_calls_per_rpc_request / 3) as usize;
         const POOL_BATCH_SIZE: usize = 1000;
         let mut token_buffer: HashSet<Address> = HashSet::new();
         let mut pool_buffer: Vec<PoolCreatedEvent> = Vec::new();
@@ -874,7 +875,7 @@ impl BlockchainDataClientCore {
             // Buffer the pool for later processing
             pool_buffer.push(pool);
 
-            if token_buffer.len() >= TOKEN_BATCH_SIZE || pool_buffer.len() >= POOL_BATCH_SIZE {
+            if token_buffer.len() >= token_batch_size || pool_buffer.len() >= POOL_BATCH_SIZE {
                 self.flush_tokens_and_process_pools(
                     &mut token_buffer,
                     &mut pool_buffer,

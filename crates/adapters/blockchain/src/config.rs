@@ -63,6 +63,8 @@ pub struct BlockchainDataClientConfig {
     pub http_rpc_url: String,
     /// The maximum number of RPC requests allowed per second.
     pub rpc_requests_per_second: Option<u32>,
+    /// The maximum number of Multicall calls per one RPC request.
+    pub multicall_calls_per_rpc_request: u32,
     /// The WebSocket secure URL for the blockchain RPC endpoint.
     pub wss_rpc_url: Option<String>,
     /// The block from which to sync historical data.
@@ -82,6 +84,7 @@ impl BlockchainDataClientConfig {
         dex_ids: Vec<DexType>,
         http_rpc_url: String,
         rpc_requests_per_second: Option<u32>,
+        multicall_calls_per_rpc_request: Option<u32>,
         wss_rpc_url: Option<String>,
         use_hypersync_for_live_data: bool,
         from_block: Option<u64>,
@@ -94,6 +97,7 @@ impl BlockchainDataClientConfig {
             use_hypersync_for_live_data,
             http_rpc_url,
             rpc_requests_per_second,
+            multicall_calls_per_rpc_request: multicall_calls_per_rpc_request.unwrap_or(100),
             wss_rpc_url,
             from_block,
             pool_filters: pools_filters.unwrap_or_default(),
