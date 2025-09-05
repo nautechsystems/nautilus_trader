@@ -52,7 +52,7 @@ config_node = TradingNodeConfig(
         use_pyo3=True,
     ),
     exec_engine=LiveExecEngineConfig(
-        reconciliation=False,
+        reconciliation=True,
         # snapshot_orders=True,
         # snapshot_positions=True,
         # snapshot_positions_interval_secs=5.0,
@@ -87,12 +87,15 @@ config_node = TradingNodeConfig(
 # Configure the execution tester strategy
 config_tester = ExecTesterConfig(
     instrument_id=InstrumentId.from_str(f"{symbol}.{BITMEX}"),
+    external_order_claims=[InstrumentId.from_str(f"{symbol}.{BITMEX}")],
     order_qty=order_qty,
     use_post_only=True,
     open_position_on_start_qty=order_qty,
     open_position_time_in_force=TimeInForce.IOC,
     close_positions_time_in_force=TimeInForce.IOC,
-    test_reject_post_only=False,
+    # test_reject_post_only=True,
+    # cancel_orders_on_stop=False,
+    # close_positions_on_stop=False,
     log_data=False,
     # dry_run=True,
 )

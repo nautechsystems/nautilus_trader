@@ -175,7 +175,7 @@ pub struct BitmexExecution {
     pub cl_ord_link_id: Option<Ustr>,
     pub account: i64,
     pub symbol: Option<Ustr>,
-    pub side: BitmexSide,
+    pub side: Option<BitmexSide>,
     pub last_qty: i64,
     pub last_px: f64,
     pub underlying_last_px: Option<f64>,

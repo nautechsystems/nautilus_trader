@@ -635,10 +635,18 @@ pub fn parse_fill_report(
     ts_init: UnixNanos,
 ) -> anyhow::Result<FillReport> {
     // Skip non-trade executions (funding, settlements, etc.)
-    // Trade executions have exec_type of Trade
+    // Trade executions have exec_type of Trade and must have order_id
     if !matches!(exec.exec_type, BitmexExecType::Trade) {
         return Err(anyhow::anyhow!(
             "Skipping non-trade execution: {:?}",
+            exec.exec_type
+        ));
+    }
+
+    // Additional check: skip executions without order_id (likely funding/settlement)
+    if exec.order_id.is_none() {
+        return Err(anyhow::anyhow!(
+            "Skipping execution without order_id: {:?}",
             exec.exec_type
         ));
     }
@@ -648,11 +656,8 @@ pub fn parse_fill_report(
         .symbol
         .ok_or_else(|| anyhow::anyhow!("Execution missing symbol"))?;
     let instrument_id = parse_instrument_id(symbol);
-    let venue_order_id = VenueOrderId::new(
-        exec.order_id
-            .ok_or_else(|| anyhow::anyhow!("Fill missing order_id"))?
-            .to_string(),
-    );
+    // SAFETY: We already checked order_id is Some above
+    let venue_order_id = VenueOrderId::new(exec.order_id.unwrap().to_string());
     // trd_match_id might be missing for some execution types, use exec_id as fallback
     let trade_id = TradeId::new(
         exec.trd_match_id
@@ -660,7 +665,14 @@ pub fn parse_fill_report(
             .ok_or_else(|| anyhow::anyhow!("Fill missing both trd_match_id and exec_id"))?
             .to_string(),
     );
-    let order_side: OrderSide = exec.side.into();
+    // Skip executions without side (likely not trades)
+    let Some(side) = exec.side else {
+        return Err(anyhow::anyhow!(
+            "Skipping execution without side: {:?}",
+            exec.exec_type
+        ));
+    };
+    let order_side: OrderSide = side.into();
     let last_qty = Quantity::from(exec.last_qty);
     let last_px = Price::new(exec.last_px, price_precision);
 
@@ -819,7 +831,7 @@ mod tests {
         // Test first execution (Maker)
         let exec1 = &executions[0];
         assert_eq!(exec1.symbol, Some(Ustr::from("XBTUSD")));
-        assert_eq!(exec1.side, BitmexSide::Sell);
+        assert_eq!(exec1.side, Some(BitmexSide::Sell));
         assert_eq!(exec1.last_qty, 100);
         assert_eq!(exec1.last_px, 98950.0);
         assert_eq!(
@@ -1050,7 +1062,7 @@ mod tests {
             symbol: Some(Ustr::from("XBTUSD")),
             order_id: Some(Uuid::parse_str("a1a2a3a4-b5b6-c7c8-d9d0-e1e2e3e4e5e6").unwrap()),
             cl_ord_id: Some(Ustr::from("client-456")),
-            side: BitmexSide::Buy,
+            side: Some(BitmexSide::Buy),
             last_qty: 50,
             last_px: 50100.5,
             commission: Some(0.00075),
@@ -1123,7 +1135,7 @@ mod tests {
             symbol: Some(Ustr::from("ETHUSD")),
             order_id: Some(Uuid::parse_str("a1a2a3a4-b5b6-c7c8-d9d0-e1e2e3e4e5e6").unwrap()),
             cl_ord_id: None,
-            side: BitmexSide::Sell,
+            side: Some(BitmexSide::Sell),
             last_qty: 100,
             last_px: 3000.0,
             commission: None,
