@@ -790,7 +790,7 @@ mod tests {
 
         // Test first order (New)
         let order1 = &orders[0];
-        assert_eq!(order1.symbol, Ustr::from("XBTUSD"));
+        assert_eq!(order1.symbol, Some(Ustr::from("XBTUSD")));
         assert_eq!(order1.side, Some(BitmexSide::Buy));
         assert_eq!(order1.order_qty, Some(100));
         assert_eq!(order1.price, Some(98000.0));
@@ -800,7 +800,7 @@ mod tests {
 
         // Test second order (Filled)
         let order2 = &orders[1];
-        assert_eq!(order2.symbol, Ustr::from("XBTUSD"));
+        assert_eq!(order2.symbol, Some(Ustr::from("XBTUSD")));
         assert_eq!(order2.side, Some(BitmexSide::Sell));
         assert_eq!(order2.order_qty, Some(200));
         assert_eq!(order2.ord_status, Some(BitmexOrderStatus::Filled));
@@ -918,7 +918,7 @@ mod tests {
 
         let order = BitmexOrder {
             account: 123456,
-            symbol: Ustr::from("XBTUSD"),
+            symbol: Some(Ustr::from("XBTUSD")),
             order_id: Uuid::parse_str("a1b2c3d4-e5f6-7890-abcd-ef1234567890").unwrap(),
             cl_ord_id: Some(Ustr::from("client-123")),
             cl_ord_link_id: None,
@@ -984,7 +984,7 @@ mod tests {
         let symbol = Ustr::from("ETHUSD");
         let order = BitmexOrder {
             account: 0, // Use 0 for test account
-            symbol: Ustr::from("ETHUSD"),
+            symbol: Some(Ustr::from("ETHUSD")),
             order_id: Uuid::parse_str("11111111-2222-3333-4444-555555555555").unwrap(),
             cl_ord_id: None,
             cl_ord_link_id: None,

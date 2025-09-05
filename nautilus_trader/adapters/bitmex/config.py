@@ -76,6 +76,12 @@ class BitmexExecClientConfig(LiveExecClientConfig, frozen=True):
         If the client is connecting to the BitMEX testnet.
     http_timeout_secs : PositiveInt, default 60
         The timeout for HTTP requests in seconds.
+    max_retries : PositiveInt, optional
+        The maximum number of retries for HTTP requests.
+    retry_delay_initial_ms : PositiveInt, default 1_000
+        The initial delay (milliseconds) for retries.
+    retry_delay_max_ms : PositiveInt, default 5_000
+        The maximum delay (milliseconds) for exponential backoff.
 
     """
 
@@ -85,3 +91,6 @@ class BitmexExecClientConfig(LiveExecClientConfig, frozen=True):
     base_url_ws: str | None = None
     testnet: bool = False
     http_timeout_secs: PositiveInt | None = 60
+    max_retries: PositiveInt | None = None
+    retry_delay_initial_ms: PositiveInt | None = 1_000
+    retry_delay_max_ms: PositiveInt | None = 5_000

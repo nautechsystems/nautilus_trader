@@ -23,7 +23,10 @@ use nautilus_model::{
         MarkPriceUpdate, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick,
         depth::DEPTH10_LEN,
     },
-    enums::{AccountType, AggregationSource, BarAggregation, OrderSide, PriceType, RecordFlag},
+    enums::{
+        AccountType, AggregationSource, BarAggregation, OrderSide, OrderStatus, PriceType,
+        RecordFlag,
+    },
     events::account::state::AccountState,
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, Symbol, TradeId, VenueOrderId,
@@ -46,7 +49,7 @@ use super::{
 };
 use crate::common::{
     consts::BITMEX_VENUE,
-    enums::{BitmexExecType, BitmexSide},
+    enums::{BitmexExecInstruction, BitmexExecType, BitmexSide},
     parse::{
         map_bitmex_currency, parse_contracts_quantity, parse_frac_quantity, parse_instrument_id,
         parse_liquidity_side, parse_optional_datetime_to_unix_nanos, parse_order_status,
@@ -440,6 +443,26 @@ pub fn parse_order_msg(msg: &BitmexOrderMsg, price_precision: u8) -> OrderStatus
         report = report.with_trigger_price(Price::new(trigger_price, price_precision));
     }
 
+    if let Some(exec_inst) = &msg.exec_inst {
+        match exec_inst {
+            BitmexExecInstruction::ParticipateDoNotInitiate => {
+                report = report.with_post_only(true);
+            }
+            BitmexExecInstruction::ReduceOnly => {
+                report = report.with_reduce_only(true);
+            }
+            _ => {}
+        }
+    }
+
+    // Check if this is a canceled post-only order (BitMEX cancels instead of rejecting)
+    // We need to preserve the rejection reason for the execution client to handle
+    if order_status == OrderStatus::Canceled
+        && let Some(reason_str) = msg.ord_rej_reason.or(msg.text)
+    {
+        report = report.with_cancel_reason(reason_str.to_string());
+    }
+
     report
 }
 
@@ -733,7 +756,10 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::common::testing::load_test_json;
+    use crate::common::{
+        enums::{BitmexExecType, BitmexOrderStatus},
+        testing::load_test_json,
+    };
 
     // Helper function to create a test perpetual instrument for tests
     fn create_test_perpetual_instrument() -> InstrumentAny {
@@ -953,6 +979,32 @@ mod tests {
             serde_json::from_str(&load_test_json("ws_execution.json")).unwrap();
         msg.exec_type = Some(BitmexExecType::Settlement);
 
+        let result = parse_execution_msg(msg, 1);
+        assert!(result.is_none());
+    }
+
+    #[rstest]
+    fn test_parse_cancel_reject_execution() {
+        // Test that CancelReject messages can be parsed (even without symbol)
+        let json = r#"{
+            "execID":"00000000-006d-1000-0000-001e7f5081ad",
+            "orderID":"ece0a2cc-7729-4f4c-bc6c-65d7c723e75b",
+            "account":1667725,
+            "execType":"CancelReject",
+            "ordStatus":"Rejected",
+            "workingIndicator":false,
+            "ordRejReason":"Invalid orderID",
+            "text":"Invalid orderID",
+            "transactTime":"2025-09-05T05:38:28.001Z",
+            "timestamp":"2025-09-05T05:38:28.001Z"
+        }"#;
+
+        let msg: BitmexExecutionMsg = serde_json::from_str(json).unwrap();
+        assert_eq!(msg.exec_type, Some(BitmexExecType::CancelReject));
+        assert_eq!(msg.ord_status, Some(BitmexOrderStatus::Rejected));
+        assert_eq!(msg.symbol, None);
+
+        // Should return None since it's not a Trade
         let result = parse_execution_msg(msg, 1);
         assert!(result.is_none());
     }

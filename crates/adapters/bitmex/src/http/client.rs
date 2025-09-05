@@ -68,7 +68,7 @@ use crate::{
     common::{
         consts::{BITMEX_HTTP_TESTNET_URL, BITMEX_HTTP_URL},
         credential::Credential,
-        enums::BitmexSide,
+        enums::{BitmexOrderStatus, BitmexSide},
         parse::{parse_account_state, parse_instrument_id},
     },
     http::{
@@ -83,12 +83,12 @@ use crate::{
 
 /// Default BitMEX REST API rate limit.
 ///
-/// BitMEX rate limits are complex and vary by endpoint:
-/// - Public endpoints: 150 requests per 5 minutes.
-/// - Private endpoints: 300 requests per 5 minutes.
-/// - Order placement: 200 requests per minute.
+/// BitMEX implements a dual-layer rate limiting system:
+/// - Primary limit: 120 requests per minute for authenticated users (30 for unauthenticated).
+/// - Secondary limit: 10 requests per second burst limit for specific endpoints.
 ///
-/// We use a conservative 10 requests per second as a general limit.
+/// We use 10 requests per second which respects the burst limit while the token bucket
+/// mechanism naturally handles the average rate limit.
 pub static BITMEX_REST_QUOTA: LazyLock<Quota> =
     LazyLock::new(|| Quota::per_second(NonZeroU32::new(10).unwrap()));
 
@@ -104,6 +104,20 @@ pub struct BitmexResponse<T> {
 /// This client wraps the underlying [`HttpClient`] to handle functionality
 /// specific to BitMEX, such as request signing (for authenticated endpoints),
 /// forming request URLs, and deserializing responses into specific data models.
+///
+/// # Connection Management
+///
+/// The client uses HTTP keep-alive for connection pooling with a 90-second idle timeout,
+/// which matches BitMEX's server-side keep-alive timeout. Connections are automatically
+/// reused for subsequent requests to minimize latency.
+///
+/// # Rate Limiting
+///
+/// BitMEX enforces the following rate limits:
+/// - 120 requests per minute for authenticated users (30 for unauthenticated).
+/// - 10 requests per second burst limit for certain endpoints (order management).
+///
+/// The client automatically respects these limits through the configured quota.
 #[derive(Debug, Clone)]
 pub struct BitmexHttpInnerClient {
     base_url: String,
@@ -844,7 +858,8 @@ impl BitmexHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if credentials are missing, the request fails, order validation fails, or the API returns an error.
+    /// Returns an error if credentials are missing, the request fails, order validation fails,
+    /// the order is rejected, or the API returns an error.
     #[allow(clippy::too_many_arguments)]
     pub async fn submit_order(
         &self,
@@ -912,7 +927,15 @@ impl BitmexHttpClient {
 
         let order: BitmexOrder = serde_json::from_value(response)?;
 
-        let price_precision = self.get_price_precision(order.symbol)?;
+        if let Some(BitmexOrderStatus::Rejected) = order.ord_status {
+            let reason = order
+                .ord_rej_reason
+                .map(|r| r.to_string())
+                .unwrap_or_else(|| "No reason provided".to_string());
+            return Err(anyhow::anyhow!("Order rejected: {reason}"));
+        }
+
+        let price_precision = self.get_price_precision(instrument_id.symbol.inner())?;
         let ts_init = self.generate_ts_init();
 
         parse_order_status_report(&order, instrument_id, price_precision, ts_init)
@@ -922,9 +945,14 @@ impl BitmexHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if credentials are missing, the request fails, the order doesn't exist, or the API returns an error.
+    /// This function will return an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - The order doesn't exist.
+    /// - The API returns an error.
     pub async fn cancel_order(
         &self,
+        instrument_id: InstrumentId,
         client_order_id: Option<ClientOrderId>,
         venue_order_id: Option<VenueOrderId>,
     ) -> anyhow::Result<OrderStatusReport> {
@@ -951,8 +979,7 @@ impl BitmexHttpClient {
             .next()
             .ok_or_else(|| anyhow::anyhow!("No order returned in cancel response"))?;
 
-        let instrument_id = parse_instrument_id(order.symbol);
-        let price_precision = self.get_price_precision(order.symbol)?;
+        let price_precision = self.get_price_precision(instrument_id.symbol.inner())?;
         let ts_init = self.generate_ts_init();
 
         parse_order_status_report(&order, instrument_id, price_precision, ts_init)
@@ -962,9 +989,14 @@ impl BitmexHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if credentials are missing, the request fails, or the API returns an error.
+    /// This function will return an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - The order doesn't exist.
+    /// - The API returns an error.
     pub async fn cancel_orders(
         &self,
+        instrument_id: InstrumentId,
         client_order_ids: Option<Vec<ClientOrderId>>,
         venue_order_ids: Option<Vec<VenueOrderId>>,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
@@ -1000,8 +1032,7 @@ impl BitmexHttpClient {
         let mut reports = Vec::new();
 
         for order in orders {
-            let instrument_id = parse_instrument_id(order.symbol);
-            let price_precision = self.get_price_precision(order.symbol)?;
+            let price_precision = self.get_price_precision(instrument_id.symbol.inner())?;
 
             reports.push(parse_order_status_report(
                 &order,
@@ -1018,7 +1049,11 @@ impl BitmexHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if credentials are missing, the request fails, or the API returns an error.
+    /// This function will return an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - The order doesn't exist.
+    /// - The API returns an error.
     pub async fn cancel_all_orders(
         &self,
         instrument_id: InstrumentId,
@@ -1062,7 +1097,12 @@ impl BitmexHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if credentials are missing, the request fails, the order doesn't exist, or the API returns an error.
+    /// This function will return an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - The order doesn't exist.
+    /// - The order is already closed.
+    /// - The API returns an error.
     pub async fn modify_order(
         &self,
         instrument_id: InstrumentId,
@@ -1104,6 +1144,14 @@ impl BitmexHttpClient {
 
         let order: BitmexOrder = serde_json::from_value(response)?;
 
+        if let Some(BitmexOrderStatus::Rejected) = order.ord_status {
+            let reason = order
+                .ord_rej_reason
+                .map(|r| r.to_string())
+                .unwrap_or_else(|| "No reason provided".to_string());
+            return Err(anyhow::anyhow!("Order modification rejected: {}", reason));
+        }
+
         let price_precision = self.get_price_precision(instrument_id.symbol.inner())?;
         let ts_init = self.generate_ts_init();
 
@@ -1114,9 +1162,13 @@ impl BitmexHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if credentials are missing, the request fails, or the API returns an error.
+    /// This function will return an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - The API returns an error.
     pub async fn query_order(
         &self,
+        instrument_id: InstrumentId,
         client_order_id: Option<ClientOrderId>,
         venue_order_id: Option<VenueOrderId>,
     ) -> anyhow::Result<Option<OrderStatusReport>> {
@@ -1149,8 +1201,7 @@ impl BitmexHttpClient {
 
         let order = &response[0];
 
-        let instrument_id = parse_instrument_id(order.symbol);
-        let price_precision = self.get_price_precision(order.symbol)?;
+        let price_precision = self.get_price_precision(instrument_id.symbol.inner())?;
         let ts_init = self.generate_ts_init();
 
         let report = parse_order_status_report(order, instrument_id, price_precision, ts_init)?;
@@ -1162,7 +1213,10 @@ impl BitmexHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if credentials are missing, the request fails, or the API returns an error.
+    /// This function will return an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - The API returns an error.
     pub async fn request_order_status_report(
         &self,
         instrument_id: InstrumentId,
@@ -1192,7 +1246,7 @@ impl BitmexHttpClient {
             .next()
             .ok_or_else(|| anyhow::anyhow!("Order not found"))?;
 
-        let price_precision = self.get_price_precision(order.symbol)?;
+        let price_precision = self.get_price_precision(instrument_id.symbol.inner())?;
         let ts_init = self.generate_ts_init();
 
         parse_order_status_report(&order, instrument_id, price_precision, ts_init)
@@ -1202,7 +1256,10 @@ impl BitmexHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if credentials are missing, the request fails, or the API returns an error.
+    /// This function will return an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - The API returns an error.
     pub async fn request_order_status_reports(
         &self,
         instrument_id: Option<InstrumentId>,
@@ -1238,8 +1295,14 @@ impl BitmexHttpClient {
         let mut reports = Vec::new();
 
         for order in response {
-            let instrument_id = parse_instrument_id(order.symbol);
-            let price_precision = self.get_price_precision(order.symbol)?;
+            // Skip orders without symbol (can happen with query responses)
+            let Some(symbol) = order.symbol else {
+                tracing::warn!("Order response missing symbol, skipping");
+                continue;
+            };
+
+            let instrument_id = parse_instrument_id(symbol);
+            let price_precision = self.get_price_precision(symbol)?;
 
             match parse_order_status_report(&order, instrument_id, price_precision, ts_init) {
                 Ok(report) => reports.push(report),
@@ -1372,7 +1435,11 @@ impl BitmexHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if credentials are missing, the request fails, order validation fails, or the API returns an error.
+    /// This function will return an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - Order validation fails.
+    /// - The API returns an error.
     pub async fn submit_orders_bulk(
         &self,
         orders: Vec<PostOrderParams>,
@@ -1385,8 +1452,14 @@ impl BitmexHttpClient {
         let mut reports = Vec::new();
 
         for order in response {
-            let instrument_id = parse_instrument_id(order.symbol);
-            let price_precision = self.get_price_precision(order.symbol)?;
+            // Skip orders without symbol (can happen with query responses)
+            let Some(symbol) = order.symbol else {
+                tracing::warn!("Order response missing symbol, skipping");
+                continue;
+            };
+
+            let instrument_id = parse_instrument_id(symbol);
+            let price_precision = self.get_price_precision(symbol)?;
 
             match parse_order_status_report(&order, instrument_id, price_precision, ts_init) {
                 Ok(report) => reports.push(report),
@@ -1401,7 +1474,12 @@ impl BitmexHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if credentials are missing, the request fails, the orders don't exist, or the API returns an error.
+    /// This function will return an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - An order doesn't exist.
+    /// - An order is closed.
+    /// - The API returns an error.
     pub async fn modify_orders_bulk(
         &self,
         orders: Vec<PutOrderParams>,
@@ -1414,8 +1492,14 @@ impl BitmexHttpClient {
         let mut reports = Vec::new();
 
         for order in response {
-            let instrument_id = parse_instrument_id(order.symbol);
-            let price_precision = self.get_price_precision(order.symbol)?;
+            // Skip orders without symbol (can happen with query responses)
+            let Some(symbol) = order.symbol else {
+                tracing::warn!("Order response missing symbol, skipping");
+                continue;
+            };
+
+            let instrument_id = parse_instrument_id(symbol);
+            let price_precision = self.get_price_precision(symbol)?;
 
             match parse_order_status_report(&order, instrument_id, price_precision, ts_init) {
                 Ok(report) => reports.push(report),
@@ -1430,7 +1514,9 @@ impl BitmexHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if credentials are missing, the request fails, or the API returns an error.
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - The API returns an error.
     pub async fn update_position_leverage(
         &self,
         symbol: &str,

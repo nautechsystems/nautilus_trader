@@ -180,17 +180,21 @@ impl BitmexHttpClient {
     }
 
     #[pyo3(name = "query_order")]
-    #[pyo3(signature = (client_order_id=None, venue_order_id=None))]
+    #[pyo3(signature = (instrument_id, client_order_id=None, venue_order_id=None))]
     fn py_query_order<'py>(
         &self,
         py: Python<'py>,
+        instrument_id: InstrumentId,
         client_order_id: Option<ClientOrderId>,
         venue_order_id: Option<VenueOrderId>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            match client.query_order(client_order_id, venue_order_id).await {
+            match client
+                .query_order(instrument_id, client_order_id, venue_order_id)
+                .await
+            {
                 Ok(Some(report)) => Python::with_gil(|py| report.into_py_any(py)),
                 Ok(None) => Ok(Python::with_gil(|py| py.None())),
                 Err(e) => Err(to_pyvalue_err(e)),
@@ -332,10 +336,11 @@ impl BitmexHttpClient {
     }
 
     #[pyo3(name = "cancel_order")]
-    #[pyo3(signature = (client_order_id=None, venue_order_id=None))]
+    #[pyo3(signature = (instrument_id, client_order_id=None, venue_order_id=None))]
     fn py_cancel_order<'py>(
         &self,
         py: Python<'py>,
+        instrument_id: InstrumentId,
         client_order_id: Option<ClientOrderId>,
         venue_order_id: Option<VenueOrderId>,
     ) -> PyResult<Bound<'py, PyAny>> {
@@ -343,7 +348,7 @@ impl BitmexHttpClient {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let report = client
-                .cancel_order(client_order_id, venue_order_id)
+                .cancel_order(instrument_id, client_order_id, venue_order_id)
                 .await
                 .map_err(to_pyvalue_err)?;
 
@@ -352,10 +357,11 @@ impl BitmexHttpClient {
     }
 
     #[pyo3(name = "cancel_orders")]
-    #[pyo3(signature = (client_order_ids=None, venue_order_ids=None))]
+    #[pyo3(signature = (instrument_id, client_order_ids=None, venue_order_ids=None))]
     fn py_cancel_orders<'py>(
         &self,
         py: Python<'py>,
+        instrument_id: InstrumentId,
         client_order_ids: Option<Vec<ClientOrderId>>,
         venue_order_ids: Option<Vec<VenueOrderId>>,
     ) -> PyResult<Bound<'py, PyAny>> {
@@ -363,7 +369,7 @@ impl BitmexHttpClient {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let reports = client
-                .cancel_orders(client_order_ids, venue_order_ids)
+                .cancel_orders(instrument_id, client_order_ids, venue_order_ids)
                 .await
                 .map_err(to_pyvalue_err)?;
 

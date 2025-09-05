@@ -47,7 +47,10 @@ order_qty = Decimal("100")  # Contract size in USD
 # Configure the trading node
 config_node = TradingNodeConfig(
     trader_id=TraderId("TESTER-001"),
-    logging=LoggingConfig(log_level="INFO", use_pyo3=True),
+    logging=LoggingConfig(
+        log_level="INFO",
+        use_pyo3=True,
+    ),
     exec_engine=LiveExecEngineConfig(
         reconciliation=False,
         # snapshot_orders=True,
@@ -89,8 +92,8 @@ config_tester = ExecTesterConfig(
     open_position_on_start_qty=order_qty,
     open_position_time_in_force=TimeInForce.IOC,
     close_positions_time_in_force=TimeInForce.IOC,
+    test_reject_post_only=False,
     log_data=False,
-    # test_reject_post_only=True,
     # dry_run=True,
 )
 tester = ExecTester(config=config_tester)

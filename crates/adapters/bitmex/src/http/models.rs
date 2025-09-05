@@ -278,7 +278,7 @@ pub struct BitmexOrder {
     #[serde(rename = "clOrdLinkID")]
     pub cl_ord_link_id: Option<Ustr>,
     pub account: i64,
-    pub symbol: Ustr,
+    pub symbol: Option<Ustr>,
     pub side: Option<BitmexSide>,
     pub order_qty: Option<i64>,
     pub price: Option<f64>,

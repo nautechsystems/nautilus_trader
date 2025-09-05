@@ -221,6 +221,8 @@ pub enum BitmexOrderStatus {
     PartiallyFilled,
     /// Order has been completely filled.
     Filled,
+    /// Order cancellation is pending.
+    PendingCancel,
     /// Order has been canceled by user or system.
     Canceled,
     /// Order was rejected by the system.
@@ -235,6 +237,7 @@ impl From<BitmexOrderStatus> for OrderStatus {
             BitmexOrderStatus::New => Self::Accepted,
             BitmexOrderStatus::PartiallyFilled => Self::PartiallyFilled,
             BitmexOrderStatus::Filled => Self::Filled,
+            BitmexOrderStatus::PendingCancel => Self::PendingCancel,
             BitmexOrderStatus::Canceled => Self::Canceled,
             BitmexOrderStatus::Rejected => Self::Rejected,
             BitmexOrderStatus::Expired => Self::Expired,
@@ -419,6 +422,8 @@ pub enum BitmexExecType {
     Trade,
     /// Order canceled.
     Canceled,
+    /// Cancel request rejected.
+    CancelReject,
     /// Order replaced.
     Replaced,
     /// Order rejected.

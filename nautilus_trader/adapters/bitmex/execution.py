@@ -41,6 +41,7 @@ from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.live.cancellation import DEFAULT_FUTURE_CANCELLATION_TIMEOUT
 from nautilus_trader.live.cancellation import cancel_tasks_with_timeout
 from nautilus_trader.live.execution_client import LiveExecutionClient
+from nautilus_trader.live.retry import RetryManagerPool
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderStatus
@@ -136,6 +137,17 @@ class BitmexExecutionClient(LiveExecutionClient):
         )
         self._ws_client_futures: set[asyncio.Future] = set()
         self._log.info(f"WebSocket URL {ws_url}", LogColor.BLUE)
+
+        # Initialize retry manager pool
+        self._retry_manager_pool = RetryManagerPool[None](
+            pool_size=100,
+            max_retries=config.max_retries or 0,
+            delay_initial_ms=config.retry_delay_initial_ms or 1_000,
+            delay_max_ms=config.retry_delay_max_ms or 10_000,
+            backoff_factor=2,
+            logger=self._log,
+            exc_types=(Exception,),  # TODO: Create specific BitmexError
+        )
 
         # Hot caches
         self._venue_order_ids: dict[ClientOrderId, VenueOrderId] = {}
@@ -253,6 +265,89 @@ class BitmexExecutionClient(LiveExecutionClient):
         )
         self._ws_client_futures.clear()
 
+        # Shutdown retry manager pool
+        self._retry_manager_pool.shutdown()
+
+    async def generate_order_status_reports(
+        self,
+        command: GenerateOrderStatusReports,
+    ) -> list[OrderStatusReport]:
+        """
+        Generate a list of `OrderStatusReport`s with optional query filters.
+        """
+        try:
+            pyo3_reports = await self._http_client.request_order_status_reports(
+                instrument_id=command.instrument_id,
+                open_only=False,
+                limit=None,
+            )
+
+            result: list[OrderStatusReport] = []
+
+            for pyo3_report in pyo3_reports:
+                result.append(OrderStatusReport.from_pyo3(pyo3_report))
+
+            self._log.info(f"Generated {len(result)} order status reports")
+            return result
+        except Exception as e:
+            self._log.error(f"Failed to generate order status reports: {e}")
+            return []
+
+    async def generate_order_status_report(
+        self,
+        command: GenerateOrderStatusReport,
+    ) -> OrderStatusReport | None:
+        """
+        Generate an `OrderStatusReport` for the specified order.
+        """
+        # TODO: Implement fetching specific order from BitMEX
+        self._log.warning("Order status report generation not yet implemented")
+        return None
+
+    async def generate_fill_reports(
+        self,
+        command: GenerateFillReports,
+    ) -> list[FillReport]:
+        """
+        Generate a list of `FillReport`s with optional query filters.
+        """
+        try:
+            pyo3_reports = await self._http_client.request_fill_reports(
+                instrument_id=command.instrument_id,
+                limit=None,
+            )
+
+            result: list[FillReport] = []
+
+            for pyo3_report in pyo3_reports:
+                result.append(FillReport.from_pyo3(pyo3_report))
+
+            self._log.info(f"Generated {len(result)} fill reports")
+            return result
+        except Exception as e:
+            self._log.error(f"Failed to generate fill reports: {e}")
+            return []
+
+    async def generate_position_status_reports(
+        self,
+        command: GeneratePositionStatusReports,
+    ) -> list[PositionStatusReport]:
+        """
+        Generate a list of `PositionStatusReport`s with optional query filters.
+        """
+        try:
+            pyo3_reports = await self._http_client.request_position_status_reports()
+
+            result = []
+            for pyo3_report in pyo3_reports:
+                result.append(PositionStatusReport.from_pyo3(pyo3_report))
+
+            self._log.info(f"Generated {len(result)} position status reports")
+            return result
+        except Exception as e:
+            self._log.error(f"Failed to generate position status reports: {e}")
+            return []
+
     async def _submit_order(self, command: SubmitOrder) -> None:
         order = command.order
 
@@ -286,8 +381,12 @@ class BitmexExecutionClient(LiveExecutionClient):
             else None
         )
 
+        retry_manager = await self._retry_manager_pool.acquire()
         try:
-            await self._http_client.submit_order(
+            report = await retry_manager.run(
+                "submit_order",
+                [order.client_order_id],
+                self._http_client.submit_order,
                 instrument_id=pyo3_instrument_id,
                 client_order_id=pyo3_client_order_id,
                 order_side=pyo3_order_side,
@@ -301,15 +400,24 @@ class BitmexExecutionClient(LiveExecutionClient):
                 reduce_only=order.is_reduce_only,
             )
 
-        except Exception as e:
-            self._log.error(f"Failed to submit order {order.client_order_id}: {e}")
-            self.generate_order_rejected(
-                strategy_id=order.strategy_id,
-                instrument_id=order.instrument_id,
-                client_order_id=order.client_order_id,
-                reason=str(e),
-                ts_event=self._clock.timestamp_ns(),
-            )
+            if retry_manager.result and report:
+                self.generate_order_accepted(
+                    instrument_id=order.instrument_id,
+                    strategy_id=order.strategy_id,
+                    client_order_id=order.client_order_id,
+                    venue_order_id=VenueOrderId(report.venue_order_id.value),
+                    ts_event=self._clock.timestamp_ns(),
+                )
+            else:
+                self.generate_order_rejected(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    reason=retry_manager.message or "Unknown error",
+                    ts_event=self._clock.timestamp_ns(),
+                )
+        finally:
+            await self._retry_manager_pool.release(retry_manager)
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
         self._log.warning("Order list submission not yet implemented")
@@ -348,8 +456,12 @@ class BitmexExecutionClient(LiveExecutionClient):
             else None
         )
 
+        retry_manager = await self._retry_manager_pool.acquire()
         try:
-            await self._http_client.modify_order(
+            await retry_manager.run(
+                "modify_order",
+                [order.client_order_id, order.venue_order_id],
+                self._http_client.modify_order,
                 instrument_id=pyo3_instrument_id,
                 client_order_id=pyo3_client_order_id,
                 venue_order_id=pyo3_venue_order_id,
@@ -357,8 +469,18 @@ class BitmexExecutionClient(LiveExecutionClient):
                 price=pyo3_price,
                 trigger_price=pyo3_trigger_price,
             )
-        except Exception as e:
-            self._log.error(f"Failed to modify order {command.client_order_id}: {e}")
+
+            if not retry_manager.result:
+                self.generate_order_modify_rejected(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    venue_order_id=order.venue_order_id,
+                    reason=retry_manager.message or "Unknown error",
+                    ts_event=self._clock.timestamp_ns(),
+                )
+        finally:
+            await self._retry_manager_pool.release(retry_manager)
 
     async def _cancel_order(self, command: CancelOrder) -> None:
         order: Order | None = self._cache.order(command.client_order_id)
@@ -383,31 +505,69 @@ class BitmexExecutionClient(LiveExecutionClient):
             if command.venue_order_id
             else None
         )
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(order.instrument_id.value)
 
+        retry_manager = await self._retry_manager_pool.acquire()
         try:
-            await self._http_client.cancel_order(
+            await retry_manager.run(
+                "cancel_order",
+                [command.client_order_id, command.venue_order_id],
+                self._http_client.cancel_order,
+                instrument_id=pyo3_instrument_id,
                 client_order_id=pyo3_client_order_id,
                 venue_order_id=pyo3_venue_order_id,
             )
-        except Exception as e:
-            self._log.error(f"Failed to cancel order {command.client_order_id}: {e}")
+
+            if not retry_manager.result:
+                self.generate_order_cancel_rejected(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    venue_order_id=order.venue_order_id,
+                    reason=retry_manager.message or "Unknown error",
+                    ts_event=self._clock.timestamp_ns(),
+                )
+        finally:
+            await self._retry_manager_pool.release(retry_manager)
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         pyo3_order_side = order_side_to_pyo3(command.order_side) if command.order_side else None
 
+        retry_manager = await self._retry_manager_pool.acquire()
         try:
-            await self._http_client.cancel_all_orders(
+            await retry_manager.run(
+                "cancel_all_orders",
+                [command.instrument_id],
+                self._http_client.cancel_all_orders,
                 instrument_id=pyo3_instrument_id,
                 order_side=pyo3_order_side,
             )
-        except Exception as e:
-            self._log.error(f"Failed to cancel all orders: {e}")
+
+            if not retry_manager.result:
+                # Generate cancel rejected for all open orders
+                orders_open: list[Order] = self._cache.orders_open(
+                    instrument_id=command.instrument_id,
+                )
+                for open_order in orders_open:
+                    if open_order.is_closed:
+                        continue
+                    self.generate_order_cancel_rejected(
+                        strategy_id=open_order.strategy_id,
+                        instrument_id=open_order.instrument_id,
+                        client_order_id=open_order.client_order_id,
+                        venue_order_id=open_order.venue_order_id,
+                        reason=retry_manager.message or "Unknown error",
+                        ts_event=self._clock.timestamp_ns(),
+                    )
+        finally:
+            await self._retry_manager_pool.release(retry_manager)
 
     async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None:
         self._log.warning("Batch cancel orders not yet implemented")
 
     async def _query_order(self, command: QueryOrder) -> None:
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         pyo3_client_order_id = (
             nautilus_pyo3.ClientOrderId(command.client_order_id.value)
             if command.client_order_id
@@ -420,8 +580,8 @@ class BitmexExecutionClient(LiveExecutionClient):
         )
 
         try:
-            # Query the order from BitMEX
             pyo3_report = await self._http_client.query_order(
+                instrument_id=pyo3_instrument_id,
                 client_order_id=pyo3_client_order_id,
                 venue_order_id=pyo3_venue_order_id,
             )
@@ -433,94 +593,12 @@ class BitmexExecutionClient(LiveExecutionClient):
                 )
                 return
 
-            report = OrderStatusReport.from_dict(pyo3_report.to_dict())
+            report = OrderStatusReport.from_pyo3(pyo3_report)
             self._send_order_status_report(report)
             self._log.info(f"Queried order {command.client_order_id}")
 
         except Exception as e:
             self._log.error(f"Failed to query order {command.client_order_id}: {e}")
-
-    async def generate_order_status_reports(
-        self,
-        command: GenerateOrderStatusReports,
-    ) -> list[OrderStatusReport]:
-        """
-        Generate a list of `OrderStatusReport`s with optional query filters.
-        """
-        try:
-            # Fetch order reports from BitMEX
-            pyo3_reports = await self._http_client.request_order_status_reports(
-                instrument_id=command.instrument_id,
-                open_only=False,
-                limit=None,
-            )
-
-            result: list[OrderStatusReport] = []
-
-            for pyo3_report in pyo3_reports:
-                # Convert pyo3 report to Python OrderStatusReport
-                result.append(OrderStatusReport.from_pyo3(pyo3_report))
-
-            self._log.info(f"Generated {len(result)} order status reports")
-            return result
-        except Exception as e:
-            self._log.error(f"Failed to generate order status reports: {e}")
-            return []
-
-    async def generate_order_status_report(
-        self,
-        command: GenerateOrderStatusReport,
-    ) -> OrderStatusReport | None:
-        """
-        Generate an `OrderStatusReport` for the specified order.
-        """
-        # TODO: Implement fetching specific order from BitMEX
-        self._log.warning("Order status report generation not yet implemented")
-        return None
-
-    async def generate_position_status_reports(
-        self,
-        command: GeneratePositionStatusReports,
-    ) -> list[PositionStatusReport]:
-        """
-        Generate a list of `PositionStatusReport`s with optional query filters.
-        """
-        try:
-            pyo3_reports = await self._http_client.request_position_status_reports()
-
-            result = []
-            for pyo3_report in pyo3_reports:
-                result.append(PositionStatusReport.from_pyo3(pyo3_report))
-
-            self._log.info(f"Generated {len(result)} position status reports")
-            return result
-        except Exception as e:
-            self._log.error(f"Failed to generate position status reports: {e}")
-            return []
-
-    async def generate_fill_reports(
-        self,
-        command: GenerateFillReports,
-    ) -> list[FillReport]:
-        """
-        Generate a list of `FillReport`s with optional query filters.
-        """
-        try:
-            pyo3_reports = await self._http_client.request_fill_reports(
-                instrument_id=command.instrument_id,
-                limit=None,
-            )
-
-            result: list[FillReport] = []
-
-            for pyo3_report in pyo3_reports:
-                result.append(FillReport.from_pyo3(pyo3_report))
-
-            self._log.info(f"Generated {len(result)} fill reports")
-            return result
-        except Exception as e:
-            self._log.error(f"Failed to generate fill reports: {e}")
-            return []
 
     def _handle_account_state(self, msg: nautilus_pyo3.AccountState) -> None:
         account_state = AccountState.from_dict(msg.to_dict())
@@ -535,12 +613,6 @@ class BitmexExecutionClient(LiveExecutionClient):
         try:
             if isinstance(msg, nautilus_pyo3.AccountState):
                 self._handle_account_state(msg)
-            elif isinstance(msg, nautilus_pyo3.OrderRejected):
-                self._handle_order_rejected_pyo3(msg)
-            elif isinstance(msg, nautilus_pyo3.OrderCancelRejected):
-                self._handle_order_cancel_rejected_pyo3(msg)
-            elif isinstance(msg, nautilus_pyo3.OrderModifyRejected):
-                self._handle_order_modify_rejected_pyo3(msg)
             elif isinstance(msg, nautilus_pyo3.OrderStatusReport):
                 self._handle_order_status_report_pyo3(msg)
             elif isinstance(msg, nautilus_pyo3.FillReport):
@@ -574,7 +646,7 @@ class BitmexExecutionClient(LiveExecutionClient):
         event = OrderModifyRejected.from_dict(pyo3_event.to_dict())
         self._send_order_event(event)
 
-    def _handle_order_status_report_pyo3(
+    def _handle_order_status_report_pyo3(  # noqa: C901 (too complex)
         self,
         pyo3_report: nautilus_pyo3.OrderStatusReport,
     ) -> None:
@@ -592,13 +664,7 @@ class BitmexExecutionClient(LiveExecutionClient):
             return
 
         if report.order_status == OrderStatus.REJECTED:
-            self.generate_order_rejected(
-                strategy_id=order.strategy_id,
-                instrument_id=report.instrument_id,
-                client_order_id=report.client_order_id,
-                reason="UNKNOWN",
-                ts_event=report.ts_last,
-            )
+            pass  # Handled by submit order
         elif report.order_status == OrderStatus.ACCEPTED:
             if is_order_updated(order, report):
                 self.generate_order_updated(
@@ -611,22 +677,42 @@ class BitmexExecutionClient(LiveExecutionClient):
                     trigger_price=report.trigger_price,
                     ts_event=report.ts_last,
                 )
+        elif report.order_status == OrderStatus.PENDING_CANCEL:
+            if order.status == OrderStatus.PENDING_CANCEL:
+                self._log.debug(
+                    f"Received PENDING_CANCEL status for {report.client_order_id!r} - "
+                    "order already in pending cancel state locally",
+                )
             else:
-                self.generate_order_accepted(
+                self._log.warning(
+                    f"Received PENDING_CANCEL status for {report.client_order_id!r} - "
+                    f"order status {order.status_string()}",
+                )
+        elif report.order_status == OrderStatus.CANCELED:
+            # Check if this is a post-only order that was canceled (BitMEX specific behavior)
+            # BitMEX cancels post-only orders instead of rejecting them when they would cross the spread
+            # The specific message is "Order had execInst of ParticipateDoNotInitiate"
+            is_post_only_rejection = (
+                report.cancel_reason and "ParticipateDoNotInitiate" in report.cancel_reason
+            )
+
+            if is_post_only_rejection:
+                self.generate_order_rejected(
+                    strategy_id=order.strategy_id,
+                    instrument_id=report.instrument_id,
+                    client_order_id=report.client_order_id,
+                    reason=report.cancel_reason,
+                    ts_event=report.ts_last,
+                    due_post_only=True,
+                )
+            else:
+                self.generate_order_canceled(
                     strategy_id=order.strategy_id,
                     instrument_id=report.instrument_id,
                     client_order_id=report.client_order_id,
                     venue_order_id=report.venue_order_id,
                     ts_event=report.ts_last,
                 )
-        elif report.order_status == OrderStatus.CANCELED:
-            self.generate_order_canceled(
-                strategy_id=order.strategy_id,
-                instrument_id=report.instrument_id,
-                client_order_id=report.client_order_id,
-                venue_order_id=report.venue_order_id,
-                ts_event=report.ts_last,
-            )
         elif report.order_status == OrderStatus.EXPIRED:
             self.generate_order_expired(
                 strategy_id=order.strategy_id,
