@@ -2390,9 +2390,6 @@ cdef class DataEngine(Component):
         if aggregator is None:
             aggregator = self._create_bar_aggregator(instrument, command.bar_type, command.params)
 
-        if isinstance(aggregator, TimeBarAggregator):
-            aggregator.start()
-
         # Set if awaiting initial partial bar
         aggregator.set_await_partial(command.await_partial)
 
@@ -2460,14 +2457,6 @@ cdef class DataEngine(Component):
             if bar_type.is_composite() and bar_type.composite().is_internally_aggregated() and bar_build_delay == 0:
                 bar_build_delay = 15  # Default for composite bars when config is 0
 
-            passthrough_bar_type = False
-
-            if bar_type.is_composite():
-                standard_bar_type = bar_type.standard()
-                composite_bar_type = bar_type.composite()
-                passthrough_bar_type = (standard_bar_type.spec.step == composite_bar_type.spec.step
-                                        and standard_bar_type.spec.aggregation == composite_bar_type.spec.aggregation)
-
             aggregator = TimeBarAggregator(
                 instrument=instrument,
                 bar_type=bar_type,
@@ -2479,7 +2468,6 @@ cdef class DataEngine(Component):
                 build_with_no_updates=self._time_bars_build_with_no_updates,
                 time_bars_origin_offset=time_bars_origin_offset,
                 bar_build_delay=bar_build_delay,
-                passthrough_bar_type=passthrough_bar_type,
             )
         elif bar_type.spec.aggregation == BarAggregation.TICK:
             aggregator = TickBarAggregator(
