@@ -118,6 +118,9 @@ pub enum BlockchainCommand {
         /// Reset sync progress and start from the beginning, ignoring last synced block
         #[arg(long)]
         reset: bool,
+        /// Maximum number of Multicall calls per RPC request (optional, defaults to 100)
+        #[arg(long)]
+        multicall_calls_per_rpc_request: Option<u32>,
         /// Database configuration options
         #[clap(flatten)]
         database: DatabaseConfig,
@@ -145,6 +148,9 @@ pub enum BlockchainCommand {
         /// Reset sync progress and start from the beginning, ignoring last synced block
         #[arg(long)]
         reset: bool,
+        /// Maximum number of Multicall calls per RPC request (optional, defaults to 100)
+        #[arg(long)]
+        multicall_calls_per_rpc_request: Option<u32>,
         /// Database configuration options
         #[clap(flatten)]
         database: DatabaseConfig,

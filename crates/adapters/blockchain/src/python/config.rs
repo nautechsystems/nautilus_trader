@@ -38,12 +38,13 @@ impl BlockchainDataClientConfig {
     /// Creates a new `BlockchainDataClientConfig` instance.
     #[new]
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (chain, dex_ids, http_rpc_url, rpc_requests_per_second=None, wss_rpc_url=None, use_hypersync_for_live_data=true, from_block=None, pool_filters=None, postgres_cache_database_config=None))]
+    #[pyo3(signature = (chain, dex_ids, http_rpc_url, rpc_requests_per_second=None, multicall_calls_per_rpc_request=None, wss_rpc_url=None, use_hypersync_for_live_data=true, from_block=None, pool_filters=None, postgres_cache_database_config=None))]
     fn py_new(
         chain: &Chain,
         dex_ids: Vec<DexType>,
         http_rpc_url: String,
         rpc_requests_per_second: Option<u32>,
+        multicall_calls_per_rpc_request: Option<u32>,
         wss_rpc_url: Option<String>,
         use_hypersync_for_live_data: bool,
         from_block: Option<u64>,
@@ -55,6 +56,7 @@ impl BlockchainDataClientConfig {
             dex_ids,
             http_rpc_url,
             rpc_requests_per_second,
+            multicall_calls_per_rpc_request,
             wss_rpc_url,
             use_hypersync_for_live_data,
             from_block,

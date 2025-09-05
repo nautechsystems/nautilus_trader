@@ -45,7 +45,18 @@ pub async fn run_blockchain_command(opt: BlockchainOpt) -> anyhow::Result<()> {
             rpc_url,
             database,
             reset,
-        } => run_sync_dex(chain, dex, rpc_url, database, reset).await,
+            multicall_calls_per_rpc_request,
+        } => {
+            run_sync_dex(
+                chain,
+                dex,
+                rpc_url,
+                database,
+                reset,
+                multicall_calls_per_rpc_request,
+            )
+            .await
+        }
         BlockchainCommand::AnalyzePool {
             chain,
             dex,
@@ -55,9 +66,18 @@ pub async fn run_blockchain_command(opt: BlockchainOpt) -> anyhow::Result<()> {
             rpc_url,
             reset,
             database,
+            multicall_calls_per_rpc_request,
         } => {
             run_analyze_pool(
-                chain, dex, address, from_block, to_block, rpc_url, database, reset,
+                chain,
+                dex,
+                address,
+                from_block,
+                to_block,
+                rpc_url,
+                database,
+                reset,
+                multicall_calls_per_rpc_request,
             )
             .await
         }
