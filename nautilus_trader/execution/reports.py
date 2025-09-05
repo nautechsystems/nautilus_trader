@@ -749,6 +749,9 @@ class PositionStatusReport(ExecutionReport):
         )
 
     def __repr__(self) -> str:
+        avg_px_open_str = (
+            f"avg_px_open={self.avg_px_open}, " if self.avg_px_open is not None else ""
+        )
         return (
             f"{type(self).__name__}("
             f"account_id={self.account_id}, "
@@ -756,7 +759,7 @@ class PositionStatusReport(ExecutionReport):
             f"venue_position_id={self.venue_position_id}, "
             f"position_side={position_side_to_str(self.position_side)}, "
             f"quantity={self.quantity.to_formatted_str()}, "
-            f"avg_px_open={self.avg_px_open}, "
+            f"{avg_px_open_str}"
             f"signed_decimal_qty={self.signed_decimal_qty}, "
             f"report_id={self.id}, "
             f"ts_last={self.ts_last}, "
