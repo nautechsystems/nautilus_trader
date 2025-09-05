@@ -10,6 +10,7 @@ Released on TBD (UTC).
 - Added `due_post_only` field for `OrderRejected` event, only properly populated for Binance and Bybit for now
 - Added `log_rejected_due_post_only_as_warning` config option for `StrategyConfig` (default `True` to retain current behavior)
 - Added `log_rejected_due_post_only_as_warning` config option for `BinanceExecClientConfig` (default `True` to retain current behavior)
+- Added `log_components_only` config option for Logger (#2931), thanks @faysou
 - Added support for additional Databento schemas: `OHLCV_EOD`, `CMBP_1`, `CBBO_1S`, `CBBO_1M`, and `TCBBO`
 - Added configurable schema parameters for Databento quote and trade subscriptions, allowing `TBBO`/`TCBBO` for efficient combined data feeds
 - Added support for option combos for Interactive Brokers (#2812), thanks @faysou
@@ -73,7 +74,7 @@ Released on TBD (UTC).
 - Refactored `BacktestDataIterator` (#2791) to consolidate data generator usage, thanks @faysou
 - Implemented `LogGuard` reference counting for proper thread lifecycle management, ensuring all logs flushed before termination
 - Implemented live subscriptions for blockchain data client (#2832), thanks @filipmacek
-- Implemented initial Hyperliquid adapter (#2912), thanks @nicolad
+- Implemented initial Hyperliquid adapter (#2912, #2922), thanks @nicolad
 - Implemented Hyperliquid EIP-712 signing and nonce management (#2916), thanks @nicolad
 - Introduced `SharedCell` / `WeakCell` wrappers for ergonomic and safer handling of `Rc<RefCell<T>>` / `Weak<RefCell<T>>` pairs
 - Introduced efficient block syncing command in the `nautilus-cli` (#2861), thanks @filipmacek
@@ -88,6 +89,9 @@ Released on TBD (UTC).
 - Added make build-debug-pyo3 (#2802), thanks @faysou
 - Added pytest timer (#2834), thanks @faysou
 - Added support for several instrument versions with `request_instrument` (#2835), thanks @faysou
+- Added `_send_position_status_report` to base execution client (#2926), thanks @faysou
+- Added `passthrough_bar_type` to `TimeBarAggregator` (#2929), thanks @faysou
+- Added matching engine check to return early if `last_qty` is non-positive (#2930), thanks @GhostLee
 - Optimized identifiers hashing to avoid frequent recomputations using C strings
 - Optimized data engine topic string caching for message bus publishing to avoid frequent f-string constructions
 - Optimized Redis key scans to improve efficiency over a network
@@ -97,7 +101,8 @@ Released on TBD (UTC).
 - Standardized DeFi chain name validation for `InstrumentId` (#2826), thanks @filipmacek
 - Standardized `NAUTILUS_PATH` env var across Tardis integration (#2850), thanks @nicolad
 - Standardized zero PnL as Money instead of None when exchange rate missing (#2880), thanks @nicolad
-- Refactored SpreadQuoteAggregator (#2905), thanks @faysou
+- Refactored `SpreadQuoteAggregator` (#2905), thanks @faysou
+- Refactored bar aggregators to use `ts_init` instead of `ts_event` (#2924), thanks @fayosu
 - Improved typing for all the DEX IDs with `DexType` and add validation (#2827), thanks @filipmacek
 - Improved reconciliation handling of internally generated orders to align positions (now uses the `INTERNAL-DIFF` strategy ID)
 - Improved data client for blockchain adapter (#2787), thanks @filipmacek
@@ -193,6 +198,7 @@ Released on TBD (UTC).
 - Added mixed debugging instructions and example (#2806), thanks @faysou
 - Improved dYdX integration guide (#2751), thanks @nicolad
 - Updated IB documentation for option spreads (#2839), thanks @faysou
+- Moved rust-python debugging documentation to `testing.md` (#2928), thanks @faysou
 
 ### Deprecations
 None
