@@ -44,7 +44,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut client = HyperliquidWebSocketClient::connect(ws_url).await?;
     info!(component = "ws_post", "websocket connected");
 
-    // === INFO: l2Book via WS post
     let book = client.info_l2_book("BTC", Duration::from_secs(2)).await?;
     let best_bid = book
         .levels
