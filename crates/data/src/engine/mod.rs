@@ -90,8 +90,8 @@ use ustr::Ustr;
 use crate::engine::pool::PoolUpdater;
 use crate::{
     aggregation::{
-        BarAggregator, TickBarAggregator, TimeBarAggregator, ValueBarAggregator,
-        VolumeBarAggregator,
+        BarAggregator, RenkoBarAggregator, TickBarAggregator, TimeBarAggregator,
+        ValueBarAggregator, VolumeBarAggregator,
     },
     client::DataClientAdapter,
 };
@@ -1359,6 +1359,14 @@ impl DataEngine {
                     bar_type,
                     price_precision,
                     size_precision,
+                    handler,
+                    false,
+                )) as Box<dyn BarAggregator>,
+                BarAggregation::Renko => Box::new(RenkoBarAggregator::new(
+                    bar_type,
+                    price_precision,
+                    size_precision,
+                    instrument.price_increment(),
                     handler,
                     false,
                 )) as Box<dyn BarAggregator>,

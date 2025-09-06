@@ -1271,6 +1271,8 @@ class BarAggregation(Enum):
     DAY = "DAY"
     WEEK = "WEEK"
     MONTH = "MONTH"
+    YEAR = "YEAR"
+    RENKO = "RENKO"
 
 class BarIntervalType(Enum):
     LEFT_OPEN = "LEFT_OPEN"
