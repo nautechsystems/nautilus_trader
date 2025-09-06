@@ -816,7 +816,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        common::{parse::parse_account_state, testing::load_test_json},
+        common::{enums::OKXTradeMode, parse::parse_account_state, testing::load_test_json},
         http::models::OKXAccount,
         websocket::messages::{OKXWebSocketArg, OKXWebSocketEvent},
     };
@@ -1519,11 +1519,11 @@ mod tests {
             c_time: 1746947317401,
             cancel_source: None,
             cancel_source_reason: None,
-            category: "normal".to_string(),
-            ccy: "USDT".to_string(),
+            category: Ustr::from("normal"),
+            ccy: Ustr::from("USDT"),
             cl_ord_id: "test_order_1".to_string(),
             fee: Some("-1.0".to_string()), // Total fee so far
-            fee_ccy: "USDT".to_string(),
+            fee_ccy: Ustr::from("USDT"),
             fill_px: "50000.0".to_string(),
             fill_sz: "0.01".to_string(),
             fill_time: 1746947317402,
@@ -1533,14 +1533,14 @@ mod tests {
             ord_id: Ustr::from("1234567890"),
             ord_type: OKXOrderType::Market,
             pnl: "0".to_string(),
-            pos_side: "long".to_string(),
+            pos_side: Ustr::from("long"),
             px: "".to_string(),
             reduce_only: "false".to_string(),
             side: crate::common::enums::OKXSide::Buy,
             state: crate::common::enums::OKXOrderStatus::PartiallyFilled,
             exec_type: crate::common::enums::OKXExecType::Maker,
             sz: "0.03".to_string(), // Total order size
-            td_mode: "isolated".to_string(),
+            td_mode: OKXTradeMode::Isolated,
             trade_id: "trade_1".to_string(),
             u_time: 1746947317402,
         };
@@ -1566,11 +1566,11 @@ mod tests {
             c_time: 1746947317401,
             cancel_source: None,
             cancel_source_reason: None,
-            category: "normal".to_string(),
-            ccy: "USDT".to_string(),
+            category: Ustr::from("normal"),
+            ccy: Ustr::from("USDT"),
             cl_ord_id: "test_order_1".to_string(),
             fee: Some("-3.0".to_string()), // Same total fee
-            fee_ccy: "USDT".to_string(),
+            fee_ccy: Ustr::from("USDT"),
             fill_px: "50000.0".to_string(),
             fill_sz: "0.02".to_string(),
             fill_time: 1746947317403,
@@ -1580,14 +1580,14 @@ mod tests {
             ord_id: Ustr::from("1234567890"),
             ord_type: OKXOrderType::Market,
             pnl: "0".to_string(),
-            pos_side: "long".to_string(),
+            pos_side: Ustr::from("long"),
             px: "".to_string(),
             reduce_only: "false".to_string(),
             side: crate::common::enums::OKXSide::Buy,
             state: crate::common::enums::OKXOrderStatus::Filled,
             exec_type: crate::common::enums::OKXExecType::Maker,
             sz: "0.03".to_string(), // Same total order size
-            td_mode: "isolated".to_string(),
+            td_mode: OKXTradeMode::Isolated,
             trade_id: "trade_2".to_string(),
             u_time: 1746947317403,
         };

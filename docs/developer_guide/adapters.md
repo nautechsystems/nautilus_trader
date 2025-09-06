@@ -23,7 +23,65 @@ An adapter typically consists of several components:
 5. Create configuration classes to hold your adapter’s settings.
 6. Test your adapter thoroughly to ensure all methods are correctly implemented and the adapter works as expected (see the [Testing Guide](testing.md)).
 
-## Template for building an adapter
+## Test organization for Rust adapters
+
+Rust adapter crates should maintain a clear separation between unit tests and integration tests.
+
+### Test structure
+
+- **Unit tests**: Located in the same module as the code being tested (`#[cfg(test)] mod tests`).
+  - Pure functions like parsing and utility functions.
+  - Private methods that require testing (e.g., authentication signature generation).
+- **Integration tests**: Located in `tests/` directory for testing client behavior with mock servers.
+- **Test data**: Real API response samples stored in `test_data/` directory.
+
+```
+crates/adapters/your_adapter/
+├── src/
+│   ├── http/
+│   │   ├── client.rs      # Unit tests for private methods only
+│   │   └── parse.rs       # Unit tests for parsing functions
+│   └── websocket/
+│       ├── client.rs      # Unit tests for private methods only
+│       └── parse.rs       # Unit tests for parsing functions
+├── tests/
+│   ├── http.rs            # Integration tests with mock HTTP server
+│   └── websocket.rs       # Integration tests with mock WebSocket server
+└── test_data/             # Real API response samples
+    ├── http_get_orders.json
+    └── ws_order_update.json
+```
+
+### Testing approach
+
+**Unit tests** should focus on:
+
+- Parsing functions that convert venue data to Nautilus domain models.
+- Private methods that handle critical logic (e.g., request signing).
+- Pure functions with complex business logic.
+- Avoid unit tests that duplicate integration test coverage.
+
+**Integration tests** should use mock servers to test:
+
+- Full request/response cycles.
+- Authentication flows.
+- Rate limiting behavior.
+- Error scenarios.
+- Public API methods of the client.
+
+---
+
+## REST API field-mapping guideline
+
+When translating a venue’s REST payload into our domain model **avoid renaming** the upstream
+fields unless there is a compelling reason (e.g. a clash with reserved keywords). The only
+transformation we apply by default is **camelCase → snake_case**.
+
+Keeping the external names intact makes it trivial to debug payloads, compare captures against the
+Rust structs, and speeds up onboarding for new contributors who have the venue’s API reference
+open side-by-side.
+
+## Template for building a Python adapter
 
 Below is a step-by-step guide to building an adapter for a new data provider using the provided template.
 
@@ -224,16 +282,6 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
 - `_unsubscribe_instrument_close`: Unsubscribes from instrument close price updates.
 
 ---
-
-## REST API field-mapping guideline
-
-When translating a venue’s REST payload into our domain model **avoid renaming** the upstream
-fields unless there is a compelling reason (e.g. a clash with reserved keywords). The only
-transformation we apply by default is **camelCase → snake_case**.
-
-Keeping the external names intact makes it trivial to debug payloads, compare captures against the
-Rust structs, and speeds up onboarding for new contributors who have the venue’s API reference
-open side-by-side.
 
 ### ExecutionClient
 

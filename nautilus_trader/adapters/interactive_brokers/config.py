@@ -53,6 +53,10 @@ class DockerizedIBGatewayConfig(NautilusConfig, frozen=True):
         The timeout (seconds) for trying to launch IBG docker container when start=True.
     container_image: str, optional
         The reference to the container image used by the IB Gateway.
+    vnc_port: int | None, optional, default None
+        The VNC port for the container. Set to None to disable VNC access.
+        The VNC server provides remote desktop access to the IB Gateway interface.
+        Examples: 5900, 5901, 5902, etc.
 
     """
 
@@ -62,6 +66,7 @@ class DockerizedIBGatewayConfig(NautilusConfig, frozen=True):
     read_only_api: bool = True
     timeout: int = 300
     container_image: str = "ghcr.io/gnzsnz/ib-gateway:stable"
+    vnc_port: int | None = None
 
     def __repr__(self):
         masked_username = self._mask_sensitive_info(self.username)

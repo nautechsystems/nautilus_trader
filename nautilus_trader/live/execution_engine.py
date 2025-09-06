@@ -1509,11 +1509,16 @@ class LiveExecutionEngine(ExecutionEngine):
                     current_avg_px = total_value / total_qty
 
             # Calculate reconciliation price
+            # Extract average price from report if available
+            target_avg_px = None
+            if report.avg_px_open is not None:
+                target_avg_px = report.avg_px_open.as_decimal()
+
             reconciliation_price = calculate_reconciliation_price(
                 current_position_qty=position_signed_decimal_qty,
                 current_position_avg_px=current_avg_px,
                 target_position_qty=report.signed_decimal_qty,
-                target_position_avg_px=None,  # TODO: Position reports don't include average price yet
+                target_position_avg_px=target_avg_px,
                 instrument=instrument,
             )
 

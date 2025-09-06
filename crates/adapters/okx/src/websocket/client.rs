@@ -63,7 +63,8 @@ use super::{
         ExecutionReport, NautilusWsMessage, OKXAuthentication, OKXAuthenticationArg,
         OKXSubscription, OKXSubscriptionArg, OKXWebSocketError, OKXWebSocketEvent, OKXWsRequest,
         WsAmendOrderParams, WsAmendOrderParamsBuilder, WsCancelOrderParams,
-        WsCancelOrderParamsBuilder, WsPostOrderParams, WsPostOrderParamsBuilder,
+        WsCancelOrderParamsBuilder, WsMassCancelParams, WsPostOrderParams,
+        WsPostOrderParamsBuilder,
     },
     parse::{parse_book_msg_vec, parse_ws_message_data},
 };
@@ -742,6 +743,54 @@ impl OKXWebSocketClient {
             .to_string()
     }
 
+    #[allow(
+        clippy::result_large_err,
+        reason = "OKXWsError contains large tungstenite::Error variant"
+    )]
+    fn get_instrument_type_and_family(
+        &self,
+        symbol: Ustr,
+    ) -> Result<(OKXInstrumentType, String), OKXWsError> {
+        // Fetch instrument from cache
+        let instrument = self.instruments_cache.get(&symbol).ok_or_else(|| {
+            OKXWsError::ClientError(format!("Instrument not found in cache: {symbol}"))
+        })?;
+
+        let inst_type =
+            okx_instrument_type(instrument).map_err(|e| OKXWsError::ClientError(e.to_string()))?;
+
+        // Determine instrument family based on instrument type
+        let inst_family = match instrument {
+            InstrumentAny::CurrencyPair(_) => symbol.as_str().to_string(),
+            InstrumentAny::CryptoPerpetual(_) => {
+                // For SWAP: "BTC-USDT-SWAP" -> "BTC-USDT"
+                symbol
+                    .as_str()
+                    .strip_suffix("-SWAP")
+                    .unwrap_or(symbol.as_str())
+                    .to_string()
+            }
+            InstrumentAny::CryptoFuture(_) => {
+                // For FUTURES: extract the underlying pair
+                let parts: Vec<&str> = symbol.as_str().split('-').collect();
+                if parts.len() >= 2 {
+                    format!("{}-{}", parts[0], parts[1])
+                } else {
+                    return Err(OKXWsError::ClientError(format!(
+                        "Unable to parse futures instrument family from symbol: {symbol}",
+                    )));
+                }
+            }
+            _ => {
+                return Err(OKXWsError::ClientError(format!(
+                    "Unsupported instrument type for mass cancel: {instrument:?}",
+                )));
+            }
+        };
+
+        Ok((inst_type, inst_family))
+    }
+
     async fn subscribe(&self, args: Vec<OKXSubscriptionArg>) -> Result<(), OKXWsError> {
         for arg in &args {
             // Check if this is a bare channel (no inst params)
@@ -802,7 +851,7 @@ impl OKXWebSocketClient {
         Ok(())
     }
 
-    #[allow(clippy::collapsible_if)]
+    #[allow(clippy::collapsible_if)] // Clearer uncollapsed
     async fn unsubscribe(&self, args: Vec<OKXSubscriptionArg>) -> Result<(), OKXWsError> {
         for arg in &args {
             // Check if this is a bare channel
@@ -1539,7 +1588,6 @@ impl OKXWebSocketClient {
         }
     }
 
-    #[allow(dead_code)] // TODO: Implement for MM pending orders
     /// Cancel multiple orders at once via WebSocket.
     ///
     /// # References
@@ -2104,6 +2152,29 @@ impl OKXWebSocketClient {
         self.ws_batch_cancel_orders(args).await
     }
 
+    /// Mass cancels all orders for a given instrument via WebSocket.
+    ///
+    /// # Parameters
+    /// - `inst_id`: The instrument ID. The instrument type will be automatically determined from the symbol.
+    ///
+    /// # References
+    /// <https://www.okx.com/docs-v5/en/#order-book-trading-websocket-mass-cancel-order>
+    /// Helper function to determine instrument type and family from symbol using instruments cache.
+    pub async fn mass_cancel_orders(&self, inst_id: InstrumentId) -> Result<(), OKXWsError> {
+        let (inst_type, inst_family) =
+            self.get_instrument_type_and_family(inst_id.symbol.inner())?;
+
+        let params = WsMassCancelParams {
+            inst_type,
+            inst_family: Ustr::from(&inst_family),
+        };
+
+        let args =
+            vec![serde_json::to_value(params).map_err(|e| OKXWsError::JsonError(e.to_string()))?];
+
+        self.ws_mass_cancel(args).await
+    }
+
     /// Modifies multiple orders via WebSocket using Nautilus domain types.
     #[allow(clippy::type_complexity)]
     #[allow(clippy::too_many_arguments)]
@@ -2547,6 +2618,13 @@ impl OKXWsMessageHandler {
 
                                     return Some(NautilusWsMessage::OrderModifyRejected(rejected));
                                 }
+                            }
+                            OKXWsOperation::MassCancel => {
+                                tracing::error!(
+                                    "Mass cancel operation failed: code={code} msg={error_msg}"
+                                );
+                                // For mass cancel, we don't have pending request tracking
+                                // The Python side will handle generating appropriate rejection events
                             }
                             _ => {
                                 tracing::warn!("Unhandled operation type for rejection: {op}");

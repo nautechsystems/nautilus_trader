@@ -34,10 +34,10 @@ use nautilus_common::{
 use nautilus_core::{WeakCell, datetime::NANOSECONDS_IN_MILLISECOND};
 use nautilus_model::{
     accounts::AccountAny,
-    data::{Bar, QuoteTick},
-    enums::{OrderSide, OrderType, PositionSide, PriceType},
+    data::{Bar, MarkPriceUpdate, QuoteTick},
+    enums::{OmsType, OrderSide, OrderType, PositionSide, PriceType},
     events::{AccountState, OrderEventAny, position::PositionEvent},
-    identifiers::{AccountId, InstrumentId, Venue},
+    identifiers::{AccountId, InstrumentId, PositionId, Venue},
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     position::Position,
@@ -52,6 +52,9 @@ struct PortfolioState {
     analyzer: PortfolioAnalyzer,
     unrealized_pnls: HashMap<InstrumentId, Money>,
     realized_pnls: HashMap<InstrumentId, Money>,
+    snapshot_sum_per_position: HashMap<PositionId, Money>,
+    snapshot_last_per_position: HashMap<PositionId, Money>,
+    snapshot_processed_counts: HashMap<PositionId, usize>,
     net_positions: HashMap<InstrumentId, Decimal>,
     pending_calcs: HashSet<InstrumentId>,
     bar_close_prices: HashMap<InstrumentId, Price>,
@@ -75,6 +78,9 @@ impl PortfolioState {
             analyzer: PortfolioAnalyzer::default(),
             unrealized_pnls: HashMap::new(),
             realized_pnls: HashMap::new(),
+            snapshot_sum_per_position: HashMap::new(),
+            snapshot_last_per_position: HashMap::new(),
+            snapshot_processed_counts: HashMap::new(),
             net_positions: HashMap::new(),
             pending_calcs: HashSet::new(),
             bar_close_prices: HashMap::new(),
@@ -89,6 +95,9 @@ impl PortfolioState {
         self.net_positions.clear();
         self.unrealized_pnls.clear();
         self.realized_pnls.clear();
+        self.snapshot_sum_per_position.clear();
+        self.snapshot_last_per_position.clear();
+        self.snapshot_processed_counts.clear();
         self.pending_calcs.clear();
         self.last_account_state_log_ts.clear();
         self.analyzer.reset();
@@ -126,7 +135,7 @@ impl Portfolio {
             cache.clone(),
             clock.clone(),
             inner.clone(),
-            config.bar_updates,
+            config.clone(),
         );
 
         Self {
@@ -141,7 +150,7 @@ impl Portfolio {
         cache: Rc<RefCell<Cache>>,
         clock: Rc<RefCell<dyn Clock>>,
         inner: Rc<RefCell<PortfolioState>>,
-        bar_updates: bool,
+        config: PortfolioConfig,
     ) {
         let inner_weak = WeakCell::from(Rc::downgrade(&inner));
 
@@ -161,10 +170,17 @@ impl Portfolio {
             let cache = cache.clone();
             let clock = clock.clone();
             let inner = inner_weak.clone();
+            let config = config.clone();
             ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
                 move |event: &PositionEvent| {
                     if let Some(inner_rc) = inner.upgrade() {
-                        update_position(cache.clone(), clock.clone(), inner_rc.into(), event);
+                        update_position(
+                            cache.clone(),
+                            clock.clone(),
+                            inner_rc.into(),
+                            config.clone(),
+                            event,
+                        );
                     }
                 },
             )))
@@ -174,10 +190,17 @@ impl Portfolio {
             let cache = cache.clone();
             let clock = clock.clone();
             let inner = inner_weak.clone();
+            let config = config.clone();
             ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
                 move |quote: &QuoteTick| {
                     if let Some(inner_rc) = inner.upgrade() {
-                        update_quote_tick(cache.clone(), clock.clone(), inner_rc.into(), quote);
+                        update_quote_tick(
+                            cache.clone(),
+                            clock.clone(),
+                            inner_rc.into(),
+                            config.clone(),
+                            quote,
+                        );
                     }
                 },
             )))
@@ -187,21 +210,55 @@ impl Portfolio {
             let cache = cache.clone();
             let clock = clock.clone();
             let inner = inner_weak.clone();
+            let config = config.clone();
             ShareableMessageHandler(Rc::new(TypedMessageHandler::from(move |bar: &Bar| {
                 if let Some(inner_rc) = inner.upgrade() {
-                    update_bar(cache.clone(), clock.clone(), inner_rc.into(), bar);
+                    update_bar(
+                        cache.clone(),
+                        clock.clone(),
+                        inner_rc.into(),
+                        config.clone(),
+                        bar,
+                    );
                 }
             })))
+        };
+
+        let update_mark_price_handler = {
+            let cache = cache.clone();
+            let clock = clock.clone();
+            let inner = inner_weak.clone();
+            let config = config.clone();
+            ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+                move |mark_price: &MarkPriceUpdate| {
+                    if let Some(inner_rc) = inner.upgrade() {
+                        update_instrument_id(
+                            cache.clone(),
+                            clock.clone(),
+                            inner_rc.into(),
+                            config.clone(),
+                            &mark_price.instrument_id,
+                        );
+                    }
+                },
+            )))
         };
 
         let update_order_handler = {
             let cache = cache;
             let clock = clock.clone();
             let inner = inner_weak;
+            let config = config.clone();
             ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
                 move |event: &OrderEventAny| {
                     if let Some(inner_rc) = inner.upgrade() {
-                        update_order(cache.clone(), clock.clone(), inner_rc.into(), event);
+                        update_order(
+                            cache.clone(),
+                            clock.clone(),
+                            inner_rc.into(),
+                            config.clone(),
+                            event,
+                        );
                     }
                 },
             )))
@@ -213,8 +270,15 @@ impl Portfolio {
         );
 
         msgbus::subscribe("data.quotes.*".into(), update_quote_handler, Some(10));
-        if bar_updates {
-            msgbus::subscribe("data.quotes.*EXTERNAL".into(), update_bar_handler, Some(10));
+        if config.bar_updates {
+            msgbus::subscribe("data.bars.*".into(), update_bar_handler, Some(10));
+        }
+        if config.use_mark_prices {
+            msgbus::subscribe(
+                "data.mark_prices.*".into(),
+                update_mark_price_handler,
+                Some(10),
+            );
         }
         msgbus::subscribe("events.order.*".into(), update_order_handler, Some(10));
         msgbus::subscribe(
@@ -494,6 +558,59 @@ impl Portfolio {
         Some(pnl)
     }
 
+    /// Returns the total PnL for the given instrument ID.
+    ///
+    /// Total PnL = Realized PnL + Unrealized PnL
+    #[must_use]
+    pub fn total_pnl(&mut self, instrument_id: &InstrumentId) -> Option<Money> {
+        let realized = self.realized_pnl(instrument_id)?;
+        let unrealized = self.unrealized_pnl(instrument_id)?;
+
+        if realized.currency != unrealized.currency {
+            log::error!(
+                "Cannot calculate total PnL: currency mismatch {} vs {}",
+                realized.currency,
+                unrealized.currency
+            );
+            return None;
+        }
+
+        Some(Money::new(
+            realized.as_f64() + unrealized.as_f64(),
+            realized.currency,
+        ))
+    }
+
+    /// Returns the total PnLs for the given venue.
+    ///
+    /// Total PnL = Realized PnL + Unrealized PnL for each currency
+    #[must_use]
+    pub fn total_pnls(&mut self, venue: &Venue) -> HashMap<Currency, Money> {
+        let realized_pnls = self.realized_pnls(venue);
+        let unrealized_pnls = self.unrealized_pnls(venue);
+
+        let mut total_pnls: HashMap<Currency, Money> = HashMap::new();
+
+        // Add realized PnLs
+        for (currency, realized) in realized_pnls {
+            total_pnls.insert(currency, realized);
+        }
+
+        // Add unrealized PnLs
+        for (currency, unrealized) in unrealized_pnls {
+            match total_pnls.get_mut(&currency) {
+                Some(total) => {
+                    *total = Money::new(total.as_f64() + unrealized.as_f64(), currency);
+                }
+                None => {
+                    total_pnls.insert(currency, unrealized);
+                }
+            }
+        }
+
+        total_pnls
+    }
+
     #[must_use]
     pub fn net_exposure(&self, instrument_id: &InstrumentId) -> Option<Money> {
         let cache = self.cache.borrow();
@@ -666,7 +783,7 @@ impl Portfolio {
 
             match result {
                 Some((updated_account, _)) => {
-                    cache.add_account(updated_account).unwrap(); // Temp Fix to update the mutated account
+                    cache.update_account(updated_account).unwrap();
                 }
                 None => {
                     initialized = false;
@@ -724,21 +841,29 @@ impl Portfolio {
 
             self.update_net_position(&instrument_id, positions_open);
 
-            let calculated_unrealized_pnl = self
-                .calculate_unrealized_pnl(&instrument_id)
-                .expect("Failed to calculate unrealized PnL");
-            let calculated_realized_pnl = self
-                .calculate_realized_pnl(&instrument_id)
-                .expect("Failed to calculate realized PnL");
+            if let Some(calculated_unrealized_pnl) = self.calculate_unrealized_pnl(&instrument_id) {
+                self.inner
+                    .borrow_mut()
+                    .unrealized_pnls
+                    .insert(instrument_id, calculated_unrealized_pnl);
+            } else {
+                log::warn!(
+                    "Failed to calculate unrealized PnL for {instrument_id}, marking as pending"
+                );
+                self.inner.borrow_mut().pending_calcs.insert(instrument_id);
+            }
 
-            self.inner
-                .borrow_mut()
-                .unrealized_pnls
-                .insert(instrument_id, calculated_unrealized_pnl);
-            self.inner
-                .borrow_mut()
-                .realized_pnls
-                .insert(instrument_id, calculated_realized_pnl);
+            if let Some(calculated_realized_pnl) = self.calculate_realized_pnl(&instrument_id) {
+                self.inner
+                    .borrow_mut()
+                    .realized_pnls
+                    .insert(instrument_id, calculated_realized_pnl);
+            } else {
+                log::warn!(
+                    "Failed to calculate realized PnL for {instrument_id}, marking as pending"
+                );
+                self.inner.borrow_mut().pending_calcs.insert(instrument_id);
+            }
 
             let cache = self.cache.borrow();
             let account = if let Some(account) = cache.account_for_venue(&instrument_id.venue) {
@@ -780,7 +905,7 @@ impl Portfolio {
             match result {
                 Some((updated_account, _)) => {
                     cache
-                        .add_account(AccountAny::Margin(updated_account)) // Temp Fix to update the mutated account
+                        .update_account(AccountAny::Margin(updated_account))
                         .unwrap();
                 }
                 None => {
@@ -806,6 +931,7 @@ impl Portfolio {
             self.cache.clone(),
             self.clock.clone(),
             self.inner.clone(),
+            self.config.clone(),
             quote,
         );
     }
@@ -818,6 +944,7 @@ impl Portfolio {
             self.cache.clone(),
             self.clock.clone(),
             self.inner.clone(),
+            self.config.clone(),
             bar,
         );
     }
@@ -835,6 +962,7 @@ impl Portfolio {
             self.cache.clone(),
             self.clock.clone(),
             self.inner.clone(),
+            self.config.clone(),
             event,
         );
     }
@@ -847,6 +975,7 @@ impl Portfolio {
             self.cache.clone(),
             self.clock.clone(),
             self.inner.clone(),
+            self.config.clone(),
             event,
         );
     }
@@ -952,7 +1081,225 @@ impl Portfolio {
         Some(Money::new(total_pnl, currency))
     }
 
+    fn ensure_snapshot_pnls_cached_for(&mut self, instrument_id: &InstrumentId) {
+        // Performance: This method maintains an incremental cache of snapshot PnLs
+        // It only deserializes new snapshots that haven't been processed yet
+        // Tracks sum and last PnL per position for efficient NETTING OMS support
+
+        // Get all position IDs that have snapshots for this instrument
+        let snapshot_position_ids = self.cache.borrow().position_snapshot_ids(instrument_id);
+
+        if snapshot_position_ids.is_empty() {
+            return; // Nothing to process
+        }
+
+        let mut rebuild = false;
+
+        // Detect purge/reset (count regression) to trigger full rebuild
+        for position_id in &snapshot_position_ids {
+            let position_snapshots = self.cache.borrow().position_snapshot_bytes(position_id);
+            let curr_count = position_snapshots.map_or(0, |s| {
+                // Count the number of snapshots (they're serialized as JSON objects)
+                s.split(|&b| b == b'{').count() - 1
+            });
+            let prev_count = self
+                .inner
+                .borrow()
+                .snapshot_processed_counts
+                .get(position_id)
+                .copied()
+                .unwrap_or(0);
+
+            if prev_count > curr_count {
+                rebuild = true;
+                break;
+            }
+        }
+
+        if rebuild {
+            // Full rebuild: process all snapshots from scratch
+            for position_id in &snapshot_position_ids {
+                if let Some(position_snapshots) =
+                    self.cache.borrow().position_snapshot_bytes(position_id)
+                {
+                    let mut sum_pnl: Option<Money> = None;
+                    let mut last_pnl: Option<Money> = None;
+
+                    // Snapshots are concatenated JSON objects
+                    let mut start = 0;
+                    let mut depth = 0;
+                    let mut in_string = false;
+                    let mut escape_next = false;
+
+                    for (i, &byte) in position_snapshots.iter().enumerate() {
+                        if escape_next {
+                            escape_next = false;
+                            continue;
+                        }
+
+                        if byte == b'\\' && in_string {
+                            escape_next = true;
+                            continue;
+                        }
+
+                        if byte == b'"' && !escape_next {
+                            in_string = !in_string;
+                        }
+
+                        if !in_string {
+                            if byte == b'{' {
+                                if depth == 0 {
+                                    start = i;
+                                }
+                                depth += 1;
+                            } else if byte == b'}' {
+                                depth -= 1;
+                                if depth == 0
+                                    && let Ok(snapshot) = serde_json::from_slice::<Position>(
+                                        &position_snapshots[start..=i],
+                                    )
+                                    && let Some(realized_pnl) = snapshot.realized_pnl
+                                {
+                                    if let Some(ref mut sum) = sum_pnl {
+                                        if sum.currency == realized_pnl.currency {
+                                            *sum = Money::new(
+                                                sum.as_f64() + realized_pnl.as_f64(),
+                                                sum.currency,
+                                            );
+                                        }
+                                    } else {
+                                        sum_pnl = Some(realized_pnl);
+                                    }
+                                    last_pnl = Some(realized_pnl);
+                                }
+                            }
+                        }
+                    }
+
+                    let mut inner = self.inner.borrow_mut();
+                    if let Some(sum) = sum_pnl {
+                        inner.snapshot_sum_per_position.insert(*position_id, sum);
+                        if let Some(last) = last_pnl {
+                            inner.snapshot_last_per_position.insert(*position_id, last);
+                        }
+                    } else {
+                        inner.snapshot_sum_per_position.remove(position_id);
+                        inner.snapshot_last_per_position.remove(position_id);
+                    }
+
+                    let snapshot_count = position_snapshots.split(|&b| b == b'{').count() - 1;
+                    inner
+                        .snapshot_processed_counts
+                        .insert(*position_id, snapshot_count);
+                }
+            }
+        } else {
+            // Incremental path: only process new snapshots
+            for position_id in &snapshot_position_ids {
+                if let Some(position_snapshots) =
+                    self.cache.borrow().position_snapshot_bytes(position_id)
+                {
+                    let curr_count = position_snapshots.split(|&b| b == b'{').count() - 1;
+                    let prev_count = self
+                        .inner
+                        .borrow()
+                        .snapshot_processed_counts
+                        .get(position_id)
+                        .copied()
+                        .unwrap_or(0);
+
+                    if prev_count >= curr_count {
+                        continue;
+                    }
+
+                    let mut sum_pnl = self
+                        .inner
+                        .borrow()
+                        .snapshot_sum_per_position
+                        .get(position_id)
+                        .copied();
+                    let mut last_pnl = self
+                        .inner
+                        .borrow()
+                        .snapshot_last_per_position
+                        .get(position_id)
+                        .copied();
+
+                    // Process only new snapshots
+                    let mut start = 0;
+                    let mut depth = 0;
+                    let mut in_string = false;
+                    let mut escape_next = false;
+                    let mut snapshot_index = 0;
+
+                    for (i, &byte) in position_snapshots.iter().enumerate() {
+                        if escape_next {
+                            escape_next = false;
+                            continue;
+                        }
+
+                        if byte == b'\\' && in_string {
+                            escape_next = true;
+                            continue;
+                        }
+
+                        if byte == b'"' && !escape_next {
+                            in_string = !in_string;
+                        }
+
+                        if !in_string {
+                            if byte == b'{' {
+                                if depth == 0 {
+                                    start = i;
+                                }
+                                depth += 1;
+                            } else if byte == b'}' {
+                                depth -= 1;
+                                if depth == 0 {
+                                    snapshot_index += 1;
+                                    // Only process new snapshots
+                                    if snapshot_index > prev_count
+                                        && let Ok(snapshot) = serde_json::from_slice::<Position>(
+                                            &position_snapshots[start..=i],
+                                        )
+                                        && let Some(realized_pnl) = snapshot.realized_pnl
+                                    {
+                                        if let Some(ref mut sum) = sum_pnl {
+                                            if sum.currency == realized_pnl.currency {
+                                                *sum = Money::new(
+                                                    sum.as_f64() + realized_pnl.as_f64(),
+                                                    sum.currency,
+                                                );
+                                            }
+                                        } else {
+                                            sum_pnl = Some(realized_pnl);
+                                        }
+                                        last_pnl = Some(realized_pnl);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    let mut inner = self.inner.borrow_mut();
+                    if let Some(sum) = sum_pnl {
+                        inner.snapshot_sum_per_position.insert(*position_id, sum);
+                        if let Some(last) = last_pnl {
+                            inner.snapshot_last_per_position.insert(*position_id, last);
+                        }
+                    }
+                    inner
+                        .snapshot_processed_counts
+                        .insert(*position_id, curr_count);
+                }
+            }
+        }
+    }
+
     fn calculate_realized_pnl(&mut self, instrument_id: &InstrumentId) -> Option<Money> {
+        // Ensure snapshot PnLs are cached for this instrument
+        self.ensure_snapshot_pnls_cached_for(instrument_id);
+
         let cache = self.cache.borrow();
         let account = if let Some(account) = cache.account_for_venue(&instrument_id.venue) {
             account
@@ -982,60 +1329,218 @@ impl Portfolio {
             None,
         );
 
-        if positions.is_empty() {
-            return Some(Money::new(0.0, currency));
-        }
+        let snapshot_position_ids = cache.position_snapshot_ids(instrument_id);
+
+        // Check if we need to use NETTING OMS logic
+        let is_netting = positions
+            .iter()
+            .any(|p| cache.oms_type(&p.id) == Some(OmsType::Netting));
 
         let mut total_pnl = 0.0;
 
-        for position in positions {
-            if position.instrument_id != *instrument_id {
-                continue; // Nothing to calculate
-            }
+        if is_netting && !snapshot_position_ids.is_empty() {
+            // NETTING OMS: Apply 3-case rule for position cycles
 
-            if position.realized_pnl.is_none() {
-                continue; // Nothing to calculate
-            }
+            for position_id in &snapshot_position_ids {
+                let is_active = positions.iter().any(|p| p.id == *position_id);
 
-            let mut pnl = position.realized_pnl?.as_f64();
+                if is_active {
+                    // Case 1 & 2: Active position - use only the last snapshot PnL
+                    let last_pnl = self
+                        .inner
+                        .borrow()
+                        .snapshot_last_per_position
+                        .get(position_id)
+                        .copied();
+                    if let Some(last_pnl) = last_pnl {
+                        let mut pnl = last_pnl.as_f64();
 
-            if let Some(base_currency) = account.base_currency() {
-                let xrate = if let Some(xrate) =
-                    self.calculate_xrate_to_base(instrument, account, position.entry)
-                {
-                    xrate
+                        if let Some(base_currency) = account.base_currency()
+                            && let Some(position) = positions.iter().find(|p| p.id == *position_id)
+                        {
+                            let xrate = if let Some(xrate) =
+                                self.calculate_xrate_to_base(instrument, account, position.entry)
+                            {
+                                xrate
+                            } else {
+                                log::error!(
+                                    "Cannot calculate realized PnL: insufficient exchange rate data for {}/{}, marking as pending calculation",
+                                    instrument.settlement_currency(),
+                                    base_currency
+                                );
+                                self.inner.borrow_mut().pending_calcs.insert(*instrument_id);
+                                return Some(Money::new(0.0, currency));
+                            };
+
+                            let scale = 10f64.powi(currency.precision.into());
+                            pnl = ((pnl * xrate) * scale).round() / scale;
+                        }
+
+                        total_pnl += pnl;
+                    }
                 } else {
-                    log::error!(
-                        "Cannot calculate realized PnL: insufficient exchange rate data for {}/{}, marking as pending calculation",
-                        instrument.settlement_currency(),
-                        base_currency
-                    );
-                    self.inner.borrow_mut().pending_calcs.insert(*instrument_id);
-                    // Return zero instead of None to avoid null pointer dereference
-                    // The pending calculation will be retried when exchange rate data becomes available
-                    return Some(Money::new(0.0, currency));
-                };
+                    // Case 3: Closed position - use sum of all snapshot PnLs
+                    let sum_pnl = self
+                        .inner
+                        .borrow()
+                        .snapshot_sum_per_position
+                        .get(position_id)
+                        .copied();
+                    if let Some(sum_pnl) = sum_pnl {
+                        let mut pnl = sum_pnl.as_f64();
 
-                let scale = 10f64.powi(currency.precision.into());
-                pnl = ((pnl * xrate) * scale).round() / scale;
+                        if let Some(base_currency) = account.base_currency() {
+                            // For closed positions, we don't have entry price, use current rates
+                            let xrate = cache.get_xrate(
+                                instrument_id.venue,
+                                instrument.settlement_currency(),
+                                base_currency,
+                                PriceType::Mid,
+                            );
+
+                            if let Some(xrate) = xrate {
+                                let scale = 10f64.powi(currency.precision.into());
+                                pnl = ((pnl * xrate) * scale).round() / scale;
+                            } else {
+                                log::error!(
+                                    "Cannot calculate realized PnL: insufficient exchange rate data for {}/{}, marking as pending calculation",
+                                    instrument.settlement_currency(),
+                                    base_currency
+                                );
+                                self.inner.borrow_mut().pending_calcs.insert(*instrument_id);
+                                return Some(Money::new(0.0, currency));
+                            }
+                        }
+
+                        total_pnl += pnl;
+                    }
+                }
             }
 
-            total_pnl += pnl;
+            // Add realized PnL from current active positions
+            for position in positions {
+                if position.instrument_id != *instrument_id {
+                    continue;
+                }
+
+                if let Some(realized_pnl) = position.realized_pnl {
+                    let mut pnl = realized_pnl.as_f64();
+
+                    if let Some(base_currency) = account.base_currency() {
+                        let xrate = if let Some(xrate) =
+                            self.calculate_xrate_to_base(instrument, account, position.entry)
+                        {
+                            xrate
+                        } else {
+                            log::error!(
+                                "Cannot calculate realized PnL: insufficient exchange rate data for {}/{}, marking as pending calculation",
+                                instrument.settlement_currency(),
+                                base_currency
+                            );
+                            self.inner.borrow_mut().pending_calcs.insert(*instrument_id);
+                            return Some(Money::new(0.0, currency));
+                        };
+
+                        let scale = 10f64.powi(currency.precision.into());
+                        pnl = ((pnl * xrate) * scale).round() / scale;
+                    }
+
+                    total_pnl += pnl;
+                }
+            }
+        } else {
+            // HEDGING OMS or no snapshots: Simple aggregation
+            // Add snapshot PnLs (sum all)
+            for position_id in &snapshot_position_ids {
+                let sum_pnl = self
+                    .inner
+                    .borrow()
+                    .snapshot_sum_per_position
+                    .get(position_id)
+                    .copied();
+                if let Some(sum_pnl) = sum_pnl {
+                    let mut pnl = sum_pnl.as_f64();
+
+                    if let Some(base_currency) = account.base_currency() {
+                        let xrate = cache.get_xrate(
+                            instrument_id.venue,
+                            instrument.settlement_currency(),
+                            base_currency,
+                            PriceType::Mid,
+                        );
+
+                        if let Some(xrate) = xrate {
+                            let scale = 10f64.powi(currency.precision.into());
+                            pnl = ((pnl * xrate) * scale).round() / scale;
+                        } else {
+                            log::error!(
+                                "Cannot calculate realized PnL: insufficient exchange rate data for {}/{}, marking as pending calculation",
+                                instrument.settlement_currency(),
+                                base_currency
+                            );
+                            self.inner.borrow_mut().pending_calcs.insert(*instrument_id);
+                            return Some(Money::new(0.0, currency));
+                        }
+                    }
+
+                    total_pnl += pnl;
+                }
+            }
+
+            // Add realized PnL from current positions
+            for position in positions {
+                if position.instrument_id != *instrument_id {
+                    continue;
+                }
+
+                if let Some(realized_pnl) = position.realized_pnl {
+                    let mut pnl = realized_pnl.as_f64();
+
+                    if let Some(base_currency) = account.base_currency() {
+                        let xrate = if let Some(xrate) =
+                            self.calculate_xrate_to_base(instrument, account, position.entry)
+                        {
+                            xrate
+                        } else {
+                            log::error!(
+                                "Cannot calculate realized PnL: insufficient exchange rate data for {}/{}, marking as pending calculation",
+                                instrument.settlement_currency(),
+                                base_currency
+                            );
+                            self.inner.borrow_mut().pending_calcs.insert(*instrument_id);
+                            return Some(Money::new(0.0, currency));
+                        };
+
+                        let scale = 10f64.powi(currency.precision.into());
+                        pnl = ((pnl * xrate) * scale).round() / scale;
+                    }
+
+                    total_pnl += pnl;
+                }
+            }
         }
 
         Some(Money::new(total_pnl, currency))
     }
 
     fn get_price(&self, position: &Position) -> Option<Price> {
+        let cache = self.cache.borrow();
+        let instrument_id = &position.instrument_id;
+
+        // Check for mark price first if configured
+        if self.config.use_mark_prices
+            && let Some(mark_price) = cache.mark_price(instrument_id)
+        {
+            return Some(mark_price.value);
+        }
+
+        // Fall back to bid/ask based on position side
         let price_type = match position.side {
             PositionSide::Long => PriceType::Bid,
             PositionSide::Short => PriceType::Ask,
             _ => panic!("invalid `PositionSide`, was {}", position.side),
         };
 
-        let cache = self.cache.borrow();
-
-        let instrument_id = &position.instrument_id;
         cache
             .price(instrument_id, price_type)
             .or_else(|| cache.price(instrument_id, PriceType::Last))
@@ -1089,15 +1594,17 @@ fn update_quote_tick(
     cache: Rc<RefCell<Cache>>,
     clock: Rc<RefCell<dyn Clock>>,
     inner: Rc<RefCell<PortfolioState>>,
+    config: PortfolioConfig,
     quote: &QuoteTick,
 ) {
-    update_instrument_id(cache, clock.clone(), inner, &quote.instrument_id);
+    update_instrument_id(cache, clock.clone(), inner, config, &quote.instrument_id);
 }
 
 fn update_bar(
     cache: Rc<RefCell<Cache>>,
     clock: Rc<RefCell<dyn Clock>>,
     inner: Rc<RefCell<PortfolioState>>,
+    config: PortfolioConfig,
     bar: &Bar,
 ) {
     let instrument_id = bar.bar_type.instrument_id();
@@ -1105,13 +1612,14 @@ fn update_bar(
         .borrow_mut()
         .bar_close_prices
         .insert(instrument_id, bar.close);
-    update_instrument_id(cache, clock.clone(), inner, &instrument_id);
+    update_instrument_id(cache, clock.clone(), inner, config, &instrument_id);
 }
 
 fn update_instrument_id(
     cache: Rc<RefCell<Cache>>,
     clock: Rc<RefCell<dyn Clock>>,
     inner: Rc<RefCell<PortfolioState>>,
+    config: PortfolioConfig,
     instrument_id: &InstrumentId,
 ) {
     inner.borrow_mut().unrealized_pnls.remove(instrument_id);
@@ -1173,7 +1681,7 @@ fn update_instrument_id(
         }
 
         if let Some((ref updated_account, _)) = result_init {
-            cache_ref.add_account(updated_account.clone()).unwrap(); // Temp Fix to update the mutated account
+            cache_ref.update_account(updated_account.clone()).unwrap();
         }
         account.clone()
     };
@@ -1182,7 +1690,7 @@ fn update_instrument_id(
         clock: clock.clone(),
         cache,
         inner: inner.clone(),
-        config: PortfolioConfig::default(), // TODO: TBD
+        config,
     };
 
     let result_unrealized_pnl: Option<Money> =
@@ -1203,6 +1711,7 @@ fn update_order(
     cache: Rc<RefCell<Cache>>,
     clock: Rc<RefCell<dyn Clock>>,
     inner: Rc<RefCell<PortfolioState>>,
+    _config: PortfolioConfig,
     event: &OrderEventAny,
 ) {
     let cache_ref = cache.borrow();
@@ -1328,6 +1837,7 @@ fn update_position(
     cache: Rc<RefCell<Cache>>,
     clock: Rc<RefCell<dyn Clock>>,
     inner: Rc<RefCell<PortfolioState>>,
+    _config: PortfolioConfig,
     event: &PositionEvent,
 ) {
     let instrument_id = event.instrument_id();
@@ -1353,21 +1863,39 @@ fn update_position(
 
     portfolio_clone.update_net_position(&instrument_id, positions_open.clone());
 
-    let calculated_unrealized_pnl = portfolio_clone
-        .calculate_unrealized_pnl(&instrument_id)
-        .expect("Failed to calculate unrealized PnL");
-    let calculated_realized_pnl = portfolio_clone
-        .calculate_realized_pnl(&instrument_id)
-        .expect("Failed to calculate realized PnL");
+    if let Some(calculated_unrealized_pnl) =
+        portfolio_clone.calculate_unrealized_pnl(&instrument_id)
+    {
+        inner
+            .borrow_mut()
+            .unrealized_pnls
+            .insert(event.instrument_id(), calculated_unrealized_pnl);
+    } else {
+        log::warn!(
+            "Failed to calculate unrealized PnL for {}, marking as pending",
+            event.instrument_id()
+        );
+        inner
+            .borrow_mut()
+            .pending_calcs
+            .insert(event.instrument_id());
+    }
 
-    inner
-        .borrow_mut()
-        .unrealized_pnls
-        .insert(event.instrument_id(), calculated_unrealized_pnl);
-    inner
-        .borrow_mut()
-        .realized_pnls
-        .insert(event.instrument_id(), calculated_realized_pnl);
+    if let Some(calculated_realized_pnl) = portfolio_clone.calculate_realized_pnl(&instrument_id) {
+        inner
+            .borrow_mut()
+            .realized_pnls
+            .insert(event.instrument_id(), calculated_realized_pnl);
+    } else {
+        log::warn!(
+            "Failed to calculate realized PnL for {}, marking as pending",
+            event.instrument_id()
+        );
+        inner
+            .borrow_mut()
+            .pending_calcs
+            .insert(event.instrument_id());
+    }
 
     let cache_ref = cache.borrow();
     let account = cache_ref.account(&event.account_id());
@@ -1394,7 +1922,7 @@ fn update_position(
         let mut cache_ref = cache.borrow_mut();
         if let Some((margin_account, _)) = result {
             cache_ref
-                .add_account(AccountAny::Margin(margin_account)) // Temp Fix to update the mutated account
+                .update_account(AccountAny::Margin(margin_account))
                 .unwrap();
         }
     } else if account.is_none() {
