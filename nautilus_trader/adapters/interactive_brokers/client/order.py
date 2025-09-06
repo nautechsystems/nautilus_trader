@@ -248,6 +248,9 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
                 handler(
                     order_ref=self._order_id_to_order_ref[order_id].order_id,
                     order_status=status,
+                    avg_fill_price=avg_fill_price,
+                    filled=filled,
+                    remaining=remaining,
                 )
 
     async def process_exec_details(
