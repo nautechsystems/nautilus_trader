@@ -48,6 +48,7 @@ use nautilus_model::{
 use nautilus_network::{
     RECONNECTED,
     ratelimiter::quota::Quota,
+    retry::{RetryManager, create_websocket_retry_manager},
     websocket::{WebSocketClient, WebSocketConfig, channel_message_handler},
 };
 use reqwest::header::USER_AGENT;
@@ -68,6 +69,29 @@ use super::{
     },
     parse::{parse_book_msg_vec, parse_ws_message_data},
 };
+use crate::common::consts::should_retry_error_code;
+
+/// Determines if an OKX WebSocket error should trigger a retry.
+fn should_retry_okx_error(error: &OKXWsError) -> bool {
+    match error {
+        OKXWsError::OkxError { error_code, .. } => should_retry_error_code(error_code),
+        OKXWsError::TungsteniteError(_) => true, // Network errors are retryable
+        OKXWsError::ClientError(msg) => {
+            // Retry on timeout and connection errors (case-insensitive)
+            let msg_lower = msg.to_lowercase();
+            msg_lower.contains("timeout")
+                || msg_lower.contains("timed out")
+                || msg_lower.contains("connection")
+                || msg_lower.contains("network")
+        }
+        OKXWsError::JsonError(_) | OKXWsError::ParsingError(_) => false, // Don't retry parsing errors
+    }
+}
+
+/// Creates a timeout error for OKX operations.
+fn create_okx_timeout_error(msg: String) -> OKXWsError {
+    OKXWsError::ClientError(msg)
+}
 use crate::{
     common::{
         consts::{
@@ -97,6 +121,7 @@ type AmendRequestData = (
     InstrumentId,
     Option<VenueOrderId>,
 );
+type MassCancelRequestData = InstrumentId;
 
 /// Default OKX WebSocket rate limit: 3 requests per second.
 ///
@@ -140,7 +165,9 @@ pub struct OKXWebSocketClient {
     pending_place_requests: Arc<DashMap<String, PlaceRequestData>>,
     pending_cancel_requests: Arc<DashMap<String, CancelRequestData>>,
     pending_amend_requests: Arc<DashMap<String, AmendRequestData>>,
+    pending_mass_cancel_requests: Arc<DashMap<String, MassCancelRequestData>>,
     instruments_cache: Arc<AHashMap<Ustr, InstrumentAny>>,
+    retry_manager: Arc<RetryManager<OKXWsError>>,
 }
 
 impl Default for OKXWebSocketClient {
@@ -211,7 +238,9 @@ impl OKXWebSocketClient {
             pending_place_requests: Arc::new(DashMap::new()),
             pending_cancel_requests: Arc::new(DashMap::new()),
             pending_amend_requests: Arc::new(DashMap::new()),
+            pending_mass_cancel_requests: Arc::new(DashMap::new()),
             instruments_cache: Arc::new(AHashMap::new()),
+            retry_manager: Arc::new(create_websocket_retry_manager()?),
         })
     }
 
@@ -352,6 +381,7 @@ impl OKXWebSocketClient {
         let pending_place_requests = self.pending_place_requests.clone();
         let pending_cancel_requests = self.pending_cancel_requests.clone();
         let pending_amend_requests = self.pending_amend_requests.clone();
+        let pending_mass_cancel_requests = self.pending_mass_cancel_requests.clone();
         let auth_state = self.auth_state.clone();
 
         let instruments_cache = self.instruments_cache.clone();
@@ -372,6 +402,7 @@ impl OKXWebSocketClient {
                 pending_place_requests,
                 pending_cancel_requests,
                 pending_amend_requests,
+                pending_mass_cancel_requests,
                 auth_state,
             );
 
@@ -1593,13 +1624,11 @@ impl OKXWebSocketClient {
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-websocket-mass-cancel-order>
-    async fn ws_mass_cancel(&self, args: Vec<Value>) -> Result<(), OKXWsError> {
-        // Generate unique request ID for WebSocket message
-        let request_id = self
-            .request_id_counter
-            .fetch_add(1, Ordering::SeqCst)
-            .to_string();
-
+    async fn ws_mass_cancel_with_id(
+        &self,
+        args: Vec<Value>,
+        request_id: String,
+    ) -> Result<(), OKXWsError> {
         let req = OKXWsRequest {
             id: Some(request_id),
             op: OKXWsOperation::MassCancel,
@@ -1887,7 +1916,18 @@ impl OKXWebSocketClient {
             (client_order_id, trader_id, strategy_id, instrument_id),
         );
 
-        self.ws_place_order(params, Some(request_id)).await
+        self.retry_manager
+            .execute_with_retry(
+                "submit_order",
+                || {
+                    let params = params.clone();
+                    let request_id = request_id.clone();
+                    async move { self.ws_place_order(params, Some(request_id)).await }
+                },
+                should_retry_okx_error,
+                create_okx_timeout_error,
+            )
+            .await
     }
 
     /// Cancels an existing order.
@@ -1913,6 +1953,11 @@ impl OKXWebSocketClient {
             builder.ord_id(venue_order_id.as_str());
         }
 
+        // Set client order ID before building params (fix for potential bug)
+        if let Some(client_order_id) = client_order_id {
+            builder.cl_ord_id(client_order_id.as_str());
+        }
+
         let params = builder
             .build()
             .map_err(|e| OKXWsError::ClientError(format!("Build cancel params error: {e}")))?;
@@ -1922,8 +1967,6 @@ impl OKXWebSocketClient {
         // External orders may not have a client order ID,
         // for now we just track those with a client order ID as pending requests.
         if let Some(client_order_id) = client_order_id {
-            builder.cl_ord_id(client_order_id.as_str());
-
             self.pending_cancel_requests.insert(
                 request_id.clone(),
                 (
@@ -1936,7 +1979,18 @@ impl OKXWebSocketClient {
             );
         }
 
-        self.ws_cancel_order(params, Some(request_id)).await
+        self.retry_manager
+            .execute_with_retry(
+                "cancel_order",
+                || {
+                    let params = params.clone();
+                    let request_id = request_id.clone();
+                    async move { self.ws_cancel_order(params, Some(request_id)).await }
+                },
+                should_retry_okx_error,
+                create_okx_timeout_error,
+            )
+            .await
     }
 
     /// Place a new order via WebSocket.
@@ -2034,7 +2088,18 @@ impl OKXWebSocketClient {
             );
         }
 
-        self.ws_amend_order(params, Some(request_id)).await
+        self.retry_manager
+            .execute_with_retry(
+                "modify_order",
+                || {
+                    let params = params.clone();
+                    let request_id = request_id.clone();
+                    async move { self.ws_amend_order(params, Some(request_id)).await }
+                },
+                should_retry_okx_error,
+                create_okx_timeout_error,
+            )
+            .await
     }
 
     /// Submits multiple orders.
@@ -2172,7 +2237,23 @@ impl OKXWebSocketClient {
         let args =
             vec![serde_json::to_value(params).map_err(|e| OKXWsError::JsonError(e.to_string()))?];
 
-        self.ws_mass_cancel(args).await
+        let request_id = self.generate_unique_request_id();
+
+        self.pending_mass_cancel_requests
+            .insert(request_id.clone(), inst_id);
+
+        self.retry_manager
+            .execute_with_retry(
+                "mass_cancel_orders",
+                || {
+                    let args = args.clone();
+                    let request_id = request_id.clone();
+                    async move { self.ws_mass_cancel_with_id(args, request_id).await }
+                },
+                should_retry_okx_error,
+                create_okx_timeout_error,
+            )
+            .await
     }
 
     /// Modifies multiple orders via WebSocket using Nautilus domain types.
@@ -2377,6 +2458,7 @@ struct OKXWsMessageHandler {
     pending_place_requests: Arc<DashMap<String, PlaceRequestData>>,
     pending_cancel_requests: Arc<DashMap<String, CancelRequestData>>,
     pending_amend_requests: Arc<DashMap<String, AmendRequestData>>,
+    pending_mass_cancel_requests: Arc<DashMap<String, MassCancelRequestData>>,
     instruments_cache: Arc<AHashMap<Ustr, InstrumentAny>>,
     last_account_state: Option<AccountState>,
     fee_cache: AHashMap<Ustr, Money>, // Key is order ID
@@ -2396,6 +2478,7 @@ impl OKXWsMessageHandler {
         pending_place_requests: Arc<DashMap<String, PlaceRequestData>>,
         pending_cancel_requests: Arc<DashMap<String, CancelRequestData>>,
         pending_amend_requests: Arc<DashMap<String, AmendRequestData>>,
+        pending_mass_cancel_requests: Arc<DashMap<String, MassCancelRequestData>>,
         auth_state: Arc<tokio::sync::watch::Sender<bool>>,
     ) -> Self {
         Self {
@@ -2405,6 +2488,7 @@ impl OKXWsMessageHandler {
             pending_place_requests,
             pending_cancel_requests,
             pending_amend_requests,
+            pending_mass_cancel_requests,
             instruments_cache,
             last_account_state: None,
             fee_cache: AHashMap::new(),
@@ -2498,6 +2582,19 @@ impl OKXWsMessageHandler {
                         "Order operation successful: id={:?} op={op} code={code}",
                         id
                     );
+
+                    // Handle successful mass cancel operations
+                    if op == OKXWsOperation::MassCancel
+                        && let Some(id) = &id
+                        && let Some((_, instrument_id)) =
+                            self.pending_mass_cancel_requests.remove(id)
+                    {
+                        tracing::info!(
+                            "Mass cancel operation successful for instrument: {}",
+                            instrument_id
+                        );
+                        // The actual order cancellations will be reported via the orders channel
+                    }
 
                     if let Some(data) = data.first() {
                         let success_msg = data
@@ -2620,11 +2717,29 @@ impl OKXWsMessageHandler {
                                 }
                             }
                             OKXWsOperation::MassCancel => {
-                                tracing::error!(
-                                    "Mass cancel operation failed: code={code} msg={error_msg}"
-                                );
-                                // For mass cancel, we don't have pending request tracking
-                                // The Python side will handle generating appropriate rejection events
+                                if let Some((_, instrument_id)) =
+                                    self.pending_mass_cancel_requests.remove(id)
+                                {
+                                    tracing::error!(
+                                        "Mass cancel operation failed for {}: code={code} msg={error_msg}",
+                                        instrument_id
+                                    );
+                                    // Create a mass cancel error message that Python can handle
+                                    let error = OKXWebSocketError {
+                                        code: code.clone(),
+                                        message: format!(
+                                            "Mass cancel failed for {}: {}",
+                                            instrument_id, error_msg
+                                        ),
+                                        conn_id: None,
+                                        timestamp: clock.get_time_ns().as_u64(),
+                                    };
+                                    return Some(NautilusWsMessage::Error(error));
+                                } else {
+                                    tracing::error!(
+                                        "Mass cancel operation failed: code={code} msg={error_msg}"
+                                    );
+                                }
                             }
                             _ => {
                                 tracing::warn!("Unhandled operation type for rejection: {op}");

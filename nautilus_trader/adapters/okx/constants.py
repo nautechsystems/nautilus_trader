@@ -22,21 +22,3 @@ from nautilus_trader.model.identifiers import Venue
 OKX: Final[str] = "OKX"
 OKX_VENUE: Final[Venue] = Venue(OKX)
 OKX_CLIENT_ID: Final[ClientId] = ClientId(OKX)
-
-# OKX error codes that should trigger retries
-# Based on OKX API documentation: https://www.okx.com/docs-v5/en/#error-codes
-# Only retry on temporary network/system issues
-OKX_RETRY_ERROR_CODES: Final[set[str]] = {
-    # Temporary system errors
-    "50001",  # Service temporarily unavailable
-    "50004",  # API endpoint request timeout (does not mean that the request was successful or failed, please check the request result)
-    "50005",  # API is offline or unavailable
-    "50013",  # System busy, please try again later
-    "50026",  # System error, please try again later
-    # Rate limit errors (temporary)
-    "50011",  # Request too frequent
-    "50113",  # API requests exceed the limit
-    # WebSocket connection issues (temporary)
-    "60001",  # OK not received in time
-    "60005",  # Connection closed as there was no data transmission in the last 30 seconds
-}

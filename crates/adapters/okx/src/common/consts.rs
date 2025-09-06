@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::sync::LazyLock;
+use std::{collections::HashSet, sync::LazyLock};
 
 use nautilus_model::{
     enums::{OrderType, TimeInForce},
@@ -57,3 +57,32 @@ pub const OKX_SUPPORTED_ORDER_TYPES: &[OrderType] = &[
     OrderType::Limit,
     OrderType::MarketToLimit, // Mapped to IOC when no price is specified
 ];
+
+/// OKX error codes that should trigger retries.
+/// Based on OKX API documentation: <https://www.okx.com/docs-v5/en/#error-codes>
+/// Only retry on temporary network/system issues.
+pub static OKX_RETRY_ERROR_CODES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
+    let mut codes = HashSet::new();
+
+    // Temporary system errors
+    codes.insert("50001"); // Service temporarily unavailable
+    codes.insert("50004"); // API endpoint request timeout (does not mean that the request was successful or failed, please check the request result)
+    codes.insert("50005"); // API is offline or unavailable
+    codes.insert("50013"); // System busy, please try again later
+    codes.insert("50026"); // System error, please try again later
+
+    // Rate limit errors (temporary)
+    codes.insert("50011"); // Request too frequent
+    codes.insert("50113"); // API requests exceed the limit
+
+    // WebSocket connection issues (temporary)
+    codes.insert("60001"); // OK not received in time
+    codes.insert("60005"); // Connection closed as there was no data transmission in the last 30 seconds
+
+    codes
+});
+
+/// Determines if an OKX error code should trigger a retry.
+pub fn should_retry_error_code(error_code: &str) -> bool {
+    OKX_RETRY_ERROR_CODES.contains(error_code)
+}
