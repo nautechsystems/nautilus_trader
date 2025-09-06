@@ -1535,3 +1535,60 @@ impl BitmexHttpClient {
         parse_position_report(response, ts_init)
     }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+    use serde_json::json;
+
+    use super::*;
+
+    #[rstest]
+    fn test_sign_request_generates_correct_headers() {
+        let client = BitmexHttpInnerClient::with_credentials(
+            "test_api_key".to_string(),
+            "test_api_secret".to_string(),
+            "http://localhost:8080".to_string(),
+            Some(60),
+        );
+
+        let headers = client
+            .sign_request(&Method::GET, "/api/v1/order", None)
+            .unwrap();
+
+        assert!(headers.contains_key("api-key"));
+        assert!(headers.contains_key("api-signature"));
+        assert!(headers.contains_key("api-expires"));
+        assert_eq!(headers.get("api-key").unwrap(), "test_api_key");
+    }
+
+    #[rstest]
+    fn test_sign_request_with_body() {
+        let client = BitmexHttpInnerClient::with_credentials(
+            "test_api_key".to_string(),
+            "test_api_secret".to_string(),
+            "http://localhost:8080".to_string(),
+            Some(60),
+        );
+
+        let body = json!({"symbol": "XBTUSD", "orderQty": 100});
+        let body_bytes = serde_json::to_vec(&body).unwrap();
+
+        let headers_without_body = client
+            .sign_request(&Method::POST, "/api/v1/order", None)
+            .unwrap();
+        let headers_with_body = client
+            .sign_request(&Method::POST, "/api/v1/order", Some(&body_bytes))
+            .unwrap();
+
+        // Signatures should be different when body is included
+        assert_ne!(
+            headers_without_body.get("api-signature").unwrap(),
+            headers_with_body.get("api-signature").unwrap()
+        );
+    }
+}

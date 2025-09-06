@@ -81,7 +81,9 @@ zeroize = { workspace = true }
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }
+axum = { workspace = true }
 criterion = { workspace = true }
+http-body-util = { workspace = true }
 rstest = { workspace = true }
 tracing-test = { workspace = true }
 url = { workspace = true }

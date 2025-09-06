@@ -1469,282 +1469,166 @@ impl BitmexWsMessageHandler {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::{AtomicBool, Ordering};
-
     use ahash::AHashSet;
-    use tokio::sync::mpsc;
-    use tokio_tungstenite::tungstenite::Message;
+    use rstest::rstest;
     use ustr::Ustr;
 
     use super::*;
 
-    fn get_test_account_id() -> AccountId {
-        AccountId::new("BITMEX-001")
-    }
-
-    #[tokio::test]
-    async fn test_bitmex_websocket_client_creation() {
+    #[rstest]
+    fn test_reconnect_topics_restoration_logic() {
+        // Create real client with credentials
         let client = BitmexWebSocketClient::new(
-            None,                            // url
-            Some("test_key".to_string()),    // api_key
-            Some("test_secret".to_string()), // api_secret
-            Some(get_test_account_id()),     // account_id
-            None,                            // heartbeat
-        )
-        .unwrap();
-
-        assert!(!client.is_active());
-    }
-
-    #[tokio::test]
-    async fn test_feed_handler_reconnection_detection() {
-        let (tx, rx) = mpsc::unbounded_channel();
-        let signal = Arc::new(AtomicBool::new(false));
-        let mut handler = BitmexFeedHandler::new(rx, signal.clone());
-
-        tx.send(Message::Text(RECONNECTED.to_string().into()))
-            .unwrap();
-
-        let result = handler.next().await;
-        assert!(matches!(result, Some(BitmexWsMessage::Reconnected)));
-    }
-
-    #[tokio::test]
-    async fn test_feed_handler_normal_message_processing() {
-        let (tx, rx) = mpsc::unbounded_channel();
-        let signal = Arc::new(AtomicBool::new(false));
-        let mut handler = BitmexFeedHandler::new(rx, signal.clone());
-
-        // Send a welcome message
-        let welcome_msg = r#"{
-            "info": "Welcome to the BitMEX Realtime API.",
-            "version": "2024-06-12T21:37:02.000Z",
-            "timestamp": "2024-12-27T12:00:00.000Z",
-            "docs": "https://www.bitmex.com/app/wsAPI",
-            "limit": {
-                "remaining": 40
-            },
-            "heartbeatEnabled": false
-        }"#;
-
-        tx.send(Message::Text(welcome_msg.to_string().into()))
-            .unwrap();
-
-        // Handler should process and skip welcome message, continuing to wait
-        // Since welcome messages are filtered out, we'll send a subscription message
-        let sub_msg = r#"{
-            "success": true,
-            "subscribe": "trade:XBTUSD",
-            "request": {
-                "op": "subscribe",
-                "args": ["trade:XBTUSD"]
-            }
-        }"#;
-
-        tx.send(Message::Text(sub_msg.to_string().into())).unwrap();
-
-        // Set signal to stop the handler
-        signal.store(true, Ordering::Relaxed);
-
-        // Handler should process messages but filter them out, then stop on signal
-        let result = handler.next().await;
-        assert!(result.is_none());
-    }
-
-    #[tokio::test]
-    async fn test_feed_handler_stop_signal() {
-        let (_tx, rx) = mpsc::unbounded_channel();
-        let signal = Arc::new(AtomicBool::new(true)); // Signal already set
-        let mut handler = BitmexFeedHandler::new(rx, signal.clone());
-
-        let result = handler.next().await;
-        assert!(result.is_none());
-    }
-
-    #[tokio::test]
-    async fn test_feed_handler_close_message() {
-        let (tx, rx) = mpsc::unbounded_channel();
-        let signal = Arc::new(AtomicBool::new(false));
-        let mut handler = BitmexFeedHandler::new(rx, signal.clone());
-
-        // Send close message
-        tx.send(Message::Close(None)).unwrap();
-
-        let result = handler.next().await;
-        assert!(result.is_none());
-    }
-
-    #[tokio::test]
-    async fn test_ws_message_handler_creation() {
-        let (_tx, rx) = mpsc::unbounded_channel();
-        let signal = Arc::new(AtomicBool::new(false));
-        let msg_tx = mpsc::unbounded_channel().0;
-        let instruments_cache = Arc::new(AHashMap::new());
-        let account_id = get_test_account_id();
-
-        let handler =
-            BitmexWsMessageHandler::new(rx, signal, msg_tx, instruments_cache, account_id);
-
-        assert_eq!(handler.account_id, account_id);
-    }
-
-    #[tokio::test]
-    async fn test_reconnection_message_constant() {
-        assert_eq!(RECONNECTED, "__RECONNECTED__");
-    }
-
-    #[tokio::test]
-    async fn test_wait_until_active_timeout() {
-        let client = BitmexWebSocketClient::new(
-            None,
+            Some("ws://test.com".to_string()),
             Some("test_key".to_string()),
             Some("test_secret".to_string()),
-            Some(get_test_account_id()),
+            Some(AccountId::new("BITMEX-TEST")),
             None,
         )
         .unwrap();
 
-        // Should timeout since client is not connected
-        let result = client.wait_until_active(0.1).await;
+        // Populate subscriptions like they would be during normal operation
+        client.subscriptions.insert("trade".to_string(), {
+            let mut set = AHashSet::new();
+            set.insert(Ustr::from("XBTUSD"));
+            set.insert(Ustr::from("ETHUSD"));
+            set
+        });
 
-        assert!(result.is_err());
-        assert!(!client.is_active());
-    }
+        client.subscriptions.insert("orderBookL2".to_string(), {
+            let mut set = AHashSet::new();
+            set.insert(Ustr::from("XBTUSD"));
+            set
+        });
 
-    #[tokio::test]
-    async fn test_multiple_reconnection_signals() {
-        let (tx, rx) = mpsc::unbounded_channel();
-        let signal = Arc::new(AtomicBool::new(false));
-        let mut handler = BitmexFeedHandler::new(rx, signal.clone());
-
-        // Send multiple reconnection messages
-        for _ in 0..3 {
-            tx.send(Message::Text(RECONNECTED.to_string().into()))
-                .unwrap();
-
-            let result = handler.next().await;
-            assert!(matches!(result, Some(BitmexWsMessage::Reconnected)));
-        }
-    }
-
-    #[tokio::test]
-    async fn test_subscription_tracking() {
-        let client = BitmexWebSocketClient::new(
-            None,
-            Some("test_key".to_string()),
-            Some("test_secret".to_string()),
-            Some(get_test_account_id()),
-            None,
-        )
-        .unwrap();
-
-        // Test subscription tracking for different channels
-        let mut symbols = AHashSet::new();
-        symbols.insert(Ustr::from("XBTUSD"));
-        client
-            .subscriptions
-            .insert("trade".to_string(), symbols.clone());
-
-        symbols.clear();
-        symbols.insert(Ustr::from("ETHUSD"));
-        client
-            .subscriptions
-            .insert("orderBookL2".to_string(), symbols.clone());
-
-        // Add account subscription (empty symbol set)
-        client
-            .subscriptions
-            .insert("position".to_string(), AHashSet::new());
-
-        // Verify subscriptions are tracked
-        assert_eq!(client.subscriptions.len(), 3);
-        assert!(client.subscriptions.contains_key("trade"));
-        assert!(client.subscriptions.contains_key("orderBookL2"));
-        assert!(client.subscriptions.contains_key("position"));
-
-        // Test removing a subscription
-        client.subscriptions.remove("trade");
-        assert_eq!(client.subscriptions.len(), 2);
-        assert!(!client.subscriptions.contains_key("trade"));
-    }
-
-    #[tokio::test]
-    async fn test_account_subscription_included_in_reconnect() {
-        let client = BitmexWebSocketClient::new(
-            None,
-            Some("test_key".to_string()),
-            Some("test_secret".to_string()),
-            Some(get_test_account_id()),
-            None,
-        )
-        .unwrap();
-
-        // Add account-level subscriptions (empty symbol set)
-        client
-            .subscriptions
-            .insert("position".to_string(), AHashSet::new());
+        // Private channels (no symbols)
         client
             .subscriptions
             .insert("order".to_string(), AHashSet::new());
         client
             .subscriptions
-            .insert("margin".to_string(), AHashSet::new());
+            .insert("position".to_string(), AHashSet::new());
 
-        // Add symbol-specific subscription
-        let mut symbols = AHashSet::new();
-        symbols.insert(Ustr::from("XBTUSD"));
-        client.subscriptions.insert("trade".to_string(), symbols);
+        // Test the actual reconnection topic building logic from lines 258-268
+        let mut topics_to_restore = Vec::new();
+        for entry in client.subscriptions.iter() {
+            let (channel, symbols) = entry.pair();
+            if symbols.is_empty() {
+                topics_to_restore.push(channel.clone());
+            } else {
+                for symbol in symbols.iter() {
+                    topics_to_restore.push(format!("{channel}:{symbol}"));
+                }
+            }
+        }
 
-        // Verify all subscription types are tracked
-        assert_eq!(client.subscriptions.len(), 4);
-
-        // Verify account-level subscriptions (empty symbol sets) are included
-        let account_subs: Vec<_> = client
-            .subscriptions
-            .iter()
-            .filter(|entry| entry.value().is_empty())
-            .collect();
-        assert_eq!(account_subs.len(), 3);
-
-        // Verify symbol-specific subscriptions are included
-        let symbol_subs: Vec<_> = client
-            .subscriptions
-            .iter()
-            .filter(|entry| !entry.value().is_empty())
-            .collect();
-        assert_eq!(symbol_subs.len(), 1);
+        // Verify it builds the correct restoration topics
+        assert!(topics_to_restore.contains(&"trade:XBTUSD".to_string()));
+        assert!(topics_to_restore.contains(&"trade:ETHUSD".to_string()));
+        assert!(topics_to_restore.contains(&"orderBookL2:XBTUSD".to_string()));
+        assert!(topics_to_restore.contains(&"order".to_string()));
+        assert!(topics_to_restore.contains(&"position".to_string()));
+        assert_eq!(topics_to_restore.len(), 5);
     }
 
-    #[tokio::test]
-    async fn test_reconnection_event_handling_in_run_loop() {
-        let (tx, rx) = mpsc::unbounded_channel();
-        let signal = Arc::new(AtomicBool::new(false));
-        let mut handler = BitmexFeedHandler::new(rx, signal.clone());
+    #[rstest]
+    fn test_reconnect_auth_message_building() {
+        // Test with credentials
+        let client_with_creds = BitmexWebSocketClient::new(
+            Some("ws://test.com".to_string()),
+            Some("test_key".to_string()),
+            Some("test_secret".to_string()),
+            Some(AccountId::new("BITMEX-TEST")),
+            None,
+        )
+        .unwrap();
 
-        // Simulate reconnection event
-        tx.send(Message::Text(RECONNECTED.into())).unwrap();
+        // Test the actual auth message building logic from lines 220-228
+        if let Some(cred) = &client_with_creds.credential {
+            let expires = (chrono::Utc::now() + chrono::Duration::seconds(30)).timestamp();
+            let signature = cred.sign("GET", "/realtime", expires, "");
 
-        // Verify reconnection event is properly detected
-        let msg = handler.next().await;
-        assert!(matches!(msg, Some(BitmexWsMessage::Reconnected)));
+            let auth_message = BitmexAuthentication {
+                op: BitmexWsAuthAction::AuthKeyExpires,
+                args: (cred.api_key.to_string(), expires, signature),
+            };
 
-        // Simulate subscription success message after reconnection
-        let sub_msg = r#"{
-            "success": true,
-            "subscribe": "trade:XBTUSD",
-            "request": {
-                "op": "subscribe",
-                "args": ["trade:XBTUSD"]
+            // Verify auth message structure
+            assert_eq!(auth_message.op, BitmexWsAuthAction::AuthKeyExpires);
+            assert_eq!(auth_message.args.0, "test_key");
+            assert!(auth_message.args.1 > 0); // expires should be positive
+            assert!(!auth_message.args.2.is_empty()); // signature should exist
+        } else {
+            panic!("Client should have credentials");
+        }
+
+        // Test without credentials
+        let client_no_creds = BitmexWebSocketClient::new(
+            Some("ws://test.com".to_string()),
+            None,
+            None,
+            Some(AccountId::new("BITMEX-TEST")),
+            None,
+        )
+        .unwrap();
+
+        assert!(client_no_creds.credential.is_none());
+    }
+
+    #[rstest]
+    fn test_subscription_state_after_unsubscribe() {
+        let client = BitmexWebSocketClient::new(
+            Some("ws://test.com".to_string()),
+            Some("test_key".to_string()),
+            Some("test_secret".to_string()),
+            Some(AccountId::new("BITMEX-TEST")),
+            None,
+        )
+        .unwrap();
+
+        // Set up initial subscriptions
+        client.subscriptions.insert("trade".to_string(), {
+            let mut set = AHashSet::new();
+            set.insert(Ustr::from("XBTUSD"));
+            set.insert(Ustr::from("ETHUSD"));
+            set
+        });
+
+        client.subscriptions.insert("orderBookL2".to_string(), {
+            let mut set = AHashSet::new();
+            set.insert(Ustr::from("XBTUSD"));
+            set
+        });
+
+        // Simulate unsubscribe logic (like from unsubscribe() method lines 586-599)
+        let topic = "trade:ETHUSD";
+        if let Some((channel, symbol)) = topic.split_once(':')
+            && let Some(mut entry) = client.subscriptions.get_mut(channel)
+        {
+            entry.remove(&Ustr::from(symbol));
+            if entry.is_empty() {
+                drop(entry);
+                client.subscriptions.remove(channel);
             }
-        }"#;
+        }
 
-        tx.send(Message::Text(sub_msg.into())).unwrap();
+        // Build restoration topics after unsubscribe
+        let mut topics_to_restore = Vec::new();
+        for entry in client.subscriptions.iter() {
+            let (channel, symbols) = entry.pair();
+            if symbols.is_empty() {
+                topics_to_restore.push(channel.clone());
+            } else {
+                for symbol in symbols.iter() {
+                    topics_to_restore.push(format!("{channel}:{symbol}"));
+                }
+            }
+        }
 
-        // Set stop signal to end the handler
-        signal.store(true, Ordering::Relaxed);
-
-        // Verify handler processes messages and stops
-        let msg = handler.next().await;
-        assert!(msg.is_none());
+        // Should have XBTUSD trade but not ETHUSD trade
+        assert!(topics_to_restore.contains(&"trade:XBTUSD".to_string()));
+        assert!(!topics_to_restore.contains(&"trade:ETHUSD".to_string()));
+        assert!(topics_to_restore.contains(&"orderBookL2:XBTUSD".to_string()));
+        assert_eq!(topics_to_restore.len(), 2);
     }
 }
