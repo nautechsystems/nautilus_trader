@@ -49,6 +49,7 @@ Released on TBD (UTC).
 - Added a complete `.env.example` template to guide environment configuration (#2877), thanks @nicolad
 - Added Interactive Brokers OCA setting to order groups (#2899), thanks @faysou
 - Added Interactive Brokers subscriptions for position updates (#2887), thanks @faysou
+- Added support for running separate live and paper IB Gateway containers without port conflicts. Simplified container naming and made VNC optional.
 
 ### Breaking Changes
 - Added `multiplier` field for `CurrencyPair` Arrow schema
