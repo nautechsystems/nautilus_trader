@@ -711,6 +711,7 @@ class PositionStatusReport(ExecutionReport):
         ts_last: int,
         ts_init: int,
         venue_position_id: PositionId | None = None,
+        avg_px_open: Price | None = None,
     ) -> None:
         super().__init__(
             account_id,
@@ -721,6 +722,7 @@ class PositionStatusReport(ExecutionReport):
         self.venue_position_id = venue_position_id
         self.position_side = position_side
         self.quantity = quantity
+        self.avg_px_open = avg_px_open
         self.signed_decimal_qty = (
             -self.quantity.as_decimal()
             if position_side == PositionSide.SHORT
@@ -747,6 +749,9 @@ class PositionStatusReport(ExecutionReport):
         )
 
     def __repr__(self) -> str:
+        avg_px_open_str = (
+            f"avg_px_open={self.avg_px_open}, " if self.avg_px_open is not None else ""
+        )
         return (
             f"{type(self).__name__}("
             f"account_id={self.account_id}, "
@@ -754,6 +759,7 @@ class PositionStatusReport(ExecutionReport):
             f"venue_position_id={self.venue_position_id}, "
             f"position_side={position_side_to_str(self.position_side)}, "
             f"quantity={self.quantity.to_formatted_str()}, "
+            f"{avg_px_open_str}"
             f"signed_decimal_qty={self.signed_decimal_qty}, "
             f"report_id={self.id}, "
             f"ts_last={self.ts_last}, "
@@ -779,6 +785,7 @@ class PositionStatusReport(ExecutionReport):
             "ts_last": self.ts_last,
             "ts_init": self.ts_init,
             "venue_position_id": self.venue_position_id.value if self.venue_position_id else None,
+            "avg_px_open": str(self.avg_px_open) if self.avg_px_open else None,
         }
 
     @classmethod
@@ -807,6 +814,9 @@ class PositionStatusReport(ExecutionReport):
             venue_position_id=(
                 PositionId(values["venue_position_id"]) if values["venue_position_id"] else None
             ),
+            avg_px_open=(
+                Price.from_str(values["avg_px_open"]) if values.get("avg_px_open") else None
+            ),
         )
 
     @staticmethod
@@ -822,6 +832,11 @@ class PositionStatusReport(ExecutionReport):
             venue_position_id=(
                 PositionId(pyo3_report.venue_position_id.value)
                 if pyo3_report.venue_position_id
+                else None
+            ),
+            avg_px_open=(
+                Price.from_str(str(pyo3_report.avg_px_open))
+                if hasattr(pyo3_report, "avg_px_open") and pyo3_report.avg_px_open
                 else None
             ),
         )

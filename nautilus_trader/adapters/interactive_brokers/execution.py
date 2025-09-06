@@ -481,11 +481,17 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             if not self._cache.instrument(instrument.id):
                 self._handle_data(instrument)
 
+            # Convert avg_cost to Price if available
+            avg_px_open = None
+            if position.avg_cost and position.avg_cost > 0:
+                avg_px_open = instrument.make_price(position.avg_cost)
+
             position_status = PositionStatusReport(
                 account_id=self.account_id,
                 instrument_id=instrument.id,
                 position_side=side,
                 quantity=Quantity.from_str(str(abs(position.quantity))),
+                avg_px_open=avg_px_open,
                 report_id=UUID4(),
                 ts_last=self._clock.timestamp_ns(),
                 ts_init=self._clock.timestamp_ns(),
@@ -1370,12 +1376,18 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             # Determine position side
             side = PositionSide.LONG if new_quantity > 0 else PositionSide.SHORT
 
+            # Convert avg_cost to Price if available
+            avg_px_open = None
+            if ib_position.avg_cost and ib_position.avg_cost > 0:
+                avg_px_open = instrument.make_price(ib_position.avg_cost)
+
             # Create position status report
             position_report = PositionStatusReport(
                 account_id=self.account_id,
                 instrument_id=instrument.id,
                 position_side=side,
                 quantity=instrument.make_qty(new_quantity),
+                avg_px_open=avg_px_open,
                 report_id=UUID4(),
                 ts_last=self._clock.timestamp_ns(),
                 ts_init=self._clock.timestamp_ns(),
