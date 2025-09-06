@@ -42,14 +42,9 @@
 //!     });
 //! ```
 
-use std::time::Duration;
-
 use nautilus_hyperliquid::{
     common::credential::Secrets,
-    http::{
-        RateLimitMode,
-        client::{HyperliquidHttpClient, RetryPolicy},
-    },
+    http::{RateLimitMode, client::HyperliquidHttpClient},
 };
 use tracing::{error, info, level_filters::LevelFilter, warn};
 use tracing_subscriber::{EnvFilter, fmt};
@@ -83,13 +78,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create a private client (with signing capability)
     // Use Noop mode if you have NT global rate limiting, otherwise LocalTokenBucket
-    let client = HyperliquidHttpClient::private(&secrets, RateLimitMode::LocalTokenBucket)?
-        .with_retry_policy(RetryPolicy {
-            max_retries: 3,
-            base_delay: Duration::from_millis(200),
-            max_delay: Duration::from_secs(5),
-            jitter: true,
-        });
+    let client = HyperliquidHttpClient::private(&secrets, RateLimitMode::LocalTokenBucket)?;
 
     info!(
         component = "http_private",

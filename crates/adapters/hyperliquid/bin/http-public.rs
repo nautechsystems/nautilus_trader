@@ -37,14 +37,9 @@
 //!     });
 //! ```
 
-use std::time::Duration;
-
 use nautilus_hyperliquid::{
     common::consts::HyperliquidNetwork,
-    http::{
-        RateLimitPolicy,
-        client::{HyperliquidHttpClient, RetryPolicy},
-    },
+    http::{RateLimitPolicy, client::HyperliquidHttpClient},
 };
 use tracing::{info, level_filters::LevelFilter, warn};
 use tracing_subscriber::{EnvFilter, fmt};
@@ -66,18 +61,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // Create a public client (no signing, local rate limiter as fallback)
-    let client = HyperliquidHttpClient::public(network)?.with_retry_policy(RetryPolicy {
-        max_retries: 3,
-        base_delay: Duration::from_millis(100),
-        max_delay: Duration::from_secs(2),
-        jitter: true,
-    });
+    let client = HyperliquidHttpClient::public(network)?;
 
     // Adjust rate limiting policy if needed
     client
         .set_rate_limit_policy(RateLimitPolicy {
-            capacity: 600,
-            refill_per_min: 600,
+            capacity: 600.0,
+            refill_per_sec: 10.0, // 600/min = 10/sec
         })
         .await;
 

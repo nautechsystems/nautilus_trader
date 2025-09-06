@@ -4791,6 +4791,7 @@ dependencies = [
  "ahash 0.8.12",
  "anyhow",
  "async-stream",
+ "async-trait",
  "aws-lc-rs",
  "base64",
  "bytes",
