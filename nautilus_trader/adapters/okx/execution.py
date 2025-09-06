@@ -18,6 +18,8 @@ from typing import Any
 
 from nautilus_trader.adapters.okx.config import OKXExecClientConfig
 from nautilus_trader.adapters.okx.constants import OKX_VENUE
+from nautilus_trader.adapters.okx.error import OKXError
+from nautilus_trader.adapters.okx.error import should_retry
 from nautilus_trader.adapters.okx.providers import OKXInstrumentProvider
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
@@ -42,6 +44,7 @@ from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
+from nautilus_trader.live.retry import RetryManagerPool
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderStatus
@@ -129,6 +132,10 @@ class OKXExecutionClient(LiveExecutionClient):
         self._log.info(f"{config.margin_mode=}", LogColor.BLUE)
         self._log.info(f"{config.http_timeout_secs=}", LogColor.BLUE)
         self._log.info(f"{config.use_fills_channel=}", LogColor.BLUE)
+        self._log.info(f"{config.use_mm_mass_cancel=}", LogColor.BLUE)
+        self._log.info(f"{config.max_retries=}", LogColor.BLUE)
+        self._log.info(f"{config.retry_delay_initial_ms=}", LogColor.BLUE)
+        self._log.info(f"{config.retry_delay_max_ms=}", LogColor.BLUE)
 
         # Set account ID
         account_id = AccountId(f"{name or OKX_VENUE.value}-master")
@@ -154,6 +161,18 @@ class OKXExecutionClient(LiveExecutionClient):
         else:
             # TODO: Initially support isolated margin only
             self._trade_mode = OKXTradeMode.ISOLATED
+
+        # Initialize retry manager pool
+        self._retry_manager_pool = RetryManagerPool[None](
+            pool_size=100,
+            max_retries=config.max_retries or 0,
+            delay_initial_ms=config.retry_delay_initial_ms or 1_000,
+            delay_max_ms=config.retry_delay_max_ms or 10_000,
+            backoff_factor=2,
+            logger=self._log,
+            exc_types=(OKXError,),
+            retry_check=should_retry,
+        )
 
     @property
     def okx_instrument_provider(self) -> OKXInstrumentProvider:
@@ -215,6 +234,9 @@ class OKXExecutionClient(LiveExecutionClient):
                 self._log.warning("Timeout while waiting for websockets shutdown to complete")
 
         self._ws_client_futures.clear()
+
+    def _stop(self) -> None:
+        self._retry_manager_pool.shutdown()
 
     async def _cache_instruments(self) -> None:
         # Ensures instrument definitions are available for correct
@@ -506,16 +528,66 @@ class OKXExecutionClient(LiveExecutionClient):
             else None
         )
 
-        await self._ws_client.cancel_order(
-            trader_id=pyo3_trader_id,
-            strategy_id=pyo3_strategy_id,
-            instrument_id=pyo3_instrument_id,
-            client_order_id=pyo3_client_order_id,
-            venue_order_id=pyo3_venue_order_id,
-        )
+        retry_manager = await self._retry_manager_pool.acquire()
+        try:
+            await retry_manager.run(
+                "cancel_order",
+                [command.client_order_id, command.venue_order_id],
+                self._ws_client.cancel_order,
+                trader_id=pyo3_trader_id,
+                strategy_id=pyo3_strategy_id,
+                instrument_id=pyo3_instrument_id,
+                client_order_id=pyo3_client_order_id,
+                venue_order_id=pyo3_venue_order_id,
+            )
+            if not retry_manager.result:
+                self.generate_order_cancel_rejected(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    venue_order_id=order.venue_order_id,
+                    reason=retry_manager.message,
+                    ts_event=self._clock.timestamp_ns(),
+                )
+        finally:
+            await self._retry_manager_pool.release(retry_manager)
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
-        # For simplicity, cancel orders one by one
+        if self._config.use_mm_mass_cancel:
+            await self._cancel_all_orders_mass_cancel(command)
+        else:
+            await self._cancel_all_orders_individually(command)
+
+    async def _cancel_all_orders_mass_cancel(self, command: CancelAllOrders) -> None:
+        # Use OKX's mass-cancel WebSocket endpoint for market makers
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+
+        retry_manager = await self._retry_manager_pool.acquire()
+        try:
+            await retry_manager.run(
+                "mass_cancel_orders",
+                [command.instrument_id],
+                self._ws_client.mass_cancel_orders,
+                instrument_id=pyo3_instrument_id,
+            )
+            if not retry_manager.result:
+                # If mass cancel fails, generate cancel rejected events for all open orders
+                orders_open = self._cache.orders_open(instrument_id=command.instrument_id)
+                for order in orders_open:
+                    if not order.is_closed:
+                        self.generate_order_cancel_rejected(
+                            strategy_id=order.strategy_id,
+                            instrument_id=order.instrument_id,
+                            client_order_id=order.client_order_id,
+                            venue_order_id=order.venue_order_id,
+                            reason=retry_manager.message,
+                            ts_event=self._clock.timestamp_ns(),
+                        )
+        finally:
+            await self._retry_manager_pool.release(retry_manager)
+
+    async def _cancel_all_orders_individually(self, command: CancelAllOrders) -> None:
+        # Cancel orders one by one (each with retry logic) - works for all users
         orders_open: list[Order] = self._cache.orders_open(instrument_id=command.instrument_id)
         for order in orders_open:
             if order.is_closed:
@@ -563,15 +635,31 @@ class OKXExecutionClient(LiveExecutionClient):
             nautilus_pyo3.Quantity.from_str(str(command.quantity)) if command.quantity else None
         )
 
-        await self._ws_client.modify_order(
-            trader_id=pyo3_trader_id,
-            strategy_id=pyo3_strategy_id,
-            instrument_id=pyo3_instrument_id,
-            price=pyo3_price,
-            quantity=pyo3_quantity,
-            client_order_id=pyo3_client_order_id,
-            venue_order_id=pyo3_venue_order_id,
-        )
+        retry_manager = await self._retry_manager_pool.acquire()
+        try:
+            await retry_manager.run(
+                "modify_order",
+                [command.client_order_id, command.venue_order_id],
+                self._ws_client.modify_order,
+                trader_id=pyo3_trader_id,
+                strategy_id=pyo3_strategy_id,
+                instrument_id=pyo3_instrument_id,
+                price=pyo3_price,
+                quantity=pyo3_quantity,
+                client_order_id=pyo3_client_order_id,
+                venue_order_id=pyo3_venue_order_id,
+            )
+            if not retry_manager.result:
+                self.generate_order_modify_rejected(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    venue_order_id=order.venue_order_id,
+                    reason=retry_manager.message,
+                    ts_event=self._clock.timestamp_ns(),
+                )
+        finally:
+            await self._retry_manager_pool.release(retry_manager)
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         order = command.order
@@ -606,22 +694,37 @@ class OKXExecutionClient(LiveExecutionClient):
             time_in_force_to_pyo3(order.time_in_force) if order.time_in_force else None
         )
 
-        await self._ws_client.submit_order(
-            trader_id=pyo3_trader_id,
-            strategy_id=pyo3_strategy_id,
-            instrument_id=pyo3_instrument_id,
-            td_mode=self._trade_mode,
-            client_order_id=pyo3_client_order_id,
-            order_side=pyo3_order_side,
-            order_type=pyo3_order_type,
-            quantity=pyo3_quantity,
-            price=pyo3_price,
-            trigger_price=pyo3_trigger_price,
-            time_in_force=pyo3_time_in_force,
-            post_only=order.is_post_only,
-            reduce_only=order.is_reduce_only,
-            quote_quantity=order.is_quote_quantity,
-        )
+        retry_manager = await self._retry_manager_pool.acquire()
+        try:
+            await retry_manager.run(
+                "submit_order",
+                [order.client_order_id],
+                self._ws_client.submit_order,
+                trader_id=pyo3_trader_id,
+                strategy_id=pyo3_strategy_id,
+                instrument_id=pyo3_instrument_id,
+                td_mode=self._trade_mode,
+                client_order_id=pyo3_client_order_id,
+                order_side=pyo3_order_side,
+                order_type=pyo3_order_type,
+                quantity=pyo3_quantity,
+                price=pyo3_price,
+                trigger_price=pyo3_trigger_price,
+                time_in_force=pyo3_time_in_force,
+                post_only=order.is_post_only,
+                reduce_only=order.is_reduce_only,
+                quote_quantity=order.is_quote_quantity,
+            )
+            if not retry_manager.result:
+                self.generate_order_rejected(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    reason=retry_manager.message,
+                    ts_event=self._clock.timestamp_ns(),
+                )
+        finally:
+            await self._retry_manager_pool.release(retry_manager)
 
     # -- WEBSOCKET HANDLERS -----------------------------------------------------------------------
 
@@ -687,8 +790,19 @@ class OKXExecutionClient(LiveExecutionClient):
         event = OrderModifyRejected.from_dict(pyo3_event.to_dict())
         self._send_order_event(event)
 
-    def _handle_order_status_report_pyo3(self, msg: nautilus_pyo3.OrderStatusReport) -> None:
-        report = OrderStatusReport.from_pyo3(msg)
+    def _handle_order_status_report_pyo3(
+        self,
+        pyo3_report: nautilus_pyo3.OrderStatusReport,
+    ) -> None:
+        # Discard order status reports until account is properly initialized
+        # Reconciliation will handle getting the current state of open orders
+        if not self.is_connected or not self.account_id or not self._cache.account(self.account_id):
+            self._log.debug(
+                f"Discarding order status report during connection sequence: {pyo3_report.client_order_id!r}",
+            )
+            return
+
+        report = OrderStatusReport.from_pyo3(pyo3_report)
 
         if self._is_external_order(report.client_order_id):
             self._send_order_status_report(report)
@@ -769,11 +883,11 @@ class OKXExecutionClient(LiveExecutionClient):
             ts_event=report.ts_last,
         )
 
-    def _handle_fill_report_pyo3(self, msg: nautilus_pyo3.FillReport) -> None:
+    def _handle_fill_report_pyo3(self, pyo3_report: nautilus_pyo3.FillReport) -> None:
         """
         Handle PyO3 FillReport (both fills channel and order status derived).
         """
-        report = FillReport.from_pyo3(msg)
+        report = FillReport.from_pyo3(pyo3_report)
 
         if self._is_external_order(report.client_order_id):
             self._send_fill_report(report)

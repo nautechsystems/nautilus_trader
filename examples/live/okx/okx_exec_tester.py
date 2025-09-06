@@ -128,6 +128,7 @@ config_node = TradingNodeConfig(
             instrument_provider=InstrumentProviderConfig(load_all=True),
             instrument_types=(instrument_type,),
             contract_types=contract_types,
+            # use_mm_mass_cancel=True,
             is_demo=False,  # If client uses the demo API
             use_fills_channel=False,  # Set to True if VIP5+ to get separate fill reports
             http_timeout_secs=10,  # Set to reasonable duration

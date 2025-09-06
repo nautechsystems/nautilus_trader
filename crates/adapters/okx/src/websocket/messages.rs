@@ -441,18 +441,18 @@ pub struct OKXEstimatedPriceMsg {
 #[serde(rename_all = "camelCase")]
 pub struct OKXStatusMsg {
     /// System maintenance status.
-    pub title: String,
+    pub title: Ustr,
     /// Status type: planned or scheduled.
     #[serde(rename = "type")]
-    pub status_type: String,
+    pub status_type: Ustr,
     /// System maintenance state: canceled, completed, pending, ongoing.
-    pub state: String,
+    pub state: Ustr,
     /// Expected completion timestamp.
     pub end_time: Option<String>,
     /// Planned start timestamp.
     pub begin_time: Option<String>,
     /// Service involved.
-    pub service_type: Option<String>,
+    pub service_type: Option<Ustr>,
     /// Reason for status change.
     pub reason: Option<String>,
     /// Timestamp of the data generation, Unix timestamp format in milliseconds.
@@ -485,16 +485,16 @@ pub struct OKXOrderMsg {
     #[serde(default)]
     pub cancel_source_reason: Option<String>,
     /// Category.
-    pub category: String,
+    pub category: Ustr,
     /// Currency.
-    pub ccy: String,
+    pub ccy: Ustr,
     /// Client order ID.
     pub cl_ord_id: String,
     /// Fee.
     #[serde(default, deserialize_with = "deserialize_empty_string_as_none")]
     pub fee: Option<String>,
     /// Fee currency.
-    pub fee_ccy: String,
+    pub fee_ccy: Ustr,
     /// Fill price.
     pub fill_px: String,
     /// Fill size.
@@ -515,7 +515,7 @@ pub struct OKXOrderMsg {
     /// Profit and loss.
     pub pnl: String,
     /// Position side.
-    pub pos_side: String,
+    pub pos_side: Ustr,
     /// Price.
     pub px: String,
     /// Reduce only flag.
@@ -529,7 +529,7 @@ pub struct OKXOrderMsg {
     /// Size.
     pub sz: String,
     /// Trade mode.
-    pub td_mode: String,
+    pub td_mode: OKXTradeMode,
     /// Trade ID.
     pub trade_id: String,
     /// Last update time, Unix timestamp in milliseconds.
@@ -547,13 +547,13 @@ pub struct WsPostOrderParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub inst_type: Option<OKXInstrumentType>,
     /// Instrument ID, e.g. "BTC-USDT".
-    pub inst_id: String,
+    pub inst_id: Ustr,
     /// Trading mode: cash, isolated, cross.
     pub td_mode: OKXTradeMode,
     /// Margin currency (only for isolated margin).
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub ccy: Option<String>,
+    pub ccy: Option<Ustr>,
     /// Unique client order ID.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cl_ord_id: Option<String>,
@@ -592,13 +592,25 @@ pub struct WsPostOrderParams {
 #[serde(rename_all = "camelCase")]
 pub struct WsCancelOrderParams {
     /// Instrument ID, e.g. "BTC-USDT".
-    pub inst_id: String,
+    pub inst_id: Ustr,
     /// Exchange-assigned order ID.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ord_id: Option<String>,
     /// User-assigned client order ID.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cl_ord_id: Option<String>,
+}
+
+/// Parameters for WebSocket mass cancel operation.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, Builder)]
+#[builder(default)]
+#[builder(setter(into, strip_option))]
+#[serde(rename_all = "camelCase")]
+pub struct WsMassCancelParams {
+    /// Instrument type.
+    pub inst_type: OKXInstrumentType,
+    /// Instrument family, e.g. "BTC-USD", "BTC-USDT".
+    pub inst_family: Ustr,
 }
 
 /// Parameters for WebSocket amend order operation (instType not included).
@@ -608,7 +620,7 @@ pub struct WsCancelOrderParams {
 #[serde(rename_all = "camelCase")]
 pub struct WsAmendOrderParams {
     /// Instrument ID, e.g. "BTC-USDT".
-    pub inst_id: String,
+    pub inst_id: Ustr,
     /// Exchange-assigned order ID (optional if using clOrdId).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ord_id: Option<String>,

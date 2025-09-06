@@ -106,6 +106,16 @@ class OKXExecClientConfig(LiveExecClientConfig, frozen=True):
     use_fills_channel : bool, default False
         If True, subscribes to the fills channel for separate fill reports (requires VIP5+).
         If False, generates fill reports from order status reports (works for all users).
+    use_mm_mass_cancel : bool, default False
+        If True, uses OKX's mass-cancel endpoint for cancel_all_orders operations.
+        This endpoint is typically restricted to market makers and high-volume traders.
+        If False, cancels orders individually (works for all users).
+    max_retries : PositiveInt, default 3
+        The maximum retry attempts for requests.
+    retry_delay_initial_ms : PositiveInt, default 1_000
+        The initial delay (milliseconds) for retries.
+    retry_delay_max_ms : PositiveInt, default 10_000
+        The maximum delay (milliseconds) for exponential backoff.
 
     """
 
@@ -120,3 +130,7 @@ class OKXExecClientConfig(LiveExecClientConfig, frozen=True):
     is_demo: bool = False
     http_timeout_secs: PositiveInt | None = 60
     use_fills_channel: bool = False
+    use_mm_mass_cancel: bool = False
+    max_retries: PositiveInt | None = 3
+    retry_delay_initial_ms: PositiveInt | None = 1_000
+    retry_delay_max_ms: PositiveInt | None = 10_000

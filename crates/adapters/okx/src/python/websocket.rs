@@ -780,7 +780,6 @@ impl OKXWebSocketClient {
         })
     }
 
-    /// Submits a new order via WebSocket.
     #[pyo3(name = "submit_order")]
     #[pyo3(signature = (
         trader_id,
@@ -845,7 +844,6 @@ impl OKXWebSocketClient {
         })
     }
 
-    /// Cancels an existing order via WebSocket.
     #[pyo3(name = "cancel_order")]
     #[pyo3(signature = (
         trader_id,
@@ -880,7 +878,6 @@ impl OKXWebSocketClient {
         })
     }
 
-    /// Modify an existing order via WebSocket.
     #[pyo3(name = "modify_order")]
     #[pyo3(signature = (
         trader_id,
@@ -921,7 +918,6 @@ impl OKXWebSocketClient {
         })
     }
 
-    /// Submits multiple orders via WebSocket.
     #[allow(clippy::type_complexity)]
     #[pyo3(name = "batch_submit_orders")]
     fn py_batch_submit_orders<'py>(
@@ -1025,7 +1021,6 @@ impl OKXWebSocketClient {
         })
     }
 
-    /// Modifies multiple orders via WebSocket.
     #[pyo3(name = "batch_modify_orders")]
     fn py_batch_modify_orders<'py>(
         &self,
@@ -1069,6 +1064,22 @@ impl OKXWebSocketClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client
                 .batch_modify_orders(domain_orders)
+                .await
+                .map_err(to_pyvalue_err)
+        })
+    }
+
+    #[pyo3(name = "mass_cancel_orders")]
+    fn py_mass_cancel_orders<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .mass_cancel_orders(instrument_id)
                 .await
                 .map_err(to_pyvalue_err)
         })

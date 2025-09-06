@@ -5984,6 +5984,10 @@ class OKXWebSocketClient:
         self,
         orders: list[Any],
     ) -> None: ...
+    async def mass_cancel_orders(
+        self,
+        instrument_id: InstrumentId,
+    ) -> None: ...
     async def batch_modify_orders(
         self,
         orders: list[Any],
