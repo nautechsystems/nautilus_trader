@@ -19,9 +19,5 @@ pub mod models;
 pub mod parse;
 pub mod query;
 
-// Re-export integration types and rate limiting types for convenience
-pub use client::{
-    EndpointKind, HttpProvider, HttpProviderResponse, HyperliquidHttpClient, Idempotency,
-    IntegrationDeps, JsonProvider, RateLimitMode, RateLimitPolicy, RateLimitProvider, RateLimiter,
-    RequestOpts,
-};
+// Re-exports
+pub use crate::http::client::HyperliquidHttpClient;

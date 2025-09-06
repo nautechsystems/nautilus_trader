@@ -135,6 +135,11 @@ impl Error {
         }
     }
 
+    /// Map HTTP client errors to appropriate error types
+    pub fn from_http_client(error: nautilus_network::http::HttpClientError) -> Self {
+        Self::transport(format!("HTTP client error: {}", error))
+    }
+
     /// Check if error is retryable
     pub fn is_retryable(&self) -> bool {
         match self {
