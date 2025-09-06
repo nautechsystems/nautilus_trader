@@ -20,8 +20,8 @@ from decimal import Decimal
 import pandas as pd
 
 from nautilus_trader.adapters.binance import BINANCE_VENUE
+from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.examples.strategies.ema_cross_trailing_stop import EMACrossTrailingStop
 from nautilus_trader.examples.strategies.ema_cross_trailing_stop import EMACrossTrailingStopConfig
 from nautilus_trader.model.currencies import ETH
@@ -63,7 +63,7 @@ if __name__ == "__main__":
     engine.add_data(ticks)
 
     # Configure your strategy
-    config = EMACrossTrailingStopConfig(
+    strategy_config = EMACrossTrailingStopConfig(
         instrument_id=ETHUSDT_BINANCE.id,
         bar_type=BarType.from_str("ETHUSDT.BINANCE-100-TICK-LAST-INTERNAL"),
         trade_size=Decimal("0.10"),
@@ -75,7 +75,7 @@ if __name__ == "__main__":
         trigger_type="LAST_PRICE",
     )
     # Instantiate and add your strategy
-    strategy = EMACrossTrailingStop(config=config)
+    strategy = EMACrossTrailingStop(config=strategy_config)
     engine.add_strategy(strategy=strategy)
 
     time.sleep(0.1)

@@ -37,9 +37,9 @@ from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.common.config import LoggingConfig
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import ImportableStrategyConfig
+from nautilus_trader.config import RoutingConfig
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.core.datetime import unix_nanos_to_iso8601
-from nautilus_trader.live.config import RoutingConfig
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import OrderSide

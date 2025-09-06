@@ -20,8 +20,8 @@ from decimal import Decimal
 import pandas as pd
 
 from nautilus_trader.adapters.binance import BINANCE_VENUE
+from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.examples.algorithms.twap import TWAPExecAlgorithm
 from nautilus_trader.examples.strategies.ema_cross_twap import EMACrossTWAP
@@ -75,7 +75,7 @@ if __name__ == "__main__":
     engine.add_data(ticks)
 
     # Configure your strategy
-    config = EMACrossTWAPConfig(
+    strategy_config = EMACrossTWAPConfig(
         instrument_id=ETHUSDT_BINANCE.id,
         bar_type=BarType.from_str("ETHUSDT.BINANCE-250-TICK-LAST-INTERNAL"),
         trade_size=Decimal("0.10"),
@@ -86,7 +86,7 @@ if __name__ == "__main__":
     )
 
     # Instantiate and add your strategy
-    strategy = EMACrossTWAP(config=config)
+    strategy = EMACrossTWAP(config=strategy_config)
     engine.add_strategy(strategy=strategy)
 
     # Instantiate and add your execution algorithm

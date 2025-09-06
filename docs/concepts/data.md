@@ -934,7 +934,7 @@ catalog_config = DataCatalogConfig(
 `DataCatalogConfig` is commonly used in live trading configurations for historical data access:
 
 ```python
-from nautilus_trader.live.config import TradingNodeConfig
+from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.persistence.config import DataCatalogConfig
 
 # Configure catalog for live system

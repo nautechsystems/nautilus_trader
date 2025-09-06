@@ -269,8 +269,8 @@ The `FillModel` simulates two key aspects of trading that exist in real markets 
 
 ```python
 from nautilus_trader.backtest.models import FillModel
+from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.backtest.engine import BacktestEngineConfig
 
 # Create a custom fill model with your desired probabilities
 fill_model = FillModel(
