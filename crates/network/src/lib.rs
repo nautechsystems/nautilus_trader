@@ -52,6 +52,7 @@ pub mod fix;
 pub mod http;
 pub mod mode;
 pub mod net;
+pub mod retry;
 pub mod socket;
 pub mod websocket;
 
