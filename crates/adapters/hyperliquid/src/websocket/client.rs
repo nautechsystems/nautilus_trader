@@ -13,9 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashSet;
-use std::sync::Arc;
-use std::time::Duration;
+use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use anyhow::Result;
 use futures_util::future::BoxFuture;
@@ -24,13 +22,17 @@ use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 use tracing::{debug, error, info, warn};
 
-use crate::http::error::{Error, Result as HyperliquidResult};
-use crate::websocket::messages::{
-    ActionPayload, HyperliquidWsMessage, HyperliquidWsRequest, PostRequest, PostResponsePayload,
-    SubscriptionRequest,
-};
-use crate::websocket::post::{
-    PostBatcher, PostIds, PostLane, PostRouter, ScheduledPost, WsSender, lane_for_action,
+use crate::{
+    http::error::{Error, Result as HyperliquidResult},
+    websocket::{
+        messages::{
+            ActionPayload, HyperliquidWsMessage, HyperliquidWsRequest, PostRequest,
+            PostResponsePayload, SubscriptionRequest,
+        },
+        post::{
+            PostBatcher, PostIds, PostLane, PostRouter, ScheduledPost, WsSender, lane_for_action,
+        },
+    },
 };
 
 /// Errors that can occur during Hyperliquid WebSocket operations.

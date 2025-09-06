@@ -25,8 +25,7 @@ use nautilus_hyperliquid::{
         post::{Grouping, OrderBuilder},
     },
 };
-use tracing::level_filters::LevelFilter;
-use tracing::{info, warn};
+use tracing::{info, level_filters::LevelFilter, warn};
 use tracing_subscriber::{EnvFilter, fmt};
 
 #[tokio::main]
