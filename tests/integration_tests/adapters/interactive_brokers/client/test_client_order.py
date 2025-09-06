@@ -206,6 +206,45 @@ async def test_orderStatus(ib_client):
     handler_func.assert_called_with(
         order_ref=1,
         order_status="Filled",
+        avg_fill_price=100.0,
+        filled=Decimal("100"),
+        remaining=Decimal("0"),
+    )
+
+
+@pytest.mark.asyncio
+async def test_orderStatus_with_zero_avg_fill_price(ib_client):
+    # Arrange
+    ib_client._order_id_to_order_ref = {
+        1: AccountOrderRef(order_id=1, account_id="DU123456"),
+    }
+    handler_func = Mock()
+    ib_client._event_subscriptions = Mock()
+    ib_client._event_subscriptions.get = MagicMock(return_value=handler_func)
+
+    # Act - Test with zero avg_fill_price (partial fill or edge case)
+    await ib_client.process_order_status(
+        order_id=1,
+        status="PartiallyFilled",
+        filled=Decimal("50"),
+        remaining=Decimal("50"),
+        avg_fill_price=0.0,
+        perm_id=1916994655,
+        parent_id=0,
+        last_fill_price=100.0,
+        client_id=1,
+        why_held="",
+        mkt_cap_price=0.0,
+    )
+
+    # Assert
+    ib_client._event_subscriptions.get.assert_called_with("orderStatus-DU123456", None)
+    handler_func.assert_called_with(
+        order_ref=1,
+        order_status="PartiallyFilled",
+        avg_fill_price=0.0,
+        filled=Decimal("50"),
+        remaining=Decimal("50"),
     )
 
 
