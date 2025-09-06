@@ -152,6 +152,7 @@ Released on TBD (UTC).
 - Fixed incorrect raw price type for matching engine in high-precision mode that could overflow during trades processing (#2810), thanks for reporting @Frzgunr1 and @happysammy
 - Fixed incorrect currency used for cash account SELL orders pre-trade risk check
 - Fixed accounting for locked balance with multiple currencies (#2918), thanks @GhostLee
+- Fixed portfolio realized PnL for NETTING OMS position snapshot cycles (#2856), thanks for reporting @idobz and analysis @paulbir
 - Fixed decoding zero-sized trades for Databento MBO data
 - Fixed purging of contingent orders where open linked orders would still be purged
 - Fixed backtest bracket order quantity independence, preventing child orders from incorrectly syncing to net position size
