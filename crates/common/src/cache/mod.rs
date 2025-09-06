@@ -26,7 +26,7 @@ mod index;
 mod tests;
 
 use std::{
-    collections::VecDeque,
+    collections::{HashSet, VecDeque},
     fmt::Debug,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -1976,6 +1976,41 @@ impl Cache {
 
         // Ok(())
         todo!()
+    }
+
+    /// Gets the OMS type for the `position_id`.
+    #[must_use]
+    pub fn oms_type(&self, position_id: &PositionId) -> Option<OmsType> {
+        // Get OMS type from the index
+        if self.index.position_strategy.contains_key(position_id) {
+            // For now, we'll default to NETTING
+            // TODO: Store and retrieve actual OMS type per position
+            Some(OmsType::Netting)
+        } else {
+            None
+        }
+    }
+
+    /// Gets position snapshot bytes for the `position_id`.
+    #[must_use]
+    pub fn position_snapshot_bytes(&self, position_id: &PositionId) -> Option<Vec<u8>> {
+        self.position_snapshots.get(position_id).map(|b| b.to_vec())
+    }
+
+    /// Gets position snapshot IDs for the `instrument_id`.
+    #[must_use]
+    pub fn position_snapshot_ids(&self, instrument_id: &InstrumentId) -> HashSet<PositionId> {
+        // Get snapshot position IDs that match the instrument
+        let mut result = HashSet::new();
+        for (position_id, _) in &self.position_snapshots {
+            // Check if this position is for the requested instrument
+            if let Some(position) = self.positions.get(position_id)
+                && position.instrument_id == *instrument_id
+            {
+                result.insert(*position_id);
+            }
+        }
+        result
     }
 
     /// Snapshots the `order` state in the database.
