@@ -50,6 +50,8 @@ Released on TBD (UTC).
 - Added Interactive Brokers OCA setting to order groups (#2899), thanks @faysou
 - Added Interactive Brokers subscriptions for position updates (#2887), thanks @faysou
 - Added support for running separate live and paper IB Gateway containers without port conflicts. Simplified container naming and made VNC optional.
+- Added `avg_px_open` field to `PositionStatusReport` for IB adapter (#2925), thanks @dinana
+- Added support for running separate live and paper IB Gateway containers simultaneously (#2937), thanks @ Bshara23
 
 ### Breaking Changes
 - Added `multiplier` field for `CurrencyPair` Arrow schema
@@ -75,8 +77,7 @@ Released on TBD (UTC).
 - Refactored `BacktestDataIterator` (#2791) to consolidate data generator usage, thanks @faysou
 - Implemented `LogGuard` reference counting for proper thread lifecycle management, ensuring all logs flushed before termination
 - Implemented live subscriptions for blockchain data client (#2832), thanks @filipmacek
-- Implemented initial Hyperliquid adapter (#2912, #2922), thanks @nicolad
-- Implemented Hyperliquid EIP-712 signing and nonce management (#2916), thanks @nicolad
+- Implemented initial Hyperliquid adapter (#2912, #2916, #2922, #2935), thanks @nicolad
 - Introduced `SharedCell` / `WeakCell` wrappers for ergonomic and safer handling of `Rc<RefCell<T>>` / `Weak<RefCell<T>>` pairs
 - Introduced efficient block syncing command in the `nautilus-cli` (#2861), thanks @filipmacek
 - Introduced pool events syncing command in blockchain data client (#2920), thanks @filipmacek
@@ -93,6 +94,7 @@ Released on TBD (UTC).
 - Added `_send_position_status_report` to base execution client (#2926), thanks @faysou
 - Added `passthrough_bar_type` to `TimeBarAggregator` (#2929), thanks @faysou
 - Added matching engine check to return early if `last_qty` is non-positive (#2930), thanks @GhostLee
+- Added `avg_px` population in order filled events for Interactive Brokers adapter (#2938), thanks @dinana
 - Optimized identifiers hashing to avoid frequent recomputations using C strings
 - Optimized data engine topic string caching for message bus publishing to avoid frequent f-string constructions
 - Optimized Redis key scans to improve efficiency over a network
@@ -191,6 +193,7 @@ Released on TBD (UTC).
 - Fixed Interactive Brokers bars query for indices (#2921), thanks @ms32035
 - Fixed missing `funding_rates` for Cache Debug impl (#2894), thanks @MK27MK
 - Fixed missing `log_component_levels` for PyO3 logging initialization
+- Fixed catalog consolidation name clash for an overlapping edge case (#2933), thanks @ms32035
 
 ### Documentation Updates
 - Added Positions concept guide
