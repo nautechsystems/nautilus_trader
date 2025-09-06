@@ -22,6 +22,7 @@ from ibapi.client import EClient
 from ibapi.connection import Connection
 from ibapi.const import NO_VALID_ID
 from ibapi.errors import CONNECT_FAIL
+from ibapi.message import OUT
 from ibapi.server_versions import MAX_CLIENT_VER
 from ibapi.server_versions import MIN_CLIENT_VER
 
@@ -163,7 +164,7 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
         if self._eclient.connectOptions:
             v100version += f" {self._eclient.connectOptions}"
 
-        msg = comm.make_msg(v100version)
+        msg = comm.make_msg(OUT.START_API, True, v100version)
         msg2 = str.encode(v100prefix, "ascii") + msg
         await asyncio.to_thread(functools.partial(self._eclient.conn.sendMsg, msg2))
 

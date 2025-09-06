@@ -80,7 +80,7 @@ betfair = [
 ]
 ib = [
     "defusedxml>=0.7.1,<1.0.0",
-    "nautilus-ibapi==10.30.1",
+    "nautilus-ibapi==10.37.2",
 ]
 docker = [
     "docker>=7.1.0,<8.0.0",

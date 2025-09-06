@@ -29,6 +29,7 @@ from ibapi.const import MAX_MSG_LEN
 from ibapi.const import NO_VALID_ID
 from ibapi.errors import BAD_LENGTH
 from ibapi.execution import Execution
+from ibapi.server_versions import MIN_SERVER_VER_PROTOBUF
 from ibapi.utils import current_fn_name
 
 # fmt: off
@@ -661,7 +662,7 @@ class InteractiveBrokersClient(
         # order, process real-time ticks, etc.) and then calls the corresponding
         # method from the EWrapper. Many of those methods are overridden in the client
         # manager and handler classes to support custom processing required for Nautilus.
-        await asyncio.to_thread(self._eclient.decoder.interpret, fields)
+        await asyncio.to_thread(self._eclient.decoder.interpret, fields, 0)
 
         return True
 
@@ -729,11 +730,13 @@ class InteractiveBrokersClient(
 
     # -- EClient overrides ------------------------------------------------------------------------
 
-    def sendMsg(self, msg):
+    def sendMsg(self, msgId, msg):
         """
         Override the logging for ibapi EClient.sendMsg.
         """
-        full_msg = comm.make_msg(msg)
+        useRawIntMsgId = self._eclient.serverVersion() >= MIN_SERVER_VER_PROTOBUF
+        full_msg = comm.make_msg(msgId, useRawIntMsgId, msg)
+        self._log.debug(f"Sending msg: {full_msg}")
         self._log.debug(f"TWS API request sent: function={current_fn_name(1)} msg={full_msg}")
         self._eclient.conn.sendMsg(full_msg)
 
