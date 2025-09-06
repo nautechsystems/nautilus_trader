@@ -38,7 +38,7 @@ from nautilus_trader.model.identifiers import AccountId
 
 # fmt: on
 
-GATEWAY = None
+GATEWAYS: dict[tuple, DockerizedIBGateway] = {}
 IB_CLIENTS: dict[tuple, InteractiveBrokersClient] = {}
 IB_INSTRUMENT_PROVIDERS: dict[tuple, InteractiveBrokersInstrumentProvider] = {}
 
@@ -59,6 +59,8 @@ def get_cached_ib_client(
     Should a keyed client already exist within the cache, the function will return this instance. It's important
     to note that the key comprises a combination of the host, port, and client_id.
 
+    When using DockerizedIBGatewayConfig, multiple gateways can be created and cached based on their trading_mode.
+
     Parameters
     ----------
     loop: asyncio.AbstractEventLoop,
@@ -78,25 +80,28 @@ def get_cached_ib_client(
         however, each must use a different client_id.
     dockerized_gateway: DockerizedIBGatewayConfig, optional
         The configuration for the dockerized gateway.If this is provided, Nautilus will oversee the docker
-        environment, facilitating the operation of the IB Gateway within.
+        environment, facilitating the operation of the IB Gateway within. Multiple gateways can be created
+        based on trading_mode.
 
     Returns
     -------
     InteractiveBrokersClient
 
     """
-    global GATEWAY
-
     if dockerized_gateway:
         PyCondition.equal(host, "127.0.0.1", "host", "127.0.0.1")
         PyCondition.none(port, "Ensure `port` is set to None when using DockerizedIBGatewayConfig.")
 
-        if GATEWAY is None:
-            GATEWAY = DockerizedIBGateway(dockerized_gateway)
-            GATEWAY.safe_start(wait=dockerized_gateway.timeout)
-            port = GATEWAY.port
+        # Create a unique key for the gateway based on its trading_mode
+        gateway_key = (dockerized_gateway.trading_mode,)
+
+        if gateway_key not in GATEWAYS:
+            gateway = DockerizedIBGateway(dockerized_gateway)
+            gateway.safe_start(wait=dockerized_gateway.timeout)
+            GATEWAYS[gateway_key] = gateway
+            port = gateway.port
         else:
-            port = GATEWAY.port
+            port = GATEWAYS[gateway_key].port
     else:
         PyCondition.not_none(
             host,
