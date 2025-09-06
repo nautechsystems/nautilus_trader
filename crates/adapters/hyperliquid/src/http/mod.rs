@@ -18,3 +18,9 @@ pub mod error;
 pub mod models;
 pub mod parse;
 pub mod query;
+
+// Re-export integration types and rate limiting types for convenience
+pub use client::{
+    EndpointKind, HttpProvider, HttpProviderResponse, IntegrationDeps, JsonProvider, RateLimitMode,
+    RateLimitPolicy, RateLimitProvider, RateLimiter,
+};

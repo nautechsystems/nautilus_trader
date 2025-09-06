@@ -33,8 +33,10 @@ use tracing::{error, info, warn};
 
 use crate::{
     common::consts::INFLIGHT_MAX,
-    http::error::{Error, Result},
-    http::models::{HyperliquidFills, HyperliquidL2Book, HyperliquidOrderStatus},
+    http::{
+        error::{Error, Result},
+        models::{HyperliquidFills, HyperliquidL2Book, HyperliquidOrderStatus},
+    },
     websocket::messages::{
         ActionRequest, CancelByCloidRequest, CancelRequest, HyperliquidWsRequest, ModifyRequest,
         OrderRequest, OrderTypeRequest, PostRequest, PostResponse, TimeInForceRequest, TpSlRequest,
@@ -609,15 +611,18 @@ impl WsSender {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::common::consts::INFLIGHT_MAX;
-    use crate::websocket::messages::{
-        ActionRequest, HyperliquidWsRequest, OrderRequest, OrderTypeRequest, TimeInForceRequest,
-    };
     use rstest::rstest;
     use tokio::{
         sync::oneshot,
         time::{Duration, sleep, timeout},
+    };
+
+    use super::*;
+    use crate::{
+        common::consts::INFLIGHT_MAX,
+        websocket::messages::{
+            ActionRequest, HyperliquidWsRequest, OrderRequest, OrderTypeRequest, TimeInForceRequest,
+        },
     };
 
     // --- helpers -------------------------------------------------------------------------------

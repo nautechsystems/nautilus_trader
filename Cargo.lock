@@ -4793,6 +4793,7 @@ dependencies = [
  "async-stream",
  "aws-lc-rs",
  "base64",
+ "bytes",
  "chrono",
  "criterion",
  "dashmap",
