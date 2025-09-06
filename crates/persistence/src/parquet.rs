@@ -198,7 +198,9 @@ pub async fn combine_parquet_files_from_object_store(
 
     // Remove the merged files
     for path in &file_paths {
-        object_store.delete(path).await?;
+        if path != new_file_path {
+            object_store.delete(path).await?;
+        }
     }
 
     Ok(())
