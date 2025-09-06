@@ -14,14 +14,24 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::collections::HashSet;
+use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Result;
+use futures_util::future::BoxFuture;
 use nautilus_network::websocket::{WebSocketClient, WebSocketConfig, channel_message_handler};
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 use tracing::{debug, error, info, warn};
 
-use crate::websocket::messages::{HyperliquidWsMessage, HyperliquidWsRequest, SubscriptionRequest};
+use crate::http::error::{Error, Result as HyperliquidResult};
+use crate::websocket::messages::{
+    ActionPayload, HyperliquidWsMessage, HyperliquidWsRequest, PostRequest, PostResponsePayload,
+    SubscriptionRequest,
+};
+use crate::websocket::post::{
+    PostBatcher, PostIds, PostLane, PostRouter, ScheduledPost, WsSender, lane_for_action,
+};
 
 /// Errors that can occur during Hyperliquid WebSocket operations.
 #[derive(Debug, Clone, thiserror::Error)]
@@ -91,14 +101,19 @@ impl HyperliquidCodec {
 /// WebSocket methods with `ws_*` prefixes.
 #[derive(Debug)]
 pub struct HyperliquidWebSocketInnerClient {
-    inner: WebSocketClient,
+    inner: Arc<WebSocketClient>,
     rx_inbound: mpsc::Receiver<HyperliquidWsMessage>,
     sent_subscriptions: HashSet<String>,
     _reader_task: tokio::task::JoinHandle<()>,
+    post_router: Arc<PostRouter>,
+    post_ids: PostIds,
+    #[allow(dead_code)] // Reserved for future direct WebSocket operations
+    ws_sender: WsSender,
+    post_batcher: PostBatcher,
 }
 
 impl HyperliquidWebSocketInnerClient {
-    /// Creates a new Hyperliquid WebSocket inner client with Nautilus' reconnection/backoff/heartbeat.
+    /// Creates a new Hyperliquid WebSocket inner client with reconnection/backoff/heartbeat.
     /// Returns a client that owns the inbound message receiver.
     pub async fn connect(url: &str) -> Result<Self> {
         // Create message handler for receiving raw WebSocket messages
@@ -118,11 +133,18 @@ impl HyperliquidWebSocketInnerClient {
             reconnect_jitter_ms: Some(200),
         };
 
-        let client = WebSocketClient::connect(cfg, None, vec![], None).await?;
+        let client = Arc::new(WebSocketClient::connect(cfg, None, vec![], None).await?);
         info!("Hyperliquid WebSocket connected: {}", url);
 
-        // Decode task – turns tungstenite Messages into HyperliquidWsMessage
+        let post_router = PostRouter::new();
+        let post_ids = PostIds::new(1);
         let (tx_inbound, rx_inbound) = mpsc::channel::<HyperliquidWsMessage>(1024);
+        let (tx_outbound, mut rx_outbound) = mpsc::channel::<HyperliquidWsRequest>(1024);
+
+        let ws_sender = WsSender::new(tx_outbound);
+
+        // Reader task: decode messages and route post replies *before* handing to general pipeline.
+        let post_router_for_reader = Arc::clone(&post_router);
         let reader_task = tokio::spawn(async move {
             while let Some(msg) = raw_rx.recv().await {
                 match msg {
@@ -130,6 +152,10 @@ impl HyperliquidWebSocketInnerClient {
                         debug!("Received WS text: {}", txt);
                         match serde_json::from_str::<HyperliquidWsMessage>(&txt) {
                             Ok(hl_msg) => {
+                                if let HyperliquidWsMessage::Post { data } = &hl_msg {
+                                    // Route the correlated response
+                                    post_router_for_reader.complete(data.clone()).await;
+                                }
                                 if let Err(e) = tx_inbound.send(hl_msg).await {
                                     error!("Failed to send decoded message: {}", e);
                                     break;
@@ -140,38 +166,64 @@ impl HyperliquidWebSocketInnerClient {
                                     "Failed to decode Hyperliquid message: {} | text: {}",
                                     err, txt
                                 );
-                                // Continue processing other messages instead of breaking
                             }
                         }
                     }
                     Message::Binary(data) => {
-                        debug!("Received binary message ({} bytes), ignoring", data.len());
+                        debug!("Received binary message ({} bytes), ignoring", data.len())
                     }
-                    Message::Ping(data) => {
-                        debug!("Received ping frame ({} bytes)", data.len());
-                        // Nautilus handles pong automatically
-                    }
-                    Message::Pong(data) => {
-                        debug!("Received pong frame ({} bytes)", data.len());
-                        // Nautilus updates heartbeat internally
-                    }
+                    Message::Ping(data) => debug!("Received ping frame ({} bytes)", data.len()),
+                    Message::Pong(data) => debug!("Received pong frame ({} bytes)", data.len()),
                     Message::Close(close_frame) => {
                         info!("Received close frame: {:?}", close_frame);
                         break;
                     }
-                    Message::Frame(_) => {
-                        warn!("Received raw frame (unexpected)");
-                    }
+                    Message::Frame(_) => warn!("Received raw frame (unexpected)"),
                 }
             }
             info!("Hyperliquid WebSocket reader finished");
         });
+
+        // Spawn task to handle outbound messages
+        let client_for_sender = Arc::clone(&client);
+        tokio::spawn(async move {
+            while let Some(req) = rx_outbound.recv().await {
+                let json = match serde_json::to_string(&req) {
+                    Ok(json) => json,
+                    Err(e) => {
+                        error!("Failed to serialize WS request: {}", e);
+                        continue;
+                    }
+                };
+                debug!("Sending WS message: {}", json);
+                if let Err(e) = client_for_sender.send_text(json, None).await {
+                    error!("Failed to send WS message: {}", e);
+                    break;
+                }
+            }
+            info!("WebSocket sender task finished");
+        });
+
+        // Create send function for batcher using a proper async closure
+        let ws_sender_for_batcher = ws_sender.clone();
+
+        let send_fn =
+            move |req: HyperliquidWsRequest| -> BoxFuture<'static, HyperliquidResult<()>> {
+                let sender = ws_sender_for_batcher.clone();
+                Box::pin(async move { sender.send(req).await })
+            };
+
+        let post_batcher = PostBatcher::new(send_fn);
 
         let hl_client = Self {
             inner: client,
             rx_inbound,
             sent_subscriptions: HashSet::new(),
             _reader_task: reader_task,
+            post_router,
+            post_ids,
+            ws_sender,
+            post_batcher,
         };
 
         Ok(hl_client)
@@ -241,6 +293,66 @@ impl HyperliquidWebSocketInnerClient {
     pub async fn ws_disconnect(&mut self) -> Result<()> {
         self.inner.disconnect().await;
         Ok(())
+    }
+
+    /// Convenience: enqueue a post on a specific lane.
+    async fn enqueue_post(
+        &self,
+        id: u64,
+        request: PostRequest,
+        lane: PostLane,
+    ) -> HyperliquidResult<()> {
+        self.post_batcher
+            .enqueue(ScheduledPost { id, request, lane })
+            .await
+    }
+
+    /// Core: send an Info post and await response with timeout.
+    pub async fn post_info_raw(
+        &self,
+        payload: serde_json::Value,
+        timeout: Duration,
+    ) -> HyperliquidResult<PostResponsePayload> {
+        let id = self.post_ids.next();
+        let rx = self.post_router.register(id).await?;
+        self.enqueue_post(id, PostRequest::Info { payload }, PostLane::Normal)
+            .await?;
+        let resp = self.post_router.await_with_timeout(id, rx, timeout).await?;
+        Ok(resp.response)
+    }
+
+    /// Core: send an Action post and await response with timeout.
+    pub async fn post_action_raw(
+        &self,
+        action: ActionPayload,
+        timeout: Duration,
+    ) -> HyperliquidResult<PostResponsePayload> {
+        let id = self.post_ids.next();
+        let rx = self.post_router.register(id).await?;
+        let lane = lane_for_action(&action.action);
+        self.enqueue_post(id, PostRequest::Action { payload: action }, lane)
+            .await?;
+        let resp = self.post_router.await_with_timeout(id, rx, timeout).await?;
+        Ok(resp.response)
+    }
+
+    /// Get l2Book via WS post and parse using shared REST model.
+    pub async fn info_l2_book(
+        &self,
+        coin: &str,
+        timeout: Duration,
+    ) -> HyperliquidResult<crate::http::models::HyperliquidL2Book> {
+        let payload = match self
+            .post_info_raw(serde_json::json!({"type":"l2Book","coin":coin}), timeout)
+            .await?
+        {
+            PostResponsePayload::Info { payload } => payload,
+            PostResponsePayload::Error { payload } => return Err(Error::exchange(payload)),
+            PostResponsePayload::Action { .. } => {
+                return Err(Error::decode("expected info payload, got action"));
+            }
+        };
+        serde_json::from_value(payload).map_err(Error::Serde)
     }
 }
 
@@ -317,5 +429,32 @@ impl HyperliquidWebSocketClient {
     /// Escape hatch: send raw requests for tests/power users.
     pub async fn send_raw(&mut self, request: &HyperliquidWsRequest) -> Result<()> {
         self.inner.ws_send(request).await
+    }
+
+    /// High-level: call info l2Book (WS post)
+    pub async fn info_l2_book(
+        &mut self,
+        coin: &str,
+        timeout: Duration,
+    ) -> HyperliquidResult<crate::http::models::HyperliquidL2Book> {
+        self.inner.info_l2_book(coin, timeout).await
+    }
+
+    /// High-level: fire arbitrary info (WS post) returning raw payload.
+    pub async fn post_info_raw(
+        &mut self,
+        payload: serde_json::Value,
+        timeout: Duration,
+    ) -> HyperliquidResult<PostResponsePayload> {
+        self.inner.post_info_raw(payload, timeout).await
+    }
+
+    /// High-level: fire action (already signed ActionPayload)
+    pub async fn post_action_raw(
+        &mut self,
+        action: ActionPayload,
+        timeout: Duration,
+    ) -> HyperliquidResult<PostResponsePayload> {
+        self.inner.post_action_raw(action, timeout).await
     }
 }

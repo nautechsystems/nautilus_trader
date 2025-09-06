@@ -19,5 +19,6 @@ pub mod enums;
 pub mod error;
 pub mod messages;
 pub mod parse;
+pub mod post; // <-- NEW
 
 pub use client::{HyperliquidWebSocketClient, HyperliquidWebSocketInnerClient};

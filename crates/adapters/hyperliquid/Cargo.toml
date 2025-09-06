@@ -103,3 +103,7 @@ path = "bin/ws-data.rs"
 [[bin]]
 name = "hyperliquid-ws-exec"
 path = "bin/ws-exec.rs"
+
+[[bin]]
+name = "hyperliquid-ws-post"
+path = "bin/ws-post.rs"
