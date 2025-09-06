@@ -200,7 +200,13 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         self._client._instrument_provider = self._instrument_provider
 
         # Validate if connected to expected TWS/Gateway using Account
-        if self.account_id.get_id() in self._client.accounts():
+        if self._config.skip_account_validation:
+            self._log.warning(
+                f"Account validation skipped for account `{self.account_id.get_id()}` "
+                f"(skip_account_validation=True). Available accounts: {self._client.accounts()}",
+                LogColor.YELLOW,
+            )
+        elif self.account_id.get_id() in self._client.accounts():
             self._log.info(
                 f"Account `{self.account_id.get_id()}` found in the connected TWS/Gateway",
                 LogColor.GREEN,

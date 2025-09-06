@@ -1390,6 +1390,70 @@ exec_client_config = InteractiveBrokersExecClientConfig(
 )
 ```
 
+### Cross-Account Configuration
+
+For advanced setups where you want to use different accounts for data and execution (e.g., live account for data, paper account for execution), you can configure separate gateways and use the `skip_account_validation` option:
+
+```python
+# Live data client configuration (connected to live gateway)
+data_client_config = InteractiveBrokersDataClientConfig(
+    ibg_host="127.0.0.1",
+    ibg_port=4001,  # Live gateway port
+    ibg_client_id=1,
+    market_data_type=IBMarketDataTypeEnum.REALTIME,
+    instrument_provider=instrument_provider_config,
+)
+
+# Paper execution client configuration (connected to paper gateway)
+exec_client_config = InteractiveBrokersExecClientConfig(
+    ibg_host="127.0.0.1",
+    ibg_port=4002,  # Paper gateway port
+    ibg_client_id=1,
+    account_id="DU123456",  # Paper account ID
+    skip_account_validation=True,  # Skip validation for cross-account setup
+    instrument_provider=instrument_provider_config,
+    routing=RoutingConfig(default=True),
+)
+
+# Or using dockerized gateways
+live_gateway_config = DockerizedIBGatewayConfig(
+    username=os.environ.get("TWS_USERNAME"),
+    password=os.environ.get("TWS_PASSWORD"),
+    trading_mode="live",
+    read_only_api=True,  # Data only
+)
+
+paper_gateway_config = DockerizedIBGatewayConfig(
+    username=os.environ.get("TWS_USERNAME"),
+    password=os.environ.get("TWS_PASSWORD"),
+    trading_mode="paper",
+    read_only_api=False,  # Allow execution
+)
+
+data_client_config = InteractiveBrokersDataClientConfig(
+    ibg_client_id=1,
+    dockerized_gateway=live_gateway_config,
+    market_data_type=IBMarketDataTypeEnum.REALTIME,
+    instrument_provider=instrument_provider_config,
+)
+
+exec_client_config = InteractiveBrokersExecClientConfig(
+    ibg_client_id=1,
+    account_id="DU123456",  # Paper account ID
+    skip_account_validation=True,  # Required for cross-account setup
+    dockerized_gateway=paper_gateway_config,
+    instrument_provider=instrument_provider_config,
+    routing=RoutingConfig(default=True),
+)
+```
+
+**Important Notes for Cross-Account Setup:**
+
+- The `skip_account_validation=True` option bypasses the safety check that ensures the execution account exists on the connected gateway
+- This is necessary when your execution client connects to a different gateway than your data client
+- Use this option with caution and ensure your configuration is correct
+- The execution client will log a warning when account validation is skipped
+
 ### Running the Trading Node
 
 ```python

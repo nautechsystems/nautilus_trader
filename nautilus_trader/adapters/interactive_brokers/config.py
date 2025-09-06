@@ -253,6 +253,11 @@ class InteractiveBrokersExecClientConfig(LiveExecClientConfig, frozen=True):
         The client's gateway container configuration.
     connection_timeout : int, default 300
         The timeout (seconds) to wait for the client connection to be established.
+    skip_account_validation : bool, default False
+        If True, skips the account validation check during connection. This is useful for
+        cross-account setups where the execution client connects to a different gateway than
+        the data client (e.g., paper execution with live data). Use with caution as this
+        bypasses an important safety check.
 
     """
 
@@ -265,3 +270,4 @@ class InteractiveBrokersExecClientConfig(LiveExecClientConfig, frozen=True):
     account_id: str | None = None
     dockerized_gateway: DockerizedIBGatewayConfig | None = None
     connection_timeout: int = 300
+    skip_account_validation: bool = False
