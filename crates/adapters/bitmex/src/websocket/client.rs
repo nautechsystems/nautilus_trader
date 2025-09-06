@@ -15,7 +15,7 @@
 
 //! Provides the WebSocket client integration for the [BitMEX](https://bitmex.com) WebSocket API.
 //!
-//! This module defines and implements a strongly-typed [`BitmexWebSocketClient`] for
+//! This module defines and implements a [`BitmexWebSocketClient`] for
 //! connecting to BitMEX WebSocket streams. It handles authentication (when credentials
 //! are provided), manages subscriptions to market data and account update channels,
 //! and parses incoming messages into structured Nautilus domain objects.
@@ -62,7 +62,7 @@ use super::{
     },
 };
 use crate::{
-    common::{consts::BITMEX_WS_URL, credential::Credential},
+    common::{consts::BITMEX_WS_URL, credential::Credential, enums::BitmexExecType},
     websocket::parse::{
         parse_execution_msg, parse_funding_msg, parse_instrument_msg, parse_order_msg,
         parse_position_msg,
@@ -227,8 +227,15 @@ impl BitmexWebSocketClient {
                                     args: (cred.api_key.to_string(), expires, signature),
                                 };
 
+                                let auth_json = match serde_json::to_string(&auth_message) {
+                                    Ok(json) => json,
+                                    Err(e) => {
+                                        tracing::error!(error = %e, "Failed to serialize auth message");
+                                        continue;
+                                    }
+                                };
                                 if let Err(e) = inner
-                                    .send_text(serde_json::to_string(&auth_message).unwrap(), None)
+                                    .send_text(auth_json, None)
                                     .await
                                 {
                                     log::error!(
@@ -245,8 +252,15 @@ impl BitmexWebSocketClient {
                                 args: vec!["instrument".to_string()],
                             };
 
+                            let subscribe_json = match serde_json::to_string(&subscribe_msg) {
+                                Ok(json) => json,
+                                Err(e) => {
+                                    tracing::error!(error = %e, "Failed to serialize subscribe message");
+                                    continue;
+                                }
+                            };
                             if let Err(e) = inner
-                                .send_text(serde_json::to_string(&subscribe_msg).unwrap(), None)
+                                .send_text(subscribe_json, None)
                                 .await
                             {
                                 log::error!(
@@ -273,8 +287,15 @@ impl BitmexWebSocketClient {
                                     args: topics_to_restore.clone(),
                                 };
 
+                                let msg_json = match serde_json::to_string(&message) {
+                                    Ok(json) => json,
+                                    Err(e) => {
+                                        tracing::error!(error = %e, topics = ?topics_to_restore, "Failed to serialize message");
+                                        continue;
+                                    }
+                                };
                                 if let Err(e) = inner
-                                    .send_text(serde_json::to_string(&message).unwrap(), None)
+                                    .send_text(msg_json, None)
                                     .await
                                 {
                                     log::error!(
@@ -319,13 +340,17 @@ impl BitmexWebSocketClient {
                     args: vec!["instrument".to_string()],
                 };
 
-                if let Err(e) = inner
-                    .send_text(serde_json::to_string(&subscribe_msg).unwrap(), None)
-                    .await
-                {
-                    log::error!("Failed to subscribe to instruments: {e}");
-                } else {
-                    log::debug!("Subscribed to all instruments");
+                match serde_json::to_string(&subscribe_msg) {
+                    Ok(subscribe_json) => {
+                        if let Err(e) = inner.send_text(subscribe_json, None).await {
+                            log::error!("Failed to subscribe to instruments: {e}");
+                        } else {
+                            log::debug!("Subscribed to all instruments");
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!(error = %e, "Failed to serialize resubscribe message");
+                    }
                 }
             }
         }
@@ -383,16 +408,15 @@ impl BitmexWebSocketClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the WebSocket is not connected or if authentication fails.
-    ///
-    /// # Panics
-    ///
-    /// Panics if credentials are not available when this method is called.
+    /// Returns an error if the WebSocket is not connected, if authentication fails,
+    /// or if credentials are not available.
     async fn authenticate(&self) -> Result<(), BitmexWsError> {
         let credential = match &self.credential {
             Some(credential) => credential,
             None => {
-                panic!("API credentials not available to authenticate");
+                return Err(BitmexWsError::AuthenticationError(
+                    "API credentials not available to authenticate".to_string(),
+                ));
             }
         };
 
@@ -407,8 +431,13 @@ impl BitmexWebSocketClient {
         {
             let inner_guard = self.inner.read().await;
             if let Some(inner) = &*inner_guard {
+                let auth_json = serde_json::to_string(&auth_message).map_err(|e| {
+                    BitmexWsError::AuthenticationError(format!(
+                        "Failed to serialize auth message: {e}"
+                    ))
+                })?;
                 inner
-                    .send_text(serde_json::to_string(&auth_message).unwrap(), None)
+                    .send_text(auth_json, None)
                     .await
                     .map_err(|e| BitmexWsError::AuthenticationError(e.to_string()))
             } else {
@@ -558,8 +587,13 @@ impl BitmexWebSocketClient {
         {
             let inner_guard = self.inner.read().await;
             if let Some(inner) = &*inner_guard {
+                let msg_json = serde_json::to_string(&message).map_err(|e| {
+                    BitmexWsError::SubscriptionError(format!(
+                        "Failed to serialize subscribe message: {e}"
+                    ))
+                })?;
                 inner
-                    .send_text(serde_json::to_string(&message).unwrap(), None)
+                    .send_text(msg_json, None)
                     .await
                     .map_err(|e| BitmexWsError::SubscriptionError(e.to_string()))?;
             } else {
@@ -605,10 +639,14 @@ impl BitmexWebSocketClient {
         {
             let inner_guard = self.inner.read().await;
             if let Some(inner) = &*inner_guard {
-                if let Err(e) = inner
-                    .send_text(serde_json::to_string(&message).unwrap(), None)
-                    .await
-                {
+                let msg_json = match serde_json::to_string(&message) {
+                    Ok(json) => json,
+                    Err(e) => {
+                        tracing::error!(error = %e, "Failed to serialize unsubscribe message");
+                        return Ok(());
+                    }
+                };
+                if let Err(e) = inner.send_text(msg_json, None).await {
                     log::debug!("Error sending unsubscribe message: {e}");
                 }
             } else {
@@ -1357,8 +1395,20 @@ impl BitmexWsMessageHandler {
 
                             for order_msg in data {
                                 let price_precision = self.get_price_precision(&order_msg.symbol);
-                                let report = parse_order_msg(&order_msg, price_precision);
-                                reports.push(report);
+                                match parse_order_msg(&order_msg, price_precision) {
+                                    Ok(report) => reports.push(report),
+                                    Err(e) => {
+                                        tracing::error!(
+                                            error = %e,
+                                            symbol = %order_msg.symbol,
+                                            order_id = %order_msg.order_id,
+                                            time_in_force = ?order_msg.time_in_force,
+                                            "Failed to parse order message - potential data loss"
+                                        );
+                                        // TODO: Add metric counter for parse failures
+                                        continue;
+                                    }
+                                }
                             }
 
                             if reports.is_empty() {
@@ -1373,10 +1423,19 @@ impl BitmexWsMessageHandler {
                             for exec_msg in data {
                                 // Skip if symbol is missing (shouldn't happen for valid trades)
                                 let Some(symbol) = &exec_msg.symbol else {
-                                    tracing::warn!(
-                                        "Execution message missing symbol: {:?}",
-                                        exec_msg.exec_id
-                                    );
+                                    // Only log as warn for Trade executions, debug for others to reduce noise
+                                    if exec_msg.exec_type == Some(BitmexExecType::Trade) {
+                                        tracing::warn!(
+                                            "Execution message missing symbol: {:?}",
+                                            exec_msg.exec_id
+                                        );
+                                    } else {
+                                        tracing::debug!(
+                                            "Execution message missing symbol: {:?} (exec_type: {:?})",
+                                            exec_msg.exec_id,
+                                            exec_msg.exec_type
+                                        );
+                                    }
                                     continue;
                                 };
                                 let price_precision = self.get_price_precision(symbol);

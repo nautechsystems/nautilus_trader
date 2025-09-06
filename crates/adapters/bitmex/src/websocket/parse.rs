@@ -24,8 +24,8 @@ use nautilus_model::{
         depth::DEPTH10_LEN,
     },
     enums::{
-        AccountType, AggregationSource, BarAggregation, OrderSide, OrderStatus, PriceType,
-        RecordFlag,
+        AccountType, AggregationSource, BarAggregation, OrderSide, OrderStatus, OrderType,
+        PriceType, RecordFlag, TimeInForce,
     },
     events::account::state::AccountState,
     identifiers::{
@@ -52,28 +52,27 @@ use crate::common::{
     enums::{BitmexExecInstruction, BitmexExecType, BitmexSide},
     parse::{
         map_bitmex_currency, parse_contracts_quantity, parse_frac_quantity, parse_instrument_id,
-        parse_liquidity_side, parse_optional_datetime_to_unix_nanos, parse_order_status,
-        parse_order_type, parse_position_side, parse_time_in_force,
+        parse_liquidity_side, parse_optional_datetime_to_unix_nanos, parse_position_side,
     },
 };
 
 const BAR_SPEC_1_MINUTE: BarSpecification = BarSpecification {
-    step: NonZero::new(1).unwrap(),
+    step: NonZero::new(1).expect("1 is a valid non-zero usize"),
     aggregation: BarAggregation::Minute,
     price_type: PriceType::Last,
 };
 const BAR_SPEC_5_MINUTE: BarSpecification = BarSpecification {
-    step: NonZero::new(5).unwrap(),
+    step: NonZero::new(5).expect("5 is a valid non-zero usize"),
     aggregation: BarAggregation::Minute,
     price_type: PriceType::Last,
 };
 const BAR_SPEC_1_HOUR: BarSpecification = BarSpecification {
-    step: NonZero::new(1).unwrap(),
+    step: NonZero::new(1).expect("1 is a valid non-zero usize"),
     aggregation: BarAggregation::Hour,
     price_type: PriceType::Last,
 };
 const BAR_SPEC_1_DAY: BarSpecification = BarSpecification {
-    step: NonZero::new(1).unwrap(),
+    step: NonZero::new(1).expect("1 is a valid non-zero usize"),
     aggregation: BarAggregation::Day,
     price_type: PriceType::Last,
 };
@@ -243,8 +242,18 @@ pub fn parse_book10_msg(
         ask_counts[i] = 1;
     }
 
-    let bids: [BookOrder; DEPTH10_LEN] = bids.try_into().expect("`bids` length should be 10");
-    let asks: [BookOrder; DEPTH10_LEN] = asks.try_into().expect("`asks` length should be 10");
+    let bids: [BookOrder; DEPTH10_LEN] = bids
+        .try_into()
+        .inspect_err(|v: &Vec<BookOrder>| {
+            tracing::error!("Bids length mismatch: expected 10, got {}", v.len());
+        })
+        .expect("BitMEX orderBook10 should always have exactly 10 bid levels");
+    let asks: [BookOrder; DEPTH10_LEN] = asks
+        .try_into()
+        .inspect_err(|v: &Vec<BookOrder>| {
+            tracing::error!("Asks length mismatch: expected 10, got {}", v.len());
+        })
+        .expect("BitMEX orderBook10 should always have exactly 10 ask levels");
 
     let ts_event = UnixNanos::from(msg.timestamp);
 
@@ -359,7 +368,10 @@ pub fn bar_spec_from_topic(topic: &BitmexWsTopic) -> BarSpecification {
         BitmexWsTopic::TradeBin5m => BAR_SPEC_5_MINUTE,
         BitmexWsTopic::TradeBin1h => BAR_SPEC_1_HOUR,
         BitmexWsTopic::TradeBin1d => BAR_SPEC_1_DAY,
-        _ => panic!("Bar specification not supported for {topic}"),
+        _ => {
+            tracing::error!(topic = ?topic, "Bar specification not supported");
+            BAR_SPEC_1_MINUTE
+        }
     }
 }
 
@@ -375,7 +387,10 @@ pub fn topic_from_bar_spec(spec: BarSpecification) -> BitmexWsTopic {
         BAR_SPEC_5_MINUTE => BitmexWsTopic::TradeBin5m,
         BAR_SPEC_1_HOUR => BitmexWsTopic::TradeBin1h,
         BAR_SPEC_1_DAY => BitmexWsTopic::TradeBin1d,
-        _ => panic!("Bar specification not supported {spec}"),
+        _ => {
+            tracing::error!(spec = ?spec, "Bar specification not supported");
+            BitmexWsTopic::TradeBin1m
+        }
     }
 }
 
@@ -389,15 +404,24 @@ pub fn topic_from_bar_spec(spec: BarSpecification) -> BitmexWsTopic {
 ///
 /// <https://www.bitmex.com/app/wsAPI#Order>
 ///
-#[must_use]
-pub fn parse_order_msg(msg: &BitmexOrderMsg, price_precision: u8) -> OrderStatusReport {
+/// # Errors
+///
+/// Returns an error if the time in force conversion fails.
+pub fn parse_order_msg(
+    msg: &BitmexOrderMsg,
+    price_precision: u8,
+) -> anyhow::Result<OrderStatusReport> {
     let account_id = AccountId::new(format!("BITMEX-{}", msg.account)); // TODO: Revisit
     let instrument_id = parse_instrument_id(msg.symbol);
     let venue_order_id = VenueOrderId::new(msg.order_id.to_string());
-    let order_side: OrderSide = BitmexSide::from(msg.side).into();
-    let order_type = parse_order_type(&msg.ord_type);
-    let time_in_force = parse_time_in_force(&msg.time_in_force);
-    let order_status = parse_order_status(&msg.ord_status);
+    let common_side: BitmexSide = msg.side.into();
+    let order_side: OrderSide = common_side.into();
+    let order_type: OrderType = msg.ord_type.into();
+    let time_in_force: TimeInForce = msg
+        .time_in_force
+        .try_into()
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let order_status: OrderStatus = msg.ord_status.into();
     let quantity = Quantity::from(msg.order_qty);
     let filled_qty = Quantity::from(msg.cum_qty);
     let report_id = UUID4::new();
@@ -463,7 +487,7 @@ pub fn parse_order_msg(msg: &BitmexOrderMsg, price_precision: u8) -> OrderStatus
         report = report.with_cancel_reason(reason_str.to_string());
     }
 
-    report
+    Ok(report)
 }
 
 /// Parse a BitMEX WebSocket execution message into a Nautilus `FillReport`.
@@ -487,8 +511,11 @@ pub fn parse_execution_msg(msg: BitmexExecutionMsg, price_precision: u8) -> Opti
     let trade_id = TradeId::new(msg.trd_match_id?.to_string());
     let order_side: OrderSide = msg
         .side
-        .map(BitmexSide::from)
-        .map_or(OrderSide::NoOrderSide, std::convert::Into::into);
+        .map(|s| {
+            let side: BitmexSide = s.into();
+            side.into()
+        })
+        .unwrap_or(OrderSide::NoOrderSide);
     let last_qty = Quantity::from(msg.last_qty?);
     let last_px = Price::new(msg.last_px?, price_precision);
     let settlement_currency_str = msg.settl_currency.unwrap_or(Ustr::from("XBT"));
@@ -921,7 +948,7 @@ mod tests {
     fn test_parse_order_msg() {
         let json_data = load_test_json("ws_order.json");
         let msg: BitmexOrderMsg = serde_json::from_str(&json_data).unwrap();
-        let report = parse_order_msg(&msg, 1);
+        let report = parse_order_msg(&msg, 1).unwrap();
 
         assert_eq!(report.account_id.to_string(), "BITMEX-1234567");
         assert_eq!(report.instrument_id, InstrumentId::from("XBTUSD.BITMEX"));

@@ -16,6 +16,8 @@
 import asyncio
 from typing import Any
 
+import pandas as pd
+
 from nautilus_trader.adapters.bitmex.config import BitmexExecClientConfig
 from nautilus_trader.adapters.bitmex.constants import BITMEX_VENUE
 from nautilus_trader.adapters.bitmex.providers import BitmexInstrumentProvider
@@ -151,8 +153,7 @@ class BitmexExecutionClient(LiveExecutionClient):
         )
 
         # Hot caches
-        self._venue_order_ids: dict[ClientOrderId, VenueOrderId] = {}
-        self._client_order_ids: dict[VenueOrderId, ClientOrderId] = {}
+        self._filled_market_orders: set[ClientOrderId] = set()
 
     def _log_runtime_error(self, message: str) -> None:
         self._log.error(message, LogColor.RED)
@@ -675,8 +676,8 @@ class BitmexExecutionClient(LiveExecutionClient):
         if report.order_status == OrderStatus.REJECTED:
             return  # Handled by submit order
         elif report.order_status == OrderStatus.ACCEPTED:
-            if order.order_type == OrderType.MARKET or order.is_closed:
-                return  # Occasional race conditions
+            if order.is_closed or order.client_order_id in self._filled_market_orders:
+                return  # Race condition: ACCEPTED event after order already filled/closed
             if is_order_updated(order, report):
                 self.generate_order_updated(
                     strategy_id=order.strategy_id,
@@ -781,6 +782,15 @@ class BitmexExecutionClient(LiveExecutionClient):
             liquidity_side=report.liquidity_side,
             ts_event=report.ts_event,
         )
+
+        # Cache filled market orders to prevent race conditions with OrderAccepted events
+        if order.order_type == OrderType.MARKET:
+            self._filled_market_orders.add(order.client_order_id)
+            self._clock.set_time_alert(
+                name=f"remove_filled_market_order_{order.client_order_id}",
+                alert_time=self._clock.utc_now() + pd.Timedelta(seconds=2.0),
+                callback=lambda: self._filled_market_orders.discard(order.client_order_id),
+            )
 
     def _handle_position_status_report_pyo3(
         self,

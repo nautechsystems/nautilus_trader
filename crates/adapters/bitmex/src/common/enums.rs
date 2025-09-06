@@ -19,6 +19,8 @@ use nautilus_model::enums::{
 use serde::{Deserialize, Deserializer, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
 
+use crate::error::{BitmexError, BitmexNonRetryableError};
+
 /// Represents the status of a BitMEX symbol.
 #[derive(
     Copy,
@@ -70,13 +72,31 @@ pub enum BitmexSide {
     Sell,
 }
 
-impl From<OrderSide> for BitmexSide {
-    fn from(value: OrderSide) -> Self {
+impl TryFrom<OrderSide> for BitmexSide {
+    type Error = BitmexError;
+
+    fn try_from(value: OrderSide) -> Result<Self, Self::Error> {
         match value {
-            OrderSide::Buy => Self::Buy,
-            OrderSide::Sell => Self::Sell,
-            _ => panic!("Invalid order side: {value:?}"),
+            OrderSide::Buy => Ok(Self::Buy),
+            OrderSide::Sell => Ok(Self::Sell),
+            _ => Err(BitmexError::NonRetryable {
+                source: BitmexNonRetryableError::Validation {
+                    field: "order_side".to_string(),
+                    message: format!("Invalid order side: {value:?}"),
+                },
+            }),
         }
+    }
+}
+
+impl BitmexSide {
+    /// Try to convert from Nautilus OrderSide.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the order side is not Buy or Sell.
+    pub fn try_from_order_side(value: OrderSide) -> anyhow::Result<Self> {
+        Self::try_from(value).map_err(|e| anyhow::anyhow!("{e}"))
     }
 }
 
@@ -170,19 +190,37 @@ pub enum BitmexOrderType {
     Pegged,
 }
 
-impl From<OrderType> for BitmexOrderType {
-    fn from(value: OrderType) -> Self {
+impl TryFrom<OrderType> for BitmexOrderType {
+    type Error = BitmexError;
+
+    fn try_from(value: OrderType) -> Result<Self, Self::Error> {
         match value {
-            OrderType::Market => Self::Market,
-            OrderType::Limit => Self::Limit,
-            OrderType::StopMarket => Self::Stop,
-            OrderType::StopLimit => Self::StopLimit,
-            OrderType::MarketIfTouched => Self::MarketIfTouched,
-            OrderType::LimitIfTouched => Self::LimitIfTouched,
-            OrderType::TrailingStopMarket => Self::Pegged,
-            OrderType::TrailingStopLimit => Self::Pegged,
-            OrderType::MarketToLimit => Self::Market, // TODO: Not supported by BitMEX
+            OrderType::Market => Ok(Self::Market),
+            OrderType::Limit => Ok(Self::Limit),
+            OrderType::StopMarket => Ok(Self::Stop),
+            OrderType::StopLimit => Ok(Self::StopLimit),
+            OrderType::MarketIfTouched => Ok(Self::MarketIfTouched),
+            OrderType::LimitIfTouched => Ok(Self::LimitIfTouched),
+            OrderType::TrailingStopMarket => Ok(Self::Pegged),
+            OrderType::TrailingStopLimit => Ok(Self::Pegged),
+            OrderType::MarketToLimit => Err(BitmexError::NonRetryable {
+                source: BitmexNonRetryableError::Validation {
+                    field: "order_type".to_string(),
+                    message: "MarketToLimit order type is not supported by BitMEX".to_string(),
+                },
+            }),
         }
+    }
+}
+
+impl BitmexOrderType {
+    /// Try to convert from Nautilus OrderType with anyhow::Result.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the order type is MarketToLimit (not supported by BitMEX).
+    pub fn try_from_order_type(value: OrderType) -> anyhow::Result<Self> {
+        Self::try_from(value).map_err(|e| anyhow::anyhow!("{e}"))
     }
 }
 
@@ -272,32 +310,52 @@ pub enum BitmexTimeInForce {
     AtCrossing,
 }
 
-impl From<BitmexTimeInForce> for TimeInForce {
-    fn from(value: BitmexTimeInForce) -> Self {
+impl TryFrom<BitmexTimeInForce> for TimeInForce {
+    type Error = BitmexError;
+
+    fn try_from(value: BitmexTimeInForce) -> Result<Self, Self::Error> {
         match value {
-            BitmexTimeInForce::Day => Self::Day,
-            BitmexTimeInForce::GoodTillCancel => Self::Gtc,
-            BitmexTimeInForce::GoodTillDate => Self::Gtd,
-            BitmexTimeInForce::ImmediateOrCancel => Self::Ioc,
-            BitmexTimeInForce::FillOrKill => Self::Fok,
-            BitmexTimeInForce::AtTheOpening => Self::AtTheOpen,
-            BitmexTimeInForce::AtTheClose => Self::AtTheClose,
-            _ => panic!("Unsupported `BitmexTimeInForce`, was {value}"),
+            BitmexTimeInForce::Day => Ok(Self::Day),
+            BitmexTimeInForce::GoodTillCancel => Ok(Self::Gtc),
+            BitmexTimeInForce::GoodTillDate => Ok(Self::Gtd),
+            BitmexTimeInForce::ImmediateOrCancel => Ok(Self::Ioc),
+            BitmexTimeInForce::FillOrKill => Ok(Self::Fok),
+            BitmexTimeInForce::AtTheOpening => Ok(Self::AtTheOpen),
+            BitmexTimeInForce::AtTheClose => Ok(Self::AtTheClose),
+            _ => Err(BitmexError::NonRetryable {
+                source: BitmexNonRetryableError::Validation {
+                    field: "time_in_force".to_string(),
+                    message: format!("Unsupported BitmexTimeInForce: {value}"),
+                },
+            }),
         }
     }
 }
 
-impl From<TimeInForce> for BitmexTimeInForce {
-    fn from(value: TimeInForce) -> Self {
+impl TryFrom<TimeInForce> for BitmexTimeInForce {
+    type Error = crate::error::BitmexError;
+
+    fn try_from(value: TimeInForce) -> Result<Self, Self::Error> {
         match value {
-            TimeInForce::Day => Self::Day,
-            TimeInForce::Gtc => Self::GoodTillCancel,
-            TimeInForce::Gtd => Self::GoodTillDate,
-            TimeInForce::Ioc => Self::ImmediateOrCancel,
-            TimeInForce::Fok => Self::FillOrKill,
-            TimeInForce::AtTheOpen => Self::AtTheOpening,
-            TimeInForce::AtTheClose => Self::AtTheClose,
+            TimeInForce::Day => Ok(Self::Day),
+            TimeInForce::Gtc => Ok(Self::GoodTillCancel),
+            TimeInForce::Gtd => Ok(Self::GoodTillDate),
+            TimeInForce::Ioc => Ok(Self::ImmediateOrCancel),
+            TimeInForce::Fok => Ok(Self::FillOrKill),
+            TimeInForce::AtTheOpen => Ok(Self::AtTheOpening),
+            TimeInForce::AtTheClose => Ok(Self::AtTheClose),
         }
+    }
+}
+
+impl BitmexTimeInForce {
+    /// Try to convert from Nautilus TimeInForce with anyhow::Result.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the time in force is not supported by BitMEX.
+    pub fn try_from_time_in_force(value: TimeInForce) -> anyhow::Result<Self> {
+        Self::try_from(value).map_err(|e| anyhow::anyhow!("{e}"))
     }
 }
 
@@ -856,5 +914,128 @@ mod tests {
         assert!(serde_json::from_str::<BitmexProductType>(r#""invalid_type""#).is_err());
         assert!(serde_json::from_str::<BitmexProductType>(r"123").is_err());
         assert!(serde_json::from_str::<BitmexProductType>(r"{}").is_err());
+    }
+
+    #[rstest]
+    fn test_order_side_try_from() {
+        // Valid conversions
+        assert_eq!(
+            BitmexSide::try_from(OrderSide::Buy).unwrap(),
+            BitmexSide::Buy
+        );
+        assert_eq!(
+            BitmexSide::try_from(OrderSide::Sell).unwrap(),
+            BitmexSide::Sell
+        );
+
+        // Invalid conversions
+        let result = BitmexSide::try_from(OrderSide::NoOrderSide);
+        assert!(result.is_err());
+        match result {
+            Err(BitmexError::NonRetryable {
+                source: BitmexNonRetryableError::Validation { field, .. },
+                ..
+            }) => {
+                assert_eq!(field, "order_side");
+            }
+            _ => panic!("Expected validation error"),
+        }
+    }
+
+    #[rstest]
+    fn test_order_type_try_from() {
+        // Valid conversions
+        assert_eq!(
+            BitmexOrderType::try_from(OrderType::Market).unwrap(),
+            BitmexOrderType::Market
+        );
+        assert_eq!(
+            BitmexOrderType::try_from(OrderType::Limit).unwrap(),
+            BitmexOrderType::Limit
+        );
+
+        // MarketToLimit should fail
+        let result = BitmexOrderType::try_from(OrderType::MarketToLimit);
+        assert!(result.is_err());
+        match result {
+            Err(BitmexError::NonRetryable {
+                source: BitmexNonRetryableError::Validation { message, .. },
+                ..
+            }) => {
+                assert!(message.contains("not supported"));
+            }
+            _ => panic!("Expected validation error"),
+        }
+    }
+
+    #[rstest]
+    fn test_time_in_force_conversions() {
+        use nautilus_model::enums::TimeInForce;
+
+        // BitMEX to Nautilus (all supported variants)
+        assert_eq!(
+            TimeInForce::try_from(BitmexTimeInForce::Day).unwrap(),
+            TimeInForce::Day
+        );
+        assert_eq!(
+            TimeInForce::try_from(BitmexTimeInForce::GoodTillCancel).unwrap(),
+            TimeInForce::Gtc
+        );
+        assert_eq!(
+            TimeInForce::try_from(BitmexTimeInForce::ImmediateOrCancel).unwrap(),
+            TimeInForce::Ioc
+        );
+
+        // Unsupported BitMEX variants should fail
+        let result = TimeInForce::try_from(BitmexTimeInForce::GoodTillCrossing);
+        assert!(result.is_err());
+        match result {
+            Err(BitmexError::NonRetryable {
+                source: BitmexNonRetryableError::Validation { field, message },
+                ..
+            }) => {
+                assert_eq!(field, "time_in_force");
+                assert!(message.contains("Unsupported"));
+            }
+            _ => panic!("Expected validation error"),
+        }
+
+        // Nautilus to BitMEX (all supported variants)
+        assert_eq!(
+            BitmexTimeInForce::try_from(TimeInForce::Day).unwrap(),
+            BitmexTimeInForce::Day
+        );
+        assert_eq!(
+            BitmexTimeInForce::try_from(TimeInForce::Gtc).unwrap(),
+            BitmexTimeInForce::GoodTillCancel
+        );
+        assert_eq!(
+            BitmexTimeInForce::try_from(TimeInForce::Fok).unwrap(),
+            BitmexTimeInForce::FillOrKill
+        );
+    }
+
+    #[rstest]
+    fn test_helper_methods() {
+        // Test try_from_order_side helper
+        let result = BitmexSide::try_from_order_side(OrderSide::Buy);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), BitmexSide::Buy);
+
+        let result = BitmexSide::try_from_order_side(OrderSide::NoOrderSide);
+        assert!(result.is_err());
+
+        // Test try_from_order_type helper
+        let result = BitmexOrderType::try_from_order_type(OrderType::Limit);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), BitmexOrderType::Limit);
+
+        let result = BitmexOrderType::try_from_order_type(OrderType::MarketToLimit);
+        assert!(result.is_err());
+
+        // Test try_from_time_in_force helper
+        let result = BitmexTimeInForce::try_from_time_in_force(TimeInForce::Ioc);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), BitmexTimeInForce::ImmediateOrCancel);
     }
 }

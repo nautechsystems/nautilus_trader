@@ -16,7 +16,7 @@
 use chrono::{DateTime, Utc};
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
-    enums::{AccountType, PositionSide},
+    enums::{AccountType, AggressorSide, LiquiditySide, PositionSide},
     events::AccountState,
     identifiers::{AccountId, InstrumentId, Symbol},
     types::{AccountBalance, Currency, Money, QUANTITY_MAX, Quantity},
@@ -44,10 +44,7 @@ pub fn map_bitmex_currency(bitmex_currency: &str) -> String {
 use crate::{
     common::{
         consts::BITMEX_VENUE,
-        enums::{
-            BitmexContingencyType, BitmexLiquidityIndicator, BitmexOrderStatus, BitmexOrderType,
-            BitmexSide, BitmexTimeInForce,
-        },
+        enums::{BitmexLiquidityIndicator, BitmexSide},
     },
     websocket::messages::BitmexMarginMsg,
 };
@@ -86,9 +83,7 @@ pub fn parse_frac_quantity(value: f64, size_precision: u8) -> Quantity {
 /// Parses the given datetime (UTC) into a `UnixNanos` timestamp.
 /// If `value` is `None`, then defaults to the UNIX epoch (0 nanoseconds).
 ///
-/// # Panics
-///
-/// Panics if the timestamp cannot be converted to nanoseconds (should never happen with valid timestamps).
+/// Returns epoch (0) for invalid timestamps that cannot be converted to nanoseconds.
 #[must_use]
 pub fn parse_optional_datetime_to_unix_nanos(
     value: &Option<DateTime<Utc>>,
@@ -96,33 +91,28 @@ pub fn parse_optional_datetime_to_unix_nanos(
 ) -> UnixNanos {
     value
         .map(|dt| {
-            UnixNanos::from(
-                dt.timestamp_nanos_opt()
-                    .unwrap_or_else(|| panic!("Invalid timestamp for `{field}`"))
-                    as u64,
-            )
+            UnixNanos::from(dt.timestamp_nanos_opt().unwrap_or_else(|| {
+                tracing::error!(field = field, timestamp = ?dt, "Invalid timestamp - out of range");
+                0
+            }) as u64)
         })
         .unwrap_or_default()
 }
 
 #[must_use]
-pub const fn parse_aggressor_side(
-    side: &Option<BitmexSide>,
-) -> nautilus_model::enums::AggressorSide {
+pub const fn parse_aggressor_side(side: &Option<BitmexSide>) -> AggressorSide {
     match side {
-        Some(BitmexSide::Buy) => nautilus_model::enums::AggressorSide::Buyer,
-        Some(BitmexSide::Sell) => nautilus_model::enums::AggressorSide::Seller,
-        None => nautilus_model::enums::AggressorSide::NoAggressor,
+        Some(BitmexSide::Buy) => AggressorSide::Buyer,
+        Some(BitmexSide::Sell) => AggressorSide::Seller,
+        None => AggressorSide::NoAggressor,
     }
 }
 
 #[must_use]
-pub fn parse_liquidity_side(
-    liquidity: &Option<BitmexLiquidityIndicator>,
-) -> nautilus_model::enums::LiquiditySide {
+pub fn parse_liquidity_side(liquidity: &Option<BitmexLiquidityIndicator>) -> LiquiditySide {
     liquidity
         .map(std::convert::Into::into)
-        .unwrap_or(nautilus_model::enums::LiquiditySide::NoLiquiditySide)
+        .unwrap_or(LiquiditySide::NoLiquiditySide)
 }
 
 #[must_use]
@@ -132,33 +122,6 @@ pub const fn parse_position_side(current_qty: Option<i64>) -> PositionSide {
         Some(qty) if qty < 0 => PositionSide::Short,
         _ => PositionSide::Flat,
     }
-}
-
-/// Parse a BitMEX time in force into a Nautilus time in force.
-///
-/// # Panics
-///
-/// Panics if an unsupported `TimeInForce` variant is encountered.
-#[must_use]
-pub fn parse_time_in_force(tif: &BitmexTimeInForce) -> nautilus_model::enums::TimeInForce {
-    (*tif).into()
-}
-
-#[must_use]
-pub fn parse_order_type(order_type: &BitmexOrderType) -> nautilus_model::enums::OrderType {
-    (*order_type).into()
-}
-
-#[must_use]
-pub fn parse_order_status(order_status: &BitmexOrderStatus) -> nautilus_model::enums::OrderStatus {
-    (*order_status).into()
-}
-
-#[must_use]
-pub fn parse_contingency_type(
-    contingency_type: &BitmexContingencyType,
-) -> nautilus_model::enums::ContingencyType {
-    (*contingency_type).into()
 }
 
 /// Parses a BitMEX margin message into a Nautilus account state.

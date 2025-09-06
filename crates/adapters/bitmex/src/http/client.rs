@@ -90,13 +90,33 @@ use crate::{
 /// We use 10 requests per second which respects the burst limit while the token bucket
 /// mechanism naturally handles the average rate limit.
 pub static BITMEX_REST_QUOTA: LazyLock<Quota> =
-    LazyLock::new(|| Quota::per_second(NonZeroU32::new(10).unwrap()));
+    LazyLock::new(|| Quota::per_second(NonZeroU32::new(10).expect("10 is a valid non-zero u32")));
 
 /// Represents a BitMEX HTTP response.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BitmexResponse<T> {
     /// The typed data returned by the BitMEX endpoint.
     pub data: Vec<T>,
+}
+
+/// Safely converts a Quantity to u32 for BitMEX API.
+///
+/// Logs a warning if truncation occurs.
+fn quantity_to_u32(quantity: &Quantity) -> u32 {
+    let value = quantity.as_f64();
+    if value > u32::MAX as f64 {
+        tracing::warn!(
+            "Quantity {} exceeds u32::MAX, clamping to {}",
+            value,
+            u32::MAX
+        );
+        u32::MAX
+    } else if value < 0.0 {
+        tracing::warn!("Quantity {} is negative, using 0", value);
+        0
+    } else {
+        value as u32
+    }
 }
 
 /// Provides a lower-level HTTP client for connecting to the [BitMEX](https://bitmex.com) REST API.
@@ -238,7 +258,8 @@ impl BitmexHttpInnerClient {
                 Err(error_resp.into())
             } else {
                 Err(BitmexHttpError::UnexpectedStatus {
-                    status: StatusCode::from_u16(resp.status.as_u16()).unwrap(),
+                    status: StatusCode::from_u16(resp.status.as_u16())
+                        .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
                     body: String::from_utf8_lossy(&resp.body).to_string(),
                 })
             }
@@ -308,7 +329,9 @@ impl BitmexHttpInnerClient {
         &self,
         params: GetTradeParams,
     ) -> Result<Vec<BitmexTrade>, BitmexHttpError> {
-        let query = serde_urlencoded::to_string(&params).expect("Invalid parameters");
+        let query = serde_urlencoded::to_string(&params).map_err(|e| {
+            BitmexHttpError::ValidationError(format!("Failed to serialize parameters: {e}"))
+        })?;
         let path = format!("/trade?{query}");
         self.send_request(Method::GET, &path, None, true).await
     }
@@ -326,7 +349,9 @@ impl BitmexHttpInnerClient {
         &self,
         params: GetOrderParams,
     ) -> Result<Vec<BitmexOrder>, BitmexHttpError> {
-        let query = serde_urlencoded::to_string(&params).expect("Invalid parameters");
+        let query = serde_urlencoded::to_string(&params).map_err(|e| {
+            BitmexHttpError::ValidationError(format!("Failed to serialize parameters: {e}"))
+        })?;
         let path = format!("/order?{query}");
         self.send_request(Method::GET, &path, None, true).await
     }
@@ -344,7 +369,9 @@ impl BitmexHttpInnerClient {
         &self,
         params: PostOrderParams,
     ) -> Result<Value, BitmexHttpError> {
-        let query = serde_urlencoded::to_string(&params).expect("Invalid parameters");
+        let query = serde_urlencoded::to_string(&params).map_err(|e| {
+            BitmexHttpError::ValidationError(format!("Failed to serialize parameters: {e}"))
+        })?;
         let path = format!("/order?{query}");
         self.send_request(Method::POST, &path, None, true).await
     }
@@ -362,7 +389,9 @@ impl BitmexHttpInnerClient {
         &self,
         params: DeleteOrderParams,
     ) -> Result<Value, BitmexHttpError> {
-        let query = serde_urlencoded::to_string(&params).expect("Invalid parameters");
+        let query = serde_urlencoded::to_string(&params).map_err(|e| {
+            BitmexHttpError::ValidationError(format!("Failed to serialize parameters: {e}"))
+        })?;
         let path = format!("/order?{query}");
         self.send_request(Method::DELETE, &path, None, true).await
     }
@@ -377,7 +406,9 @@ impl BitmexHttpInnerClient {
     ///
     /// Panics if the parameters cannot be serialized (should never happen with valid builder-generated params).
     pub async fn http_amend_order(&self, params: PutOrderParams) -> Result<Value, BitmexHttpError> {
-        let query = serde_urlencoded::to_string(&params).expect("Invalid parameters");
+        let query = serde_urlencoded::to_string(&params).map_err(|e| {
+            BitmexHttpError::ValidationError(format!("Failed to serialize parameters: {e}"))
+        })?;
         let path = format!("/order?{query}");
         self.send_request(Method::PUT, &path, None, true).await
     }
@@ -399,7 +430,9 @@ impl BitmexHttpInnerClient {
         &self,
         params: DeleteAllOrdersParams,
     ) -> Result<Value, BitmexHttpError> {
-        let query = serde_urlencoded::to_string(&params).expect("Invalid parameters");
+        let query = serde_urlencoded::to_string(&params).map_err(|e| {
+            BitmexHttpError::ValidationError(format!("Failed to serialize parameters: {e}"))
+        })?;
         let path = format!("/order/all?{query}");
         self.send_request(Method::DELETE, &path, None, true).await
     }
@@ -417,7 +450,9 @@ impl BitmexHttpInnerClient {
         &self,
         params: GetExecutionParams,
     ) -> Result<Vec<BitmexExecution>, BitmexHttpError> {
-        let query = serde_urlencoded::to_string(&params).expect("Invalid parameters");
+        let query = serde_urlencoded::to_string(&params).map_err(|e| {
+            BitmexHttpError::ValidationError(format!("Failed to serialize parameters: {e}"))
+        })?;
         let path = format!("/execution/tradeHistory?{query}");
         self.send_request(Method::GET, &path, None, true).await
     }
@@ -435,7 +470,9 @@ impl BitmexHttpInnerClient {
         &self,
         params: GetPositionParams,
     ) -> Result<Vec<BitmexPosition>, BitmexHttpError> {
-        let query = serde_urlencoded::to_string(&params).expect("Invalid parameters");
+        let query = serde_urlencoded::to_string(&params).map_err(|e| {
+            BitmexHttpError::ValidationError(format!("Failed to serialize parameters: {e}"))
+        })?;
         let path = format!("/position?{query}");
         self.send_request(Method::GET, &path, None, true).await
     }
@@ -453,7 +490,9 @@ impl BitmexHttpInnerClient {
         &self,
         params: PostOrderBulkParams,
     ) -> Result<Vec<BitmexOrder>, BitmexHttpError> {
-        let body = serde_json::to_vec(&params).expect("Invalid parameters");
+        let body = serde_json::to_vec(&params).map_err(|e| {
+            BitmexHttpError::ValidationError(format!("Failed to serialize parameters: {e}"))
+        })?;
         let path = "/order/bulk";
         self.send_request(Method::POST, path, Some(body), true)
             .await
@@ -472,7 +511,9 @@ impl BitmexHttpInnerClient {
         &self,
         params: PutOrderBulkParams,
     ) -> Result<Vec<BitmexOrder>, BitmexHttpError> {
-        let body = serde_json::to_vec(&params).expect("Invalid parameters");
+        let body = serde_json::to_vec(&params).map_err(|e| {
+            BitmexHttpError::ValidationError(format!("Failed to serialize parameters: {e}"))
+        })?;
         let path = "/order/bulk";
         self.send_request(Method::PUT, path, Some(body), true).await
     }
@@ -490,7 +531,9 @@ impl BitmexHttpInnerClient {
         &self,
         params: PostPositionLeverageParams,
     ) -> Result<BitmexPosition, BitmexHttpError> {
-        let query = serde_urlencoded::to_string(&params).expect("Invalid parameters");
+        let query = serde_urlencoded::to_string(&params).map_err(|e| {
+            BitmexHttpError::ValidationError(format!("Failed to serialize parameters: {e}"))
+        })?;
         let path = format!("/position/leverage?{query}");
         self.send_request(Method::POST, &path, None, true).await
     }
@@ -884,15 +927,15 @@ impl BitmexHttpClient {
         params.symbol(instrument_id.symbol.as_str());
         params.cl_ord_id(client_order_id.as_str());
 
-        let side: BitmexSide = order_side.into();
+        let side = BitmexSide::try_from_order_side(order_side)?;
         params.side(side);
 
-        let ord_type: BitmexOrderType = order_type.into();
+        let ord_type = BitmexOrderType::try_from_order_type(order_type)?;
         params.ord_type(ord_type);
 
-        params.order_qty(quantity.as_f64() as u32);
+        params.order_qty(quantity_to_u32(&quantity));
 
-        let tif: BitmexTimeInForce = time_in_force.into();
+        let tif = BitmexTimeInForce::try_from_time_in_force(time_in_force)?;
         params.time_in_force(tif);
 
         if let Some(price) = price {
@@ -904,7 +947,7 @@ impl BitmexHttpClient {
         }
 
         if let Some(display_qty) = display_qty {
-            params.display_qty(display_qty.as_f64() as u32);
+            params.display_qty(quantity_to_u32(&display_qty));
         }
 
         let mut exec_inst = Vec::new();
@@ -1064,7 +1107,7 @@ impl BitmexHttpClient {
         params.symbol(instrument_id.symbol.as_str());
 
         if let Some(side) = order_side {
-            let side: BitmexSide = side.into();
+            let side = BitmexSide::try_from_order_side(side)?;
             params.filter(serde_json::json!({
                 "side": side
             }));
@@ -1127,7 +1170,7 @@ impl BitmexHttpClient {
         }
 
         if let Some(quantity) = quantity {
-            params.order_qty(quantity.as_f64() as u32);
+            params.order_qty(quantity_to_u32(&quantity));
         }
 
         if let Some(price) = price {

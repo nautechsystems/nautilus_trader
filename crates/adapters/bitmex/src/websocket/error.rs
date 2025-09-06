@@ -50,3 +50,56 @@ impl From<serde_json::Error> for BitmexWsError {
         Self::JsonError(error.to_string())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_bitmex_ws_error_display() {
+        let error = BitmexWsError::ParsingError("Invalid message format".to_string());
+        assert_eq!(error.to_string(), "Parsing error: Invalid message format");
+
+        let error = BitmexWsError::BitmexError {
+            error_name: "InvalidTopic".to_string(),
+            message: "Unknown subscription topic".to_string(),
+        };
+        assert_eq!(
+            error.to_string(),
+            "BitMEX error InvalidTopic: Unknown subscription topic"
+        );
+
+        let error = BitmexWsError::ClientError("Connection lost".to_string());
+        assert_eq!(error.to_string(), "Client error: Connection lost");
+
+        let error = BitmexWsError::AuthenticationError("Invalid API key".to_string());
+        assert_eq!(error.to_string(), "Authentication error: Invalid API key");
+
+        let error = BitmexWsError::SubscriptionError("Topic not available".to_string());
+        assert_eq!(error.to_string(), "Subscription error: Topic not available");
+
+        let error = BitmexWsError::MissingCredentials;
+        assert_eq!(
+            error.to_string(),
+            "Missing credentials: API authentication required for this operation"
+        );
+    }
+
+    #[rstest]
+    fn test_bitmex_ws_error_from_json_error() {
+        let json_err = serde_json::from_str::<serde_json::Value>("invalid json").unwrap_err();
+        let ws_error: BitmexWsError = json_err.into();
+        assert!(ws_error.to_string().contains("JSON error"));
+    }
+
+    #[rstest]
+    fn test_bitmex_ws_error_from_tungstenite() {
+        use tokio_tungstenite::tungstenite::Error as WsError;
+
+        let tungstenite_err = WsError::ConnectionClosed;
+        let ws_error: BitmexWsError = tungstenite_err.into();
+        assert!(ws_error.to_string().contains("Tungstenite error"));
+    }
+}

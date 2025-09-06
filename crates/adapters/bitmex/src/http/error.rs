@@ -109,3 +109,90 @@ impl From<BitmexErrorResponse> for BitmexHttpError {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_bitmex_build_error_display() {
+        let error = BitmexBuildError::MissingSymbol;
+        assert_eq!(error.to_string(), "Missing required symbol");
+
+        let error = BitmexBuildError::InvalidCount;
+        assert_eq!(
+            error.to_string(),
+            "Invalid count: must be between 1 and 500"
+        );
+
+        let error = BitmexBuildError::InvalidTimeRange {
+            start_time: 100,
+            end_time: 50,
+        };
+        assert_eq!(
+            error.to_string(),
+            "Invalid time range: start_time (100) must be less than end_time (50)"
+        );
+    }
+
+    #[rstest]
+    fn test_bitmex_error_response_from_json() {
+        let json = r#"{
+            "error": {
+                "message": "Invalid API Key.",
+                "name": "HTTPError"
+            }
+        }"#;
+
+        let error_response: BitmexErrorResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(error_response.error.message, "Invalid API Key.");
+        assert_eq!(error_response.error.name, "HTTPError");
+    }
+
+    #[rstest]
+    fn test_bitmex_http_error_from_error_response() {
+        let error_response = BitmexErrorResponse {
+            error: BitmexErrorMessage {
+                message: "Rate limit exceeded".to_string(),
+                name: "RateLimitError".to_string(),
+            },
+        };
+
+        let http_error: BitmexHttpError = error_response.into();
+        assert_eq!(
+            http_error.to_string(),
+            "BitMEX error RateLimitError: Rate limit exceeded"
+        );
+    }
+
+    #[rstest]
+    fn test_bitmex_http_error_from_json_error() {
+        let json_err = serde_json::from_str::<BitmexErrorResponse>("invalid json").unwrap_err();
+        let http_error: BitmexHttpError = json_err.into();
+        assert!(http_error.to_string().contains("JSON error"));
+    }
+
+    #[rstest]
+    fn test_bitmex_http_error_from_string() {
+        let error_msg = "Invalid parameter value".to_string();
+        let http_error: BitmexHttpError = error_msg.into();
+        assert_eq!(
+            http_error.to_string(),
+            "Parameter validation error: Invalid parameter value"
+        );
+    }
+
+    #[rstest]
+    fn test_unexpected_status_error() {
+        let error = BitmexHttpError::UnexpectedStatus {
+            status: StatusCode::BAD_GATEWAY,
+            body: "Server error".to_string(),
+        };
+        assert_eq!(
+            error.to_string(),
+            "Unexpected HTTP status code 502 Bad Gateway: Server error"
+        );
+    }
+}

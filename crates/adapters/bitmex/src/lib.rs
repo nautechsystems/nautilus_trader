@@ -15,7 +15,7 @@
 
 //! [NautilusTrader](http://nautilustrader.io) adapter for the [BitMEX](https://bitmex.com) cryptocurrency exchange.
 //!
-//! The `nautilus-bitmex` crate provides strongly-typed client bindings (HTTP & WebSocket), data
+//! The `nautilus-bitmex` crate provides client bindings (HTTP & WebSocket), data
 //! models and helper utilities that wrap the official **BitMEX API**.
 //!
 //! The official BitMEX API reference can be found at <https://www.bitmex.com/app/apiOverview>.
@@ -51,6 +51,7 @@
 
 pub mod common;
 pub mod config;
+pub mod error;
 pub mod http;
 pub mod websocket;
 

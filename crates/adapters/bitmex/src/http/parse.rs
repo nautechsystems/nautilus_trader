@@ -19,7 +19,7 @@ use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime, uuid::UUID4};
 use nautilus_model::{
     currencies::CURRENCY_MAP,
     data::TradeTick,
-    enums::{CurrencyType, OrderSide, TriggerType},
+    enums::{CurrencyType, OrderSide, OrderStatus, OrderType, TriggerType},
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, Symbol, TradeId, VenueOrderId,
     },
@@ -35,9 +35,8 @@ use super::models::{BitmexExecution, BitmexInstrument, BitmexOrder, BitmexPositi
 use crate::common::{
     enums::{BitmexExecInstruction, BitmexExecType, BitmexInstrumentType},
     parse::{
-        map_bitmex_currency, parse_aggressor_side, parse_contingency_type, parse_instrument_id,
-        parse_liquidity_side, parse_optional_datetime_to_unix_nanos, parse_order_status,
-        parse_order_type, parse_position_side, parse_time_in_force,
+        map_bitmex_currency, parse_aggressor_side, parse_instrument_id, parse_liquidity_side,
+        parse_optional_datetime_to_unix_nanos, parse_position_side,
     },
 };
 
@@ -118,7 +117,6 @@ pub fn parse_index_instrument(
     let instrument_id = parse_instrument_id(definition.symbol);
     let raw_symbol = Symbol::new(definition.symbol);
 
-    // Use USD for indices
     let base_currency = Currency::USD();
     let quote_currency = Currency::USD();
     let settlement_currency = Currency::USD();
@@ -514,26 +512,23 @@ pub fn parse_order_status_report(
     let venue_order_id = VenueOrderId::new(order.order_id.to_string());
     let order_side: OrderSide = order
         .side
-        .ok_or_else(|| anyhow::anyhow!("Order missing side"))?
-        .into();
-    let order_type = parse_order_type(
-        order
-            .ord_type
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Order missing ord_type"))?,
-    );
-    let time_in_force = parse_time_in_force(
-        order
-            .time_in_force
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Order missing time_in_force"))?,
-    );
-    let order_status = parse_order_status(
-        order
-            .ord_status
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Order missing ord_status"))?,
-    );
+        .map_or(OrderSide::NoOrderSide, |side| side.into());
+    let order_type: OrderType = (*order
+        .ord_type
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("Order missing ord_type"))?)
+    .into();
+    let time_in_force: nautilus_model::enums::TimeInForce = (*order
+        .time_in_force
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("Order missing time_in_force"))?)
+    .try_into()
+    .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let order_status: OrderStatus = (*order
+        .ord_status
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("Order missing ord_status"))?)
+    .into();
     let quantity = Quantity::from(
         order
             .order_qty
@@ -608,7 +603,7 @@ pub fn parse_order_status_report(
     }
 
     if let Some(contingency_type) = order.contingency_type {
-        report = report.with_contingency_type(parse_contingency_type(&contingency_type));
+        report = report.with_contingency_type(contingency_type.into());
     }
 
     // if let Some(expire_time) = order.ex {
@@ -644,20 +639,16 @@ pub fn parse_fill_report(
     }
 
     // Additional check: skip executions without order_id (likely funding/settlement)
-    if exec.order_id.is_none() {
-        return Err(anyhow::anyhow!(
-            "Skipping execution without order_id: {:?}",
-            exec.exec_type
-        ));
-    }
+    let order_id = exec.order_id.ok_or_else(|| {
+        anyhow::anyhow!("Skipping execution without order_id: {:?}", exec.exec_type)
+    })?;
 
     let account_id = AccountId::new(format!("BITMEX-{}", exec.account));
     let symbol = exec
         .symbol
         .ok_or_else(|| anyhow::anyhow!("Execution missing symbol"))?;
     let instrument_id = parse_instrument_id(symbol);
-    // SAFETY: We already checked order_id is Some above
-    let venue_order_id = VenueOrderId::new(exec.order_id.unwrap().to_string());
+    let venue_order_id = VenueOrderId::new(order_id.to_string());
     // trd_match_id might be missing for some execution types, use exec_id as fallback
     let trade_id = TradeId::new(
         exec.trd_match_id
