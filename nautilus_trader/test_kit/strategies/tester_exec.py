@@ -387,13 +387,13 @@ class ExecTester(Strategy):
             if self.config.use_individual_cancels_on_stop:
                 for order in self.cache.orders_open(
                     instrument_id=self.config.instrument_id,
-                    strategy_id=self.strategy_id,
+                    strategy_id=self.id,
                 ):
                     self.cancel_order(order)
             elif self.config.use_batch_cancel_on_stop:
                 open_orders = self.cache.orders_open(
                     instrument_id=self.config.instrument_id,
-                    strategy_id=self.strategy_id,
+                    strategy_id=self.id,
                 )
                 if open_orders:
                     self.cancel_orders(open_orders, client_id=self.client_id)

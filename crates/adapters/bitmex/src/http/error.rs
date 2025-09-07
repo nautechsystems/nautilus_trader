@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// Build error for query parameter validation.
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, Error)]
 pub enum BitmexBuildError {
     /// Missing required symbol.
     #[error("Missing required symbol")]
@@ -62,7 +62,7 @@ pub struct BitmexErrorMessage {
 }
 
 /// A typed error enumeration for the BitMEX HTTP client.
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, Error)]
 pub enum BitmexHttpError {
     /// Error variant when credentials are missing but the request is authenticated.
     #[error("Missing credentials for authenticated request")]
@@ -79,12 +79,18 @@ pub enum BitmexHttpError {
     /// Build error for query parameters.
     #[error("Build error: {0}")]
     BuildError(#[from] BitmexBuildError),
-    /// Wrapping the underlying `HttpClientError` from the network crate.
+    /// Generic network error (for retries, cancellations, etc).
     #[error("Network error: {0}")]
-    HttpClientError(#[from] HttpClientError),
+    NetworkError(String),
     /// Any unknown HTTP status or unexpected response from BitMEX.
     #[error("Unexpected HTTP status code {status}: {body}")]
     UnexpectedStatus { status: StatusCode, body: String },
+}
+
+impl From<HttpClientError> for BitmexHttpError {
+    fn from(error: HttpClientError) -> Self {
+        Self::NetworkError(error.to_string())
+    }
 }
 
 impl From<String> for BitmexHttpError {

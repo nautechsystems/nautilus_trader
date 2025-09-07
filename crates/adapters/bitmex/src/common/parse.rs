@@ -23,24 +23,6 @@ use nautilus_model::{
 };
 use ustr::Ustr;
 
-/// Maps BitMEX currency codes to standard Nautilus currency codes.
-///
-/// BitMEX uses some non-standard currency codes:
-/// - "XBt" -> "XBT" (Bitcoin)
-/// - "USDt" -> "USDT" (Tether)
-/// - "LAMp" -> "USDT" (Test currency, mapped to USDT)
-///
-/// For other currencies, converts to uppercase.
-#[must_use]
-pub fn map_bitmex_currency(bitmex_currency: &str) -> String {
-    match bitmex_currency {
-        "XBt" => "XBT".to_string(),
-        "USDt" => "USDT".to_string(),
-        "LAMp" => "USDT".to_string(), // Map test currency to USDT
-        other => other.to_uppercase(),
-    }
-}
-
 use crate::{
     common::{
         consts::BITMEX_VENUE,
@@ -53,6 +35,26 @@ use crate::{
 #[must_use]
 pub fn parse_instrument_id(symbol: Ustr) -> InstrumentId {
     InstrumentId::new(Symbol::from_ustr_unchecked(symbol), *BITMEX_VENUE)
+}
+
+/// Safely converts a Quantity to u32 for BitMEX API.
+///
+/// Logs a warning if truncation occurs.
+#[must_use]
+pub fn quantity_to_u32(quantity: &Quantity) -> u32 {
+    let value = quantity.as_f64();
+    if value > u32::MAX as f64 {
+        tracing::warn!(
+            "Quantity {value} exceeds u32::MAX, clamping to {}",
+            u32::MAX
+        );
+        u32::MAX
+    } else if value < 0.0 {
+        tracing::warn!("Quantity {value} is negative, using 0");
+        0
+    } else {
+        value as u32
+    }
 }
 
 #[must_use]
@@ -121,6 +123,24 @@ pub const fn parse_position_side(current_qty: Option<i64>) -> PositionSide {
         Some(qty) if qty > 0 => PositionSide::Long,
         Some(qty) if qty < 0 => PositionSide::Short,
         _ => PositionSide::Flat,
+    }
+}
+
+/// Maps BitMEX currency codes to standard Nautilus currency codes.
+///
+/// BitMEX uses some non-standard currency codes:
+/// - "XBt" -> "XBT" (Bitcoin)
+/// - "USDt" -> "USDT" (Tether)
+/// - "LAMp" -> "USDT" (Test currency, mapped to USDT)
+///
+/// For other currencies, converts to uppercase.
+#[must_use]
+pub fn map_bitmex_currency(bitmex_currency: &str) -> String {
+    match bitmex_currency {
+        "XBt" => "XBT".to_string(),
+        "USDt" => "USDT".to_string(),
+        "LAMp" => "USDT".to_string(), // Map test currency to USDT
+        other => other.to_uppercase(),
     }
 }
 

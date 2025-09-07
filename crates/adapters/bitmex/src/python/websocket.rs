@@ -112,6 +112,11 @@ impl BitmexWebSocketClient {
         self.get_subscriptions(instrument_id)
     }
 
+    #[pyo3(name = "set_account_id")]
+    pub fn py_set_account_id(&mut self, account_id: AccountId) {
+        self.set_account_id(account_id);
+    }
+
     #[pyo3(name = "connect")]
     fn py_connect<'py>(
         &mut self,
@@ -160,7 +165,7 @@ impl BitmexWebSocketClient {
                             }
                         }
                         NautilusWsMessage::PositionStatusReport(report) => {
-                            if let Ok(py_obj) = (*report).into_py_any(py) {
+                            if let Ok(py_obj) = report.into_py_any(py) {
                                 call_python(py, &callback, py_obj);
                             }
                         }
@@ -172,7 +177,12 @@ impl BitmexWebSocketClient {
                             }
                         }
                         NautilusWsMessage::AccountState(account_state) => {
-                            if let Ok(py_obj) = (*account_state).into_py_any(py) {
+                            if let Ok(py_obj) = account_state.into_py_any(py) {
+                                call_python(py, &callback, py_obj);
+                            }
+                        }
+                        NautilusWsMessage::OrderUpdated(event) => {
+                            if let Ok(py_obj) = event.into_py_any(py) {
                                 call_python(py, &callback, py_obj);
                             }
                         }
