@@ -238,7 +238,7 @@ async fn test_get_instruments() {
     let (addr, _state) = start_test_server().await.unwrap();
     let base_url = format!("http://{}", addr);
 
-    let client = BitmexHttpInnerClient::new(Some(base_url), Some(60));
+    let client = BitmexHttpInnerClient::new(Some(base_url), Some(60), None, None, None).unwrap();
     let instruments = client.http_get_instruments(true).await.unwrap();
 
     assert_eq!(instruments.len(), 1);
@@ -252,7 +252,8 @@ async fn test_get_wallet_requires_auth() {
     let base_url = format!("http://{}", addr);
 
     // Test without credentials - should fail
-    let client = BitmexHttpInnerClient::new(Some(base_url.clone()), Some(60));
+    let client =
+        BitmexHttpInnerClient::new(Some(base_url.clone()), Some(60), None, None, None).unwrap();
     let result = client.http_get_wallet().await;
     assert!(result.is_err());
 
@@ -262,7 +263,11 @@ async fn test_get_wallet_requires_auth() {
         "test_api_secret".to_string(),
         base_url,
         Some(60),
-    );
+        None,
+        None,
+        None,
+    )
+    .unwrap();
     let wallet = client.http_get_wallet().await.unwrap();
     assert_eq!(wallet.currency, "XBt");
 }
@@ -278,7 +283,11 @@ async fn test_get_orders() {
         "test_api_secret".to_string(),
         base_url,
         Some(60),
-    );
+        None,
+        None,
+        None,
+    )
+    .unwrap();
 
     let params = GetOrderParamsBuilder::default().build().unwrap();
     let orders = client.http_get_orders(params).await.unwrap();
@@ -298,7 +307,11 @@ async fn test_place_order() {
         "test_api_secret".to_string(),
         base_url,
         Some(60),
-    );
+        None,
+        None,
+        None,
+    )
+    .unwrap();
 
     let params = PostOrderParams {
         symbol: "XBTUSD".to_string(),
@@ -329,7 +342,11 @@ async fn test_cancel_order() {
         "test_api_secret".to_string(),
         base_url,
         Some(60),
-    );
+        None,
+        None,
+        None,
+    )
+    .unwrap();
 
     let params = DeleteOrderParams {
         order_id: Some(vec!["test-order-id".to_string()]),
@@ -355,7 +372,11 @@ async fn test_rate_limiting() {
         "test_api_secret".to_string(),
         base_url,
         Some(60),
-    );
+        None,
+        None,
+        None,
+    )
+    .unwrap();
 
     // Make multiple requests to trigger rate limiting
     let params = GetOrderParamsBuilder::default().build().unwrap();

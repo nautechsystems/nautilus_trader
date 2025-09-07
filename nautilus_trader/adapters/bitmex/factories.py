@@ -36,6 +36,10 @@ def get_bitmex_http_client(
     api_secret: str | None = None,
     base_url: str | None = None,
     testnet: bool = False,
+    timeout_secs: int | None = None,
+    max_retries: int | None = None,
+    retry_delay_ms: int | None = None,
+    retry_delay_max_ms: int | None = None,
 ) -> nautilus_pyo3.BitmexHttpClient:
     """
     Cache and return a BitMEX HTTP client with the given key and secret.
@@ -53,6 +57,14 @@ def get_bitmex_http_client(
         The base URL for the BitMEX API.
     testnet : bool, default False
         If the client should connect to the testnet.
+    timeout_secs : int, optional
+        The timeout in seconds for HTTP requests.
+    max_retries : int, optional
+        The maximum number of retry attempts for failed requests.
+    retry_delay_ms : int, optional
+        The initial delay in milliseconds between retry attempts.
+    retry_delay_max_ms : int, optional
+        The maximum delay in milliseconds between retry attempts.
 
     Returns
     -------
@@ -64,6 +76,10 @@ def get_bitmex_http_client(
         api_secret=api_secret,
         base_url=base_url,
         testnet=testnet,
+        timeout_secs=timeout_secs,
+        max_retries=max_retries,
+        retry_delay_ms=retry_delay_ms,
+        retry_delay_max_ms=retry_delay_max_ms,
     )
 
 
@@ -134,11 +150,13 @@ class BitmexLiveDataClientFactory(LiveDataClientFactory):
         BitmexDataClient
 
         """
+        # BitmexDataClientConfig doesn't have retry settings, use defaults
         client = get_bitmex_http_client(
             api_key=config.api_key,
             api_secret=config.api_secret,
             base_url=config.base_url_http,
             testnet=config.testnet,
+            timeout_secs=config.http_timeout_secs,
         )
 
         provider = get_bitmex_instrument_provider(
@@ -201,6 +219,10 @@ class BitmexLiveExecClientFactory(LiveExecClientFactory):
             api_secret=config.api_secret,
             base_url=config.base_url_http,
             testnet=config.testnet,
+            timeout_secs=config.http_timeout_secs,
+            max_retries=config.max_retries,
+            retry_delay_ms=config.retry_delay_initial_ms,
+            retry_delay_max_ms=config.retry_delay_max_ms,
         )
 
         provider = get_bitmex_instrument_provider(

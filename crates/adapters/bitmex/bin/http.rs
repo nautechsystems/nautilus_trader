@@ -30,7 +30,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let api_key = env::var("BITMEX_API_KEY").expect("environment variable should be set");
     let api_secret = env::var("BITMEX_API_SECRET").expect("environment variable should be set");
-    let client = BitmexHttpClient::new(None, Some(api_key), Some(api_secret), false, None);
+    let client = BitmexHttpClient::new(
+        None,
+        Some(api_key),
+        Some(api_secret),
+        false,
+        None,
+        None, // max_retries
+        None, // retry_delay_ms
+        None, // retry_delay_max_ms
+    )
+    .expect("Failed to create HTTP client");
 
     Ok(())
 }

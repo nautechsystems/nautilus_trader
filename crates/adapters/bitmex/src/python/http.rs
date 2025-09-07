@@ -27,37 +27,60 @@ use crate::http::client::BitmexHttpClient;
 #[pymethods]
 impl BitmexHttpClient {
     #[new]
-    #[pyo3(signature = (api_key=None, api_secret=None, base_url=None, testnet=false))]
+    #[pyo3(signature = (api_key=None, api_secret=None, base_url=None, testnet=false, timeout_secs=None, max_retries=None, retry_delay_ms=None, retry_delay_max_ms=None))]
+    #[allow(clippy::too_many_arguments)]
     fn py_new(
         api_key: Option<&str>,
         api_secret: Option<&str>,
         base_url: Option<&str>,
         testnet: bool,
+        timeout_secs: Option<u64>,
+        max_retries: Option<u32>,
+        retry_delay_ms: Option<u64>,
+        retry_delay_max_ms: Option<u64>,
     ) -> PyResult<Self> {
+        let timeout = timeout_secs.or(Some(60));
+
         // Try to use with_credentials if we have any credentials or need env vars
         if api_key.is_none() && api_secret.is_none() && !testnet && base_url.is_none() {
             // Try to load from environment
-            match Self::with_credentials(None, None, base_url.map(String::from), Some(60)) {
+            match Self::with_credentials(
+                None,
+                None,
+                base_url.map(String::from),
+                timeout,
+                max_retries,
+                retry_delay_ms,
+                retry_delay_max_ms,
+            ) {
                 Ok(client) => Ok(client),
                 Err(_) => {
                     // Fall back to unauthenticated client
-                    Ok(Self::new(
+                    Self::new(
                         base_url.map(String::from),
                         None,
                         None,
                         testnet,
-                        Some(60),
-                    ))
+                        timeout,
+                        max_retries,
+                        retry_delay_ms,
+                        retry_delay_max_ms,
+                    )
+                    .map_err(to_pyvalue_err)
                 }
             }
         } else {
-            Ok(Self::new(
+            Self::new(
                 base_url.map(String::from),
                 api_key.map(String::from),
                 api_secret.map(String::from),
                 testnet,
-                Some(60),
-            ))
+                timeout,
+                max_retries,
+                retry_delay_ms,
+                retry_delay_max_ms,
+            )
+            .map_err(to_pyvalue_err)
         }
     }
 

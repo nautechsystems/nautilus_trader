@@ -45,10 +45,15 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{Price, Quantity},
 };
-use nautilus_network::{http::HttpClient, ratelimiter::quota::Quota};
+use nautilus_network::{
+    http::HttpClient,
+    ratelimiter::quota::Quota,
+    retry::{RetryConfig, RetryManager},
+};
 use reqwest::{Method, StatusCode, header::USER_AGENT};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
+use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use super::{
@@ -69,7 +74,7 @@ use crate::{
         consts::{BITMEX_HTTP_TESTNET_URL, BITMEX_HTTP_URL},
         credential::Credential,
         enums::{BitmexOrderStatus, BitmexSide},
-        parse::{parse_account_state, parse_instrument_id},
+        parse::{parse_account_state, parse_instrument_id, quantity_to_u32},
     },
     http::{
         parse::{
@@ -99,26 +104,6 @@ pub struct BitmexResponse<T> {
     pub data: Vec<T>,
 }
 
-/// Safely converts a Quantity to u32 for BitMEX API.
-///
-/// Logs a warning if truncation occurs.
-fn quantity_to_u32(quantity: &Quantity) -> u32 {
-    let value = quantity.as_f64();
-    if value > u32::MAX as f64 {
-        tracing::warn!(
-            "Quantity {} exceeds u32::MAX, clamping to {}",
-            value,
-            u32::MAX
-        );
-        u32::MAX
-    } else if value < 0.0 {
-        tracing::warn!("Quantity {} is negative, using 0", value);
-        0
-    } else {
-        value as u32
-    }
-}
-
 /// Provides a lower-level HTTP client for connecting to the [BitMEX](https://bitmex.com) REST API.
 ///
 /// This client wraps the underlying [`HttpClient`] to handle functionality
@@ -143,23 +128,60 @@ pub struct BitmexHttpInnerClient {
     base_url: String,
     client: HttpClient,
     credential: Option<Credential>,
+    retry_manager: RetryManager<BitmexHttpError>,
+    cancellation_token: CancellationToken,
 }
 
 impl Default for BitmexHttpInnerClient {
     fn default() -> Self {
-        Self::new(None, Some(60))
+        Self::new(None, Some(60), None, None, None)
+            .expect("Failed to create default BitmexHttpInnerClient")
     }
 }
 
 impl BitmexHttpInnerClient {
+    /// Cancel all pending HTTP requests.
+    pub fn cancel_all_requests(&self) {
+        self.cancellation_token.cancel();
+    }
+
+    /// Get the cancellation token for this client.
+    pub fn cancellation_token(&self) -> &CancellationToken {
+        &self.cancellation_token
+    }
     /// Creates a new [`BitmexHttpInnerClient`] using the default BitMEX HTTP URL,
     /// optionally overridden with a custom base URL.
     ///
     /// This version of the client has **no credentials**, so it can only
     /// call publicly accessible endpoints.
-    #[must_use]
-    pub fn new(base_url: Option<String>, timeout_secs: Option<u64>) -> Self {
-        Self {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the retry manager cannot be created.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        base_url: Option<String>,
+        timeout_secs: Option<u64>,
+        max_retries: Option<u32>,
+        retry_delay_ms: Option<u64>,
+        retry_delay_max_ms: Option<u64>,
+    ) -> Result<Self, BitmexHttpError> {
+        let retry_config = RetryConfig {
+            max_retries: max_retries.unwrap_or(3),
+            initial_delay_ms: retry_delay_ms.unwrap_or(1000),
+            max_delay_ms: retry_delay_max_ms.unwrap_or(10_000),
+            backoff_factor: 2.0,
+            jitter_ms: 1000,
+            operation_timeout_ms: Some(60_000),
+            immediate_first: false,
+            max_elapsed_ms: Some(180_000),
+        };
+
+        let retry_manager = RetryManager::new(retry_config).map_err(|e| {
+            BitmexHttpError::NetworkError(format!("Failed to create retry manager: {e}"))
+        })?;
+
+        Ok(Self {
             base_url: base_url.unwrap_or(BITMEX_HTTP_URL.to_string()),
             client: HttpClient::new(
                 Self::default_headers(),
@@ -169,19 +191,43 @@ impl BitmexHttpInnerClient {
                 timeout_secs,
             ),
             credential: None,
-        }
+            retry_manager,
+            cancellation_token: CancellationToken::new(),
+        })
     }
 
     /// Creates a new [`BitmexHttpInnerClient`] configured with credentials
     /// for authenticated requests, optionally using a custom base URL.
-    #[must_use]
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the retry manager cannot be created.
+    #[allow(clippy::too_many_arguments)]
     pub fn with_credentials(
         api_key: String,
         api_secret: String,
         base_url: String,
         timeout_secs: Option<u64>,
-    ) -> Self {
-        Self {
+        max_retries: Option<u32>,
+        retry_delay_ms: Option<u64>,
+        retry_delay_max_ms: Option<u64>,
+    ) -> Result<Self, BitmexHttpError> {
+        let retry_config = RetryConfig {
+            max_retries: max_retries.unwrap_or(3),
+            initial_delay_ms: retry_delay_ms.unwrap_or(1000),
+            max_delay_ms: retry_delay_max_ms.unwrap_or(10_000),
+            backoff_factor: 2.0,
+            jitter_ms: 1000,
+            operation_timeout_ms: Some(60_000),
+            immediate_first: false,
+            max_elapsed_ms: Some(180_000),
+        };
+
+        let retry_manager = RetryManager::new(retry_config).map_err(|e| {
+            BitmexHttpError::NetworkError(format!("Failed to create retry manager: {e}"))
+        })?;
+
+        Ok(Self {
             base_url,
             client: HttpClient::new(
                 Self::default_headers(),
@@ -191,7 +237,9 @@ impl BitmexHttpInnerClient {
                 timeout_secs,
             ),
             credential: Some(Credential::new(api_key, api_secret)),
-        }
+            retry_manager,
+            cancellation_token: CancellationToken::new(),
+        })
     }
 
     fn default_headers() -> HashMap<String, String> {
@@ -238,32 +286,94 @@ impl BitmexHttpInnerClient {
         authenticate: bool,
     ) -> Result<T, BitmexHttpError> {
         let url = format!("{}{endpoint}", self.base_url);
+        let method_clone = method.clone();
+        let body_clone = body.clone();
 
-        let headers = if authenticate {
-            Some(self.sign_request(&method, endpoint, body.as_deref())?)
-        } else {
-            None
+        let operation = || {
+            let url = url.clone();
+            let method = method_clone.clone();
+            let body = body_clone.clone();
+            let endpoint = endpoint.to_string();
+
+            async move {
+                let headers = if authenticate {
+                    Some(self.sign_request(&method, &endpoint, body.as_deref())?)
+                } else {
+                    None
+                };
+
+                let resp = self
+                    .client
+                    .request(method, url, headers, body, None, None)
+                    .await?;
+
+                if resp.status.is_success() {
+                    serde_json::from_slice(&resp.body).map_err(Into::into)
+                } else if let Ok(error_resp) =
+                    serde_json::from_slice::<BitmexErrorResponse>(&resp.body)
+                {
+                    Err(error_resp.into())
+                } else {
+                    Err(BitmexHttpError::UnexpectedStatus {
+                        status: StatusCode::from_u16(resp.status.as_u16())
+                            .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+                        body: String::from_utf8_lossy(&resp.body).to_string(),
+                    })
+                }
+            }
         };
 
-        let resp = self
-            .client
-            .request(method, url, headers, None, None, None)
-            .await?;
-
-        if resp.status.is_success() {
-            serde_json::from_slice(&resp.body).map_err(Into::into)
-        } else {
-            // Try to parse as BitMEX error response
-            if let Ok(error_resp) = serde_json::from_slice::<BitmexErrorResponse>(&resp.body) {
-                Err(error_resp.into())
-            } else {
-                Err(BitmexHttpError::UnexpectedStatus {
-                    status: StatusCode::from_u16(resp.status.as_u16())
-                        .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
-                    body: String::from_utf8_lossy(&resp.body).to_string(),
-                })
+        // Retry strategy based on BitMEX error responses and HTTP status codes:
+        //
+        // 1. Network errors: always retry (transient connection issues)
+        // 2. HTTP 5xx/429: server errors and rate limiting should be retried
+        // 3. BitMEX JSON errors with specific handling:
+        //    - "RateLimitError": explicit rate limit error from BitMEX
+        //    - "HTTPError": generic error name used by BitMEX for various issues
+        //      Only retry if message contains "rate limit" to avoid retrying
+        //      non-transient errors like authentication failures, validation errors,
+        //      insufficient balance, etc. which also return as "HTTPError"
+        //
+        // Note: BitMEX returns many permanent errors as "HTTPError" (e.g., "Invalid orderQty",
+        // "Account has insufficient Available Balance", "Invalid API Key") which should NOT
+        // be retried. We only retry when the message explicitly mentions rate limiting.
+        //
+        // See tests in tests/http.rs for retry behavior validation
+        let should_retry = |error: &BitmexHttpError| -> bool {
+            match error {
+                BitmexHttpError::NetworkError(_) => true,
+                BitmexHttpError::UnexpectedStatus { status, .. } => {
+                    status.as_u16() >= 500 || status.as_u16() == 429
+                }
+                BitmexHttpError::BitmexError {
+                    error_name,
+                    message,
+                } => {
+                    error_name == "RateLimitError"
+                        || (error_name == "HTTPError"
+                            && message.to_lowercase().contains("rate limit"))
+                }
+                _ => false,
             }
-        }
+        };
+
+        let create_error = |msg: String| -> BitmexHttpError {
+            if msg == "canceled" {
+                BitmexHttpError::NetworkError("Request canceled".to_string())
+            } else {
+                BitmexHttpError::NetworkError(msg)
+            }
+        };
+
+        self.retry_manager
+            .execute_with_retry_with_cancel(
+                endpoint,
+                operation,
+                should_retry,
+                create_error,
+                &self.cancellation_token,
+            )
+            .await
     }
 
     /// Get all instruments.
@@ -555,20 +665,28 @@ pub struct BitmexHttpClient {
 
 impl Default for BitmexHttpClient {
     fn default() -> Self {
-        Self::new(None, None, None, false, Some(60))
+        Self::new(None, None, None, false, Some(60), None, None, None)
+            .expect("Failed to create default BitmexHttpClient")
     }
 }
 
 impl BitmexHttpClient {
     /// Creates a new [`BitmexHttpClient`] instance.
-    #[must_use]
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP client cannot be created.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         base_url: Option<String>,
         api_key: Option<String>,
         api_secret: Option<String>,
         testnet: bool,
         timeout_secs: Option<u64>,
-    ) -> Self {
+        max_retries: Option<u32>,
+        retry_delay_ms: Option<u64>,
+        retry_delay_max_ms: Option<u64>,
+    ) -> Result<Self, BitmexHttpError> {
         // Determine the base URL
         let url = base_url.unwrap_or_else(|| {
             if testnet {
@@ -579,16 +697,28 @@ impl BitmexHttpClient {
         });
 
         let inner = match (api_key, api_secret) {
-            (Some(key), Some(secret)) => {
-                BitmexHttpInnerClient::with_credentials(key, secret, url, timeout_secs)
-            }
-            _ => BitmexHttpInnerClient::new(Some(url), timeout_secs),
+            (Some(key), Some(secret)) => BitmexHttpInnerClient::with_credentials(
+                key,
+                secret,
+                url,
+                timeout_secs,
+                max_retries,
+                retry_delay_ms,
+                retry_delay_max_ms,
+            )?,
+            _ => BitmexHttpInnerClient::new(
+                Some(url),
+                timeout_secs,
+                max_retries,
+                retry_delay_ms,
+                retry_delay_max_ms,
+            )?,
         };
 
-        Self {
+        Ok(Self {
             inner: Arc::new(inner),
             instruments_cache: Arc::new(Mutex::new(AHashMap::new())),
-        }
+        })
     }
 
     /// Creates a new [`BitmexHttpClient`] instance using environment variables and
@@ -598,7 +728,8 @@ impl BitmexHttpClient {
     ///
     /// Returns an error if required environment variables are not set or invalid.
     pub fn from_env() -> anyhow::Result<Self> {
-        Self::with_credentials(None, None, None, None)
+        Self::with_credentials(None, None, None, None, None, None, None)
+            .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))
     }
 
     /// Creates a new [`BitmexHttpClient`] configured with credentials
@@ -610,11 +741,15 @@ impl BitmexHttpClient {
     /// # Errors
     ///
     /// Returns an error if one credential is provided without the other.
+    #[allow(clippy::too_many_arguments)]
     pub fn with_credentials(
         api_key: Option<String>,
         api_secret: Option<String>,
         base_url: Option<String>,
         timeout_secs: Option<u64>,
+        max_retries: Option<u32>,
+        retry_delay_ms: Option<u64>,
+        retry_delay_max_ms: Option<u64>,
     ) -> anyhow::Result<Self> {
         let api_key = api_key.or_else(|| get_env_var("BITMEX_API_KEY").ok());
         let api_secret = api_secret.or_else(|| get_env_var("BITMEX_API_SECRET").ok());
@@ -630,13 +765,17 @@ impl BitmexHttpClient {
             anyhow::bail!("BITMEX_API_KEY is required when BITMEX_API_SECRET is provided");
         }
 
-        Ok(Self::new(
+        Self::new(
             base_url,
             api_key,
             api_secret,
             testnet,
             timeout_secs,
-        ))
+            max_retries,
+            retry_delay_ms,
+            retry_delay_max_ms,
+        )
+        .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))
     }
 
     /// Returns the base url being used by the client.
@@ -654,6 +793,16 @@ impl BitmexHttpClient {
     /// Generates a timestamp for initialization.
     fn generate_ts_init(&self) -> UnixNanos {
         get_atomic_clock_realtime().get_time_ns()
+    }
+
+    /// Cancel all pending HTTP requests.
+    pub fn cancel_all_requests(&self) {
+        self.inner.cancel_all_requests();
+    }
+
+    /// Get the cancellation token for this client.
+    pub fn cancellation_token(&self) -> CancellationToken {
+        self.inner.cancellation_token().clone()
     }
 
     /// Adds an instrument to the cache for precision lookups.
@@ -1600,7 +1749,11 @@ mod tests {
             "test_api_secret".to_string(),
             "http://localhost:8080".to_string(),
             Some(60),
-        );
+            None, // max_retries
+            None, // retry_delay_ms
+            None, // retry_delay_max_ms
+        )
+        .expect("Failed to create test client");
 
         let headers = client
             .sign_request(&Method::GET, "/api/v1/order", None)
@@ -1619,7 +1772,11 @@ mod tests {
             "test_api_secret".to_string(),
             "http://localhost:8080".to_string(),
             Some(60),
-        );
+            None, // max_retries
+            None, // retry_delay_ms
+            None, // retry_delay_max_ms
+        )
+        .expect("Failed to create test client");
 
         let body = json!({"symbol": "XBTUSD", "orderQty": 100});
         let body_bytes = serde_json::to_vec(&body).unwrap();

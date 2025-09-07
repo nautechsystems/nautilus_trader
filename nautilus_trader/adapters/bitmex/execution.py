@@ -41,7 +41,6 @@ from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.live.cancellation import DEFAULT_FUTURE_CANCELLATION_TIMEOUT
 from nautilus_trader.live.cancellation import cancel_tasks_with_timeout
 from nautilus_trader.live.execution_client import LiveExecutionClient
-from nautilus_trader.live.retry import RetryManagerPool
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderStatus
@@ -138,17 +137,6 @@ class BitmexExecutionClient(LiveExecutionClient):
         )
         self._ws_client_futures: set[asyncio.Future] = set()
         self._log.info(f"WebSocket URL {ws_url}", LogColor.BLUE)
-
-        # Initialize retry manager pool
-        self._retry_manager_pool = RetryManagerPool[None](
-            pool_size=100,
-            max_retries=config.max_retries or 0,
-            delay_initial_ms=config.retry_delay_initial_ms or 1_000,
-            delay_max_ms=config.retry_delay_max_ms or 10_000,
-            backoff_factor=2,
-            logger=self._log,
-            exc_types=(Exception,),  # TODO: Create specific BitmexError
-        )
 
     def _log_runtime_error(self, message: str) -> None:
         self._log.error(message, LogColor.RED)
@@ -263,9 +251,6 @@ class BitmexExecutionClient(LiveExecutionClient):
         )
         self._ws_client_futures.clear()
 
-        # Shutdown retry manager pool
-        self._retry_manager_pool.shutdown()
-
     async def generate_order_status_reports(
         self,
         command: GenerateOrderStatusReports,
@@ -379,12 +364,8 @@ class BitmexExecutionClient(LiveExecutionClient):
             else None
         )
 
-        retry_manager = await self._retry_manager_pool.acquire()
         try:
-            await retry_manager.run(
-                "submit_order",
-                [order.client_order_id],
-                self._http_client.submit_order,
+            await self._http_client.submit_order(
                 instrument_id=pyo3_instrument_id,
                 client_order_id=pyo3_client_order_id,
                 order_side=pyo3_order_side,
@@ -397,17 +378,14 @@ class BitmexExecutionClient(LiveExecutionClient):
                 post_only=order.is_post_only,
                 reduce_only=order.is_reduce_only,
             )
-
-            if not retry_manager.result:
-                self.generate_order_rejected(
-                    strategy_id=order.strategy_id,
-                    instrument_id=order.instrument_id,
-                    client_order_id=order.client_order_id,
-                    reason=retry_manager.message or "Unknown error",
-                    ts_event=self._clock.timestamp_ns(),
-                )
-        finally:
-            await self._retry_manager_pool.release(retry_manager)
+        except Exception as e:
+            self.generate_order_rejected(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                reason=str(e),
+                ts_event=self._clock.timestamp_ns(),
+            )
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
         self._log.warning("Order list submission not yet implemented")
@@ -446,12 +424,8 @@ class BitmexExecutionClient(LiveExecutionClient):
             else None
         )
 
-        retry_manager = await self._retry_manager_pool.acquire()
         try:
-            await retry_manager.run(
-                "modify_order",
-                [order.client_order_id, order.venue_order_id],
-                self._http_client.modify_order,
+            await self._http_client.modify_order(
                 instrument_id=pyo3_instrument_id,
                 client_order_id=pyo3_client_order_id,
                 venue_order_id=pyo3_venue_order_id,
@@ -459,18 +433,15 @@ class BitmexExecutionClient(LiveExecutionClient):
                 price=pyo3_price,
                 trigger_price=pyo3_trigger_price,
             )
-
-            if not retry_manager.result:
-                self.generate_order_modify_rejected(
-                    strategy_id=order.strategy_id,
-                    instrument_id=order.instrument_id,
-                    client_order_id=order.client_order_id,
-                    venue_order_id=order.venue_order_id,
-                    reason=retry_manager.message or "Unknown error",
-                    ts_event=self._clock.timestamp_ns(),
-                )
-        finally:
-            await self._retry_manager_pool.release(retry_manager)
+        except Exception as e:
+            self.generate_order_modify_rejected(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                venue_order_id=order.venue_order_id,
+                reason=str(e),
+                ts_event=self._clock.timestamp_ns(),
+            )
 
     async def _cancel_order(self, command: CancelOrder) -> None:
         order: Order | None = self._cache.order(command.client_order_id)
@@ -497,61 +468,47 @@ class BitmexExecutionClient(LiveExecutionClient):
         )
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(order.instrument_id.value)
 
-        retry_manager = await self._retry_manager_pool.acquire()
         try:
-            await retry_manager.run(
-                "cancel_order",
-                [command.client_order_id, command.venue_order_id],
-                self._http_client.cancel_order,
+            await self._http_client.cancel_order(
                 instrument_id=pyo3_instrument_id,
                 client_order_id=pyo3_client_order_id,
                 venue_order_id=pyo3_venue_order_id,
             )
-
-            if not retry_manager.result:
-                self.generate_order_cancel_rejected(
-                    strategy_id=order.strategy_id,
-                    instrument_id=order.instrument_id,
-                    client_order_id=order.client_order_id,
-                    venue_order_id=order.venue_order_id,
-                    reason=retry_manager.message or "Unknown error",
-                    ts_event=self._clock.timestamp_ns(),
-                )
-        finally:
-            await self._retry_manager_pool.release(retry_manager)
+        except Exception as e:
+            self.generate_order_cancel_rejected(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                venue_order_id=order.venue_order_id,
+                reason=str(e),
+                ts_event=self._clock.timestamp_ns(),
+            )
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         pyo3_order_side = order_side_to_pyo3(command.order_side) if command.order_side else None
 
-        retry_manager = await self._retry_manager_pool.acquire()
         try:
-            await retry_manager.run(
-                "cancel_all_orders",
-                [command.instrument_id],
-                self._http_client.cancel_all_orders,
+            await self._http_client.cancel_all_orders(
                 instrument_id=pyo3_instrument_id,
                 order_side=pyo3_order_side,
             )
-
-            if not retry_manager.result:
-                # Generate cancel rejected for all open orders
-                orders_open: list[Order] = self._cache.orders_open(
-                    instrument_id=command.instrument_id,
+        except Exception as e:
+            # Generate cancel rejected for all open orders
+            orders_open: list[Order] = self._cache.orders_open(
+                instrument_id=command.instrument_id,
+            )
+            for open_order in orders_open:
+                if open_order.is_closed:
+                    continue
+                self.generate_order_cancel_rejected(
+                    strategy_id=open_order.strategy_id,
+                    instrument_id=open_order.instrument_id,
+                    client_order_id=open_order.client_order_id,
+                    venue_order_id=open_order.venue_order_id,
+                    reason=str(e),
+                    ts_event=self._clock.timestamp_ns(),
                 )
-                for open_order in orders_open:
-                    if open_order.is_closed:
-                        continue
-                    self.generate_order_cancel_rejected(
-                        strategy_id=open_order.strategy_id,
-                        instrument_id=open_order.instrument_id,
-                        client_order_id=open_order.client_order_id,
-                        venue_order_id=open_order.venue_order_id,
-                        reason=retry_manager.message or "Unknown error",
-                        ts_event=self._clock.timestamp_ns(),
-                    )
-        finally:
-            await self._retry_manager_pool.release(retry_manager)
 
     async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None:
         self._log.warning("Batch cancel orders not yet implemented")

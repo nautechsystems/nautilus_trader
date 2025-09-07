@@ -57,7 +57,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None,     // api_secret
         testnet,  // testnet
         Some(60), // timeout_secs
-    );
+        None,     // max_retries
+        None,     // retry_delay_ms
+        None,     // retry_delay_max_ms
+    )
+    .expect("Failed to create HTTP client");
 
     let instruments = http_client
         .request_instruments(true) // active_only

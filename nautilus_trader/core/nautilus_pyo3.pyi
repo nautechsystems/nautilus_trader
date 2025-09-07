@@ -6309,6 +6309,10 @@ class BitmexHttpClient:
         api_secret: str | None = None,
         base_url: str | None = None,
         testnet: bool = False,
+        timeout_secs: int | None = None,
+        max_retries: int | None = None,
+        retry_delay_ms: int | None = None,
+        retry_delay_max_ms: int | None = None,
     ) -> None: ...
     @staticmethod
     def from_env() -> BitmexHttpClient: ...
