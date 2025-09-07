@@ -519,6 +519,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         start: TimestampLike | None = None,
         end: TimestampLike | None = None,
         ensure_contiguous_files: bool = True,
+        deduplicate: bool = False,
     ) -> None:
         """
         Consolidate all parquet files across the entire catalog within the specified
@@ -541,6 +542,8 @@ class ParquetDataCatalog(BaseDataCatalog):
             up to the end of time will be considered.
         ensure_contiguous_files : bool, default True
             If True, ensures that files have contiguous timestamps before consolidation.
+        deduplicate : bool, default False
+            If True, removes duplicate rows from the consolidated file.
 
         Notes
         -----
@@ -558,7 +561,13 @@ class ParquetDataCatalog(BaseDataCatalog):
         leaf_directories = self._find_leaf_data_directories()
 
         for directory in leaf_directories:
-            self._consolidate_directory(directory, start, end, ensure_contiguous_files)
+            self._consolidate_directory(
+                directory,
+                start,
+                end,
+                ensure_contiguous_files,
+                deduplicate=deduplicate,
+            )
 
     def consolidate_data(
         self,
@@ -567,6 +576,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         start: TimestampLike | None = None,
         end: TimestampLike | None = None,
         ensure_contiguous_files: bool = True,
+        deduplicate: bool = False,
     ) -> None:
         """
         Consolidate multiple parquet files for a specific data class and instrument ID
@@ -593,6 +603,8 @@ class ParquetDataCatalog(BaseDataCatalog):
             up to the end of time will be considered.
         ensure_contiguous_files : bool, default True
             If True, ensures that files have contiguous timestamps before consolidation.
+        deduplicate : bool, default False
+            If True, removes duplicate rows from the consolidated file.
 
         Notes
         -----
@@ -604,7 +616,13 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         """
         directory = self._make_path(data_cls, identifier)
-        self._consolidate_directory(directory, start, end, ensure_contiguous_files)
+        self._consolidate_directory(
+            directory,
+            start,
+            end,
+            ensure_contiguous_files,
+            deduplicate=deduplicate,
+        )
 
     def _consolidate_directory(
         self,
@@ -612,6 +630,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         start: TimestampLike | None = None,
         end: TimestampLike | None = None,
         ensure_contiguous_files: bool = True,
+        deduplicate: bool = False,
     ) -> None:
         parquet_files = self.fs.glob(os.path.join(directory, "*.parquet"))
         files_to_consolidate = []
@@ -643,19 +662,32 @@ class ParquetDataCatalog(BaseDataCatalog):
             _timestamps_to_filename(intervals[0][0], intervals[-1][1]),
         )
         files_to_consolidate.sort()
-        self._combine_parquet_files(files_to_consolidate, new_file_name)
+        self._combine_parquet_files(files_to_consolidate, new_file_name, deduplicate=deduplicate)
 
-    def _combine_parquet_files(self, file_list: list[str], new_file: str) -> None:
+    def _combine_parquet_files(
+        self,
+        file_list: list[str],
+        new_file: str,
+        deduplicate: bool = False,
+    ) -> None:
         if len(file_list) <= 1:
             return
 
         tables = [pq.read_table(file, memory_map=True, pre_buffer=False) for file in file_list]
         combined_table = pa.concat_tables(tables)
+
+        if deduplicate:
+            combined_table = self._deduplicate_table(combined_table)
+
         pq.write_table(combined_table, where=new_file)
 
         for file in file_list:
             if file != new_file:
                 self.fs.rm(file)
+
+    @staticmethod
+    def _deduplicate_table(table: pa.Table) -> pa.Table:
+        return table.group_by(table.column_names).aggregate([])
 
     def consolidate_catalog_by_period(
         self,
