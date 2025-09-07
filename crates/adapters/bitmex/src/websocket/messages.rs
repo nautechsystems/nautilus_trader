@@ -18,9 +18,10 @@ use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use nautilus_model::{
     data::{Data, funding::FundingRateUpdate},
+    events::{AccountState, OrderUpdated},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
 };
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, de};
 use strum::Display;
 use ustr::Ustr;
 use uuid::Uuid;
@@ -55,10 +56,11 @@ pub struct BitmexSubscription {
 pub enum NautilusWsMessage {
     Data(Vec<Data>),
     OrderStatusReports(Vec<OrderStatusReport>),
+    OrderUpdated(OrderUpdated),
     FillReports(Vec<FillReport>),
-    PositionStatusReport(Box<PositionStatusReport>),
+    PositionStatusReport(PositionStatusReport),
     FundingRateUpdates(Vec<FundingRateUpdate>),
-    AccountState(Box<nautilus_model::events::AccountState>),
+    AccountState(AccountState),
     Reconnected,
 }
 
@@ -165,7 +167,8 @@ pub enum BitmexTableMessage {
     },
     Order {
         action: BitmexAction,
-        data: Vec<BitmexOrderMsg>,
+        #[serde(deserialize_with = "deserialize_order_data")]
+        data: Vec<OrderData>,
     },
     Execution {
         action: BitmexAction,
@@ -344,7 +347,30 @@ pub struct BitmexInstrumentMsg {
     pub timestamp: DateTime<Utc>,
 }
 
-/// Represents an order update from the WebSocket stream
+/// Represents an order update message with only changed fields.
+/// Used for `update` actions where only modified fields are sent.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BitmexOrderUpdateMsg {
+    #[serde(rename = "orderID")]
+    pub order_id: Uuid,
+    #[serde(rename = "clOrdID")]
+    pub cl_ord_id: Option<Ustr>,
+    pub account: i64,
+    pub symbol: Ustr,
+    pub side: Option<BitmexSide>,
+    pub price: Option<f64>,
+    pub currency: Option<Ustr>,
+    pub text: Option<Ustr>,
+    pub transact_time: Option<DateTime<Utc>>,
+    pub timestamp: Option<DateTime<Utc>>,
+    pub leaves_qty: Option<i64>,
+    pub cum_qty: Option<i64>,
+    pub ord_status: Option<BitmexOrderStatus>,
+}
+
+/// Represents a full order message from the WebSocket stream.
+/// Used for `insert` and `partial` actions where all fields are present.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BitmexOrderMsg {
@@ -379,6 +405,38 @@ pub struct BitmexOrderMsg {
     pub text: Option<Ustr>,
     pub transact_time: DateTime<Utc>,
     pub timestamp: DateTime<Utc>,
+}
+
+/// Wrapper enum for order data that can be either full or update messages.
+#[derive(Clone, Debug)]
+pub enum OrderData {
+    Full(BitmexOrderMsg),
+    Update(BitmexOrderUpdateMsg),
+}
+
+/// Custom deserializer for order data that tries to deserialize as full message first,
+/// then falls back to update message if fields are missing.
+fn deserialize_order_data<'de, D>(deserializer: D) -> Result<Vec<OrderData>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let raw_values: Vec<serde_json::Value> = Vec::deserialize(deserializer)?;
+    let mut result = Vec::new();
+
+    for value in raw_values {
+        // Try to deserialize as full message first
+        if let Ok(full_msg) = serde_json::from_value::<BitmexOrderMsg>(value.clone()) {
+            result.push(OrderData::Full(full_msg));
+        } else if let Ok(update_msg) = serde_json::from_value::<BitmexOrderUpdateMsg>(value) {
+            result.push(OrderData::Update(update_msg));
+        } else {
+            return Err(de::Error::custom(
+                "Failed to deserialize order data as either full or update message",
+            ));
+        }
+    }
+
+    Ok(result)
 }
 
 /// Raw Order and Balance Data.

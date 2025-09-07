@@ -54,11 +54,11 @@ use super::{
     error::BitmexWsError,
     messages::{
         BitmexAuthentication, BitmexSubscription, BitmexTableMessage, BitmexWsMessage,
-        NautilusWsMessage,
+        NautilusWsMessage, OrderData,
     },
     parse::{
-        is_index_symbol, parse_book_msg_vec, parse_book10_msg_vec, parse_trade_bin_msg_vec,
-        parse_trade_msg_vec, parse_wallet_msg, topic_from_bar_spec,
+        is_index_symbol, parse_book_msg_vec, parse_book10_msg_vec, parse_order_update_msg,
+        parse_trade_bin_msg_vec, parse_trade_msg_vec, parse_wallet_msg, topic_from_bar_spec,
     },
 };
 use crate::{
@@ -170,6 +170,11 @@ impl BitmexWebSocketClient {
             },
             Err(_) => true,
         }
+    }
+
+    /// Sets the account ID.
+    pub fn set_account_id(&mut self, account_id: AccountId) {
+        self.account_id = account_id;
     }
 
     /// Initialize the instruments cache with the given `instruments`.
@@ -667,7 +672,7 @@ impl BitmexWebSocketClient {
     #[must_use]
     pub fn get_subscriptions(&self, instrument_id: InstrumentId) -> Vec<String> {
         let symbol = instrument_id.symbol.inner();
-        let mut channels = Vec::new();
+        let mut channels = Vec::with_capacity(self.subscriptions.len());
 
         for entry in self.subscriptions.iter() {
             let (channel, symbols) = entry.pair();
@@ -1391,22 +1396,44 @@ impl BitmexWsMessageHandler {
                         // (e.g., immediate response + stream update). This is expected behavior.
                         BitmexTableMessage::Order { data, .. } => {
                             // Process all orders in the message
-                            let mut reports = Vec::new();
+                            let mut reports = Vec::with_capacity(data.len());
 
-                            for order_msg in data {
-                                let price_precision = self.get_price_precision(&order_msg.symbol);
-                                match parse_order_msg(&order_msg, price_precision) {
-                                    Ok(report) => reports.push(report),
-                                    Err(e) => {
-                                        tracing::error!(
-                                            error = %e,
-                                            symbol = %order_msg.symbol,
-                                            order_id = %order_msg.order_id,
-                                            time_in_force = ?order_msg.time_in_force,
-                                            "Failed to parse order message - potential data loss"
-                                        );
-                                        // TODO: Add metric counter for parse failures
-                                        continue;
+                            for order_data in data {
+                                match order_data {
+                                    OrderData::Full(order_msg) => {
+                                        let price_precision =
+                                            self.get_price_precision(&order_msg.symbol);
+                                        match parse_order_msg(&order_msg, price_precision) {
+                                            Ok(report) => reports.push(report),
+                                            Err(e) => {
+                                                tracing::error!(
+                                                    error = %e,
+                                                    symbol = %order_msg.symbol,
+                                                    order_id = %order_msg.order_id,
+                                                    time_in_force = ?order_msg.time_in_force,
+                                                    "Failed to parse full order message - potential data loss"
+                                                );
+                                                // TODO: Add metric counter for parse failures
+                                                continue;
+                                            }
+                                        }
+                                    }
+                                    OrderData::Update(msg) => {
+                                        let price_precision = self.get_price_precision(&msg.symbol);
+
+                                        if let Some(event) = parse_order_update_msg(
+                                            &msg,
+                                            price_precision,
+                                            self.account_id,
+                                        ) {
+                                            return Some(NautilusWsMessage::OrderUpdated(event));
+                                        } else {
+                                            tracing::warn!(
+                                                order_id = %msg.order_id,
+                                                price = ?msg.price,
+                                                "Skipped order update message (insufficient data)"
+                                            );
+                                        }
                                     }
                                 }
                             }
@@ -1418,7 +1445,7 @@ impl BitmexWsMessageHandler {
                             NautilusWsMessage::OrderStatusReports(reports)
                         }
                         BitmexTableMessage::Execution { data, .. } => {
-                            let mut fills = Vec::new();
+                            let mut fills = Vec::with_capacity(data.len());
 
                             for exec_msg in data {
                                 // Skip if symbol is missing (shouldn't happen for valid trades)
@@ -1453,7 +1480,7 @@ impl BitmexWsMessageHandler {
                         BitmexTableMessage::Position { data, .. } => {
                             if let Some(pos_msg) = data.into_iter().next() {
                                 let report = parse_position_msg(pos_msg);
-                                NautilusWsMessage::PositionStatusReport(Box::new(report))
+                                NautilusWsMessage::PositionStatusReport(report)
                             } else {
                                 continue;
                             }
@@ -1461,7 +1488,7 @@ impl BitmexWsMessageHandler {
                         BitmexTableMessage::Wallet { data, .. } => {
                             if let Some(wallet_msg) = data.into_iter().next() {
                                 let account_state = parse_wallet_msg(wallet_msg, ts_init);
-                                NautilusWsMessage::AccountState(Box::new(account_state))
+                                NautilusWsMessage::AccountState(account_state)
                             } else {
                                 continue;
                             }
@@ -1474,7 +1501,7 @@ impl BitmexWsMessageHandler {
                         }
                         BitmexTableMessage::Instrument { data, .. } => {
                             let ts_init = clock.get_time_ns();
-                            let mut data_msgs = Vec::new();
+                            let mut data_msgs = Vec::with_capacity(data.len());
 
                             for msg in data {
                                 let parsed =
@@ -1489,7 +1516,7 @@ impl BitmexWsMessageHandler {
                         }
                         BitmexTableMessage::Funding { data, .. } => {
                             let ts_init = clock.get_time_ns();
-                            let mut funding_updates = Vec::new();
+                            let mut funding_updates = Vec::with_capacity(data.len());
 
                             for msg in data {
                                 if let Some(parsed) = parse_funding_msg(msg, ts_init) {

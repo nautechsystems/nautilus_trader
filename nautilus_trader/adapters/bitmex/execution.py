@@ -16,8 +16,6 @@
 import asyncio
 from typing import Any
 
-import pandas as pd
-
 from nautilus_trader.adapters.bitmex.config import BitmexExecClientConfig
 from nautilus_trader.adapters.bitmex.constants import BITMEX_VENUE
 from nautilus_trader.adapters.bitmex.providers import BitmexInstrumentProvider
@@ -47,18 +45,18 @@ from nautilus_trader.live.retry import RetryManagerPool
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderStatus
-from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderCancelRejected
 from nautilus_trader.model.events import OrderModifyRejected
 from nautilus_trader.model.events import OrderRejected
+from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.functions import order_side_to_pyo3
 from nautilus_trader.model.functions import order_type_to_pyo3
 from nautilus_trader.model.functions import time_in_force_to_pyo3
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import Order
 
 
@@ -152,9 +150,6 @@ class BitmexExecutionClient(LiveExecutionClient):
             exc_types=(Exception,),  # TODO: Create specific BitmexError
         )
 
-        # Hot caches
-        self._filled_market_orders: set[ClientOrderId] = set()
-
     def _log_runtime_error(self, message: str) -> None:
         self._log.error(message, LogColor.RED)
         raise RuntimeError(message)
@@ -187,6 +182,9 @@ class BitmexExecutionClient(LiveExecutionClient):
 
         instruments = self._instrument_provider.instruments_pyo3()  # type: ignore
 
+        await self._update_account_state()
+        self._ws_client.set_account_id(self.pyo3_account_id)
+
         await self._ws_client.connect(
             instruments,
             self._handle_msg,
@@ -205,8 +203,6 @@ class BitmexExecutionClient(LiveExecutionClient):
             await self._ws_client.subscribe_wallet()
         except Exception as e:
             self._log.error(f"Failed to subscribe to authenticated channels: {e}")
-
-        await self._update_account_state()
 
     async def _update_account_state(self) -> None:
         try:
@@ -385,7 +381,7 @@ class BitmexExecutionClient(LiveExecutionClient):
 
         retry_manager = await self._retry_manager_pool.acquire()
         try:
-            report = await retry_manager.run(
+            await retry_manager.run(
                 "submit_order",
                 [order.client_order_id],
                 self._http_client.submit_order,
@@ -402,15 +398,7 @@ class BitmexExecutionClient(LiveExecutionClient):
                 reduce_only=order.is_reduce_only,
             )
 
-            if retry_manager.result and report:
-                self.generate_order_accepted(
-                    instrument_id=order.instrument_id,
-                    strategy_id=order.strategy_id,
-                    client_order_id=order.client_order_id,
-                    venue_order_id=VenueOrderId(report.venue_order_id.value),
-                    ts_event=self._clock.timestamp_ns(),
-                )
-            else:
+            if not retry_manager.result:
                 self.generate_order_rejected(
                     strategy_id=order.strategy_id,
                     instrument_id=order.instrument_id,
@@ -613,16 +601,20 @@ class BitmexExecutionClient(LiveExecutionClient):
 
     def _handle_msg(self, msg: Any) -> None:
         try:
-            if isinstance(msg, nautilus_pyo3.AccountState):
+            if nautilus_pyo3.is_pycapsule(msg):
+                pass  # PyCapsules are market data we ignore for the execution client
+            elif isinstance(msg, nautilus_pyo3.AccountState):
                 self._handle_account_state(msg)
             elif isinstance(msg, nautilus_pyo3.OrderStatusReport):
                 self._handle_order_status_report_pyo3(msg)
+            elif isinstance(msg, nautilus_pyo3.OrderUpdated):
+                self._handle_order_updated_pyo3(msg)
             elif isinstance(msg, nautilus_pyo3.FillReport):
                 self._handle_fill_report_pyo3(msg)
             elif isinstance(msg, nautilus_pyo3.PositionStatusReport):
                 self._handle_position_status_report_pyo3(msg)
             else:
-                self._log.debug(f"Received unhandled message type: {type(msg)}")
+                self._log.warning(f"Received unhandled message type: {type(msg)}")
         except Exception as e:
             self._log.exception("Error handling websocket message", e)
 
@@ -648,18 +640,36 @@ class BitmexExecutionClient(LiveExecutionClient):
         event = OrderModifyRejected.from_dict(pyo3_event.to_dict())
         self._send_order_event(event)
 
+    def _handle_order_updated_pyo3(
+        self,
+        pyo3_event: nautilus_pyo3.OrderUpdated,
+    ) -> None:
+        client_order_id = ClientOrderId(pyo3_event.client_order_id.value)
+
+        order = self._cache.order(client_order_id)
+        if not order:
+            self._log.warning(
+                f"Cannot find order for client_order_id {client_order_id} with "
+                f"venue_order_id {pyo3_event.venue_order_id}, ignoring update",
+            )
+            return
+
+        event_dict = pyo3_event.to_dict()
+        event_dict["trader_id"] = order.trader_id.value
+        event_dict["strategy_id"] = order.strategy_id.value
+
+        # We use zero as a sentinel indicating no quantity change
+        event_qty = Quantity.from_str(event_dict["quantity"])
+        if event_qty == 0:
+            event_dict["quantity"] = str(order.quantity)
+
+        event = OrderUpdated.from_dict(event_dict)
+        self._send_order_event(event)
+
     def _handle_order_status_report_pyo3(  # noqa: C901 (too complex)
         self,
         pyo3_report: nautilus_pyo3.OrderStatusReport,
     ) -> None:
-        # Discard order status reports until account is properly initialized
-        # Reconciliation will handle getting the current state of open orders
-        if not self.is_connected or not self.account_id or not self._cache.account(self.account_id):
-            self._log.debug(
-                f"Discarding order status report during connection sequence: {pyo3_report.client_order_id!r}",
-            )
-            return
-
         report = OrderStatusReport.from_pyo3(pyo3_report)
 
         if self._is_external_order(report.client_order_id):
@@ -674,10 +684,8 @@ class BitmexExecutionClient(LiveExecutionClient):
             return
 
         if report.order_status == OrderStatus.REJECTED:
-            return  # Handled by submit order
+            pass  # Handled by submit_order
         elif report.order_status == OrderStatus.ACCEPTED:
-            if order.is_closed or order.client_order_id in self._filled_market_orders:
-                return  # Race condition: ACCEPTED event after order already filled/closed
             if is_order_updated(order, report):
                 self.generate_order_updated(
                     strategy_id=order.strategy_id,
@@ -687,6 +695,14 @@ class BitmexExecutionClient(LiveExecutionClient):
                     quantity=report.quantity,
                     price=report.price,
                     trigger_price=report.trigger_price,
+                    ts_event=report.ts_last,
+                )
+            else:
+                self.generate_order_accepted(
+                    strategy_id=order.strategy_id,
+                    instrument_id=report.instrument_id,
+                    client_order_id=report.client_order_id,
+                    venue_order_id=report.venue_order_id,
                     ts_event=report.ts_last,
                 )
         elif report.order_status == OrderStatus.PENDING_CANCEL:
@@ -782,15 +798,6 @@ class BitmexExecutionClient(LiveExecutionClient):
             liquidity_side=report.liquidity_side,
             ts_event=report.ts_event,
         )
-
-        # Cache filled market orders to prevent race conditions with OrderAccepted events
-        if order.order_type == OrderType.MARKET:
-            self._filled_market_orders.add(order.client_order_id)
-            self._clock.set_time_alert(
-                name=f"remove_filled_market_order_{order.client_order_id}",
-                alert_time=self._clock.utc_now() + pd.Timedelta(seconds=2.0),
-                callback=lambda: self._filled_market_orders.discard(order.client_order_id),
-            )
 
     def _handle_position_status_report_pyo3(
         self,

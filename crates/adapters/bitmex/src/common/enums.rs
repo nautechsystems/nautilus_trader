@@ -486,6 +486,8 @@ pub enum BitmexExecType {
     Replaced,
     /// Order rejected.
     Rejected,
+    /// Order amendment rejected.
+    AmendReject,
     /// Funding rate execution.
     Funding,
     /// Settlement execution.

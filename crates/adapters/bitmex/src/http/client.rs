@@ -656,7 +656,7 @@ impl BitmexHttpClient {
         get_atomic_clock_realtime().get_time_ns()
     }
 
-    /// Add an instrument to the cache for precision lookups.
+    /// Adds an instrument to the cache for precision lookups.
     ///
     /// # Panics
     ///
@@ -1432,8 +1432,11 @@ impl BitmexHttpClient {
             match parse_fill_report(exec, price_precision, ts_init) {
                 Ok(report) => reports.push(report),
                 Err(e) => {
-                    // Log at debug level for skipped non-trade executions
-                    if e.to_string().starts_with("Skipping non-trade execution") {
+                    // Log at debug level for expected skip cases
+                    let error_msg = e.to_string();
+                    if error_msg.starts_with("Skipping non-trade execution")
+                        || error_msg.starts_with("Skipping execution without order_id")
+                    {
                         tracing::debug!("{e}");
                     } else {
                         tracing::error!("Failed to parse fill report: {e}");

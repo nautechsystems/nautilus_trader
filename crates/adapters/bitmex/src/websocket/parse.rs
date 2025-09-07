@@ -27,9 +27,10 @@ use nautilus_model::{
         AccountType, AggregationSource, BarAggregation, OrderSide, OrderStatus, OrderType,
         PriceType, RecordFlag, TimeInForce,
     },
-    events::account::state::AccountState,
+    events::{OrderUpdated, account::state::AccountState},
     identifiers::{
-        AccountId, ClientOrderId, InstrumentId, OrderListId, Symbol, TradeId, VenueOrderId,
+        AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol, TradeId, TraderId,
+        VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
@@ -47,13 +48,17 @@ use super::{
         BitmexQuoteMsg, BitmexTradeBinMsg, BitmexTradeMsg, BitmexWalletMsg,
     },
 };
-use crate::common::{
-    consts::BITMEX_VENUE,
-    enums::{BitmexExecInstruction, BitmexExecType, BitmexSide},
-    parse::{
-        map_bitmex_currency, parse_contracts_quantity, parse_frac_quantity, parse_instrument_id,
-        parse_liquidity_side, parse_optional_datetime_to_unix_nanos, parse_position_side,
+use crate::{
+    common::{
+        consts::BITMEX_VENUE,
+        enums::{BitmexExecInstruction, BitmexExecType, BitmexSide},
+        parse::{
+            map_bitmex_currency, parse_contracts_quantity, parse_frac_quantity,
+            parse_instrument_id, parse_liquidity_side, parse_optional_datetime_to_unix_nanos,
+            parse_position_side,
+        },
     },
+    websocket::messages::BitmexOrderUpdateMsg,
 };
 
 const BAR_SPEC_1_MINUTE: BarSpecification = BarSpecification {
@@ -490,6 +495,48 @@ pub fn parse_order_msg(
     Ok(report)
 }
 
+/// Parse a BitMEX WebSocket order update message into a Nautilus `OrderUpdated` event.
+///
+/// This handles partial updates where only changed fields are present.
+pub fn parse_order_update_msg(
+    msg: &BitmexOrderUpdateMsg,
+    price_precision: u8,
+    account_id: AccountId,
+) -> Option<OrderUpdated> {
+    // For BitMEX updates, we don't have trader_id or strategy_id from the exchange
+    // These will be populated by the execution engine when it matches the venue_order_id
+    let trader_id = TraderId::default();
+    let strategy_id = StrategyId::default();
+    let instrument_id = parse_instrument_id(msg.symbol);
+    let venue_order_id = Some(VenueOrderId::new(msg.order_id.to_string()));
+    let client_order_id = msg.cl_ord_id.map(ClientOrderId::new).unwrap_or_default();
+    let quantity = Quantity::zero(0); // Sentinel to signal no quantity update
+    let price = msg.price.map(|p| Price::new(p, price_precision));
+
+    // BitMEX doesn't send trigger price in regular order updates?
+    let trigger_price = None;
+
+    let event_id = UUID4::new();
+    let ts_event = parse_optional_datetime_to_unix_nanos(&msg.timestamp, "timestamp");
+    let ts_init = get_atomic_clock_realtime().get_time_ns();
+
+    Some(nautilus_model::events::OrderUpdated::new(
+        trader_id,
+        strategy_id,
+        instrument_id,
+        client_order_id,
+        quantity,
+        event_id,
+        ts_event,
+        ts_init,
+        false, // reconciliation
+        venue_order_id,
+        Some(account_id),
+        price,
+        trigger_price,
+    ))
+}
+
 /// Parse a BitMEX WebSocket execution message into a Nautilus `FillReport`.
 ///
 /// # Panics
@@ -623,14 +670,11 @@ pub fn parse_instrument_msg(
             // Index instruments (starting with '.') are not loaded via regular API endpoints.
             if is_index {
                 tracing::trace!(
-                    "Index instrument {} not in cache, skipping price updates",
+                    "Index instrument {} not in cache, skipping update",
                     msg.symbol
                 );
             } else {
-                tracing::debug!(
-                    "Instrument {} not in cache, skipping price updates",
-                    msg.symbol
-                );
+                tracing::debug!("Instrument {} not in cache, skipping update", msg.symbol);
             }
             return updates;
         }
