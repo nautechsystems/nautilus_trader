@@ -60,6 +60,7 @@ class HistoricInteractiveBrokersClient:
         client_id: int = 1,
         market_data_type: MarketDataTypeEnum = MarketDataTypeEnum.REALTIME,
         log_level: str = "INFO",
+        cache: Cache | None = None,
     ) -> None:
         loop = asyncio.get_event_loop()
         loop.set_debug(True)
@@ -72,12 +73,11 @@ class HistoricInteractiveBrokersClient:
             TraderId("historic_interactive_brokers_client-001"),
             self._clock,
         )
-        cache = Cache()
         self.market_data_type = market_data_type
         self._client = InteractiveBrokersClient(
             loop=loop,
             msgbus=msgbus,
-            cache=cache,
+            cache=cache or Cache(),
             clock=self._clock,
             host=host,
             port=port,
