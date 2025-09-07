@@ -4967,6 +4967,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tokio-tungstenite 0.27.0",
+ "tokio-util",
  "tracing",
  "tracing-test",
  "turmoil",

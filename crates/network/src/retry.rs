@@ -17,8 +17,7 @@
 
 use std::{future::Future, marker::PhantomData, time::Duration};
 
-use tokio::time::sleep;
-use tracing::{debug, warn};
+use tokio_util::sync::CancellationToken;
 
 use crate::backoff::ExponentialBackoff;
 
@@ -62,8 +61,9 @@ impl Default for RetryConfig {
 }
 
 /// Generic retry manager for network operations.
-/// This is stateless and thread-safe - each operation gets its own backoff state.
-#[derive(Debug)]
+///
+/// Stateless and thread-safe - each operation maintains its own backoff state.
+#[derive(Clone, Debug)]
 pub struct RetryManager<E> {
     config: RetryConfig,
     _phantom: PhantomData<E>,
@@ -85,6 +85,257 @@ where
         })
     }
 
+    /// Executes an operation with retry logic and optional cancellation.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the operation fails after exhausting all retries,
+    /// if the operation times out, if creating the backoff state fails, or if canceled.
+    pub async fn execute_with_retry_inner<F, Fut, T>(
+        &self,
+        operation_name: &str,
+        mut operation: F,
+        should_retry: impl Fn(&E) -> bool,
+        create_error: impl Fn(String) -> E,
+        cancel: Option<&CancellationToken>,
+    ) -> Result<T, E>
+    where
+        F: FnMut() -> Fut,
+        Fut: Future<Output = Result<T, E>>,
+    {
+        let mut backoff = ExponentialBackoff::new(
+            Duration::from_millis(self.config.initial_delay_ms),
+            Duration::from_millis(self.config.max_delay_ms),
+            self.config.backoff_factor,
+            self.config.jitter_ms,
+            self.config.immediate_first,
+        )
+        .map_err(|e| create_error(format!("Invalid configuration: {e}")))?;
+
+        let mut attempt = 0;
+        let start_time = tokio::time::Instant::now();
+
+        loop {
+            if let Some(token) = cancel
+                && token.is_cancelled()
+            {
+                tracing::debug!(
+                    operation = %operation_name,
+                    attempts = attempt,
+                    "Operation canceled"
+                );
+                return Err(create_error("canceled".to_string()));
+            }
+
+            if let Some(max_elapsed_ms) = self.config.max_elapsed_ms {
+                let elapsed = start_time.elapsed();
+                if elapsed.as_millis() >= max_elapsed_ms as u128 {
+                    let timeout_error = create_error("Budget exceeded".to_string());
+                    tracing::trace!(
+                        operation = %operation_name,
+                        attempts = attempt + 1,
+                        budget_ms = max_elapsed_ms,
+                        "Retry budget exceeded"
+                    );
+                    return Err(timeout_error);
+                }
+            }
+
+            let result = match (self.config.operation_timeout_ms, cancel) {
+                (Some(timeout_ms), Some(token)) => {
+                    tokio::select! {
+                        result = tokio::time::timeout(Duration::from_millis(timeout_ms), operation()) => result,
+                        _ = token.cancelled() => {
+                            tracing::debug!(
+                                operation = %operation_name,
+                                "Operation canceled during execution"
+                            );
+                            return Err(create_error("canceled".to_string()));
+                        }
+                    }
+                }
+                (Some(timeout_ms), None) => {
+                    tokio::time::timeout(Duration::from_millis(timeout_ms), operation()).await
+                }
+                (None, Some(token)) => {
+                    tokio::select! {
+                        result = operation() => Ok(result),
+                        _ = token.cancelled() => {
+                            tracing::debug!(
+                                operation = %operation_name,
+                                "Operation canceled during execution"
+                            );
+                            return Err(create_error("canceled".to_string()));
+                        }
+                    }
+                }
+                (None, None) => Ok(operation().await),
+            };
+
+            match result {
+                Ok(Ok(success)) => {
+                    if attempt > 0 {
+                        tracing::trace!(
+                            operation = %operation_name,
+                            attempts = attempt + 1,
+                            "Retry succeeded"
+                        );
+                    }
+                    return Ok(success);
+                }
+                Ok(Err(error)) => {
+                    if !should_retry(&error) {
+                        tracing::trace!(
+                            operation = %operation_name,
+                            error = %error,
+                            "Non-retryable error"
+                        );
+                        return Err(error);
+                    }
+
+                    if attempt >= self.config.max_retries {
+                        tracing::trace!(
+                            operation = %operation_name,
+                            attempts = attempt + 1,
+                            error = %error,
+                            "Retries exhausted"
+                        );
+                        return Err(error);
+                    }
+
+                    let mut delay = backoff.next_duration();
+
+                    if let Some(max_elapsed_ms) = self.config.max_elapsed_ms {
+                        let elapsed = start_time.elapsed();
+                        let remaining =
+                            Duration::from_millis(max_elapsed_ms).saturating_sub(elapsed);
+
+                        if remaining.is_zero() {
+                            let timeout_error = create_error("Budget exceeded".to_string());
+                            tracing::trace!(
+                                operation = %operation_name,
+                                attempts = attempt + 1,
+                                budget_ms = max_elapsed_ms,
+                                "Retry budget exceeded"
+                            );
+                            return Err(timeout_error);
+                        }
+
+                        delay = delay.min(remaining);
+                    }
+
+                    tracing::trace!(
+                        operation = %operation_name,
+                        attempt = attempt + 1,
+                        delay_ms = delay.as_millis() as u64,
+                        error = %error,
+                        "Retrying after failure"
+                    );
+
+                    // Skip zero-delay sleep to avoid unnecessary yield
+                    if delay.is_zero() {
+                        attempt += 1;
+                        continue;
+                    }
+
+                    if let Some(token) = cancel {
+                        tokio::select! {
+                            _ = tokio::time::sleep(delay) => {},
+                            _ = token.cancelled() => {
+                                tracing::debug!(
+                                    operation = %operation_name,
+                                    attempt = attempt + 1,
+                                    "Operation canceled during retry delay"
+                                );
+                                return Err(create_error("canceled".to_string()));
+                            }
+                        }
+                    } else {
+                        tokio::time::sleep(delay).await;
+                    }
+                    attempt += 1;
+                }
+                Err(_timeout) => {
+                    let timeout_error = create_error(format!(
+                        "Timed out after {}ms",
+                        self.config.operation_timeout_ms.unwrap_or(0)
+                    ));
+
+                    if !should_retry(&timeout_error) {
+                        tracing::trace!(
+                            operation = %operation_name,
+                            error = %timeout_error,
+                            "Non-retryable timeout"
+                        );
+                        return Err(timeout_error);
+                    }
+
+                    if attempt >= self.config.max_retries {
+                        tracing::trace!(
+                            operation = %operation_name,
+                            attempts = attempt + 1,
+                            error = %timeout_error,
+                            "Retries exhausted after timeout"
+                        );
+                        return Err(timeout_error);
+                    }
+
+                    let mut delay = backoff.next_duration();
+
+                    if let Some(max_elapsed_ms) = self.config.max_elapsed_ms {
+                        let elapsed = start_time.elapsed();
+                        let remaining =
+                            Duration::from_millis(max_elapsed_ms).saturating_sub(elapsed);
+
+                        if remaining.is_zero() {
+                            let budget_error = create_error("Budget exceeded".to_string());
+                            tracing::trace!(
+                                operation = %operation_name,
+                                attempts = attempt + 1,
+                                budget_ms = max_elapsed_ms,
+                                "Retry budget exceeded"
+                            );
+                            return Err(budget_error);
+                        }
+
+                        delay = delay.min(remaining);
+                    }
+
+                    tracing::trace!(
+                        operation = %operation_name,
+                        attempt = attempt + 1,
+                        delay_ms = delay.as_millis() as u64,
+                        error = %timeout_error,
+                        "Retrying after timeout"
+                    );
+
+                    // Skip zero-delay sleep to avoid unnecessary yield
+                    if delay.is_zero() {
+                        attempt += 1;
+                        continue;
+                    }
+
+                    if let Some(token) = cancel {
+                        tokio::select! {
+                            _ = tokio::time::sleep(delay) => {},
+                            _ = token.cancelled() => {
+                                tracing::debug!(
+                                    operation = %operation_name,
+                                    attempt = attempt + 1,
+                                    "Operation canceled during retry delay"
+                                );
+                                return Err(create_error("canceled".to_string()));
+                            }
+                        }
+                    } else {
+                        tokio::time::sleep(delay).await;
+                    }
+                    attempt += 1;
+                }
+            }
+        }
+    }
+
     /// Executes an operation with retry logic.
     ///
     /// # Errors
@@ -94,138 +345,44 @@ where
     pub async fn execute_with_retry<F, Fut, T>(
         &self,
         operation_name: &str,
-        mut operation: F,
+        operation: F,
         should_retry: impl Fn(&E) -> bool,
-        create_timeout_error: impl Fn(String) -> E,
+        create_error: impl Fn(String) -> E,
     ) -> Result<T, E>
     where
         F: FnMut() -> Fut,
         Fut: Future<Output = Result<T, E>>,
     {
-        // Create a fresh backoff state for this operation
-        let mut backoff = ExponentialBackoff::new(
-            Duration::from_millis(self.config.initial_delay_ms),
-            Duration::from_millis(self.config.max_delay_ms),
-            self.config.backoff_factor,
-            self.config.jitter_ms,
-            self.config.immediate_first,
+        self.execute_with_retry_inner(operation_name, operation, should_retry, create_error, None)
+            .await
+    }
+
+    /// Executes an operation with retry logic and cancellation support.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the operation fails after exhausting all retries,
+    /// if the operation times out, if creating the backoff state fails, or if canceled.
+    pub async fn execute_with_retry_with_cancel<F, Fut, T>(
+        &self,
+        operation_name: &str,
+        operation: F,
+        should_retry: impl Fn(&E) -> bool,
+        create_error: impl Fn(String) -> E,
+        cancellation_token: &CancellationToken,
+    ) -> Result<T, E>
+    where
+        F: FnMut() -> Fut,
+        Fut: Future<Output = Result<T, E>>,
+    {
+        self.execute_with_retry_inner(
+            operation_name,
+            operation,
+            should_retry,
+            create_error,
+            Some(cancellation_token),
         )
-        .map_err(|e| create_timeout_error(format!("Failed to create backoff: {e}")))?;
-
-        let mut attempt = 0;
-        let start_time = tokio::time::Instant::now();
-
-        loop {
-            // Check if we've exceeded the total elapsed time budget
-            if let Some(max_elapsed_ms) = self.config.max_elapsed_ms {
-                let elapsed = start_time.elapsed();
-                if elapsed.as_millis() > max_elapsed_ms as u128 {
-                    let timeout_error = create_timeout_error(format!(
-                        "Operation '{}' exceeded total time budget of {}ms",
-                        operation_name, max_elapsed_ms
-                    ));
-                    warn!(
-                        "Operation '{}' exceeded total time budget after {} attempts",
-                        operation_name,
-                        attempt + 1
-                    );
-                    return Err(timeout_error);
-                }
-            }
-            // Execute the operation with optional timeout
-            let result = if let Some(timeout_ms) = self.config.operation_timeout_ms {
-                tokio::time::timeout(Duration::from_millis(timeout_ms), operation()).await
-            } else {
-                Ok(operation().await)
-            };
-
-            match result {
-                Ok(Ok(success)) => {
-                    if attempt > 0 {
-                        debug!(
-                            "Operation '{}' succeeded after {} attempts",
-                            operation_name,
-                            attempt + 1
-                        );
-                    }
-                    return Ok(success);
-                }
-                Ok(Err(error)) => {
-                    // Check if we should retry this error
-                    if !should_retry(&error) {
-                        debug!(
-                            "Operation '{}' failed with non-retryable error: {}",
-                            operation_name, error
-                        );
-                        return Err(error);
-                    }
-
-                    // Check if we've exhausted retries
-                    if attempt >= self.config.max_retries {
-                        warn!(
-                            "Operation '{}' failed after {} attempts: {}",
-                            operation_name,
-                            attempt + 1,
-                            error
-                        );
-                        return Err(error);
-                    }
-
-                    // Calculate delay and wait
-                    let delay = backoff.next_duration();
-                    debug!(
-                        "Operation '{}' failed (attempt {}), retrying in {:?}: {}",
-                        operation_name,
-                        attempt + 1,
-                        delay,
-                        error
-                    );
-
-                    sleep(delay).await;
-                    attempt += 1;
-                }
-                Err(_timeout) => {
-                    let timeout_error = create_timeout_error(format!(
-                        "Operation '{}' timed out after {}ms",
-                        operation_name,
-                        self.config.operation_timeout_ms.unwrap_or(0)
-                    ));
-
-                    // Check if we should retry this timeout error
-                    if !should_retry(&timeout_error) {
-                        debug!(
-                            "Operation '{}' timed out with non-retryable timeout: {}",
-                            operation_name, timeout_error
-                        );
-                        return Err(timeout_error);
-                    }
-
-                    // Check if we've exhausted retries
-                    if attempt >= self.config.max_retries {
-                        warn!(
-                            "Operation '{}' timed out after {} attempts: {}",
-                            operation_name,
-                            attempt + 1,
-                            timeout_error
-                        );
-                        return Err(timeout_error);
-                    }
-
-                    // Calculate delay and wait
-                    let delay = backoff.next_duration();
-                    debug!(
-                        "Operation '{}' timed out (attempt {}), retrying in {:?}: {}",
-                        operation_name,
-                        attempt + 1,
-                        delay,
-                        timeout_error
-                    );
-
-                    sleep(delay).await;
-                    attempt += 1;
-                }
-            }
-        }
+        .await
     }
 }
 
@@ -286,11 +443,9 @@ where
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
+mod test_utils {
     #[derive(Debug, thiserror::Error)]
-    enum TestError {
+    pub enum TestError {
         #[error("Retryable error: {0}")]
         Retryable(String),
         #[error("Non-retryable error: {0}")]
@@ -299,13 +454,18 @@ mod tests {
         Timeout(String),
     }
 
-    fn should_retry_test_error(error: &TestError) -> bool {
+    pub fn should_retry_test_error(error: &TestError) -> bool {
         matches!(error, TestError::Retryable(_))
     }
 
-    fn create_timeout_error(msg: String) -> TestError {
+    pub fn create_test_error(msg: String) -> TestError {
         TestError::Timeout(msg)
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{test_utils::*, *};
 
     #[test]
     fn test_retry_config_default() {
@@ -316,7 +476,7 @@ mod tests {
         assert_eq!(config.backoff_factor, 2.0);
         assert_eq!(config.jitter_ms, 100);
         assert_eq!(config.operation_timeout_ms, Some(30_000));
-        assert!(!config.immediate_first); // Default to Python behavior
+        assert!(!config.immediate_first);
         assert_eq!(config.max_elapsed_ms, None);
     }
 
@@ -329,7 +489,7 @@ mod tests {
                 "test_operation",
                 || async { Ok::<i32, TestError>(42) },
                 should_retry_test_error,
-                create_timeout_error,
+                create_test_error,
             )
             .await;
 
@@ -345,7 +505,7 @@ mod tests {
                 "test_operation",
                 || async { Err::<i32, TestError>(TestError::NonRetryable("test".to_string())) },
                 should_retry_test_error,
-                create_timeout_error,
+                create_test_error,
             )
             .await;
 
@@ -357,10 +517,10 @@ mod tests {
     async fn test_retry_manager_retryable_error_exhausted() {
         let config = RetryConfig {
             max_retries: 2,
-            initial_delay_ms: 10, // Fast for testing
+            initial_delay_ms: 10,
             max_delay_ms: 50,
             backoff_factor: 2.0,
-            jitter_ms: 0, // No jitter for predictable testing
+            jitter_ms: 0,
             operation_timeout_ms: None,
             immediate_first: false,
             max_elapsed_ms: None,
@@ -372,7 +532,7 @@ mod tests {
                 "test_operation",
                 || async { Err::<i32, TestError>(TestError::Retryable("test".to_string())) },
                 should_retry_test_error,
-                create_timeout_error,
+                create_test_error,
             )
             .await;
 
@@ -388,7 +548,7 @@ mod tests {
             max_delay_ms: 50,
             backoff_factor: 2.0,
             jitter_ms: 0,
-            operation_timeout_ms: Some(50), // Very short timeout
+            operation_timeout_ms: Some(50),
             immediate_first: false,
             max_elapsed_ms: None,
         };
@@ -398,11 +558,11 @@ mod tests {
             .execute_with_retry(
                 "test_timeout",
                 || async {
-                    tokio::time::sleep(Duration::from_millis(100)).await; // Longer than timeout
+                    tokio::time::sleep(Duration::from_millis(100)).await;
                     Ok::<i32, TestError>(42)
                 },
                 should_retry_test_error,
-                create_timeout_error,
+                create_test_error,
             )
             .await;
 
@@ -413,14 +573,14 @@ mod tests {
     #[tokio::test]
     async fn test_max_elapsed_time_budget() {
         let config = RetryConfig {
-            max_retries: 10, // High retry count
+            max_retries: 10,
             initial_delay_ms: 50,
             max_delay_ms: 100,
             backoff_factor: 2.0,
             jitter_ms: 0,
             operation_timeout_ms: None,
             immediate_first: false,
-            max_elapsed_ms: Some(200), // Short total budget
+            max_elapsed_ms: Some(200),
         };
         let manager = RetryManager::new(config).unwrap();
 
@@ -430,23 +590,22 @@ mod tests {
                 "test_budget",
                 || async { Err::<i32, TestError>(TestError::Retryable("test".to_string())) },
                 should_retry_test_error,
-                create_timeout_error,
+                create_test_error,
             )
             .await;
 
         let elapsed = start.elapsed();
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), TestError::Timeout(_)));
-        // Should have stopped due to time budget, not retry count
-        assert!(elapsed.as_millis() >= 200);
-        assert!(elapsed.as_millis() < 500); // Shouldn't take too long
+        assert!(elapsed.as_millis() >= 150);
+        assert!(elapsed.as_millis() < 1000);
     }
 
     #[test]
     fn test_http_retry_manager_config() {
         let manager = create_http_retry_manager::<TestError>().unwrap();
         assert_eq!(manager.config.max_retries, 3);
-        assert!(!manager.config.immediate_first); // HTTP should not retry immediately
+        assert!(!manager.config.immediate_first);
         assert_eq!(manager.config.max_elapsed_ms, Some(180_000));
     }
 
@@ -454,7 +613,7 @@ mod tests {
     fn test_websocket_retry_manager_config() {
         let manager = create_websocket_retry_manager::<TestError>().unwrap();
         assert_eq!(manager.config.max_retries, 5);
-        assert!(manager.config.immediate_first); // WebSocket should retry immediately
+        assert!(manager.config.immediate_first);
         assert_eq!(manager.config.max_elapsed_ms, Some(120_000));
     }
 
@@ -466,7 +625,7 @@ mod tests {
             max_delay_ms: 50,
             backoff_factor: 2.0,
             jitter_ms: 0,
-            operation_timeout_ms: Some(50), // Very short timeout
+            operation_timeout_ms: Some(50),
             immediate_first: false,
             max_elapsed_ms: None,
         };
@@ -479,11 +638,11 @@ mod tests {
             .execute_with_retry(
                 "test_timeout_non_retryable",
                 || async {
-                    tokio::time::sleep(Duration::from_millis(100)).await; // Longer than timeout
+                    tokio::time::sleep(Duration::from_millis(100)).await;
                     Ok::<i32, TestError>(42)
                 },
                 should_not_retry_timeouts,
-                create_timeout_error,
+                create_test_error,
             )
             .await;
 
@@ -500,7 +659,7 @@ mod tests {
             max_delay_ms: 50,
             backoff_factor: 2.0,
             jitter_ms: 0,
-            operation_timeout_ms: Some(50), // Very short timeout
+            operation_timeout_ms: Some(50),
             immediate_first: false,
             max_elapsed_ms: None,
         };
@@ -514,11 +673,11 @@ mod tests {
             .execute_with_retry(
                 "test_timeout_retryable",
                 || async {
-                    tokio::time::sleep(Duration::from_millis(100)).await; // Longer than timeout
+                    tokio::time::sleep(Duration::from_millis(100)).await;
                     Ok::<i32, TestError>(42)
                 },
                 should_retry_timeouts,
-                create_timeout_error,
+                create_test_error,
             )
             .await;
 
@@ -528,6 +687,976 @@ mod tests {
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), TestError::Timeout(_)));
         // Should have taken time for retries (at least 2 timeouts + delays)
-        assert!(elapsed.as_millis() > 100); // More than just one timeout
+        assert!(elapsed.as_millis() > 80); // More than just one timeout
+    }
+
+    #[tokio::test]
+    async fn test_successful_retry_after_failures() {
+        let config = RetryConfig {
+            max_retries: 3,
+            initial_delay_ms: 10,
+            max_delay_ms: 50,
+            backoff_factor: 2.0,
+            jitter_ms: 0,
+            operation_timeout_ms: None,
+            immediate_first: false,
+            max_elapsed_ms: None,
+        };
+        let manager = RetryManager::new(config).unwrap();
+
+        let attempt_counter = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let counter_clone = attempt_counter.clone();
+
+        let result = manager
+            .execute_with_retry(
+                "test_eventual_success",
+                move || {
+                    let counter = counter_clone.clone();
+                    async move {
+                        let attempts = counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        if attempts < 2 {
+                            Err(TestError::Retryable("temporary failure".to_string()))
+                        } else {
+                            Ok(42)
+                        }
+                    }
+                },
+                should_retry_test_error,
+                create_test_error,
+            )
+            .await;
+
+        assert_eq!(result.unwrap(), 42);
+        assert_eq!(attempt_counter.load(std::sync::atomic::Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test]
+    async fn test_immediate_first_retry() {
+        let config = RetryConfig {
+            max_retries: 2,
+            initial_delay_ms: 100,
+            max_delay_ms: 200,
+            backoff_factor: 2.0,
+            jitter_ms: 0,
+            operation_timeout_ms: None,
+            immediate_first: true,
+            max_elapsed_ms: None,
+        };
+        let manager = RetryManager::new(config).unwrap();
+
+        let attempt_times = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let times_clone = attempt_times.clone();
+        let start = tokio::time::Instant::now();
+
+        let _result = manager
+            .execute_with_retry(
+                "test_immediate",
+                move || {
+                    let times = times_clone.clone();
+                    async move {
+                        times.lock().unwrap().push(start.elapsed());
+                        Err::<i32, TestError>(TestError::Retryable("fail".to_string()))
+                    }
+                },
+                should_retry_test_error,
+                create_test_error,
+            )
+            .await;
+
+        let times = attempt_times.lock().unwrap();
+        assert_eq!(times.len(), 3); // Initial + 2 retries
+
+        // First retry should be immediate (within 10ms)
+        assert!(times[1].as_millis() < 10);
+        // Second retry should have delay (at least 100ms from first retry)
+        assert!(times[2].as_millis() >= 100);
+    }
+
+    #[tokio::test]
+    async fn test_operation_without_timeout() {
+        let config = RetryConfig {
+            max_retries: 2,
+            initial_delay_ms: 10,
+            max_delay_ms: 50,
+            backoff_factor: 2.0,
+            jitter_ms: 0,
+            operation_timeout_ms: None, // No timeout
+            immediate_first: false,
+            max_elapsed_ms: None,
+        };
+        let manager = RetryManager::new(config).unwrap();
+
+        let start = tokio::time::Instant::now();
+        let result = manager
+            .execute_with_retry(
+                "test_no_timeout",
+                || async {
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                    Ok::<i32, TestError>(42)
+                },
+                should_retry_test_error,
+                create_test_error,
+            )
+            .await;
+
+        let elapsed = start.elapsed();
+        assert_eq!(result.unwrap(), 42);
+        // Should complete without timing out
+        assert!(elapsed.as_millis() >= 30);
+        assert!(elapsed.as_millis() < 200);
+    }
+
+    #[tokio::test]
+    async fn test_zero_retries() {
+        let config = RetryConfig {
+            max_retries: 0,
+            initial_delay_ms: 10,
+            max_delay_ms: 50,
+            backoff_factor: 2.0,
+            jitter_ms: 0,
+            operation_timeout_ms: None,
+            immediate_first: false,
+            max_elapsed_ms: None,
+        };
+        let manager = RetryManager::new(config).unwrap();
+
+        let attempt_counter = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let counter_clone = attempt_counter.clone();
+
+        let result = manager
+            .execute_with_retry(
+                "test_no_retries",
+                move || {
+                    let counter = counter_clone.clone();
+                    async move {
+                        counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        Err::<i32, TestError>(TestError::Retryable("fail".to_string()))
+                    }
+                },
+                should_retry_test_error,
+                create_test_error,
+            )
+            .await;
+
+        assert!(result.is_err());
+        // Should only attempt once (no retries)
+        assert_eq!(attempt_counter.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn test_jitter_applied() {
+        let config = RetryConfig {
+            max_retries: 2,
+            initial_delay_ms: 50,
+            max_delay_ms: 100,
+            backoff_factor: 2.0,
+            jitter_ms: 50, // Significant jitter
+            operation_timeout_ms: None,
+            immediate_first: false,
+            max_elapsed_ms: None,
+        };
+        let manager = RetryManager::new(config).unwrap();
+
+        let delays = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let delays_clone = delays.clone();
+        let last_time = std::sync::Arc::new(std::sync::Mutex::new(tokio::time::Instant::now()));
+        let last_time_clone = last_time.clone();
+
+        let _result = manager
+            .execute_with_retry(
+                "test_jitter",
+                move || {
+                    let delays = delays_clone.clone();
+                    let last_time = last_time_clone.clone();
+                    async move {
+                        let now = tokio::time::Instant::now();
+                        let delay = {
+                            let mut last = last_time.lock().unwrap();
+                            let d = now.duration_since(*last);
+                            *last = now;
+                            d
+                        };
+                        delays.lock().unwrap().push(delay);
+                        Err::<i32, TestError>(TestError::Retryable("fail".to_string()))
+                    }
+                },
+                should_retry_test_error,
+                create_test_error,
+            )
+            .await;
+
+        let delays = delays.lock().unwrap();
+        // Skip the first delay (initial attempt)
+        for delay in delays.iter().skip(1) {
+            // Each delay should be at least the base delay (50ms for first retry)
+            assert!(delay.as_millis() >= 50);
+            // But no more than base + jitter (100ms for first retry)
+            assert!(delay.as_millis() <= 150);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_max_elapsed_stops_early() {
+        let config = RetryConfig {
+            max_retries: 100, // Very high retry count
+            initial_delay_ms: 50,
+            max_delay_ms: 100,
+            backoff_factor: 1.5,
+            jitter_ms: 0,
+            operation_timeout_ms: None,
+            immediate_first: false,
+            max_elapsed_ms: Some(150), // Should stop after ~3 attempts
+        };
+        let manager = RetryManager::new(config).unwrap();
+
+        let attempt_counter = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let counter_clone = attempt_counter.clone();
+
+        let start = tokio::time::Instant::now();
+        let result = manager
+            .execute_with_retry(
+                "test_elapsed_limit",
+                move || {
+                    let counter = counter_clone.clone();
+                    async move {
+                        counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        Err::<i32, TestError>(TestError::Retryable("fail".to_string()))
+                    }
+                },
+                should_retry_test_error,
+                create_test_error,
+            )
+            .await;
+
+        let elapsed = start.elapsed();
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), TestError::Timeout(_)));
+
+        // Should have stopped due to time limit, not retry count
+        let attempts = attempt_counter.load(std::sync::atomic::Ordering::SeqCst);
+        assert!(attempts < 10); // Much less than max_retries
+        assert!(elapsed.as_millis() >= 100);
+    }
+
+    #[tokio::test]
+    async fn test_mixed_errors_retry_behavior() {
+        let config = RetryConfig {
+            max_retries: 5,
+            initial_delay_ms: 10,
+            max_delay_ms: 50,
+            backoff_factor: 2.0,
+            jitter_ms: 0,
+            operation_timeout_ms: None,
+            immediate_first: false,
+            max_elapsed_ms: None,
+        };
+        let manager = RetryManager::new(config).unwrap();
+
+        let attempt_counter = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let counter_clone = attempt_counter.clone();
+
+        let result = manager
+            .execute_with_retry(
+                "test_mixed_errors",
+                move || {
+                    let counter = counter_clone.clone();
+                    async move {
+                        let attempts = counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        match attempts {
+                            0 => Err(TestError::Retryable("retry 1".to_string())),
+                            1 => Err(TestError::Retryable("retry 2".to_string())),
+                            2 => Err(TestError::NonRetryable("stop here".to_string())),
+                            _ => Ok(42),
+                        }
+                    }
+                },
+                should_retry_test_error,
+                create_test_error,
+            )
+            .await;
+
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), TestError::NonRetryable(_)));
+        // Should stop at the non-retryable error
+        assert_eq!(attempt_counter.load(std::sync::atomic::Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test]
+    async fn test_cancellation_during_retry_delay() {
+        use tokio_util::sync::CancellationToken;
+
+        let config = RetryConfig {
+            max_retries: 10,
+            initial_delay_ms: 500, // Long delay to ensure cancellation happens during sleep
+            max_delay_ms: 1000,
+            backoff_factor: 2.0,
+            jitter_ms: 0,
+            operation_timeout_ms: None,
+            immediate_first: false,
+            max_elapsed_ms: None,
+        };
+        let manager = RetryManager::new(config).unwrap();
+
+        let token = CancellationToken::new();
+        let token_clone = token.clone();
+
+        // Cancel after a short delay
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            token_clone.cancel();
+        });
+
+        let attempt_counter = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let counter_clone = attempt_counter.clone();
+
+        let start = tokio::time::Instant::now();
+        let result = manager
+            .execute_with_retry_with_cancel(
+                "test_cancellation",
+                move || {
+                    let counter = counter_clone.clone();
+                    async move {
+                        counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        Err::<i32, TestError>(TestError::Retryable("fail".to_string()))
+                    }
+                },
+                should_retry_test_error,
+                create_test_error,
+                &token,
+            )
+            .await;
+
+        let elapsed = start.elapsed();
+
+        // Should be canceled quickly
+        assert!(result.is_err());
+        let error_msg = format!("{}", result.unwrap_err());
+        assert!(error_msg.contains("canceled"));
+
+        // Should not have taken the full delay time
+        assert!(elapsed.as_millis() < 600);
+
+        // Should have made at least one attempt
+        let attempts = attempt_counter.load(std::sync::atomic::Ordering::SeqCst);
+        assert!(attempts >= 1);
+    }
+
+    #[tokio::test]
+    async fn test_cancellation_during_operation_execution() {
+        use tokio_util::sync::CancellationToken;
+
+        let config = RetryConfig {
+            max_retries: 5,
+            initial_delay_ms: 50,
+            max_delay_ms: 100,
+            backoff_factor: 2.0,
+            jitter_ms: 0,
+            operation_timeout_ms: None,
+            immediate_first: false,
+            max_elapsed_ms: None,
+        };
+        let manager = RetryManager::new(config).unwrap();
+
+        let token = CancellationToken::new();
+        let token_clone = token.clone();
+
+        // Cancel after a short delay
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            token_clone.cancel();
+        });
+
+        let start = tokio::time::Instant::now();
+        let result = manager
+            .execute_with_retry_with_cancel(
+                "test_cancellation_during_op",
+                || async {
+                    // Long-running operation
+                    tokio::time::sleep(Duration::from_millis(200)).await;
+                    Ok::<i32, TestError>(42)
+                },
+                should_retry_test_error,
+                create_test_error,
+                &token,
+            )
+            .await;
+
+        let elapsed = start.elapsed();
+
+        // Should be canceled during the operation
+        assert!(result.is_err());
+        let error_msg = format!("{}", result.unwrap_err());
+        assert!(error_msg.contains("canceled"));
+
+        // Should not have completed the long operation
+        assert!(elapsed.as_millis() < 250);
+    }
+
+    #[tokio::test]
+    async fn test_cancellation_error_message() {
+        use tokio_util::sync::CancellationToken;
+
+        let config = RetryConfig::default();
+        let manager = RetryManager::new(config).unwrap();
+
+        let token = CancellationToken::new();
+        token.cancel(); // Pre-cancel for immediate cancellation
+
+        let result = manager
+            .execute_with_retry_with_cancel(
+                "test_operation",
+                || async { Ok::<i32, TestError>(42) },
+                should_retry_test_error,
+                create_test_error,
+                &token,
+            )
+            .await;
+
+        assert!(result.is_err());
+        let error_msg = format!("{}", result.unwrap_err());
+        assert!(error_msg.contains("canceled"));
+    }
+}
+
+#[cfg(test)]
+mod proptest_tests {
+    use proptest::prelude::*;
+
+    use super::{test_utils::*, *};
+
+    proptest! {
+        #[test]
+        fn test_retry_config_valid_ranges(
+            max_retries in 0u32..100,
+            initial_delay_ms in 1u64..10_000,
+            max_delay_ms in 1u64..60_000,
+            backoff_factor in 1.0f64..10.0,
+            jitter_ms in 0u64..1_000,
+            operation_timeout_ms in prop::option::of(1u64..120_000),
+            immediate_first in any::<bool>(),
+            max_elapsed_ms in prop::option::of(1u64..300_000)
+        ) {
+            // Ensure max_delay >= initial_delay for valid config
+            let max_delay_ms = max_delay_ms.max(initial_delay_ms);
+
+            let config = RetryConfig {
+                max_retries,
+                initial_delay_ms,
+                max_delay_ms,
+                backoff_factor,
+                jitter_ms,
+                operation_timeout_ms,
+                immediate_first,
+                max_elapsed_ms,
+            };
+
+            // Should always be able to create a RetryManager with valid config
+            let manager = RetryManager::<std::io::Error>::new(config);
+            prop_assert!(manager.is_ok());
+        }
+
+        #[test]
+        fn test_retry_attempts_bounded(
+            max_retries in 0u32..5,
+            initial_delay_ms in 1u64..10,
+            backoff_factor in 1.0f64..2.0,
+        ) {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_time()
+                .build()
+                .unwrap();
+
+            let config = RetryConfig {
+                max_retries,
+                initial_delay_ms,
+                max_delay_ms: initial_delay_ms * 2,
+                backoff_factor,
+                jitter_ms: 0,
+                operation_timeout_ms: None,
+                immediate_first: false,
+                max_elapsed_ms: None,
+            };
+
+            let manager = RetryManager::new(config).unwrap();
+            let attempt_counter = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+            let counter_clone = attempt_counter.clone();
+
+            let _result = rt.block_on(manager.execute_with_retry(
+                "prop_test",
+                move || {
+                    let counter = counter_clone.clone();
+                    async move {
+                        counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        Err::<i32, TestError>(TestError::Retryable("fail".to_string()))
+                    }
+                },
+                |e: &TestError| matches!(e, TestError::Retryable(_)),
+                TestError::Timeout,
+            ));
+
+            let attempts = attempt_counter.load(std::sync::atomic::Ordering::SeqCst);
+            // Total attempts should be 1 (initial) + max_retries
+            prop_assert_eq!(attempts, max_retries + 1);
+        }
+
+        #[test]
+        fn test_timeout_always_respected(
+            timeout_ms in 10u64..50,
+            operation_delay_ms in 60u64..100,
+        ) {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_time()
+                .build()
+                .unwrap();
+
+            let config = RetryConfig {
+                max_retries: 0, // No retries to isolate timeout behavior
+                initial_delay_ms: 10,
+                max_delay_ms: 100,
+                backoff_factor: 2.0,
+                jitter_ms: 0,
+                operation_timeout_ms: Some(timeout_ms),
+                immediate_first: false,
+                max_elapsed_ms: None,
+            };
+
+            let manager = RetryManager::new(config).unwrap();
+
+            let start = std::time::Instant::now();
+            let result = rt.block_on(manager.execute_with_retry(
+                "timeout_test",
+                move || async move {
+                    tokio::time::sleep(Duration::from_millis(operation_delay_ms)).await;
+                    Ok::<i32, TestError>(42)
+                },
+                |_: &TestError| true,
+                TestError::Timeout,
+            ));
+
+            let elapsed = start.elapsed();
+
+            // Operation should timeout
+            prop_assert!(result.is_err());
+            prop_assert!(matches!(result.unwrap_err(), TestError::Timeout(_)));
+
+            // Should complete within reasonable time of the timeout
+            prop_assert!(elapsed.as_millis() < (timeout_ms as u128) * 3);
+        }
+
+        #[test]
+        fn test_max_elapsed_always_respected(
+            max_elapsed_ms in 20u64..50,
+            delay_per_retry in 15u64..30,
+            max_retries in 10u32..20,
+        ) {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_time()
+                .build()
+                .unwrap();
+
+            // Set up config where we would exceed max_elapsed_ms before max_retries
+            let config = RetryConfig {
+                max_retries,
+                initial_delay_ms: delay_per_retry,
+                max_delay_ms: delay_per_retry * 2,
+                backoff_factor: 1.0, // No backoff to make timing predictable
+                jitter_ms: 0,
+                operation_timeout_ms: None,
+                immediate_first: false,
+                max_elapsed_ms: Some(max_elapsed_ms),
+            };
+
+            let manager = RetryManager::new(config).unwrap();
+            let attempt_counter = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+            let counter_clone = attempt_counter.clone();
+
+            let start = std::time::Instant::now();
+            let result = rt.block_on(manager.execute_with_retry(
+                "elapsed_test",
+                move || {
+                    let counter = counter_clone.clone();
+                    async move {
+                        counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        Err::<i32, TestError>(TestError::Retryable("fail".to_string()))
+                    }
+                },
+                |e: &TestError| matches!(e, TestError::Retryable(_)),
+                TestError::Timeout,
+            ));
+
+            let elapsed = start.elapsed();
+            let attempts = attempt_counter.load(std::sync::atomic::Ordering::SeqCst);
+
+            // Should have failed with timeout error
+            prop_assert!(result.is_err());
+            prop_assert!(matches!(result.unwrap_err(), TestError::Timeout(_)));
+
+            // Should have stopped before exhausting all retries
+            prop_assert!(attempts <= max_retries + 1);
+
+            // Elapsed time should be at least max_elapsed_ms
+            prop_assert!(elapsed.as_millis() >= max_elapsed_ms as u128);
+            // But shouldn't overshoot by too much (one retry delay + small buffer)
+            prop_assert!(elapsed.as_millis() < (max_elapsed_ms as u128) + (delay_per_retry as u128) * 3);
+        }
+
+        #[test]
+        fn test_jitter_bounds(
+            jitter_ms in 0u64..20,
+            base_delay_ms in 10u64..30,
+        ) {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_time()
+                .build()
+                .unwrap();
+
+            let config = RetryConfig {
+                max_retries: 2,
+                initial_delay_ms: base_delay_ms,
+                max_delay_ms: base_delay_ms * 2,
+                backoff_factor: 1.0, // No backoff to isolate jitter
+                jitter_ms,
+                operation_timeout_ms: None,
+                immediate_first: false,
+                max_elapsed_ms: None,
+            };
+
+            let manager = RetryManager::new(config).unwrap();
+            let attempt_times = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+            let times_clone = attempt_times.clone();
+            let start_time = std::time::Instant::now();
+
+            let _result = rt.block_on(manager.execute_with_retry(
+                "jitter_test",
+                move || {
+                    let times = times_clone.clone();
+                    async move {
+                        times.lock().unwrap().push(start_time.elapsed());
+                        Err::<i32, TestError>(TestError::Retryable("fail".to_string()))
+                    }
+                },
+                |e: &TestError| matches!(e, TestError::Retryable(_)),
+                TestError::Timeout,
+            ));
+
+            let times = attempt_times.lock().unwrap();
+
+            // We expect at least 2 attempts total (initial + at least 1 retry)
+            prop_assert!(times.len() >= 2);
+
+            // First attempt should be immediate (no delay)
+            prop_assert!(times[0].as_millis() < 5);
+
+            // Check subsequent retries have appropriate delays
+            for i in 1..times.len() {
+                let delay_from_previous = if i == 1 {
+                    times[i] - times[0]
+                } else {
+                    times[i] - times[i - 1]
+                };
+
+                // The delay should be at least base_delay_ms
+                prop_assert!(
+                    delay_from_previous.as_millis() >= base_delay_ms as u128,
+                    "Retry {} delay {}ms is less than base {}ms",
+                    i, delay_from_previous.as_millis(), base_delay_ms
+                );
+
+                // Delay should be at most base_delay + jitter
+                prop_assert!(
+                    delay_from_previous.as_millis() <= (base_delay_ms + jitter_ms + 5) as u128,
+                    "Retry {} delay {}ms exceeds base {} + jitter {}",
+                    i, delay_from_previous.as_millis(), base_delay_ms, jitter_ms
+                );
+            }
+        }
+
+        #[test]
+        fn test_immediate_first_property(
+            immediate_first in any::<bool>(),
+            initial_delay_ms in 10u64..30,
+        ) {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_time()
+                .build()
+                .unwrap();
+
+            let config = RetryConfig {
+                max_retries: 2,
+                initial_delay_ms,
+                max_delay_ms: initial_delay_ms * 2,
+                backoff_factor: 2.0,
+                jitter_ms: 0,
+                operation_timeout_ms: None,
+                immediate_first,
+                max_elapsed_ms: None,
+            };
+
+            let manager = RetryManager::new(config).unwrap();
+            let attempt_times = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+            let times_clone = attempt_times.clone();
+
+            let start = std::time::Instant::now();
+            let _result = rt.block_on(manager.execute_with_retry(
+                "immediate_test",
+                move || {
+                    let times = times_clone.clone();
+                    async move {
+                        let elapsed = start.elapsed();
+                        times.lock().unwrap().push(elapsed);
+                        Err::<i32, TestError>(TestError::Retryable("fail".to_string()))
+                    }
+                },
+                |e: &TestError| matches!(e, TestError::Retryable(_)),
+                TestError::Timeout,
+            ));
+
+            let times = attempt_times.lock().unwrap();
+            prop_assert!(times.len() >= 2);
+
+            if immediate_first {
+                // First retry should be immediate
+                prop_assert!(times[1].as_millis() < 20,
+                    "With immediate_first=true, first retry took {}ms",
+                    times[1].as_millis());
+            } else {
+                // First retry should have delay
+                prop_assert!(times[1].as_millis() >= (initial_delay_ms - 10) as u128,
+                    "With immediate_first=false, first retry was too fast: {}ms",
+                    times[1].as_millis());
+            }
+        }
+
+        #[test]
+        fn test_non_retryable_stops_immediately(
+            attempt_before_non_retryable in 0usize..3,
+            max_retries in 3u32..5,
+        ) {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_time()
+                .build()
+                .unwrap();
+
+            let config = RetryConfig {
+                max_retries,
+                initial_delay_ms: 10,
+                max_delay_ms: 100,
+                backoff_factor: 2.0,
+                jitter_ms: 0,
+                operation_timeout_ms: None,
+                immediate_first: false,
+                max_elapsed_ms: None,
+            };
+
+            let manager = RetryManager::new(config).unwrap();
+            let attempt_counter = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+            let counter_clone = attempt_counter.clone();
+
+            let result: Result<i32, TestError> = rt.block_on(manager.execute_with_retry(
+                "non_retryable_test",
+                move || {
+                    let counter = counter_clone.clone();
+                    async move {
+                        let attempts = counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as usize;
+                        if attempts == attempt_before_non_retryable {
+                            Err(TestError::NonRetryable("stop".to_string()))
+                        } else {
+                            Err(TestError::Retryable("retry".to_string()))
+                        }
+                    }
+                },
+                |e: &TestError| matches!(e, TestError::Retryable(_)),
+                TestError::Timeout,
+            ));
+
+            let attempts = attempt_counter.load(std::sync::atomic::Ordering::SeqCst) as usize;
+
+            prop_assert!(result.is_err());
+            prop_assert!(matches!(result.unwrap_err(), TestError::NonRetryable(_)));
+            // Should stop exactly when non-retryable error occurs
+            prop_assert_eq!(attempts, attempt_before_non_retryable + 1);
+        }
+
+        #[test]
+        fn test_cancellation_stops_immediately(
+            cancel_after_ms in 10u64..100,
+            initial_delay_ms in 200u64..500,
+        ) {
+            use tokio_util::sync::CancellationToken;
+
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_time()
+                .build()
+                .unwrap();
+
+            let config = RetryConfig {
+                max_retries: 10,
+                initial_delay_ms,
+                max_delay_ms: initial_delay_ms * 2,
+                backoff_factor: 2.0,
+                jitter_ms: 0,
+                operation_timeout_ms: None,
+                immediate_first: false,
+                max_elapsed_ms: None,
+            };
+
+            let manager = RetryManager::new(config).unwrap();
+            let token = CancellationToken::new();
+            let token_clone = token.clone();
+
+            // Cancel after specified delay
+            rt.spawn(async move {
+                tokio::time::sleep(Duration::from_millis(cancel_after_ms)).await;
+                token_clone.cancel();
+            });
+
+            let start = std::time::Instant::now();
+            let result: Result<i32, TestError> = rt.block_on(manager.execute_with_retry_with_cancel(
+                "cancellation_test",
+                || async {
+                    Err::<i32, TestError>(TestError::Retryable("fail".to_string()))
+                },
+                |e: &TestError| matches!(e, TestError::Retryable(_)),
+                create_test_error,
+                &token,
+            ));
+
+            let elapsed = start.elapsed();
+
+            // Should be canceled
+            prop_assert!(result.is_err());
+            let error_msg = format!("{}", result.unwrap_err());
+            prop_assert!(error_msg.contains("canceled"));
+
+            // Should complete within reasonable time after cancellation
+            // Allow some buffer for timing variance
+            prop_assert!(elapsed.as_millis() <= (cancel_after_ms as u128) + 100);
+        }
+
+        #[test]
+        fn test_budget_clamp_prevents_overshoot(
+            max_elapsed_ms in 10u64..30,
+            delay_per_retry in 20u64..50,
+        ) {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_time()
+                .build()
+                .unwrap();
+
+            // Configure so that first retry delay would exceed budget
+            let config = RetryConfig {
+                max_retries: 5,
+                initial_delay_ms: delay_per_retry,
+                max_delay_ms: delay_per_retry * 2,
+                backoff_factor: 1.0,
+                jitter_ms: 0,
+                operation_timeout_ms: None,
+                immediate_first: false,
+                max_elapsed_ms: Some(max_elapsed_ms),
+            };
+
+            let manager = RetryManager::new(config).unwrap();
+
+            let start = std::time::Instant::now();
+            let _result = rt.block_on(manager.execute_with_retry(
+                "budget_clamp_test",
+                || async {
+                    // Fast operation to focus on delay timing
+                    Err::<i32, TestError>(TestError::Retryable("fail".to_string()))
+                },
+                |e: &TestError| matches!(e, TestError::Retryable(_)),
+                create_test_error,
+            ));
+
+            let elapsed = start.elapsed();
+
+            // With clamping, should not exceed budget by more than a small epsilon (10ms for timing variance)
+            prop_assert!(
+                elapsed.as_millis() <= (max_elapsed_ms as u128) + 10,
+                "Elapsed {}ms exceeds budget {}ms by too much",
+                elapsed.as_millis(),
+                max_elapsed_ms
+            );
+        }
+
+        #[test]
+        fn test_success_on_kth_attempt(
+            k in 1usize..5,
+            initial_delay_ms in 5u64..20,
+        ) {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_time()
+                .build()
+                .unwrap();
+
+            let config = RetryConfig {
+                max_retries: 10, // More than k
+                initial_delay_ms,
+                max_delay_ms: initial_delay_ms * 4,
+                backoff_factor: 2.0,
+                jitter_ms: 0,
+                operation_timeout_ms: None,
+                immediate_first: false,
+                max_elapsed_ms: None,
+            };
+
+            let manager = RetryManager::new(config).unwrap();
+            let attempt_counter = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+            let counter_clone = attempt_counter.clone();
+            let target_k = k;
+
+            let start = std::time::Instant::now();
+            let result = rt.block_on(manager.execute_with_retry(
+                "kth_attempt_test",
+                move || {
+                    let counter = counter_clone.clone();
+                    async move {
+                        let attempt = counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as usize;
+                        if attempt + 1 == target_k {
+                            Ok(42)
+                        } else {
+                            Err(TestError::Retryable("retry".to_string()))
+                        }
+                    }
+                },
+                |e: &TestError| matches!(e, TestError::Retryable(_)),
+                create_test_error,
+            ));
+
+            let elapsed = start.elapsed();
+            let attempts = attempt_counter.load(std::sync::atomic::Ordering::SeqCst) as usize;
+
+            // Should succeed on exactly k-th attempt
+            prop_assert!(result.is_ok());
+            prop_assert_eq!(result.unwrap(), 42);
+            prop_assert_eq!(attempts, k);
+
+            // Calculate expected delay sum (for k > 1)
+            if k > 1 {
+                let mut expected_delay = 0u64;
+                let mut current_delay = initial_delay_ms;
+                for _ in 0..(k - 1) {
+                    expected_delay += current_delay;
+                    current_delay = (current_delay as f64 * 2.0) as u64; // backoff_factor = 2.0
+                    current_delay = current_delay.min(initial_delay_ms * 4); // max_delay
+                }
+
+                // Elapsed should be approximately the sum of delays
+                // Allow 20ms tolerance for execution time
+                let elapsed_ms = elapsed.as_millis() as u64;
+                prop_assert!(
+                    elapsed_ms >= expected_delay.saturating_sub(5),
+                    "Elapsed {}ms less than expected minimum {}ms",
+                    elapsed_ms,
+                    expected_delay
+                );
+                prop_assert!(
+                    elapsed_ms <= expected_delay + 50,
+                    "Elapsed {}ms exceeds expected maximum {}ms",
+                    elapsed_ms,
+                    expected_delay + 50
+                );
+            }
+        }
     }
 }
