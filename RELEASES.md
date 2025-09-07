@@ -51,7 +51,8 @@ Released on TBD (UTC).
 - Added Interactive Brokers subscriptions for position updates (#2887), thanks @faysou
 - Added support for running separate live and paper IB Gateway containers without port conflicts. Simplified container naming and made VNC optional.
 - Added `avg_px_open` field to `PositionStatusReport` for IB adapter (#2925), thanks @dinana
-- Added support for running separate live and paper IB Gateway containers simultaneously (#2937), thanks @ Bshara23
+- Added support for running separate live and paper IB Gateway containers simultaneously (#2937), thanks @Bshara23
+- Added support for data deduplication on catalog consolidation (#2934), thanks @ms32035
 
 ### Breaking Changes
 - Added `multiplier` field for `CurrencyPair` Arrow schema
