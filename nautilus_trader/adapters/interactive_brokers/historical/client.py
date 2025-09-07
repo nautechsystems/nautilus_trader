@@ -30,6 +30,8 @@ from nautilus_trader.adapters.interactive_brokers.providers import InteractiveBr
 
 # fmt: on
 from nautilus_trader.cache.cache import Cache
+from nautilus_trader.cache.config import CacheConfig
+from nautilus_trader.cache.facade import CacheDatabaseFacade
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import Logger
 from nautilus_trader.common.component import MessageBus
@@ -60,7 +62,8 @@ class HistoricInteractiveBrokersClient:
         client_id: int = 1,
         market_data_type: MarketDataTypeEnum = MarketDataTypeEnum.REALTIME,
         log_level: str = "INFO",
-        cache: Cache | None = None,
+        cache_database: CacheDatabaseFacade | None = None,
+        cache_config: CacheConfig | None = None,
     ) -> None:
         loop = asyncio.get_event_loop()
         loop.set_debug(True)
@@ -77,7 +80,7 @@ class HistoricInteractiveBrokersClient:
         self._client = InteractiveBrokersClient(
             loop=loop,
             msgbus=msgbus,
-            cache=cache or Cache(),
+            cache=Cache(database=cache_database, config=cache_config),
             clock=self._clock,
             host=host,
             port=port,
