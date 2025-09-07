@@ -220,9 +220,6 @@ class OKXExecutionClient(LiveExecutionClient):
 
         self._ws_client_futures.clear()
 
-    def _stop(self) -> None:
-        pass
-
     async def _cache_instruments(self) -> None:
         # Ensures instrument definitions are available for correct
         # price and size precisions when parsing responses.

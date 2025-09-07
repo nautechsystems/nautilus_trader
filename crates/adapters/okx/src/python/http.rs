@@ -30,16 +30,29 @@ use crate::{
 #[pymethods]
 impl OKXHttpClient {
     #[new]
-    #[pyo3(signature = (api_key=None, api_secret=None, api_passphrase=None, base_url=None, timeout_secs=None))]
+    #[pyo3(signature = (api_key=None, api_secret=None, api_passphrase=None, base_url=None, timeout_secs=None, max_retries=None, retry_delay_ms=None, retry_delay_max_ms=None))]
+    #[allow(clippy::too_many_arguments)]
     fn py_new(
         api_key: Option<String>,
         api_secret: Option<String>,
         api_passphrase: Option<String>,
         base_url: Option<String>,
         timeout_secs: Option<u64>,
+        max_retries: Option<u32>,
+        retry_delay_ms: Option<u64>,
+        retry_delay_max_ms: Option<u64>,
     ) -> PyResult<Self> {
-        Self::with_credentials(api_key, api_secret, api_passphrase, base_url, timeout_secs)
-            .map_err(to_pyvalue_err)
+        Self::with_credentials(
+            api_key,
+            api_secret,
+            api_passphrase,
+            base_url,
+            timeout_secs,
+            max_retries,
+            retry_delay_ms,
+            retry_delay_max_ms,
+        )
+        .map_err(to_pyvalue_err)
     }
 
     #[staticmethod]
@@ -72,6 +85,11 @@ impl OKXHttpClient {
     #[must_use]
     pub fn py_get_cached_symbols(&self) -> Vec<String> {
         self.get_cached_symbols()
+    }
+
+    #[pyo3(name = "cancel_all_requests")]
+    pub fn py_cancel_all_requests(&self) {
+        self.cancel_all_requests();
     }
 
     /// # Errors

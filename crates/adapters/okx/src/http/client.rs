@@ -53,9 +53,14 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
 };
-use nautilus_network::{http::HttpClient, ratelimiter::quota::Quota};
+use nautilus_network::{
+    http::HttpClient,
+    ratelimiter::quota::Quota,
+    retry::{RetryConfig, RetryManager},
+};
 use reqwest::{Method, StatusCode, header::USER_AGENT};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use super::{
@@ -77,7 +82,7 @@ use super::{
 };
 use crate::{
     common::{
-        consts::OKX_HTTP_URL,
+        consts::{OKX_HTTP_URL, should_retry_error_code},
         credential::Credential,
         enums::{OKXInstrumentType, OKXPositionMode},
         models::OKXInstrument,
@@ -126,11 +131,14 @@ pub struct OKXHttpInnerClient {
     base_url: String,
     client: HttpClient,
     credential: Option<Credential>,
+    retry_manager: RetryManager<OKXHttpError>,
+    cancellation_token: CancellationToken,
 }
 
 impl Default for OKXHttpInnerClient {
     fn default() -> Self {
-        Self::new(None, Some(60))
+        Self::new(None, Some(60), None, None, None)
+            .expect("Failed to create default OKXHttpInnerClient")
     }
 }
 
@@ -145,13 +153,48 @@ impl Debug for OKXHttpInnerClient {
 }
 
 impl OKXHttpInnerClient {
+    /// Cancel all pending HTTP requests.
+    pub fn cancel_all_requests(&self) {
+        self.cancellation_token.cancel();
+    }
+
+    /// Get the cancellation token for this client.
+    pub fn cancellation_token(&self) -> &CancellationToken {
+        &self.cancellation_token
+    }
+
     /// Creates a new [`OKXHttpClient`] using the default OKX HTTP URL,
     /// optionally overridden with a custom base URL.
     ///
     /// This version of the client has **no credentials**, so it can only
     /// call publicly accessible endpoints.
-    pub fn new(base_url: Option<String>, timeout_secs: Option<u64>) -> Self {
-        Self {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the retry manager cannot be created.
+    pub fn new(
+        base_url: Option<String>,
+        timeout_secs: Option<u64>,
+        max_retries: Option<u32>,
+        retry_delay_ms: Option<u64>,
+        retry_delay_max_ms: Option<u64>,
+    ) -> Result<Self, OKXHttpError> {
+        let retry_config = RetryConfig {
+            max_retries: max_retries.unwrap_or(3),
+            initial_delay_ms: retry_delay_ms.unwrap_or(1000),
+            max_delay_ms: retry_delay_max_ms.unwrap_or(10_000),
+            backoff_factor: 2.0,
+            jitter_ms: 1000,
+            operation_timeout_ms: Some(60_000),
+            immediate_first: false,
+            max_elapsed_ms: Some(180_000),
+        };
+
+        let retry_manager = RetryManager::new(retry_config).map_err(|e| {
+            OKXHttpError::ValidationError(format!("Failed to create retry manager: {e}"))
+        })?;
+
+        Ok(Self {
             base_url: base_url.unwrap_or(OKX_HTTP_URL.to_string()),
             client: HttpClient::new(
                 Self::default_headers(),
@@ -161,19 +204,44 @@ impl OKXHttpInnerClient {
                 timeout_secs,
             ),
             credential: None,
-        }
+            retry_manager,
+            cancellation_token: CancellationToken::new(),
+        })
     }
 
     /// Creates a new [`OKXHttpClient`] configured with credentials
     /// for authenticated requests, optionally using a custom base URL.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the retry manager cannot be created.
+    #[allow(clippy::too_many_arguments)]
     pub fn with_credentials(
         api_key: String,
         api_secret: String,
         api_passphrase: String,
         base_url: String,
         timeout_secs: Option<u64>,
-    ) -> Self {
-        Self {
+        max_retries: Option<u32>,
+        retry_delay_ms: Option<u64>,
+        retry_delay_max_ms: Option<u64>,
+    ) -> Result<Self, OKXHttpError> {
+        let retry_config = RetryConfig {
+            max_retries: max_retries.unwrap_or(3),
+            initial_delay_ms: retry_delay_ms.unwrap_or(1000),
+            max_delay_ms: retry_delay_max_ms.unwrap_or(10_000),
+            backoff_factor: 2.0,
+            jitter_ms: 1000,
+            operation_timeout_ms: Some(60_000),
+            immediate_first: false,
+            max_elapsed_ms: Some(180_000),
+        };
+
+        let retry_manager = RetryManager::new(retry_config).map_err(|e| {
+            OKXHttpError::ValidationError(format!("Failed to create retry manager: {e}"))
+        })?;
+
+        Ok(Self {
             base_url,
             client: HttpClient::new(
                 Self::default_headers(),
@@ -183,7 +251,9 @@ impl OKXHttpInnerClient {
                 timeout_secs,
             ),
             credential: Some(Credential::new(api_key, api_secret, api_passphrase)),
-        }
+            retry_manager,
+            cancellation_token: CancellationToken::new(),
+        })
     }
 
     /// Builds the default headers to include with each request (e.g., `User-Agent`).
@@ -246,9 +316,10 @@ impl OKXHttpInnerClient {
     /// Sends an HTTP request to OKX and parses the response into `Vec<T>`.
     ///
     /// Internally, this method handles:
-    /// - Building the URL from `base_url` + `path`
-    /// - Optionally signing the request
-    /// - Deserializing JSON responses into typed models, or returning a [`OKXHttpError`]
+    /// - Building the URL from `base_url` + `path`.
+    /// - Optionally signing the request.
+    /// - Deserializing JSON responses into typed models, or returning a [`OKXHttpError`].
+    /// - Retrying with exponential backoff on transient errors.
     ///
     /// # Errors
     ///
@@ -265,58 +336,108 @@ impl OKXHttpInnerClient {
         authenticate: bool,
     ) -> Result<Vec<T>, OKXHttpError> {
         let url = format!("{}{path}", self.base_url);
+        let endpoint = path.to_string();
+        let method_clone = method.clone();
+        let body_clone = body.clone();
 
-        let mut headers = if authenticate {
-            self.sign_request(&method, path, body.as_deref())?
-        } else {
-            HashMap::new()
+        let operation = || {
+            let url = url.clone();
+            let method = method_clone.clone();
+            let body = body_clone.clone();
+            let endpoint = endpoint.clone();
+
+            async move {
+                let mut headers = if authenticate {
+                    self.sign_request(&method, &endpoint, body.as_deref())?
+                } else {
+                    HashMap::new()
+                };
+
+                // Always set Content-Type header when body is present
+                if body.is_some() {
+                    headers.insert("Content-Type".to_string(), "application/json".to_string());
+                }
+
+                let resp = self
+                    .client
+                    .request(method.clone(), url, Some(headers), body, None, None)
+                    .await?;
+
+                tracing::trace!("Response: {resp:?}");
+
+                if resp.status.is_success() {
+                    let okx_response: OKXResponse<T> =
+                        serde_json::from_slice(&resp.body).map_err(|e| {
+                            tracing::error!("Failed to deserialize OKXResponse: {e}");
+                            OKXHttpError::JsonError(e.to_string())
+                        })?;
+
+                    if okx_response.code != OKX_SUCCESS_CODE {
+                        return Err(OKXHttpError::OkxError {
+                            error_code: okx_response.code,
+                            message: okx_response.msg,
+                        });
+                    }
+
+                    Ok(okx_response.data)
+                } else {
+                    let error_body = String::from_utf8_lossy(&resp.body);
+                    tracing::error!(
+                        "HTTP error {} with body: {error_body}",
+                        resp.status.as_str()
+                    );
+
+                    if let Ok(parsed_error) = serde_json::from_slice::<OKXResponse<T>>(&resp.body) {
+                        return Err(OKXHttpError::OkxError {
+                            error_code: parsed_error.code,
+                            message: parsed_error.msg,
+                        });
+                    }
+
+                    Err(OKXHttpError::UnexpectedStatus {
+                        status: StatusCode::from_u16(resp.status.as_u16()).unwrap(),
+                        body: error_body.to_string(),
+                    })
+                }
+            }
         };
 
-        // Always set Content-Type header when body is present
-        if body.is_some() {
-            headers.insert("Content-Type".to_string(), "application/json".to_string());
-        }
-
-        let resp = self
-            .client
-            .request(method.clone(), url, Some(headers), body, None, None)
-            .await?;
-
-        tracing::trace!("Response: {resp:?}");
-
-        if resp.status.is_success() {
-            let okx_response: OKXResponse<T> = serde_json::from_slice(&resp.body).map_err(|e| {
-                tracing::error!("Failed to deserialize OKXResponse: {e}");
-                OKXHttpError::JsonError(e.to_string())
-            })?;
-
-            if okx_response.code != OKX_SUCCESS_CODE {
-                return Err(OKXHttpError::OkxError {
-                    error_code: okx_response.code,
-                    message: okx_response.msg,
-                });
+        // Retry strategy based on OKX error responses and HTTP status codes:
+        //
+        // 1. Network errors: always retry (transient connection issues)
+        // 2. HTTP 5xx/429: server errors and rate limiting should be retried
+        // 3. OKX specific retryable error codes (defined in common::consts)
+        //
+        // Note: OKX returns many permanent errors which should NOT be retried
+        // (e.g., "Invalid instrument", "Insufficient balance", "Invalid API Key")
+        let should_retry = |error: &OKXHttpError| -> bool {
+            match error {
+                OKXHttpError::HttpClientError(_) => true,
+                OKXHttpError::UnexpectedStatus { status, .. } => {
+                    status.as_u16() >= 500 || status.as_u16() == 429
+                }
+                OKXHttpError::OkxError { error_code, .. } => should_retry_error_code(error_code),
+                _ => false,
             }
+        };
 
-            Ok(okx_response.data)
-        } else {
-            let error_body = String::from_utf8_lossy(&resp.body);
-            tracing::error!(
-                "HTTP error {} with body: {error_body}",
-                resp.status.as_str()
-            );
-
-            if let Ok(parsed_error) = serde_json::from_slice::<OKXResponse<T>>(&resp.body) {
-                return Err(OKXHttpError::OkxError {
-                    error_code: parsed_error.code,
-                    message: parsed_error.msg,
-                });
+        let create_error = |msg: String| -> OKXHttpError {
+            if msg == "canceled" {
+                OKXHttpError::ValidationError("Request canceled".to_string())
+            } else {
+                OKXHttpError::ValidationError(msg)
             }
+        };
 
-            Err(OKXHttpError::UnexpectedStatus {
-                status: StatusCode::from_u16(resp.status.as_u16()).unwrap(),
-                body: error_body.to_string(),
-            })
-        }
+        self.retry_manager
+            .execute_with_retry_with_cancel(
+                &endpoint,
+                operation,
+                should_retry,
+                create_error,
+                &self.cancellation_token,
+            )
+            .await
     }
 
     /// Sets the position mode for an account.
@@ -570,7 +691,7 @@ pub struct OKXHttpClient {
 
 impl Default for OKXHttpClient {
     fn default() -> Self {
-        Self::new(None, Some(60))
+        Self::new(None, Some(60), None, None, None).expect("Failed to create default OKXHttpClient")
     }
 }
 
@@ -580,28 +701,48 @@ impl OKXHttpClient {
     ///
     /// This version of the client has **no credentials**, so it can only
     /// call publicly accessible endpoints.
-    pub fn new(base_url: Option<String>, timeout_secs: Option<u64>) -> Self {
-        Self {
-            inner: Arc::new(OKXHttpInnerClient::new(base_url, timeout_secs)),
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the retry manager cannot be created.
+    pub fn new(
+        base_url: Option<String>,
+        timeout_secs: Option<u64>,
+        max_retries: Option<u32>,
+        retry_delay_ms: Option<u64>,
+        retry_delay_max_ms: Option<u64>,
+    ) -> anyhow::Result<Self> {
+        Ok(Self {
+            inner: Arc::new(OKXHttpInnerClient::new(
+                base_url,
+                timeout_secs,
+                max_retries,
+                retry_delay_ms,
+                retry_delay_max_ms,
+            )?),
             instruments_cache: Arc::new(Mutex::new(HashMap::new())),
             cache_initialized: false,
-        }
+        })
     }
 
     /// Creates a new authenticated [`OKXHttpClient`] using environment variables and
     /// the default OKX HTTP base url.
     pub fn from_env() -> anyhow::Result<Self> {
-        Self::with_credentials(None, None, None, None, None)
+        Self::with_credentials(None, None, None, None, None, None, None, None)
     }
 
     /// Creates a new [`OKXHttpClient`] configured with credentials
     /// for authenticated requests, optionally using a custom base url.
+    #[allow(clippy::too_many_arguments)]
     pub fn with_credentials(
         api_key: Option<String>,
         api_secret: Option<String>,
         api_passphrase: Option<String>,
         base_url: Option<String>,
         timeout_secs: Option<u64>,
+        max_retries: Option<u32>,
+        retry_delay_ms: Option<u64>,
+        retry_delay_max_ms: Option<u64>,
     ) -> anyhow::Result<Self> {
         let api_key = api_key.unwrap_or(get_env_var("OKX_API_KEY")?);
         let api_secret = api_secret.unwrap_or(get_env_var("OKX_API_SECRET")?);
@@ -615,7 +756,10 @@ impl OKXHttpClient {
                 api_passphrase,
                 base_url,
                 timeout_secs,
-            )),
+                max_retries,
+                retry_delay_ms,
+                retry_delay_max_ms,
+            )?),
             instruments_cache: Arc::new(Mutex::new(HashMap::new())),
             cache_initialized: false,
         })
@@ -659,6 +803,16 @@ impl OKXHttpClient {
         }
 
         anyhow::bail!("Instrument {symbol} not in cache and fetch failed");
+    }
+
+    /// Cancel all pending HTTP requests.
+    pub fn cancel_all_requests(&self) {
+        self.inner.cancel_all_requests();
+    }
+
+    /// Get the cancellation token for this client.
+    pub fn cancellation_token(&self) -> &CancellationToken {
+        self.inner.cancellation_token()
     }
 
     /// Returns the base url being used by the client.

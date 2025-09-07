@@ -55,6 +55,7 @@ use reqwest::header::USER_AGENT;
 use serde_json::Value;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio_tungstenite::tungstenite::{Error, Message};
+use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use super::{
@@ -168,6 +169,7 @@ pub struct OKXWebSocketClient {
     pending_mass_cancel_requests: Arc<DashMap<String, MassCancelRequestData>>,
     instruments_cache: Arc<AHashMap<Ustr, InstrumentAny>>,
     retry_manager: Arc<RetryManager<OKXWsError>>,
+    cancellation_token: CancellationToken,
 }
 
 impl Default for OKXWebSocketClient {
@@ -241,6 +243,7 @@ impl OKXWebSocketClient {
             pending_mass_cancel_requests: Arc::new(DashMap::new()),
             instruments_cache: Arc::new(AHashMap::new()),
             retry_manager: Arc::new(create_websocket_retry_manager()?),
+            cancellation_token: CancellationToken::new(),
         })
     }
 
@@ -283,6 +286,16 @@ impl OKXWebSocketClient {
             None,
             None,
         )
+    }
+
+    /// Cancel all pending WebSocket requests.
+    pub fn cancel_all_requests(&self) {
+        self.cancellation_token.cancel();
+    }
+
+    /// Get the cancellation token for this client.
+    pub fn cancellation_token(&self) -> &CancellationToken {
+        &self.cancellation_token
     }
 
     /// Returns the websocket url being used by the client.
@@ -1917,7 +1930,7 @@ impl OKXWebSocketClient {
         );
 
         self.retry_manager
-            .execute_with_retry(
+            .execute_with_retry_with_cancel(
                 "submit_order",
                 || {
                     let params = params.clone();
@@ -1926,6 +1939,7 @@ impl OKXWebSocketClient {
                 },
                 should_retry_okx_error,
                 create_okx_timeout_error,
+                &self.cancellation_token,
             )
             .await
     }
@@ -1980,7 +1994,7 @@ impl OKXWebSocketClient {
         }
 
         self.retry_manager
-            .execute_with_retry(
+            .execute_with_retry_with_cancel(
                 "cancel_order",
                 || {
                     let params = params.clone();
@@ -1989,6 +2003,7 @@ impl OKXWebSocketClient {
                 },
                 should_retry_okx_error,
                 create_okx_timeout_error,
+                &self.cancellation_token,
             )
             .await
     }
@@ -2089,7 +2104,7 @@ impl OKXWebSocketClient {
         }
 
         self.retry_manager
-            .execute_with_retry(
+            .execute_with_retry_with_cancel(
                 "modify_order",
                 || {
                     let params = params.clone();
@@ -2098,6 +2113,7 @@ impl OKXWebSocketClient {
                 },
                 should_retry_okx_error,
                 create_okx_timeout_error,
+                &self.cancellation_token,
             )
             .await
     }
@@ -2243,7 +2259,7 @@ impl OKXWebSocketClient {
             .insert(request_id.clone(), inst_id);
 
         self.retry_manager
-            .execute_with_retry(
+            .execute_with_retry_with_cancel(
                 "mass_cancel_orders",
                 || {
                     let args = args.clone();
@@ -2252,6 +2268,7 @@ impl OKXWebSocketClient {
                 },
                 should_retry_okx_error,
                 create_okx_timeout_error,
+                &self.cancellation_token,
             )
             .await
     }

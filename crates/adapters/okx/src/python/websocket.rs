@@ -170,6 +170,11 @@ impl OKXWebSocketClient {
         self.is_closed()
     }
 
+    #[pyo3(name = "cancel_all_requests")]
+    pub fn py_cancel_all_requests(&self) {
+        self.cancel_all_requests();
+    }
+
     #[pyo3(name = "get_subscriptions")]
     fn py_get_subscriptions(&self, instrument_id: InstrumentId) -> Vec<String> {
         let channels = self.get_subscriptions(instrument_id);

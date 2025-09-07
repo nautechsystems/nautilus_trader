@@ -13,8 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashSet, sync::LazyLock};
+use std::sync::LazyLock;
 
+use ahash::AHashSet;
 use nautilus_model::{
     enums::{OrderType, TimeInForce},
     identifiers::Venue,
@@ -59,10 +60,14 @@ pub const OKX_SUPPORTED_ORDER_TYPES: &[OrderType] = &[
 ];
 
 /// OKX error codes that should trigger retries.
-/// Based on OKX API documentation: <https://www.okx.com/docs-v5/en/#error-codes>
+///
 /// Only retry on temporary network/system issues.
-pub static OKX_RETRY_ERROR_CODES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
-    let mut codes = HashSet::new();
+///
+/// # References
+///
+/// Based on OKX API documentation: <https://www.okx.com/docs-v5/en/#error-codes>
+pub static OKX_RETRY_ERROR_CODES: LazyLock<AHashSet<&'static str>> = LazyLock::new(|| {
+    let mut codes = AHashSet::new();
 
     // Temporary system errors
     codes.insert("50001"); // Service temporarily unavailable
