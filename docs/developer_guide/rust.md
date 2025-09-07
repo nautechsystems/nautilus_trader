@@ -213,6 +213,34 @@ pub const BAR_SPEC_1_MINUTE_LAST: BarSpecification = BarSpecification {
 };
 ```
 
+### Hash collections
+
+Prefer `AHashMap` and `AHashSet` from the `ahash` crate over the standard library's `HashMap` and `HashSet`:
+
+```rust
+use ahash::{AHashMap, AHashSet};
+
+// Preferred - using AHashMap/AHashSet
+let mut symbols: AHashSet<Symbol> = AHashSet::new();
+let mut prices: AHashMap<InstrumentId, Price> = AHashMap::new();
+
+// Instead of - standard library HashMap/HashSet
+use std::collections::{HashMap, HashSet};
+let mut symbols: HashSet<Symbol> = HashSet::new();
+let mut prices: HashMap<InstrumentId, Price> = HashMap::new();
+```
+
+**Why use `ahash`?**
+
+- **Superior performance**: AHash uses AES-NI hardware instructions when available, providing 2-3x faster hashing compared to the default SipHash.
+- **Low collision rates**: Despite being non-cryptographic, AHash provides excellent distribution and low collision rates for typical data.
+- **Drop-in replacement**: Fully compatible API with standard library collections.
+
+**When to use standard `HashMap`/`HashSet`:**
+
+- **Cryptographic security required**: Use standard `HashMap` when hash flooding attacks are a concern (e.g., handling untrusted user input in network protocols).
+- **Network clients**: Currently prefer standard `HashMap` for network-facing components where security considerations outweigh performance benefits.
+
 ### Re-export patterns
 
 Organize re-exports alphabetically and place at the end of lib.rs files:
