@@ -687,7 +687,9 @@ class ParquetDataCatalog(BaseDataCatalog):
 
     @staticmethod
     def _deduplicate_table(table: pa.Table) -> pa.Table:
-        return table.group_by(table.column_names).aggregate([])
+        res = table.group_by(table.column_names).aggregate([])
+        res = res.replace_schema_metadata(table.schema.metadata)
+        return res
 
     def consolidate_catalog_by_period(
         self,
