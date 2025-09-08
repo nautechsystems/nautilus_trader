@@ -176,6 +176,7 @@ cdef class DataEngine(Component):
         self._snapshot_info: dict[str, SnapshotInfo] = {}
         self._query_group_n_responses: dict[UUID4, int] = {}
         self._query_group_responses: dict[UUID4, list] = {}
+        self._query_group_requests: dict[UUID4, RequestData] = {}
 
         self._topic_cache_instruments: dict[InstrumentId, str] = {}
         self._topic_cache_deltas: dict[InstrumentId, str] = {}
@@ -707,6 +708,7 @@ cdef class DataEngine(Component):
         self._subscribed_synthetic_trades.clear()
         self._buffered_deltas_map.clear()
         self._snapshot_info.clear()
+        self._query_group_requests.clear()
 
         self._clock.cancel_timers()
         self.command_count = 0
@@ -1496,7 +1498,7 @@ cdef class DataEngine(Component):
             self._handle_response(response)
             return
 
-        self._new_query_group(request.id, n_requests)
+        self._new_query_group(request, n_requests)
 
         # Catalog query
         if has_catalog_data and not skip_catalog_data:
@@ -1924,8 +1926,9 @@ cdef class DataEngine(Component):
 
         self._msgbus.response(response_2)
 
-    cpdef void _new_query_group(self, UUID4 correlation_id, int n_components):
-        self._query_group_n_responses[correlation_id] = n_components
+    cpdef void _new_query_group(self, RequestData request, int n_components):
+        self._query_group_n_responses[request.id] = n_components
+        self._query_group_requests[request.id] = request
 
     cpdef DataResponse _handle_query_group(self, DataResponse response):
         # Closure is not allowed in cpdef functions so we call a cdef function
@@ -1991,9 +1994,17 @@ cdef class DataEngine(Component):
             result += response.data
 
         result.sort(key=lambda x: x.ts_init)
+
+        # Use the original request from the group to ensure the correct response
+        # parameters are returned to the caller.
+        original_request = self._query_group_requests[correlation_id]
         response.data = result
+        response.start = original_request.start
+        response.end = original_request.end
+
         del self._query_group_n_responses[correlation_id]
         del self._query_group_responses[correlation_id]
+        del self._query_group_requests[correlation_id]
 
         return response
 
