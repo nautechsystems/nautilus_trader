@@ -100,6 +100,7 @@ cdef class DataEngine(Component):
     cdef readonly dict[str, SnapshotInfo] _snapshot_info
     cdef readonly dict[UUID4, int] _query_group_n_responses
     cdef readonly dict[UUID4, list] _query_group_responses
+    cdef readonly dict[UUID4, RequestData] _query_group_requests
 
     cdef readonly dict[InstrumentId, str] _topic_cache_deltas
     cdef readonly dict[InstrumentId, str] _topic_cache_quotes
@@ -248,7 +249,7 @@ cdef class DataEngine(Component):
     cpdef void _handle_response(self, DataResponse response)
     cpdef void _handle_instruments(self, list instruments, bint update_catalog = *, bint force_update_catalog = *)
     cpdef tuple[datetime, object] _catalog_last_timestamp(self, type data_cls, identifier: str | None = *)
-    cpdef void _new_query_group(self, UUID4 correlation_id, int n_components)
+    cpdef void _new_query_group(self, RequestData request, int n_components)
     cpdef DataResponse _handle_query_group(self, DataResponse response)
     cdef DataResponse _handle_query_group_aux(self, DataResponse response)
     cpdef Instrument _modify_instrument_properties(self, Instrument instrument, dict instrument_properties)
