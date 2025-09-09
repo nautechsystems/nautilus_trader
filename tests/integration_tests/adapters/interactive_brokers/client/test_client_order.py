@@ -96,14 +96,14 @@ async def test_get_open_orders(ib_client):
     all_orders = [order_1, order_2, order_3]
     ib_client._await_request = AsyncMock(return_value=all_orders)
 
-    ib_client._eclient.reqOpenOrders = MagicMock()
+    ib_client._eclient.reqAllOpenOrders = MagicMock()
 
     # Act
     orders = await ib_client.get_open_orders(account_id_1)
 
     # Assert
     assert Counter(orders) == Counter([order_1, order_2])
-    ib_client._eclient.reqOpenOrders.assert_called_once()
+    ib_client._eclient.reqAllOpenOrders.assert_called_once()
 
 
 def test_next_order_id(ib_client):

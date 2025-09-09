@@ -99,8 +99,13 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
 
     async def get_open_orders(self, account_id: str) -> list[IBOrder]:
         """
-        Retrieve a list of open orders for a specific account. Once the request is
-        completed, openOrderEnd() will be called.
+        Retrieve a list of ALL open orders for a specific account from all clients and
+        TWS. Once the request is completed, openOrderEnd() will be called.
+
+        This method uses reqAllOpenOrders() which fetches orders from:
+        - All API clients (regardless of client ID)
+        - TWS/IB Gateway GUI
+        - All other trading interfaces connected to the account
 
         Parameters
         ----------
@@ -110,6 +115,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         Returns
         -------
         list[IBOrder]
+            List of all open orders filtered by the specified account_id.
 
         """
         self._log.debug(f"Requesting open orders for {account_id}")
@@ -119,7 +125,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
             request = self._requests.add(
                 req_id=self._next_req_id(),
                 name=name,
-                handle=self._eclient.reqOpenOrders,
+                handle=self._eclient.reqAllOpenOrders,
             )
 
             if not request:
