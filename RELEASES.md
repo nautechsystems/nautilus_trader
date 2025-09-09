@@ -195,6 +195,8 @@ Released on TBD (UTC).
 - Fixed missing `funding_rates` for Cache Debug impl (#2894), thanks @MK27MK
 - Fixed missing `log_component_levels` for PyO3 logging initialization
 - Fixed catalog consolidation name clash for an overlapping edge case (#2933), thanks @ms32035
+- Fixed historical data request race condition in DataEngine (#2946), thanks @lisiyuan656
+- Fixed catalog metadata retention on deduplication (#2943), thanks @ms32035
 
 ### Documentation Updates
 - Added Positions concept guide
