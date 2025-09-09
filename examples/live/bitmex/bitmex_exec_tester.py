@@ -42,6 +42,7 @@ from nautilus_trader.test_kit.strategies.tester_exec import ExecTesterConfig
 # Alt perpetuals: ETHUSD, SOLUSD, etc.
 
 symbol = "XBTUSD"  # Bitcoin perpetual swap
+instrument_id = InstrumentId.from_str(f"{symbol}.{BITMEX}")
 order_qty = Decimal("100")  # Contract size in USD
 
 # Configure the trading node
@@ -53,6 +54,9 @@ config_node = TradingNodeConfig(
     ),
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,
+        reconciliation_instrument_ids=[instrument_id],  # Only reconcile this instrument
+        # open_check_interval_secs=5.0,
+        # open_check_open_only=True,
         # snapshot_orders=True,
         # snapshot_positions=True,
         # snapshot_positions_interval_secs=5.0,
@@ -86,8 +90,8 @@ config_node = TradingNodeConfig(
 
 # Configure the execution tester strategy
 config_tester = ExecTesterConfig(
-    instrument_id=InstrumentId.from_str(f"{symbol}.{BITMEX}"),
-    external_order_claims=[InstrumentId.from_str(f"{symbol}.{BITMEX}")],
+    instrument_id=instrument_id,
+    external_order_claims=[instrument_id],
     order_qty=order_qty,
     use_post_only=True,
     tob_offset_ticks=0,
