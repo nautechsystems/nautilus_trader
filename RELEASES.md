@@ -1,6 +1,6 @@
 # NautilusTrader 1.220.0 Beta
 
-Released on TBD (UTC).
+Released on 9th September 2025 (UTC).
 
 ### Enhancements
 - Added `FundingRateUpdate` data type with caching support through data engine
