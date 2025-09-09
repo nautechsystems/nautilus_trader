@@ -73,6 +73,7 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
         self,
         *,
         req_id: int,
+        error_time: int,
         error_code: int,
         error_string: str,
         advanced_order_reject_json: str = "",
@@ -86,6 +87,8 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
         ----------
         req_id : int
             The request ID associated with the error.
+        error_time : int
+            The timestamp when the error occurred.
         error_code : int
             The error code.
         error_string : str

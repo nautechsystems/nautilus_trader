@@ -15,7 +15,7 @@
 
 from decimal import Decimal
 
-from ibapi.commission_report import CommissionReport
+from ibapi.commission_and_fees_report import CommissionAndFeesReport
 from ibapi.contract import Contract
 from ibapi.execution import Execution
 from ibapi.order import Order as IBOrder
@@ -286,10 +286,10 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
     async def process_commission_report(
         self,
         *,
-        commission_report: CommissionReport,
+        commission_report: CommissionAndFeesReport,
     ) -> None:
         """
-        Provide the CommissionReport of an Execution.
+        Provide the CommissionAndFeesReport of an Execution.
         """
         if not (cache := self._exec_id_details.get(commission_report.execId, None)):
             self._exec_id_details[commission_report.execId] = {}

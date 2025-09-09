@@ -18,7 +18,7 @@ import json
 from decimal import Decimal
 from typing import Any
 
-from ibapi.commission_report import CommissionReport
+from ibapi.commission_and_fees_report import CommissionAndFeesReport
 from ibapi.const import UNSET_DECIMAL
 from ibapi.const import UNSET_DOUBLE
 from ibapi.execution import Execution
@@ -1052,7 +1052,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         self,
         order_ref: str,
         execution: Execution,
-        commission_report: CommissionReport,
+        commission_report: CommissionAndFeesReport,
         contract: IBContract,
     ) -> None:
         if not execution.orderRef:
@@ -1108,7 +1108,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             last_px=Price(converted_execution_price, precision=instrument.price_precision),
             quote_currency=instrument.quote_currency,
             commission=Money(
-                commission_report.commission,
+                commission_report.commissionAndFees,
                 Currency.from_str(commission_report.currency),
             ),
             liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
@@ -1124,7 +1124,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         nautilus_order: Order,
         execution: Execution,
         contract: IBContract,
-        commission_report: CommissionReport,
+        commission_report: CommissionAndFeesReport,
     ) -> None:
         """
         Handle spread execution by translating leg fills to combo progress and
@@ -1171,7 +1171,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         nautilus_order: Order,
         execution: Execution,
         contract: IBContract,
-        commission_report: CommissionReport,
+        commission_report: CommissionAndFeesReport,
     ) -> None:
         """
         Generate combo fill from leg fill for order management.
@@ -1213,7 +1213,9 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
             # Combo commission scaled to the number of legs of the combo
             combo_commission = (
-                commission_report.commission * nautilus_order.instrument_id.n_legs() / abs(ratio)
+                commission_report.commissionAndFees
+                * nautilus_order.instrument_id.n_legs()
+                / abs(ratio)
             )
             commission = Money(combo_commission, Currency.from_str(commission_report.currency))
 
@@ -1253,7 +1255,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         nautilus_order: Order,
         execution: Execution,
         contract: IBContract,
-        commission_report: CommissionReport,
+        commission_report: CommissionAndFeesReport,
     ) -> None:
         """
         Generate individual leg fill for portfolio updates.
@@ -1302,7 +1304,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             order_side = order_side = OrderSide[ORDER_SIDE_TO_ORDER_ACTION[execution.side]]
 
             commission = Money(
-                commission_report.commission,
+                commission_report.commissionAndFees,
                 Currency.from_str(commission_report.currency),
             )
 

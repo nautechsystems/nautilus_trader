@@ -23,7 +23,7 @@ from typing import Annotated, Any, NamedTuple
 
 import msgspec
 from ibapi.client import EClient
-from ibapi.commission_report import CommissionReport
+from ibapi.commission_and_fees_report import CommissionAndFeesReport
 from ibapi.common import BarData
 from ibapi.execution import Execution
 
@@ -537,7 +537,7 @@ class BaseMixin:
     _next_valid_order_id: int
     _exec_id_details: dict[
         str,
-        dict[str, Execution | (CommissionReport | str)],
+        dict[str, Execution | (CommissionAndFeesReport | str)],
     ]
 
 
