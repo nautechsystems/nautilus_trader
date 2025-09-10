@@ -1243,7 +1243,14 @@ class OptionStrategy(Strategy):
         # Subscribe to individual option quotes
         self.subscribe_quote_ticks(
             self.config.option_id,
-            params={"durations_seconds": (pd.Timedelta(minutes=2).seconds,)},
+            params={
+                "time_range_generator": BacktestEngine.default_time_range_generator(
+                    self.clock.utc_now().value,
+                    pd.Timestamp("2024-05-09T10:05").value,
+                    {"durations_seconds": (pd.Timedelta(minutes=2).seconds,)},
+                ),
+            },
+            # params={"durations_seconds": (pd.Timedelta(minutes=2).seconds,)},
         )
         self.subscribe_quote_ticks(
             self.config.option_id2,
