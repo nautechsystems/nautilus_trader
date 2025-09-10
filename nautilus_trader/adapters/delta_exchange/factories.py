@@ -634,7 +634,7 @@ class DeltaExchangeLiveDataEngineFactory:
             # Register the factory
             node.add_data_client_factory(venue, DeltaExchangeLiveDataClientFactory)
 
-            _logger.info(f"Successfully registered Delta Exchange data client factory")
+            _logger.info("Successfully registered Delta Exchange data client factory")
 
         except Exception as e:
             _logger.error(f"Failed to register Delta Exchange data client factory: {e}")
