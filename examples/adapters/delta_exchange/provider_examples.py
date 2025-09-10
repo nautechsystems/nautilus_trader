@@ -374,7 +374,7 @@ async def performance_monitoring_example():
         stats = provider.stats
         instruments = provider.list_all()
         
-        print(f"\nPerformance Results:")
+        print("\nPerformance Results:")
         print(f"  Load time: {load_time:.2f} seconds")
         print(f"  Instruments loaded: {len(instruments)}")
         print(f"  Load rate: {len(instruments) / load_time:.1f} instruments/second")
