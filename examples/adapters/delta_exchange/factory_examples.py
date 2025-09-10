@@ -237,7 +237,7 @@ async def advanced_factory_configuration_example():
         
         # Show cache statistics
         cache_info = get_delta_exchange_factory_info()
-        print(f"\nCache Statistics After Creating Multiple Clients:")
+        print("\nCache Statistics After Creating Multiple Clients:")
         for cache_type, stats in cache_info.items():
             if isinstance(stats, dict) and "hits" in stats:
                 print(f"  {cache_type}:")
