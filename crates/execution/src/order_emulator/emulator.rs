@@ -548,7 +548,8 @@ impl OrderEmulator {
     }
 
     fn handle_cancel_all_orders(&mut self, command: CancelAllOrders) {
-        let matching_core = match self.matching_cores.get(&command.instrument_id) {
+        let instrument_id = command.instrument_id;
+        let matching_core = match self.matching_cores.get(&instrument_id) {
             Some(core) => core,
             None => return, // No orders to cancel
         };

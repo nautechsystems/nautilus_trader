@@ -20,14 +20,14 @@ crate-type = ["rlib", "staticlib"]
 [features]
 default = []
 extension-module = [
-  "pyo3/extension-module",
   "nautilus-core/extension-module",
+  "pyo3/extension-module",
 ]
 ffi = ["cbindgen", "nautilus-core/ffi"]
-python = ["pyo3", "nautilus-core/python"]
+python = ["nautilus-core/python", "pyo3"]
 stubs = ["rstest"]
 high-precision = []
-# DeFi domain model requires 18-decimal WEI precision, implying `high-precision`
+# DeFi domain model requires 18-decimal wei precision, implying `high-precision`
 defi = [
     "alloy-primitives",
     "high-precision",
@@ -60,10 +60,10 @@ tabled = { workspace = true }
 thiserror = { workspace = true }
 thousands = { workspace = true }
 ustr = { workspace = true }
+hex = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }
-float-cmp = { workspace = true }
 iai = { workspace = true }
 proptest = { workspace = true }
 rstest = { workspace = true }

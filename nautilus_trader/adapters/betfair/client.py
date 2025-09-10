@@ -59,6 +59,7 @@ from betfair_parser.spec.navigation import Navigation
 
 import nautilus_trader
 from nautilus_trader.common.component import Logger
+from nautilus_trader.common.secure import SecureString
 from nautilus_trader.core.nautilus_pyo3 import HttpClient
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 from nautilus_trader.core.nautilus_pyo3 import HttpResponse
@@ -78,7 +79,7 @@ class BetfairHttpClient:
     ) -> None:
         # Config
         self.username = username
-        self.password = password
+        self.password = SecureString(password, name="password")
         self.app_key = app_key
 
         # Client
@@ -138,7 +139,7 @@ class BetfairHttpClient:
             return
 
         self._log.info("Connecting (Betfair login)")
-        request = Login.with_params(username=self.username, password=self.password)
+        request = Login.with_params(username=self.username, password=self.password.get_value())
         resp: LoginResponse = await self._post(request)
         if resp.status != LoginStatus.SUCCESS:
             raise RuntimeError(f"Login not successful: {resp.status.value}")

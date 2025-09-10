@@ -12,11 +12,11 @@ curating test-fixture datasets.
 `curate-dataset.sh` automates the small but repetitive tasks required when we
 bring a third-party file into the NautilusTrader *test-data* bucket:
 
-* download the raw file from its original URL (with retries)
-* create a versioned directory (`v1/<slug>/`)
-* copy the file into that directory
-* write a `LICENSE.txt` file holding the SPDX identifier or licence URL
-* compute size and SHA-256 checksum and store them in `metadata.json`
+- download the raw file from its original URL (with retries)
+- create a versioned directory (`v1/<slug>/`)
+- copy the file into that directory
+- write a `LICENSE.txt` file holding the SPDX identifier or licence URL
+- compute size and SHA-256 checksum and store them in `metadata.json`
 
 The result is a self-contained directory ready to upload one-for-one to the
 S3 bucket (or to commit into the repository if the data size is small).
@@ -27,10 +27,10 @@ S3 bucket (or to commit into the repository if the data size is small).
 scripts/curate-dataset.sh <slug> <filename> <download-url> <licence>
 ```
 
-* **`slug`** – sub-directory name (e.g. `fi2010_all`)
-* **`filename`** – the basename you want inside the directory (e.g. `Fi2010.zip`)
-* **`download-url`** – original public URL of the file
-* **`licence`** – short ID or full URL (e.g. `CC-BY-SA-4.0`)
+- **`slug`** – sub-directory name (e.g. `fi2010_all`)
+- **`filename`** – the basename you want inside the directory (e.g. `Fi2010.zip`)
+- **`download-url`** – original public URL of the file
+- **`licence`** – short ID or full URL (e.g. `CC-BY-SA-4.0`)
 
 Example – curate the full FI-2010 limit-order-book dataset (all 10 trading
 days) from a Dropbox mirror:
@@ -56,12 +56,12 @@ and downstream tooling can verify the checksum.
 
 ### Notes
 
-* The script uses `curl -L --fail --retry 3`, so transient network hiccups are
+- The script uses `curl -L --fail --retry 3`, so transient network hiccups are
   handled automatically.
-* Re-running the script with the same arguments simply overwrites the existing
+- Re-running the script with the same arguments simply overwrites the existing
   files – useful when the upstream file is updated and you want to bump the
   checksum.
-* Only basic validation is performed; ensure that the licence you specify
+- Only basic validation is performed; ensure that the licence you specify
   indeed permits redistribution.
 
 ---

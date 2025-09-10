@@ -15,7 +15,7 @@
 
 //! Common componentry for [NautilusTrader](http://nautilustrader.io).
 //!
-//! The *common* crate provides shared components and utilities that form the system foundation for
+//! The `nautilus-common` crate provides shared components and utilities that form the system foundation for
 //! NautilusTrader applications. This includes the actor system, message bus, caching layer, and other
 //! essential services.
 //!
@@ -40,9 +40,12 @@
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 //! - `stubs`: Enables type stubs for use in testing scenarios.
 //! - `defi`: Enables DeFi (Decentralized Finance) support.
+//! - `indicators`: Includes the `nautilus-indicators` crate and indicator utilities.
+//! - `extension-module`: Builds the crate as a Python extension module.
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]
+#![deny(unsafe_op_in_unsafe_fn)]
 #![deny(nonstandard_style)]
 #![deny(missing_debug_implementations)]
 #![deny(clippy::missing_errors_doc)]

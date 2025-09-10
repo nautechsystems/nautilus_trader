@@ -469,7 +469,7 @@ class TestPrice:
     @pytest.mark.parametrize(
         ("value1", "value2", "expected_type", "expected_value"),
         [
-            [1, Price(1, 0), Decimal, 1],
+            [1, Price(1, 0), Decimal, 0],  # 1 % 1 = 0
             [Price(100, 0), 10, Decimal, 0],
             [Price(23, 0), 2, Decimal, 1],
             [2.1, Price(1.1, 1), float, 1.0],
@@ -674,6 +674,159 @@ class TestPrice:
         # Assert
         assert str(price) == string
         assert price.precision == precision
+
+    @pytest.mark.parametrize(
+        ("value", "expected_str", "expected_precision"),
+        [
+            # Scientific notation tests
+            ["1e7", "10000000", 0],
+            ["1E7", "10000000", 0],
+            ["1.5e6", "1500000.000", 3],
+            ["2.5E-3", "0.002", 3],
+            ["1.23456e-4", "0.0001", 4],
+            ["9.876E2", "987.60000", 5],
+            # Underscore handling
+            ["1_000", "1000", 0],
+            ["1_000.50", "1000.50", 2],
+            ["1_234_567.89", "1234567.89", 2],
+            ["0.000_001", "0.000001", 6],
+            # Combined underscores and scientific notation
+            ["1_000e3", "1000000", 0],
+            ["1_234.5e-2", "12.34", 2],
+            # Edge cases for precision
+            [
+                "0.123456789012345" if FIXED_PRECISION > 9 else "0.123456789",
+                "0.123456789012345" if FIXED_PRECISION > 9 else "0.123456789",
+                min(15, FIXED_PRECISION),
+            ],
+            ["1234567890.123456789", "1234567890.123456789", 9],
+            # Rounding behavior verification
+            ["1.115", "1.115", 3],
+            ["1.125", "1.125", 3],
+            ["1.135", "1.135", 3],
+            ["1.145", "1.145", 3],
+            ["1.155", "1.155", 3],
+            # Negative values with scientific notation
+            ["-1e7", "-10000000", 0],
+            ["-2.5E-3", "-0.002", 3],
+            # Zero representations
+            ["0e0", "0", 0],
+            ["0.0e10", "0.0000", 4],
+            ["0E-5", "0.00000", 5],
+            # Small numbers
+            [
+                "1e-15" if FIXED_PRECISION > 9 else "1e-9",
+                "0.000000000000001" if FIXED_PRECISION > 9 else "0.000000001",
+                min(15, FIXED_PRECISION) if FIXED_PRECISION > 9 else 9,
+            ],
+        ],
+    )
+    def test_from_str_comprehensive(self, value, expected_str, expected_precision):
+        # Arrange, Act
+        price = Price.from_str(value)
+
+        # Assert
+        assert str(price) == expected_str
+        assert price.precision == expected_precision
+
+    @pytest.mark.parametrize(
+        "invalid_input",
+        [
+            "not_a_number",
+            "1.2.3",
+            "++1",
+            "--1",
+            "1e",
+            "e10",
+            "1e1e1",
+            "",
+            "nan",
+            "inf",
+            "-inf",
+            "1e1000",  # Overflow
+        ],
+    )
+    def test_from_str_invalid_input_raises_value_error(self, invalid_input):
+        # Arrange, Act, Assert
+        with pytest.raises(Exception):  # Various exceptions can be raised for invalid input
+            Price.from_str(invalid_input)
+
+    def test_from_str_with_precision_exceeding_max_raises_value_error(self):
+        if FIXED_PRECISION <= 9:
+            # On Windows with 9 decimal max
+            with pytest.raises(ValueError, match="invalid `precision` greater than max"):
+                Price.from_str("1." + "0" * 10)  # 10 decimals > 9
+        else:
+            # On Linux/Mac with 16 decimal max
+            with pytest.raises(ValueError, match="invalid `precision` greater than max"):
+                Price.from_str("1." + "0" * 17)  # 17 decimals > 16
+
+    def test_from_str_precision_preservation(self):
+
+        # Whole numbers should have precision 0
+        assert Price.from_str("100").precision == 0
+        assert Price.from_str("1000000").precision == 0
+
+        # Decimal places should determine precision
+        assert Price.from_str("100.0").precision == 1
+        assert Price.from_str("100.00").precision == 2
+        assert Price.from_str("100.12345").precision == 5
+
+        # Scientific notation with decimal results
+        price = Price.from_str("1.23e-2")
+        assert str(price) == "0.01"
+        assert price.precision == 2
+
+        # Underscores shouldn't affect precision
+        assert Price.from_str("1_000.123").precision == 3
+        assert Price.from_str("1_000").precision == 0
+
+    @pytest.mark.parametrize(
+        ("input_val", "expected"),
+        [
+            # Test banker's rounding at different precisions
+            ("1.115", "1.115"),  # Exact representation
+            ("1.125", "1.125"),  # Exact representation
+            ("1.135", "1.135"),  # Exact representation
+            ("1.145", "1.145"),  # Exact representation
+            # High precision values are preserved exactly up to FIXED_PRECISION
+            (
+                "0.9999999999999999" if FIXED_PRECISION > 9 else "0.999999999",
+                "0.9999999999999999" if FIXED_PRECISION > 9 else "0.999999999",
+            ),
+            (
+                "1.0000000000000001" if FIXED_PRECISION > 9 else "1.000000001",
+                "1.0000000000000001" if FIXED_PRECISION > 9 else "1.000000001",
+            ),
+        ],
+    )
+    def test_from_str_rounding_behavior(self, input_val, expected):
+        price = Price.from_str(input_val)
+        assert str(price) == expected
+
+    @pytest.mark.parametrize(
+        ("input_val", "expected_str"),
+        [
+            ("1000000000", "1000000000"),  # Large positive
+            ("-1000000", "-1000000"),  # Large negative
+        ],
+    )
+    def test_from_str_boundary_values(self, input_val, expected_str):
+        price = Price.from_str(input_val)
+        assert str(price) == expected_str
+
+    @pytest.mark.parametrize(
+        ("input_val", "expected_str"),
+        [
+            ("0", "0"),
+            ("0.0", "0.0"),
+            ("-0.0", "0.0"),  # Negative zero becomes positive zero
+        ],
+    )
+    def test_from_str_zero_values(self, input_val, expected_str):
+        price = Price.from_str(input_val)
+        assert str(price) == expected_str
+        assert price.as_double() == 0
 
     def test_str_repr(self):
         # Arrange, Act

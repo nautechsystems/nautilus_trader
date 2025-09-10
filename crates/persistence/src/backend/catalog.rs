@@ -300,6 +300,14 @@ impl ParquetDataCatalog {
         self.base_path.clone()
     }
 
+    /// Resets the backend session to clear any cached table registrations.
+    ///
+    /// This is useful during catalog operations when files are being modified
+    /// and we need to ensure fresh data is loaded.
+    pub fn reset_session(&mut self) {
+        self.session.clear_registered_tables();
+    }
+
     /// Writes mixed data types to the catalog by separating them into type-specific collections.
     ///
     /// This method takes a heterogeneous collection of market data and separates it by type,
@@ -811,7 +819,10 @@ impl ParquetDataCatalog {
             if let Ok(url) = url::Url::parse(&self.original_uri)
                 && let Ok(base_path) = url.to_file_path()
             {
-                return format!("{}/{}", base_path.display(), path_str);
+                // Use platform-appropriate path separator for display
+                // but object store paths always use forward slashes
+                let base_str = base_path.to_string_lossy();
+                return self.join_paths(&base_str, path_str);
             }
         }
 
@@ -822,12 +833,18 @@ impl ParquetDataCatalog {
                 // Fallback: return the path as-is
                 path_str.to_string()
             } else {
-                format!("{}/{}", self.original_uri.trim_end_matches('/'), path_str)
+                self.join_paths(self.original_uri.trim_end_matches('/'), path_str)
             }
         } else {
             let base = self.base_path.trim_end_matches('/');
-            format!("{base}/{path_str}")
+            self.join_paths(base, path_str)
         }
+    }
+
+    /// Helper method to join paths using forward slashes (object store convention)
+    #[must_use]
+    fn join_paths(&self, base: &str, path: &str) -> String {
+        make_object_store_path(base, &[path])
     }
 
     /// Helper method to check if the original URI uses a remote object store scheme
@@ -938,14 +955,19 @@ impl ParquetDataCatalog {
             self.query_files(T::path_prefix(), instrument_ids, start, end)?
         };
 
-        // Use a unique timestamp-based suffix to avoid table name conflicts
-        let unique_suffix = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
+        for file_uri in &files_list {
+            // Extract identifier from file path and filename to create meaningful table names
+            let identifier = extract_identifier_from_path(file_uri);
+            let safe_sql_identifier = make_sql_safe_identifier(&identifier);
+            let safe_filename = extract_sql_safe_filename(file_uri);
 
-        for (idx, file_uri) in files_list.iter().enumerate() {
-            let table_name = format!("{}_{}_{}", T::path_prefix(), unique_suffix, idx);
+            // Create table name from path_prefix, identifier, and filename
+            let table_name = format!(
+                "{}_{}_{}",
+                T::path_prefix(),
+                safe_sql_identifier,
+                safe_filename
+            );
             let query = build_query(&table_name, start, end, where_clause);
 
             // Convert object store path to filesystem path for DataFusion
@@ -1484,18 +1506,14 @@ impl ParquetDataCatalog {
         type_name: &str,
         instrument_id: Option<String>,
     ) -> anyhow::Result<String> {
-        let mut path = if self.base_path.is_empty() {
-            format!("data/{type_name}")
-        } else {
-            // Remove trailing slash from base_path to avoid double slashes
-            let base_path = self.base_path.trim_end_matches('/');
-            format!("{base_path}/data/{type_name}")
-        };
+        let mut components = vec!["data".to_string(), type_name.to_string()];
 
         if let Some(id) = instrument_id {
-            path = format!("{}/{}", path, urisafe_instrument_id(&id));
+            let safe_id = urisafe_instrument_id(&id);
+            components.push(safe_id);
         }
 
+        let path = make_object_store_path_owned(&self.base_path, components);
         Ok(path)
     }
 
@@ -1539,8 +1557,9 @@ impl ParquetDataCatalog {
     ///
     /// - If `base_path` is empty, the path is used as-is.
     /// - If `base_path` is set, it's stripped from the path if present.
-    /// - Trailing slashes are automatically handled.
+    /// - Trailing slashes and backslashes are automatically handled.
     /// - The resulting path is relative to the object store root.
+    /// - All paths are normalized to use forward slashes (object store convention).
     ///
     /// # Examples
     ///
@@ -1559,17 +1578,22 @@ impl ParquetDataCatalog {
     /// ```
     #[must_use]
     pub fn to_object_path(&self, path: &str) -> ObjectPath {
+        // Normalize path separators to forward slashes for object store
+        let normalized_path = path.replace('\\', "/");
+
         if self.base_path.is_empty() {
-            return ObjectPath::from(path);
+            return ObjectPath::from(normalized_path);
         }
 
-        let base = self.base_path.trim_end_matches('/');
+        // Normalize base path separators as well
+        let normalized_base = self.base_path.replace('\\', "/");
+        let base = normalized_base.trim_end_matches('/');
 
         // Remove the catalog base prefix if present
-        let without_base = path
+        let without_base = normalized_path
             .strip_prefix(&format!("{base}/"))
-            .or_else(|| path.strip_prefix(base))
-            .unwrap_or(path);
+            .or_else(|| normalized_path.strip_prefix(base))
+            .unwrap_or(&normalized_path);
 
         ObjectPath::from(without_base)
     }
@@ -1650,10 +1674,6 @@ impl_catalog_path_prefix!(Bar, "bars");
 impl_catalog_path_prefix!(IndexPriceUpdate, "index_prices");
 impl_catalog_path_prefix!(MarkPriceUpdate, "mark_prices");
 impl_catalog_path_prefix!(InstrumentClose, "instrument_closes");
-
-////////////////////////////////////////////////////////////////////////////////
-// Helper functions for filename operations
-////////////////////////////////////////////////////////////////////////////////
 
 /// Converts timestamps to a filename using ISO 8601 format.
 ///
@@ -1779,10 +1799,6 @@ fn iso_to_unix_nanos(iso_timestamp: &str) -> anyhow::Result<u64> {
     Ok(iso8601_to_unix_nanos(iso_timestamp.to_string())?.into())
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Helper functions for interval operations
-////////////////////////////////////////////////////////////////////////////////
-
 /// Converts an instrument ID to a URI-safe format by removing forward slashes.
 ///
 /// Some instrument IDs contain forward slashes (e.g., "BTC/USD") which are not
@@ -1806,6 +1822,236 @@ fn iso_to_unix_nanos(iso_timestamp: &str) -> anyhow::Result<u64> {
 /// ```
 fn urisafe_instrument_id(instrument_id: &str) -> String {
     instrument_id.replace('/', "")
+}
+
+/// Extracts the identifier from a file path.
+///
+/// The identifier is typically the second-to-last path component (directory name).
+/// For example, from "`data/quote_tick/EURUSD/file.parquet`", extracts "EURUSD".
+#[must_use]
+pub fn extract_identifier_from_path(file_path: &str) -> String {
+    let path_parts: Vec<&str> = file_path.split('/').collect();
+    if path_parts.len() >= 2 {
+        path_parts[path_parts.len() - 2].to_string()
+    } else {
+        "unknown".to_string()
+    }
+}
+
+/// Makes an identifier safe for use in SQL table names.
+///
+/// Removes forward slashes, replaces dots, hyphens, and spaces with underscores, and converts to lowercase.
+#[must_use]
+pub fn make_sql_safe_identifier(identifier: &str) -> String {
+    urisafe_instrument_id(identifier)
+        .replace(['.', '-', ' '], "_")
+        .to_lowercase()
+}
+
+/// Extracts the filename from a file path and makes it SQL-safe.
+///
+/// For example, from "data/quote_tick/EURUSD/2021-01-01T00-00-00-000000000Z_2021-01-02T00-00-00-000000000Z.parquet",
+/// extracts "`2021_01_01t00_00_00_000000000z_2021_01_02t00_00_00_000000000z`".
+#[must_use]
+pub fn extract_sql_safe_filename(file_path: &str) -> String {
+    if file_path.is_empty() {
+        return "unknown_file".to_string();
+    }
+
+    let filename = file_path.split('/').next_back().unwrap_or("unknown_file");
+
+    // Remove .parquet extension
+    let name_without_ext = if let Some(dot_pos) = filename.rfind(".parquet") {
+        &filename[..dot_pos]
+    } else {
+        filename
+    };
+
+    // Remove characters that can pose problems: hyphens, colons, etc.
+    name_without_ext
+        .replace(['-', ':', '.'], "_")
+        .to_lowercase()
+}
+
+/// Creates a platform-appropriate local path using `PathBuf`.
+///
+/// This function constructs file system paths using the platform's native path separators.
+/// Use this for local file operations that need to work with the actual file system.
+///
+/// # Arguments
+///
+/// * `base_path` - The base directory path
+/// * `components` - Path components to join
+///
+/// # Returns
+///
+/// A `PathBuf` with platform-appropriate separators
+///
+/// # Examples
+///
+/// ```rust
+/// # use nautilus_persistence::backend::catalog::make_local_path;
+/// let path = make_local_path("/base", &["data", "quotes", "EURUSD"]);
+/// // On Unix: "/base/data/quotes/EURUSD"
+/// // On Windows: "\base\data\quotes\EURUSD"
+/// ```
+pub fn make_local_path<P: AsRef<Path>>(base_path: P, components: &[&str]) -> PathBuf {
+    let mut path = PathBuf::from(base_path.as_ref());
+    for component in components {
+        path.push(component);
+    }
+    path
+}
+
+/// Creates an object store path using forward slashes.
+///
+/// Object stores (S3, GCS, etc.) always expect forward slashes regardless of platform.
+/// Use this when creating paths for object store operations.
+///
+/// # Arguments
+///
+/// * `base_path` - The base path (can be empty)
+/// * `components` - Path components to join
+///
+/// # Returns
+///
+/// A string path with forward slash separators
+///
+/// # Examples
+///
+/// ```rust
+/// # use nautilus_persistence::backend::catalog::make_object_store_path;
+/// let path = make_object_store_path("base", &["data", "quotes", "EURUSD"]);
+/// assert_eq!(path, "base/data/quotes/EURUSD");
+/// ```
+#[must_use]
+pub fn make_object_store_path(base_path: &str, components: &[&str]) -> String {
+    let mut parts = Vec::new();
+
+    if !base_path.is_empty() {
+        let normalized_base = base_path
+            .replace('\\', "/")
+            .trim_end_matches('/')
+            .to_string();
+        if !normalized_base.is_empty() {
+            parts.push(normalized_base);
+        }
+    }
+
+    for component in components {
+        let normalized_component = component
+            .replace('\\', "/")
+            .trim_start_matches('/')
+            .trim_end_matches('/')
+            .to_string();
+        if !normalized_component.is_empty() {
+            parts.push(normalized_component);
+        }
+    }
+
+    parts.join("/")
+}
+
+/// Creates an object store path using forward slashes with owned strings.
+///
+/// This variant accepts owned strings to avoid lifetime issues.
+///
+/// # Arguments
+///
+/// * `base_path` - The base path (can be empty)
+/// * `components` - Path components to join (owned strings)
+///
+/// # Returns
+///
+/// A string path with forward slash separators
+#[must_use]
+pub fn make_object_store_path_owned(base_path: &str, components: Vec<String>) -> String {
+    let mut parts = Vec::new();
+
+    if !base_path.is_empty() {
+        let normalized_base = base_path
+            .replace('\\', "/")
+            .trim_end_matches('/')
+            .to_string();
+        if !normalized_base.is_empty() {
+            parts.push(normalized_base);
+        }
+    }
+
+    for component in components {
+        let normalized_component = component
+            .replace('\\', "/")
+            .trim_start_matches('/')
+            .trim_end_matches('/')
+            .to_string();
+        if !normalized_component.is_empty() {
+            parts.push(normalized_component);
+        }
+    }
+
+    parts.join("/")
+}
+
+/// Converts a local `PathBuf` to an object store path string.
+///
+/// This function normalizes a local file system path to the forward-slash format
+/// expected by object stores, handling platform differences.
+///
+/// # Arguments
+///
+/// * `local_path` - The local `PathBuf` to convert
+///
+/// # Returns
+///
+/// A string with forward slash separators suitable for object store operations
+///
+/// # Examples
+///
+/// ```rust
+/// # use std::path::PathBuf;
+/// # use nautilus_persistence::backend::catalog::local_to_object_store_path;
+/// let local_path = PathBuf::from("data").join("quotes").join("EURUSD");
+/// let object_path = local_to_object_store_path(&local_path);
+/// assert_eq!(object_path, "data/quotes/EURUSD");
+/// ```
+#[must_use]
+pub fn local_to_object_store_path(local_path: &Path) -> String {
+    local_path.to_string_lossy().replace('\\', "/")
+}
+
+/// Extracts path components using platform-appropriate path parsing.
+///
+/// This function safely parses a path into its components, handling both
+/// local file system paths and object store paths correctly.
+///
+/// # Arguments
+///
+/// * `path_str` - The path string to parse
+///
+/// # Returns
+///
+/// A vector of path components
+///
+/// # Examples
+///
+/// ```rust
+/// # use nautilus_persistence::backend::catalog::extract_path_components;
+/// let components = extract_path_components("data/quotes/EURUSD");
+/// assert_eq!(components, vec!["data", "quotes", "EURUSD"]);
+///
+/// // Works with both separators
+/// let components = extract_path_components("data\\quotes\\EURUSD");
+/// assert_eq!(components, vec!["data", "quotes", "EURUSD"]);
+/// ```
+#[must_use]
+pub fn extract_path_components(path_str: &str) -> Vec<String> {
+    // Normalize separators and split
+    let normalized = path_str.replace('\\', "/");
+    normalized
+        .split('/')
+        .filter(|s| !s.is_empty())
+        .map(ToString::to_string)
+        .collect()
 }
 
 /// Checks if a filename's timestamp range intersects with a query interval.

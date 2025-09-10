@@ -117,6 +117,7 @@ class TestInstrument:
             "taker_fee": "0.001",
             "ts_event": 0,
             "ts_init": 0,
+            "tick_scheme_name": None,
             "info": None,
         }
 
@@ -148,6 +149,7 @@ class TestInstrument:
             "taker_fee": "0.001",
             "ts_event": 0,
             "ts_init": 0,
+            "tick_scheme_name": None,
             "info": None,
         }
 
@@ -202,6 +204,7 @@ class TestInstrument:
             "ts_event": 0,
             "ts_init": 0,
             "info": {},
+            "tick_scheme_name": None,
         }
 
     def test_crypto_perpetual_instrument_to_dict(self):
@@ -237,6 +240,7 @@ class TestInstrument:
             "ts_event": 0,
             "ts_init": 0,
             "info": None,
+            "tick_scheme_name": None,
         }
 
     def test_crypto_future_instrument_to_dict(self):
@@ -274,6 +278,7 @@ class TestInstrument:
             "ts_event": 0,
             "ts_init": 0,
             "info": None,
+            "tick_scheme_name": None,
         }
 
     def test_equity_instrument_to_dict(self):
@@ -302,6 +307,7 @@ class TestInstrument:
             "ts_event": 0,
             "ts_init": 0,
             "info": None,
+            "tick_scheme_name": None,
         }
 
     def test_future_instrument_to_dict(self):
@@ -337,6 +343,7 @@ class TestInstrument:
             "ts_event": 1622842200000000000,
             "ts_init": 1622842200000000000,
             "info": None,
+            "tick_scheme_name": None,
         }
 
     def test_option_instrument_to_dict(self):
@@ -374,6 +381,7 @@ class TestInstrument:
             "ts_event": 0,
             "ts_init": 0,
             "info": None,
+            "tick_scheme_name": None,
         }
 
     @pytest.mark.parametrize(
@@ -565,8 +573,10 @@ class TestInstrument:
 
     def test_next_bid_price_when_no_tick_scheme(self):
         # Arrange, Act
+        instrument = TestInstrumentProvider.btcusdt_binance()
+
         with pytest.raises(ValueError) as exc_info:
-            BTCUSDT_BINANCE.next_bid_price(100_000.0)
+            instrument.next_bid_price(100_000.0)
 
         # Assert
         assert (
@@ -576,14 +586,33 @@ class TestInstrument:
 
     def test_next_ask_price_when_no_tick_scheme(self):
         # Arrange, Act
+        instrument = TestInstrumentProvider.btcusdt_binance()
+
         with pytest.raises(ValueError) as exc_info:
-            BTCUSDT_BINANCE.next_ask_price(100_000.0)
+            instrument.next_ask_price(100_000.0)
 
         # Assert
         assert (
             str(exc_info.value)
             == "No tick scheme for instrument BTCUSDT.BINANCE. You can specify a tick scheme by passing a `tick_scheme_name` at initialization."
         )
+
+    def test_set_tick_scheme_name_enables_tick_scheme(self):
+        # Arrange
+        instrument = TestInstrumentProvider.btcusdt_binance()
+
+        with pytest.raises(ValueError):
+            instrument.next_bid_price(100.123456)
+
+        tick_scheme_name = "FOREX_5DECIMAL"
+
+        # Act
+        instrument.set_tick_scheme(tick_scheme_name)
+        result = instrument.next_bid_price(100.123456)
+
+        # Assert
+        assert instrument.tick_scheme_name == tick_scheme_name
+        assert result == Price.from_str("100.12345")
 
     @pytest.mark.parametrize(
         ("instrument", "value", "n", "expected"),
@@ -615,8 +644,11 @@ class TestInstrument:
 
     def test_next_bid_prices_when_no_tick_scheme(self):
         # Arrange, Act
+        instrument = TestInstrumentProvider.btcusdt_binance()
+
         with pytest.raises(ValueError) as exc_info:
-            BTCUSDT_BINANCE.next_bid_prices(100_000.0)
+            instrument.next_bid_prices(100_000.0)
+
         # Assert
         assert (
             str(exc_info.value)
@@ -625,8 +657,11 @@ class TestInstrument:
 
     def test_next_ask_prices_when_no_tick_scheme(self):
         # Arrange, Act
+        instrument = TestInstrumentProvider.btcusdt_binance()
+
         with pytest.raises(ValueError) as exc_info:
-            BTCUSDT_BINANCE.next_ask_prices(100_000.0)
+            instrument.next_ask_prices(100_000.0)
+
         # Assert
         assert (
             str(exc_info.value)
@@ -670,8 +705,8 @@ class TestInstrument:
     @pytest.mark.parametrize(
         ("instrument", "value", "num_ticks", "expected_first", "expected_last"),
         [
-            (AUDUSD_SIM, 0.72000, 10, "0.72000", "0.72009"),
-            (AUDUSD_SIM, 0.72001, 5, "0.72002", "0.72006"),
+            (AUDUSD_SIM, 0.72000, 10, "0.72", "0.72009"),
+            (AUDUSD_SIM, 0.72001, 5, "0.72001", "0.72005"),  # Price-inclusive: start at boundary
             (AUDUSD_SIM, 0.90001, 3, "0.90001", "0.90003"),
         ],
     )
@@ -697,9 +732,9 @@ class TestInstrument:
     @pytest.mark.parametrize(
         ("instrument", "value", "num_ticks", "expected_first", "expected_last"),
         [
-            (AUDUSD_SIM, 0.72000, 10, "0.71999", "0.71990"),
-            (AUDUSD_SIM, 0.72000, 5, "0.71999", "0.71995"),
-            (AUDUSD_SIM, 0.90000, 3, "0.90000", "0.89998"),
+            (AUDUSD_SIM, 0.72000, 10, "0.72", "0.71991"),  # Price-inclusive: start at boundary
+            (AUDUSD_SIM, 0.72000, 5, "0.72", "0.71996"),  # Price-inclusive: start at boundary
+            (AUDUSD_SIM, 0.90000, 3, "0.9", "0.89998"),
         ],
     )
     def test_next_bid_prices_values(

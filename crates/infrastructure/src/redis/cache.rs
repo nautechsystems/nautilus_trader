@@ -13,12 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    collections::{HashMap, VecDeque},
-    fmt::Debug,
-    time::{Duration, Instant},
-};
+use std::{collections::VecDeque, fmt::Debug, time::Duration};
 
+use ahash::AHashMap;
 use bytes::Bytes;
 use nautilus_common::{
     cache::{
@@ -95,7 +92,6 @@ pub enum DatabaseOperation {
     Insert,
     Update,
     Delete,
-    DeleteFromList,
     Close,
 }
 
@@ -240,7 +236,6 @@ impl RedisCacheDatabase {
     /// Returns an error if the underlying Redis scan operation fails.
     pub async fn keys(&mut self, pattern: &str) -> anyhow::Result<Vec<String>> {
         let pattern = format!("{}{REDIS_DELIMITER}{pattern}", self.trader_key);
-        log::debug!("Querying keys: {pattern}");
         DatabaseQueries::scan_keys(&mut self.con, pattern).await
     }
 
@@ -251,6 +246,15 @@ impl RedisCacheDatabase {
     /// Returns an error if the underlying Redis read operation fails.
     pub async fn read(&mut self, key: &str) -> anyhow::Result<Vec<Bytes>> {
         DatabaseQueries::read(&self.con, &self.trader_key, key).await
+    }
+
+    /// Reads multiple values using bulk operations for efficiency.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying Redis read operation fails.
+    pub async fn read_bulk(&mut self, keys: &[String]) -> anyhow::Result<Vec<Option<Bytes>>> {
+        DatabaseQueries::read_bulk(&self.con, keys).await
     }
 
     /// Sends an insert command for `key` with optional `payload` to Redis via the background task.
@@ -300,12 +304,8 @@ impl RedisCacheDatabase {
     pub fn delete_order(&self, client_order_id: &ClientOrderId) -> anyhow::Result<()> {
         let order_id_bytes = Bytes::from(client_order_id.to_string());
 
-        log::debug!("Deleting order: {client_order_id} from Redis");
-        log::debug!("Trader key: {}", self.trader_key);
-
         // Delete the order itself
         let key = format!("{ORDERS}{REDIS_DELIMITER}{client_order_id}");
-        log::debug!("Deleting order key: {key}");
         let op = DatabaseCommand::new(DatabaseOperation::Delete, key, None);
         self.tx
             .send(op)
@@ -322,8 +322,7 @@ impl RedisCacheDatabase {
         ];
 
         for index_key in &index_keys {
-            let key = index_key.to_string();
-            log::debug!("Deleting from index: {key} (order_id: {client_order_id})");
+            let key = (*index_key).to_string();
             let payload = vec![order_id_bytes.clone()];
             let op = DatabaseCommand::new(DatabaseOperation::Delete, key, Some(payload));
             self.tx
@@ -334,8 +333,7 @@ impl RedisCacheDatabase {
         // Delete from hash indexes
         let hash_indexes = [INDEX_ORDER_POSITION, INDEX_ORDER_CLIENT];
         for index_key in &hash_indexes {
-            let key = index_key.to_string();
-            log::debug!("Deleting from hash index: {key} (order_id: {client_order_id})");
+            let key = (*index_key).to_string();
             let payload = vec![order_id_bytes.clone()];
             let op = DatabaseCommand::new(DatabaseOperation::Delete, key, Some(payload));
             self.tx.send(op).map_err(|e| {
@@ -343,7 +341,6 @@ impl RedisCacheDatabase {
             })?;
         }
 
-        log::debug!("Sent all delete commands for order: {client_order_id}");
         Ok(())
     }
 
@@ -355,12 +352,8 @@ impl RedisCacheDatabase {
     pub fn delete_position(&self, position_id: &PositionId) -> anyhow::Result<()> {
         let position_id_bytes = Bytes::from(position_id.to_string());
 
-        log::debug!("Deleting position: {position_id} from Redis");
-        log::debug!("Trader key: {}", self.trader_key);
-
         // Delete the position itself
         let key = format!("{POSITIONS}{REDIS_DELIMITER}{position_id}");
-        log::debug!("Deleting position key: {key}");
         let op = DatabaseCommand::new(DatabaseOperation::Delete, key, None);
         self.tx
             .send(op)
@@ -374,8 +367,7 @@ impl RedisCacheDatabase {
         ];
 
         for index_key in &index_keys {
-            let key = index_key.to_string();
-            log::debug!("Deleting from index: {key} (position_id: {position_id})");
+            let key = (*index_key).to_string();
             let payload = vec![position_id_bytes.clone()];
             let op = DatabaseCommand::new(DatabaseOperation::Delete, key, Some(payload));
             self.tx.send(op).map_err(|e| {
@@ -383,7 +375,6 @@ impl RedisCacheDatabase {
             })?;
         }
 
-        log::debug!("Sent all delete commands for position: {position_id}");
         Ok(())
     }
 
@@ -394,18 +385,11 @@ impl RedisCacheDatabase {
     /// Returns an error if the command cannot be sent to the background task channel.
     pub fn delete_account_event(
         &self,
-        account_id: &AccountId,
-        event_id: &str,
+        _account_id: &AccountId,
+        _event_id: &str,
     ) -> anyhow::Result<()> {
-        log::debug!("Deleting account event: {account_id}:{event_id}");
-        log::debug!("Trader key: {}", self.trader_key);
-
-        let key = format!("{ACCOUNTS}{REDIS_DELIMITER}{account_id}");
-        let payload = vec![Bytes::from(event_id.to_string())];
-        let op = DatabaseCommand::new(DatabaseOperation::DeleteFromList, key, Some(payload));
-        self.tx
-            .send(op)
-            .map_err(|e| anyhow::anyhow!("Failed to send delete account event command: {e}"))
+        tracing::warn!("Deleting account events currently a no-op (pending redesign)");
+        Ok(())
     }
 }
 
@@ -424,14 +408,14 @@ async fn process_commands(
 
     // Buffering
     let mut buffer: VecDeque<DatabaseCommand> = VecDeque::new();
-    let mut last_drain = Instant::now();
+    let mut last_drain = std::time::Instant::now();
     let buffer_interval = Duration::from_millis(config.buffer_interval_ms.unwrap_or(0) as u64);
 
     // Continue to receive and handle messages until channel is hung up
     loop {
         if last_drain.elapsed() >= buffer_interval && !buffer.is_empty() {
             drain_buffer(&mut con, &trader_key, &mut buffer).await;
-            last_drain = Instant::now();
+            last_drain = std::time::Instant::now();
         } else if let Some(cmd) = rx.recv().await {
             tracing::trace!("Received {cmd:?}");
 
@@ -505,22 +489,11 @@ async fn drain_buffer(
                     "Processing DELETE for collection: {}, key: {}, payload: {:?}",
                     collection,
                     key,
-                    msg.payload.as_ref().map(|p| p.len())
+                    msg.payload.as_ref().map(std::vec::Vec::len)
                 );
                 // `payload` can be `None` for a delete operation
                 if let Err(e) = delete(&mut pipe, collection, &key, msg.payload) {
                     tracing::error!("{e}");
-                }
-            }
-            DatabaseOperation::DeleteFromList => {
-                log::debug!("Processing DELETE_FROM_LIST for collection: {collection}, key: {key}");
-                // For deleting specific items from Redis lists (TBD if this remains)
-                if let Some(payload) = &msg.payload {
-                    if let Err(e) = delete_from_list(&mut pipe, collection, &key, payload) {
-                        tracing::error!("{e}");
-                    }
-                } else {
-                    tracing::error!("Null `payload` for `delete_from_list`");
                 }
             }
             DatabaseOperation::Close => panic!("Close command should not be drained"),
@@ -794,58 +767,6 @@ fn delete_string(pipe: &mut Pipeline, key: &str) {
     pipe.del(key);
 }
 
-fn delete_from_list(
-    pipe: &mut Pipeline,
-    collection: &str,
-    key: &str,
-    payload: &[Bytes],
-) -> anyhow::Result<()> {
-    match collection {
-        ACCOUNTS => {
-            // payload[0] contains the event_id as a string
-            let event_id = std::str::from_utf8(&payload[0])?;
-
-            // The Python layer has already determined this event is safe to delete
-            // (it's not the last event). We can safely remove it from the Redis list.
-            // Since account events are stored as serialized objects, we need to find
-            // and remove items that contain the event_id within their serialized data.
-            let lua_script = r#"
-                local key = KEYS[1]
-                local event_id = ARGV[1]
-                local removed_count = 0
-
-                -- Check if the key exists first
-                if redis.call('EXISTS', key) == 0 then
-                    return 0  -- Nothing to delete
-                end
-
-                local items = redis.call('LRANGE', key, 0, -1)
-                redis.call('DEL', key)
-
-                for i, item in ipairs(items) do
-                    if not string.find(item, event_id, 1, true) then
-                        redis.call('RPUSH', key, item)
-                    else
-                        removed_count = removed_count + 1
-                    end
-                end
-
-                return removed_count
-            "#;
-
-            pipe.cmd("EVAL")
-                .arg(lua_script)
-                .arg(1)
-                .arg(key)
-                .arg(event_id);
-            Ok(())
-        }
-        _ => {
-            anyhow::bail!("Unsupported operation: `delete_from_list` for collection '{collection}'")
-        }
-    }
-}
-
 fn get_trader_key(trader_id: TraderId, instance_id: UUID4, config: &CacheConfig) -> String {
     let mut key = String::new();
 
@@ -936,12 +857,12 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         })
     }
 
-    fn load(&self) -> anyhow::Result<HashMap<String, Bytes>> {
+    fn load(&self) -> anyhow::Result<AHashMap<String, Bytes>> {
         // self.database.load()
-        Ok(HashMap::new()) // TODO
+        Ok(AHashMap::new()) // TODO
     }
 
-    async fn load_currencies(&self) -> anyhow::Result<HashMap<Ustr, Currency>> {
+    async fn load_currencies(&self) -> anyhow::Result<AHashMap<Ustr, Currency>> {
         DatabaseQueries::load_currencies(
             &self.database.con,
             &self.database.trader_key,
@@ -950,7 +871,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         .await
     }
 
-    async fn load_instruments(&self) -> anyhow::Result<HashMap<InstrumentId, InstrumentAny>> {
+    async fn load_instruments(&self) -> anyhow::Result<AHashMap<InstrumentId, InstrumentAny>> {
         DatabaseQueries::load_instruments(
             &self.database.con,
             &self.database.trader_key,
@@ -959,7 +880,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         .await
     }
 
-    async fn load_synthetics(&self) -> anyhow::Result<HashMap<InstrumentId, SyntheticInstrument>> {
+    async fn load_synthetics(&self) -> anyhow::Result<AHashMap<InstrumentId, SyntheticInstrument>> {
         DatabaseQueries::load_synthetics(
             &self.database.con,
             &self.database.trader_key,
@@ -968,17 +889,17 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         .await
     }
 
-    async fn load_accounts(&self) -> anyhow::Result<HashMap<AccountId, AccountAny>> {
+    async fn load_accounts(&self) -> anyhow::Result<AHashMap<AccountId, AccountAny>> {
         DatabaseQueries::load_accounts(&self.database.con, &self.database.trader_key, self.encoding)
             .await
     }
 
-    async fn load_orders(&self) -> anyhow::Result<HashMap<ClientOrderId, OrderAny>> {
+    async fn load_orders(&self) -> anyhow::Result<AHashMap<ClientOrderId, OrderAny>> {
         DatabaseQueries::load_orders(&self.database.con, &self.database.trader_key, self.encoding)
             .await
     }
 
-    async fn load_positions(&self) -> anyhow::Result<HashMap<PositionId, Position>> {
+    async fn load_positions(&self) -> anyhow::Result<AHashMap<PositionId, Position>> {
         DatabaseQueries::load_positions(
             &self.database.con,
             &self.database.trader_key,
@@ -987,11 +908,11 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         .await
     }
 
-    fn load_index_order_position(&self) -> anyhow::Result<HashMap<ClientOrderId, Position>> {
+    fn load_index_order_position(&self) -> anyhow::Result<AHashMap<ClientOrderId, Position>> {
         todo!()
     }
 
-    fn load_index_order_client(&self) -> anyhow::Result<HashMap<ClientOrderId, ClientId>> {
+    fn load_index_order_client(&self) -> anyhow::Result<AHashMap<ClientOrderId, ClientId>> {
         todo!()
     }
 
@@ -1064,7 +985,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         .await
     }
 
-    fn load_actor(&self, component_id: &ComponentId) -> anyhow::Result<HashMap<String, Bytes>> {
+    fn load_actor(&self, component_id: &ComponentId) -> anyhow::Result<AHashMap<String, Bytes>> {
         todo!()
     }
 
@@ -1072,7 +993,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         todo!()
     }
 
-    fn load_strategy(&self, strategy_id: &StrategyId) -> anyhow::Result<HashMap<String, Bytes>> {
+    fn load_strategy(&self, strategy_id: &StrategyId) -> anyhow::Result<AHashMap<String, Bytes>> {
         todo!()
     }
 
@@ -1106,7 +1027,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         ];
 
         for index_key in &index_keys {
-            let key = index_key.to_string();
+            let key = (*index_key).to_string();
             log::debug!("Deleting from index: {key} (order_id: {client_order_id})");
             let payload = vec![order_id_bytes.clone()];
             let op = DatabaseCommand::new(DatabaseOperation::Delete, key, Some(payload));
@@ -1119,7 +1040,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         // Delete from hash indexes
         let hash_indexes = [INDEX_ORDER_POSITION, INDEX_ORDER_CLIENT];
         for index_key in &hash_indexes {
-            let key = index_key.to_string();
+            let key = (*index_key).to_string();
             log::debug!("Deleting from hash index: {key} (order_id: {client_order_id})");
             let payload = vec![order_id_bytes.clone()];
             let op = DatabaseCommand::new(DatabaseOperation::Delete, key, Some(payload));
@@ -1151,7 +1072,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         ];
 
         for index_key in &index_keys {
-            let key = index_key.to_string();
+            let key = (*index_key).to_string();
             let payload = vec![position_id_bytes.clone()];
             let op = DatabaseCommand::new(DatabaseOperation::Delete, key, Some(payload));
             self.database.tx.send(op).map_err(|e| {
@@ -1163,13 +1084,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     }
 
     fn delete_account_event(&self, account_id: &AccountId, event_id: &str) -> anyhow::Result<()> {
-        let key = format!("{ACCOUNTS}{REDIS_DELIMITER}{account_id}");
-        let payload = vec![Bytes::from(event_id.to_string())];
-        let op = DatabaseCommand::new(DatabaseOperation::DeleteFromList, key, Some(payload));
-        self.database
-            .tx
-            .send(op)
-            .map_err(|e| anyhow::anyhow!("Failed to send delete account event command: {e}"))
+        todo!()
     }
 
     fn add(&self, key: String, value: Bytes) -> anyhow::Result<()> {

@@ -16,18 +16,21 @@
 use std::{collections::BTreeSet, sync::Arc};
 
 use ahash::AHashMap;
-use alloy::primitives::{Address, keccak256};
+use alloy::primitives::Address;
 use futures_util::Stream;
 use hypersync_client::{
     net_types::{BlockSelection, FieldSelection, Query},
     simple_types::Log,
 };
-use nautilus_core::UnixNanos;
-use nautilus_model::defi::{AmmType, Block, Dex, Pool, SharedChain, Token};
+use nautilus_common::runtime::get_runtime;
+use nautilus_model::{
+    defi::{Block, DexType, SharedChain},
+    identifiers::InstrumentId,
+};
 use reqwest::Url;
 
 use crate::{
-    hypersync::transform::{transform_hypersync_block, transform_hypersync_swap_log},
+    exchanges::get_dex_extended, hypersync::transform::transform_hypersync_block,
     rpc::types::BlockchainMessage,
 };
 
@@ -44,10 +47,10 @@ pub struct HyperSyncClient {
     client: Arc<hypersync_client::Client>,
     /// Background task handle for the block subscription task.
     blocks_task: Option<tokio::task::JoinHandle<()>>,
-    /// Background task handles for swap subscription tasks (keyed by pool address).
-    swaps_tasks: AHashMap<Address, tokio::task::JoinHandle<()>>,
     /// Channel for sending blockchain messages to the adapter data client.
-    tx: tokio::sync::mpsc::UnboundedSender<BlockchainMessage>,
+    tx: Option<tokio::sync::mpsc::UnboundedSender<BlockchainMessage>>,
+    /// Index of pool addressed keyed by instrument ID.
+    pool_addresses: AHashMap<InstrumentId, Address>,
 }
 
 impl HyperSyncClient {
@@ -59,7 +62,7 @@ impl HyperSyncClient {
     #[must_use]
     pub fn new(
         chain: SharedChain,
-        tx: tokio::sync::mpsc::UnboundedSender<BlockchainMessage>,
+        tx: Option<tokio::sync::mpsc::UnboundedSender<BlockchainMessage>>,
     ) -> Self {
         let mut config = hypersync_client::ClientConfig::default();
         let hypersync_url =
@@ -71,59 +74,150 @@ impl HyperSyncClient {
             chain,
             client: Arc::new(client),
             blocks_task: None,
-            swaps_tasks: AHashMap::new(),
             tx,
+            pool_addresses: AHashMap::new(),
         }
     }
 
+    #[must_use]
+    pub fn get_pool_address(&self, instrument_id: InstrumentId) -> Option<&Address> {
+        self.pool_addresses.get(&instrument_id)
+    }
+
+    /// Processes DEX contract events for a specific block.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the DEX extended configuration cannot be retrieved or if stream creation fails.
+    pub async fn process_block_dex_contract_events(
+        &self,
+        dex: &DexType,
+        block: u64,
+        contract_addresses: Vec<Address>,
+        swap_event_encoded_signature: String,
+        mint_event_encoded_signature: String,
+        burn_event_encoded_signature: String,
+    ) {
+        let topics = vec![
+            swap_event_encoded_signature.as_str(),
+            &mint_event_encoded_signature.as_str(),
+            &burn_event_encoded_signature.as_str(),
+        ];
+        let query = Self::construct_contract_events_query(
+            block,
+            Some(block + 1),
+            contract_addresses,
+            topics,
+        );
+        let tx = if let Some(tx) = &self.tx {
+            tx.clone()
+        } else {
+            tracing::error!("Hypersync client channel should have been initialized");
+            return;
+        };
+        let client = self.client.clone();
+        let dex_extended =
+            get_dex_extended(self.chain.name, dex).expect("Failed to get dex extended");
+
+        get_runtime().spawn(async move {
+            let mut rx = client
+                .stream(query, Default::default())
+                .await
+                .expect("Failed to create stream");
+
+            while let Some(response) = rx.recv().await {
+                let response = response.unwrap();
+
+                for batch in response.data.logs {
+                    for log in batch {
+                        let event_signature = match log.topics.first().and_then(|t| t.as_ref()) {
+                            Some(log_argument) => {
+                                format!("0x{}", hex::encode(log_argument.as_ref()))
+                            }
+                            None => continue,
+                        };
+                        if event_signature == swap_event_encoded_signature {
+                            match dex_extended.parse_swap_event(log.clone()) {
+                                Ok(swap_event) => {
+                                    if let Err(e) =
+                                        tx.send(BlockchainMessage::SwapEvent(swap_event))
+                                    {
+                                        tracing::error!("Failed to send swap event: {}", e);
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::error!(
+                                        "Failed to parse swap with error '{:?}' for event: {:?}",
+                                        e,
+                                        log
+                                    );
+                                    continue;
+                                }
+                            }
+                        } else if event_signature == mint_event_encoded_signature {
+                            match dex_extended.parse_mint_event(log.clone()) {
+                                Ok(swap_event) => {
+                                    if let Err(e) =
+                                        tx.send(BlockchainMessage::MintEvent(swap_event))
+                                    {
+                                        tracing::error!("Failed to send mint event: {}", e);
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::error!(
+                                        "Failed to parse mint with error '{:?}' for event: {:?}",
+                                        e,
+                                        log
+                                    );
+                                    continue;
+                                }
+                            }
+                        } else if event_signature == burn_event_encoded_signature {
+                            match dex_extended.parse_burn_event(log.clone()) {
+                                Ok(swap_event) => {
+                                    if let Err(e) =
+                                        tx.send(BlockchainMessage::BurnEvent(swap_event))
+                                    {
+                                        tracing::error!("Failed to send burn event: {}", e);
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::error!(
+                                        "Failed to parse burn with error '{:?}' for event: {:?}",
+                                        e,
+                                        log
+                                    );
+                                    continue;
+                                }
+                            }
+                        } else {
+                            tracing::error!("Unknown event signature: {}", event_signature);
+                            continue;
+                        }
+                    }
+                }
+            }
+        });
+    }
+
     /// Creates a stream of contract event logs matching the specified criteria.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the contract address cannot be parsed as a valid Ethereum address.
     pub async fn request_contract_events_stream(
         &self,
         from_block: u64,
         to_block: Option<u64>,
-        contract_address: &str,
-        event_signature: &str,
-        additional_topics: Vec<String>,
+        contract_address: &Address,
+        topics: Vec<&str>,
     ) -> impl Stream<Item = Log> + use<> {
-        let event_hash = keccak256(event_signature.as_bytes());
-        let topic0 = format!("0x{}", hex::encode(event_hash));
-
-        let mut topics_array = Vec::new();
-        topics_array.push(vec![topic0]);
-        for additional_topic in additional_topics {
-            topics_array.push(vec![additional_topic]);
-        }
-
-        let mut query_value = serde_json::json!({
-            "from_block": from_block,
-            "logs": [{
-                "topics": topics_array,
-                "address": [
-                    contract_address,
-                ]
-            }],
-            "field_selection": {
-                "log": [
-                    "block_number",
-                    "transaction_hash",
-                    "transaction_index",
-                    "log_index",
-                    "data",
-                    "topic0",
-                    "topic1",
-                    "topic2",
-                    "topic3",
-                ]
-            }
-        });
-
-        if let Some(to_block) = to_block
-            && let Some(obj) = query_value.as_object_mut()
-        {
-            obj.insert("to_block".to_string(), serde_json::json!(to_block));
-        }
-
-        let query = serde_json::from_value(query_value).unwrap();
+        let query = Self::construct_contract_events_query(
+            from_block,
+            to_block,
+            vec![contract_address.clone()],
+            topics,
+        );
 
         let mut rx = self
             .client
@@ -148,15 +242,22 @@ impl HyperSyncClient {
     /// Disconnects from the HyperSync service and stops all background tasks.
     pub fn disconnect(&mut self) {
         self.unsubscribe_blocks();
-        self.unsubscribe_all_swaps();
     }
 
     /// Returns the current block
+    ///
+    /// # Panics
+    ///
+    /// Panics if the client height request fails.
     pub async fn current_block(&self) -> u64 {
         self.client.get_height().await.unwrap()
     }
 
     /// Creates a stream that yields blockchain blocks within the specified range.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the stream creation or block transformation fails.
     pub async fn request_blocks_stream(
         &self,
         from_block: u64,
@@ -186,12 +287,25 @@ impl HyperSyncClient {
     }
 
     /// Starts a background task that continuously polls for new blockchain blocks.
+    ///
+    /// # Panics
+    ///
+    /// Panics if client height requests or block transformations fail.
     pub fn subscribe_blocks(&mut self) {
+        if self.blocks_task.is_some() {
+            return;
+        }
+
         let chain = self.chain.name;
         let client = self.client.clone();
-        let tx = self.tx.clone();
+        let tx = if let Some(tx) = &self.tx {
+            tx.clone()
+        } else {
+            tracing::error!("Hypersync client channel should have been initialized");
+            return;
+        };
 
-        let task = tokio::spawn(async move {
+        let task = get_runtime().spawn(async move {
             tracing::debug!("Starting task 'blocks_feed");
 
             let current_block_height = client.get_height().await.unwrap();
@@ -247,136 +361,17 @@ impl HyperSyncClient {
         }
     }
 
-    /// Subscribes to swap events for a specific pool address.
-    pub fn subscribe_pool_swaps(&mut self, pool_address: Address) {
-        let chain_ref = self.chain.clone(); // Use existing SharedChain
-        let client = self.client.clone();
-        let tx = self.tx.clone();
-
-        let task = tokio::spawn(async move {
-            tracing::debug!("Starting task 'swaps_feed' for pool: {pool_address}");
-
-            // TODO: These objects should be fetched from cache or RPC calls
-            // For now, create minimal objects just to get compilation working
-            let dex = std::sync::Arc::new(Dex::new(
-                (*chain_ref).clone(),
-                "Uniswap V3",
-                "0x1F98431c8aD98523631AE4a59f267346ea31F984", // Uniswap V3 factory
-                AmmType::CLAMM,
-                "PoolCreated(address,address,uint24,int24,address)",
-                "Swap(address,address,int256,int256,uint160,uint128,int24)",
-                "Mint(address,address,int24,int24,uint128,uint256,uint256)",
-                "Burn(address,int24,int24,uint128,uint256,uint256)",
-            ));
-
-            let token0 = Token::new(
-                chain_ref.clone(),
-                "0xA0b86a33E6441b936662bb6B5d1F8Fb0E2b57A5D"
-                    .parse()
-                    .unwrap(), // WETH
-                "Wrapped Ether".to_string(),
-                "WETH".to_string(),
-                18,
-            );
-
-            let token1 = Token::new(
-                chain_ref.clone(),
-                "0xdAC17F958D2ee523a2206206994597C13D831ec7"
-                    .parse()
-                    .unwrap(), // USDT
-                "Tether USD".to_string(),
-                "USDT".to_string(),
-                6, // USDT has 6 decimals
-            );
-
-            let pool = std::sync::Arc::new(Pool::new(
-                chain_ref.clone(),
-                (*dex).clone(),
-                pool_address,
-                0, // creation block - TODO: fetch from cache
-                token0,
-                token1,
-                3000, // 0.3% fee tier
-                60,   // tick spacing
-                UnixNanos::default(),
-            ));
-
-            let current_block_height = client.get_height().await.unwrap();
-            let mut query =
-                Self::construct_pool_swaps_query(pool_address, current_block_height, None);
-
-            loop {
-                let response = client.get(&query).await.unwrap();
-
-                // Process logs for swap events
-                for batch in response.data.logs {
-                    for log in batch {
-                        tracing::debug!(
-                            "Received swap log from pool {pool_address}: topics={:?}, data={:?}, block={:?}, tx_hash={:?}",
-                            log.topics,
-                            log.data,
-                            log.block_number,
-                            log.transaction_hash
-                        );
-                        match transform_hypersync_swap_log(
-                            chain_ref.clone(),
-                            dex.clone(),
-                            pool.clone(),
-                            UnixNanos::default(), // TODO: block timestamp placeholder
-                            &log,
-                        ) {
-                            Ok(swap) => {
-                                let msg = crate::rpc::types::BlockchainMessage::Swap(swap);
-                                if let Err(e) = tx.send(msg) {
-                                    tracing::error!("Error sending swap message: {e}");
-                                }
-                            }
-                            Err(e) => {
-                                tracing::warn!(
-                                    "Failed to transform swap log from pool {pool_address}: {e}"
-                                );
-                            }
-                        }
-                    }
-                }
-
-                if let Some(archive_block_height) = response.archive_height
-                    && archive_block_height < response.next_block
-                {
-                    while client.get_height().await.unwrap() < response.next_block {
-                        tokio::time::sleep(std::time::Duration::from_millis(
-                            BLOCK_POLLING_INTERVAL_MS,
-                        ))
-                        .await;
-                    }
-                }
-
-                query.from_block = response.next_block;
-            }
-        });
-
-        self.swaps_tasks.insert(pool_address, task);
-    }
-
-    /// Constructs a HyperSync query for fetching swap events from a specific pool.
-    fn construct_pool_swaps_query(
-        pool_address: alloy::primitives::Address,
+    fn construct_contract_events_query(
         from_block: u64,
         to_block: Option<u64>,
+        contract_addresses: Vec<Address>,
+        topics: Vec<&str>,
     ) -> Query {
-        // Uniswap V3 Swap event signature:
-        // Swap(address indexed sender, address indexed recipient, int256 amount0, int256 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick)
-        let swap_topic = "0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67";
-
         let mut query_value = serde_json::json!({
             "from_block": from_block,
             "logs": [{
-                "topics": [
-                    [swap_topic]
-                ],
-                "address": [
-                    pool_address.to_string(),
-                ]
+                "topics": [topics],
+                "address": contract_addresses
             }],
             "field_selection": {
                 "log": [
@@ -401,22 +396,6 @@ impl HyperSyncClient {
         }
 
         serde_json::from_value(query_value).unwrap()
-    }
-
-    /// Unsubscribes from swap events for a specific pool address.
-    pub fn unsubscribe_pool_swaps(&mut self, pool_address: Address) {
-        if let Some(task) = self.swaps_tasks.remove(&pool_address) {
-            task.abort();
-            tracing::debug!("Unsubscribed from swaps for pool: {}", pool_address);
-        }
-    }
-
-    /// Unsubscribes from all swap events by stopping all swap background tasks.
-    pub fn unsubscribe_all_swaps(&mut self) {
-        for (pool_address, task) in self.swaps_tasks.drain() {
-            task.abort();
-            tracing::debug!("Unsubscribed from swaps for pool: {}", pool_address);
-        }
     }
 
     /// Unsubscribes from new blocks by stopping the background watch task.

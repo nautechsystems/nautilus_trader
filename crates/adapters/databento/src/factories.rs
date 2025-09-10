@@ -257,10 +257,11 @@ mod tests {
     use std::env;
 
     use nautilus_core::time::get_atomic_clock_realtime;
+    use rstest::rstest;
 
     use super::*;
 
-    #[test]
+    #[rstest]
     fn test_config_builder() {
         let config = DatabentoDataClientConfigBuilder::new()
             .api_key("test_key".to_string())
@@ -277,7 +278,7 @@ mod tests {
         assert!(!config.bars_timestamp_on_close);
     }
 
-    #[test]
+    #[rstest]
     fn test_config_builder_missing_required_fields() {
         let config = DatabentoDataClientConfigBuilder::new()
             .api_key("test_key".to_string())
@@ -287,7 +288,7 @@ mod tests {
         assert!(config.is_err());
     }
 
-    #[test]
+    #[rstest]
     fn test_historical_client_factory() {
         let api_key = env::var("DATABENTO_API_KEY").unwrap_or_else(|_| "test_key".to_string());
         let publishers_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("publishers.json");
@@ -302,7 +303,7 @@ mod tests {
         assert!(result.is_err() || result.is_ok());
     }
 
-    #[test]
+    #[rstest]
     fn test_live_data_client_factory() {
         let client_id = ClientId::from("DATABENTO-001");
         let api_key = "test_key".to_string();

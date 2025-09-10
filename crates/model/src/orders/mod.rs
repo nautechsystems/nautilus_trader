@@ -33,7 +33,6 @@ pub mod trailing_stop_market;
 pub mod stubs;
 
 // Re-exports
-use anyhow::anyhow;
 use enum_dispatch::enum_dispatch;
 use indexmap::IndexMap;
 use nautilus_core::{UUID4, UnixNanos};
@@ -136,12 +135,12 @@ pub(crate) fn check_display_qty(
     display_qty: Option<Quantity>,
     quantity: Quantity,
 ) -> Result<(), OrderError> {
-    if let Some(q) = display_qty {
-        if q > quantity {
-            return Err(OrderError::Invariant(anyhow!(
-                "`display_qty` may not exceed `quantity`"
-            )));
-        }
+    if let Some(q) = display_qty
+        && q > quantity
+    {
+        return Err(OrderError::Invariant(anyhow::anyhow!(
+            "`display_qty` may not exceed `quantity`"
+        )));
     }
     Ok(())
 }
@@ -152,7 +151,7 @@ pub(crate) fn check_time_in_force(
     expire_time: Option<UnixNanos>,
 ) -> Result<(), OrderError> {
     if time_in_force == TimeInForce::Gtd && expire_time.unwrap_or_default() == 0 {
-        return Err(OrderError::Invariant(anyhow!(
+        return Err(OrderError::Invariant(anyhow::anyhow!(
             "`expire_time` is required for `GTD` order"
         )));
     }
@@ -370,10 +369,10 @@ pub trait Order: 'static + Send {
     }
 
     fn is_open(&self) -> bool {
-        if let Some(emulation_trigger) = self.emulation_trigger() {
-            if emulation_trigger != TriggerType::NoTrigger {
-                return false;
-            }
+        if let Some(emulation_trigger) = self.emulation_trigger()
+            && emulation_trigger != TriggerType::NoTrigger
+        {
+            return false;
         }
 
         matches!(
@@ -402,10 +401,10 @@ pub trait Order: 'static + Send {
     }
 
     fn is_inflight(&self) -> bool {
-        if let Some(emulation_trigger) = self.emulation_trigger() {
-            if emulation_trigger != TriggerType::NoTrigger {
-                return false;
-            }
+        if let Some(emulation_trigger) = self.emulation_trigger()
+            && emulation_trigger != TriggerType::NoTrigger
+        {
+            return false;
         }
 
         matches!(
@@ -691,13 +690,12 @@ impl OrderCore {
     }
 
     fn updated(&mut self, event: &OrderUpdated) {
-        if let Some(venue_order_id) = &event.venue_order_id {
-            if self.venue_order_id.is_none()
-                || venue_order_id != self.venue_order_id.as_ref().unwrap()
-            {
-                self.venue_order_id = Some(*venue_order_id);
-                self.venue_order_ids.push(*venue_order_id);
-            }
+        if let Some(venue_order_id) = &event.venue_order_id
+            && (self.venue_order_id.is_none()
+                || venue_order_id != self.venue_order_id.as_ref().unwrap())
+        {
+            self.venue_order_id = Some(*venue_order_id);
+            self.venue_order_ids.push(*venue_order_id);
         }
     }
 

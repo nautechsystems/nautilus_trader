@@ -15,7 +15,7 @@
 
 //! Technical analysis indicators for [NautilusTrader](http://nautilustrader.io).
 //!
-//! The *indicators* crate provides a comprehensive collection of technical analysis indicators
+//! The `nautilus-indicators` crate provides a comprehensive collection of technical analysis indicators
 //! for quantitative trading and market research. This includes a wide variety of indicators
 //! organized by category, with a unified trait-based architecture for consistent usage:
 //!
@@ -48,6 +48,7 @@
 //! or as part of a Rust only build.
 //!
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//! - `extension-module`: Builds the crate as a Python extension module.
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]

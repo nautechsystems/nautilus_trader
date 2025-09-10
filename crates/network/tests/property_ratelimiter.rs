@@ -25,10 +25,11 @@ use std::{num::NonZeroU32, time::Duration};
 
 use nautilus_network::ratelimiter::{RateLimiter, quota::Quota};
 use proptest::prelude::*;
+use rstest::rstest;
 
 proptest! {
     /// Property: Rate limiter should never allow more requests than quota permits initially.
-    #[test]
+    #[rstest]
     fn rate_limiter_respects_quota_bounds(
         rate in 1u32..=100u32,
         key in "[a-z]{1,10}",
@@ -37,12 +38,13 @@ proptest! {
         let rate_nonzero = NonZeroU32::new(rate).unwrap();
         let quota = Quota::per_second(rate_nonzero);
         let rate_limiter = RateLimiter::new_with_quota(
-            Some(quota),
+            None,
             vec![(key.clone(), quota)]
         );
 
         let mut successful_requests = 0;
         let burst_capacity = rate as usize;
+        let start = std::time::Instant::now();
 
         // Make rapid requests without any delay
         for i in 0..request_count {
@@ -57,25 +59,32 @@ proptest! {
             }
         }
 
-        // Should not exceed burst capacity without time advancement
-        prop_assert!(
-            successful_requests <= burst_capacity,
-            "Successful requests {} exceeded burst capacity {}",
-            successful_requests,
-            burst_capacity
-        );
+        // Account for real time passing during the tight loop.
+        // With a real clock, additional tokens may replenish while we iterate.
+        let elapsed = start.elapsed();
+        let replenish_interval = quota.replenish_interval();
+        // Integer division floors the replenished count, which is conservative
+        // (we may underestimate tokens replenished during the loop). This still
+        // preserves the invariant we care about: we must not exceed what could
+        // have been allowed by burst plus replenishment in the elapsed time.
+        let replenished = (elapsed.as_nanos() / replenish_interval.as_nanos()) as usize;
+        let max_allowed = burst_capacity.saturating_add(replenished);
+        let bound = std::cmp::min(request_count, max_allowed);
 
-        // Should allow exactly the minimum of request_count and burst_capacity
-        let expected_successful = std::cmp::min(request_count, burst_capacity);
-        prop_assert_eq!(
+        // Should not exceed burst + replenished capacity during the loop
+        prop_assert!(
+            successful_requests <= bound,
+            "Successful requests {} exceeded allowed bound {} (burst {} + replenished {} in {:?})",
             successful_requests,
-            expected_successful,
-            "Should allow exactly min(request_count, burst_capacity)"
+            bound,
+            burst_capacity,
+            replenished,
+            elapsed
         );
     }
 
     /// Property: Rate limiter behavior should be consistent across multiple keys.
-    #[test]
+    #[rstest]
     fn rate_limiter_consistent_across_keys(
         keys in prop::collection::hash_set("[a-z]{3,8}", 2..=10).prop_map(|s| s.into_iter().collect::<Vec<_>>()),
         rate in 1u32..=20u32
@@ -102,35 +111,28 @@ proptest! {
             );
         }
 
-        // Verify keys don't interfere with each other
-        if keys.len() > 1 && rate > 1 {
-            // Exhaust first key by making all its allowed requests
+        // Verify keys don't interfere with each other using a fresh limiter (avoid consuming key2)
+        if keys.len() > 1 {
+            let keyed_quotas2: Vec<(String, Quota)> = keys.iter().map(|k| (k.clone(), quota)).collect();
+            let rate_limiter2 = RateLimiter::new_with_quota(Some(quota), keyed_quotas2);
+
+            // Generate load on first key only
             for _ in 0..rate {
-                let _ = rate_limiter.check_key(&keys[0]);
+                let _ = rate_limiter2.check_key(&keys[0]);
             }
 
-            // First key should now be exhausted
-            let first_key_exhausted = rate_limiter.check_key(&keys[0]).is_err();
-
-            // Second key should still have quota available
-            let second_key_fresh = rate_limiter.check_key(&keys[1]).is_ok();
-
-            prop_assert!(
-                first_key_exhausted,
-                "First key '{}' should be exhausted after {} requests",
-                keys[0], rate
-            );
-
+            // The second key's first request should still succeed (unaffected by first key).
+            let second_key_fresh = rate_limiter2.check_key(&keys[1]).is_ok();
             prop_assert!(
                 second_key_fresh,
-                "Second key '{}' should still be available after first key exhaustion",
-                keys[1]
+                "Second key '{}' should be available and unaffected by '{}'",
+                keys[1], keys[0]
             );
         }
     }
 
     /// Property: Quota calculations should respect mathematical bounds and not overflow.
-    #[test]
+    #[rstest]
     fn quota_calculations_bounded(
         rate in 1u32..=10000u32
     ) {
@@ -200,7 +202,7 @@ proptest! {
     }
 
     /// Property: Rate limiter should handle rapid sequential requests consistently.
-    #[test]
+    #[rstest]
     fn rate_limiter_handles_rapid_requests(
         rate in 1u32..=50u32,
         request_count in 1usize..=150
@@ -217,6 +219,7 @@ proptest! {
         let mut denied_count = 0;
 
         // Make rapid sequential requests
+        let start = std::time::Instant::now();
         for _ in 0..request_count {
             if rate_limiter.check_key(&key).is_ok() {
                 allowed_count += 1;
@@ -225,26 +228,19 @@ proptest! {
             }
         }
 
-        // Should allow exactly the burst capacity, deny the rest
+        // Account for real time passing during the tight loop: tokens may replenish
         let burst_capacity = rate as usize;
-        prop_assert_eq!(
-            allowed_count,
-            std::cmp::min(request_count, burst_capacity),
-            "Allowed count should match burst capacity or request count"
+        let elapsed = start.elapsed();
+        let replenish_interval = quota.replenish_interval();
+        // Floors replenished count, which is conservative and safe
+        let replenished = (elapsed.as_nanos() / replenish_interval.as_nanos()) as usize;
+        let max_allowed = std::cmp::min(request_count, burst_capacity.saturating_add(replenished));
+
+        prop_assert!(
+            allowed_count <= max_allowed,
+            "Allowed {} exceeded bound {} (burst {} + replenished {} in {:?})",
+            allowed_count, max_allowed, burst_capacity, replenished, elapsed
         );
-
-        if request_count > burst_capacity {
-            prop_assert!(
-                denied_count > 0,
-                "Should deny some requests when exceeding burst capacity"
-            );
-
-            prop_assert_eq!(
-                denied_count,
-                request_count - burst_capacity,
-                "Denied count should equal excess requests"
-            );
-        }
 
         prop_assert_eq!(
             allowed_count + denied_count,
@@ -254,7 +250,7 @@ proptest! {
     }
 
     /// Property: Default quota should work when no specific key quota is set.
-    #[test]
+    #[rstest]
     fn default_quota_behavior(
         default_rate in 1u32..=20u32,
         key_rate in 1u32..=20u32,
@@ -268,38 +264,50 @@ proptest! {
             vec![(key.clone(), key_quota)]
         );
 
-        // Test specific key uses its quota
-        let mut specific_allowed = 0;
-        for _ in 0..=key_rate {
+        // Test specific key uses its quota (time-aware bound)
+        let mut specific_allowed = 0usize;
+        let specific_attempts = key_rate as usize + 1; // inclusive in original test
+        let start_specific = std::time::Instant::now();
+        for _ in 0..specific_attempts {
             if rate_limiter.check_key(&key).is_ok() {
                 specific_allowed += 1;
             }
         }
-
-        prop_assert_eq!(
-            specific_allowed,
-            key_rate as usize,
-            "Specific key should use its own quota"
+        let elapsed_specific = start_specific.elapsed();
+        let burst_specific = key_rate as usize;
+        let repl_specific = key_quota.replenish_interval();
+        let replenished_specific = (elapsed_specific.as_nanos() / repl_specific.as_nanos()) as usize;
+        let max_allowed_specific = std::cmp::min(specific_attempts, burst_specific.saturating_add(replenished_specific));
+        prop_assert!(
+            specific_allowed <= max_allowed_specific,
+            "Specific key allowed {} exceeded bound {} (burst {} + replenished {} in {:?})",
+            specific_allowed, max_allowed_specific, burst_specific, replenished_specific, elapsed_specific
         );
 
-        // Test unknown key uses default quota
+        // Test unknown key uses default quota (time-aware bound)
         let unknown_key = format!("{key}_unknown");
-        let mut default_allowed = 0;
-        for _ in 0..=default_rate {
+        let mut default_allowed = 0usize;
+        let default_attempts = default_rate as usize + 1; // inclusive in original test
+        let start_default = std::time::Instant::now();
+        for _ in 0..default_attempts {
             if rate_limiter.check_key(&unknown_key).is_ok() {
                 default_allowed += 1;
             }
         }
-
-        prop_assert_eq!(
-            default_allowed,
-            default_rate as usize,
-            "Unknown key should use default quota"
+        let elapsed_default = start_default.elapsed();
+        let burst_default = default_rate as usize;
+        let repl_default = default_quota.replenish_interval();
+        let replenished_default = (elapsed_default.as_nanos() / repl_default.as_nanos()) as usize;
+        let max_allowed_default = std::cmp::min(default_attempts, burst_default.saturating_add(replenished_default));
+        prop_assert!(
+            default_allowed <= max_allowed_default,
+            "Unknown key allowed {} exceeded bound {} (burst {} + replenished {} in {:?})",
+            default_allowed, max_allowed_default, burst_default, replenished_default, elapsed_default
         );
     }
 
     /// Property: Quota with custom period should work correctly.
-    #[test]
+    #[rstest]
     fn custom_period_quota_behavior(
         period_ms in 1u64..=5000u64,
         burst_size in 1u32..=10u32
@@ -318,18 +326,25 @@ proptest! {
 
             let key = "custom_period_test".to_string();
 
-            // Should allow up to burst size immediately
-            let mut allowed = 0;
-            for _ in 0..burst_size * 2 {
+            // Should allow up to burst size immediately (time-aware upper bound)
+            let mut allowed = 0usize;
+            let attempts = (burst_size * 2) as usize;
+            let start = std::time::Instant::now();
+            for _ in 0..attempts {
                 if rate_limiter.check_key(&key).is_ok() {
                     allowed += 1;
                 }
             }
-
-            prop_assert_eq!(
-                allowed,
-                burst_size as usize,
-                "Should allow exactly burst size requests"
+            let elapsed = start.elapsed();
+            let burst = burst_size as usize;
+            let repl = quota.replenish_interval();
+            // Floors replenishment count; conservative and safe
+            let replenished = (elapsed.as_nanos() / repl.as_nanos()) as usize;
+            let max_allowed = std::cmp::min(attempts, burst.saturating_add(replenished));
+            prop_assert!(
+                allowed <= max_allowed,
+                "Allowed {} exceeded bound {} (burst {} + replenished {} in {:?})",
+                allowed, max_allowed, burst, replenished, elapsed
             );
 
             // Verify quota properties

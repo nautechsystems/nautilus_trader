@@ -286,7 +286,7 @@ async def test_modify_order_success(
     await asyncio.sleep(0)
 
     # Assert
-    pending_update, _, updated = events[-3:]
+    pending_update, updated = events[-2:]
     assert isinstance(pending_update, OrderPendingUpdate)
     assert isinstance(updated, OrderUpdated)
     assert updated.price == betfair_float_to_price(50)
@@ -529,7 +529,7 @@ async def test_order_stream_new_full_image(exec_client, setup_order_state, cache
     # Act
     exec_client.handle_order_stream_update(raw)
     await asyncio.sleep(0)
-    assert len(events) == 6
+    assert len(events) == 4
 
 
 @pytest.mark.asyncio()
@@ -561,7 +561,7 @@ async def test_order_stream_update(exec_client, setup_order_state, events):
     await asyncio.sleep(0)
 
     # Assert
-    assert len(events) == 5
+    assert len(events) == 3
 
 
 @pytest.mark.asyncio()
@@ -577,7 +577,7 @@ async def test_order_stream_filled(exec_client, setup_order_state, events, fill_
     await asyncio.sleep(0)
 
     # Assert
-    assert len(events) == 6
+    assert len(events) == 4
     fill: OrderFilled = fill_events[0]
     assert isinstance(fill, OrderFilled)
     assert fill.last_px == betfair_float_to_price(1.10)
@@ -621,7 +621,7 @@ async def test_order_stream_filled_multiple_prices(
     await asyncio.sleep(0)
 
     # Assert
-    assert len(events) == 12
+    assert len(events) == 8
     fill1, fill2 = (event for event in events if isinstance(event, OrderFilled))
     assert isinstance(fill1, OrderFilled)
     assert isinstance(fill2, OrderFilled)
@@ -1081,7 +1081,7 @@ async def test_generate_fill_reports(exec_client):
 
 @pytest.mark.asyncio
 @pytest.mark.live_components
-async def test_reconcile_mass_status(exec_client, exec_engine):
+async def test_reconcile_execution_mass_status(exec_client, exec_engine):
     # Arrange
     mock_betfair_request(
         exec_client._client,
@@ -1090,7 +1090,7 @@ async def test_reconcile_mass_status(exec_client, exec_engine):
 
     # Act, Assert
     mass_status = await exec_client.generate_mass_status()
-    exec_engine._reconcile_mass_status(mass_status)
+    exec_engine._reconcile_execution_mass_status(mass_status)
 
 
 # A price far below the allowed minimum (~ -1.7e13)

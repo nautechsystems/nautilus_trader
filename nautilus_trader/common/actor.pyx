@@ -67,6 +67,7 @@ from nautilus_trader.data.messages cimport RequestQuoteTicks
 from nautilus_trader.data.messages cimport RequestTradeTicks
 from nautilus_trader.data.messages cimport SubscribeBars
 from nautilus_trader.data.messages cimport SubscribeData
+from nautilus_trader.data.messages cimport SubscribeFundingRates
 from nautilus_trader.data.messages cimport SubscribeIndexPrices
 from nautilus_trader.data.messages cimport SubscribeInstrument
 from nautilus_trader.data.messages cimport SubscribeInstrumentClose
@@ -78,6 +79,7 @@ from nautilus_trader.data.messages cimport SubscribeQuoteTicks
 from nautilus_trader.data.messages cimport SubscribeTradeTicks
 from nautilus_trader.data.messages cimport UnsubscribeBars
 from nautilus_trader.data.messages cimport UnsubscribeData
+from nautilus_trader.data.messages cimport UnsubscribeFundingRates
 from nautilus_trader.data.messages cimport UnsubscribeIndexPrices
 from nautilus_trader.data.messages cimport UnsubscribeInstrument
 from nautilus_trader.data.messages cimport UnsubscribeInstruments
@@ -86,15 +88,17 @@ from nautilus_trader.data.messages cimport UnsubscribeMarkPrices
 from nautilus_trader.data.messages cimport UnsubscribeOrderBook
 from nautilus_trader.data.messages cimport UnsubscribeQuoteTicks
 from nautilus_trader.data.messages cimport UnsubscribeTradeTicks
-from nautilus_trader.indicators.base.indicator cimport Indicator
+from nautilus_trader.indicators.base cimport Indicator
 from nautilus_trader.model.book cimport OrderBook
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport DataType
+from nautilus_trader.model.data cimport FundingRateUpdate
 from nautilus_trader.model.data cimport IndexPriceUpdate
 from nautilus_trader.model.data cimport InstrumentClose
 from nautilus_trader.model.data cimport InstrumentStatus
 from nautilus_trader.model.data cimport MarkPriceUpdate
+from nautilus_trader.model.data cimport OrderBookDelta
 from nautilus_trader.model.data cimport OrderBookDeltas
 from nautilus_trader.model.data cimport OrderBookDepth10
 from nautilus_trader.model.data cimport QuoteTick
@@ -495,6 +499,22 @@ cdef class Actor(Component):
         ----------
         index_price : IndexPriceUpdate
             The index price update received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_funding_rate(self, FundingRateUpdate funding_rate):
+        """
+        Actions to be performed when running and receives a funding rate update.
+
+        Parameters
+        ----------
+        funding_rate : FundingRateUpdate
+            The funding rate update received.
 
         Warnings
         --------
@@ -1366,11 +1386,11 @@ cdef class Actor(Component):
         )
         cdef SubscribeOrderBook command = SubscribeOrderBook(
             instrument_id=instrument_id,
+            book_data_type=OrderBookDelta,
             book_type=book_type,
             depth=depth,
             managed=managed,
-            interval_ms=1000,
-            only_deltas=True,
+            interval_ms=0,
             client_id=client_id,
             venue=instrument_id.venue,
             command_id=UUID4(),
@@ -1427,11 +1447,11 @@ cdef class Actor(Component):
         )
         cdef SubscribeOrderBook command = SubscribeOrderBook(
             instrument_id=instrument_id,
+            book_data_type=OrderBookDepth10,
             book_type=book_type,
             depth=depth,
             managed=managed,
-            interval_ms=1000,
-            only_deltas=False,
+            interval_ms=0,
             client_id=client_id,
             venue=instrument_id.venue,
             command_id=UUID4(),
@@ -1447,7 +1467,6 @@ cdef class Actor(Component):
         int depth = 0,
         int interval_ms = 1000,
         ClientId client_id = None,
-        bint managed = True,
         dict[str, object] params = None,
     ):
         """
@@ -1473,8 +1492,6 @@ cdef class Actor(Component):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
-        managed : bool, default True
-            If an order book should be managed by the data engine based on the subscribed feed.
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -1511,11 +1528,11 @@ cdef class Actor(Component):
         )
         cdef SubscribeOrderBook command = SubscribeOrderBook(
             instrument_id=instrument_id,
+            book_data_type=OrderBookDelta,
             book_type=book_type,
             depth=depth,
-            managed=managed,
+            managed=True,  # Must be managed by DataEngine to provide snapshots at interval
             interval_ms=interval_ms,
-            only_deltas=False,
             client_id=client_id,
             venue=instrument_id.venue,
             command_id=UUID4(),
@@ -1699,6 +1716,48 @@ cdef class Actor(Component):
             handler=self.handle_index_price,
         )
         cdef SubscribeIndexPrices command = SubscribeIndexPrices(
+            instrument_id=instrument_id,
+            client_id=client_id,
+            venue=instrument_id.venue,
+            command_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+            params=params,
+        )
+        self._send_data_cmd(command)
+
+    cpdef void subscribe_funding_rates(
+        self,
+        InstrumentId instrument_id,
+        ClientId client_id = None,
+        dict[str, object] params = None,
+    ):
+        """
+        Subscribe to streaming `FundingRateUpdate` data for the given instrument ID.
+
+        Once subscribed, any matching funding rate updates published on the message bus are forwarded
+        to the `on_funding_rate` handler.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument to subscribe to.
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If ``None`` then will be inferred from the venue in the instrument ID.
+        params : dict[str, Any], optional
+            Additional parameters potentially used by a specific client.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
+
+        self._msgbus.subscribe(
+            topic=f"data.funding_rates"
+                  f".{instrument_id.venue}"
+                  f".{instrument_id.symbol.topic()}",
+            handler=self.handle_funding_rate,
+        )
+        cdef SubscribeFundingRates command = SubscribeFundingRates(
             instrument_id=instrument_id,
             client_id=client_id,
             venue=instrument_id.venue,
@@ -1997,7 +2056,7 @@ cdef class Actor(Component):
         )
         cdef UnsubscribeOrderBook command = UnsubscribeOrderBook(
             instrument_id=instrument_id,
-            only_deltas=True,
+            book_data_type=OrderBookDelta,
             client_id=client_id,
             venue=instrument_id.venue,
             command_id=UUID4(),
@@ -2037,7 +2096,7 @@ cdef class Actor(Component):
         )
         cdef UnsubscribeOrderBook command = UnsubscribeOrderBook(
             instrument_id=instrument_id,
-            only_deltas=True,
+            book_data_type=OrderBookDepth10,
             client_id=client_id,
             venue=instrument_id.venue,
             command_id=UUID4(),
@@ -2083,7 +2142,7 @@ cdef class Actor(Component):
         )
         cdef UnsubscribeOrderBook command = UnsubscribeOrderBook(
             instrument_id=instrument_id,
-            only_deltas=False,
+            book_data_type=OrderBookDelta,
             client_id=client_id,
             venue=instrument_id.venue,
             command_id=UUID4(),
@@ -2193,7 +2252,7 @@ cdef class Actor(Component):
         Condition.not_none(instrument_id, "instrument_id")
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
-        self._msgbus.subscribe(
+        self._msgbus.unsubscribe(
             topic=f"data.mark_prices"
                   f".{instrument_id.venue}"
                   f".{instrument_id.symbol.topic()}",
@@ -2232,13 +2291,52 @@ cdef class Actor(Component):
         Condition.not_none(instrument_id, "instrument_id")
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
-        self._msgbus.subscribe(
+        self._msgbus.unsubscribe(
             topic=f"data.index_prices"
                   f".{instrument_id.venue}"
                   f".{instrument_id.symbol.topic()}",
             handler=self.handle_index_price,
         )
         cdef UnsubscribeIndexPrices command = UnsubscribeIndexPrices(
+            instrument_id=instrument_id,
+            client_id=client_id,
+            venue=instrument_id.venue,
+            command_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+            params=params,
+        )
+        self._send_data_cmd(command)
+
+    cpdef void unsubscribe_funding_rates(
+        self,
+        InstrumentId instrument_id,
+        ClientId client_id = None,
+        dict[str, object] params = None,
+    ):
+        """
+        Unsubscribe from streaming `FundingRateUpdate` data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument to unsubscribe from.
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If ``None`` then will be inferred from the venue in the instrument ID.
+        params : dict[str, Any], optional
+            Additional parameters potentially used by a specific client.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
+
+        self._msgbus.unsubscribe(
+            topic=f"data.funding_rates"
+                  f".{instrument_id.venue}"
+                  f".{instrument_id.symbol.topic()}",
+            handler=self.handle_funding_rate,
+        )
+        cdef UnsubscribeFundingRates command = UnsubscribeFundingRates(
             instrument_id=instrument_id,
             client_id=client_id,
             venue=instrument_id.venue,
@@ -2405,6 +2503,52 @@ cdef class Actor(Component):
             handler=self.handle_signal,
         )
 
+# -- VALIDATIONS -------------------------------------------------------------------------
+
+    cdef tuple _validate_datetime_range(
+        self,
+        datetime start,
+        datetime end,
+    ):
+        """
+        Validate datetime range parameters.
+
+        Parameters
+        ----------
+        start : datetime
+            The start datetime (UTC) of request time range.
+        end : datetime, optional
+            The end datetime (UTC) of request time range.
+
+        Returns
+        -------
+        tuple[datetime, datetime]
+            The validated start and end datetimes. If `end` was None,
+            it will be replaced with the current UTC time.
+
+        Raises
+        ------
+        TypeError
+            If `start` is None.
+        ValueError
+            If `start` is > current timestamp (now).
+        ValueError
+            If `end` is > current timestamp (now).
+        ValueError
+            If `start` is > `end`.
+
+        """
+        cdef datetime now = self.clock.utc_now()
+        if end is None:
+            end = now
+
+        Condition.not_none(start, "start")
+        Condition.is_true(start <= now, "start was > now")
+        Condition.is_true(end <= now, "end was > now")
+        Condition.is_true(start <= end, "start was > end")
+
+        return (start, end)
+
 # -- REQUESTS -------------------------------------------------------------------------------------
 
     cpdef UUID4 request_data(
@@ -2433,12 +2577,14 @@ cdef class Actor(Component):
             The data type for the request.
         client_id : ClientId
             The data client ID.
-        start : datetime, optional
+        start : datetime
             The start datetime (UTC) of request time range.
-            The inclusiveness depends on individual data client implementation.
+            Cannot be `None`.
+            Should be left-inclusive (start <= value), but inclusiveness is not currently guaranteed.
         end : datetime, optional
             The end datetime (UTC) of request time range.
-            The inclusiveness depends on individual data client implementation.
+            If `None` then will be replaced with the current UTC time.
+            Should be right-inclusive (value <= end), but inclusiveness is not currently guaranteed.
         limit : int, optional
             The limit on the amount of data points received.
         callback : Callable[[UUID4], None], optional
@@ -2457,24 +2603,24 @@ cdef class Actor(Component):
         Raises
         ------
         TypeError
+            If `start` is `None`.
+        ValueError
+            If `start` is > current timestamp (now).
+        ValueError
+            If `end` is > current timestamp (now).
+        ValueError
+            If `start` is > `end`.
+        TypeError
             If `callback` is not `None` and not of type `Callable`.
 
         """
+        # TODO: Default start value assignment based on requested type of data
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
         Condition.not_none(client_id, "client_id")
         Condition.not_none(data_type, "data_type")
         Condition.callable_or_none(callback, "callback")
 
-        cdef datetime now = self.clock.utc_now()
-
-        if start is not None:
-            Condition.is_true(start <= now, "start was > now")
-
-        if end is not None:
-            Condition.is_true(end <= now, "end was > now")
-
-        if start is not None and end is not None:
-            Condition.is_true(start <= end, "start was > end")
+        start, end = self._validate_datetime_range(start, end)
 
         params = params or {}
         params["update_catalog"] = update_catalog
@@ -2504,7 +2650,7 @@ cdef class Actor(Component):
         datetime start = None,
         datetime end = None,
         ClientId client_id = None,
-        callback: Callable[[UUID4], Noane] | None = None,
+        callback: Callable[[UUID4], None] | None = None,
         update_catalog: bool = False,
         dict[str, object] params = None,
     ):
@@ -2581,7 +2727,7 @@ cdef class Actor(Component):
             end=end,
             client_id=client_id,
             venue=instrument_id.venue,
-            callback=self._handle_instrument_response,
+            callback=self._handle_instruments_response,
             request_id=request_id,
             ts_init=self._clock.timestamp_ns(),
             params=params,
@@ -2630,7 +2776,8 @@ cdef class Actor(Component):
         update_catalog : bool, optional
             Whether to update a catalog with the received data.
         params : dict[str, Any], optional
-            Additional parameters potentially used by a specific client.
+            Additional parameters potentially used by a specific client:
+            - `only_last` (default `True`) retains only the latest instrument record per instrument_id, based on the most recent ts_init.
 
         Returns
         -------
@@ -2749,7 +2896,7 @@ cdef class Actor(Component):
     cpdef UUID4 request_quote_ticks(
         self,
         InstrumentId instrument_id,
-        datetime start = None,
+        datetime start,
         datetime end = None,
         int limit = 0,
         ClientId client_id = None,
@@ -2771,12 +2918,13 @@ cdef class Actor(Component):
         ----------
         instrument_id : InstrumentId
             The tick instrument ID for the request.
-        start : datetime, optional
+        start : datetime
             The start datetime (UTC) of request time range.
-            The inclusiveness depends on individual data client implementation.
+            Should be left-inclusive (start <= value), but inclusiveness is not currently guaranteed.
         end : datetime, optional
             The end datetime (UTC) of request time range.
-            The inclusiveness depends on individual data client implementation.
+            If `None` then will be replaced with the current UTC time.
+            Should be right-inclusive (value <= end), but inclusiveness is not currently guaranteed.
         limit : int, optional
             The limit on the amount of quote ticks received.
         client_id : ClientId, optional
@@ -2797,12 +2945,14 @@ cdef class Actor(Component):
 
         Raises
         ------
+        TypeError
+            If `start` is `None`.
         ValueError
-            If `start` is not `None` and > current timestamp (now).
+            If `start` is > current timestamp (now).
         ValueError
-            If `end` is not `None` and > current timestamp (now).
+            If `end` is > current timestamp (now).
         ValueError
-            If `start` and `end` are not `None` and `start` is >= `end`.
+            If `start` is > `end`.
         TypeError
             If `callback` is not `None` and not of type `Callable`.
 
@@ -2811,16 +2961,7 @@ cdef class Actor(Component):
         Condition.not_none(instrument_id, "instrument_id")
         Condition.callable_or_none(callback, "callback")
 
-        cdef datetime now = self.clock.utc_now()
-
-        if start is not None:
-            Condition.is_true(start <= now, "start was > now")
-
-        if end is not None:
-            Condition.is_true(end <= now, "end was > now")
-
-        if start is not None and end is not None:
-            Condition.is_true(start <= end, "start was > end")
+        start, end = self._validate_datetime_range(start, end)
 
         params = params or {}
         params["update_catalog"] = update_catalog
@@ -2846,7 +2987,7 @@ cdef class Actor(Component):
     cpdef UUID4 request_trade_ticks(
         self,
         InstrumentId instrument_id,
-        datetime start = None,
+        datetime start,
         datetime end = None,
         int limit = 0,
         ClientId client_id = None,
@@ -2868,12 +3009,13 @@ cdef class Actor(Component):
         ----------
         instrument_id : InstrumentId
             The tick instrument ID for the request.
-        start : datetime, optional
+        start : datetime
             The start datetime (UTC) of request time range.
-            The inclusiveness depends on individual data client implementation.
+            Should be left-inclusive (start <= value), but inclusiveness is not currently guaranteed.
         end : datetime, optional
             The end datetime (UTC) of request time range.
-            The inclusiveness depends on individual data client implementation.
+            If `None` then will be replaced with the current UTC time.
+            Should be right-inclusive (value <= end), but inclusiveness is not currently guaranteed.
         limit : int, optional
             The limit on the amount of trade ticks received.
         client_id : ClientId, optional
@@ -2894,12 +3036,14 @@ cdef class Actor(Component):
 
         Raises
         ------
+        TypeError
+            If `start` is `None`.
         ValueError
-            If `start` is not `None` and > current timestamp (now).
+            If `start` is > current timestamp (now).
         ValueError
-            If `end` is not `None` and > current timestamp (now).
+            If `end` is > current timestamp (now).
         ValueError
-            If `start` and `end` are not `None` and `start` is >= `end`.
+            If `start` is > `end`.
         TypeError
             If `callback` is not `None` and not of type `Callable`.
 
@@ -2908,16 +3052,7 @@ cdef class Actor(Component):
         Condition.not_none(instrument_id, "instrument_id")
         Condition.callable_or_none(callback, "callback")
 
-        cdef datetime now = self.clock.utc_now()
-
-        if start is not None:
-            Condition.is_true(start <= now, "start was > now")
-
-        if end is not None:
-            Condition.is_true(end <= now, "end was > now")
-
-        if start is not None and end is not None:
-            Condition.is_true(start <= end, "start was > end")
+        start, end = self._validate_datetime_range(start, end)
 
         params = params or {}
         params["update_catalog"] = update_catalog
@@ -2943,7 +3078,7 @@ cdef class Actor(Component):
     cpdef UUID4 request_bars(
         self,
         BarType bar_type,
-        datetime start = None,
+        datetime start,
         datetime end = None,
         int limit = 0,
         ClientId client_id = None,
@@ -2965,12 +3100,13 @@ cdef class Actor(Component):
         ----------
         bar_type : BarType
             The bar type for the request.
-        start : datetime, optional
+        start : datetime
             The start datetime (UTC) of request time range.
-            The inclusiveness depends on individual data client implementation.
+            Should be left-inclusive (start <= value), but inclusiveness is not currently guaranteed.
         end : datetime, optional
             The end datetime (UTC) of request time range.
-            The inclusiveness depends on individual data client implementation.
+            If `None` then will be replaced with the current UTC time.
+            Should be right-inclusive (value <= end), but inclusiveness is not currently guaranteed.
         limit : int, optional
             The limit on the amount of bars received.
         client_id : ClientId, optional
@@ -2991,12 +3127,14 @@ cdef class Actor(Component):
 
         Raises
         ------
+        TypeError
+            If `start` is `None`.
         ValueError
-            If `start` is not `None` and > current timestamp (now).
+            If `start` is > current timestamp (now).
         ValueError
-            If `end` is not `None` and > current timestamp (now).
+            If `end` is > current timestamp (now).
         ValueError
-            If `start` and `end` are not `None` and `start` is >= `end`.
+            If `start` is > `end`.
         TypeError
             If `callback` is not `None` and not of type `Callable`.
 
@@ -3005,16 +3143,7 @@ cdef class Actor(Component):
         Condition.not_none(bar_type, "bar_type")
         Condition.callable_or_none(callback, "callback")
 
-        cdef datetime now = self.clock.utc_now()
-
-        if start is not None:
-            Condition.is_true(start <= now, "start was > now")
-
-        if end is not None:
-            Condition.is_true(end <= now, "end was > now")
-
-        if start is not None and end is not None:
-            Condition.is_true(start <= end, "start was > end")
+        start, end = self._validate_datetime_range(start, end)
 
         params = params or {}
         params["update_catalog"] = update_catalog
@@ -3040,7 +3169,7 @@ cdef class Actor(Component):
     cpdef UUID4 request_aggregated_bars(
         self,
         list bar_types,
-        datetime start = None,
+        datetime start,
         datetime end = None,
         int limit = 0,
         ClientId client_id = None,
@@ -3070,12 +3199,13 @@ cdef class Actor(Component):
         bar_types : list[BarType]
             The list of bar types for the request. Composite bars can also be used and need to
             figure in the list after a BarType on which it depends.
-        start : datetime, optional
+        start : datetime
             The start datetime (UTC) of request time range.
-            The inclusiveness depends on individual data client implementation.
+            Should be left-inclusive (start <= value), but inclusiveness is not currently guaranteed.
         end : datetime, optional
             The end datetime (UTC) of request time range.
-            The inclusiveness depends on individual data client implementation.
+            If `None` then will be replaced with the current UTC time.
+            Should be right-inclusive (value <= end), but inclusiveness is not currently guaranteed.
         limit : int, optional
             The limit on the amount of data received (quote ticks, trade ticks or bars).
         client_id : ClientId, optional
@@ -3100,12 +3230,14 @@ cdef class Actor(Component):
 
         Raises
         ------
+        TypeError
+            If `start` is `None`.
         ValueError
-            If `start` is not `None` and > current timestamp (now).
+            If `start` is > current timestamp (now).
         ValueError
-            If `end` is not `None` and > current timestamp (now).
+            If `end` is > current timestamp (now).
         ValueError
-            If `start` and `end` are not `None` and `start` is >= `end`.
+            If `start` is > `end`.
         ValueError
             If `bar_types` is empty.
         TypeError
@@ -3119,16 +3251,7 @@ cdef class Actor(Component):
         Condition.list_type(bar_types, BarType, "bar_types")
         Condition.callable_or_none(callback, "callback")
 
-        cdef datetime now = self.clock.utc_now()
-
-        if start is not None:
-            Condition.is_true(start <= now, "start was > now")
-
-        if end is not None:
-            Condition.is_true(end <= now, "end was > now")
-
-        if start is not None and end is not None:
-            Condition.is_true(start <= end, "start was > end")
+        start, end = self._validate_datetime_range(start, end)
 
         for bar_type in bar_types:
             if not bar_type.is_internally_aggregated():
@@ -3253,7 +3376,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(instrument, "instrument")
 
-        if self._fsm.state == ComponentState.RUNNING:
+        if self._fsm.state in (ComponentState.STARTING, ComponentState.RUNNING):
             try:
                 self.on_instrument(instrument)
             except Exception as e:
@@ -3526,6 +3649,31 @@ cdef class Actor(Component):
                 self.log.exception(f"Error on handling {repr(index_price)}", e)
                 raise
 
+    cpdef void handle_funding_rate(self, FundingRateUpdate funding_rate):
+        """
+        Handle the given funding rate update.
+
+        If state is ``RUNNING`` then passes to `on_funding_rate`.
+
+        Parameters
+        ----------
+        funding_rate : FundingRateUpdate
+            The funding rate update received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        Condition.not_none(funding_rate, "funding_rate")
+
+        if self._fsm.state == ComponentState.RUNNING:
+            try:
+                self.on_funding_rate(funding_rate)
+            except Exception as e:
+                self.log.exception(f"Error on handling {repr(funding_rate)}", e)
+                raise
+
     @cython.boundscheck(False)
     @cython.wraparound(False)
     cpdef void handle_trade_ticks(self, list ticks):
@@ -3629,7 +3777,7 @@ cdef class Actor(Component):
         if length > 0:
             self._log.info(f"Received <Bar[{length}]> data for {first.bar_type}")
         else:
-            self._log.error(f"Received <Bar[{length}]> data for unknown bar type")
+            self._log.warning(f"Received <Bar[{length}]> data for unknown bar type")
             return
 
         if length > 0 and first.ts_init > last.ts_init:
@@ -3803,10 +3951,6 @@ cdef class Actor(Component):
         else:
             self.handle_historical_data(response.data)
 
-        self._finish_response(response.correlation_id)
-
-    cpdef void _handle_instrument_response(self, DataResponse response):
-        self.handle_instrument(response.data)
         self._finish_response(response.correlation_id)
 
     cpdef void _handle_instruments_response(self, DataResponse response):

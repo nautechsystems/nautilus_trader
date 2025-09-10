@@ -22,6 +22,7 @@ from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
+from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.identifiers import AccountId
@@ -767,3 +768,123 @@ class TestMarginAccount:
         # With 5x leverage, should be +6000.00 USDT for 0.5 BTC at $60,000
         expected = Money(6000.00, USDT)
         assert impact == expected
+
+    def test_margin_account_calculate_initial_margin(self):
+        """
+        Test that MarginAccount correctly calculates initial margin requirements.
+        """
+        # Arrange
+        account = TestExecStubs.margin_account()
+        instrument = AUDUSD_SIM
+
+        quantity = Quantity.from_int(100_000)
+        price = Price.from_str("1.00000")
+
+        # Act
+        initial_margin = account.calculate_margin_init(
+            instrument=instrument,
+            quantity=quantity,
+            price=price,
+            use_quote_for_inverse=False,
+        )
+
+        # Assert
+        # With default leverage, margin should be a fraction of notional
+        notional = quantity.as_decimal() * price.as_decimal()
+        assert initial_margin > Money(0, USD)
+        assert initial_margin < Money(notional, USD)
+
+    def test_margin_account_calculate_maintenance_margin(self):
+        """
+        Test that MarginAccount correctly calculates maintenance margin requirements.
+        """
+        # Arrange
+        account = TestExecStubs.margin_account()
+        instrument = AUDUSD_SIM
+
+        quantity = Quantity.from_int(100_000)
+        price = Price.from_str("1.00000")
+
+        # Act
+        maint_margin = account.calculate_margin_maint(
+            instrument=instrument,
+            side=OrderSide.BUY,
+            quantity=quantity,
+            price=price,
+            use_quote_for_inverse=False,
+        )
+
+        # Assert
+        # Maintenance margin should be less than initial margin
+        initial_margin = account.calculate_margin_init(
+            instrument=instrument,
+            quantity=quantity,
+            price=price,
+            use_quote_for_inverse=False,
+        )
+        assert maint_margin > Money(0, USD)
+        assert maint_margin <= initial_margin
+
+    def test_margin_account_calculate_balance_locked_with_leverage(self):
+        """
+        Test that MarginAccount leverage affects margin calculations.
+        """
+        # Arrange
+        account = TestExecStubs.margin_account()
+        account.set_default_leverage(Decimal(10))  # 10x leverage
+        instrument = AUDUSD_SIM
+
+        # Act - Calculate initial margin with leverage
+        margin = account.calculate_margin_init(
+            instrument=instrument,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("1.00000"),
+            use_quote_for_inverse=False,
+        )
+
+        # Assert
+        # With 10x leverage, margin should be ~10,000 USD for 100,000 notional
+        assert margin > Money(0, USD)
+        assert margin < Money(20_000.00, USD)  # Should be around 10,000
+
+    def test_margin_account_calculate_commission_on_trade(self):
+        """
+        Test that MarginAccount correctly calculates commission on trades.
+        """
+        # Arrange
+        account = TestExecStubs.margin_account()
+        instrument = AUDUSD_SIM
+
+        quantity = Quantity.from_int(100_000)
+        price = Price.from_str("1.00000")
+
+        # Act
+        commission = account.calculate_commission(
+            instrument=instrument,
+            last_qty=quantity,
+            last_px=price,
+            liquidity_side=LiquiditySide.TAKER,
+            use_quote_for_inverse=False,
+        )
+
+        # Assert
+        assert commission is not None
+        assert commission.currency == USD
+        assert commission > Money(0, USD)
+        # Commission should be small percentage of notional
+        assert commission < Money(1000.00, USD)  # Less than 1% of 100k
+
+    def test_margin_account_update_commissions(self):
+        """
+        Test that MarginAccount.update_commissions tracks commissions.
+        """
+        # Arrange
+        account = TestExecStubs.margin_account()
+
+        # Act - Update commissions
+        account.update_commissions(Money(10.00, USD))
+        account.update_commissions(Money(5.00, USD))
+
+        # Assert
+        commission = account.commission(USD)
+        assert commission == Money(15.00, USD)  # Should accumulate

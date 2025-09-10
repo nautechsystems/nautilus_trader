@@ -318,9 +318,9 @@ impl OrderBook {
     }
 
     #[pyo3(name = "pprint")]
-    #[pyo3(signature = (num_levels=3))]
-    fn py_pprint(&self, num_levels: usize) -> String {
-        self.pprint(num_levels)
+    #[pyo3(signature = (num_levels=3, group_size=None))]
+    fn py_pprint(&self, num_levels: usize, group_size: Option<Decimal>) -> String {
+        self.pprint(num_levels, group_size)
     }
 }
 

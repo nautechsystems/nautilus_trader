@@ -6,7 +6,7 @@ trades, open interest, funding rates, options chains and liquidations data for l
 NautilusTrader provides an integration with the Tardis API and data formats, enabling seamless access.
 The capabilities of this adapter include:
 
-- `TardisCSVDataLoader`: Reads Tardis-format CSV files and converts them into Nautilus data.
+- `TardisCSVDataLoader`: Reads Tardis-format CSV files and converts them into Nautilus data, with support for both bulk loading and memory-efficient streaming.
 - `TardisMachineClient`: Supports live streaming and historical replay of data from the Tardis Machine WebSocket server - converting messages into Nautilus data.
 - `TardisHttpClient`: Requests instrument definition metadata from the Tardis HTTP API, parsing it into Nautilus instrument definitions.
 - `TardisDataClient`: Provides a live data client for subscribing to data streams from a Tardis Machine WebSocket server.
@@ -81,13 +81,13 @@ The Tardis integration ensures seamless compatibility with NautilusTrader’s cr
 by consistently normalizing symbols. Typically, NautilusTrader uses the native exchange naming conventions
 provided by Tardis. However, for certain exchanges, raw symbols are adjusted to adhere to the Nautilus symbology normalization, as outlined below:
 
-### Common Rules
+### Common rules
 
 - All symbols are converted to uppercase.
 - Market type suffixes are appended with a hyphen for some exchanges (see [exchange-specific normalizations](#exchange-specific-normalizations)).
 - Original exchange symbols are preserved in the Nautilus instrument definitions `raw_symbol` field.
 
-### Exchange-Specific Normalizations
+### Exchange-specific normalizations
 
 - **Binance**: Nautilus appends the suffix `-PERP` to all perpetual symbols.
 - **Bybit**: Nautilus uses specific product category suffixes, including `-SPOT`, `-LINEAR`, `-INVERSE`, `-OPTION`.
@@ -135,7 +135,7 @@ The table below outlines the mappings between Nautilus venues and corresponding 
 | `HUOBI`                 | `huobi`, `huobi-dm`, `huobi-dm-linear-swap`, `huobi-dm-options` |
 | `HUOBI_DELIVERY`        | `huobi-dm-swap`                                       |
 | `HYPERLIQUID`           | `hyperliquid`                                         |
-| `KRAKEN`                | `kraken`, `kraken-futures`                            |
+| `KRAKEN`                | `kraken`                                              |
 | `KUCOIN`                | `kucoin`, `kucoin-futures`                            |
 | `MANGO`                 | `mango`                                               |
 | `OKCOIN`                | `okcoin`                                              |
@@ -143,7 +143,7 @@ The table below outlines the mappings between Nautilus venues and corresponding 
 | `PHEMEX`                | `phemex`                                              |
 | `POLONIEX`              | `poloniex`                                            |
 | `SERUM`                 | `serum` (*historical research*)                       |
-| `STARATLAS`             | `staratlas`                                           |
+| `STAR_ATLAS`            | `star-atlas`                                          |
 | `UPBIT`                 | `upbit`                                               |
 | `WOO_X`                 | `woo-x`                                               |
 
@@ -155,7 +155,7 @@ The following environment variables are used by Tardis and NautilusTrader.
 - `TARDIS_API_KEY`: API key for NautilusTrader Tardis clients.
 - `TARDIS_MACHINE_WS_URL` (optional): WebSocket URL for the `TardisMachineClient` in NautilusTrader.
 - `TARDIS_BASE_URL` (optional): Base URL for the `TardisHttpClient` in NautilusTrader.
-- `NAUTILUS_CATALOG_PATH` (optional): Root directory for writing replay data in the Nautilus catalog.
+- `NAUTILUS_PATH` (optional): Parent directory containing the `catalog/` subdirectory for writing replay data in the Nautilus catalog format.
 
 ## Running Tardis Machine historical replays
 
@@ -179,10 +179,10 @@ You can request data for the first day of each month without an API key. For all
 :::
 
 This process is optimized for direct output to a Nautilus Parquet data catalog.
-Ensure that the `NAUTILUS_CATALOG_PATH` environment variable is set to the root `/catalog/` directory.
-Parquet files will then be organized under `/catalog/data/` in the expected subdirectories corresponding to data type and instrument.
+Ensure that the `NAUTILUS_PATH` environment variable is set to the parent directory containing the `catalog/` subdirectory.
+Parquet files will then be organized under `<NAUTILUS_PATH>/catalog/data/` in the expected subdirectories corresponding to data type and instrument.
 
-If no `output_path` is specified in the configuration file and the `NAUTILUS_CATALOG_PATH` environment variable is unset, the system will default to the current working directory.
+If no `output_path` is specified in the configuration file and the `NAUTILUS_PATH` environment variable is unset, the system will default to the current working directory.
 
 ### Procedure
 
@@ -205,7 +205,7 @@ Next, ensure you have a configuration JSON file available.
 |:--------------------|:------------------|:------------------------------------------------------------------------------------|:------------------------------------------------------------------------------------------------------|
 | `tardis_ws_url`     | string (optional) | The Tardis Machine WebSocket URL.                                                   | If `null` then will use the `TARDIS_MACHINE_WS_URL` env var.                                          |
 | `normalize_symbols` | bool (optional)   | If Nautilus [symbol normalization](#symbology-and-normalization) should be applied. | If `null` then will default to `true`.                                                                |
-| `output_path`       | string (optional) | The output directory path to write Nautilus Parquet data to.                        | If `null` then will use the `NAUTILUS_CATALOG_PATH` env var, otherwise the current working directory. |
+| `output_path`       | string (optional) | The output directory path to write Nautilus Parquet data to.                        | If `null` then will use the `NAUTILUS_PATH` env var, otherwise the current working directory. |
 | `options`           | JSON[]            | An array of [ReplayNormalizedRequestOptions](https://docs.tardis.dev/api/tardis-machine#replay-normalized-options) objects.                                                                 |
 
 An example configuration file, `example_config.json`, is available [here](https://github.com/nautechsystems/nautilus_trader/blob/develop/crates/adapters/tardis/bin/example_config.json):
@@ -358,6 +358,126 @@ async fn main() {
         limit,
     )
     .unwrap();
+}
+```
+
+## Streaming Tardis CSV Data
+
+For memory-efficient processing of large CSV files, the Tardis integration provides streaming capabilities that load and process data in configurable chunks rather than loading entire files into memory at once. This is particularly useful for processing multi-gigabyte CSV files without exhausting system memory.
+
+The streaming functionality is available for all supported Tardis data types:
+
+- Order book deltas (`stream_deltas`).
+- Quote ticks (`stream_quotes`).
+- Trade ticks (`stream_trades`).
+- Order book depth snapshots (`stream_depth10`).
+
+### Streaming CSV Data in Python
+
+The `TardisCSVDataLoader` provides streaming methods that yield chunks of data as iterators. Each method accepts a `chunk_size` parameter that controls how many records are read from the CSV file per chunk:
+
+```python
+from nautilus_trader.adapters.tardis import TardisCSVDataLoader
+from nautilus_trader.model import InstrumentId
+
+instrument_id = InstrumentId.from_str("BTC-PERPETUAL.DERIBIT")
+loader = TardisCSVDataLoader(
+    price_precision=1,
+    size_precision=0,
+    instrument_id=instrument_id,
+)
+
+filepath = Path("large_trades_file.csv")
+chunk_size = 100_000  # Process 100,000 records per chunk (default)
+
+# Stream trade ticks in chunks
+for chunk in loader.stream_trades(filepath, chunk_size):
+    print(f"Processing chunk with {len(chunk)} trades")
+    # Process each chunk - only this chunk is in memory
+    for trade in chunk:
+        # Your processing logic here
+        pass
+```
+
+### Streaming Order Book Data
+
+For order book data, streaming is available for both deltas and depth snapshots:
+
+```python
+# Stream order book deltas
+for chunk in loader.stream_deltas(filepath):
+    print(f"Processing {len(chunk)} deltas")
+    # Process delta chunk
+
+# Stream depth10 snapshots (specify levels: 5 or 25)
+for chunk in loader.stream_depth10(filepath, levels=5):
+    print(f"Processing {len(chunk)} depth snapshots")
+    # Process depth chunk
+```
+
+### Streaming Quote Data
+
+Quote data can be streamed similarly:
+
+```python
+# Stream quote ticks
+for chunk in loader.stream_quotes(filepath):
+    print(f"Processing {len(chunk)} quotes")
+    # Process quote chunk
+```
+
+### Memory Efficiency Benefits
+
+The streaming approach provides significant memory efficiency advantages:
+
+- **Controlled Memory Usage**: Only one chunk is loaded in memory at a time.
+- **Scalable Processing**: Can process files larger than available RAM.
+- **Configurable Chunk Sizes**: Tune `chunk_size` based on your system's memory and performance requirements (default 100,000).
+
+:::warning
+When using streaming with precision inference (not providing explicit precisions), the inferred precision may differ from bulk loading the entire file.
+This is because precision inference works within chunk boundaries, and different chunks may contain values with different precision requirements.
+For deterministic precision behavior, provide explicit `price_precision` and `size_precision` parameters when calling streaming methods.
+:::
+
+### Streaming CSV Data in Rust
+
+The underlying streaming functionality is implemented in Rust and can be used directly:
+
+```rust
+use std::path::Path;
+use nautilus_adapters::tardis::csv::{stream_trades, stream_deltas};
+use nautilus_model::identifiers::InstrumentId;
+
+#[tokio::main]
+async fn main() {
+    let filepath = Path::new("large_trades_file.csv");
+    let chunk_size = 100_000;
+    let price_precision = Some(1);
+    let size_precision = Some(0);
+    let instrument_id = Some(InstrumentId::from("BTC-PERPETUAL.DERIBIT"));
+
+    // Stream trades in chunks
+    let stream = stream_trades(
+        filepath,
+        chunk_size,
+        price_precision,
+        size_precision,
+        instrument_id,
+    ).unwrap();
+
+    for chunk_result in stream {
+        match chunk_result {
+            Ok(chunk) => {
+                println!("Processing chunk with {} trades", chunk.len());
+                // Process chunk
+            }
+            Err(e) => {
+                eprintln!("Error processing chunk: {}", e);
+                break;
+            }
+        }
+    }
 }
 ```
 

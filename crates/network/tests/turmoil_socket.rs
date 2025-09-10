@@ -21,6 +21,7 @@
 use std::time::Duration;
 
 use nautilus_network::{backoff::ExponentialBackoff, net::TcpConnector, socket::SocketConfig};
+use rstest::rstest;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_tungstenite::tungstenite::stream::Mode;
 use turmoil::{Builder, net};
@@ -113,7 +114,7 @@ async fn echo_server() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-#[test]
+#[rstest]
 fn test_turmoil_socket_with_dependency_injection() {
     let mut sim = Builder::new().build();
 
@@ -124,8 +125,7 @@ fn test_turmoil_socket_with_dependency_injection() {
             url: "server:8080".to_string(),
             mode: Mode::Plain,
             suffix: b"\\r\\n".to_vec(),
-            #[cfg(feature = "python")]
-            py_handler: None,
+            message_handler: None,
             heartbeat: None,
             reconnect_timeout_ms: Some(2_000),
             reconnect_delay_initial_ms: Some(50),
@@ -154,7 +154,7 @@ fn test_turmoil_socket_with_dependency_injection() {
     sim.run().unwrap();
 }
 
-#[test]
+#[rstest]
 fn test_turmoil_socket_network_partition() {
     let mut sim = Builder::new().build();
 
@@ -165,8 +165,8 @@ fn test_turmoil_socket_network_partition() {
             url: "server:8080".to_string(),
             mode: Mode::Plain,
             suffix: b"\\r\\n".to_vec(),
-            #[cfg(feature = "python")]
-            py_handler: None,
+            message_handler: None,
+
             heartbeat: None,
             reconnect_timeout_ms: Some(2_000),
             reconnect_delay_initial_ms: Some(100),
@@ -220,7 +220,7 @@ fn test_turmoil_socket_network_partition() {
     sim.run().unwrap();
 }
 
-#[test]
+#[rstest]
 fn test_exponential_backoff_under_network_instability() {
     let mut sim = Builder::new().build();
 
@@ -231,8 +231,8 @@ fn test_exponential_backoff_under_network_instability() {
             url: "server:8080".to_string(),
             mode: Mode::Plain,
             suffix: b"\\r\\n".to_vec(),
-            #[cfg(feature = "python")]
-            py_handler: None,
+            message_handler: None,
+
             heartbeat: None,
             reconnect_timeout_ms: Some(5_000),
             reconnect_delay_initial_ms: Some(50),
@@ -284,7 +284,7 @@ fn test_exponential_backoff_under_network_instability() {
     sim.run().unwrap();
 }
 
-#[test]
+#[rstest]
 fn test_multiple_clients_concurrent() {
     let mut sim = Builder::new().build();
 
@@ -297,8 +297,8 @@ fn test_multiple_clients_concurrent() {
                 url: "server:8080".to_string(),
                 mode: Mode::Plain,
                 suffix: b"\\r\\n".to_vec(),
-                #[cfg(feature = "python")]
-                py_handler: None,
+                message_handler: None,
+
                 heartbeat: None,
                 reconnect_timeout_ms: Some(2_000),
                 reconnect_delay_initial_ms: Some(50),

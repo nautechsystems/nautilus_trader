@@ -71,6 +71,7 @@ from nautilus_trader.execution.messages import GenerateFillReports
 from nautilus_trader.execution.messages import GenerateOrderStatusReport
 from nautilus_trader.execution.messages import GenerateOrderStatusReports
 from nautilus_trader.execution.messages import GeneratePositionStatusReports
+from nautilus_trader.execution.messages import QueryAccount
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
@@ -310,6 +311,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             params = None
 
         # Check active orders with venue
+        # Note: py_clob_client.get_orders() handles pagination internally
         retry_manager = await self._retry_manager_pool.acquire()
         try:
             response: list[JSON] | None = await retry_manager.run(
@@ -318,11 +320,10 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 asyncio.to_thread,
                 self._http_client.get_orders,
                 params=params,
-                # TODO: Handle cursor for lookback
             )
             if response:
                 # Uncomment for development
-                # self._log.info(str(response), LogColor.MAGENTA)
+                # self._log.info(f"Processing {len(response)} orders", LogColor.MAGENTA)
                 for json_obj in response:
                     raw = msgspec.json.encode(json_obj)
                     polymarket_order = self._decoder_order_report.decode(raw)
@@ -479,7 +480,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
     ) -> OrderStatusReport | None:
         await self._maintain_active_market(command.instrument_id)
 
-        if command.venue_order_id is None:
+        venue_order_id = command.venue_order_id
+        if venue_order_id is None:
             venue_order_id = self._cache.venue_order_id(command.client_order_id)
             if venue_order_id is None:
                 self._log.error(
@@ -497,10 +499,10 @@ class PolymarketExecutionClient(LiveExecutionClient):
         try:
             response: JSON | None = await retry_manager.run(
                 "generate_order_status_report",
-                [command.client_order_id, command.venue_order_id],
+                [command.client_order_id, venue_order_id],
                 asyncio.to_thread,
                 self._http_client.get_order,
-                order_id=command.venue_order_id.value,
+                order_id=venue_order_id.value,
             )
             if not response:
                 return None
@@ -546,6 +548,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
         if command.instrument_id:
             details.append(command.instrument_id)
 
+        # Note: py_clob_client.get_trades() handles pagination internally
         retry_manager = await self._retry_manager_pool.acquire()
         try:
             response: JSON | None = await retry_manager.run(
@@ -557,7 +560,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             )
             if response:
                 # Uncomment for development
-                # self._log.info(str(response), LogColor.MAGENTA)
+                # self._log.info(f"Processing {len(response)} trades", LogColor.MAGENTA)
                 trade_ids: set[TradeId] = set()
                 for json_obj in response:
                     raw = msgspec.json.encode(json_obj)
@@ -643,6 +646,10 @@ class PolymarketExecutionClient(LiveExecutionClient):
         return reports
 
     # -- COMMAND HANDLERS -------------------------------------------------------------------------
+
+    async def _query_account(self, _command: QueryAccount) -> None:
+        # Specific account ID (sub account) not yet supported
+        await self._update_account_state()
 
     async def _cancel_order(self, command: CancelOrder) -> None:
         # https://docs.polymarket.com/#cancel-an-order
@@ -1028,7 +1035,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             return
 
         if wait_for_ack:
-            self._loop.create_task(self._wait_for_ack_order(msg, venue_order_id))
+            self.create_task(self._wait_for_ack_order(msg, venue_order_id))
             return
 
         client_order_id = self._cache.client_order_id(venue_order_id)
@@ -1110,7 +1117,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             return
 
         if wait_for_ack:
-            self._loop.create_task(self._wait_for_ack_trade(msg, venue_order_id))
+            self.create_task(self._wait_for_ack_trade(msg, venue_order_id))
             return
 
         client_order_id = self._cache.client_order_id(venue_order_id)
@@ -1170,4 +1177,4 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
         self._processed_trades.add(trade_id)
 
-        self._loop.create_task(self._update_account_state())
+        self.create_task(self._update_account_state())

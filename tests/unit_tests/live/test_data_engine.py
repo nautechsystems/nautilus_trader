@@ -17,6 +17,7 @@ import asyncio
 from unittest.mock import Mock
 from unittest.mock import patch
 
+import pandas as pd
 import pytest
 
 from nautilus_trader.common.component import LiveClock
@@ -189,6 +190,8 @@ class TestLiveDataEngine:
             correlation_id=UUID4(),
             response_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
+            start=pd.Timestamp("2023-01-01"),
+            end=pd.Timestamp("2023-01-02"),
         )
 
         # Act
@@ -240,7 +243,7 @@ class TestLiveDataEngine:
     async def test_kill_when_running_and_no_messages_on_queues(self):
         # Arrange, Act
         self.engine.start()
-        await asyncio.sleep(0)
+        await eventually(lambda: self.engine.is_running)
         self.engine.kill()
 
         # Assert
@@ -320,6 +323,8 @@ class TestLiveDataEngine:
             correlation_id=UUID4(),
             response_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
+            start=pd.Timestamp("2023-01-01"),
+            end=pd.Timestamp("2023-01-02"),
         )
 
         # Act
@@ -651,6 +656,8 @@ class TestLiveDataEngine:
                 correlation_id=UUID4(),
                 response_id=UUID4(),
                 ts_init=self.clock.timestamp_ns(),
+                start=pd.Timestamp("2023-01-01"),
+                end=pd.Timestamp("2023-01-02"),
             )
             engine.response(response)
 

@@ -21,6 +21,7 @@ pub mod close;
 pub mod delta;
 pub mod deltas;
 pub mod depth;
+pub mod funding;
 pub mod greeks;
 pub mod order;
 pub mod prices;
@@ -37,7 +38,6 @@ use std::{
     str::FromStr,
 };
 
-use close::InstrumentClose;
 use indexmap::IndexMap;
 use nautilus_core::UnixNanos;
 use serde::{Deserialize, Serialize};
@@ -46,9 +46,11 @@ use serde_json::to_string;
 // Re-exports
 #[rustfmt::skip]  // Keep these grouped
 pub use bar::{Bar, BarSpecification, BarType};
+pub use close::InstrumentClose;
 pub use delta::OrderBookDelta;
 pub use deltas::{OrderBookDeltas, OrderBookDeltas_API};
 pub use depth::{DEPTH10_LEN, OrderBookDepth10};
+pub use funding::FundingRateUpdate;
 pub use greeks::{
     BlackScholesGreeksResult, GreeksData, PortfolioGreeks, YieldCurveData, black_scholes_greeks,
     imply_vol_and_greeks,

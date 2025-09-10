@@ -140,10 +140,11 @@ where
 #[cfg(test)]
 mod tests {
     use alloy_primitives::U256;
+    use rstest::rstest;
 
     use super::*;
 
-    #[test]
+    #[rstest]
     fn test_from_str_hex_to_u64_valid() {
         assert_eq!(from_str_hex_to_u64("0x0").unwrap(), 0);
         assert_eq!(from_str_hex_to_u64("0x1").unwrap(), 1);
@@ -154,7 +155,7 @@ mod tests {
         assert_eq!(from_str_hex_to_u64("1234abcd").unwrap(), 0x1234abcd);
     }
 
-    #[test]
+    #[rstest]
     fn test_from_str_hex_to_u64_too_long() {
         // 17 characters should fail (exceeds u64 max length)
         let too_long = "0x1ffffffffffffffff";
@@ -165,13 +166,13 @@ mod tests {
         assert!(from_str_hex_to_u64(very_long).is_err());
     }
 
-    #[test]
+    #[rstest]
     fn test_from_str_hex_to_u64_invalid_chars() {
         assert!(from_str_hex_to_u64("0xzz").is_err());
         assert!(from_str_hex_to_u64("0x123g").is_err());
     }
 
-    #[test]
+    #[rstest]
     fn test_deserialize_hex_timestamp() {
         // Test that hex timestamp conversion works
         let timestamp_hex = "0x64b5f3bb"; // Some timestamp
@@ -184,14 +185,14 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn test_deserialize_opt_hex_u256_present() {
         let json = "\"0x1a\"";
         let value: Option<U256> = serde_json::from_str(json).unwrap();
         assert_eq!(value, Some(U256::from(26u8)));
     }
 
-    #[test]
+    #[rstest]
     fn test_deserialize_opt_hex_u256_null() {
         let json = "null";
         let value: Option<U256> = serde_json::from_str(json).unwrap();

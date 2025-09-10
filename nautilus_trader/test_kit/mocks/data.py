@@ -81,29 +81,54 @@ class MockMarketDataClient(MarketDataClient):
         self.bars: list[Bar] = []
 
     def request_instrument(self, request: RequestInstrument) -> None:
-        self._handle_instrument(self.instrument, request.id, request.params)
+        self._handle_instrument(
+            self.instrument,
+            request.id,
+            request.start,
+            request.end,
+            request.params,
+        )
 
     def request_instruments(self, request: RequestInstruments) -> None:
-        self._handle_instruments(request.venue, self.instruments, request.id, request.params)
+        self._handle_instruments(
+            request.venue,
+            self.instruments,
+            request.id,
+            request.start,
+            request.end,
+            request.params,
+        )
 
     def request_quote_ticks(self, request: RequestQuoteTicks) -> None:
-        self._handle_quote_ticks(
+        self._handle_quote_ticks_py(
             request.instrument_id,
             self.quote_ticks,
             request.id,
+            request.start,
+            request.end,
             request.params,
         )
 
     def request_trade_ticks(self, request: RequestTradeTicks) -> None:
-        self._handle_trade_ticks(
+        self._handle_trade_ticks_py(
             request.instrument_id,
             self.trade_ticks,
             request.id,
+            request.start,
+            request.end,
             request.params,
         )
 
     def request_bars(self, request: RequestBars) -> None:
-        self._handle_bars(request.bar_type, self.bars, None, request.id, request.params)
+        self._handle_bars_py(
+            request.bar_type,
+            self.bars,
+            None,
+            request.id,
+            request.start,
+            request.end,
+            request.params,
+        )
 
 
 _AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
@@ -118,23 +143,18 @@ class NewsEventData(NewsEvent):
 
 def setup_catalog(
     protocol: Literal["memory", "file"],
-    path: Path | str | None = None,
+    path: Path | str,
 ) -> ParquetDataCatalog:
     if protocol not in ("memory", "file"):
         raise ValueError("`protocol` should only be one of `memory` or `file` for testing")
 
     if isinstance(path, str):
         path = Path(path)
+    path = path.resolve()
 
     clear_singleton_instances(ParquetDataCatalog)
 
-    path = Path.cwd() / "catalog" if path is None else path.resolve()
-
     catalog = ParquetDataCatalog(path=path.as_posix(), fs_protocol=protocol)
-
-    if catalog.fs.exists(catalog.path):
-        catalog.fs.rm(catalog.path, recursive=True)
-
     catalog.fs.mkdir(catalog.path, create_parents=True)
 
     assert catalog.fs.isdir(catalog.path)

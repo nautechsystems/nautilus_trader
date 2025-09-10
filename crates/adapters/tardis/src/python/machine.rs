@@ -15,10 +15,12 @@
 
 use std::{collections::HashMap, path::Path, sync::Arc};
 
+use ahash::AHashMap;
 use futures_util::{Stream, StreamExt, pin_mut};
 use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyruntime_err};
 use nautilus_model::{
-    data::{Bar, Data},
+    data::{Bar, Data, funding::FundingRateUpdate},
+    identifiers::InstrumentId,
     python::data::data_to_pycapsule,
 };
 use pyo3::{prelude::*, types::PyList};
@@ -28,11 +30,11 @@ use crate::{
         Error,
         client::{TardisMachineClient, determine_instrument_info},
         message::WsMessage,
-        parse::parse_tardis_ws_message,
+        parse::{parse_tardis_ws_message, parse_tardis_ws_message_funding_rate},
         replay_normalized, stream_normalized,
         types::{
-            InstrumentMiniInfo, ReplayNormalizedRequestOptions, StreamNormalizedRequestOptions,
-            TardisInstrumentKey,
+            ReplayNormalizedRequestOptions, StreamNormalizedRequestOptions, TardisInstrumentKey,
+            TardisInstrumentMiniInfo,
         },
     },
     replay::run_tardis_machine_replay_from_config,
@@ -90,7 +92,7 @@ impl TardisMachineClient {
     #[pyo3(name = "replay")]
     fn py_replay<'py>(
         &self,
-        instruments: Vec<InstrumentMiniInfo>,
+        instruments: Vec<TardisInstrumentMiniInfo>,
         options: Vec<ReplayNormalizedRequestOptions>,
         callback: PyObject,
         py: Python<'py>,
@@ -98,7 +100,7 @@ impl TardisMachineClient {
         let map = if instruments.is_empty() {
             self.instruments.clone()
         } else {
-            let mut instrument_map: HashMap<TardisInstrumentKey, Arc<InstrumentMiniInfo>> =
+            let mut instrument_map: HashMap<TardisInstrumentKey, Arc<TardisInstrumentMiniInfo>> =
                 HashMap::new();
             for inst in instruments {
                 let key = inst.as_tardis_instrument_key();
@@ -125,7 +127,7 @@ impl TardisMachineClient {
     #[pyo3(name = "replay_bars")]
     fn py_replay_bars<'py>(
         &self,
-        instruments: Vec<InstrumentMiniInfo>,
+        instruments: Vec<TardisInstrumentMiniInfo>,
         options: Vec<ReplayNormalizedRequestOptions>,
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyAny>> {
@@ -180,12 +182,12 @@ impl TardisMachineClient {
     #[pyo3(name = "stream")]
     fn py_stream<'py>(
         &self,
-        instruments: Vec<InstrumentMiniInfo>,
+        instruments: Vec<TardisInstrumentMiniInfo>,
         options: Vec<StreamNormalizedRequestOptions>,
         callback: PyObject,
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let mut instrument_map: HashMap<TardisInstrumentKey, Arc<InstrumentMiniInfo>> =
+        let mut instrument_map: HashMap<TardisInstrumentKey, Arc<TardisInstrumentMiniInfo>> =
             HashMap::new();
         for inst in instruments {
             let key = inst.as_tardis_instrument_key();
@@ -198,7 +200,7 @@ impl TardisMachineClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let stream = stream_normalized(&base_url, options, replay_signal)
                 .await
-                .expect("Failed to connect to WebSocket");
+                .map_err(to_pyruntime_err)?;
 
             // We use Box::pin to heap-allocate the stream and ensure it implements
             // Unpin for safe async handling across lifetimes.
@@ -236,12 +238,15 @@ pub fn py_run_tardis_machine_replay(
 async fn handle_python_stream<S>(
     stream: S,
     callback: PyObject,
-    instrument: Option<Arc<InstrumentMiniInfo>>,
-    instrument_map: Option<HashMap<TardisInstrumentKey, Arc<InstrumentMiniInfo>>>,
+    instrument: Option<Arc<TardisInstrumentMiniInfo>>,
+    instrument_map: Option<HashMap<TardisInstrumentKey, Arc<TardisInstrumentMiniInfo>>>,
 ) where
     S: Stream<Item = Result<WsMessage, Error>> + Unpin,
 {
     pin_mut!(stream);
+
+    // Cache for funding rates to avoid duplicate emissions
+    let mut funding_rate_cache: AHashMap<InstrumentId, FundingRateUpdate> = AHashMap::new();
 
     while let Some(result) = stream.next().await {
         match result {
@@ -252,13 +257,39 @@ async fn handle_python_stream<S>(
                         .and_then(|map| determine_instrument_info(&msg, map))
                 });
 
-                if let Some(info) = info
-                    && let Some(data) = parse_tardis_ws_message(msg, info)
-                {
-                    Python::with_gil(|py| {
-                        let py_obj = data_to_pycapsule(py, data);
-                        call_python(py, &callback, py_obj);
-                    });
+                if let Some(info) = info.clone() {
+                    if let Some(data) = parse_tardis_ws_message(msg.clone(), info.clone()) {
+                        Python::with_gil(|py| {
+                            let py_obj = data_to_pycapsule(py, data);
+                            call_python(py, &callback, py_obj);
+                        });
+                    } else if let Some(funding_rate) =
+                        parse_tardis_ws_message_funding_rate(msg, info)
+                    {
+                        // Check if we should emit this funding rate
+                        let should_emit = if let Some(cached_rate) =
+                            funding_rate_cache.get(&funding_rate.instrument_id)
+                        {
+                            // Only emit if changed (uses custom PartialEq comparing rate and next_funding_ns)
+                            if cached_rate == &funding_rate {
+                                false // Skip unchanged rate
+                            } else {
+                                funding_rate_cache.insert(funding_rate.instrument_id, funding_rate);
+                                true
+                            }
+                        } else {
+                            // First time seeing this instrument, cache and emit
+                            funding_rate_cache.insert(funding_rate.instrument_id, funding_rate);
+                            true
+                        };
+
+                        if should_emit {
+                            Python::with_gil(|py| {
+                                let py_obj = funding_rate.into_py_any_unwrap(py);
+                                call_python(py, &callback, py_obj);
+                            });
+                        }
+                    }
                 }
             }
             Err(e) => {

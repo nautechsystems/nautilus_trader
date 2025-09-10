@@ -1,13 +1,11 @@
-version: '3.5'
-
 services:
   postgres:
     container_name: nautilus-database
     image: postgres
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_USER: ${POSTGRES_USER:-nautilus}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pass}
-      POSTGRES_DATABASE: nautilus
+      POSTGRES_DB: ${POSTGRES_DB:-nautilus}
       PGDATA: /data/postgres
     volumes:
       - nautilus-database:/data/postgres
@@ -37,7 +35,7 @@ services:
     container_name: nautilus-redis
     image: redis
     ports:
-      - 6379:6379
+      - "6379:6379"
     restart: unless-stopped
     networks:
       - nautilus-network

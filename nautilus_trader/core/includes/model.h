@@ -87,7 +87,7 @@
  * which has approximately 15-17 significant decimal digits. Beyond 16 decimal places,
  * floating-point arithmetic becomes unreliable due to rounding errors.
  *
- * For higher precision values (such as 18-decimal WEI values in DeFi), specialized
+ * For higher precision values (such as 18-decimal wei values in DeFi), specialized
  * constructors that work with integer representations should be used instead.
  */
 #define MAX_FLOAT_PRECISION 16
@@ -1740,6 +1740,10 @@ typedef struct OrderRejected_t {
      * If the event was generated during reconciliation.
      */
     uint8_t reconciliation;
+    /**
+     * If the order was rejected because it was post-only and would execute immediately as a taker.
+     */
+    uint8_t due_post_only;
 } OrderRejected_t;
 
 /**
@@ -1899,6 +1903,30 @@ typedef struct Money_t {
  * The value is determined by the "high-precision" feature flag.
  */
 extern const uint8_t HIGH_PRECISION_MODE;
+
+/**
+ * The maximum raw money integer value.
+ *
+ * # Safety
+ *
+ * This value is computed at compile time from MONEY_MAX * FIXED_SCALAR.
+ * The multiplication is guaranteed not to overflow because MONEY_MAX and FIXED_SCALAR
+ * are chosen such that their product fits within MoneyRaw's range in both
+ * high-precision (i128) and standard-precision (i64) modes.
+ */
+extern const MoneyRaw MONEY_RAW_MAX;
+
+/**
+ * The minimum raw money integer value.
+ *
+ * # Safety
+ *
+ * This value is computed at compile time from MONEY_MIN * FIXED_SCALAR.
+ * The multiplication is guaranteed not to overflow because MONEY_MIN and FIXED_SCALAR
+ * are chosen such that their product fits within MoneyRaw's range in both
+ * high-precision (i128) and standard-precision (i64) modes.
+ */
+extern const MoneyRaw MONEY_RAW_MIN;
 
 /**
  * The maximum raw price integer value.
@@ -2162,6 +2190,18 @@ uint8_t mark_price_update_eq(const struct MarkPriceUpdate_t *lhs,
 uint64_t mark_price_update_hash(const struct MarkPriceUpdate_t *value);
 
 const char *mark_price_update_to_cstr(const struct MarkPriceUpdate_t *value);
+
+struct IndexPriceUpdate_t index_price_update_new(struct InstrumentId_t instrument_id,
+                                                 struct Price_t value,
+                                                 uint64_t ts_event,
+                                                 uint64_t ts_init);
+
+uint8_t index_price_update_eq(const struct IndexPriceUpdate_t *lhs,
+                              const struct IndexPriceUpdate_t *rhs);
+
+uint64_t index_price_update_hash(const struct IndexPriceUpdate_t *value);
+
+const char *index_price_update_to_cstr(const struct IndexPriceUpdate_t *value);
 
 struct QuoteTick_t quote_tick_new(struct InstrumentId_t instrument_id,
                                   struct Price_t bid_price,
@@ -2657,7 +2697,8 @@ struct OrderRejected_t order_rejected_new(struct TraderId_t trader_id,
                                           UUID4_t event_id,
                                           uint64_t ts_event,
                                           uint64_t ts_init,
-                                          uint8_t reconciliation);
+                                          uint8_t reconciliation,
+                                          uint8_t due_post_only);
 
 /**
  * FFI wrapper for interned string statistics.
@@ -3059,7 +3100,7 @@ CVec orderbook_simulate_fills(const struct OrderBook_API *book, struct BookOrder
 
 uint8_t orderbook_check_integrity(const struct OrderBook_API *book);
 
-void vec_fills_drop(CVec v);
+void vec_drop_fills(CVec v);
 
 /**
  * Returns a pretty printed `OrderBook` number of levels per side, as a C string pointer.
@@ -3082,9 +3123,9 @@ double level_size(const struct BookLevel_API *level);
 
 double level_exposure(const struct BookLevel_API *level);
 
-void vec_levels_drop(CVec v);
+void vec_drop_book_levels(CVec v);
 
-void vec_orders_drop(CVec v);
+void vec_drop_book_orders(CVec v);
 
 /**
  * Returns a [`Currency`] from pointers and primitives.

@@ -15,12 +15,12 @@
 
 import numpy as np
 
-from nautilus_trader.indicators.fuzzy_candlesticks import FuzzyCandle
-from nautilus_trader.indicators.fuzzy_candlesticks import FuzzyCandlesticks
-from nautilus_trader.indicators.fuzzy_enum import CandleBodySize
-from nautilus_trader.indicators.fuzzy_enum import CandleDirection
-from nautilus_trader.indicators.fuzzy_enum import CandleSize
-from nautilus_trader.indicators.fuzzy_enum import CandleWickSize
+from nautilus_trader.indicators import CandleBodySize
+from nautilus_trader.indicators import CandleDirection
+from nautilus_trader.indicators import CandleSize
+from nautilus_trader.indicators import CandleWickSize
+from nautilus_trader.indicators import FuzzyCandle
+from nautilus_trader.indicators import FuzzyCandlesticks
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 
@@ -36,27 +36,27 @@ class TestFuzzyCandlesticks:
     def test_fuzzy_candle_equality(self):
         # Arrange
         fuzzy_candle1 = FuzzyCandle(
-            CandleDirection.BULL,
-            CandleSize.MEDIUM,
-            CandleBodySize.MEDIUM,
-            CandleWickSize.SMALL,
-            CandleWickSize.SMALL,
+            CandleDirection.DIRECTION_BULL,
+            CandleSize.SIZE_MEDIUM,
+            CandleBodySize.BODY_MEDIUM,
+            CandleWickSize.WICK_SMALL,
+            CandleWickSize.WICK_SMALL,
         )
 
         fuzzy_candle2 = FuzzyCandle(
-            CandleDirection.BULL,
-            CandleSize.MEDIUM,
-            CandleBodySize.MEDIUM,
-            CandleWickSize.SMALL,
-            CandleWickSize.SMALL,
+            CandleDirection.DIRECTION_BULL,
+            CandleSize.SIZE_MEDIUM,
+            CandleBodySize.BODY_MEDIUM,
+            CandleWickSize.WICK_SMALL,
+            CandleWickSize.WICK_SMALL,
         )
 
         fuzzy_candle3 = FuzzyCandle(
-            CandleDirection.BEAR,
-            CandleSize.MEDIUM,
-            CandleBodySize.MEDIUM,
-            CandleWickSize.SMALL,
-            CandleWickSize.SMALL,
+            CandleDirection.DIRECTION_BEAR,
+            CandleSize.SIZE_MEDIUM,
+            CandleBodySize.BODY_MEDIUM,
+            CandleWickSize.WICK_SMALL,
+            CandleWickSize.WICK_SMALL,
         )
 
         # Act, Assert
@@ -67,11 +67,11 @@ class TestFuzzyCandlesticks:
     def test_fuzzy_str_and_repr(self):
         # Arrange
         fuzzy_candle = FuzzyCandle(
-            CandleDirection.BULL,
-            CandleSize.MEDIUM,
-            CandleBodySize.MEDIUM,
-            CandleWickSize.SMALL,
-            CandleWickSize.SMALL,
+            CandleDirection.DIRECTION_BULL,
+            CandleSize.SIZE_MEDIUM,
+            CandleBodySize.BODY_MEDIUM,
+            CandleWickSize.WICK_SMALL,
+            CandleWickSize.WICK_SMALL,
         )
 
         # Act, Assert
@@ -123,11 +123,11 @@ class TestFuzzyCandlesticks:
 
         # Assert
         assert np.array_equal([0, 0, 0, 0, 0], result_vector)
-        assert result_candle.direction == CandleDirection.NONE
-        assert result_candle.size == CandleSize.NONE
-        assert result_candle.body_size == CandleBodySize.NONE
-        assert result_candle.upper_wick_size == CandleWickSize.NONE
-        assert result_candle.lower_wick_size == CandleWickSize.NONE
+        assert result_candle.direction == CandleDirection.DIRECTION_NONE
+        assert result_candle.size == CandleSize.SIZE_NONE
+        assert result_candle.body_size == CandleBodySize.BODY_NONE
+        assert result_candle.upper_wick_size == CandleWickSize.WICK_NONE
+        assert result_candle.lower_wick_size == CandleWickSize.WICK_NONE
 
     def test_values_with_stub_bars_returns_expected_results(self):
         # Arrange
@@ -148,11 +148,11 @@ class TestFuzzyCandlesticks:
 
         # Assert
         assert np.array_equal([1, 1, 1, 1, 1], result_vector)
-        assert result_candle.direction == CandleDirection.BULL
-        assert result_candle.size == CandleSize.VERY_SMALL
-        assert result_candle.body_size == CandleBodySize.SMALL
-        assert result_candle.upper_wick_size == CandleWickSize.SMALL
-        assert result_candle.lower_wick_size == CandleWickSize.SMALL
+        assert result_candle.direction == CandleDirection.DIRECTION_BULL
+        assert result_candle.size == CandleSize.SIZE_VERY_SMALL
+        assert result_candle.body_size == CandleBodySize.BODY_SMALL
+        assert result_candle.upper_wick_size == CandleWickSize.WICK_SMALL
+        assert result_candle.lower_wick_size == CandleWickSize.WICK_SMALL
 
     def test_values_with_down_market_returns_expected_results(self):
         # Arrange
@@ -173,11 +173,11 @@ class TestFuzzyCandlesticks:
 
         # Assert
         assert [-1, 2, 4, 2, 2], result_vector
-        assert result_candle.direction == CandleDirection.BEAR
-        assert result_candle.size == CandleSize.SMALL
-        assert result_candle.body_size == CandleBodySize.TREND
-        assert result_candle.upper_wick_size == CandleWickSize.MEDIUM
-        assert result_candle.lower_wick_size == CandleWickSize.MEDIUM
+        assert result_candle.direction == CandleDirection.DIRECTION_BEAR
+        assert result_candle.size == CandleSize.SIZE_SMALL
+        assert result_candle.body_size == CandleBodySize.BODY_TREND
+        assert result_candle.upper_wick_size == CandleWickSize.WICK_MEDIUM
+        assert result_candle.lower_wick_size == CandleWickSize.WICK_MEDIUM
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange

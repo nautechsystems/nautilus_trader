@@ -15,7 +15,7 @@
 
 //! Data serialization and format conversion for [NautilusTrader](http://nautilustrader.io).
 //!
-//! The *serialization* crate provides comprehensive data serialization capabilities for converting
+//! The `nautilus-serialization` crate provides comprehensive data serialization capabilities for converting
 //! trading data between different formats including Apache Arrow, Parquet, and custom schemas.
 //! This enables efficient data storage, retrieval, and interoperability across different systems:
 //!
@@ -24,6 +24,16 @@
 //! - **Record batch processing**: Efficient batch operations for time-series data.
 //! - **Schema management**: Type-safe schema definitions with metadata preservation.
 //! - **Cross-format conversion**: Seamless data interchange between Arrow, Parquet, and native types.
+//!
+//! # Platform
+//!
+//! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
+//! algorithmic trading platform, providing quantitative traders with the ability to backtest
+//! portfolios of automated trading strategies on historical data with an event-driven engine,
+//! and also deploy those same strategies live, with no code changes.
+//!
+//! NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
+//! highest level, with the aim of supporting mission-critical, trading system backtesting and live deployment workloads.
 //!
 //! # Feature flags
 //!
@@ -34,6 +44,7 @@
 //!
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 //! - `high-precision`: Enables [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) to use 128-bit value types.
+//! - `extension-module`: Builds the crate as a Python extension module.
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]

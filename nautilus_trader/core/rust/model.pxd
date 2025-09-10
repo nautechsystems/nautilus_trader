@@ -52,7 +52,7 @@ cdef extern from "../includes/model.h":
     # which has approximately 15-17 significant decimal digits. Beyond 16 decimal places,
     # floating-point arithmetic becomes unreliable due to rounding errors.
     #
-    # For higher precision values (such as 18-decimal WEI values in DeFi), specialized
+    # For higher precision values (such as 18-decimal wei values in DeFi), specialized
     # constructors that work with integer representations should be used instead.
     const uint8_t MAX_FLOAT_PRECISION # = 16
 
@@ -950,6 +950,8 @@ cdef extern from "../includes/model.h":
         uint64_t ts_init;
         # If the event was generated during reconciliation.
         uint8_t reconciliation;
+        # If the order was rejected because it was post-only and would execute immediately as a taker.
+        uint8_t due_post_only;
 
     # Represents a system client ID.
     cdef struct ClientId_t:
@@ -1056,6 +1058,26 @@ cdef extern from "../includes/model.h":
     # making it safe to read from multiple threads without synchronization.
     # The value is determined by the "high-precision" feature flag.
     extern const uint8_t HIGH_PRECISION_MODE;
+
+    # The maximum raw money integer value.
+    #
+    # # Safety
+    #
+    # This value is computed at compile time from MONEY_MAX * FIXED_SCALAR.
+    # The multiplication is guaranteed not to overflow because MONEY_MAX and FIXED_SCALAR
+    # are chosen such that their product fits within MoneyRaw's range in both
+    # high-precision (i128) and standard-precision (i64) modes.
+    extern const MoneyRaw MONEY_RAW_MAX;
+
+    # The minimum raw money integer value.
+    #
+    # # Safety
+    #
+    # This value is computed at compile time from MONEY_MIN * FIXED_SCALAR.
+    # The multiplication is guaranteed not to overflow because MONEY_MIN and FIXED_SCALAR
+    # are chosen such that their product fits within MoneyRaw's range in both
+    # high-precision (i128) and standard-precision (i64) modes.
+    extern const MoneyRaw MONEY_RAW_MIN;
 
     # The maximum raw price integer value.
     #
@@ -1282,6 +1304,17 @@ cdef extern from "../includes/model.h":
     uint64_t mark_price_update_hash(const MarkPriceUpdate_t *value);
 
     const char *mark_price_update_to_cstr(const MarkPriceUpdate_t *value);
+
+    IndexPriceUpdate_t index_price_update_new(InstrumentId_t instrument_id,
+                                              Price_t value,
+                                              uint64_t ts_event,
+                                              uint64_t ts_init);
+
+    uint8_t index_price_update_eq(const IndexPriceUpdate_t *lhs, const IndexPriceUpdate_t *rhs);
+
+    uint64_t index_price_update_hash(const IndexPriceUpdate_t *value);
+
+    const char *index_price_update_to_cstr(const IndexPriceUpdate_t *value);
 
     QuoteTick_t quote_tick_new(InstrumentId_t instrument_id,
                                Price_t bid_price,
@@ -1715,7 +1748,8 @@ cdef extern from "../includes/model.h":
                                        UUID4_t event_id,
                                        uint64_t ts_event,
                                        uint64_t ts_init,
-                                       uint8_t reconciliation);
+                                       uint8_t reconciliation,
+                                       uint8_t due_post_only);
 
     # FFI wrapper for interned string statistics.
     void interned_string_stats();
@@ -2056,7 +2090,7 @@ cdef extern from "../includes/model.h":
 
     uint8_t orderbook_check_integrity(const OrderBook_API *book);
 
-    void vec_fills_drop(CVec v);
+    void vec_drop_fills(CVec v);
 
     # Returns a pretty printed `OrderBook` number of levels per side, as a C string pointer.
     const char *orderbook_pprint_to_cstr(const OrderBook_API *book, uintptr_t num_levels);
@@ -2077,9 +2111,9 @@ cdef extern from "../includes/model.h":
 
     double level_exposure(const BookLevel_API *level);
 
-    void vec_levels_drop(CVec v);
+    void vec_drop_book_levels(CVec v);
 
-    void vec_orders_drop(CVec v);
+    void vec_drop_book_orders(CVec v);
 
     # Returns a [`Currency`] from pointers and primitives.
     #

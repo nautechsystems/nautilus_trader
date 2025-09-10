@@ -248,6 +248,7 @@ impl sqlx::Encode<'_, sqlx::Postgres> for BarAggregationModel {
             BarAggregation::Day => "DAY",
             BarAggregation::Week => "WEEK",
             BarAggregation::Month => "MONTH",
+            BarAggregation::Year => "YEAR",
         };
         <&str as sqlx::Encode<sqlx::Postgres>>::encode(bar_aggregation_str, buf)
     }

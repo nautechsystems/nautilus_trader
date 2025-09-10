@@ -15,7 +15,6 @@
 
 import asyncio
 import concurrent.futures
-import os
 import platform
 import signal
 import socket
@@ -189,9 +188,6 @@ class NautilusKernel:
                 file_path.open("w").close()
 
         if not is_logging_initialized():
-            if "RUST_LOG" not in os.environ:
-                os.environ["RUST_LOG"] = "off"
-
             if not logging.bypass_logging:
                 if logging.use_pyo3:
                     set_logging_pyo3(True)
@@ -205,6 +201,7 @@ class NautilusKernel:
                         instance_id=nautilus_pyo3.UUID4.from_str(self._instance_id.value),
                         level_stdout=nautilus_pyo3.LogLevel(logging.log_level),
                         level_file=nautilus_pyo3.LogLevel(logging.log_level_file or "OFF"),
+                        component_levels=logging.log_component_levels,
                         directory=logging.log_directory,
                         file_name=logging.log_file_name,
                         file_format=logging.log_file_format,
@@ -216,6 +213,7 @@ class NautilusKernel:
                         is_colored=logging.log_colors,
                         is_bypassed=logging.bypass_logging,
                         print_config=logging.print_config,
+                        log_components_only=logging.log_components_only,
                     )
                     nautilus_pyo3.log_header(
                         trader_id=nautilus_pyo3.TraderId(self._trader_id.value),
@@ -242,6 +240,7 @@ class NautilusKernel:
                         colors=logging.log_colors,
                         bypass=logging.bypass_logging,
                         print_config=logging.print_config,
+                        log_components_only=logging.log_components_only,
                         max_file_size=logging.log_file_max_size or 0,
                         max_backup_count=logging.log_file_max_backup_count,
                     )
@@ -1013,8 +1012,11 @@ class NautilusKernel:
         if not await self._await_engines_connected():
             return
 
-        if not await self._await_execution_reconciliation():
-            return
+        if self.exec_engine.reconciliation:
+            if not await self._await_execution_reconciliation():
+                return
+        else:
+            self._log.warning("Reconciliation deactivated")
 
         self._emulator.start()
         self._initialize_portfolio()
@@ -1318,7 +1320,7 @@ class NautilusKernel:
             color=LogColor.BLUE,
         )
 
-        if not await self._exec_engine.reconcile_state(
+        if not await self._exec_engine.reconcile_execution_state(
             timeout_secs=self._config.timeout_reconciliation,
         ):
             self._log.error("Execution state could not be reconciled")

@@ -14,14 +14,12 @@
 | `nightly` | [![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fnightly%2Fversion.json)](https://packages.nautechsystems.io/simple/nautilus-trader/index.html) | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=nightly)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml) |
 | `develop` | [![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fdevelop%2Fversion.json)](https://packages.nautechsystems.io/simple/nautilus-trader/index.html) | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=develop)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml) |
 
-| Platform           | Rust   | Python     |
-| :----------------- | :----- | :--------- |
-| `Linux (x86_64)`   | 1.88.0 | 3.11-3.13  |
-| `Linux (ARM64)`    | 1.88.0 | 3.11-3.13  |
-| `macOS (ARM64)`    | 1.88.0 | 3.11-3.13  |
-| `Windows (x86_64)` | 1.88.0 | 3.11-3.13* |
-
-\* Windows builds are currently pinned to CPython 3.13.2, see [installation guide](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/getting_started/installation.md).
+| Platform           | Rust   | Python    |
+| :----------------- | :----- | :-------- |
+| `Linux (x86_64)`   | 1.89.0 | 3.11-3.13 |
+| `Linux (ARM64)`    | 1.89.0 | 3.11-3.13 |
+| `macOS (ARM64)`    | 1.89.0 | 3.11-3.13 |
+| `Windows (x86_64)` | 1.89.0 | 3.11-3.13 |
 
 - **Docs**: <https://nautilustrader.io/docs/>
 - **Website**: <https://nautilustrader.io>
@@ -43,7 +41,7 @@ and live deployment workloads.
 
 The platform is also universal, and asset-class-agnostic —  with any REST API or WebSocket feed able to be integrated via modular
 adapters. It supports high-frequency trading across a wide range of asset classes and instrument types
-including FX, Equities, Futures, Options, Crypto and Betting, enabling seamless operations across multiple venues simultaneously.
+including FX, Equities, Futures, Options, Crypto, DeFi, and Betting, enabling seamless operations across multiple venues simultaneously.
 
 ![nautilus-trader](https://github.com/nautechsystems/nautilus_trader/raw/develop/assets/nautilus-trader.png "nautilus-trader")
 
@@ -129,12 +127,14 @@ The following integrations are currently supported; see [docs/integrations/](htt
 | [Binance](https://binance.com)                                               | `BINANCE`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/binance.md)       |
 | [Binance US](https://binance.us)                                             | `BINANCE`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/binance.md)       |
 | [Binance Futures](https://www.binance.com/en/futures)                        | `BINANCE`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/binance.md)       |
+| [BitMEX](https://www.bitmex.com)                                             | `BITMEX`              | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/building-orange) | [Guide](docs/integrations/bitmex.md)        |
 | [Bybit](https://www.bybit.com)                                               | `BYBIT`               | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/bybit.md)         |
 | [Coinbase International](https://www.coinbase.com/en/international-exchange) | `COINBASE_INTX`       | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/coinbase_intx.md) |
 | [Databento](https://databento.com)                                           | `DATABENTO`           | Data Provider           | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/databento.md)     |
 | [dYdX](https://dydx.exchange/)                                               | `DYDX`                | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/dydx.md)          |
+| [Hyperliquid](https://hyperliquid.xyz)                                       | `HYPERLIQUID`         | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/building-orange) | [Guide](docs/integrations/hyperliquid.md)   |
 | [Interactive Brokers](https://www.interactivebrokers.com)                    | `INTERACTIVE_BROKERS` | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/ib.md)            |
-| [OKX](https://okx.com)                                                       | `OKX`                 | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/building-orange) | [Guide](docs/integrations/okx.md)           |
+| [OKX](https://okx.com)                                                       | `OKX`                 | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](docs/integrations/okx.md)           |
 | [Polymarket](https://polymarket.com)                                         | `POLYMARKET`          | Prediction Market (DEX) | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/polymarket.md)    |
 | [Tardis](https://tardis.dev)                                                 | `TARDIS`              | Crypto Data Provider    | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/tardis.md)        |
 
@@ -219,7 +219,7 @@ pip install -U nautilus_trader
 
 ### From the Nautech Systems package index
 
-The Nautech Systems package index (`packages.nautechsystems.io`) is [PEP-503](https://peps.python.org/pep-0503/) compliant and hosts both stable and development binary wheels for `nautilus_trader`.
+The Nautech Systems package index (`packages.nautechsystems.io`) complies with [PEP-503](https://peps.python.org/pep-0503/) and hosts both stable and development binary wheels for `nautilus_trader`.
 This enables users to install either the latest stable release or pre-release versions for testing.
 
 #### Stable wheels
@@ -255,11 +255,11 @@ while adhering to [PEP-440](https://peps.python.org/pep-0440/) versioning standa
 
 > [!WARNING]
 >
-> We don't recommend using development wheels in production environments, such as live trading controlling real capital.
+> We do not recommend using development wheels in production environments, such as live trading controlling real capital.
 
 #### Installation commands
 
-By default, pip installs the latest stable release. Adding the `--pre` flag ensures that pre-release versions, including development wheels, are considered.
+By default, pip will install the latest stable release. Adding the `--pre` flag ensures that pre-release versions, including development wheels, are considered.
 
 To install the latest available pre-release (including development wheels):
 
@@ -285,13 +285,13 @@ curl -s https://packages.nautechsystems.io/simple/nautilus-trader/index.html | g
 
 #### Branch updates
 
-- `develop` branch wheels (`.dev`): Are built and published continuously with every merged commit.
-- `nightly` branch wheels (`a`): Are built and published daily when `develop` branch is automatically merged at **14:00 UTC** (if there are changes).
+- `develop` branch wheels (`.dev`): Build and publish continuously with every merged commit.
+- `nightly` branch wheels (`a`): Build and publish daily when we automatically merge the `develop` branch at **14:00 UTC** (if there are changes).
 
 #### Retention policies
 
-- `develop` branch wheels (`.dev`): Only the most recent wheel build is retained.
-- `nightly` branch wheels (`a`): Only the 10 most recent wheel builds are retained.
+- `develop` branch wheels (`.dev`): We retain only the most recent wheel build.
+- `nightly` branch wheels (`a`): We retain only the 30 most recent wheel builds.
 
 ### From Source
 
@@ -404,6 +404,10 @@ A `Makefile` is provided to automate most installation and build tasks for devel
 >
 > Run `make help` for documentation on all available make targets.
 
+> [!TIP]
+>
+> See the [crates/infrastructure/TESTS.md](https://github.com/nautechsystems/nautilus_trader/blob/develop/crates/infrastructure/TESTS.md) file for running the infrastructure integration tests.
+
 ## Examples
 
 Indicators and strategies can be developed in both Python and Cython. For performance and
@@ -447,8 +451,8 @@ http://127.0.0.1:8888/lab
 > [!WARNING]
 >
 > NautilusTrader currently exceeds the rate limit for Jupyter notebook logging (stdout output).
-> As a result, the `log_level` in the examples is set to `ERROR`. Lowering this level to see more
-> logging will cause the notebook to hang during cell execution. We are investigating a fix, which
+> Therefore, we set the `log_level` to `ERROR` in the examples. Lowering this level to see more
+> logging will cause the notebook to hang during cell execution. We are investigating a fix that
 > may involve either raising the configured rate limits for Jupyter or throttling the log flushing
 > from Nautilus.
 >

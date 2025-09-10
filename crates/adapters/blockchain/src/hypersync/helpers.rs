@@ -13,6 +13,31 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use alloy::primitives::Address;
+
+/// Extracts an address from a specific topic in a log entry
+///
+/// # Errors
+///
+/// Returns an error if the topic at the specified index is not present in the log.
+pub fn extract_address_from_topic(
+    log: &hypersync_client::simple_types::Log,
+    topic_index: usize,
+    description: &str,
+) -> anyhow::Result<Address> {
+    match log.topics.get(topic_index).and_then(|t| t.as_ref()) {
+        Some(topic) => {
+            // Address is stored in the last 20 bytes of the 32-byte topic
+            Ok(Address::from_slice(&topic.as_ref()[12..32]))
+        }
+        None => anyhow::bail!(
+            "Missing {} address in topic{} when parsing event",
+            description,
+            topic_index
+        ),
+    }
+}
+
 /// Extracts the transaction hash from a log entry
 ///
 /// # Errors
@@ -63,18 +88,49 @@ pub fn extract_block_number(log: &hypersync_client::simple_types::Log) -> anyhow
         .ok_or_else(|| anyhow::anyhow!("Missing block number in the log"))
 }
 
+/// Extracts the event signature from a log entry and returns it as a hex string
+///
+/// # Errors
+///
+/// Returns an error if the event signature (topic0) is not present in the log.
+pub fn extract_event_signature(
+    log: &hypersync_client::simple_types::Log,
+) -> anyhow::Result<String> {
+    if let Some(topic) = log.topics.first().and_then(|t| t.as_ref()) {
+        Ok(hex::encode(topic))
+    } else {
+        anyhow::bail!("Missing event signature in topic0");
+    }
+}
+
+/// Extracts the event signature from a log entry and returns it as raw bytes
+///
+/// # Errors
+///
+/// Returns an error if the event signature (topic0) is not present in the log.
+pub fn extract_event_signature_bytes(
+    log: &hypersync_client::simple_types::Log,
+) -> anyhow::Result<&[u8]> {
+    if let Some(topic) = log.topics.first().and_then(|t| t.as_ref()) {
+        Ok(topic.as_ref())
+    } else {
+        anyhow::bail!("Missing event signature in topic0");
+    }
+}
+
 /// Validates that a log entry corresponds to the expected event by comparing its topic0 with the provided event signature hash.
+///
+/// # Errors
+///
+/// Returns an error if the event signature doesn't match or if topic0 is missing.
 pub fn validate_event_signature_hash(
     event_name: &str,
-    event_signature_hash: &str,
+    target_event_signature_hash: &str,
     log: &hypersync_client::simple_types::Log,
 ) -> anyhow::Result<()> {
-    if let Some(topic) = log.topics.first().and_then(|t| t.as_ref()) {
-        if hex::encode(topic) != event_signature_hash {
-            anyhow::bail!("Invalid event signature for event '{event_name}'");
-        }
-    } else {
-        anyhow::bail!("Missing event signature in topic0 for event '{event_name}'");
+    let event_signature = extract_event_signature(log)?;
+    if event_signature.as_str() != target_event_signature_hash {
+        anyhow::bail!("Invalid event signature for event '{event_name}'");
     }
     Ok(())
 }
@@ -200,7 +256,7 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().to_string(),
-            "Missing event signature in topic0 for event 'Swap'"
+            "Missing event signature in topic0"
         );
     }
 
@@ -212,7 +268,7 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().to_string(),
-            "Missing event signature in topic0 for event 'Swap'"
+            "Missing event signature in topic0"
         );
     }
 
@@ -388,6 +444,71 @@ mod tests {
         assert_eq!(
             result.unwrap_err().to_string(),
             "Missing block number in the log"
+        );
+    }
+
+    #[rstest]
+    fn test_extract_address_from_topic_success(swap_log_1: Log) {
+        // Extract sender address from topic1
+        let result = extract_address_from_topic(&swap_log_1, 1, "sender");
+        assert!(result.is_ok());
+        let address = result.unwrap();
+        assert_eq!(
+            address.to_string().to_lowercase(),
+            "0x3fc91a3afd70395cd496c647d5a6cc9d4b2b7fad"
+        );
+    }
+
+    #[rstest]
+    fn test_extract_address_from_topic_success_log2(swap_log_2: Log) {
+        // Extract sender address from topic1
+        let result = extract_address_from_topic(&swap_log_2, 1, "sender");
+        assert!(result.is_ok());
+        let address = result.unwrap();
+        assert_eq!(
+            address.to_string().to_lowercase(),
+            "0x66a9893cc07d91d95644aedd05d03f95e1dba8af"
+        );
+
+        // Extract recipient address from topic2
+        let result = extract_address_from_topic(&swap_log_2, 2, "recipient");
+        assert!(result.is_ok());
+        let address = result.unwrap();
+        assert_eq!(
+            address.to_string().to_lowercase(),
+            "0xf90321d0ecad58ab2b0c8c79db8aaeeefa023578"
+        );
+    }
+
+    #[rstest]
+    fn test_extract_address_from_topic_missing_topic(swap_log_1: Log) {
+        // Try to extract from topic index 5 (doesn't exist)
+        let result = extract_address_from_topic(&swap_log_1, 5, "nonexistent");
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Missing nonexistent address in topic5 when parsing event"
+        );
+    }
+
+    #[rstest]
+    fn test_extract_address_from_topic_none_topic(swap_log_1: Log) {
+        // Try to extract from topic index 3 (which is null in swap_log_1)
+        let result = extract_address_from_topic(&swap_log_1, 3, "null_topic");
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Missing null_topic address in topic3 when parsing event"
+        );
+    }
+
+    #[rstest]
+    fn test_extract_address_from_topic_no_topics(log_without_topics: Log) {
+        let result = extract_address_from_topic(&log_without_topics, 1, "sender");
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Missing sender address in topic1 when parsing event"
         );
     }
 }

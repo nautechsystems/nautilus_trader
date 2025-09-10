@@ -15,7 +15,7 @@
 
 //! Cryptographic utilities and security functions for [NautilusTrader](http://nautilustrader.io).
 //!
-//! The *cryptography* crate provides essential cryptographic primitives and security utilities
+//! The `nautilus-cryptography` crate provides essential cryptographic primitives and security utilities
 //! required for secure communication with trading venues and data providers. This includes
 //! digital signing, TLS configuration, and cryptographic provider management:
 //!
@@ -43,6 +43,7 @@
 //! or as part of a Rust only build.
 //!
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//! - `extension-module`: Builds the crate as a Python extension module.
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]

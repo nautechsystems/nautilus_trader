@@ -1109,18 +1109,28 @@ cdef inline TimeEvent capsule_to_time_event(capsule):
 cdef class TimeEventHandler:
     """
     Represents a time event with its associated handler.
+
+    Parameters
+    ----------
+    event : TimeEvent
+        The time event to handle
+    handler : Callable[[TimeEvent], None]
+        The handler to call.
+
     """
 
     def __init__(
         self,
         TimeEvent event not None,
         handler not None: Callable[[TimeEvent], None],
-    ):
+    ) -> None:
         self.event = event
         self._handler = handler
 
     cpdef void handle(self):
-        """Call the handler with the contained time event."""
+        """
+        Call the handler with the contained time event.
+        """
         self._handler(self.event)
 
     def __eq__(self, TimeEventHandler other) -> bool:
@@ -1205,6 +1215,7 @@ cpdef LogGuard init_logging(
     str file_name = None,
     str file_format = None,
     dict component_levels: dict[ComponentId, LogLevel] = None,
+    bint log_components_only = False,
     bint colors = True,
     bint bypass = False,
     bint print_config = False,
@@ -1244,6 +1255,10 @@ cpdef LogGuard init_logging(
     component_levels : dict[ComponentId, LogLevel]
         The additional per component log level filters, where keys are component
         IDs (e.g. actor/strategy IDs) and values are log levels.
+    log_components_only : bool, default False
+        If only components with explicit component-level filters should be logged.
+        When enabled, only log messages from components that have been explicitly
+        configured in `log_component_levels` will be output.
     colors : bool, default True
         If ANSI codes should be used to produce colored log lines.
     bypass : bool, default False
@@ -1288,6 +1303,7 @@ cpdef LogGuard init_logging(
         colors,
         bypass,
         print_config,
+        log_components_only,
         max_file_size,
         max_backup_count,
     )
@@ -2307,6 +2323,17 @@ cdef class MessageBus:
         Condition.valid_string(pattern, "pattern")
 
         return [s for s in self._subscriptions if is_matching(s.topic, pattern)]
+
+    cpdef set streaming_types(self):
+        """
+        Return all types registered for external streaming -> internal publishing.
+
+        Returns
+        -------
+        set[type]
+
+        """
+        return self._streaming_types.copy()
 
     cpdef bint has_subscribers(self, str pattern = None):
         """

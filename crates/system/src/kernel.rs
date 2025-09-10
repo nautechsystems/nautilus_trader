@@ -145,36 +145,50 @@ impl NautilusKernel {
         let data_engine = Rc::new(RefCell::new(data_engine));
 
         // Register DataEngine command execution
-        let data_engine_ref = data_engine.clone();
+        use nautilus_core::WeakCell;
+
+        let data_engine_weak = WeakCell::from(Rc::downgrade(&data_engine));
+        let data_engine_weak_clone1 = data_engine_weak.clone();
         let endpoint = MessagingSwitchboard::data_engine_execute();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |cmd: &DataCommand| data_engine_ref.borrow_mut().execute(cmd),
+            move |cmd: &DataCommand| {
+                if let Some(engine_rc) = data_engine_weak_clone1.upgrade() {
+                    engine_rc.borrow_mut().execute(cmd);
+                }
+            },
         )));
         msgbus::register(endpoint, handler);
 
         // Register DataEngine command queueing
         let endpoint = MessagingSwitchboard::data_engine_queue_execute();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |cmd: &DataCommand| get_data_cmd_sender().clone().execute(cmd.clone()), // TODO:
+            move |cmd: &DataCommand| {
+                get_data_cmd_sender().clone().execute(cmd.clone());
+            },
         )));
         msgbus::register(endpoint, handler);
 
         // Register DataEngine process handler
-        let data_engine_ref = data_engine.clone();
         let endpoint = MessagingSwitchboard::data_engine_process();
-        // TODO: Optimize this back to a typed handler
+        let data_engine_weak2 = data_engine_weak.clone();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::with_any(
             move |data: &dyn Any| {
-                data_engine_ref.borrow_mut().process(data);
+                if let Some(engine_rc) = data_engine_weak2.upgrade() {
+                    engine_rc.borrow_mut().process(data);
+                }
             },
         )));
         msgbus::register(endpoint, handler);
 
         // Register DataEngine response handler
-        let data_engine_ref = data_engine.clone();
         let endpoint = MessagingSwitchboard::data_engine_response();
+        let data_engine_weak3 = data_engine_weak;
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |resp: &DataResponse| data_engine_ref.borrow_mut().response(resp.clone()),
+            move |resp: &DataResponse| {
+                if let Some(engine_rc) = data_engine_weak3.upgrade() {
+                    engine_rc.borrow_mut().response(resp.clone());
+                }
+            },
         )));
         msgbus::register(endpoint, handler);
 
@@ -370,10 +384,10 @@ impl NautilusKernel {
 
     /// Starts the Nautilus system kernel.
     pub async fn start_async(&mut self) {
-        log::info!("Starting engines...");
+        log::info!("Starting");
         self.start_engines();
 
-        log::info!("Initializing trader...");
+        log::info!("Initializing trader");
         if let Err(e) = self.trader.initialize() {
             log::error!("Error initializing trader: {e:?}");
             return;
@@ -385,19 +399,17 @@ impl NautilusKernel {
         }
         log::info!("Clients connected");
 
-        log::info!("Starting trader...");
         if let Err(e) = self.trader.start() {
             log::error!("Error starting trader: {e:?}");
         }
-        log::info!("Trader started");
 
         self.ts_started = Some(self.clock.borrow().timestamp_ns());
-        log::info!("Nautilus system kernel started");
+        log::info!("Started");
     }
 
     /// Stops the Nautilus system kernel.
     pub async fn stop_async(&mut self) {
-        log::info!("Stopping Nautilus system kernel");
+        log::info!("Stopping");
 
         // Stop the trader (it will stop all registered components)
         if let Err(e) = self.trader.stop() {
@@ -413,11 +425,13 @@ impl NautilusKernel {
         self.cancel_timers();
 
         self.ts_shutdown = Some(self.clock.borrow().timestamp_ns());
-        log::info!("Nautilus system kernel stopped");
+        log::info!("Stopped");
     }
 
     /// Resets the Nautilus system kernel to its initial state.
     pub fn reset(&mut self) {
+        log::info!("Resetting");
+
         if let Err(e) = self.trader.reset() {
             log::error!("Error resetting trader: {e:?}");
         }
@@ -429,11 +443,13 @@ impl NautilusKernel {
         self.ts_started = None;
         self.ts_shutdown = None;
 
-        log::info!("Nautilus system kernel reset");
+        log::info!("Reset");
     }
 
     /// Disposes of the Nautilus system kernel, releasing resources.
     pub fn dispose(&mut self) {
+        log::info!("Disposing");
+
         if let Err(e) = self.trader.dispose() {
             log::error!("Error disposing trader: {e:?}");
         }
@@ -443,7 +459,7 @@ impl NautilusKernel {
         self.data_engine.borrow_mut().dispose();
         // TODO: Implement dispose methods for other engines
 
-        log::info!("Nautilus system kernel disposed");
+        log::info!("Disposed");
     }
 
     /// Cancels all tasks currently running under the kernel.

@@ -34,7 +34,6 @@ pub mod stubs;
 
 use std::{fmt::Display, str::FromStr};
 
-use anyhow::{anyhow, bail};
 use enum_dispatch::enum_dispatch;
 use nautilus_core::{
     UnixNanos,
@@ -237,7 +236,7 @@ impl FromStr for TickScheme {
         match s.trim().to_ascii_uppercase().as_str() {
             "FIXED" => Ok(TickScheme::Fixed(FixedTickScheme::new(1.0)?)),
             "CRYPTO_0_01" => Ok(TickScheme::Crypto),
-            _ => Err(anyhow!("unknown tick scheme {}", s)),
+            _ => Err(anyhow::anyhow!("unknown tick scheme {s}")),
         }
     }
 }
@@ -344,12 +343,12 @@ pub trait Instrument: 'static + Send {
             .price_precision()
             .min(self._min_price_increment_precision()) as u32;
         let decimal_value = Decimal::from_f64_retain(value)
-            .ok_or_else(|| anyhow!("non-finite value passed to make_price"))?;
+            .ok_or_else(|| anyhow::anyhow!("non-finite value passed to make_price"))?;
         let rounded_decimal =
             decimal_value.round_dp_with_strategy(precision, RoundingStrategy::MidpointNearestEven);
         let rounded = rounded_decimal
             .to_f64()
-            .ok_or_else(|| anyhow!("Decimal out of f64 range in make_price"))?;
+            .ok_or_else(|| anyhow::anyhow!("Decimal out of f64 range in make_price"))?;
         Ok(Price::new(rounded, self.price_precision()))
     }
 
@@ -365,7 +364,7 @@ pub trait Instrument: 'static + Send {
         let precision_u8 = self.size_precision();
         let precision = precision_u8 as u32;
         let decimal_value = Decimal::from_f64_retain(value)
-            .ok_or_else(|| anyhow!("non-finite value passed to make_qty"))?;
+            .ok_or_else(|| anyhow::anyhow!("non-finite value passed to make_qty"))?;
         let rounded_decimal = if round_down.unwrap_or(false) {
             decimal_value.round_dp_with_strategy(precision, RoundingStrategy::ToZero)
         } else {
@@ -373,10 +372,10 @@ pub trait Instrument: 'static + Send {
         };
         let rounded = rounded_decimal
             .to_f64()
-            .ok_or_else(|| anyhow!("Decimal out of f64 range in make_qty"))?;
+            .ok_or_else(|| anyhow::anyhow!("Decimal out of f64 range in make_qty"))?;
         let increment = 10f64.powi(-(precision_u8 as i32));
         if value > 0.0 && rounded < increment * 0.1 {
-            bail!("value rounded to zero for quantity");
+            anyhow::bail!("value rounded to zero for quantity");
         }
         Ok(Quantity::new(rounded, precision_u8))
     }
@@ -401,17 +400,18 @@ pub trait Instrument: 'static + Send {
             last_price.as_f64().is_finite(),
             "non-finite price passed to calculate_base_quantity",
         )?;
-        let quantity_decimal = Decimal::from_f64_retain(quantity.as_f64())
-            .ok_or_else(|| anyhow!("non-finite quantity passed to calculate_base_quantity"))?;
+        let quantity_decimal = Decimal::from_f64_retain(quantity.as_f64()).ok_or_else(|| {
+            anyhow::anyhow!("non-finite quantity passed to calculate_base_quantity")
+        })?;
         let price_decimal = Decimal::from_f64_retain(last_price.as_f64())
-            .ok_or_else(|| anyhow!("non-finite price passed to calculate_base_quantity"))?;
+            .ok_or_else(|| anyhow::anyhow!("non-finite price passed to calculate_base_quantity"))?;
         let value_decimal = (quantity_decimal / price_decimal).round_dp_with_strategy(
             self.size_precision().into(),
             RoundingStrategy::MidpointNearestEven,
         );
-        let rounded = value_decimal
-            .to_f64()
-            .ok_or_else(|| anyhow!("Decimal out of f64 range in calculate_base_quantity"))?;
+        let rounded = value_decimal.to_f64().ok_or_else(|| {
+            anyhow::anyhow!("Decimal out of f64 range in calculate_base_quantity")
+        })?;
         Ok(Quantity::new(rounded, self.size_precision()))
     }
 
@@ -1106,7 +1106,7 @@ mod tests {
     }
 
     proptest! {
-        #[test]
+        #[rstest]
         fn make_price_qty_fuzz(input in 0.0001f64..1e8) {
             let instrument = currency_pair_btcusdt();
             let price = instrument.make_price(input);

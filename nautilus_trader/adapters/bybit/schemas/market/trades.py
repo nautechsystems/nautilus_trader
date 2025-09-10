@@ -44,16 +44,18 @@ class BybitTrade(msgspec.Struct):
     def parse_to_trade(
         self,
         instrument_id: InstrumentId,
-        ts_init: int,
+        ts_init: int | None = None,
     ) -> TradeTick:
+        ts_event = millis_to_nanos(int(self.time))
+
         return TradeTick(
             instrument_id=instrument_id,
             price=Price.from_str(self.price),
             size=Quantity.from_str(self.size),
             aggressor_side=parse_aggressor_side(self.side),
             trade_id=TradeId(self.execId),
-            ts_event=millis_to_nanos(int(self.time)),
-            ts_init=ts_init,
+            ts_event=ts_event,
+            ts_init=(ts_init or ts_event),
         )
 
 

@@ -203,10 +203,12 @@ class PolymarketDataClient(LiveMarketDataClient):
     async def _delayed_ws_client_connection(
         self,
         ws_client: PolymarketWebSocketClient,
-        sleep_secs: float,
+        delay_secs: float,
     ) -> None:
         try:
-            await asyncio.sleep(sleep_secs)
+            self._log.info(f"Delaying websocket connections start for {delay_secs}s...")
+
+            await asyncio.sleep(delay_secs)
             self._ws_clients.append(ws_client)
             await ws_client.connect()
         finally:
@@ -215,7 +217,11 @@ class PolymarketDataClient(LiveMarketDataClient):
 
     async def _subscribe_asset_book(self, instrument_id):
         create_connect_task = False
-        if self._ws_client_pending_connection is None:
+        # Polymarket only supports 500 subscriptions per client
+        if (
+            self._ws_client_pending_connection is None
+            or len(self._ws_client_pending_connection.asset_subscriptions()) >= 500
+        ):
             self._ws_client_pending_connection = self._create_websocket_client()
             create_connect_task = True
 
@@ -308,7 +314,7 @@ class PolymarketDataClient(LiveMarketDataClient):
             self._log.error(f"Cannot find instrument for {request.instrument_id}")
             return
 
-        self._handle_instrument(instrument, request.id, request.params)
+        self._handle_instrument(instrument, request.id, request.start, request.end, request.params)
 
     async def _request_instruments(self, request: RequestInstruments) -> None:
         if request.start is not None:
@@ -328,9 +334,11 @@ class PolymarketDataClient(LiveMarketDataClient):
                 target_instruments.append(instrument)
 
         self._handle_instruments(
-            target_instruments,
             request.venue,
+            target_instruments,
             request.id,
+            request.start,
+            request.end,
             request.params,
         )
 

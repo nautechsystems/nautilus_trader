@@ -14,9 +14,10 @@ jobs:
     env:
       BUILD_MODE: release
       RUST_BACKTRACE: 1
+      SCCACHE_CACHE_SIZE: 1G
     services:
       redis:
-        image: redis
+        image: redis:7-alpine
         ports:
           - 6379:6379
         options: >-
@@ -25,7 +26,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       postgres:
-        image: postgres
+        image: postgres:16-alpine
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: pass
@@ -35,13 +36,40 @@ jobs:
         options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@002fdce3c6a235733a90a27c80493a3241e56863 # v2.12.1
+      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
         with:
           egress-policy: audit
 
       - name: Checkout repository
         # https://github.com/actions/checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 1
+
+      - name: Aggressive disk cleanup (pre-setup)
+        if: runner.os == 'Linux'
+        run: |
+          set -euxo pipefail
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost || true
+          sudo rm -rf /usr/local/lib/android /usr/lib/jvm /usr/lib/mono || true
+          sudo rm -rf /opt/hostedtoolcache/go /opt/hostedtoolcache/node || true
+
+          if [ -n "${AGENT_TOOLSDIRECTORY:-}" ] && [ -d "$AGENT_TOOLSDIRECTORY" ]; then
+            # Remove big toolcache components but keep Python intact
+            sudo rm -rf "$AGENT_TOOLSDIRECTORY/CodeQL" \
+                        "$AGENT_TOOLSDIRECTORY/Go" \
+                        "$AGENT_TOOLSDIRECTORY/Node" \
+                        "$AGENT_TOOLSDIRECTORY/node" \
+                        "$AGENT_TOOLSDIRECTORY/Ruby" \
+                        "$AGENT_TOOLSDIRECTORY/PyPy" \
+                        "$AGENT_TOOLSDIRECTORY/R" \
+                        "$AGENT_TOOLSDIRECTORY"/Java* || true
+          fi
+
+          sudo apt-get clean
+          sudo apt-get autoremove -y
+          sudo rm -rf /var/lib/apt/lists/* /usr/share/man /usr/share/doc || true
+          df -h
 
       - name: Common setup
         uses: ./.github/actions/common-setup
@@ -49,13 +77,16 @@ jobs:
           python-version: "3.12"
           free-disk-space: "true"
 
-      - name: Run pre-commit # Runs again here to check pre-commit with Python 3.12
-        run: make pre-commit
-
-      - name: Install Nautilus CLI and run init postgres
+      - name: Prune unused Docker images
+        if: runner.os == 'Linux'
         run: |
-          make install-cli
-          nautilus database init --schema ${{ github.workspace }}/schema/sql
+          docker image prune -a -f || true
+
+      - name: Install Nautilus CLI
+        run: bash scripts/ci/install-nautilus-cli.sh
+
+      - name: Init postgres schema
+        run: nautilus database init --schema ${{ github.workspace }}/schema/sql
         env:
           POSTGRES_HOST: localhost
           POSTGRES_PORT: 5432
@@ -63,37 +94,32 @@ jobs:
           POSTGRES_PASSWORD: pass
           POSTGRES_DATABASE: nautilus
 
-      - name: Cached test data
-        uses: ./.github/actions/common-test-data
-
       - name: Run Rust tests
         run: make cargo-test
 
       # TODO: Add nautilus-persistence once required test data available
       - name: Run Rust benchmarks crate-by-crate
-        run: |
-          # Workspace-wide `cargo bench` fails due to mixed panic strategies
-          # (`abort` from our cdylib/staticlib targets vs `unwind` from
-          # Criterion/iai).  Invoking benches one crate at a time keeps each
-          # link step internally consistent while Cargo reuses artifacts so we
-          # don't pay the full compile cost for every crate.
-
-          CRATES=(
-            nautilus-common
-            nautilus-core
-            nautilus-model
-          )
-
-          for crate in "${CRATES[@]}"; do
-            echo "▶▶ Running benches for $crate"
-            cargo bench -p "$crate" --benches --no-fail-fast --profile bench
-          done
+        env:
+          # Shrink bench artifacts to reduce disk usage
+          RUSTFLAGS: -Cdebuginfo=0
+          CARGO_PROFILE_BENCH_DEBUG: 0
+          CARGO_PROFILE_BENCH_INCREMENTAL: false
+        run: make cargo-ci-benches
 
       - name: Build and install wheel
         uses: ./.github/actions/common-wheel-build
         with:
           python-version: "3.12"
           github_ref: ${{ github.ref }}
+
+      - name: Cleanup build artifacts and caches
+        if: runner.os == 'Linux'
+        run: |
+          set -euxo pipefail
+          rm -rf target || true
+          rm -rf ~/.cargo/registry ~/.cargo/git || true
+          uv cache prune || true
+          rm -rf dist build || true
 
       # Run codspeed once only
       - name: Run benchmarks

@@ -27,6 +27,7 @@ use std::{
     rc::Rc,
 };
 
+use nautilus_common::timer::TimeEventHandlerV2;
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_data::client::DataClientAdapter;
 use nautilus_execution::models::{fee::FeeModelAny, fill::FillModel, latency::LatencyModel};
@@ -135,7 +136,6 @@ impl BacktestEngine {
         fee_model: FeeModelAny,
         latency_model: Option<LatencyModel>,
         routing: Option<bool>,
-        frozen_account: Option<bool>,
         reject_stop_orders: Option<bool>,
         support_gtd_orders: Option<bool>,
         support_contingent_orders: Option<bool>,
@@ -146,6 +146,8 @@ impl BacktestEngine {
         bar_execution: Option<bool>,
         bar_adaptive_high_low_ordering: Option<bool>,
         trade_execution: Option<bool>,
+        allow_cash_borrowing: Option<bool>,
+        frozen_account: Option<bool>,
     ) -> anyhow::Result<()> {
         let default_leverage: Decimal = default_leverage.unwrap_or_else(|| {
             if account_type == AccountType::Margin {
@@ -170,7 +172,6 @@ impl BacktestEngine {
             fee_model,
             book_type,
             latency_model,
-            frozen_account,
             bar_execution,
             reject_stop_orders,
             support_gtd_orders,
@@ -179,6 +180,8 @@ impl BacktestEngine {
             use_random_ids,
             use_reduce_only,
             use_message_queue,
+            allow_cash_borrowing,
+            frozen_account,
         )?;
         let exchange = Rc::new(RefCell::new(exchange));
         self.venues.insert(venue, exchange.clone());
@@ -204,7 +207,13 @@ impl BacktestEngine {
     }
 
     pub fn change_fill_model(&mut self, venue: Venue, fill_model: FillModel) {
-        todo!("implement change_fill_model")
+        if let Some(exchange) = self.venues.get_mut(&venue) {
+            exchange.borrow_mut().set_fill_model(fill_model);
+        } else {
+            log::warn!(
+                "BacktestEngine::change_fill_model called for unknown venue {venue}. Ignoring."
+            );
+        }
     }
 
     /// Adds an instrument to the backtest engine for the specified venue.
@@ -264,7 +273,49 @@ impl BacktestEngine {
         validate: bool,
         sort: bool,
     ) {
-        todo!("implement add_data")
+        if data.is_empty() {
+            log::warn!("add_data called with empty data slice – ignoring");
+            return;
+        }
+
+        // If requested, sort by ts_init so internal stream is monotonic.
+        let mut to_add = data;
+        if sort {
+            to_add.sort_by_key(nautilus_model::data::HasTsInit::ts_init);
+        }
+
+        // Instrument & book tracking using Data helpers
+        if validate {
+            for item in &to_add {
+                let instr_id = item.instrument_id();
+                self.has_data.insert(instr_id);
+
+                if item.is_order_book_data() {
+                    self.has_book_data.insert(instr_id);
+                }
+
+                // Ensure appropriate market data client exists
+                self.add_market_data_client_if_not_exists(instr_id.venue);
+            }
+        }
+
+        // Extend master data vector and ensure internal iterator (index) remains valid.
+        for item in to_add {
+            self.data.push_back(item);
+        }
+
+        if sort {
+            // VecDeque cannot be sorted directly; convert to Vec for sorting, then back.
+            let mut vec: Vec<Data> = self.data.drain(..).collect();
+            vec.sort_by_key(nautilus_model::data::HasTsInit::ts_init);
+            self.data = vec.into();
+        }
+
+        log::info!(
+            "Added {} data element{} to BacktestEngine",
+            self.data.len(),
+            if self.data.len() == 1 { "" } else { "s" }
+        );
     }
 
     pub fn add_actor(&mut self) {
@@ -320,19 +371,46 @@ impl BacktestEngine {
     }
 
     pub fn get_result(&self) {
-        todo!("implement get_result")
+        // TODO: implement full BacktestResult aggregation once portfolio analysis
+        // components are available in Rust. For now we simply log and return.
+        log::info!("BacktestEngine::get_result called – not yet implemented");
     }
 
     pub fn next(&mut self) {
-        todo!("implement next")
+        self.data.pop_front();
     }
 
-    pub fn advance_time(&mut self) {
-        todo!("implement advance_time")
+    pub fn advance_time(&mut self, _ts_now: UnixNanos) -> Vec<TimeEventHandlerV2> {
+        // TODO: integrate TestClock advancement when kernel clocks are exposed.
+        self.accumulator.drain()
     }
 
-    pub fn process_raw_time_event_handlers(&mut self) {
-        todo!("implement process_raw_time_event_handlers")
+    pub fn process_raw_time_event_handlers(
+        &mut self,
+        handlers: Vec<TimeEventHandlerV2>,
+        ts_now: UnixNanos,
+        only_now: bool,
+        as_of_now: bool,
+    ) {
+        let mut last_ts_init: Option<UnixNanos> = None;
+
+        for handler in handlers {
+            let ts_event_init = handler.event.ts_event; // event time
+
+            if Self::should_skip_time_event(ts_event_init, ts_now, only_now, as_of_now) {
+                continue;
+            }
+
+            if last_ts_init != Some(ts_event_init) {
+                // First handler for this timestamp – process exchange queues beforehand.
+                for exchange in self.venues.values() {
+                    exchange.borrow_mut().process(ts_event_init);
+                }
+                last_ts_init = Some(ts_event_init);
+            }
+
+            handler.run();
+        }
     }
 
     pub fn log_pre_run(&self) {
@@ -347,8 +425,50 @@ impl BacktestEngine {
         todo!("implement log_post_run")
     }
 
-    pub fn add_data_client_if_not_exists(&mut self) {
-        todo!("implement add_data_client_if_not_exists")
+    pub fn add_data_client_if_not_exists(&mut self, client_id: ClientId) {
+        if self
+            .kernel
+            .data_engine
+            .borrow()
+            .registered_clients()
+            .contains(&client_id)
+        {
+            return;
+        }
+
+        // Create a generic, venue-agnostic backtest data client. We use a dummy
+        // venue derived from the client id for uniqueness.
+        let venue = Venue::from(client_id.as_str());
+        let backtest_client = BacktestDataClient::new(client_id, venue, self.kernel.cache.clone());
+        let data_client_adapter = DataClientAdapter::new(
+            backtest_client.client_id,
+            None, // no specific venue association
+            false,
+            false,
+            Box::new(backtest_client),
+        );
+
+        self.kernel
+            .data_engine
+            .borrow_mut()
+            .register_client(data_client_adapter, None);
+    }
+
+    // Helper matching Cython semantics for determining whether to skip
+    // processing a time event.
+    fn should_skip_time_event(
+        ts_event_init: UnixNanos,
+        ts_now: UnixNanos,
+        only_now: bool,
+        as_of_now: bool,
+    ) -> bool {
+        if only_now {
+            ts_event_init != ts_now
+        } else if as_of_now {
+            ts_event_init > ts_now
+        } else {
+            ts_event_init >= ts_now
+        }
     }
 
     // TODO: We might want venue to be optional for multi-venue clients
@@ -425,6 +545,7 @@ mod tests {
                 None,
                 None,
                 None,
+                None,
             )
             .unwrap();
         engine
@@ -432,8 +553,6 @@ mod tests {
 
     #[rstest]
     fn test_engine_venue_and_instrument_initialization(crypto_perpetual_ethusdt: CryptoPerpetual) {
-        pyo3::prepare_freethreaded_python();
-
         let venue = Venue::from("BINANCE");
         let client_id = ClientId::from(venue.as_str());
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);

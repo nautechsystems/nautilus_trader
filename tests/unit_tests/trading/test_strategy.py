@@ -22,7 +22,7 @@ import pytest
 import pytz
 
 from nautilus_trader.backtest.data_client import BacktestMarketDataClient
-from nautilus_trader.backtest.exchange import SimulatedExchange
+from nautilus_trader.backtest.engine import SimulatedExchange
 from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.models import LatencyModel
@@ -36,7 +36,7 @@ from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
-from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
+from nautilus_trader.indicators import ExponentialMovingAverage
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.enums import AccountType
@@ -191,12 +191,14 @@ class TestStrategy:
             "strategy_id": None,
             "order_id_tag": None,
             "use_uuid_client_order_ids": False,
+            "use_hyphens_in_client_order_ids": True,
             "oms_type": None,
             "external_order_claims": None,
             "manage_contingent_orders": False,
             "manage_gtd_expiry": False,
             "log_events": True,
             "log_commands": True,
+            "log_rejected_due_post_only_as_warning": True,
         }
 
     def test_strategy_to_importable_config(self) -> None:
@@ -223,12 +225,14 @@ class TestStrategy:
             "strategy_id": "ALPHA-01",
             "order_id_tag": "001",
             "use_uuid_client_order_ids": False,
+            "use_hyphens_in_client_order_ids": True,
             "oms_type": None,
             "external_order_claims": ["ETHUSDT-PERP.DYDX"],
             "manage_contingent_orders": True,
             "manage_gtd_expiry": True,
             "log_events": False,
             "log_commands": True,
+            "log_rejected_due_post_only_as_warning": True,
         }
 
     def test_strategy_equality(self) -> None:

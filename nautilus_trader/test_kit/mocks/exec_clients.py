@@ -268,6 +268,12 @@ class MockLiveExecutionClient(LiveExecutionClient):
             self.calls.append(current_frame.f_code.co_name)
         self.commands.append(command)
 
+    def query_account(self, command) -> None:
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
+        self.commands.append(command)
+
     def query_order(self, command) -> None:
         current_frame = inspect.currentframe()
         if current_frame:

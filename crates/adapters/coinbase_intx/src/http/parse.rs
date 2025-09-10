@@ -57,8 +57,9 @@ pub fn parse_spot_instrument(
 
     let price_increment = Price::from(&definition.quote_increment);
     let size_increment = Quantity::from(&definition.base_increment);
-
+    let multiplier = None;
     let lot_size = None;
+
     let max_quantity = None;
     let min_quantity = None;
     let max_notional = None;
@@ -75,6 +76,7 @@ pub fn parse_spot_instrument(
         size_increment.precision,
         price_increment,
         size_increment,
+        multiplier,
         lot_size,
         max_quantity,
         min_quantity,
@@ -426,7 +428,7 @@ pub fn parse_position_status_report(
         .net_size
         .parse::<f64>()
         .map_err(|e| anyhow::anyhow!("Invalid value for `net_size`: {e}"))?;
-    let position_side = parse_position_side(Some(net_size));
+    let position_side = parse_position_side(Some(net_size)).as_specified();
     let quantity = Quantity::new(net_size.abs(), size_precision);
 
     Ok(PositionStatusReport::new(

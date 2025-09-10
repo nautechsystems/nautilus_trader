@@ -16,6 +16,7 @@ from Cython.Build import build_ext
 from Cython.Build import cythonize
 from Cython.Compiler import Options
 from Cython.Compiler.Version import version as cython_compiler_version
+from packaging.version import Version
 from setuptools import Distribution
 from setuptools import Extension
 
@@ -39,6 +40,8 @@ ANNOTATION_MODE = bool(os.getenv("ANNOTATION_MODE", ""))
 PARALLEL_BUILD = os.getenv("PARALLEL_BUILD", "true").lower() == "true"
 # If COPY_TO_SOURCE is enabled, copy built *.so files back into the source tree
 COPY_TO_SOURCE = os.getenv("COPY_TO_SOURCE", "true").lower() == "true"
+# Force stripping of debug symbols even in non-release builds
+FORCE_STRIP = os.getenv("FORCE_STRIP", "false").lower() == "true"
 # If PyO3 only then don't build C extensions to reduce compilation time
 PYO3_ONLY = os.getenv("PYO3_ONLY", "").lower() != ""
 # If dry run only print the commands that would be executed
@@ -108,7 +111,16 @@ else:  # Linux
 
 CARGO_TARGET_DIR = os.environ.get("CARGO_TARGET_DIR", Path.cwd() / "target")
 CARGO_BUILD_TARGET = os.environ.get("CARGO_BUILD_TARGET", "")
-CARGO_TARGET_DIR = Path(CARGO_TARGET_DIR) / CARGO_BUILD_TARGET / BUILD_MODE
+
+# Determine the profile directory name
+if BUILD_MODE == "release":
+    profile_dir = "release"
+elif BUILD_MODE == "debug-pyo3":
+    profile_dir = "debug-pyo3"
+else:
+    profile_dir = "debug"
+
+CARGO_TARGET_DIR = Path(CARGO_TARGET_DIR) / CARGO_BUILD_TARGET / profile_dir
 
 # Directories with headers to include
 RUST_INCLUDES = ["nautilus_trader/core/includes"]
@@ -123,7 +135,7 @@ RUST_LIBS: list[str] = [str(path) for path in RUST_LIB_PATHS]
 
 
 def _set_feature_flags() -> list[str]:
-    features = "ffi,python,extension-module,postgres"
+    features = "cython-compat,ffi,python,extension-module,postgres"
     flags = ["--no-default-features", "--features"]
 
     if HIGH_PRECISION:
@@ -152,7 +164,15 @@ def _build_rust_libs() -> None:
             "nautilus-pyo3",
         ]
 
-        build_options = " --release" if BUILD_MODE == "release" else ""
+        if BUILD_MODE == "release":
+            build_options = ["--release"]
+            existing_rustflags = os.environ.get("RUSTFLAGS", "")
+            os.environ["RUSTFLAGS"] = f"{existing_rustflags} -C link-arg=-s"
+        elif BUILD_MODE == "debug-pyo3":
+            build_options = ["--profile", "debug-pyo3"]
+        else:
+            build_options = []
+
         features = _set_feature_flags()
 
         cmd_args = [
@@ -160,7 +180,7 @@ def _build_rust_libs() -> None:
             "build",
             "--lib",
             *itertools.chain.from_iterable(("-p", p) for p in needed_crates),
-            *build_options.split(),
+            *build_options,
             *features,
         ]
 
@@ -201,7 +221,7 @@ CYTHON_COMPILER_DIRECTIVES = {
 }
 
 # TODO: Temporarily separate Cython configuration while we require v3.0.11 for coverage
-if cython_compiler_version == "3.1.2":
+if Version(cython_compiler_version) >= Version("3.1.2"):
     Options.warning_errors = True  # Treat compiler warnings as errors
     Options.extra_warnings = True
     CYTHON_COMPILER_DIRECTIVES["warn.deprecated.IF"] = False
@@ -228,6 +248,12 @@ def _build_extensions() -> list[Extension]:
         if BUILD_MODE == "release":
             extra_compile_args.append("-O2")
             extra_compile_args.append("-pipe")
+
+            if IS_LINUX:
+                extra_compile_args.append("-ffunction-sections")
+                extra_compile_args.append("-fdata-sections")
+                extra_link_args.append("-Wl,--gc-sections")
+                extra_link_args.append("-Wl,--as-needed")
 
     if IS_WINDOWS:
         # Standard Windows system libraries required when linking Cython extensions.
@@ -428,9 +454,15 @@ def _ensure_windows_python_import_lib() -> None:
 def _strip_unneeded_symbols() -> None:
     try:
         print("Stripping unneeded symbols from binaries...")
+        total_before = 0
+        total_after = 0
+
         for so in itertools.chain(Path("nautilus_trader").rglob("*.so")):
+            size_before = so.stat().st_size
+            total_before += size_before
+
             if IS_LINUX:
-                strip_cmd = ["strip", "--strip-unneeded", so]
+                strip_cmd = ["strip", "--strip-all", "-R", ".comment", "-R", ".note", so]
             elif IS_MACOS:
                 strip_cmd = ["strip", "-x", so]
             else:
@@ -439,6 +471,16 @@ def _strip_unneeded_symbols() -> None:
                 strip_cmd,  # type: ignore [arg-type]
                 check=True,
                 capture_output=True,
+            )
+
+            size_after = so.stat().st_size
+            total_after += size_after
+
+        if total_before > 0:
+            reduction = (1 - total_after / total_before) * 100
+            print(
+                f"Stripped binaries: {total_before / 1024 / 1024:.1f}MB "
+                f"-> {total_after / 1024 / 1024:.1f}MB ({reduction:.1f}% reduction)",
             )
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Error when stripping symbols.\n{e}") from e
@@ -501,8 +543,8 @@ def build() -> None:
             # Copy the build back into the source tree for development and wheel packaging
             _copy_build_dir_to_project(cmd)
 
-    if BUILD_MODE == "release" and (IS_LINUX or IS_MACOS):
-        # Only strip symbols for release builds
+    if (BUILD_MODE == "release" or FORCE_STRIP) and (IS_LINUX or IS_MACOS):
+        # Strip symbols for release builds or when forced
         _strip_unneeded_symbols()
 
 
@@ -532,6 +574,7 @@ if __name__ == "__main__":
     print(f"ANNOTATION_MODE={ANNOTATION_MODE}")
     print(f"PARALLEL_BUILD={PARALLEL_BUILD}")
     print(f"COPY_TO_SOURCE={COPY_TO_SOURCE}")
+    print(f"FORCE_STRIP={FORCE_STRIP}")
     print(f"PYO3_ONLY={PYO3_ONLY}")
     print_env_var_if_exists("CC")
     print_env_var_if_exists("CXX")

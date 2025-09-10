@@ -106,31 +106,32 @@ pub fn trailing_stop_calculate(
     let compute = |off: Decimal, basis: f64| -> Price {
         Price::new(
             match trailing_offset_type {
-                TrailingOffsetType::Price => {
-                    basis
-                        + off.to_f64().unwrap()
-                            * match order_side {
-                                OrderSideSpecified::Buy => 1.0,
-                                OrderSideSpecified::Sell => -1.0,
-                            }
-                }
+                TrailingOffsetType::Price => off.to_f64().unwrap().mul_add(
+                    match order_side {
+                        OrderSideSpecified::Buy => 1.0,
+                        OrderSideSpecified::Sell => -1.0,
+                    },
+                    basis,
+                ),
                 TrailingOffsetType::BasisPoints => {
                     let delta = basis * (off.to_f64().unwrap() / 10_000.0);
-                    basis
-                        + delta
-                            * match order_side {
-                                OrderSideSpecified::Buy => 1.0,
-                                OrderSideSpecified::Sell => -1.0,
-                            }
+                    delta.mul_add(
+                        match order_side {
+                            OrderSideSpecified::Buy => 1.0,
+                            OrderSideSpecified::Sell => -1.0,
+                        },
+                        basis,
+                    )
                 }
                 TrailingOffsetType::Ticks => {
                     let delta = off.to_f64().unwrap() * price_increment.as_f64();
-                    basis
-                        + delta
-                            * match order_side {
-                                OrderSideSpecified::Buy => 1.0,
-                                OrderSideSpecified::Sell => -1.0,
-                            }
+                    delta.mul_add(
+                        match order_side {
+                            OrderSideSpecified::Buy => 1.0,
+                            OrderSideSpecified::Sell => -1.0,
+                        },
+                        basis,
+                    )
                 }
                 _ => unreachable!("checked above"),
             },

@@ -62,27 +62,64 @@ The same Rust implemented Nautilus decoder is used for:
 - Loading and decoding DBN files from disk
 - Decoding historical and live data in real time
 
+## Schema selection for live subscriptions
+
+When subscribing to live data, you can specify a `schema` parameter to choose the most appropriate data format:
+
+### Quote subscriptions
+
+- **Default**: `mbp-1` (market by price level 1)
+- **Allowed schemas**: `mbp-1`, `bbo-1s`, `bbo-1m`, `cmbp-1`, `cbbo-1s`, `cbbo-1m`, `tbbo`, `tcbbo`
+- **Note**: TBBO and TCBBO schemas will provide both quotes AND trades in a single subscription
+
+### Trade subscriptions
+
+- **Default**: `trades`
+- **Allowed schemas**: `trades`, `tbbo`, `tcbbo`, `mbp-1`, `cmbp-1`
+- **Note**: MBP-1 and CMBP-1 only emit trades when the message represents a trade event
+
+Example of subscribing with a specific schema:
+
+```python
+# Subscribe to quotes and trades using TBBO (more efficient than separate subscriptions)
+self.subscribe_quote_ticks(
+    instrument_id=instrument_id,
+    params={"schema": "tbbo"}  # Will receive both quotes and trades
+)
+```
+
 ## Supported schemas
 
 The following Databento schemas are supported by NautilusTrader:
 
-| Databento schema | Nautilus data type                |
-|:-----------------|:----------------------------------|
-| MBO              | `OrderBookDelta`                  |
-| MBP_1            | `(QuoteTick, Option<TradeTick>)`  |
-| MBP_10           | `OrderBookDepth10`                |
-| BBO_1S           | `QuoteTick`                       |
-| BBO_1M           | `QuoteTick`                       |
-| TBBO             | `(QuoteTick, TradeTick)`          |
-| TRADES           | `TradeTick`                       |
-| OHLCV_1S         | `Bar`                             |
-| OHLCV_1M         | `Bar`                             |
-| OHLCV_1H         | `Bar`                             |
-| OHLCV_1D         | `Bar`                             |
-| DEFINITION       | `Instrument` (various types)      |
-| IMBALANCE        | `DatabentoImbalance`              |
-| STATISTICS       | `DatabentoStatistics`             |
-| STATUS           | `InstrumentStatus`                |
+| Databento schema | Nautilus data type                | Description                                |
+|:-----------------|:----------------------------------|:-------------------------------------------|
+| MBO              | `OrderBookDelta`                  | Market by order (L3).                     |
+| MBP_1            | `(QuoteTick, Option<TradeTick>)`  | Market by price (L1).                     |
+| MBP_10           | `OrderBookDepth10`                | Market depth (L2).                        |
+| BBO_1S           | `QuoteTick`                       | 1-second best bid/offer.                  |
+| BBO_1M           | `QuoteTick`                       | 1-minute best bid/offer.                  |
+| CMBP_1           | `(QuoteTick, Option<TradeTick>)`  | Consolidated MBP across venues.           |
+| CBBO_1S          | `QuoteTick`                       | Consolidated 1-second BBO.                |
+| CBBO_1M          | `QuoteTick`                       | Consolidated 1-minute BBO.                |
+| TCBBO            | `(QuoteTick, TradeTick)`          | Trade-sampled consolidated BBO.           |
+| TBBO             | `(QuoteTick, TradeTick)`          | Trade-sampled best bid/offer.             |
+| TRADES           | `TradeTick`                       | Trade ticks.                              |
+| OHLCV_1S         | `Bar`                             | 1-second bars.                            |
+| OHLCV_1M         | `Bar`                             | 1-minute bars.                            |
+| OHLCV_1H         | `Bar`                             | 1-hour bars.                              |
+| OHLCV_1D         | `Bar`                             | Daily bars.                               |
+| OHLCV_EOD        | `Bar`                             | End-of-day bars.                          |
+| DEFINITION       | `Instrument` (various types)      | Instrument definitions.                   |
+| IMBALANCE        | `DatabentoImbalance`              | Auction imbalance data.                   |
+| STATISTICS       | `DatabentoStatistics`             | Market statistics.                        |
+| STATUS           | `InstrumentStatus`                | Market status updates.                    |
+
+:::tip
+**Consolidated schemas** (CMBP_1, CBBO_1S, CBBO_1M, TCBBO) aggregate data across multiple venues,
+providing a unified view of the market. These are particularly useful for cross-venue analysis and
+when you need a comprehensive market picture.
+:::
 
 :::warning
 NautilusTrader no longer supports Databento DBN v1 schema decoding.
@@ -196,6 +233,13 @@ object, which occurs during the replay startup sequence.
 This schema represents the top-of-book only (quotes *and* trades). Like with MBO messages, some
 messages carry trade information, and so when decoding MBP-1 messages Nautilus
 will produce a `QuoteTick` and *also* a `TradeTick` if the message is a trade.
+
+### TBBO and TCBBO (top-of-book with trades)
+
+The TBBO (Top Book with Trades) and TCBBO (Top Consolidated Book with Trades) schemas provide
+both quote and trade data in each message. When subscribing to quotes using these schemas,
+you'll automatically receive both `QuoteTick` and `TradeTick` data, making them more efficient
+than subscribing to quotes and trades separately. TCBBO provides consolidated data across venues.
 
 ### OHLCV (bar aggregates)
 
@@ -334,6 +378,53 @@ catalog.write_data(trades)
 See also the [Data concepts guide](../concepts/data.md).
 :::
 
+### Historical loader options
+
+The `from_dbn_file` method supports several important parameters:
+
+- `instrument_id`: Passing this improves decode speed by skipping symbology lookup.
+- `price_precision`: Override the default price precision for the instrument.
+- `include_trades`: For MBP-1/CMBP-1 schemas, setting this to `True` will emit both `QuoteTick` and `TradeTick` objects when trade data is present.
+- `as_legacy_cython`: Set to `False` when loading IMBALANCE or STATISTICS schemas (required) or for performance when writing to catalog.
+
+:::warning
+IMBALANCE and STATISTICS schemas require `as_legacy_cython=False` as these are PyO3-only types.
+:::
+
+### Loading consolidated data
+
+Consolidated schemas aggregate data across multiple venues:
+
+```python
+# Load consolidated MBP-1 quotes
+loader = DatabentoDataLoader()
+cmbp_quotes = loader.from_dbn_file(
+    path="consolidated.cmbp-1.dbn.zst",
+    instrument_id=InstrumentId.from_str("AAPL.XNAS"),
+    include_trades=True,  # Get both quotes and trades if available
+    as_legacy_cython=True,
+)
+
+# Load consolidated BBO quotes
+cbbo_quotes = loader.from_dbn_file(
+    path="consolidated.cbbo-1s.dbn.zst",
+    instrument_id=InstrumentId.from_str("AAPL.XNAS"),
+    as_legacy_cython=False,  # Use PyO3 for better performance
+)
+
+# Load TCBBO (consolidated trade-sampled BBO) - provides both quotes and trades
+tcbbo_data = loader.from_dbn_file(
+    path="consolidated.tcbbo.dbn.zst",
+    instrument_id=InstrumentId.from_str("AAPL.XNAS"),
+    as_legacy_cython=True,
+)
+# tcbbo_data will contain interleaved QuoteTick and TradeTick objects
+```
+
+:::tip
+**Cost optimization**: Avoid subscribing to both TBBO/TCBBO and separate trade subscriptions for the same instrument, as these schemas already include trade data. This prevents duplicates and reduces costs.
+:::
+
 ## Real-time client architecture
 
 The `DatabentoDataClient` is a Python class which contains other Databento adapter classes.
@@ -400,6 +491,9 @@ node.build()
 - `api_key`: The Databento API secret key. If ``None`` then will source the `DATABENTO_API_KEY` environment variable.
 - `http_gateway`: The historical HTTP client gateway override (useful for testing and typically not needed by most users).
 - `live_gateway`: The raw TCP real-time client gateway override (useful for testing and typically not needed by most users).
+- `use_exchange_as_venue`: Use exchange MIC instead of GLBX for CME families. Default `True`.
+- `bars_timestamp_on_close`: Choose open vs close timestamps for bars. If `True`, uses bar close for `ts_event`/`ts_init`; if `False`, uses open. Default `True`.
+- `venue_dataset_map`: Per-venue dataset override as `dict[Venue, str]`.
 - `parent_symbols`: The Databento parent symbols to subscribe to instrument definitions for on start. This is a map of Databento dataset keys -> to a sequence of the parent symbols, e.g. {'GLBX.MDP3', ['ES.FUT', 'ES.OPT']} (for all E-mini S&P 500 futures and options products).
 - `instrument_ids`: The instrument IDs to request instrument definitions for on start.
 - `timeout_initial_load`: The timeout (seconds) to wait for instruments to load (concurrently per dataset).

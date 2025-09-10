@@ -2,13 +2,13 @@
 
 The [Rust](https://www.rust-lang.org/learn) programming language is an ideal fit for implementing the mission-critical core of the platform and systems. Its strong type system, ownership model, and compile-time checks eliminate memory errors and data races by construction, while zero-cost abstractions and the absence of a garbage collector deliver C-like performance—critical for high-frequency trading workloads.
 
-## Python Bindings
+## Python bindings
 
 Python bindings are provided via Cython and [PyO3](https://pyo3.rs), allowing users to import NautilusTrader crates directly in Python without a Rust toolchain.
 
-## Code Style and Conventions
+## Code style and conventions
 
-### File Header Requirements
+### File header requirements
 
 All Rust files must include the standardized copyright header:
 
@@ -29,7 +29,7 @@ All Rust files must include the standardized copyright header:
 // -------------------------------------------------------------------------------------------------
 ```
 
-### Code Formatting
+### Code formatting
 
 Import formatting is automatically handled by rustfmt when running `make format`.
 The tool organizes imports into groups (standard library, external crates, local imports) and sorts them alphabetically within each group.
@@ -41,7 +41,21 @@ mirrors the default behavior of `rustfmt`.
 - Leave **one blank line above every doc comment** (`///` or `//!`) so that the comment is clearly
   detached from the previous code block.
 
-#### PyO3 naming convention
+#### String formatting
+
+Prefer inline format strings over positional arguments:
+
+```rust
+// Preferred - inline format with variable names
+anyhow::bail!("Failed to subtract {n} months from {datetime}");
+
+// Instead of - positional arguments
+anyhow::bail!("Failed to subtract {} months from {}", n, datetime);
+```
+
+This makes messages more readable and self-documenting, especially when there are multiple variables.
+
+#### PyO3 naming conventions
 
 When exposing Rust functions to Python **via PyO3**:
 
@@ -57,7 +71,7 @@ pub fn py_do_something() -> PyResult<()> {
 }
 ```
 
-### Error Handling
+### Error handling
 
 Use structured error handling patterns consistently:
 
@@ -102,19 +116,7 @@ Use structured error handling patterns consistently:
 
    **Note**: Use `anyhow::bail!` for early returns, but `anyhow::anyhow!` in closure contexts like `ok_or_else()` where early returns aren't possible.
 
-5. **Error Message Formatting**: Prefer inline format strings over positional arguments:
-
-   ```rust
-   // Preferred - inline format with variable names
-   anyhow::bail!("Failed to subtract {n} months from {datetime}");
-
-   // Instead of - positional arguments
-   anyhow::bail!("Failed to subtract {} months from {}", n, datetime);
-   ```
-
-   This makes error messages more readable and self-documenting, especially when there are multiple variables.
-
-### Attribute Patterns
+### Attribute patterns
 
 Consistent attribute usage and ordering:
 
@@ -161,7 +163,7 @@ pub enum AccountType {
 }
 ```
 
-### Constructor Patterns
+### Constructor patterns
 
 Use the `new()` vs `new_checked()` convention consistently:
 
@@ -195,7 +197,7 @@ Always use the `FAILED` constant for `.expect()` messages related to correctness
 use nautilus_core::correctness::FAILED;
 ```
 
-### Constants and Naming Conventions
+### Constants and naming conventions
 
 Use SCREAMING_SNAKE_CASE for constants with descriptive names:
 
@@ -211,7 +213,35 @@ pub const BAR_SPEC_1_MINUTE_LAST: BarSpecification = BarSpecification {
 };
 ```
 
-### Re-export Patterns
+### Hash collections
+
+Prefer `AHashMap` and `AHashSet` from the `ahash` crate over the standard library's `HashMap` and `HashSet`:
+
+```rust
+use ahash::{AHashMap, AHashSet};
+
+// Preferred - using AHashMap/AHashSet
+let mut symbols: AHashSet<Symbol> = AHashSet::new();
+let mut prices: AHashMap<InstrumentId, Price> = AHashMap::new();
+
+// Instead of - standard library HashMap/HashSet
+use std::collections::{HashMap, HashSet};
+let mut symbols: HashSet<Symbol> = HashSet::new();
+let mut prices: HashMap<InstrumentId, Price> = HashMap::new();
+```
+
+**Why use `ahash`?**
+
+- **Superior performance**: AHash uses AES-NI hardware instructions when available, providing 2-3x faster hashing compared to the default SipHash.
+- **Low collision rates**: Despite being non-cryptographic, AHash provides excellent distribution and low collision rates for typical data.
+- **Drop-in replacement**: Fully compatible API with standard library collections.
+
+**When to use standard `HashMap`/`HashSet`:**
+
+- **Cryptographic security required**: Use standard `HashMap` when hash flooding attacks are a concern (e.g., handling untrusted user input in network protocols).
+- **Network clients**: Currently prefer standard `HashMap` for network-facing components where security considerations outweigh performance benefits.
+
+### Re-export patterns
 
 Organize re-exports alphabetically and place at the end of lib.rs files:
 
@@ -231,7 +261,7 @@ pub use crate::identifiers::{
 };
 ```
 
-### Documentation Standards
+### Documentation standards
 
 #### Module-Level Documentation
 
@@ -256,6 +286,7 @@ For modules with feature flags, document them clearly:
 //!
 //! - `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//! - `extension-module`: Builds as a Python extension module (used with `python`).
 //! - `stubs`: Enables type stubs for use in testing scenarios.
 ```
 
@@ -371,9 +402,11 @@ impl Send for MessageBus {
 }
 ```
 
-### Testing Conventions
+### Testing conventions
 
-- Do not use Arrange, Act, Assert separator comments for Rust tests.
+- Use `mod tests` as the standard test module name unless you need to specifically compartmentalize.
+- Use `#[rstest]` attributes consistently, this standardization reduces cognitive overhead.
+- Do *not* use Arrange, Act, Assert separator comments in Rust tests.
 
 #### Test Organization
 
@@ -383,6 +416,7 @@ Use consistent test module structure with section separators:
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -422,6 +456,119 @@ fn test_sma_with_single_input()
 fn test_symbol_is_composite()
 ```
 
+## Rust-Python Memory Management
+
+When working with PyO3 bindings, it's critical to understand and avoid reference cycles between Rust's `Arc` reference counting and Python's garbage collector.
+This section documents best practices for handling Python objects in Rust callback-holding structures.
+
+### The Reference Cycle Problem
+
+**Problem**: Using `Arc<PyObject>` in callback-holding structs creates circular references:
+
+1. **Rust `Arc` holds Python objects** → increases Python reference count.
+2. **Python objects might reference Rust objects** → creates cycles.
+3. **Neither side can be garbage collected** → memory leak.
+
+**Example of problematic pattern**:
+
+```rust
+// AVOID: This creates reference cycles
+struct CallbackHolder {
+    handler: Option<Arc<PyObject>>,  // ❌ Arc wrapper causes cycles
+}
+```
+
+### The Solution: GIL-Based Cloning
+
+**Solution**: Use plain `PyObject` with proper GIL-based cloning via `clone_py_object()`:
+
+```rust
+use nautilus_core::python::clone_py_object;
+
+// CORRECT: Use plain PyObject without Arc wrapper
+struct CallbackHolder {
+    handler: Option<PyObject>,  // ✅ No Arc wrapper
+}
+
+// Manual Clone implementation using clone_py_object
+impl Clone for CallbackHolder {
+    fn clone(&self) -> Self {
+        Self {
+            handler: self.handler.as_ref().map(clone_py_object),
+        }
+    }
+}
+```
+
+### Best Practices
+
+#### 1. Use `clone_py_object()` for Python object cloning
+
+```rust
+// When cloning Python callbacks
+let cloned_callback = clone_py_object(&original_callback);
+
+// In manual Clone implementations
+self.py_handler.as_ref().map(clone_py_object)
+```
+
+#### 2. Remove `#[derive(Clone)]` from callback-holding structs
+
+```rust
+// BEFORE: Automatic derive causes issues with PyObject
+#[derive(Clone)]  // ❌ Remove this
+struct Config {
+    handler: Option<PyObject>,
+}
+
+// AFTER: Manual implementation with proper cloning
+struct Config {
+    handler: Option<PyObject>,
+}
+
+impl Clone for Config {
+    fn clone(&self) -> Self {
+        Self {
+            // Clone regular fields normally
+            url: self.url.clone(),
+            // Use clone_py_object for Python objects
+            handler: self.handler.as_ref().map(clone_py_object),
+        }
+    }
+}
+```
+
+#### 3. Update function signatures to accept `PyObject`
+
+```rust
+// BEFORE: Arc wrapper in function signatures
+fn spawn_task(handler: Arc<PyObject>) { ... }  // ❌
+
+// AFTER: Plain PyObject
+fn spawn_task(handler: PyObject) { ... }  // ✅
+```
+
+#### 4. Avoid `Arc::new()` when creating Python callbacks
+
+```rust
+// BEFORE: Wrapping in Arc
+let callback = Arc::new(py_function);  // ❌
+
+// AFTER: Use directly
+let callback = py_function;  // ✅
+```
+
+### Why this works
+
+The `clone_py_object()` function:
+
+- **Acquires the Python GIL** before performing clone operations.
+- **Uses Python's native reference counting** via `clone_ref()`.
+- **Avoids Rust Arc wrappers** that interfere with Python GC.
+- **Maintains thread safety** through proper GIL management.
+
+This approach allows both Rust and Python garbage collectors to work correctly, eliminating memory leaks from reference cycles.
+
 ## Unsafe Rust
 
 It will be necessary to write `unsafe` Rust code to be able to achieve the value
@@ -434,7 +581,7 @@ the contract between the interface and caller, shifting some responsibility for 
 from the Rust compiler, and onto us. The goal is to realize the advantages of the `unsafe` facility, whilst avoiding *any* undefined behavior.
 The definition for what the Rust language designers consider undefined behavior can be found in the [language reference](https://doc.rust-lang.org/stable/reference/behavior-considered-undefined.html).
 
-### Safety Policy
+### Safety policy
 
 To maintain correctness, any use of `unsafe` Rust must follow our policy:
 
@@ -446,10 +593,19 @@ and covering the invariants which the function expects the callers to uphold, an
 ```rust
 // SAFETY: Message bus is not meant to be passed between threads
 #[allow(unsafe_code)]
+
 unsafe impl Send for MessageBus {}
 ```
 
-## Tooling Configuration
+- **Crate-level lint** – every crate that exposes FFI symbols enables
+  `#![deny(unsafe_op_in_unsafe_fn)]`. Even inside an `unsafe fn`, each pointer dereference or
+  other dangerous operation must be wrapped in its own `unsafe { … }` block.
+
+- **CVec contract** – for raw vectors that cross the FFI boundary read the
+  [FFI Memory Contract](ffi.md). Foreign code becomes the owner of the allocation and **must**
+  call the matching `vec_drop_*` function exactly once.
+
+## Tooling configuration
 
 The project uses several tools for code quality:
 

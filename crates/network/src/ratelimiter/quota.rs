@@ -183,11 +183,11 @@ impl Quota {
         let tau_u64 = tau.as_u64();
 
         // Validate division won't be zero or overflow
-        assert!((t_u64 != 0), "Invalid GCRA parameter: t cannot be zero");
+        assert!(t_u64 != 0, "Invalid GCRA parameter: t cannot be zero");
 
         let division_result = tau_u64 / t_u64;
         assert!(
-            (division_result != 0),
+            division_result != 0,
             "Invalid GCRA parameters: tau/t results in zero burst capacity"
         );
         assert!(

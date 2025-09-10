@@ -20,6 +20,7 @@ import msgspec
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
@@ -32,8 +33,8 @@ from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.instruments import Instrument
 
 
-def create_instrument_info(instrument: Instrument) -> nautilus_pyo3.InstrumentMiniInfo:
-    return nautilus_pyo3.InstrumentMiniInfo(
+def create_instrument_info(instrument: Instrument) -> nautilus_pyo3.TardisInstrumentMiniInfo:
+    return nautilus_pyo3.TardisInstrumentMiniInfo(
         instrument_id=nautilus_pyo3.InstrumentId.from_str(instrument.id.value),
         raw_symbol=instrument.raw_symbol.value,
         exchange=infer_tardis_exchange_str(instrument),
@@ -88,11 +89,6 @@ def infer_tardis_exchange_str(instrument: Instrument) -> str:  # noqa: C901 (too
                 return "huobi-dm-options"
         case "HUOBI_DELIVERY":
             return "huobi-dm-swap"
-        case "KRAKEN":
-            if isinstance(instrument, CurrencyPair):
-                return "kraken"
-            else:
-                return "kraken-futures"
         case "OKEX":
             if isinstance(instrument, CurrencyPair):
                 return "okex"
@@ -126,6 +122,8 @@ def convert_nautilus_data_type_to_tardis_data_type(data_type: type) -> str:
         return "quote"
     elif data_type is TradeTick:
         return "trade"
+    elif data_type is FundingRateUpdate:
+        return "derivative_ticker"
     else:
         raise ValueError(f"Invalid `data_type` to convert, was {data_type}")
 

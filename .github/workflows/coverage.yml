@@ -32,7 +32,7 @@ jobs:
         options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@002fdce3c6a235733a90a27c80493a3241e56863 # v2.12.1
+      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
         with:
           egress-policy: audit
 
@@ -45,10 +45,11 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Nautilus CLI and run init postgres
-        run: |
-          make install-cli
-          nautilus database init --schema ${{ github.workspace }}/schema/sql
+      - name: Install Nautilus CLI
+        run: bash scripts/ci/install-nautilus-cli.sh
+
+      - name: Init postgres schema
+        run: nautilus database init --schema ${{ github.workspace }}/schema/sql
         env:
           POSTGRES_HOST: localhost
           POSTGRES_PORT: 5432

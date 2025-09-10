@@ -19,8 +19,7 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use std::collections::HashMap;
-
+use ahash::AHashMap;
 use bytes::Bytes;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
@@ -43,14 +42,14 @@ use crate::{custom::CustomData, signal::Signal};
 
 #[derive(Debug, Default)]
 pub struct CacheMap {
-    pub currencies: HashMap<Ustr, Currency>,
-    pub instruments: HashMap<InstrumentId, InstrumentAny>,
-    pub synthetics: HashMap<InstrumentId, SyntheticInstrument>,
-    pub accounts: HashMap<AccountId, AccountAny>,
-    pub orders: HashMap<ClientOrderId, OrderAny>,
-    pub positions: HashMap<PositionId, Position>,
-    pub greeks: HashMap<InstrumentId, GreeksData>,
-    pub yield_curves: HashMap<String, YieldCurveData>,
+    pub currencies: AHashMap<Ustr, Currency>,
+    pub instruments: AHashMap<InstrumentId, InstrumentAny>,
+    pub synthetics: AHashMap<InstrumentId, SyntheticInstrument>,
+    pub accounts: AHashMap<AccountId, AccountAny>,
+    pub orders: AHashMap<ClientOrderId, OrderAny>,
+    pub positions: AHashMap<PositionId, Position>,
+    pub greeks: AHashMap<InstrumentId, GreeksData>,
+    pub yield_curves: AHashMap<String, YieldCurveData>,
 }
 
 #[async_trait::async_trait]
@@ -81,57 +80,57 @@ pub trait CacheDatabaseAdapter {
     /// # Errors
     ///
     /// Returns an error if the load operation fails.
-    fn load(&self) -> anyhow::Result<HashMap<String, Bytes>>;
+    fn load(&self) -> anyhow::Result<AHashMap<String, Bytes>>;
 
     /// Loads all currencies from the cache.
     ///
     /// # Errors
     ///
     /// Returns an error if loading currencies fails.
-    async fn load_currencies(&self) -> anyhow::Result<HashMap<Ustr, Currency>>;
+    async fn load_currencies(&self) -> anyhow::Result<AHashMap<Ustr, Currency>>;
 
     /// Loads all instruments from the cache.
     ///
     /// # Errors
     ///
     /// Returns an error if loading instruments fails.
-    async fn load_instruments(&self) -> anyhow::Result<HashMap<InstrumentId, InstrumentAny>>;
+    async fn load_instruments(&self) -> anyhow::Result<AHashMap<InstrumentId, InstrumentAny>>;
 
     /// Loads all synthetic instruments from the cache.
     ///
     /// # Errors
     ///
     /// Returns an error if loading synthetic instruments fails.
-    async fn load_synthetics(&self) -> anyhow::Result<HashMap<InstrumentId, SyntheticInstrument>>;
+    async fn load_synthetics(&self) -> anyhow::Result<AHashMap<InstrumentId, SyntheticInstrument>>;
 
     /// Loads all accounts from the cache.
     ///
     /// # Errors
     ///
     /// Returns an error if loading accounts fails.
-    async fn load_accounts(&self) -> anyhow::Result<HashMap<AccountId, AccountAny>>;
+    async fn load_accounts(&self) -> anyhow::Result<AHashMap<AccountId, AccountAny>>;
 
     /// Loads all orders from the cache.
     ///
     /// # Errors
     ///
     /// Returns an error if loading orders fails.
-    async fn load_orders(&self) -> anyhow::Result<HashMap<ClientOrderId, OrderAny>>;
+    async fn load_orders(&self) -> anyhow::Result<AHashMap<ClientOrderId, OrderAny>>;
 
     /// Loads all positions from the cache.
     ///
     /// # Errors
     ///
     /// Returns an error if loading positions fails.
-    async fn load_positions(&self) -> anyhow::Result<HashMap<PositionId, Position>>;
+    async fn load_positions(&self) -> anyhow::Result<AHashMap<PositionId, Position>>;
 
     /// Loads all [`GreeksData`] from the cache.
     ///
     /// # Errors
     ///
     /// Returns an error if loading greeks data fails.
-    async fn load_greeks(&self) -> anyhow::Result<HashMap<InstrumentId, GreeksData>> {
-        Ok(HashMap::new())
+    async fn load_greeks(&self) -> anyhow::Result<AHashMap<InstrumentId, GreeksData>> {
+        Ok(AHashMap::new())
     }
 
     /// Loads all [`YieldCurveData`] from the cache.
@@ -139,8 +138,8 @@ pub trait CacheDatabaseAdapter {
     /// # Errors
     ///
     /// Returns an error if loading yield curve data fails.
-    async fn load_yield_curves(&self) -> anyhow::Result<HashMap<String, YieldCurveData>> {
-        Ok(HashMap::new())
+    async fn load_yield_curves(&self) -> anyhow::Result<AHashMap<String, YieldCurveData>> {
+        Ok(AHashMap::new())
     }
 
     /// Loads mapping from order IDs to position IDs.
@@ -148,14 +147,14 @@ pub trait CacheDatabaseAdapter {
     /// # Errors
     ///
     /// Returns an error if loading the index order-position mapping fails.
-    fn load_index_order_position(&self) -> anyhow::Result<HashMap<ClientOrderId, Position>>;
+    fn load_index_order_position(&self) -> anyhow::Result<AHashMap<ClientOrderId, Position>>;
 
     /// Loads mapping from order IDs to client IDs.
     ///
     /// # Errors
     ///
     /// Returns an error if loading the index order-client mapping fails.
-    fn load_index_order_client(&self) -> anyhow::Result<HashMap<ClientOrderId, ClientId>>;
+    fn load_index_order_client(&self) -> anyhow::Result<AHashMap<ClientOrderId, ClientId>>;
 
     /// Loads a single currency by code.
     ///
@@ -211,14 +210,14 @@ pub trait CacheDatabaseAdapter {
     /// # Errors
     ///
     /// Returns an error if loading actor state fails.
-    fn load_actor(&self, component_id: &ComponentId) -> anyhow::Result<HashMap<String, Bytes>>;
+    fn load_actor(&self, component_id: &ComponentId) -> anyhow::Result<AHashMap<String, Bytes>>;
 
     /// Loads strategy state by strategy ID.
     ///
     /// # Errors
     ///
     /// Returns an error if loading strategy state fails.
-    fn load_strategy(&self, strategy_id: &StrategyId) -> anyhow::Result<HashMap<String, Bytes>>;
+    fn load_strategy(&self, strategy_id: &StrategyId) -> anyhow::Result<AHashMap<String, Bytes>>;
 
     /// Loads signals by name.
     ///

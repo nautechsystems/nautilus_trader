@@ -13,18 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    sync::{Arc, atomic::Ordering},
-    time::Duration,
-};
+use std::{sync::atomic::Ordering, time::Duration};
 
-use nautilus_core::python::to_pyruntime_err;
+use nautilus_core::python::{clone_py_object, to_pyruntime_err};
 use pyo3::prelude::*;
 use tokio_tungstenite::tungstenite::stream::Mode;
 
 use crate::{
     mode::ConnectionMode,
-    socket::{SocketClient, SocketConfig, WriterCommand},
+    socket::{SocketClient, SocketConfig, TcpMessageHandler, WriterCommand},
 };
 
 #[pymethods]
@@ -46,11 +43,22 @@ impl SocketConfig {
         certs_dir: Option<String>,
     ) -> Self {
         let mode = if ssl { Mode::Tls } else { Mode::Plain };
+
+        // Create function pointer that calls Python handler
+        let handler_clone = clone_py_object(&handler);
+        let message_handler: TcpMessageHandler = std::sync::Arc::new(move |data: &[u8]| {
+            Python::with_gil(|py| {
+                if let Err(e) = handler_clone.call1(py, (data,)) {
+                    tracing::error!("Error calling Python message handler: {e}");
+                }
+            });
+        });
+
         Self {
             url,
             mode,
             suffix,
-            py_handler: Some(Arc::new(handler)),
+            message_handler: Some(message_handler),
             heartbeat,
             reconnect_timeout_ms,
             reconnect_delay_initial_ms,
@@ -79,13 +87,46 @@ impl SocketClient {
         post_disconnection: Option<PyObject>,
         py: Python<'_>,
     ) -> PyResult<Bound<'_, PyAny>> {
+        // Convert Python callbacks to function pointers
+        let post_connection_fn = post_connection.map(|callback| {
+            let callback_clone = clone_py_object(&callback);
+            std::sync::Arc::new(move || {
+                Python::with_gil(|py| {
+                    if let Err(e) = callback_clone.call0(py) {
+                        tracing::error!("Error calling post_connection handler: {e}");
+                    }
+                });
+            }) as std::sync::Arc<dyn Fn() + Send + Sync>
+        });
+
+        let post_reconnection_fn = post_reconnection.map(|callback| {
+            let callback_clone = clone_py_object(&callback);
+            std::sync::Arc::new(move || {
+                Python::with_gil(|py| {
+                    if let Err(e) = callback_clone.call0(py) {
+                        tracing::error!("Error calling post_reconnection handler: {e}");
+                    }
+                });
+            }) as std::sync::Arc<dyn Fn() + Send + Sync>
+        });
+
+        let post_disconnection_fn = post_disconnection.map(|callback| {
+            let callback_clone = clone_py_object(&callback);
+            std::sync::Arc::new(move || {
+                Python::with_gil(|py| {
+                    if let Err(e) = callback_clone.call0(py) {
+                        tracing::error!("Error calling post_disconnection handler: {e}");
+                    }
+                });
+            }) as std::sync::Arc<dyn Fn() + Send + Sync>
+        });
+
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             Self::connect(
                 config,
-                None, // Rust handler
-                post_connection,
-                post_reconnection,
-                post_disconnection,
+                post_connection_fn,
+                post_reconnection_fn,
+                post_disconnection_fn,
             )
             .await
             .map_err(to_pyruntime_err)
@@ -174,10 +215,10 @@ impl SocketClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             match ConnectionMode::from_atomic(&mode) {
                 ConnectionMode::Closed => {
-                    tracing::warn!("Socket already closed");
+                    tracing::debug!("Socket already closed");
                 }
                 ConnectionMode::Disconnect => {
-                    tracing::warn!("Socket already disconnecting");
+                    tracing::debug!("Socket already disconnecting");
                 }
                 _ => {
                     mode.store(ConnectionMode::Disconnect.as_u8(), Ordering::SeqCst);

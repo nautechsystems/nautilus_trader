@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from nautilus_trader.adapters.bybit.common.constants import BYBIT_HOUR_INTERVALS
@@ -27,12 +28,19 @@ from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import bar_aggregation_to_str
+from nautilus_trader.model.objects import FIXED_SCALAR
 
 
 if TYPE_CHECKING:
     from nautilus_trader.model.identifiers import InstrumentId
     from nautilus_trader.model.objects import Price
     from nautilus_trader.model.objects import Quantity
+
+
+def parse_str_to_raw(value: str) -> int:
+    if not value or value == "":
+        return 0
+    return int(Decimal(value) * Decimal(int(FIXED_SCALAR)))
 
 
 def parse_aggressor_side(value: str) -> AggressorSide:
@@ -58,10 +66,14 @@ def parse_bybit_delta(
 ) -> OrderBookDelta:
     price = values[0]
     size = values[1]
-    if snapshot:
+
+    # Handle zero sizes better
+    if size.as_double() == 0:
+        action = BookAction.DELETE
+    elif snapshot:
         action = BookAction.ADD
     else:
-        action = BookAction.DELETE if size == 0 else BookAction.UPDATE
+        action = BookAction.UPDATE
 
     return OrderBookDelta(
         instrument_id=instrument_id,

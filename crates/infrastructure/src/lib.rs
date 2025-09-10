@@ -15,7 +15,7 @@
 
 //! Database and messaging infrastructure for [NautilusTrader](http://nautilustrader.io).
 //!
-//! The *infrastructure* crate provides backend database implementations and message bus adapters
+//! The `nautilus-infrastructure` crate provides backend database implementations and message bus adapters
 //! that enable NautilusTrader to scale from development to production deployments. This includes
 //! enterprise-grade data persistence and messaging capabilities:
 //!
@@ -47,7 +47,8 @@
 //!
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 //! - `redis`: Enables the Redis cache database and message bus backing implementations.
-//! - `sql`: Enables the SQL models and cache database.
+//! - `postgres`: Enables the PostgreSQL SQLx models and cache database backend.
+//! - `extension-module`: Builds the crate as a Python extension module.
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]

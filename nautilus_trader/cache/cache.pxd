@@ -30,6 +30,7 @@ from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.model.book cimport OrderBook
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarType
+from nautilus_trader.model.data cimport FundingRateUpdate
 from nautilus_trader.model.data cimport IndexPriceUpdate
 from nautilus_trader.model.data cimport MarkPriceUpdate
 from nautilus_trader.model.data cimport QuoteTick
@@ -68,6 +69,7 @@ cdef class Cache(CacheFacade):
     cdef dict _xrate_symbols
     cdef dict _mark_prices
     cdef dict _index_prices
+    cdef dict _funding_rates
     cdef dict _bars
     cdef dict _bars_bid
     cdef dict _bars_ask
@@ -92,6 +94,7 @@ cdef class Cache(CacheFacade):
     cdef dict _index_position_orders
     cdef dict _index_instrument_orders
     cdef dict _index_instrument_positions
+    cdef dict _index_instrument_position_snapshots
     cdef dict _index_strategy_orders
     cdef dict _index_strategy_positions
     cdef dict _index_exec_algorithm_orders
@@ -114,6 +117,8 @@ cdef class Cache(CacheFacade):
 
     cdef readonly bint has_backing
     """If the cache has a database backing.\n\n:returns: `bool`"""
+    cdef readonly bint persist_account_events
+    """If account state events are written to the backing database.\n\n:returns: `bool`"""
     cdef readonly int tick_capacity
     """The caches tick capacity.\n\n:returns: `int`"""
     cdef readonly int bar_capacity
@@ -168,6 +173,7 @@ cdef class Cache(CacheFacade):
     cpdef void add_trade_tick(self, TradeTick tick)
     cpdef void add_mark_price(self, MarkPriceUpdate mark_price)
     cpdef void add_index_price(self, IndexPriceUpdate index_price)
+    cpdef void add_funding_rate(self, FundingRateUpdate funding_rate)
     cpdef void add_bar(self, Bar bar)
     cpdef void add_quote_ticks(self, list ticks)
     cpdef void add_trade_ticks(self, list ticks)

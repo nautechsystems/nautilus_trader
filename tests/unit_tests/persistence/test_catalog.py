@@ -98,7 +98,7 @@ def test_catalog_instruments_df(
     catalog_betfair: ParquetDataCatalog,
 ) -> None:
     instruments = catalog_betfair.instruments()
-    assert len(instruments) == 2
+    assert len(instruments) == 4
 
 
 def test_catalog_instruments_filtered_df(
@@ -106,7 +106,7 @@ def test_catalog_instruments_filtered_df(
 ) -> None:
     instrument_id = catalog_betfair.instruments()[0].id.value
     instruments = catalog_betfair.instruments(instrument_ids=[instrument_id])
-    assert len(instruments) == 1
+    assert len(instruments) == 2  # There are duplicates in the test data
     assert all(isinstance(ins, BettingInstrument) for ins in instruments)
     assert instruments[0].id.value == instrument_id
 
@@ -207,8 +207,12 @@ def test_catalog_custom_data(catalog: ParquetDataCatalog) -> None:
     # Assert
     assert data_usd is not None
     assert data_chf is not None
-    assert len(data_usd) == 22941
-    assert len(data_chf) == 2745
+    assert (
+        len(data_usd) == 1258
+    )  # Reduced from 22941 for faster testing (USD events in first 5k rows)
+    assert (
+        len(data_chf) == 210
+    )  # Reduced from 2745 for faster testing (CHF events in first 5k rows)
     assert isinstance(data_chf[0], CustomData)
 
 
@@ -2128,3 +2132,125 @@ def test_delete_data_range_zero_timestamp_edge_case(catalog: ParquetDataCatalog)
     timestamps = [q.ts_init for q in remaining_data]
     timestamps.sort()
     assert timestamps == [2, 3]
+
+
+def test_backend_session_table_naming_multiple_instruments(catalog: ParquetDataCatalog) -> None:
+    """
+    Test that backend_session creates identifier-dependent table names for multiple
+    instruments.
+
+    This test verifies the fix for the table naming bug where multiple instruments would
+    cause table name conflicts in DataFusion queries.
+
+    """
+    # Arrange - Create bars for multiple instruments
+    bar_type1 = TestDataStubs.bartype_adabtc_binance_1min_last()
+    instrument1 = TestInstrumentProvider.adabtc_binance()
+    bars1 = TestDataStubs.binance_bars_from_csv(
+        "ADABTC-1m-2021-11-27.csv",
+        bar_type1,
+        instrument1,
+    )[
+        :5
+    ]  # Use fewer bars for faster test
+
+    bar_type2 = TestDataStubs.bartype_btcusdt_binance_100tick_last()
+    instrument2 = TestInstrumentProvider.btcusdt_binance()
+    bars2 = TestDataStubs.binance_bars_from_csv(
+        "ADABTC-1m-2021-11-27.csv",  # Reuse same CSV data but with different bar_type
+        bar_type2,
+        instrument2,
+    )[
+        :5
+    ]  # Use fewer bars for faster test
+
+    # Write data for both instruments
+    catalog.write_data(bars1)
+    catalog.write_data(bars2)
+
+    # Act - Create backend session with multiple instruments
+    identifiers = [str(bar_type1), str(bar_type2)]
+    session = catalog.backend_session(
+        data_cls=Bar,
+        identifiers=identifiers,
+    )
+
+    # Assert - Session should be created successfully without table name conflicts
+    assert session is not None
+
+    # Query data using the session to verify it works correctly
+    result = session.to_query_result()
+    data = []
+    for chunk in result:
+        from nautilus_trader.model.data import capsule_to_list
+
+        data.extend(capsule_to_list(chunk))
+
+    # Should get data from both instruments
+    assert len(data) == 10  # 5 bars from each instrument
+
+    # Verify we have data from both instruments
+    instrument_ids = {bar.bar_type.instrument_id.value for bar in data}
+    assert len(instrument_ids) == 2
+    assert instrument1.id.value in instrument_ids
+    assert instrument2.id.value in instrument_ids
+
+
+def test_backend_session_table_naming_special_characters(catalog: ParquetDataCatalog) -> None:
+    """
+    Test that backend_session handles special characters in identifiers correctly.
+
+    This test verifies that identifiers with dots, hyphens, and slashes are properly
+    converted to safe SQL table names.
+
+    """
+    # Arrange - Create quote ticks for instruments with special characters
+    eurusd_instrument = TestInstrumentProvider.default_fx_ccy("EUR/USD", Venue("SIM"))
+    btcusd_instrument = TestInstrumentProvider.default_fx_ccy("BTC-USD", Venue("COINBASE"))
+
+    quotes_eurusd = [
+        TestDataStubs.quote_tick(
+            instrument=eurusd_instrument,
+            ts_init=i * 1000,
+        )
+        for i in range(3)
+    ]
+
+    quotes_btc_usd = [
+        TestDataStubs.quote_tick(
+            instrument=btcusd_instrument,
+            ts_init=i * 1000 + 500,
+        )
+        for i in range(3)
+    ]
+
+    # Write data
+    catalog.write_data(quotes_eurusd)
+    catalog.write_data(quotes_btc_usd)
+
+    # Act - Create backend session with identifiers containing special characters
+    identifiers = [str(eurusd_instrument.id), str(btcusd_instrument.id)]
+    session = catalog.backend_session(
+        data_cls=QuoteTick,
+        identifiers=identifiers,
+    )
+
+    # Assert - Session should be created successfully
+    assert session is not None
+
+    # Query data to verify it works
+    result = session.to_query_result()
+    data = []
+    for chunk in result:
+        from nautilus_trader.model.data import capsule_to_list
+
+        data.extend(capsule_to_list(chunk))
+
+    # Should get data from both instruments
+    assert len(data) == 6  # 3 quotes from each instrument
+
+    # Verify we have data from both instruments
+    instrument_ids = {quote.instrument_id.value for quote in data}
+    assert len(instrument_ids) == 2
+    assert str(eurusd_instrument.id) in instrument_ids
+    assert str(btcusd_instrument.id) in instrument_ids

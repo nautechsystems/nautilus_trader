@@ -153,6 +153,21 @@ impl RedisCacheDatabase {
         }
     }
 
+    #[pyo3(name = "read_bulk")]
+    fn py_read_bulk(&mut self, py: Python, keys: Vec<String>) -> PyResult<Vec<Option<PyObject>>> {
+        let result = get_runtime().block_on(async { self.read_bulk(&keys).await });
+        match result {
+            Ok(results) => {
+                let vec_py_bytes = results
+                    .into_iter()
+                    .map(|opt| opt.map(|bytes| PyBytes::new(py, bytes.as_ref()).into()))
+                    .collect::<Vec<Option<PyObject>>>();
+                Ok(vec_py_bytes)
+            }
+            Err(e) => Err(to_pyruntime_err(e)),
+        }
+    }
+
     #[pyo3(name = "insert")]
     fn py_insert(&mut self, key: String, payload: Vec<Vec<u8>>) -> PyResult<()> {
         let payload: Vec<Bytes> = payload.into_iter().map(Bytes::from).collect();

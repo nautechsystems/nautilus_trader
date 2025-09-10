@@ -58,9 +58,7 @@ cdef class SubscribeOrderBook(SubscribeData):
     cdef readonly bint managed
     """If an order book should be managed by the data engine based on the subscribed feed."""
     cdef readonly int interval_ms
-    """The order book snapshot interval in milliseconds (must be positive)."""
-    cdef readonly bint only_deltas
-    """If the subscription is for OrderBookDeltas or OrderBook snapshots."""
+    """The order book snapshot interval in milliseconds (must be positive for snapshots)."""
 
 
 cdef class SubscribeQuoteTicks(SubscribeData):
@@ -76,6 +74,10 @@ cdef class SubscribeMarkPrices(SubscribeData):
 
 
 cdef class SubscribeIndexPrices(SubscribeData):
+    pass
+
+
+cdef class SubscribeFundingRates(SubscribeData):
     pass
 
 
@@ -108,8 +110,7 @@ cdef class UnsubscribeInstrument(UnsubscribeData):
 
 
 cdef class UnsubscribeOrderBook(UnsubscribeData):
-    cdef readonly bint only_deltas
-    """If the subscription is for OrderBookDeltas or OrderBook snapshots."""
+    pass
 
 
 cdef class UnsubscribeQuoteTicks(UnsubscribeData):
@@ -125,6 +126,10 @@ cdef class UnsubscribeMarkPrices(UnsubscribeData):
 
 
 cdef class UnsubscribeIndexPrices(UnsubscribeData):
+    pass
+
+
+cdef class UnsubscribeFundingRates(UnsubscribeData):
     pass
 
 
@@ -194,6 +199,10 @@ cdef class DataResponse(Response):
     """The response data type.\n\n:returns: `type`"""
     cdef readonly object data
     """The response data.\n\n:returns: `object`"""
+    cdef readonly datetime start
+    """The start datetime (UTC) of response time range (inclusive)."""
+    cdef readonly datetime end
+    """The end datetime (UTC) of response time range."""
     cdef readonly dict[str, object] params
     """Additional specific parameters for the response.\n\n:returns: `dict[str, object]` or ``None``"""
 

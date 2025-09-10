@@ -254,7 +254,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
     cpdef dict load(self):
         """
-        Load all general objects from the database.
+        Load all general objects from the database using bulk loading for efficiency.
 
         Returns
         -------
@@ -262,28 +262,34 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         """
         cdef dict general = {}
-
         cdef list general_keys = self._backing.keys(f"{_GENERAL}:*")
+
         if not general_keys:
             return general
 
-        cdef:
-            str key
-            list result
-            bytes value_bytes
-        for key in general_keys:
-            key = key.split(':', maxsplit=1)[1]
-            result = self._backing.read(key)
-            value_bytes = result[0]
-            if value_bytes is not None:
-                key = key.split(':', maxsplit=1)[1]
-                general[key] = value_bytes
+        # Use bulk loading for efficiency
+        cdef list bulk_results = self._backing.read_bulk(general_keys)
+
+        cdef bytes value_bytes
+        cdef str key
+        cdef str clean_key
+        cdef int idx
+
+        for idx in range(len(general_keys)):
+            key = general_keys[idx]
+            # Extract the clean key (remove trader_key prefix and general prefix)
+            clean_key = key.split(':', maxsplit=1)[1]  # Remove trader_key prefix
+            clean_key = clean_key.split(':', maxsplit=1)[1]  # Remove general prefix
+
+            if idx < len(bulk_results) and bulk_results[idx] is not None:
+                value_bytes = bulk_results[idx]
+                general[clean_key] = value_bytes
 
         return general
 
     cpdef dict load_currencies(self):
         """
-        Load all currencies from the database.
+        Load all currencies from the database using bulk loading for efficiency.
 
         Returns
         -------
@@ -291,27 +297,49 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         """
         cdef dict currencies = {}
-
         cdef list currency_keys = self._backing.keys(f"{_CURRENCIES}*")
+
         if not currency_keys:
             return currencies
 
-        cdef:
-            str key
-            str currency_code
-            Currency currency
+        cdef list currency_codes = []
+        cdef str key
+        cdef str currency_code
+
         for key in currency_keys:
             currency_code = key.rsplit(':', maxsplit=1)[1]
-            currency = self.load_currency(currency_code)
+            currency_codes.append(currency_code)
 
-            if currency is not None:
-                currencies[currency.code] = currency
+        cdef list bulk_results = self._backing.read_bulk(currency_keys)
+
+        cdef bytes value_bytes
+        cdef Currency currency
+        cdef int idx
+        cdef dict c_map
+
+        for idx in range(len(currency_codes)):
+            currency_code = currency_codes[idx]
+
+            if idx < len(bulk_results) and bulk_results[idx] is not None:
+                value_bytes = bulk_results[idx]
+                try:
+                    c_map = self._serializer.deserialize(value_bytes)
+                    currency = Currency(
+                        code=currency_code,
+                        precision=int(c_map["precision"]),
+                        iso4217=int(c_map["iso4217"]),
+                        name=c_map["name"],
+                        currency_type=currency_type_from_str(c_map["currency_type"]),
+                    )
+                    currencies[currency.code] = currency
+                except Exception as e:
+                    self._log.error(f"Failed to deserialize currency {currency_code}: {e}")
 
         return currencies
 
     cpdef dict load_instruments(self):
         """
-        Load all instruments from the database.
+        Load all instruments from the database using bulk loading for efficiency.
 
         Returns
         -------
@@ -319,27 +347,38 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         """
         cdef dict instruments = {}
-
         cdef list instrument_keys = self._backing.keys(f"{_INSTRUMENTS}*")
+
         if not instrument_keys:
             return instruments
+
+        # Use bulk loading for efficiency
+        cdef list bulk_results = self._backing.read_bulk(instrument_keys)
 
         cdef:
             str key
             InstrumentId instrument_id
             Instrument instrument
-        for key in instrument_keys:
-            instrument_id = InstrumentId.from_str_c(key.rsplit(':', maxsplit=1)[1])
-            instrument = self.load_instrument(instrument_id)
+            bytes instrument_bytes
+            int idx
 
-            if instrument is not None:
-                instruments[instrument.id] = instrument
+        for idx in range(len(instrument_keys)):
+            key = instrument_keys[idx]
+            instrument_id = InstrumentId.from_str_c(key.rsplit(':', maxsplit=1)[1])
+
+            if idx < len(bulk_results) and bulk_results[idx] is not None:
+                instrument_bytes = bulk_results[idx]
+                try:
+                    instrument = self._serializer.deserialize(instrument_bytes)
+                    instruments[instrument.id] = instrument
+                except Exception as e:
+                    self._log.error(f"Failed to deserialize instrument {instrument_id}: {e}")
 
         return instruments
 
     cpdef dict load_synthetics(self):
         """
-        Load all synthetic instruments from the database.
+        Load all synthetic instruments from the database using bulk loading for efficiency.
 
         Returns
         -------
@@ -347,21 +386,32 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         """
         cdef dict synthetics = {}
-
         cdef list synthetic_keys = self._backing.keys(f"{_SYNTHETICS}*")
+
         if not synthetic_keys:
             return synthetics
+
+        # Use bulk loading for efficiency
+        cdef list bulk_results = self._backing.read_bulk(synthetic_keys)
 
         cdef:
             str key
             InstrumentId instrument_id
             SyntheticInstrument synthetic
-        for key in synthetic_keys:
-            instrument_id = InstrumentId.from_str_c(key.rsplit(':', maxsplit=1)[1])
-            synthetic = self.load_synthetic(instrument_id)
+            bytes synthetic_bytes
+            int idx
 
-            if synthetic is not None:
-                synthetics[synthetic.id] = synthetic
+        for idx in range(len(synthetic_keys)):
+            key = synthetic_keys[idx]
+            instrument_id = InstrumentId.from_str_c(key.rsplit(':', maxsplit=1)[1])
+
+            if idx < len(bulk_results) and bulk_results[idx] is not None:
+                synthetic_bytes = bulk_results[idx]
+                try:
+                    synthetic = self._serializer.deserialize(synthetic_bytes)
+                    synthetics[synthetic.id] = synthetic
+                except Exception as e:
+                    self._log.error(f"Failed to deserialize synthetic {instrument_id}: {e}")
 
         return synthetics
 
@@ -375,14 +425,13 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         """
         cdef dict accounts = {}
-
         cdef list account_keys = self._backing.keys(f"{_ACCOUNTS}*")
+
         if not account_keys:
             return accounts
 
         cdef:
             str key
-            str account_str
             AccountId account_id
             Account account
         for key in account_keys:
@@ -404,8 +453,8 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         """
         cdef dict orders = {}
-
         cdef list order_keys = self._backing.keys(f"{_ORDERS}*")
+
         if not order_keys:
             return orders
 
@@ -432,8 +481,8 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         """
         cdef dict positions = {}
-
         cdef list position_keys = self._backing.keys(f"{_POSITIONS}*")
+
         if not position_keys:
             return positions
 
@@ -743,7 +792,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         cdef str key = f"{_ACTORS}:{component_id.to_str()}:state"
         self._backing.delete(key)
 
-        self._log.info(f"Deleted {repr(component_id)}")
+        self._log.debug(f"Deleted {repr(component_id)}")
 
     cpdef dict load_strategy(self, StrategyId strategy_id):
         """
@@ -783,7 +832,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         cdef str key = f"{_STRATEGIES}:{strategy_id.to_str()}:state"
         self._backing.delete(key)
 
-        self._log.info(f"Deleted {repr(strategy_id)}")
+        self._log.debug(f"Deleted {repr(strategy_id)}")
 
     cpdef void delete_order(self, ClientOrderId client_order_id):
         """
@@ -799,7 +848,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         self._backing.delete_order(client_order_id.to_str())
 
-        self._log.info(f"Deleted order {repr(client_order_id)}")
+        self._log.debug(f"Deleted order {repr(client_order_id)}")
 
     cpdef void delete_position(self, PositionId position_id):
         """
@@ -815,7 +864,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         self._backing.delete_position(position_id.to_str())
 
-        self._log.info(f"Deleted position {repr(position_id)}")
+        self._log.debug(f"Deleted position {repr(position_id)}")
 
     cpdef void delete_account_event(self, AccountId account_id, str event_id):
         """
@@ -832,9 +881,12 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         Condition.not_none(account_id, "account_id")
         Condition.not_none(event_id, "event_id")
 
-        self._backing.delete_account_event(account_id.to_str(), event_id)
+        self._log.warning(f"Deleting account events currently a no-op (pending redesign), {repr(account_id)}: {event_id}")
 
-        self._log.info(f"Deleted account event {repr(account_id)}:{event_id}")
+        # TODO: No-op pending reimplementation to improve efficiency
+        # self._backing.delete_account_event(account_id.to_str(), event_id)
+        #
+        # self._log.info(f"Deleted account event {repr(account_id)}:{event_id}")
 
     cpdef void add(self, str key, bytes value):
         """

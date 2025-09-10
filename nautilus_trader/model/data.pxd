@@ -29,6 +29,7 @@ from nautilus_trader.core.rust.model cimport BarType_t
 from nautilus_trader.core.rust.model cimport BookAction
 from nautilus_trader.core.rust.model cimport BookOrder_t
 from nautilus_trader.core.rust.model cimport BookType
+from nautilus_trader.core.rust.model cimport IndexPriceUpdate_t
 from nautilus_trader.core.rust.model cimport InstrumentCloseType
 from nautilus_trader.core.rust.model cimport MarketStatusAction
 from nautilus_trader.core.rust.model cimport MarkPriceUpdate_t
@@ -102,6 +103,13 @@ cpdef enum BarAggregation:
     DAY = 14
     WEEK = 15
     MONTH = 16
+    YEAR = 17
+
+
+cpdef enum BarIntervalType:
+    LEFT_OPEN=0
+    RIGHT_OPEN=1
+
 
 
 cdef class BarSpecification:
@@ -109,6 +117,8 @@ cdef class BarSpecification:
 
     cdef str to_str(self)
     cdef str aggregation_string_c(self)
+
+    cpdef uint64_t get_interval_ns(self)
 
     @staticmethod
     cdef BarSpecification from_mem_c(BarSpecification_t raw)
@@ -327,7 +337,7 @@ cdef class InstrumentStatus(Data):
     cdef readonly uint64_t ts_event
     """UNIX timestamp (nanoseconds) when the data event occurred.\n\n:returns: `uint64_t`"""
     cdef readonly uint64_t ts_init
-    """UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `uint64_t`"""
+    """UNIX timestamp (nanoseconds) when the instance was created.\n\n:returns: `uint64_t`"""
 
     @staticmethod
     cdef InstrumentStatus from_dict_c(dict values)
@@ -346,7 +356,7 @@ cdef class InstrumentClose(Data):
     cdef readonly uint64_t ts_event
     """UNIX timestamp (nanoseconds) when the data event occurred.\n\n:returns: `uint64_t`"""
     cdef readonly uint64_t ts_init
-    """UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `uint64_t`"""
+    """UNIX timestamp (nanoseconds) when the instance was created.\n\n:returns: `uint64_t`"""
 
     @staticmethod
     cdef InstrumentClose from_dict_c(dict values)
@@ -476,14 +486,7 @@ cdef class MarkPriceUpdate(Data):
 
 
 cdef class IndexPriceUpdate(Data):
-    cdef readonly InstrumentId instrument_id
-    """The instrument ID.\n\n:returns: `InstrumentId`"""
-    cdef readonly Price value
-    """The index price.\n\n:returns: `Price`"""
-    cdef readonly uint64_t ts_event
-    """UNIX timestamp (nanoseconds) when the update occurred.\n\n:returns: `uint64_t`"""
-    cdef readonly uint64_t ts_init
-    """UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `uint64_t`"""
+    cdef IndexPriceUpdate_t _mem
 
     cdef str to_str(self)
 
@@ -492,3 +495,22 @@ cdef class IndexPriceUpdate(Data):
 
     @staticmethod
     cdef dict to_dict_c(IndexPriceUpdate obj)
+
+
+cdef class FundingRateUpdate(Data):
+    cdef readonly InstrumentId instrument_id
+    """The instrument ID for the funding rate.\n\n:returns: `InstrumentId`"""
+    cdef readonly object rate
+    """The current funding rate.\n\n:returns: `Decimal`"""
+    cdef readonly object next_funding_ns
+    """UNIX timestamp (nanoseconds) of the next funding payment (if available, otherwise zero).\n\n:returns: `int` or ``None``"""
+    cdef readonly uint64_t _ts_event
+    """UNIX timestamp (nanoseconds) when the data event occurred.\n\n:returns: `uint64_t`"""
+    cdef readonly uint64_t _ts_init
+    """UNIX timestamp (nanoseconds) when the instance was created.\n\n:returns: `uint64_t`"""
+
+    @staticmethod
+    cdef FundingRateUpdate from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(FundingRateUpdate obj)

@@ -20,7 +20,7 @@ use alloy_primitives::U256;
 use crate::types::quantity::Quantity;
 
 impl Quantity {
-    /// Constructs a [`Quantity`] from a raw amount expressed in WEI (18-decimal fixed-point).
+    /// Constructs a [`Quantity`] from a raw amount expressed in wei (18-decimal fixed-point).
     ///
     /// The resulting [`Quantity`] will always have `precision` equal to `18`.
     ///
@@ -36,12 +36,12 @@ impl Quantity {
         let raw_u256: U256 = raw_wei.into();
         let raw_u128: u128 = raw_u256
             .try_into()
-            .expect("raw WEI value exceeds unsigned 128-bit range");
+            .expect("raw wei value exceeds unsigned 128-bit range");
 
         Self::from_raw(raw_u128, 18)
     }
 
-    /// Converts this [`Quantity`] to a WEI amount (U256).
+    /// Converts this [`Quantity`] to a wei amount (U256).
     ///
     /// Only valid for prices with precision 18. For other precisions convert to precision 18 first.
     ///
@@ -52,7 +52,7 @@ impl Quantity {
     pub fn as_wei(&self) -> U256 {
         if self.precision != 18 {
             panic!(
-                "Failed to convert quantity with precision {} to WEI (requires precision 18)",
+                "Failed to convert quantity with precision {} to wei (requires precision 18)",
                 self.precision
             );
         }
@@ -73,7 +73,7 @@ mod tests {
 
     #[rstest]
     fn test_from_wei_basic() {
-        let quantity = Quantity::from_wei(U256::from(1_000_000_000_000_000_000_u128)); // 1 token in WEI
+        let quantity = Quantity::from_wei(U256::from(1_000_000_000_000_000_000_u128)); // 1 token in wei
         assert_eq!(quantity.precision, 18);
         assert_eq!(quantity.as_decimal(), dec!(1.0));
     }
@@ -87,7 +87,7 @@ mod tests {
 
     #[rstest]
     #[should_panic(
-        expected = "Failed to convert quantity with precision 2 to WEI (requires precision 18)"
+        expected = "Failed to convert quantity with precision 2 to wei (requires precision 18)"
     )]
     fn test_as_wei_wrong_precision() {
         let quantity = Quantity::new(1.23, 2);
@@ -105,7 +105,7 @@ mod tests {
 
     #[rstest]
     fn test_from_wei_large_value() {
-        // Test with a large but valid WEI amount
+        // Test with a large but valid wei amount
         let large_wei = U256::from(1_000_000_000_000_000_000_000_u128); // 1000 tokens
         let quantity = Quantity::from_wei(large_wei);
         assert_eq!(quantity.precision, 18);
@@ -114,8 +114,8 @@ mod tests {
 
     #[rstest]
     fn test_from_wei_small_value() {
-        // Test with a small but representable WEI amount (1 million WEI = 1e-12)
-        // Very small values like 1 WEI (1e-18) are at the edge of f64 precision
+        // Test with a small but representable wei amount (1 million wei = 1e-12)
+        // Very small values like 1 wei (1e-18) are at the edge of f64 precision
         let small_wei = U256::from(1_000_000_u128);
         let quantity = Quantity::from_wei(small_wei);
         assert_eq!(quantity.precision, 18);
@@ -132,7 +132,7 @@ mod tests {
 
     #[rstest]
     fn test_from_wei_very_large_value() {
-        // Test with a very large but valid WEI amount (1 billion tokens)
+        // Test with a very large but valid wei amount (1 billion tokens)
         let large_wei = U256::from(1_000_000_000_000_000_000_000_000_000_u128);
         let quantity = Quantity::from_wei(large_wei);
         assert_eq!(quantity.precision, 18);
@@ -141,7 +141,7 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "raw WEI value exceeds unsigned 128-bit range")]
+    #[should_panic(expected = "raw wei value exceeds unsigned 128-bit range")]
     fn test_from_wei_overflow() {
         let overflow_wei = U256::from(u128::MAX) + U256::from(1_u64);
         let _ = Quantity::from_wei(overflow_wei);
@@ -149,11 +149,11 @@ mod tests {
 
     #[rstest]
     fn test_from_wei_various_amounts() {
-        // Test various WEI amounts and their decimal equivalents
+        // Test various wei amounts and their decimal equivalents
         let test_cases = vec![
-            (1_u128, dec!(0.000000000000000001)),        // 1 WEI
-            (1000_u128, dec!(0.000000000000001)),        // 1 thousand WEI
-            (1_000_000_u128, dec!(0.000000000001)),      // 1 million WEI
+            (1_u128, dec!(0.000000000000000001)),        // 1 wei
+            (1000_u128, dec!(0.000000000000001)),        // 1 thousand wei
+            (1_000_000_u128, dec!(0.000000000001)),      // 1 million wei
             (1_000_000_000_u128, dec!(0.000000001)),     // 1 gwei
             (1_000_000_000_000_u128, dec!(0.000001)),    // 1 microtoken
             (1_000_000_000_000_000_u128, dec!(0.001)),   // 1 millitoken

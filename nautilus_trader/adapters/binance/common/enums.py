@@ -133,6 +133,8 @@ class BinanceSymbolFilterType(Enum):
     MAX_NUM_ORDERS = "MAX_NUM_ORDERS"
     MAX_NUM_ALGO_ORDERS = "MAX_NUM_ALGO_ORDERS"
     MAX_NUM_ICEBERG_ORDERS = "MAX_NUM_ICEBERG_ORDERS"
+    MAX_NUM_ORDER_LISTS = "MAX_NUM_ORDER_LISTS"
+    MAX_NUM_ORDER_AMENDS = "MAX_NUM_ORDER_AMENDS"
     MAX_POSITION = "MAX_POSITION"
     TRAILING_DELTA = "TRAILING_DELTA"
     POSITION_RISK_CONTROL = "POSITION_RISK_CONTROL"
@@ -147,8 +149,8 @@ class BinanceAccountType(Enum):
     SPOT = "SPOT"
     MARGIN = "MARGIN"
     ISOLATED_MARGIN = "ISOLATED_MARGIN"
-    USDT_FUTURE = "USDT_FUTURE"
-    COIN_FUTURE = "COIN_FUTURE"
+    USDT_FUTURES = "USDT_FUTURES"
+    COIN_FUTURES = "COIN_FUTURES"
 
     @property
     def is_spot(self):
@@ -172,8 +174,8 @@ class BinanceAccountType(Enum):
     @property
     def is_futures(self) -> bool:
         return self in (
-            BinanceAccountType.USDT_FUTURE,
-            BinanceAccountType.COIN_FUTURE,
+            BinanceAccountType.USDT_FUTURES,
+            BinanceAccountType.COIN_FUTURES,
         )
 
 
@@ -332,6 +334,8 @@ class BinanceErrorCode(Enum):
     ASSET_NOT_SUPPORTED = -1126
     MORE_THAN_XX_HOURS = -1127
     OPTIONAL_PARAMS_BAD_COMBO = -1128
+    ORDER_AMEND_KEEP_PRIORITY_FAILED = -2038
+    ORDER_QUERY_DUAL_ID_NOT_FOUND = -2039
     INVALID_PARAMETER = -1130
     INVALID_NEW_ORDER_RESP_TYPE = -1136
 

@@ -15,9 +15,10 @@
 
 use std::{collections::HashMap, str::FromStr};
 
+use ahash::AHashMap;
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
-use futures::{StreamExt, future::join_all};
+use futures::future::join_all;
 use nautilus_common::{cache::database::CacheMap, enums::SerializationEncoding};
 use nautilus_model::{
     accounts::AccountAny,
@@ -113,11 +114,59 @@ impl DatabaseQueries {
         con: &mut ConnectionManager,
         pattern: String,
     ) -> anyhow::Result<Vec<String>> {
-        Ok(con
-            .scan_match::<String, String>(pattern)
-            .await?
-            .collect()
-            .await)
+        let mut result = Vec::new();
+        let mut cursor = 0u64;
+
+        loop {
+            let scan_result: (u64, Vec<String>) = redis::cmd("SCAN")
+                .arg(cursor)
+                .arg("MATCH")
+                .arg(&pattern)
+                .arg("COUNT")
+                .arg(5000)
+                .query_async(con)
+                .await?;
+
+            let (new_cursor, keys) = scan_result;
+            result.extend(keys);
+
+            // If cursor is 0, we've completed the full scan
+            if new_cursor == 0 {
+                break;
+            }
+
+            cursor = new_cursor;
+        }
+
+        Ok(result)
+    }
+
+    /// Bulk reads multiple keys from Redis using MGET for efficiency.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying Redis MGET operation fails.
+    pub async fn read_bulk(
+        con: &ConnectionManager,
+        keys: &[String],
+    ) -> anyhow::Result<Vec<Option<Bytes>>> {
+        if keys.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let mut con = con.clone();
+
+        // Use MGET to fetch all keys in a single network operation
+        let results: Vec<Option<Vec<u8>>> =
+            redis::cmd("MGET").arg(keys).query_async(&mut con).await?;
+
+        // Convert Vec<u8> to Bytes
+        let bytes_results: Vec<Option<Bytes>> = results
+            .into_iter()
+            .map(|opt| opt.map(Bytes::from))
+            .collect();
+
+        Ok(bytes_results)
     }
 
     /// Reads raw byte payloads for `key` under `trader_key` from Redis.
@@ -131,20 +180,21 @@ impl DatabaseQueries {
         key: &str,
     ) -> anyhow::Result<Vec<Bytes>> {
         let collection = Self::get_collection_key(key)?;
-        let key = format!("{trader_key}{REDIS_DELIMITER}{key}");
+        let full_key = format!("{trader_key}{REDIS_DELIMITER}{key}");
+
         let mut con = con.clone();
 
         match collection {
-            INDEX => Self::read_index(&mut con, &key).await,
-            GENERAL => Self::read_string(&mut con, &key).await,
-            CURRENCIES => Self::read_string(&mut con, &key).await,
-            INSTRUMENTS => Self::read_string(&mut con, &key).await,
-            SYNTHETICS => Self::read_string(&mut con, &key).await,
-            ACCOUNTS => Self::read_list(&mut con, &key).await,
-            ORDERS => Self::read_list(&mut con, &key).await,
-            POSITIONS => Self::read_list(&mut con, &key).await,
-            ACTORS => Self::read_string(&mut con, &key).await,
-            STRATEGIES => Self::read_string(&mut con, &key).await,
+            INDEX => Self::read_index(&mut con, &full_key).await,
+            GENERAL => Self::read_string(&mut con, &full_key).await,
+            CURRENCIES => Self::read_string(&mut con, &full_key).await,
+            INSTRUMENTS => Self::read_string(&mut con, &full_key).await,
+            SYNTHETICS => Self::read_string(&mut con, &full_key).await,
+            ACCOUNTS => Self::read_list(&mut con, &full_key).await,
+            ORDERS => Self::read_list(&mut con, &full_key).await,
+            POSITIONS => Self::read_list(&mut con, &full_key).await,
+            ACTORS => Self::read_string(&mut con, &full_key).await,
+            STRATEGIES => Self::read_string(&mut con, &full_key).await,
             _ => anyhow::bail!("Unsupported operation: `read` for collection '{collection}'"),
         }
     }
@@ -171,8 +221,8 @@ impl DatabaseQueries {
 
         // For now, we don't load greeks and yield curves from the database
         // This will be implemented in the future
-        let greeks = HashMap::new();
-        let yield_curves = HashMap::new();
+        let greeks = AHashMap::new();
+        let yield_curves = AHashMap::new();
 
         Ok(CacheMap {
             currencies,
@@ -195,43 +245,44 @@ impl DatabaseQueries {
         con: &ConnectionManager,
         trader_key: &str,
         encoding: SerializationEncoding,
-    ) -> anyhow::Result<HashMap<Ustr, Currency>> {
-        let mut currencies = HashMap::new();
+    ) -> anyhow::Result<AHashMap<Ustr, Currency>> {
+        let mut currencies = AHashMap::new();
         let pattern = format!("{trader_key}{REDIS_DELIMITER}{CURRENCIES}*");
         tracing::debug!("Loading {pattern}");
 
         let mut con = con.clone();
         let keys = Self::scan_keys(&mut con, pattern).await?;
 
-        let futures: Vec<_> = keys
-            .iter()
-            .map(|key| {
-                let con = con.clone();
-                async move {
-                    let currency_code = if let Some(code) = key.as_str().rsplit(':').next() {
-                        Ustr::from(code)
-                    } else {
-                        log::error!("Invalid key format: {key}");
-                        return None;
-                    };
+        if keys.is_empty() {
+            return Ok(currencies);
+        }
 
-                    match Self::load_currency(&con, trader_key, &currency_code, encoding).await {
-                        Ok(Some(currency)) => Some((currency_code, currency)),
-                        Ok(None) => {
-                            log::error!("Currency not found: {currency_code}");
-                            None
-                        }
-                        Err(e) => {
-                            log::error!("Failed to load currency {currency_code}: {e}");
-                            None
-                        }
+        // Use bulk loading with MGET for efficiency
+        let bulk_values = Self::read_bulk(&con, &keys).await?;
+
+        // Process the bulk results
+        for (key, value_opt) in keys.iter().zip(bulk_values.iter()) {
+            let currency_code = if let Some(code) = key.as_str().rsplit(':').next() {
+                Ustr::from(code)
+            } else {
+                log::error!("Invalid key format: {key}");
+                continue;
+            };
+
+            if let Some(value_bytes) = value_opt {
+                match Self::deserialize_payload(encoding, value_bytes) {
+                    Ok(currency) => {
+                        currencies.insert(currency_code, currency);
+                    }
+                    Err(e) => {
+                        log::error!("Failed to deserialize currency {currency_code}: {e}");
                     }
                 }
-            })
-            .collect();
+            } else {
+                log::error!("Currency not found in Redis: {currency_code}");
+            }
+        }
 
-        // Insert all Currency_code (key) and Currency (value) into the HashMap, filtering out None values.
-        currencies.extend(join_all(futures).await.into_iter().flatten());
         tracing::debug!("Loaded {} currencies(s)", currencies.len());
 
         Ok(currencies)
@@ -251,8 +302,8 @@ impl DatabaseQueries {
         con: &ConnectionManager,
         trader_key: &str,
         encoding: SerializationEncoding,
-    ) -> anyhow::Result<HashMap<InstrumentId, InstrumentAny>> {
-        let mut instruments = HashMap::new();
+    ) -> anyhow::Result<AHashMap<InstrumentId, InstrumentAny>> {
+        let mut instruments = AHashMap::new();
         let pattern = format!("{trader_key}{REDIS_DELIMITER}{INSTRUMENTS}*");
         tracing::debug!("Loading {pattern}");
 
@@ -320,8 +371,8 @@ impl DatabaseQueries {
         con: &ConnectionManager,
         trader_key: &str,
         encoding: SerializationEncoding,
-    ) -> anyhow::Result<HashMap<InstrumentId, SyntheticInstrument>> {
-        let mut synthetics = HashMap::new();
+    ) -> anyhow::Result<AHashMap<InstrumentId, SyntheticInstrument>> {
+        let mut synthetics = AHashMap::new();
         let pattern = format!("{trader_key}{REDIS_DELIMITER}{SYNTHETICS}*");
         tracing::debug!("Loading {pattern}");
 
@@ -389,8 +440,8 @@ impl DatabaseQueries {
         con: &ConnectionManager,
         trader_key: &str,
         encoding: SerializationEncoding,
-    ) -> anyhow::Result<HashMap<AccountId, AccountAny>> {
-        let mut accounts = HashMap::new();
+    ) -> anyhow::Result<AHashMap<AccountId, AccountAny>> {
+        let mut accounts = AHashMap::new();
         let pattern = format!("{trader_key}{REDIS_DELIMITER}{ACCOUNTS}*");
         tracing::debug!("Loading {pattern}");
 
@@ -445,8 +496,8 @@ impl DatabaseQueries {
         con: &ConnectionManager,
         trader_key: &str,
         encoding: SerializationEncoding,
-    ) -> anyhow::Result<HashMap<ClientOrderId, OrderAny>> {
-        let mut orders = HashMap::new();
+    ) -> anyhow::Result<AHashMap<ClientOrderId, OrderAny>> {
+        let mut orders = AHashMap::new();
         let pattern = format!("{trader_key}{REDIS_DELIMITER}{ORDERS}*");
         tracing::debug!("Loading {pattern}");
 
@@ -501,8 +552,8 @@ impl DatabaseQueries {
         con: &ConnectionManager,
         trader_key: &str,
         encoding: SerializationEncoding,
-    ) -> anyhow::Result<HashMap<PositionId, Position>> {
-        let mut positions = HashMap::new();
+    ) -> anyhow::Result<AHashMap<PositionId, Position>> {
+        let mut positions = AHashMap::new();
         let pattern = format!("{trader_key}{REDIS_DELIMITER}{POSITIONS}*");
         tracing::debug!("Loading {pattern}");
 

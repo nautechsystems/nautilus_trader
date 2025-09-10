@@ -95,6 +95,7 @@ impl GreeksActor {
             Some(percent_greeks),
             index_instrument_id,
             beta_weights,
+            None, // vega_time_weight_base
         )
     }
 
@@ -119,6 +120,7 @@ impl GreeksActor {
         let percent_greeks = false;
         let index_instrument_id = None;
         let beta_weights = None;
+        let greeks_filter = None;
 
         // Calculate portfolio greeks
         self.greeks_calculator.portfolio_greeks(
@@ -138,6 +140,8 @@ impl GreeksActor {
             Some(percent_greeks),
             index_instrument_id,
             beta_weights,
+            greeks_filter,
+            None, // vega_time_weight_base
         )
     }
 

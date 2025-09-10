@@ -99,7 +99,7 @@ pub const PRECISION_DIFF_SCALAR: f64 = 1.0;
 /// which has approximately 15-17 significant decimal digits. Beyond 16 decimal places,
 /// floating-point arithmetic becomes unreliable due to rounding errors.
 ///
-/// For higher precision values (such as 18-decimal WEI values in DeFi), specialized
+/// For higher precision values (such as 18-decimal wei values in DeFi), specialized
 /// constructors that work with integer representations should be used instead.
 pub const MAX_FLOAT_PRECISION: u8 = 16;
 
@@ -216,7 +216,7 @@ pub fn fixed_u128_to_f64(value: u128) -> f64 {
 #[cfg(feature = "high-precision")]
 #[cfg(test)]
 mod tests {
-    use float_cmp::approx_eq;
+    use nautilus_core::approx_eq;
     use rstest::rstest;
 
     use super::*;
@@ -514,7 +514,7 @@ mod tests {
 #[cfg(not(feature = "high-precision"))]
 #[cfg(test)]
 mod tests {
-    use float_cmp::approx_eq;
+    use nautilus_core::approx_eq;
     use rstest::rstest;
 
     use super::*;

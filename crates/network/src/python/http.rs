@@ -62,7 +62,7 @@ impl HttpResponse {
     #[new]
     pub fn py_new(status: u16, body: Vec<u8>) -> PyResult<Self> {
         Ok(Self {
-            status: HttpStatus::from(status).map_err(to_pyvalue_err)?,
+            status: HttpStatus::try_from(status).map_err(to_pyvalue_err)?,
             headers: HashMap::new(),
             body: Bytes::from(body),
         })

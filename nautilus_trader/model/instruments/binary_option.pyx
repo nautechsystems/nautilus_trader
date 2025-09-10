@@ -81,6 +81,8 @@ cdef class BinaryOption(Instrument):
         The binary outcome of the market.
     description : str, optional
         The market description.
+    tick_scheme_name : str, optional
+        The name of the tick scheme.
     info : dict[str, object], optional
         The additional instrument information.
 
@@ -117,6 +119,7 @@ cdef class BinaryOption(Instrument):
         taker_fee: Decimal | None = None,
         str outcome = None,
         str description = None,
+        str tick_scheme_name = None,
         dict info = None,
     ) -> None:
         if description is not None:
@@ -146,6 +149,7 @@ cdef class BinaryOption(Instrument):
             taker_fee=taker_fee or Decimal(0),
             ts_event=ts_event,
             ts_init=ts_init,
+            tick_scheme_name=tick_scheme_name,
             info=info,
         )
 
@@ -204,6 +208,7 @@ cdef class BinaryOption(Instrument):
             description=values["description"],
             max_quantity=Quantity.from_str(max_q) if max_q is not None else None,
             min_quantity=Quantity.from_str(min_q) if min_q is not None else None,
+            tick_scheme_name=values.get("tick_scheme_name"),
             info=values.get("info"),
         )
 
@@ -232,6 +237,7 @@ cdef class BinaryOption(Instrument):
             "taker_fee": str(obj.taker_fee),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
+            "tick_scheme_name": obj.tick_scheme_name,
             "info": obj.info,
         }
 

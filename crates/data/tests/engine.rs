@@ -17,6 +17,7 @@ mod common;
 
 use std::{any::Any, cell::RefCell, num::NonZeroUsize, rc::Rc, sync::Arc};
 
+use alloy_primitives::Address;
 use common::mocks::MockDataClient;
 #[cfg(feature = "defi")]
 use nautilus_common::messages::defi::{
@@ -30,11 +31,11 @@ use nautilus_common::{
         DataCommand, RequestBars, RequestBookSnapshot, RequestCommand, RequestCustomData,
         RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars,
         SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots, SubscribeCommand,
-        SubscribeCustomData, SubscribeIndexPrices, SubscribeInstrument, SubscribeMarkPrices,
-        SubscribeQuotes, SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas,
-        UnsubscribeBookSnapshots, UnsubscribeCommand, UnsubscribeCustomData,
-        UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeMarkPrices, UnsubscribeQuotes,
-        UnsubscribeTrades,
+        SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
+        SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
+        UnsubscribeBookDeltas, UnsubscribeBookSnapshots, UnsubscribeCommand, UnsubscribeCustomData,
+        UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
+        UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
     },
     msgbus::{
         self, MessageBus,
@@ -47,27 +48,24 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_data::{client::DataClientAdapter, engine::DataEngine};
 use nautilus_model::{
     data::{
-        Bar, BarType, Data, DataType, OrderBookDeltas, OrderBookDeltas_API, OrderBookDepth10,
-        QuoteTick, TradeTick,
-        prices::{IndexPriceUpdate, MarkPriceUpdate},
+        Bar, BarType, Data, DataType, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate,
+        OrderBookDeltas, OrderBookDeltas_API, OrderBookDepth10, QuoteTick, TradeTick,
         stubs::{stub_delta, stub_deltas, stub_depth10},
     },
+    defi::{AmmType, Dex, DexType, chain::chains},
     enums::{BookType, PriceType},
-    identifiers::{ClientId, TraderId, Venue},
+    identifiers::{ClientId, InstrumentId, TraderId, Venue},
     instruments::{CurrencyPair, Instrument, InstrumentAny, stubs::audusd_sim},
     types::Price,
 };
-use rstest::*;
 #[cfg(feature = "defi")]
-use {
-    alloy_primitives::Address,
-    nautilus_model::{
-        defi::{Block, Blockchain, DefiData, PoolSwap},
-        defi::{Pool, Token},
-        enums::OrderSide,
-        types::Quantity,
-    },
+use nautilus_model::{
+    defi::{Block, Blockchain, DefiData, PoolSwap},
+    defi::{Pool, Token},
+    enums::OrderSide,
+    types::Quantity,
 };
+use rstest::*;
 
 #[fixture]
 fn client_id() -> ClientId {
@@ -840,6 +838,66 @@ fn test_execute_subscribe_index_prices(
     }
 }
 
+#[rstest]
+fn test_execute_subscribe_funding_rates(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let sub = SubscribeFundingRates::new(
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    let sub_cmd = DataCommand::Subscribe(SubscribeCommand::FundingRates(sub));
+    data_engine.execute(&sub_cmd);
+
+    assert!(
+        data_engine
+            .subscribed_funding_rates()
+            .contains(&audusd_sim.id)
+    );
+    {
+        assert_eq!(recorder.borrow().as_slice(), &[sub_cmd.clone()]);
+    }
+
+    let unsub = UnsubscribeFundingRates::new(
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::FundingRates(unsub));
+    data_engine.execute(&unsub_cmd);
+
+    assert!(
+        !data_engine
+            .subscribed_funding_rates()
+            .contains(&audusd_sim.id)
+    );
+    assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
+}
+
 // ------------------------------------------------------------------------------------------------
 // Test execute request commands
 // ------------------------------------------------------------------------------------------------
@@ -867,6 +925,9 @@ fn test_execute_request_data(
     let req = RequestCustomData {
         client_id,
         data_type: DataType::new("X", None),
+        start: None,
+        end: None,
+        limit: None,
         request_id: UUID4::new(),
         ts_init: UnixNanos::default(),
         params: None,
@@ -1440,6 +1501,152 @@ fn test_process_index_price(
 }
 
 #[rstest]
+fn test_process_funding_rate_through_any(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    data_client: DataClientAdapter,
+) {
+    let client_id = data_client.client_id;
+    let venue = data_client.venue;
+    data_engine.borrow_mut().register_client(data_client, None);
+
+    let sub = SubscribeFundingRates::new(
+        audusd_sim.id,
+        Some(client_id),
+        venue,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    let cmd = DataCommand::Subscribe(SubscribeCommand::FundingRates(sub));
+
+    let endpoint = MessagingSwitchboard::data_engine_execute();
+    msgbus::send_any(endpoint, &cmd as &dyn Any);
+
+    let funding_rate = FundingRateUpdate::new(
+        audusd_sim.id,
+        "0.0001".parse().unwrap(),
+        None,
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    let handler = get_message_saving_handler::<FundingRateUpdate>(None);
+    let topic = switchboard::get_funding_rate_topic(funding_rate.instrument_id);
+    msgbus::subscribe_topic(topic, handler.clone(), None);
+
+    let mut data_engine = data_engine.borrow_mut();
+    // Test through the process() method with &dyn Any
+    data_engine.process(&funding_rate as &dyn Any);
+    let cache = &data_engine.get_cache();
+    let messages = get_saved_messages::<FundingRateUpdate>(handler);
+
+    assert_eq!(
+        cache.funding_rate(&funding_rate.instrument_id),
+        Some(&funding_rate)
+    );
+    assert_eq!(messages.len(), 1);
+    assert!(messages.contains(&funding_rate));
+}
+
+#[rstest]
+fn test_process_funding_rate(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    data_client: DataClientAdapter,
+) {
+    let client_id = data_client.client_id;
+    let venue = data_client.venue;
+    data_engine.borrow_mut().register_client(data_client, None);
+
+    let sub = SubscribeFundingRates::new(
+        audusd_sim.id,
+        Some(client_id),
+        venue,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    let cmd = DataCommand::Subscribe(SubscribeCommand::FundingRates(sub));
+
+    let endpoint = MessagingSwitchboard::data_engine_execute();
+    msgbus::send_any(endpoint, &cmd as &dyn Any);
+
+    let funding_rate = FundingRateUpdate::new(
+        audusd_sim.id,
+        "0.0001".parse().unwrap(),
+        None,
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    let handler = get_message_saving_handler::<FundingRateUpdate>(None);
+    let topic = switchboard::get_funding_rate_topic(funding_rate.instrument_id);
+    msgbus::subscribe_topic(topic, handler.clone(), None);
+
+    let mut data_engine = data_engine.borrow_mut();
+    data_engine.handle_funding_rate(funding_rate);
+    let cache = &data_engine.get_cache();
+    let messages = get_saved_messages::<FundingRateUpdate>(handler);
+
+    assert_eq!(
+        cache.funding_rate(&funding_rate.instrument_id),
+        Some(&funding_rate)
+    );
+    assert_eq!(messages.len(), 1);
+    assert!(messages.contains(&funding_rate));
+}
+
+#[rstest]
+fn test_process_funding_rate_updates_existing(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    data_client: DataClientAdapter,
+) {
+    let client_id = data_client.client_id;
+    let venue = data_client.venue;
+    data_engine.borrow_mut().register_client(data_client, None);
+
+    let sub = SubscribeFundingRates::new(
+        audusd_sim.id,
+        Some(client_id),
+        venue,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    let cmd = DataCommand::Subscribe(SubscribeCommand::FundingRates(sub));
+
+    let endpoint = MessagingSwitchboard::data_engine_execute();
+    msgbus::send_any(endpoint, &cmd as &dyn Any);
+
+    let funding_rate1 = FundingRateUpdate::new(
+        audusd_sim.id,
+        "0.0001".parse().unwrap(),
+        None,
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+
+    let funding_rate2 = FundingRateUpdate::new(
+        audusd_sim.id,
+        "0.0002".parse().unwrap(),
+        None,
+        UnixNanos::from(3),
+        UnixNanos::from(4),
+    );
+
+    let mut data_engine = data_engine.borrow_mut();
+    data_engine.handle_funding_rate(funding_rate1);
+    data_engine.handle_funding_rate(funding_rate2);
+    let cache = &data_engine.get_cache();
+
+    // Should only have the latest funding rate
+    assert_eq!(
+        cache.funding_rate(&funding_rate2.instrument_id),
+        Some(&funding_rate2)
+    );
+}
+
+#[rstest]
 fn test_process_bar(data_engine: Rc<RefCell<DataEngine>>, data_client: DataClientAdapter) {
     let client_id = data_client.client_id;
     let venue = data_client.venue;
@@ -1550,9 +1757,11 @@ fn test_execute_subscribe_pool_swaps(
         &mut data_engine,
     );
 
-    let address = Address::from([0x12; 20]);
+    let instrument_id =
+        InstrumentId::from("0x11b815efB8f581194ae79006d24E0d814B7697F6.Arbitrum:UniswapV3");
+
     let sub_cmd = DataCommand::DefiSubscribe(DefiSubscribeCommand::PoolSwaps(SubscribePoolSwaps {
-        address,
+        instrument_id,
         client_id: Some(client_id),
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
@@ -1560,14 +1769,14 @@ fn test_execute_subscribe_pool_swaps(
     }));
     data_engine.execute(&sub_cmd);
 
-    assert!(data_engine.subscribed_pool_swaps().contains(&address));
+    assert!(data_engine.subscribed_pool_swaps().contains(&instrument_id));
     {
         assert_eq!(recorder.borrow().as_slice(), &[sub_cmd.clone()]);
     }
 
     let unsub_cmd =
         DataCommand::DefiUnsubscribe(DefiUnsubscribeCommand::PoolSwaps(UnsubscribePoolSwaps {
-            address,
+            instrument_id,
             client_id: Some(client_id),
             command_id: UUID4::new(),
             ts_init: UnixNanos::default(),
@@ -1575,7 +1784,7 @@ fn test_execute_subscribe_pool_swaps(
         }));
     data_engine.execute(&unsub_cmd);
 
-    assert!(!data_engine.subscribed_pool_swaps().contains(&address));
+    assert!(!data_engine.subscribed_pool_swaps().contains(&instrument_id));
     assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
 }
 
@@ -1623,36 +1832,23 @@ fn test_process_block(data_engine: Rc<RefCell<DataEngine>>, data_client: DataCli
 #[cfg(feature = "defi")]
 #[rstest]
 fn test_process_pool_swap(data_engine: Rc<RefCell<DataEngine>>, data_client: DataClientAdapter) {
-    use nautilus_model::defi::{AmmType, Dex, chain::chains};
-
     let client_id = data_client.client_id;
     data_engine.borrow_mut().register_client(data_client, None);
 
-    let address = Address::from([0x12; 20]);
-    let sub = DefiSubscribeCommand::PoolSwaps(SubscribePoolSwaps {
-        address,
-        client_id: Some(client_id),
-        command_id: UUID4::new(),
-        ts_init: UnixNanos::default(),
-        params: None,
-    });
-    let cmd = DataCommand::DefiSubscribe(sub);
-
-    let endpoint = MessagingSwitchboard::data_engine_execute();
-    msgbus::send_any(endpoint, &cmd as &dyn Any);
-
     // Create a pool swap
     let chain = Arc::new(chains::ETHEREUM.clone());
-    let dex = Dex::new(
+    let dex = Arc::new(Dex::new(
         chains::ETHEREUM.clone(),
-        "Uniswap V3",
+        DexType::UniswapV3,
         "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+        0,
         AmmType::CLAMM,
         "PoolCreated",
         "Swap",
         "Mint",
         "Burn",
-    );
+        "Collect",
+    ));
     let token0 = Token::new(
         chain.clone(),
         Address::from([0x11; 20]),
@@ -1670,32 +1866,47 @@ fn test_process_pool_swap(data_engine: Rc<RefCell<DataEngine>>, data_client: Dat
     let pool = Pool::new(
         chain.clone(),
         dex.clone(),
-        address,
+        Address::from([0x12; 20]),
         0u64,
         token0,
         token1,
-        500u32,
-        10u32,
+        Some(500u32),
+        Some(10u32),
         UnixNanos::from(1),
     );
 
+    let instrument_id = pool.instrument_id;
+
     let swap = PoolSwap::new(
         chain,
-        Arc::new(dex),
-        Arc::new(pool),
+        dex,
+        pool.instrument_id,
+        pool.address,
         1000u64,
         "0x123".to_string(),
         0,
         0,
-        UnixNanos::from(1),
-        address,
+        None,
+        Address::from([0x12; 20]),
         OrderSide::Buy,
         Quantity::from("1000"),
         Price::from("500"),
     );
 
+    let sub = DefiSubscribeCommand::PoolSwaps(SubscribePoolSwaps {
+        instrument_id,
+        client_id: Some(client_id),
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        params: None,
+    });
+    let cmd = DataCommand::DefiSubscribe(sub);
+
+    let endpoint = MessagingSwitchboard::data_engine_execute();
+    msgbus::send_any(endpoint, &cmd as &dyn Any);
+
     let handler = get_message_saving_handler::<PoolSwap>(None);
-    let topic = switchboard::get_defi_pool_swaps_topic(address);
+    let topic = switchboard::get_defi_pool_swaps_topic(instrument_id);
     msgbus::subscribe_topic(topic, handler.clone(), None);
 
     let mut data_engine = data_engine.borrow_mut();

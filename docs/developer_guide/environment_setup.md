@@ -89,7 +89,7 @@ To compile in debug mode, use:
 make build-debug
 ```
 
-## Faster builds 🏁
+## Faster builds
 
 The cranelift backends reduces build time significantly for dev, testing and IDE checks. However, cranelift is available on the nightly toolchain and needs extra configuration. Install the nightly toolchain
 
@@ -138,7 +138,7 @@ index 62b78cd8d0..beb0800211 100644
  opt-level = 3
 ```
 
-Pass `RUSTUP_TOOLCHAIN=nightly` when running `make build-debug` like commands and include it in in all [rust analyzer settings](#rust-analyzer-settings) for faster builds and IDE checks.
+Pass `RUSTUP_TOOLCHAIN=nightly` when running `make build-debug` like commands and include it in all [rust analyzer settings](#rust-analyzer-settings) for faster builds and IDE checks.
 
 ## Services
 
@@ -183,7 +183,7 @@ CREATE DATABASE
 
 ```
 
-## Nautilus CLI Developer Guide
+## Nautilus CLI developer guide
 
 ## Introduction
 

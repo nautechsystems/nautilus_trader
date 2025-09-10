@@ -8,7 +8,7 @@
 
 Data serialization and format conversion for [NautilusTrader](http://nautilustrader.io).
 
-The *serialization* crate provides comprehensive data serialization capabilities for converting
+The `nautilus-serialization` crate provides comprehensive data serialization capabilities for converting
 trading data between different formats including Apache Arrow, Parquet, and custom schemas.
 This enables efficient data storage, retrieval, and interoperability across different systems:
 
@@ -36,6 +36,7 @@ for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python packa
 or as part of a Rust only build.
 
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+- `extension-module`: Builds as a Python extension module (used with `python`).
 - `high-precision`: Enables [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) to use 128-bit value types.
 
 ## Documentation

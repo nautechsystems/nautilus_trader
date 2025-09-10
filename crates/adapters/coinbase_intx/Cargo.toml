@@ -20,19 +20,19 @@ crate-type = ["rlib", "cdylib"]
 [features]
 default = []
 extension-module = [
-  "pyo3/extension-module",
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
   "nautilus-network/extension-module",
+  "pyo3/extension-module",
 ]
 python = [
-  "pyo3",
-  "pyo3-async-runtimes",
   "nautilus-common/python",
   "nautilus-core/python",
   "nautilus-model/python",
   "nautilus-network/python",
+  "pyo3",
+  "pyo3-async-runtimes",
 ]
 
 [package.metadata.docs.rs]
@@ -45,10 +45,12 @@ nautilus-core = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
 
+ahash = { workspace = true }
 anyhow = { workspace = true }
 async-stream = { workspace = true }
 base64 = { workspace = true }
 chrono = { workspace = true }
+dashmap = { workspace = true }
 derive_builder = { workspace = true }
 futures-util = { workspace = true }
 indexmap = { workspace = true }
@@ -69,6 +71,7 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }  # Needed for example binaries
 ustr = { workspace = true }
 uuid = { workspace = true }
+zeroize = { workspace = true }
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }

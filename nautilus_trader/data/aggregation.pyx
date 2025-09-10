@@ -16,13 +16,18 @@
 from decimal import Decimal
 from typing import Callable
 
+import numpy as np
 import pandas as pd
 
+cimport numpy as np
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 from libc.stdint cimport uint64_t
 
+from datetime import timedelta
+
 from nautilus_trader.core.datetime import unix_nanos_to_dt
+
 from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport Logger
 from nautilus_trader.common.component cimport TimeEvent
@@ -128,7 +133,7 @@ cdef class BarBuilder:
         self._partial_set = True
         self.initialized = True
 
-    cpdef void update(self, Price price, Quantity size, uint64_t ts_event):
+    cpdef void update(self, Price price, Quantity size, uint64_t ts_init):
         """
         Update the bar builder.
 
@@ -138,7 +143,7 @@ cdef class BarBuilder:
             The update price.
         size : Decimal
             The update size.
-        ts_event : uint64_t
+        ts_init : uint64_t
             UNIX timestamp (nanoseconds) of the update.
 
         """
@@ -146,7 +151,7 @@ cdef class BarBuilder:
         Condition.not_none(size, "size")
 
         # TODO: What happens if the first tick updates before a partial bar is applied?
-        if ts_event < self.ts_last:
+        if ts_init < self.ts_last:
             return  # Not applicable
 
         if self._open is None:
@@ -163,7 +168,7 @@ cdef class BarBuilder:
         self._close = price
         self.volume._mem.raw += size._mem.raw
         self.count += 1
-        self.ts_last = ts_event
+        self.ts_last = ts_init
 
     cpdef void update_bar(self, Bar bar, Quantity volume, uint64_t ts_init):
         """
@@ -244,7 +249,6 @@ cdef class BarBuilder:
             self._high = self._last_close
             self._low = self._last_close
             self._close = self._last_close
-
 
         self._low._mem.raw = min(self._close._mem.raw, self._low._mem.raw)
         self._high._mem.raw = max(self._close._mem.raw, self._high._mem.raw)
@@ -339,7 +343,7 @@ cdef class BarAggregator:
             self._apply_update(
                 price=tick.extract_price(self.bar_type.spec.price_type),
                 size=tick.extract_size(self.bar_type.spec.price_type),
-                ts_event=tick.ts_event,
+                ts_init=tick.ts_init,
             )
 
     cpdef void handle_trade_tick(self, TradeTick tick):
@@ -358,7 +362,7 @@ cdef class BarAggregator:
             self._apply_update(
                 price=tick.price,
                 size=tick.size,
-                ts_event=tick.ts_event,
+                ts_init=tick.ts_init,
             )
 
     cpdef void handle_bar(self, Bar bar):
@@ -394,7 +398,7 @@ cdef class BarAggregator:
         """
         self._builder.set_partial(partial_bar)
 
-    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event):
+    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_init):
         raise NotImplementedError("method `_apply_update` must be implemented in the subclass")
 
     cdef void _apply_update_bar(self, Bar bar, Quantity volume, uint64_t ts_init):
@@ -443,8 +447,8 @@ cdef class TickBarAggregator(BarAggregator):
             handler=handler,
         )
 
-    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event):
-        self._builder.update(price, size, ts_event)
+    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_init):
+        self._builder.update(price, size, ts_init)
 
         if self._builder.count == self.bar_type.spec.step:
             self._build_now_and_send()
@@ -490,7 +494,7 @@ cdef class VolumeBarAggregator(BarAggregator):
             handler=handler,
         )
 
-    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event):
+    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_init):
         cdef QuantityRaw raw_size_update = size._mem.raw
         cdef QuantityRaw raw_step = <QuantityRaw>(self.bar_type.spec.step * <QuantityRaw>FIXED_SCALAR)
         cdef QuantityRaw raw_size_diff = 0
@@ -501,7 +505,7 @@ cdef class VolumeBarAggregator(BarAggregator):
                 self._builder.update(
                     price=price,
                     size=Quantity.from_raw_c(raw_size_update, precision=size._mem.precision),
-                    ts_event=ts_event,
+                    ts_init=ts_init,
                 )
                 break
 
@@ -510,7 +514,7 @@ cdef class VolumeBarAggregator(BarAggregator):
             self._builder.update(
                 price=price,
                 size=Quantity.from_raw_c(raw_size_diff, precision=size._mem.precision),
-                ts_event=ts_event,
+                ts_init=ts_init,
             )
 
             # Build a bar and reset builder
@@ -598,7 +602,7 @@ cdef class ValueBarAggregator(BarAggregator):
         """
         return self._cum_value
 
-    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event):
+    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_init):
         size_update = size
 
         while size_update > 0:  # While there is value to apply
@@ -609,7 +613,7 @@ cdef class ValueBarAggregator(BarAggregator):
                 self._builder.update(
                     price=price,
                     size=Quantity(size_update, precision=size._mem.precision),
-                    ts_event=ts_event,
+                    ts_init=ts_init,
                 )
                 break
 
@@ -619,7 +623,7 @@ cdef class ValueBarAggregator(BarAggregator):
             self._builder.update(
                 price=price,
                 size=Quantity(size_diff, precision=size._mem.precision),
-                ts_event=ts_event,
+                ts_init=ts_init,
             )
 
             # Build a bar and reset builder and cumulative value
@@ -738,8 +742,11 @@ cdef class TimeBarAggregator(BarAggregator):
         self._timestamp_on_close = timestamp_on_close
         self._skip_first_non_full_bar = skip_first_non_full_bar
         self._build_with_no_updates = build_with_no_updates
-        self._time_bars_origin_offset = time_bars_origin_offset
         self._bar_build_delay = bar_build_delay
+        self._time_bars_origin_offset = time_bars_origin_offset or 0
+
+        if type(self._time_bars_origin_offset) is int:
+            self._time_bars_origin_offset = pd.Timedelta(self._time_bars_origin_offset)
 
         self._timer_name = None
         self._build_on_next_tick = False
@@ -772,65 +779,15 @@ cdef class TimeBarAggregator(BarAggregator):
         aggregation = self.bar_type.spec.aggregation
 
         if aggregation == BarAggregation.MILLISECOND:
-            start_time = now.floor(freq="s")
-
-            if self._time_bars_origin_offset is not None:
-                start_time += self._time_bars_origin_offset
-
-            if now < start_time:
-                start_time -= pd.Timedelta(seconds=1)
-
-            while start_time <= now:
-                start_time += pd.Timedelta(milliseconds=step)
-
-            start_time -= pd.Timedelta(milliseconds=step)
+            start_time = find_closest_smaller_time(now, self._time_bars_origin_offset, pd.Timedelta(milliseconds=step))
         elif aggregation == BarAggregation.SECOND:
-            start_time = now.floor(freq="min")
-
-            if self._time_bars_origin_offset is not None:
-                start_time += self._time_bars_origin_offset
-
-            if now < start_time:
-                start_time -= pd.Timedelta(minutes=1)
-
-            while start_time <= now:
-                start_time += pd.Timedelta(seconds=step)
-
-            start_time -= pd.Timedelta(seconds=step)
+            start_time = find_closest_smaller_time(now, self._time_bars_origin_offset, pd.Timedelta(seconds=step))
         elif aggregation == BarAggregation.MINUTE:
-            start_time = now.floor(freq="h")
-
-            if self._time_bars_origin_offset is not None:
-                start_time += self._time_bars_origin_offset
-
-            if now < start_time:
-                start_time -= pd.Timedelta(hours=1)
-
-            while start_time <= now:
-                start_time += pd.Timedelta(minutes=step)
-
-            start_time -= pd.Timedelta(minutes=step)
+            start_time = find_closest_smaller_time(now, self._time_bars_origin_offset, pd.Timedelta(minutes=step))
         elif aggregation == BarAggregation.HOUR:
-            start_time = now.floor(freq="d")
-
-            if self._time_bars_origin_offset is not None:
-                start_time += self._time_bars_origin_offset
-
-            if now < start_time:
-                start_time -= pd.Timedelta(days=1)
-
-            while start_time <= now:
-                start_time += pd.Timedelta(hours=step)
-
-            start_time -= pd.Timedelta(hours=step)
+            start_time = find_closest_smaller_time(now, self._time_bars_origin_offset, pd.Timedelta(hours=step))
         elif aggregation == BarAggregation.DAY:
-            start_time = now.floor(freq="d")
-
-            if self._time_bars_origin_offset is not None:
-                start_time += self._time_bars_origin_offset
-
-            if now < start_time:
-                start_time -= pd.Timedelta(days=1)
+            start_time = find_closest_smaller_time(now, self._time_bars_origin_offset, pd.Timedelta(days=step))
         elif aggregation == BarAggregation.WEEK:
             start_time = (now - pd.Timedelta(days=now.dayofweek)).floor(freq="d")
 
@@ -916,7 +873,18 @@ cdef class TimeBarAggregator(BarAggregator):
         cdef datetime now = self._clock.utc_now()
         cdef datetime start_time = self.get_start_time(now)
 
-        if start_time == now:
+        # Consider near-boundary starts within a small tolerance as on-boundary
+        cdef uint64_t now_ns = dt_to_unix_nanos(now)
+        cdef uint64_t start_ns = dt_to_unix_nanos(start_time)
+        cdef uint64_t diff_ns = now_ns - start_ns if now_ns >= start_ns else start_ns - now_ns
+
+        # Use a step-aware tolerance capped at 1 ms. For MONTH aggregation
+        # (where interval_ns == 0), default to 1 ms.
+        cdef uint64_t tolerance_ns = 1_000_000 if self.interval_ns == 0 else self.interval_ns // 1000
+        if tolerance_ns > 1_000_000:
+            tolerance_ns = 1_000_000
+
+        if diff_ns <= tolerance_ns:
             self._skip_first_non_full_bar = False
 
         start_time += timedelta(microseconds=self._bar_build_delay)
@@ -1027,16 +995,14 @@ cdef class TimeBarAggregator(BarAggregator):
         if not self._batch_mode:
             self._batch_next_close_ns = 0
 
-    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event):
+    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_init):
         if self._batch_next_close_ns != 0:
-            self._batch_pre_update(ts_event)
+            self._batch_pre_update(ts_init)
 
-        self._builder.update(price, size, ts_event)
+        self._builder.update(price, size, ts_init)
 
         if self._build_on_next_tick:
-            if ts_event <= self._stored_close_ns:
-                ts_init = ts_event
-
+            if ts_init <= self._stored_close_ns:
                 # Adjusting the timestamp logic based on interval_type
                 if self._is_left_open:
                     ts_event = self._stored_close_ns if self._timestamp_on_close else self._stored_open_ns
@@ -1050,7 +1016,7 @@ cdef class TimeBarAggregator(BarAggregator):
             self._stored_close_ns = 0
 
         if self._batch_next_close_ns != 0:
-            self._batch_post_update(ts_event)
+            self._batch_post_update(ts_init)
 
     cdef void _apply_update_bar(self, Bar bar, Quantity volume, uint64_t ts_init):
         if self._batch_next_close_ns != 0:
@@ -1114,3 +1080,15 @@ cdef class TimeBarAggregator(BarAggregator):
             )
 
             self.next_close_ns = dt_to_unix_nanos(alert_time)
+
+
+def find_closest_smaller_time(now: pd.Timestamp, daily_time_origin: pd.Timedelta, period: pd.Timedelta) -> pd.Timestamp:
+    day_start = now.floor(freq="d")
+    base_time = day_start + daily_time_origin
+
+    time_difference = now - base_time
+    num_periods = time_difference // period
+
+    closest_time = base_time + num_periods * period
+
+    return closest_time

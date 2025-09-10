@@ -15,7 +15,7 @@
 
 //! Portfolio management and risk analysis for [NautilusTrader](http://nautilustrader.io).
 //!
-//! The *portfolio* crate provides comprehensive portfolio management capabilities including
+//! The `nautilus-portfolio` crate provides comprehensive portfolio management capabilities including
 //! real-time position tracking, performance calculations, and risk management. This includes
 //! sophisticated portfolio analytics and multi-currency support:
 //!
@@ -47,6 +47,7 @@
 //! or as part of a Rust only build.
 //!
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//! - `extension-module`: Builds the crate as a Python extension module.
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]

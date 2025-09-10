@@ -19,8 +19,9 @@ use strum::{AsRefStr, Display, EnumIter, EnumString, FromRepr};
 use ustr::Ustr;
 
 #[derive(
-    Debug,
+    Copy,
     Clone,
+    Debug,
     PartialEq,
     Eq,
     Hash,
@@ -36,7 +37,7 @@ use ustr::Ustr;
 #[strum(serialize_all = "lowercase")]
 #[serde(rename_all = "lowercase")]
 /// The instrument type for the symbol.
-pub enum InstrumentType {
+pub enum TardisInstrumentType {
     Spot,
     Perpetual,
     Future,
@@ -45,8 +46,9 @@ pub enum InstrumentType {
 }
 
 #[derive(
-    Debug,
+    Copy,
     Clone,
+    Debug,
     PartialEq,
     Eq,
     Hash,
@@ -60,15 +62,16 @@ pub enum InstrumentType {
 )]
 #[serde(rename_all = "lowercase")]
 /// The type of option.
-pub enum OptionType {
+pub enum TardisOptionType {
     Call,
     Put,
 }
 
 /// The aggressor side of the trade.
 #[derive(
-    Debug,
+    Copy,
     Clone,
+    Debug,
     PartialEq,
     Eq,
     Hash,
@@ -81,7 +84,7 @@ pub enum OptionType {
     FromRepr,
 )]
 #[serde(rename_all = "lowercase")]
-pub enum TradeSide {
+pub enum TardisTradeSide {
     Buy,
     Sell,
     Unknown,
@@ -90,8 +93,9 @@ pub enum TradeSide {
 /// The bar kind.
 #[allow(missing_docs)]
 #[derive(
-    Debug,
+    Copy,
     Clone,
+    Debug,
     PartialEq,
     Eq,
     Hash,
@@ -104,15 +108,16 @@ pub enum TradeSide {
     FromRepr,
 )]
 #[serde(rename_all = "lowercase")]
-pub enum BarKind {
+pub enum TardisBarKind {
     Time,
     Volume,
     Tick,
 }
 
 #[derive(
-    Debug,
+    Copy,
     Clone,
+    Debug,
     PartialEq,
     Eq,
     Hash,
@@ -129,7 +134,7 @@ pub enum BarKind {
 #[serde(rename_all = "kebab-case")]
 /// Represents a crypto exchange.
 /// See <https://api.tardis.dev/v1/exchanges> for all supported exchanges.
-pub enum Exchange {
+pub enum TardisExchange {
     Ascendex,
     Binance,
     BinanceDelivery,
@@ -174,7 +179,6 @@ pub enum Exchange {
     HuobiDmSwap,
     Hyperliquid,
     Kraken,
-    KrakenFutures,
     Kucoin,
     KucoinFutures,
     Mango,
@@ -192,7 +196,7 @@ pub enum Exchange {
     WooX,
 }
 
-impl Exchange {
+impl TardisExchange {
     #[must_use]
     pub fn from_venue_str(s: &str) -> Vec<Self> {
         let s = s.to_ascii_uppercase();
@@ -209,8 +213,8 @@ impl Exchange {
             "BINANCE_DELIVERY" => vec![Self::BinanceDelivery],
             "BINANCE_US" => vec![Self::BinanceUs],
             "BITFINEX" => vec![Self::Bitfinex, Self::BitfinexDerivatives],
-            "BITGET" => vec![Self::Bitget, Self::BitgetFutures],
             "BITFLYER" => vec![Self::Bitflyer],
+            "BITGET" => vec![Self::Bitget, Self::BitgetFutures],
             "BITMEX" => vec![Self::Bitmex],
             "BITNOMIAL" => vec![Self::Bitnomial],
             "BITSTAMP" => vec![Self::Bitstamp],
@@ -237,7 +241,7 @@ impl Exchange {
             ],
             "HUOBI_DELIVERY" => vec![Self::HuobiDmSwap],
             "HYPERLIQUID" => vec![Self::Hyperliquid],
-            "KRAKEN" => vec![Self::Kraken, Self::KrakenFutures],
+            "KRAKEN" => vec![Self::Kraken],
             "KUCOIN" => vec![Self::Kucoin, Self::KucoinFutures],
             "MANGO" => vec![Self::Mango],
             "OKCOIN" => vec![Self::Okcoin],
@@ -251,7 +255,7 @@ impl Exchange {
             "PHEMEX" => vec![Self::Phemex],
             "POLONIEX" => vec![Self::Poloniex],
             "SERUM" => vec![Self::Serum],
-            "STARATLAS" => vec![Self::StarAtlas],
+            "STAR_ATLAS" => vec![Self::StarAtlas],
             "UPBIT" => vec![Self::Upbit],
             "WOO_X" => vec![Self::WooX],
             _ => Vec::new(),
@@ -305,7 +309,6 @@ impl Exchange {
             Self::HuobiDmSwap => "HUOBI_DELIVERY",
             Self::Hyperliquid => "HYPERLIQUID",
             Self::Kraken => "KRAKEN",
-            Self::KrakenFutures => "KRAKEN",
             Self::Kucoin => "KUCOIN",
             Self::KucoinFutures => "KUCOIN",
             Self::Mango => "MANGO",
@@ -318,7 +321,7 @@ impl Exchange {
             Self::Phemex => "PHEMEX",
             Self::Poloniex => "POLONIEX",
             Self::Serum => "SERUM",
-            Self::StarAtlas => "STARATLAS",
+            Self::StarAtlas => "STAR_ATLAS",
             Self::Upbit => "UPBIT",
             Self::WooX => "WOO_X",
         }
@@ -327,5 +330,66 @@ impl Exchange {
     #[must_use]
     pub fn as_venue(&self) -> Venue {
         Venue::from_ustr_unchecked(Ustr::from(self.as_venue_str()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+    use strum::IntoEnumIterator;
+
+    use super::*;
+
+    #[rstest]
+    fn test_exchange_to_venue_mapping() {
+        for exchange in TardisExchange::iter() {
+            let venue_str = exchange.as_venue_str();
+            assert!(
+                Venue::new_checked(venue_str).is_ok(),
+                "Tardis exchange '{exchange:?}' maps to invalid Nautilus venue '{venue_str}'",
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_venue_to_exchange_mapping_bidirectional() {
+        let test_venues = [
+            "BINANCE",
+            "BITMEX",
+            "DERIBIT",
+            "KRAKEN",
+            "COINBASE",
+            "BYBIT",
+            "OKEX",
+            "HUOBI",
+            "GATE_IO",
+            "KUCOIN",
+            "BITFINEX",
+            "GEMINI",
+            "BITSTAMP",
+            "ASCENDEX",
+            "PHEMEX",
+            "POLONIEX",
+            "UPBIT",
+            "WOO_X",
+            "HYPERLIQUID",
+            "CRYPTO_COM",
+            "DYDX",
+            "HITBTC",
+        ];
+
+        for venue_str in test_venues {
+            let venue = Venue::new(venue_str);
+            let exchanges = TardisExchange::from_venue_str(venue.as_str());
+
+            for exchange in exchanges {
+                assert_eq!(
+                    exchange.as_venue_str(),
+                    venue_str,
+                    "Bidirectional mapping failed: Nautilus venue '{venue_str}' -> Tardis exchange '{exchange:?}' -> Nautilus venue '{}'",
+                    exchange.as_venue_str()
+                );
+            }
+        }
     }
 }

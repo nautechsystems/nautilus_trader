@@ -325,14 +325,6 @@ class ParquetDataCatalog(BaseDataCatalog):
         directory = self._make_path(data_cls=data_cls, identifier=identifier)
         self.fs.mkdirs(directory, exist_ok=True)
 
-        if isinstance(data[0], Instrument):
-            # When writing an instrument for a given instrument_id, we don't want duplicates
-            # Also keeping the first occurrence can give information about when it's first available
-            data = [data[0]]
-
-            for file in self.fs.glob(f"{directory}/*.parquet"):
-                self.fs.rm(file)
-
         start = start if start else data[0].ts_init
         end = end if end else data[-1].ts_init
         filename = _timestamps_to_filename(start, end)
@@ -436,7 +428,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             intervals,
         ), "Intervals are not disjoint after extending file name"
 
-    def reset_catalog_file_names(self) -> None:
+    def reset_all_file_names(self) -> None:
         """
         Reset the filenames of all parquet files in the catalog to match their actual
         content timestamps.
@@ -475,7 +467,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         ID.
 
         This method resets the filenames of parquet files for the specified data class and
-        instrument ID to accurately reflect the minimum and maximum timestamps of the data
+        identifier to accurately reflect the minimum and maximum timestamps of the data
         they contain. It examines the parquet metadata for each file and renames the file
         to follow the pattern '{first_timestamp}-{last_timestamp}.parquet'.
 
@@ -484,13 +476,13 @@ class ParquetDataCatalog(BaseDataCatalog):
         data_cls : type
             The data class type to reset filenames for (e.g., QuoteTick, TradeTick, Bar).
         identifier : str, optional
-            The specific instrument ID to reset filenames for. If None, resets filenames
-            for all instruments of the specified data class.
+            The specific identifier (instrument ID, etc) to reset filenames for.
+            If None, resets filenames for all instruments of the specified data class.
 
         Notes
         -----
-        - This operation is more targeted than `reset_catalog_file_names` as it only affects
-          files for a specific data class and instrument ID.
+        - This operation is more targeted than `reset_all_file_names` as it only affects
+          files for a specific data class and identifier.
         - The method does not modify the content of the files, only their names.
         - After renaming, the method verifies that the intervals represented by the filenames
           are disjoint (non-overlapping) to maintain data integrity.
@@ -527,6 +519,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         start: TimestampLike | None = None,
         end: TimestampLike | None = None,
         ensure_contiguous_files: bool = True,
+        deduplicate: bool = False,
     ) -> None:
         """
         Consolidate all parquet files across the entire catalog within the specified
@@ -549,6 +542,8 @@ class ParquetDataCatalog(BaseDataCatalog):
             up to the end of time will be considered.
         ensure_contiguous_files : bool, default True
             If True, ensures that files have contiguous timestamps before consolidation.
+        deduplicate : bool, default False
+            If True, removes duplicate rows from the consolidated file.
 
         Notes
         -----
@@ -566,7 +561,13 @@ class ParquetDataCatalog(BaseDataCatalog):
         leaf_directories = self._find_leaf_data_directories()
 
         for directory in leaf_directories:
-            self._consolidate_directory(directory, start, end, ensure_contiguous_files)
+            self._consolidate_directory(
+                directory,
+                start,
+                end,
+                ensure_contiguous_files,
+                deduplicate=deduplicate,
+            )
 
     def consolidate_data(
         self,
@@ -575,6 +576,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         start: TimestampLike | None = None,
         end: TimestampLike | None = None,
         ensure_contiguous_files: bool = True,
+        deduplicate: bool = False,
     ) -> None:
         """
         Consolidate multiple parquet files for a specific data class and instrument ID
@@ -601,6 +603,8 @@ class ParquetDataCatalog(BaseDataCatalog):
             up to the end of time will be considered.
         ensure_contiguous_files : bool, default True
             If True, ensures that files have contiguous timestamps before consolidation.
+        deduplicate : bool, default False
+            If True, removes duplicate rows from the consolidated file.
 
         Notes
         -----
@@ -612,7 +616,13 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         """
         directory = self._make_path(data_cls, identifier)
-        self._consolidate_directory(directory, start, end, ensure_contiguous_files)
+        self._consolidate_directory(
+            directory,
+            start,
+            end,
+            ensure_contiguous_files,
+            deduplicate=deduplicate,
+        )
 
     def _consolidate_directory(
         self,
@@ -620,6 +630,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         start: TimestampLike | None = None,
         end: TimestampLike | None = None,
         ensure_contiguous_files: bool = True,
+        deduplicate: bool = False,
     ) -> None:
         parquet_files = self.fs.glob(os.path.join(directory, "*.parquet"))
         files_to_consolidate = []
@@ -651,18 +662,36 @@ class ParquetDataCatalog(BaseDataCatalog):
             _timestamps_to_filename(intervals[0][0], intervals[-1][1]),
         )
         files_to_consolidate.sort()
-        self._combine_parquet_files(files_to_consolidate, new_file_name)
+        self._combine_parquet_files(files_to_consolidate, new_file_name, deduplicate=deduplicate)
 
-    def _combine_parquet_files(self, file_list: list[str], new_file: str) -> None:
+    def _combine_parquet_files(
+        self,
+        file_list: list[str],
+        new_file: str,
+        deduplicate: bool = False,
+    ) -> None:
         if len(file_list) <= 1:
             return
 
         tables = [pq.read_table(file, memory_map=True, pre_buffer=False) for file in file_list]
         combined_table = pa.concat_tables(tables)
+
+        if deduplicate:
+            combined_table = self._deduplicate_table(combined_table)
+
         pq.write_table(combined_table, where=new_file)
 
         for file in file_list:
-            self.fs.rm(file)
+            if file != new_file:
+                self.fs.rm(file)
+
+    @staticmethod
+    def _deduplicate_table(table: pa.Table) -> pa.Table:
+        deduped_data_table = table.group_by(table.column_names).aggregate([])
+        return pa.Table.from_arrays(
+            deduped_data_table.columns,
+            schema=table.schema,
+        )
 
     def consolidate_catalog_by_period(
         self,
@@ -1630,8 +1659,19 @@ class ParquetDataCatalog(BaseDataCatalog):
         if self.fs_protocol != "file":
             self._register_object_store_with_session(session)
 
-        for idx, file in enumerate(file_list):
-            table = f"{file_prefix}_{idx}"
+        for file in file_list:
+            # Extract identifier from file path and filename to create meaningful table names
+            identifier = file.split("/")[-2]
+            safe_sql_identifier = (
+                urisafe_identifier(identifier)
+                .replace(".", "_")
+                .replace("-", "_")
+                .replace(" ", "_")
+                .replace("^", "_")
+                .lower()
+            )
+            safe_filename = _extract_sql_safe_filename(file)
+            table = f"{file_prefix}_{safe_sql_identifier}_{safe_filename}"
             query = self._build_query(
                 table,
                 start=start,
@@ -2374,3 +2414,19 @@ def _get_integer_interval_set(intervals: list[tuple[int, int]]) -> P.Interval:
         union_result |= P.closedopen(interval[0], interval[1] + 1)
 
     return union_result
+
+
+def _extract_sql_safe_filename(file_path: str) -> str:
+    if not file_path:
+        return "unknown_file"
+
+    filename = file_path.split("/")[-1]
+
+    # Remove .parquet extension
+    if filename.endswith(".parquet"):
+        name_without_ext = filename[:-8]  # Remove ".parquet"
+    else:
+        name_without_ext = filename
+
+    # Remove characters that can pose problems: hyphens, colons, etc.
+    return name_without_ext.replace("-", "_").replace(":", "_").replace(".", "_").lower()

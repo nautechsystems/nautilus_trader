@@ -17,45 +17,31 @@ from libc.string cimport strcmp
 
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.rust.model cimport account_id_hash
 from nautilus_trader.core.rust.model cimport account_id_new
-from nautilus_trader.core.rust.model cimport client_id_hash
 from nautilus_trader.core.rust.model cimport client_id_new
-from nautilus_trader.core.rust.model cimport client_order_id_hash
 from nautilus_trader.core.rust.model cimport client_order_id_new
-from nautilus_trader.core.rust.model cimport component_id_hash
 from nautilus_trader.core.rust.model cimport component_id_new
-from nautilus_trader.core.rust.model cimport exec_algorithm_id_hash
 from nautilus_trader.core.rust.model cimport exec_algorithm_id_new
 from nautilus_trader.core.rust.model cimport instrument_id_check_parsing
 from nautilus_trader.core.rust.model cimport instrument_id_from_cstr
-from nautilus_trader.core.rust.model cimport instrument_id_hash
 from nautilus_trader.core.rust.model cimport instrument_id_is_synthetic
 from nautilus_trader.core.rust.model cimport instrument_id_new
 from nautilus_trader.core.rust.model cimport instrument_id_to_cstr
 from nautilus_trader.core.rust.model cimport interned_string_stats
-from nautilus_trader.core.rust.model cimport order_list_id_hash
 from nautilus_trader.core.rust.model cimport order_list_id_new
-from nautilus_trader.core.rust.model cimport position_id_hash
 from nautilus_trader.core.rust.model cimport position_id_new
-from nautilus_trader.core.rust.model cimport strategy_id_hash
 from nautilus_trader.core.rust.model cimport strategy_id_new
-from nautilus_trader.core.rust.model cimport symbol_hash
 from nautilus_trader.core.rust.model cimport symbol_is_composite
 from nautilus_trader.core.rust.model cimport symbol_new
 from nautilus_trader.core.rust.model cimport symbol_root
 from nautilus_trader.core.rust.model cimport symbol_topic
-from nautilus_trader.core.rust.model cimport trade_id_hash
 from nautilus_trader.core.rust.model cimport trade_id_new
 from nautilus_trader.core.rust.model cimport trade_id_to_cstr
-from nautilus_trader.core.rust.model cimport trader_id_hash
 from nautilus_trader.core.rust.model cimport trader_id_new
 from nautilus_trader.core.rust.model cimport venue_code_exists
 from nautilus_trader.core.rust.model cimport venue_from_cstr_code
-from nautilus_trader.core.rust.model cimport venue_hash
 from nautilus_trader.core.rust.model cimport venue_is_synthetic
 from nautilus_trader.core.rust.model cimport venue_new
-from nautilus_trader.core.rust.model cimport venue_order_id_hash
 from nautilus_trader.core.rust.model cimport venue_order_id_new
 from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.core.string cimport pystr_to_cstr
@@ -142,11 +128,14 @@ cdef class Symbol(Identifier):
 
     def __eq__(self, Symbol other) -> bool:
         if other is None:
-            raise RuntimeError("other was None in __eq__")
+            raise TypeError("other was None in __eq__")
         return strcmp(self._mem._0, other._mem._0) == 0
 
     def __hash__(self) -> int:
-        return hash(self.to_str())
+        # A rare zero hash will cause frequent recomputations
+        if self._hash == 0:
+            self._hash = hash(self.to_str())
+        return self._hash
 
     @staticmethod
     cdef Symbol from_mem_c(Symbol_t mem):
@@ -226,11 +215,14 @@ cdef class Venue(Identifier):
 
     def __eq__(self, Venue other) -> bool:
         if other is None:
-            raise RuntimeError("other was None in __eq__")
+            raise TypeError("other was None in __eq__")
         return strcmp(self._mem._0, other._mem._0) == 0
 
     def __hash__(self) -> int:
-        return hash(self.to_str())
+        # A rare zero hash will cause frequent recomputations
+        if self._hash == 0:
+            self._hash = hash(self.to_str())
+        return self._hash
 
     cdef str to_str(self):
         return ustr_to_pystr(self._mem._0)
@@ -283,7 +275,6 @@ cdef class Venue(Identifier):
         return Venue.from_code_c(code)
 
 
-
 cdef class InstrumentId(Identifier):
     """
     Represents a valid instrument ID.
@@ -332,17 +323,18 @@ cdef class InstrumentId(Identifier):
         return self.to_str()
 
     def __setstate__(self, state):
-        self._mem = instrument_id_from_cstr(
-            pystr_to_cstr(state),
-        )
+        self._mem = instrument_id_from_cstr(pystr_to_cstr(state))
 
     def __eq__(self, InstrumentId other) -> bool:
         if other is None:
-            raise RuntimeError("other was None in __eq__")
+            raise TypeError("other was None in __eq__")
         return strcmp(self._mem.symbol._0, other._mem.symbol._0) == 0 and strcmp(self._mem.venue._0, other._mem.venue._0) == 0
 
     def __hash__(self) -> int:
-        return hash(self.to_str())
+        # A rare zero hash will cause frequent recomputations
+        if self._hash == 0:
+            self._hash = hash(self.to_str())
+        return self._hash
 
     @staticmethod
     cdef InstrumentId from_mem_c(InstrumentId_t mem):
@@ -402,6 +394,17 @@ cdef class InstrumentId(Identifier):
         """
         return <bint>instrument_id_is_synthetic(&self._mem)
 
+    cpdef bint is_spread(self):
+        """
+        Return whether the instrument ID is a spread instrument (symbol contains '_' separator).
+
+        Returns
+        -------
+        bool
+
+        """
+        return "_" in self.symbol.value
+
     @staticmethod
     def from_pyo3(pyo3_instrument_id) -> InstrumentId:
         """
@@ -429,6 +432,138 @@ cdef class InstrumentId(Identifier):
 
         """
         return nautilus_pyo3.InstrumentId.from_str(self.to_str())
+
+    @staticmethod
+    def new_spread(instrument_ratios: list[tuple[InstrumentId, int]]) -> InstrumentId:
+        """
+        Create a spread InstrumentId from a list of (instrument_id, ratio) tuples.
+
+        The resulting symbol will be in the format: (ratio1)symbol1_(ratio2)symbol2_...
+        where positive ratios are shown as (ratio) and negative ratios as ((ratio)).
+        All instrument IDs must have the same venue. The instrument IDs are sorted
+        alphabetically by symbol before creating the spread symbol.
+
+        Parameters
+        ----------
+        instrument_ratios : list[tuple[InstrumentId, int]]
+            List of tuples containing (instrument_id, ratio) where ratio cannot be 0.
+
+        Returns
+        -------
+        InstrumentId
+            The spread instrument ID.
+
+        Raises
+        ------
+        ValueError
+            If the list is empty, ratios are zero, or venues don't match.
+
+        Examples
+        --------
+        >>> from nautilus_trader.model.identifiers import InstrumentId, Symbol, Venue
+        >>> id1 = InstrumentId(Symbol("MSFT"), Venue("NASDAQ"))
+        >>> id2 = InstrumentId(Symbol("AAPL"), Venue("NASDAQ"))
+        >>> spread = InstrumentId.new_spread([(id1, 1), (id2, -2)])
+        >>> print(spread.symbol.value)
+        ((2))AAPL_(1)MSFT
+
+        """
+        if len(instrument_ratios) <= 1:
+            raise ValueError("instrument_ratios list needs to have at least 2 legs")
+
+        # Validate all ratios are non-zero and venues match
+        first_venue = instrument_ratios[0][0].venue
+
+        for instrument_id, ratio in instrument_ratios:
+            if ratio == 0:
+                raise ValueError("ratio cannot be zero")
+
+            if instrument_id.venue != first_venue:
+                raise ValueError(f"All venues must match. Expected {first_venue}, got {instrument_id.venue}")
+
+        # Sort instrument ratios alphabetically by symbol
+        sorted_ratios = sorted(instrument_ratios, key=lambda x: x[0].symbol.value)
+
+        # Build the composite symbol
+        symbol_parts = []
+
+        for instrument_id, ratio in sorted_ratios:
+            if ratio > 0:
+                symbol_part = f"({ratio}){instrument_id.symbol.value}"
+            else:
+                symbol_part = f"(({abs(ratio)})){instrument_id.symbol.value}"
+
+            symbol_parts.append(symbol_part)
+
+        composite_symbol = "_".join(symbol_parts)
+
+        return InstrumentId(Symbol(composite_symbol), first_venue)
+
+    def to_list(self) -> list[tuple[InstrumentId, int]]:
+        """
+        Parse this InstrumentId back into a list of (instrument_id, ratio) tuples.
+
+        This is the inverse operation of new_spread(). The symbol must be in the format
+        created by new_spread(): (ratio1)symbol1_(ratio2)symbol2_...
+        The returned list is sorted alphabetically by symbol.
+
+        Returns
+        -------
+        list[tuple[InstrumentId, int]]
+            List of tuples containing (instrument_id, ratio), sorted alphabetically by symbol.
+
+        Raises
+        ------
+        ValueError
+            If the symbol format is not compatible with new_spread() format.
+
+        Examples
+        --------
+        >>> from nautilus_trader.model.identifiers import InstrumentId, Symbol, Venue
+        >>> spread = InstrumentId(Symbol("(1)AAPL_((2))MSFT"), Venue("NASDAQ"))
+        >>> result = spread.to_list()
+        >>> print(result)
+        [(InstrumentId('AAPL.NASDAQ'), 1), (InstrumentId('MSFT.NASDAQ'), -2)]
+
+        """
+        import re
+
+        symbol_str = self.symbol.value
+        venue = self.venue
+
+        # Split by underscore to get individual components
+        components = symbol_str.split("_")
+        result = []
+
+        # Pattern to match (ratio)symbol or ((ratio))symbol
+        pattern = r'^\(\((\d+)\)\)(.+)$|^\((\d+)\)(.+)$'
+
+        for component in components:
+            match = re.match(pattern, component)
+
+            if not match:
+                raise ValueError(f"Invalid symbol format for component: {component}")
+
+            if match.group(1) is not None:  # Negative ratio: ((ratio))symbol
+                ratio = -int(match.group(1))
+                symbol_value = match.group(2)
+            else:  # Positive ratio: (ratio)symbol
+                ratio = int(match.group(3))
+                symbol_value = match.group(4)
+
+            instrument_id = InstrumentId(Symbol(symbol_value), venue)
+            result.append((instrument_id, ratio))
+
+        # Sort result alphabetically by symbol
+        result.sort(key=lambda x: x[0].symbol.value)
+
+        return result
+
+    def n_legs(self):
+        if not self.is_spread():
+            return 1
+
+        return sum([abs(component[1]) for component in self.to_list()])
 
 
 cdef class ComponentId(Identifier):
@@ -462,11 +597,14 @@ cdef class ComponentId(Identifier):
 
     def __eq__(self, ComponentId other) -> bool:
         if other is None:
-            raise RuntimeError("other was None in __eq__")
+            raise TypeError("other was None in __eq__")
         return strcmp(self._mem._0, other._mem._0) == 0
 
     def __hash__(self) -> int:
-        return hash(self.to_str())
+        # A rare zero hash will cause frequent recomputations
+        if self._hash == 0:
+            self._hash = hash(self.to_str())
+        return self._hash
 
     @staticmethod
     cdef ComponentId from_mem_c(ComponentId_t mem):
@@ -509,11 +647,14 @@ cdef class ClientId(Identifier):
 
     def __eq__(self, ClientId other) -> bool:
         if other is None:
-            raise RuntimeError("other was None in __eq__")
+            raise TypeError("other was None in __eq__")
         return strcmp(self._mem._0, other._mem._0) == 0
 
     def __hash__(self) -> int:
-        return hash(self.to_str())
+        # A rare zero hash will cause frequent recomputations
+        if self._hash == 0:
+            self._hash = hash(self.to_str())
+        return self._hash
 
     @staticmethod
     cdef ClientId from_mem_c(ClientId_t mem):
@@ -565,11 +706,14 @@ cdef class TraderId(Identifier):
 
     def __eq__(self, TraderId other) -> bool:
         if other is None:
-            raise RuntimeError("other was None in __eq__")
+            raise TypeError("other was None in __eq__")
         return strcmp(self._mem._0, other._mem._0) == 0
 
     def __hash__(self) -> int:
-        return hash(self.to_str())
+        # A rare zero hash will cause frequent recomputations
+        if self._hash == 0:
+            self._hash = hash(self.to_str())
+        return self._hash
 
     @staticmethod
     cdef TraderId from_mem_c(TraderId_t mem):
@@ -638,11 +782,14 @@ cdef class StrategyId(Identifier):
 
     def __eq__(self, StrategyId other) -> bool:
         if other is None:
-            raise RuntimeError("other was None in __eq__")
+            raise TypeError("other was None in __eq__")
         return strcmp(self._mem._0, other._mem._0) == 0
 
     def __hash__(self) -> int:
-        return hash(self.to_str())
+        # A rare zero hash will cause frequent recomputations
+        if self._hash == 0:
+            self._hash = hash(self.to_str())
+        return self._hash
 
     @staticmethod
     cdef StrategyId from_mem_c(StrategyId_t mem):
@@ -709,11 +856,14 @@ cdef class ExecAlgorithmId(Identifier):
 
     def __eq__(self, ExecAlgorithmId other) -> bool:
         if other is None:
-            raise RuntimeError("other was None in __eq__")
+            raise TypeError("other was None in __eq__")
         return strcmp(self._mem._0, other._mem._0) == 0
 
     def __hash__(self) -> int:
-        return hash(self.to_str())
+        # A rare zero hash will cause frequent recomputations
+        if self._hash == 0:
+            self._hash = hash(self.to_str())
+        return self._hash
 
     @staticmethod
     cdef ExecAlgorithmId from_mem_c(ExecAlgorithmId_t mem):
@@ -764,11 +914,14 @@ cdef class AccountId(Identifier):
 
     def __eq__(self, AccountId other) -> bool:
         if other is None:
-            raise RuntimeError("other was None in __eq__")
+            raise TypeError("other was None in __eq__")
         return strcmp(self._mem._0, other._mem._0) == 0
 
     def __hash__(self) -> int:
-        return hash(self.to_str())
+        # A rare zero hash will cause frequent recomputations
+        if self._hash == 0:
+            self._hash = hash(self.to_str())
+        return self._hash
 
     @staticmethod
     cdef AccountId from_mem_c(AccountId_t mem):
@@ -833,11 +986,14 @@ cdef class ClientOrderId(Identifier):
 
     def __eq__(self, ClientOrderId other) -> bool:
         if other is None:
-            raise RuntimeError("other was None in __eq__")
+            raise TypeError("other was None in __eq__")
         return strcmp(self._mem._0, other._mem._0) == 0
 
     def __hash__(self) -> int:
-        return hash(self.to_str())
+        # A rare zero hash will cause frequent recomputations
+        if self._hash == 0:
+            self._hash = hash(self.to_str())
+        return self._hash
 
     @staticmethod
     cdef ClientOrderId from_mem_c(ClientOrderId_t mem):
@@ -876,11 +1032,14 @@ cdef class VenueOrderId(Identifier):
 
     def __eq__(self, VenueOrderId other) -> bool:
         if other is None:
-            raise RuntimeError("other was None in __eq__")
+            raise TypeError("other was None in __eq__")
         return strcmp(self._mem._0, other._mem._0) == 0
 
     def __hash__(self) -> int:
-        return hash(self.to_str())
+        # A rare zero hash will cause frequent recomputations
+        if self._hash == 0:
+            self._hash = hash(self.to_str())
+        return self._hash
 
     @staticmethod
     cdef VenueOrderId from_mem_c(VenueOrderId_t mem):
@@ -919,11 +1078,14 @@ cdef class OrderListId(Identifier):
 
     def __eq__(self, OrderListId other) -> bool:
         if other is None:
-            raise RuntimeError("other was None in __eq__")
+            raise TypeError("other was None in __eq__")
         return strcmp(self._mem._0, other._mem._0) == 0
 
     def __hash__(self) -> int:
-        return hash(self.to_str())
+        # A rare zero hash will cause frequent recomputations
+        if self._hash == 0:
+            self._hash = hash(self.to_str())
+        return self._hash
 
     @staticmethod
     cdef OrderListId from_mem_c(OrderListId_t mem):
@@ -962,11 +1124,14 @@ cdef class PositionId(Identifier):
 
     def __eq__(self, PositionId other) -> bool:
         if other is None:
-            raise RuntimeError("other was None in __eq__")
+            raise TypeError("other was None in __eq__")
         return strcmp(self._mem._0, other._mem._0) == 0
 
     def __hash__(self) -> int:
-        return hash(self.to_str())
+        # A rare zero hash will cause frequent recomputations
+        if self._hash == 0:
+            self._hash = hash(self.to_str())
+        return self._hash
 
     @staticmethod
     cdef PositionId from_mem_c(PositionId_t mem):
@@ -1023,11 +1188,14 @@ cdef class TradeId(Identifier):
 
     def __eq__(self, TradeId other) -> bool:
         if other is None:
-            raise RuntimeError("other was None in __eq__")
+            raise TypeError("other was None in __eq__")
         return strcmp(trade_id_to_cstr(&self._mem), trade_id_to_cstr(&other._mem)) == 0
 
     def __hash__(self) -> int:
-        return hash(self.to_str())
+        # A rare zero hash will cause frequent recomputations
+        if self._hash == 0:
+            self._hash = hash(self.to_str())
+        return self._hash
 
     @staticmethod
     cdef TradeId from_mem_c(TradeId_t mem):

@@ -3,7 +3,7 @@ repos:
   #  General checks
   ##############################################################################
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       - id: forbid-new-submodules
       - id: end-of-file-fixer
@@ -72,7 +72,7 @@ repos:
       - id: fmt
         name: cargo fmt
         description: Format files with cargo fmt.
-        entry: cargo fmt
+        entry: bash .pre-commit-hooks/cargo_fmt_stable.sh
         language: system
         args: ["--all", "--", "--check"]
         files: '\.(rs|toml)$'
@@ -117,7 +117,7 @@ repos:
         args: ["--config", "pyproject.toml"]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.12.2
+    rev: v0.12.12
     hooks:
       - id: ruff
         args: ["--fix"]
@@ -146,9 +146,10 @@ repos:
         ]
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.16.1
+    rev: v1.17.1
     hooks:
       - id: mypy
+        exclude: ^python/nautilus_trader/.*__init__\.py$
         args: [
           "--config", "pyproject.toml",
           "--allow-incomplete-defs",
@@ -163,9 +164,10 @@ repos:
         ]
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.7.19  # uv version
+    rev: 0.8.15  # uv version
     hooks:
       - id: uv-lock
+        files: ^python/uv\.lock$
 
   - repo: https://github.com/kynan/nbstripout
     rev: 0.8.1
@@ -173,7 +175,7 @@ repos:
       - id: nbstripout
 
   - repo: https://github.com/DavidAnson/markdownlint-cli2
-    rev: v0.17.2  # Pin v0.17.2 to depend on default node version for GitHub actions runners
+    rev: v0.18.1
     hooks:
       - id: markdownlint-cli2
         name: markdownlint

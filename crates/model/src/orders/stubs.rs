@@ -20,7 +20,7 @@ use nautilus_core::{UUID4, UnixNanos};
 use super::any::OrderAny;
 use crate::{
     enums::{LiquiditySide, OrderType},
-    events::{OrderAccepted, OrderEventAny, OrderFilled, OrderSubmitted},
+    events::{OrderAccepted, OrderCanceled, OrderEventAny, OrderFilled, OrderSubmitted},
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, PositionId, TradeId, Venue, VenueOrderId,
     },
@@ -66,6 +66,26 @@ impl TestOrderEventStubs {
             false,
         );
         OrderEventAny::Accepted(event)
+    }
+
+    pub fn canceled(
+        order: &OrderAny,
+        account_id: AccountId,
+        venue_order_id: Option<VenueOrderId>,
+    ) -> OrderEventAny {
+        let event = OrderCanceled::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            false, // reconciliation
+            venue_order_id,
+            Some(account_id),
+        );
+        OrderEventAny::Canceled(event)
     }
 
     /// # Panics

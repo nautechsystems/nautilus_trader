@@ -21,7 +21,7 @@ use nautilus_common::{cache::Cache, clock::Clock};
 use nautilus_data::client::DataClient;
 use nautilus_system::factories::{ClientConfig, DataClientFactory};
 
-use crate::{config::BlockchainDataClientConfig, data::BlockchainDataClient};
+use crate::{config::BlockchainDataClientConfig, data::client::BlockchainDataClient};
 
 impl ClientConfig for BlockchainDataClientConfig {
     fn as_any(&self) -> &dyn Any {
@@ -33,7 +33,11 @@ impl ClientConfig for BlockchainDataClientConfig {
 ///
 /// This factory creates `BlockchainDataClient` instances configured for different blockchain networks
 /// (Ethereum, Arbitrum, Base, Polygon) with appropriate RPC and HyperSync configurations.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.blockchain")
+)]
 pub struct BlockchainDataClientFactory;
 
 impl BlockchainDataClientFactory {
@@ -96,10 +100,14 @@ mod tests {
         let chain = Arc::new(chains::ETHEREUM.clone());
         let config = BlockchainDataClientConfig::new(
             chain,
+            vec![],
             "https://eth-mainnet.example.com".to_string(),
             None,
             None,
+            None,
             false,
+            None,
+            None,
             None,
         );
 

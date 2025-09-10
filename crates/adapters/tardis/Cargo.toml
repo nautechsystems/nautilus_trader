@@ -18,20 +18,21 @@ name = "nautilus_tardis"
 crate-type = ["rlib", "cdylib"]
 
 [features]
-default = []
+default = ["replay"]
 extension-module = [
-  "pyo3/extension-module",
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
   "nautilus-serialization/extension-module",
+  "pyo3/extension-module",
 ]
 python = [
-  "pyo3",
-  "pyo3-async-runtimes",
   "nautilus-core/python",
   "nautilus-model/python",
   "nautilus-serialization/python",
+  "pyo3",
+  "pyo3-async-runtimes",
 ]
+replay = []
 
 [package.metadata.docs.rs]
 all-features = true
@@ -40,9 +41,9 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 nautilus-core = { workspace = true }
 nautilus-model = { workspace = true, features = ["python"] }
-nautilus-persistence = { workspace = true }
 nautilus-serialization = { workspace = true }
 
+ahash = { workspace = true }
 anyhow = { workspace = true }
 arrow = { workspace = true }
 async-stream = { workspace = true }
@@ -52,6 +53,8 @@ derive_builder = { workspace = true }
 flate2 = { workspace = true }
 futures-util = { workspace = true }
 heck = { workspace = true }
+log = { workspace = true }
+parquet = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
 reqwest = { workspace = true }
@@ -87,3 +90,9 @@ path = "bin/example_http.rs"
 [[bin]]
 name = "tardis-replay"
 path = "bin/example_replay.rs"
+required-features = ["replay"]
+
+# Run with `cargo run --bin stream_deltas_bench --profile bench`
+[[bin]]
+name = "stream_deltas_bench"
+path = "bin/stream_deltas_bench.rs"

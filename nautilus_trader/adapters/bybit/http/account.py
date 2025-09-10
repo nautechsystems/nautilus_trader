@@ -209,14 +209,26 @@ class BybitAccountHttpAPI:
             case _:
                 settle_coin = self.default_settle_coin if symbol is None else None
 
-        response = await self._endpoint_position_info.get(
-            PositionInfoGetParams(
-                symbol=symbol,
-                settleCoin=settle_coin,
-                category=product_type.value,
-            ),
-        )
-        return response.result.list
+        all_positions = []
+        cursor = None
+        while True:
+            response = await self._endpoint_position_info.get(
+                PositionInfoGetParams(
+                    symbol=symbol,
+                    settleCoin=settle_coin,
+                    category=product_type.value,
+                    limit=200,
+                    cursor=cursor,
+                ),
+            )
+            all_positions.extend(response.result.list)
+
+            if hasattr(response.result, "nextPageCursor") and response.result.nextPageCursor:
+                cursor = response.result.nextPageCursor
+            else:
+                break
+
+        return all_positions
 
     async def query_open_orders(
         self,
@@ -303,6 +315,7 @@ class BybitAccountHttpAPI:
         time_in_force: BybitTimeInForce | None = None,
         client_order_id: str | None = None,
         reduce_only: bool | None = None,
+        is_leverage: bool | None = None,
         tpsl_mode: BybitTpSlMode | None = None,
         close_on_trigger: bool | None = None,
         tp_order_type: BybitOrderType | None = None,
@@ -326,6 +339,7 @@ class BybitAccountHttpAPI:
                 price=price,
                 timeInForce=time_in_force,
                 orderLinkId=client_order_id,
+                isLeverage=int(is_leverage) if is_leverage is not None else None,
                 reduceOnly=reduce_only,
                 closeOnTrigger=close_on_trigger,
                 tpslMode=tpsl_mode if product_type != BybitProductType.SPOT else None,

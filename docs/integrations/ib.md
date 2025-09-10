@@ -161,23 +161,23 @@ The client uses a mixin-based architecture where each mixin handles a specific a
 
 #### Connection Management (`InteractiveBrokersClientConnectionMixin`)
 
-- Establishes and maintains socket connections to TWS/Gateway
-- Handles connection timeouts and reconnection logic
-- Manages connection state and health monitoring
-- Supports configurable reconnection attempts via `IB_MAX_CONNECTION_ATTEMPTS` environment variable
+- Establishes and maintains socket connections to TWS/Gateway.
+- Handles connection timeouts and reconnection logic.
+- Manages connection state and health monitoring.
+- Supports configurable reconnection attempts via `IB_MAX_CONNECTION_ATTEMPTS` environment variable.
 
 #### Error Handling (`InteractiveBrokersClientErrorMixin`)
 
-- Processes all API errors and warnings
-- Categorizes errors by type (client errors, connectivity issues, request errors)
-- Handles subscription and request-specific error scenarios
-- Provides comprehensive error logging and debugging information
+- Processes all API errors and warnings.
+- Categorizes errors by type (client errors, connectivity issues, request errors).
+- Handles subscription and request-specific error scenarios.
+- Provides comprehensive error logging and debugging information.
 
 #### Account Management (`InteractiveBrokersClientAccountMixin`)
 
-- Retrieves account information and balances
-- Manages position data and portfolio updates
-- Handles multi-account scenarios
+- Retrieves account information and balances.
+- Manages position data and portfolio updates.
+- Handles multi-account scenarios.
 - Processes account-related notifications
 
 #### Contract/Instrument Management (`InteractiveBrokersClientContractMixin`)
@@ -542,6 +542,68 @@ instrument_provider_config = InteractiveBrokersInstrumentProviderConfig(
 When using `build_options_chain=True` or `build_futures_chain=True`, the `secType` and `symbol` should be specified for the underlying contract. The adapter will automatically discover and load all related derivative contracts within the specified expiry range.
 :::
 
+## Option Spreads
+
+Interactive Brokers supports option spreads through BAG contracts, which combine multiple option legs into a single tradeable instrument. NautilusTrader provides comprehensive support for creating, loading, and trading option spreads.
+
+### Creating Option Spread Instrument IDs
+
+Option spreads are created using the `InstrumentId.new_spread()` method, which combines individual option legs with their respective ratios:
+
+```python
+from nautilus_trader.model.identifiers import InstrumentId
+
+# Create individual option instrument IDs
+call_leg = InstrumentId.from_str("SPY C400.SMART")
+put_leg = InstrumentId.from_str("SPY P390.SMART")
+
+# Create a 1:1 call spread (long call, short call)
+call_spread_id = InstrumentId.new_spread([
+    (call_leg, 1),   # Long 1 contract
+    (put_leg, -1),   # Short 1 contract
+])
+
+# Create a 1:2 ratio spread
+ratio_spread_id = InstrumentId.new_spread([
+    (call_leg, 1),   # Long 1 contract
+    (put_leg, 2),    # Long 2 contracts
+])
+```
+
+### Dynamic Spread Loading
+
+Option spreads must be requested before they can be traded or subscribed to for market data. Use the `request_instrument()` method to dynamically load spread instruments:
+
+```python
+# In your strategy's on_start method
+def on_start(self):
+    # Request the spread instrument
+    self.request_instrument(spread_id)
+
+def on_instrument(self, instrument):
+    # Handle the loaded spread instrument
+    self.log.info(f"Loaded spread: {instrument.id}")
+
+    # Now you can subscribe to market data
+    self.subscribe_quote_ticks(instrument.id)
+
+    # And place orders
+    order = self.order_factory.market(
+        instrument_id=instrument.id,
+        order_side=OrderSide.BUY,
+        quantity=instrument.make_qty(1),
+        time_in_force=TimeInForce.DAY,
+    )
+    self.submit_order(order)
+```
+
+### Spread Trading Requirements
+
+1. **Load Individual Legs First**: The individual option legs must be available before creating spreads
+2. **Request Spread Instrument**: Use `request_instrument()` to load the spread before trading
+3. **Market Data Subscription**: Subscribe to quote ticks after the spread is loaded
+4. **Order Placement**: Any order type can be used
+
 ## Historical Data & Backtesting
 
 The `HistoricInteractiveBrokersClient` provides comprehensive methods for retrieving historical data from Interactive Brokers for backtesting and research purposes.
@@ -573,6 +635,8 @@ await client.connect()
 
 ### Retrieving Instruments
 
+#### Basic Instrument Retrieval
+
 ```python
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 
@@ -585,6 +649,53 @@ contracts = [
 
 # Request instrument definitions
 instruments = await client.request_instruments(contracts=contracts)
+```
+
+#### Option Chain Retrieval with Catalog Storage
+
+You can download entire option chains using `request_instruments` in your strategy, with the added benefit of saving the data to the catalog using `update_catalog=True`:
+
+```python
+# In your strategy's on_start method
+def on_start(self):
+    self.request_instruments(
+        venue=IB_VENUE,
+        update_catalog=True,
+        params={
+            "update_catalog": True,
+            "ib_contracts": (
+                # SPY options
+                {
+                    "secType": "STK",
+                    "symbol": "SPY",
+                    "exchange": "SMART",
+                    "primaryExchange": "ARCA",
+                    "build_options_chain": True,
+                    "min_expiry_days": 7,
+                    "max_expiry_days": 30,
+                },
+                # QQQ options
+                {
+                    "secType": "STK",
+                    "symbol": "QQQ",
+                    "exchange": "SMART",
+                    "primaryExchange": "NASDAQ",
+                    "build_options_chain": True,
+                    "min_expiry_days": 7,
+                    "max_expiry_days": 30,
+                },
+                # ES futures options
+                {
+                    "secType": "CONTFUT",
+                    "exchange": "CME",
+                    "symbol": "ES",
+                    "build_options_chain": True,
+                    "min_expiry_days": 0,
+                    "max_expiry_days": 60,
+                },
+            ),
+        },
+    )
 ```
 
 ### Retrieving Historical Bars
@@ -907,7 +1018,7 @@ The adapter supports most Interactive Brokers order types:
 - **Market-on-Close**: `OrderType.MARKET` with `TimeInForce.AT_THE_CLOSE`
 - **Limit-on-Close**: `OrderType.LIMIT` with `TimeInForce.AT_THE_CLOSE`
 
-#### Time-in-Force Options
+#### Time in force options
 
 - **Day Orders**: `TimeInForce.DAY`
 - **Good-Till-Canceled**: `TimeInForce.GTC`
@@ -916,6 +1027,41 @@ The adapter supports most Interactive Brokers order types:
 - **Good-Till-Date**: `TimeInForce.GTD`
 - **At-the-Open**: `TimeInForce.AT_THE_OPEN`
 - **At-the-Close**: `TimeInForce.AT_THE_CLOSE`
+
+#### Batch operations
+
+| Operation          | Supported | Notes                                        |
+|--------------------|-----------|----------------------------------------------|
+| Batch Submit       | ✓         | Submit multiple orders in single request.    |
+| Batch Modify       | ✓         | Modify multiple orders in single request.    |
+| Batch Cancel       | ✓         | Cancel multiple orders in single request.    |
+
+#### Position management
+
+| Feature              | Supported | Notes                                        |
+|--------------------|-----------|----------------------------------------------|
+| Query positions     | ✓         | Real-time position updates.                  |
+| Position mode       | ✓         | Net vs separate long/short positions.       |
+| Leverage control    | ✓         | Account-level margin requirements.          |
+| Margin mode         | ✓         | Portfolio vs individual margin.             |
+
+#### Order querying
+
+| Feature              | Supported | Notes                                        |
+|--------------------|-----------|----------------------------------------------|
+| Query open orders   | ✓         | List all active orders.                      |
+| Query order history | ✓         | Historical order data.                       |
+| Order status updates| ✓         | Real-time order state changes.              |
+| Trade history       | ✓         | Execution and fill reports.                 |
+
+#### Contingent orders
+
+| Feature              | Supported | Notes                                        |
+|--------------------|-----------|----------------------------------------------|
+| Order lists         | ✓         | Atomic multi-order submission.               |
+| OCO orders          | ✓         | One-Cancels-Other with customizable OCA types (1, 2, 3). |
+| Bracket orders      | ✓         | Parent-child order relationships with automatic OCO. |
+| Conditional orders  | ✓         | Advanced order conditions and triggers.     |
 
 #### Basic Execution Client Configuration
 
@@ -987,7 +1133,105 @@ order_tags = IBOrderTags(
     goodAfterTime="20240315 09:35:00 EST",    # Good after time
 )
 
+# Apply tags to an order
+order = order_factory.limit(
+    instrument_id=instrument.id,
+    order_side=OrderSide.BUY,
+    quantity=instrument.make_qty(100),
+    price=instrument.make_price(100.0),
+    tags=[order_tags.value],
+)
+```
+
+#### OCA (One-Cancels-All) Orders
+
+The adapter provides comprehensive support for OCA orders with both automatic detection and custom configuration:
+
+### Automatic OCO Detection
+
+Bracket orders automatically use OCA functionality with safe defaults:
+
+```python
+# Bracket orders automatically create OCA groups
+bracket_order = order_factory.bracket(
+    instrument_id=instrument.id,
+    order_side=OrderSide.BUY,
+    quantity=instrument.make_qty(100),
+    tp_price=instrument.make_price(110.0),
+    sl_trigger_price=instrument.make_price(90.0),
+    contingency_type=ContingencyType.OCO,  # Automatic OCA Type 1
+)
+```
+
+### Custom OCA Types
+
+You can specify custom OCA behavior using `IBOrderTags`:
+
+```python
+from nautilus_trader.adapters.interactive_brokers.common import IBOrderTags
+
+# Create custom OCA configuration
+custom_oca_tags = IBOrderTags(
+    ocaGroup="MY_CUSTOM_GROUP",
+    ocaType=2,  # Use Type 2: Reduce with Block
+)
+
+# Apply to individual orders
+order = order_factory.limit(
+    instrument_id=instrument.id,
+    order_side=OrderSide.BUY,
+    quantity=instrument.make_qty(100),
+    price=instrument.make_price(100.0),
+    tags=[custom_oca_tags.value],
+)
+```
+
+### OCA Types
+
+Interactive Brokers supports three OCA types:
+
+| Type | Name | Behavior | Use Case |
+|------|------|----------|----------|
+| **1** | Cancel All with Block | Cancel all remaining orders with block protection | **Default** - Safest option, prevents overfills |
+| **2** | Reduce with Block | Proportionally reduce remaining orders with block protection | Partial fills with overfill protection |
+| **3** | Reduce without Block | Proportionally reduce remaining orders without block protection | Fastest execution, higher overfill risk |
+
+#### Multiple Orders in Same OCA Group
+
+```python
+# Create multiple orders with the same OCA group
+oca_tags = IBOrderTags(
+    ocaGroup="MULTI_ORDER_GROUP",
+    ocaType=3,  # Use Type 3: Reduce without Block
+)
+
+order1 = order_factory.limit(
+    instrument_id=instrument.id,
+    order_side=OrderSide.BUY,
+    quantity=instrument.make_qty(50),
+    price=instrument.make_price(99.0),
+    tags=[oca_tags.value],
+)
+
+order2 = order_factory.limit(
+    instrument_id=instrument.id,
+    order_side=OrderSide.BUY,
+    quantity=instrument.make_qty(50),
+    price=instrument.make_price(101.0),
+    tags=[oca_tags.value],
+)
+```
+
+### Priority Order
+
+The adapter applies OCA settings in the following priority:
+
+1. **Custom IBOrderTags** (highest priority) - Explicit OCA settings in order tags
+2. **Automatic Detection** - OCO/OUO contingency types in bracket orders (uses Type 1)
+3. **No OCA** - Orders without contingency types or OCA tags
+
 # Apply tags to order (implementation depends on your strategy code)
+
 ```
 
 ### Complete Trading Node Configuration
@@ -1077,7 +1321,7 @@ if __name__ == "__main__":
         node.dispose()
 ```
 
-#### Live Trading with Dockerized Gateway
+## Live Trading with Dockerized Gateway
 
 ```python
 from nautilus_trader.adapters.interactive_brokers.config import DockerizedIBGatewayConfig
@@ -1122,7 +1366,7 @@ config_node = TradingNodeConfig(
 )
 ```
 
-#### Multi-Client Configuration
+### Multi-Client Configuration
 
 For advanced setups, you can configure multiple clients with different purposes:
 

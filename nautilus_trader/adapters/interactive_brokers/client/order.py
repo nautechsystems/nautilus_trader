@@ -80,7 +80,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         order_id : int
             The unique identifier for the order to be canceled.
         order_cancel : OrderCancel object, optional.
-            The Order cancellation parameters when cancelling an order, when subject to CME Rule 576.
+            The Order cancellation parameters when canceling an order, when subject to CME Rule 576.
 
         """
         if order_cancel is None:
@@ -248,6 +248,9 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
                 handler(
                     order_ref=self._order_id_to_order_ref[order_id].order_id,
                     order_status=status,
+                    avg_fill_price=avg_fill_price,
+                    filled=filled,
+                    remaining=remaining,
                 )
 
     async def process_exec_details(
@@ -265,6 +268,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
             cache = self._exec_id_details[execution.execId]
 
         cache["execution"] = execution
+        cache["contract"] = IBContract(**contract.__dict__)
         cache["order_ref"] = execution.orderRef.rsplit(":", 1)[0]
         name = f"execDetails-{execution.acctNumber}"
 
@@ -275,6 +279,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
                 order_ref=cache["order_ref"],
                 execution=cache["execution"],
                 commission_report=cache["commission_report"],
+                contract=cache["contract"],
             )
             cache.pop(execution.execId, None)
 
@@ -300,5 +305,6 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
                     order_ref=cache["order_ref"],
                     execution=cache["execution"],
                     commission_report=cache["commission_report"],
+                    contract=cache.get("contract"),
                 )
                 cache.pop(commission_report.execId, None)

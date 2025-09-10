@@ -53,6 +53,7 @@ from nautilus_trader.execution.messages cimport BatchCancelOrders
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
+from nautilus_trader.execution.messages cimport QueryAccount
 from nautilus_trader.execution.messages cimport QueryOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
@@ -85,6 +86,7 @@ from nautilus_trader.model.functions cimport oms_type_from_str
 from nautilus_trader.model.functions cimport order_side_to_str
 from nautilus_trader.model.functions cimport order_status_to_str
 from nautilus_trader.model.functions cimport position_side_to_str
+from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecAlgorithmId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -145,6 +147,7 @@ cdef class Strategy(Actor):
         self.id = StrategyId(f"{component_id}-{config.order_id_tag}")
         self.order_id_tag = str(config.order_id_tag)
         self.use_uuid_client_order_ids = config.use_uuid_client_order_ids
+        self.use_hyphens_in_client_order_ids = config.use_hyphens_in_client_order_ids
         self._log = Logger(name=component_id)
 
         oms_type = config.oms_type or OmsType.UNSPECIFIED
@@ -154,6 +157,7 @@ cdef class Strategy(Actor):
         # Configuration
         self._log_events = config.log_events
         self._log_commands = config.log_commands
+        self._log_rejected_due_post_only_as_warning = config.log_rejected_due_post_only_as_warning
         self.config = config
         self.oms_type = <OmsType>oms_type
         self.external_order_claims = self._parse_external_order_claims(config.external_order_claims)
@@ -288,7 +292,8 @@ cdef class Strategy(Actor):
             strategy_id=self.id,
             clock=clock,
             cache=cache,
-            use_uuid_client_order_ids=self.use_uuid_client_order_ids
+            use_uuid_client_order_ids=self.use_uuid_client_order_ids,
+            use_hyphens_in_client_order_ids=self.use_hyphens_in_client_order_ids
         )
 
         self._manager = OrderManager(
@@ -1356,6 +1361,37 @@ cdef class Strategy(Actor):
         for position in positions_open:
             self.close_position(position, client_id, tags, time_in_force, reduce_only, params)
 
+    cpdef void query_account(self, AccountId account_id, ClientId client_id = None, dict[str, object] params = None):
+        """
+        Query the account with optional routing instructions.
+
+        A `QueryAccount` command will be created and then sent to the
+        `ExecutionEngine`.
+
+        Parameters
+        ----------
+        account_id : AccountId
+            The account to query.
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If ``None`` then will be inferred from the venue in the instrument ID.
+        params : dict[str, Any], optional
+            Additional parameters potentially used by a specific client.
+
+        """
+        Condition.is_true(self.trader_id is not None, "The strategy has not been registered")
+
+        cdef QueryAccount command = QueryAccount(
+            trader_id=self.trader_id,
+            account_id=account_id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            client_id=client_id,
+            params=params,
+        )
+
+        self._manager.send_exec_command(command)
+
     cpdef void query_order(self, Order order, ClientId client_id = None, dict[str, object] params = None):
         """
         Query the given order with optional routing instructions.
@@ -1594,7 +1630,9 @@ cdef class Strategy(Actor):
         """
         Condition.not_none(event, "event")
 
-        if type(event) in self._warning_events:
+        if type(event) in self._warning_events and not (
+            isinstance(event, OrderRejected) and event.due_post_only and not self._log_rejected_due_post_only_as_warning
+        ):
             self.log.warning(f"{RECV}{EVT} {event}")
         elif self._log_events:
             self.log.info(f"{RECV}{EVT} {event}")

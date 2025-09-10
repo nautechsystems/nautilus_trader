@@ -22,7 +22,7 @@ import msgspec
 from nautilus_trader.adapters.dydx.schemas.account.address import DYDXPerpetualPosition
 
 
-class DYDXPerpetualPositionsResponse(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXPerpetualPositionsResponse(msgspec.Struct, forbid_unknown_fields=False):
     """
     Define the schema for the asset positions response.
     """

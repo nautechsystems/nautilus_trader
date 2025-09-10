@@ -530,6 +530,7 @@ class BaseMixin:
 
     # MarketData
     _bar_type_to_last_bar: dict[str, BarData | None]
+    _bar_timeout_tasks: dict[str, Any]  # asyncio.Task
     _order_id_to_order_ref: dict[int, AccountOrderRef]
 
     # Order

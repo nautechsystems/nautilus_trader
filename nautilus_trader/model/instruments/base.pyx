@@ -197,24 +197,34 @@ cdef class Instrument(Data):
         if tick_scheme_name is not None:
             Condition.valid_string(tick_scheme_name, "tick_scheme_name")
             Condition.is_in(tick_scheme_name, TICK_SCHEMES, "tick_scheme_name", "TICK_SCHEMES")
+
         if price_increment is not None:
             Condition.positive(price_increment, "price_increment")
+
         if price_precision is not None and price_increment is not None:
             Condition.equal(price_precision, price_increment.precision, "price_precision", "price_increment.precision")  # noqa
+
         if lot_size is not None:
             Condition.positive(lot_size, "lot_size")
+
         if max_quantity is not None:
             Condition.positive(max_quantity, "max_quantity")
+
         if min_quantity is not None:
             Condition.not_negative(min_quantity, "min_quantity")
+
         if max_notional is not None:
             Condition.positive(max_notional, "max_notional")
+
         if min_notional is not None:
             Condition.not_negative(min_notional, "min_notional")
+
         if max_price is not None:
             Condition.positive(max_price, "max_price")
+
         if min_price is not None:
             Condition.not_negative(min_price, "min_price")
+
         Condition.type(margin_init, Decimal, "margin_init")
         Condition.not_negative(margin_init, "margin_init")
         Condition.type(margin_maint, Decimal, "margin_maint")
@@ -294,6 +304,7 @@ cdef class Instrument(Data):
         cdef str min_n = values["min_notional"]
         cdef str max_p = values["max_price"]
         cdef str min_p = values["min_price"]
+
         return Instrument(
             instrument_id=InstrumentId.from_str_c(values["id"]),
             raw_symbol=Symbol(values["raw_symbol"]),
@@ -319,6 +330,7 @@ cdef class Instrument(Data):
             taker_fee=Decimal(values["taker_fee"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
+            tick_scheme_name=values.get("tick_scheme_name"),
             info=values["info"],
         )
 
@@ -350,6 +362,7 @@ cdef class Instrument(Data):
             "taker_fee": str(obj.taker_fee),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
+            "tick_scheme_name": obj.tick_scheme_name,
             "info": obj.info,
         }
 
@@ -453,6 +466,31 @@ cdef class Instrument(Data):
         else:
             return self.quote_currency
 
+    cpdef void set_tick_scheme(self, str tick_scheme_name):
+        """
+        Set the tick scheme for the instrument.
+
+        Sets both the `tick_scheme_name` and the corresponding tick scheme implementation
+        used for price rounding and tick calculations.
+
+        This will override any previously set tick scheme, including the `tick_scheme_name` field.
+
+        Parameters
+        ----------
+        tick_scheme_name : str
+            The name of the registered tick scheme.
+
+        Raises
+        ------
+        ValueError
+            If `tick_scheme_name` is not a valid string.
+        ValueError
+            If `tick_scheme_name` is not a registered tick scheme.
+
+        """
+        self.tick_scheme_name = tick_scheme_name
+        self._tick_scheme = get_tick_scheme(tick_scheme_name)
+
     cpdef Price make_price(self, value):
         """
         Return a new price from the given value using the instruments price
@@ -469,6 +507,7 @@ cdef class Instrument(Data):
 
         """
         cdef double rounded_value = round(float(value), self._min_price_increment_precision)
+
         return Price(rounded_value, precision=self.price_precision)
 
     cpdef Price next_bid_price(self, double value, int num_ticks=0):
@@ -574,10 +613,12 @@ cdef class Instrument(Data):
         for i in range(num_ticks):
             try:
                 price = self._tick_scheme.next_bid_price(value=value, n=i)
+
                 if price is None:
                     break
                 if self.min_price is not None and price < self.min_price:
                     break
+
                 prices.append(price.as_decimal())
             except Exception:
                 break
@@ -625,10 +666,13 @@ cdef class Instrument(Data):
         for i in range(num_ticks):
             try:
                 price = self._tick_scheme.next_ask_price(value=value, n=i)
+
                 if price is None:
                     break
+
                 if self.max_price is not None and price > self.max_price:
                     break
+
                 prices.append(price.as_decimal())
             except Exception:
                 break
@@ -677,6 +721,7 @@ cdef class Instrument(Data):
                 f"due to size increment {self.size_increment} "
                 f"and size precision {self.size_precision}",
             )
+
         return Quantity(rounded_value, precision=self.size_precision)
 
     cpdef Money notional_value(
@@ -712,6 +757,7 @@ cdef class Instrument(Data):
             if use_quote_for_inverse:
                 # Quantity is notional in quote currency
                 return Money(quantity, self.quote_currency)
+
             return Money(quantity.as_f64_c() * float(self.multiplier) * (1.0 / price.as_f64_c()), self.base_currency)
         else:
             return Money(quantity.as_f64_c() * float(self.multiplier) * price.as_f64_c(), self.quote_currency)

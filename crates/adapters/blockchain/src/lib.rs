@@ -13,9 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! A high-performance, universal, extensible adapter for ingesting DeFi data from decentralized exchanges (DEXs),
-//! liquidity pools, and on-chain events. It enables you to power analytics pipelines and trading strategies
-//! with real-time and historical on-chain data.
+//! Blockchain data adapter for [NautilusTrader](http://nautilustrader.io).
+//!
+//! The `nautilus-blockchain` crate provides a high-performance, universal, extensible adapter for ingesting
+//! DeFi data from decentralized exchanges (DEXs), liquidity pools, and on-chain events.
+//! It enables you to power analytics pipelines and trading strategies with real-time and historical
+//! on-chain data.
+//!
+//! # Platform
 //!
 //! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
 //! algorithmic trading platform, providing quantitative traders with the ability to backtest
@@ -31,6 +36,7 @@
 //!
 //! - `hypersync`: Enables the [HyperSync](https://envio.dev/#hypersync) client integration.
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//! - `extension-module`: Builds as a Python extension module (used with `python`).
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]
@@ -46,7 +52,6 @@ pub mod decode;
 pub mod events;
 pub mod math;
 pub mod rpc;
-pub mod validation;
 
 #[cfg(feature = "hypersync")]
 pub mod cache;
@@ -62,3 +67,9 @@ pub mod factories;
 
 #[cfg(feature = "hypersync")]
 pub mod hypersync;
+
+#[cfg(feature = "hypersync")]
+pub mod reporting;
+
+#[cfg(feature = "python")]
+pub mod python;

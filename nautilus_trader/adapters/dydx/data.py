@@ -17,10 +17,12 @@ Provide a data client for the dYdX decentralized cypto exchange.
 """
 
 import asyncio
+from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
 import msgspec
+import pandas as pd
 
 from nautilus_trader.adapters.dydx.common.constants import DYDX_VENUE
 from nautilus_trader.adapters.dydx.common.enums import DYDXChannel
@@ -75,6 +77,7 @@ from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import RecordFlag
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Quantity
 
 
@@ -196,12 +199,12 @@ class DYDXDataClient(LiveMarketDataClient):
 
     async def _disconnect(self) -> None:
         if self._update_instruments_task:
-            self._log.debug("Cancelling 'update_instruments' task")
+            self._log.debug("Canceling 'update_instruments' task")
             self._update_instruments_task.cancel()
             self._update_instruments_task = None
 
         if self._fetch_orderbook_task:
-            self._log.debug("Cancelling 'fetch_orderbook' task")
+            self._log.debug("Canceling 'fetch_orderbook' task")
             self._fetch_orderbook_task.cancel()
             self._fetch_orderbook_task = None
 
@@ -619,7 +622,7 @@ class DYDXDataClient(LiveMarketDataClient):
         book = self._books.get(instrument_id)
 
         if book is None:
-            self.log.error(
+            self._log.error(
                 f"Cannot resolve crossed order book: order book not found for {instrument_id}",
             )
             return
@@ -871,6 +874,7 @@ class DYDXDataClient(LiveMarketDataClient):
                 command_id=command.id,
                 instrument_id=command.instrument_id,
                 book_type=book_type,
+                book_data_type=OrderBookDelta,
                 client_id=command.client_id,
                 venue=command.venue,
                 ts_init=command.ts_init,
@@ -914,11 +918,11 @@ class DYDXDataClient(LiveMarketDataClient):
             order_book_command = UnsubscribeOrderBook(
                 command_id=command.id,
                 instrument_id=command.instrument_id,
+                book_data_type=OrderBookDelta,
                 client_id=command.client_id,
                 venue=command.venue,
                 ts_init=command.ts_init,
                 params=command.params,
-                only_deltas=True,  # not used
             )
             await self._unsubscribe_order_book_deltas(order_book_command)
 
@@ -932,11 +936,48 @@ class DYDXDataClient(LiveMarketDataClient):
         nautilus_instrument_id: InstrumentId = dydx_symbol.to_instrument_id()
         return nautilus_instrument_id
 
+    def _should_partition_bars_request(self, request: RequestBars, max_bars: int) -> bool:
+        bar_timedelta = request.bar_type.spec.timedelta
+        total_duration = request.end - request.start
+        expected_bars = int(total_duration / bar_timedelta)
+        return expected_bars > max_bars
+
+    async def _fetch_candles(
+        self,
+        symbol: DYDXSymbol,
+        bar_type: BarType,
+        instrument: Instrument,
+        start: datetime | pd.Timestamp | None,
+        end: datetime | pd.Timestamp | None,
+        request_limit: int,
+    ) -> list[Bar]:
+        """
+        Fetch candles from API and convert to bars.
+        """
+        candles = await self._http_market.get_candles(
+            symbol=symbol,
+            resolution=self._enum_parser.parse_dydx_kline(bar_type),
+            limit=request_limit,
+            start=start,
+            end=end,
+        )
+
+        if candles is None or not candles.candles:
+            return []
+
+        ts_init = self._clock.timestamp_ns()
+        return [
+            candle.parse_to_bar(
+                bar_type=bar_type,
+                price_precision=instrument.price_precision,
+                size_precision=instrument.size_precision,
+                ts_init=ts_init,
+            )
+            for candle in candles.candles
+        ]
+
     async def _request_bars(self, request: RequestBars) -> None:
-        max_bars = 100
-        limit = request.limit
-        if limit == 0 or limit > max_bars:
-            limit = max_bars
+        max_bars = 1000
 
         if request.bar_type.is_internally_aggregated():
             self._log.error(
@@ -965,26 +1006,62 @@ class DYDXDataClient(LiveMarketDataClient):
             self._log.error(f"Cannot parse kline data: no instrument for {instrument_id}")
             return
 
-        candles = await self._http_market.get_candles(
-            symbol=symbol,
-            resolution=self._enum_parser.parse_dydx_kline(request.bar_type),
-            limit=limit,
-            start=request.start,
-            end=request.end,
-        )
+        all_bars = []
 
-        if candles is not None:
-            ts_init = self._clock.timestamp_ns()
+        # Check if we need to partition the request
+        if (
+            request.start is not None
+            and request.end is not None
+            and self._should_partition_bars_request(request, max_bars)
+        ):
+            # Partition into multiple requests
+            self._log.info(
+                f"Expected bars exceed limit of {max_bars}, partitioning into multiple requests",
+            )
 
-            bars = [
-                candle.parse_to_bar(
-                    bar_type=request.bar_type,
-                    price_precision=instrument.price_precision,
-                    size_precision=instrument.size_precision,
-                    ts_init=ts_init,
+            chunk_duration = request.bar_type.spec.timedelta * max_bars
+            current_start = request.start
+
+            while current_start < request.end:
+                current_end = min(current_start + chunk_duration, request.end)
+
+                chunk_bars = await self._fetch_candles(
+                    symbol,
+                    request.bar_type,
+                    instrument,
+                    current_start,
+                    current_end,
+                    max_bars,
                 )
-                for candle in candles.candles
-            ]
+                all_bars.extend(chunk_bars)
 
-            partial: Bar = bars.pop()
-            self._handle_bars(request.bar_type, bars, partial, request.id, request.params)
+                current_start = current_end
+
+                # Apply overall limit if specified
+                if request.limit > 0 and len(all_bars) >= request.limit:
+                    all_bars = all_bars[: request.limit]
+                    break
+        else:
+            # Single request
+            limit = request.limit if request.limit > 0 else max_bars
+            all_bars = await self._fetch_candles(
+                symbol,
+                request.bar_type,
+                instrument,
+                request.start,
+                request.end,
+                limit,
+            )
+
+        if all_bars:
+            # For historical data, the last bar might be partial, don't include it
+            partial: Bar = all_bars.pop() if all_bars else None
+            self._handle_bars_py(
+                request.bar_type,
+                all_bars,
+                partial,
+                request.id,
+                request.start,
+                request.end,
+                request.params,
+            )

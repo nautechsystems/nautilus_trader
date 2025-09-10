@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.indicators.psl import PsychologicalLine
+from nautilus_trader.indicators import PsychologicalLine
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 

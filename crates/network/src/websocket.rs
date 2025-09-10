@@ -42,19 +42,16 @@ use futures_util::{
     stream::{SplitSink, SplitStream},
 };
 use http::HeaderName;
+use nautilus_core::CleanDrop;
 use nautilus_cryptography::providers::install_cryptographic_provider;
-#[cfg(feature = "python")]
-use pyo3::{prelude::*, types::PyBytes};
-use tokio::{
-    net::TcpStream,
-    sync::mpsc::{self, Receiver, Sender},
-};
+use tokio::net::TcpStream;
 use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream, connect_async,
     tungstenite::{Error, Message, client::IntoClientRequest, http::HeaderValue},
 };
 
 use crate::{
+    RECONNECTED,
     backoff::ExponentialBackoff,
     error::SendError,
     logging::{log_task_aborted, log_task_started, log_task_stopped},
@@ -62,31 +59,37 @@ use crate::{
     ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota},
 };
 
+// Connection timing constants
+const CONNECTION_STATE_CHECK_INTERVAL_MS: u64 = 10;
+const GRACEFUL_SHUTDOWN_DELAY_MS: u64 = 100;
+const GRACEFUL_SHUTDOWN_TIMEOUT_SECS: u64 = 5;
+
 type MessageWriter = SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>;
 pub type MessageReader = SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
 
-/// Defines how WebSocket messages are consumed.
-#[derive(Debug, Clone)]
-pub enum Consumer {
-    /// Python-based message handler.
-    #[cfg(feature = "python")]
-    Python(Option<Arc<PyObject>>),
-    /// Rust-based message handler using a channel sender.
-    Rust(Sender<Message>),
+/// Function type for handling WebSocket messages.
+pub type MessageHandler = Arc<dyn Fn(Message) + Send + Sync>;
+
+/// Function type for handling WebSocket ping messages.
+pub type PingHandler = Arc<dyn Fn(Vec<u8>) + Send + Sync>;
+
+/// Creates a channel-based message handler.
+///
+/// Returns a tuple containing the message handler and a receiver for messages.
+#[must_use]
+pub fn channel_message_handler() -> (
+    MessageHandler,
+    tokio::sync::mpsc::UnboundedReceiver<Message>,
+) {
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    let handler = Arc::new(move |msg: Message| {
+        if let Err(e) = tx.send(msg) {
+            tracing::error!("Failed to send message to channel: {e}");
+        }
+    });
+    (handler, rx)
 }
 
-impl Consumer {
-    /// Creates a Rust-based consumer with a channel for receiving messages.
-    ///
-    /// Returns a tuple containing the consumer and a receiver for messages.
-    #[must_use]
-    pub fn rust_consumer() -> (Self, Receiver<Message>) {
-        let (tx, rx) = mpsc::channel(100);
-        (Self::Rust(tx), rx)
-    }
-}
-
-#[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
@@ -96,15 +99,14 @@ pub struct WebSocketConfig {
     pub url: String,
     /// The default headers.
     pub headers: Vec<(String, String)>,
-    /// The Python function to handle incoming messages.
-    pub handler: Consumer,
+    /// The function to handle incoming messages.
+    pub message_handler: Option<MessageHandler>,
     /// The optional heartbeat interval (seconds).
     pub heartbeat: Option<u64>,
     /// The optional heartbeat message.
     pub heartbeat_msg: Option<String>,
     /// The handler for incoming pings.
-    #[cfg(feature = "python")]
-    pub ping_handler: Option<Arc<PyObject>>,
+    pub ping_handler: Option<PingHandler>,
     /// The timeout (milliseconds) for reconnection attempts.
     pub reconnect_timeout_ms: Option<u64>,
     /// The initial reconnection delay (milliseconds) for reconnects.
@@ -115,6 +117,51 @@ pub struct WebSocketConfig {
     pub reconnect_backoff_factor: Option<f64>,
     /// The maximum jitter (milliseconds) added to reconnection delays.
     pub reconnect_jitter_ms: Option<u64>,
+}
+
+impl Debug for WebSocketConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WebSocketConfig")
+            .field("url", &self.url)
+            .field("headers", &self.headers)
+            .field(
+                "message_handler",
+                &self.message_handler.as_ref().map(|_| "<function>"),
+            )
+            .field("heartbeat", &self.heartbeat)
+            .field("heartbeat_msg", &self.heartbeat_msg)
+            .field(
+                "ping_handler",
+                &self.ping_handler.as_ref().map(|_| "<function>"),
+            )
+            .field("reconnect_timeout_ms", &self.reconnect_timeout_ms)
+            .field(
+                "reconnect_delay_initial_ms",
+                &self.reconnect_delay_initial_ms,
+            )
+            .field("reconnect_delay_max_ms", &self.reconnect_delay_max_ms)
+            .field("reconnect_backoff_factor", &self.reconnect_backoff_factor)
+            .field("reconnect_jitter_ms", &self.reconnect_jitter_ms)
+            .finish()
+    }
+}
+
+impl Clone for WebSocketConfig {
+    fn clone(&self) -> Self {
+        Self {
+            url: self.url.clone(),
+            headers: self.headers.clone(),
+            message_handler: self.message_handler.clone(),
+            heartbeat: self.heartbeat,
+            heartbeat_msg: self.heartbeat_msg.clone(),
+            ping_handler: self.ping_handler.clone(),
+            reconnect_timeout_ms: self.reconnect_timeout_ms,
+            reconnect_delay_initial_ms: self.reconnect_delay_initial_ms,
+            reconnect_delay_max_ms: self.reconnect_delay_max_ms,
+            reconnect_backoff_factor: self.reconnect_backoff_factor,
+            reconnect_jitter_ms: self.reconnect_jitter_ms,
+        }
+    }
 }
 
 /// Represents a command for the writer task.
@@ -153,18 +200,63 @@ struct WebSocketClientInner {
 }
 
 impl WebSocketClientInner {
+    /// Create an inner websocket client with an existing writer.
+    pub async fn new_with_writer(
+        config: WebSocketConfig,
+        writer: MessageWriter,
+    ) -> Result<Self, Error> {
+        install_cryptographic_provider();
+
+        let connection_mode = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
+
+        // Note: We don't spawn a read task here since the reader is handled externally
+        let read_task = None;
+
+        let backoff = ExponentialBackoff::new(
+            Duration::from_millis(config.reconnect_delay_initial_ms.unwrap_or(2_000)),
+            Duration::from_millis(config.reconnect_delay_max_ms.unwrap_or(30_000)),
+            config.reconnect_backoff_factor.unwrap_or(1.5),
+            config.reconnect_jitter_ms.unwrap_or(100),
+            true, // immediate-first
+        )
+        .map_err(|e| Error::Io(std::io::Error::new(std::io::ErrorKind::InvalidInput, e)))?;
+
+        let (writer_tx, writer_rx) = tokio::sync::mpsc::unbounded_channel::<WriterCommand>();
+        let write_task = Self::spawn_write_task(connection_mode.clone(), writer, writer_rx);
+
+        let heartbeat_task = if let Some(heartbeat_interval) = config.heartbeat {
+            Some(Self::spawn_heartbeat_task(
+                connection_mode.clone(),
+                heartbeat_interval,
+                config.heartbeat_msg.clone(),
+                writer_tx.clone(),
+            ))
+        } else {
+            None
+        };
+
+        Ok(Self {
+            config: config.clone(),
+            writer_tx,
+            connection_mode,
+            reconnect_timeout: Duration::from_millis(config.reconnect_timeout_ms.unwrap_or(10000)),
+            heartbeat_task,
+            read_task,
+            write_task,
+            backoff,
+        })
+    }
+
     /// Create an inner websocket client.
     pub async fn connect_url(config: WebSocketConfig) -> Result<Self, Error> {
         install_cryptographic_provider();
 
-        #[allow(unused_variables)]
         let WebSocketConfig {
             url,
-            handler,
+            message_handler,
             heartbeat,
             headers,
             heartbeat_msg,
-            #[cfg(feature = "python")]
             ping_handler,
             reconnect_timeout_ms,
             reconnect_delay_initial_ms,
@@ -176,21 +268,15 @@ impl WebSocketClientInner {
 
         let connection_mode = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
 
-        let read_task = match &handler {
-            #[cfg(feature = "python")]
-            Consumer::Python(handler) => handler.as_ref().map(|handler| {
-                Self::spawn_python_callback_task(
-                    connection_mode.clone(),
-                    reader,
-                    handler.clone(),
-                    ping_handler.clone(),
-                )
-            }),
-            Consumer::Rust(sender) => Some(Self::spawn_rust_streaming_task(
+        let read_task = if message_handler.is_some() {
+            Some(Self::spawn_message_handler_task(
                 connection_mode.clone(),
                 reader,
-                sender.clone(),
-            )),
+                message_handler.as_ref(),
+                ping_handler.as_ref(),
+            ))
+        } else {
+            None
         };
 
         let (writer_tx, writer_rx) = tokio::sync::mpsc::unbounded_channel::<WriterCommand>();
@@ -275,7 +361,7 @@ impl WebSocketClientInner {
             }
 
             // Delay before closing connection
-            tokio::time::sleep(Duration::from_millis(100)).await;
+            tokio::time::sleep(Duration::from_millis(GRACEFUL_SHUTDOWN_DELAY_MS)).await;
 
             if ConnectionMode::from_atomic(&self.connection_mode).is_disconnect() {
                 tracing::debug!("Reconnect aborted mid-flight (after delay)");
@@ -299,21 +385,15 @@ impl WebSocketClientInner {
             self.connection_mode
                 .store(ConnectionMode::Active.as_u8(), Ordering::SeqCst);
 
-            self.read_task = match &self.config.handler {
-                #[cfg(feature = "python")]
-                Consumer::Python(handler) => handler.as_ref().map(|handler| {
-                    Self::spawn_python_callback_task(
-                        self.connection_mode.clone(),
-                        reader,
-                        handler.clone(),
-                        self.config.ping_handler.clone(),
-                    )
-                }),
-                Consumer::Rust(sender) => Some(Self::spawn_rust_streaming_task(
+            self.read_task = if self.config.message_handler.is_some() {
+                Some(Self::spawn_message_handler_task(
                     self.connection_mode.clone(),
                     reader,
-                    sender.clone(),
-                )),
+                    self.config.message_handler.as_ref(),
+                    self.config.ping_handler.as_ref(),
+                ))
+            } else {
+                None
             };
 
             tracing::debug!("Reconnect succeeded");
@@ -347,55 +427,19 @@ impl WebSocketClientInner {
         }
     }
 
-    fn spawn_rust_streaming_task(
+    fn spawn_message_handler_task(
         connection_state: Arc<AtomicU8>,
         mut reader: MessageReader,
-        sender: Sender<Message>,
+        message_handler: Option<&MessageHandler>,
+        ping_handler: Option<&PingHandler>,
     ) -> tokio::task::JoinHandle<()> {
-        tracing::debug!("Started streaming task 'read'");
+        tracing::debug!("Started message handler task 'read'");
 
-        let check_interval = Duration::from_millis(10);
+        let check_interval = Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS);
 
-        tokio::task::spawn(async move {
-            loop {
-                if !ConnectionMode::from_atomic(&connection_state).is_active() {
-                    break;
-                }
-
-                match tokio::time::timeout(check_interval, reader.next()).await {
-                    Ok(Some(Ok(message))) => {
-                        if let Err(e) = sender.send(message).await {
-                            tracing::error!("Failed to send message: {e}");
-                        }
-                    }
-                    Ok(Some(Err(e))) => {
-                        tracing::error!("Received error message - terminating: {e}");
-                        break;
-                    }
-                    Ok(None) => {
-                        tracing::debug!("No message received - terminating");
-                        break;
-                    }
-                    Err(_) => {
-                        // Timeout - continue loop and check connection mode
-                        continue;
-                    }
-                }
-            }
-        })
-    }
-
-    #[cfg(feature = "python")]
-    fn spawn_python_callback_task(
-        connection_state: Arc<AtomicU8>,
-        mut reader: MessageReader,
-        handler: Arc<PyObject>,
-        ping_handler: Option<Arc<PyObject>>,
-    ) -> tokio::task::JoinHandle<()> {
-        log_task_started("read");
-
-        // Interval between checking the connection mode
-        let check_interval = Duration::from_millis(10);
+        // Clone Arc handlers for the async task
+        let message_handler = message_handler.cloned();
+        let ping_handler = ping_handler.cloned();
 
         tokio::task::spawn(async move {
             loop {
@@ -406,34 +450,21 @@ impl WebSocketClientInner {
                 match tokio::time::timeout(check_interval, reader.next()).await {
                     Ok(Some(Ok(Message::Binary(data)))) => {
                         tracing::trace!("Received message <binary> {} bytes", data.len());
-                        if let Err(e) =
-                            Python::with_gil(|py| handler.call1(py, (PyBytes::new(py, &data),)))
-                        {
-                            tracing::error!("Error calling handler: {e}");
-                            break;
+                        if let Some(ref handler) = message_handler {
+                            handler(Message::Binary(data));
                         }
-                        continue;
                     }
                     Ok(Some(Ok(Message::Text(data)))) => {
                         tracing::trace!("Received message: {data}");
-                        if let Err(e) = Python::with_gil(|py| {
-                            handler.call1(py, (PyBytes::new(py, data.as_bytes()),))
-                        }) {
-                            tracing::error!("Error calling handler: {e}");
-                            break;
+                        if let Some(ref handler) = message_handler {
+                            handler(Message::Text(data));
                         }
-                        continue;
                     }
-                    Ok(Some(Ok(Message::Ping(ping)))) => {
-                        tracing::trace!("Received ping: {ping:?}");
-                        if let Some(ref handler) = ping_handler
-                            && let Err(e) =
-                                Python::with_gil(|py| handler.call1(py, (PyBytes::new(py, &ping),)))
-                        {
-                            tracing::error!("Error calling handler: {e}");
-                            break;
+                    Ok(Some(Ok(Message::Ping(ping_data)))) => {
+                        tracing::trace!("Received ping: {ping_data:?}");
+                        if let Some(ref handler) = ping_handler {
+                            handler(ping_data.to_vec());
                         }
-                        continue;
                     }
                     Ok(Some(Ok(Message::Pong(_)))) => {
                         tracing::trace!("Received pong");
@@ -447,8 +478,6 @@ impl WebSocketClientInner {
                         tracing::error!("Received error message - terminating: {e}");
                         break;
                     }
-                    // Internally tungstenite considers the connection closed when polling
-                    // for the next message in the stream returns None.
                     Ok(None) => {
                         tracing::debug!("No message received - terminating");
                         break;
@@ -470,7 +499,7 @@ impl WebSocketClientInner {
         log_task_started("write");
 
         // Interval between checking the connection mode
-        let check_interval = Duration::from_millis(10);
+        let check_interval = Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS);
 
         tokio::task::spawn(async move {
             let mut active_writer = writer;
@@ -480,7 +509,11 @@ impl WebSocketClientInner {
                     ConnectionMode::Disconnect => {
                         // Attempt to close the writer gracefully before exiting,
                         // we ignore any error as the writer may already be closed.
-                        _ = active_writer.close().await;
+                        _ = tokio::time::timeout(
+                            Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS),
+                            active_writer.close(),
+                        )
+                        .await;
                         break;
                     }
                     ConnectionMode::Closed => break,
@@ -504,7 +537,11 @@ impl WebSocketClientInner {
 
                                 // Attempt to close the writer gracefully on update,
                                 // we ignore any error as the writer may already be closed.
-                                _ = active_writer.close().await;
+                                _ = tokio::time::timeout(
+                                    Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS),
+                                    active_writer.close(),
+                                )
+                                .await;
 
                                 active_writer = new_writer;
                                 tracing::debug!("Updated writer");
@@ -538,7 +575,11 @@ impl WebSocketClientInner {
 
             // Attempt to close the writer gracefully before exiting,
             // we ignore any error as the writer may already be closed.
-            _ = active_writer.close().await;
+            _ = tokio::time::timeout(
+                Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS),
+                active_writer.close(),
+            )
+            .await;
 
             log_task_stopped("write");
         })
@@ -584,6 +625,13 @@ impl WebSocketClientInner {
 
 impl Drop for WebSocketClientInner {
     fn drop(&mut self) {
+        // Delegate to explicit cleanup handler
+        self.clean_drop();
+    }
+}
+
+impl CleanDrop for WebSocketClientInner {
+    fn clean_drop(&mut self) {
         if let Some(ref read_task) = self.read_task.take()
             && !read_task.is_finished()
         {
@@ -602,12 +650,16 @@ impl Drop for WebSocketClientInner {
             handle.abort();
             log_task_aborted("heartbeat");
         }
+
+        // Clear handlers to break potential reference cycles
+        self.config.message_handler = None;
+        self.config.ping_handler = None;
     }
 }
 
 /// WebSocket client with automatic reconnection.
 ///
-/// Handles connection state, Python callbacks, and rate limiting.
+/// Handles connection state, callbacks, and rate limiting.
 /// See module docs for architecture details.
 #[cfg_attr(
     feature = "python",
@@ -640,26 +692,19 @@ impl WebSocketClient {
         post_reconnect: Option<Arc<dyn Fn() + Send + Sync>>,
     ) -> Result<(MessageReader, Self), Error> {
         install_cryptographic_provider();
+
+        // Create a single connection and split it
         let (ws_stream, _) = connect_async(config.url.clone().into_client_request()?).await?;
         let (writer, reader) = ws_stream.split();
-        let inner = WebSocketClientInner::connect_url(config).await?;
+
+        // Create inner without connecting (we'll provide the writer)
+        let inner = WebSocketClientInner::new_with_writer(config, writer).await?;
 
         let connection_mode = inner.connection_mode.clone();
-
         let writer_tx = inner.writer_tx.clone();
-        if let Err(e) = writer_tx.send(WriterCommand::Update(writer)) {
-            tracing::error!("{e}");
-        }
 
-        let controller_task = Self::spawn_controller_task(
-            inner,
-            connection_mode.clone(),
-            post_reconnect,
-            #[cfg(feature = "python")]
-            None, // no post_reconnection
-            #[cfg(feature = "python")]
-            None, // no post_disconnection
-        );
+        let controller_task =
+            Self::spawn_controller_task(inner, connection_mode.clone(), post_reconnect);
 
         let rate_limiter = Arc::new(RateLimiter::new_with_quota(default_quota, keyed_quotas));
 
@@ -684,36 +729,19 @@ impl WebSocketClient {
     /// Returns any websocket error.
     pub async fn connect(
         config: WebSocketConfig,
-        #[cfg(feature = "python")] post_connection: Option<PyObject>,
-        #[cfg(feature = "python")] post_reconnection: Option<PyObject>,
-        #[cfg(feature = "python")] post_disconnection: Option<PyObject>,
+        post_reconnection: Option<Arc<dyn Fn() + Send + Sync>>,
         keyed_quotas: Vec<(String, Quota)>,
         default_quota: Option<Quota>,
     ) -> Result<Self, Error> {
         tracing::debug!("Connecting");
-        let inner = WebSocketClientInner::connect_url(config.clone()).await?;
+        let inner = WebSocketClientInner::connect_url(config).await?;
         let connection_mode = inner.connection_mode.clone();
         let writer_tx = inner.writer_tx.clone();
 
-        let controller_task = Self::spawn_controller_task(
-            inner,
-            connection_mode.clone(),
-            None, // Rust handler
-            #[cfg(feature = "python")]
-            post_reconnection, // TODO: Deprecated
-            #[cfg(feature = "python")]
-            post_disconnection, // TODO: Deprecated
-        );
+        let controller_task =
+            Self::spawn_controller_task(inner, connection_mode.clone(), post_reconnection);
 
         let rate_limiter = Arc::new(RateLimiter::new_with_quota(default_quota, keyed_quotas));
-
-        #[cfg(feature = "python")]
-        if let Some(handler) = post_connection {
-            Python::with_gil(|py| match handler.call0(py) {
-                Ok(_) => tracing::debug!("Called `post_connection` handler"),
-                Err(e) => tracing::error!("Error calling `post_connection` handler: {e}"),
-            });
-        }
 
         Ok(Self {
             controller_task,
@@ -784,9 +812,9 @@ impl WebSocketClient {
         self.connection_mode
             .store(ConnectionMode::Disconnect.as_u8(), Ordering::SeqCst);
 
-        match tokio::time::timeout(Duration::from_secs(5), async {
+        match tokio::time::timeout(Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS), async {
             while !self.is_disconnected() {
-                tokio::time::sleep(Duration::from_millis(10)).await;
+                tokio::time::sleep(Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS)).await;
             }
 
             if !self.controller_task.is_finished() {
@@ -875,13 +903,11 @@ impl WebSocketClient {
         mut inner: WebSocketClientInner,
         connection_mode: Arc<AtomicU8>,
         post_reconnection: Option<Arc<dyn Fn() + Send + Sync>>,
-        #[cfg(feature = "python")] py_post_reconnection: Option<PyObject>, // TODO: Deprecated
-        #[cfg(feature = "python")] py_post_disconnection: Option<PyObject>, // TODO: Deprecated
     ) -> tokio::task::JoinHandle<()> {
         tokio::task::spawn(async move {
             log_task_started("controller");
 
-            let check_interval = Duration::from_millis(10);
+            let check_interval = Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS);
 
             loop {
                 tokio::time::sleep(check_interval).await;
@@ -890,10 +916,10 @@ impl WebSocketClient {
                 if mode.is_disconnect() {
                     tracing::debug!("Disconnecting");
 
-                    let timeout = Duration::from_secs(5);
+                    let timeout = Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS);
                     if tokio::time::timeout(timeout, async {
                         // Delay awaiting graceful shutdown
-                        tokio::time::sleep(Duration::from_millis(100)).await;
+                        tokio::time::sleep(Duration::from_millis(GRACEFUL_SHUTDOWN_DELAY_MS)).await;
 
                         if let Some(task) = &inner.read_task
                             && !task.is_finished()
@@ -916,16 +942,6 @@ impl WebSocketClient {
                     }
 
                     tracing::debug!("Closed");
-
-                    #[cfg(feature = "python")]
-                    if let Some(ref handler) = py_post_disconnection {
-                        Python::with_gil(|py| match handler.call0(py) {
-                            Ok(_) => tracing::debug!("Called `post_disconnection` handler"),
-                            Err(e) => {
-                                tracing::error!("Error calling `post_disconnection` handler: {e}");
-                            }
-                        });
-                    }
                     break; // Controller finished
                 }
 
@@ -936,21 +952,17 @@ impl WebSocketClient {
 
                             // Only invoke callbacks if not in disconnect state
                             if ConnectionMode::from_atomic(&connection_mode).is_active() {
-                                if let Some(ref callback) = post_reconnection {
-                                    callback();
+                                if let Some(ref handler) = inner.config.message_handler {
+                                    let reconnected_msg =
+                                        Message::Text(RECONNECTED.to_string().into());
+                                    handler(reconnected_msg);
+                                    tracing::debug!("Sent reconnected message to handler");
                                 }
 
-                                // TODO: Python based websocket handlers deprecated (will be removed)
-                                #[cfg(feature = "python")]
-                                if let Some(ref callback) = py_post_reconnection {
-                                    Python::with_gil(|py| match callback.call0(py) {
-                                        Ok(_) => {
-                                            tracing::debug!("Called `post_reconnection` handler");
-                                        }
-                                        Err(e) => tracing::error!(
-                                            "Error calling `post_reconnection` handler: {e}"
-                                        ),
-                                    });
+                                // TODO: Retain this legacy callback for use from Python
+                                if let Some(ref callback) = post_reconnection {
+                                    callback();
+                                    tracing::debug!("Called `post_reconnection` handler");
                                 }
 
                                 tracing::debug!("Reconnected successfully");
@@ -993,7 +1005,7 @@ impl Drop for WebSocketClient {
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
-#[cfg(feature = "python")]
+
 #[cfg(test)]
 #[cfg(target_os = "linux")] // Only run network tests on Linux (CI stability)
 mod tests {
@@ -1014,7 +1026,7 @@ mod tests {
 
     use crate::{
         ratelimiter::quota::Quota,
-        websocket::{Consumer, WebSocketClient, WebSocketConfig},
+        websocket::{WebSocketClient, WebSocketConfig},
     };
 
     struct TestServer {
@@ -1114,7 +1126,7 @@ mod tests {
         let config = WebSocketConfig {
             url: format!("ws://127.0.0.1:{port}"),
             headers: vec![("test".into(), "test".into())],
-            handler: Consumer::Python(None),
+            message_handler: None,
             heartbeat: None,
             heartbeat_msg: None,
             ping_handler: None,
@@ -1124,7 +1136,7 @@ mod tests {
             reconnect_delay_max_ms: None,
             reconnect_jitter_ms: None,
         };
-        WebSocketClient::connect(config, None, None, None, vec![], None)
+        WebSocketClient::connect(config, None, vec![], None)
             .await
             .expect("Failed to connect")
     }
@@ -1158,7 +1170,7 @@ mod tests {
         let config = WebSocketConfig {
             url: "ws://127.0.0.1:9997".into(), // <-- No server
             headers: vec![],
-            handler: Consumer::Python(None),
+            message_handler: None,
             heartbeat: None,
             heartbeat_msg: None,
             ping_handler: None,
@@ -1168,7 +1180,7 @@ mod tests {
             reconnect_delay_max_ms: None,
             reconnect_jitter_ms: None,
         };
-        let res = WebSocketClient::connect(config, None, None, None, vec![], None).await;
+        let res = WebSocketClient::connect(config, None, vec![], None).await;
         assert!(res.is_err(), "Should fail quickly with no server");
     }
 
@@ -1202,7 +1214,7 @@ mod tests {
         let config = WebSocketConfig {
             url: format!("ws://127.0.0.1:{}", server.port),
             headers: vec![("test".into(), "test".into())],
-            handler: Consumer::Python(None),
+            message_handler: None,
             heartbeat: None,
             heartbeat_msg: None,
             ping_handler: None,
@@ -1213,16 +1225,9 @@ mod tests {
             reconnect_jitter_ms: None,
         };
 
-        let client = WebSocketClient::connect(
-            config,
-            None,
-            None,
-            None,
-            vec![("default".into(), quota)],
-            None,
-        )
-        .await
-        .unwrap();
+        let client = WebSocketClient::connect(config, None, vec![("default".into(), quota)], None)
+            .await
+            .unwrap();
 
         // First 2 should succeed
         client.send_text("test1".into(), None).await.unwrap();
@@ -1285,17 +1290,16 @@ mod rust_tests {
             sleep(Duration::from_secs(1)).await;
         });
 
-        // Build a rust consumer for incoming messages (unused here)
-        let (consumer, _rx) = Consumer::rust_consumer();
+        // Build a channel-based message handler for incoming messages (unused here)
+        let (handler, _rx) = channel_message_handler();
 
         // Configure client with short reconnect backoff
         let config = WebSocketConfig {
             url: format!("ws://127.0.0.1:{port}"),
             headers: vec![],
-            handler: consumer,
+            message_handler: Some(handler),
             heartbeat: None,
             heartbeat_msg: None,
-            #[cfg(feature = "python")]
             ping_handler: None,
             reconnect_timeout_ms: Some(1_000),
             reconnect_delay_initial_ms: Some(50),
@@ -1305,20 +1309,9 @@ mod rust_tests {
         };
 
         // Connect the client
-        let client = {
-            #[cfg(feature = "python")]
-            {
-                WebSocketClient::connect(config.clone(), None, None, None, vec![], None)
-                    .await
-                    .unwrap()
-            }
-            #[cfg(not(feature = "python"))]
-            {
-                WebSocketClient::connect(config.clone(), vec![], None)
-                    .await
-                    .unwrap()
-            }
-        };
+        let client = WebSocketClient::connect(config, None, vec![], None)
+            .await
+            .unwrap();
 
         // Allow server to drop connection and client to detect
         sleep(Duration::from_millis(100)).await;

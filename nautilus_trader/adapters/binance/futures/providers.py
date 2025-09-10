@@ -68,7 +68,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         self,
         client: BinanceHttpClient,
         clock: LiveClock,
-        account_type: BinanceAccountType = BinanceAccountType.USDT_FUTURE,
+        account_type: BinanceAccountType = BinanceAccountType.USDT_FUTURES,
         config: InstrumentProviderConfig | None = None,
         venue: Venue = BINANCE_VENUE,
     ) -> None:

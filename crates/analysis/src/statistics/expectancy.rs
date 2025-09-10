@@ -61,6 +61,7 @@ impl PortfolioStatistic for Expectancy {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::approx_eq;
     use rstest::rstest;
 
     use super::*;
@@ -70,7 +71,7 @@ mod tests {
         let expectancy = Expectancy {};
         let result = expectancy.calculate_from_realized_pnls(&[]);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), 0.0);
+        assert!(approx_eq!(f64, result.unwrap(), 0.0, epsilon = 1e-9));
     }
 
     #[rstest]
@@ -82,7 +83,7 @@ mod tests {
         assert!(result.is_some());
         // Expected: avg_winner = 20.0, win_rate = 1.0, loss_rate = 0.0
         // Expectancy = (20.0 * 1.0) + (0.0 * 0.0) = 20.0
-        assert_eq!(result.unwrap(), 20.0);
+        assert!(approx_eq!(f64, result.unwrap(), 20.0, epsilon = 1e-9));
     }
 
     #[rstest]
@@ -94,7 +95,7 @@ mod tests {
         assert!(result.is_some());
         // Expected: avg_loser = -20.0, win_rate = 0.0, loss_rate = 1.0
         // Expectancy = (0.0 * 0.0) + (-20.0 * 1.0) = -20.0
-        assert_eq!(result.unwrap(), -20.0);
+        assert!(approx_eq!(f64, result.unwrap(), -20.0, epsilon = 1e-9));
     }
 
     #[rstest]
@@ -110,7 +111,7 @@ mod tests {
         // win_rate = 0.5 (2 winners out of 4 trades)
         // loss_rate = 0.5
         // Expectancy = (12.5 * 0.5) + (-7.5 * 0.5) = 2.5
-        assert_eq!(result.unwrap(), 2.5);
+        assert!(approx_eq!(f64, result.unwrap(), 2.5, epsilon = 1e-9));
     }
 
     #[rstest]
@@ -122,7 +123,7 @@ mod tests {
         assert!(result.is_some());
         // Expected: avg_winner = 10.0, win_rate = 1.0, loss_rate = 0.0
         // Expectancy = (10.0 * 1.0) + (0.0 * 0.0) = 10.0
-        assert_eq!(result.unwrap(), 10.0);
+        assert!(approx_eq!(f64, result.unwrap(), 10.0, epsilon = 1e-9));
     }
 
     #[rstest]

@@ -64,6 +64,7 @@ indexmap = { workspace = true }
 log = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
+pyo3-stub-gen = { workspace = true }
 regex = { workspace = true }
 rstest = { workspace = true, optional = true }
 serde = { workspace = true }

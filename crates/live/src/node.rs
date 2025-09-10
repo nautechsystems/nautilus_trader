@@ -17,7 +17,16 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    rc::Rc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
+};
 
 use nautilus_common::{
     actor::{Actor, DataActor},
@@ -36,20 +45,85 @@ use nautilus_system::{
 
 use crate::{config::LiveNodeConfig, runner::AsyncRunner};
 
+/// A thread-safe handle to control a `LiveNode` from other threads.
+/// This allows starting, stopping, and querying the node's state
+/// without requiring the node itself to be Send + Sync.
+#[derive(Clone, Debug)]
+pub struct LiveNodeHandle {
+    /// Atomic flag indicating if the node should stop.
+    pub(crate) stop_flag: Arc<AtomicBool>,
+    /// Atomic flag indicating if the node is currently running.
+    pub(crate) running_flag: Arc<AtomicBool>,
+}
+
+impl Default for LiveNodeHandle {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl LiveNodeHandle {
+    /// Creates a new handle with default (stopped) state.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            stop_flag: Arc::new(AtomicBool::new(false)),
+            running_flag: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    /// Returns whether the node should stop.
+    #[must_use]
+    pub fn should_stop(&self) -> bool {
+        self.stop_flag.load(Ordering::Relaxed)
+    }
+
+    /// Returns whether the node is currently running.
+    #[must_use]
+    pub fn is_running(&self) -> bool {
+        self.running_flag.load(Ordering::Relaxed)
+    }
+
+    /// Signals the node to stop.
+    pub fn stop(&self) {
+        self.stop_flag.store(true, Ordering::Relaxed);
+    }
+
+    /// Marks the node as running (internal use).
+    pub(crate) fn set_running(&self, running: bool) {
+        self.running_flag.store(running, Ordering::Relaxed);
+        if running {
+            // Clear stop flag when starting
+            self.stop_flag.store(false, Ordering::Relaxed);
+        }
+    }
+}
+
 /// High-level abstraction for a live Nautilus system node.
 ///
 /// Provides a simplified interface for running live systems
 /// with automatic client management and lifecycle handling.
 #[derive(Debug)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.live", unsendable)
+)]
 pub struct LiveNode {
     clock: Rc<RefCell<LiveClock>>,
     kernel: NautilusKernel,
     runner: AsyncRunner,
     config: LiveNodeConfig,
     is_running: bool,
+    /// Handle for thread-safe control of this node.
+    handle: LiveNodeHandle,
 }
 
 impl LiveNode {
+    /// Returns a thread-safe handle to control this node.
+    #[must_use]
+    pub fn handle(&self) -> LiveNodeHandle {
+        self.handle.clone()
+    }
     /// Creates a new [`LiveNodeBuilder`] for fluent configuration.
     ///
     /// # Errors
@@ -96,6 +170,7 @@ impl LiveNode {
             runner,
             config,
             is_running: false,
+            handle: LiveNodeHandle::new(),
         })
     }
 
@@ -106,15 +181,13 @@ impl LiveNode {
     /// Returns an error if startup fails.
     pub async fn start(&mut self) -> anyhow::Result<()> {
         if self.is_running {
-            anyhow::bail!("LiveNode is already running");
+            anyhow::bail!("Already running");
         }
-
-        log::info!("Starting LiveNode");
 
         self.kernel.start_async().await;
         self.is_running = true;
+        self.handle.set_running(true);
 
-        log::info!("LiveNode started successfully");
         Ok(())
     }
 
@@ -125,15 +198,13 @@ impl LiveNode {
     /// Returns an error if shutdown fails.
     pub async fn stop(&mut self) -> anyhow::Result<()> {
         if !self.is_running {
-            anyhow::bail!("LiveNode is not running");
+            anyhow::bail!("Not running");
         }
-
-        log::info!("Stopping LiveNode");
 
         self.kernel.stop_async().await;
         self.is_running = false;
+        self.handle.set_running(false);
 
-        log::info!("LiveNode stopped successfully");
         Ok(())
     }
 
@@ -153,7 +224,18 @@ impl LiveNode {
             () = self.runner.run() => {
                 log::info!("AsyncRunner finished");
             }
-            // Handle SIGINT signal
+            // Handle stop signal from handle (for Python integration)
+            () = async {
+                while !self.handle.should_stop() {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                }
+                log::info!("Received stop signal from handle");
+            } => {
+                self.runner.stop();
+                // Give the AsyncRunner a moment to process the shutdown signal
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            }
+            // Handle SIGINT signal (fallback for direct Rust usage)
             result = tokio::signal::ctrl_c() => {
                 match result {
                     Ok(()) => {
@@ -169,7 +251,7 @@ impl LiveNode {
             }
         }
 
-        log::debug!("AsyncRunner and signal handling finished"); // TODO: Temp logging
+        log::debug!("AsyncRunner and signal handling finished");
 
         self.stop().await?;
         Ok(())
@@ -185,6 +267,12 @@ impl LiveNode {
     #[must_use]
     pub const fn kernel(&self) -> &NautilusKernel {
         &self.kernel
+    }
+
+    /// Gets an exclusive reference to the underlying kernel.
+    #[must_use]
+    pub(crate) const fn kernel_mut(&mut self) -> &mut NautilusKernel {
+        &mut self.kernel
     }
 
     /// Gets the node's trader ID.
@@ -229,6 +317,44 @@ impl LiveNode {
 
         self.kernel.trader.add_actor(actor)
     }
+
+    pub(crate) fn add_registered_actor<T>(&mut self, actor: T) -> anyhow::Result<()>
+    where
+        T: DataActor + Component + Actor + 'static,
+    {
+        if self.is_running {
+            anyhow::bail!(
+                "Cannot add actor while node is running. Add actors before calling start()."
+            );
+        }
+
+        self.kernel.trader.add_registered_actor(actor)
+    }
+
+    /// Adds an actor to the live node using a factory function.
+    ///
+    /// The factory function is called at registration time to create the actor,
+    /// avoiding cloning issues with non-cloneable actor types.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The node is currently running.
+    /// - The factory function fails to create the actor.
+    /// - The underlying trader registration fails.
+    pub fn add_actor_from_factory<F, T>(&mut self, factory: F) -> anyhow::Result<()>
+    where
+        F: FnOnce() -> anyhow::Result<T>,
+        T: DataActor + Component + Actor + 'static,
+    {
+        if self.is_running {
+            anyhow::bail!(
+                "Cannot add actor while node is running. Add actors before calling start()."
+            );
+        }
+
+        self.kernel.trader.add_actor_from_factory(factory)
+    }
 }
 
 /// Builder for constructing a [`LiveNode`] with a fluent API.
@@ -236,6 +362,10 @@ impl LiveNode {
 /// Provides configuration options specific to live nodes,
 /// including client factory registration and timeout settings.
 #[derive(Debug)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.live", unsendable)
+)]
 pub struct LiveNodeBuilder {
     config: LiveNodeConfig,
     data_client_factories: HashMap<String, Box<dyn DataClientFactory>>,
@@ -300,97 +430,87 @@ impl LiveNodeBuilder {
 
     /// Set the connection timeout in seconds.
     #[must_use]
-    pub const fn with_timeout_connection(mut self, timeout: u32) -> Self {
-        self.config.timeout_connection = timeout;
+    pub const fn with_timeout_connection(mut self, timeout_secs: u64) -> Self {
+        self.config.timeout_connection = Duration::from_secs(timeout_secs);
         self
     }
 
     /// Set the reconciliation timeout in seconds.
     #[must_use]
-    pub const fn with_timeout_reconciliation(mut self, timeout: u32) -> Self {
-        self.config.timeout_reconciliation = timeout;
+    pub const fn with_timeout_reconciliation(mut self, timeout_secs: u64) -> Self {
+        self.config.timeout_reconciliation = Duration::from_secs(timeout_secs);
         self
     }
 
     /// Set the portfolio initialization timeout in seconds.
     #[must_use]
-    pub const fn with_timeout_portfolio(mut self, timeout: u32) -> Self {
-        self.config.timeout_portfolio = timeout;
+    pub const fn with_timeout_portfolio(mut self, timeout_secs: u64) -> Self {
+        self.config.timeout_portfolio = Duration::from_secs(timeout_secs);
         self
     }
 
     /// Set the disconnection timeout in seconds.
     #[must_use]
-    pub const fn with_timeout_disconnection(mut self, timeout: u32) -> Self {
-        self.config.timeout_disconnection = timeout;
+    pub const fn with_timeout_disconnection_secs(mut self, timeout_secs: u64) -> Self {
+        self.config.timeout_disconnection = Duration::from_secs(timeout_secs);
         self
     }
 
-    /// Set the post-stop timeout in seconds.
+    /// Set the post-stop delay in seconds.
     #[must_use]
-    pub const fn with_timeout_post_stop(mut self, timeout: u32) -> Self {
-        self.config.timeout_post_stop = timeout;
+    pub const fn with_delay_post_stop_secs(mut self, delay_secs: u64) -> Self {
+        self.config.delay_post_stop = Duration::from_secs(delay_secs);
         self
     }
 
     /// Set the shutdown timeout in seconds.
     #[must_use]
-    pub const fn with_timeout_shutdown(mut self, timeout: u32) -> Self {
-        self.config.timeout_shutdown = timeout;
+    pub const fn with_delay_shutdown_secs(mut self, delay_secs: u64) -> Self {
+        self.config.timeout_shutdown = Duration::from_secs(delay_secs);
         self
     }
 
-    /// Adds a data client with both factory and configuration.
+    /// Adds a data client with factory and configuration.
     ///
     /// # Errors
     ///
     /// Returns an error if a client with the same name is already registered.
-    pub fn add_data_client<F, C>(
+    pub fn add_data_client(
         mut self,
         name: Option<String>,
-        factory: F,
-        config: C,
-    ) -> anyhow::Result<Self>
-    where
-        F: DataClientFactory + 'static,
-        C: ClientConfig + 'static,
-    {
+        factory: Box<dyn DataClientFactory>,
+        config: Box<dyn ClientConfig>,
+    ) -> anyhow::Result<Self> {
         let name = name.unwrap_or_else(|| factory.name().to_string());
 
         if self.data_client_factories.contains_key(&name) {
             anyhow::bail!("Data client '{name}' is already registered");
         }
 
-        self.data_client_factories
-            .insert(name.clone(), Box::new(factory));
-        self.data_client_configs.insert(name, Box::new(config));
+        self.data_client_factories.insert(name.clone(), factory);
+        self.data_client_configs.insert(name, config);
         Ok(self)
     }
 
-    /// Adds an execution client with both factory and configuration.
+    /// Adds an execution client with factory and configuration.
     ///
     /// # Errors
     ///
     /// Returns an error if a client with the same name is already registered.
-    pub fn add_exec_client<F, C>(
+    pub fn add_exec_client(
         mut self,
         name: Option<String>,
-        factory: F,
-        config: C,
-    ) -> anyhow::Result<Self>
-    where
-        F: ExecutionClientFactory + 'static,
-        C: ClientConfig + 'static,
-    {
+        factory: Box<dyn ExecutionClientFactory>,
+        config: Box<dyn ClientConfig>,
+    ) -> anyhow::Result<Self> {
         let name = name.unwrap_or_else(|| factory.name().to_string());
 
         if self.exec_client_factories.contains_key(&name) {
             anyhow::bail!("Execution client '{name}' is already registered");
         }
 
-        self.exec_client_factories
-            .insert(name.clone(), Box::new(factory));
-        self.exec_client_configs.insert(name, Box::new(config));
+        self.exec_client_factories.insert(name.clone(), factory);
+        self.exec_client_configs.insert(name, config);
         Ok(self)
     }
 
@@ -460,7 +580,7 @@ impl LiveNodeBuilder {
             }
         }
 
-        log::info!("LiveNode built successfully");
+        log::info!("Built successfully");
 
         Ok(LiveNode {
             clock,
@@ -468,6 +588,7 @@ impl LiveNodeBuilder {
             runner,
             config: self.config,
             is_running: false,
+            handle: LiveNodeHandle::new(),
         })
     }
 }

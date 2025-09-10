@@ -20,17 +20,17 @@ crate-type = ["rlib", "cdylib"]
 [features]
 default = ["redis"]  # redis needed by `nautilus_trader` by default for now
 extension-module = [
-  "pyo3/extension-module",
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
+  "pyo3/extension-module",
 ]
 python = [
-  "pyo3",
-  "pyo3-async-runtimes",
   "nautilus-common/python",
   "nautilus-core/python",
   "nautilus-model/python",
+  "pyo3",
+  "pyo3-async-runtimes",
 ]
 redis = ["dep:redis"]
 postgres = ["dep:sqlx"]
@@ -45,6 +45,7 @@ nautilus-core = { workspace = true }
 nautilus-cryptography = { workspace = true }
 nautilus-model = { workspace = true, features = ["stubs"] }
 
+ahash = { workspace = true }
 anyhow = { workspace = true }
 async-stream = { workspace = true }
 async-trait = { workspace = true }
@@ -56,6 +57,7 @@ indexmap = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
 log = { workspace = true }
+regex = { workspace = true }
 rmp-serde = { workspace = true }
 rust_decimal = { workspace = true }
 semver = { workspace = true }

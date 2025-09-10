@@ -616,6 +616,161 @@ class TestQuantity:
         assert qty.precision == 3
 
     @pytest.mark.parametrize(
+        ("value", "expected_str", "expected_precision"),
+        [
+            # Scientific notation tests
+            ["1e6", "1000000", 0],
+            ["1E6", "1000000", 0],
+            ["2.5e4", "25000.000", 3],
+            ["3.5E-2", "0.04", 2],
+            ["1.23456e-3", "0.001", 3],
+            ["7.89E1", "78.9000", 4],
+            # Underscore handling
+            ["1_000", "1000", 0],
+            ["1_000.25", "1000.25", 2],
+            ["9_876_543.21", "9876543.21", 2],
+            ["0.000_123", "0.000123", 6],
+            # Combined underscores and scientific notation
+            ["1_000e2", "100000", 0],
+            ["2_345.6e-3", "2.346", 3],
+            # Edge cases for precision
+            [
+                "0.123456789012345" if FIXED_PRECISION > 9 else "0.123456789",
+                "0.123456789012345" if FIXED_PRECISION > 9 else "0.123456789",
+                min(15, FIXED_PRECISION),
+            ],
+            ["987654321.123456789", "987654321.123456789", 9],  # Full precision preserved
+            # Rounding behavior verification
+            ["2.115", "2.115", 3],
+            ["2.125", "2.125", 3],
+            ["2.135", "2.135", 3],
+            ["2.145", "2.145", 3],
+            ["2.155", "2.155", 3],
+            # Zero representations
+            ["0e0", "0", 0],
+            ["0.0e5", "0.000", 3],
+            ["0E-3", "0.000", 3],
+            # Small numbers
+            [
+                "1e-15" if FIXED_PRECISION > 9 else "1e-9",
+                "0.000000000000001" if FIXED_PRECISION > 9 else "0.000000001",
+                min(15, FIXED_PRECISION) if FIXED_PRECISION > 9 else 9,
+            ],
+        ],
+    )
+    def test_from_str_comprehensive(self, value, expected_str, expected_precision):
+        # Arrange, Act
+        qty = Quantity.from_str(value)
+
+        # Assert
+        assert str(qty) == expected_str
+        assert qty.precision == expected_precision
+
+    @pytest.mark.parametrize(
+        "invalid_input",
+        [
+            "not_a_number",
+            "1.2.3",
+            "++1",
+            "--1",
+            "-1",  # Negative values not allowed for Quantity
+            "-0.5",
+            "-1e3",
+            "1e",
+            "e10",
+            "1e1e1",
+            "",
+            "nan",
+            "inf",
+            "-inf",
+            "1e1000",  # Overflow
+        ],
+    )
+    def test_from_str_invalid_input_raises_value_error(self, invalid_input):
+        # Arrange, Act, Assert
+        with pytest.raises(Exception):  # Various exceptions can be raised for invalid input
+            Quantity.from_str(invalid_input)
+
+    def test_from_str_with_negative_value_raises_value_error(self):
+        with pytest.raises(ValueError, match="invalid negative quantity"):
+            Quantity.from_str("-1.0")
+        with pytest.raises(ValueError, match="invalid negative quantity"):
+            Quantity.from_str("-0.001")
+
+    def test_from_str_with_precision_exceeding_max_raises_value_error(self):
+        if FIXED_PRECISION <= 9:
+            # On Windows with 9 decimal max
+            with pytest.raises(ValueError, match="invalid `precision` greater than max"):
+                Quantity.from_str("1." + "0" * 10)  # 10 decimals > 9
+        else:
+            # On Linux/Mac with 16 decimal max
+            with pytest.raises(ValueError, match="invalid `precision` greater than max"):
+                Quantity.from_str("1." + "0" * 17)  # 17 decimals > 16
+
+    def test_from_str_precision_preservation(self):
+
+        # Whole numbers should have precision 0
+        assert Quantity.from_str("100").precision == 0
+        assert Quantity.from_str("1000000").precision == 0
+
+        # Decimal places should determine precision
+        assert Quantity.from_str("100.0").precision == 1
+        assert Quantity.from_str("100.00").precision == 2
+        assert Quantity.from_str("100.12345").precision == 5
+
+        # Scientific notation with decimal results
+        qty = Quantity.from_str("1.23e-2")
+        assert str(qty) == "0.01"
+        assert qty.precision == 2
+
+        # Underscores shouldn't affect precision
+        assert Quantity.from_str("1_000.123").precision == 3
+        assert Quantity.from_str("1_000").precision == 0
+
+    @pytest.mark.parametrize(
+        ("input_val", "expected"),
+        [
+            # Test that values are preserved exactly
+            ("1.115", "1.115"),
+            ("1.125", "1.125"),
+            ("1.135", "1.135"),
+            ("1.145", "1.145"),
+            # High precision values preserved up to FIXED_PRECISION
+            (
+                "0.9999999999999999" if FIXED_PRECISION > 9 else "0.999999999",
+                "0.9999999999999999" if FIXED_PRECISION > 9 else "0.999999999",
+            ),
+            (
+                "1.0000000000000001" if FIXED_PRECISION > 9 else "1.000000001",
+                "1.0000000000000001" if FIXED_PRECISION > 9 else "1.000000001",
+            ),
+        ],
+    )
+    def test_from_str_rounding_behavior(self, input_val, expected):
+        qty = Quantity.from_str(input_val)
+        assert str(qty) == expected
+
+    def test_from_str_boundary_values(self):
+        # Test values near the boundaries of the Quantity type
+
+        # Maximum value (should work)
+        # Test reasonable large values
+        qty_large = Quantity.from_str("1000000000")
+        assert str(qty_large) == "1000000000"
+
+        # Zero (should work)
+        qty_zero = Quantity.from_str("0")
+        assert qty_zero.as_double() == 0
+        assert str(qty_zero) == "0"
+
+        # Negative values should raise errors (Quantity is unsigned)
+        with pytest.raises(ValueError):
+            Quantity.from_str("-1")
+
+        with pytest.raises(ValueError):
+            Quantity.from_str("-0.001")
+
+    @pytest.mark.parametrize(
         ("value", "expected"),
         [
             ["0", "0"],

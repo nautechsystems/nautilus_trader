@@ -254,7 +254,7 @@ impl OrderMatchingEngine {
             self.book.apply_delta(delta);
         }
 
-        self.iterate(delta.ts_event);
+        self.iterate(delta.ts_init);
     }
 
     pub fn process_order_book_deltas(&mut self, deltas: &OrderBookDeltas) {
@@ -264,7 +264,7 @@ impl OrderMatchingEngine {
             self.book.apply_deltas(deltas);
         }
 
-        self.iterate(deltas.ts_event);
+        self.iterate(deltas.ts_init);
     }
 
     /// # Panics
@@ -277,7 +277,7 @@ impl OrderMatchingEngine {
             self.book.update_quote_tick(quote).unwrap();
         }
 
-        self.iterate(quote.ts_event);
+        self.iterate(quote.ts_init);
     }
 
     /// # Panics
@@ -361,8 +361,8 @@ impl OrderMatchingEngine {
             size,
             aggressor_side,
             self.ids_generator.generate_trade_id(),
-            bar.ts_event,
-            bar.ts_event,
+            bar.ts_init,
+            bar.ts_init,
         );
 
         // Open
@@ -424,7 +424,7 @@ impl OrderMatchingEngine {
         // Wait for next bar
         if self.last_bar_bid.is_none()
             || self.last_bar_ask.is_none()
-            || self.last_bar_bid.unwrap().ts_event != self.last_bar_ask.unwrap().ts_event
+            || self.last_bar_bid.unwrap().ts_init != self.last_bar_ask.unwrap().ts_init
         {
             return;
         }
@@ -482,7 +482,7 @@ impl OrderMatchingEngine {
         }
         self.core.set_last_raw(trade.price);
 
-        self.iterate(trade.ts_event);
+        self.iterate(trade.ts_init);
     }
 
     pub fn process_status(&mut self, action: MarketStatusAction) {
@@ -778,10 +778,11 @@ impl OrderMatchingEngine {
     }
 
     pub fn process_cancel_all(&mut self, command: &CancelAllOrders, account_id: AccountId) {
+        let instrument_id = command.instrument_id;
         let open_orders = self
             .cache
             .borrow()
-            .orders_open(None, Some(&command.instrument_id), None, None)
+            .orders_open(None, Some(&instrument_id), None, None)
             .into_iter()
             .cloned()
             .collect::<Vec<OrderAny>>();
@@ -2245,6 +2246,9 @@ impl OrderMatchingEngine {
             .account_id()
             .unwrap_or(self.account_ids.get(&order.trader_id()).unwrap().to_owned());
 
+        // Check if rejection is due to post-only
+        let due_post_only = reason.as_str().starts_with("POST_ONLY");
+
         let event = OrderEventAny::Rejected(OrderRejected::new(
             order.trader_id(),
             order.strategy_id(),
@@ -2256,6 +2260,7 @@ impl OrderMatchingEngine {
             ts_now,
             ts_now,
             false,
+            due_post_only,
         ));
         msgbus::send_any("ExecEngine.process".into(), &event as &dyn Any);
     }

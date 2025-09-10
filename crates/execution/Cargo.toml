@@ -20,10 +20,10 @@ crate-type = ["rlib", "cdylib"]
 [features]
 default = []
 extension-module = [
-  "pyo3/extension-module",
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
+  "pyo3/extension-module",
 ]
 ffi = [
   "nautilus-common/ffi",
@@ -31,10 +31,10 @@ ffi = [
   "nautilus-model/ffi",
 ]
 python = [
-  "pyo3",
   "nautilus-common/python",
   "nautilus-core/python",
   "nautilus-model/python",
+  "pyo3",
 ]
 
 [package.metadata.docs.rs]
@@ -56,11 +56,6 @@ rust_decimal_macros = { workspace = true }
 serde = { workspace = true }
 ustr = { workspace = true }
 uuid = { workspace = true }
-
-[dev-dependencies]
-nautilus-data = { workspace = true }
-nautilus-portfolio = { workspace = true }
-nautilus-risk = { workspace = true }
 
 criterion = { workspace = true }
 rstest = { workspace = true }

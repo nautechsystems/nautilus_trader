@@ -39,12 +39,17 @@ from nautilus_trader.core.rust.model cimport FIXED_SCALAR as RUST_FIXED_SCALAR
 from nautilus_trader.core.rust.model cimport HIGH_PRECISION_MODE as RUST_HIGH_PRECISION_MODE
 from nautilus_trader.core.rust.model cimport MONEY_MAX as RUST_MONEY_MAX
 from nautilus_trader.core.rust.model cimport MONEY_MIN as RUST_MONEY_MIN
+from nautilus_trader.core.rust.model cimport MONEY_RAW_MAX
+from nautilus_trader.core.rust.model cimport MONEY_RAW_MIN
 from nautilus_trader.core.rust.model cimport PRECISION_BYTES
 from nautilus_trader.core.rust.model cimport PRECISION_BYTES as RUST_PRECISION_BYTES
 from nautilus_trader.core.rust.model cimport PRICE_MAX as RUST_PRICE_MAX
 from nautilus_trader.core.rust.model cimport PRICE_MIN as RUST_PRICE_MIN
+from nautilus_trader.core.rust.model cimport PRICE_RAW_MAX
+from nautilus_trader.core.rust.model cimport PRICE_RAW_MIN
 from nautilus_trader.core.rust.model cimport QUANTITY_MAX as RUST_QUANTITY_MAX
 from nautilus_trader.core.rust.model cimport QUANTITY_MIN as RUST_QUANTITY_MIN
+from nautilus_trader.core.rust.model cimport QUANTITY_RAW_MAX
 from nautilus_trader.core.rust.model cimport MoneyRaw
 from nautilus_trader.core.rust.model cimport PriceRaw
 from nautilus_trader.core.rust.model cimport QuantityRaw
@@ -78,6 +83,7 @@ HIGH_PRECISION = bool(RUST_HIGH_PRECISION_MODE)
 FIXED_PRECISION = RUST_FIXED_PRECISION
 FIXED_SCALAR = RUST_FIXED_SCALAR
 FIXED_PRECISION_BYTES = RUST_PRECISION_BYTES
+FIXED_DECIMAL_SCALE = decimal.Decimal(10) ** FIXED_PRECISION
 
 
 @cython.auto_pickle(True)
@@ -217,7 +223,7 @@ cdef class Quantity:
     def __rmod__(b, a) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) % float(b)
-        return Quantity._extract_decimal(a) * Quantity._extract_decimal(b)
+        return Quantity._extract_decimal(a) % Quantity._extract_decimal(b)
 
     def __neg__(self) -> decimal.Decimal:
         return self.as_decimal().__neg__()
@@ -235,13 +241,13 @@ cdef class Quantity:
         return self.as_f64_c()
 
     def __int__(self) -> int:
-        return int(self.as_f64_c())
+        return int(self.as_decimal())
 
     def __hash__(self) -> int:
         return hash(self._mem.raw)
 
     def __str__(self) -> str:
-        return f"{self._mem.raw / RUST_FIXED_SCALAR:.{self._mem.precision}f}"
+        return f"{self.as_decimal():.{self._mem.precision}f}"
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
@@ -373,7 +379,32 @@ cdef class Quantity:
 
     @staticmethod
     cdef Quantity from_str_c(str value):
-        return Quantity(float(value), precision=precision_from_cstr(pystr_to_cstr(value)))
+        value = value.replace('_', '')
+
+        cdef uint8_t precision = precision_from_cstr(pystr_to_cstr(value))
+        if precision > FIXED_PRECISION:
+            raise ValueError(
+                f"invalid `precision` greater than max {FIXED_PRECISION}, was {precision}"
+            )
+
+        decimal_value = decimal.Decimal(value)
+
+        if decimal_value < 0:
+            raise ValueError(
+                f"invalid negative quantity, was {value}"
+            )
+
+        scaled = decimal_value * (10 ** precision)
+        integral = scaled.to_integral_value(rounding=decimal.ROUND_HALF_EVEN)
+
+        raw_py = int(integral) * (10 ** (FIXED_PRECISION - precision))
+        if raw_py > QUANTITY_RAW_MAX:
+            raise ValueError(
+                f"invalid raw quantity value exceeds max {QUANTITY_RAW_MAX}, was {raw_py}"
+            )
+
+        cdef QuantityRaw raw = <QuantityRaw>(raw_py)
+        return Quantity.from_raw_c(raw, precision)
 
     @staticmethod
     cdef Quantity from_int_c(QuantityRaw value):
@@ -462,6 +493,8 @@ cdef class Quantity:
         ------
         ValueError
             If inferred precision is greater than 16.
+        ValueError
+            If raw value is outside the valid representable range [0, `QUANTITY_RAW_MAX`].
         OverflowError
             If inferred precision is negative (< 0).
 
@@ -505,7 +538,7 @@ cdef class Quantity:
         str
 
         """
-        return f"{self.as_f64_c():,.{self._mem.precision}f}".replace(",", "_")
+        return f"{self.as_decimal():,.{self._mem.precision}f}".replace(",", "_")
 
     cpdef object as_decimal(self):
         """
@@ -516,7 +549,8 @@ cdef class Quantity:
         Decimal
 
         """
-        return decimal.Decimal(f"{self.as_f64_c():.{self._mem.precision}f}")
+        raw_decimal = decimal.Decimal(self._mem.raw)
+        return raw_decimal / FIXED_DECIMAL_SCALE
 
     cpdef double as_double(self):
         """
@@ -667,7 +701,7 @@ cdef class Price:
     def __rmod__(b, a) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) % float(b)
-        return Price._extract_decimal(a) * Price._extract_decimal(b)
+        return Price._extract_decimal(a) % Price._extract_decimal(b)
 
     def __neg__(self) -> decimal.Decimal:
         return self.as_decimal().__neg__()
@@ -685,13 +719,13 @@ cdef class Price:
         return self.as_f64_c()
 
     def __int__(self) -> int:
-        return int(self.as_f64_c())
+        return int(self.as_decimal())
 
     def __hash__(self) -> int:
         return hash(self._mem.raw)
 
     def __str__(self) -> str:
-        return f"{self._mem.raw / RUST_FIXED_SCALAR:.{self._mem.precision}f}"
+        return f"{self.as_decimal():.{self._mem.precision}f}"
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
@@ -755,12 +789,31 @@ cdef class Price:
         return PyObject_RichCompareBool(a, b, op)
 
     @staticmethod
-    cdef double raw_to_f64_c(QuantityRaw raw):
+    cdef double raw_to_f64_c(PriceRaw raw):
         return raw / RUST_FIXED_SCALAR
 
     @staticmethod
     cdef Price from_str_c(str value):
-        return Price(float(value), precision=precision_from_cstr(pystr_to_cstr(value)))
+        value = value.replace('_', '')
+
+        cdef uint8_t precision = precision_from_cstr(pystr_to_cstr(value))
+        if precision > FIXED_PRECISION:
+            raise ValueError(
+                f"invalid `precision` greater than max {FIXED_PRECISION}, was {precision}"
+            )
+
+        decimal_value = decimal.Decimal(value)
+        scaled = decimal_value * (10 ** precision)
+        integral = scaled.to_integral_value(rounding=decimal.ROUND_HALF_EVEN)
+
+        raw_py = int(integral) * (10 ** (FIXED_PRECISION - precision))
+        if raw_py < PRICE_RAW_MIN or raw_py > PRICE_RAW_MAX:
+            raise ValueError(
+                f"invalid raw price value outside range [{PRICE_RAW_MIN}, {PRICE_RAW_MAX}], was {raw_py}"
+            )
+
+        cdef PriceRaw raw = <PriceRaw>(raw_py)
+        return Price.from_raw_c(raw, precision)
 
     @staticmethod
     cdef Price from_int_c(PriceRaw value):
@@ -879,6 +932,8 @@ cdef class Price:
         ------
         ValueError
             If inferred precision is greater than 16.
+        ValueError
+            If raw value is outside the valid representable range [`PRICE_RAW_MIN`, `PRICE_RAW_MAX`].
         OverflowError
             If inferred precision is negative (< 0).
 
@@ -917,7 +972,7 @@ cdef class Price:
         str
 
         """
-        return f"{self.as_f64_c():,.{self._mem.precision}f}".replace(",", "_")
+        return f"{self.as_decimal():,.{self._mem.precision}f}".replace(",", "_")
 
     cpdef object as_decimal(self):
         """
@@ -928,7 +983,8 @@ cdef class Price:
         Decimal
 
         """
-        return decimal.Decimal(f"{self.as_f64_c():.{self._mem.precision}f}")
+        raw_decimal = decimal.Decimal(self._mem.raw)
+        return raw_decimal / FIXED_DECIMAL_SCALE
 
     cpdef double as_double(self):
         """
@@ -991,7 +1047,8 @@ cdef class Money:
 
     def __eq__(self, Money other) -> bool:
         Condition.not_none(other, "other")
-        Condition.is_true(self._mem.currency.code == other._mem.currency.code, "currency != other.currency")
+        if self._mem.currency.code != other._mem.currency.code:
+            Condition.is_true(self._mem.currency.code == other._mem.currency.code, f"currency {self.currency.code} != other.currency {other.currency.code}")
         return self._mem.raw == other._mem.raw
 
     def __lt__(self, Money other) -> bool:
@@ -1072,7 +1129,7 @@ cdef class Money:
     def __rmod__(b, a) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) % float(b)
-        return Money._extract_decimal(a) * Money._extract_decimal(b)
+        return Money._extract_decimal(a) % Money._extract_decimal(b)
 
     def __neg__(self) -> decimal.Decimal:
         return self.as_decimal().__neg__()
@@ -1090,17 +1147,16 @@ cdef class Money:
         return self.as_f64_c()
 
     def __int__(self) -> int:
-        return int(self.as_f64_c())
+        return int(self.as_decimal())
 
     def __hash__(self) -> int:
         return hash((self._mem.raw, self.currency_code_c()))
 
     def __str__(self) -> str:
-        return f"{self._mem.raw / RUST_FIXED_SCALAR:.{self._mem.currency.precision}f} {self.currency_code_c()}"
+        return f"{self.as_decimal():.{self._mem.currency.precision}f} {self.currency_code_c()}"
 
     def __repr__(self) -> str:
-        cdef str amount = f"{self._mem.raw / RUST_FIXED_SCALAR:.{self._mem.currency.precision}f}"
-        return f"{type(self).__name__}({amount}, {self.currency_code_c()})"
+        return f"{type(self).__name__}({self.as_decimal():.{self._mem.currency.precision}f}, {self.currency_code_c()})"
 
     @property
     def raw(self) -> MoneyRaw:
@@ -1151,7 +1207,22 @@ cdef class Money:
         if len(pieces) != 2:
             raise ValueError(f"The `Money` string value was malformed, was {value}")
 
-        return Money(pieces[0], Currency.from_str_c(pieces[1]))
+        amount_str = pieces[0].replace('_', '')
+
+        cdef Currency currency = Currency.from_str_c(pieces[1])
+        cdef uint8_t precision = currency._mem.precision
+        decimal_value = decimal.Decimal(amount_str)
+        scaled = decimal_value * (10 ** precision)
+        integral = scaled.to_integral_value(rounding=decimal.ROUND_HALF_EVEN)
+
+        raw_py = int(integral) * (10 ** (FIXED_PRECISION - precision))
+        if raw_py < MONEY_RAW_MIN or raw_py > MONEY_RAW_MAX:
+            raise ValueError(
+                f"invalid raw money value outside range [{MONEY_RAW_MIN}, {MONEY_RAW_MAX}], was {raw_py}"
+            )
+
+        cdef MoneyRaw raw = <MoneyRaw>(raw_py)
+        return Money.from_raw_c(raw, currency)
 
     cdef str currency_code_c(self):
         return cstr_to_pystr(currency_code_to_cstr(&self._mem.currency))
@@ -1238,6 +1309,8 @@ cdef class Money:
         ------
         ValueError
             If inferred currency precision is greater than 16.
+        ValueError
+            If raw value is outside the valid representable range [`MONEY_RAW_MIN`, `MONEY_RAW_MAX`].
         OverflowError
             If inferred currency precision is negative (< 0).
 
@@ -1260,7 +1333,7 @@ cdef class Money:
         str
 
         """
-        return f"{self.as_f64_c():,.{self._mem.currency.precision}f} {self.currency_code_c()}".replace(",", "_")
+        return f"{self.as_decimal():,.{self._mem.currency.precision}f} {self.currency_code_c()}".replace(",", "_")
 
     cpdef object as_decimal(self):
         """
@@ -1271,7 +1344,8 @@ cdef class Money:
         Decimal
 
         """
-        return decimal.Decimal(f"{self.as_f64_c():.{self._mem.currency.precision}f}")
+        raw_decimal = decimal.Decimal(self._mem.raw)
+        return raw_decimal / FIXED_DECIMAL_SCALE
 
     cpdef double as_double(self):
         """
@@ -1626,7 +1700,7 @@ cdef class AccountBalance:
     ) -> None:
         Condition.equal(total.currency, locked.currency, "total.currency", "locked.currency")
         Condition.equal(total.currency, free.currency, "total.currency", "free.currency")
-        Condition.is_true(total.raw_int_c() - locked.raw_int_c() == free.raw_int_c(), "`total` - `locked` != `free` amount")
+        Condition.is_true(total.raw_int_c() - locked.raw_int_c() == free.raw_int_c(), f"`total` ({total}) - `locked` ({locked}) != `free` ({free})")
 
         self.total = total
         self.locked = locked
@@ -1704,9 +1778,9 @@ cdef class AccountBalance:
         """
         return {
             "type": type(self).__name__,
-            "total": str(self.total.as_decimal()),
-            "locked": str(self.locked.as_decimal()),
-            "free": str(self.free.as_decimal()),
+            "total": f"{self.total.as_decimal():.{self.currency.precision}f}",
+            "locked": f"{self.locked.as_decimal():.{self.currency.precision}f}",
+            "free": f"{self.free.as_decimal():.{self.currency.precision}f}",
             "currency": self.currency.code,
         }
 
@@ -1741,8 +1815,8 @@ cdef class MarginBalance:
         InstrumentId instrument_id = None,
     ) -> None:
         Condition.equal(initial.currency, maintenance.currency, "initial.currency", "maintenance.currency")
-        Condition.is_true(initial.raw_int_c() >= 0, "initial margin was negative")
-        Condition.is_true(maintenance.raw_int_c() >= 0, "maintenance margin was negative")
+        Condition.is_true(initial.raw_int_c() >= 0, f"initial margin was negative ({initial})")
+        Condition.is_true(maintenance.raw_int_c() >= 0, f"maintenance margin was negative ({maintenance})")
 
         self.initial = initial
         self.maintenance = maintenance
@@ -1821,8 +1895,8 @@ cdef class MarginBalance:
         """
         return {
             "type": type(self).__name__,
-            "initial": str(self.initial.as_decimal()),
-            "maintenance": str(self.maintenance.as_decimal()),
+            "initial": f"{self.initial.as_decimal():.{self.currency.precision}f}",
+            "maintenance": f"{self.maintenance.as_decimal():.{self.currency.precision}f}",
             "currency": self.currency.code,
             "instrument_id": self.instrument_id.to_str() if self.instrument_id is not None else None,
         }

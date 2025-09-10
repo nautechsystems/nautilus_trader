@@ -18,7 +18,7 @@ use nautilus_model::identifiers::InstrumentId;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use crate::enums::Exchange;
+use crate::enums::TardisExchange;
 pub use crate::machine::client::TardisMachineClient;
 
 /// Instrument definition information necessary for stream parsing.
@@ -27,28 +27,28 @@ pub use crate::machine::client::TardisMachineClient;
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
 )]
-pub struct InstrumentMiniInfo {
+pub struct TardisInstrumentMiniInfo {
     /// The instrument ID with optionally Nautilus normalized symbol.
     pub instrument_id: InstrumentId,
     /// The Tardis symbol.
     pub raw_symbol: Ustr,
     /// The Tardis exchange.
-    pub exchange: Exchange,
+    pub exchange: TardisExchange,
     /// The price precision for the instrument.
     pub price_precision: u8,
     /// The size precision for the instrument.
     pub size_precision: u8,
 }
 
-impl InstrumentMiniInfo {
-    /// Creates a new [`InstrumentMiniInfo`] instance.
+impl TardisInstrumentMiniInfo {
+    /// Creates a new [`TardisInstrumentMiniInfo`] instance.
     ///
     /// If `raw_instrument_id` is `None` then the `instrument_id` value will be assigned.
     #[must_use]
     pub fn new(
         instrument_id: InstrumentId,
         raw_symbol: Option<Ustr>,
-        exchange: Exchange,
+        exchange: TardisExchange,
         price_precision: u8,
         size_precision: u8,
     ) -> Self {
@@ -62,8 +62,8 @@ impl InstrumentMiniInfo {
     }
 
     #[must_use]
-    pub fn as_tardis_instrument_key(&self) -> TardisInstrumentKey {
-        TardisInstrumentKey::new(self.raw_symbol, self.exchange.clone())
+    pub const fn as_tardis_instrument_key(&self) -> TardisInstrumentKey {
+        TardisInstrumentKey::new(self.raw_symbol, self.exchange)
     }
 }
 
@@ -77,13 +77,13 @@ pub struct TardisInstrumentKey {
     /// The Tardis raw symbol.
     pub raw_symbol: Ustr,
     /// The Tardis exchange.
-    pub exchange: Exchange,
+    pub exchange: TardisExchange,
 }
 
 impl TardisInstrumentKey {
     /// Creates a new [`TardisInstrumentKey`] instance.
     #[must_use]
-    pub const fn new(raw_symbol: Ustr, exchange: Exchange) -> Self {
+    pub const fn new(raw_symbol: Ustr, exchange: TardisExchange) -> Self {
         Self {
             raw_symbol,
             exchange,
@@ -99,8 +99,8 @@ impl TardisInstrumentKey {
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
 )]
 pub struct ReplayNormalizedRequestOptions {
-    /// Requested [`Exchange`].
-    pub exchange: Exchange,
+    /// Requested [`TardisExchange`].
+    pub exchange: TardisExchange,
     /// Optional symbols of requested historical data feed.
     /// Use /exchanges/:exchange HTTP API to get allowed symbols for requested exchange.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -130,8 +130,8 @@ pub struct ReplayNormalizedRequestOptions {
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
 )]
 pub struct StreamNormalizedRequestOptions {
-    /// Requested [`Exchange`].
-    pub exchange: Exchange,
+    /// Requested [`TardisExchange`].
+    pub exchange: TardisExchange,
     /// Optional symbols of requested real-time data feed.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]

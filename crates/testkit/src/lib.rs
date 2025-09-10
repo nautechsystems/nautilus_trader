@@ -15,7 +15,7 @@
 
 //! Test utilities and data management for [NautilusTrader](http://nautilustrader.io).
 //!
-//! The *testkit* crate provides comprehensive testing utilities including test data management,
+//! The `nautilus-testkit` crate provides comprehensive testing utilities including test data management,
 //! file handling, and common testing patterns. This crate supports robust testing workflows
 //! across the entire NautilusTrader ecosystem with automated data downloads and validation:
 //!
@@ -44,6 +44,7 @@
 //!
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 //! - `high-precision`: Enables [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) to use 128-bit value types.
+//! - `extension-module`: Builds the crate as a Python extension module.
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]

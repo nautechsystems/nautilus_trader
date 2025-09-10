@@ -15,7 +15,7 @@
 
 //! Order execution engine for [NautilusTrader](http://nautilustrader.io).
 //!
-//! The *execution* crate provides a comprehensive order execution system that handles the complete
+//! The `nautilus-execution` crate provides a comprehensive order execution system that handles the complete
 //! order lifecycle from submission to fill processing. This includes sophisticated order matching,
 //! execution venue integration, and advanced order type emulation:
 //!
@@ -50,6 +50,7 @@
 //!
 //! - `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//! - `extension-module`: Builds the crate as a Python extension module.
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]

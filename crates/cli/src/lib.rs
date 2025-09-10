@@ -15,7 +15,7 @@
 
 //! Command-line interface and tools for [NautilusTrader](http://nautilustrader.io).
 //!
-//! The *cli* crate provides a comprehensive command-line interface for managing and
+//! The `nautilus-cli` crate provides a comprehensive command-line interface for managing and
 //! operating NautilusTrader installations. It includes tools for database management,
 //! system configuration, and operational utilities:
 //!
@@ -33,6 +33,13 @@
 //!
 //! NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
 //! highest level, with the aim of supporting mission-critical, trading system backtesting and live deployment workloads.
+//!
+//! # Feature flags
+//!
+//! This crate provides feature flags to control source code inclusion during compilation,
+//! depending on the intended use case:
+//!
+//! - `hypersync`: Enables Hypersync blockchain functionality for high-performance blockchain data access.
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]
@@ -42,9 +49,13 @@
 #![deny(clippy::missing_panics_doc)]
 #![deny(rustdoc::broken_intra_doc_links)]
 
+#[cfg(feature = "hypersync")]
+mod blockchain;
 mod database;
 pub mod opt;
 
+#[cfg(feature = "hypersync")]
+use crate::blockchain::run_blockchain_command;
 use crate::{
     database::postgres::run_database_command,
     opt::{Commands, NautilusCli},
@@ -58,6 +69,8 @@ use crate::{
 pub async fn run(opt: NautilusCli) -> anyhow::Result<()> {
     match opt.command {
         Commands::Database(database_opt) => run_database_command(database_opt).await?,
+        #[cfg(feature = "hypersync")]
+        Commands::Blockchain(blockchain_opt) => run_blockchain_command(blockchain_opt).await?,
     }
     Ok(())
 }

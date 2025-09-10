@@ -24,8 +24,8 @@ from nautilus_trader.config import StrategyConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
-from nautilus_trader.indicators.atr import AverageTrueRange
-from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
+from nautilus_trader.indicators import AverageTrueRange
+from nautilus_trader.indicators import ExponentialMovingAverage
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import QuoteTick
@@ -153,7 +153,10 @@ class EMACrossBracketAlgo(Strategy):
         self.register_indicator_for_bars(self.config.bar_type, self.slow_ema)
 
         # Get historical data
-        self.request_bars(self.config.bar_type)
+        self.request_bars(
+            self.config.bar_type,
+            start=self._clock.utc_now() - timedelta(days=1),
+        )
 
         # Subscribe to live data
         self.subscribe_bars(self.config.bar_type)

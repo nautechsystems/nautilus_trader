@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import pytest
 
 from nautilus_trader.accounting.accounts.cash import CashAccount
@@ -253,5 +254,6 @@ def test_pyo3_cython_conversion():
     account_pyo3_back = cash_account_from_account_events(
         events=account_cython_dict["events"],
         calculate_account_state=account_cython_dict["calculate_account_state"],
+        allow_borrowing=account_cython_dict.get("allow_borrowing", False),
     )
     assert account_pyo3 == account_pyo3_back

@@ -46,17 +46,6 @@ impl HttpStatus {
         Self { inner: code }
     }
 
-    /// Attempts to construct a [`HttpStatus`] from a `u16`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the code is not in the valid `100..999` range.
-    pub fn from(code: u16) -> Result<Self, InvalidStatusCode> {
-        Ok(Self {
-            inner: StatusCode::from_u16(code)?,
-        })
-    }
-
     /// Returns the status code as a `u16` (e.g., `200` for OK).
     #[inline]
     #[must_use]
@@ -107,6 +96,21 @@ impl HttpStatus {
     }
 }
 
+impl TryFrom<u16> for HttpStatus {
+    type Error = InvalidStatusCode;
+
+    /// Attempts to construct a [`HttpStatus`] from a `u16`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the code is not in the valid `100..999` range.
+    fn try_from(code: u16) -> Result<Self, Self::Error> {
+        Ok(Self {
+            inner: StatusCode::from_u16(code)?,
+        })
+    }
+}
+
 /// Represents the HTTP methods supported by the `HttpClient`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(
@@ -121,15 +125,14 @@ pub enum HttpMethod {
     PATCH,
 }
 
-#[allow(clippy::from_over_into)]
-impl Into<Method> for HttpMethod {
-    fn into(self) -> Method {
-        match self {
-            Self::GET => Method::GET,
-            Self::POST => Method::POST,
-            Self::PUT => Method::PUT,
-            Self::DELETE => Method::DELETE,
-            Self::PATCH => Method::PATCH,
+impl From<HttpMethod> for Method {
+    fn from(value: HttpMethod) -> Self {
+        match value {
+            HttpMethod::GET => Self::GET,
+            HttpMethod::POST => Self::POST,
+            HttpMethod::PUT => Self::PUT,
+            HttpMethod::DELETE => Self::DELETE,
+            HttpMethod::PATCH => Self::PATCH,
         }
     }
 }

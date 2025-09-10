@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import base64
 import urllib.parse
 from typing import Any
 
@@ -81,9 +82,12 @@ class BinanceHttpClient:
         self._secret: str = api_secret
         self._key_type: BinanceKeyType = key_type
         self._rsa_private_key: str | None = rsa_private_key
-        self._ed25519_private_key: bytes | None = (
-            ed25519_private_key.encode() if ed25519_private_key else None
-        )
+        self._ed25519_private_key: bytes | None = None
+        if ed25519_private_key:
+            # Decode base64 ASN.1/DER format
+            key_bytes = base64.b64decode(ed25519_private_key)
+            # ASN.1/DER structure: the 32-byte seed is typically at the end
+            self._ed25519_private_key = key_bytes[-32:]
 
         self._headers: dict[str, Any] = {
             "Content-Type": "application/json",
