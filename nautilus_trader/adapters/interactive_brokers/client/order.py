@@ -39,6 +39,8 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
 
     """
 
+    _fetch_all_open_orders: bool
+
     def place_order(self, order: IBOrder) -> None:
         """
         Place an order through the EClient.
@@ -99,13 +101,14 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
 
     async def get_open_orders(self, account_id: str) -> list[IBOrder]:
         """
-        Retrieve a list of ALL open orders for a specific account from all clients and
-        TWS. Once the request is completed, openOrderEnd() will be called.
+        Retrieve a list of open orders for a specific account. Once the request is
+        completed, openOrderEnd() will be called.
 
-        This method uses reqAllOpenOrders() which fetches orders from:
-        - All API clients (regardless of client ID)
-        - TWS/IB Gateway GUI
-        - All other trading interfaces connected to the account
+        The behavior depends on the `fetch_all_open_orders` configuration:
+        - If True: Uses reqAllOpenOrders() to fetch orders from all API clients,
+          TWS/IB Gateway GUI, and other trading interfaces
+        - If False: Uses reqOpenOrders() to fetch only orders from the current
+          client ID session
 
         Parameters
         ----------
@@ -115,17 +118,23 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         Returns
         -------
         list[IBOrder]
-            List of all open orders filtered by the specified account_id.
+            List of open orders filtered by the specified account_id.
 
         """
         self._log.debug(f"Requesting open orders for {account_id}")
         name = "OpenOrders"
 
         if not (request := self._requests.get(name=name)):
+            # Choose the appropriate handler based on configuration
+            if self._fetch_all_open_orders:
+                handle = self._eclient.reqAllOpenOrders
+            else:
+                handle = self._eclient.reqOpenOrders
+
             request = self._requests.add(
                 req_id=self._next_req_id(),
                 name=name,
-                handle=self._eclient.reqAllOpenOrders,
+                handle=handle,
             )
 
             if not request:

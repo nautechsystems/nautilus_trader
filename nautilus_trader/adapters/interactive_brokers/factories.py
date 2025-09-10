@@ -52,6 +52,7 @@ def get_cached_ib_client(
     port: int | None = None,
     client_id: int = 1,
     dockerized_gateway: DockerizedIBGatewayConfig | None = None,
+    fetch_all_open_orders: bool = False,
 ) -> InteractiveBrokersClient:
     """
     Retrieve or create a cached InteractiveBrokersClient using the provided key.
@@ -82,6 +83,9 @@ def get_cached_ib_client(
         The configuration for the dockerized gateway.If this is provided, Nautilus will oversee the docker
         environment, facilitating the operation of the IB Gateway within. Multiple gateways can be created
         based on trading_mode.
+    fetch_all_open_orders : bool, default False
+        If True, uses reqAllOpenOrders to fetch orders from all API clients and TWS GUI.
+        If False, uses reqOpenOrders to fetch only orders from current client ID session.
 
     Returns
     -------
@@ -109,7 +113,7 @@ def get_cached_ib_client(
         )
         PyCondition.not_none(port, "Please provide the `port` for the IB TWS or Gateway.")
 
-    client_key: tuple = (host, port, client_id)
+    client_key: tuple = (host, port, client_id, fetch_all_open_orders)
 
     if client_key not in IB_CLIENTS:
         client = InteractiveBrokersClient(
@@ -120,6 +124,7 @@ def get_cached_ib_client(
             host=host,
             port=port,
             client_id=client_id,
+            fetch_all_open_orders=fetch_all_open_orders,
         )
         client.start()
         IB_CLIENTS[client_key] = client
@@ -286,6 +291,7 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
             port=config.ibg_port,
             client_id=config.ibg_client_id,
             dockerized_gateway=config.dockerized_gateway,
+            fetch_all_open_orders=config.fetch_all_open_orders,
         )
 
         # Get instrument provider singleton
