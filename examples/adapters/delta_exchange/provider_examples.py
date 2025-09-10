@@ -385,7 +385,7 @@ async def performance_monitoring_example():
         print(f"  Filtered out: {stats['filtered_out']}")
         
         # Show configuration impact
-        print(f"\nConfiguration:")
+        print("\nConfiguration:")
         print(f"  Max concurrent requests: {config.max_concurrent_requests}")
         print(f"  Request delay: {config.request_delay_ms}ms")
         print(f"  Cache enabled: {config.enable_instrument_caching}")
