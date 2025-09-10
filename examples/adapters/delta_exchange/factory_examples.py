@@ -134,7 +134,7 @@ async def basic_factory_usage_example():
         
         # Check factory cache information
         cache_info = get_delta_exchange_factory_info()
-        print(f"\nFactory Cache Information:")
+        print("\nFactory Cache Information:")
         print(f"HTTP client cache hits: {cache_info['http_client_cache']['hits']}")
         print(f"HTTP client cache size: {cache_info['http_client_cache']['currsize']}")
         
