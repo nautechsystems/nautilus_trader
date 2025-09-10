@@ -1824,5 +1824,5 @@ class DeltaExchangeExecutionClient(LiveExecutionClient):
             f"connected={self._is_connected}, "
             f"open_orders={len(self._open_orders)}, "
             f"positions={len(self._positions)}"
-            f")"
+            ")"
         )
