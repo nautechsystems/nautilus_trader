@@ -168,7 +168,7 @@ async def basic_execution_client_example():
             
         # Print statistics
         stats = exec_client.stats
-        print(f"\nExecution Client Statistics:")
+        print("\nExecution Client Statistics:")
         for key, value in stats.items():
             print(f"  {key}: {value:,}")
             
