@@ -1,0 +1,119 @@
+[package]
+name = "nautilus-delta-exchange"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description.workspace = true
+categories.workspace = true
+keywords.workspace = true
+documentation.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[lib]
+name = "nautilus_delta_exchange"
+crate-type = ["rlib", "cdylib"]
+
+[features]
+default = []
+python = [
+    "dep:pyo3",
+    "dep:pyo3-async-runtimes",
+    "dep:nautilus-core",
+    "dep:nautilus-model",
+]
+extension-module = ["python", "pyo3/extension-module"]
+extension-module = [
+  "nautilus-common/extension-module",
+  "nautilus-core/extension-module",
+  "nautilus-model/extension-module",
+  "nautilus-network/extension-module",
+  "pyo3/extension-module",
+]
+python = [
+  "nautilus-common/python",
+  "nautilus-core/python",
+  "nautilus-model/python",
+  "nautilus-network/python",
+  "pyo3",
+  "pyo3-async-runtimes",
+]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies]
+nautilus-common = { workspace = true }
+nautilus-core = { workspace = true }
+nautilus-model = { workspace = true }
+nautilus-network = { workspace = true }
+
+ahash = { workspace = true }
+anyhow = { workspace = true }
+async-stream = { workspace = true }
+base64 = { workspace = true }
+chrono = { workspace = true }
+dashmap = { workspace = true }
+derive_builder = { workspace = true }
+futures-util = { workspace = true }
+indexmap = { workspace = true }
+log = { workspace = true }
+pyo3 = { workspace = true, optional = true }
+pyo3-async-runtimes = { workspace = true, optional = true }
+reqwest = { workspace = true }
+rust_decimal = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_urlencoded = { workspace = true }
+aws-lc-rs = { workspace = true }
+strum = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-tungstenite = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }  # Needed for example binaries
+ustr = { workspace = true }
+uuid = { workspace = true }
+zeroize = { workspace = true }
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+strum = { workspace = true }
+chrono = { workspace = true }
+rust_decimal = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-tungstenite = { workspace = true }
+futures-util = { workspace = true }
+ahash = { workspace = true }
+dashmap = { workspace = true }
+
+# Python bindings (optional)
+pyo3 = { workspace = true, optional = true }
+pyo3-async-runtimes = { workspace = true, optional = true }
+nautilus-core = { workspace = true, optional = true }
+nautilus-model = { workspace = true, optional = true }
+
+[dev-dependencies]
+nautilus-testkit = { workspace = true }
+rstest = { workspace = true }
+tracing-test = { workspace = true }
+
+[[bin]]
+name = "delta-exchange-http-private"
+path = "bin/http-private.rs"
+required-features = ["python"]
+
+[[bin]]
+name = "delta-exchange-http-public"
+path = "bin/http-public.rs"
+required-features = ["python"]
+
+[[bin]]
+name = "delta-exchange-ws"
+path = "bin/websocket.rs"
+required-features = ["python"]
