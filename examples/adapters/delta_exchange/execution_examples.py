@@ -516,7 +516,7 @@ async def risk_management_example():
         
         # Check statistics
         stats = exec_client.stats
-        print(f"\nRisk Management Test Results:")
+        print("\nRisk Management Test Results:")
         print(f"Orders submitted: {stats['orders_submitted']}")
         print(f"Orders rejected: {stats['orders_rejected']}")
         print(f"API calls: {stats['api_calls']}")
