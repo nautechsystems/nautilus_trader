@@ -241,7 +241,7 @@ class DeltaExchangeExecutionClient(LiveExecutionClient):
         }
 
         # Log configuration
-        self._log.info(f"Delta Exchange Execution Client initialized", LogColor.BLUE)
+        self._log.info("Delta Exchange Execution Client initialized", LogColor.BLUE)
         self._log.info(f"Account ID: {account_id}", LogColor.BLUE)
         self._log.info(f"Environment: {'testnet' if config.testnet else 'production'}", LogColor.BLUE)
         self._log.info(f"OMS Type: {self.oms_type}", LogColor.BLUE)
