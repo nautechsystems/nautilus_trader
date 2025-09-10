@@ -136,7 +136,7 @@ async def basic_data_client_example():
             
         # Print statistics
         stats = data_client.stats
-        print(f"\nData Client Statistics:")
+        print("\nData Client Statistics:")
         for key, value in stats.items():
             print(f"  {key}: {value:,}")
             
