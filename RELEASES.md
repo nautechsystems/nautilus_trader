@@ -3,16 +3,20 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Added Renko bar aggregator (#2941), thanks @faysou
+- Added Interactive Brokers cache config support for historical provider (#2942), thanks @ms32035
+- Added Interactive Brokers support for fetching orders from all clients (#2948), thanks @dinana
 
 ### Breaking Changes
 None
 
 ### Internal Improvements
+- Implemented HTTP client for Hyperliquid adapter (#2939), thanks @nicolad
 - Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.26.0
 
 ### Fixes
 - Fixed `on_load` called before strategy added bug (#2953), thanks @lisiyuan656
+- Fixed filesystem usage in catalog for `isfile` and `isdir` (#2954), thanks @limx0
 
 ### Documentation Updates
 None
