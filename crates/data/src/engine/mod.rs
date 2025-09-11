@@ -683,6 +683,7 @@ impl DataEngine {
                 RequestCommand::Instrument(req) => client.request_instrument(req),
                 RequestCommand::Instruments(req) => client.request_instruments(req),
                 RequestCommand::BookSnapshot(req) => client.request_book_snapshot(req),
+                RequestCommand::OrderBookDepths(req) => client.request_order_book_depths(req),
                 RequestCommand::Quotes(req) => client.request_quotes(req),
                 RequestCommand::Trades(req) => client.request_trades(req),
                 RequestCommand::Bars(req) => client.request_bars(req),
@@ -772,6 +773,10 @@ impl DataEngine {
         log::debug!("{RECV}{RES} {resp:?}");
 
         match &resp {
+            DataResponse::Data(_resp) => {
+                // Custom data responses are handled by the message bus directly
+                // No additional processing needed here
+            }
             DataResponse::Instrument(resp) => {
                 self.handle_instrument_response(resp.data.clone());
             }
@@ -781,7 +786,10 @@ impl DataEngine {
             DataResponse::Quotes(resp) => self.handle_quotes(&resp.data),
             DataResponse::Trades(resp) => self.handle_trades(&resp.data),
             DataResponse::Bars(resp) => self.handle_bars(&resp.data),
-            _ => todo!(),
+            DataResponse::Book(_resp) => {
+                // Book responses are handled by the message bus directly
+                // No additional processing needed here
+            }
         }
 
         msgbus::send_response(resp.correlation_id(), &resp);

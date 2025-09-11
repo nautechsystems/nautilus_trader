@@ -881,7 +881,7 @@ cdef class BacktestEngine:
         self._log.info(f"Added {data_name} stream generator")
 
     cpdef void _handle_data_command(self, DataCommand command):
-        if not(command.data_type.type in [Bar, QuoteTick, TradeTick]
+        if not(command.data_type.type in [Bar, QuoteTick, TradeTick, OrderBookDepth10]
                or type(command) not in [SubscribeData, UnsubscribeData, SubscribeInstruments, UnsubscribeInstruments]):
             return
 

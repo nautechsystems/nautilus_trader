@@ -31,7 +31,7 @@ pub mod unsubscribe;
 // Re-exports
 pub use request::{
     RequestBars, RequestBookSnapshot, RequestCustomData, RequestInstrument, RequestInstruments,
-    RequestQuotes, RequestTrades,
+    RequestOrderBookDepths, RequestQuotes, RequestTrades,
 };
 pub use response::{
     BarsResponse, BookResponse, CustomDataResponse, InstrumentResponse, InstrumentsResponse,
@@ -299,6 +299,7 @@ pub enum RequestCommand {
     Instrument(RequestInstrument),
     Instruments(RequestInstruments),
     BookSnapshot(RequestBookSnapshot),
+    OrderBookDepths(RequestOrderBookDepths),
     Quotes(RequestQuotes),
     Trades(RequestTrades),
     Bars(RequestBars),
@@ -322,6 +323,7 @@ impl RequestCommand {
             Self::Instrument(cmd) => &cmd.request_id,
             Self::Instruments(cmd) => &cmd.request_id,
             Self::BookSnapshot(cmd) => &cmd.request_id,
+            Self::OrderBookDepths(cmd) => &cmd.request_id,
             Self::Quotes(cmd) => &cmd.request_id,
             Self::Trades(cmd) => &cmd.request_id,
             Self::Bars(cmd) => &cmd.request_id,
@@ -334,6 +336,7 @@ impl RequestCommand {
             Self::Instrument(cmd) => cmd.client_id.as_ref(),
             Self::Instruments(cmd) => cmd.client_id.as_ref(),
             Self::BookSnapshot(cmd) => cmd.client_id.as_ref(),
+            Self::OrderBookDepths(cmd) => cmd.client_id.as_ref(),
             Self::Quotes(cmd) => cmd.client_id.as_ref(),
             Self::Trades(cmd) => cmd.client_id.as_ref(),
             Self::Bars(cmd) => cmd.client_id.as_ref(),
@@ -346,6 +349,7 @@ impl RequestCommand {
             Self::Instrument(cmd) => Some(&cmd.instrument_id.venue),
             Self::Instruments(cmd) => cmd.venue.as_ref(),
             Self::BookSnapshot(cmd) => Some(&cmd.instrument_id.venue),
+            Self::OrderBookDepths(cmd) => Some(&cmd.instrument_id.venue),
             Self::Quotes(cmd) => Some(&cmd.instrument_id.venue),
             Self::Trades(cmd) => Some(&cmd.instrument_id.venue),
             // TODO: Extract the below somewhere
@@ -362,6 +366,7 @@ impl RequestCommand {
             Self::Instrument(cmd) => cmd.ts_init,
             Self::Instruments(cmd) => cmd.ts_init,
             Self::BookSnapshot(cmd) => cmd.ts_init,
+            Self::OrderBookDepths(cmd) => cmd.ts_init,
             Self::Quotes(cmd) => cmd.ts_init,
             Self::Trades(cmd) => cmd.ts_init,
             Self::Bars(cmd) => cmd.ts_init,
