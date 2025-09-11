@@ -24,7 +24,7 @@ use crate::backoff::ExponentialBackoff;
 /// Configuration for retry behavior.
 #[derive(Debug, Clone)]
 pub struct RetryConfig {
-    /// Maximum number of retry attempts (total attempts = 1 initial + max_retries).
+    /// Maximum number of retry attempts (total attempts = 1 initial + `max_retries`).
     pub max_retries: u32,
     /// Initial delay between retries in milliseconds.
     pub initial_delay_ms: u64,
@@ -41,7 +41,7 @@ pub struct RetryConfig {
     /// Should be false for HTTP/order operations, true for connection operations.
     pub immediate_first: bool,
     /// Optional maximum total elapsed time for all retries in milliseconds.
-    /// If exceeded, retries stop even if max_retries hasn't been reached.
+    /// If exceeded, retries stop even if `max_retries` hasn't been reached.
     pub max_elapsed_ms: Option<u64>,
 }
 
@@ -78,7 +78,7 @@ where
     /// # Errors
     ///
     /// This function will return an error if the configuration is invalid.
-    pub fn new(config: RetryConfig) -> anyhow::Result<Self> {
+    pub const fn new(config: RetryConfig) -> anyhow::Result<Self> {
         Ok(Self {
             config,
             _phantom: PhantomData,
@@ -129,7 +129,7 @@ where
 
             if let Some(max_elapsed_ms) = self.config.max_elapsed_ms {
                 let elapsed = start_time.elapsed();
-                if elapsed.as_millis() >= max_elapsed_ms as u128 {
+                if elapsed.as_millis() >= u128::from(max_elapsed_ms) {
                     let timeout_error = create_error("Budget exceeded".to_string());
                     tracing::trace!(
                         operation = %operation_name,
@@ -145,7 +145,7 @@ where
                 (Some(timeout_ms), Some(token)) => {
                     tokio::select! {
                         result = tokio::time::timeout(Duration::from_millis(timeout_ms), operation()) => result,
-                        _ = token.cancelled() => {
+                        () = token.cancelled() => {
                             tracing::debug!(
                                 operation = %operation_name,
                                 "Operation canceled during execution"
@@ -160,7 +160,7 @@ where
                 (None, Some(token)) => {
                     tokio::select! {
                         result = operation() => Ok(result),
-                        _ = token.cancelled() => {
+                        () = token.cancelled() => {
                             tracing::debug!(
                                 operation = %operation_name,
                                 "Operation canceled during execution"
@@ -240,8 +240,8 @@ where
 
                     if let Some(token) = cancel {
                         tokio::select! {
-                            _ = tokio::time::sleep(delay) => {},
-                            _ = token.cancelled() => {
+                            () = tokio::time::sleep(delay) => {},
+                            () = token.cancelled() => {
                                 tracing::debug!(
                                     operation = %operation_name,
                                     attempt = attempt + 1,
@@ -317,8 +317,8 @@ where
 
                     if let Some(token) = cancel {
                         tokio::select! {
-                            _ = tokio::time::sleep(delay) => {},
-                            _ = token.cancelled() => {
+                            () = tokio::time::sleep(delay) => {},
+                            () = token.cancelled() => {
                                 tracing::debug!(
                                     operation = %operation_name,
                                     attempt = attempt + 1,
