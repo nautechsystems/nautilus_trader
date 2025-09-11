@@ -61,6 +61,7 @@ from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.aggregation cimport BarAggregator
+from nautilus_trader.data.aggregation cimport RenkoBarAggregator
 from nautilus_trader.data.aggregation cimport TickBarAggregator
 from nautilus_trader.data.aggregation cimport TimeBarAggregator
 from nautilus_trader.data.aggregation cimport ValueBarAggregator
@@ -2494,6 +2495,12 @@ cdef class DataEngine(Component):
             )
         elif bar_type.spec.aggregation == BarAggregation.VALUE:
             aggregator = ValueBarAggregator(
+                instrument=instrument,
+                bar_type=bar_type,
+                handler=self.process,
+            )
+        elif bar_type.spec.aggregation == BarAggregation.RENKO:
+            aggregator = RenkoBarAggregator(
                 instrument=instrument,
                 bar_type=bar_type,
                 handler=self.process,

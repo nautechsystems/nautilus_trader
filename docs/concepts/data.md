@@ -90,6 +90,7 @@ The platform implements various aggregation methods:
 | `VALUE`            | Aggregation of the notional value of trades (also known as "Dollar bars"). | Threshold    |
 | `VALUE_IMBALANCE`  | Aggregation of the buy/sell imbalance of trading by notional value.        | Information  |
 | `VALUE_RUNS`       | Aggregation of sequential buy/sell runs of trading by notional value.      | Threshold    |
+| `RENKO`            | Aggregation based on fixed price movements (brick size in ticks).          | Threshold    |
 | `MILLISECOND`      | Aggregation of time intervals with millisecond granularity.                | Time         |
 | `SECOND`           | Aggregation of time intervals with second granularity.                     | Time         |
 | `MINUTE`           | Aggregation of time intervals with minute granularity.                     | Time         |

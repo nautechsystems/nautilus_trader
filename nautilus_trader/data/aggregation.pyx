@@ -669,6 +669,159 @@ cdef class ValueBarAggregator(BarAggregator):
             assert volume_update >= 0
 
 
+cdef class RenkoBarAggregator(BarAggregator):
+    """
+    Provides a means of building Renko bars from ticks.
+
+    Renko bars are created when the price moves by a fixed amount (brick size)
+    regardless of time or volume. Each bar represents a price movement equal
+    to the step size in the bar specification.
+
+    Parameters
+    ----------
+    instrument : Instrument
+        The instrument for the aggregator.
+    bar_type : BarType
+        The bar type for the aggregator.
+    handler : Callable[[Bar], None]
+        The bar handler for the aggregator.
+
+    Raises
+    ------
+    ValueError
+        If `instrument.id` != `bar_type.instrument_id`.
+    """
+
+    def __init__(
+        self,
+        Instrument instrument not None,
+        BarType bar_type not None,
+        handler not None: Callable[[Bar], None],
+    ) -> None:
+        super().__init__(
+            instrument=instrument,
+            bar_type=bar_type.standard(),
+            handler=handler,
+        )
+
+        # Calculate brick size from step and instrument price increment
+        # step represents number of ticks, so brick_size = step * price_increment
+        self.brick_size = instrument.price_increment.as_decimal() * Decimal(bar_type.spec.step)
+        self._last_close = None
+
+    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event):
+        # Initialize last_close if this is the first update
+        if self._last_close is None:
+            self._last_close = price
+            # For the first update, just store the price and add to builder
+            self._builder.update(price, size, ts_event)
+            return
+
+        # Always update the builder with the current tick
+        self._builder.update(price, size, ts_event)
+
+        last_close = self._last_close
+        price_diff_decimal = price.as_decimal() - last_close.as_decimal()
+        abs_price_diff = abs(price_diff_decimal)
+
+        # Check if we need to create one or more Renko bars
+        if abs_price_diff >= self.brick_size:
+            num_bricks = int(abs_price_diff // self.brick_size)
+            direction = 1 if price_diff_decimal > 0 else -1
+            current_close = last_close
+
+            # Store the current builder volume to distribute across bricks
+            total_volume = self._builder.volume
+
+            for i in range(num_bricks):
+                # Calculate the close price for this brick
+                brick_close_decimal = current_close.as_decimal() + (direction * self.brick_size)
+                brick_close = Price.from_str(str(brick_close_decimal))
+
+                # Set the builder's OHLC for this specific brick
+                self._builder._open = current_close
+                self._builder._close = brick_close
+
+                if direction > 0:
+                    # Upward movement: high = brick_close, low = current_close
+                    self._builder._high = brick_close
+                    self._builder._low = current_close
+                else:
+                    # Downward movement: high = current_close, low = brick_close
+                    self._builder._high = current_close
+                    self._builder._low = brick_close
+
+                # Set the volume for this brick (all accumulated volume goes to each brick)
+                self._builder.volume = total_volume
+
+                # Build and send the bar
+                self._build_and_send(ts_event, ts_event)
+
+                # Update current_close for the next brick
+                current_close = brick_close
+
+            # Update last_close to the final brick close
+            self._last_close = current_close
+        # For Renko bars, we don't build partial bars
+        # If price movement is less than brick size, we just accumulate in the builder
+
+    cdef void _apply_update_bar(self, Bar bar, Quantity volume, uint64_t ts_init):
+        # Initialize last_close if this is the first update
+        if self._last_close is None:
+            self._last_close = bar.close
+            # For the first update, just store the price and add to builder
+            self._builder.update_bar(bar, volume, ts_init)
+            return
+
+        # Always update the builder with the current bar
+        self._builder.update_bar(bar, volume, ts_init)
+
+        last_close = self._last_close
+        price_diff_decimal = bar.close.as_decimal() - last_close.as_decimal()
+        abs_price_diff = abs(price_diff_decimal)
+
+        # Check if we need to create one or more Renko bars
+        if abs_price_diff >= self.brick_size:
+            num_bricks = int(abs_price_diff // self.brick_size)
+            direction = 1 if price_diff_decimal > 0 else -1
+            current_close = last_close
+
+            # Store the current builder volume to distribute across bricks
+            total_volume = self._builder.volume
+
+            for i in range(num_bricks):
+                # Calculate the close price for this brick
+                brick_close_decimal = current_close.as_decimal() + (direction * self.brick_size)
+                brick_close = Price.from_str(str(brick_close_decimal))
+
+                # Set the builder's OHLC for this specific brick
+                self._builder._open = current_close
+                self._builder._close = brick_close
+
+                if direction > 0:
+                    # Upward movement: high = brick_close, low = current_close
+                    self._builder._high = brick_close
+                    self._builder._low = current_close
+                else:
+                    # Downward movement: high = current_close, low = brick_close
+                    self._builder._high = current_close
+                    self._builder._low = brick_close
+
+                # Set the volume for this brick (all accumulated volume goes to each brick)
+                self._builder.volume = total_volume
+
+                # Build and send the bar
+                self._build_and_send(ts_init, ts_init)
+
+                # Update current_close for the next brick
+                current_close = brick_close
+
+            # Update last_close to the final brick close
+            self._last_close = current_close
+        # For Renko bars, we don't build partial bars
+        # If price movement is less than brick size, we just accumulate in the builder
+
+
 cdef class TimeBarAggregator(BarAggregator):
     """
     Provides a means of building time bars from ticks with an internal timer.

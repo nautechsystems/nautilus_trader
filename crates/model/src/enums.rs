@@ -314,6 +314,8 @@ pub enum BarAggregation {
     Month = 16,
     /// Based on time intervals with year granularity.
     Year = 17,
+    /// Based on fixed price movements (brick size).
+    Renko = 18,
 }
 
 /// The interval type for bar aggregation.
