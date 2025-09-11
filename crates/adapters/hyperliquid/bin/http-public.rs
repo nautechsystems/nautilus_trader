@@ -13,7 +13,41 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_hyperliquid::{
+    common::consts::HyperliquidNetwork, http::client::HyperliquidHttpClient,
+};
+use tracing::level_filters::LevelFilter;
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tracing_subscriber::fmt()
+        .with_max_level(LevelFilter::INFO)
+        .init();
+
+    let network = HyperliquidNetwork::from_env();
+    let client = HyperliquidHttpClient::new(network, Some(60));
+
+    // Fetch metadata
+    let meta = client.info_meta().await?;
+    tracing::info!("Fetched {} markets", meta.universe.len());
+
+    // Fetch BTC order book
+    if let Ok(book) = client.info_l2_book("BTC").await {
+        let best_bid = book
+            .levels
+            .first()
+            .and_then(|bids| bids.first())
+            .map(|l| l.px.clone())
+            .unwrap_or_default();
+        let best_ask = book
+            .levels
+            .get(1)
+            .and_then(|asks| asks.first())
+            .map(|l| l.px.clone())
+            .unwrap_or_default();
+
+        tracing::info!("BTC best bid: {}, best ask: {}", best_bid, best_ask);
+    }
+
     Ok(())
 }
