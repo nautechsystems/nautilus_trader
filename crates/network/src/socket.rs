@@ -17,16 +17,16 @@
 //! with exponential backoff and state management.
 
 //! **Key features**:
-//! - Connection state tracking (ACTIVE/RECONNECTING/DISCONNECTING/CLOSED)
-//! - Synchronized reconnection with backoff
-//! - Split read/write architecture
-//! - Python callback integration
+//! - Connection state tracking (ACTIVE/RECONNECTING/DISCONNECTING/CLOSED).
+//! - Synchronized reconnection with backoff.
+//! - Split read/write architecture.
+//! - Python callback integration.
 //!
 //! **Design**:
-//! - Single reader, multiple writer model
-//! - Read half runs in dedicated task
-//! - Write half runs in dedicated task connected with channel
-//! - Controller task manages lifecycle
+//! - Single reader, multiple writer model.
+//! - Read half runs in dedicated task.
+//! - Write half runs in dedicated task connected with channel.
+//! - Controller task manages lifecycle.
 
 use std::{
     fmt::Debug,
@@ -1216,20 +1216,9 @@ mod rust_tests {
         };
 
         // Connect client (handler=None)
-        let client = {
-            #[cfg(feature = "python")]
-            {
-                SocketClient::connect(config.clone(), None, None, None)
-                    .await
-                    .unwrap()
-            }
-            #[cfg(not(feature = "python"))]
-            {
-                SocketClient::connect(config.clone(), None, None, None)
-                    .await
-                    .unwrap()
-            }
-        };
+        let client = SocketClient::connect(config.clone(), None, None, None)
+            .await
+            .unwrap();
 
         // Allow server to drop connection and client to notice
         sleep(Duration::from_millis(100)).await;
