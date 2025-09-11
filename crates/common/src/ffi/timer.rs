@@ -50,7 +50,7 @@ pub struct TimeEventHandler {
 // -----------------------------------------------------------------------------
 //
 // The legacy `TimeEventHandler` handed to Cython stores only a borrowed
-// `PyObject*` (`callback_ptr`).  To make sure the pointed-to Python object
+// `Py<PyAny>*` (`callback_ptr`).  To make sure the pointed-to Python object
 // stays alive while *any* handler referencing it exists we keep a single
 // `Arc<Py<PyAny>>` per raw pointer in this registry together with a manual
 // reference counter.
@@ -64,7 +64,7 @@ pub struct TimeEventHandler {
 // Drop strategy:
 //   1. Cloning a handler increments the per-pointer counter.
 //   2. Dropping a handler decrements it; if the count hits zero we remove the
-//      entry *then* release the `Arc` under `Python::with_gil`.
+//      entry *then* release the `Arc` under `Python::attach`.
 //      The drop happens *outside* the mutex guard to avoid dead-locking when
 //      Python finalisers re-enter the registry.
 //
@@ -72,7 +72,7 @@ pub struct TimeEventHandler {
 // leaks, and is safe on any thread.
 
 #[cfg(feature = "python")]
-type CallbackEntry = (PyObject, usize); // (object, ref_count)
+type CallbackEntry = (Py<PyAny>, usize); // (object, ref_count)
 
 #[cfg(feature = "python")]
 fn registry() -> &'static Mutex<HashMap<usize, CallbackEntry>> {
@@ -97,12 +97,12 @@ pub fn registry_size() -> usize {
 #[cfg(feature = "python")]
 pub fn cleanup_callback_registry() {
     // Drain entries while locked, then drop callbacks with the GIL outside
-    let callbacks: Vec<PyObject> = {
+    let callbacks: Vec<Py<PyAny>> = {
         let mut map = registry_lock();
         map.drain().map(|(_, (obj, _))| obj).collect()
     };
 
-    Python::with_gil(|_| {
+    Python::attach(|_| {
         for cb in callbacks {
             drop(cb);
         }
@@ -167,7 +167,7 @@ impl Drop for TimeEventHandler {
             }
             // This was the final handler – remove entry and drop Arc under GIL
             let (arc, _) = map.remove(&key).unwrap();
-            Python::with_gil(|_| drop(arc));
+            Python::attach(|_| drop(arc));
         }
     }
 }
@@ -209,9 +209,8 @@ mod tests {
 
     #[rstest]
     fn registry_clears_after_handler_drop() {
-        pyo3::prepare_freethreaded_python();
-
-        Python::with_gil(|py| {
+        Python::initialize();
+        Python::attach(|py| {
             let py_list = PyList::empty(py);
             let callback = TimeEventCallback::from(Py::from(py_list.getattr("append").unwrap()));
 

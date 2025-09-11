@@ -9,10 +9,10 @@ None
 None
 
 ### Internal Improvements
-None
+- Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.26.0
 
 ### Fixes
-None
+- Fixed `on_load` called before strategy added bug (#2953), thanks @lisiyuan656
 
 ### Documentation Updates
 None

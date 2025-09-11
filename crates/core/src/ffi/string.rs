@@ -49,7 +49,7 @@ use ustr::Ustr;
 #[must_use]
 pub unsafe fn pystr_to_string(ptr: *mut ffi::PyObject) -> String {
     assert!(!ptr.is_null(), "`ptr` was NULL");
-    Python::with_gil(|py| unsafe { Bound::from_borrowed_ptr(py, ptr).to_string() })
+    Python::attach(|py| unsafe { Bound::from_borrowed_ptr(py, ptr).to_string() })
 }
 
 /// Convert a C string pointer into an owned `String`.
@@ -204,9 +204,9 @@ mod tests {
     #[cfg_attr(miri, ignore)]
     #[rstest]
     fn test_pystr_to_string() {
-        pyo3::prepare_freethreaded_python();
+        Python::initialize();
         // Create a valid Python object pointer
-        let ptr = Python::with_gil(|py| PyString::new(py, "test string1").as_ptr());
+        let ptr = Python::attach(|py| PyString::new(py, "test string1").as_ptr());
         let result = unsafe { pystr_to_string(ptr) };
         assert_eq!(result, "test string1");
     }

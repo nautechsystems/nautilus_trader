@@ -53,11 +53,11 @@ impl Money {
         Ok(())
     }
 
-    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+    fn __getstate__(&self, py: Python) -> PyResult<Py<PyAny>> {
         (self.raw, self.currency.code.to_string()).into_py_any(py)
     }
 
-    fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
+    fn __reduce__(&self, py: Python) -> PyResult<Py<PyAny>> {
         let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
         let state = self.__getstate__(py)?;
         (safe_constructor, PyTuple::empty(py), state).into_py_any(py)
@@ -68,7 +68,7 @@ impl Money {
         Self::new(0.0, Currency::AUD())
     }
 
-    fn __add__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
+    fn __add__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<Py<PyAny>> {
         if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract::<f64>()?;
             (self.as_f64() + other_float).into_py_any(py)
@@ -84,7 +84,7 @@ impl Money {
         }
     }
 
-    fn __radd__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
+    fn __radd__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<Py<PyAny>> {
         if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
             (other_float + self.as_f64()).into_py_any(py)
@@ -100,7 +100,7 @@ impl Money {
         }
     }
 
-    fn __sub__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
+    fn __sub__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<Py<PyAny>> {
         if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
             (self.as_f64() - other_float).into_py_any(py)
@@ -116,7 +116,7 @@ impl Money {
         }
     }
 
-    fn __rsub__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
+    fn __rsub__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<Py<PyAny>> {
         if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
             (other_float - self.as_f64()).into_py_any(py)
@@ -132,7 +132,7 @@ impl Money {
         }
     }
 
-    fn __mul__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
+    fn __mul__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<Py<PyAny>> {
         if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
             (self.as_f64() * other_float).into_py_any(py)
@@ -148,7 +148,7 @@ impl Money {
         }
     }
 
-    fn __rmul__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
+    fn __rmul__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<Py<PyAny>> {
         if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
             (other_float * self.as_f64()).into_py_any(py)
@@ -164,7 +164,7 @@ impl Money {
         }
     }
 
-    fn __truediv__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
+    fn __truediv__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<Py<PyAny>> {
         if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
             (self.as_f64() / other_float).into_py_any(py)
@@ -180,7 +180,7 @@ impl Money {
         }
     }
 
-    fn __rtruediv__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
+    fn __rtruediv__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<Py<PyAny>> {
         if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
             (other_float / self.as_f64()).into_py_any(py)
@@ -196,7 +196,7 @@ impl Money {
         }
     }
 
-    fn __floordiv__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
+    fn __floordiv__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<Py<PyAny>> {
         if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
             (self.as_f64() / other_float).floor().into_py_any(py)
@@ -214,7 +214,7 @@ impl Money {
         }
     }
 
-    fn __rfloordiv__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
+    fn __rfloordiv__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<Py<PyAny>> {
         if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
             (other_float / self.as_f64()).floor().into_py_any(py)
@@ -232,7 +232,7 @@ impl Money {
         }
     }
 
-    fn __mod__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
+    fn __mod__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<Py<PyAny>> {
         if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
             (self.as_f64() % other_float).into_py_any(py)
@@ -248,7 +248,7 @@ impl Money {
         }
     }
 
-    fn __rmod__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
+    fn __rmod__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<Py<PyAny>> {
         if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
             (other_float % self.as_f64()).into_py_any(py)
@@ -292,7 +292,7 @@ impl Money {
             .round_dp_with_strategy(ndigits.unwrap_or(0), RoundingStrategy::MidpointNearestEven)
     }
 
-    fn __richcmp__(&self, other: PyObject, op: CompareOp, py: Python<'_>) -> PyResult<Py<PyAny>> {
+    fn __richcmp__(&self, other: Py<PyAny>, op: CompareOp, py: Python<'_>) -> PyResult<Py<PyAny>> {
         if let Ok(other_money) = other.extract::<Self>(py) {
             if self.currency != other_money.currency {
                 return Err(PyErr::new::<PyValueError, _>(

@@ -96,7 +96,7 @@ impl OKXHttpClient {
     ///
     /// Returns a Python exception if adding the instrument to the cache fails.
     #[pyo3(name = "add_instrument")]
-    pub fn py_add_instrument(&mut self, py: Python<'_>, instrument: PyObject) -> PyResult<()> {
+    pub fn py_add_instrument(&mut self, py: Python<'_>, instrument: Py<PyAny>) -> PyResult<()> {
         self.add_instrument(pyobject_to_instrument_any(py, instrument)?);
         Ok(())
     }
@@ -115,7 +115,7 @@ impl OKXHttpClient {
                 .set_position_mode(position_mode)
                 .await
                 .map_err(to_pyvalue_err)?;
-            Ok(Python::with_gil(|py| py.None()))
+            Ok(Python::attach(|py| py.None()))
         })
     }
 
@@ -133,7 +133,7 @@ impl OKXHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let py_instruments: PyResult<Vec<_>> = instruments
                     .into_iter()
                     .map(|inst| instrument_any_to_pyobject(py, inst))
@@ -160,7 +160,7 @@ impl OKXHttpClient {
                 .request_account_state(account_id)
                 .await
                 .map_err(to_pyvalue_err)?;
-            Ok(Python::with_gil(|py| account_state.into_py_any_unwrap(py)))
+            Ok(Python::attach(|py| account_state.into_py_any_unwrap(py)))
         })
     }
 
@@ -181,7 +181,7 @@ impl OKXHttpClient {
                 .request_trades(instrument_id, start, end, limit)
                 .await
                 .map_err(to_pyvalue_err)?;
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let pylist = PyList::new(py, trades.into_iter().map(|t| t.into_py_any_unwrap(py)))?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
@@ -205,7 +205,7 @@ impl OKXHttpClient {
                 .request_bars(bar_type, start, end, limit)
                 .await
                 .map_err(to_pyvalue_err)?;
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let pylist =
                     PyList::new(py, bars.into_iter().map(|bar| bar.into_py_any_unwrap(py)))?;
                 Ok(pylist.into_py_any_unwrap(py))
@@ -226,7 +226,7 @@ impl OKXHttpClient {
                 .request_mark_price(instrument_id)
                 .await
                 .map_err(to_pyvalue_err)?;
-            Ok(Python::with_gil(|py| mark_price.into_py_any_unwrap(py)))
+            Ok(Python::attach(|py| mark_price.into_py_any_unwrap(py)))
         })
     }
 
@@ -243,7 +243,7 @@ impl OKXHttpClient {
                 .request_index_price(instrument_id)
                 .await
                 .map_err(to_pyvalue_err)?;
-            Ok(Python::with_gil(|py| index_price.into_py_any_unwrap(py)))
+            Ok(Python::attach(|py| index_price.into_py_any_unwrap(py)))
         })
     }
 
@@ -276,7 +276,7 @@ impl OKXHttpClient {
                 )
                 .await
                 .map_err(to_pyvalue_err)?;
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let pylist =
                     PyList::new(py, reports.into_iter().map(|t| t.into_py_any_unwrap(py)))?;
                 Ok(pylist.into_py_any_unwrap(py))
@@ -311,7 +311,7 @@ impl OKXHttpClient {
                 )
                 .await
                 .map_err(to_pyvalue_err)?;
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let pylist = PyList::new(py, trades.into_iter().map(|t| t.into_py_any_unwrap(py)))?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
@@ -334,7 +334,7 @@ impl OKXHttpClient {
                 .request_position_status_reports(account_id, instrument_type, instrument_id)
                 .await
                 .map_err(to_pyvalue_err)?;
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let pylist =
                     PyList::new(py, reports.into_iter().map(|t| t.into_py_any_unwrap(py)))?;
                 Ok(pylist.into_py_any_unwrap(py))

@@ -363,6 +363,7 @@ async fn test_cancel_order() {
 
 #[rstest]
 #[tokio::test]
+#[ignore = "slow test, revisit setup"] // TODO: Improve test setup to avoid slow test run time
 async fn test_rate_limiting() {
     let (addr, _state) = start_test_server().await.unwrap();
     let base_url = format!("http://{}", addr);

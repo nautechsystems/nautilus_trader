@@ -61,12 +61,12 @@ impl RedisCacheDatabase {
     }
 
     #[pyo3(name = "load_all")]
-    fn py_load_all(&mut self) -> PyResult<PyObject> {
+    fn py_load_all(&mut self) -> PyResult<Py<PyAny>> {
         let result = get_runtime().block_on(async {
             DatabaseQueries::load_all(&self.con, self.get_encoding(), self.get_trader_key()).await
         });
         match result {
-            Ok(cache_map) => Python::with_gil(|py| {
+            Ok(cache_map) => Python::attach(|py| {
                 let dict = PyDict::new(py);
 
                 // Load currencies
@@ -139,14 +139,14 @@ impl RedisCacheDatabase {
     }
 
     #[pyo3(name = "read")]
-    fn py_read(&mut self, py: Python, key: &str) -> PyResult<Vec<PyObject>> {
+    fn py_read(&mut self, py: Python, key: &str) -> PyResult<Vec<Py<PyAny>>> {
         let result = get_runtime().block_on(async { self.read(key).await });
         match result {
             Ok(result) => {
                 let vec_py_bytes = result
                     .into_iter()
                     .map(|r| PyBytes::new(py, r.as_ref()).into())
-                    .collect::<Vec<PyObject>>();
+                    .collect::<Vec<Py<PyAny>>>();
                 Ok(vec_py_bytes)
             }
             Err(e) => Err(to_pyruntime_err(e)),
@@ -154,14 +154,14 @@ impl RedisCacheDatabase {
     }
 
     #[pyo3(name = "read_bulk")]
-    fn py_read_bulk(&mut self, py: Python, keys: Vec<String>) -> PyResult<Vec<Option<PyObject>>> {
+    fn py_read_bulk(&mut self, py: Python, keys: Vec<String>) -> PyResult<Vec<Option<Py<PyAny>>>> {
         let result = get_runtime().block_on(async { self.read_bulk(&keys).await });
         match result {
             Ok(results) => {
                 let vec_py_bytes = results
                     .into_iter()
                     .map(|opt| opt.map(|bytes| PyBytes::new(py, bytes.as_ref()).into()))
-                    .collect::<Vec<Option<PyObject>>>();
+                    .collect::<Vec<Option<Py<PyAny>>>>();
                 Ok(vec_py_bytes)
             }
             Err(e) => Err(to_pyruntime_err(e)),

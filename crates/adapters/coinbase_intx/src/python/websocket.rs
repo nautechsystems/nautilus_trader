@@ -114,8 +114,8 @@ impl CoinbaseIntxWebSocketClient {
     fn py_connect<'py>(
         &mut self,
         py: Python<'py>,
-        instruments: Vec<PyObject>,
-        callback: PyObject,
+        instruments: Vec<Py<PyAny>>,
+        callback: Py<PyAny>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let mut instruments_any = Vec::new();
         for inst in instruments {
@@ -137,37 +137,37 @@ impl CoinbaseIntxWebSocketClient {
 
                 while let Some(msg) = stream.next().await {
                     match msg {
-                        NautilusWsMessage::Instrument(inst) => Python::with_gil(|py| {
+                        NautilusWsMessage::Instrument(inst) => Python::attach(|py| {
                             let py_obj = instrument_any_to_pyobject(py, inst)
                                 .expect("Failed to create instrument");
                             call_python(py, &callback, py_obj);
                         }),
-                        NautilusWsMessage::Data(data) => Python::with_gil(|py| {
+                        NautilusWsMessage::Data(data) => Python::attach(|py| {
                             let py_obj = data_to_pycapsule(py, data);
                             call_python(py, &callback, py_obj);
                         }),
-                        NautilusWsMessage::DataVec(data_vec) => Python::with_gil(|py| {
+                        NautilusWsMessage::DataVec(data_vec) => Python::attach(|py| {
                             for data in data_vec {
                                 let py_obj = data_to_pycapsule(py, data);
                                 call_python(py, &callback, py_obj);
                             }
                         }),
-                        NautilusWsMessage::Deltas(deltas) => Python::with_gil(|py| {
+                        NautilusWsMessage::Deltas(deltas) => Python::attach(|py| {
                             call_python(py, &callback, deltas.into_py_any_unwrap(py));
                         }),
-                        NautilusWsMessage::MarkPrice(mark_price) => Python::with_gil(|py| {
+                        NautilusWsMessage::MarkPrice(mark_price) => Python::attach(|py| {
                             call_python(py, &callback, mark_price.into_py_any_unwrap(py));
                         }),
-                        NautilusWsMessage::IndexPrice(index_price) => Python::with_gil(|py| {
+                        NautilusWsMessage::IndexPrice(index_price) => Python::attach(|py| {
                             call_python(py, &callback, index_price.into_py_any_unwrap(py));
                         }),
                         NautilusWsMessage::MarkAndIndex((mark_price, index_price)) => {
-                            Python::with_gil(|py| {
+                            Python::attach(|py| {
                                 call_python(py, &callback, mark_price.into_py_any_unwrap(py));
                                 call_python(py, &callback, index_price.into_py_any_unwrap(py));
                             });
                         }
-                        NautilusWsMessage::OrderEvent(msg) => Python::with_gil(|py| {
+                        NautilusWsMessage::OrderEvent(msg) => Python::attach(|py| {
                             let py_obj =
                                 order_event_to_pyobject(py, msg).expect("Failed to create event");
                             call_python(py, &callback, py_obj);
@@ -436,7 +436,7 @@ impl CoinbaseIntxWebSocketClient {
     }
 }
 
-pub fn call_python(py: Python, callback: &PyObject, py_obj: PyObject) {
+pub fn call_python(py: Python, callback: &Py<PyAny>, py_obj: Py<PyAny>) {
     if let Err(e) = callback.call1(py, (py_obj,)) {
         tracing::error!("Error calling Python: {e}");
     }

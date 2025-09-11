@@ -121,8 +121,8 @@ impl BitmexWebSocketClient {
     fn py_connect<'py>(
         &mut self,
         py: Python<'py>,
-        instruments: Vec<PyObject>,
-        callback: PyObject,
+        instruments: Vec<Py<PyAny>>,
+        callback: Py<PyAny>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let mut instruments_any = Vec::new();
         for inst in instruments {
@@ -143,7 +143,7 @@ impl BitmexWebSocketClient {
                 tokio::pin!(stream);
 
                 while let Some(msg) = stream.next().await {
-                    Python::with_gil(|py| match msg {
+                    Python::attach(|py| match msg {
                         NautilusWsMessage::Data(data_vec) => {
                             for data in data_vec {
                                 let py_obj = data_to_pycapsule(py, data);
@@ -688,7 +688,7 @@ impl BitmexWebSocketClient {
     }
 }
 
-pub fn call_python(py: Python, callback: &PyObject, py_obj: PyObject) {
+pub fn call_python(py: Python, callback: &Py<PyAny>, py_obj: Py<PyAny>) {
     if let Err(e) = callback.call1(py, (py_obj,)) {
         tracing::error!("Error calling Python: {e}");
     }

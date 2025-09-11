@@ -195,8 +195,8 @@ impl OKXWebSocketClient {
     fn py_connect<'py>(
         &mut self,
         py: Python<'py>,
-        instruments: Vec<PyObject>,
-        callback: PyObject,
+        instruments: Vec<Py<PyAny>>,
+        callback: Py<PyAny>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let mut instruments_any = Vec::new();
         for inst in instruments {
@@ -223,7 +223,7 @@ impl OKXWebSocketClient {
                                 instrument_any_to_pyobject(py, *msg)
                             });
                         }
-                        NautilusWsMessage::Data(msg) => Python::with_gil(|py| {
+                        NautilusWsMessage::Data(msg) => Python::attach(|py| {
                             for data in msg {
                                 let py_obj = data_to_pycapsule(py, data);
                                 call_python(py, &callback, py_obj);
@@ -259,7 +259,7 @@ impl OKXWebSocketClient {
                                 };
                             }
                         }
-                        NautilusWsMessage::Deltas(msg) => Python::with_gil(|py| {
+                        NautilusWsMessage::Deltas(msg) => Python::attach(|py| {
                             let py_obj =
                                 data_to_pycapsule(py, Data::Deltas(OrderBookDeltas_API::new(msg)));
                             call_python(py, &callback, py_obj);
@@ -928,7 +928,7 @@ impl OKXWebSocketClient {
     fn py_batch_submit_orders<'py>(
         &self,
         py: Python<'py>,
-        orders: Vec<PyObject>,
+        orders: Vec<Py<PyAny>>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let mut domain_orders = Vec::with_capacity(orders.len());
 
@@ -998,7 +998,7 @@ impl OKXWebSocketClient {
     fn py_batch_cancel_orders<'py>(
         &self,
         py: Python<'py>,
-        orders: Vec<PyObject>,
+        orders: Vec<Py<PyAny>>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let mut domain_orders = Vec::with_capacity(orders.len());
 
@@ -1030,7 +1030,7 @@ impl OKXWebSocketClient {
     fn py_batch_modify_orders<'py>(
         &self,
         py: Python<'py>,
-        orders: Vec<PyObject>,
+        orders: Vec<Py<PyAny>>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let mut domain_orders = Vec::with_capacity(orders.len());
 
@@ -1091,17 +1091,17 @@ impl OKXWebSocketClient {
     }
 }
 
-pub fn call_python(py: Python, callback: &PyObject, py_obj: PyObject) {
+pub fn call_python(py: Python, callback: &Py<PyAny>, py_obj: Py<PyAny>) {
     if let Err(e) = callback.call1(py, (py_obj,)) {
         tracing::error!("Error calling Python: {e}");
     }
 }
 
-fn call_python_with_data<F>(callback: &PyObject, data_converter: F)
+fn call_python_with_data<F>(callback: &Py<PyAny>, data_converter: F)
 where
-    F: FnOnce(Python) -> PyResult<PyObject>,
+    F: FnOnce(Python) -> PyResult<Py<PyAny>>,
 {
-    Python::with_gil(|py| match data_converter(py) {
+    Python::attach(|py| match data_converter(py) {
         Ok(py_obj) => call_python(py, callback, py_obj),
         Err(e) => tracing::error!("Failed to convert data to Python object: {e}"),
     });

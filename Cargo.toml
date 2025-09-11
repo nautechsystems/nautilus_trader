@@ -142,7 +142,7 @@ object_store = { version = "0.12.3", default-features = false, features = [
 parquet = { version = "55.2.0", default-features = false, features = ["arrow", "async"] }
 pem = "3.0.5"
 procfs = "0.18.0"
-pyo3 = { version = "0.25.1", default-features = false, features = [
+pyo3 = { version = "0.26.0", default-features = false, features = [
   "chrono",
   "hashbrown",
   "indexmap",
@@ -150,7 +150,7 @@ pyo3 = { version = "0.25.1", default-features = false, features = [
   "rust_decimal",
   "serde",
 ] }
-pyo3-async-runtimes = { version = "0.25.0", default-features = false, features = [
+pyo3-async-runtimes = { version = "0.26.0", default-features = false, features = [
   "attributes",
   "tokio",
   "tokio-runtime",
