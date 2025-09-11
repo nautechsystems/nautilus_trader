@@ -269,8 +269,6 @@ mod tests {
     #[rstest]
     fn test_builder_build() {
         #[cfg(feature = "python")]
-        pyo3::prepare_freethreaded_python();
-
         let result = NautilusKernelBuilder::default().build();
         assert!(result.is_ok());
 

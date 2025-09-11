@@ -191,7 +191,7 @@ impl Equity {
 
     #[getter]
     #[pyo3(name = "info")]
-    fn py_info(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn py_info(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         Ok(PyDict::new(py).into())
     }
 
@@ -202,7 +202,7 @@ impl Equity {
     }
 
     #[pyo3(name = "to_dict")]
-    fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let dict = PyDict::new(py);
         dict.set_item("type", stringify!(Equity))?;
         dict.set_item("id", self.id.to_string())?;

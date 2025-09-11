@@ -119,7 +119,7 @@ impl BitmexHttpClient {
             //     .await
             //     .map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| -> PyResult<PyObject> {
+            Python::attach(|py| -> PyResult<Py<PyAny>> {
                 // report.into_py_any(py).map_err(to_pyvalue_err)
                 Ok(py.None())
             })
@@ -140,7 +140,7 @@ impl BitmexHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| match instrument {
+            Python::attach(|py| match instrument {
                 Some(inst) => instrument_any_to_pyobject(py, inst),
                 None => Ok(py.None()),
             })
@@ -161,7 +161,7 @@ impl BitmexHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let py_instruments: PyResult<Vec<_>> = instruments
                     .into_iter()
                     .map(|inst| instrument_any_to_pyobject(py, inst))
@@ -191,7 +191,7 @@ impl BitmexHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let py_trades: PyResult<Vec<_>> = trades
                     .into_iter()
                     .map(|trade| trade.into_py_any(py))
@@ -218,8 +218,8 @@ impl BitmexHttpClient {
                 .query_order(instrument_id, client_order_id, venue_order_id)
                 .await
             {
-                Ok(Some(report)) => Python::with_gil(|py| report.into_py_any(py)),
-                Ok(None) => Ok(Python::with_gil(|py| py.None())),
+                Ok(Some(report)) => Python::attach(|py| report.into_py_any(py)),
+                Ok(None) => Ok(Python::attach(|py| py.None())),
                 Err(e) => Err(to_pyvalue_err(e)),
             }
         })
@@ -242,7 +242,7 @@ impl BitmexHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let py_reports: PyResult<Vec<_>> = reports
                     .into_iter()
                     .map(|report| report.into_py_any(py))
@@ -269,7 +269,7 @@ impl BitmexHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let py_reports: PyResult<Vec<_>> = reports
                     .into_iter()
                     .map(|report| report.into_py_any(py))
@@ -293,7 +293,7 @@ impl BitmexHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let py_reports: PyResult<Vec<_>> = reports
                     .into_iter()
                     .map(|report| report.into_py_any(py))
@@ -354,7 +354,7 @@ impl BitmexHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| report.into_py_any(py))
+            Python::attach(|py| report.into_py_any(py))
         })
     }
 
@@ -375,7 +375,7 @@ impl BitmexHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| report.into_py_any(py))
+            Python::attach(|py| report.into_py_any(py))
         })
     }
 
@@ -396,7 +396,7 @@ impl BitmexHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let py_reports: PyResult<Vec<_>> = reports
                     .into_iter()
                     .map(|report| report.into_py_any(py))
@@ -423,7 +423,7 @@ impl BitmexHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let py_reports: PyResult<Vec<_>> = reports
                     .into_iter()
                     .map(|report| report.into_py_any(py))
@@ -469,12 +469,12 @@ impl BitmexHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| report.into_py_any(py))
+            Python::attach(|py| report.into_py_any(py))
         })
     }
 
     #[pyo3(name = "add_instrument")]
-    fn py_add_instrument(&mut self, py: Python, instrument: PyObject) -> PyResult<()> {
+    fn py_add_instrument(&mut self, py: Python, instrument: Py<PyAny>) -> PyResult<()> {
         let inst_any = pyobject_to_instrument_any(py, instrument)?;
         self.add_instrument(inst_any);
         Ok(())
@@ -494,7 +494,7 @@ impl BitmexHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 // Create a simple Python object with just the account field we need
                 // We can expand this if more fields are needed
                 let account = margin.account;
@@ -517,7 +517,7 @@ impl BitmexHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| account_state.into_py_any(py).map_err(to_pyvalue_err))
+            Python::attach(|py| account_state.into_py_any(py).map_err(to_pyvalue_err))
         })
     }
 
@@ -525,12 +525,12 @@ impl BitmexHttpClient {
     fn py_submit_orders_bulk<'py>(
         &self,
         py: Python<'py>,
-        orders: Vec<PyObject>,
+        orders: Vec<Py<PyAny>>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let _client = self.clone();
 
         // Convert Python objects to PostOrderParams
-        let _params = Python::with_gil(|_py| {
+        let _params = Python::attach(|_py| {
             orders
                 .into_iter()
                 .map(|obj| {
@@ -545,8 +545,8 @@ impl BitmexHttpClient {
             // Call the bulk order method once it's implemented
             // let reports = client.submit_orders_bulk(params).await.map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| -> PyResult<PyObject> {
-                let py_list = PyList::new(py, Vec::<PyObject>::new())?;
+            Python::attach(|py| -> PyResult<Py<PyAny>> {
+                let py_list = PyList::new(py, Vec::<Py<PyAny>>::new())?;
                 // for report in reports {
                 //     py_list.append(report.into_py_any(py)?)?;
                 // }
@@ -559,12 +559,12 @@ impl BitmexHttpClient {
     fn py_modify_orders_bulk<'py>(
         &self,
         py: Python<'py>,
-        orders: Vec<PyObject>,
+        orders: Vec<Py<PyAny>>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let _client = self.clone();
 
         // Convert Python objects to PutOrderParams
-        let _params = Python::with_gil(|_py| {
+        let _params = Python::attach(|_py| {
             orders
                 .into_iter()
                 .map(|obj| {
@@ -579,8 +579,8 @@ impl BitmexHttpClient {
             // Call the bulk amend method once it's implemented
             // let reports = client.modify_orders_bulk(params).await.map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| -> PyResult<PyObject> {
-                let py_list = PyList::new(py, Vec::<PyObject>::new())?;
+            Python::attach(|py| -> PyResult<Py<PyAny>> {
+                let py_list = PyList::new(py, Vec::<Py<PyAny>>::new())?;
                 // for report in reports {
                 //     py_list.append(report.into_py_any(py)?)?;
                 // }

@@ -125,7 +125,7 @@ impl OrderDenied {
     }
 
     #[pyo3(name = "to_dict")]
-    fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let dict = PyDict::new(py);
         dict.set_item("type", stringify!(OrderDenied))?;
         dict.set_item("trader_id", self.trader_id.to_string())?;

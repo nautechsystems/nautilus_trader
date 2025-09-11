@@ -481,9 +481,6 @@ class NautilusKernel:
             loop=self._loop,
         )
 
-        if self._load_state:
-            self._trader.load()
-
         # Add controller
         self._controller: Controller | None = None
 
@@ -529,6 +526,9 @@ class NautilusKernel:
         for strategy_config in config.strategies:
             strategy: Strategy = StrategyFactory.create(strategy_config)
             self._trader.add_strategy(strategy)
+
+        if self._load_state:
+            self._trader.load()
 
         # Create importable execution algorithms
         for exec_algorithm_config in config.exec_algorithms:

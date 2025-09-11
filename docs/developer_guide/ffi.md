@@ -36,7 +36,7 @@ once the capsule becomes unreachable. The closure/destructor is responsible
 for reconstructing the original `Box<T>` or `Vec<T>` and letting it drop.
 
 ```rust
-Python::with_gil(|py| {
+Python::attach(|py| {
     // allocate the value on the heap
     let my_data = MyStruct::new();
 

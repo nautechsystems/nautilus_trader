@@ -68,7 +68,7 @@ impl Currency {
         Ok(())
     }
 
-    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+    fn __getstate__(&self, py: Python) -> PyResult<Py<PyAny>> {
         (
             self.code.to_string(),
             self.precision,
@@ -79,7 +79,7 @@ impl Currency {
             .into_py_any(py)
     }
 
-    fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
+    fn __reduce__(&self, py: Python) -> PyResult<Py<PyAny>> {
         let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
         let state = self.__getstate__(py)?;
         (safe_constructor, PyTuple::empty(py), state).into_py_any(py)

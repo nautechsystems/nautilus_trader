@@ -889,7 +889,7 @@ impl Drop for SocketClient {
 #[cfg(target_os = "linux")] // Only run network tests on Linux (CI stability)
 mod tests {
     use nautilus_common::testing::wait_until_async;
-    use pyo3::prepare_freethreaded_python;
+    use pyo3::Python;
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
         net::{TcpListener, TcpStream},
@@ -943,7 +943,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_basic_send_receive() {
-        prepare_freethreaded_python();
+        Python::initialize();
 
         let (port, listener) = bind_test_server().await;
         let server_task = task::spawn(async move {
@@ -982,7 +982,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_reconnect_fail_exhausted() {
-        prepare_freethreaded_python();
+        Python::initialize();
 
         let (port, listener) = bind_test_server().await;
         drop(listener); // We drop it immediately -> no server is listening
@@ -1010,7 +1010,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_user_disconnect() {
-        prepare_freethreaded_python();
+        Python::initialize();
 
         let (port, listener) = bind_test_server().await;
         let server_task = task::spawn(async move {
@@ -1048,7 +1048,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_heartbeat() {
-        prepare_freethreaded_python();
+        Python::initialize();
 
         let (port, listener) = bind_test_server().await;
         let received = Arc::new(Mutex::new(Vec::new()));
@@ -1117,7 +1117,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_reconnect_success() {
-        prepare_freethreaded_python();
+        Python::initialize();
 
         let (port, listener) = bind_test_server().await;
 

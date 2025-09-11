@@ -1,3 +1,27 @@
+# NautilusTrader 1.221.0 Beta
+
+Released on TBD (UTC).
+
+### Enhancements
+None
+
+### Breaking Changes
+None
+
+### Internal Improvements
+- Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.26.0
+
+### Fixes
+- Fixed `on_load` called before strategy added bug (#2953), thanks @lisiyuan656
+
+### Documentation Updates
+None
+
+### Deprecations
+None
+
+---
+
 # NautilusTrader 1.220.0 Beta
 
 Released on 9th September 2025 (UTC).

@@ -87,7 +87,7 @@ impl DataType {
 /// encapsulated `Data` safely, especially when converting the capsule back to a
 /// Rust data structure.
 #[must_use]
-pub fn data_to_pycapsule(py: Python, data: Data) -> PyObject {
+pub fn data_to_pycapsule(py: Python, data: Data) -> Py<PyAny> {
     // Register a destructor which simply drops the `Data` value once the
     // capsule is released by Python.
     let capsule = PyCapsule::new_with_destructor(py, data, None, |_, _| {})

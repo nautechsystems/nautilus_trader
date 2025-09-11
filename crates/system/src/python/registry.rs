@@ -21,17 +21,17 @@ use pyo3::prelude::*;
 
 use crate::factories::{ClientConfig, DataClientFactory};
 
-/// Function type for extracting a `PyObject` factory to a boxed `DataClientFactory` trait object.
+/// Function type for extracting a `Py<PyAny>` factory to a boxed `DataClientFactory` trait object.
 pub type FactoryExtractor =
-    fn(py: Python<'_>, factory: PyObject) -> PyResult<Box<dyn DataClientFactory>>;
+    fn(py: Python<'_>, factory: Py<PyAny>) -> PyResult<Box<dyn DataClientFactory>>;
 
-/// Function type for extracting a `PyObject` config to a boxed `ClientConfig` trait object.
-pub type ConfigExtractor = fn(py: Python<'_>, config: PyObject) -> PyResult<Box<dyn ClientConfig>>;
+/// Function type for extracting a `Py<PyAny>` config to a boxed `ClientConfig` trait object.
+pub type ConfigExtractor = fn(py: Python<'_>, config: Py<PyAny>) -> PyResult<Box<dyn ClientConfig>>;
 
 /// Registry for PyO3 factory and config extractors.
 ///
 /// This allows each adapter to register its own extraction logic for converting
-/// `PyObjects` to boxed trait objects without requiring the live crate to know
+/// `Py<PyAny>s` to boxed trait objects without requiring the live crate to know
 /// about specific implementations.
 #[derive(Debug)]
 pub struct FactoryRegistry {
@@ -95,7 +95,7 @@ impl FactoryRegistry {
         Ok(())
     }
 
-    /// Extracts a `PyObject` factory to a boxed `DataClientFactory` trait object.
+    /// Extracts a `Py<PyAny>` factory to a boxed `DataClientFactory` trait object.
     ///
     /// # Errors
     ///
@@ -107,7 +107,7 @@ impl FactoryRegistry {
     pub fn extract_factory(
         &self,
         py: Python<'_>,
-        factory: PyObject,
+        factory: Py<PyAny>,
     ) -> PyResult<Box<dyn DataClientFactory>> {
         // Get the factory name to find the appropriate extractor
         let factory_name = factory
@@ -125,7 +125,7 @@ impl FactoryRegistry {
         }
     }
 
-    /// Extracts a `PyObject` config to a boxed `ClientConfig` trait object.
+    /// Extracts a `Py<PyAny>` config to a boxed `ClientConfig` trait object.
     ///
     /// # Errors
     ///
@@ -137,7 +137,7 @@ impl FactoryRegistry {
     pub fn extract_config(
         &self,
         py: Python<'_>,
-        config: PyObject,
+        config: Py<PyAny>,
     ) -> PyResult<Box<dyn ClientConfig>> {
         // Get the config class name to find the appropriate extractor
         let config_type_name = config

@@ -181,7 +181,7 @@ impl CoinbaseIntxFixClient {
     /// Returns an error if network connection or FIX logon fails.
     pub async fn connect(
         &mut self,
-        #[cfg(feature = "python")] handler: PyObject,
+        #[cfg(feature = "python")] handler: Py<PyAny>,
         #[cfg(not(feature = "python"))] _handler: (),
     ) -> anyhow::Result<()> {
         let logged_on = self.logged_on.clone();
@@ -231,7 +231,7 @@ impl CoinbaseIntxFixClient {
                                         &message, account_id, ts_init,
                                     ) {
                                         #[cfg(feature = "python")]
-                                        Ok(report) => Python::with_gil(|py| {
+                                        Ok(report) => Python::attach(|py| {
                                             call_python(
                                                 py,
                                                 &handler,
@@ -257,7 +257,7 @@ impl CoinbaseIntxFixClient {
                                     let ts_init = clock.get_time_ns();
                                     match convert_to_fill_report(&message, account_id, ts_init) {
                                         #[cfg(feature = "python")]
-                                        Ok(report) => Python::with_gil(|py| {
+                                        Ok(report) => Python::attach(|py| {
                                             call_python(
                                                 py,
                                                 &handler,
@@ -523,7 +523,7 @@ impl CoinbaseIntxFixClient {
 
 // Can't be moved to core because we don't want to depend on tracing there
 #[cfg(feature = "python")]
-pub fn call_python(py: Python, callback: &PyObject, py_obj: PyObject) {
+pub fn call_python(py: Python, callback: &Py<PyAny>, py_obj: Py<PyAny>) {
     if let Err(e) = callback.call1(py, (py_obj,)) {
         tracing::error!("Error calling Python: {e}");
     }

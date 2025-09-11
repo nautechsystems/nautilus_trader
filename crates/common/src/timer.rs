@@ -33,7 +33,7 @@ use nautilus_core::{
     time::get_atomic_clock_realtime,
 };
 #[cfg(feature = "python")]
-use pyo3::{PyObject, Python};
+use pyo3::{Py, PyAny, Python};
 use tokio::{
     task::JoinHandle,
     time::{Duration, Instant},
@@ -128,7 +128,7 @@ pub type RustTimeEventCallback = dyn Fn(TimeEvent);
 
 pub enum TimeEventCallback {
     #[cfg(feature = "python")]
-    Python(PyObject),
+    Python(Py<PyAny>),
     Rust(Rc<RustTimeEventCallback>),
 }
 
@@ -162,7 +162,7 @@ impl TimeEventCallback {
         match self {
             #[cfg(feature = "python")]
             Self::Python(callback) => {
-                Python::with_gil(|py| {
+                Python::attach(|py| {
                     callback.call1(py, (event,)).unwrap();
                 });
             }
@@ -178,14 +178,14 @@ impl From<Rc<RustTimeEventCallback>> for TimeEventCallback {
 }
 
 #[cfg(feature = "python")]
-impl From<PyObject> for TimeEventCallback {
-    fn from(value: PyObject) -> Self {
+impl From<Py<PyAny>> for TimeEventCallback {
+    fn from(value: Py<PyAny>) -> Self {
         Self::Python(value)
     }
 }
 
 // TimeEventCallback supports both single-threaded and async use cases:
-// - Python variant uses PyObject for cross-thread compatibility with Python's GIL.
+// - Python variant uses Py<PyAny> for cross-thread compatibility with Python's GIL.
 // - Rust variant uses Rc<dyn Fn(TimeEvent)> for efficient single-threaded callbacks.
 //
 // SAFETY: The async timer tasks only use Python callbacks, and Rust callbacks are never
@@ -563,11 +563,11 @@ impl LiveTimer {
 }
 
 #[cfg(feature = "python")]
-fn call_python_with_time_event(event: TimeEvent, callback: &PyObject) {
+fn call_python_with_time_event(event: TimeEvent, callback: &Py<PyAny>) {
     use nautilus_core::python::IntoPyObjectNautilusExt;
     use pyo3::types::PyCapsule;
 
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         // Create a new PyCapsule that owns `event` and registers a destructor so
         // the contained `TimeEvent` is properly freed once the capsule is
         // garbage-collected by Python. Without the destructor the memory would
@@ -575,7 +575,7 @@ fn call_python_with_time_event(event: TimeEvent, callback: &PyObject) {
 
         // Register a destructor that simply drops the `TimeEvent` once the
         // capsule is freed on the Python side.
-        let capsule: PyObject = PyCapsule::new_with_destructor(py, event, None, |_, _| {})
+        let capsule: Py<PyAny> = PyCapsule::new_with_destructor(py, event, None, |_, _| {})
             .expect("Error creating `PyCapsule`")
             .into_py_any_unwrap(py);
 
