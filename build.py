@@ -254,6 +254,9 @@ def _build_extensions() -> list[Extension]:
                 extra_compile_args.append("-fdata-sections")
                 extra_link_args.append("-Wl,--gc-sections")
                 extra_link_args.append("-Wl,--as-needed")
+                # Ensure non-executable stack on Linux to avoid loader errors
+                # when any input object accidentally requests an execstack.
+                extra_link_args.append("-Wl,-z,noexecstack")
 
     if IS_WINDOWS:
         # Standard Windows system libraries required when linking Cython extensions.
@@ -524,7 +527,9 @@ def build() -> None:
     """
     _ensure_windows_python_import_lib()
     _build_rust_libs()
-    _copy_rust_dylibs_to_project()
+    # Allow skipping Rust dylib copy in constrained environments
+    if not os.getenv("SKIP_RUST_DYLIB_COPY"):
+        _copy_rust_dylibs_to_project()
 
     if not PYO3_ONLY:
         # Create C Extensions to feed into cythonize()
