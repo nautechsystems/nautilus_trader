@@ -108,7 +108,7 @@ dev = [
     "pandas-stubs>=2.3.2,<3.0.0",
     "pre-commit>=4.3.0,<5.0.0",
     "requests>=2.32.5,<3.0.0",
-    "ruff>=0.12.12,<1.0.0",
+    "ruff==0.12.12",  # Pinned to 0.12.12 for import sorting stability
     "types-pytz>=2024.2,<2025.0",
     "types-requests>=2.32,<3.0",
     "types-toml>=0.10.2,<1.0.0",
