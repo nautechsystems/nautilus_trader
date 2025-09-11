@@ -2251,7 +2251,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         feather_dir = Path(self.path) / subdirectory / instance_id
 
         if self.fs.isdir(feather_dir / table_name):
-            feather_files = sorted(self.fs.glob(feather_dir / table_name / "*.feather"))
+            feather_files = sorted(self.fs.glob(str(feather_dir / table_name / "*.feather")))
         else:
             feather_files = sorted(self.fs.glob(f"{table_name}_*.feather"))
 
