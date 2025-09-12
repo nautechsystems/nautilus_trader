@@ -12,6 +12,7 @@ None
 
 ### Internal Improvements
 - Implemented HTTP client for Hyperliquid adapter (#2939), thanks @nicolad
+- Refined Bybit balance parsing to use `Money.from_str` to ensure no rounding errors
 - Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.26.0
 
 ### Fixes
