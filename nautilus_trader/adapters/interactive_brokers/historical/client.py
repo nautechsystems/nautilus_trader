@@ -460,19 +460,14 @@ class HistoricInteractiveBrokersClient:
             return None, False
 
         timestamps = [unix_nanos_to_dt(tick.ts_event) for tick in ticks]
-        min_timestamp = min(timestamps)
         max_timestamp = max(timestamps)
 
-        if min_timestamp.floor("s") == max_timestamp.floor("s"):
-            max_timestamp = max_timestamp.floor("s") + pd.Timedelta(seconds=1)
+        next_start = max_timestamp + pd.Timedelta(seconds=1)
 
-        if len(ticks) <= 50:
-            max_timestamp = max_timestamp.floor("s") + pd.Timedelta(minutes=1)
-
-        if max_timestamp >= end_date_time:
+        if next_start >= end_date_time:
             return None, False
 
-        return max_timestamp, True
+        return next_start, True
 
     async def _fetch_instruments_if_not_cached(
         self,
