@@ -13,9 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_hyperliquid::{
-    common::consts::HyperliquidNetwork, http::client::HyperliquidHttpClient,
-};
+use std::env;
+
+use nautilus_hyperliquid::http::client::HyperliquidHttpClient;
 use tracing::level_filters::LevelFilter;
 
 #[tokio::main]
@@ -24,8 +24,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_max_level(LevelFilter::INFO)
         .init();
 
-    let network = HyperliquidNetwork::from_env();
-    let client = HyperliquidHttpClient::new(network, Some(60));
+    let args: Vec<String> = env::args().collect();
+    let testnet = args.get(1).is_some_and(|s| s == "testnet");
+
+    tracing::info!("Starting Hyperliquid HTTP public example");
+    tracing::info!("Testnet: {testnet}");
+
+    let client = HyperliquidHttpClient::new(testnet, Some(60));
 
     // Fetch metadata
     let meta = client.info_meta().await?;

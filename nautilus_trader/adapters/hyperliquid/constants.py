@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 from typing import Final
 
 from nautilus_trader.model.identifiers import ClientId

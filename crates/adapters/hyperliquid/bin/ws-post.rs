@@ -15,10 +15,10 @@
 
 //! Minimal WS post example: info (l2Book) and a stubbed order action.
 
-use std::time::Duration;
+use std::{env, time::Duration};
 
 use nautilus_hyperliquid::{
-    common::consts::{HyperliquidNetwork, ws_url},
+    common::consts::ws_url,
     websocket::{
         client::HyperliquidWebSocketClient,
         messages::{ActionPayload, ActionRequest, SignatureData, TimeInForceRequest},
@@ -31,15 +31,17 @@ use tracing_subscriber::{EnvFilter, fmt};
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Structured logging with env-controlled filter (e.g. RUST_LOG=debug)
-    let env = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
     fmt()
-        .with_env_filter(env)
+        .with_env_filter(env_filter)
         .with_max_level(LevelFilter::INFO)
         .init();
 
-    let network = HyperliquidNetwork::from_env();
-    let ws_url = ws_url(network);
-    info!(component = "ws_post", %ws_url, ?network, "connecting");
+    let args: Vec<String> = env::args().collect();
+    let testnet = args.get(1).is_some_and(|s| s == "testnet");
+    let ws_url = ws_url(testnet);
+
+    info!(component = "ws_post", %ws_url, ?testnet, "connecting");
     let mut client = HyperliquidWebSocketClient::connect(ws_url).await?;
     info!(component = "ws_post", "websocket connected");
 

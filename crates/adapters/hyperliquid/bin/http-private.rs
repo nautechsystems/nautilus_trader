@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::env;
+
 use nautilus_hyperliquid::http::client::HyperliquidHttpClient;
 use tracing::level_filters::LevelFilter;
 
@@ -22,8 +24,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_max_level(LevelFilter::INFO)
         .init();
 
+    let args: Vec<String> = env::args().collect();
+    let testnet = args.get(1).is_some_and(|s| s == "testnet");
+
+    tracing::info!("Starting Hyperliquid HTTP private example");
+    tracing::info!("Testnet: {testnet}");
+
     // Try to create authenticated client from environment
-    let client = match HyperliquidHttpClient::from_env() {
+    let client = match HyperliquidHttpClient::from_env(testnet) {
         Ok(client) => client,
         Err(_) => {
             tracing::warn!(
