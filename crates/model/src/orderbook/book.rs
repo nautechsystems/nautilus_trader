@@ -160,6 +160,74 @@ impl OrderBook {
         self.increment(sequence, ts_event);
     }
 
+    /// Removes overlapping bid/ask levels when the book is strictly crossed (best bid > best ask).
+    ///
+    /// This method is intentionally simple and conservative:
+    /// - It only acts when both sides exist and best_bid > best_ask.
+    /// - It removes ask levels with price <= the original best bid and
+    ///   bid levels with price >= the original best ask.
+    /// - It deletes levels by removing all orders in those levels using the ladder API,
+    ///   preserving cache invariants and letting empty levels drop naturally.
+    ///
+    /// Returns the number of price levels removed across both sides.
+    pub fn clear_stale_levels(&mut self) -> usize {
+        // L1_MBP maintains a single top-of-book price per side; nothing to do
+        if self.book_type == BookType::L1_MBP {
+            return 0;
+        }
+
+        let (Some(best_bid), Some(best_ask)) = (self.best_bid_price(), self.best_ask_price())
+        else {
+            return 0;
+        };
+
+        if best_bid <= best_ask {
+            return 0;
+        }
+
+        // Collect order IDs to remove, count levels for the return value
+        let mut ask_order_ids = Vec::new();
+        let mut ask_levels_removed = 0;
+
+        for (bp, level) in self.asks.levels.iter() {
+            if bp.value <= best_bid {
+                ask_levels_removed += 1;
+                ask_order_ids.extend(level.orders.keys().copied());
+            } else {
+                break;
+            }
+        }
+
+        let mut bid_order_ids = Vec::new();
+        let mut bid_levels_removed = 0;
+
+        for (bp, level) in self.bids.levels.iter() {
+            if bp.value >= best_ask {
+                bid_levels_removed += 1;
+                bid_order_ids.extend(level.orders.keys().copied());
+            } else {
+                break;
+            }
+        }
+
+        if ask_levels_removed == 0 && bid_levels_removed == 0 {
+            return 0;
+        }
+
+        for order_id in ask_order_ids {
+            self.asks.remove(order_id, self.sequence, self.ts_last);
+        }
+
+        for order_id in bid_order_ids {
+            self.bids.remove(order_id, self.sequence, self.ts_last);
+        }
+
+        // Bump update count (keeping sequence and ts_last unchanged)
+        self.increment(self.sequence, self.ts_last);
+
+        ask_levels_removed + bid_levels_removed
+    }
+
     /// Applies a single order book delta operation.
     pub fn apply_delta(&mut self, delta: &OrderBookDelta) {
         let order = delta.order;
