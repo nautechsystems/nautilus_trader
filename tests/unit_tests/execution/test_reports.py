@@ -773,3 +773,24 @@ class TestExecutionReports:
         assert report.quantity == Quantity.from_str("50000")
         assert report.signed_decimal_qty == Decimal("-50000")
         assert report.venue_position_id is None
+
+    def test_order_status_report_leaves_qty_clamped_to_zero_when_overfilled(self):
+        # Arrange, Act: filled quantity exceeds original quantity
+        report = OrderStatusReport(
+            account_id=AccountId("SIM-001"),
+            instrument_id=AUDUSD_IDEALPRO,
+            venue_order_id=VenueOrderId("V-OVERFILL"),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.LIMIT,
+            time_in_force=TimeInForce.GTC,
+            order_status=OrderStatus.ACCEPTED,
+            quantity=Quantity.from_int(100),
+            filled_qty=Quantity.from_int(150),
+            report_id=UUID4(),
+            ts_accepted=1,
+            ts_last=2,
+            ts_init=3,
+        )
+
+        # Assert: leaves_qty is clamped to zero (non-negative)
+        assert report.leaves_qty == Quantity.zero(0)

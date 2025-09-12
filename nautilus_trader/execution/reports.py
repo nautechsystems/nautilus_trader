@@ -88,6 +88,9 @@ class OrderStatusReport(ExecutionReport):
     """
     Represents an order status at a point in time.
 
+    Reporting is best-effort; if filled exceeds quantity due to venue anomalies,
+    avoid negative leaves_qty by clamping to zero.
+
     Parameters
     ----------
     account_id : AccountId
@@ -236,10 +239,11 @@ class OrderStatusReport(ExecutionReport):
         self.trailing_offset_type = trailing_offset_type
         self.quantity = quantity
         self.filled_qty = filled_qty
-        self.leaves_qty = Quantity(
-            float(self.quantity - self.filled_qty),
-            self.quantity.precision,
-        )
+
+        # Clamp to minimum zero for robustness
+        raw_leaves_qty = max(self.quantity.raw - self.filled_qty.raw, 0)
+        self.leaves_qty = Quantity.from_raw(raw_leaves_qty, self.quantity.precision)
+
         self.display_qty = display_qty
         self.avg_px = avg_px
         self.post_only = post_only
