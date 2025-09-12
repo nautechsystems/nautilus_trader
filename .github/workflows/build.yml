@@ -15,13 +15,13 @@ jobs:
     runs-on: ubuntu-22.04 # (glibc 2.35) wider runtime range than 24.04/glibc 2.39
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
           egress-policy: audit
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
       - name: Common setup
         uses: ./.github/actions/common-setup
@@ -75,13 +75,13 @@ jobs:
         options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
           egress-policy: audit
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
       - name: Common setup
         uses: ./.github/actions/common-setup
@@ -165,13 +165,13 @@ jobs:
         options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
           egress-policy: audit
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
       - name: Common setup
         uses: ./.github/actions/common-setup
@@ -235,13 +235,13 @@ jobs:
       RUST_BACKTRACE: 1
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
           egress-policy: audit
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
       - name: Common setup
         uses: ./.github/actions/common-setup
@@ -295,13 +295,13 @@ jobs:
       RUST_BACKTRACE: 1
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
           egress-policy: audit
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
       - name: Common setup
         uses: ./.github/actions/common-setup
@@ -350,13 +350,20 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
           egress-policy: audit
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Download built wheels
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          path: dist
+          pattern: "*.whl"
+          merge-multiple: true
 
       - name: Publish wheels to Cloudflare R2
         uses: ./.github/actions/publish-wheels
@@ -387,13 +394,20 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
           egress-policy: audit
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Download built wheels
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          path: dist
+          pattern: "*.whl"
+          merge-multiple: true
 
       - name: Publish wheels to Cloudflare R2
         uses: ./.github/actions/publish-wheels
@@ -425,13 +439,13 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
           egress-policy: audit
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
       - name: Get uv version
         shell: bash
@@ -439,44 +453,24 @@ jobs:
           echo "UV_VERSION=$(cat uv-version)" >> $GITHUB_ENV
 
       - name: Install uv
-        uses: astral-sh/setup-uv@bd01e18f51369d5a26f1651c3cb451d3417e3bba # v6.3.1
+        uses: astral-sh/setup-uv@557e51de59eb14aaaba2ed9621916900a91d50c6 # v6.6.1
         with:
           version: ${{ env.UV_VERSION }}
+
+      - name: Download built wheels for PyPI and GitHub release
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          path: dist
+          pattern: "*.whl"
+          merge-multiple: true
 
       - name: Publish wheels to Cloudflare R2
         uses: ./.github/actions/publish-wheels
 
-      - name: Download built wheels
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          path: dist/
-          pattern: "*.whl"
-
       - name: Upload wheels to GitHub release
+        # https://cli.github.com/manual/gh_release_upload
         run: |
-          find dist -type f -name "*.whl" | while read wheel; do
-            echo "Uploading $wheel to release"
-            asset_name=$(basename "$wheel")
-            curl -X POST \
-              -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-              -H "Content-Type: application/octet-stream" \
-              --data-binary @"$wheel" \
-              "${{ needs.tag-release.outputs.upload_url }}?name=$asset_name"
-          done
-
-      - name: Consolidate wheels for PyPI
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          # Create dist/all directory for consolidated wheels
-          mkdir -p dist/all
-
-          # Move all .whl files from subdirectories to dist/all (exclude dist/all itself)
-          find dist/ -path dist/all -prune -o -name "*.whl" -type f -exec mv {} dist/all/ \;
-
-          echo "Consolidated wheels in dist/all:"
-          ls -la dist/all/
+          gh release upload "${{ needs.tag-release.outputs.tag_name }}" dist/*.whl --clobber --repo ${{ github.repository }}
 
       - name: Publish to PyPI
         if: success()
@@ -484,7 +478,8 @@ jobs:
           UV_PUBLISH_USERNAME: ${{ secrets.PYPI_USERNAME }}
           UV_PUBLISH_PASSWORD: ${{ secrets.PYPI_TOKEN }}
         run: |
-          uv publish dist/all
+          # Use --check-url to skip files that already exist on PyPI
+          uv publish --check-url https://pypi.org/simple/
 
       - name: Fetch and delete artifacts for current run
         shell: bash
@@ -507,13 +502,13 @@ jobs:
       tag_name: ${{ env.TAG_NAME }}
     steps:
       # Security hardening
-      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
           egress-policy: audit
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           fetch-depth: 2
 
@@ -562,13 +557,13 @@ jobs:
       COPY_TO_SOURCE: false # Do not copy built *.so files back into source tree
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
           egress-policy: audit
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
       - name: Common setup
         uses: ./.github/actions/common-setup
@@ -599,16 +594,9 @@ jobs:
           echo "ASSET_NAME=$(basename "$ASSET_PATH")" >> $GITHUB_ENV
 
       - name: Upload release asset
-        id: upload-release-asset
-        # https://github.com/actions/upload-release-asset
-        uses: actions/upload-release-asset@ef2adfe8cb8ebfa540930c452c576b3819990faa # v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.tag-release.outputs.upload_url }}
-          asset_path: ${{ env.ASSET_PATH }}
-          asset_name: ${{ env.ASSET_NAME }}
-          asset_content_type: application/gzip
+        # https://cli.github.com/manual/gh_release_upload
+        run: |
+          gh release upload "${{ needs.tag-release.outputs.tag_name }}" "${{ env.ASSET_PATH }}" --clobber --repo ${{ github.repository }}
 
       - name: Publish to PyPI
         if: success()
@@ -616,4 +604,5 @@ jobs:
           UV_PUBLISH_USERNAME: ${{ secrets.PYPI_USERNAME }}
           UV_PUBLISH_PASSWORD: ${{ secrets.PYPI_TOKEN }}
         run: |
-          uv publish dist
+          # Use --check-url to skip files that already exist on PyPI
+          uv publish --check-url https://pypi.org/simple/
