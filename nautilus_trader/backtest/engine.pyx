@@ -900,65 +900,57 @@ cdef class BacktestEngine:
         self._log.debug(f"Subscribing to {subscription_name}, {command.params.get('durations_seconds')=}")
 
         self._data_requests[subscription_name] = request
-        self._last_subscription_ts[subscription_name] = self._last_ns
+        time_range_generator = request.params.get(
+            "time_range_generator",
+            BacktestEngine.default_time_range_generator(self._last_ns, self._end_ns, request.params)
+        )
         cdef bint append_data = request.params.get("append_data", True)
-        cdef bint point_data = request.params.get("point_data", False)
-        self._data_iterator.init_data(subscription_name, self._subscription_generator(subscription_name, point_data), append_data)
+        self._data_iterator.init_data(subscription_name, self._subscription_generator(subscription_name, time_range_generator), append_data)
 
-    def _subscription_generator(self, str subscription_name, bint point_data):
-        iteration_index = 0
-        durations_seconds = self._data_requests[subscription_name].params.get("durations_seconds", [None])
-        durations_ns = [duration_seconds * 1e9 if duration_seconds else None for duration_seconds in durations_seconds]
+    def _subscription_generator(self, str subscription_name, time_range_generator):
+        """
+        Generator that yields data for subscription using a time generator.
+        """
+        def get_next_time_range(data_received):
+            # Helper to get next time range with proper error handling
+            try:
+                return time_range_generator.send(data_received) if data_received else next(time_range_generator)
+            except StopIteration:
+                return None, None
 
-        while True:
-            # Clear response data from previous iteration
-            self._response_data = []
+        # Get initial time range
+        start_time, end_time = get_next_time_range(False)
 
-            # Possibility to use durations of various lengths to take into account weekends or market breaks
-            for duration_ns in durations_ns:
-                self._update_subscription_data(subscription_name, duration_ns, iteration_index, point_data)
+        try:
+            while start_time is not None and start_time <= self._end_ns:
+                # Clear and update response data
+                self._response_data = []
+                self._update_subscription_data(subscription_name, start_time, end_time)
 
+                # Determine signal based on whether we got data
+                data_received = len(self._response_data) > 0
+
+                # Yield data if we have any
                 if self._response_data:
-                    break
+                    yield self._response_data
 
-            iteration_index += 1
+                # Get next time range
+                start_time, end_time = get_next_time_range(data_received)
+        finally:
+            # Ensure generator is properly closed
+            try:
+                time_range_generator.close()
+            except (StopIteration, GeneratorExit):
+                pass
 
-            if self._response_data:
-                yield self._response_data
-            else:
-                break  # No more data, end generator
-
-    cpdef void _update_subscription_data(self, str subscription_name, object duration_ns, int iteration_index, bint point_data):
-        if subscription_name == "backtest_data" or subscription_name not in self._data_requests:
-            return
-
-        # First iteration for [a, a + duration], then ]a + duration, a + 2 * duration]
-        # When point_data we do a query for [start_time, start_time] only
-
-        cdef uint64_t offset = 1 if iteration_index > 0 and not point_data else 0
-        cdef uint64_t start_time = self._last_subscription_ts[subscription_name] + offset
-
-        if start_time > self._end_ns:
-            return
-
-        cdef uint64_t end_time
-        if duration_ns:
-            end_time = min(start_time + duration_ns - offset, self._end_ns)
-        else:
-            end_time = self._end_ns
-
-        self._last_subscription_ts[subscription_name] = end_time
-
-        if point_data:
-            end_time = start_time
-
+    cpdef void _update_subscription_data(self, str subscription_name, uint64_t start_time, uint64_t end_time):
         cdef RequestData request = self._data_requests[subscription_name]
         cdef RequestData new_request = request.with_dates(
             unix_nanos_to_dt(start_time),
             unix_nanos_to_dt(end_time),
             self._last_ns
         )
-        self._log.debug(f"Renewing {request.data_type.type.__name__} data from {unix_nanos_to_dt(start_time)} to {unix_nanos_to_dt(end_time)}, {duration_ns=}")
+        self._log.debug(f"Renewing {request.data_type.type.__name__} data from {unix_nanos_to_dt(start_time)} to {unix_nanos_to_dt(end_time)}")
         self._kernel._msgbus.request(endpoint="DataEngine.request", request=new_request)
 
     cpdef void _handle_data_response(self, DataResponse response):
@@ -985,6 +977,55 @@ cdef class BacktestEngine:
         self._log.debug(f"Unsubscribing {subscription_name}")
         self._data_iterator.remove_data(subscription_name, complete_remove=True)
         self._data_requests.pop(subscription_name, None)
+
+    @classmethod
+    def default_time_range_generator(cls, uint64_t initial_time, uint64_t end_ns, dict params):
+        """
+        Generator that yields (start_time, end_time) tuples for data subscription.
+
+        This generator handles the duration logic and can receive feedback via .send().
+        """
+        cdef uint64_t offset
+        cdef uint64_t start_time
+        cdef uint64_t end_time
+        cdef uint64_t last_subscription_ts = initial_time
+
+        cdef bint point_data = params.get("point_data", False)
+        durations_seconds = params.get("durations_seconds", [None])
+        durations_ns = [duration_seconds * 1e9 if duration_seconds else None for duration_seconds in durations_seconds]
+        cdef int iteration_index = 0
+
+        while True:
+            # Possibility to use durations of various lengths to take into account weekends or market breaks
+            for duration_ns in durations_ns:
+                # First iteration for [a, a + duration], then ]a + duration, a + 2 * duration]
+                # When point_data we do a query for [start_time, start_time] only
+                offset = 1 if iteration_index > 0 and not point_data else 0
+                start_time = last_subscription_ts + offset
+
+                if start_time > end_ns:
+                    return
+
+                if duration_ns:
+                    end_time = min(start_time + duration_ns - offset, end_ns)
+                else:
+                    end_time = end_ns
+
+                last_subscription_ts = end_time
+
+                if point_data:
+                    end_time = start_time
+
+                # Yield the time range and wait for feedback
+                data_received = yield (start_time, end_time)
+                iteration_index += 1
+
+                # If we received a success signal, break from the duration loop
+                if data_received:
+                    break
+            else:
+                # If we completed the for loop without breaking (no success), exit the while loop
+                return
 
     def dump_pickled_data(self) -> bytes:
         """
