@@ -117,7 +117,7 @@ repos:
         args: ["--config", "pyproject.toml"]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.12.12
+    rev: v0.12.12  # Pinned to v0.12.12 for import sorting stability
     hooks:
       - id: ruff
         args: ["--fix"]
@@ -146,7 +146,7 @@ repos:
         ]
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.17.1
+    rev: v1.18.1
     hooks:
       - id: mypy
         exclude: ^python/nautilus_trader/.*__init__\.py$
@@ -164,7 +164,7 @@ repos:
         ]
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.8.15  # uv version
+    rev: 0.8.17  # uv version
     hooks:
       - id: uv-lock
         files: ^python/uv\.lock$
