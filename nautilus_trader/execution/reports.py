@@ -88,6 +88,9 @@ class OrderStatusReport(ExecutionReport):
     """
     Represents an order status at a point in time.
 
+    Reporting is best-effort; if filled exceeds quantity due to venue anomalies,
+    avoid negative leaves_qty by clamping to zero.
+
     Parameters
     ----------
     account_id : AccountId
@@ -236,10 +239,11 @@ class OrderStatusReport(ExecutionReport):
         self.trailing_offset_type = trailing_offset_type
         self.quantity = quantity
         self.filled_qty = filled_qty
-        self.leaves_qty = Quantity(
-            float(self.quantity - self.filled_qty),
-            self.quantity.precision,
-        )
+
+        # Clamp to minimum zero for robustness
+        raw_leaves_qty = max(self.quantity.raw - self.filled_qty.raw, 0)
+        self.leaves_qty = Quantity.from_raw(raw_leaves_qty, self.quantity.precision)
+
         self.display_qty = display_qty
         self.avg_px = avg_px
         self.post_only = post_only
@@ -698,6 +702,8 @@ class PositionStatusReport(ExecutionReport):
         venue has assigned a position ID / ticket for the trade then pass that
         here, otherwise pass ``None`` and the execution engine OMS will handle
         position ID resolution.
+    avg_px_open : Decimal, optional
+        The reported position average open price.
 
     """
 
@@ -711,7 +717,7 @@ class PositionStatusReport(ExecutionReport):
         ts_last: int,
         ts_init: int,
         venue_position_id: PositionId | None = None,
-        avg_px_open: Price | None = None,
+        avg_px_open: Decimal | None = None,
     ) -> None:
         super().__init__(
             account_id,
@@ -749,9 +755,6 @@ class PositionStatusReport(ExecutionReport):
         )
 
     def __repr__(self) -> str:
-        avg_px_open_str = (
-            f"avg_px_open={self.avg_px_open}, " if self.avg_px_open is not None else ""
-        )
         return (
             f"{type(self).__name__}("
             f"account_id={self.account_id}, "
@@ -759,7 +762,7 @@ class PositionStatusReport(ExecutionReport):
             f"venue_position_id={self.venue_position_id}, "
             f"position_side={position_side_to_str(self.position_side)}, "
             f"quantity={self.quantity.to_formatted_str()}, "
-            f"{avg_px_open_str}"
+            f"avg_px_open={self.avg_px_open}, "
             f"signed_decimal_qty={self.signed_decimal_qty}, "
             f"report_id={self.id}, "
             f"ts_last={self.ts_last}, "
@@ -814,9 +817,7 @@ class PositionStatusReport(ExecutionReport):
             venue_position_id=(
                 PositionId(values["venue_position_id"]) if values["venue_position_id"] else None
             ),
-            avg_px_open=(
-                Price.from_str(values["avg_px_open"]) if values.get("avg_px_open") else None
-            ),
+            avg_px_open=(Decimal(values["avg_px_open"]) if values.get("avg_px_open") else None),
         )
 
     @staticmethod
@@ -834,11 +835,7 @@ class PositionStatusReport(ExecutionReport):
                 if pyo3_report.venue_position_id
                 else None
             ),
-            avg_px_open=(
-                Price.from_str(str(pyo3_report.avg_px_open))
-                if hasattr(pyo3_report, "avg_px_open") and pyo3_report.avg_px_open
-                else None
-            ),
+            avg_px_open=pyo3_report.avg_px_open,
         )
 
 

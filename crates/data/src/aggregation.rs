@@ -842,6 +842,223 @@ where
     }
 }
 
+/// Provides a means of building Renko bars aggregated from quote and trades.
+///
+/// Renko bars are created when the price moves by a fixed amount (brick size)
+/// regardless of time or volume. Each bar represents a price movement equal
+/// to the step size in the bar specification.
+pub struct RenkoBarAggregator<H>
+where
+    H: FnMut(Bar),
+{
+    core: BarAggregatorCore<H>,
+    pub brick_size: f64,
+    last_close: Option<Price>,
+}
+
+impl<H: FnMut(Bar)> Debug for RenkoBarAggregator<H> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(RenkoBarAggregator))
+            .field("core", &self.core)
+            .field("brick_size", &self.brick_size)
+            .field("last_close", &self.last_close)
+            .finish()
+    }
+}
+
+impl<H> RenkoBarAggregator<H>
+where
+    H: FnMut(Bar),
+{
+    /// Creates a new [`RenkoBarAggregator`] instance.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if:
+    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
+    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    pub fn new(
+        bar_type: BarType,
+        price_precision: u8,
+        size_precision: u8,
+        price_increment: Price,
+        handler: H,
+        await_partial: bool,
+    ) -> Self {
+        let brick_size = bar_type.spec().step.get() as f64 * price_increment.as_f64();
+
+        Self {
+            core: BarAggregatorCore::new(
+                bar_type.standard(),
+                price_precision,
+                size_precision,
+                handler,
+                await_partial,
+            ),
+            brick_size,
+            last_close: None,
+        }
+    }
+}
+
+impl<H> BarAggregator for RenkoBarAggregator<H>
+where
+    H: FnMut(Bar) + 'static,
+{
+    fn bar_type(&self) -> BarType {
+        self.core.bar_type
+    }
+
+    fn is_running(&self) -> bool {
+        self.core.is_running
+    }
+
+    fn set_await_partial(&mut self, value: bool) {
+        self.core.set_await_partial(value);
+    }
+
+    fn set_is_running(&mut self, value: bool) {
+        self.core.set_is_running(value);
+    }
+
+    fn await_partial(&self) -> bool {
+        self.core.await_partial()
+    }
+
+    /// Apply the given update to the aggregator.
+    ///
+    /// For Renko bars, we check if the price movement from the last close
+    /// is greater than or equal to the brick size. If so, we create new bars.
+    fn update(&mut self, price: Price, size: Quantity, ts_init: UnixNanos) {
+        // Always update the builder with the current tick
+        self.core.apply_update(price, size, ts_init);
+
+        // Initialize last_close if this is the first update
+        if self.last_close.is_none() {
+            self.last_close = Some(price);
+            return;
+        }
+
+        let last_close = self.last_close.unwrap();
+        let price_diff = price.as_f64() - last_close.as_f64();
+        let abs_price_diff = price_diff.abs();
+
+        // Check if we need to create one or more Renko bars
+        if abs_price_diff >= self.brick_size {
+            let num_bricks = (abs_price_diff / self.brick_size).floor() as usize;
+            let direction = if price_diff > 0.0 { 1.0 } else { -1.0 };
+            let mut current_close = last_close;
+
+            // Store the current builder volume to distribute across bricks
+            let total_volume = self.core.builder.volume;
+
+            for _i in 0..num_bricks {
+                // Calculate the close price for this brick
+                let brick_close = Price::new(
+                    current_close.as_f64() + direction * self.brick_size,
+                    price.precision,
+                );
+
+                // For Renko bars: open = previous close, high/low depend on direction
+                let (brick_high, brick_low) = if direction > 0.0 {
+                    (brick_close, current_close)
+                } else {
+                    (current_close, brick_close)
+                };
+
+                // Reset builder for this brick
+                self.core.builder.reset();
+                self.core.builder.open = Some(current_close);
+                self.core.builder.high = Some(brick_high);
+                self.core.builder.low = Some(brick_low);
+                self.core.builder.close = Some(brick_close);
+                self.core.builder.volume = total_volume; // Each brick gets the full volume
+                self.core.builder.count = 1;
+                self.core.builder.ts_last = ts_init;
+                self.core.builder.initialized = true;
+
+                // Build and send the bar
+                self.core.build_now_and_send();
+
+                // Update for the next brick
+                current_close = brick_close;
+                self.last_close = Some(brick_close);
+            }
+        }
+    }
+
+    fn update_bar(&mut self, bar: Bar, volume: Quantity, ts_init: UnixNanos) {
+        // Always update the builder with the current bar
+        self.core.builder.update_bar(bar, volume, ts_init);
+
+        // Initialize last_close if this is the first update
+        if self.last_close.is_none() {
+            self.last_close = Some(bar.close);
+            return;
+        }
+
+        let last_close = self.last_close.unwrap();
+        let price_diff = bar.close.as_f64() - last_close.as_f64();
+        let abs_price_diff = price_diff.abs();
+
+        // Check if we need to create one or more Renko bars
+        if abs_price_diff >= self.brick_size {
+            let num_bricks = (abs_price_diff / self.brick_size).floor() as usize;
+            let direction = if price_diff > 0.0 { 1.0 } else { -1.0 };
+            let mut current_close = last_close;
+
+            // Store the current builder volume to distribute across bricks
+            let total_volume = self.core.builder.volume;
+
+            for _i in 0..num_bricks {
+                // Calculate the close price for this brick
+                let brick_close = Price::new(
+                    current_close.as_f64() + direction * self.brick_size,
+                    bar.close.precision,
+                );
+
+                // For Renko bars: open = previous close, high/low depend on direction
+                let (brick_high, brick_low) = if direction > 0.0 {
+                    (brick_close, current_close)
+                } else {
+                    (current_close, brick_close)
+                };
+
+                // Reset builder for this brick
+                self.core.builder.reset();
+                self.core.builder.open = Some(current_close);
+                self.core.builder.high = Some(brick_high);
+                self.core.builder.low = Some(brick_low);
+                self.core.builder.close = Some(brick_close);
+                self.core.builder.volume = total_volume; // Each brick gets the full volume
+                self.core.builder.count = 1;
+                self.core.builder.ts_last = ts_init;
+                self.core.builder.initialized = true;
+
+                // Build and send the bar
+                self.core.build_now_and_send();
+
+                // Update for the next brick
+                current_close = brick_close;
+                self.last_close = Some(brick_close);
+            }
+        }
+    }
+
+    fn start_batch_update(&mut self, handler: Box<dyn FnMut(Bar)>, _: UnixNanos) {
+        self.core.start_batch_update(handler);
+    }
+
+    fn stop_batch_update(&mut self) {
+        self.core.stop_batch_update();
+    }
+
+    fn set_partial(&mut self, partial_bar: Bar) {
+        self.core.set_partial(partial_bar);
+        self.last_close = Some(partial_bar.close);
+    }
+}
+
 /// Provides a means of building time bars aggregated from quote and trades.
 ///
 /// At each aggregation time interval, a bar is created and sent to the handler.

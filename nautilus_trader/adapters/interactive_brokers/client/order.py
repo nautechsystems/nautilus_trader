@@ -39,6 +39,8 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
 
     """
 
+    _fetch_all_open_orders: bool
+
     def place_order(self, order: IBOrder) -> None:
         """
         Place an order through the EClient.
@@ -102,6 +104,12 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         Retrieve a list of open orders for a specific account. Once the request is
         completed, openOrderEnd() will be called.
 
+        The behavior depends on the `fetch_all_open_orders` configuration:
+        - If True: Uses reqAllOpenOrders() to fetch orders from all API clients,
+          TWS/IB Gateway GUI, and other trading interfaces
+        - If False: Uses reqOpenOrders() to fetch only orders from the current
+          client ID session
+
         Parameters
         ----------
         account_id : str
@@ -110,16 +118,23 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         Returns
         -------
         list[IBOrder]
+            List of open orders filtered by the specified account_id.
 
         """
         self._log.debug(f"Requesting open orders for {account_id}")
         name = "OpenOrders"
 
         if not (request := self._requests.get(name=name)):
+            # Choose the appropriate handler based on configuration
+            if self._fetch_all_open_orders:
+                handle = self._eclient.reqAllOpenOrders
+            else:
+                handle = self._eclient.reqOpenOrders
+
             request = self._requests.add(
                 req_id=self._next_req_id(),
                 name=name,
-                handle=self._eclient.reqOpenOrders,
+                handle=handle,
             )
 
             if not request:

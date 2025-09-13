@@ -160,6 +160,97 @@ impl OrderBook {
         self.increment(sequence, ts_event);
     }
 
+    /// Removes overlapping bid/ask levels when the book is strictly crossed (best bid > best ask).
+    ///
+    /// This method is intentionally simple and conservative:
+    /// - It only acts when both sides exist and best_bid > best_ask.
+    /// - It removes ask levels with price <= the original best bid and
+    ///   bid levels with price >= the original best ask.
+    /// - It deletes levels by removing all orders in those levels using the ladder API,
+    ///   preserving cache invariants and letting empty levels drop naturally.
+    ///
+    /// Returns the removed price levels from both sides (crossed bids first, then crossed asks),
+    /// or None if no levels were removed.
+    pub fn clear_stale_levels(&mut self) -> Option<Vec<BookLevel>> {
+        // L1_MBP maintains a single top-of-book price per side; nothing to do
+        if self.book_type == BookType::L1_MBP {
+            return None;
+        }
+
+        let (Some(best_bid), Some(best_ask)) = (self.best_bid_price(), self.best_ask_price())
+        else {
+            return None;
+        };
+
+        if best_bid <= best_ask {
+            return None;
+        }
+
+        let mut removed_levels = Vec::new();
+
+        // Collect prices to remove for asks (prices <= best_bid)
+        let mut ask_prices_to_remove = Vec::new();
+        for (bp, _level) in self.asks.levels.iter() {
+            if bp.value <= best_bid {
+                ask_prices_to_remove.push(*bp);
+            } else {
+                break;
+            }
+        }
+
+        // Collect prices to remove for bids (prices >= best_ask)
+        let mut bid_prices_to_remove = Vec::new();
+        for (bp, _level) in self.bids.levels.iter() {
+            if bp.value >= best_ask {
+                bid_prices_to_remove.push(*bp);
+            } else {
+                break;
+            }
+        }
+
+        if ask_prices_to_remove.is_empty() && bid_prices_to_remove.is_empty() {
+            return None;
+        }
+
+        let bid_count = bid_prices_to_remove.len();
+        let ask_count = ask_prices_to_remove.len();
+
+        // Remove bid levels and collect them
+        for price in bid_prices_to_remove {
+            if let Some(level) = self.bids.remove_level(price) {
+                removed_levels.push(level);
+            }
+        }
+
+        // Remove ask levels and collect them
+        for price in ask_prices_to_remove {
+            if let Some(level) = self.asks.remove_level(price) {
+                removed_levels.push(level);
+            }
+        }
+
+        self.increment(self.sequence, self.ts_last);
+
+        if removed_levels.is_empty() {
+            None
+        } else {
+            let total_orders: usize = removed_levels.iter().map(|level| level.orders.len()).sum();
+
+            log::warn!(
+                "Removed {} stale/crossed levels (instrument_id={}, bid_levels={}, ask_levels={}, total_orders={}), book was crossed with best_bid={} > best_ask={}",
+                removed_levels.len(),
+                self.instrument_id,
+                bid_count,
+                ask_count,
+                total_orders,
+                best_bid,
+                best_ask
+            );
+
+            Some(removed_levels)
+        }
+    }
+
     /// Applies a single order book delta operation.
     pub fn apply_delta(&mut self, delta: &OrderBookDelta) {
         let order = delta.order;
@@ -572,7 +663,7 @@ impl OrderBook {
         if let Some(top_bids) = self.bids.top()
             && let Some(top_bid) = top_bids.first()
         {
-            self.bids.remove(top_bid.order_id, 0, ts_event);
+            self.bids.remove_order(top_bid.order_id, 0, ts_event);
         }
         self.bids.add(order);
     }
@@ -581,7 +672,7 @@ impl OrderBook {
         if let Some(top_asks) = self.asks.top()
             && let Some(top_ask) = top_asks.first()
         {
-            self.asks.remove(top_ask.order_id, 0, ts_event);
+            self.asks.remove_order(top_ask.order_id, 0, ts_event);
         }
         self.asks.add(order);
     }

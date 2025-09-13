@@ -13,12 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::time::Duration;
+use std::{env, time::Duration};
 
-use nautilus_hyperliquid::{
-    common::consts::{HyperliquidNetwork, ws_url},
-    websocket::client::HyperliquidWebSocketClient,
-};
+use nautilus_hyperliquid::{common::consts::ws_url, websocket::client::HyperliquidWebSocketClient};
 use tokio::{pin, signal};
 use tracing::level_filters::LevelFilter;
 
@@ -28,11 +25,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_max_level(LevelFilter::TRACE)
         .init();
 
-    tracing::info!("Starting Hyperliquid WebSocket execution example");
+    let args: Vec<String> = env::args().collect();
+    let testnet = args.get(1).is_some_and(|s| s == "testnet");
 
-    // Determine network and get WebSocket URL
-    let network = HyperliquidNetwork::from_env();
-    let ws_url = ws_url(network);
+    tracing::info!("Starting Hyperliquid WebSocket execution example");
+    tracing::info!("Testnet: {testnet}");
+
+    let ws_url = ws_url(testnet);
+    tracing::info!("WebSocket URL: {ws_url}");
 
     let mut client = HyperliquidWebSocketClient::connect(ws_url).await?;
     tracing::info!("Connected to Hyperliquid WebSocket");

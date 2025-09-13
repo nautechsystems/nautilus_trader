@@ -605,12 +605,11 @@ impl OKXWebSocketClient {
 
     /// Authenticates the WebSocket session with OKX.
     async fn authenticate(&self) -> Result<(), Error> {
-        let credential = match &self.credential {
-            Some(credential) => credential,
-            None => {
-                panic!("API credentials not available to authenticate");
-            }
-        };
+        let credential = self.credential.as_ref().ok_or_else(|| {
+            Error::Io(std::io::Error::other(
+                "API credentials not available to authenticate",
+            ))
+        })?;
 
         let timestamp = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)

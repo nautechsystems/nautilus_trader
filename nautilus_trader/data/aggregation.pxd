@@ -94,6 +94,11 @@ cdef class ValueBarAggregator(BarAggregator):
     cpdef object get_cumulative_value(self)
 
 
+cdef class RenkoBarAggregator(BarAggregator):
+    cdef readonly object brick_size
+    cdef object _last_close
+
+
 cdef class TimeBarAggregator(BarAggregator):
     cdef Clock _clock
     cdef bint _build_on_next_tick

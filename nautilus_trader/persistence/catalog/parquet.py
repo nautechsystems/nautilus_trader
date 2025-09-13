@@ -2174,7 +2174,7 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         # Non-instrument feather files
         for path_str in self.fs.glob(f"{prefix}/*.feather"):
-            if not Path(path_str).is_file():
+            if not self.fs.isfile(path_str):
                 continue
 
             file_name = path_str.replace(prefix + "/", "").replace(".feather", "")
@@ -2187,7 +2187,7 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         # Per-instrument feather files
         for path_str in self.fs.glob(f"{prefix}/**/*.feather"):
-            if not Path(path_str).is_file():
+            if not self.fs.isfile(path_str):
                 continue
 
             file_name = path_str.replace(prefix + "/", "").replace(".feather", "")
@@ -2250,10 +2250,10 @@ class ParquetDataCatalog(BaseDataCatalog):
         table_name = class_to_filename(data_cls)
         feather_dir = Path(self.path) / subdirectory / instance_id
 
-        if (feather_dir / table_name).is_dir():
-            feather_files = sorted((feather_dir / table_name).glob("*.feather"))
+        if self.fs.isdir(feather_dir / table_name):
+            feather_files = sorted(self.fs.glob(str(feather_dir / table_name / "*.feather")))
         else:
-            feather_files = sorted(feather_dir.glob(f"{table_name}_*.feather"))
+            feather_files = sorted(self.fs.glob(f"{table_name}_*.feather"))
 
         all_data = []
 

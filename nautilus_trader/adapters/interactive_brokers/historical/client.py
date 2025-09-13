@@ -18,6 +18,7 @@ import datetime
 import re
 from typing import Literal
 
+import msgspec
 import pandas as pd
 from ibapi.common import MarketDataTypeEnum
 
@@ -30,6 +31,8 @@ from nautilus_trader.adapters.interactive_brokers.providers import InteractiveBr
 
 # fmt: on
 from nautilus_trader.cache.cache import Cache
+from nautilus_trader.cache.config import CacheConfig
+from nautilus_trader.cache.database import CacheDatabaseAdapter
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import Logger
 from nautilus_trader.common.component import MessageBus
@@ -37,6 +40,7 @@ from nautilus_trader.common.component import init_logging
 from nautilus_trader.common.component import log_level_from_str
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.datetime import unix_nanos_to_dt
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.data import BarType
@@ -46,6 +50,7 @@ from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.instruments import Instrument
+from nautilus_trader.serialization.serializer import MsgSpecSerializer
 
 
 class HistoricInteractiveBrokersClient:
@@ -60,6 +65,7 @@ class HistoricInteractiveBrokersClient:
         client_id: int = 1,
         market_data_type: MarketDataTypeEnum = MarketDataTypeEnum.REALTIME,
         log_level: str = "INFO",
+        cache_config: CacheConfig | None = None,
     ) -> None:
         loop = asyncio.get_event_loop()
         loop.set_debug(True)
@@ -68,16 +74,37 @@ class HistoricInteractiveBrokersClient:
         self._log_guard = init_logging(level_stdout=log_level_from_str(log_level))
 
         self.log = Logger(name="HistoricInteractiveBrokersClient")
+        trader_id = TraderId("historic_interactive_brokers_client-001")
         msgbus = MessageBus(
-            TraderId("historic_interactive_brokers_client-001"),
+            trader_id,
             self._clock,
         )
-        cache = Cache()
         self.market_data_type = market_data_type
+        if not cache_config or not cache_config.database:
+            cache_db = None
+        elif cache_config.database.type == "redis":
+            encoding = cache_config.encoding.lower()
+            cache_db = CacheDatabaseAdapter(
+                trader_id=trader_id,
+                instance_id=UUID4(),
+                serializer=MsgSpecSerializer(
+                    encoding=msgspec.msgpack if encoding == "msgpack" else msgspec.json,
+                    timestamps_as_str=True,  # Hard-coded for now
+                    timestamps_as_iso8601=cache_config.timestamps_as_iso8601,
+                ),
+                config=cache_config,
+            )
+        else:
+            raise ValueError(
+                f"Unrecognized `cache_config.database.type`, was '{cache_config.database.type}'. "
+                "The only database type currently supported is 'redis', if you don't want a cache database backing "
+                "then you can pass `None` for the `cache_config.database`",
+            )
+
         self._client = InteractiveBrokersClient(
             loop=loop,
             msgbus=msgbus,
-            cache=cache,
+            cache=Cache(database=cache_db, config=cache_config) if cache_config else Cache(),
             clock=self._clock,
             host=host,
             port=port,

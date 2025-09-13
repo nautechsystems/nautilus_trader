@@ -4,28 +4,16 @@ description: Publish wheels to Cloudflare R2
 runs:
   using: "composite"
   steps:
-    - name: Checkout repository
-      # https://github.com/actions/checkout
-      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-    - name: Download built wheels
-      # https://github.com/actions/download-artifact
-      uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
-      with:
-        path: dist/
-        pattern: "*.whl"
-
     - name: Configure AWS CLI for Cloudflare R2
       shell: bash
       run: |
         set -euo pipefail
         echo "Configuring AWS CLI for Cloudflare R2..."
 
-        # Install specific AWS CLI version known to work with R2
-        curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64-2.22.35.zip" -o "awscliv2.zip"
-        unzip awscliv2.zip
-        sudo ./aws/install --bin-dir /usr/local/bin --install-dir /usr/local/aws-cli --update
+        # AWS CLI v2 is pre-installed on GitHub runners
+        aws --version
 
+        # Configure credentials for Cloudflare R2
         mkdir -p ~/.aws
         envsubst < .github/aws/credentials.ini > ~/.aws/credentials
         envsubst < .github/aws/config.ini > ~/.aws/config

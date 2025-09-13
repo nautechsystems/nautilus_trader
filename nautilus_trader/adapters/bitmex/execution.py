@@ -23,6 +23,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.execution.messages import BatchCancelOrders
 from nautilus_trader.execution.messages import CancelAllOrders
@@ -210,7 +211,7 @@ class BitmexExecutionClient(LiveExecutionClient):
 
             self.generate_account_state(
                 balances=account_state.balances,
-                margins=[],  # TBD
+                margins=account_state.margins,
                 reported=True,
                 ts_event=self._clock.timestamp_ns(),
             )
@@ -261,17 +262,25 @@ class BitmexExecutionClient(LiveExecutionClient):
         try:
             pyo3_reports = await self._http_client.request_order_status_reports(
                 instrument_id=command.instrument_id,
-                open_only=False,
+                open_only=command.open_only,
                 limit=None,
             )
 
-            result: list[OrderStatusReport] = []
+            reports: list[OrderStatusReport] = []
 
             for pyo3_report in pyo3_reports:
-                result.append(OrderStatusReport.from_pyo3(pyo3_report))
+                reports.append(OrderStatusReport.from_pyo3(pyo3_report))
 
-            self._log.info(f"Generated {len(result)} order status reports")
-            return result
+            len_reports = len(reports)
+            plural = "" if len_reports == 1 else "s"
+            receipt_log = f"Received {len(reports)} OrderStatusReport{plural}"
+
+            if command.log_receipt_level == LogLevel.INFO:
+                self._log.info(receipt_log)
+            else:
+                self._log.debug(receipt_log)
+
+            return reports
         except Exception as e:
             self._log.error(f"Failed to generate order status reports: {e}")
             return []
@@ -300,13 +309,16 @@ class BitmexExecutionClient(LiveExecutionClient):
                 limit=None,
             )
 
-            result: list[FillReport] = []
+            reports: list[FillReport] = []
 
             for pyo3_report in pyo3_reports:
-                result.append(FillReport.from_pyo3(pyo3_report))
+                reports.append(FillReport.from_pyo3(pyo3_report))
 
-            self._log.info(f"Generated {len(result)} fill reports")
-            return result
+            len_reports = len(reports)
+            plural = "" if len_reports == 1 else "s"
+            self._log.info(f"Received {len(reports)} FillReport{plural}")
+
+            return reports
         except Exception as e:
             self._log.error(f"Failed to generate fill reports: {e}")
             return []
@@ -321,12 +333,16 @@ class BitmexExecutionClient(LiveExecutionClient):
         try:
             pyo3_reports = await self._http_client.request_position_status_reports()
 
-            result = []
-            for pyo3_report in pyo3_reports:
-                result.append(PositionStatusReport.from_pyo3(pyo3_report))
+            reports = []
 
-            self._log.info(f"Generated {len(result)} position status reports")
-            return result
+            for pyo3_report in pyo3_reports:
+                reports.append(PositionStatusReport.from_pyo3(pyo3_report))
+
+            len_reports = len(reports)
+            plural = "" if len_reports == 1 else "s"
+            self._log.info(f"Received {len(reports)} PositionStatusReport{plural}")
+
+            return reports
         except Exception as e:
             self._log.error(f"Failed to generate position status reports: {e}")
             return []

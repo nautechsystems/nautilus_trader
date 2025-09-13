@@ -549,6 +549,82 @@ pub enum OKXTriggerType {
     Mark,
 }
 
+/// Represents OKX VIP level tiers for trading fee structure and API limits.
+///
+/// VIP levels determine:
+/// - Trading fee discounts.
+/// - API rate limits.
+/// - Access to advanced order book channels (L2/L3 depth).
+///
+/// Higher VIP levels (VIP4+) get access to:
+/// - "books50-l2-tbt" channel (50 depth, 10ms updates).
+/// - "bbo-tbt" channel (1 depth, 10ms updates).
+///
+/// VIP5+ get access to:
+/// - "books-l2-tbt" channel (400 depth, 10ms updates).
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
+)]
+pub enum OKXVipLevel {
+    /// VIP level 0 (default tier).
+    #[serde(rename = "0")]
+    #[strum(serialize = "0")]
+    Vip0 = 0,
+    /// VIP level 1.
+    #[serde(rename = "1")]
+    #[strum(serialize = "1")]
+    Vip1 = 1,
+    /// VIP level 2.
+    #[serde(rename = "2")]
+    #[strum(serialize = "2")]
+    Vip2 = 2,
+    /// VIP level 3.
+    #[serde(rename = "3")]
+    #[strum(serialize = "3")]
+    Vip3 = 3,
+    /// VIP level 4 (can access books50-l2-tbt channel).
+    #[serde(rename = "4")]
+    #[strum(serialize = "4")]
+    Vip4 = 4,
+    /// VIP level 5 (can access books-l2-tbt channel).
+    #[serde(rename = "5")]
+    #[strum(serialize = "5")]
+    Vip5 = 5,
+    /// VIP level 6.
+    #[serde(rename = "6")]
+    #[strum(serialize = "6")]
+    Vip6 = 6,
+    /// VIP level 7.
+    #[serde(rename = "7")]
+    #[strum(serialize = "7")]
+    Vip7 = 7,
+    /// VIP level 8.
+    #[serde(rename = "8")]
+    #[strum(serialize = "8")]
+    Vip8 = 8,
+    /// VIP level 9 (highest tier).
+    #[serde(rename = "9")]
+    #[strum(serialize = "9")]
+    Vip9 = 9,
+}
+
 impl From<OKXSide> for OrderSide {
     fn from(side: OKXSide) -> Self {
         match side {

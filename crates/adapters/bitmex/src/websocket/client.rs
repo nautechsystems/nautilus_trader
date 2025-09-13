@@ -62,7 +62,10 @@ use super::{
     },
 };
 use crate::{
-    common::{consts::BITMEX_WS_URL, credential::Credential, enums::BitmexExecType},
+    common::{
+        consts::BITMEX_WS_URL, credential::Credential, enums::BitmexExecType,
+        parse::parse_account_state,
+    },
     websocket::parse::{
         parse_execution_msg, parse_funding_msg, parse_instrument_msg, parse_order_msg,
         parse_position_msg,
@@ -1282,7 +1285,7 @@ impl BitmexWsMessageHandler {
                 BitmexWsMessage::Table(table_msg) => {
                     let ts_init = clock.get_time_ns();
 
-                    return Some(match table_msg {
+                    let msg = match table_msg {
                         BitmexTableMessage::OrderBookL2 { action, data } => {
                             if data.is_empty() {
                                 continue;
@@ -1493,11 +1496,38 @@ impl BitmexWsMessageHandler {
                                 continue;
                             }
                         }
-                        BitmexTableMessage::Margin { .. } => {
-                            // TODO: Implement proper margin parsing with instrument_id
-                            // For now, we'll skip margin messages as they need an instrument_id
-                            // which requires more context about the position
-                            continue;
+                        BitmexTableMessage::Margin { data, .. } => {
+                            if let Some(margin_msg) = data.into_iter().next() {
+                                tracing::debug!(
+                                    "Processing margin message: wallet={:?}, available={:?}, init={:?}, maint={:?}",
+                                    margin_msg.wallet_balance,
+                                    margin_msg.available_margin,
+                                    margin_msg.init_margin,
+                                    margin_msg.maint_margin
+                                );
+                                // TODO: Catching panics for now for initial development
+                                match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                    parse_account_state(&margin_msg, self.account_id, ts_init)
+                                })) {
+                                    Ok(Ok(account_state)) => {
+                                        tracing::debug!("Successfully parsed margin message");
+                                        NautilusWsMessage::AccountState(account_state)
+                                    }
+                                    Ok(Err(e)) => {
+                                        tracing::debug!("Failed to parse margin message: {e:?}");
+                                        continue;
+                                    }
+                                    Err(panic_info) => {
+                                        tracing::error!(
+                                            "PANIC while parsing margin message: {:?}",
+                                            panic_info
+                                        );
+                                        continue;
+                                    }
+                                }
+                            } else {
+                                continue;
+                            }
                         }
                         BitmexTableMessage::Instrument { data, .. } => {
                             let ts_init = clock.get_time_ns();
@@ -1535,7 +1565,9 @@ impl BitmexWsMessageHandler {
                             tracing::warn!("Unhandled table message type: {table_msg:?}");
                             continue;
                         }
-                    });
+                    };
+
+                    return Some(msg);
                 }
                 _ => {
                     // Other BitmexWsMessage types (Welcome, Subscription, Error) are

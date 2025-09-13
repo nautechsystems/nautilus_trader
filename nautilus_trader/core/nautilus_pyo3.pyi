@@ -1271,6 +1271,8 @@ class BarAggregation(Enum):
     DAY = "DAY"
     WEEK = "WEEK"
     MONTH = "MONTH"
+    YEAR = "YEAR"
+    RENKO = "RENKO"
 
 class BarIntervalType(Enum):
     LEFT_OPEN = "LEFT_OPEN"
@@ -3885,8 +3887,9 @@ class PositionStatusReport:
         quantity: Quantity,
         ts_last: int,
         ts_init: int,
-        venue_position_id: PositionId | None = None,
         report_id: UUID4 | None = None,
+        venue_position_id: PositionId | None = None,
+        avg_px_open: Decimal | None = None,
     ) -> None: ...
     @classmethod
     def from_dict(cls, values: dict[str, str]) -> PositionStatusReport: ...
@@ -3903,6 +3906,8 @@ class PositionStatusReport:
     def quantity(self) -> Quantity: ...
     @property
     def signed_decimal_qty(self) -> Decimal: ...
+    @property
+    def avg_px_open(self) -> Decimal | None: ...
     @property
     def report_id(self) -> UUID4: ...
     @property
@@ -3989,6 +3994,7 @@ class OrderBook:
     def clear(self, sequence: int, ts_event: int) -> None: ...
     def clear_bids(self, sequence: int, ts_event: int) -> None: ...
     def clear_asks(self, sequence: int, ts_event: int) -> None: ...
+    def clear_stale_levels(self) -> list[BookLevel] | None: ...
     def apply_delta(self, delta: OrderBookDelta) -> None: ...
     def apply_deltas(self, deltas: OrderBookDeltas) -> None: ...
     def apply_depth(self, depth: OrderBookDepth10) -> None: ...
@@ -6304,6 +6310,21 @@ class OKXTradeMode(Enum):
 class OKXPositionMode(Enum):
     NET_MODE = "NET_MODE"
     LONG_SHORT_MODE = "LONG_SHORT_MODE"
+
+class OKXVipLevel(Enum):
+    VIP0 = "VIP0"
+    VIP1 = "VIP1"
+    VIP2 = "VIP2"
+    VIP3 = "VIP3"
+    VIP4 = "VIP4"
+    VIP5 = "VIP5"
+    VIP6 = "VIP6"
+    VIP7 = "VIP7"
+    VIP8 = "VIP8"
+    VIP9 = "VIP9"
+
+    @property
+    def value(self) -> int: ...  # type: ignore[override]
 
 # BitMEX
 

@@ -178,6 +178,7 @@ The following `BarAggregation` methods are available:
 - `TICK`
 - `VOLUME`
 - `VALUE` (a.k.a Dollar bars)
+- `RENKO` (price-based bricks)
 - `TICK_IMBALANCE`
 - `TICK_RUNS`
 - `VOLUME_IMBALANCE`

@@ -38,5 +38,8 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
   radius if a job is compromised.
 - **Caching**: caches for sccache, pip/site-packages, pre-commit, and test data speed up workflows while preserving hermetic builds.
 
+**Action Update Policy**: When updating GitHub Actions, only use versions that have been released for at least 2 weeks.
+This allows time for the community to identify potential issues while maintaining security through timely updates.
+
 For updates or changes to actions or workflows, please adhere to the repository's
 CONTRIBUTING guidelines and maintain these security best practices.

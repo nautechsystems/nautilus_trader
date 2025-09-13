@@ -27,7 +27,7 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{Currency, Money, Price, Quantity},
 };
-use rust_decimal::Decimal;
+use rust_decimal::{Decimal, prelude::FromPrimitive};
 use ustr::Ustr;
 use uuid::Uuid;
 
@@ -715,6 +715,7 @@ pub fn parse_position_report(
     let position_side = parse_position_side(position.current_qty).as_specified();
     let quantity = Quantity::from(position.current_qty.map_or(0_i64, i64::abs));
     let venue_position_id = None; // Not applicable on BitMEX
+    let avg_px_open = position.avg_entry_price.and_then(Decimal::from_f64);
     let ts_last = parse_optional_datetime_to_unix_nanos(&position.timestamp, "timestamp");
 
     Ok(PositionStatusReport::new(
@@ -722,10 +723,11 @@ pub fn parse_position_report(
         instrument_id,
         position_side,
         quantity,
-        venue_position_id,
         ts_last,
         ts_init,
-        None,
+        None,              // report_id
+        venue_position_id, // venue_position_id
+        avg_px_open,       // avg_px_open
     ))
 }
 
