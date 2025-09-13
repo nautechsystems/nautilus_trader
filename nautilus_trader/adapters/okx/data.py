@@ -176,6 +176,8 @@ class OKXDataClient(LiveMarketDataClient):
             await self._ws_client.subscribe_instruments(instrument_type)
 
     async def _disconnect(self) -> None:
+        self._http_client.cancel_all_requests()
+
         # Delay to allow websocket to send any unsubscribe messages
         await asyncio.sleep(1.0)
 
@@ -244,7 +246,7 @@ class OKXDataClient(LiveMarketDataClient):
             return
 
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        vip_level = self._config.vip_level or 0
+        vip_level = self._config.vip_level.value if self._config.vip_level else 0
 
         if command.depth == 50:
             if vip_level >= 4:

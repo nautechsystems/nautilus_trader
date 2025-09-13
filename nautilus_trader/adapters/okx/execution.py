@@ -196,6 +196,8 @@ class OKXExecutionClient(LiveExecutionClient):
         await self._ws_client.subscribe_account()
 
     async def _disconnect(self) -> None:
+        self._http_client.cancel_all_requests()
+
         # Shutdown websocket
         if not self._ws_client.is_closed():
             self._log.info("Disconnecting websocket")
@@ -236,7 +238,7 @@ class OKXExecutionClient(LiveExecutionClient):
 
             self.generate_account_state(
                 balances=account_state.balances,
-                margins=[],  # TBD
+                margins=account_state.margins,
                 reported=True,
                 ts_event=self._clock.timestamp_ns(),
             )

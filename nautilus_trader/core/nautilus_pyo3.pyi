@@ -6311,6 +6311,21 @@ class OKXPositionMode(Enum):
     NET_MODE = "NET_MODE"
     LONG_SHORT_MODE = "LONG_SHORT_MODE"
 
+class OKXVipLevel(Enum):
+    VIP0 = "VIP0"
+    VIP1 = "VIP1"
+    VIP2 = "VIP2"
+    VIP3 = "VIP3"
+    VIP4 = "VIP4"
+    VIP5 = "VIP5"
+    VIP6 = "VIP6"
+    VIP7 = "VIP7"
+    VIP8 = "VIP8"
+    VIP9 = "VIP9"
+
+    @property
+    def value(self) -> int: ...  # type: ignore[override]
+
 # BitMEX
 
 class BitmexHttpClient:
