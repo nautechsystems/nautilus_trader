@@ -351,7 +351,6 @@ class OKXExecutionClient(LiveExecutionClient):
                 ) or (command.venue_order_id and report.venue_order_id == command.venue_order_id):
                     self._log.debug(f"Received {report}", LogColor.MAGENTA)
                     return report
-
         except Exception as e:
             self._log.exception("Failed to generate OrderStatusReport", e)
 
@@ -844,9 +843,6 @@ class OKXExecutionClient(LiveExecutionClient):
         )
 
     def _handle_fill_report_pyo3(self, pyo3_report: nautilus_pyo3.FillReport) -> None:
-        """
-        Handle PyO3 FillReport (both fills channel and order status derived).
-        """
         report = FillReport.from_pyo3(pyo3_report)
 
         if self._is_external_order(report.client_order_id):
