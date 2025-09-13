@@ -167,7 +167,8 @@ impl Secrets {
     /// Expected environment variables:
     /// - `HYPERLIQUID_PK`: EVM private key (required)
     /// - `HYPERLIQUID_VAULT`: Vault address (optional)
-    pub fn from_env(is_testnet: bool) -> Result<Self> {
+    /// - `HYPERLIQUID_NETWORK`: Network type - "mainnet" or "testnet" (optional, defaults to "mainnet")
+    pub fn from_env() -> Result<Self> {
         let private_key_str = env::var("HYPERLIQUID_PK")
             .map_err(|_| Error::bad_request("HYPERLIQUID_PK environment variable not set"))?;
 
@@ -176,6 +177,11 @@ impl Secrets {
         let vault_address = match env::var("HYPERLIQUID_VAULT") {
             Ok(addr_str) if !addr_str.trim().is_empty() => Some(VaultAddress::parse(&addr_str)?),
             _ => None,
+        };
+
+        let is_testnet = match env::var("HYPERLIQUID_NETWORK") {
+            Ok(network) => matches!(network.to_lowercase().as_str(), "testnet" | "test"),
+            Err(_) => false, // Default to mainnet if not specified
         };
 
         Ok(Self {
@@ -393,14 +399,14 @@ mod tests {
         // Note: This test requires setting environment variables manually
         // HYPERLIQUID_PK=1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef
         // HYPERLIQUID_VAULT=0x1234567890abcdef1234567890abcdef12345678
-        // HYPERLIQUID_NET=testnet
+        // HYPERLIQUID_NETWORK=testnet
 
         // For now, just test the error case when variables are not set
-        match Secrets::from_env(false) {
+        match Secrets::from_env() {
             Err(e) => {
                 assert!(
-                    e.to_string().contains("HYPERLIQUID_PK missing")
-                        || e.to_string().contains("invalid EVM private key")
+                    e.to_string().contains("HYPERLIQUID_PK")
+                        || e.to_string().contains("environment variable not set")
                 );
             }
             Ok(_) => {

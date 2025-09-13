@@ -8,7 +8,7 @@
 
 [NautilusTrader](http://nautilustrader.io) adapter for the [Hyperliquid](https://hyperliquid.gitbook.io/hyperliquid-docs) decentralized exchange.
 
-The `nautilus-hyperliquid` crate provides strongly-typed client bindings (HTTP & WebSocket), data
+The `nautilus-hyperliquid` crate provides client bindings (HTTP & WebSocket), data
 models and helper utilities that wrap the official **Hyperliquid API**.
 
 ## Platform

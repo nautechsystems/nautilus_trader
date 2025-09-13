@@ -28,11 +28,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let testnet = args.get(1).is_some_and(|s| s == "testnet");
 
     tracing::info!("Starting Hyperliquid HTTP private example");
-    tracing::info!("Testnet: {testnet}");
+    if testnet {
+        tracing::info!(
+            "Testnet parameter provided - set HYPERLIQUID_NETWORK=testnet environment variable"
+        );
+    }
 
     // Try to create authenticated client from environment
-    let client = match HyperliquidHttpClient::from_env(testnet) {
-        Ok(client) => client,
+    let client = match HyperliquidHttpClient::from_env() {
+        Ok(client) => {
+            tracing::info!("Testnet mode: {}", client.is_testnet());
+            client
+        }
         Err(_) => {
             tracing::warn!(
                 "No credentials found in environment (HYPERLIQUID_PK). Skipping authenticated examples."

@@ -131,9 +131,9 @@ impl HyperliquidHttpClient {
     ///
     /// Returns [`Error::Auth`] if required environment variables
     /// are not set.
-    pub fn from_env(is_testnet: bool) -> Result<Self> {
-        let secrets = Secrets::from_env(is_testnet)
-            .map_err(|_| Error::auth("missing credentials in environment"))?;
+    pub fn from_env() -> Result<Self> {
+        let secrets =
+            Secrets::from_env().map_err(|_| Error::auth("missing credentials in environment"))?;
         Ok(Self::with_credentials(&secrets, None))
     }
 
