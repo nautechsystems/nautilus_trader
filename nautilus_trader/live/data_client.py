@@ -42,6 +42,7 @@ from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestData
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
+from nautilus_trader.data.messages import RequestOrderBookDepths
 from nautilus_trader.data.messages import RequestOrderBookSnapshot
 from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
@@ -875,6 +876,19 @@ class LiveMarketDataClient(MarketDataClient):
             log_msg=f"request: order_book_snapshot {request.instrument_id}",
         )
 
+    def request_order_book_depths(self, request: RequestOrderBookDepths) -> None:
+        time_range_str = format_utc_timerange(request.start, request.end)
+        limit_str = f" limit={request.limit}" if request.limit != 0 else ""
+        depth_str = f" depth={request.depth}"
+        self._log.info(
+            f"Request {request.instrument_id} order_book_depths{time_range_str}{limit_str}{depth_str}",
+            LogColor.BLUE,
+        )
+        self.create_task(
+            self._request_order_book_depths(request),
+            log_msg=f"request: order_book_depths {request.instrument_id}",
+        )
+
     ############################################################################
     # Coroutines to implement
     ############################################################################
@@ -1051,6 +1065,11 @@ class LiveMarketDataClient(MarketDataClient):
     async def _request_order_book_snapshot(self, request: RequestOrderBookSnapshot) -> None:
         raise NotImplementedError(
             "implement the `_request_order_book_snapshot` coroutine",  # pragma: no cover
+        )
+
+    async def _request_order_book_depths(self, request: RequestOrderBookDepths) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "implement the `_request_order_book_depths` coroutine",  # pragma: no cover
         )
 
     async def cancel_pending_tasks(self, timeout_secs: float = 5.0) -> None:

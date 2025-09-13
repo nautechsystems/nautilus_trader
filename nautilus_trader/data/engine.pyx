@@ -75,6 +75,7 @@ from nautilus_trader.data.messages cimport RequestBars
 from nautilus_trader.data.messages cimport RequestData
 from nautilus_trader.data.messages cimport RequestInstrument
 from nautilus_trader.data.messages cimport RequestInstruments
+from nautilus_trader.data.messages cimport RequestOrderBookDepths
 from nautilus_trader.data.messages cimport RequestOrderBookSnapshot
 from nautilus_trader.data.messages cimport RequestQuoteTicks
 from nautilus_trader.data.messages cimport RequestTradeTicks
@@ -917,7 +918,7 @@ cdef class DataEngine(Component):
                 client.subscribe_order_book_deltas(command)
         elif command.data_type.type == OrderBookDepth10:
             if command.instrument_id not in client.subscribed_order_book_snapshots():
-                client.subscribe_order_book_snapshots(command)
+                client.subscribe_order_book_depth10(command)
         else:  # pragma: no cover (design-time error)
             raise TypeError(f"Invalid book data type, was {command.data_type}")
 
@@ -1228,6 +1229,9 @@ cdef class DataEngine(Component):
             if command.data_type.type == OrderBookDelta:
                 if command.instrument_id in client.subscribed_order_book_deltas():
                     client.unsubscribe_order_book_deltas(command)
+            elif command.data_type.type == OrderBookDepth10:
+                if command.instrument_id in client.subscribed_order_book_snapshots():
+                    client.unsubscribe_order_book_depth10(command)
             else:
                 if command.instrument_id in client.subscribed_order_book_snapshots():
                     client.unsubscribe_order_book_snapshots(command)
@@ -1380,6 +1384,8 @@ cdef class DataEngine(Component):
             self._handle_request_instrument(client, request)
         elif isinstance(request, RequestOrderBookSnapshot):
             self._handle_request_order_book_snapshot(client, request)
+        elif isinstance(request, RequestOrderBookDepths):
+            self._handle_request_order_book_depths(client, request)
         elif isinstance(request, RequestQuoteTicks):
             self._handle_request_quote_ticks(client, request)
         elif isinstance(request, RequestTradeTicks):
@@ -1423,6 +1429,9 @@ cdef class DataEngine(Component):
             return  # No client to handle request
 
         client.request_order_book_snapshot(request)
+
+    cpdef void _handle_request_order_book_depths(self, DataClient client, RequestOrderBookDepths request):
+        self._handle_date_range_request(client, request)
 
     cpdef void _handle_request_quote_ticks(self, DataClient client, RequestQuoteTicks request):
         self._handle_date_range_request(client, request)

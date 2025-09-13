@@ -242,6 +242,18 @@ cdef class Actor(Component):
         callback=*,
         dict[str, object] params=*,
     )
+    cpdef UUID4 request_order_book_depths(
+        self,
+        InstrumentId instrument_id,
+        datetime start,
+        datetime end=*,
+        int limit=*,
+        int depth=*,
+        ClientId client_id=*,
+        callback=*,
+        bint update_catalog=*,
+        dict params=*,
+    )
     cpdef UUID4 request_quote_ticks(
         self,
         InstrumentId instrument_id,

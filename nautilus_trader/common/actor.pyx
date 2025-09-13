@@ -62,6 +62,7 @@ from nautilus_trader.data.messages cimport RequestBars
 from nautilus_trader.data.messages cimport RequestData
 from nautilus_trader.data.messages cimport RequestInstrument
 from nautilus_trader.data.messages cimport RequestInstruments
+from nautilus_trader.data.messages cimport RequestOrderBookDepths
 from nautilus_trader.data.messages cimport RequestOrderBookSnapshot
 from nautilus_trader.data.messages cimport RequestQuoteTicks
 from nautilus_trader.data.messages cimport RequestTradeTicks
@@ -2881,6 +2882,86 @@ cdef class Actor(Component):
         cdef RequestOrderBookSnapshot request = RequestOrderBookSnapshot(
             instrument_id=instrument_id,
             limit=limit,
+            client_id=client_id,
+            venue=instrument_id.venue,
+            callback=self._handle_data_response,
+            request_id=request_id,
+            ts_init=self._clock.timestamp_ns(),
+            params=params,
+        )
+        self._pending_requests[request_id] = callback
+        self._send_data_req(request)
+
+        return request_id
+
+    cpdef UUID4 request_order_book_depths(
+        self,
+        InstrumentId instrument_id,
+        datetime start,
+        datetime end = None,
+        int limit = 0,
+        int depth = 10,
+        ClientId client_id = None,
+        callback: Callable[[UUID4], None] | None = None,
+        bint update_catalog: bool = True,
+        dict[str, object] params = None,
+    ):
+        """
+        Request historical order book depths.
+
+        Once the response is received, the order book depth data is forwarded from the message bus
+        to the `on_historical_data` handler.
+
+        If the request fails, then an error is logged.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the order book depths request.
+        start : datetime
+            The start datetime (UTC) of request time range (inclusive).
+        end : datetime, optional
+            The end datetime (UTC) of request time range.
+            The inclusiveness depends on individual data client implementation.
+        limit : int, optional
+            The limit on the amount of order book depths received.
+        depth : int, optional
+            The maximum depth for the order book depths (default is 10).
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If None, it will be inferred from the venue in the instrument ID.
+        callback : Callable[[UUID4], None], optional
+            The registered callback, to be called with the request ID when the response has completed processing.
+        update_catalog : bool, default True
+            If the data catalog should be updated with the received data.
+        params : dict[str, Any], optional
+            Additional parameters potentially used by a specific client.
+
+        Returns
+        -------
+        UUID4
+            The `request_id` for the request.
+
+        Raises
+        ------
+        ValueError
+            If the instrument_id is None.
+        TypeError
+            If callback is not None and not of type Callable.
+
+        """
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.not_none(start, "start")
+        Condition.callable_or_none(callback, "callback")
+
+        cdef UUID4 request_id = UUID4()
+        cdef RequestOrderBookDepths request = RequestOrderBookDepths(
+            instrument_id=instrument_id,
+            start=start,
+            end=end,
+            limit=limit,
+            depth=depth,
             client_id=client_id,
             venue=instrument_id.venue,
             callback=self._handle_data_response,
