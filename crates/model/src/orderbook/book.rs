@@ -169,63 +169,86 @@ impl OrderBook {
     /// - It deletes levels by removing all orders in those levels using the ladder API,
     ///   preserving cache invariants and letting empty levels drop naturally.
     ///
-    /// Returns the number of price levels removed across both sides.
-    pub fn clear_stale_levels(&mut self) -> usize {
+    /// Returns the removed price levels from both sides (crossed bids first, then crossed asks),
+    /// or None if no levels were removed.
+    pub fn clear_stale_levels(&mut self) -> Option<Vec<BookLevel>> {
         // L1_MBP maintains a single top-of-book price per side; nothing to do
         if self.book_type == BookType::L1_MBP {
-            return 0;
+            return None;
         }
 
         let (Some(best_bid), Some(best_ask)) = (self.best_bid_price(), self.best_ask_price())
         else {
-            return 0;
+            return None;
         };
 
         if best_bid <= best_ask {
-            return 0;
+            return None;
         }
 
-        // Collect order IDs to remove, count levels for the return value
-        let mut ask_order_ids = Vec::new();
-        let mut ask_levels_removed = 0;
+        let mut removed_levels = Vec::new();
 
-        for (bp, level) in self.asks.levels.iter() {
+        // Collect prices to remove for asks (prices <= best_bid)
+        let mut ask_prices_to_remove = Vec::new();
+        for (bp, _level) in self.asks.levels.iter() {
             if bp.value <= best_bid {
-                ask_levels_removed += 1;
-                ask_order_ids.extend(level.orders.keys().copied());
+                ask_prices_to_remove.push(*bp);
             } else {
                 break;
             }
         }
 
-        let mut bid_order_ids = Vec::new();
-        let mut bid_levels_removed = 0;
-
-        for (bp, level) in self.bids.levels.iter() {
+        // Collect prices to remove for bids (prices >= best_ask)
+        let mut bid_prices_to_remove = Vec::new();
+        for (bp, _level) in self.bids.levels.iter() {
             if bp.value >= best_ask {
-                bid_levels_removed += 1;
-                bid_order_ids.extend(level.orders.keys().copied());
+                bid_prices_to_remove.push(*bp);
             } else {
                 break;
             }
         }
 
-        if ask_levels_removed == 0 && bid_levels_removed == 0 {
-            return 0;
+        if ask_prices_to_remove.is_empty() && bid_prices_to_remove.is_empty() {
+            return None;
         }
 
-        for order_id in ask_order_ids {
-            self.asks.remove(order_id, self.sequence, self.ts_last);
+        let bid_count = bid_prices_to_remove.len();
+        let ask_count = ask_prices_to_remove.len();
+
+        // Remove bid levels and collect them
+        for price in bid_prices_to_remove {
+            if let Some(level) = self.bids.remove_level(price) {
+                removed_levels.push(level);
+            }
         }
 
-        for order_id in bid_order_ids {
-            self.bids.remove(order_id, self.sequence, self.ts_last);
+        // Remove ask levels and collect them
+        for price in ask_prices_to_remove {
+            if let Some(level) = self.asks.remove_level(price) {
+                removed_levels.push(level);
+            }
         }
 
-        // Bump update count (keeping sequence and ts_last unchanged)
         self.increment(self.sequence, self.ts_last);
 
-        ask_levels_removed + bid_levels_removed
+        if removed_levels.is_empty() {
+            None
+        } else {
+            let total_orders: usize = removed_levels.iter().map(|level| level.orders.len()).sum();
+
+            log::warn!(
+                "Removed {} stale/crossed levels (instrument_id={}, bid_levels={}, ask_levels={}, total_orders={}), book was crossed with best_bid={} > best_ask={}",
+                removed_levels.len(),
+                self.instrument_id,
+                bid_count,
+                ask_count,
+                total_orders,
+                best_bid,
+                best_ask
+            );
+
+            Some(removed_levels)
+        }
     }
 
     /// Applies a single order book delta operation.
@@ -640,7 +663,7 @@ impl OrderBook {
         if let Some(top_bids) = self.bids.top()
             && let Some(top_bid) = top_bids.first()
         {
-            self.bids.remove(top_bid.order_id, 0, ts_event);
+            self.bids.remove_order(top_bid.order_id, 0, ts_event);
         }
         self.bids.add(order);
     }
@@ -649,7 +672,7 @@ impl OrderBook {
         if let Some(top_asks) = self.asks.top()
             && let Some(top_ask) = top_asks.first()
         {
-            self.asks.remove(top_ask.order_id, 0, ts_event);
+            self.asks.remove_order(top_ask.order_id, 0, ts_event);
         }
         self.asks.add(order);
     }

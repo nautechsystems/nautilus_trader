@@ -128,7 +128,7 @@ impl OrderBook {
     }
 
     #[pyo3(name = "clear_stale_levels")]
-    fn py_clear_stale_levels(&mut self) -> usize {
+    fn py_clear_stale_levels(&mut self) -> Option<Vec<BookLevel>> {
         self.clear_stale_levels()
     }
 

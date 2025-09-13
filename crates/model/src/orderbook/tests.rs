@@ -1822,10 +1822,10 @@ fn test_book_clear_stale_levels_not_crossed() {
 
     let initial_update_count = book.update_count;
 
-    // Clear stale levels should return 0 and not modify the book
+    // Clear stale levels should return None and not modify the book
     let removed = book.clear_stale_levels();
 
-    assert_eq!(removed, 0);
+    assert!(removed.is_none());
     assert_eq!(book.update_count, initial_update_count); // No increment when nothing removed
     assert_eq!(book.best_bid_price(), Some(Price::from("99.00")));
     assert_eq!(book.best_ask_price(), Some(Price::from("101.00")));
@@ -1877,7 +1877,9 @@ fn test_book_clear_stale_levels_simple_crossed() {
     // Should remove:
     // - Bids with price >= 95 (original best ask): 105, 100
     // - Asks with price <= 105 (original best bid): 95
-    assert_eq!(removed, 3); // 2 bid levels + 1 ask level
+    assert!(removed.is_some());
+    let removed_levels = removed.unwrap();
+    assert_eq!(removed_levels.len(), 3); // 2 bid levels + 1 ask level
     assert_eq!(book.update_count, initial_update_count + 1); // Should increment once
     assert_eq!(book.best_bid_price(), None); // Both bids removed
     assert_eq!(book.best_ask_price(), Some(Price::from("110.00"))); // ask1 removed
@@ -1958,7 +1960,9 @@ fn test_book_clear_stale_levels_multiple_overlapping() {
     // Should remove:
     // - Bids with price >= 95 (original best ask): 110, 108, 105
     // - Asks with price <= 110 (original best bid): 95, 100, 103
-    assert_eq!(removed, 6); // 3 bid levels + 3 ask levels
+    assert!(removed.is_some());
+    let removed_levels = removed.unwrap();
+    assert_eq!(removed_levels.len(), 6); // 3 bid levels + 3 ask levels
     assert_eq!(book.best_bid_price(), Some(Price::from("90.00")));
     assert_eq!(book.best_ask_price(), Some(Price::from("115.00")));
     assert_eq!(book.bids(None).count(), 1);
@@ -2009,7 +2013,9 @@ fn test_book_clear_stale_levels_with_multiple_orders_per_level() {
     let removed = book.clear_stale_levels();
 
     // Should remove 1 bid level at 105 + 1 ask level at 95
-    assert_eq!(removed, 2); // Count of price levels
+    assert!(removed.is_some());
+    let removed_levels = removed.unwrap();
+    assert_eq!(removed_levels.len(), 2); // Count of price levels
     assert_eq!(book.best_bid_price(), Some(Price::from("90.00")));
     assert_eq!(book.best_ask_price(), Some(Price::from("110.00")));
     assert_eq!(book.bids(None).count(), 1);
@@ -2024,7 +2030,7 @@ fn test_book_clear_stale_levels_empty_book() {
     let initial_update_count = book.update_count;
     let removed = book.clear_stale_levels();
 
-    assert_eq!(removed, 0);
+    assert!(removed.is_none());
     assert_eq!(book.update_count, initial_update_count);
 }
 
@@ -2051,7 +2057,7 @@ fn test_book_clear_stale_levels_only_bids() {
 
     let removed = book.clear_stale_levels();
 
-    assert_eq!(removed, 0);
+    assert!(removed.is_none());
     assert_eq!(book.bids(None).count(), 2);
 }
 
@@ -2078,7 +2084,7 @@ fn test_book_clear_stale_levels_only_asks() {
 
     let removed = book.clear_stale_levels();
 
-    assert_eq!(removed, 0);
+    assert!(removed.is_none());
     assert_eq!(book.asks(None).count(), 2);
 }
 
@@ -2106,7 +2112,7 @@ fn test_book_clear_stale_levels_exactly_crossed() {
     let removed = book.clear_stale_levels();
 
     // Should not remove anything when bid == ask (not strictly crossed)
-    assert_eq!(removed, 0);
+    assert!(removed.is_none());
     assert_eq!(book.best_bid_price(), Some(Price::from("100.00")));
     assert_eq!(book.best_ask_price(), Some(Price::from("100.00")));
 }
@@ -2117,10 +2123,10 @@ fn test_book_clear_stale_levels_l1_mbp() {
     let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
     let mut book = OrderBook::new(instrument_id, BookType::L1_MBP);
 
-    // Even if we somehow had a crossed L1 book, it should return 0
+    // Even if we somehow had a crossed L1 book, it should return None
     let removed = book.clear_stale_levels();
 
-    assert_eq!(removed, 0);
+    assert!(removed.is_none());
 }
 
 #[rstest]
@@ -2212,7 +2218,9 @@ fn test_book_clear_stale_levels_boundary_conditions() {
     // Should remove:
     // - Asks with price <= 105 (original best bid): 90, 105
     // - Bids with price >= 90 (original best ask): 105, 100, 95
-    assert_eq!(removed, 5); // 3 bid levels + 2 ask levels
+    assert!(removed.is_some());
+    let removed_levels = removed.unwrap();
+    assert_eq!(removed_levels.len(), 5); // 3 bid levels + 2 ask levels
     assert_eq!(book.bids(None).count(), 0);
     assert_eq!(book.asks(None).count(), 1);
     assert_eq!(book.best_ask_price(), Some(Price::from("110.00")));
