@@ -138,6 +138,8 @@ impl Display for PositionStatusReport {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use nautilus_core::UnixNanos;
     use rstest::*;
     use rust_decimal::Decimal;
@@ -388,5 +390,99 @@ mod tests {
             long_report.signed_decimal_qty,
             short_report.signed_decimal_qty
         );
+    }
+
+    #[rstest]
+    fn test_with_avg_px_open() {
+        let report = PositionStatusReport::new(
+            AccountId::from("SIM-001"),
+            InstrumentId::from("AUDUSD.SIM"),
+            PositionSideSpecified::Long,
+            Quantity::from("100"),
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::from(2_000_000_000),
+            None,
+            Some(PositionId::from("P-001")),
+            Some(Decimal::from_str("1.23456").unwrap()),
+        );
+
+        assert_eq!(
+            report.avg_px_open,
+            Some(rust_decimal::Decimal::from_str("1.23456").unwrap())
+        );
+        assert!(format!("{}", report).contains("avg_px_open=Some(1.23456)"));
+    }
+
+    #[rstest]
+    fn test_avg_px_open_none_default() {
+        let report = PositionStatusReport::new(
+            AccountId::from("SIM-001"),
+            InstrumentId::from("AUDUSD.SIM"),
+            PositionSideSpecified::Long,
+            Quantity::from("100"),
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::from(2_000_000_000),
+            None,
+            None,
+            None, // avg_px_open is None
+        );
+
+        assert_eq!(report.avg_px_open, None);
+    }
+
+    #[rstest]
+    fn test_avg_px_open_with_different_sides() {
+        let long_with_price = PositionStatusReport::new(
+            AccountId::from("SIM-001"),
+            InstrumentId::from("AUDUSD.SIM"),
+            PositionSideSpecified::Long,
+            Quantity::from("100"),
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::from(2_000_000_000),
+            None,
+            None,
+            Some(Decimal::from_str("1.50000").unwrap()),
+        );
+
+        let short_with_price = PositionStatusReport::new(
+            AccountId::from("SIM-001"),
+            InstrumentId::from("AUDUSD.SIM"),
+            PositionSideSpecified::Short,
+            Quantity::from("100"),
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::from(2_000_000_000),
+            None,
+            None,
+            Some(Decimal::from_str("1.60000").unwrap()),
+        );
+
+        assert_eq!(
+            long_with_price.avg_px_open,
+            Some(rust_decimal::Decimal::from_str("1.50000").unwrap())
+        );
+        assert_eq!(
+            short_with_price.avg_px_open,
+            Some(rust_decimal::Decimal::from_str("1.60000").unwrap())
+        );
+    }
+
+    #[rstest]
+    fn test_avg_px_open_serialization() {
+        let report = PositionStatusReport::new(
+            AccountId::from("SIM-001"),
+            InstrumentId::from("AUDUSD.SIM"),
+            PositionSideSpecified::Long,
+            Quantity::from("100"),
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::from(2_000_000_000),
+            None,
+            None,
+            Some(Decimal::from_str("1.99999").unwrap()),
+        );
+
+        let json = serde_json::to_string(&report).unwrap();
+        let deserialized: PositionStatusReport = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(report.avg_px_open, deserialized.avg_px_open);
     }
 }

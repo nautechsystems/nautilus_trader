@@ -125,8 +125,8 @@ class TestExecutionReports:
             == f"FillReport(account_id=SIM-001, instrument_id=AUD/USD.IDEALPRO, client_order_id=O-123456789, venue_order_id=1, venue_position_id=2, trade_id=3, order_side=BUY, last_qty=10_000_000, last_px=100.50, commission=4.50 USD, liquidity_side=TAKER, report_id={report_id}, ts_event=0, ts_init=0)"  # noqa
         )
 
-    def test_instantiate_position_status_report(self):
-        # Arrange, Act
+    def test_instantiate_position_status_report_long_and_short(self):
+        # Arrange
         report_id1 = UUID4()
         report1 = PositionStatusReport(
             account_id=AccountId("SIM-001"),
@@ -152,6 +152,10 @@ class TestExecutionReports:
         )
 
         # Assert
+        assert report1.position_side == PositionSide.LONG
+        assert report1.signed_decimal_qty == Decimal("1000000")
+        assert report2.position_side == PositionSide.SHORT
+        assert report2.signed_decimal_qty == Decimal("-1000000")
         assert (
             str(report1)
             == f"PositionStatusReport(account_id=SIM-001, instrument_id=AUD/USD.IDEALPRO, venue_position_id=1, position_side=LONG, quantity=1_000_000, avg_px_open=None, signed_decimal_qty=1000000, report_id={report_id1}, ts_last=0, ts_init=0)"  # noqa
@@ -160,7 +164,6 @@ class TestExecutionReports:
             repr(report1)
             == f"PositionStatusReport(account_id=SIM-001, instrument_id=AUD/USD.IDEALPRO, venue_position_id=1, position_side=LONG, quantity=1_000_000, avg_px_open=None, signed_decimal_qty=1000000, report_id={report_id1}, ts_last=0, ts_init=0)"  # noqa
         )
-
         assert (
             str(report2)
             == f"PositionStatusReport(account_id=SIM-001, instrument_id=AUD/USD.IDEALPRO, venue_position_id=2, position_side=SHORT, quantity=1_000_000, avg_px_open=None, signed_decimal_qty=-1000000, report_id={report_id2}, ts_last=0, ts_init=0)"  # noqa
@@ -772,7 +775,111 @@ class TestExecutionReports:
         assert report.position_side == PositionSide.SHORT
         assert report.quantity == Quantity.from_str("50000")
         assert report.signed_decimal_qty == Decimal("-50000")
-        assert report.venue_position_id is None
+
+    def test_position_status_report_with_avg_px_open(self):
+        # Arrange
+        report_id = UUID4()
+        report = PositionStatusReport(
+            account_id=AccountId("SIM-001"),
+            instrument_id=AUDUSD_IDEALPRO,
+            venue_position_id=PositionId("P-001"),
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_int(100_000),
+            avg_px_open=Price.from_str("1.25000"),
+            report_id=report_id,
+            ts_last=1_000_000_000,
+            ts_init=2_000_000_000,
+        )
+
+        # Assert
+        assert report.avg_px_open == Price.from_str("1.25000")
+        assert "avg_px_open=1.25000" in str(report)
+        assert "avg_px_open=1.25000" in repr(report)
+
+    def test_position_status_report_avg_px_open_none(self):
+        # Arrange
+        report = PositionStatusReport(
+            account_id=AccountId("SIM-001"),
+            instrument_id=AUDUSD_IDEALPRO,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_int(100_000),
+            avg_px_open=None,
+            report_id=UUID4(),
+            ts_last=1_000_000_000,
+            ts_init=2_000_000_000,
+        )
+
+        # Assert
+        assert report.avg_px_open is None
+        assert "avg_px_open=None" in str(report)
+
+    def test_position_status_report_with_avg_px_open_serialization(self):
+        # Arrange
+        report = PositionStatusReport(
+            account_id=AccountId("SIM-001"),
+            instrument_id=AUDUSD_IDEALPRO,
+            position_side=PositionSide.SHORT,
+            quantity=Quantity.from_int(50_000),
+            avg_px_open=Price.from_str("0.75500"),
+            report_id=UUID4(),
+            ts_last=1_000_000_000,
+            ts_init=2_000_000_000,
+        )
+
+        # Act
+        serialized = report.to_dict()
+        deserialized = PositionStatusReport.from_dict(serialized)
+
+        # Assert
+        assert deserialized.avg_px_open == Price.from_str("0.75500")
+        assert deserialized.avg_px_open == report.avg_px_open
+
+    def test_position_status_report_avg_px_open_from_pyo3(self):
+        # Arrange
+        pyo3_report = nautilus_pyo3.PositionStatusReport(
+            account_id=nautilus_pyo3.AccountId("SIM-001"),
+            instrument_id=nautilus_pyo3.InstrumentId.from_str("AUD/USD.IDEALPRO"),
+            position_side=nautilus_pyo3.PositionSide.LONG,
+            quantity=nautilus_pyo3.Quantity.from_str("100000"),
+            venue_position_id=nautilus_pyo3.PositionId("P-003"),
+            avg_px_open=nautilus_pyo3.Price.from_str("1.35000"),
+            ts_last=1_000_000_000,
+            ts_init=2_000_000_000,
+        )
+
+        # Act
+        report = PositionStatusReport.from_pyo3(pyo3_report)
+
+        # Assert
+        assert report.avg_px_open == Price.from_str("1.35000")
+
+    def test_position_status_report_different_avg_px_open_values(self):
+        # Arrange
+        report1 = PositionStatusReport(
+            account_id=AccountId("SIM-001"),
+            instrument_id=AUDUSD_IDEALPRO,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_int(100_000),
+            avg_px_open=Price.from_str("1.25000"),
+            report_id=UUID4(),
+            ts_last=1_000_000_000,
+            ts_init=2_000_000_000,
+        )
+        report2 = PositionStatusReport(
+            account_id=AccountId("SIM-001"),
+            instrument_id=AUDUSD_IDEALPRO,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_int(100_000),
+            avg_px_open=Price.from_str("1.30000"),
+            report_id=UUID4(),
+            ts_last=1_000_000_000,
+            ts_init=2_000_000_000,
+        )
+
+        # Assert
+        assert report1.avg_px_open != report2.avg_px_open
+        assert report1.avg_px_open == Price.from_str("1.25000")
+        assert report2.avg_px_open == Price.from_str("1.30000")
 
     def test_order_status_report_leaves_qty_clamped_to_zero_when_overfilled(self):
         # Arrange, Act: filled quantity exceeds original quantity
@@ -794,3 +901,94 @@ class TestExecutionReports:
 
         # Assert: leaves_qty is clamped to zero (non-negative)
         assert report.leaves_qty == Quantity.zero(0)
+
+    def test_execution_mass_status_to_from_dict(self):
+        # Arrange
+        mass_status = ExecutionMassStatus(
+            client_id=ClientId("IB"),
+            account_id=AccountId("IB-123456"),
+            venue=Venue("IDEALPRO"),
+            report_id=UUID4(),
+            ts_init=1_000_000_000,
+        )
+
+        # Act
+        mass_status_dict = mass_status.to_dict()
+        mass_status_from_dict = ExecutionMassStatus.from_dict(mass_status_dict)
+
+        # Assert
+        assert mass_status_from_dict.client_id == ClientId("IB")
+        assert mass_status_from_dict.account_id == AccountId("IB-123456")
+        assert mass_status_from_dict.venue == Venue("IDEALPRO")
+        assert mass_status_from_dict.ts_init == 1_000_000_000
+        assert mass_status_from_dict.order_reports == {}
+        assert mass_status_from_dict.fill_reports == {}
+        assert mass_status_from_dict.position_reports == {}
+
+    def test_position_status_report_flat_position(self):
+        # Arrange
+        report = PositionStatusReport(
+            account_id=AccountId("SIM-001"),
+            instrument_id=AUDUSD_IDEALPRO,
+            position_side=PositionSide.FLAT,
+            quantity=Quantity.zero(0),
+            report_id=UUID4(),
+            ts_last=1_000_000_000,
+            ts_init=2_000_000_000,
+        )
+
+        # Assert
+        assert report.position_side == PositionSide.FLAT
+        assert report.quantity == Quantity.zero(0)
+        assert report.signed_decimal_qty == Decimal("0")
+
+    def test_fill_report_with_zero_commission(self):
+        # Arrange
+        report = FillReport(
+            account_id=AccountId("SIM-001"),
+            instrument_id=AUDUSD_IDEALPRO,
+            client_order_id=ClientOrderId("O-123"),
+            venue_order_id=VenueOrderId("V-123"),
+            trade_id=TradeId("T-123"),
+            order_side=OrderSide.BUY,
+            last_qty=Quantity.from_int(100),
+            last_px=Price.from_str("1.00000"),
+            commission=Money(0, USD),  # Zero commission
+            liquidity_side=LiquiditySide.MAKER,
+            report_id=UUID4(),
+            ts_event=1_000_000_000,
+            ts_init=2_000_000_000,
+        )
+
+        # Assert
+        assert report.commission == Money(0, USD)
+        assert report.commission.as_decimal() == Decimal("0")
+
+    def test_order_status_report_with_trigger_price_but_not_triggered(self):
+        # Arrange
+        report = OrderStatusReport(
+            account_id=AccountId("SIM-001"),
+            instrument_id=AUDUSD_IDEALPRO,
+            venue_order_id=VenueOrderId("V-123"),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.STOP_LIMIT,
+            time_in_force=TimeInForce.GTC,
+            order_status=OrderStatus.ACCEPTED,
+            quantity=Quantity.from_int(100),
+            filled_qty=Quantity.zero(0),
+            trigger_price=Price.from_str("1.00100"),
+            trigger_type=TriggerType.DEFAULT,
+            price=Price.from_str("1.00050"),
+            report_id=UUID4(),
+            ts_accepted=1_000_000_000,
+            ts_triggered=0,  # Not triggered yet
+            ts_last=2_000_000_000,
+            ts_init=3_000_000_000,
+        )
+
+        # Assert
+        assert report.trigger_price == Price.from_str("1.00100")
+        assert report.trigger_type == TriggerType.DEFAULT
+        assert report.ts_triggered == 0
+        assert report.order_status == OrderStatus.ACCEPTED
+        assert report.filled_qty == Quantity.zero(0)
