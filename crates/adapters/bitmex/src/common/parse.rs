@@ -19,7 +19,7 @@ use nautilus_model::{
     enums::{AccountType, AggressorSide, LiquiditySide, PositionSide},
     events::AccountState,
     identifiers::{AccountId, InstrumentId, Symbol},
-    types::{AccountBalance, Currency, Money, QUANTITY_MAX, Quantity},
+    types::{AccountBalance, Currency, MarginBalance, Money, QUANTITY_MAX, Quantity},
 };
 use ustr::Ustr;
 
@@ -132,6 +132,8 @@ pub const fn parse_position_side(current_qty: Option<i64>) -> PositionSide {
 /// - "XBt" -> "XBT" (Bitcoin)
 /// - "USDt" -> "USDT" (Tether)
 /// - "LAMp" -> "USDT" (Test currency, mapped to USDT)
+/// - "RLUSd" -> "RLUSD" (Ripple USD stablecoin)
+/// - "MAMUSd" -> "MAMUSD" (Unknown stablecoin)
 ///
 /// For other currencies, converts to uppercase.
 #[must_use]
@@ -140,6 +142,8 @@ pub fn map_bitmex_currency(bitmex_currency: &str) -> String {
         "XBt" => "XBT".to_string(),
         "USDt" => "USDT".to_string(),
         "LAMp" => "USDT".to_string(), // Map test currency to USDT
+        "RLUSd" => "RLUSD".to_string(),
+        "MAMUSd" => "MAMUSD".to_string(),
         other => other.to_uppercase(),
     }
 }
@@ -154,12 +158,33 @@ pub fn parse_account_state(
     account_id: AccountId,
     ts_init: UnixNanos,
 ) -> anyhow::Result<AccountState> {
+    tracing::debug!(
+        "Parsing margin: currency={}, wallet_balance={:?}, available_margin={:?}, init_margin={:?}, maint_margin={:?}, foreign_margin_balance={:?}, foreign_requirement={:?}",
+        margin.currency,
+        margin.wallet_balance,
+        margin.available_margin,
+        margin.init_margin,
+        margin.maint_margin,
+        margin.foreign_margin_balance,
+        margin.foreign_requirement
+    );
+
     // Map BitMEX currency to standard currency code
     let currency_str = map_bitmex_currency(&margin.currency);
-    let currency = Currency::from(currency_str.as_str());
+
+    // Skip unknown currencies (like RLUSD) that aren't registered in Nautilus
+    let currency = match Currency::try_from_str(&currency_str) {
+        Some(c) => c,
+        None => {
+            tracing::debug!(
+                "Skipping margin message for unknown currency: {}",
+                currency_str
+            );
+            return Err(anyhow::anyhow!("Unknown currency: {}", currency_str));
+        }
+    };
 
     // BitMEX returns values in satoshis for BTC (XBt) or microunits for USDT/LAMp
-    // We need to convert to the actual value
     let divisor = if margin.currency == "XBt" {
         100_000_000.0 // Satoshis to BTC
     } else if margin.currency == "USDt" || margin.currency == "LAMp" {
@@ -168,26 +193,72 @@ pub fn parse_account_state(
         1.0
     };
 
-    // Calculate total balance from wallet balance
+    // Wallet balance is the actual asset amount
     let total = if let Some(wallet_balance) = margin.wallet_balance {
         Money::new(wallet_balance as f64 / divisor, currency)
+    } else if let Some(margin_balance) = margin.margin_balance {
+        Money::new(margin_balance as f64 / divisor, currency)
+    } else if let Some(available) = margin.available_margin {
+        // Fallback when only available_margin is provided
+        Money::new(available as f64 / divisor, currency)
     } else {
         Money::new(0.0, currency)
     };
 
-    // Calculate free balance from available margin
-    let free = if let Some(available_margin) = margin.available_margin {
-        Money::new(available_margin as f64 / divisor, currency)
+    // Calculate how much is locked for margin requirements
+    let margin_used = if let Some(init_margin) = margin.init_margin {
+        Money::new(init_margin as f64 / divisor, currency)
     } else {
         Money::new(0.0, currency)
     };
 
-    // Calculate locked balance as the difference
+    // Free balance: prefer withdrawable_margin, then available_margin, then calculate
+    let free = if let Some(withdrawable) = margin.withdrawable_margin {
+        Money::new(withdrawable as f64 / divisor, currency)
+    } else if let Some(available) = margin.available_margin {
+        // Available margin already accounts for orders and positions
+        let available_money = Money::new(available as f64 / divisor, currency);
+        // Ensure it doesn't exceed total (can happen with unrealized PnL)
+        if available_money > total {
+            total
+        } else {
+            available_money
+        }
+    } else {
+        // Fallback: free = total - init_margin
+        let calculated_free = total - margin_used;
+        if calculated_free < Money::new(0.0, currency) {
+            Money::new(0.0, currency)
+        } else {
+            calculated_free
+        }
+    };
+
+    // Locked is what's being used for margin
     let locked = total - free;
 
     let balance = AccountBalance::new(total, locked, free);
     let balances = vec![balance];
-    let margins = vec![]; // BitMEX margin info is already in the balances
+
+    let mut margins = Vec::new();
+
+    // Add standard margin requirements if present
+    if let (Some(init_margin), Some(maint_margin)) = (margin.init_margin, margin.maint_margin) {
+        let initial = Money::new(init_margin as f64 / divisor, currency);
+        let maintenance = Money::new(maint_margin as f64 / divisor, currency);
+
+        let margin_instrument_id = InstrumentId::new(
+            Symbol::from_ustr_unchecked(Ustr::from("XBTUSD")),
+            *BITMEX_VENUE,
+        );
+
+        let margin_balance = MarginBalance::new(initial, maintenance, margin_instrument_id);
+        margins.push(margin_balance);
+    }
+
+    // Note: foreign_requirement represents margin for positions in other currencies
+    // For now we skip adding it as a separate margin entry since BitMEX uses
+    // cross-margin at the account level
 
     let account_type = AccountType::Margin;
     let is_reported = true;
@@ -262,15 +333,19 @@ mod tests {
         assert_eq!(account_state.account_id, account_id);
         assert_eq!(account_state.account_type, AccountType::Margin);
         assert_eq!(account_state.balances.len(), 1);
-        assert_eq!(account_state.margins.len(), 0);
+        assert_eq!(account_state.margins.len(), 1);
         assert!(account_state.is_reported);
 
-        // Check XBT balance (converted from satoshis)
         let xbt_balance = &account_state.balances[0];
         assert_eq!(xbt_balance.currency, Currency::from("XBT"));
-        assert_eq!(xbt_balance.total.as_f64(), 0.05); // 5000000 satoshis = 0.05 XBT
-        assert_eq!(xbt_balance.free.as_f64(), 0.0498); // 4980000 satoshis = 0.0498 XBT
-        assert_eq!(xbt_balance.locked.as_f64(), 0.0002); // difference
+        assert_eq!(xbt_balance.total.as_f64(), 0.05); // 5000000 satoshis = 0.05 XBT wallet balance
+        assert_eq!(xbt_balance.free.as_f64(), 0.049); // 4900000 satoshis = 0.049 XBT withdrawable
+        assert_eq!(xbt_balance.locked.as_f64(), 0.001); // 100000 satoshis locked
+
+        let margin = &account_state.margins[0];
+        assert_eq!(margin.initial.as_f64(), 0.0002); // 20000 satoshis = 0.0002 XBT
+        assert_eq!(margin.maintenance.as_f64(), 0.0001); // 10000 satoshis = 0.0001 XBT
+        assert_eq!(margin.currency, Currency::from("XBT"));
     }
 
     #[rstest]
@@ -287,8 +362,8 @@ mod tests {
             gross_exec_cost: None,
             gross_mark_value: None,
             risk_value: None,
-            init_margin: None,
-            maint_margin: None,
+            init_margin: Some(500000),  // 0.5 USDT in microunits
+            maint_margin: Some(250000), // 0.25 USDT in microunits
             target_excess_margin: None,
             realised_pnl: None,
             unrealised_pnl: None,
@@ -311,11 +386,270 @@ mod tests {
 
         let account_state = parse_account_state(&margin_msg, account_id, ts_init).unwrap();
 
-        // Check USDT balance (converted from microunits)
         let usdt_balance = &account_state.balances[0];
         assert_eq!(usdt_balance.currency, Currency::USDT());
         assert_eq!(usdt_balance.total.as_f64(), 10000.0);
         assert_eq!(usdt_balance.free.as_f64(), 9500.0);
         assert_eq!(usdt_balance.locked.as_f64(), 500.0);
+
+        assert_eq!(account_state.margins.len(), 1);
+        let margin = &account_state.margins[0];
+        assert_eq!(margin.initial.as_f64(), 0.5); // 500000 microunits = 0.5 USDT
+        assert_eq!(margin.maintenance.as_f64(), 0.25); // 250000 microunits = 0.25 USDT
+        assert_eq!(margin.currency, Currency::USDT());
+    }
+
+    #[rstest]
+    fn test_parse_margin_message_with_missing_fields() {
+        // Create a margin message with missing optional fields
+        let margin_msg = BitmexMarginMsg {
+            account: 123456,
+            currency: Ustr::from("XBt"),
+            risk_limit: None,
+            amount: None,
+            prev_realised_pnl: None,
+            gross_comm: None,
+            gross_open_cost: None,
+            gross_open_premium: None,
+            gross_exec_cost: None,
+            gross_mark_value: None,
+            risk_value: None,
+            init_margin: None,  // Missing
+            maint_margin: None, // Missing
+            target_excess_margin: None,
+            realised_pnl: None,
+            unrealised_pnl: None,
+            wallet_balance: Some(100000),
+            margin_balance: None,
+            margin_leverage: None,
+            margin_used_pcnt: None,
+            excess_margin: None,
+            available_margin: Some(95000),
+            withdrawable_margin: None,
+            maker_fee_discount: None,
+            taker_fee_discount: None,
+            timestamp: chrono::Utc::now(),
+            foreign_margin_balance: None,
+            foreign_requirement: None,
+        };
+
+        let account_id = AccountId::new("BITMEX-123456");
+        let ts_init = UnixNanos::from(1_000_000_000);
+
+        let account_state = parse_account_state(&margin_msg, account_id, ts_init)
+            .expect("Should parse even with missing margin fields");
+
+        // Should have balance but no margins
+        assert_eq!(account_state.balances.len(), 1);
+        assert_eq!(account_state.margins.len(), 0); // No margins when init/maint are missing
+    }
+
+    #[rstest]
+    fn test_parse_margin_message_with_only_available_margin() {
+        // This is the case we saw in the logs - only available_margin is populated
+        let margin_msg = BitmexMarginMsg {
+            account: 1667725,
+            currency: Ustr::from("USDt"),
+            risk_limit: None,
+            amount: None,
+            prev_realised_pnl: None,
+            gross_comm: None,
+            gross_open_cost: None,
+            gross_open_premium: None,
+            gross_exec_cost: None,
+            gross_mark_value: None,
+            risk_value: None,
+            init_margin: None,
+            maint_margin: None,
+            target_excess_margin: None,
+            realised_pnl: None,
+            unrealised_pnl: None,
+            wallet_balance: None, // None
+            margin_balance: None, // None
+            margin_leverage: None,
+            margin_used_pcnt: None,
+            excess_margin: None,
+            available_margin: Some(107859036), // Only this is populated
+            withdrawable_margin: None,
+            maker_fee_discount: None,
+            taker_fee_discount: None,
+            timestamp: chrono::Utc::now(),
+            foreign_margin_balance: None,
+            foreign_requirement: None,
+        };
+
+        let account_id = AccountId::new("BITMEX-1667725");
+        let ts_init = UnixNanos::from(1_000_000_000);
+
+        let account_state = parse_account_state(&margin_msg, account_id, ts_init)
+            .expect("Should handle case with only available_margin");
+
+        // Check the balance accounting equation holds
+        let balance = &account_state.balances[0];
+        assert_eq!(balance.currency, Currency::USDT());
+        assert_eq!(balance.total.as_f64(), 107.859036); // Total should equal free when only available_margin is present
+        assert_eq!(balance.free.as_f64(), 107.859036);
+        assert_eq!(balance.locked.as_f64(), 0.0);
+
+        // Verify the accounting equation: total = locked + free
+        assert_eq!(balance.total, balance.locked + balance.free);
+    }
+
+    #[rstest]
+    fn test_parse_margin_available_exceeds_wallet() {
+        // Test case where available margin exceeds wallet balance (bonus margin scenario)
+        let margin_msg = BitmexMarginMsg {
+            account: 123456,
+            currency: Ustr::from("XBt"),
+            risk_limit: None,
+            amount: Some(70772),
+            prev_realised_pnl: None,
+            gross_comm: None,
+            gross_open_cost: None,
+            gross_open_premium: None,
+            gross_exec_cost: None,
+            gross_mark_value: None,
+            risk_value: None,
+            init_margin: Some(0),
+            maint_margin: Some(0),
+            target_excess_margin: None,
+            realised_pnl: None,
+            unrealised_pnl: None,
+            wallet_balance: Some(70772), // 0.00070772 BTC
+            margin_balance: None,
+            margin_leverage: None,
+            margin_used_pcnt: None,
+            excess_margin: None,
+            available_margin: Some(94381), // 0.00094381 BTC - exceeds wallet!
+            withdrawable_margin: None,
+            maker_fee_discount: None,
+            taker_fee_discount: None,
+            timestamp: chrono::Utc::now(),
+            foreign_margin_balance: None,
+            foreign_requirement: None,
+        };
+
+        let account_id = AccountId::new("BITMEX-123456");
+        let ts_init = UnixNanos::from(1_000_000_000);
+
+        let account_state = parse_account_state(&margin_msg, account_id, ts_init)
+            .expect("Should handle available > wallet case");
+
+        // Wallet balance is the actual asset amount, not available margin
+        let balance = &account_state.balances[0];
+        assert_eq!(balance.currency, Currency::from("XBT"));
+        assert_eq!(balance.total.as_f64(), 0.00070772); // Wallet balance (actual assets)
+        assert_eq!(balance.free.as_f64(), 0.00070772); // All free since no margin locked
+        assert_eq!(balance.locked.as_f64(), 0.0);
+
+        // Verify the accounting equation: total = locked + free
+        assert_eq!(balance.total, balance.locked + balance.free);
+    }
+
+    #[rstest]
+    fn test_parse_margin_message_with_foreign_requirements() {
+        // Test case where trading USDT-settled contracts with XBT margin
+        let margin_msg = BitmexMarginMsg {
+            account: 123456,
+            currency: Ustr::from("XBt"),
+            risk_limit: Some(1000000000),
+            amount: Some(100000000), // 1 BTC
+            prev_realised_pnl: None,
+            gross_comm: None,
+            gross_open_cost: None,
+            gross_open_premium: None,
+            gross_exec_cost: None,
+            gross_mark_value: None,
+            risk_value: None,
+            init_margin: None,  // No direct margin in XBT
+            maint_margin: None, // No direct margin in XBT
+            target_excess_margin: None,
+            realised_pnl: None,
+            unrealised_pnl: None,
+            wallet_balance: Some(100000000),
+            margin_balance: Some(100000000),
+            margin_leverage: None,
+            margin_used_pcnt: None,
+            excess_margin: None,
+            available_margin: Some(95000000), // 0.95 BTC available
+            withdrawable_margin: None,
+            maker_fee_discount: None,
+            taker_fee_discount: None,
+            timestamp: chrono::Utc::now(),
+            foreign_margin_balance: Some(100000000), // Foreign margin balance in satoshis
+            foreign_requirement: Some(5000000),      // 0.05 BTC required for USDT positions
+        };
+
+        let account_id = AccountId::new("BITMEX-123456");
+        let ts_init = UnixNanos::from(1_000_000_000);
+
+        let account_state = parse_account_state(&margin_msg, account_id, ts_init)
+            .expect("Failed to parse account state with foreign requirements");
+
+        // Check balance
+        let balance = &account_state.balances[0];
+        assert_eq!(balance.currency, Currency::from("XBT"));
+        assert_eq!(balance.total.as_f64(), 1.0);
+        assert_eq!(balance.free.as_f64(), 0.95);
+        assert_eq!(balance.locked.as_f64(), 0.05);
+
+        // With only foreign requirements and no standard margins, we have no margins tracked
+        assert_eq!(account_state.margins.len(), 0);
+    }
+
+    #[rstest]
+    fn test_parse_margin_message_with_both_standard_and_foreign() {
+        // Test case with both standard and foreign margin requirements
+        let margin_msg = BitmexMarginMsg {
+            account: 123456,
+            currency: Ustr::from("XBt"),
+            risk_limit: Some(1000000000),
+            amount: Some(100000000), // 1 BTC
+            prev_realised_pnl: None,
+            gross_comm: None,
+            gross_open_cost: None,
+            gross_open_premium: None,
+            gross_exec_cost: None,
+            gross_mark_value: None,
+            risk_value: None,
+            init_margin: Some(2000000),  // 0.02 BTC for XBT positions
+            maint_margin: Some(1000000), // 0.01 BTC for XBT positions
+            target_excess_margin: None,
+            realised_pnl: None,
+            unrealised_pnl: None,
+            wallet_balance: Some(100000000),
+            margin_balance: Some(100000000),
+            margin_leverage: None,
+            margin_used_pcnt: None,
+            excess_margin: None,
+            available_margin: Some(93000000), // 0.93 BTC available
+            withdrawable_margin: None,
+            maker_fee_discount: None,
+            taker_fee_discount: None,
+            timestamp: chrono::Utc::now(),
+            foreign_margin_balance: Some(100000000),
+            foreign_requirement: Some(5000000), // 0.05 BTC for USDT positions
+        };
+
+        let account_id = AccountId::new("BITMEX-123456");
+        let ts_init = UnixNanos::from(1_000_000_000);
+
+        let account_state = parse_account_state(&margin_msg, account_id, ts_init)
+            .expect("Failed to parse account state with both margins");
+
+        // Check balance
+        let balance = &account_state.balances[0];
+        assert_eq!(balance.currency, Currency::from("XBT"));
+        assert_eq!(balance.total.as_f64(), 1.0);
+        assert_eq!(balance.free.as_f64(), 0.93);
+        assert_eq!(balance.locked.as_f64(), 0.07); // 0.02 + 0.05 = 0.07 total margin
+
+        // Should only have standard margin (foreign is not tracked separately)
+        assert_eq!(account_state.margins.len(), 1);
+
+        let margin = &account_state.margins[0];
+        assert_eq!(margin.instrument_id.symbol.as_str(), "XBTUSD");
+        assert_eq!(margin.initial.as_f64(), 0.02);
+        assert_eq!(margin.maintenance.as_f64(), 0.01);
     }
 }
