@@ -51,6 +51,8 @@ pub struct PositionStatusReport {
     pub ts_init: UnixNanos,
     /// The position ID (assigned by the venue).
     pub venue_position_id: Option<PositionId>,
+    /// The reported average open price for the position.
+    pub avg_px_open: Option<Decimal>,
 }
 
 impl PositionStatusReport {
@@ -62,10 +64,11 @@ impl PositionStatusReport {
         instrument_id: InstrumentId,
         position_side: PositionSideSpecified,
         quantity: Quantity,
-        venue_position_id: Option<PositionId>,
         ts_last: UnixNanos,
         ts_init: UnixNanos,
         report_id: Option<UUID4>,
+        venue_position_id: Option<PositionId>,
+        avg_px_open: Option<Decimal>,
     ) -> Self {
         // Calculate signed decimal quantity based on position side
         let signed_decimal_qty = match position_side {
@@ -84,6 +87,7 @@ impl PositionStatusReport {
             ts_last,
             ts_init,
             venue_position_id,
+            avg_px_open,
         }
     }
 
@@ -116,12 +120,13 @@ impl Display for PositionStatusReport {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "PositionStatusReport(account={}, instrument={}, side={}, qty={}, venue_pos_id={:?}, ts_last={}, ts_init={})",
+            "PositionStatusReport(account={}, instrument={}, side={}, qty={}, venue_pos_id={:?}, avg_px_open={:?}, ts_last={}, ts_init={})",
             self.account_id,
             self.instrument_id,
             self.position_side,
             self.signed_decimal_qty,
             self.venue_position_id,
+            self.avg_px_open,
             self.ts_last,
             self.ts_init
         )
@@ -149,10 +154,11 @@ mod tests {
             InstrumentId::from("AUDUSD.SIM"),
             PositionSideSpecified::Long,
             Quantity::from("100"),
-            Some(PositionId::from("P-001")),
             UnixNanos::from(1_000_000_000),
             UnixNanos::from(2_000_000_000),
-            None,
+            None,                            // report_id
+            Some(PositionId::from("P-001")), // venue_position_id
+            None,                            // avg_px_open
         )
     }
 
@@ -162,9 +168,10 @@ mod tests {
             InstrumentId::from("AUDUSD.SIM"),
             PositionSideSpecified::Short,
             Quantity::from("50"),
-            None,
             UnixNanos::from(1_000_000_000),
             UnixNanos::from(2_000_000_000),
+            None,
+            None,
             None,
         )
     }
@@ -175,9 +182,10 @@ mod tests {
             InstrumentId::from("AUDUSD.SIM"),
             PositionSideSpecified::Flat,
             Quantity::from("0"),
-            None,
             UnixNanos::from(1_000_000_000),
             UnixNanos::from(2_000_000_000),
+            None,
+            None,
             None,
         )
     }
@@ -222,10 +230,11 @@ mod tests {
             InstrumentId::from("AUDUSD.SIM"),
             PositionSideSpecified::Long,
             Quantity::from("100"),
-            None,
             UnixNanos::from(1_000_000_000),
             UnixNanos::from(2_000_000_000),
             None, // No report ID provided, should generate one
+            None,
+            None,
         );
 
         // Should have a generated UUID
@@ -255,9 +264,10 @@ mod tests {
             InstrumentId::from("AUDUSD.SIM"),
             PositionSideSpecified::Flat,
             Quantity::from("0"),
-            None,
             UnixNanos::from(1_000_000_000),
             UnixNanos::from(2_000_000_000),
+            None,
+            None,
             None,
         );
 
@@ -300,6 +310,7 @@ mod tests {
         assert!(display_str.contains("LONG"));
         assert!(display_str.contains("100"));
         assert!(display_str.contains("P-001"));
+        assert!(display_str.contains("avg_px_open=None"));
     }
 
     #[rstest]
@@ -328,9 +339,10 @@ mod tests {
             InstrumentId::from("AUDUSD.SIM"),
             PositionSideSpecified::Long,
             Quantity::from("100.5"),
-            None,
             UnixNanos::from(1_000_000_000),
             UnixNanos::from(2_000_000_000),
+            None,
+            None,
             None,
         );
 
@@ -339,9 +351,10 @@ mod tests {
             InstrumentId::from("AUDUSD.SIM"),
             PositionSideSpecified::Short,
             Quantity::from("200.75"),
-            None,
             UnixNanos::from(1_000_000_000),
             UnixNanos::from(2_000_000_000),
+            None,
+            None,
             None,
         );
 
@@ -363,10 +376,11 @@ mod tests {
             InstrumentId::from("AUDUSD.SIM"),
             PositionSideSpecified::Short,
             Quantity::from("100"), // Same quantity but different side
-            Some(PositionId::from("P-001")),
             UnixNanos::from(1_000_000_000),
             UnixNanos::from(2_000_000_000),
-            None,
+            None,                            // report_id
+            Some(PositionId::from("P-001")), // venue_position_id
+            None,                            // avg_px_open
         );
 
         assert_ne!(long_report, short_report);

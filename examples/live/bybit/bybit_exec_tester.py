@@ -150,8 +150,8 @@ config_tester = ExecTesterConfig(
     use_post_only=True,
     # test_reject_post_only=True,
     reduce_only_on_stop=False,  # Not supported for Bybit SPOT
-    cancel_orders_on_stop=True,
-    close_positions_on_stop=True,
+    # cancel_orders_on_stop=False,
+    # close_positions_on_stop=False,
     log_data=False,
     log_rejected_due_post_only_as_warning=False,
 )

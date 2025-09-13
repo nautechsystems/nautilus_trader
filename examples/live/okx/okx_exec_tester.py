@@ -160,8 +160,8 @@ config_tester = ExecTesterConfig(
     order_qty=order_qty,
     # modify_orders_to_maintain_tob_offset=True,
     use_post_only=True,
-    cancel_orders_on_stop=True,
-    close_positions_on_stop=True,
+    # cancel_orders_on_stop=False,
+    # close_positions_on_stop=False,
     log_data=False,
     dry_run=False,
 )

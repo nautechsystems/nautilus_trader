@@ -1509,23 +1509,18 @@ class LiveExecutionEngine(ExecutionEngine):
                     current_avg_px = total_value / total_qty
 
             # Calculate reconciliation price
-            # Extract average price from report if available
-            target_avg_px = None
-            if report.avg_px_open is not None:
-                target_avg_px = report.avg_px_open.as_decimal()
-
             reconciliation_price = calculate_reconciliation_price(
                 current_position_qty=position_signed_decimal_qty,
                 current_position_avg_px=current_avg_px,
                 target_position_qty=report.signed_decimal_qty,
-                target_position_avg_px=target_avg_px,
+                target_position_avg_px=report.avg_px_open,
                 instrument=instrument,
             )
 
             # If we couldn't calculate a price, use a reasonable fallback
             if reconciliation_price is None:
-                # Since position reports don't include average price, we can't calculate
-                # an exact reconciliation price yet, use a reasonable market price fallback.
+                # If avg_px_open is None, we cannot compute an exact reconciliation price
+                # and will fall back to a market price.
                 self._log.warning(
                     f"Cannot calculate exact reconciliation price for {report.instrument_id}: "
                     f"position report lacks average price information, using last quote fallback",

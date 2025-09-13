@@ -1994,7 +1994,7 @@ impl OKXHttpClient {
                 inst.id(),
                 inst.size_precision(),
                 ts_init,
-            );
+            )?;
             reports.push(report);
         }
 

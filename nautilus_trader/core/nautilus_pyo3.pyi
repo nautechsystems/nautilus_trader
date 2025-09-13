@@ -3887,8 +3887,9 @@ class PositionStatusReport:
         quantity: Quantity,
         ts_last: int,
         ts_init: int,
-        venue_position_id: PositionId | None = None,
         report_id: UUID4 | None = None,
+        venue_position_id: PositionId | None = None,
+        avg_px_open: Decimal | None = None,
     ) -> None: ...
     @classmethod
     def from_dict(cls, values: dict[str, str]) -> PositionStatusReport: ...
@@ -3905,6 +3906,8 @@ class PositionStatusReport:
     def quantity(self) -> Quantity: ...
     @property
     def signed_decimal_qty(self) -> Decimal: ...
+    @property
+    def avg_px_open(self) -> Decimal | None: ...
     @property
     def report_id(self) -> UUID4: ...
     @property

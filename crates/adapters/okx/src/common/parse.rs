@@ -497,7 +497,7 @@ pub fn parse_position_status_report(
     instrument_id: InstrumentId,
     size_precision: u8,
     ts_init: UnixNanos,
-) -> PositionStatusReport {
+) -> anyhow::Result<PositionStatusReport> {
     let pos_value = position.pos.parse::<f64>().unwrap_or_else(|e| {
         panic!(
             "Failed to parse position quantity '{}' for instrument {}: {:?}",
@@ -524,18 +524,20 @@ pub fn parse_position_status_report(
     let quantity = Quantity::new(pos_value.abs(), size_precision);
     let venue_position_id = None; // TODO: Only support netting for now
     // let venue_position_id = Some(PositionId::new(position.pos_id));
+    let avg_px_open = Some(Decimal::from_str(&position.avg_px)?);
     let ts_last = parse_millisecond_timestamp(position.u_time);
 
-    PositionStatusReport::new(
+    Ok(PositionStatusReport::new(
         account_id,
         instrument_id,
         position_side,
         quantity,
-        venue_position_id,
         ts_last,
         ts_init,
-        None,
-    )
+        None, // Will generate a UUID4
+        venue_position_id,
+        avg_px_open,
+    ))
 }
 
 /// Parses an OKX transaction detail into a Nautilus `FillReport`.
@@ -1434,7 +1436,8 @@ mod tests {
             instrument_id,
             8,
             UnixNanos::default(),
-        );
+        )
+        .unwrap();
 
         assert_eq!(position_report.account_id, account_id);
         assert_eq!(position_report.instrument_id, instrument_id);
