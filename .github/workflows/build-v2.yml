@@ -14,6 +14,7 @@ on:
     branches:
       - develop
       - nightly
+      - test-ci
 
 env:
   PACKAGE_DIR: python
@@ -130,6 +131,7 @@ jobs:
   publish:
     needs: build
     runs-on: ubuntu-latest
+    environment: r2-${{ github.ref_name }}
     permissions:
       actions: write # Required for deleting artifacts
       contents: read
@@ -140,11 +142,23 @@ jobs:
       CLOUDFLARE_R2_REGION: "auto"
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
       CLOUDFLARE_R2_PREFIX: "v2/simple/nautilus-trader"
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
-          egress-policy: audit
+          egress-policy: block
+          allowed-endpoints: |
+            api.github.com:443
+            github.com:443
+            artifacts.githubusercontent.com:443
+            codeload.github.com:443
+            raw.githubusercontent.com:443
+            uploads.github.com:443
+            objects.githubusercontent.com:443
+            pipelines.actions.githubusercontent.com:443
+            ${{ secrets.CLOUDFLARE_R2_ALLOWED_HOST }}:443
+            archive.ubuntu.com:443
+            security.ubuntu.com:443
+            azure.archive.ubuntu.com:443
 
       - name: Checkout repository
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
@@ -161,5 +175,7 @@ jobs:
 
       - name: Fetch and delete artifacts for current run
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           bash ./scripts/ci/publish-wheels-delete-artifacts.sh

@@ -3,6 +3,16 @@ set -euo pipefail
 
 echo "Fetching artifacts for the current run"
 
+# Ensure jq is available (needed to parse GitHub API response)
+if ! command -v jq >/dev/null 2>&1; then
+  echo "jq not found; attempting to install via apt..."
+  if command -v sudo >/dev/null 2>&1; then
+    sudo apt-get update && sudo apt-get install -y jq || echo "Warning: failed to install jq; proceeding may fail"
+  else
+    apt-get update && apt-get install -y jq || echo "Warning: failed to install jq; proceeding may fail"
+  fi
+fi
+
 response=$(curl -s -H "Authorization: Bearer ${GITHUB_TOKEN}" \
   -H "Accept: application/vnd.github+json" \
   "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts")
