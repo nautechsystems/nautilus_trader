@@ -76,7 +76,7 @@ generate-setup-file = false
 
 [project.optional-dependencies]
 betfair = [
-    "betfair-parser==0.14.4",
+    "betfair-parser==0.17.0",
 ]
 ib = [
     "defusedxml>=0.7.1,<1.0.0",
@@ -95,7 +95,7 @@ dydx = [
     "pycryptodome>=3.20.0,<4.0.0",
 ]
 polymarket = [
-    "py-clob-client==0.23.0,<1.0.0",  # Pinned to 0.23.0 for stability
+    "py-clob-client==0.25.0,<1.0.0",  # Pinned to 0.25.0 for stability
 ]
 
 [dependency-groups]
