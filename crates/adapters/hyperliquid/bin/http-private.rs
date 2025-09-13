@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::env;
+
 use nautilus_hyperliquid::http::client::HyperliquidHttpClient;
 use tracing::level_filters::LevelFilter;
 
@@ -22,9 +24,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_max_level(LevelFilter::INFO)
         .init();
 
+    let args: Vec<String> = env::args().collect();
+    let testnet = args.get(1).is_some_and(|s| s == "testnet");
+
+    tracing::info!("Starting Hyperliquid HTTP private example");
+    if testnet {
+        tracing::info!(
+            "Testnet parameter provided - set HYPERLIQUID_NETWORK=testnet environment variable"
+        );
+    }
+
     // Try to create authenticated client from environment
     let client = match HyperliquidHttpClient::from_env() {
-        Ok(client) => client,
+        Ok(client) => {
+            tracing::info!("Testnet mode: {}", client.is_testnet());
+            client
+        }
         Err(_) => {
             tracing::warn!(
                 "No credentials found in environment (HYPERLIQUID_PK). Skipping authenticated examples."

@@ -6,7 +6,7 @@
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
 
-The `nautilus-okx` crate provides strongly-typed client bindings (HTTP & WebSocket), data
+The `nautilus-okx` crate provides client bindings (HTTP & WebSocket), data
 models and helper utilities that wrap the official **OKX v5 API**.
 
 The official OKX API reference can be found at <https://www.okx.com/docs-v5/en/>.

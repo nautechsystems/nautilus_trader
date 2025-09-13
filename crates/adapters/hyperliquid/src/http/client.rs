@@ -34,7 +34,7 @@ use serde_json::Value;
 
 use crate::{
     common::{
-        consts::{HyperliquidNetwork, exchange_url, info_url},
+        consts::{exchange_url, info_url},
         credential::{Secrets, VaultAddress},
     },
     http::{
@@ -62,8 +62,7 @@ pub static HYPERLIQUID_REST_QUOTA: LazyLock<Quota> =
 #[derive(Debug)]
 pub struct HyperliquidHttpClient {
     client: HttpClient,
-    #[allow(dead_code)] // May be used for future network-specific logic
-    network: HyperliquidNetwork,
+    is_testnet: bool,
     base_info: String,
     base_exchange: String,
     signer: Option<HyperliquidEip712Signer>,
@@ -73,7 +72,7 @@ pub struct HyperliquidHttpClient {
 
 impl Default for HyperliquidHttpClient {
     fn default() -> Self {
-        Self::new(HyperliquidNetwork::Testnet, None)
+        Self::new(true, None) // Default to testnet
     }
 }
 
@@ -84,7 +83,7 @@ impl HyperliquidHttpClient {
     /// This version of the client has **no credentials**, so it can only
     /// call publicly accessible endpoints.
     #[must_use]
-    pub fn new(network: HyperliquidNetwork, timeout_secs: Option<u64>) -> Self {
+    pub fn new(is_testnet: bool, timeout_secs: Option<u64>) -> Self {
         Self {
             client: HttpClient::new(
                 Self::default_headers(),
@@ -93,9 +92,9 @@ impl HyperliquidHttpClient {
                 Some(*HYPERLIQUID_REST_QUOTA),
                 timeout_secs,
             ),
-            network,
-            base_info: info_url(network).to_string(),
-            base_exchange: exchange_url(network).to_string(),
+            is_testnet,
+            base_info: info_url(is_testnet).to_string(),
+            base_exchange: exchange_url(is_testnet).to_string(),
             signer: None,
             nonce_manager: None,
             vault_address: None,
@@ -117,9 +116,9 @@ impl HyperliquidHttpClient {
                 Some(*HYPERLIQUID_REST_QUOTA),
                 timeout_secs,
             ),
-            network: secrets.network,
-            base_info: info_url(secrets.network).to_string(),
-            base_exchange: exchange_url(secrets.network).to_string(),
+            is_testnet: secrets.is_testnet,
+            base_info: info_url(secrets.is_testnet).to_string(),
+            base_exchange: exchange_url(secrets.is_testnet).to_string(),
             signer: Some(signer),
             nonce_manager: Some(nonce_manager),
             vault_address: secrets.vault_address,
@@ -138,9 +137,18 @@ impl HyperliquidHttpClient {
         Ok(Self::with_credentials(&secrets, None))
     }
 
+    /// Returns whether this client is configured for testnet.
+    #[must_use]
+    pub fn is_testnet(&self) -> bool {
+        self.is_testnet
+    }
+
     /// Builds the default headers to include with each request (e.g., `User-Agent`).
     fn default_headers() -> HashMap<String, String> {
-        HashMap::from([(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())])
+        HashMap::from([
+            (USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string()),
+            ("Content-Type".to_string(), "application/json".to_string()),
+        ])
     }
 
     // ---------------- INFO ENDPOINTS --------------------------------------------

@@ -18,10 +18,7 @@ use std::{env, fmt, fs, path::Path};
 use serde::Deserialize;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use crate::{
-    common::consts::HyperliquidNetwork,
-    http::error::{Error, Result},
-};
+use crate::http::error::{Error, Result};
 
 /// Represents a secure wrapper for EVM private key with zeroization on drop.
 #[derive(Clone, ZeroizeOnDrop)]
@@ -151,7 +148,7 @@ impl fmt::Display for VaultAddress {
 pub struct Secrets {
     pub private_key: EvmPrivateKey,
     pub vault_address: Option<VaultAddress>,
-    pub network: HyperliquidNetwork,
+    pub is_testnet: bool,
 }
 
 impl fmt::Debug for Secrets {
@@ -159,7 +156,7 @@ impl fmt::Debug for Secrets {
         f.debug_struct("Secrets")
             .field("private_key", &self.private_key)
             .field("vault_address", &self.vault_address)
-            .field("network", &self.network)
+            .field("is_testnet", &self.is_testnet)
             .finish()
     }
 }
@@ -170,7 +167,7 @@ impl Secrets {
     /// Expected environment variables:
     /// - `HYPERLIQUID_PK`: EVM private key (required)
     /// - `HYPERLIQUID_VAULT`: Vault address (optional)
-    /// - `HYPERLIQUID_NET`: Network (optional, defaults to mainnet)
+    /// - `HYPERLIQUID_NETWORK`: Network type - "mainnet" or "testnet" (optional, defaults to "mainnet")
     pub fn from_env() -> Result<Self> {
         let private_key_str = env::var("HYPERLIQUID_PK")
             .map_err(|_| Error::bad_request("HYPERLIQUID_PK environment variable not set"))?;
@@ -182,12 +179,15 @@ impl Secrets {
             _ => None,
         };
 
-        let network = HyperliquidNetwork::from_env();
+        let is_testnet = match env::var("HYPERLIQUID_NETWORK") {
+            Ok(network) => matches!(network.to_lowercase().as_str(), "testnet" | "test"),
+            Err(_) => false, // Default to mainnet if not specified
+        };
 
         Ok(Self {
             private_key,
             vault_address,
-            network,
+            is_testnet,
         })
     }
 
@@ -234,15 +234,12 @@ impl Secrets {
             None => None,
         };
 
-        let network = match raw.network.as_deref() {
-            Some("testnet") | Some("test") => HyperliquidNetwork::Testnet,
-            _ => HyperliquidNetwork::Mainnet,
-        };
+        let is_testnet = matches!(raw.network.as_deref(), Some("testnet") | Some("test"));
 
         Ok(Self {
             private_key,
             vault_address,
-            network,
+            is_testnet,
         })
     }
 }
@@ -356,7 +353,7 @@ mod tests {
         assert_eq!(secrets.private_key.as_hex(), TEST_PRIVATE_KEY);
         assert!(secrets.vault_address.is_some());
         assert_eq!(secrets.vault_address.unwrap().to_hex(), TEST_VAULT_ADDRESS);
-        assert_eq!(secrets.network, HyperliquidNetwork::Testnet);
+        assert!(secrets.is_testnet);
     }
 
     #[rstest]
@@ -371,7 +368,7 @@ mod tests {
         let secrets = Secrets::from_json(&json).unwrap();
         assert_eq!(secrets.private_key.as_hex(), TEST_PRIVATE_KEY);
         assert!(secrets.vault_address.is_none());
-        assert_eq!(secrets.network, HyperliquidNetwork::Mainnet);
+        assert!(!secrets.is_testnet);
     }
 
     #[rstest]
@@ -402,14 +399,14 @@ mod tests {
         // Note: This test requires setting environment variables manually
         // HYPERLIQUID_PK=1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef
         // HYPERLIQUID_VAULT=0x1234567890abcdef1234567890abcdef12345678
-        // HYPERLIQUID_NET=testnet
+        // HYPERLIQUID_NETWORK=testnet
 
         // For now, just test the error case when variables are not set
         match Secrets::from_env() {
             Err(e) => {
                 assert!(
-                    e.to_string().contains("HYPERLIQUID_PK missing")
-                        || e.to_string().contains("invalid EVM private key")
+                    e.to_string().contains("HYPERLIQUID_PK")
+                        || e.to_string().contains("environment variable not set")
                 );
             }
             Ok(_) => {
