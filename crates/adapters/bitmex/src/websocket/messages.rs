@@ -48,7 +48,7 @@ pub struct BitmexAuthentication {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BitmexSubscription {
     pub op: BitmexWsOperation,
-    pub args: Vec<String>,
+    pub args: Vec<Ustr>,
 }
 
 /// Unified WebSocket message type for BitMEX.

@@ -150,13 +150,15 @@ class BitmexLiveDataClientFactory(LiveDataClientFactory):
         BitmexDataClient
 
         """
-        # BitmexDataClientConfig doesn't have retry settings, use defaults
         client = get_bitmex_http_client(
             api_key=config.api_key,
             api_secret=config.api_secret,
             base_url=config.base_url_http,
             testnet=config.testnet,
             timeout_secs=config.http_timeout_secs,
+            max_retries=config.max_retries,
+            retry_delay_ms=config.retry_delay_initial_ms,
+            retry_delay_max_ms=config.retry_delay_max_ms,
         )
 
         provider = get_bitmex_instrument_provider(

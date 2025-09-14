@@ -16,10 +16,10 @@
 use chrono::{DateTime, Utc};
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
-    enums::{AccountType, AggressorSide, LiquiditySide, PositionSide},
+    enums::{AccountType, AggressorSide, CurrencyType, LiquiditySide, PositionSide},
     events::AccountState,
     identifiers::{AccountId, InstrumentId, Symbol},
-    types::{AccountBalance, Currency, MarginBalance, Money, QUANTITY_MAX, Quantity},
+    types::{AccountBalance, Currency, Money, QUANTITY_MAX, Quantity},
 };
 use ustr::Ustr;
 
@@ -169,18 +169,16 @@ pub fn parse_account_state(
         margin.foreign_requirement
     );
 
-    // Map BitMEX currency to standard currency code
     let currency_str = map_bitmex_currency(&margin.currency);
 
-    // Skip unknown currencies (like RLUSD) that aren't registered in Nautilus
     let currency = match Currency::try_from_str(&currency_str) {
         Some(c) => c,
         None => {
-            tracing::debug!(
-                "Skipping margin message for unknown currency: {}",
-                currency_str
+            // Create a default crypto currency for unknown codes to avoid disrupting flows
+            tracing::warn!(
+                "Unknown currency '{currency_str}' in margin message, creating default crypto currency"
             );
-            return Err(anyhow::anyhow!("Unknown currency: {}", currency_str));
+            Currency::new(&currency_str, 8, 0, &currency_str, CurrencyType::Crypto)
         }
     };
 
@@ -240,25 +238,9 @@ pub fn parse_account_state(
     let balance = AccountBalance::new(total, locked, free);
     let balances = vec![balance];
 
-    let mut margins = Vec::new();
-
-    // Add standard margin requirements if present
-    if let (Some(init_margin), Some(maint_margin)) = (margin.init_margin, margin.maint_margin) {
-        let initial = Money::new(init_margin as f64 / divisor, currency);
-        let maintenance = Money::new(maint_margin as f64 / divisor, currency);
-
-        let margin_instrument_id = InstrumentId::new(
-            Symbol::from_ustr_unchecked(Ustr::from("XBTUSD")),
-            *BITMEX_VENUE,
-        );
-
-        let margin_balance = MarginBalance::new(initial, maintenance, margin_instrument_id);
-        margins.push(margin_balance);
-    }
-
-    // Note: foreign_requirement represents margin for positions in other currencies
-    // For now we skip adding it as a separate margin entry since BitMEX uses
-    // cross-margin at the account level
+    // Skip margin details - BitMEX uses account-level cross-margin which doesn't map
+    // well to Nautilus's per-instrument margin model, we track balances only.
+    let margins = Vec::new();
 
     let account_type = AccountType::Margin;
     let is_reported = true;
@@ -333,7 +315,7 @@ mod tests {
         assert_eq!(account_state.account_id, account_id);
         assert_eq!(account_state.account_type, AccountType::Margin);
         assert_eq!(account_state.balances.len(), 1);
-        assert_eq!(account_state.margins.len(), 1);
+        assert_eq!(account_state.margins.len(), 0); // No margins tracked
         assert!(account_state.is_reported);
 
         let xbt_balance = &account_state.balances[0];
@@ -341,11 +323,6 @@ mod tests {
         assert_eq!(xbt_balance.total.as_f64(), 0.05); // 5000000 satoshis = 0.05 XBT wallet balance
         assert_eq!(xbt_balance.free.as_f64(), 0.049); // 4900000 satoshis = 0.049 XBT withdrawable
         assert_eq!(xbt_balance.locked.as_f64(), 0.001); // 100000 satoshis locked
-
-        let margin = &account_state.margins[0];
-        assert_eq!(margin.initial.as_f64(), 0.0002); // 20000 satoshis = 0.0002 XBT
-        assert_eq!(margin.maintenance.as_f64(), 0.0001); // 10000 satoshis = 0.0001 XBT
-        assert_eq!(margin.currency, Currency::from("XBT"));
     }
 
     #[rstest]
@@ -392,11 +369,7 @@ mod tests {
         assert_eq!(usdt_balance.free.as_f64(), 9500.0);
         assert_eq!(usdt_balance.locked.as_f64(), 500.0);
 
-        assert_eq!(account_state.margins.len(), 1);
-        let margin = &account_state.margins[0];
-        assert_eq!(margin.initial.as_f64(), 0.5); // 500000 microunits = 0.5 USDT
-        assert_eq!(margin.maintenance.as_f64(), 0.25); // 250000 microunits = 0.25 USDT
-        assert_eq!(margin.currency, Currency::USDT());
+        assert_eq!(account_state.margins.len(), 0); // No margins tracked
     }
 
     #[rstest]
@@ -441,7 +414,7 @@ mod tests {
 
         // Should have balance but no margins
         assert_eq!(account_state.balances.len(), 1);
-        assert_eq!(account_state.margins.len(), 0); // No margins when init/maint are missing
+        assert_eq!(account_state.margins.len(), 0); // No margins tracked
     }
 
     #[rstest]
@@ -593,7 +566,7 @@ mod tests {
         assert_eq!(balance.free.as_f64(), 0.95);
         assert_eq!(balance.locked.as_f64(), 0.05);
 
-        // With only foreign requirements and no standard margins, we have no margins tracked
+        // No margins tracked
         assert_eq!(account_state.margins.len(), 0);
     }
 
@@ -644,12 +617,7 @@ mod tests {
         assert_eq!(balance.free.as_f64(), 0.93);
         assert_eq!(balance.locked.as_f64(), 0.07); // 0.02 + 0.05 = 0.07 total margin
 
-        // Should only have standard margin (foreign is not tracked separately)
-        assert_eq!(account_state.margins.len(), 1);
-
-        let margin = &account_state.margins[0];
-        assert_eq!(margin.instrument_id.symbol.as_str(), "XBTUSD");
-        assert_eq!(margin.initial.as_f64(), 0.02);
-        assert_eq!(margin.maintenance.as_f64(), 0.01);
+        // No margins tracked
+        assert_eq!(account_state.margins.len(), 0);
     }
 }

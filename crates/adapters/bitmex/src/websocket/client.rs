@@ -62,10 +62,7 @@ use super::{
     },
 };
 use crate::{
-    common::{
-        consts::BITMEX_WS_URL, credential::Credential, enums::BitmexExecType,
-        parse::parse_account_state,
-    },
+    common::{consts::BITMEX_WS_URL, credential::Credential, enums::BitmexExecType},
     websocket::parse::{
         parse_execution_msg, parse_funding_msg, parse_instrument_msg, parse_order_msg,
         parse_position_msg,
@@ -257,7 +254,7 @@ impl BitmexWebSocketClient {
                             // Always resubscribe to instruments
                             let subscribe_msg = BitmexSubscription {
                                 op: BitmexWsOperation::Subscribe,
-                                args: vec!["instrument".to_string()],
+                                args: vec![Ustr::from("instrument")],
                             };
 
                             let subscribe_json = match serde_json::to_string(&subscribe_msg) {
@@ -292,7 +289,7 @@ impl BitmexWebSocketClient {
                             if !topics_to_restore.is_empty() {
                                 let message = BitmexSubscription {
                                     op: BitmexWsOperation::Subscribe,
-                                    args: topics_to_restore.clone(),
+                                    args: topics_to_restore.iter().map(|s| Ustr::from(s)).collect(),
                                 };
 
                                 let msg_json = match serde_json::to_string(&message) {
@@ -345,7 +342,7 @@ impl BitmexWebSocketClient {
             if let Some(inner) = &*inner_guard {
                 let subscribe_msg = BitmexSubscription {
                     op: BitmexWsOperation::Subscribe,
-                    args: vec!["instrument".to_string()],
+                    args: vec![Ustr::from("instrument")],
                 };
 
                 match serde_json::to_string(&subscribe_msg) {
@@ -589,7 +586,7 @@ impl BitmexWebSocketClient {
 
         let message = BitmexSubscription {
             op: BitmexWsOperation::Subscribe,
-            args: topics.clone(),
+            args: topics.iter().map(|s| Ustr::from(s)).collect(),
         };
 
         {
@@ -641,7 +638,7 @@ impl BitmexWebSocketClient {
 
         let message = BitmexSubscription {
             op: BitmexWsOperation::Unsubscribe,
-            args: topics.clone(),
+            args: topics.iter().map(|s| Ustr::from(s)).collect(),
         };
 
         {
@@ -1285,7 +1282,7 @@ impl BitmexWsMessageHandler {
                 BitmexWsMessage::Table(table_msg) => {
                     let ts_init = clock.get_time_ns();
 
-                    let msg = match table_msg {
+                    return Some(match table_msg {
                         BitmexTableMessage::OrderBookL2 { action, data } => {
                             if data.is_empty() {
                                 continue;
@@ -1496,38 +1493,10 @@ impl BitmexWsMessageHandler {
                                 continue;
                             }
                         }
-                        BitmexTableMessage::Margin { data, .. } => {
-                            if let Some(margin_msg) = data.into_iter().next() {
-                                tracing::debug!(
-                                    "Processing margin message: wallet={:?}, available={:?}, init={:?}, maint={:?}",
-                                    margin_msg.wallet_balance,
-                                    margin_msg.available_margin,
-                                    margin_msg.init_margin,
-                                    margin_msg.maint_margin
-                                );
-                                // TODO: Catching panics for now for initial development
-                                match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                                    parse_account_state(&margin_msg, self.account_id, ts_init)
-                                })) {
-                                    Ok(Ok(account_state)) => {
-                                        tracing::debug!("Successfully parsed margin message");
-                                        NautilusWsMessage::AccountState(account_state)
-                                    }
-                                    Ok(Err(e)) => {
-                                        tracing::debug!("Failed to parse margin message: {e:?}");
-                                        continue;
-                                    }
-                                    Err(panic_info) => {
-                                        tracing::error!(
-                                            "PANIC while parsing margin message: {:?}",
-                                            panic_info
-                                        );
-                                        continue;
-                                    }
-                                }
-                            } else {
-                                continue;
-                            }
+                        BitmexTableMessage::Margin { .. } => {
+                            // Skip margin messages - BitMEX uses account-level cross-margin
+                            // which doesn't map well to Nautilus's per-instrument margin model
+                            continue;
                         }
                         BitmexTableMessage::Instrument { data, .. } => {
                             let ts_init = clock.get_time_ns();
@@ -1565,9 +1534,7 @@ impl BitmexWsMessageHandler {
                             tracing::warn!("Unhandled table message type: {table_msg:?}");
                             continue;
                         }
-                    };
-
-                    return Some(msg);
+                    });
                 }
                 _ => {
                     // Other BitmexWsMessage types (Welcome, Subscription, Error) are

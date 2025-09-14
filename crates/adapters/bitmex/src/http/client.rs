@@ -258,9 +258,7 @@ impl BitmexHttpInnerClient {
             .ok_or(BitmexHttpError::MissingCredentials)?;
 
         let expires = Utc::now().timestamp() + 10;
-        let body_str = body
-            .and_then(|b| String::from_utf8(b.to_vec()).ok())
-            .unwrap_or_default();
+        let body_str = body.and_then(|b| std::str::from_utf8(b).ok()).unwrap_or("");
 
         let full_path = if endpoint.starts_with("/api/v1") {
             endpoint.to_string()
@@ -268,7 +266,7 @@ impl BitmexHttpInnerClient {
             format!("/api/v1{endpoint}")
         };
 
-        let signature = credential.sign(method.as_str(), &full_path, expires, &body_str);
+        let signature = credential.sign(method.as_str(), &full_path, expires, body_str);
 
         let mut headers = HashMap::new();
         headers.insert("api-expires".to_string(), expires.to_string());
@@ -293,11 +291,10 @@ impl BitmexHttpInnerClient {
             let url = url.clone();
             let method = method_clone.clone();
             let body = body_clone.clone();
-            let endpoint = endpoint.to_string();
 
             async move {
                 let headers = if authenticate {
-                    Some(self.sign_request(&method, &endpoint, body.as_deref())?)
+                    Some(self.sign_request(&method, endpoint, body.as_deref())?)
                 } else {
                     None
                 };
