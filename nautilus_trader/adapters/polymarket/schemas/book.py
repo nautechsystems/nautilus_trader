@@ -121,22 +121,38 @@ class PolymarketBookSnapshot(msgspec.Struct, tag="book", tag_field="event_type",
         self,
         instrument: BinaryOption,
         ts_init: int,
-    ) -> QuoteTick:
-        if self.bids:
+        drop_quotes_missing_side: bool = True,
+    ) -> QuoteTick | None:
+        # Handle missing bid/ask prices (can occur near market resolution)
+        if not self.bids or not self.asks:
+            if drop_quotes_missing_side:
+                return None
+
+            # Use boundary prices with zero volume for missing sides
+            # POLYMARKET_MIN_PRICE = 0.001, POLYMARKET_MAX_PRICE = 0.999
+            if self.bids:
+                top_bid = self.bids[-1]
+                top_bid_price = float(top_bid.price)
+                top_bid_size = float(top_bid.size)
+            else:
+                top_bid_price = POLYMARKET_MIN_PRICE
+                top_bid_size = 0.0
+
+            if self.asks:
+                top_ask = self.asks[-1]
+                top_ask_price = float(top_ask.price)
+                top_ask_size = float(top_ask.size)
+            else:
+                top_ask_price = POLYMARKET_MAX_PRICE
+                top_ask_size = 0.0
+        else:
             top_bid = self.bids[-1]
             top_bid_price = float(top_bid.price)
             top_bid_size = float(top_bid.size)
-        else:
-            top_bid_price = POLYMARKET_MIN_PRICE
-            top_bid_size = 0.0
 
-        if self.asks:
             top_ask = self.asks[-1]
             top_ask_price = float(top_ask.price)
             top_ask_size = float(top_ask.size)
-        else:
-            top_ask_price = POLYMARKET_MAX_PRICE
-            top_ask_size = 0.0
 
         return QuoteTick(
             instrument_id=instrument.id,
@@ -144,7 +160,7 @@ class PolymarketBookSnapshot(msgspec.Struct, tag="book", tag_field="event_type",
             ask_price=instrument.make_price(top_ask_price),
             bid_size=instrument.make_qty(top_bid_size),
             ask_size=instrument.make_qty(top_ask_size),
-            ts_event=ts_init,  # Polymarket does not provide a timestamp
+            ts_event=millis_to_nanos(float(self.timestamp)),
             ts_init=ts_init,
         )
 

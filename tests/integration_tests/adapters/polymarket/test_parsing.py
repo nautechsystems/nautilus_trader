@@ -361,10 +361,19 @@ def test_parse_book_snapshot_to_quote_empty_bids() -> None:
     )
     instrument = TestInstrumentProvider.binary_option()
 
-    # Act
+    # Act - Test with default drop_quotes_missing_side=True
     quote = book_snapshot.parse_to_quote(instrument=instrument, ts_init=1728799418260000001)
+    assert quote is None  # Should return None when bids are missing
+
+    # Act - Test with drop_quotes_missing_side=False
+    quote = book_snapshot.parse_to_quote(
+        instrument=instrument,
+        ts_init=1728799418260000001,
+        drop_quotes_missing_side=False,
+    )
 
     # Assert
+    assert quote is not None
     assert quote.bid_price == instrument.make_price(0.001)  # POLYMARKET_MIN_PRICE
     assert quote.bid_size == instrument.make_qty(0.0)
     assert quote.ask_price == instrument.make_price(0.60)
@@ -388,10 +397,19 @@ def test_parse_book_snapshot_to_quote_empty_asks() -> None:
     )
     instrument = TestInstrumentProvider.binary_option()
 
-    # Act
+    # Act - Test with default drop_quotes_missing_side=True
     quote = book_snapshot.parse_to_quote(instrument=instrument, ts_init=1728799418260000001)
+    assert quote is None  # Should return None when asks are missing
+
+    # Act - Test with drop_quotes_missing_side=False
+    quote = book_snapshot.parse_to_quote(
+        instrument=instrument,
+        ts_init=1728799418260000001,
+        drop_quotes_missing_side=False,
+    )
 
     # Assert
+    assert quote is not None
     assert quote.bid_price == instrument.make_price(0.50)
     assert quote.bid_size == instrument.make_qty(250.0)
     assert quote.ask_price == instrument.make_price(POLYMARKET_MAX_PRICE)
@@ -412,10 +430,19 @@ def test_parse_book_snapshot_to_quote_both_empty() -> None:
     )
     instrument = TestInstrumentProvider.binary_option()
 
-    # Act
+    # Act - Test with default drop_quotes_missing_side=True
     quote = book_snapshot.parse_to_quote(instrument=instrument, ts_init=1728799418260000001)
+    assert quote is None  # Should return None when both sides are missing
+
+    # Act - Test with drop_quotes_missing_side=False
+    quote = book_snapshot.parse_to_quote(
+        instrument=instrument,
+        ts_init=1728799418260000001,
+        drop_quotes_missing_side=False,
+    )
 
     # Assert
+    assert quote is not None
     assert quote.bid_price == instrument.make_price(POLYMARKET_MIN_PRICE)
     assert quote.bid_size == instrument.make_qty(0.0)
     assert quote.ask_price == instrument.make_price(POLYMARKET_MAX_PRICE)

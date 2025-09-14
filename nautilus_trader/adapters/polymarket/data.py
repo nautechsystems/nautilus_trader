@@ -20,6 +20,8 @@ from typing import Any
 import msgspec
 from py_clob_client.client import ClobClient
 
+from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_MAX_PRICE
+from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_MIN_PRICE
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_VENUE
 from nautilus_trader.adapters.polymarket.common.deltas import compute_effective_deltas
 from nautilus_trader.adapters.polymarket.common.parsing import update_instrument
@@ -396,7 +398,16 @@ class PolymarketDataClient(LiveMarketDataClient):
         self._handle_deltas(instrument, deltas)
 
         if instrument.id in self.subscribed_quote_ticks():
-            quote = ws_message.parse_to_quote(instrument=instrument, ts_init=now_ns)
+            quote = ws_message.parse_to_quote(
+                instrument=instrument,
+                ts_init=now_ns,
+                drop_quotes_missing_side=self._config.drop_quotes_missing_side,
+            )
+            if quote is None:
+                self._log.warning(
+                    f"Dropping QuoteTick for {instrument.id}: missing bid or ask prices in snapshot",
+                )
+                return
             self._last_quotes[instrument.id] = quote
             self._handle_data(quote)
 
@@ -433,12 +444,35 @@ class PolymarketDataClient(LiveMarketDataClient):
         self._handle_data(deltas)
 
         if instrument.id in self.subscribed_quote_ticks():
+            bid_price = local_book.best_bid_price()
+            ask_price = local_book.best_ask_price()
+            bid_size = local_book.best_bid_size()
+            ask_size = local_book.best_ask_size()
+
+            # Handle missing bid/ask prices (can occur near market resolution)
+            if bid_price is None or ask_price is None:
+                if self._config.drop_quotes_missing_side:
+                    self._log.warning(
+                        f"Dropping QuoteTick for {instrument.id}: "
+                        f"bid_price={bid_price}, ask_price={ask_price}",
+                    )
+                    return
+                else:
+                    # Use boundary prices with zero volume for missing sides
+                    # POLYMARKET_MIN_PRICE = 0.001, POLYMARKET_MAX_PRICE = 0.999
+                    if bid_price is None:
+                        bid_price = instrument.make_price(POLYMARKET_MIN_PRICE)
+                        bid_size = instrument.make_qty(0.0)
+                    if ask_price is None:
+                        ask_price = instrument.make_price(POLYMARKET_MAX_PRICE)
+                        ask_size = instrument.make_qty(0.0)
+
             quote = QuoteTick(
                 instrument_id=instrument.id,
-                bid_price=local_book.best_bid_price(),
-                ask_price=local_book.best_ask_price(),
-                bid_size=local_book.best_bid_size(),
-                ask_size=local_book.best_ask_size(),
+                bid_price=bid_price,
+                ask_price=ask_price,
+                bid_size=bid_size,
+                ask_size=ask_size,
                 ts_event=millis_to_nanos(float(ws_message.timestamp)),
                 ts_init=self._clock.timestamp_ns(),
             )
