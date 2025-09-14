@@ -16,9 +16,8 @@
 //! Provides an ergonomic wrapper around the **OKX v5 REST API** –
 //! <https://www.okx.com/docs-v5/en/>.
 //!
-//! The core type exported by this module is [`OKXHttpClient`].  It offers a
-//! *strongly-typed* interface to all exchange endpoints currently required by
-//! NautilusTrader.
+//! The core type exported by this module is [`OKXHttpClient`].  It offers an
+//! interface to all exchange endpoints currently required by NautilusTrader.
 //!
 //! Key responsibilities handled internally:
 //! • Request signing and header composition for private routes (HMAC-SHA256).

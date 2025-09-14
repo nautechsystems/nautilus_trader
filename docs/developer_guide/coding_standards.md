@@ -25,11 +25,19 @@ The following applies to **all** source files (Rust, Python, Cython, shell, etc.
 
 ### Doc comment / docstring mood
 
-- **Python** docstrings should be written in the **imperative mood** – e.g. *“Return a cached client.”*
-- **Rust** doc comments should be written in the **indicative mood** – e.g. *“Returns a cached client.”*
+- **Python** docstrings should be written in the **imperative mood** – e.g. *"Return a cached client."*
+- **Rust** doc comments should be written in the **indicative mood** – e.g. *"Returns a cached client."*
 
 These conventions align with the prevailing styles of each language ecosystem and make generated
 documentation feel natural to end-users.
+
+### Terminology and phrasing
+
+1. **Error messages**: Avoid using ", got" in error messages. Use more descriptive alternatives like ", was", ", received", or ", found" depending on context.
+   - ❌ `"Expected string, got {type(value)}"`
+   - ✅ `"Expected string, was {type(value)}"`
+
+2. **Spelling**: Use "hardcoded" (single word) rather than "hard-coded" or "hard coded" – this is the more modern and accepted spelling.
 
 ### Formatting
 

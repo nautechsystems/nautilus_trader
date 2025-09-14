@@ -582,7 +582,7 @@ def test_incremental_caching_avoids_redundant_unpickling(
 
     # Check how many snapshots we have
     snapshots = cache.position_snapshots(position_id)
-    assert len(snapshots) == 2, f"Expected 2 snapshots, got {len(snapshots)}"
+    assert len(snapshots) == 2, f"Expected 2 snapshots, was {len(snapshots)}"
 
     # Verify both snapshots have realized PnL
     for i, snapshot in enumerate(snapshots):

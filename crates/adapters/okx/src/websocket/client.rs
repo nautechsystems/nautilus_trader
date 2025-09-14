@@ -15,9 +15,9 @@
 
 //! Provides the WebSocket client integration for the [OKX](https://okx.com) WebSocket API.
 //!
-//! This module defines and implements a strongly-typed [`OKXWebSocketClient`] for
-//! connecting to OKX WebSocket streams. It handles authentication (when credentials
-//! are provided), manages subscriptions to market data and account update channels,
+//! This module defines and implements an [`OKXWebSocketClient`] for connecting to
+//! OKX WebSocket streams. It handles authentication (when credentials are provided),
+//! manages subscriptions to market data and account update channels,
 //! and parses incoming messages into structured Nautilus domain objects.
 
 use std::{

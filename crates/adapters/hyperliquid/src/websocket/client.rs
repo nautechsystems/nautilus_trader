@@ -73,7 +73,7 @@ impl HyperliquidCodec {
             Ok(())
         } else {
             Err(HyperliquidError::UrlParsing(format!(
-                "URL must start with ws:// or wss://, got: {}",
+                "URL must start with ws:// or wss://, was: {}",
                 url
             )))
         }
@@ -351,7 +351,7 @@ impl HyperliquidWebSocketInnerClient {
             PostResponsePayload::Info { payload } => payload,
             PostResponsePayload::Error { payload } => return Err(Error::exchange(payload)),
             PostResponsePayload::Action { .. } => {
-                return Err(Error::decode("expected info payload, got action"));
+                return Err(Error::decode("expected info payload, was action"));
             }
         };
         serde_json::from_value(payload).map_err(Error::Serde)

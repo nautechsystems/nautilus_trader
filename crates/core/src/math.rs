@@ -207,7 +207,7 @@ mod tests {
         let result = linear_weight(x1, x2, x);
         assert!(
             approx_eq!(f64, result, expected, epsilon = 1e-10),
-            "Expected {expected}, got {result}"
+            "Expected {expected}, was {result}"
         );
     }
 
@@ -231,7 +231,7 @@ mod tests {
         let result = linear_weighting(y1, y2, weight);
         assert!(
             approx_eq!(f64, result, expected, epsilon = 1e-10),
-            "Expected {expected}, got {result}"
+            "Expected {expected}, was {result}"
         );
     }
 

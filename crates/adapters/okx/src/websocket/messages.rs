@@ -707,7 +707,7 @@ mod tests {
                     assert_eq!(arg.channel, OKXWsChannel::Instruments);
                     assert_eq!(conn_id, "380cfa6a");
                 } else {
-                    panic!("Expected Subscribe variant, got: {msg:?}");
+                    panic!("Expected Subscribe variant, was: {msg:?}");
                 }
             }
             Err(e) => {
@@ -733,7 +733,7 @@ mod tests {
                     assert_eq!(arg.channel, OKXWsChannel::Candle1Minute);
                     assert_eq!(conn_id, "358602f5");
                 } else {
-                    panic!("Expected Subscribe variant, got: {msg:?}");
+                    panic!("Expected Subscribe variant, was: {msg:?}");
                 }
             }
             Err(e) => {
@@ -778,7 +778,7 @@ mod tests {
                 assert_eq!(msg, "");
                 assert!(data.is_empty());
             }
-            Ok(other) => panic!("Expected OrderResponse, got: {other:?}"),
+            Ok(other) => panic!("Expected OrderResponse, was: {other:?}"),
             Err(e) => panic!("Failed to deserialize: {e}"),
         }
 
@@ -798,7 +798,7 @@ mod tests {
                 assert_eq!(msg, "Order not found");
                 assert!(data.is_empty());
             }
-            Ok(other) => panic!("Expected OrderResponse, got: {other:?}"),
+            Ok(other) => panic!("Expected OrderResponse, was: {other:?}"),
             Err(e) => panic!("Failed to deserialize: {e}"),
         }
 
@@ -818,7 +818,7 @@ mod tests {
                 assert_eq!(msg, "Invalid price");
                 assert!(data.is_empty());
             }
-            Ok(other) => panic!("Expected OrderResponse, got: {other:?}"),
+            Ok(other) => panic!("Expected OrderResponse, was: {other:?}"),
             Err(e) => panic!("Failed to deserialize: {e}"),
         }
     }
@@ -953,7 +953,7 @@ mod tests {
                 assert_eq!(msg, "Login successful");
                 assert_eq!(conn_id, "a4d3ae55");
             }
-            _ => panic!("Expected Login variant, got: {:?}", parsed),
+            _ => panic!("Expected Login variant, was: {:?}", parsed),
         }
     }
 

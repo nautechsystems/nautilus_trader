@@ -201,10 +201,10 @@ async def main():
 
         assert (
             len(bars_narrow) >= min_expected
-        ), f"Expected at least {min_expected} bars for 1-hour range, got {len(bars_narrow)}"
+        ), f"Expected at least {min_expected} bars for 1-hour range, was {len(bars_narrow)}"
         assert (
             len(bars_narrow) <= max_expected
-        ), f"Expected at most {max_expected} bars for 1-hour range, got {len(bars_narrow)}"
+        ), f"Expected at most {max_expected} bars for 1-hour range, was {len(bars_narrow)}"
 
         # Check time bounds with small tolerance
         time_tolerance = pd.Timedelta(minutes=10)  # Allow 10 min tolerance due to API adjustments

@@ -89,7 +89,7 @@ class HistoricInteractiveBrokersClient:
                 instance_id=UUID4(),
                 serializer=MsgSpecSerializer(
                     encoding=msgspec.msgpack if encoding == "msgpack" else msgspec.json,
-                    timestamps_as_str=True,  # Hard-coded for now
+                    timestamps_as_str=True,  # Hardcoded for now
                     timestamps_as_iso8601=cache_config.timestamps_as_iso8601,
                 ),
                 config=cache_config,

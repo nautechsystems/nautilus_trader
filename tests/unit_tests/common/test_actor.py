@@ -2040,7 +2040,7 @@ class TestActor:
         assert request_id is not None, f"Request ID should not be None{method_info}"
         assert (
             self.data_engine.request_count == 1
-        ), f"Expected 1 request in data engine{method_info}, got {self.data_engine.request_count}"
+        ), f"Expected 1 request in data engine{method_info}, was {self.data_engine.request_count}"
         assert (
             not actor.has_pending_requests()
         ), f"Actor should not have pending requests{method_info}"

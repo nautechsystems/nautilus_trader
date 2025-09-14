@@ -806,7 +806,7 @@ mod tests {
 
         assert!(
             (actual_slippage - expected_slippage).abs() < 0.001,
-            "Expected slippage around {expected_slippage}, got {actual_slippage}"
+            "Expected slippage around {expected_slippage}, was {actual_slippage}"
         );
     }
 }

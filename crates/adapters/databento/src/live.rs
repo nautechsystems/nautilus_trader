@@ -132,7 +132,7 @@ impl DatabentoFeedHandler {
         let mut buffering_start = None;
         let mut buffered_deltas: AHashMap<InstrumentId, Vec<OrderBookDelta>> = AHashMap::new();
         let mut initialized_books = HashSet::new();
-        let timeout = Duration::from_secs(5); // Hard-coded timeout for now
+        let timeout = Duration::from_secs(5); // Hardcoded timeout for now
 
         let result = tokio::time::timeout(
             timeout,
@@ -601,7 +601,7 @@ fn handle_imbalance_msg(
         instrument_id_map,
     )?;
 
-    let price_precision = 2; // Hard-coded for now
+    let price_precision = 2; // Hardcoded for now
 
     decode_imbalance_msg(msg, instrument_id, price_precision, Some(ts_init))
 }
@@ -623,7 +623,7 @@ fn handle_statistics_msg(
         instrument_id_map,
     )?;
 
-    let price_precision = 2; // Hard-coded for now
+    let price_precision = 2; // Hardcoded for now
 
     decode_statistics_msg(msg, instrument_id, price_precision, Some(ts_init))
 }
@@ -647,7 +647,7 @@ fn handle_record(
         instrument_id_map,
     )?;
 
-    let price_precision = 2; // Hard-coded for now
+    let price_precision = 2; // Hardcoded for now
 
     // For MBP-1 and quote-based schemas, always include trades since they're integral to the data
     // For MBO, only include trades after the book is initialized to maintain consistency

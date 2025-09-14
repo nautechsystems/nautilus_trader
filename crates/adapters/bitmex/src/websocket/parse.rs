@@ -250,13 +250,13 @@ pub fn parse_book10_msg(
     let bids: [BookOrder; DEPTH10_LEN] = bids
         .try_into()
         .inspect_err(|v: &Vec<BookOrder>| {
-            tracing::error!("Bids length mismatch: expected 10, got {}", v.len());
+            tracing::error!("Bids length mismatch: expected 10, was {}", v.len());
         })
         .expect("BitMEX orderBook10 should always have exactly 10 bid levels");
     let asks: [BookOrder; DEPTH10_LEN] = asks
         .try_into()
         .inspect_err(|v: &Vec<BookOrder>| {
-            tracing::error!("Asks length mismatch: expected 10, got {}", v.len());
+            tracing::error!("Asks length mismatch: expected 10, was {}", v.len());
         })
         .expect("BitMEX orderBook10 should always have exactly 10 ask levels");
 

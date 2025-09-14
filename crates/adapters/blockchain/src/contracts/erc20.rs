@@ -60,7 +60,7 @@ pub enum TokenInfoError {
     RpcError(#[from] BlockchainRpcClientError),
     #[error("Token {field} is empty for address {address}")]
     EmptyTokenField { field: Erc20Field, address: Address },
-    #[error("Multicall returned unexpected number of results: expected {expected}, got {actual}")]
+    #[error("Multicall returned unexpected number of results: expected {expected}, was {actual}")]
     UnexpectedResultCount { expected: usize, actual: usize },
     #[error("Call failed for {field} at address {address}: {reason} (raw data: {raw_data})")]
     CallFailed {

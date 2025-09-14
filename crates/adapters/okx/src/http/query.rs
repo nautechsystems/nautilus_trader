@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Strongly-typed request parameter structures for the OKX **v5 REST API**.
+//! Request parameter structures for the OKX **v5 REST API**.
 //!
 //! Each struct corresponds 1-to-1 with an OKX REST endpoint and is annotated
 //! using `serde` so that it can be serialized directly into the query string
