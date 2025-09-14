@@ -19,6 +19,7 @@ None
 ### Fixes
 - Fixed `on_load` called before strategy added bug (#2953), thanks @lisiyuan656
 - Fixed filesystem usage in catalog for `isfile` and `isdir` (#2954), thanks @limx0
+- Fixed Databento CMBP-1/CBBO/TBBO symbology resolution
 
 ### Documentation Updates
 None
