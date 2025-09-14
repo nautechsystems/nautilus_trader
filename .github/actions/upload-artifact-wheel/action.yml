@@ -6,7 +6,7 @@ runs:
   steps:
     - name: Set release output
       shell: bash
-      if: github.event_name == 'push'
+      if: github.event_name == 'push' && (github.ref_name == 'develop' || github.ref_name == 'nightly' || github.ref_name == 'master')
       id: vars
       run: |
         if [ ! -d "./dist" ]; then
@@ -25,7 +25,7 @@ runs:
         echo "ASSET_NAME=$(basename "$ASSET_PATH")" >> $GITHUB_ENV
 
     - name: Upload wheel artifact
-      if: github.event_name == 'push'
+      if: github.event_name == 'push' && (github.ref_name == 'develop' || github.ref_name == 'nightly' || github.ref_name == 'master')
       # https://github.com/actions/upload-artifact
       uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       with:

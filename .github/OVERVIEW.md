@@ -38,6 +38,32 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
   radius if a job is compromised.
 - **Caching**: caches for sccache, pip/site-packages, pre-commit, and test data speed up workflows while preserving hermetic builds.
 
+### Allowed network endpoints
+
+The `step-security/harden-runner` action restricts network access to approved endpoints.
+Common endpoints are maintained in the variable `COMMON_ALLOWED_ENDPOINTS`:
+
+```
+api.github.com:443                           # GitHub API
+github.com:443                               # GitHub main site
+artifacts.githubusercontent.com:443          # GitHub Actions artifacts
+codeload.github.com:443                      # GitHub code downloads
+raw.githubusercontent.com:443                # Raw file access
+uploads.github.com:443                       # GitHub uploads
+objects.githubusercontent.com:443            # GitHub objects storage
+pipelines.actions.githubusercontent.com:443  # Actions pipelines
+tokens.actions.githubusercontent.com:443     # Actions tokens
+github-cloud.githubusercontent.com:443       # GitHub cloud content
+github-cloud.s3.amazonaws.com:443            # GitHub S3 storage
+media.githubusercontent.com:443              # GitHub media content
+archive.ubuntu.com:443                       # Ubuntu package archives
+security.ubuntu.com:443                      # Ubuntu security updates
+azure.archive.ubuntu.com:443                 # Azure Ubuntu mirrors
+astral.sh:443                                # UV/Ruff tooling
+```
+
+Job-specific endpoints (e.g., `pypi.org:443` for publishing jobs) are added inline within each workflow.
+
 **Action Update Policy**: When updating GitHub Actions, only use versions that have been released for at least 2 weeks.
 This allows time for the community to identify potential issues while maintaining security through timely updates.
 

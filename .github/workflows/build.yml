@@ -331,6 +331,7 @@ jobs:
   publish-wheels-develop:
     name: publish-wheels-develop
     runs-on: ubuntu-latest
+    environment: r2-develop
     permissions:
       actions: write # Required for deleting artifacts
       contents: read
@@ -347,12 +348,14 @@ jobs:
       CLOUDFLARE_R2_URL: ${{ secrets.CLOUDFLARE_R2_URL }}
       CLOUDFLARE_R2_REGION: "auto"
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
-          egress-policy: audit
+          egress-policy: block
+          allowed-endpoints: |
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ secrets.CLOUDFLARE_R2_ALLOWED_HOST }}:443
 
       - name: Checkout repository
         # https://github.com/actions/checkout
@@ -370,11 +373,15 @@ jobs:
 
       - name: Fetch and delete artifacts for current run
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           bash ./scripts/ci/publish-wheels-delete-artifacts.sh
 
   publish-wheels-nightly:
+    name: publish-wheels-nightly
     runs-on: ubuntu-latest
+    environment: r2-nightly
     permissions:
       actions: write # Required for deleting artifacts
       contents: read
@@ -389,14 +396,16 @@ jobs:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       CLOUDFLARE_R2_URL: ${{ secrets.CLOUDFLARE_R2_URL }}
-      CLOUDFLARE_R2_BUCKET_NAME: "packages"
       CLOUDFLARE_R2_REGION: "auto"
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      CLOUDFLARE_R2_BUCKET_NAME: "packages"
     steps:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
-          egress-policy: audit
+          egress-policy: block
+          allowed-endpoints: |
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ secrets.CLOUDFLARE_R2_ALLOWED_HOST }}:443
 
       - name: Checkout repository
         # https://github.com/actions/checkout
@@ -414,11 +423,14 @@ jobs:
 
       - name: Fetch and delete artifacts for current run
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           bash ./scripts/ci/publish-wheels-delete-artifacts.sh
 
   publish-wheels-master:
     runs-on: ubuntu-latest
+    environment: release
     permissions:
       contents: write # Required for uploading release assets
       actions: write  # Required for deleting artifacts
@@ -434,14 +446,19 @@ jobs:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       CLOUDFLARE_R2_URL: ${{ secrets.CLOUDFLARE_R2_URL }}
-      CLOUDFLARE_R2_BUCKET_NAME: "packages"
       CLOUDFLARE_R2_REGION: "auto"
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      CLOUDFLARE_R2_BUCKET_NAME: "packages"
     steps:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
-          egress-policy: audit
+          egress-policy: block
+          allowed-endpoints: |
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            pypi.org:443
+            files.pythonhosted.org:443
+            upload.pypi.org:443
+            ${{ secrets.CLOUDFLARE_R2_ALLOWED_HOST }}:443
 
       - name: Checkout repository
         # https://github.com/actions/checkout
@@ -469,6 +486,8 @@ jobs:
 
       - name: Upload wheels to GitHub release
         # https://cli.github.com/manual/gh_release_upload
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload "${{ needs.tag-release.outputs.tag_name }}" dist/*.whl --clobber --repo ${{ github.repository }}
 
@@ -483,6 +502,8 @@ jobs:
 
       - name: Fetch and delete artifacts for current run
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           bash ./scripts/ci/publish-wheels-delete-artifacts.sh
 
@@ -504,7 +525,9 @@ jobs:
       # Security hardening
       - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
-          egress-policy: audit
+          egress-policy: block
+          allowed-endpoints: |
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
         # https://github.com/actions/checkout
@@ -551,6 +574,7 @@ jobs:
     needs: [tag-release]
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
+    environment: release
     permissions:
       contents: write # Required for uploading release assets
     env:
@@ -559,7 +583,12 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
-          egress-policy: audit
+          egress-policy: block
+          allowed-endpoints: |
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            pypi.org:443
+            files.pythonhosted.org:443
+            upload.pypi.org:443
 
       - name: Checkout repository
         # https://github.com/actions/checkout
@@ -595,6 +624,8 @@ jobs:
 
       - name: Upload release asset
         # https://cli.github.com/manual/gh_release_upload
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload "${{ needs.tag-release.outputs.tag_name }}" "${{ env.ASSET_PATH }}" --clobber --repo ${{ github.repository }}
 

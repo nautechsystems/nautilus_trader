@@ -19,7 +19,27 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
-          egress-policy: audit
+          egress-policy: block
+          allowed-endpoints: |
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            # Docker Hub (pull base images)
+            registry-1.docker.io:443
+            auth.docker.io:443
+            production.cloudflare.docker.com:443
+            # GitHub Container Registry (push images)
+            ghcr.io:443
+            # Debian package mirrors (inside docker build)
+            deb.debian.org:443
+            security.debian.org:443
+            # Rust toolchain install
+            sh.rustup.rs:443
+            static.rust-lang.org:443
+            # PyPI for Python packages during image build
+            pypi.org:443
+            files.pythonhosted.org:443
+            # Cargo crates downloads
+            crates.io:443
+            static.crates.io:443
 
       - name: Free disk space (Ubuntu)
         # https://github.com/jlumbroso/free-disk-space

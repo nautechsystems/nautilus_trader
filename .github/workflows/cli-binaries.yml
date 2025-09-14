@@ -220,6 +220,7 @@ jobs:
       - build-macos-arm64
       - build-windows-x86_64
     if: github.event_name == 'push' && github.ref == 'refs/heads/nightly'
+    environment: r2-nightly
     permissions:
       actions: write
       contents: read
@@ -230,11 +231,13 @@ jobs:
       CLOUDFLARE_R2_REGION: "auto"
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
       CLOUDFLARE_R2_PREFIX: "cli/nautilus-cli"
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
-          egress-policy: audit
+          egress-policy: block
+          allowed-endpoints: |
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ secrets.CLOUDFLARE_R2_ALLOWED_HOST }}:443
 
       - name: Checkout repository
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
@@ -255,8 +258,24 @@ jobs:
 
           # Configure credentials for Cloudflare R2
           mkdir -p ~/.aws
-          envsubst < .github/aws/credentials.ini > ~/.aws/credentials
-          envsubst < .github/aws/config.ini > ~/.aws/config
+          {
+            echo "[default]"
+            echo "aws_access_key_id=${AWS_ACCESS_KEY_ID}"
+            echo "aws_secret_access_key=${AWS_SECRET_ACCESS_KEY}"
+          } > ~/.aws/credentials
+          {
+            echo "[default]"
+            echo "region=${CLOUDFLARE_R2_REGION:-auto}"
+            echo "output=json"
+            echo "s3 ="
+            echo "    signature_version = s3v4"
+            echo "    addressing_style = path"
+            echo "    payload_signing_enabled = false"
+            echo "    use_accelerate_endpoint = false"
+            echo "    use_dualstack_endpoint = false"
+            echo "    use_fips_endpoint = false"
+          } > ~/.aws/config
+          export AWS_EC2_METADATA_DISABLED=true
 
       - name: Upload install.sh to R2 (stable + latest)
         shell: bash
