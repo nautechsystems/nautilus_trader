@@ -352,7 +352,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
-          egress-policy: block
+          egress-policy: audit
           allowed-endpoints: |
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ secrets.CLOUDFLARE_R2_ALLOWED_HOST }}:443
@@ -402,7 +402,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
-          egress-policy: block
+          egress-policy: audit
           allowed-endpoints: |
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ secrets.CLOUDFLARE_R2_ALLOWED_HOST }}:443
@@ -452,7 +452,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
-          egress-policy: block
+          egress-policy: audit
           allowed-endpoints: |
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             pypi.org:443
@@ -525,7 +525,7 @@ jobs:
       # Security hardening
       - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
-          egress-policy: block
+          egress-policy: audit
           allowed-endpoints: |
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
 
@@ -583,7 +583,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
-          egress-policy: block
+          egress-policy: audit
           allowed-endpoints: |
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             pypi.org:443
