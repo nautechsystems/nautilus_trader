@@ -345,21 +345,48 @@ class BybitExecutionClient(LiveExecutionClient):
     ) -> list[OrderStatusReport]:
         instrument_id = command.instrument_id
 
-        self._log.debug("Requesting OrderStatusReports...")
+        self._log.debug(f"Requesting OrderStatusReports... open_only={command.open_only}")
         reports: list[OrderStatusReport] = []
 
         try:
             _symbol = instrument_id.symbol.value if instrument_id is not None else None
             symbol = BybitSymbol(_symbol) if _symbol is not None else None
-            # active_symbols = self._get_cache_active_symbols()
-            # active_symbols.update(await self._get_active_position_symbols(symbol))
-            # open_orders: dict[BybitProductType, list[BybitOrder]] = dict()
+
             for product_type in self._product_types:
-                bybit_orders = await self._http_account.query_order_history(
-                    product_type,
-                    symbol,
-                    command.open_only,
-                )
+                if command.open_only:
+                    bybit_orders = await self._http_account.query_open_orders(
+                        product_type,
+                        symbol,
+                    )
+                else:
+                    # For full history mode, query BOTH endpoints to ensure we don't miss any orders
+                    # The realtime endpoint has the most up-to-date open orders
+                    # The history endpoint has recently closed orders
+                    all_orders = []
+
+                    # First get open orders from realtime endpoint
+                    open_orders = await self._http_account.query_open_orders(
+                        product_type,
+                        symbol,
+                    )
+                    all_orders.extend(open_orders)
+
+                    # Then get order history (which may lag for very recent orders)
+                    history_orders = await self._http_account.query_order_history(
+                        product_type,
+                        symbol,
+                        command.open_only,
+                        command.start,
+                    )
+
+                    # De-duplicate by orderId (open orders might appear in both)
+                    seen_order_ids = {order.orderId for order in open_orders}
+                    for order in history_orders:
+                        if order.orderId not in seen_order_ids:
+                            all_orders.append(order)
+
+                    bybit_orders = all_orders
+
                 for bybit_order in bybit_orders:
                     # Uncomment for development
                     # self._log.info(f"Generating report {bybit_order}", LogColor.MAGENTA)
@@ -1507,13 +1534,14 @@ class BybitExecutionClient(LiveExecutionClient):
                             ts_event=report.ts_last,
                         )
                     else:
-                        self.generate_order_accepted(
-                            strategy_id=strategy_id,
-                            instrument_id=report.instrument_id,
-                            client_order_id=report.client_order_id,
-                            venue_order_id=report.venue_order_id,
-                            ts_event=report.ts_last,
-                        )
+                        if order.is_open:
+                            self.generate_order_accepted(
+                                strategy_id=strategy_id,
+                                instrument_id=report.instrument_id,
+                                client_order_id=report.client_order_id,
+                                venue_order_id=report.venue_order_id,
+                                ts_event=report.ts_last,
+                            )
                 elif bybit_order.orderStatus in (
                     BybitOrderStatus.CANCELED,
                     BybitOrderStatus.DEACTIVATED,

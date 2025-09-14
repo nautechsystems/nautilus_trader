@@ -55,6 +55,8 @@ config_node = TradingNodeConfig(
     ),
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,
+        open_check_interval_secs=5.0,
+        open_check_open_only=False,
         # snapshot_orders=True,
         # snapshot_positions=True,
         # snapshot_positions_interval_secs=5.0,
@@ -129,7 +131,7 @@ strat_config = ExecTesterConfig(
     external_order_claims=[InstrumentId.from_str("ETHUSDT-PERP.BINANCE")],
     order_qty=order_qty,
     # open_position_on_start_qty=order_qty,
-    # tob_offset_ticks=1,
+    # tob_offset_ticks=0,
     # use_batch_cancel_on_stop=True,
     # use_individual_cancels_on_stop=True,
     use_post_only=True,

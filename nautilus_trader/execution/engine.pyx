@@ -1276,7 +1276,7 @@ cdef class ExecutionEngine(Component):
             if fill.position_id is not None and fill.position_id != position_id:
                 self._log.warning(
                     "Incorrect position ID assigned to fill: "
-                    f"cached={position_id!r}, assigned={fill.position_id!r}. "
+                    f"cached={position_id!r}, assigned={fill.position_id!r}; "
                     "re-assigning from cache",
                 )
             # Assign position ID to fill
@@ -1301,7 +1301,7 @@ cdef class ExecutionEngine(Component):
         cdef Order order = self._cache.order(fill.client_order_id)
         if order is None:
             raise RuntimeError(
-                f"Order for {fill.client_order_id!r} not found to determine position ID.",
+                f"Order for {fill.client_order_id!r} not found to determine position ID",
             )
 
         # Check execution algorithm position ID
@@ -1424,9 +1424,6 @@ cdef class ExecutionEngine(Component):
             # but without position linkage (since no position is created for spreads)
 
     cdef void _handle_position_update(self, Instrument instrument, OrderFilled fill, OmsType oms_type):
-        """
-        Handle position creation or update for a fill.
-        """
         cdef Position position = self._cache.position(fill.position_id)
 
         if position is None or position.is_closed_c():

@@ -60,9 +60,10 @@ config_node = TradingNodeConfig(
     ),
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,
+        reconciliation_lookback_mins=2880,
         reconciliation_instrument_ids=[instrument_id],  # Only reconcile this instrument
         open_check_interval_secs=5.0,
-        open_check_open_only=True,
+        open_check_open_only=False,
         # own_books_audit_interval_secs=2.0,
         # manage_own_order_books=True,
         # snapshot_orders=True,

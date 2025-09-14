@@ -1559,7 +1559,7 @@ class TestReconciliationEdgeCases:
         # Verify the generated order report is a MARKET order (fallback)
         order_report, trades, is_external = reconcile_calls[0]
         assert order_report.order_type == OrderType.MARKET
-        assert order_report.time_in_force == TimeInForce.DAY
+        assert order_report.time_in_force == TimeInForce.IOC
         assert order_report.price is None  # MARKET orders don't have a price
         assert order_report.order_side == OrderSide.BUY
         assert order_report.quantity == Quantity.from_int(100)

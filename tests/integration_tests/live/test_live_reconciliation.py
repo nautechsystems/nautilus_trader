@@ -174,6 +174,7 @@ def fixture_exec_engine(msgbus, cache, clock, exec_client, portfolio):
             inflight_check_threshold_ms=200,
             inflight_check_retries=2,  # Low retries for testing
             open_check_interval_secs=0.5,
+            reconciliation_startup_delay_secs=0,  # No delay for testing
         ),
     )
     exec_engine.register_client(exec_client)
@@ -474,17 +475,17 @@ async def test_inflight_order_timeout_reconciliation(
     # Venue never responds (simulating timeout scenario)
     # Don't add any order status report to the client
 
-    # Wait a bit to ensure time has passed
-    await asyncio.sleep(0.3)
+    # The continuous reconciliation loop will handle this
+    # With inflight_check_interval_ms=100 and inflight_check_retries=2
+    # We need to wait for:
+    # - Initial threshold wait of 200ms (inflight_check_threshold_ms)
+    # - First check at ~100ms after threshold (retry counter = 0, increments to 1)
+    # - Second check at ~200ms (retry counter = 1, increments to 2)
+    # - Third check at ~300ms (retry counter = 2, max reached, order rejected)
+    # Total: ~500ms plus processing time
 
-    # Trigger inflight checks via reconciliation method (public API)
-    # Note: Using public reconcile_execution_state() instead of private _check_inflight_orders()
-    for _ in range(3):
-        # This triggers inflight checks as part of the reconciliation process
-        await exec_engine.reconcile_execution_state()
-
-    # Assert - After max retries, order should be rejected
-    await eventually(lambda: order.status == OrderStatus.REJECTED, timeout=1.0)
+    # Assert - After max retries via continuous reconciliation, order should be rejected
+    await eventually(lambda: order.status == OrderStatus.REJECTED, timeout=3.0)
     assert order.status == OrderStatus.REJECTED
 
 

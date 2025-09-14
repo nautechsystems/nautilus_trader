@@ -4180,7 +4180,7 @@ cdef class Cache(CacheFacade):
         """
         Condition.not_none(client_order_id, "client_order_id")
 
-        self._index_order_client.get(client_order_id)
+        return self._index_order_client.get(client_order_id)
 
     cpdef list orders(
         self,

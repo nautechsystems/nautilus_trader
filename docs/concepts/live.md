@@ -178,22 +178,57 @@ See [Execution reconciliation](../concepts/execution#execution-reconciliation) f
 
 If an order's status cannot be reconciled after exhausting all retries, the engine resolves the order as follows:
 
+**In-flight order timeout resolution** (when venue doesn't respond after max retries):
+
 | Current status   | Resolved to | Rationale                                  |
 |------------------|-------------|--------------------------------------------|
-| `SUBMITTED`      | `REJECTED`  | No confirmation received.                  |
+| `SUBMITTED`      | `REJECTED`  | No confirmation received from venue.       |
 | `PENDING_UPDATE` | `CANCELED`  | Modification remains unacknowledged.       |
 | `PENDING_CANCEL` | `CANCELED`  | Venue never confirmed the cancellation.    |
 
+**Order consistency checks** (when cache state differs from venue state):
+
+| Cache status       | Venue status | Resolution  | Rationale                                                           |
+|--------------------|--------------|-------------|---------------------------------------------------------------------|
+| `ACCEPTED`         | Not found    | `REJECTED`  | Order doesn't exist at venue, likely was never successfully placed. |
+| `ACCEPTED`         | `CANCELED`   | `CANCELED`  | Venue canceled the order (user action or venue-initiated).          |
+| `ACCEPTED`         | `EXPIRED`    | `EXPIRED`   | Order reached GTD expiration at venue.                              |
+| `ACCEPTED`         | `REJECTED`   | `REJECTED`  | Venue rejected after initial acceptance (rare but possible).        |
+| `PARTIALLY_FILLED` | `CANCELED`   | `CANCELED`  | Order canceled at venue with fills preserved.                       |
+| `PARTIALLY_FILLED` | Not found    | `CANCELED`  | Order doesn't exist but had fills (reconciles fill history).        |
+
+:::note
+**Important reconciliation caveats:**
+
+- **"Not found" resolutions**: These are only performed in full-history mode (`open_check_open_only=False`). In open-only mode (`open_check_open_only=True`, the default), these checks are intentionally skipped. This is because open-only mode uses venue-specific "open orders" endpoints which exclude closed orders by design, making it impossible to distinguish between genuinely missing orders and recently closed ones.
+- **Recent order protection**: The engine skips "missing" checks for orders with last event timestamp within the `inflight_check_threshold_ms` window (default 5 seconds). This prevents false positives from race conditions where orders may still be processing at the venue.
+- **Targeted query safeguard**: Before marking orders as `REJECTED` or `CANCELED` when "not found", the engine attempts a targeted single-order query to the venue. This helps prevent false negatives due to bulk query limitations or timing delays.
+- **`FILLED` orders**: When a `FILLED` order is "not found" at the venue, this is considered normal behavior (venues often don't track completed orders) and is ignored without generating warnings.
+
+:::
+
 This ensures the trading node maintains a consistent execution state even under unreliable conditions.
 
-| Setting                         | Default   | Description                                                                                                                         |
-|---------------------------------|-----------|-------------------------------------------------------------------------------------------------------------------------------------|
-| `inflight_check_interval_ms`    | 2,000 ms  | Determines how frequently the system checks in-flight order status. Set to 0 to disable.                                            |
-| `inflight_check_threshold_ms`   | 5,000 ms  | Sets the time threshold after which an in-flight order triggers a venue status check. Adjust if colocated to avoid race conditions. |
-| `inflight_check_retries`        | 5 retries | Specifies the number of retry attempts the engine will make to verify the status of an in-flight order with the venue, should the initial attempt fail. |
-| `open_check_interval_secs`      | None      | Determines how frequently (in seconds) open orders are checked at the venue. Set to None or 0.0 to disable. Recommended: 5-10 seconds, considering API rate limits. |
-| `open_check_open_only`          | True      | When enabled, only open orders are requested during checks; if disabled, full order history is fetched (resource-intensive).         |
-| `own_books_audit_interval_secs` | None      | Sets the interval (in seconds) between audits of own order books against public ones. Verifies synchronization and logs errors for inconsistencies. |
+| Setting                             | Default   | Description                                                                                                                         |
+|-------------------------------------|-----------|-------------------------------------------------------------------------------------------------------------------------------------|
+| `inflight_check_interval_ms`        | 2,000 ms  | Determines how frequently the system checks in-flight order status. Set to 0 to disable.                                            |
+| `inflight_check_threshold_ms`       | 5,000 ms  | Sets the time threshold after which an in-flight order triggers a venue status check. Adjust if colocated to avoid race conditions. |
+| `inflight_check_retries`            | 5 retries | Specifies the number of retry attempts the engine will make to verify the status of an in-flight order with the venue, should the initial attempt fail. |
+| `open_check_interval_secs`          | None      | Determines how frequently (in seconds) open orders are checked at the venue. Set to None or 0.0 to disable. Recommended: 5-10 seconds, considering API rate limits. |
+| `open_check_open_only`              | True      | When enabled, only open orders are requested during checks; if disabled, full order history is fetched (resource-intensive).         |
+| `open_check_lookback_mins`          | 60 min    | Lookback window (minutes) for order status polling during continuous reconciliation. Only orders modified within this window are considered. |
+| `open_check_missing_retries`        | 5 retries | Maximum retries before resolving an order that is open in cache but not found at venue. Prevents false positives from race conditions. |
+| `reconciliation_startup_delay_secs` | 10.0 s    | Initial delay (seconds) before starting continuous reconciliation loop. Provides time for system stabilization after startup. |
+| `own_books_audit_interval_secs`     | None      | Sets the interval (in seconds) between audits of own order books against public ones. Verifies synchronization and logs errors for inconsistencies. |
+
+:::warning
+**Important configuration guidelines:**
+
+- **`open_check_lookback_mins`**: Do not reduce below 60 minutes. This lookback window must be sufficiently generous for your venue's order history retention. Setting it too short can trigger false "missing order" resolutions even with built-in safeguards, as orders may appear missing when they're simply outside the query window.
+
+- **`reconciliation_startup_delay_secs`**: Do not reduce below 10 seconds for production systems. This delay allows the system to stabilize after startup, ensuring all connections are established and initial state is loaded before reconciliation begins. Reducing this too much can cause reconciliation to run against incomplete state.
+
+:::
 
 #### Additional options
 
@@ -229,9 +264,10 @@ remain available in memory for any ongoing operations that might require them.
 
 **Purpose**: Handles the internal buffering of order events to ensure smooth processing and to prevent system resource overloads.
 
-| Setting | Default  | Description                                                                                          |
-|---------|----------|------------------------------------------------------------------------------------------------------|
-| `qsize` | 100,000  | Sets the size of internal queue buffers, managing the flow of data within the engine.                |
+| Setting                          | Default  | Description                                                                                          |
+|----------------------------------|----------|------------------------------------------------------------------------------------------------------|
+| `qsize`                          | 100,000  | Sets the size of internal queue buffers, managing the flow of data within the engine.                |
+| `graceful_shutdown_on_exception` | False    | If the system should perform a graceful shutdown when an unexpected exception occurs during message queue processing (does not include user actor/strategy exceptions). |
 
 ### Strategy configuration
 
