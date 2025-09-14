@@ -25,8 +25,7 @@ from nautilus_trader.adapters.databento.data_utils import databento_data
 from nautilus_trader.adapters.databento.data_utils import load_catalog
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
-from nautilus_trader.backtest.engine import ExecEngineConfig
-from nautilus_trader.backtest.engine import RiskEngineConfig
+from nautilus_trader.backtest.engine import register_time_range_generator
 from nautilus_trader.backtest.modules import FXRolloverInterestConfig
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.backtest.node import BacktestNode
@@ -51,6 +50,7 @@ from nautilus_trader.examples.strategies.ema_cross_twap import EMACrossTWAPConfi
 from nautilus_trader.examples.strategies.market_maker import MarketMaker
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
+from nautilus_trader.execution.config import ExecEngineConfig
 from nautilus_trader.model import Bar
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import Price
@@ -84,6 +84,7 @@ from nautilus_trader.persistence.config import DataCatalogConfig
 from nautilus_trader.persistence.wranglers import BarDataWrangler
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
 from nautilus_trader.persistence.wranglers import TradeTickDataWrangler
+from nautilus_trader.risk.config import RiskEngineConfig
 from nautilus_trader.test_kit.mocks.data import setup_catalog
 from nautilus_trader.test_kit.providers import TestDataProvider
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
@@ -1096,6 +1097,8 @@ def run_backtest(test_callback=None, with_data=True, log_path=None):
         ],
     )
 
+    register_time_range_generator("default", BacktestEngine.default_time_range_generator)
+
     strategies = [
         ImportableStrategyConfig(
             strategy_path=OptionStrategy.fully_qualified_name(),
@@ -1243,7 +1246,11 @@ class OptionStrategy(Strategy):
         # Subscribe to individual option quotes
         self.subscribe_quote_ticks(
             self.config.option_id,
-            params={"durations_seconds": (pd.Timedelta(minutes=2).seconds,)},
+            params={
+                "time_range_generator": "default",
+                "durations_seconds": (pd.Timedelta(minutes=2).seconds,),
+            },
+            # params={"durations_seconds": (pd.Timedelta(minutes=2).seconds,)},
         )
         self.subscribe_quote_ticks(
             self.config.option_id2,
