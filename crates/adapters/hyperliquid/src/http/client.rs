@@ -24,6 +24,7 @@ use std::{
     collections::HashMap,
     num::NonZeroU32,
     sync::{Arc, LazyLock},
+    time::Duration,
 };
 
 use anyhow::Context;
@@ -31,6 +32,7 @@ use nautilus_core::consts::NAUTILUS_USER_AGENT;
 use nautilus_network::{http::HttpClient, ratelimiter::quota::Quota};
 use reqwest::{Method, header::USER_AGENT};
 use serde_json::Value;
+use tokio::time::sleep;
 
 use crate::{
     common::{
@@ -44,6 +46,10 @@ use crate::{
             HyperliquidL2Book, HyperliquidMeta, HyperliquidOrderStatus,
         },
         query::{ExchangeAction, InfoRequest},
+        rate_limits::{
+            RateLimitSnapshot, WeightedLimiter, backoff_full_jitter, exchange_weight,
+            info_base_weight, info_extra_weight,
+        },
     },
     signing::{
         HyperliquidActionType, HyperliquidEip712Signer, NonceManager, SignRequest, types::SignerId,
@@ -68,6 +74,10 @@ pub struct HyperliquidHttpClient {
     signer: Option<HyperliquidEip712Signer>,
     nonce_manager: Option<Arc<NonceManager>>,
     vault_address: Option<VaultAddress>,
+    rest_limiter: Arc<WeightedLimiter>,
+    rate_limit_backoff_base: Duration,
+    rate_limit_backoff_cap: Duration,
+    rate_limit_max_attempts_info: u32,
 }
 
 impl Default for HyperliquidHttpClient {
@@ -98,6 +108,10 @@ impl HyperliquidHttpClient {
             signer: None,
             nonce_manager: None,
             vault_address: None,
+            rest_limiter: Arc::new(WeightedLimiter::per_minute(1200)),
+            rate_limit_backoff_base: Duration::from_millis(125),
+            rate_limit_backoff_cap: Duration::from_secs(5),
+            rate_limit_max_attempts_info: 3,
         }
     }
 
@@ -122,6 +136,10 @@ impl HyperliquidHttpClient {
             signer: Some(signer),
             nonce_manager: Some(nonce_manager),
             vault_address: secrets.vault_address,
+            rest_limiter: Arc::new(WeightedLimiter::per_minute(1200)),
+            rate_limit_backoff_base: Duration::from_millis(125),
+            rate_limit_backoff_cap: Duration::from_secs(5),
+            rate_limit_max_attempts_info: 3,
         }
     }
 
@@ -135,6 +153,15 @@ impl HyperliquidHttpClient {
         let secrets =
             Secrets::from_env().map_err(|_| Error::auth("missing credentials in environment"))?;
         Ok(Self::with_credentials(&secrets, None))
+    }
+
+    /// Configure rate limiting parameters (chainable).
+    pub fn with_rate_limits(mut self) -> Self {
+        self.rest_limiter = Arc::new(WeightedLimiter::per_minute(1200));
+        self.rate_limit_backoff_base = Duration::from_millis(125);
+        self.rate_limit_backoff_cap = Duration::from_secs(5);
+        self.rate_limit_max_attempts_info = 3;
+        self
     }
 
     /// Returns whether this client is configured for testnet.
@@ -181,16 +208,91 @@ impl HyperliquidHttpClient {
         serde_json::from_value(response).map_err(Error::Serde)
     }
 
+    /// Generic info request method that returns raw JSON (useful for new endpoints and testing).
+    pub async fn send_info_request_raw(&self, request: &InfoRequest) -> Result<Value> {
+        self.send_info_request(request).await
+    }
+
     /// Send a raw info request and return the JSON response.
     async fn send_info_request(&self, request: &InfoRequest) -> Result<Value> {
+        let base_w = info_base_weight(request);
+        self.rest_limiter.acquire(base_w).await;
+
+        let mut attempt = 0u32;
+        loop {
+            let response = self.http_roundtrip_info(request).await?;
+
+            if response.status.is_success() {
+                // decode once to count items, then materialize T
+                let val: Value = serde_json::from_slice(&response.body).map_err(Error::Serde)?;
+                let extra = info_extra_weight(request, &val);
+                if extra > 0 {
+                    self.rest_limiter.debit_extra(extra).await;
+                    tracing::debug!(endpoint=?request, base_w, extra, "info: debited extra weight");
+                }
+                return Ok(val);
+            }
+
+            // 429 → respect Retry-After; else jittered backoff. Retry Info only.
+            if response.status.as_u16() == 429 {
+                if attempt >= self.rate_limit_max_attempts_info {
+                    let ra = self.parse_retry_after_simple(&response.headers);
+                    return Err(Error::rate_limit("info", base_w, ra));
+                }
+                let delay = self
+                    .parse_retry_after_simple(&response.headers)
+                    .map(Duration::from_millis)
+                    .unwrap_or_else(|| {
+                        backoff_full_jitter(
+                            attempt,
+                            self.rate_limit_backoff_base,
+                            self.rate_limit_backoff_cap,
+                        )
+                    });
+                tracing::warn!(endpoint=?request, attempt, wait_ms=?delay.as_millis(), "429 Too Many Requests; backing off");
+                attempt += 1;
+                sleep(delay).await;
+                // tiny re-acquire to avoid stampede exactly on minute boundary
+                self.rest_limiter.acquire(1).await;
+                continue;
+            }
+
+            // transient 5xx: treat like retryable Info (bounded)
+            if (response.status.is_server_error() || response.status.as_u16() == 408)
+                && attempt < self.rate_limit_max_attempts_info
+            {
+                let delay = backoff_full_jitter(
+                    attempt,
+                    self.rate_limit_backoff_base,
+                    self.rate_limit_backoff_cap,
+                );
+                tracing::warn!(endpoint=?request, attempt, status=?response.status.as_u16(), wait_ms=?delay.as_millis(), "transient error; retrying");
+                attempt += 1;
+                sleep(delay).await;
+                continue;
+            }
+
+            // non-retryable or exhausted
+            let error_body = String::from_utf8_lossy(&response.body);
+            return Err(Error::http(
+                response.status.as_u16(),
+                error_body.to_string(),
+            ));
+        }
+    }
+
+    /// Raw HTTP roundtrip for info requests - returns the original HttpResponse
+    async fn http_roundtrip_info(
+        &self,
+        request: &InfoRequest,
+    ) -> Result<nautilus_network::http::HttpResponse> {
         let url = &self.base_info;
         let body = serde_json::to_value(request).map_err(Error::Serde)?;
         let body_bytes = serde_json::to_string(&body)
             .map_err(Error::Serde)?
             .into_bytes();
 
-        let response = self
-            .client
+        self.client
             .request(
                 Method::POST,
                 url.clone(),
@@ -200,17 +302,13 @@ impl HyperliquidHttpClient {
                 None,
             )
             .await
-            .map_err(Error::from_http_client)?;
+            .map_err(Error::from_http_client)
+    }
 
-        if response.status.is_success() {
-            serde_json::from_slice(&response.body).map_err(Error::Serde)
-        } else {
-            let error_body = String::from_utf8_lossy(&response.body);
-            Err(Error::http(
-                response.status.as_u16(),
-                error_body.to_string(),
-            ))
-        }
+    /// Parse Retry-After from response headers (simplified)
+    fn parse_retry_after_simple(&self, headers: &HashMap<String, String>) -> Option<u64> {
+        let retry_after = headers.get("retry-after")?;
+        retry_after.parse::<u64>().ok().map(|s| s * 1000) // convert seconds to ms
     }
 
     // ---------------- EXCHANGE ENDPOINTS ---------------------------------------
@@ -220,6 +318,9 @@ impl HyperliquidHttpClient {
         &self,
         action: &ExchangeAction,
     ) -> Result<HyperliquidExchangeResponse> {
+        let w = exchange_weight(action);
+        self.rest_limiter.acquire(w).await;
+
         let signer = self
             .signer
             .as_ref()
@@ -257,12 +358,32 @@ impl HyperliquidHttpClient {
             HyperliquidExchangeRequest::new(action.clone(), time_nonce.as_millis() as u64, sig)
         };
 
+        let response = self.http_roundtrip_exchange(&request).await?;
+
+        if response.status.is_success() {
+            serde_json::from_slice(&response.body).map_err(Error::Serde)
+        } else if response.status.as_u16() == 429 {
+            let ra = self.parse_retry_after_simple(&response.headers);
+            Err(Error::rate_limit("exchange", w, ra))
+        } else {
+            let error_body = String::from_utf8_lossy(&response.body);
+            Err(Error::http(
+                response.status.as_u16(),
+                error_body.to_string(),
+            ))
+        }
+    }
+
+    /// Raw HTTP roundtrip for exchange requests
+    async fn http_roundtrip_exchange(
+        &self,
+        request: &HyperliquidExchangeRequest<ExchangeAction>,
+    ) -> Result<nautilus_network::http::HttpResponse> {
         let url = &self.base_exchange;
         let body = serde_json::to_string(&request).map_err(Error::Serde)?;
         let body_bytes = body.into_bytes();
 
-        let response = self
-            .client
+        self.client
             .request(
                 Method::POST,
                 url.clone(),
@@ -272,17 +393,12 @@ impl HyperliquidHttpClient {
                 None,
             )
             .await
-            .map_err(Error::from_http_client)?;
+            .map_err(Error::from_http_client)
+    }
 
-        if response.status.is_success() {
-            serde_json::from_slice(&response.body).map_err(Error::Serde)
-        } else {
-            let error_body = String::from_utf8_lossy(&response.body);
-            Err(Error::http(
-                response.status.as_u16(),
-                error_body.to_string(),
-            ))
-        }
+    /// Best-effort gauge for diagnostics/metrics
+    pub async fn rest_limiter_snapshot(&self) -> RateLimitSnapshot {
+        self.rest_limiter.snapshot().await
     }
 
     // ---------------- INTERNALS -----------------------------------------------
