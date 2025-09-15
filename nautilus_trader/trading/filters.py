@@ -86,6 +86,16 @@ class NewsEvent(Data):
     def ts_init(self) -> int:
         return self._ts_init
 
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"impact={self._impact}, "
+            f"name={self._name}, "
+            f"currency={self._currency}, "
+            f"ts_event={self._ts_event}, "
+            f"ts_init={self._ts_init})"
+        )
+
 
 class EconomicNewsEventFilter:
     """
