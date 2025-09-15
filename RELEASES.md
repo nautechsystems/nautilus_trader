@@ -7,6 +7,7 @@ Released on TBD (UTC).
 - Added Interactive Brokers cache config support for historical provider (#2942), thanks @ms32035
 - Added Interactive Brokers support for fetching orders from all clients (#2948), thanks @dinana
 - Added `time_range_generator` for on the fly data data subscriptions (#2952), thanks @faysou
+- Added `__repr__` to `NewsEvent` (#2958), thanks @MK27MK
 
 ### Breaking Changes
 None
@@ -14,6 +15,7 @@ None
 ### Internal Improvements
 - Implemented Hyperliquid adapter HTTP client (#2939), thanks @nicolad
 - Implemented Hyperliquid adapter scaffolding and examples (#2957), thanks @nicolad
+- Implemented Hyperliquid weighted rate limiter for REST API (#2960), thanks @nicolad
 - Refined Bybit balance parsing to use `Money.from_str` to ensure no rounding errors
 - Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.26.0
 
@@ -23,6 +25,7 @@ None
 - Fixed `on_load` called before strategy added bug (#2953), thanks @lisiyuan656
 - Fixed filesystem usage in catalog for `isfile` and `isdir` (#2954), thanks @limx0
 - Fixed Polymarket handling of one-sided quotes (#2950), thanks for reporting @thefabus
+- Fixed Interactive Brokers tick level historical data downloading (#2956), thanks @DracheShiki
 
 ### Documentation Updates
 None
