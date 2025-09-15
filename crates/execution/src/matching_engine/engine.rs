@@ -1543,6 +1543,10 @@ impl OrderMatchingEngine {
             }
 
             // Check reduce only order
+            // If the incoming simulated fill would exceed the position when reduce-only is honored,
+            // clamp the effective fill size to the adjusted (remaining position) quantity.
+            let mut effective_fill_qty = *fill_qty;
+
             if self.config.use_reduce_only
                 && order.is_reduce_only()
                 && let Some(position) = &position
@@ -1553,11 +1557,17 @@ impl OrderMatchingEngine {
                     return;
                 }
 
-                // Adjust fill to honor reduce only execution (fill remaining position size only)
+                // Adjusted target quantity equals the remaining position size
                 let adjusted_fill_qty =
                     Quantity::from_raw(position.quantity.raw, fill_qty.precision);
 
-                self.generate_order_updated(order, adjusted_fill_qty, None, None);
+                // Determine the effective fill size for this iteration first
+                effective_fill_qty = std::cmp::min(effective_fill_qty, adjusted_fill_qty);
+
+                // Only emit an update if the order quantity actually changes
+                if order.quantity() != adjusted_fill_qty {
+                    self.generate_order_updated(order, adjusted_fill_qty, None, None);
+                }
             }
 
             if fill_qty.is_zero() {
@@ -1573,7 +1583,7 @@ impl OrderMatchingEngine {
             self.fill_order(
                 order,
                 fill_px,
-                *fill_qty,
+                effective_fill_qty,
                 liquidity_side,
                 venue_position_id,
                 position.clone(),

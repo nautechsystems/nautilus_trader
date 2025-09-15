@@ -188,10 +188,48 @@ impl Quantity {
         }
         check_predicate_true(
             raw == QUANTITY_UNDEF || raw <= QUANTITY_RAW_MAX,
-            &format!("raw outside valid range, was {raw}"),
+            &format!(
+                "Quantity::from_raw received raw={raw} (precision={precision}) exceeding QUANTITY_RAW_MAX={QUANTITY_RAW_MAX}. \
+                 Likely overflow/underflow upstream (e.g., leaves < 0 from unsigned subtraction). \
+                 Ensure fills never exceed order/position and prefer clamping/saturating deltas."
+            ),
         )
         .expect(FAILED);
         check_fixed_precision(precision).expect(FAILED);
+        Self { raw, precision }
+    }
+
+    /// Computes a saturating subtraction between two quantities, logging when clamped.
+    ///
+    /// When `rhs` is greater than `self`, the result is clamped to zero and a warning is logged.
+    /// Precision rules follow the `Sub` implementation: the left-hand precision is retained unless zero.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the right-hand side has greater precision than the left-hand side (precision loss).
+    #[must_use]
+    pub fn saturating_sub(self, rhs: Self) -> Self {
+        let precision = match self.precision {
+            0 => rhs.precision,
+            _ => self.precision,
+        };
+        assert!(
+            self.precision >= rhs.precision,
+            "Precision mismatch: cannot subtract precision {} from precision {} (precision loss)",
+            rhs.precision,
+            self.precision,
+        );
+
+        let raw = self.raw.saturating_sub(rhs.raw);
+        if raw == 0 && self.raw < rhs.raw {
+            log::warn!(
+                "Saturating Quantity subtraction: {} - {} < 0, clamped to 0 (precision={})",
+                self,
+                rhs,
+                precision
+            );
+        }
+
         Self { raw, precision }
     }
 
@@ -1081,6 +1119,32 @@ mod tests {
         let formatted = qty.to_formatted_string();
         assert_eq!(formatted, "1_234.5678");
         assert_eq!(qty.to_string(), "1234.5678");
+    }
+
+    #[rstest]
+    fn test_saturating_sub() {
+        let q1 = Quantity::new(100.0, 2);
+        let q2 = Quantity::new(50.0, 2);
+        let q3 = Quantity::new(150.0, 2);
+
+        let result = q1.saturating_sub(q2);
+        assert_eq!(result, Quantity::new(50.0, 2));
+
+        let result = q1.saturating_sub(q3);
+        assert_eq!(result, Quantity::zero(2));
+        assert_eq!(result.raw, 0);
+    }
+
+    #[rstest]
+    fn test_saturating_sub_overflow_bug() {
+        // Reproduces original bug: subtracting 80 from 79
+        let peak_qty = Quantity::from_raw(79_000, 3);
+        let order_qty = Quantity::from_raw(80_000, 3);
+
+        // This would have caused panic before fix due to underflow
+        let result = peak_qty.saturating_sub(order_qty);
+        assert_eq!(result.raw, 0);
+        assert_eq!(result, Quantity::zero(3));
     }
 
     #[rstest]

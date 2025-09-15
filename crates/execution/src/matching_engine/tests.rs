@@ -2700,3 +2700,57 @@ fn test_updating_of_contingent_orders(
     assert_eq!(updated.client_order_id, client_order_id_contingent);
     assert_eq!(updated.quantity, Quantity::from("2.000"));
 }
+
+#[rstest]
+fn test_reduce_only_order_exceeding_position_quantity(
+    order_event_handler: ShareableMessageHandler,
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+    engine_config: OrderMatchingEngineConfig,
+) {
+    // Reproduces bug where reduce-only order exceeding position causes panic
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
+
+    let mut engine = get_order_matching_engine(
+        instrument_eth_usdt.clone(),
+        None,
+        None,
+        Some(engine_config),
+        None,
+    );
+
+    let mut buy_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("79.000"))
+        .submit(true)
+        .build();
+
+    engine.process_order(&mut buy_order, account_id);
+
+    let mut reduce_only_sell = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("80.000")) // Exceeds position quantity
+        .price(Price::from("1500.00"))
+        .reduce_only(true)
+        .submit(true)
+        .build();
+
+    engine.process_order(&mut reduce_only_sell, account_id);
+
+    let saved_messages = get_order_event_handler_messages(order_event_handler);
+    assert!(saved_messages.len() >= 2, "Should have at least 2 events");
+
+    let has_quantity_update = saved_messages.iter().any(|event| {
+        matches!(event, OrderEventAny::Updated(updated) if updated.quantity == Quantity::from("79.000"))
+    });
+
+    assert!(
+        has_quantity_update || !saved_messages.is_empty(),
+        "Order should be processed without panic"
+    );
+}

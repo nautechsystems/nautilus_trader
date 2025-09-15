@@ -3218,3 +3218,5 @@ void quantity_add_assign_u64(struct Quantity_t a, uint64_t b);
 void quantity_sub_assign(struct Quantity_t a, struct Quantity_t b);
 
 void quantity_sub_assign_u64(struct Quantity_t a, uint64_t b);
+
+struct Quantity_t quantity_saturating_sub(struct Quantity_t a, struct Quantity_t b);

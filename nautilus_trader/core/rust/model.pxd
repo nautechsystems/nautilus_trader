@@ -2198,3 +2198,5 @@ cdef extern from "../includes/model.h":
     void quantity_sub_assign(Quantity_t a, Quantity_t b);
 
     void quantity_sub_assign_u64(Quantity_t a, uint64_t b);
+
+    Quantity_t quantity_saturating_sub(Quantity_t a, Quantity_t b);

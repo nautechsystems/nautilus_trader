@@ -66,6 +66,7 @@ from nautilus_trader.core.rust.model cimport price_from_raw
 from nautilus_trader.core.rust.model cimport price_new
 from nautilus_trader.core.rust.model cimport quantity_from_raw
 from nautilus_trader.core.rust.model cimport quantity_new
+from nautilus_trader.core.rust.model cimport quantity_saturating_sub
 from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.core.string cimport ustr_to_pystr
@@ -314,6 +315,9 @@ cdef class Quantity:
 
     cdef Quantity sub(self, Quantity other):
         return Quantity.from_raw_c(self._mem.raw - other._mem.raw, self._mem.precision)
+
+    cdef Quantity saturating_sub(self, Quantity other):
+        return Quantity.from_mem_c(quantity_saturating_sub(self._mem, other._mem))
 
     cdef void add_assign(self, Quantity other):
         self._mem.raw += other._mem.raw

@@ -713,7 +713,7 @@ impl OrderCore {
         self.last_trade_id = Some(event.trade_id);
         self.liquidity_side = Some(event.liquidity_side);
         self.filled_qty += event.last_qty;
-        self.leaves_qty -= event.last_qty;
+        self.leaves_qty = self.leaves_qty.saturating_sub(event.last_qty);
         self.ts_last = event.ts_event;
         if self.ts_accepted.is_none() {
             // Set ts_accepted to time of first fill if not previously set
