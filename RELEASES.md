@@ -6,6 +6,7 @@ Released on TBD (UTC).
 - Added Renko bar aggregator (#2941), thanks @faysou
 - Added Interactive Brokers cache config support for historical provider (#2942), thanks @ms32035
 - Added Interactive Brokers support for fetching orders from all clients (#2948), thanks @dinana
+- Added `time_range_generator` for on the fly data data subscriptions (#2952), thanks @faysou
 
 ### Breaking Changes
 None
@@ -17,6 +18,7 @@ None
 - Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.26.0
 
 ### Fixes
+- Fixed reduce-only order panic when quantity exceeds position
 - Fixed Databento CMBP-1/CBBO/TBBO symbology resolution
 - Fixed `on_load` called before strategy added bug (#2953), thanks @lisiyuan656
 - Fixed filesystem usage in catalog for `isfile` and `isdir` (#2954), thanks @limx0
