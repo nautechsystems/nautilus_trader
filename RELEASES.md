@@ -17,6 +17,7 @@ None
 - Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.26.0
 
 ### Fixes
+- Fixed Databento CMBP-1/CBBO/TBBO symbology resolution
 - Fixed `on_load` called before strategy added bug (#2953), thanks @lisiyuan656
 - Fixed filesystem usage in catalog for `isfile` and `isdir` (#2954), thanks @limx0
 - Fixed Polymarket handling of one-sided quotes (#2950), thanks for reporting @thefabus
@@ -34,6 +35,7 @@ None
 Released on 9th September 2025 (UTC).
 
 ### Enhancements
+- Added initial BitMEX integration adapter
 - Added `FundingRateUpdate` data type with caching support through data engine
 - Added `subscribe_funding_rates(...)` and `unsubscribe_funding_rates(...)` methods for actors
 - Added `on_funding_rate(...)` handler for actors
@@ -80,7 +82,6 @@ Released on 9th September 2025 (UTC).
 - Added a complete `.env.example` template to guide environment configuration (#2877), thanks @nicolad
 - Added Interactive Brokers OCA setting to order groups (#2899), thanks @faysou
 - Added Interactive Brokers subscriptions for position updates (#2887), thanks @faysou
-- Added support for running separate live and paper IB Gateway containers without port conflicts. Simplified container naming and made VNC optional.
 - Added `avg_px_open` field to `PositionStatusReport` for IB adapter (#2925), thanks @dinana
 - Added support for running separate live and paper IB Gateway containers simultaneously (#2937), thanks @Bshara23
 - Added support for data deduplication on catalog consolidation (#2934), thanks @ms32035
