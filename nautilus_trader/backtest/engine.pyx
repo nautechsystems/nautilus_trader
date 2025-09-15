@@ -19,6 +19,9 @@ import uuid
 from collections import deque
 from decimal import Decimal
 from heapq import heappush
+from typing import Any
+from typing import Callable
+from typing import Generator
 
 import cython
 import pandas as pd
@@ -29,20 +32,14 @@ from nautilus_trader.common import Environment
 from nautilus_trader.common.component import is_logging_pyo3
 from nautilus_trader.common.config import InvalidConfiguration
 from nautilus_trader.config import BacktestEngineConfig
-from nautilus_trader.config import CacheConfig
 from nautilus_trader.core import nautilus_pyo3
-from nautilus_trader.data.config import DataEngineConfig
-from nautilus_trader.execution.config import ExecEngineConfig
 from nautilus_trader.model import BOOK_DATA_TYPES
 from nautilus_trader.model import NAUTILUS_PYO3_DATA_TYPES
-from nautilus_trader.risk.config import RiskEngineConfig
 from nautilus_trader.system.kernel import NautilusKernel
 from nautilus_trader.trading.trader import Trader
 
 from cpython.datetime cimport timedelta
 from cpython.object cimport PyObject
-from libc.math cimport fabs
-from libc.stdint cimport UINT64_MAX
 from libc.stdint cimport uint32_t
 from libc.stdint cimport uint64_t
 
@@ -61,7 +58,6 @@ from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.component cimport FORCE_STOP
 from nautilus_trader.common.component cimport LOGGING_PYO3
-from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport LogColor
 from nautilus_trader.common.component cimport Logger
 from nautilus_trader.common.component cimport LogGuard
@@ -94,7 +90,6 @@ from nautilus_trader.core.rust.core cimport CVec
 from nautilus_trader.core.rust.model cimport AccountType
 from nautilus_trader.core.rust.model cimport AggregationSource
 from nautilus_trader.core.rust.model cimport AggressorSide
-from nautilus_trader.core.rust.model cimport BookAction
 from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport InstrumentCloseType
@@ -114,7 +109,6 @@ from nautilus_trader.core.rust.model cimport orderbook_best_ask_price
 from nautilus_trader.core.rust.model cimport orderbook_best_bid_price
 from nautilus_trader.core.rust.model cimport orderbook_has_ask
 from nautilus_trader.core.rust.model cimport orderbook_has_bid
-from nautilus_trader.core.rust.model cimport price_new
 from nautilus_trader.core.rust.model cimport trade_id_new
 from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.core.uuid cimport UUID4
@@ -159,7 +153,6 @@ from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.functions cimport account_type_to_str
 from nautilus_trader.model.functions cimport aggressor_side_to_str
 from nautilus_trader.model.functions cimport book_type_to_str
-from nautilus_trader.model.functions cimport liquidity_side_to_str
 from nautilus_trader.model.functions cimport oms_type_to_str
 from nautilus_trader.model.functions cimport order_type_to_str
 from nautilus_trader.model.functions cimport time_in_force_to_str
@@ -192,8 +185,6 @@ from nautilus_trader.model.orders.market_if_touched cimport MarketIfTouchedOrder
 from nautilus_trader.model.orders.market_to_limit cimport MarketToLimitOrder
 from nautilus_trader.model.orders.stop_limit cimport StopLimitOrder
 from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
-from nautilus_trader.model.orders.trailing_stop_limit cimport TrailingStopLimitOrder
-from nautilus_trader.model.orders.trailing_stop_market cimport TrailingStopMarketOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.portfolio.base cimport PortfolioFacade
 from nautilus_trader.trading.strategy cimport Strategy
@@ -900,65 +891,58 @@ cdef class BacktestEngine:
         self._log.debug(f"Subscribing to {subscription_name}, {command.params.get('durations_seconds')=}")
 
         self._data_requests[subscription_name] = request
-        self._last_subscription_ts[subscription_name] = self._last_ns
+        request.params["end_ns"] = self._end_ns
+        time_range_generator = TIME_RANGE_GENERATORS.get(
+            request.params.get("time_range_generator", ""),
+            BacktestEngine.default_time_range_generator
+        )(self._last_ns, request.params)
         cdef bint append_data = request.params.get("append_data", True)
-        cdef bint point_data = request.params.get("point_data", False)
-        self._data_iterator.init_data(subscription_name, self._subscription_generator(subscription_name, point_data), append_data)
+        self._data_iterator.init_data(subscription_name, self._subscription_generator(subscription_name, time_range_generator), append_data)
 
-    def _subscription_generator(self, str subscription_name, bint point_data):
-        iteration_index = 0
-        durations_seconds = self._data_requests[subscription_name].params.get("durations_seconds", [None])
-        durations_ns = [duration_seconds * 1e9 if duration_seconds else None for duration_seconds in durations_seconds]
+    def _subscription_generator(self, str subscription_name, time_range_generator):
+        """
+        Generator that yields data for subscription using a time generator.
+        """
+        def get_next_time_range(data_received):
+            # Helper to get next time range with proper error handling
+            try:
+                return time_range_generator.send(data_received) if data_received else next(time_range_generator)
+            except StopIteration:
+                return None, None
 
-        while True:
-            # Clear response data from previous iteration
-            self._response_data = []
+        # Get initial time range
+        start_time, end_time = get_next_time_range(False)
 
-            # Possibility to use durations of various lengths to take into account weekends or market breaks
-            for duration_ns in durations_ns:
-                self._update_subscription_data(subscription_name, duration_ns, iteration_index, point_data)
+        try:
+            while start_time is not None and start_time <= self._end_ns:
+                # Clear and update response data
+                self._response_data = []
+                self._update_subscription_data(subscription_name, start_time, end_time)
 
+                # Determine signal based on whether we got data
+                data_received = len(self._response_data) > 0
+
+                # Yield data if we have any
                 if self._response_data:
-                    break
+                    yield self._response_data
 
-            iteration_index += 1
+                # Get next time range
+                start_time, end_time = get_next_time_range(data_received)
+        finally:
+            # Ensure generator is properly closed
+            try:
+                time_range_generator.close()
+            except (StopIteration, GeneratorExit):
+                pass
 
-            if self._response_data:
-                yield self._response_data
-            else:
-                break  # No more data, end generator
-
-    cpdef void _update_subscription_data(self, str subscription_name, object duration_ns, int iteration_index, bint point_data):
-        if subscription_name == "backtest_data" or subscription_name not in self._data_requests:
-            return
-
-        # First iteration for [a, a + duration], then ]a + duration, a + 2 * duration]
-        # When point_data we do a query for [start_time, start_time] only
-
-        cdef uint64_t offset = 1 if iteration_index > 0 and not point_data else 0
-        cdef uint64_t start_time = self._last_subscription_ts[subscription_name] + offset
-
-        if start_time > self._end_ns:
-            return
-
-        cdef uint64_t end_time
-        if duration_ns:
-            end_time = min(start_time + duration_ns - offset, self._end_ns)
-        else:
-            end_time = self._end_ns
-
-        self._last_subscription_ts[subscription_name] = end_time
-
-        if point_data:
-            end_time = start_time
-
+    cpdef void _update_subscription_data(self, str subscription_name, uint64_t start_time, uint64_t end_time):
         cdef RequestData request = self._data_requests[subscription_name]
         cdef RequestData new_request = request.with_dates(
             unix_nanos_to_dt(start_time),
             unix_nanos_to_dt(end_time),
             self._last_ns
         )
-        self._log.debug(f"Renewing {request.data_type.type.__name__} data from {unix_nanos_to_dt(start_time)} to {unix_nanos_to_dt(end_time)}, {duration_ns=}")
+        self._log.debug(f"Renewing {request.data_type.type.__name__} data from {unix_nanos_to_dt(start_time)} to {unix_nanos_to_dt(end_time)}")
         self._kernel._msgbus.request(endpoint="DataEngine.request", request=new_request)
 
     cpdef void _handle_data_response(self, DataResponse response):
@@ -985,6 +969,56 @@ cdef class BacktestEngine:
         self._log.debug(f"Unsubscribing {subscription_name}")
         self._data_iterator.remove_data(subscription_name, complete_remove=True)
         self._data_requests.pop(subscription_name, None)
+
+    @classmethod
+    def default_time_range_generator(cls, uint64_t initial_time, dict params):
+        """
+        Generator that yields (start_time, end_time) tuples for data subscription.
+
+        This generator handles the duration logic and can receive feedback via .send().
+        """
+        cdef uint64_t offset
+        cdef uint64_t start_time
+        cdef uint64_t end_time
+        cdef uint64_t last_subscription_ts = initial_time
+
+        cdef uint64_t end_ns = params.get("end_ns", 0)
+        cdef bint point_data = params.get("point_data", False)
+        durations_seconds = params.get("durations_seconds", [None])
+        durations_ns = [duration_seconds * 1e9 if duration_seconds else None for duration_seconds in durations_seconds]
+        cdef int iteration_index = 0
+
+        while True:
+            # Possibility to use durations of various lengths to take into account weekends or market breaks
+            for duration_ns in durations_ns:
+                # First iteration for [a, a + duration], then ]a + duration, a + 2 * duration]
+                # When point_data we do a query for [start_time, start_time] only
+                offset = 1 if iteration_index > 0 and not point_data else 0
+                start_time = last_subscription_ts + offset
+
+                if start_time > end_ns:
+                    return
+
+                if duration_ns:
+                    end_time = min(start_time + duration_ns - offset, end_ns)
+                else:
+                    end_time = end_ns
+
+                last_subscription_ts = end_time
+
+                if point_data:
+                    end_time = start_time
+
+                # Yield the time range and wait for feedback
+                data_received = yield (start_time, end_time)
+                iteration_index += 1
+
+                # If we received a success signal, break from the duration loop
+                if data_received:
+                    break
+            else:
+                # If we completed the for loop without breaking (no success), exit the while loop
+                return
 
     def dump_pickled_data(self) -> bytes:
         """
@@ -6351,3 +6385,10 @@ cdef class OrderMatchingEngine:
             ts_init=ts_now,
         )
         self.msgbus.send(endpoint="ExecEngine.process", msg=event)
+
+
+TimeRangeGenerator = Callable[[int, dict[str, Any]], Generator[int, bool, None]]
+cdef dict[str, TimeRangeGenerator] TIME_RANGE_GENERATORS = {}
+
+cpdef void register_time_range_generator(str name, function: TimeRangeGenerator):
+    TIME_RANGE_GENERATORS[name] = function
