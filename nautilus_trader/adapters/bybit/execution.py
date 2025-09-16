@@ -644,7 +644,10 @@ class BybitExecutionClient(LiveExecutionClient):
                         instrument = self._cache.instrument(instrument_id)
                         if instrument and instrument.base_currency.code == coin_balance.coin:
                             try:
-                                quantity = instrument.make_qty(coin_balance.walletBalance)
+                                quantity = instrument.make_qty(
+                                    coin_balance.walletBalance,
+                                    round_down=True,
+                                )
                             except ValueError:
                                 quantity = Quantity.zero(instrument.size_precision)
 
