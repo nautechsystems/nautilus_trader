@@ -17,6 +17,7 @@ None
 - Implemented Hyperliquid adapter HTTP client (#2939), thanks @nicolad
 - Implemented Hyperliquid adapter scaffolding and examples (#2957), thanks @nicolad
 - Implemented Hyperliquid weighted rate limiter for REST API (#2960), thanks @nicolad
+- Refined Renko bar aggregator and add tests (#2961), thanks @faysou
 - Refined Bybit balance parsing to use `Money.from_str` to ensure no rounding errors
 - Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.26.0
 
