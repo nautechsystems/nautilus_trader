@@ -79,7 +79,7 @@ nautilus-okx = { path = "crates/adapters/okx", version = "0.51.0" }
 nautilus-tardis = { path = "crates/adapters/tardis", version = "0.51.0" }
 
 ahash = "0.8.12"
-alloy = { version = "1.0.30", default-features = false, features = ["sol-types", "contract"] }
+alloy = { version = "1.0.31", default-features = false, features = ["sol-types", "contract"] }
 alloy-primitives = { version = "1.3.1", features = ["serde"] }
 anyhow = "1.0.99"
 arraydeque = "0.5.1"
@@ -181,8 +181,8 @@ rustls = { version = "0.23.31", default-features = false, features = ["aws-lc-rs
 rustls-pemfile = "2.2.0"
 ryu = "1.0.20"
 semver = "1.0.25"
-serde = { version = "=1.0.220", default-features = false, features = ["derive", "std", "rc"] }
-serde_json = { version = "=1.0.143", default-features = false, features = ["std"] }
+serde = { version = "1.0.224", default-features = false, features = ["derive", "std", "rc"] }
+serde_json = { version = "1.0.145", default-features = false, features = ["std"] }
 serde_urlencoded = "0.7.1"
 simple_logger = "5.0.0"
 sqlx = { version = "0.8.6", default-features = false, features = [
@@ -216,7 +216,7 @@ tokio-rustls = "0.26.2"
 tokio-stream = "0.1.17"
 tokio-tungstenite = { version = "0.27.0", features = ["rustls-tls-webpki-roots"] }
 tokio-util = { version = "0.7.16", default-features = false, features = ["io"] }
-toml = { version = "0.9.5", default-features = false, features = ["parse", "serde"] }
+toml = { version = "0.9.6", default-features = false, features = ["parse", "serde"] }
 tracing = { version = "0.1.41", default-features = false, features = ["std", "attributes"] }
 # Disable default feature "tracing-log" since it interferes with custom logging
 tracing-subscriber = { version = "0.3.20", default-features = false, features = [

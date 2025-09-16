@@ -69,6 +69,7 @@ from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import capsule_to_data
+from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import bar_aggregation_to_str
 from nautilus_trader.model.identifiers import ClientId
@@ -706,6 +707,22 @@ class DatabentoDataClient(LiveMarketDataClient):
             except ValueError as e:
                 self._log.error(f"Cannot subscribe: {e}")
                 return
+
+            # Check for schema override in params
+            schema_override: str | None = command.params.get("schema")
+            if schema_override:
+                if (
+                    command.bar_type.spec.aggregation == BarAggregation.DAY
+                    and schema_override == "ohlcv-eod"
+                ):
+                    # Allow ohlcv-eod override for daily bars
+                    schema = DatabentoSchema.OHLCV_EOD
+                else:
+                    self._log.error(
+                        f"Invalid schema override '{schema_override}' for bar type {command.bar_type}. "
+                        f"Only 'ohlcv-eod' is supported for DAY aggregation bars.",
+                    )
+                    return
 
             start: int | None = command.params.get("start_ns")
             live_client = self._get_live_client(dataset)

@@ -73,7 +73,9 @@ node = TradingNode(config=config_node)
 config_tester = DataTesterConfig(
     instrument_ids=instrument_ids,
     bar_types=[BarType.from_str(f"{instrument_ids[0]}-1-SECOND-LAST-EXTERNAL")],
+    # bar_types=[BarType.from_str(f"{instrument_ids[0]}-1-DAY-LAST-EXTERNAL")],
     # subscribe_params={"schema": "bbo-1s"},
+    # subscribe_params={"schema": "ohlcv-eod"},
     # subscribe_book_deltas=True,
     # subscribe_book_depth=True,
     # subscribe_book_at_interval=True,

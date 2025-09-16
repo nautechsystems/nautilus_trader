@@ -577,7 +577,7 @@ class LiveExecutionEngine(ExecutionEngine):
         ts_now = self._clock.timestamp_ns()
 
         self._log.debug(
-            f"Performing targeted query for {order.client_order_id!r} before marking as rejected",
+            f"Performing targeted query for {order.client_order_id!r} before marking as REJECTED",
             LogColor.BLUE,
         )
 
@@ -612,7 +612,7 @@ class LiveExecutionEngine(ExecutionEngine):
 
         # Order still not found after targeted query - proceed with rejection
         self._log.warning(
-            f"Order {order.client_order_id!r} not found even with targeted query, marking as rejected",
+            f"Order {order.client_order_id!r} not found even with targeted query, marking as REJECTED",
             LogColor.YELLOW,
         )
 
@@ -1400,6 +1400,16 @@ class LiveExecutionEngine(ExecutionEngine):
             return False  # Failed
 
         if report.filled_qty > order.filled_qty:
+            # Check if order is already closed to avoid duplicate inferred fills
+            if order.is_closed:
+                self._log.warning(  # TODO: Reduce level to debug after initial development phase
+                    f"{order.client_order_id!r} already {order.status_string()} but "
+                    f"reported difference in filled_qty: "
+                    f"report={report.filled_qty}, cached={order.filled_qty}, "
+                    f"skipping inferred fill generation for closed order",
+                )
+                return True  # Consider it reconciled to avoid infinite loops
+
             # This is due to missing fill report(s), there may now be some
             # information loss if multiple fills occurred to reach the reported
             # state, or if commissions differed from the default.

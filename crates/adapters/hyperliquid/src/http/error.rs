@@ -31,8 +31,12 @@ pub enum Error {
     Auth(String),
 
     /// Rate limiting errors with optional retry information
-    #[error("rate limited (retry_after={retry_after:?}s)")]
-    RateLimit { retry_after: Option<u64> },
+    #[error("Rate limited on {scope} (weight={weight}) retry_after_ms={retry_after_ms:?}")]
+    RateLimit {
+        scope: &'static str,
+        weight: u32,
+        retry_after_ms: Option<u64>,
+    },
 
     /// Nonce window violations (nonces must be within time window and unique)
     #[error("nonce window error: {0}")]
@@ -83,8 +87,12 @@ impl Error {
     }
 
     /// Create a rate limit error
-    pub fn rate_limit(retry_after: Option<u64>) -> Self {
-        Self::RateLimit { retry_after }
+    pub fn rate_limit(scope: &'static str, weight: u32, retry_after_ms: Option<u64>) -> Self {
+        Self::RateLimit {
+            scope,
+            weight,
+            retry_after_ms,
+        }
     }
 
     /// Create a nonce window error
@@ -115,6 +123,18 @@ impl Error {
         }
     }
 
+    /// Create an error from HTTP status code and body
+    pub fn from_http_status(status: reqwest::StatusCode, body: &[u8]) -> Self {
+        let message = String::from_utf8_lossy(body).to_string();
+        match status.as_u16() {
+            401 | 403 => Self::auth(format!("HTTP {}: {}", status.as_u16(), message)),
+            400 => Self::bad_request(format!("HTTP {}: {}", status.as_u16(), message)),
+            429 => Self::rate_limit("unknown", 0, None),
+            500..=599 => Self::exchange(format!("HTTP {}: {}", status.as_u16(), message)),
+            _ => Self::http(status.as_u16(), message),
+        }
+    }
+
     /// Map reqwest errors to appropriate error types
     pub fn from_reqwest(error: reqwest::Error) -> Self {
         if error.is_timeout() {
@@ -124,7 +144,7 @@ impl Error {
             match status_code {
                 401 | 403 => Self::auth(format!("HTTP {}: authentication failed", status_code)),
                 400 => Self::bad_request(format!("HTTP {}: bad request", status_code)),
-                429 => Self::rate_limit(None), // TODO: Extract retry-after header
+                429 => Self::rate_limit("unknown", 0, None), // TODO: Extract retry-after header
                 500..=599 => Self::exchange(format!("HTTP {}: server error", status_code)),
                 _ => Self::http(status_code, format!("HTTP error: {}", error)),
             }
@@ -185,7 +205,7 @@ mod tests {
         let auth_err = Error::auth("Invalid signature");
         assert!(auth_err.is_auth_error());
 
-        let rate_limit_err = Error::rate_limit(Some(30));
+        let rate_limit_err = Error::rate_limit("test", 30, Some(30000));
         assert!(rate_limit_err.is_rate_limited());
         assert!(rate_limit_err.is_retryable());
 
@@ -196,9 +216,14 @@ mod tests {
     #[rstest]
     fn test_error_display() {
         let err = Error::RateLimit {
-            retry_after: Some(60),
+            scope: "info",
+            weight: 20,
+            retry_after_ms: Some(60000),
         };
-        assert_eq!(err.to_string(), "rate limited (retry_after=Some(60)s)");
+        assert_eq!(
+            err.to_string(),
+            "Rate limited on info (weight=20) retry_after_ms=Some(60000)"
+        );
 
         let err = Error::NonceWindow("Nonce too old".to_string());
         assert_eq!(err.to_string(), "nonce window error: Nonce too old");
@@ -208,7 +233,7 @@ mod tests {
     fn test_retryable_errors() {
         assert!(Error::transport("test").is_retryable());
         assert!(Error::Timeout.is_retryable());
-        assert!(Error::rate_limit(None).is_retryable());
+        assert!(Error::rate_limit("test", 10, None).is_retryable());
         assert!(Error::http(500, "server error").is_retryable());
 
         assert!(!Error::auth("test").is_retryable());

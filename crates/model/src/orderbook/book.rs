@@ -160,20 +160,16 @@ impl OrderBook {
         self.increment(sequence, ts_event);
     }
 
-    /// Removes overlapping bid/ask levels when the book is strictly crossed (best bid > best ask).
+    /// Removes overlapped bid/ask levels when the book is strictly crossed (best bid > best ask)
     ///
-    /// This method is intentionally simple and conservative:
-    /// - It only acts when both sides exist and best_bid > best_ask.
-    /// - It removes ask levels with price <= the original best bid and
-    ///   bid levels with price >= the original best ask.
-    /// - It deletes levels by removing all orders in those levels using the ladder API,
-    ///   preserving cache invariants and letting empty levels drop naturally.
-    ///
-    /// Returns the removed price levels from both sides (crossed bids first, then crossed asks),
-    /// or None if no levels were removed.
-    pub fn clear_stale_levels(&mut self) -> Option<Vec<BookLevel>> {
-        // L1_MBP maintains a single top-of-book price per side; nothing to do
+    /// - Acts only when both sides exist and the book is crossed.
+    /// - Deletes by removing whole price levels via the ladder API to preserve invariants.
+    /// - `side=None` or `NoOrderSide` clears both overlapped ranges (conservative, may widen spread).
+    /// - `side=Buy` clears crossed bids only; side=Sell clears crossed asks only.
+    /// - Returns removed price levels (crossed bids first, then crossed asks), or None if nothing removed.
+    pub fn clear_stale_levels(&mut self, side: Option<OrderSide>) -> Option<Vec<BookLevel>> {
         if self.book_type == BookType::L1_MBP {
+            // L1_MBP maintains a single top-of-book price per side; nothing to do
             return None;
         }
 
@@ -187,24 +183,39 @@ impl OrderBook {
         }
 
         let mut removed_levels = Vec::new();
+        let mut clear_bids = false;
+        let mut clear_asks = false;
+
+        match side {
+            Some(OrderSide::Buy) => clear_bids = true,
+            Some(OrderSide::Sell) => clear_asks = true,
+            _ => {
+                clear_bids = true;
+                clear_asks = true;
+            }
+        }
 
         // Collect prices to remove for asks (prices <= best_bid)
         let mut ask_prices_to_remove = Vec::new();
-        for (bp, _level) in self.asks.levels.iter() {
-            if bp.value <= best_bid {
-                ask_prices_to_remove.push(*bp);
-            } else {
-                break;
+        if clear_asks {
+            for (bp, _level) in self.asks.levels.iter() {
+                if bp.value <= best_bid {
+                    ask_prices_to_remove.push(*bp);
+                } else {
+                    break;
+                }
             }
         }
 
         // Collect prices to remove for bids (prices >= best_ask)
         let mut bid_prices_to_remove = Vec::new();
-        for (bp, _level) in self.bids.levels.iter() {
-            if bp.value >= best_ask {
-                bid_prices_to_remove.push(*bp);
-            } else {
-                break;
+        if clear_bids {
+            for (bp, _level) in self.bids.levels.iter() {
+                if bp.value >= best_ask {
+                    bid_prices_to_remove.push(*bp);
+                } else {
+                    break;
+                }
             }
         }
 
@@ -215,14 +226,14 @@ impl OrderBook {
         let bid_count = bid_prices_to_remove.len();
         let ask_count = ask_prices_to_remove.len();
 
-        // Remove bid levels and collect them
+        // Remove and collect bid levels
         for price in bid_prices_to_remove {
             if let Some(level) = self.bids.remove_level(price) {
                 removed_levels.push(level);
             }
         }
 
-        // Remove ask levels and collect them
+        // Remove and collect ask levels
         for price in ask_prices_to_remove {
             if let Some(level) = self.asks.remove_level(price) {
                 removed_levels.push(level);

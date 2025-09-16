@@ -10,7 +10,7 @@ Adapters provide connectivity to trading venues and data providers—translating
 NautilusTrader adapters follow a layered architecture pattern with a **Rust core** for performance-critical operations
 and a **Python layer** for the integration interface. This pattern is consistently used across adapters like Databento, Hyperliquid, OKX, BitMEX, and others.
 
-### Rust core (under `crates/adapters/your_adapter/`)
+### Rust core (`crates/adapters/your_adapter/`)
 
 The Rust layer handles:
 
@@ -37,7 +37,7 @@ crates/adapters/your_adapter/
 └── tests/                # Integration tests with mock servers
 ```
 
-### Python layer (under `nautilus_trader/adapters/your_adapter`)
+### Python layer (`nautilus_trader/adapters/your_adapter`)
 
 The Python layer provides the integration interface through these components:
 

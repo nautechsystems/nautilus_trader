@@ -168,8 +168,9 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                                     // Check if this is a private channel that requires auth
                                     let private_channels =
                                         ["order", "execution", "position", "margin", "wallet"];
-                                    let requires_auth =
-                                        private_channels.iter().any(|&ch| topic.starts_with(ch));
+                                    let requires_auth = private_channels.iter().any(|&ch| {
+                                        topic == ch || topic.starts_with(&format!("{}:", ch))
+                                    });
 
                                     if requires_auth {
                                         if !state.authenticated.load(Ordering::Relaxed) {
@@ -366,6 +367,12 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                         if let Some(args) = data.get("args").and_then(|a| a.as_array()) {
                             for arg in args {
                                 if let Some(topic) = arg.as_str() {
+                                    // Remove from subscriptions
+                                    {
+                                        let mut subs = state.subscriptions.lock().await;
+                                        subs.retain(|s| s != topic);
+                                    }
+
                                     let response = json!({
                                         "success": true,
                                         "unsubscribe": topic,
@@ -480,7 +487,7 @@ async fn test_websocket_connection() {
 #[rstest]
 #[tokio::test]
 async fn test_subscribe_to_public_data() {
-    let (addr, _state) = start_test_server().await.unwrap();
+    let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{}/realtime", addr);
 
     let mut client = BitmexWebSocketClient::new(
@@ -502,8 +509,13 @@ async fn test_subscribe_to_public_data() {
     // Wait for subscription confirmation and data
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    // If we got here without errors, subscription worked
+    // Verify subscription state
     assert!(client.is_active());
+    let subscriptions = state.subscriptions.lock().await;
+    assert!(subscriptions.contains(&"trade:XBTUSD".to_string()));
+
+    // Verify no authentication needed for public data
+    assert!(!state.authenticated.load(Ordering::Relaxed));
 
     // Close the connection
     client.close().await.unwrap();
@@ -512,7 +524,7 @@ async fn test_subscribe_to_public_data() {
 #[rstest]
 #[tokio::test]
 async fn test_subscribe_to_orderbook() {
-    let (addr, _state) = start_test_server().await.unwrap();
+    let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{}/realtime", addr);
 
     let mut client = BitmexWebSocketClient::new(
@@ -527,15 +539,21 @@ async fn test_subscribe_to_orderbook() {
     // Connect to the mock server
     client.connect().await.unwrap();
 
-    // Subscribe to order book
+    // Subscribe to order book and trades (test multiple subscriptions)
     let instrument_id = nautilus_model::identifiers::InstrumentId::from("XBTUSD.BITMEX");
     client.subscribe_book(instrument_id).await.unwrap();
+    client.subscribe_trades(instrument_id).await.unwrap();
 
     // Wait for subscription confirmation and data
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    // If we got here without errors, subscription worked
+    // Verify both subscriptions are active
     assert!(client.is_active());
+    let subscriptions = state.subscriptions.lock().await;
+    assert!(subscriptions.contains(&"orderBookL2:XBTUSD".to_string()));
+    assert!(subscriptions.contains(&"trade:XBTUSD".to_string()));
+    // Note: instrument subscription is also automatically added
+    assert!(subscriptions.len() >= 2);
 
     // Close the connection
     client.close().await.unwrap();
@@ -544,7 +562,7 @@ async fn test_subscribe_to_orderbook() {
 #[rstest]
 #[tokio::test]
 async fn test_subscribe_to_private_data() {
-    let (addr, _state) = start_test_server().await.unwrap();
+    let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{}/realtime", addr);
 
     let mut client = BitmexWebSocketClient::new(
@@ -567,8 +585,19 @@ async fn test_subscribe_to_private_data() {
     // Wait for subscription confirmations and data
     tokio::time::sleep(Duration::from_millis(300)).await;
 
-    // If we got here without errors, subscriptions worked
+    // Verify client is active and authenticated
     assert!(client.is_active());
+    assert!(state.authenticated.load(Ordering::Relaxed));
+
+    // Verify auth was called
+    let auth_calls = *state.auth_calls.lock().await;
+    assert!(auth_calls >= 1);
+
+    // Verify private subscriptions
+    let subscriptions = state.subscriptions.lock().await;
+    assert!(subscriptions.contains(&"position".to_string()));
+    assert!(subscriptions.contains(&"order".to_string()));
+    assert!(subscriptions.contains(&"execution".to_string()));
 
     // Close the connection
     client.close().await.unwrap();
@@ -636,7 +665,7 @@ async fn test_reconnection_scenario() {
 #[rstest]
 #[tokio::test]
 async fn test_unsubscribe() {
-    let (addr, _state) = start_test_server().await.unwrap();
+    let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{}/realtime", addr);
 
     let mut client = BitmexWebSocketClient::new(
@@ -656,13 +685,25 @@ async fn test_unsubscribe() {
     // Wait for subscription
     tokio::time::sleep(Duration::from_millis(100)).await;
 
+    // Verify subscription exists
+    {
+        let subs = state.subscriptions.lock().await;
+        assert!(subs.contains(&"trade:XBTUSD".to_string()));
+    }
+
     // Unsubscribe
     client.unsubscribe_trades(instrument_id).await.unwrap();
 
     // Wait for unsubscription
     tokio::time::sleep(Duration::from_millis(100)).await;
 
-    // If we got here without errors, unsubscription worked
+    // Verify topic was removed from subscriptions
+    {
+        let subs = state.subscriptions.lock().await;
+        assert!(!subs.contains(&"trade:XBTUSD".to_string()));
+    }
+
+    // Client should still be active after unsubscribe
     assert!(client.is_active());
 
     // Close the connection
@@ -692,7 +733,7 @@ async fn test_wait_until_active_timeout() {
 #[rstest]
 #[tokio::test]
 async fn test_multiple_symbols_subscription() {
-    let (addr, _state) = start_test_server().await.unwrap();
+    let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{}/realtime", addr);
 
     let mut client = BitmexWebSocketClient::new(
@@ -718,106 +759,20 @@ async fn test_multiple_symbols_subscription() {
     // Wait for subscriptions
     tokio::time::sleep(Duration::from_millis(300)).await;
 
-    // If we got here without errors, subscriptions worked
+    // Verify all subscriptions are tracked
     assert!(client.is_active());
+    let subscriptions = state.subscriptions.lock().await;
+    assert!(subscriptions.contains(&"trade:XBTUSD".to_string()));
+    assert!(subscriptions.contains(&"trade:ETHUSD".to_string()));
+    assert!(subscriptions.contains(&"orderBookL2:XBTUSD".to_string()));
 
     // Close the connection
     client.close().await.unwrap();
 }
 
-#[rstest]
-#[tokio::test]
-async fn test_server_side_drop_with_auto_reconnect() {
-    // Test server-initiated drop triggers auto-reconnect and subscription restoration
-    let (addr, state) = start_test_server().await.unwrap();
-    let ws_url = format!("ws://{}/realtime", addr);
+// Removed test_server_side_drop_with_auto_reconnect - see test_true_auto_reconnect_with_verification for comprehensive testing
 
-    let mut client = BitmexWebSocketClient::new(
-        Some(ws_url.clone()),
-        Some("test_api_key".to_string()),
-        Some("test_api_secret".to_string()),
-        Some(AccountId::new("BITMEX-001")),
-        None,
-    )
-    .unwrap();
-
-    // Initial connect and subscribe
-    client.connect().await.unwrap();
-
-    let instrument_id = nautilus_model::identifiers::InstrumentId::from("XBTUSD.BITMEX");
-    client.subscribe_trades(instrument_id).await.unwrap();
-    client.subscribe_book(instrument_id).await.unwrap();
-    client.subscribe_positions().await.unwrap();
-    client.subscribe_orders().await.unwrap();
-
-    // Wait for initial subscriptions
-    tokio::time::sleep(Duration::from_millis(300)).await;
-
-    // Verify initial state
-    assert!(client.is_active());
-    let initial_subs = {
-        let subs = state.subscriptions.lock().await;
-        subs.clone()
-    };
-
-    // Should have public and private subscriptions
-    assert!(!initial_subs.is_empty());
-    assert!(initial_subs.contains(&"instrument".to_string()));
-
-    // Trigger server-side graceful close
-    state.drop_connections.store(true, Ordering::Relaxed);
-    state.silent_drop.store(false, Ordering::Relaxed); // Use graceful close
-
-    // Wait for reconnection to happen (the underlying WebSocketClient should auto-reconnect)
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    // Reset drop flag for reconnection
-    state.drop_connections.store(false, Ordering::Relaxed);
-
-    // Clean up
-    client.close().await.unwrap();
-}
-
-#[rstest]
-#[tokio::test]
-async fn test_server_side_silent_drop() {
-    // Test silent connection drop (network failure scenario) triggers auto-reconnect
-    let (addr, state) = start_test_server().await.unwrap();
-    let ws_url = format!("ws://{}/realtime", addr);
-
-    let mut client = BitmexWebSocketClient::new(
-        Some(ws_url.clone()),
-        Some("test_api_key".to_string()),
-        Some("test_api_secret".to_string()),
-        Some(AccountId::new("BITMEX-001")),
-        None,
-    )
-    .unwrap();
-
-    // Connect and subscribe
-    client.connect().await.unwrap();
-
-    let instrument_id = nautilus_model::identifiers::InstrumentId::from("XBTUSD.BITMEX");
-    client.subscribe_trades(instrument_id).await.unwrap();
-    client.subscribe_positions().await.unwrap();
-
-    // Wait for subscriptions
-    tokio::time::sleep(Duration::from_millis(300)).await;
-    assert!(client.is_active());
-
-    // Trigger server-side silent drop (no close frame)
-    state.silent_drop.store(true, Ordering::Relaxed);
-    state.drop_connections.store(true, Ordering::Relaxed);
-
-    // Wait for reconnection
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    // Reset flags
-    state.drop_connections.store(false, Ordering::Relaxed);
-    state.silent_drop.store(false, Ordering::Relaxed);
-
-    client.close().await.unwrap();
-}
+// Removed test_server_side_silent_drop - see test_true_auto_reconnect_with_verification for comprehensive testing
 
 #[rstest]
 #[tokio::test]
@@ -927,11 +882,13 @@ async fn test_true_auto_reconnect_with_verification() {
         }
 
         // Check if subscriptions were restored
-        if final_subs.len() >= initial_subs.len() {
-            println!("✅ Subscriptions appear to be restored");
-        } else {
-            println!("❌ Subscriptions were NOT fully restored");
-        }
+        assert!(
+            final_subs.len() >= initial_subs.len(),
+            "Subscriptions should be restored after reconnection. Initial: {}, Final: {}",
+            initial_subs.len(),
+            final_subs.len()
+        );
+        println!("✅ Subscriptions restored: {} topics", final_subs.len());
     } else {
         println!("❌ Client never became active again - auto-reconnect failed");
         println!("Wait result: {:?}", reconnect_result);
@@ -1031,8 +988,13 @@ async fn test_subscription_restoration_tracking() {
     client.unsubscribe_trades(eth_id).await.unwrap();
     tokio::time::sleep(Duration::from_millis(100)).await;
 
-    // Verify unsubscription was tracked (would be used during reconnection)
-    // Note: In a real reconnection scenario, the client would not restore unsubscribed topics
+    // Verify unsubscription removed the topic from subscriptions
+    let subs_after_unsub = {
+        let subs = state.subscriptions.lock().await;
+        subs.clone()
+    };
+    assert!(!subs_after_unsub.contains(&"trade:ETHUSD".to_string()));
+    assert!(subs_after_unsub.contains(&"trade:XBTUSD".to_string())); // Other subscriptions remain
 
     client.close().await.unwrap();
 }
@@ -1097,9 +1059,8 @@ async fn test_heartbeat_timeout_reconnection() {
     tokio::time::sleep(Duration::from_millis(200)).await;
     assert!(client.is_active());
 
-    // Note: Testing actual heartbeat timeout would require suppressing pong responses
-    // in the mock server, which is complex to implement. This test mainly verifies
-    // that heartbeat can be configured without breaking the connection.
+    // SAFETY: Heartbeat configuration doesn't break connection
+    // TODO: Add server flag to suppress pong responses and test actual heartbeat timeout
 
     // Wait a bit longer to see if heartbeat causes any issues
     tokio::time::sleep(Duration::from_millis(1500)).await;
