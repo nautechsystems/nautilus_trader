@@ -109,6 +109,10 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
     use_http_batch_api : bool, default False
         If the client is using http api to send batch order requests.
         Effective only when `use_ws_trade_api` is set to `True`.
+    use_spot_position_reports : bool, default False
+        If True, wallet balances for SPOT instruments will be reported as LONG positions.
+        WARNING: This may lead to unintended liquidation of wallet assets if strategies
+        are not designed to handle spot positions appropriately.
     max_retries : PositiveInt, optional
         The maximum number of times a submit, cancel or modify order request will be retried.
     retry_delay_initial_ms : PositiveInt, optional
@@ -155,3 +159,4 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
     futures_leverages: dict[BybitSymbol, PositiveInt] | None = None
     position_mode: dict[BybitSymbol, BybitPositionMode] | None = None
     margin_mode: BybitMarginMode | None = None
+    use_spot_position_reports: bool = False

@@ -26,6 +26,7 @@ from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
+from nautilus_trader.live.config import LiveRiskEngineConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
@@ -39,10 +40,19 @@ from nautilus_trader.test_kit.strategies.tester_exec import ExecTesterConfig
 
 # SPOT/LINEAR
 product_type = BybitProductType.LINEAR
-symbol = f"ETHUSDT-{product_type.value.upper()}"
+
+if product_type == BybitProductType.SPOT:
+    symbol = f"DOGEUSDT-{product_type.value.upper()}"
+    order_qty = Decimal("100")
+    order_params = {"is_leverage": True}
+elif product_type == BybitProductType.LINEAR:
+    symbol = f"ETHUSDT-{product_type.value.upper()}"
+    order_qty = Decimal("0.01")
+    order_params = {}
+else:
+    raise NotImplementedError
+
 instrument_id = InstrumentId.from_str(f"{symbol}.{BYBIT}")
-order_qty = Decimal("0.01")
-order_params = {"is_leverage": False}
 
 # INVERSE
 # product_type = BybitProductType.INVERSE
@@ -64,6 +74,7 @@ config_node = TradingNodeConfig(
         reconciliation_instrument_ids=[instrument_id],  # Only reconcile this instrument
         open_check_interval_secs=5.0,
         open_check_open_only=False,
+        # filtered_client_order_ids=[ClientOrderId("1757985206157")],  # For demonstration
         # own_books_audit_interval_secs=2.0,
         # manage_own_order_books=True,
         # snapshot_orders=True,
@@ -78,6 +89,7 @@ config_node = TradingNodeConfig(
         purge_from_database=True,  # Set True with caution
         graceful_shutdown_on_exception=True,
     ),
+    risk_engine=LiveRiskEngineConfig(bypass=True),
     # cache=CacheConfig(
     #     database=DatabaseConfig(),
     #     timestamps_as_iso8601=True,
@@ -119,6 +131,7 @@ config_node = TradingNodeConfig(
             use_ws_trade_api=True,
             instrument_provider=InstrumentProviderConfig(load_all=True),
             product_types=[product_type],
+            # use_spot_position_reports=True,  # Experimental feature
             demo=False,  # If client uses the demo API
             testnet=False,  # If client uses the testnet API
             max_retries=3,

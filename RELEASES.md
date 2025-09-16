@@ -4,10 +4,11 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added Renko bar aggregator (#2941), thanks @faysou
-- Added Interactive Brokers cache config support for historical provider (#2942), thanks @ms32035
-- Added Interactive Brokers support for fetching orders from all clients (#2948), thanks @dinana
 - Added `time_range_generator` for on the fly data data subscriptions (#2952), thanks @faysou
 - Added `__repr__` to `NewsEvent` (#2958), thanks @MK27MK
+- Added Interactive Brokers cache config support for historical provider (#2942), thanks @ms32035
+- Added Interactive Brokers support for fetching orders from all clients (#2948), thanks @dinana
+- Added Bybit SPOT position reports with opt-in `use_spot_position_reports` config option for `BybitExecClientConfig`
 
 ### Breaking Changes
 None

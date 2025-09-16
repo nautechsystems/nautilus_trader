@@ -54,6 +54,7 @@ from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.live.retry import RetryManagerPool
 from nautilus_trader.model.enums import AccountType
@@ -62,6 +63,7 @@ from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import account_type_to_str
 from nautilus_trader.model.identifiers import AccountId
@@ -107,7 +109,6 @@ if TYPE_CHECKING:
     from nautilus_trader.execution.messages import SubmitOrderList
     from nautilus_trader.execution.reports import FillReport
     from nautilus_trader.execution.reports import OrderStatusReport
-    from nautilus_trader.execution.reports import PositionStatusReport
     from nautilus_trader.model.position import Position
 
 
@@ -195,6 +196,7 @@ class BybitExecutionClient(LiveExecutionClient):
         self._futures_leverages = config.futures_leverages
         self._margin_mode = config.margin_mode
         self._position_mode = config.position_mode
+        self._use_spot_position_reports = config.use_spot_position_reports
 
         self._log.info(f"Account type: {account_type_to_str(account_type)}", LogColor.BLUE)
         self._log.info(f"Product types: {[p.value for p in product_types]}", LogColor.BLUE)
@@ -202,6 +204,7 @@ class BybitExecutionClient(LiveExecutionClient):
         self._log.info(f"{config.use_ws_execution_fast=}", LogColor.BLUE)
         self._log.info(f"{config.use_ws_trade_api=}", LogColor.BLUE)
         self._log.info(f"{config.use_http_batch_api=}", LogColor.BLUE)
+        self._log.info(f"{config.use_spot_position_reports=}", LogColor.BLUE)
         self._log.info(f"{config.max_retries=}", LogColor.BLUE)
         self._log.info(f"{config.retry_delay_initial_ms=}", LogColor.BLUE)
         self._log.info(f"{config.retry_delay_max_ms=}", LogColor.BLUE)
@@ -210,6 +213,14 @@ class BybitExecutionClient(LiveExecutionClient):
         self._log.info(f"{config.futures_leverages=}", LogColor.BLUE)
         self._log.info(f"{config.margin_mode=}", LogColor.BLUE)
         self._log.info(f"{config.position_mode=}", LogColor.BLUE)
+
+        if self._use_spot_position_reports:
+            self._log.warning(
+                "SPOT position reports enabled - wallet balances will be treated as LONG positions; "
+                "This may lead to unintended liquidation of wallet assets if strategies are not "
+                "designed to handle SPOT positions properly",
+                LogColor.YELLOW,
+            )
 
         self._enum_parser = BybitEnumParser()
 
@@ -528,7 +539,7 @@ class BybitExecutionClient(LiveExecutionClient):
 
         return reports
 
-    async def generate_position_status_reports(
+    async def generate_position_status_reports(  # noqa: C901
         self,
         command: GeneratePositionStatusReports,
     ) -> list[PositionStatusReport]:
@@ -540,42 +551,165 @@ class BybitExecutionClient(LiveExecutionClient):
             if instrument_id:
                 self._log.debug(f"Requesting PositionStatusReport for {instrument_id}")
                 bybit_symbol = BybitSymbol(instrument_id.symbol.value)
-                positions = await self._http_account.query_position_info(
-                    bybit_symbol.product_type,
-                    bybit_symbol.raw_symbol,
-                )
-                for position in positions:
-                    position_report = position.parse_to_position_status_report(
-                        account_id=self.account_id,
-                        instrument_id=instrument_id,
-                        report_id=UUID4(),
-                        ts_init=self._clock.timestamp_ns(),
+
+                if (
+                    self._use_spot_position_reports
+                    and bybit_symbol.product_type == BybitProductType.SPOT
+                ):
+                    # Handle SPOT positions from wallet if enabled
+                    spot_reports = await self._generate_spot_position_reports_from_wallet(
+                        instrument_id,
                     )
-                    self._log.debug(f"Received {position_report}")
-                    reports.append(position_report)
-            else:
-                self._log.debug("Requesting PositionStatusReports...")
-                for product_type in self._product_types:
-                    if product_type == BybitProductType.SPOT:
-                        continue  # No positions on spot
-                    positions = await self._http_account.query_position_info(product_type)
+                    reports.extend(spot_reports)
+                elif bybit_symbol.product_type in (
+                    BybitProductType.LINEAR,
+                    BybitProductType.OPTION,
+                ):
+                    # Only LINEAR and OPTION are supported by Bybit position endpoint
+                    positions = await self._http_account.query_position_info(
+                        bybit_symbol.product_type,
+                        bybit_symbol.raw_symbol,
+                    )
                     for position in positions:
-                        symbol = position.symbol
-                        bybit_symbol = BybitSymbol(f"{symbol}-{product_type.value.upper()}")
                         position_report = position.parse_to_position_status_report(
                             account_id=self.account_id,
-                            instrument_id=bybit_symbol.to_instrument_id(),
+                            instrument_id=instrument_id,
                             report_id=UUID4(),
                             ts_init=self._clock.timestamp_ns(),
                         )
                         self._log.debug(f"Received {position_report}")
                         reports.append(position_report)
+                else:
+                    # INVERSE or SPOT (without use_spot_position_reports) not supported
+                    self._log.debug(
+                        f"No position reports available for {instrument_id} "
+                        f"({bybit_symbol.product_type.value} not supported)",
+                    )
+            else:
+                self._log.debug("Requesting PositionStatusReports...")
+                for product_type in self._product_types:
+                    if product_type == BybitProductType.SPOT:
+                        # Handle SPOT positions from wallet if enabled
+                        if self._use_spot_position_reports:
+                            spot_reports = await self._generate_spot_position_reports_from_wallet()
+                            reports.extend(spot_reports)
+                    elif product_type in (BybitProductType.LINEAR, BybitProductType.OPTION):
+                        # Only LINEAR and OPTION are supported by Bybit position endpoint
+                        positions = await self._http_account.query_position_info(product_type)
+                        for position in positions:
+                            symbol = position.symbol
+                            bybit_symbol = BybitSymbol(f"{symbol}-{product_type.value.upper()}")
+                            position_report = position.parse_to_position_status_report(
+                                account_id=self.account_id,
+                                instrument_id=bybit_symbol.to_instrument_id(),
+                                report_id=UUID4(),
+                                ts_init=self._clock.timestamp_ns(),
+                            )
+                            self._log.debug(f"Received {position_report}")
+                            reports.append(position_report)
+                    else:
+                        # INVERSE not supported by position endpoint
+                        self._log.debug(
+                            f"Skipping position query for {product_type.value} "
+                            f"(not supported by Bybit position endpoint)",
+                        )
         except BybitError as e:
             self._log.error(f"Failed to generate PositionReports: {e}")
 
         len_reports = len(reports)
         plural = "" if len_reports == 1 else "s"
-        self._log.info(f"Received {len(reports)} PositionReport{plural}")
+        self._log.info(f"Received {len_reports} PositionReport{plural}")
+
+        return reports
+
+    async def _generate_spot_position_reports_from_wallet(  # noqa: C901
+        self,
+        instrument_id: InstrumentId | None = None,
+    ) -> list[PositionStatusReport]:
+        reports: list[PositionStatusReport] = []
+        position_found = False
+
+        try:
+            # Query wallet balances
+            (balances, ts_event) = await self._http_account.query_wallet_balance()
+
+            for wallet in balances:
+                for coin_balance in wallet.coin:
+                    # Skip if balance is zero or negative
+                    wallet_balance = Decimal(coin_balance.walletBalance or "0")
+                    if wallet_balance <= 0:
+                        continue
+
+                    coin = coin_balance.coin
+
+                    # If specific instrument requested, check if this coin matches
+                    if instrument_id:
+                        # Get cached instrument to check base currency properly
+                        cached_instrument = self._cache.instrument(instrument_id)
+                        if cached_instrument and cached_instrument.base_currency.code == coin:
+                            # Use instrument's make_qty for proper precision
+                            quantity = cached_instrument.make_qty(coin_balance.walletBalance)
+                            position_report = PositionStatusReport(
+                                account_id=self.account_id,
+                                instrument_id=instrument_id,
+                                position_side=PositionSide.LONG,
+                                quantity=quantity,
+                                avg_px_open=None,  # No average price available from wallet balance
+                                report_id=UUID4(),
+                                ts_last=millis_to_nanos(ts_event),
+                                ts_init=self._clock.timestamp_ns(),
+                            )
+                            reports.append(position_report)
+                            position_found = True
+                            self._log.debug(
+                                f"Generated SPOT position report from wallet: {position_report}",
+                            )
+                    else:
+                        # Generate for all SPOT instruments with this base currency
+                        # Find all SPOT instruments in cache with this coin as base
+                        for cached_instrument in self._cache.instruments(venue=self.venue):
+                            if cached_instrument.id.symbol.value.endswith("-SPOT"):
+                                # Check if this instrument has the coin as base currency
+                                if cached_instrument.base_currency.code == coin:
+                                    # Use instrument's make_qty for proper precision
+                                    quantity = cached_instrument.make_qty(
+                                        coin_balance.walletBalance,
+                                    )
+                                    position_report = PositionStatusReport(
+                                        account_id=self.account_id,
+                                        instrument_id=cached_instrument.id,
+                                        position_side=PositionSide.LONG,
+                                        quantity=quantity,
+                                        avg_px_open=None,  # No average price available from wallet balance
+                                        report_id=UUID4(),
+                                        ts_last=millis_to_nanos(ts_event),
+                                        ts_init=self._clock.timestamp_ns(),
+                                    )
+                                    reports.append(position_report)
+                                    self._log.debug(
+                                        f"Generated SPOT position report from wallet: {position_report}",
+                                    )
+                                    break  # Only one position per coin
+
+            # If a specific instrument was requested but no position found,
+            # return a FLAT position report
+            if instrument_id and not position_found:
+                cached_instrument = self._cache.instrument(instrument_id)
+                if cached_instrument and cached_instrument.id.symbol.value.endswith("-SPOT"):
+                    flat_report = PositionStatusReport.create_flat(
+                        account_id=self.account_id,
+                        instrument_id=instrument_id,
+                        size_precision=cached_instrument.size_precision,
+                        ts_init=self._clock.timestamp_ns(),
+                        report_id=UUID4(),
+                    )
+                    reports.append(flat_report)
+                    self._log.debug(
+                        f"Generated FLAT SPOT position report (no wallet balance): {flat_report}",
+                    )
+
+        except BybitError as e:
+            self._log.error(f"Failed to generate SPOT position reports from wallet: {e}")
 
         return reports
 
@@ -1533,15 +1667,15 @@ class BybitExecutionClient(LiveExecutionClient):
                             trigger_price=report.trigger_price,
                             ts_event=report.ts_last,
                         )
-                    else:
-                        if order.is_open:
-                            self.generate_order_accepted(
-                                strategy_id=strategy_id,
-                                instrument_id=report.instrument_id,
-                                client_order_id=report.client_order_id,
-                                venue_order_id=report.venue_order_id,
-                                ts_event=report.ts_last,
-                            )
+                    elif not order.is_closed:
+                        # Only generate accepted if order is not in a terminal state
+                        self.generate_order_accepted(
+                            strategy_id=strategy_id,
+                            instrument_id=report.instrument_id,
+                            client_order_id=report.client_order_id,
+                            venue_order_id=report.venue_order_id,
+                            ts_event=report.ts_last,
+                        )
                 elif bybit_order.orderStatus in (
                     BybitOrderStatus.CANCELED,
                     BybitOrderStatus.DEACTIVATED,
