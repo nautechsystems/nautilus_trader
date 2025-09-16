@@ -577,7 +577,7 @@ class LiveExecutionEngine(ExecutionEngine):
         ts_now = self._clock.timestamp_ns()
 
         self._log.debug(
-            f"Performing targeted query for {order.client_order_id!r} before marking as rejected",
+            f"Performing targeted query for {order.client_order_id!r} before marking as REJECTED",
             LogColor.BLUE,
         )
 
@@ -612,7 +612,7 @@ class LiveExecutionEngine(ExecutionEngine):
 
         # Order still not found after targeted query - proceed with rejection
         self._log.warning(
-            f"Order {order.client_order_id!r} not found even with targeted query, marking as rejected",
+            f"Order {order.client_order_id!r} not found even with targeted query, marking as REJECTED",
             LogColor.YELLOW,
         )
 
