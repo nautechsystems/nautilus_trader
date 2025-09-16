@@ -69,11 +69,11 @@ The following Databento schemas are supported by NautilusTrader:
 | Databento schema | Nautilus data type                | Description                     |
 |:-----------------|:----------------------------------|:--------------------------------|
 | MBO              | `OrderBookDelta`                  | Market by order (L3).           |
-| MBP_1            | `(QuoteTick, TradeTick | None)`   | Market by price (L1).           |
+| MBP_1            | `(QuoteTick, TradeTick \| None)`  | Market by price (L1).           |
 | MBP_10           | `OrderBookDepth10`                | Market depth (L2).              |
 | BBO_1S           | `QuoteTick`                       | 1-second best bid/offer.        |
 | BBO_1M           | `QuoteTick`                       | 1-minute best bid/offer.        |
-| CMBP_1           | `(QuoteTick, TradeTick | None)`   | Consolidated MBP across venues. |
+| CMBP_1           | `(QuoteTick, TradeTick \| None)`  | Consolidated MBP across venues. |
 | CBBO_1S          | `QuoteTick`                       | Consolidated 1-second BBO.      |
 | CBBO_1M          | `QuoteTick`                       | Consolidated 1-minute BBO.      |
 | TCBBO            | `(QuoteTick, TradeTick)`          | Trade-sampled consolidated BBO. |
@@ -93,10 +93,10 @@ The following Databento schemas are supported by NautilusTrader:
 
 - **TBBO and TCBBO**: Trade-sampled feeds that pair every trade with the BBO immediately *before* the trade's effect (TBBO per-venue, TCBBO consolidated across venues). Use when you need trades aligned with contemporaneous quotes without managing two streams.
 - **MBP-1 and CMBP-1 (L1)**: Event-level updates; emit trades only on trade events. Choose for a complete top-of-book event tape. For quote+trade alignment, prefer TBBO/TCBBO; otherwise, use TRADES.
-- **MBP-10 (L2)**: (top 10 levels) with trades. Good for depth-aware strategies that don't need per-order detail; lighter than MBO with much of the structure you need including number of orders per level.
+- **MBP-10 (L2)**: Top 10 levels with trades. Good for depth-aware strategies that don't need per-order detail; lighter than MBO with much of the structure you need including number of orders per level.
 - **MBO (L3)**: Per-order events enable queue position modeling and exact book reconstruction. Highest volume/cost; start at node initialization to ensure proper replay context.
 - **BBO_1S/BBO_1M and CBBO_1S/CBBO_1M**: Sampled top-of-book quotes at fixed intervals (1s/1m), no trades. Best for monitoring/spreads/low-cost signal generation; not suited for fine-grained microstructure.
-- **TRADES**: Trades only. Pair with MBP-1 (include_trades=True) or use TBBO/TCBBO if you need quote context aligned with trades.
+- **TRADES**: Trades only. Pair with MBP-1 (`include_trades=True`) or use TBBO/TCBBO if you need quote context aligned with trades.
 - **OHLCV_ (incl. OHLCV_EOD)**: Aggregated bars derived from trades. Prefer for higher-timeframe analytics/backtests; ensure bar timestamps represent close time (set `bars_timestamp_on_close=True`).
 - **Imbalance / Statistics / Status**: Venue operational data; subscribe via `subscribe_data` with a `DataType` carrying `instrument_id` metadata.
 
@@ -112,7 +112,17 @@ See also the Databento [Schemas and data formats](https://databento.com/docs/sch
 
 ## Schema selection for live subscriptions
 
-:::info
+The following table shows how Nautilus subscription methods map to Databento schemas:
+
+| Nautilus Subscription Method    | Default Schema | Available Databento Schemas                                                  | Nautilus Data Type |
+|:--------------------------------|:---------------|:-----------------------------------------------------------------------------|:-------------------|
+| `subscribe_quote_ticks()`       | `mbp-1`        | `mbp-1`, `bbo-1s`, `bbo-1m`, `cmbp-1`, `cbbo-1s`, `cbbo-1m`, `tbbo`, `tcbbo` | `QuoteTick`        |
+| `subscribe_trade_ticks()`       | `trades`       | `trades`, `tbbo`, `tcbbo`, `mbp-1`, `cmbp-1`                                 | `TradeTick`        |
+| `subscribe_order_book_depth()`  | `mbp-10`       | `mbp-10`                                                                     | `OrderBookDepth10` |
+| `subscribe_order_book_deltas()` | `mbo`          | `mbo`                                                                        | `OrderBookDeltas`  |
+| `subscribe_bars()`              | varies         | `ohlcv-1s`, `ohlcv-1m`, `ohlcv-1h`, `ohlcv-1d`                               | `Bar`              |
+
+:::note
 The examples below assume you're within a `Strategy` or `Actor` class context where `self` has access to subscription methods.
 Remember to import the necessary types:
 
@@ -123,18 +133,6 @@ from nautilus_trader.model.identifiers import InstrumentId
 ```
 
 :::
-
-### Nautilus subscription methods to Databento schemas
-
-The following table shows how Nautilus subscription methods map to Databento schemas:
-
-| Nautilus Subscription Method    | Default Schema | Available Databento Schemas                                                  | Nautilus Data Type |
-|:--------------------------------|:---------------|:-----------------------------------------------------------------------------|:-------------------|
-| `subscribe_quote_ticks()`       | `mbp-1`        | `mbp-1`, `bbo-1s`, `bbo-1m`, `cmbp-1`, `cbbo-1s`, `cbbo-1m`, `tbbo`, `tcbbo` | `QuoteTick`        |
-| `subscribe_trade_ticks()`       | `trades`       | `trades`, `tbbo`, `tcbbo`, `mbp-1`, `cmbp-1`                                 | `TradeTick`        |
-| `subscribe_order_book_depth()`  | `mbp-10`       | `mbp-10`                                                                     | `OrderBookDepth10` |
-| `subscribe_order_book_deltas()` | `mbo`          | `mbo`                                                                        | `OrderBookDeltas`  |
-| `subscribe_bars()`              | varies         | `ohlcv-1s`, `ohlcv-1m`, `ohlcv-1h`, `ohlcv-1d`                               | `Bar`              |
 
 ### Quote subscriptions (MBP / L1)
 
